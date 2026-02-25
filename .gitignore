@@ -1,0 +1,5 @@
+.env
+data/macro_radar.db
+
+__pycache__/
+*.pyc
