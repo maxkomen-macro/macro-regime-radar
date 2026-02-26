@@ -1,0 +1,19 @@
+# config/providers.yml
+# Polygon.io REST API settings and rate limiting configuration.
+
+polygon:
+  base_url: "https://api.polygon.io"
+  # Endpoint templates (ticker, from_date, to_date substituted at runtime)
+  daily_endpoint:    "/v2/aggs/ticker/{ticker}/range/1/day/{from_date}/{to_date}"
+  intraday_endpoint: "/v2/aggs/ticker/{ticker}/range/5/minute/{from_date}/{to_date}"
+  default_params:
+    limit: 50000
+    adjusted: "true"
+  rate_limit:
+    # Conservative for free-tier (~5 req/min = 12s between requests)
+    sleep_between_requests: 12
+    # Exponential backoff waits (seconds) on HTTP 429 Too Many Requests
+    retry_429_backoffs: [60, 120, 240]
+    # Fixed backoff waits (seconds) on HTTP 5xx Server Error
+    retry_5xx_backoffs: [5, 5, 5]
+    max_retries: 3

@@ -39,3 +39,22 @@ UNRATE_SPIKE_WINDOW             = 3     # months
 CPI_HOT_THRESHOLD               = 4.0  # YoY %
 CPI_COLD_THRESHOLD              = 1.0  # YoY %
 VIX_SPIKE_THRESHOLD             = 30.0
+
+# ── Extended FRED Series (Priced Metrics / Trader Pack) ────────────────────
+PRICED_SERIES = {
+    "fedfunds":      "FEDFUNDS",   # Federal Funds Effective Rate (monthly)
+    "sofr":          "SOFR",       # Secured Overnight Financing Rate (daily→monthly)
+    "breakeven_5y":  "T5YIE",      # 5-Year Breakeven Inflation Rate (daily→monthly)
+    "breakeven_10y": "T10YIE",     # 10-Year Breakeven Inflation Rate (daily→monthly)
+    "tips_5y":       "DFII5",      # 5-Year TIPS Yield (daily→monthly)
+    "tips_10y":      "DFII10",     # 10-Year TIPS Yield (daily→monthly)
+}
+SERIES.update(PRICED_SERIES)   # fetch_all_series() picks these up automatically
+
+# ── Polygon API (optional — no raise) ──────────────────────────────────────
+POLYGON_API_KEY             = os.getenv("POLYGON_API_KEY")
+MARKET_DAILY_BACKFILL_YEARS = int(os.getenv("MARKET_DAILY_BACKFILL_YEARS", "10"))
+
+# ── Output paths ───────────────────────────────────────────────────────────
+OUTPUT_DIR         = PROJECT_ROOT / "output"
+PLAYBOOK_JSON_PATH = OUTPUT_DIR / "playbook.json"
