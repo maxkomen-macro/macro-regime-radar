@@ -323,6 +323,186 @@ def regime_commentary(label: str, confidence: float, triggered: list) -> str:
     return text
 
 
+def regime_commentary_rich(
+    label: str,
+    confidence: float,
+    triggered: list,
+    derived: pd.DataFrame,
+    prev_label=None,
+    regime_duration: int = 0,
+) -> str:
+    """
+    Generate 4-6 sentence professional macro commentary for 'What It Implies'.
+    Cites actual latest indicator values, compares to the prior month's regime,
+    and lists key variables to watch. Written in the style of a macro strategist.
+    """
+    conf_str = (
+        "high confidence" if confidence >= 0.4
+        else "moderate confidence" if confidence >= 0.2
+        else "low confidence"
+    )
+
+    # ── Pull latest indicator values from derived DataFrame ──────────────────
+    cpi        = _latest(gcol(derived, "CPI_YOY"))
+    ur         = _latest(gcol(derived, "UNRATE"))
+    ur_3m      = _latest(gcol(derived, "UNRATE_3M"))
+    sp         = _latest(gcol(derived, "SPREAD"))
+    vix        = _latest(gcol(derived, "VIXCLS"))
+    indpro_yoy = _latest(gcol(derived, "INDPRO_YOY"))
+
+    def fmt(v, d=2, sfx=""):
+        return f"{v:.{d}f}{sfx}" if v is not None else "N/A"
+
+    # ── S1: What the regime means for markets ────────────────────────────────
+    intros = {
+        "Goldilocks": (
+            f"The macro backdrop is registering a <b>Goldilocks</b> regime ({conf_str}): "
+            "growth is expanding and inflation remains contained — historically one of the most "
+            "constructive environments for risk assets, with equities, credit, and cyclical "
+            "sectors tending to outperform over 12-month investment horizons."
+        ),
+        "Overheating": (
+            f"Current conditions are consistent with an <b>Overheating</b> regime ({conf_str}): "
+            "the economy is running above trend while inflation remains elevated, a combination "
+            "that historically pressures rate-sensitive assets, steepens the front end of the "
+            "yield curve, and may prompt further central bank tightening."
+        ),
+        "Stagflation": (
+            f"The model is flagging a <b>Stagflation</b> regime ({conf_str}): growth is "
+            "decelerating while inflation remains sticky — one of the most challenging macro "
+            "backdrops for diversified portfolios, where both equities and nominal bonds tend "
+            "to underperform and real assets and inflation-linked instruments typically outperform."
+        ),
+        "Recession Risk": (
+            f"The data is pointing to a <b>Recession Risk</b> regime ({conf_str}): growth "
+            "indicators are deteriorating while disinflationary dynamics are emerging — "
+            "a backdrop that historically favors duration, high-quality fixed income, and "
+            "a defensive tilt in equity positioning toward low-beta and income-oriented sectors."
+        ),
+    }
+    text = intros.get(label, f"Current regime: <b>{label}</b> ({conf_str}).")
+
+    # ── S2: Driving indicators with actual values ────────────────────────────
+    drivers = []
+    if cpi is not None:
+        cpi_desc = (
+            "elevated" if cpi > 4.0
+            else "well-anchored" if cpi < 1.5
+            else "running at a moderate pace"
+        )
+        drivers.append(f"CPI at <b>{fmt(cpi)}% YoY</b> ({cpi_desc})")
+
+    if ur is not None:
+        if ur_3m is not None and ur_3m > 0.3:
+            ur_desc = "rising"
+        elif ur_3m is not None and ur_3m < -0.2:
+            ur_desc = "improving"
+        else:
+            ur_desc = "stable"
+        drivers.append(f"unemployment at <b>{fmt(ur, 1)}%</b> ({ur_desc})")
+
+    if sp is not None:
+        if sp < 0:
+            sp_desc = "inverted — a historical recession warning"
+        elif sp < 0.3:
+            sp_desc = "near-flat"
+        else:
+            sp_desc = "positively sloped"
+        drivers.append(f"the 10Y–2Y yield spread at <b>{fmt(sp)}%</b> ({sp_desc})")
+
+    if vix is not None:
+        vix_desc = (
+            "elevated, signaling market stress" if vix > 30
+            else "slightly elevated" if vix > 20
+            else "subdued, consistent with low perceived risk"
+        )
+        drivers.append(f"VIX at <b>{fmt(vix, 1)}</b> ({vix_desc})")
+
+    if indpro_yoy is not None:
+        ip_desc = (
+            "expanding" if indpro_yoy > 2
+            else "contracting" if indpro_yoy < -1
+            else "near-flat"
+        )
+        drivers.append(
+            f"industrial production at <b>{fmt(indpro_yoy)}% YoY</b> ({ip_desc})"
+        )
+
+    if drivers:
+        text += (
+            " The classification is primarily driven by: "
+            + ", ".join(drivers[:4])
+            + "."
+        )
+
+    # ── S3: How this compares to the recent trend ────────────────────────────
+    if prev_label is not None and prev_label != label:
+        text += (
+            f" Notably, the regime has transitioned from <b>{prev_label}</b> in the prior month — "
+            "a shift that historically marks an inflection point in cross-asset performance "
+            "and warrants reassessment of positioning across asset classes."
+        )
+    else:
+        dur_str = (
+            f" for {regime_duration} consecutive month{'s' if regime_duration != 1 else ''}"
+            if regime_duration > 1 else ""
+        )
+        text += (
+            f" The regime reading is unchanged from the prior month{dur_str}, "
+            "suggesting the underlying macro dynamics remain intact and no near-term "
+            "trend reversal is yet in evidence."
+        )
+
+    # ── S4: Active signals ───────────────────────────────────────────────────
+    if triggered:
+        names  = [SIGNAL_META.get(s, {}).get("label", s) for s in triggered]
+        joined = ", ".join(f"<b>{n}</b>" for n in names)
+        text += (
+            f" Risk signals currently active: {joined}. "
+            "The persistence of these triggers historically correlates with above-average "
+            "market volatility and warrants elevated caution on position sizing and "
+            "near-term liquidity management."
+        )
+    else:
+        text += (
+            " No major risk signals are currently triggered; the regime classification "
+            "rests on trend inputs rather than acute stress readings, suggesting the "
+            "environment lacks the tail-risk characteristics typical of market dislocations."
+        )
+
+    # ── S5: What investors should watch going forward ────────────────────────
+    watches = {
+        "Goldilocks": (
+            "any re-acceleration in core services CPI that could prompt a more restrictive "
+            "Fed stance, and early signs of labor-market softening — a sustained rise in "
+            "initial claims or consecutive payroll misses would be the most credible leading "
+            "indicator of a transition toward Recession Risk"
+        ),
+        "Overheating": (
+            "incoming CPI and PCE prints for evidence of deceleration, Fed communication "
+            "around the pace and terminal level of rate adjustments, and the yield curve — "
+            "further inversion would signal that tightening is beginning to restrain "
+            "demand and that a growth slowdown may follow"
+        ),
+        "Stagflation": (
+            "whether headline and core inflation begins to roll over as demand weakens, "
+            "and the Fed's policy balance: easing prematurely risks entrenching inflation "
+            "expectations, while continued tightening risks accelerating the growth "
+            "slowdown into an outright contraction"
+        ),
+        "Recession Risk": (
+            "monthly payrolls and initial jobless claims as the most timely labor-market "
+            "leading indicators, Fed policy pivots (rate cuts historically lag cycle peaks "
+            "by several months), and broad leading indicators such as the PMI composite "
+            "and Conference Board LEI for evidence of stabilization"
+        ),
+    }
+    watch = watches.get(label, "key macro indicators for signs of a regime transition")
+    text += f" Going forward, investors should closely monitor {watch}."
+
+    return text
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Chart helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -385,16 +565,20 @@ st.markdown("""
     font-size: 13px;
     line-height: 1.9;
     height: 100%;
+    color: #111111 !important;
 }
-.sig-triggered { border-left: 4px solid #e74c3c; background: #fff8f8; }
-.sig-ok         { border-left: 4px solid #2ecc71; background: #f8fff8; }
+.sig-card * { color: #111111 !important; }
+.sig-triggered { border-left: 4px solid #e74c3c; background: #fff5f5; }
+.sig-ok         { border-left: 4px solid #2ecc71; background: #f5fff5; }
 .commentary-box {
     background: #f9f9f9;
     padding: 16px 20px;
     border-radius: 6px;
     font-size: 15px;
     line-height: 1.8;
+    color: #111111 !important;
 }
+.commentary-box * { color: #111111 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -563,14 +747,14 @@ for i, (sname, smeta) in enumerate(SIGNAL_META.items()):
         last_t_str = last_t.strftime("%b %Y") if last_t is not None else "Never"
 
         st.markdown(
-            f"""<div class="sig-card {css}">
-<b style="font-size:14px">{icon} {smeta['label']}</b><br>
-<b>Status:</b> {status}<br>
-<b>Value:</b> {val:.2f} {smeta['unit']}<br>
-<b>Threshold:</b> {smeta['threshold']} ({smeta['direction']})<br>
-<b>Severity:</b> {sev}<br>
-<b>Active periods:</b> {dur_s}<br>
-<b>Last triggered:</b> {last_t_str}
+            f"""<div class="sig-card {css}" style="color:#111111 !important">
+<b style="font-size:14px;color:#111111">{icon} {smeta['label']}</b><br>
+<span style="color:#111111"><b style="color:#111111">Status:</b> {status}</span><br>
+<span style="color:#111111"><b style="color:#111111">Value:</b> {val:.2f} {smeta['unit']}</span><br>
+<span style="color:#111111"><b style="color:#111111">Threshold:</b> {smeta['threshold']} ({smeta['direction']})</span><br>
+<span style="color:#111111"><b style="color:#111111">Severity:</b> {sev}</span><br>
+<span style="color:#111111"><b style="color:#111111">Active periods:</b> {dur_s}</span><br>
+<span style="color:#111111"><b style="color:#111111">Last triggered:</b> {last_t_str}</span>
 </div>""",
             unsafe_allow_html=True,
         )
@@ -733,14 +917,26 @@ if latest_regime is not None:
         latest_signals[latest_signals["triggered"] == 1]["signal_name"].tolist()
         if not latest_signals.empty else []
     )
-    commentary = regime_commentary(
+    # Determine previous month's regime for trend comparison
+    prev_regime_label = None
+    if not regimes_df.empty and as_of is not None:
+        prev_rows = regimes_df[regimes_df["date"] < as_of].sort_values("date")
+        if not prev_rows.empty:
+            prev_regime_label = str(prev_rows.iloc[-1]["label"])
+    dur_now = regime_duration_months(regimes_df, as_of) if as_of is not None else 0
+
+    commentary = regime_commentary_rich(
         latest_regime["label"],
         float(latest_regime["confidence"]),
         triggered_now,
+        derived_df,
+        prev_label=prev_regime_label,
+        regime_duration=dur_now,
     )
     border_color = REGIME_COLORS.get(latest_regime["label"], "#888")
     st.markdown(
-        f'<div class="commentary-box" style="border-left:4px solid {border_color}">'
+        f'<div class="commentary-box" '
+        f'style="border-left:4px solid {border_color}; color:#111111 !important">'
         f'{commentary}</div>',
         unsafe_allow_html=True,
     )

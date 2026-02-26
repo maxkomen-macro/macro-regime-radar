@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Macro Regime Radar — Weekly Memo</title>
+  <style>
+    /* ── Reset & base ────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, "Segoe UI", Helvetica Neue, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.65;
+      color: #1a1d23;
+      background: #f4f5f7;
+    }
+
+    /* ── Page wrapper ────────────────────────────────────────────────────── */
+    .page {
+      max-width: 860px;
+      margin: 32px auto;
+      background: #ffffff;
+      border: 1px solid #dde1e9;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    /* ── Header band ─────────────────────────────────────────────────────── */
+    .page-header {
+      background: #0d1b2a;
+      color: #ffffff;
+      padding: 28px 36px 22px;
+    }
+    .page-header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      margin-bottom: 4px;
+    }
+    .page-header .subtitle {
+      font-size: 12px;
+      color: #a0aec0;
+      letter-spacing: 0.3px;
+    }
+    .page-header .dates {
+      display: flex;
+      gap: 24px;
+      margin-top: 14px;
+    }
+    .page-header .date-chip {
+      font-size: 11px;
+      color: #cbd5e0;
+    }
+    .page-header .date-chip strong {
+      color: #e2e8f0;
+      font-weight: 600;
+    }
+
+    /* ── Section wrapper ─────────────────────────────────────────────────── */
+    .section {
+      padding: 24px 36px;
+      border-bottom: 1px solid #e8ebf0;
+    }
+    .section:last-of-type { border-bottom: none; }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: #6b7591;
+      margin-bottom: 14px;
+    }
+
+    /* ── Warning banner ──────────────────────────────────────────────────── */
+    .warning-banner {
+      background: #fffbeb;
+      border: 1px solid #f6c90e;
+      border-radius: 4px;
+      padding: 10px 16px;
+      font-size: 13px;
+      color: #7d5a00;
+      margin-bottom: 12px;
+    }
+
+    /* ── Regime summary ──────────────────────────────────────────────────── */
+    .regime-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .regime-badge {
+      display: inline-block;
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 17px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.3px;
+      flex-shrink: 0;
+    }
+    .regime-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 4px;
+    }
+    .regime-meta .conf {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1d23;
+      line-height: 1;
+    }
+    .regime-meta .conf-label {
+      font-size: 11px;
+      color: #6b7591;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .trend-pills {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+    }
+    .trend-pill {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid #dde1e9;
+      color: #444;
+      background: #f7f8fa;
+    }
+    .trend-pill.up   { border-color: #2ecc71; color: #0f7a3c; background: #f0faf4; }
+    .trend-pill.down { border-color: #e74c3c; color: #b91c1c; background: #fff4f4; }
+
+    /* ── What Changed bullets ────────────────────────────────────────────── */
+    .changes-list {
+      list-style: none;
+      padding: 0;
+    }
+    .changes-list li {
+      display: flex;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid #f0f2f5;
+      font-size: 13.5px;
+      align-items: baseline;
+    }
+    .changes-list li:last-child { border-bottom: none; }
+    .changes-list .rank {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #eef0f5;
+      color: #6b7591;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .changes-list .zscore-bar {
+      flex-shrink: 0;
+      align-self: center;
+      width: 48px;
+      height: 5px;
+      border-radius: 3px;
+      background: #e3e5e8;
+      overflow: hidden;
+    }
+    .changes-list .zscore-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: #2c7be5;
+    }
+
+    /* ── Signals table ───────────────────────────────────────────────────── */
+    .signals-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .signals-table th {
+      text-align: left;
+      padding: 8px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: #6b7591;
+      background: #f7f8fa;
+      border-bottom: 1px solid #dde1e9;
+    }
+    .signals-table td {
+      padding: 10px 10px;
+      border-bottom: 1px solid #f0f2f5;
+      vertical-align: middle;
+    }
+    .signals-table tr:last-child td { border-bottom: none; }
+    .signals-table tr.triggered td:first-child {
+      border-left: 3px solid #e74c3c;
+    }
+    .signals-table tr.triggered {
+      background: #fff8f7;
+    }
+    .signals-table tr.ok td:first-child {
+      border-left: 3px solid #2ecc71;
+    }
+    .trig-yes {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      background: #fdecea;
+      color: #c0392b;
+      font-weight: 600;
+      font-size: 11px;
+    }
+    .trig-no {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      background: #eafaf1;
+      color: #27ae60;
+      font-weight: 600;
+      font-size: 11px;
+    }
+
+    /* ── Charts grid ─────────────────────────────────────────────────────── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .chart-card {
+      border: 1px solid #e8ebf0;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    .chart-card img {
+      width: 100%;
+      display: block;
+    }
+    .chart-footer {
+      padding: 8px 10px;
+      background: #f7f8fa;
+      border-top: 1px solid #e8ebf0;
+    }
+    .chart-caption {
+      font-size: 11px;
+      color: #444;
+      line-height: 1.45;
+    }
+    .chart-source {
+      font-size: 10px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    /* ── Implication box ─────────────────────────────────────────────────── */
+    .implication-box {
+      background: #f7f8fa;
+      border-left: 4px solid #2c7be5;
+      border-radius: 0 4px 4px 0;
+      padding: 14px 18px;
+      font-size: 14px;
+      line-height: 1.75;
+      color: #1a1d23;
+    }
+
+    /* ── Methodology ─────────────────────────────────────────────────────── */
+    .methodology-list {
+      list-style: none;
+      padding: 0;
+    }
+    .methodology-list li {
+      font-size: 12.5px;
+      color: #555;
+      padding: 4px 0 4px 16px;
+      position: relative;
+    }
+    .methodology-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: #2c7be5;
+      font-weight: 700;
+    }
+
+    /* ── Page footer ─────────────────────────────────────────────────────── */
+    .page-footer {
+      background: #f7f8fa;
+      border-top: 1px solid #dde1e9;
+      padding: 14px 36px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: #888;
+    }
+    .page-footer strong { color: #555; }
+
+    /* ── Print ───────────────────────────────────────────────────────────── */
+    @media print {
+      body { background: #fff; }
+      .page { border: none; margin: 0; }
+      .charts-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="page-header">
+    <h1>Macro Regime Radar — Weekly Memo</h1>
+    <div class="subtitle">Quantitative macro regime classification &amp; risk signal monitor</div>
+    <div class="dates">
+      <div class="date-chip"><strong>As of:</strong>&nbsp; {{ as_of }}</div>
+      <div class="date-chip"><strong>Generated:</strong>&nbsp; {{ generated_at }}</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       1. CURRENT REGIME SUMMARY
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="currentregime">
+    <div class="section-title">Current Regime Summary</div>
+
+    {% if no_regimes %}
+    <div class="warning-banner">
+      ⚠ No regimes computed yet. Run <code>python main.py</code> to populate the database.
+    </div>
+    {% else %}
+    <div class="regime-row">
+      <div class="regime-badge" style="background: {{ regime.badge_color }};">
+        {{ regime.label }}
+      </div>
+      <div class="regime-meta">
+        <div class="conf">{{ regime.conf_pct }}</div>
+        <div class="conf-label">Model Confidence</div>
+        <div class="trend-pills">
+          <span class="trend-pill {% if regime.growth_arrow == '▲' %}up{% else %}down{% endif %}">
+            {{ regime.growth_arrow }} Growth: {{ regime.growth_dir }}
+          </span>
+          <span class="trend-pill {% if regime.infl_arrow == '▲' %}up{% else %}down{% endif %}">
+            {{ regime.infl_arrow }} Inflation: {{ regime.infl_dir }}
+          </span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       2. WHAT CHANGED THIS WEEK
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="whatchanged">
+    <div class="section-title">What Changed This Week</div>
+    <div style="font-size:11px; color:#888; margin-bottom:12px;">
+      Ranked by magnitude of move relative to recent history (|z-score|, {{ as_of }} data).
+    </div>
+
+    {% if not changes %}
+    <p style="color:#888; font-size:13px;">Insufficient data to compute changes.</p>
+    {% else %}
+    <ul class="changes-list">
+      {% for item in changes %}
+      <li>
+        <div class="rank">{{ loop.index }}</div>
+        <div style="flex:1">{{ item.bullet }}</div>
+        <div class="zscore-bar" title="z-score: {{ '%.1f'|format(item.zscore|abs) }}">
+          <div class="zscore-fill" style="width: {{ [item.zscore|abs * 20, 100]|min|int }}%;
+               background: {% if item.zscore|abs > 2 %}#e74c3c{% elif item.zscore|abs > 1 %}#e67e22{% else %}#2c7be5{% endif %};"></div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       3. SIGNALS OVERVIEW
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="signaltable">
+    <div class="section-title">Signals Overview</div>
+
+    {% if no_signals %}
+    <p style="color:#888; font-size:13px;">No signal data available.</p>
+    {% else %}
+    <table class="signals-table">
+      <thead>
+        <tr>
+          <th>Signal</th>
+          <th>Status</th>
+          <th>Current Value</th>
+          <th>Severity</th>
+          <th>Duration Active</th>
+          <th>Last Triggered</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in signal_rows %}
+        <tr class="{% if row.triggered %}triggered{% else %}ok{% endif %}">
+          <td><strong>{{ row.label }}</strong></td>
+          <td>
+            {% if row.triggered %}
+            <span class="trig-yes">&#x25CF; Yes</span>
+            {% else %}
+            <span class="trig-no">&#x25CB; No</span>
+            {% endif %}
+          </td>
+          <td>{{ row.value_str }}</td>
+          <td>{{ row.severity }}</td>
+          <td>
+            {% if row.duration > 0 %}
+              {{ row.duration }}&nbsp;month{% if row.duration != 1 %}s{% endif %}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>{{ row.last_trig }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       4. CHARTS
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="charts">
+    <div class="section-title">Key Indicators — Last 24 Months</div>
+
+    {% if not charts %}
+    <p style="color:#888; font-size:13px;">Charts unavailable — check data series in the database.</p>
+    {% else %}
+    <div class="charts-grid">
+      {% for c in charts %}
+      <div class="chart-card">
+        <img src="data:image/png;base64,{{ c.b64 }}" alt="{{ c.title }}" />
+        <div class="chart-footer">
+          <div class="chart-caption">{{ c.caption }}</div>
+          <div class="chart-source">{{ c.source }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       5. WHAT IT IMPLIES
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="implications">
+    <div class="section-title">What It Implies</div>
+
+    {% if implication %}
+    <div class="implication-box">
+      {{ implication }}
+    </div>
+    {% else %}
+    <p style="color:#888; font-size:13px;">No regime data available for commentary.</p>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       6. METHODOLOGY
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="methodology">
+    <div class="section-title">Methodology</div>
+    <ul class="methodology-list">
+      <li>
+        <strong>Data source:</strong> All series sourced from the Federal Reserve Economic Data (FRED)
+        API — CPIAUCSL, UNRATE, GS10, GS2, INDPRO, VIXCLS — updated monthly.
+      </li>
+      <li>
+        <strong>Regime classification:</strong> Growth trend derived from INDPRO rolling OLS slope;
+        inflation trend from CPI rolling OLS slope. The four regimes (Goldilocks, Overheating,
+        Stagflation, Recession Risk) are mapped from the sign combination of these two trends.
+        Confidence reflects the magnitude of the z-scores.
+      </li>
+      <li>
+        <strong>Signal alerts:</strong> Five threshold-based binary signals — yield curve inversion
+        (10Y–2Y &lt; 0%), unemployment spike (3M change ≥ 0.3pp), CPI Hot (&gt; 4% YoY),
+        CPI Cold (&lt; 1% YoY), VIX spike (&gt; 30). Severity and duration measure how far the
+        current reading is from the threshold and for how many consecutive months it has been active.
+      </li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       FOOTER
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="page-footer">
+    <span><strong>Source:</strong> Federal Reserve Economic Data (FRED), St. Louis Fed</span>
+    <span>Generated by <strong>Macro Regime Radar</strong> &mdash; {{ generated_at }}</span>
+  </div>
+
+</div><!-- /.page -->
+</body>
+</html>
