@@ -30,7 +30,7 @@ Metric naming scheme (stored in derived_metrics.name):
 """
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -157,9 +157,9 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
             continue
         chg   = weekly_abs_change(s)
         chg_z = rolling_zscore(chg)
-        if series_id == "GS10":
-            for dt, val in chg.items():
-                rows.append(("GS10_weekly_chg", dt.strftime("%Y-%m-%d"), float(val)))
+        # Store raw weekly change for both series (needed for _Z_TO_RAW raw value display).
+        for dt, val in chg.items():
+            rows.append((f"{series_id}_weekly_chg", dt.strftime("%Y-%m-%d"), float(val)))
         for dt, val in chg_z.items():
             rows.append((f"{series_id}_weekly_chg_z", dt.strftime("%Y-%m-%d"), float(val)))
 
@@ -175,11 +175,13 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
         for dt, val in spread_z.items():
             rows.append(("SPREAD_weekly_chg_z", dt.strftime("%Y-%m-%d"), float(val)))
 
-    # UNRATE weekly change z-score
+    # UNRATE weekly change and z-score
     unrate = load_fred_weekly(conn, "UNRATE")
     if len(unrate) >= MIN_PERIODS:
         unrate_chg = weekly_abs_change(unrate)
         unrate_z   = rolling_zscore(unrate_chg)
+        for dt, val in unrate_chg.items():
+            rows.append(("UNRATE_weekly_chg", dt.strftime("%Y-%m-%d"), float(val)))
         for dt, val in unrate_z.items():
             rows.append(("UNRATE_weekly_chg_z", dt.strftime("%Y-%m-%d"), float(val)))
 
@@ -199,11 +201,13 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
             len(cpi), min_cpi_weeks,
         )
 
-    # VIX weekly change z-score
+    # VIX weekly change and z-score
     vix = load_fred_weekly(conn, "VIXCLS")
     if len(vix) >= MIN_PERIODS:
         vix_chg = weekly_abs_change(vix)
         vix_z   = rolling_zscore(vix_chg)
+        for dt, val in vix_chg.items():
+            rows.append(("VIX_weekly_chg", dt.strftime("%Y-%m-%d"), float(val)))
         for dt, val in vix_z.items():
             rows.append(("VIX_weekly_chg_z", dt.strftime("%Y-%m-%d"), float(val)))
 
@@ -214,7 +218,7 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
 
 def upsert_derived_metrics(conn: sqlite3.Connection, rows: list) -> int:
     """Upsert (name, date, value) tuples into derived_metrics."""
-    computed_at = datetime.utcnow().isoformat()
+    computed_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     data = [(name, date, value, computed_at) for name, date, value in rows]
     conn.executemany(
         """

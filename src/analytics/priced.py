@@ -24,7 +24,7 @@ Series groups:
 """
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -62,7 +62,7 @@ def load_series(conn: sqlite3.Connection, series_id: str) -> pd.Series:
 
 def upsert_derived_metrics(conn: sqlite3.Connection, rows: list) -> int:
     """Upsert (name, date, value) tuples into derived_metrics."""
-    computed_at = datetime.utcnow().isoformat()
+    computed_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     data = [(name, date, value, computed_at) for name, date, value in rows]
     conn.executemany(
         """
@@ -84,7 +84,7 @@ def build_priced_metrics(conn: sqlite3.Connection) -> list:
     Returns list of (metric_name, date_str, value) tuples.
     """
     rows = []
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d")
 
     for series_id in ALL_PRICED_SERIES:
         s = load_series(conn, series_id)
@@ -108,12 +108,6 @@ def build_priced_metrics(conn: sqlite3.Connection) -> list:
             rows.append((f"{series_id}_mom_chg", latest_date, mom_chg))
         else:
             logger.warning("[priced] %s: only 1 data point — cannot compute mom_chg.", series_id)
-
-        # Also store as _weekly_chg for breakeven and TIPS series
-        # (since these are daily→monthly resampled, mom_chg ≈ latest weekly change)
-        if series_id in BREAKEVEN_TIPS and len(s) >= 2:
-            mom_chg = float(s.iloc[-1] - s.iloc[-2])
-            rows.append((f"{series_id}_weekly_chg", latest_date, mom_chg))
 
         logger.info("[priced] %s: latest=%.3f (as of %s)", series_id, latest_val, latest_date)
 

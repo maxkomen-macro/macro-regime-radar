@@ -302,11 +302,197 @@
     }
     .page-footer strong { color: #555; }
 
+    /* ── Market Snapshot ─────────────────────────────────────────────────── */
+    .market-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .market-table th {
+      text-align: left;
+      padding: 7px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: #6b7591;
+      background: #f7f8fa;
+      border-bottom: 1px solid #dde1e9;
+    }
+    .market-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #f0f2f5;
+      vertical-align: middle;
+    }
+    .market-table tr:last-child td { border-bottom: none; }
+    .ret-up   { color: #27ae60; font-weight: 600; }
+    .ret-down { color: #c0392b; font-weight: 600; }
+    .ret-na   { color: #aaa; }
+
+    /* ── Surprise ranking ────────────────────────────────────────────────── */
+    .surprise-list { list-style: none; padding: 0; }
+    .surprise-list li {
+      display: flex;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid #f0f2f5;
+      font-size: 13px;
+      align-items: center;
+    }
+    .surprise-list li:last-child { border-bottom: none; }
+    .zscore-badge {
+      flex-shrink: 0;
+      min-width: 50px;
+      text-align: center;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .z-high   { background: #fdecea; color: #c0392b; }
+    .z-medium { background: #fef9e7; color: #b7770d; }
+    .z-low    { background: #eaf4ff; color: #1a5fa3; }
+
+    /* ── What's Priced ───────────────────────────────────────────────────── */
+    .priced-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .priced-card {
+      background: #f7f8fa;
+      border: 1px solid #e8ebf0;
+      border-radius: 5px;
+      padding: 12px 14px;
+    }
+    .priced-card .label {
+      font-size: 11px;
+      color: #6b7591;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 4px;
+    }
+    .priced-card .value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1a1d23;
+      line-height: 1.1;
+    }
+    .priced-card .delta {
+      font-size: 11px;
+      margin-top: 3px;
+    }
+    .delta-up   { color: #e74c3c; }
+    .delta-down { color: #27ae60; }
+    .priced-interp {
+      background: #f0f6ff;
+      border-left: 3px solid #2c7be5;
+      padding: 10px 14px;
+      font-size: 13px;
+      line-height: 1.65;
+      border-radius: 0 4px 4px 0;
+    }
+
+    /* ── Alerts summary ──────────────────────────────────────────────────── */
+    .alert-row {
+      display: flex;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid #f0f2f5;
+      align-items: flex-start;
+      font-size: 13px;
+    }
+    .alert-row:last-child { border-bottom: none; }
+    .alert-badge {
+      flex-shrink: 0;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-risk  { background: #fdecea; color: #c0392b; }
+    .badge-watch { background: #fef9e7; color: #b7770d; }
+    .badge-info  { background: #eaf4ff; color: #1a5fa3; }
+
+    /* ── Next week / Calendar ────────────────────────────────────────────── */
+    .event-list { list-style: none; padding: 0; }
+    .event-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid #f0f2f5;
+      font-size: 13px;
+    }
+    .event-list li:last-child { border-bottom: none; }
+    .evt-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .evt-date {
+      font-size: 11px;
+      color: #888;
+      margin-left: auto;
+      white-space: nowrap;
+    }
+    .watch-list { list-style: none; padding: 0; margin-top: 12px; }
+    .watch-list li {
+      padding: 6px 0 6px 16px;
+      position: relative;
+      font-size: 13px;
+      border-bottom: 1px solid #f0f2f5;
+    }
+    .watch-list li:last-child { border-bottom: none; }
+    .watch-list li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: #2c7be5;
+    }
+
+    /* ── Playbook ─────────────────────────────────────────────────────────── */
+    .playbook-regime {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 5px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 15px;
+      margin-bottom: 10px;
+    }
+    .playbook-baseline {
+      font-size: 13.5px;
+      line-height: 1.7;
+      margin-bottom: 10px;
+      border-left: 3px solid #ccc;
+      padding-left: 12px;
+    }
+    .because-list { list-style: none; padding: 0; }
+    .because-list li {
+      padding: 5px 0 5px 18px;
+      position: relative;
+      font-size: 13px;
+      line-height: 1.55;
+      border-bottom: 1px solid #f0f2f5;
+    }
+    .because-list li:last-child { border-bottom: none; }
+    .because-list li::before {
+      content: "↳";
+      position: absolute;
+      left: 0;
+      color: #888;
+    }
+
     /* ── Print ───────────────────────────────────────────────────────────── */
     @media print {
       body { background: #fff; }
       .page { border: none; margin: 0; }
       .charts-grid { grid-template-columns: 1fr 1fr; }
+      .priced-grid { grid-template-columns: 1fr 1fr 1fr; }
     }
   </style>
 </head>
@@ -470,14 +656,241 @@
   </div>
 
   <!-- ══════════════════════════════════════════════════════════════════════
-       6. METHODOLOGY
+       6. MARKET SNAPSHOT
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="marketsnapshot">
+    <div class="section-title">Market Snapshot</div>
+
+    {% if market_snapshot %}
+    <table class="market-table">
+      <thead>
+        <tr>
+          <th>Asset</th>
+          <th>1W Return</th>
+          <th>Weekly Z-score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in market_snapshot %}
+        <tr>
+          <td><strong>{{ row.label }}</strong></td>
+          <td class="{% if row.ret_1w is not none and row.ret_1w > 0 %}ret-up{% elif row.ret_1w is not none and row.ret_1w < 0 %}ret-down{% else %}ret-na{% endif %}">
+            {{ row.ret_1w_str }}
+          </td>
+          <td>
+            {% if row.z_str %}
+            <span class="{% if row.z_score|abs >= 2.5 %}z-high{% elif row.z_score|abs >= 1.5 %}z-medium{% else %}z-low{% endif %} zscore-badge">
+              {{ row.z_str }}
+            </span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if market_chart_b64 %}
+    <div style="margin-top: 16px;">
+      <div class="chart-card" style="border-radius:5px;overflow:hidden;border:1px solid #e8ebf0;">
+        <img src="data:image/png;base64,{{ market_chart_b64 }}" alt="Market Returns" style="width:100%;display:block;" />
+        <div class="chart-footer">
+          <div class="chart-caption">12-month indexed return (rebased to 100). SPY, TLT, GLD, HYG.</div>
+          <div class="chart-source">Source: Polygon.io market data</div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <p style="color:#888;font-size:13px;">Market data unavailable — run <code>python src/market_data/fetch_market.py --mode backfill</code></p>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       7. SURPRISE RANKING
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="surpriseranking">
+    <div class="section-title">Surprise Ranking — Top Weekly Moves</div>
+    <div style="font-size:11px;color:#888;margin-bottom:12px;">
+      Ranked by |z-score| relative to 2-year rolling history. Covers macro + market series.
+    </div>
+
+    {% if surprise_ranking %}
+    <ul class="surprise-list">
+      {% for item in surprise_ranking %}
+      <li>
+        <span class="zscore-badge {% if item.abs_z >= 2.5 %}z-high{% elif item.abs_z >= 1.5 %}z-medium{% else %}z-low{% endif %}">
+          {{ item.z_str }}
+        </span>
+        <div style="flex:1">{{ item.interpretation }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="color:#888;font-size:13px;">No surprise data — run <code>python -m src.analytics.surprise</code></p>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       8. WHAT'S PRICED
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="whatspriced">
+    <div class="section-title">What's Priced</div>
+
+    {% if whats_priced and whats_priced.has_data %}
+    <div class="priced-grid">
+
+      {% if whats_priced.fedfunds is not none %}
+      <div class="priced-card">
+        <div class="label">Fed Funds</div>
+        <div class="value">{{ "%.2f"|format(whats_priced.fedfunds) }}%</div>
+        {% if whats_priced.fedfunds_chg is not none %}
+        <div class="delta {% if whats_priced.fedfunds_chg > 0 %}delta-up{% else %}delta-down{% endif %}">
+          {{ "%+.2f"|format(whats_priced.fedfunds_chg) }}pp MoM
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if whats_priced.t10yie is not none %}
+      <div class="priced-card">
+        <div class="label">10Y Breakeven</div>
+        <div class="value">{{ "%.2f"|format(whats_priced.t10yie) }}%</div>
+        {% if whats_priced.t10yie_chg is not none %}
+        <div class="delta {% if whats_priced.t10yie_chg > 0 %}delta-up{% else %}delta-down{% endif %}">
+          {{ "%+.2f"|format(whats_priced.t10yie_chg) }}pp MoM
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if whats_priced.dfii10 is not none %}
+      <div class="priced-card">
+        <div class="label">10Y Real Yield (TIPS)</div>
+        <div class="value">{{ "%.2f"|format(whats_priced.dfii10) }}%</div>
+        {% if whats_priced.dfii10_chg is not none %}
+        <div class="delta {% if whats_priced.dfii10_chg > 0 %}delta-up{% else %}delta-down{% endif %}">
+          {{ "%+.2f"|format(whats_priced.dfii10_chg) }}pp MoM
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    </div>
+
+    {% if whats_priced.interpretation %}
+    <div class="priced-interp">{{ whats_priced.interpretation }}</div>
+    {% endif %}
+
+    {% else %}
+    <p style="color:#888;font-size:13px;">No priced data — run <code>python -m src.analytics.priced</code></p>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       9. ALERTS SUMMARY
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="alertssummary">
+    <div class="section-title">Alerts &amp; Risk Summary</div>
+
+    {% if alerts_summary.active_signal_count > 0 %}
+    <div style="margin-bottom:12px;font-size:13px;">
+      <strong>{{ alerts_summary.active_signal_count }}</strong> macro signal{{ 's' if alerts_summary.active_signal_count != 1 else '' }} currently triggered:
+      {{ alerts_summary.active_signal_labels | join(", ") }}
+    </div>
+    {% endif %}
+
+    {% if alerts_summary.top_risk_alerts %}
+    <div style="margin-bottom:8px;font-size:11px;color:#6b7591;text-transform:uppercase;letter-spacing:0.4px;">Top Risk Alerts</div>
+    {% for alert in alerts_summary.top_risk_alerts %}
+    <div class="alert-row">
+      <span class="alert-badge badge-{{ alert.level }}">{{ alert.level }}</span>
+      <div style="flex:1">
+        <strong>{{ alert.name }}</strong><br>
+        <span style="font-size:12px;color:#555;">{{ alert.message }}</span>
+      </div>
+      <span style="font-size:11px;color:#888;white-space:nowrap;">{{ alert.date }}</span>
+    </div>
+    {% endfor %}
+    {% elif not alerts_summary.has_data %}
+    <p style="color:#888;font-size:13px;">No alerts — run <code>python -m src.analytics.alerts</code></p>
+    {% else %}
+    <p style="color:#27ae60;font-size:13px;">✓ No risk-level alerts currently active.</p>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       10. NEXT WEEK
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="nextweek">
+    <div class="section-title">Next Week — Events &amp; What to Watch</div>
+
+    {% if next_week.events %}
+    <div style="margin-bottom:8px;font-size:11px;color:#6b7591;text-transform:uppercase;letter-spacing:0.4px;">Upcoming Events (7 Days)</div>
+    <ul class="event-list">
+      {% for evt in next_week.events %}
+      <li>
+        <span class="evt-dot" style="background: {% if evt.importance == 'high' %}#e74c3c{% elif evt.importance == 'medium' %}#f39c12{% else %}#95a5a6{% endif %};"></span>
+        <strong>{{ evt.name }}</strong>
+        <span class="evt-date">{{ evt.datetime }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="color:#888;font-size:13px;margin-bottom:12px;">No events in the next 7 days.</p>
+    {% endif %}
+
+    {% if next_week.watch_items %}
+    <div style="margin-top:14px;margin-bottom:8px;font-size:11px;color:#6b7591;text-transform:uppercase;letter-spacing:0.4px;">What to Watch</div>
+    <ul class="watch-list">
+      {% for item in next_week.watch_items %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       11. PLAYBOOK COMMENTARY
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="playbook">
+    <div class="section-title">Playbook Commentary</div>
+
+    {% if playbook and playbook.has_data %}
+    <span class="playbook-regime" style="background: {{ playbook.badge_color }};">
+      {{ playbook.regime }} — {{ playbook.confidence }} confidence
+    </span>
+
+    {% if playbook.baseline %}
+    <div class="playbook-baseline" style="border-left-color: {{ playbook.badge_color }};">
+      {{ playbook.baseline }}
+    </div>
+    {% endif %}
+
+    {% if playbook.because_today %}
+    <div style="margin-bottom:8px;font-size:11px;color:#6b7591;text-transform:uppercase;letter-spacing:0.4px;">Because Today…</div>
+    <ul class="because-list">
+      {% for sentence in playbook.because_today %}
+      <li>{{ sentence }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% else %}
+    <p style="color:#888;font-size:13px;">No playbook data — run <code>python -m src.analytics.playbook</code></p>
+    {% endif %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       13. METHODOLOGY
   ══════════════════════════════════════════════════════════════════════════ -->
   <div class="section" id="methodology">
     <div class="section-title">Methodology</div>
     <ul class="methodology-list">
       <li>
-        <strong>Data source:</strong> All series sourced from the Federal Reserve Economic Data (FRED)
+        <strong>Data sources:</strong> Macro series sourced from the Federal Reserve Economic Data (FRED)
         API — CPIAUCSL, UNRATE, GS10, GS2, INDPRO, VIXCLS — updated monthly.
+        Market data (SPY, QQQ, TLT, HYG, LQD, GLD, UUP, USO, IWM) from Polygon.io (daily OHLCV).
       </li>
       <li>
         <strong>Regime classification:</strong> Growth trend derived from INDPRO rolling OLS slope;
@@ -498,7 +911,7 @@
        FOOTER
   ══════════════════════════════════════════════════════════════════════════ -->
   <div class="page-footer">
-    <span><strong>Source:</strong> Federal Reserve Economic Data (FRED), St. Louis Fed</span>
+    <span><strong>Data sources:</strong> FRED (macro) &middot; Polygon.io (market)</span>
     <span>Generated by <strong>Macro Regime Radar</strong> &mdash; {{ generated_at }}</span>
   </div>
 

@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from src.config import (
     YIELD_CURVE_INVERSION_THRESHOLD,
     UNRATE_SPIKE_THRESHOLD,
@@ -95,7 +95,7 @@ def run_all_signals(series_dict: dict) -> pd.DataFrame:
 
 def save_signals(df: pd.DataFrame) -> None:
     """Upsert signal detection results into the signals table."""
-    computed_at = datetime.utcnow().isoformat()
+    computed_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_connection()
     try:
         rows = [

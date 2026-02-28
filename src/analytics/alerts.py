@@ -31,7 +31,7 @@ Re-runs: delete today's alert_feed rows and reinsert (no UNIQUE constraint).
 """
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -116,15 +116,23 @@ def _get_latest_derived(conn: sqlite3.Connection, name: str):
     return None, None
 
 
+# How many months back to look for recently-triggered (but currently inactive) signals.
+LOOKBACK_MONTHS = 6
+
 # ── Macro alerts ──────────────────────────────────────────────────────────────
 
 def build_macro_alerts(conn: sqlite3.Connection) -> list:
     """
     Build alert_feed rows from macro signals table.
-    Only includes signals that are triggered in the most recent data date.
+
+    For each signal:
+    - If triggered at its own most-recent data date → current alert.
+    - If not currently triggered, look back LOOKBACK_MONTHS months: if the signal
+      fired within that window, emit a "recently triggered" alert using the most
+      recent triggered row so the Alerts tab is never silently empty in normal markets.
     """
     rows_out = []
-    created_at = datetime.utcnow().isoformat()
+    created_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     all_signals = pd.read_sql_query(
         "SELECT date, signal_name, value, triggered FROM signals ORDER BY date, signal_name",
@@ -135,7 +143,6 @@ def build_macro_alerts(conn: sqlite3.Connection) -> list:
         return rows_out
 
     all_signals = all_signals.assign(date=pd.to_datetime(all_signals["date"]))
-    latest_date = all_signals["date"].max()
 
     for signal_name, cfg in SIGNAL_CFG.items():
         sdf = all_signals[all_signals["signal_name"] == signal_name].sort_values("date")
@@ -143,27 +150,37 @@ def build_macro_alerts(conn: sqlite3.Connection) -> list:
             logger.warning("[alerts] Signal '%s' not found in DB.", signal_name)
             continue
 
-        latest_row = sdf[sdf["date"] == latest_date]
-        if latest_row.empty:
-            continue
-
-        val       = float(latest_row.iloc[0]["value"])
-        triggered = int(latest_row.iloc[0]["triggered"])
+        # Use the signal's own latest date, not the global max across all signals.
+        signal_latest_date = sdf["date"].max()
+        latest_row = sdf[sdf["date"] == signal_latest_date].iloc[0]
+        val       = float(latest_row["value"])
+        triggered = int(latest_row["triggered"])
+        alert_date = signal_latest_date
 
         if triggered == 0:
-            continue  # only generate alerts for active (triggered) signals
+            # Check for recent triggers within the lookback window.
+            cutoff = signal_latest_date - pd.DateOffset(months=LOOKBACK_MONTHS)
+            recent = sdf[(sdf["date"] >= cutoff) & (sdf["triggered"] == 1)]
+            if recent.empty:
+                continue  # no recent activity — skip entirely
+            # Use the most recent past trigger for severity/level calculation.
+            past_row   = recent.sort_values("date").iloc[-1]
+            val        = float(past_row["value"])
+            alert_date = past_row["date"]
 
         severity = cfg["severity_fn"](val)
         duration = _compute_duration_months(sdf)
         level    = _compute_level(severity, duration, cfg)
 
+        currently_active = bool(int(latest_row["triggered"]) == 1)
+        status_note = "" if currently_active else f" (last triggered {alert_date.strftime('%Y-%m')})"
         message = (
-            f"{signal_name.replace('_', ' ').title()} triggered. "
+            f"{signal_name.replace('_', ' ').title()} triggered{status_note}. "
             f"Value={val:.2f}, severity={severity:.2f}, "
             f"duration={duration}mo, level={level.upper()}."
         )
         rows_out.append((
-            latest_date.strftime("%Y-%m-%d"),
+            alert_date.strftime("%Y-%m-%d"),
             "macro_signal",
             signal_name,
             level,
@@ -173,7 +190,8 @@ def build_macro_alerts(conn: sqlite3.Connection) -> list:
             message,
             created_at,
         ))
-        logger.info("[alerts] Macro alert: %s [%s]", signal_name, level.upper())
+        logger.info("[alerts] Macro alert: %s [%s]%s", signal_name, level.upper(),
+                    "" if currently_active else " (recently triggered)")
 
     return rows_out
 
@@ -185,11 +203,11 @@ def build_market_alerts(conn: sqlite3.Connection) -> list:
     Build alert_feed rows from derived_metrics weekly returns and z-scores.
     """
     rows_out = []
-    created_at = datetime.utcnow().isoformat()
+    created_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     def _add(date_str, name, level, value, threshold, direction, message):
         rows_out.append((
-            date_str or datetime.utcnow().strftime("%Y-%m-%d"),
+            date_str or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "market",
             name,
             level,
@@ -247,7 +265,7 @@ def upsert_alert_feed(conn: sqlite3.Connection, rows: list) -> int:
     """
     if not rows:
         return 0
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     conn.execute("DELETE FROM alert_feed WHERE date=?", (today,))
     conn.executemany(
         """

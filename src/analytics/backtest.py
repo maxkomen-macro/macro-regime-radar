@@ -25,8 +25,9 @@ Metrics stored:
 Note: backtest_results has no UNIQUE constraint. Full delete-then-reinsert each run.
 """
 import logging
+import math
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -93,9 +94,15 @@ def compute_forward_return(
 
 
 def compute_metrics(returns: list) -> dict:
-    """Return avg_return, median_return, hit_rate, n from list of float returns."""
+    """Return avg_return, median_return, hit_rate, n from list of float returns.
+
+    When returns is empty (no market data overlaps the cohort dates), numeric metrics
+    are returned as float('nan') which SQLite stores as NULL — distinguishable from a
+    genuine 0% return. The dashboard will display '—' instead of a misleading 0.0%.
+    """
     if not returns:
-        return {"avg_return": 0.0, "median_return": 0.0, "hit_rate": 0.0, "n": 0}
+        return {"avg_return": float("nan"), "median_return": float("nan"),
+                "hit_rate": float("nan"), "n": 0}
     arr = np.array(returns, dtype=float)
     return {
         "avg_return":    float(np.mean(arr)),
@@ -120,7 +127,7 @@ def backtest_signals(conn: sqlite3.Connection, spy: pd.Series) -> list:
         ).fetchall()
     ]
 
-    computed_at = datetime.utcnow().isoformat()
+    computed_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     for signal_name in signal_names:
         rows = conn.execute(
@@ -170,7 +177,7 @@ def backtest_regimes(conn: sqlite3.Connection, spy: pd.Series) -> list:
     entries = df[df["label"] != df["prev_label"]].copy()
 
     results = []
-    computed_at = datetime.utcnow().isoformat()
+    computed_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     for regime_label in df["label"].unique():
         entry_dates = entries[entries["label"] == regime_label]["date"].tolist()
@@ -198,7 +205,15 @@ def upsert_backtest_results(conn: sqlite3.Connection, rows: list) -> int:
     """
     Full delete-then-insert. backtest_results has no UNIQUE constraint
     so this is the correct approach to avoid duplicates on re-runs.
+
+    Rows where value is NaN (empty cohort avg/median/hit_rate) are dropped before
+    insertion because the schema has value NOT NULL. The n=0 row is kept so the
+    dashboard can display '0' samples and '—' for the return metrics via the pivot.
     """
+    if not rows:
+        return 0
+    # Filter out NaN values (backtest_results.value is NOT NULL).
+    rows = [r for r in rows if not (isinstance(r[4], float) and math.isnan(r[4]))]
     if not rows:
         return 0
     conn.execute("DELETE FROM backtest_results")

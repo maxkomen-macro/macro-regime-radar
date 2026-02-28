@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 from src.config import ROLLING_WINDOW
 from src.utils.db import get_connection
 
@@ -98,7 +98,7 @@ def run_regime_classification(series_dict: dict) -> pd.DataFrame:
 
 def save_regimes(df: pd.DataFrame) -> None:
     """Upsert regime classifications into the regimes table."""
-    computed_at = datetime.utcnow().isoformat()
+    computed_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_connection()
     try:
         rows = [

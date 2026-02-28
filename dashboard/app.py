@@ -1,5 +1,5 @@
 """
-dashboard/app.py — Macro Regime Radar Dashboard (Phase 3, Part A)
+dashboard/app.py — Macro Regime Radar Dashboard (Phase 3 + Trader Pack)
 
 Run:
     streamlit run dashboard/app.py
@@ -592,10 +592,10 @@ with st.sidebar:
     overlay_reg = st.toggle("Overlay Regimes on Charts", value=False)
     norm_mode   = st.selectbox("Normalization", ["Raw", "Index to 100", "Z-score"])
     st.divider()
-    st.caption("Macro Regime Radar · Phase 3")
+    st.caption("Macro Regime Radar · Phase 3 + Trader Pack")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Load all data
+# Load all macro data (shared across tabs)
 # ─────────────────────────────────────────────────────────────────────────────
 
 regimes_df   = load_regimes()
@@ -632,122 +632,165 @@ latest_signals = (
 regime_segs = merge_regime_segments(regimes_df)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 1 — Header / Regime Summary
+# Global header (always visible)
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.markdown("# 📡 Macro Regime Radar")
 as_of_str = as_of.strftime("%B %Y") if as_of is not None else "N/A"
 st.markdown(f"*As of **{as_of_str}** · Last updated: {last_upd}*")
-st.divider()
 
-col_badge, col_stats = st.columns([1, 3])
+# ─────────────────────────────────────────────────────────────────────────────
+# Top-level tab navigation
+# ─────────────────────────────────────────────────────────────────────────────
 
-with col_badge:
-    if latest_regime is not None:
-        lbl  = latest_regime["label"]
-        conf = float(latest_regime["confidence"])
-        bg   = REGIME_COLORS.get(lbl, "#888")
-        st.markdown(
-            f'<div class="regime-tile" style="background:{bg}">{lbl}</div>',
-            unsafe_allow_html=True,
+tab_dv, tab_ms, tab_macro, tab_bt, tab_al, tab_wp, tab_cal = st.tabs([
+    "⚡ Decision View",
+    "📊 Market Snapshot",
+    "📡 Macro",
+    "🧪 Backtests",
+    "🚨 Alerts",
+    "💲 What's Priced",
+    "📅 Calendar",
+])
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Decision View
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_dv:
+    try:
+        from components.decision_view import render_decision_view
+        render_decision_view(
+            latest_regime=latest_regime,
+            regimes_df=regimes_df,
+            latest_signals=latest_signals,
+            signals_df=signals_df,
+            as_of=as_of,
         )
-        st.markdown(f"**Confidence:** {conf:.1%}")
+    except Exception as exc:
+        st.error(f"Decision View error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Market Snapshot
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_ms:
+    try:
+        from components.market_snapshot import render_market_snapshot
+        render_market_snapshot(wide_df=wide_df)
+    except Exception as exc:
+        st.error(f"Market Snapshot error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Macro (existing content)
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_macro:
+    # ── SECTION 1 — Header / Regime Summary ──────────────────────────────────
+    st.divider()
+
+    col_badge, col_stats = st.columns([1, 3])
+
+    with col_badge:
+        if latest_regime is not None:
+            lbl  = latest_regime["label"]
+            conf = float(latest_regime["confidence"])
+            bg   = REGIME_COLORS.get(lbl, "#888")
+            st.markdown(
+                f'<div class="regime-tile" style="background:{bg}">{lbl}</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(f"**Confidence:** {conf:.1%}")
+        else:
+            st.warning("No regime data available.")
+
+    with col_stats:
+        if latest_regime is not None and as_of is not None:
+            dur  = regime_duration_months(regimes_df, as_of)
+            sw12 = max(0, regime_switches_n_months(regimes_df, as_of))
+            gt   = float(latest_regime["growth_trend"])
+            it   = float(latest_regime["inflation_trend"])
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Growth Trend",     f"{gt:.3f}")
+            c2.metric("Inflation Trend",  f"{it:.3f}")
+            c3.metric("Months in Regime", str(dur))
+            c4.metric("Switches (12M)",   str(sw12))
+
+    st.divider()
+
+    # ── SECTION 2 — KPI Strip ────────────────────────────────────────────────
+    st.subheader("Key Indicators")
+
+    kpi = st.columns(5)
+
+    if not derived_df.empty:
+        # 1. CPI YoY
+        cpi_val  = _latest(gcol(derived_df, "CPI_YOY"))
+        cpi_prev = _prev(gcol(derived_df, "CPI_YOY"))
+        cpi_d    = f"{cpi_val - cpi_prev:+.2f}pp" if (cpi_val is not None and cpi_prev is not None) else None
+        kpi[0].metric("CPI YoY (%)", f"{cpi_val:.2f}" if cpi_val is not None else "N/A", delta=cpi_d)
+
+        # 2. Unemployment
+        ur_val = _latest(gcol(derived_df, "UNRATE"))
+        ur_3m  = _latest(gcol(derived_df, "UNRATE_3M"))
+        ur_d   = f"{ur_3m:+.2f}pp (3M)" if ur_3m is not None else None
+        kpi[1].metric("Unemployment Rate", f"{ur_val:.1f}%" if ur_val is not None else "N/A", delta=ur_d)
+
+        # 3. Yield spread
+        sp_val   = _latest(gcol(derived_df, "SPREAD"))
+        inverted = sp_val is not None and sp_val < 0
+        sp_label = "10Y–2Y Spread" + (" 🔴 Inverted" if inverted else "")
+        kpi[2].metric(sp_label, f"{sp_val:.2f}%" if sp_val is not None else "N/A")
+
+        # 4. VIX
+        vix_val = _latest(gcol(derived_df, "VIXCLS"))
+        vix_d   = f"{vix_val - 30:.1f} from 30" if vix_val is not None else None
+        kpi[3].metric("VIX", f"{vix_val:.1f}" if vix_val is not None else "N/A", delta=vix_d)
+
+        # 5. Regime trend inputs
+        if latest_regime is not None:
+            kpi[4].metric(
+                "Growth / Infl Trend",
+                f"{float(latest_regime['growth_trend']):.3f} / {float(latest_regime['inflation_trend']):.3f}",
+            )
+        else:
+            kpi[4].metric("Growth / Infl Trend", "N/A")
     else:
-        st.warning("No regime data available.")
+        st.warning("Raw series unavailable — KPIs cannot be computed.")
 
-with col_stats:
-    if latest_regime is not None and as_of is not None:
-        dur  = regime_duration_months(regimes_df, as_of)
-        sw12 = max(0, regime_switches_n_months(regimes_df, as_of))
-        gt   = float(latest_regime["growth_trend"])
-        it   = float(latest_regime["inflation_trend"])
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Growth Trend",     f"{gt:.3f}")
-        c2.metric("Inflation Trend",  f"{it:.3f}")
-        c3.metric("Months in Regime", str(dur))
-        c4.metric("Switches (12M)",   str(sw12))
+    st.divider()
 
-st.divider()
+    # ── SECTION 3 — Signals Panel ─────────────────────────────────────────────
+    st.subheader("Signal Monitor")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SECTION 2 — KPI Strip
-# ─────────────────────────────────────────────────────────────────────────────
+    sig_cols = st.columns(len(SIGNAL_META))
 
-st.subheader("Key Indicators")
+    for i, (sname, smeta) in enumerate(SIGNAL_META.items()):
+        with sig_cols[i]:
+            srow = None
+            if not latest_signals.empty and sname in latest_signals["signal_name"].values:
+                srow = latest_signals[latest_signals["signal_name"] == sname].iloc[0]
+            all_s = (
+                signals_df[signals_df["signal_name"] == sname]
+                if not signals_df.empty else pd.DataFrame()
+            )
 
-kpi = st.columns(5)
+            if srow is None:
+                st.markdown(f"**{smeta['label']}**\n\n*No data*")
+                continue
 
-if not derived_df.empty:
-    # 1. CPI YoY
-    cpi_val  = _latest(gcol(derived_df, "CPI_YOY"))
-    cpi_prev = _prev(gcol(derived_df, "CPI_YOY"))
-    cpi_d    = f"{cpi_val - cpi_prev:+.2f}pp" if (cpi_val is not None and cpi_prev is not None) else None
-    kpi[0].metric("CPI YoY (%)", f"{cpi_val:.2f}" if cpi_val is not None else "N/A", delta=cpi_d)
+            triggered = bool(int(srow["triggered"]))
+            val       = float(srow["value"])
+            dur_s     = signal_active_periods(all_s)
+            last_t    = signal_last_triggered(all_s)
+            sev       = signal_severity_str(val, smeta)
+            css       = "sig-triggered" if triggered else "sig-ok"
+            icon      = "🔴" if triggered else "🟢"
+            status    = "TRIGGERED" if triggered else "OK"
+            last_t_str = last_t.strftime("%b %Y") if last_t is not None else "Never"
 
-    # 2. Unemployment
-    ur_val = _latest(gcol(derived_df, "UNRATE"))
-    ur_3m  = _latest(gcol(derived_df, "UNRATE_3M"))
-    ur_d   = f"{ur_3m:+.2f}pp (3M)" if ur_3m is not None else None
-    kpi[1].metric("Unemployment Rate", f"{ur_val:.1f}%" if ur_val is not None else "N/A", delta=ur_d)
-
-    # 3. Yield spread
-    sp_val   = _latest(gcol(derived_df, "SPREAD"))
-    inverted = sp_val is not None and sp_val < 0
-    sp_label = "10Y–2Y Spread" + (" 🔴 Inverted" if inverted else "")
-    kpi[2].metric(sp_label, f"{sp_val:.2f}%" if sp_val is not None else "N/A")
-
-    # 4. VIX
-    vix_val = _latest(gcol(derived_df, "VIXCLS"))
-    vix_d   = f"{vix_val - 30:.1f} from 30" if vix_val is not None else None
-    kpi[3].metric("VIX", f"{vix_val:.1f}" if vix_val is not None else "N/A", delta=vix_d)
-
-    # 5. Regime trend inputs
-    if latest_regime is not None:
-        kpi[4].metric(
-            "Growth / Infl Trend",
-            f"{float(latest_regime['growth_trend']):.3f} / {float(latest_regime['inflation_trend']):.3f}",
-        )
-    else:
-        kpi[4].metric("Growth / Infl Trend", "N/A")
-else:
-    st.warning("Raw series unavailable — KPIs cannot be computed.")
-
-st.divider()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SECTION 3 — Signals Panel
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.subheader("Signal Monitor")
-
-sig_cols = st.columns(len(SIGNAL_META))
-
-for i, (sname, smeta) in enumerate(SIGNAL_META.items()):
-    with sig_cols[i]:
-        srow = None
-        if not latest_signals.empty and sname in latest_signals["signal_name"].values:
-            srow = latest_signals[latest_signals["signal_name"] == sname].iloc[0]
-        all_s = (
-            signals_df[signals_df["signal_name"] == sname]
-            if not signals_df.empty else pd.DataFrame()
-        )
-
-        if srow is None:
-            st.markdown(f"**{smeta['label']}**\n\n*No data*")
-            continue
-
-        triggered = bool(int(srow["triggered"]))
-        val       = float(srow["value"])
-        dur_s     = signal_active_periods(all_s)
-        last_t    = signal_last_triggered(all_s)
-        sev       = signal_severity_str(val, smeta)
-        css       = "sig-triggered" if triggered else "sig-ok"
-        icon      = "🔴" if triggered else "🟢"
-        status    = "TRIGGERED" if triggered else "OK"
-        last_t_str = last_t.strftime("%b %Y") if last_t is not None else "Never"
-
-        st.markdown(
-            f"""<div class="sig-card {css}" style="color:#111111 !important">
+            st.markdown(
+                f"""<div class="sig-card {css}" style="color:#111111 !important">
 <b style="font-size:14px;color:#111111">{icon} {smeta['label']}</b><br>
 <span style="color:#111111"><b style="color:#111111">Status:</b> {status}</span><br>
 <span style="color:#111111"><b style="color:#111111">Value:</b> {val:.2f} {smeta['unit']}</span><br>
@@ -756,329 +799,355 @@ for i, (sname, smeta) in enumerate(SIGNAL_META.items()):
 <span style="color:#111111"><b style="color:#111111">Active periods:</b> {dur_s}</span><br>
 <span style="color:#111111"><b style="color:#111111">Last triggered:</b> {last_t_str}</span>
 </div>""",
-            unsafe_allow_html=True,
-        )
-
-st.divider()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SECTION 4 — Charts
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.subheader("Charts")
-
-if derived_df.empty:
-    st.warning("No raw series data available for charts.")
-else:
-    chart_df   = derived_df[derived_df.index >= win_start]
-    reg_window = regime_segs[regime_segs["start"] >= win_start] if not regime_segs.empty else pd.DataFrame()
-
-    # Shared chart builder
-    def make_line_fig(series: pd.Series, title: str, y_title: str,
-                      color: str, hlines=None) -> go.Figure:
-        s = apply_norm(series.dropna(), norm_mode)
-        fig = go.Figure()
-        if overlay_reg and not reg_window.empty:
-            fig = add_regime_bg(fig, reg_window)
-        fig.add_trace(go.Scatter(
-            x=s.index, y=s.values,
-            name=y_title,
-            line=dict(color=color, width=2),
-            hovertemplate="%{x|%b %Y}: %{y:.2f}<extra></extra>",
-        ))
-        if hlines and norm_mode == "Raw":
-            for y_val, dash, ann in hlines:
-                fig.add_hline(
-                    y=y_val, line_dash=dash, line_color="#555", line_width=1,
-                    annotation_text=ann, annotation_position="top left",
-                    annotation_font_size=11,
-                )
-        fig.update_layout(**base_layout(title, y_title))
-        return fig
-
-    tab1, tab2, tab3, tab4 = st.tabs(["CPI YoY", "Unemployment", "Yield Curve", "VIX"])
-
-    with tab1:
-        s = gcol(chart_df, "CPI_YOY")
-        if not s.dropna().empty:
-            fig = make_line_fig(
-                s, "CPI Year-over-Year (%)", "% YoY", "#e74c3c",
-                hlines=[
-                    (4.0, "dash", "Hot threshold (4%)"),
-                    (1.0, "dot",  "Cold threshold (1%)"),
-                ],
+                unsafe_allow_html=True,
             )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("CPI YoY not available in selected window.")
 
-    with tab2:
-        s = gcol(chart_df, "UNRATE")
-        if not s.dropna().empty:
-            fig = make_line_fig(s, "Unemployment Rate (%)", "% Unemployed", "#3498db")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("Unemployment data not available.")
+    st.divider()
 
-    with tab3:
-        s = gcol(chart_df, "SPREAD")
-        if not s.dropna().empty:
-            norm_s = apply_norm(s.dropna(), norm_mode)
+    # ── SECTION 4 — Charts ────────────────────────────────────────────────────
+    st.subheader("Charts")
+
+    if derived_df.empty:
+        st.warning("No raw series data available for charts.")
+    else:
+        chart_df   = derived_df[derived_df.index >= win_start]
+        reg_window = regime_segs[regime_segs["start"] >= win_start] if not regime_segs.empty else pd.DataFrame()
+
+        # Shared chart builder
+        def make_line_fig(series: pd.Series, title: str, y_title: str,
+                          color: str, hlines=None) -> go.Figure:
+            s = apply_norm(series.dropna(), norm_mode)
             fig = go.Figure()
             if overlay_reg and not reg_window.empty:
                 fig = add_regime_bg(fig, reg_window)
             fig.add_trace(go.Scatter(
-                x=norm_s.index, y=norm_s.values,
-                name="10Y–2Y Spread",
-                line=dict(color="#9b59b6", width=2),
-                fill="tozeroy",
-                fillcolor="rgba(155,89,182,0.12)",
-                hovertemplate="%{x|%b %Y}: %{y:.2f}%<extra></extra>",
+                x=s.index, y=s.values,
+                name=y_title,
+                line=dict(color=color, width=2),
+                hovertemplate="%{x|%b %Y}: %{y:.2f}<extra></extra>",
             ))
-            if norm_mode == "Raw":
-                fig.add_hline(
-                    y=0, line_dash="solid", line_color="#e74c3c", line_width=1.5,
-                    annotation_text="Inversion (0%)", annotation_position="top left",
-                    annotation_font_size=11,
+            if hlines and norm_mode == "Raw":
+                for y_val, dash, ann in hlines:
+                    fig.add_hline(
+                        y=y_val, line_dash=dash, line_color="#555", line_width=1,
+                        annotation_text=ann, annotation_position="top left",
+                        annotation_font_size=11,
+                    )
+            fig.update_layout(**base_layout(title, y_title))
+            return fig
+
+        ctab1, ctab2, ctab3, ctab4 = st.tabs(["CPI YoY", "Unemployment", "Yield Curve", "VIX"])
+
+        with ctab1:
+            s = gcol(chart_df, "CPI_YOY")
+            if not s.dropna().empty:
+                fig = make_line_fig(
+                    s, "CPI Year-over-Year (%)", "% YoY", "#e74c3c",
+                    hlines=[
+                        (4.0, "dash", "Hot threshold (4%)"),
+                        (1.0, "dot",  "Cold threshold (1%)"),
+                    ],
                 )
-            fig.update_layout(**base_layout("Yield Curve Spread: 10Y – 2Y (%)", "Spread (%)"))
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("Yield spread data not available.")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("CPI YoY not available in selected window.")
 
-    with tab4:
-        s = gcol(chart_df, "VIXCLS")
-        if not s.dropna().empty:
-            fig = make_line_fig(
-                s, "CBOE Volatility Index (VIX)", "VIX", "#f39c12",
-                hlines=[(30.0, "dash", "Spike threshold (30)")],
+        with ctab2:
+            s = gcol(chart_df, "UNRATE")
+            if not s.dropna().empty:
+                fig = make_line_fig(s, "Unemployment Rate (%)", "% Unemployed", "#3498db")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Unemployment data not available.")
+
+        with ctab3:
+            s = gcol(chart_df, "SPREAD")
+            if not s.dropna().empty:
+                norm_s = apply_norm(s.dropna(), norm_mode)
+                fig = go.Figure()
+                if overlay_reg and not reg_window.empty:
+                    fig = add_regime_bg(fig, reg_window)
+                fig.add_trace(go.Scatter(
+                    x=norm_s.index, y=norm_s.values,
+                    name="10Y–2Y Spread",
+                    line=dict(color="#9b59b6", width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(155,89,182,0.12)",
+                    hovertemplate="%{x|%b %Y}: %{y:.2f}%<extra></extra>",
+                ))
+                if norm_mode == "Raw":
+                    fig.add_hline(
+                        y=0, line_dash="solid", line_color="#e74c3c", line_width=1.5,
+                        annotation_text="Inversion (0%)", annotation_position="top left",
+                        annotation_font_size=11,
+                    )
+                fig.update_layout(**base_layout("Yield Curve Spread: 10Y – 2Y (%)", "Spread (%)"))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Yield spread data not available.")
+
+        with ctab4:
+            s = gcol(chart_df, "VIXCLS")
+            if not s.dropna().empty:
+                fig = make_line_fig(
+                    s, "CBOE Volatility Index (VIX)", "VIX", "#f39c12",
+                    hlines=[(30.0, "dash", "Spike threshold (30)")],
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("VIX data not available.")
+
+    st.divider()
+
+    # ── SECTION 5 — Regime History ────────────────────────────────────────────
+    st.subheader("Regime History (Last 12 Months)")
+
+    if regimes_df.empty:
+        st.warning("No regime data available.")
+    else:
+        twelve_ago = (as_of - pd.DateOffset(months=12)) if as_of is not None else pd.Timestamp("2020-01-01")
+        hist_segs  = regime_segs[regime_segs["start"] >= twelve_ago].copy()
+
+        if hist_segs.empty:
+            st.info("No regime segments in the last 12 months.")
+        else:
+            fig_gantt = px.timeline(
+                hist_segs,
+                x_start="start",
+                x_end="end",
+                y="Task",
+                color="label",
+                color_discrete_map=REGIME_COLORS,
+                hover_data={"label": True, "confidence": ":.1%", "Task": False},
+                labels={"label": "Regime"},
+                text="label",
             )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("VIX data not available.")
+            fig_gantt.update_yaxes(showticklabels=False, title="")
+            fig_gantt.update_xaxes(tickformat="%b %Y", title="")
+            fig_gantt.update_traces(textposition="inside", insidetextanchor="middle")
+            fig_gantt.update_layout(
+                height=110,
+                margin=dict(l=20, r=20, t=30, b=20),
+                template="plotly_white",
+                showlegend=True,
+                legend=dict(orientation="h", y=1.4, title=""),
+            )
+            st.plotly_chart(fig_gantt, use_container_width=True)
 
-st.divider()
+        if as_of is not None:
+            dur  = regime_duration_months(regimes_df, as_of)
+            sw12 = max(0, regime_switches_n_months(regimes_df, as_of))
+            c1, c2 = st.columns(2)
+            c1.metric("Months in Current Regime", str(dur))
+            c2.metric("Regime Switches (12M)", str(sw12))
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SECTION 5 — Regime History
-# ─────────────────────────────────────────────────────────────────────────────
+    st.divider()
 
-st.subheader("Regime History (Last 12 Months)")
+    # ── SECTION 6 — "What It Implies" commentary ──────────────────────────────
+    st.subheader("What It Implies")
 
-if regimes_df.empty:
-    st.warning("No regime data available.")
-else:
-    twelve_ago = (as_of - pd.DateOffset(months=12)) if as_of is not None else pd.Timestamp("2020-01-01")
-    hist_segs  = regime_segs[regime_segs["start"] >= twelve_ago].copy()
+    if latest_regime is not None:
+        triggered_now = (
+            latest_signals[latest_signals["triggered"] == 1]["signal_name"].tolist()
+            if not latest_signals.empty else []
+        )
+        # Determine previous month's regime for trend comparison
+        prev_regime_label = None
+        if not regimes_df.empty and as_of is not None:
+            prev_rows = regimes_df[regimes_df["date"] < as_of].sort_values("date")
+            if not prev_rows.empty:
+                prev_regime_label = str(prev_rows.iloc[-1]["label"])
+        dur_now = regime_duration_months(regimes_df, as_of) if as_of is not None else 0
 
-    if hist_segs.empty:
-        st.info("No regime segments in the last 12 months.")
+        commentary = regime_commentary_rich(
+            latest_regime["label"],
+            float(latest_regime["confidence"]),
+            triggered_now,
+            derived_df,
+            prev_label=prev_regime_label,
+            regime_duration=dur_now,
+        )
+        border_color = REGIME_COLORS.get(latest_regime["label"], "#888")
+        st.markdown(
+            f'<div class="commentary-box" '
+            f'style="border-left:4px solid {border_color}; color:#111111 !important">'
+            f'{commentary}</div>',
+            unsafe_allow_html=True,
+        )
     else:
-        fig_gantt = px.timeline(
-            hist_segs,
-            x_start="start",
-            x_end="end",
-            y="Task",
-            color="label",
-            color_discrete_map=REGIME_COLORS,
-            hover_data={"label": True, "confidence": ":.1%", "Task": False},
-            labels={"label": "Regime"},
-            text="label",
-        )
-        fig_gantt.update_yaxes(showticklabels=False, title="")
-        fig_gantt.update_xaxes(tickformat="%b %Y", title="")
-        fig_gantt.update_traces(textposition="inside", insidetextanchor="middle")
-        fig_gantt.update_layout(
-            height=110,
-            margin=dict(l=20, r=20, t=30, b=20),
-            template="plotly_white",
-            showlegend=True,
-            legend=dict(orientation="h", y=1.4, title=""),
-        )
-        st.plotly_chart(fig_gantt, use_container_width=True)
+        st.info("No regime data to generate commentary.")
 
-    if as_of is not None:
-        dur  = regime_duration_months(regimes_df, as_of)
-        sw12 = max(0, regime_switches_n_months(regimes_df, as_of))
-        c1, c2 = st.columns(2)
-        c1.metric("Months in Current Regime", str(dur))
-        c2.metric("Regime Switches (12M)", str(sw12))
+    st.divider()
 
-st.divider()
+    # ── PRO C — Drivers Panel ("Why this regime?") ────────────────────────────
+    st.subheader("Why This Regime? — Drivers Panel")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SECTION 6 — "What It Implies" commentary
-# ─────────────────────────────────────────────────────────────────────────────
+    if latest_regime is None or derived_df.empty:
+        st.info("No regime or derived data available.")
+    else:
+        col_bar, col_tbl = st.columns([1, 2])
 
-st.subheader("What It Implies")
-
-if latest_regime is not None:
-    triggered_now = (
-        latest_signals[latest_signals["triggered"] == 1]["signal_name"].tolist()
-        if not latest_signals.empty else []
-    )
-    # Determine previous month's regime for trend comparison
-    prev_regime_label = None
-    if not regimes_df.empty and as_of is not None:
-        prev_rows = regimes_df[regimes_df["date"] < as_of].sort_values("date")
-        if not prev_rows.empty:
-            prev_regime_label = str(prev_rows.iloc[-1]["label"])
-    dur_now = regime_duration_months(regimes_df, as_of) if as_of is not None else 0
-
-    commentary = regime_commentary_rich(
-        latest_regime["label"],
-        float(latest_regime["confidence"]),
-        triggered_now,
-        derived_df,
-        prev_label=prev_regime_label,
-        regime_duration=dur_now,
-    )
-    border_color = REGIME_COLORS.get(latest_regime["label"], "#888")
-    st.markdown(
-        f'<div class="commentary-box" '
-        f'style="border-left:4px solid {border_color}; color:#111111 !important">'
-        f'{commentary}</div>',
-        unsafe_allow_html=True,
-    )
-else:
-    st.info("No regime data to generate commentary.")
-
-st.divider()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PRO C — Drivers Panel ("Why this regime?")
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.subheader("Why This Regime? — Drivers Panel")
-
-if latest_regime is None or derived_df.empty:
-    st.info("No regime or derived data available.")
-else:
-    col_bar, col_tbl = st.columns([1, 2])
-
-    with col_bar:
-        st.markdown("**Regime Inputs**")
-        gt = float(latest_regime["growth_trend"])
-        it = float(latest_regime["inflation_trend"])
-        fig_b = go.Figure(go.Bar(
-            x=["Growth Trend", "Inflation Trend"],
-            y=[gt, it],
-            text=[f"{gt:.3f}", f"{it:.3f}"],
-            textposition="outside",
-            marker_color=[
-                "#2ecc71" if gt >= 0 else "#e74c3c",
-                "#e74c3c" if it > 0.5 else "#f39c12",
-            ],
-        ))
-        fig_b.update_layout(
-            height=260,
-            margin=dict(l=20, r=20, t=20, b=20),
-            template="plotly_white",
-            showlegend=False,
-            yaxis_title="Trend value",
-        )
-        st.plotly_chart(fig_b, use_container_width=True)
-
-    with col_tbl:
-        st.markdown("**Indicator Snapshot (latest)**")
-        snap_rows = []
-        for col_name, disp_name, unit in [
-            ("CPI_YOY",    "CPI YoY",        "%"),
-            ("INDPRO_YOY", "INDPRO YoY",     "%"),
-            ("INDPRO_3M",  "INDPRO 3M Chg",  "%"),
-            ("UNRATE",     "Unemployment",   "%"),
-            ("UNRATE_3M",  "UNRATE 3M Chg", "pp"),
-            ("SPREAD",     "10Y–2Y Spread",  "%"),
-            ("VIXCLS",     "VIX",             ""),
-        ]:
-            v = _latest(gcol(derived_df, col_name))
-            snap_rows.append({
-                "Indicator": disp_name,
-                "Value": f"{v:.2f}{unit}" if v is not None else "N/A",
-            })
-        st.dataframe(pd.DataFrame(snap_rows), hide_index=True, use_container_width=True)
-
-        st.markdown("**Top Drivers by |Z-score| vs. 2Y window**")
-        win_2y = derived_df[derived_df.index >= derived_df.index.max() - pd.DateOffset(months=24)]
-        nice   = {
-            "CPI_YOY":    "CPI YoY",
-            "INDPRO_YOY": "INDPRO YoY",
-            "UNRATE":     "Unemployment",
-            "SPREAD":     "Yield Spread",
-            "VIXCLS":     "VIX",
-        }
-        zscores = {}
-        for cn in nice:
-            s = gcol(win_2y, cn).dropna()
-            if len(s) >= 3 and s.std() != 0:
-                zscores[cn] = float((s.iloc[-1] - s.mean()) / s.std())
-
-        bullets = [
-            f"- **{nice[k]}**: {v:+.2f}σ ({'above' if v > 0 else 'below'} 2Y avg)"
-            for k, v in sorted(zscores.items(), key=lambda x: abs(x[1]), reverse=True)[:4]
-        ]
-        st.markdown("\n".join(bullets) if bullets else "*Insufficient data for z-score ranking.*")
-
-st.divider()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PRO D — Data Freshness & Quality
-# ─────────────────────────────────────────────────────────────────────────────
-
-with st.expander("Data Freshness & Quality"):
-    if not freshness_df.empty:
-        st.markdown("**Latest available date per series**")
-        st.dataframe(freshness_df, hide_index=True, use_container_width=True)
-
-        if not wide_df.empty:
-            st.markdown("**Data completeness in selected window**")
-            wdf   = wide_df[wide_df.index >= win_start]
-            miss  = wdf.isnull().sum()
-            total = len(wdf)
-            miss_rows = pd.DataFrame({
-                "Series":       miss.index,
-                "Missing Rows": miss.values,
-                "Total Rows":   total,
-                "Completeness": [
-                    f"{(total - m) / total * 100:.0f}%" for m in miss.values
+        with col_bar:
+            st.markdown("**Regime Inputs**")
+            gt = float(latest_regime["growth_trend"])
+            it = float(latest_regime["inflation_trend"])
+            fig_b = go.Figure(go.Bar(
+                x=["Growth Trend", "Inflation Trend"],
+                y=[gt, it],
+                text=[f"{gt:.3f}", f"{it:.3f}"],
+                textposition="outside",
+                marker_color=[
+                    "#2ecc71" if gt >= 0 else "#e74c3c",
+                    "#e74c3c" if it > 0.5 else "#f39c12",
                 ],
-            })
-            st.dataframe(miss_rows, hide_index=True, use_container_width=True)
-    else:
-        st.info("No freshness data available.")
+            ))
+            fig_b.update_layout(
+                height=260,
+                margin=dict(l=20, r=20, t=20, b=20),
+                template="plotly_white",
+                showlegend=False,
+                yaxis_title="Trend value",
+            )
+            st.plotly_chart(fig_b, use_container_width=True)
+
+        with col_tbl:
+            st.markdown("**Indicator Snapshot (latest)**")
+            snap_rows = []
+            for col_name, disp_name, unit in [
+                ("CPI_YOY",    "CPI YoY",        "%"),
+                ("INDPRO_YOY", "INDPRO YoY",     "%"),
+                ("INDPRO_3M",  "INDPRO 3M Chg",  "%"),
+                ("UNRATE",     "Unemployment",   "%"),
+                ("UNRATE_3M",  "UNRATE 3M Chg", "pp"),
+                ("SPREAD",     "10Y–2Y Spread",  "%"),
+                ("VIXCLS",     "VIX",             ""),
+            ]:
+                v = _latest(gcol(derived_df, col_name))
+                snap_rows.append({
+                    "Indicator": disp_name,
+                    "Value": f"{v:.2f}{unit}" if v is not None else "N/A",
+                })
+            st.dataframe(pd.DataFrame(snap_rows), hide_index=True, use_container_width=True)
+
+            st.markdown("**Top Drivers by |Z-score| vs. 2Y window**")
+            win_2y = derived_df[derived_df.index >= derived_df.index.max() - pd.DateOffset(months=24)]
+            nice   = {
+                "CPI_YOY":    "CPI YoY",
+                "INDPRO_YOY": "INDPRO YoY",
+                "UNRATE":     "Unemployment",
+                "SPREAD":     "Yield Spread",
+                "VIXCLS":     "VIX",
+            }
+            zscores = {}
+            for cn in nice:
+                s = gcol(win_2y, cn).dropna()
+                if len(s) >= 3 and s.std() != 0:
+                    zscores[cn] = float((s.iloc[-1] - s.mean()) / s.std())
+
+            bullets = [
+                f"- **{nice[k]}**: {v:+.2f}σ ({'above' if v > 0 else 'below'} 2Y avg)"
+                for k, v in sorted(zscores.items(), key=lambda x: abs(x[1]), reverse=True)[:4]
+            ]
+            st.markdown("\n".join(bullets) if bullets else "*Insufficient data for z-score ranking.*")
+
+    st.divider()
+
+    # ── PRO D — Data Freshness & Quality ──────────────────────────────────────
+    with st.expander("Data Freshness & Quality"):
+        if not freshness_df.empty:
+            st.markdown("**Latest available date per series**")
+            st.dataframe(freshness_df, hide_index=True, use_container_width=True)
+
+            if not wide_df.empty:
+                st.markdown("**Data completeness in selected window**")
+                wdf   = wide_df[wide_df.index >= win_start]
+                miss  = wdf.isnull().sum()
+                total = len(wdf)
+                miss_rows = pd.DataFrame({
+                    "Series":       miss.index,
+                    "Missing Rows": miss.values,
+                    "Total Rows":   total,
+                    "Completeness": [
+                        f"{(total - m) / total * 100:.0f}%" for m in miss.values
+                    ],
+                })
+                st.dataframe(miss_rows, hide_index=True, use_container_width=True)
+        else:
+            st.info("No freshness data available.")
+
+    # ── PRO E — Downloads ─────────────────────────────────────────────────────
+    st.subheader("Downloads")
+
+    dl1, dl2, dl3 = st.columns(3)
+
+    with dl1:
+        if not wide_df.empty:
+            df_dl = wide_df[wide_df.index >= win_start].reset_index()
+            st.download_button(
+                "⬇ Raw Series (selected window)",
+                data=df_dl.to_csv(index=False).encode(),
+                file_name=f"raw_series_{date_range}.csv",
+                mime="text/csv",
+            )
+
+    with dl2:
+        if not regimes_df.empty:
+            st.download_button(
+                "⬇ Regimes Table",
+                data=regimes_df.to_csv(index=False).encode(),
+                file_name="regimes.csv",
+                mime="text/csv",
+            )
+
+    with dl3:
+        if not signals_df.empty:
+            st.download_button(
+                "⬇ Signals Table",
+                data=signals_df.to_csv(index=False).encode(),
+                file_name="signals.csv",
+                mime="text/csv",
+            )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PRO E — Downloads
+# TAB: Backtests
 # ─────────────────────────────────────────────────────────────────────────────
 
-st.subheader("Downloads")
+with tab_bt:
+    try:
+        from components.backtests import render_backtests
+        render_backtests()
+    except Exception as exc:
+        st.error(f"Backtests error: {exc}")
 
-dl1, dl2, dl3 = st.columns(3)
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Alerts
+# ─────────────────────────────────────────────────────────────────────────────
 
-with dl1:
-    if not wide_df.empty:
-        df_dl = wide_df[wide_df.index >= win_start].reset_index()
-        st.download_button(
-            "⬇ Raw Series (selected window)",
-            data=df_dl.to_csv(index=False).encode(),
-            file_name=f"raw_series_{date_range}.csv",
-            mime="text/csv",
-        )
+with tab_al:
+    try:
+        from components.alerts_tab import render_alerts_tab
+        render_alerts_tab()
+    except Exception as exc:
+        st.error(f"Alerts error: {exc}")
 
-with dl2:
-    if not regimes_df.empty:
-        st.download_button(
-            "⬇ Regimes Table",
-            data=regimes_df.to_csv(index=False).encode(),
-            file_name="regimes.csv",
-            mime="text/csv",
-        )
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: What's Priced
+# ─────────────────────────────────────────────────────────────────────────────
 
-with dl3:
-    if not signals_df.empty:
-        st.download_button(
-            "⬇ Signals Table",
-            data=signals_df.to_csv(index=False).encode(),
-            file_name="signals.csv",
-            mime="text/csv",
-        )
+with tab_wp:
+    try:
+        from components.whats_priced import render_whats_priced
+        render_whats_priced()
+    except Exception as exc:
+        st.error(f"What's Priced error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Calendar
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_cal:
+    try:
+        from components.calendar_tab import render_calendar_tab
+        render_calendar_tab(latest_signals=latest_signals)
+    except Exception as exc:
+        st.error(f"Calendar error: {exc}")

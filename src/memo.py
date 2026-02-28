@@ -1,5 +1,5 @@
 """
-src/memo.py — Weekly Memo Generator  (Phase 3, Part B)
+src/memo.py — Weekly Memo Generator  (Phase 3, Part B + Trader Pack)
 
 Run:
     python src/memo.py
@@ -12,6 +12,7 @@ Standalone — does NOT import src.config so no FRED_API_KEY is required.
 
 import base64
 import io
+import json
 import sqlite3
 import sys
 from datetime import datetime
@@ -29,11 +30,12 @@ from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 # Paths
 # ─────────────────────────────────────────────────────────────────────────────
 
-ROOT       = Path(__file__).resolve().parent.parent
-DB_PATH    = ROOT / "data" / "macro_radar.db"
-TMPL_DIR   = ROOT / "templates"
-OUTPUT_DIR = ROOT / "output"
-MEMO_PATH  = OUTPUT_DIR / "weekly_memo.html"
+ROOT          = Path(__file__).resolve().parent.parent
+DB_PATH       = ROOT / "data" / "macro_radar.db"
+TMPL_DIR      = ROOT / "templates"
+OUTPUT_DIR    = ROOT / "output"
+MEMO_PATH     = OUTPUT_DIR / "weekly_memo.html"
+PLAYBOOK_PATH = OUTPUT_DIR / "playbook.json"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config — mirrors dashboard constants (no src.config import)
@@ -624,16 +626,467 @@ def print_validation(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Trader Pack data loaders (standalone, no src.config import)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _table_exists(table: str) -> bool:
+    try:
+        conn = connect()
+        cur  = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        )
+        exists = cur.fetchone()[0] > 0
+        conn.close()
+        return exists
+    except Exception:
+        return False
+
+
+def load_market_daily_memo() -> pd.DataFrame:
+    """Load market_daily for memo (no Streamlit cache)."""
+    if not _table_exists("market_daily"):
+        return pd.DataFrame()
+    try:
+        df = load_df(
+            "SELECT symbol, date, open, high, low, close, volume "
+            "FROM market_daily ORDER BY symbol, date"
+        )
+        if df.empty:
+            return df
+        df = df.assign(date=pd.to_datetime(df["date"]))
+        parts = []
+        for sym, grp in df.groupby("symbol"):
+            g = grp.sort_values("date").copy()
+            g = g.assign(ret_1w=g["close"].pct_change(5) * 100)
+            parts.append(g)
+        return pd.concat(parts).reset_index(drop=True) if parts else pd.DataFrame()
+    except Exception as exc:
+        print(f"[memo] WARNING: market_daily load failed: {exc}")
+        return pd.DataFrame()
+
+
+def load_derived_metrics_memo() -> pd.DataFrame:
+    """Load derived_metrics pivoted to wide format."""
+    if not _table_exists("derived_metrics"):
+        return pd.DataFrame()
+    try:
+        df = load_df("SELECT name, date, value FROM derived_metrics ORDER BY date")
+        if df.empty:
+            return df
+        df = df.assign(date=pd.to_datetime(df["date"]))
+        wide = df.pivot_table(index="date", columns="name", values="value", aggfunc="last")
+        wide.columns.name = None
+        return wide.sort_index(ascending=False)
+    except Exception as exc:
+        print(f"[memo] WARNING: derived_metrics load failed: {exc}")
+        return pd.DataFrame()
+
+
+def load_alert_feed_memo() -> pd.DataFrame:
+    """Load alert_feed newest first."""
+    if not _table_exists("alert_feed"):
+        return pd.DataFrame()
+    try:
+        df = load_df(
+            "SELECT date, alert_type, name, level, value, threshold, direction, message "
+            "FROM alert_feed ORDER BY date DESC"
+        )
+        if not df.empty:
+            df = df.assign(date=pd.to_datetime(df["date"]))
+        return df
+    except Exception as exc:
+        print(f"[memo] WARNING: alert_feed load failed: {exc}")
+        return pd.DataFrame()
+
+
+def load_event_calendar_memo() -> pd.DataFrame:
+    """Load event_calendar upcoming events."""
+    if not _table_exists("event_calendar"):
+        return pd.DataFrame()
+    try:
+        df = load_df(
+            "SELECT event_name, event_datetime, importance "
+            "FROM event_calendar ORDER BY event_datetime ASC"
+        )
+        if not df.empty:
+            df = df.assign(event_dt=pd.to_datetime(df["event_datetime"], utc=True))
+        return df
+    except Exception as exc:
+        print(f"[memo] WARNING: event_calendar load failed: {exc}")
+        return pd.DataFrame()
+
+
+def load_playbook_memo() -> dict:
+    """Load output/playbook.json. Returns {} if missing."""
+    try:
+        with open(PLAYBOOK_PATH) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trader Pack section builders
+# ─────────────────────────────────────────────────────────────────────────────
+
+_WATCHLIST_LABELS = {
+    "SPY": "S&P 500 (SPY)", "QQQ": "Nasdaq 100 (QQQ)", "IWM": "Russell 2000 (IWM)",
+    "TLT": "20Y Treasury (TLT)", "HYG": "HY Credit (HYG)", "LQD": "IG Credit (LQD)",
+    "UUP": "USD Basket (UUP)", "GLD": "Gold (GLD)", "USO": "Oil (USO)",
+}
+
+_Z_LABELS_MEMO = {
+    "SPY_weekly_ret_z":    "SPY weekly return",
+    "QQQ_weekly_ret_z":    "QQQ weekly return",
+    "TLT_weekly_ret_z":    "TLT (20Y Treasury)",
+    "HYG_weekly_ret_z":    "HYG (HY Credit)",
+    "GLD_weekly_ret_z":    "GLD (Gold)",
+    "UUP_weekly_ret_z":    "UUP (USD)",
+    "USO_weekly_ret_z":    "USO (Oil)",
+    "GS10_weekly_chg_z":   "10Y Treasury yield",
+    "SPREAD_weekly_chg_z": "10Y–2Y Yield Spread",
+    "CPI_yoy_z":           "CPI YoY",
+    "VIX_weekly_chg_z":    "VIX (volatility)",
+}
+
+_Z_TO_RAW_MEMO = {
+    "SPY_weekly_ret_z":    "SPY_weekly_ret",
+    "QQQ_weekly_ret_z":    "QQQ_weekly_ret",
+    "TLT_weekly_ret_z":    "TLT_weekly_ret",
+    "HYG_weekly_ret_z":    "HYG_weekly_ret",
+    "GLD_weekly_ret_z":    "GLD_weekly_ret",
+    "UUP_weekly_ret_z":    "UUP_weekly_ret",
+    "USO_weekly_ret_z":    "USO_weekly_ret",
+    "GS10_weekly_chg_z":   "GS10_weekly_chg",
+    "SPREAD_weekly_chg_z": "SPREAD_weekly_chg",
+    "CPI_yoy_z":           "CPI_yoy",
+    "VIX_weekly_chg_z":    None,
+}
+
+
+def build_market_snapshot(market_df: pd.DataFrame, derived_df: pd.DataFrame, wide_df: pd.DataFrame) -> list:
+    """
+    Build list of dicts for key market moves.
+    Each dict: symbol, label, ret_1w, ret_1w_str, direction, z_score.
+    """
+    rows = []
+    priority = ["SPY", "HYG", "TLT", "GLD", "UUP", "USO", "QQQ"]
+
+    for sym in priority:
+        sym_data = market_df[market_df["symbol"] == sym].sort_values("date") if not market_df.empty else pd.DataFrame()
+        ret_1w   = None
+        if not sym_data.empty and "ret_1w" in sym_data.columns:
+            v = sym_data["ret_1w"].dropna()
+            ret_1w = float(v.iloc[-1]) if not v.empty else None
+
+        z_col = f"{sym}_weekly_ret_z"
+        z_val = None
+        if not derived_df.empty and z_col in derived_df.columns:
+            s = derived_df[z_col].dropna()
+            z_val = float(s.iloc[0]) if not s.empty else None
+
+        rows.append({
+            "symbol":    sym,
+            "label":     _WATCHLIST_LABELS.get(sym, sym),
+            "ret_1w":    ret_1w,
+            "ret_1w_str": f"{ret_1w:+.2f}%" if ret_1w is not None else "N/A",
+            "direction": "up" if ret_1w is not None and ret_1w > 0 else "down",
+            "z_score":   z_val,
+            "z_str":     f"{z_val:+.1f}σ" if z_val is not None else "",
+        })
+
+    # Add rates from raw_series
+    if not wide_df.empty:
+        gs2  = wide_df["GS2"].dropna()  if "GS2"  in wide_df.columns else pd.Series(dtype=float)
+        gs10 = wide_df["GS10"].dropna() if "GS10" in wide_df.columns else pd.Series(dtype=float)
+        if not gs10.empty:
+            rows.append({
+                "symbol": "GS10", "label": "10Y Treasury Yield",
+                "ret_1w": float(gs10.iloc[-1]) if not gs10.empty else None,
+                "ret_1w_str": f"{float(gs10.iloc[-1]):.2f}%" if not gs10.empty else "N/A",
+                "direction": "—", "z_score": None, "z_str": "",
+            })
+
+    return rows
+
+
+def build_surprise_ranking(derived_df: pd.DataFrame, top_n: int = 10) -> list:
+    """
+    Return top-N z-score items sorted by |z|.
+    Each dict: label, z_score, z_str, raw_value, direction, interpretation.
+    """
+    if derived_df.empty:
+        return []
+
+    latest = derived_df.iloc[0]  # sorted descending
+    rows   = []
+    for col, label in _Z_LABELS_MEMO.items():
+        if col not in derived_df.columns:
+            continue
+        z = latest.get(col)
+        if z is None or (isinstance(z, float) and np.isnan(z)):
+            continue
+        z = float(z)
+        raw_col = _Z_TO_RAW_MEMO.get(col)
+        raw_val = None
+        if raw_col and raw_col in derived_df.columns:
+            rv = latest.get(raw_col)
+            if rv is not None and not (isinstance(rv, float) and np.isnan(rv)):
+                raw_val = float(rv)
+
+        direction  = "surged" if z > 0 else "fell"
+        magnitude  = "sharply" if abs(z) >= 2.5 else ("notably" if abs(z) >= 1.5 else "modestly")
+        raw_str    = f" ({raw_val:+.2f}%)" if raw_val is not None else ""
+        interp     = f"{label} {direction} {magnitude}{raw_str} — {abs(z):.1f}σ move"
+        rows.append({
+            "label":          label,
+            "z_score":        z,
+            "z_str":          f"{z:+.1f}σ",
+            "abs_z":          abs(z),
+            "raw_value":      raw_val,
+            "direction":      "up" if z > 0 else "down",
+            "interpretation": interp,
+            "level":          "high" if abs(z) >= 2.5 else ("medium" if abs(z) >= 1.5 else "low"),
+        })
+
+    rows.sort(key=lambda x: x["abs_z"], reverse=True)
+    return rows[:top_n]
+
+
+def build_whats_priced_memo(derived_df: pd.DataFrame) -> dict:
+    """
+    Return dict with priced metric values.
+    Keys: fedfunds, sofr, t5yie, t10yie, dfii5, dfii10 + _chg variants + interpretation.
+    """
+    result = {}
+    if derived_df.empty:
+        return result
+
+    latest = derived_df.iloc[0]
+
+    def _get(col):
+        if col not in derived_df.columns:
+            return None
+        v = latest.get(col)
+        return float(v) if v is not None and not (isinstance(v, float) and np.isnan(v)) else None
+
+    result["fedfunds"]      = _get("FEDFUNDS_latest")
+    result["fedfunds_chg"]  = _get("FEDFUNDS_mom_chg")
+    result["sofr"]          = _get("SOFR_latest")
+    result["sofr_chg"]      = _get("SOFR_mom_chg")
+    result["t5yie"]         = _get("T5YIE_latest")
+    result["t5yie_chg"]     = _get("T5YIE_mom_chg")
+    result["t10yie"]        = _get("T10YIE_latest")
+    result["t10yie_chg"]    = _get("T10YIE_mom_chg")
+    result["dfii5"]         = _get("DFII5_latest")
+    result["dfii5_chg"]     = _get("DFII5_mom_chg")
+    result["dfii10"]        = _get("DFII10_latest")
+    result["dfii10_chg"]    = _get("DFII10_mom_chg")
+    result["has_data"]      = any(v is not None for k, v in result.items() if not k.endswith("_chg") and k != "has_data")
+
+    # Build interpretation
+    msgs = []
+    rate = result.get("fedfunds") or result.get("sofr")
+    if rate:
+        label = "Fed Funds" if result.get("fedfunds") else "SOFR"
+        if rate >= 5.0:
+            msgs.append(f"Policy rate ({label} {rate:.2f}%) in restrictive territory — high opportunity-cost hurdle for risk assets.")
+        elif rate >= 3.0:
+            msgs.append(f"Policy rate ({label} {rate:.2f}%) moderately restrictive — rate easing would be a duration tailwind.")
+        else:
+            msgs.append(f"Policy rate ({label} {rate:.2f}%) accommodative — supportive of equity multiples and credit.")
+
+    be = result.get("t10yie") or result.get("t5yie")
+    if be:
+        if be > 2.8:
+            msgs.append(f"Breakevens ({be:.2f}%) pricing persistent above-target inflation — favor TIPS and real assets over nominals.")
+        elif be > 2.2:
+            msgs.append(f"Breakevens ({be:.2f}%) modestly above 2% target — monitor incoming CPI for direction.")
+        elif be > 1.5:
+            msgs.append(f"Breakevens ({be:.2f}%) near-target — inflation expectations anchored.")
+        else:
+            msgs.append(f"Breakevens ({be:.2f}%) below 2% — disinflation priced in, duration attractive.")
+
+    ry = result.get("dfii10") or result.get("dfii5")
+    if ry:
+        if ry > 1.5:
+            msgs.append(f"Real yields ({ry:.2f}%) restrictive — headwind for growth equities and gold; USD supportive.")
+        elif ry > 0:
+            msgs.append(f"Real yields ({ry:.2f}%) mildly positive — balanced environment.")
+        else:
+            msgs.append(f"Real yields ({ry:.2f}%) negative — accommodative for risk-on assets and gold.")
+
+    result["interpretation"] = " ".join(msgs)
+    return result
+
+
+def build_alerts_summary_memo(alerts_df: pd.DataFrame, signal_rows: list) -> dict:
+    """
+    Return dict with top 3 risk alerts + active signal count + narrative.
+    """
+    result = {
+        "top_risk_alerts": [],
+        "active_signal_count": 0,
+        "active_signal_labels": [],
+        "has_data": False,
+    }
+
+    if not alerts_df.empty:
+        risk_alerts = alerts_df[alerts_df["level"] == "risk"].head(3)
+        for _, row in risk_alerts.iterrows():
+            val_str = f"  ({row['value']:.2f})" if pd.notna(row.get("value")) else ""
+            result["top_risk_alerts"].append({
+                "name":    row["name"],
+                "level":   row["level"],
+                "message": row["message"] + val_str,
+                "date":    str(row.get("date", ""))[:10],
+            })
+        result["has_data"] = True
+
+    active = [r for r in signal_rows if r.get("triggered")]
+    result["active_signal_count"]  = len(active)
+    result["active_signal_labels"] = [r["label"] for r in active]
+
+    return result
+
+
+def build_next_week_memo(calendar_df: pd.DataFrame, signal_rows: list, alerts_df: pd.DataFrame) -> dict:
+    """
+    Return dict with upcoming events and "what to watch" text.
+    """
+    result = {
+        "events":        [],
+        "watch_items":   [],
+        "has_events":    False,
+    }
+
+    if not calendar_df.empty:
+        now    = pd.Timestamp.utcnow().tz_localize(None)
+        cutoff = now + pd.Timedelta(days=7)
+        cal    = calendar_df.copy()
+        cal    = cal.assign(event_dt_naive=cal["event_dt"].dt.tz_localize(None))
+        upcoming = cal[
+            (cal["event_dt_naive"] >= now) & (cal["event_dt_naive"] <= cutoff)
+        ]
+        for _, row in upcoming.iterrows():
+            result["events"].append({
+                "name":       row["event_name"],
+                "datetime":   str(row.get("event_datetime", ""))[:10],
+                "importance": row.get("importance", "medium"),
+            })
+        result["has_events"] = len(result["events"]) > 0
+
+    # "What to Watch" items
+    for evt in result["events"]:
+        if evt["importance"] == "high":
+            result["watch_items"].append(f"{evt['name']} ({evt['datetime']}) — key macro release")
+
+    if not alerts_df.empty:
+        for _, row in alerts_df[alerts_df["level"].isin(["risk", "watch"])].head(2).iterrows():
+            result["watch_items"].append(f"Alert: {row['name']} — {row['message'][:80]}")
+
+    active = [r for r in signal_rows if r.get("triggered")]
+    for r in active[:2]:
+        result["watch_items"].append(f"Signal: {r['label']} still triggered — monitor for resolution")
+
+    return result
+
+
+def build_playbook_commentary_memo(playbook: dict) -> dict:
+    """Return dict from playbook.json for template rendering."""
+    if not playbook:
+        return {"has_data": False}
+    return {
+        "has_data":     True,
+        "regime":       playbook.get("regime", ""),
+        "confidence":   f"{playbook.get('confidence', 0):.1%}",
+        "baseline":     playbook.get("baseline", ""),
+        "because_today": playbook.get("because_today", [])[:5],
+        "summary":      playbook.get("summary", ""),
+        "badge_color":  {
+            "Goldilocks": "#2ecc71", "Overheating": "#e67e22",
+            "Stagflation": "#e74c3c", "Recession Risk": "#95a5a6",
+        }.get(playbook.get("regime", ""), "#888"),
+    }
+
+
+def build_market_chart(market_df: pd.DataFrame, as_of: pd.Timestamp) -> str | None:
+    """
+    Build a 12-month indexed return chart for SPY, TLT, GLD, HYG.
+    Returns base64 PNG string or None.
+    """
+    if market_df.empty:
+        return None
+
+    cutoff = as_of - pd.DateOffset(months=12)
+    symbols_to_plot = ["SPY", "TLT", "GLD", "HYG"]
+    colors          = {"SPY": "#2c7be5", "TLT": "#9b59b6", "GLD": "#f39c12", "HYG": "#e74c3c"}
+    plotted         = False
+
+    with plt.rc_context(_CHART_RC):
+        fig, ax = plt.subplots(figsize=(7.2, 2.9))
+
+        for sym in symbols_to_plot:
+            sym_data = market_df[market_df["symbol"] == sym].sort_values("date")
+            if sym_data.empty:
+                continue
+            sym_data = sym_data[sym_data["date"] >= cutoff]
+            if sym_data.empty or len(sym_data) < 5:
+                continue
+            s = sym_data.set_index("date")["close"].dropna()
+            if s.empty:
+                continue
+            indexed = s / s.iloc[0] * 100  # index to 100
+            ax.plot(indexed.index, indexed.values, label=sym,
+                    color=colors.get(sym, "#333"), linewidth=1.5)
+            plotted = True
+
+        if not plotted:
+            plt.close(fig)
+            return None
+
+        ax.axhline(100, color="#aaa", linewidth=0.8, linestyle="--")
+        ax.set_title("12-Month Relative Performance (Indexed = 100)", fontsize=10,
+                     fontweight="bold", pad=6, loc="left")
+        ax.set_ylabel("Indexed Return", fontsize=8)
+        ax.legend(fontsize=8, framealpha=0.7, loc="upper left", ncol=4)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+        ax.tick_params(axis="x", labelrotation=30, labelsize=7)
+        ax.tick_params(axis="y", labelsize=8)
+        fig.tight_layout(pad=0.8)
+        return _fig_to_b64(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
 
 def generate_memo() -> None:
-    # ── Load data ──────────────────────────────────────────────────────────
+    # ── Load macro data ────────────────────────────────────────────────────
     print("[memo] Loading data from DB ...")
     regimes = load_regimes()
     signals = load_signals()
     wide    = load_raw_wide()
     derived = compute_derived(wide) if not wide.empty else pd.DataFrame()
+
+    # ── Load Trader Pack data ──────────────────────────────────────────────
+    print("[memo] Loading Trader Pack data ...")
+    market_daily = load_market_daily_memo()
+    derived_dm   = load_derived_metrics_memo()
+    alerts_df    = load_alert_feed_memo()
+    calendar_df  = load_event_calendar_memo()
+    playbook     = load_playbook_memo()
+
+    if not market_daily.empty:
+        print(f"[memo] market_daily: {len(market_daily)} rows")
+    else:
+        print("[memo] WARNING: market_daily empty — run fetch_market.py")
+
+    if not derived_dm.empty:
+        print(f"[memo] derived_metrics: {derived_dm.shape[1]} metrics")
+    else:
+        print("[memo] WARNING: derived_metrics empty — run analytics modules")
 
     # ── As-of date (same rule as dashboard) ───────────────────────────────
     if not regimes.empty:
@@ -670,9 +1123,16 @@ def generate_memo() -> None:
     signal_rows = build_signal_rows(signals) if not signals.empty else []
 
     # ── Charts (base64 embedded) ───────────────────────────────────────────
-    print("[memo] Generating charts ...")
+    print("[memo] Generating macro charts ...")
     charts = build_charts(derived, as_of) if not derived.empty else []
-    print(f"[memo] {len(charts)} chart(s) generated.")
+    print(f"[memo] {len(charts)} macro chart(s) generated.")
+
+    # Market returns chart
+    market_chart_b64 = build_market_chart(market_daily, as_of)
+    if market_chart_b64:
+        print("[memo] Market returns chart generated.")
+    else:
+        print("[memo] Market returns chart skipped (no data).")
 
     # ── What It Implies ────────────────────────────────────────────────────
     implication = ""
@@ -682,6 +1142,17 @@ def generate_memo() -> None:
             regime_ctx["confidence"],
             signal_rows,
         )
+
+    # ── Trader Pack sections ───────────────────────────────────────────────
+    print("[memo] Building Trader Pack sections ...")
+    market_snapshot   = build_market_snapshot(market_daily, derived_dm, wide)
+    surprise_ranking  = build_surprise_ranking(derived_dm, top_n=10)
+    whats_priced      = build_whats_priced_memo(derived_dm)
+    alerts_summary    = build_alerts_summary_memo(alerts_df, signal_rows)
+    next_week         = build_next_week_memo(calendar_df, signal_rows, alerts_df)
+    playbook_ctx      = build_playbook_commentary_memo(playbook)
+
+    print(f"[memo] Surprises: {len(surprise_ranking)}, Events: {len(next_week['events'])}")
 
     # ── Render Jinja2 template ─────────────────────────────────────────────
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -695,16 +1166,24 @@ def generate_memo() -> None:
         )
 
     html = template.render(
-        generated_at = generated_at,
-        as_of        = as_of.strftime("%B %Y"),
-        as_of_long   = as_of.strftime("%B %d, %Y"),
-        regime       = regime_ctx,
-        changes      = changes,
-        signal_rows  = signal_rows,
-        charts       = charts,
-        implication  = implication,
-        no_regimes   = regime_ctx is None,
-        no_signals   = not signal_rows,
+        generated_at      = generated_at,
+        as_of             = as_of.strftime("%B %Y"),
+        as_of_long        = as_of.strftime("%B %d, %Y"),
+        regime            = regime_ctx,
+        changes           = changes,
+        signal_rows       = signal_rows,
+        charts            = charts,
+        implication       = implication,
+        no_regimes        = regime_ctx is None,
+        no_signals        = not signal_rows,
+        # Trader Pack new sections
+        market_snapshot   = market_snapshot,
+        surprise_ranking  = surprise_ranking,
+        whats_priced      = whats_priced,
+        alerts_summary    = alerts_summary,
+        next_week         = next_week,
+        playbook          = playbook_ctx,
+        market_chart_b64  = market_chart_b64,
     )
 
     MEMO_PATH.write_text(html, encoding="utf-8")

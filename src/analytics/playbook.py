@@ -28,7 +28,7 @@ The actual text lives in output/playbook.json.
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT         = Path(__file__).resolve().parent.parent.parent
@@ -229,7 +229,7 @@ def build_playbook_dict(regime: dict, because_sentences: list) -> dict:
         summary += " " + " ".join(because_sentences[:3])
 
     return {
-        "generated_at":  datetime.utcnow().isoformat(),
+        "generated_at":  datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "as_of":         regime["date"],
         "regime":        label,
         "confidence":    conf,
@@ -254,7 +254,7 @@ def upsert_playbook_metrics(conn: sqlite3.Connection, playbook: dict, today: str
     Store numeric proxy rows in derived_metrics.
     The actual text is in output/playbook.json.
     """
-    computed_at = datetime.utcnow().isoformat()
+    computed_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conf = float(playbook["confidence"])
 
     rows = [
@@ -283,7 +283,7 @@ def upsert_playbook_metrics(conn: sqlite3.Connection, playbook: dict, today: str
 
 def run() -> None:
     conn  = _get_conn()
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d")
 
     try:
         regime = load_current_regime(conn)
