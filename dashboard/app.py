@@ -639,6 +639,35 @@ st.markdown("# 📡 Macro Regime Radar")
 as_of_str = as_of.strftime("%B %Y") if as_of is not None else "N/A"
 st.markdown(f"*As of **{as_of_str}** · Last updated: {last_upd}*")
 
+# Market data freshness line
+try:
+    from components.db_helpers import get_market_freshness
+    _mf = get_market_freshness()
+    _mkt_parts = []
+    if _mf.get("last_daily_date"):
+        _mkt_parts.append(f"daily close: {_mf['last_daily_date']}")
+    if _mf.get("last_intraday_ts"):
+        _mkt_parts.append(f"intraday: {str(_mf['last_intraday_ts'])[:16]}")
+    if _mkt_parts:
+        st.caption(f"Market data — {' · '.join(_mkt_parts)}")
+        # Staleness warning: warn only if more than 1 business day behind
+        # (skips weekends and holidays naturally)
+        if _mf.get("last_daily_date"):
+            try:
+                import numpy as np
+                _last = pd.Timestamp(_mf["last_daily_date"]).date()
+                _today = pd.Timestamp.today().date()
+                _bdays_old = int(np.busday_count(_last, _today))
+                if _bdays_old > 1:
+                    st.warning(
+                        f"⚠️ Market data is {_bdays_old} trading day{'s' if _bdays_old != 1 else ''} behind "
+                        f"— re-run `python src/market_data/fetch_market.py --mode incremental`"
+                    )
+            except Exception:
+                pass
+except Exception:
+    pass
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level tab navigation
 # ─────────────────────────────────────────────────────────────────────────────

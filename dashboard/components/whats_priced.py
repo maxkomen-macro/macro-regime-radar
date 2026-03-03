@@ -84,55 +84,77 @@ def render_whats_priced() -> None:
 
 
 def _render_interpretation(dm: pd.DataFrame) -> None:
-    ff   = get_derived_latest(dm, "FEDFUNDS_latest")
-    sofr = get_derived_latest(dm, "SOFR_latest")
-    t5be = get_derived_latest(dm, "T5YIE_latest")
-    t10be = get_derived_latest(dm, "T10YIE_latest")
-    r5   = get_derived_latest(dm, "DFII5_latest")
-    r10  = get_derived_latest(dm, "DFII10_latest")
+    ff     = get_derived_latest(dm, "FEDFUNDS_latest")
+    sofr   = get_derived_latest(dm, "SOFR_latest")
+    t5be   = get_derived_latest(dm, "T5YIE_latest")
+    t10be  = get_derived_latest(dm, "T10YIE_latest")
+    r5     = get_derived_latest(dm, "DFII5_latest")
+    r10    = get_derived_latest(dm, "DFII10_latest")
+    ff_chg = get_derived_latest(dm, "FEDFUNDS_mom_chg")
+    be_chg = get_derived_latest(dm, "T10YIE_mom_chg")
 
-    msgs = []
+    bullets = []
 
-    # Policy
+    # Policy rate
     rate = ff if ff is not None else sofr
     if rate is not None:
-        label = "Fed Funds" if ff is not None else "SOFR"
+        rlabel = "Fed Funds" if ff is not None else "SOFR"
+        chg_str = f" (MoM: {ff_chg:+.2f}%)" if ff_chg is not None else ""
         if rate >= 5.0:
-            msgs.append(f"**Policy rate ({label} {rate:.2f}%):** Restrictive territory — Fed anchored at multi-decade highs. Risk assets face a high opportunity-cost hurdle.")
+            body = f"Restrictive territory — multi-decade highs. High opportunity-cost hurdle for risk assets.{chg_str}"
         elif rate >= 3.0:
-            msgs.append(f"**Policy rate ({label} {rate:.2f}%):** Moderately restrictive. Easing cycle would be a near-term tailwind for duration and risk.")
+            body = f"Moderately restrictive. An easing cycle would be a near-term tailwind for duration and risk.{chg_str}"
         else:
-            msgs.append(f"**Policy rate ({label} {rate:.2f}%):** Accommodative. Low-rate environment supports equity multiples and credit.")
+            body = f"Accommodative. Low-rate environment supports equity multiples and credit spreads.{chg_str}"
+        bullets.append(f"<b>Policy rate ({rlabel} {rate:.2f}%):</b> {body}")
 
     # Breakevens
     be = t10be if t10be is not None else t5be
     if be is not None:
+        blabel = "10Y BE" if t10be is not None else "5Y BE"
+        chg_str = f" (MoM: {be_chg:+.2f}%)" if be_chg is not None else ""
         if be > 2.8:
-            msgs.append(f"**Breakevens ({be:.2f}%):** Well above 2% target — markets pricing persistent inflation. TIPS and real assets favored over nominals.")
+            body = f"Well above 2% target — markets pricing persistent inflation. TIPS and real assets favored over nominals.{chg_str}"
         elif be > 2.2:
-            msgs.append(f"**Breakevens ({be:.2f}%):** Modestly above target. Inflation risk premium exists but not alarming; monitor incoming CPI prints.")
+            body = f"Modestly above target. Inflation risk premium exists; monitor CPI prints for confirmation.{chg_str}"
         elif be > 1.5:
-            msgs.append(f"**Breakevens ({be:.2f}%):** Near target — inflation expectations anchored. Nominal bonds viable vs. TIPS.")
+            body = f"Near target — inflation expectations anchored. Nominal bonds competitive vs. TIPS.{chg_str}"
         else:
-            msgs.append(f"**Breakevens ({be:.2f}%):** Below 2% — markets pricing disinflation or deflation risk. Duration attractive; TIPS underperform.")
+            body = f"Below 2% — markets pricing disinflation or deflation risk. Duration attractive; TIPS underperform.{chg_str}"
+        bullets.append(f"<b>Breakevens ({blabel} {be:.2f}%):</b> {body}")
 
     # Real yields
     ry = r10 if r10 is not None else r5
     if ry is not None:
+        rylabel = "10Y Real" if r10 is not None else "5Y Real"
         if ry > 2.0:
-            msgs.append(f"**Real yields ({ry:.2f}%):** Highly restrictive. Strong headwind for growth stocks, gold, and long-duration assets. Dollar supportive.")
+            body = "Highly restrictive. Strong headwind for growth stocks, gold, and long-duration. Dollar supportive."
         elif ry > 1.0:
-            msgs.append(f"**Real yields ({ry:.2f}%):** Restrictive. Growth vs. value spread likely to compress; gold faces headwinds.")
+            body = "Restrictive. Growth vs. value spread likely to compress; gold faces headwinds from positive carry alternatives."
         elif ry > 0:
-            msgs.append(f"**Real yields ({ry:.2f}%):** Mildly positive. Balanced environment — real yields not yet a dominant driver.")
+            body = "Mildly positive. Balanced environment — real yields are not a dominant directional driver."
         else:
-            msgs.append(f"**Real yields ({ry:.2f}%):** Negative. Historically accommodative for equities, gold, and commodities. Risk-on tailwind.")
+            body = "Negative real rates. Historically accommodative for equities, gold, and commodities — risk-on tailwind."
+        bullets.append(f"<b>Real yields ({rylabel} {ry:.2f}%):</b> {body}")
 
-    if msgs:
-        box_html = '<div style="background:#f8f9fa;border-left:4px solid #3498db;padding:16px 20px;border-radius:6px;line-height:2">'
-        for msg in msgs:
-            box_html += f'<p style="margin:0 0 8px 0">{msg}</p>'
-        box_html += '</div>'
-        st.markdown(box_html, unsafe_allow_html=True)
+    # 5Y/10Y breakeven term structure (bonus bullet if both available)
+    if t5be is not None and t10be is not None:
+        spread = t10be - t5be
+        if spread > 0.1:
+            body = f"10Y breakeven ({t10be:.2f}%) > 5Y ({t5be:.2f}%) by {spread:.2f}% — market expects inflation to persist long-term."
+        elif spread < -0.1:
+            body = f"5Y breakeven ({t5be:.2f}%) > 10Y ({t10be:.2f}%) by {abs(spread):.2f}% — near-term inflation concern, longer-term anchored."
+        else:
+            body = f"5Y/10Y breakevens in line ({t5be:.2f}% / {t10be:.2f}%) — no meaningful term inflation risk premium."
+        bullets.append(f"<b>BE term structure:</b> {body}")
+
+    if bullets:
+        rows = "".join(f'<p style="margin:0 0 10px 0;color:#222">{b}</p>' for b in bullets)
+        st.markdown(
+            f'<div style="background:#f8f9fa;border-left:4px solid #3498db;'
+            f'padding:16px 20px;border-radius:6px;line-height:1.8;color:#222">'
+            f'{rows}</div>',
+            unsafe_allow_html=True,
+        )
     else:
         st.info("Not enough data for interpretation.")

@@ -6,6 +6,9 @@ Displays:
   - "What to Watch Next" synthesis: events + active alerts + triggered signals
 """
 
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 import streamlit as st
 
@@ -14,6 +17,8 @@ from components.db_helpers import (
     load_alert_feed,
     load_event_calendar,
 )
+
+_ET = ZoneInfo("America/New_York")
 
 IMP_COLORS = {"high": "#e74c3c", "medium": "#f39c12", "low": "#95a5a6"}
 IMP_ICONS  = {"high": "🔴", "medium": "🟡", "low": "⚪"}
@@ -32,6 +37,11 @@ def render_calendar_tab(latest_signals: pd.DataFrame) -> None:
 
     calendar = load_event_calendar()
     alerts   = load_alert_feed()
+
+    # Last refreshed timestamp
+    if not calendar.empty and "created_at" in calendar.columns:
+        last_refresh = str(calendar["created_at"].max())[:16]
+        st.caption(f"Last refreshed: {last_refresh} UTC")
 
     # ── Upcoming Events (14 days) ──────────────────────────────────────────────
     st.markdown("**Upcoming Events — Next 14 Days**")
@@ -58,29 +68,57 @@ def render_calendar_tab(latest_signals: pd.DataFrame) -> None:
     _render_what_to_watch(calendar, alerts, latest_signals)
 
 
+def _days_until_str(event_datetime_str: str) -> str:
+    """Return human 'days until' string from ISO 8601 UTC event_datetime."""
+    try:
+        dt_utc = datetime.fromisoformat(event_datetime_str.rstrip("Z")).replace(tzinfo=timezone.utc)
+        today  = datetime.now(timezone.utc).date()
+        delta  = (dt_utc.date() - today).days
+        if delta == 0:
+            return "today"
+        if delta == 1:
+            return "tomorrow"
+        if delta < 0:
+            return f"{abs(delta)}d ago"
+        return f"in {delta}d"
+    except Exception:
+        return ""
+
+
+def _format_event_time(event_datetime_str: str) -> str:
+    """Return 'Mon DD · H:MM AM/PM ET' from ISO 8601 UTC string."""
+    try:
+        dt_utc = datetime.fromisoformat(event_datetime_str.rstrip("Z")).replace(tzinfo=timezone.utc)
+        dt_et  = dt_utc.astimezone(_ET)
+        return dt_et.strftime("%b %-d · %-I:%M %p ET")
+    except Exception:
+        return str(event_datetime_str)[:16].replace("T", " ")
+
+
 def _render_events_table(df: pd.DataFrame, full: bool = False) -> None:
-    """Render events as styled cards."""
+    """Render events as styled cards with visible text, ET time, and days-until."""
     for _, row in df.iterrows():
-        imp   = row.get("importance", "medium")
-        color = IMP_COLORS.get(imp, "#888")
-        icon  = IMP_ICONS.get(imp, "⚪")
-        name  = row["event_name"]
+        imp      = row.get("importance", "medium")
+        color    = IMP_COLORS.get(imp, "#888")
+        icon     = IMP_ICONS.get(imp, "⚪")
+        name     = row["event_name"]
+        raw_dt   = str(row.get("event_datetime", ""))
+        time_str = _format_event_time(raw_dt)
+        days_str = _days_until_str(raw_dt)
+        weight   = "700" if imp == "high" else "400"
+        bg       = "#fff8f8" if imp == "high" else "#fafafa"
 
-        # Format datetime
-        dt_str = str(row.get("event_datetime", ""))[:16].replace("T", "  ")
-
-        weight = "700" if imp == "high" else "400"
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:10px;'
             f'padding:8px 12px;margin-bottom:6px;border-radius:6px;'
-            f'background:{"#fff8f8" if imp=="high" else "#fafafa"};'
-            f'border-left:3px solid {color}">'
+            f'background:{bg};border-left:3px solid {color};color:#222">'
             f'<span style="font-size:16px">{icon}</span>'
             f'<div style="flex:1">'
-            f'<span style="font-size:13px;font-weight:{weight}">{name}</span>'
+            f'<span style="font-size:13px;font-weight:{weight};color:#111">{name}</span><br>'
+            f'<span style="font-size:11px;color:#666">{time_str}</span>'
             f'</div>'
             f'<div style="text-align:right">'
-            f'<span style="font-size:12px;color:#555">{dt_str}</span><br>'
+            f'<span style="font-size:12px;color:#444;font-weight:600">{days_str}</span><br>'
             f'<span style="font-size:11px;color:{color}">{imp.upper()}</span>'
             f'</div>'
             f'</div>',

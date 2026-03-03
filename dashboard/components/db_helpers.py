@@ -279,6 +279,30 @@ def load_playbook() -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Market data freshness
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_market_freshness() -> dict:
+    """
+    Return dict with:
+      last_daily_date  — MAX(date) from market_daily (YYYY-MM-DD str or None)
+      last_intraday_ts — MAX(ts) from market_intraday (ISO str or None)
+    Not cached so it always reflects the current DB state.
+    """
+    try:
+        conn = _get_conn()
+        row_d = conn.execute("SELECT MAX(date) FROM market_daily").fetchone()
+        row_i = conn.execute("SELECT MAX(ts) FROM market_intraday").fetchone()
+        conn.close()
+        return {
+            "last_daily_date":  row_d[0] if row_d and row_d[0] else None,
+            "last_intraday_ts": row_i[0] if row_i and row_i[0] else None,
+        }
+    except Exception:
+        return {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Shared surprise renderer
 # ─────────────────────────────────────────────────────────────────────────────
 

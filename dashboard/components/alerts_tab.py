@@ -16,6 +16,26 @@ LEVEL_COLORS = {"risk": "#e74c3c", "watch": "#f39c12", "info": "#3498db"}
 LEVEL_ICONS  = {"risk": "🔴", "watch": "🟡", "info": "🔵"}
 LEVEL_BG     = {"risk": "#fff0f0", "watch": "#fffbf0", "info": "#f0f6ff"}
 
+# Finance-friendly display for known signal/alert names
+# Maps raw name → (category, "why it matters" text)
+_SIGNAL_DISPLAY: dict[str, tuple[str, str]] = {
+    "unemployment_spike":    ("Labor Market",  "Unemployment rising — watch for recessionary demand trajectory"),
+    "yield_curve_inversion": ("Rates",         "Curve inverted — historically a leading indicator of recession"),
+    "cpi_hot":               ("Inflation",     "CPI above threshold — Fed tightening risk elevated, real rates at risk"),
+    "cpi_cold":              ("Inflation",     "CPI below threshold — disinflation signal, watch demand weakness"),
+    "vix_spike":             ("Volatility",    "VIX spiked — risk-off conditions, elevated equity tail risk"),
+}
+
+_ALERT_TYPE_LABELS = {
+    "macro_signal": "Macro Signal",
+    "market":       "Market",
+    "event":        "Event",
+}
+
+def _friendly_name(raw: str) -> str:
+    """Convert snake_case alert name to Title Case for display."""
+    return raw.replace("_", " ").title()
+
 
 def render_alerts_tab() -> None:
     """Main entry point — call from app.py inside the Alerts tab."""
@@ -72,33 +92,62 @@ def render_alerts_tab() -> None:
 
     # ── Card-style feed ────────────────────────────────────────────────────────
     for _, row in filtered.head(50).iterrows():
-        lvl   = row.get("level", "info")
-        color = LEVEL_COLORS.get(lvl, "#888")
-        bg    = LEVEL_BG.get(lvl, "#fafafa")
-        icon  = LEVEL_ICONS.get(lvl, "")
+        lvl    = row.get("level", "info")
+        color  = LEVEL_COLORS.get(lvl, "#888")
+        bg     = LEVEL_BG.get(lvl, "#fafafa")
+        icon   = LEVEL_ICONS.get(lvl, "")
+        name   = str(row.get("name", ""))
+        atype  = str(row.get("alert_type", ""))
 
-        val_str = ""
-        if pd.notna(row.get("value")) and pd.notna(row.get("threshold")):
-            dir_str  = row.get("direction", "")
-            dir_text = f" ({dir_str} {row['threshold']:.2f})" if dir_str else f" (threshold {row['threshold']:.2f})"
-            val_str  = f'<br><span style="font-size:11px;color:#666">Value: {row["value"]:.2f}{dir_text}</span>'
+        # Finance-native display fields
+        category, why_it_matters = _SIGNAL_DISPLAY.get(name, (None, None))
+        display_name  = _friendly_name(name)
+        type_label    = _ALERT_TYPE_LABELS.get(atype, atype.replace("_", " ").title())
+        if category is None:
+            category = type_label
+
+        # Value / threshold / direction line
+        val_line = ""
+        val      = row.get("value")
+        thresh   = row.get("threshold")
+        dirn     = row.get("direction", "")
+        if pd.notna(val):
+            if pd.notna(thresh):
+                dir_txt  = f" {dirn} threshold {thresh:.2f}" if dirn else f" (threshold {thresh:.2f})"
+                val_line = f'Value: {val:.2f}{dir_txt}'
+            else:
+                val_line = f'Value: {val:.2f}'
+            if dirn:
+                val_line += f" — {'above' if dirn == 'above' else 'below'} trigger"
+
+        # "Why it matters": prefer lookup, fall back to truncated raw message
+        if why_it_matters is None:
+            raw_msg = str(row.get("message", ""))
+            # Strip verbose debug suffix (everything after first sentence or 120 chars)
+            why_it_matters = raw_msg.split(".")[0] if "." in raw_msg else raw_msg[:120]
 
         dt_str = str(row.get("date", ""))[:10]
 
+        val_html = (
+            f'<div style="font-size:11px;color:#666;margin-top:3px">{val_line}</div>'
+            if val_line else ""
+        )
+
         st.markdown(
-            f'<div style="border-left:4px solid {color};background:{bg};'
+            f'<div style="border-left:4px solid {color};background:{bg};color:#222;'
             f'border-radius:6px;padding:10px 14px;margin-bottom:10px">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
             f'<div>'
-            f'<span style="font-weight:700;font-size:14px">{icon} {row["name"]}</span>'
-            f'<span style="margin-left:8px;font-size:11px;background:{color};color:#fff;'
-            f'padding:2px 8px;border-radius:8px">{lvl.upper()}</span>'
-            f'<span style="margin-left:8px;font-size:11px;color:#888">{row.get("alert_type","")}</span>'
+            f'<span style="font-size:11px;color:{color};font-weight:600;text-transform:uppercase;'
+            f'letter-spacing:.5px">{category}</span> '
+            f'<span style="margin-left:4px;font-size:11px;background:{color};color:#fff;'
+            f'padding:1px 7px;border-radius:8px">{lvl.upper()}</span>'
+            f'<br><span style="font-weight:700;font-size:14px;color:#111">{icon} {display_name}</span>'
             f'</div>'
-            f'<span style="font-size:11px;color:#888">{dt_str}</span>'
+            f'<span style="font-size:11px;color:#888;white-space:nowrap;padding-left:8px">{dt_str}</span>'
             f'</div>'
-            f'<div style="font-size:13px;margin-top:5px;color:#333">{row["message"]}</div>'
-            f'{val_str}'
+            f'<div style="font-size:13px;margin-top:5px;color:#333">{why_it_matters}</div>'
+            f'{val_html}'
             f'</div>',
             unsafe_allow_html=True,
         )

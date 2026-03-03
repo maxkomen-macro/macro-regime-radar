@@ -34,11 +34,11 @@ REGIME_COLORS = {
 }
 
 SIGNAL_META = {
-    "yield_curve_inversion": {"label": "Yield Curve Inv.", "unit": "%"},
-    "unemployment_spike":    {"label": "Unemploy. Spike",  "unit": "pp"},
-    "cpi_hot":               {"label": "CPI Hot",          "unit": "% YoY"},
-    "cpi_cold":              {"label": "CPI Cold",         "unit": "% YoY"},
-    "vix_spike":             {"label": "VIX Spike",        "unit": ""},
+    "yield_curve_inversion": {"label": "Curve Inversion",    "unit": "%",      "threshold": 0.0,  "direction": "below"},
+    "unemployment_spike":    {"label": "Labor Deterioration","unit": "pp",     "threshold": 0.3,  "direction": "above"},
+    "cpi_hot":               {"label": "Inflation Hot",      "unit": "% YoY",  "threshold": 4.0,  "direction": "above"},
+    "cpi_cold":              {"label": "Inflation Cold",     "unit": "% YoY",  "threshold": 1.0,  "direction": "below"},
+    "vix_spike":             {"label": "Vol Spike",          "unit": "",       "threshold": 30.0, "direction": "above"},
 }
 
 LEVEL_COLORS = {"risk": "#e74c3c", "watch": "#f39c12", "info": "#3498db"}
@@ -218,10 +218,12 @@ def _render_upcoming_events(calendar: pd.DataFrame, days: int = 7) -> None:
 def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame) -> None:
     st.markdown("**Signal Monitor**")
     if latest_signals.empty:
-        st.info("No signal data.")
+        st.info("No signal data loaded — run `python -m src.analytics.signals`")
         return
 
     sig_cols = st.columns(len(SIGNAL_META))
+    as_of_dates = []
+
     for i, (sname, smeta) in enumerate(SIGNAL_META.items()):
         with sig_cols[i]:
             srow = None
@@ -231,40 +233,75 @@ def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame
             if srow is None:
                 st.markdown(
                     f'<div style="border:1px solid #ddd;border-radius:6px;padding:10px;'
-                    f'font-size:12px;text-align:center">'
-                    f'<b>{smeta["label"]}</b><br><span style="color:#888">No data</span></div>',
+                    f'font-size:12px;text-align:center;color:#555">'
+                    f'<b style="color:#222">{smeta["label"]}</b><br>'
+                    f'<span style="color:#888">No data</span></div>',
                     unsafe_allow_html=True,
                 )
                 continue
 
-            triggered = bool(int(srow["triggered"]))
-            val       = float(srow["value"])
-            icon      = "🔴" if triggered else "🟢"
-            status    = "TRIGGERED" if triggered else "OK"
-            bg_color  = "#fff5f5" if triggered else "#f5fff5"
-            border    = "#e74c3c" if triggered else "#2ecc71"
+            triggered  = bool(int(srow["triggered"]))
+            val        = float(srow["value"])
+            threshold  = smeta["threshold"]
+            direction  = smeta["direction"]
+            icon       = "🔴" if triggered else "🟢"
+            status     = "TRIGGERED" if triggered else "OK"
+            bg_color   = "#fff5f5" if triggered else "#f5fff5"
+            border     = "#e74c3c" if triggered else "#2ecc71"
 
-            # Duration
+            # Severity: distance from threshold (signed in direction of concern)
+            dist = abs(val - threshold)
+            if direction == "above":
+                severity_str = f"+{dist:.2f} past threshold" if triggered else f"{threshold - val:.2f} from trigger"
+            else:
+                severity_str = f"{dist:.2f} past threshold" if triggered else f"{val - threshold:.2f} from trigger"
+
+            # Duration: consecutive triggered months ending at latest date
             all_s = signals_df[signals_df["signal_name"] == sname] if not signals_df.empty else pd.DataFrame()
-            dur   = 0
+            dur = 0
+            last_trig_date = None
             if not all_s.empty:
                 s_sorted = all_s.sort_values("date", ascending=False).reset_index(drop=True)
                 for _, r in s_sorted.iterrows():
                     if int(r["triggered"]) == 1:
                         dur += 1
+                        if last_trig_date is None:
+                            last_trig_date = str(r["date"])[:10]
                     else:
+                        if last_trig_date is None and dur == 0:
+                            # Find last triggered date even if not currently triggered
+                            triggered_rows = s_sorted[s_sorted["triggered"] == 1]
+                            if not triggered_rows.empty:
+                                last_trig_date = str(triggered_rows.iloc[0]["date"])[:10]
                         break
+                # If still no last_trig_date, find it separately
+                if last_trig_date is None:
+                    triggered_rows = s_sorted[s_sorted["triggered"] == 1]
+                    if not triggered_rows.empty:
+                        last_trig_date = str(triggered_rows.iloc[0]["date"])[:10]
+
+            trig_line = f"<br>Last: {last_trig_date}" if last_trig_date else "<br>Never triggered"
+
+            # Track as-of date for caption
+            row_date = str(srow.get("date", ""))[:10]
+            if row_date:
+                as_of_dates.append(row_date)
 
             st.markdown(
-                f'<div style="border-left:3px solid {border};background:{bg_color};'
+                f'<div style="border-left:3px solid {border};background:{bg_color};color:#222;'
                 f'border-radius:6px;padding:10px;font-size:12px;line-height:1.7">'
-                f'<b style="font-size:13px">{icon} {smeta["label"]}</b><br>'
-                f'Status: <b>{status}</b><br>'
-                f'Value: {val:.2f} {smeta["unit"]}<br>'
-                f'Duration: {dur}mo'
+                f'<b style="font-size:13px;color:#111">{icon} {smeta["label"]}</b><br>'
+                f'Status: <b style="color:#111">{status}</b><br>'
+                f'Value: <span style="color:#333">{val:.2f} {smeta["unit"]}</span><br>'
+                f'Dist: <span style="color:#555">{severity_str}</span><br>'
+                f'Duration: <span style="color:#333">{dur}mo</span>'
+                f'<span style="font-size:11px;color:#666">{trig_line}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
+
+    if as_of_dates:
+        st.caption(f"Signals as of {max(as_of_dates)}")
 
 
 def _render_priced_highlights(dm: pd.DataFrame) -> None:
