@@ -4,7 +4,7 @@
 
 ---
 
-> **Live App:** *Deploying to Streamlit Cloud — URL coming soon*
+> **Live App:** *[Macro Regime Radar Live](https://macro-regime-radar.streamlit.app/)*
 
 ![Dashboard Screenshot](docs/images/dashboard.png)
 <!-- Replace with actual screenshot after Streamlit deploy -->
