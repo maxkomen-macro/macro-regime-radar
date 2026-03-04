@@ -1,5 +1,13 @@
 .env
-data/macro_radar.db
-
+.streamlit/secrets.toml
 __pycache__/
 *.pyc
+.DS_Store
+.venv/
+venv/
+logs/*
+!logs/.gitkeep
+*.db-shm
+*.db-wal
+data/*.db-shm
+data/*.db-wal
