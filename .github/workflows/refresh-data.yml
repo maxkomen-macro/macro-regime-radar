@@ -1,0 +1,93 @@
+name: Refresh Data
+
+on:
+  schedule:
+    # Daily at 11:00 UTC = 6:00 AM ET (before US market open)
+    - cron: "0 11 * * *"
+  workflow_dispatch:  # Allow manual trigger from Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    env:
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write .env for scripts that use load_dotenv()
+        run: |
+          echo "FRED_API_KEY=${{ secrets.FRED_API_KEY }}" > .env
+          echo "POLYGON_API_KEY=${{ secrets.POLYGON_API_KEY }}" >> .env
+
+      - name: Run FRED pipeline (fetch + regimes + signals)
+        run: python main.py
+
+      - name: Fetch market data (incremental)
+        run: python src/market_data/fetch_market.py --mode incremental
+
+      - name: Compute macro surprises (z-scores)
+        run: python -m src.analytics.surprise
+
+      - name: Compute backtest results
+        run: python -m src.analytics.backtest
+
+      - name: Generate alert feed
+        run: python -m src.analytics.alerts
+
+      - name: Compute priced metrics
+        run: python -m src.analytics.priced
+
+      - name: Generate regime playbook
+        run: python -m src.analytics.playbook
+
+      - name: Reload event calendar (idempotent)
+        run: python src/events/load_events.py
+
+      - name: Trim intraday data to last 30 days (prevent DB bloat)
+        run: |
+          sqlite3 data/macro_radar.db "DELETE FROM market_intraday WHERE ts < datetime('now','-30 days');"
+          sqlite3 data/macro_radar.db "VACUUM;"
+
+      - name: Checkpoint WAL into main DB file
+        run: sqlite3 data/macro_radar.db "PRAGMA wal_checkpoint(FULL);"
+
+      - name: Clean up .env before commit
+        run: rm -f .env
+
+      - name: Check if database changed
+        id: check_changes
+        run: |
+          git diff --name-only
+          if git diff --quiet data/macro_radar.db output/playbook.json 2>/dev/null; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push updated data
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/macro_radar.db
+          git add output/playbook.json 2>/dev/null || true
+          git commit -m "Auto-refresh data [skip ci]"
+          git push
