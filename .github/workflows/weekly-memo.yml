@@ -50,10 +50,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/memo/weekly_memo.html
-          git diff --cached --quiet && exit 0
-          git commit -m "Update weekly memo [skip ci]"
-          git pull --rebase
-          git push
+          if git diff --cached --quiet; then
+            echo "No memo changes to commit"
+          else
+            git commit -m "Update weekly memo [skip ci]"
+            git stash --include-untracked
+            git pull --rebase
+            git stash pop || true
+            git push
+          fi
+          if [ ! -f output/email_body.html ]; then
+            cat output/email_header.html output/weekly_memo.html > output/email_body.html 2>/dev/null || cp output/weekly_memo.html output/email_body.html
+          fi
+          ls -la output/email_body.html
 
       - name: Send memo email
         uses: dawidd6/action-send-mail@v2
