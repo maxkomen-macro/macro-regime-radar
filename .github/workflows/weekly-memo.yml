@@ -35,4 +35,5 @@ jobs:
           subject: "Macro Regime Radar — Weekly Memo"
           to: ${{ secrets.GMAIL_ADDRESS }}
           from: Macro Radar <${{ secrets.GMAIL_ADDRESS }}>
-          html_body: file://output/weekly_memo.html
+          body: file://output/weekly_memo.html
+          content_type: text/html
