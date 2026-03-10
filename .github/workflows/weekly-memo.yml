@@ -1,0 +1,38 @@
+name: Weekly Memo Email
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"   # Every Monday at 13:00 UTC = 8:00 AM ET (after daily refresh at 11:00 UTC)
+  workflow_dispatch:         # Allow manual trigger for testing
+
+jobs:
+  email-memo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate weekly memo
+        run: python src/memo.py
+
+      - name: Send memo email
+        uses: dawidd6/action-send-mail@v2
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_ADDRESS }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "Macro Regime Radar — Weekly Memo"
+          to: ${{ secrets.GMAIL_ADDRESS }}
+          from: Macro Radar <${{ secrets.GMAIL_ADDRESS }}>
+          html_body: file://output/weekly_memo.html
