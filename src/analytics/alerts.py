@@ -261,12 +261,13 @@ def build_market_alerts(conn: sqlite3.Connection) -> list:
 
 def upsert_alert_feed(conn: sqlite3.Connection, rows: list) -> int:
     """
-    Delete today's alert_feed rows and reinsert. alert_feed has no UNIQUE constraint.
+    Clear all alert_feed rows and reinsert. Table is fully recomputed each run,
+    so we truncate rather than delete only today's rows (which would leave stale
+    past-dated macro alerts accumulating on each daily refresh).
     """
     if not rows:
         return 0
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    conn.execute("DELETE FROM alert_feed WHERE date=?", (today,))
+    conn.execute("DELETE FROM alert_feed")
     conn.executemany(
         """
         INSERT INTO alert_feed

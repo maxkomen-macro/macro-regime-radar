@@ -1,3 +1,5 @@
+import time
+
 import pandas as pd
 from fredapi import Fred
 from src.config import FRED_API_KEY
@@ -20,7 +22,19 @@ def fetch_series(series_id: str, lookback_years: int = 10) -> pd.Series:
     start  = get_start_date(lookback_years)
     end    = get_end_date()
 
-    raw = client.get_series(series_id, observation_start=start, observation_end=end)
+    last_exc: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            raw = client.get_series(series_id, observation_start=start, observation_end=end)
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 3:
+                delay = 2 ** attempt  # 2s, 4s
+                print(f"[fetch_data] FRED timeout, retrying in {delay}s... (attempt {attempt}/3)")
+                time.sleep(delay)
+    else:
+        raise last_exc  # type: ignore[misc]
 
     if raw is None or raw.empty:
         raise ValueError(f"FRED returned empty data for series '{series_id}'")

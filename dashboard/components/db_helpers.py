@@ -255,7 +255,7 @@ def get_upcoming_events(cal: pd.DataFrame, days: int = 14) -> pd.DataFrame:
     """Filter events to the next `days` days from today (UTC)."""
     if cal.empty:
         return cal
-    now     = pd.Timestamp.utcnow().tz_localize(None)
+    now     = pd.Timestamp.now(tz="UTC").tz_localize(None)
     cutoff  = now + pd.Timedelta(days=days)
     cal_loc = cal.copy()
     cal_loc["event_dt_naive"] = cal_loc["event_dt"].dt.tz_localize(None)

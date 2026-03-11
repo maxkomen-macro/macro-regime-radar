@@ -1,6 +1,6 @@
 import collections
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from src.config import SERIES, LOOKBACK_YEARS
 from src.utils.fred_client import fetch_series
 from src.utils.db import get_connection
@@ -19,7 +19,7 @@ def fetch_all_series() -> dict:
             print(f"[fetch_data] Fetching {series_id} ({name})...")
             s = fetch_series(series_id, LOOKBACK_YEARS)
 
-            fetched_at = datetime.utcnow().isoformat()
+            fetched_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             rows = [
                 (series_id, idx.strftime("%Y-%m-%d"), float(val), fetched_at)
                 for idx, val in s.items()
