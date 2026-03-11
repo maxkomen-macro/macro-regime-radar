@@ -961,7 +961,7 @@ def build_next_week_memo(calendar_df: pd.DataFrame, signal_rows: list, alerts_df
     }
 
     if not calendar_df.empty:
-        now    = pd.Timestamp.utcnow().tz_localize(None)
+        now    = pd.Timestamp.now(tz="UTC").tz_localize(None)
         cutoff = now + pd.Timedelta(days=7)
         cal    = calendar_df.copy()
         cal    = cal.assign(event_dt_naive=cal["event_dt"].dt.tz_localize(None))

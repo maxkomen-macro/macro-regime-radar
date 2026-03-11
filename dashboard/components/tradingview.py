@@ -43,7 +43,7 @@ def tv_symbol_overview(
         theme:   "light" or "dark"
         height:  iframe height in pixels
     """
-    sym_list = [{"s": s, "d": d} for s, d in symbols]
+    sym_list = [[d, f"{s}|1D"] for s, d in symbols]
     config = {
         "symbols":    sym_list,
         "chartOnly":  False,
@@ -163,7 +163,7 @@ EQUITIES_SYMBOLS = [
 ]
 
 RATES_CREDIT_SYMBOLS = [
-    ("AMEX:TLT", "TLT"),
+    ("NASDAQ:TLT", "TLT"),
     ("AMEX:LQD", "LQD"),
     ("AMEX:HYG", "HYG"),
 ]

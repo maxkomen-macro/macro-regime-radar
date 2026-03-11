@@ -14,7 +14,7 @@ Duplicate (event_name, event_datetime) pairs are silently ignored on re-runs
 import csv
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT     = Path(__file__).resolve().parent.parent.parent
@@ -56,7 +56,7 @@ def load_events() -> int:
         print(f"[events] ERROR: Calendar CSV not found at {CSV_PATH}", file=sys.stderr)
         sys.exit(1)
 
-    created_at = datetime.utcnow().isoformat()
+    created_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     good_rows: list[tuple] = []
     skipped = 0
 

@@ -21,7 +21,7 @@ import logging
 import os
 import sqlite3
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -168,7 +168,7 @@ def run_backfill(client, assets: dict, backfill_years: int) -> None:
                 logger.warning("[fetch_market] %s: no data returned.", symbol)
                 continue
 
-            fetched_at = datetime.utcnow().isoformat()
+            fetched_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             rows = [
                 (r.symbol, r.date, r.open, r.high, r.low, r.close, r.volume, r.vwap, fetched_at)
                 for r in df.itertuples(index=False)
@@ -188,7 +188,7 @@ def run_incremental(client, assets: dict) -> None:
     Intraday symbols: fetch today's 5m bars.
     """
     today_str  = date.today().isoformat()
-    fetched_at = datetime.utcnow().isoformat()
+    fetched_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = _get_conn()
     try:
         # Daily incremental

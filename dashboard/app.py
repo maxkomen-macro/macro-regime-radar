@@ -657,7 +657,7 @@ try:
                 import numpy as np
                 _last = pd.Timestamp(_mf["last_daily_date"]).date()
                 _today = pd.Timestamp.today().date()
-                _bdays_old = int(np.busday_count(_last, _today))
+                _bdays_old = int(np.busday_count(_last, _today)) - 1
                 if _bdays_old > 1:
                     st.warning(
                         f"⚠️ Market data is {_bdays_old} trading day{'s' if _bdays_old != 1 else ''} behind "
