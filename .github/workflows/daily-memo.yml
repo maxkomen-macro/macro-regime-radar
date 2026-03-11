@@ -1,0 +1,88 @@
+name: Daily Memo Email
+
+on:
+  schedule:
+    - cron: "5 11 * * 1-5"   # Mon–Fri at 11:05 UTC = 6:05 AM ET (5 min after data refresh)
+  workflow_dispatch:           # Allow manual trigger for testing
+
+permissions:
+  contents: write
+
+jobs:
+  email-memo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate daily memo
+        id: memo_meta
+        run: |
+          OUTPUT=$(python src/daily_memo.py)
+          echo "$OUTPUT"
+          MEMO_DATE=$(echo "$OUTPUT" | grep "^MEMO_DATE=" | cut -d= -f2)
+          MEMO_REGIME=$(echo "$OUTPUT" | grep "^MEMO_REGIME=" | cut -d= -f2)
+          echo "memo_date=$MEMO_DATE" >> $GITHUB_OUTPUT
+          echo "memo_regime=$MEMO_REGIME" >> $GITHUB_OUTPUT
+
+      - name: Copy memo to GitHub Pages location
+        run: |
+          mkdir -p docs/memo
+          cp output/daily_memo.html docs/memo/daily_memo.html
+
+      - name: Build email body with browser link
+        run: |
+          cat > output/email_header.html << 'EOF'
+          <div style="font-family: Arial, sans-serif; font-size: 16px; padding: 15px; background-color: #f0f4f8; border-radius: 8px; margin-bottom: 20px;">
+            📊 <a href="https://maxkomen-macro.github.io/macro-regime-radar/memo/daily_memo.html" style="color: #1f77b4; text-decoration: none; font-weight: bold;">View this memo in your browser</a>
+            &nbsp;|&nbsp;
+            📈 <a href="https://macro-regime-radar.streamlit.app/" style="color: #1f77b4; text-decoration: none; font-weight: bold;">Live Dashboard</a>
+          </div>
+          <hr style="border: 1px solid #ddd; margin-bottom: 20px;">
+          EOF
+          cat output/email_header.html output/daily_memo.html > output/email_body.html
+
+      - name: Commit and push updated memo to GitHub Pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/memo/daily_memo.html
+          if git diff --cached --quiet; then
+            echo "No memo changes to commit"
+          else
+            git commit -m "Update daily memo [skip ci]"
+            git stash --include-untracked
+            git pull --rebase
+            git stash pop || true
+            git push
+          fi
+          if [ ! -f output/email_body.html ]; then
+            cat output/email_header.html output/daily_memo.html > output/email_body.html 2>/dev/null || cp output/daily_memo.html output/email_body.html
+          fi
+          ls -la output/email_body.html
+
+      - name: Send memo email
+        uses: dawidd6/action-send-mail@v2
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_ADDRESS }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "📊 Daily Briefing — ${{ steps.memo_meta.outputs.memo_date }} — ${{ steps.memo_meta.outputs.memo_regime }}"
+          to: ${{ secrets.GMAIL_ADDRESS }}
+          from: Macro Radar <${{ secrets.GMAIL_ADDRESS }}>
+          body: file://output/email_body.html
+          content_type: text/html
+          attachments: output/daily_memo.html
