@@ -17,6 +17,7 @@ from components.db_helpers import (
     load_alert_feed,
     load_event_calendar,
 )
+from components.shared_styles import section_header
 
 _ET = ZoneInfo("America/New_York")
 
@@ -32,7 +33,7 @@ def render_calendar_tab(latest_signals: pd.DataFrame) -> None:
     Args:
         latest_signals: latest row per signal_name from the signals table
     """
-    st.markdown("### 📅 Economic Calendar")
+    section_header("📅 Economic Calendar")
     st.divider()
 
     calendar = load_event_calendar()

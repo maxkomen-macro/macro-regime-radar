@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from components.db_helpers import load_alert_feed
+from components.shared_styles import section_header
 
 LEVEL_COLORS = {"risk": "#e74c3c", "watch": "#f39c12", "info": "#3498db"}
 LEVEL_ICONS  = {"risk": "🔴", "watch": "🟡", "info": "🔵"}
@@ -39,7 +40,7 @@ def _friendly_name(raw: str) -> str:
 
 def render_alerts_tab() -> None:
     """Main entry point — call from app.py inside the Alerts tab."""
-    st.markdown("### 🚨 Alerts Feed")
+    section_header("🚨 Alerts Feed")
     st.caption("Macro signal and market-based alerts, newest first.")
     st.divider()
 
