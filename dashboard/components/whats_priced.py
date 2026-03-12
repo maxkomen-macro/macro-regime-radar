@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from components.db_helpers import get_derived_latest, load_derived_metrics
+from components.shared_styles import section_header
 
 METRIC_GROUPS = [
     {
@@ -37,7 +38,7 @@ METRIC_GROUPS = [
 
 def render_whats_priced() -> None:
     """Main entry point — call from app.py inside the What's Priced tab."""
-    st.markdown("### 💲 What's Priced")
+    section_header("💲 What's Priced")
     st.caption("Policy rate proxies, inflation breakevens, and TIPS real yields — latest data from FRED.")
     st.divider()
 
@@ -70,8 +71,6 @@ def render_whats_priced() -> None:
 
         if not group_found:
             st.warning(f"{group['title']}: no data — run `python -m src.analytics.priced`")
-
-        st.markdown("")
 
     if not any_found:
         return

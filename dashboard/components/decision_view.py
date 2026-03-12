@@ -25,6 +25,7 @@ from components.db_helpers import (
     load_playbook,
     render_surprises,
 )
+from components.shared_styles import render_regime_badge, render_signal_card, section_header
 
 REGIME_COLORS = {
     "Goldilocks":     "#2ecc71",
@@ -54,7 +55,7 @@ def render_decision_view(
 ) -> None:
     """Main entry point — call from app.py inside the Decision View tab."""
 
-    st.markdown("### ⚡ Decision View — PM Scan")
+    section_header("⚡ Decision View — PM Scan")
     st.caption("Everything you need in 20 seconds.")
     st.divider()
 
@@ -122,11 +123,7 @@ def _render_regime_tile(latest_regime, regimes_df, as_of) -> None:
     it     = float(latest_regime["inflation_trend"])
     ao_str = as_of.strftime("%b %Y") if as_of is not None else "N/A"
 
-    st.markdown(
-        f'<div style="background:{bg};padding:16px 20px;border-radius:10px;'
-        f'color:#fff;font-size:22px;font-weight:700;margin-bottom:8px">{lbl}</div>',
-        unsafe_allow_html=True,
-    )
+    render_regime_badge(lbl)
     st.metric("Confidence", f"{conf:.1%}")
     st.caption(f"As of {ao_str}")
 
@@ -244,17 +241,8 @@ def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame
             val        = float(srow["value"])
             threshold  = smeta["threshold"]
             direction  = smeta["direction"]
-            icon       = "🔴" if triggered else "🟢"
             status     = "TRIGGERED" if triggered else "OK"
-            bg_color   = "#fff5f5" if triggered else "#f5fff5"
-            border     = "#e74c3c" if triggered else "#2ecc71"
-
-            # Severity: distance from threshold (signed in direction of concern)
-            dist = abs(val - threshold)
-            if direction == "above":
-                severity_str = f"+{dist:.2f} past threshold" if triggered else f"{threshold - val:.2f} from trigger"
-            else:
-                severity_str = f"{dist:.2f} past threshold" if triggered else f"{val - threshold:.2f} from trigger"
+            dist       = abs(val - threshold)
 
             # Duration: consecutive triggered months ending at latest date
             all_s = signals_df[signals_df["signal_name"] == sname] if not signals_df.empty else pd.DataFrame()
@@ -269,35 +257,32 @@ def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame
                             last_trig_date = str(r["date"])[:10]
                     else:
                         if last_trig_date is None and dur == 0:
-                            # Find last triggered date even if not currently triggered
                             triggered_rows = s_sorted[s_sorted["triggered"] == 1]
                             if not triggered_rows.empty:
                                 last_trig_date = str(triggered_rows.iloc[0]["date"])[:10]
                         break
-                # If still no last_trig_date, find it separately
                 if last_trig_date is None:
                     triggered_rows = s_sorted[s_sorted["triggered"] == 1]
                     if not triggered_rows.empty:
                         last_trig_date = str(triggered_rows.iloc[0]["date"])[:10]
 
-            trig_line = f"<br>Last: {last_trig_date}" if last_trig_date else "<br>Never triggered"
+            last_triggered_str = last_trig_date if last_trig_date else "Never"
 
             # Track as-of date for caption
             row_date = str(srow.get("date", ""))[:10]
             if row_date:
                 as_of_dates.append(row_date)
 
-            st.markdown(
-                f'<div style="border-left:3px solid {border};background:{bg_color};color:#222;'
-                f'border-radius:6px;padding:10px;font-size:12px;line-height:1.7">'
-                f'<b style="font-size:13px;color:#111">{icon} {smeta["label"]}</b><br>'
-                f'Status: <b style="color:#111">{status}</b><br>'
-                f'Value: <span style="color:#333">{val:.2f} {smeta["unit"]}</span><br>'
-                f'Dist: <span style="color:#555">{severity_str}</span><br>'
-                f'Duration: <span style="color:#333">{dur}mo</span>'
-                f'<span style="font-size:11px;color:#666">{trig_line}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
+            render_signal_card(
+                name=smeta["label"],
+                status=status,
+                value=val,
+                unit=smeta["unit"],
+                threshold=threshold,
+                direction=direction,
+                distance=dist,
+                duration_str=f"{dur}mo",
+                last_triggered_str=last_triggered_str,
             )
 
     if as_of_dates:
@@ -359,22 +344,23 @@ def _render_playbook_bias(playbook: dict) -> None:
     bg       = REGIME_COLORS.get(regime, "#888")
 
     st.markdown(
-        f'<div style="background:{bg};color:#fff;padding:8px 14px;'
-        f'border-radius:6px;font-size:13px;margin-bottom:8px">'
-        f'<b>{regime}</b> — {conf:.1%} confidence'
+        f'<div style="background:{bg};color:#fff;padding:12px 16px;'
+        f'border-radius:8px;font-size:15px;font-weight:700;margin-bottom:8px">'
+        f'{regime} — <span style="font-weight:400;font-size:13px">{conf:.1%} confidence</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
     if baseline:
         st.markdown(
-            f'<div style="font-size:13px;line-height:1.6;color:#333;'
-            f'border-left:3px solid {bg};padding-left:10px;margin-bottom:8px">'
+            f'<div style="font-size:14px;line-height:1.6;color:#e0e0e0;'
+            f'border-left:3px solid {bg};padding:12px 12px;margin-bottom:8px;'
+            f'background:rgba(255,255,255,0.05);border-radius:0 6px 6px 0">'
             f'{baseline}</div>',
             unsafe_allow_html=True,
         )
     for sentence in because[:3]:
         st.markdown(
-            f'<div style="font-size:12px;color:#555;line-height:1.5;margin-bottom:4px">'
+            f'<div style="font-size:13px;color:#b0b0b0;line-height:1.6;margin-bottom:4px">'
             f'↳ {sentence}</div>',
             unsafe_allow_html=True,
         )

@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.db_helpers import load_backtest_results, pivot_backtest
+from components.shared_styles import section_header
 
 HORIZONS = ["1M", "3M", "6M", "12M"]
 HORIZON_ORDER = {h: i for i, h in enumerate(HORIZONS)}
@@ -21,7 +22,7 @@ HORIZON_ORDER = {h: i for i, h in enumerate(HORIZONS)}
 
 def render_backtests() -> None:
     """Main entry point — call from app.py inside the Backtests tab."""
-    st.markdown("### 🧪 Signal & Regime Backtests")
+    section_header("🧪 Signal & Regime Backtests")
     st.caption("Historical SPY forward returns following signal triggers and regime periods.")
     st.divider()
 

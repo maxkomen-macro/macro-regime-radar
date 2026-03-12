@@ -547,38 +547,13 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.regime-tile {
-    display: inline-block;
-    padding: 18px 32px;
-    border-radius: 10px;
-    font-size: 26px;
-    font-weight: 700;
-    color: #fff;
-    text-shadow: 0 1px 2px rgba(0,0,0,.25);
-    letter-spacing: .5px;
-    margin-bottom: 8px;
-}
-.sig-card {
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 14px 16px;
-    font-size: 13px;
-    line-height: 1.9;
-    height: 100%;
-    color: #111111 !important;
-}
-.sig-card * { color: #111111 !important; }
-.sig-triggered { border-left: 4px solid #e74c3c; background: #fff5f5; }
-.sig-ok         { border-left: 4px solid #2ecc71; background: #f5fff5; }
-.commentary-box {
-    background: #f9f9f9;
-    padding: 16px 20px;
-    border-radius: 6px;
-    font-size: 15px;
-    line-height: 1.8;
-    color: #111111 !important;
-}
-.commentary-box * { color: #111111 !important; }
+/* ── Whitespace reduction ─────────────────────────────── */
+div.block-container { padding-top: 1rem; padding-bottom: 0rem; }
+[data-testid="stVerticalBlockBorderWrapper"] { gap: 0.3rem; }
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] { gap: 0.3rem; }
+/* ── Legacy helpers (kept for any remaining references) ─ */
+.sig-triggered { border-left: 4px solid #e74c3c; }
+.sig-ok         { border-left: 4px solid #2ecc71; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -724,11 +699,8 @@ with tab_macro:
         if latest_regime is not None:
             lbl  = latest_regime["label"]
             conf = float(latest_regime["confidence"])
-            bg   = REGIME_COLORS.get(lbl, "#888")
-            st.markdown(
-                f'<div class="regime-tile" style="background:{bg}">{lbl}</div>',
-                unsafe_allow_html=True,
-            )
+            from components.shared_styles import render_regime_badge
+            render_regime_badge(lbl)
             st.markdown(f"**Confidence:** {conf:.1%}")
         else:
             st.warning("No regime data available.")
@@ -748,7 +720,8 @@ with tab_macro:
     st.divider()
 
     # ── SECTION 2 — KPI Strip ────────────────────────────────────────────────
-    st.subheader("Key Indicators")
+    from components.shared_styles import section_header
+    section_header("Key Indicators")
 
     kpi = st.columns(5)
 
@@ -790,7 +763,7 @@ with tab_macro:
     st.divider()
 
     # ── SECTION 3 — Signals Panel ─────────────────────────────────────────────
-    st.subheader("Signal Monitor")
+    section_header("Signal Monitor")
 
     sig_cols = st.columns(len(SIGNAL_META))
 
@@ -808,33 +781,31 @@ with tab_macro:
                 st.markdown(f"**{smeta['label']}**\n\n*No data*")
                 continue
 
-            triggered = bool(int(srow["triggered"]))
-            val       = float(srow["value"])
-            dur_s     = signal_active_periods(all_s)
-            last_t    = signal_last_triggered(all_s)
-            sev       = signal_severity_str(val, smeta)
-            css       = "sig-triggered" if triggered else "sig-ok"
-            icon      = "🔴" if triggered else "🟢"
-            status    = "TRIGGERED" if triggered else "OK"
+            triggered  = bool(int(srow["triggered"]))
+            val        = float(srow["value"])
+            dur_s      = signal_active_periods(all_s)
+            last_t     = signal_last_triggered(all_s)
+            status     = "TRIGGERED" if triggered else "OK"
             last_t_str = last_t.strftime("%b %Y") if last_t is not None else "Never"
+            distance   = abs(val - smeta["threshold"])
 
-            st.markdown(
-                f"""<div class="sig-card {css}" style="color:#111111 !important">
-<b style="font-size:14px;color:#111111">{icon} {smeta['label']}</b><br>
-<span style="color:#111111"><b style="color:#111111">Status:</b> {status}</span><br>
-<span style="color:#111111"><b style="color:#111111">Value:</b> {val:.2f} {smeta['unit']}</span><br>
-<span style="color:#111111"><b style="color:#111111">Threshold:</b> {smeta['threshold']} ({smeta['direction']})</span><br>
-<span style="color:#111111"><b style="color:#111111">Severity:</b> {sev}</span><br>
-<span style="color:#111111"><b style="color:#111111">Active periods:</b> {dur_s}</span><br>
-<span style="color:#111111"><b style="color:#111111">Last triggered:</b> {last_t_str}</span>
-</div>""",
-                unsafe_allow_html=True,
+            from components.shared_styles import render_signal_card
+            render_signal_card(
+                name=smeta["label"],
+                status=status,
+                value=val,
+                unit=smeta["unit"],
+                threshold=smeta["threshold"],
+                direction=smeta["direction"],
+                distance=distance,
+                duration_str=dur_s,
+                last_triggered_str=last_t_str,
             )
 
     st.divider()
 
     # ── SECTION 4 — Charts ────────────────────────────────────────────────────
-    st.subheader("Charts")
+    section_header("Charts")
 
     if derived_df.empty:
         st.warning("No raw series data available for charts.")
@@ -929,7 +900,7 @@ with tab_macro:
     st.divider()
 
     # ── SECTION 5 — Regime History ────────────────────────────────────────────
-    st.subheader("Regime History (Last 12 Months)")
+    section_header("Regime History (Last 12 Months)")
 
     if regimes_df.empty:
         st.warning("No regime data available.")
@@ -973,7 +944,7 @@ with tab_macro:
     st.divider()
 
     # ── SECTION 6 — "What It Implies" commentary ──────────────────────────────
-    st.subheader("What It Implies")
+    section_header("What It Implies")
 
     if latest_regime is not None:
         triggered_now = (
@@ -998,8 +969,9 @@ with tab_macro:
         )
         border_color = REGIME_COLORS.get(latest_regime["label"], "#888")
         st.markdown(
-            f'<div class="commentary-box" '
-            f'style="border-left:4px solid {border_color}; color:#111111 !important">'
+            f'<div style="border-left:4px solid {border_color};background:rgba(255,255,255,0.04);'
+            f'padding:16px 20px;border-radius:0 6px 6px 0;font-size:15px;line-height:1.6;'
+            f'color:#e0e0e0">'
             f'{commentary}</div>',
             unsafe_allow_html=True,
         )
@@ -1009,7 +981,7 @@ with tab_macro:
     st.divider()
 
     # ── PRO C — Drivers Panel ("Why this regime?") ────────────────────────────
-    st.subheader("Why This Regime? — Drivers Panel")
+    section_header("Why This Regime? — Drivers Panel")
 
     if latest_regime is None or derived_df.empty:
         st.info("No regime or derived data available.")
@@ -1105,7 +1077,7 @@ with tab_macro:
             st.info("No freshness data available.")
 
     # ── PRO E — Downloads ─────────────────────────────────────────────────────
-    st.subheader("Downloads")
+    section_header("Downloads")
 
     dl1, dl2, dl3 = st.columns(3)
 

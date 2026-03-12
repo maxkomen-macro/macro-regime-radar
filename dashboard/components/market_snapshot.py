@@ -21,6 +21,7 @@ from components.db_helpers import (
     render_surprises,
 )
 from components.tradingview import render_tv_groups
+from components.shared_styles import section_header
 
 WATCHLIST_SYMBOLS = ["SPY", "QQQ", "IWM", "TLT", "HYG", "LQD", "UUP", "GLD", "USO"]
 SYMBOL_LABELS = {
@@ -38,7 +39,7 @@ SYMBOL_LABELS = {
 
 def render_market_snapshot(wide_df: pd.DataFrame) -> None:
     """Main entry point — call from app.py inside the Market Snapshot tab."""
-    st.markdown("### 📊 Market Snapshot")
+    section_header("📊 Market Snapshot")
     st.divider()
 
     market_ok = has_market_data()
@@ -186,8 +187,26 @@ def _render_watchlist(
     df_display["1M %"]      = df_display["1M %"].map(_fmt_pct)
     df_display["W Z-score"] = df_display["W Z-score"].map(_fmt_z)
 
+    # Color-code return columns: green positive, red negative, grey neutral/missing
+    def _color_return(val):
+        try:
+            num = float(str(val).replace("%", "").replace("+", "").replace("σ", "").strip())
+            if num > 0:
+                return "color: #2ecc71"
+            elif num < 0:
+                return "color: #e74c3c"
+        except (ValueError, AttributeError):
+            pass
+        return "color: #888888"
+
+    styled = (
+        df_display.set_index("Symbol")
+        .style
+        .applymap(_color_return, subset=["1D %", "1W %", "1M %", "W Z-score"])
+    )
+
     st.dataframe(
-        df_display.set_index("Symbol"),
+        styled,
         use_container_width=True,
         column_config={
             "Name":      st.column_config.TextColumn("Name"),
