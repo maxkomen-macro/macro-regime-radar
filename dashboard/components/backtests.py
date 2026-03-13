@@ -86,14 +86,19 @@ def render_backtests() -> None:
 
     # Warn when any cohort has a dangerously small sample size (1–4 observations).
     if "n" in pivoted.columns:
+        from collections import Counter
         low_n_mask = pivoted["n"].between(1, 4, inclusive="both")
-        low_n_cohorts = pivoted.loc[low_n_mask, "cohort"].tolist()
-        if low_n_cohorts:
-            names = ", ".join(
-                c.replace("SPY_", "").replace("_", " ") for c in low_n_cohorts
+        low_n_rows = pivoted.loc[low_n_mask, "cohort"]
+        if not low_n_rows.empty:
+            counts = Counter(
+                c.replace("SPY_", "").replace("_", " ") for c in low_n_rows
             )
+            parts = [
+                f"{name} ({n} horizon{'s' if n > 1 else ''})"
+                for name, n in sorted(counts.items())
+            ]
             st.warning(
-                f"⚠️ Low sample size (n < 5): **{names}** — "
+                "⚠️ Low sample size (n < 5): **" + ", ".join(parts) + "** — "
                 "statistics may not be reliable with so few observations."
             )
 

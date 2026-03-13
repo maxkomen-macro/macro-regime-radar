@@ -720,8 +720,49 @@ with tab_macro:
     st.divider()
 
     # ── SECTION 2 — KPI Strip ────────────────────────────────────────────────
-    from components.shared_styles import section_header
+    from components.shared_styles import (
+        compute_momentum,
+        generate_sparkline_b64,
+        section_header,
+    )
     section_header("Key Indicators")
+
+    # rising_bad → rising is bad (red); rising_good → rising is good (green)
+    _KPI_DIRECTION = {
+        "CPI_YOY": "rising_bad",
+        "UNRATE":  "rising_bad",
+        "SPREAD":  "rising_good",
+        "VIXCLS":  "rising_bad",
+    }
+
+    def _momentum_color(label: str, series_key: str) -> str:
+        """Return CSS color for a momentum label based on series direction."""
+        direction = _KPI_DIRECTION.get(series_key, "rising_bad")
+        rising = "Rising" in label or "Accelerating" in label
+        if direction == "rising_bad":
+            return "#e74c3c" if rising else "#2ecc71"
+        else:
+            return "#2ecc71" if rising else "#e74c3c"
+
+    def _sparkline_and_momentum(col, series_key: str, derived_col: str) -> None:
+        """Render sparkline + momentum label inside an already-active column context."""
+        vals_series = gcol(derived_df, derived_col).dropna()
+        vals = tuple(vals_series.iloc[-12:].tolist())
+        if len(vals) >= 3:
+            spark_color = "#4a9eff"
+            b64 = generate_sparkline_b64(vals, color=spark_color)
+            if b64:
+                col.markdown(
+                    f'<img src="data:image/png;base64,{b64}" '
+                    f'style="width:100%;margin:4px 0 2px;" />',
+                    unsafe_allow_html=True,
+                )
+            lbl, arrow, fixed_color = compute_momentum(vals)
+            color = fixed_color if fixed_color is not None else _momentum_color(lbl, series_key)
+            col.markdown(
+                f'<span style="color:{color};font-size:12px">{arrow} {lbl} (3M)</span>',
+                unsafe_allow_html=True,
+            )
 
     kpi = st.columns(5)
 
@@ -731,23 +772,27 @@ with tab_macro:
         cpi_prev = _prev(gcol(derived_df, "CPI_YOY"))
         cpi_d    = f"{cpi_val - cpi_prev:+.2f}pp" if (cpi_val is not None and cpi_prev is not None) else None
         kpi[0].metric("CPI YoY (%)", f"{cpi_val:.2f}" if cpi_val is not None else "N/A", delta=cpi_d)
+        _sparkline_and_momentum(kpi[0], "CPI_YOY", "CPI_YOY")
 
         # 2. Unemployment
         ur_val = _latest(gcol(derived_df, "UNRATE"))
         ur_3m  = _latest(gcol(derived_df, "UNRATE_3M"))
         ur_d   = f"{ur_3m:+.2f}pp (3M)" if ur_3m is not None else None
         kpi[1].metric("Unemployment Rate", f"{ur_val:.1f}%" if ur_val is not None else "N/A", delta=ur_d)
+        _sparkline_and_momentum(kpi[1], "UNRATE", "UNRATE")
 
         # 3. Yield spread
         sp_val   = _latest(gcol(derived_df, "SPREAD"))
         inverted = sp_val is not None and sp_val < 0
         sp_label = "10Y–2Y Spread" + (" 🔴 Inverted" if inverted else "")
         kpi[2].metric(sp_label, f"{sp_val:.2f}%" if sp_val is not None else "N/A")
+        _sparkline_and_momentum(kpi[2], "SPREAD", "SPREAD")
 
         # 4. VIX
         vix_val = _latest(gcol(derived_df, "VIXCLS"))
         vix_d   = f"{vix_val - 30:.1f} from 30" if vix_val is not None else None
         kpi[3].metric("VIX", f"{vix_val:.1f}" if vix_val is not None else "N/A", delta=vix_d)
+        _sparkline_and_momentum(kpi[3], "VIXCLS", "VIXCLS")
 
         # 5. Regime trend inputs
         if latest_regime is not None:
@@ -789,6 +834,10 @@ with tab_macro:
             last_t_str = last_t.strftime("%b %Y") if last_t is not None else "Never"
             distance   = abs(val - smeta["threshold"])
 
+            hist_values = ()
+            if not all_s.empty:
+                hist_values = tuple(all_s.sort_values("date")["value"].dropna().tolist())
+
             from components.shared_styles import render_signal_card
             render_signal_card(
                 name=smeta["label"],
@@ -800,6 +849,7 @@ with tab_macro:
                 distance=distance,
                 duration_str=dur_s,
                 last_triggered_str=last_t_str,
+                hist_values=hist_values,
             )
 
     st.divider()
