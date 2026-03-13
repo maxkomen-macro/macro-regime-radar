@@ -35,6 +35,22 @@ def _query(sql: str, params: tuple = ()) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Raw series helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=3600)
+def fetch_raw_series_n(series_id: str, n_months: int = 24) -> tuple:
+    """Return the last n_months values (oldest→newest) from raw_series as a tuple of floats."""
+    df = _query(
+        "SELECT value FROM raw_series WHERE series_id=? ORDER BY date DESC LIMIT ?",
+        (series_id, n_months),
+    )
+    if df.empty:
+        return ()
+    return tuple(df["value"].iloc[::-1].dropna().tolist())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Availability checks
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -27,7 +27,7 @@ SERIES = {
 }
 
 # ── Fetch window ───────────────────────────────────────────────────────────
-LOOKBACK_YEARS = 10
+LOOKBACK_YEARS = 30
 
 # ── Regime thresholds ─────────────────────────────────────────────────────
 ROLLING_WINDOW = 3  # months for trend computation

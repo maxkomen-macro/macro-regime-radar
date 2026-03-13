@@ -202,7 +202,7 @@ def _render_watchlist(
     styled = (
         df_display.set_index("Symbol")
         .style
-        .applymap(_color_return, subset=["1D %", "1W %", "1M %", "W Z-score"])
+        .map(_color_return, subset=["1D %", "1W %", "1M %", "W Z-score"])
     )
 
     st.dataframe(

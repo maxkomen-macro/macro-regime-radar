@@ -273,6 +273,10 @@ def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame
             if row_date:
                 as_of_dates.append(row_date)
 
+            hist_values = ()
+            if not all_s.empty:
+                hist_values = tuple(all_s.sort_values("date")["value"].dropna().tolist())
+
             render_signal_card(
                 name=smeta["label"],
                 status=status,
@@ -283,6 +287,7 @@ def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame
                 distance=dist,
                 duration_str=f"{dur}mo",
                 last_triggered_str=last_triggered_str,
+                hist_values=hist_values,
             )
 
     if as_of_dates:
