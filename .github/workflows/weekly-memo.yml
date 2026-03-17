@@ -12,6 +12,10 @@ jobs:
   email-memo:
     runs-on: ubuntu-latest
 
+    env:
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -27,6 +31,22 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Write .env for scripts that use load_dotenv()
+        run: |
+          echo "FRED_API_KEY=${{ secrets.FRED_API_KEY }}" > .env
+          echo "POLYGON_API_KEY=${{ secrets.POLYGON_API_KEY }}" >> .env
+
+      - name: Ensure analytics are fresh
+        run: |
+          python -m src.analytics.surprise
+          python -m src.analytics.backtest
+          python -m src.analytics.alerts
+          python -m src.analytics.priced
+          python -m src.analytics.playbook
+
+      - name: Clean up .env
+        run: rm -f .env
+
       - name: Generate weekly memo
         run: python src/memo.py
 
@@ -37,13 +57,13 @@ jobs:
         run: |
           cat > output/email_header.html << 'EOF'
           <div style="font-family: Arial, sans-serif; font-size: 16px; padding: 15px; background-color: #f0f4f8; border-radius: 8px; margin-bottom: 20px;">
-            📊 <a href="https://maxkomen-macro.github.io/macro-regime-radar/memo/weekly_memo.html" style="color: #1f77b4; text-decoration: none; font-weight: bold;">View this memo in your browser</a>
+            📊 <a href="https://maxkomen-macro.github.io/macro-regime-radar/memo/weekly_memo.html" style="color: #1f77b4; text-decoration: none; font-weight: bold;">View full memo with charts in your browser</a>
             &nbsp;|&nbsp;
             📈 <a href="https://macro-regime-radar.streamlit.app/" style="color: #1f77b4; text-decoration: none; font-weight: bold;">Live Dashboard</a>
           </div>
           <hr style="border: 1px solid #ddd; margin-bottom: 20px;">
           EOF
-          cat output/email_header.html output/weekly_memo.html > output/email_body.html
+          cat output/email_header.html output/weekly_memo_email.html > output/email_body.html
 
       - name: Commit and push updated memo to GitHub Pages
         run: |
@@ -60,7 +80,7 @@ jobs:
             git push
           fi
           if [ ! -f output/email_body.html ]; then
-            cat output/email_header.html output/weekly_memo.html > output/email_body.html 2>/dev/null || cp output/weekly_memo.html output/email_body.html
+            cat output/email_header.html output/weekly_memo_email.html > output/email_body.html 2>/dev/null || cp output/weekly_memo_email.html output/email_body.html
           fi
           ls -la output/email_body.html
 
