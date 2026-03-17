@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Macro Regime Radar — Weekly Memo</title>
+</head>
+<body bgcolor="#f4f5f7" style="margin:0;padding:0;background-color:#f4f5f7;font-family:Arial,Helvetica,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f4f5f7" style="background-color:#f4f5f7;">
+<tr><td align="center" style="padding:20px 10px;">
+
+<table width="700" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="background-color:#ffffff;border:1px solid #dde1e9;max-width:700px;">
+
+<!-- ── HEADER ─────────────────────────────────────────────────────────────── -->
+<tr>
+  <td bgcolor="#0d1b2a" style="background-color:#0d1b2a;padding:24px 32px;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:700;color:#ffffff;letter-spacing:0.3px;">Macro Regime Radar</div>
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#a0aec0;margin-top:4px;letter-spacing:0.2px;">
+      Weekly Memo &nbsp;&bull;&nbsp; {{ as_of_long }} &nbsp;&bull;&nbsp; Generated {{ generated_at }}
+    </div>
+    <div style="margin-top:12px;">
+      <a href="https://maxkomen-macro.github.io/macro-regime-radar/memo/weekly_memo.html"
+         style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#63b3ed;text-decoration:none;">
+        &#128202; View full memo with charts in browser &#8594;
+      </a>
+      &nbsp;&nbsp;
+      <a href="https://macro-regime-radar.streamlit.app/"
+         style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#63b3ed;text-decoration:none;">
+        &#128200; Live Dashboard
+      </a>
+    </div>
+  </td>
+</tr>
+
+<!-- ── REGIME SUMMARY ─────────────────────────────────────────────────────── -->
+{% if regime %}
+<tr>
+  <td style="padding:20px 32px;border-bottom:1px solid #e8ebf0;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#6b7591;margin-bottom:12px;">Current Regime</div>
+    <table cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="padding-right:20px;vertical-align:top;">
+          <span style="display:inline-block;padding:8px 18px;border-radius:5px;font-size:16px;font-weight:700;color:#ffffff;background-color:{{ regime.badge_color }};">{{ regime.label }}</span>
+        </td>
+        <td style="vertical-align:top;">
+          <div style="font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:700;color:#1a1d23;line-height:1;">{{ regime.conf_pct }}</div>
+          <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#6b7591;text-transform:uppercase;letter-spacing:0.4px;">confidence</div>
+          <div style="margin-top:8px;">
+            <span style="font-family:Arial,Helvetica,sans-serif;font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid #dde1e9;color:#444;background-color:#f7f8fa;margin-right:6px;">{{ regime.growth_arrow }} Growth {{ regime.growth_dir }}</span>
+            <span style="font-family:Arial,Helvetica,sans-serif;font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid #dde1e9;color:#444;background-color:#f7f8fa;">{{ regime.infl_arrow }} Inflation {{ regime.infl_dir }}</span>
+          </div>
+        </td>
+      </tr>
+    </table>
+    {% if implication %}
+    <div style="margin-top:14px;padding:12px 16px;background-color:#f7f8fa;border-left:4px solid #2c7be5;border-radius:0 4px 4px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.65;color:#1a1d23;">{{ implication }}</div>
+    {% endif %}
+  </td>
+</tr>
+{% endif %}
+
+<!-- ── KEY INDICATORS (replaces base64 charts) ────────────────────────────── -->
+<tr>
+  <td style="padding:20px 32px;border-bottom:1px solid #e8ebf0;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#6b7591;margin-bottom:12px;">Key Indicators</div>
+    {% if key_indicators %}
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+      <tr bgcolor="#f7f8fa" style="background-color:#f7f8fa;">
+        <th align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Indicator</th>
+        <th align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Current</th>
+        <th align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">3M Ago</th>
+        <th align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">6M Ago</th>
+        <th align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">12M Ago</th>
+        <th align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Trend</th>
+      </tr>
+      {% for row in key_indicators %}
+      <tr>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;color:#1a1d23;padding:9px 10px;border-bottom:1px solid #f0f2f5;">{{ row.label }}</td>
+        <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#1a1d23;padding:9px 10px;border-bottom:1px solid #f0f2f5;">{{ row.current }}</td>
+        <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#555;padding:9px 10px;border-bottom:1px solid #f0f2f5;">{{ row.m3ago }}</td>
+        <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#555;padding:9px 10px;border-bottom:1px solid #f0f2f5;">{{ row.m6ago }}</td>
+        <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#555;padding:9px 10px;border-bottom:1px solid #f0f2f5;">{{ row.m12ago }}</td>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#444;padding:9px 10px;border-bottom:1px solid #f0f2f5;">{{ row.trend }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#6b7591;">No indicator data available.</div>
+    {% endif %}
+  </td>
+</tr>
+
+<!-- ── SURPRISE RANKING ────────────────────────────────────────────────────── -->
+<tr>
+  <td style="padding:20px 32px;border-bottom:1px solid #e8ebf0;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#6b7591;margin-bottom:12px;">Surprise Ranking — Biggest Z-Score Moves</div>
+    {% if surprise_ranking %}
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+      <tr bgcolor="#f7f8fa" style="background-color:#f7f8fa;">
+        <th align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">#</th>
+        <th align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Indicator</th>
+        <th align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Z-Score</th>
+        <th align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Interpretation</th>
+      </tr>
+      {% for item in surprise_ranking %}
+      <tr>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7591;padding:8px 10px;border-bottom:1px solid #f0f2f5;">{{ loop.index }}</td>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;color:#1a1d23;padding:8px 10px;border-bottom:1px solid #f0f2f5;">{{ item.label }}</td>
+        <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;padding:8px 10px;border-bottom:1px solid #f0f2f5;{% if item.direction == 'up' %}color:#0f7a3c;{% else %}color:#b91c1c;{% endif %}">{{ item.z_str }}</td>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#555;padding:8px 10px;border-bottom:1px solid #f0f2f5;">{{ item.interpretation }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#6b7591;">No surprise data — run analytics modules.</div>
+    {% endif %}
+  </td>
+</tr>
+
+<!-- ── SIGNALS ─────────────────────────────────────────────────────────────── -->
+<tr>
+  <td style="padding:20px 32px;border-bottom:1px solid #e8ebf0;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#6b7591;margin-bottom:12px;">Signals Overview</div>
+    {% if signal_rows %}
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+      <tr bgcolor="#f7f8fa" style="background-color:#f7f8fa;">
+        <th align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Signal</th>
+        <th align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Status</th>
+        <th align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Value</th>
+        <th align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Severity</th>
+        <th align="left" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;padding:7px 10px;border-bottom:1px solid #dde1e9;">Last Triggered</th>
+      </tr>
+      {% for row in signal_rows %}
+      <tr {% if row.triggered %}bgcolor="#fff8f7" style="background-color:#fff8f7;"{% endif %}>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1a1d23;padding:9px 10px;border-bottom:1px solid #f0f2f5;{% if row.triggered %}border-left:3px solid #e74c3c;{% else %}border-left:3px solid #2ecc71;{% endif %}">{{ row.label }}</td>
+        <td style="padding:9px 10px;border-bottom:1px solid #f0f2f5;">
+          {% if row.triggered %}
+          <span style="font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:600;padding:2px 8px;border-radius:3px;background-color:#fdecea;color:#c0392b;">TRIGGERED</span>
+          {% else %}
+          <span style="font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:600;padding:2px 8px;border-radius:3px;background-color:#eafaf1;color:#27ae60;">OK</span>
+          {% endif %}
+        </td>
+        <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#555;padding:9px 10px;border-bottom:1px solid #f0f2f5;">{{ row.value_str }}</td>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#555;padding:9px 10px;border-bottom:1px solid #f0f2f5;">{{ row.severity }}</td>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#555;padding:9px 10px;border-bottom:1px solid #f0f2f5;">{{ row.last_trig }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#6b7591;">No signal data available.</div>
+    {% endif %}
+  </td>
+</tr>
+
+<!-- ── ALERTS ─────────────────────────────────────────────────────────────── -->
+<tr>
+  <td style="padding:20px 32px;border-bottom:1px solid #e8ebf0;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#6b7591;margin-bottom:12px;">Alerts &amp; Risk Summary</div>
+    {% if alerts_summary.active_signal_count > 0 %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#b91c1c;font-weight:600;margin-bottom:10px;">
+      &#9888; {{ alerts_summary.active_signal_count }} signal(s) triggered: {{ alerts_summary.active_signal_labels | join(", ") }}
+    </div>
+    {% else %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#27ae60;font-weight:600;margin-bottom:10px;">&#10003; No macro signals currently triggered.</div>
+    {% endif %}
+    {% if alerts_summary.top_risk_alerts %}
+    {% for alert in alerts_summary.top_risk_alerts %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1a1d23;padding:8px 12px;background-color:#fff8f7;border-left:3px solid #e74c3c;border-radius:0 3px 3px 0;margin-bottom:6px;">
+      <strong>{{ alert.name }}</strong> — {{ alert.message }}
+      <span style="font-size:11px;color:#888;margin-left:8px;">{{ alert.date }}</span>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </td>
+</tr>
+
+<!-- ── NEXT WEEK ───────────────────────────────────────────────────────────── -->
+<tr>
+  <td style="padding:20px 32px;border-bottom:1px solid #e8ebf0;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#6b7591;margin-bottom:12px;">Upcoming Events &amp; What to Watch</div>
+    {% if next_week.events %}
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-bottom:12px;">
+      {% for evt in next_week.events %}
+      <tr>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1a1d23;padding:6px 0;border-bottom:1px solid #f0f2f5;">
+          {% if evt.importance == "high" %}<strong>{% endif %}{{ evt.name }}{% if evt.importance == "high" %}</strong>{% endif %}
+          &nbsp;<span style="font-size:11px;color:#888;">{{ evt.datetime }}</span>
+          {% if evt.importance == "high" %}&nbsp;<span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;background-color:#fef3c7;color:#92400e;">HIGH</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#6b7591;margin-bottom:10px;">No events in the next 7 days.</div>
+    {% endif %}
+    {% if next_week.watch_items %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;margin-bottom:8px;">What to Watch</div>
+    {% for item in next_week.watch_items %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1a1d23;padding:4px 0 4px 12px;border-left:2px solid #2c7be5;margin-bottom:5px;">{{ item }}</div>
+    {% endfor %}
+    {% endif %}
+  </td>
+</tr>
+
+<!-- ── PLAYBOOK ────────────────────────────────────────────────────────────── -->
+{% if playbook.has_data %}
+<tr>
+  <td style="padding:20px 32px;border-bottom:1px solid #e8ebf0;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#6b7591;margin-bottom:12px;">Playbook Commentary</div>
+    <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:10px;">
+      <tr>
+        <td style="padding-right:16px;">
+          <span style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;color:#ffffff;padding:5px 14px;border-radius:4px;background-color:{{ playbook.badge_color }};">{{ playbook.regime }}</span>
+        </td>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7591;">{{ playbook.confidence }} confidence</td>
+      </tr>
+    </table>
+    {% if playbook.summary %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1a1d23;line-height:1.65;margin-bottom:10px;">{{ playbook.summary }}</div>
+    {% endif %}
+    {% if playbook.because_today %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#6b7591;margin-bottom:8px;">Key Drivers</div>
+    {% for item in playbook.because_today %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1a1d23;padding:4px 0 4px 12px;border-left:2px solid {{ playbook.badge_color }};margin-bottom:5px;">{{ item }}</div>
+    {% endfor %}
+    {% endif %}
+  </td>
+</tr>
+{% endif %}
+
+<!-- ── FOOTER ─────────────────────────────────────────────────────────────── -->
+<tr>
+  <td bgcolor="#f7f8fa" style="background-color:#f7f8fa;padding:14px 32px;border-top:1px solid #dde1e9;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7591;">
+          Macro Regime Radar &nbsp;&bull;&nbsp; {{ as_of }} &nbsp;&bull;&nbsp;
+          <a href="https://maxkomen-macro.github.io/macro-regime-radar/memo/weekly_memo.html" style="color:#2c7be5;text-decoration:none;">&#128202; View full memo with charts</a>
+          &nbsp;&nbsp;
+          <a href="https://macro-regime-radar.streamlit.app/" style="color:#2c7be5;text-decoration:none;">&#128200; Dashboard</a>
+        </td>
+        <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#a0aec0;">{{ generated_at }}</td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+</table><!-- /main 700px table -->
+</td></tr>
+</table><!-- /outer table -->
+
+</body>
+</html>
