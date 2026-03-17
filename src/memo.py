@@ -818,21 +818,24 @@ def build_surprise_ranking(derived_df: pd.DataFrame, top_n: int = 10) -> list:
     if derived_df.empty:
         return []
 
-    latest = derived_df.iloc[0]  # sorted descending
-    rows   = []
+    rows = []
     for col, label in _Z_LABELS_MEMO.items():
         if col not in derived_df.columns:
             continue
-        z = latest.get(col)
-        if z is None or (isinstance(z, float) and np.isnan(z)):
+        # Use per-column dropna so we get the most recent non-NaN value even if
+        # different metrics were last computed on different dates (z-scores are
+        # weekly W-FRI; other metrics may have a newer date in iloc[0] that is NaN
+        # for z-score columns).
+        s = derived_df[col].dropna()
+        if s.empty:
             continue
-        z = float(z)
+        z = float(s.iloc[0])
         raw_col = _Z_TO_RAW_MEMO.get(col)
         raw_val = None
         if raw_col and raw_col in derived_df.columns:
-            rv = latest.get(raw_col)
-            if rv is not None and not (isinstance(rv, float) and np.isnan(rv)):
-                raw_val = float(rv)
+            rs = derived_df[raw_col].dropna()
+            if not rs.empty:
+                raw_val = float(rs.iloc[0])
 
         direction  = "surged" if z > 0 else "fell"
         magnitude  = "sharply" if abs(z) >= 2.5 else ("notably" if abs(z) >= 1.5 else "modestly")
