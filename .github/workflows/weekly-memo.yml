@@ -92,7 +92,7 @@ jobs:
           username: ${{ secrets.GMAIL_ADDRESS }}
           password: ${{ secrets.GMAIL_APP_PASSWORD }}
           subject: "Macro Regime Radar — Weekly Memo"
-          to: ${{ secrets.GMAIL_ADDRESS }}
+          to: ${{ secrets.MEMO_RECIPIENTS }}
           from: Macro Radar <${{ secrets.GMAIL_ADDRESS }}>
           body: file://output/email_body.html
           content_type: text/html
