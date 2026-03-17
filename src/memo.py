@@ -34,8 +34,9 @@ ROOT          = Path(__file__).resolve().parent.parent
 DB_PATH       = ROOT / "data" / "macro_radar.db"
 TMPL_DIR      = ROOT / "templates"
 OUTPUT_DIR    = ROOT / "output"
-MEMO_PATH     = OUTPUT_DIR / "weekly_memo.html"
-PLAYBOOK_PATH = OUTPUT_DIR / "playbook.json"
+MEMO_PATH       = OUTPUT_DIR / "weekly_memo.html"
+MEMO_EMAIL_PATH = OUTPUT_DIR / "weekly_memo_email.html"
+PLAYBOOK_PATH   = OUTPUT_DIR / "playbook.json"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config — mirrors dashboard constants (no src.config import)
@@ -1062,6 +1063,68 @@ def build_market_chart(market_df: pd.DataFrame, as_of: pd.Timestamp) -> str | No
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Key indicators for email text table (replaces base64 charts)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_key_indicators(derived: pd.DataFrame) -> list:
+    """
+    Build 4-row key indicators list for the email text table.
+    Each row: label, current, m3ago, m6ago, m12ago, trend.
+    derived is sorted ascending (iloc[-1] = most recent).
+    """
+    if derived.empty:
+        return []
+
+    def _get(col, months_back):
+        if col not in derived.columns:
+            return None
+        s = derived[col].dropna()
+        idx = -(1 + months_back)
+        if len(s) < abs(idx):
+            return None
+        return float(s.iloc[idx])
+
+    def _fmt(v, decimals, suffix):
+        if v is None:
+            return "N/A"
+        return f"{v:.{decimals}f}{suffix}"
+
+    specs = [
+        ("CPI_YOY", "CPI YoY",      2, "%",  "cooling",    "rising"),
+        ("UNRATE",  "Unemployment",  2, "%",  "falling",    "rising"),
+        ("SPREAD",  "10Y-2Y Spread", 2, "%",  "flattening", "steepening"),
+        ("VIXCLS",  "VIX",           1, "",   "falling",    "rising"),
+    ]
+    rows = []
+    for col, label, dec, suffix, down_word, up_word in specs:
+        cur = _get(col, 0)
+        if cur is None:
+            continue
+        m3  = _get(col, 3)
+        m6  = _get(col, 6)
+        m12 = _get(col, 12)
+        if m3 is not None:
+            diff = cur - m3
+            if diff > 0.05:
+                trend = f"▲ {up_word.capitalize()}"
+            elif diff < -0.05:
+                trend = f"▼ {down_word.capitalize()}"
+            else:
+                trend = "→ Stable"
+        else:
+            trend = "—"
+        rows.append({
+            "label":   label,
+            "current": _fmt(cur, dec, suffix),
+            "m3ago":   _fmt(m3,  dec, suffix),
+            "m6ago":   _fmt(m6,  dec, suffix),
+            "m12ago":  _fmt(m12, dec, suffix),
+            "trend":   trend,
+        })
+    return rows
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1157,18 +1220,11 @@ def generate_memo() -> None:
 
     print(f"[memo] Surprises: {len(surprise_ranking)}, Events: {len(next_week['events'])}")
 
-    # ── Render Jinja2 template ─────────────────────────────────────────────
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        env      = Environment(loader=FileSystemLoader(str(TMPL_DIR)), autoescape=True)
-        template = env.get_template("memo.html")
-    except TemplateNotFound:
-        raise FileNotFoundError(
-            f"Template not found: {TMPL_DIR / 'memo.html'}\n"
-            "Make sure templates/memo.html exists in the project root."
-        )
+    # ── Key indicators for email text table ────────────────────────────────
+    key_indicators = _build_key_indicators(derived)
 
-    html = template.render(
+    # ── Shared template context ────────────────────────────────────────────
+    ctx = dict(
         generated_at      = generated_at,
         as_of             = as_of.strftime("%B %Y"),
         as_of_long        = as_of.strftime("%B %d, %Y"),
@@ -1179,7 +1235,6 @@ def generate_memo() -> None:
         implication       = implication,
         no_regimes        = regime_ctx is None,
         no_signals        = not signal_rows,
-        # Trader Pack new sections
         market_snapshot   = market_snapshot,
         surprise_ranking  = surprise_ranking,
         whats_priced      = whats_priced,
@@ -1187,10 +1242,31 @@ def generate_memo() -> None:
         next_week         = next_week,
         playbook          = playbook_ctx,
         market_chart_b64  = market_chart_b64,
+        key_indicators    = key_indicators,
     )
 
-    MEMO_PATH.write_text(html, encoding="utf-8")
+    # ── Render browser version ─────────────────────────────────────────────
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        env      = Environment(loader=FileSystemLoader(str(TMPL_DIR)), autoescape=True)
+        template = env.get_template("memo.html")
+    except TemplateNotFound:
+        raise FileNotFoundError(
+            f"Template not found: {TMPL_DIR / 'memo.html'}\n"
+            "Make sure templates/memo.html exists in the project root."
+        )
+
+    MEMO_PATH.write_text(template.render(**ctx), encoding="utf-8")
     print(f"[memo] Memo written → {MEMO_PATH}")
+
+    # ── Render email version ───────────────────────────────────────────────
+    try:
+        email_tmpl = env.get_template("memo_email.html")
+        MEMO_EMAIL_PATH.write_text(email_tmpl.render(**ctx), encoding="utf-8")
+        email_kb = MEMO_EMAIL_PATH.stat().st_size / 1024
+        print(f"[memo] Email memo written → {MEMO_EMAIL_PATH}  ({email_kb:.0f} KB)")
+    except TemplateNotFound:
+        print("[memo] WARNING: templates/memo_email.html not found — skipping email version")
 
     # ── Validation ─────────────────────────────────────────────────────────
     print_validation(regimes, signals, MEMO_PATH)
