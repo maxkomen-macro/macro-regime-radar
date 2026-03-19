@@ -123,7 +123,7 @@ def load_key_levels() -> dict:
     df = _load(
         """
         SELECT series_id, date, value FROM raw_series
-        WHERE series_id IN ('FEDFUNDS', 'GS10', 'GS2', 'VIXCLS')
+        WHERE series_id IN ('FEDFUNDS', 'DGS10', 'DGS2', 'VIXCLS')
         ORDER BY series_id, date DESC
         """
     )
@@ -137,9 +137,9 @@ def load_key_levels() -> dict:
         change     = float(grp.iloc[0]["value"] - grp.iloc[1]["value"]) if len(grp) >= 2 else 0.0
         result[sid] = {"value": latest_val, "change": change}
 
-    # Compute 2s10s spread from GS10 and GS2
-    gs10 = df[df["series_id"] == "GS10"].sort_values("date", ascending=False)
-    gs2  = df[df["series_id"] == "GS2"].sort_values("date", ascending=False)
+    # Compute 2s10s spread from DGS10 and DGS2
+    gs10 = df[df["series_id"] == "DGS10"].sort_values("date", ascending=False)
+    gs2  = df[df["series_id"] == "DGS2"].sort_values("date", ascending=False)
     if not gs10.empty and not gs2.empty:
         spread_latest = float(gs10.iloc[0]["value"]) - float(gs2.iloc[0]["value"])
         if len(gs10) >= 2 and len(gs2) >= 2:
@@ -408,7 +408,7 @@ def build_html(
       <table style="width:100%; border-collapse:collapse;">
         <tr>
           {_level_cell('Fed Funds', 'FEDFUNDS')}
-          {_level_cell('10Y Treasury', 'GS10')}
+          {_level_cell('10Y Treasury', 'DGS10')}
           {_level_cell('2s10s Spread', 'SPREAD')}
           {_level_cell('VIX', 'VIXCLS', '')}
         </tr>

@@ -20,8 +20,8 @@ if not FRED_API_KEY:
 SERIES = {
     "growth":       "INDPRO",    # Industrial Production Index (monthly)
     "inflation":    "CPIAUCSL",  # CPI All Urban Consumers (monthly)
-    "yield_10y":    "GS10",      # 10-Year Treasury Constant Maturity Rate
-    "yield_2y":     "GS2",       # 2-Year Treasury Constant Maturity Rate
+    "yield_10y":    "DGS10",     # 10-Year Treasury Constant Maturity Rate (daily)
+    "yield_2y":     "DGS2",      # 2-Year Treasury Constant Maturity Rate (daily)
     "unemployment": "UNRATE",    # Unemployment Rate (monthly)
     "vix":          "VIXCLS",    # CBOE Volatility Index (daily → resampled monthly)
 }

@@ -92,8 +92,8 @@ def _render_rates_bar(wide_df: pd.DataFrame) -> None:
         s = series.dropna()
         return float(s.iloc[-1 - n]) if len(s) > n else None
 
-    gs2   = wide_df["GS2"]   if "GS2"  in wide_df.columns else pd.Series(dtype=float)
-    gs10  = wide_df["GS10"]  if "GS10" in wide_df.columns else pd.Series(dtype=float)
+    gs2   = wide_df["DGS2"]   if "DGS2"  in wide_df.columns else pd.Series(dtype=float)
+    gs10  = wide_df["DGS10"]  if "DGS10" in wide_df.columns else pd.Series(dtype=float)
 
     v2   = _latest(gs2)
     v10  = _latest(gs10)
