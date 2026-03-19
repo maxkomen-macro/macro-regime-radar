@@ -25,7 +25,7 @@ from components.db_helpers import (
     load_playbook,
     render_surprises,
 )
-from components.shared_styles import render_regime_badge, render_signal_card, section_header
+from components.shared_styles import render_regime_badge, render_signal_card, section_header, SIGNAL_DISPLAY_NAMES
 
 REGIME_COLORS = {
     "Goldilocks":     "#2ecc71",
@@ -55,8 +55,6 @@ def render_decision_view(
 ) -> None:
     """Main entry point — call from app.py inside the Decision View tab."""
 
-    section_header("⚡ Decision View — PM Scan")
-    st.caption("Everything you need in 20 seconds.")
     st.divider()
 
     # Load new-table data
@@ -66,11 +64,8 @@ def render_decision_view(
     playbook  = load_playbook()
     market_ok = has_market_data()
 
-    # ── Row 1: Regime | Top Risks | Upcoming Events ───────────────────────────
-    col_regime, col_risks, col_events = st.columns([1.2, 1.4, 1.4])
-
-    with col_regime:
-        _render_regime_tile(latest_regime, regimes_df, as_of)
+    # ── Row 1: Top Risks | Upcoming Events (regime shown in header bar) ─────────
+    col_risks, col_events = st.columns([1, 1])
 
     with col_risks:
         _render_top_risks(alerts)
@@ -91,19 +86,13 @@ def render_decision_view(
 
     st.divider()
 
-    # ── Row 3: Surprises + Playbook ───────────────────────────────────────────
-    col_surp, col_play = st.columns([1, 1])
-
-    with col_surp:
-        if market_ok and not dm.empty:
-            render_surprises(dm, top_n=5, title="Top Surprises This Week")
-        elif not market_ok:
-            st.warning("Market data not yet loaded — run `python src/market_data/fetch_market.py --mode backfill`")
-        else:
-            st.info("Surprise data not available — run `python -m src.analytics.surprise`")
-
-    with col_play:
-        _render_playbook_bias(playbook)
+    # ── Row 3: Surprises (playbook bias shown in header read-through box) ────────
+    if market_ok and not dm.empty:
+        render_surprises(dm, top_n=5, title="Top Surprises This Week")
+    elif not market_ok:
+        st.warning("Market data not yet loaded — run `python src/market_data/fetch_market.py --mode backfill`")
+    else:
+        st.info("Surprise data not available — run `python -m src.analytics.surprise`")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -218,11 +207,14 @@ def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame
         st.info("No signal data loaded — run `python -m src.analytics.signals`")
         return
 
-    sig_cols = st.columns(len(SIGNAL_META))
+    signal_list = list(SIGNAL_META.items())
+    row1_cols = st.columns(3)
+    row2_cols = st.columns(2)
     as_of_dates = []
 
-    for i, (sname, smeta) in enumerate(SIGNAL_META.items()):
-        with sig_cols[i]:
+    for i, (sname, smeta) in enumerate(signal_list):
+        col = row1_cols[i] if i < 3 else row2_cols[i - 3]
+        with col:
             srow = None
             if sname in latest_signals["signal_name"].values:
                 srow = latest_signals[latest_signals["signal_name"] == sname].iloc[0]
@@ -278,7 +270,7 @@ def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame
                 hist_values = tuple(all_s.sort_values("date")["value"].dropna().tolist())
 
             render_signal_card(
-                name=smeta["label"],
+                name=SIGNAL_DISPLAY_NAMES.get(sname, smeta["label"]),
                 status=status,
                 value=val,
                 unit=smeta["unit"],
