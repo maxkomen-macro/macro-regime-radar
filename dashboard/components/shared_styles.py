@@ -36,11 +36,21 @@ SIGNAL_DISPLAY_NAMES = {
 
 
 def section_header(title: str) -> None:
-    """Render a section header with a left accent bar (Bloomberg/FactSet panel style)."""
+    """Render a section header in the 3A design system style — 11px uppercase, muted."""
     st.markdown(
-        f'<h2 style="border-left:4px solid #4a9eff;padding-left:12px;'
-        f'margin-top:16px;margin-bottom:12px;color:#e6edf3;font-size:20px;'
-        f'font-weight:600;border-bottom:none">{title}</h2>',
+        f'<div style="font-size:11px;font-weight:600;text-transform:uppercase;'
+        f'letter-spacing:0.5px;color:#8899aa;padding-bottom:6px;'
+        f'border-bottom:1px solid #21262d;margin-bottom:10px;margin-top:16px">'
+        f'{title}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def subsection_header(title: str) -> None:
+    """Render a sub-section header — 12px normal case, lighter text, no border."""
+    st.markdown(
+        f'<div style="font-size:12px;font-weight:500;color:#c9d1d9;'
+        f'margin-top:12px;margin-bottom:6px">{title}</div>',
         unsafe_allow_html=True,
     )
 
@@ -64,6 +74,12 @@ def render_regime_badge(label: str) -> None:
     )
 
 
+_SIGNAL_TOOLTIPS = {
+    "Inflation pressure":  "Monitors CPI year-over-year for sustained above-target inflation",
+    "Curve inversion risk": "Monitors the 10Y–2Y Treasury spread for yield curve inversion",
+}
+
+
 def signal_card_html(
     name: str,
     status: str,
@@ -76,15 +92,21 @@ def signal_card_html(
     last_triggered_str: str,
     hist_values: tuple = (),
 ) -> str:
-    """Return dark-themed signal card as an HTML string (for embedding in CSS grid layouts).
+    """Return compact dark-themed signal card as an HTML string.
 
-    Same logic as render_signal_card() but returns HTML instead of calling st.markdown.
-    Includes name nowrap fix: card name is single-line with ellipsis overflow.
+    Layout: name + status dot (top row) | big value | thin gauge bar | last alert date.
     """
-    triggered = status == "TRIGGERED"
-    unit_str = (" " + unit) if unit else ""
+    # Unit formatting: no leading space for % units
+    if unit.startswith("%"):
+        unit_str = unit
+    elif unit:
+        unit_str = " " + unit
+    else:
+        unit_str = ""
 
-    # ── Gauge calculation ──────────────────────────────────────────────────────
+    value_display = f"{value:.2f}{unit_str}"
+
+    # ── Gauge calculation (unchanged logic) ────────────────────────────────────
     fill_pct = 0.0
     gauge_html = ""
     if hist_values:
@@ -112,16 +134,12 @@ def signal_card_html(
             gauge_color = "#da3633"
 
         gauge_html = (
-            f'<div style="font-size:9px;color:#484f58;margin-top:6px;margin-bottom:2px;">'
+            f'<div style="font-size:9px;color:#484f58;margin-top:8px;margin-bottom:3px;">'
             f'Threshold proximity</div>'
-            f'<div style="background:#21262d;border-radius:4px;height:16px;width:100%;'
-            f'overflow:hidden;margin:0 0 2px;">'
+            f'<div style="background:#21262d;border-radius:3px;height:4px;width:100%;'
+            f'overflow:hidden;margin-bottom:8px;">'
             f'<div style="background:{gauge_color};height:100%;width:{fill_pct:.0f}%;'
-            f'border-radius:4px;"></div></div>'
-            f'<div style="display:flex;justify-content:space-between;font-size:11px;'
-            f'color:#8899aa;margin-bottom:2px;">'
-            f'<span>Current: {value:.2f}{unit_str}</span>'
-            f'<span>Trigger: {threshold}</span></div>'
+            f'border-radius:3px;"></div></div>'
         )
 
     # ── Status from fill_pct ──────────────────────────────────────────────────
@@ -135,32 +153,35 @@ def signal_card_html(
         status_label = "Triggered"
         status_color = "#da3633"
 
-    icon_html = (
-        f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
-        f'background:{status_color};flex-shrink:0;"></span>'
-        f'<span style="font-size:9px;color:{status_color};margin-left:4px">{status_label}</span>'
-    )
-
-    # Watch state gets a subtle amber border; all cards get a left accent bar
+    # Card border: full border, no left accent bar
     if status_label == "Watch":
-        card_side_border = "border:0.5px solid rgba(210,153,34,0.3);"
+        card_border = "border:0.5px solid rgba(210,153,34,0.3);"
     elif status_label == "Triggered":
-        card_side_border = "border:0.5px solid rgba(218,54,51,0.3);"
+        card_border = "border:0.5px solid rgba(218,54,51,0.3);"
     else:
-        card_side_border = "border:0.5px solid #21262d;"
+        card_border = "border:0.5px solid #21262d;"
+
+    # Optional tooltip for specific signals
+    tooltip = _SIGNAL_TOOLTIPS.get(name, "")
+    tooltip_attr = f' title="{tooltip}"' if tooltip else ""
 
     return (
-        f'<div style="background:#161b22;{card_side_border}'
-        f'border-left:4px solid {status_color};border-radius:8px;padding:12px;'
-        f'height:100%;font-size:13px;line-height:1.8;color:#e6edf3">'
-        f'<div style="display:flex;align-items:center;margin-bottom:4px;">'
-        f'{icon_html}'
-        f'<b style="font-size:12px;color:#e6edf3;margin-left:6px;white-space:nowrap;'
-        f'overflow:hidden;text-overflow:ellipsis;display:block">{name}</b>'
+        f'<div style="background:#161b22;{card_border}border-radius:6px;padding:12px;"'
+        f'{tooltip_attr}>'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;'
+        f'margin-bottom:6px;">'
+        f'<span style="font-size:12px;font-weight:500;color:#e6edf3;white-space:nowrap;'
+        f'overflow:hidden;text-overflow:ellipsis;max-width:65%">{name}</span>'
+        f'<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">'
+        f'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;'
+        f'background:{status_color};"></span>'
+        f'<span style="font-size:9px;color:{status_color}">{status_label}</span>'
         f'</div>'
-        f'<b style="color:#8899aa">Value:</b> {value:.2f}{unit_str}<br>'
-        f'<b style="color:#8899aa">Last alert:</b> {last_triggered_str}'
+        f'</div>'
+        f'<div style="font-size:18px;font-weight:600;color:#e6edf3;'
+        f'font-variant-numeric:tabular-nums;margin-bottom:2px;">{value_display}</div>'
         f'{gauge_html}'
+        f'<div style="font-size:10px;color:#484f58;">Last alert: {last_triggered_str}</div>'
         f'</div>'
     )
 

@@ -17,7 +17,7 @@ from components.db_helpers import (
     load_alert_feed,
     load_event_calendar,
 )
-from components.shared_styles import section_header
+from components.shared_styles import section_header, SIGNAL_DISPLAY_NAMES
 
 _ET = ZoneInfo("America/New_York")
 
@@ -33,7 +33,7 @@ def render_calendar_tab(latest_signals: pd.DataFrame) -> None:
     Args:
         latest_signals: latest row per signal_name from the signals table
     """
-    section_header("📅 Economic Calendar")
+    section_header("ECONOMIC CALENDAR")
     st.divider()
 
     calendar = load_event_calendar()
@@ -45,7 +45,7 @@ def render_calendar_tab(latest_signals: pd.DataFrame) -> None:
         st.caption(f"Last refreshed: {last_refresh} UTC")
 
     # ── Upcoming Events (14 days) ──────────────────────────────────────────────
-    st.markdown("**Upcoming Events — Next 14 Days**")
+    section_header("UPCOMING EVENTS — NEXT 14 DAYS")
     upcoming_14 = get_upcoming_events(calendar, days=14)
 
     if upcoming_14.empty:
@@ -65,7 +65,7 @@ def render_calendar_tab(latest_signals: pd.DataFrame) -> None:
     st.divider()
 
     # ── What to Watch Next ─────────────────────────────────────────────────────
-    st.markdown("### 👁 What to Watch Next")
+    section_header("WHAT TO WATCH NEXT")
     _render_what_to_watch(calendar, alerts, latest_signals)
 
 
@@ -101,30 +101,36 @@ def _render_events_table(df: pd.DataFrame, full: bool = False) -> None:
     for _, row in df.iterrows():
         imp      = row.get("importance", "medium")
         color    = IMP_COLORS.get(imp, "#888")
-        icon     = IMP_ICONS.get(imp, "⚪")
         name     = row["event_name"]
         raw_dt   = str(row.get("event_datetime", ""))
         time_str = _format_event_time(raw_dt)
         days_str = _days_until_str(raw_dt)
-        weight   = "700" if imp == "high" else "400"
-        bg       = "#fff8f8" if imp == "high" else "#fafafa"
+        weight = "700" if imp == "high" else "500"
 
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:10px;'
             f'padding:8px 12px;margin-bottom:6px;border-radius:6px;'
-            f'background:{bg};border-left:3px solid {color};color:#222">'
-            f'<span style="font-size:16px">{icon}</span>'
+            f'background:#161b22;border:0.5px solid #21262d;border-left:3px solid {color}">'
             f'<div style="flex:1">'
-            f'<span style="font-size:13px;font-weight:{weight};color:#111">{name}</span><br>'
-            f'<span style="font-size:11px;color:#666">{time_str}</span>'
+            f'<span style="font-size:13px;font-weight:{weight};color:#e6edf3">{name}</span><br>'
+            f'<span style="font-size:11px;color:#8899aa">{time_str}</span>'
             f'</div>'
             f'<div style="text-align:right">'
-            f'<span style="font-size:12px;color:#444;font-weight:600">{days_str}</span><br>'
+            f'<span style="font-size:12px;color:#c9d1d9;font-weight:600">{days_str}</span><br>'
             f'<span style="font-size:11px;color:{color}">{imp.upper()}</span>'
             f'</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
+
+
+def _fmt_event_date(event_datetime_str: str) -> str:
+    """Format event datetime as 'Mar 19, 2026'."""
+    try:
+        dt = datetime.fromisoformat(str(event_datetime_str).rstrip("Z"))
+        return dt.strftime("%b %-d, %Y")
+    except Exception:
+        return str(event_datetime_str)[:10]
 
 
 def _render_what_to_watch(
@@ -139,23 +145,26 @@ def _render_what_to_watch(
     if not upcoming_7.empty:
         high_events = upcoming_7[upcoming_7["importance"] == "high"]
         for _, row in high_events.iterrows():
-            dt_str = str(row.get("event_datetime", ""))[:10]
-            items.append(f"🔴 **{row['event_name']}** on {dt_str} — high importance macro release")
+            dt_str = _fmt_event_date(str(row.get("event_datetime", "")))
+            items.append(f"**{row['event_name']}** on {dt_str} — high importance macro release")
 
     # Active risk/watch alerts
     if not alerts.empty:
         top_alerts = alerts[alerts["level"].isin(["risk", "watch"])].head(3)
         for _, row in top_alerts.iterrows():
-            icon = LEVEL_ICONS.get(row["level"], "")
-            items.append(f"{icon} **Alert: {row['name']}** — {row['message'][:100]}")
+            raw_name = str(row["name"])
+            display_name = SIGNAL_DISPLAY_NAMES.get(raw_name, raw_name.replace("_", " ").title())
+            level_label = row["level"].capitalize()
+            items.append(f"**{level_label}: {display_name}** — {row['message'][:100]}")
 
     # Triggered signals
     if not latest_signals.empty:
         triggered = latest_signals[latest_signals["triggered"] == 1]
         for _, row in triggered.iterrows():
+            sname = str(row["signal_name"])
+            display_name = SIGNAL_DISPLAY_NAMES.get(sname, sname.replace("_", " ").title())
             items.append(
-                f"🚨 **Signal: {row['signal_name'].replace('_', ' ').title()}** triggered — "
-                f"value {float(row['value']):.2f}"
+                f"**Signal: {display_name}** triggered — value {float(row['value']):.2f}"
             )
 
     if not items:
@@ -163,8 +172,8 @@ def _render_what_to_watch(
         return
 
     st.markdown(
-        '<div style="background:#f8f9fa;border-left:4px solid #3498db;'
-        'padding:16px 20px;border-radius:6px;line-height:1.8">',
+        '<div style="background:#161b22;border:0.5px solid #21262d;border-left:4px solid #4a9eff;'
+        'padding:16px 20px;border-radius:6px;line-height:1.8;color:#c9d1d9">',
         unsafe_allow_html=True,
     )
     for item in items:

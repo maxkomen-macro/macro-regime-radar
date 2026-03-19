@@ -13,9 +13,8 @@ import streamlit as st
 from components.db_helpers import load_alert_feed
 from components.shared_styles import section_header
 
-LEVEL_COLORS = {"risk": "#e74c3c", "watch": "#f39c12", "info": "#3498db"}
+LEVEL_COLORS = {"risk": "#da3633", "watch": "#d29922", "info": "#4a9eff"}
 LEVEL_ICONS  = {"risk": "🔴", "watch": "🟡", "info": "🔵"}
-LEVEL_BG     = {"risk": "#fff0f0", "watch": "#fffbf0", "info": "#f0f6ff"}
 
 # Finance-friendly display for known signal/alert names
 # Maps raw name → (category, "why it matters" text)
@@ -40,7 +39,7 @@ def _friendly_name(raw: str) -> str:
 
 def render_alerts_tab() -> None:
     """Main entry point — call from app.py inside the Alerts tab."""
-    section_header("🚨 Alerts Feed")
+    section_header("ALERTS FEED")
     st.caption("Macro signal and market-based alerts, newest first.")
     st.divider()
 
@@ -94,8 +93,7 @@ def render_alerts_tab() -> None:
     # ── Card-style feed ────────────────────────────────────────────────────────
     for _, row in filtered.head(50).iterrows():
         lvl    = row.get("level", "info")
-        color  = LEVEL_COLORS.get(lvl, "#888")
-        bg     = LEVEL_BG.get(lvl, "#fafafa")
+        color  = LEVEL_COLORS.get(lvl, "#8899aa")
         icon   = LEVEL_ICONS.get(lvl, "")
         name   = str(row.get("name", ""))
         atype  = str(row.get("alert_type", ""))
@@ -124,18 +122,18 @@ def render_alerts_tab() -> None:
         # "Why it matters": prefer lookup, fall back to truncated raw message
         if why_it_matters is None:
             raw_msg = str(row.get("message", ""))
-            # Strip verbose debug suffix (everything after first sentence or 120 chars)
             why_it_matters = raw_msg.split(".")[0] if "." in raw_msg else raw_msg[:120]
 
         dt_str = str(row.get("date", ""))[:10]
 
         val_html = (
-            f'<div style="font-size:11px;color:#666;margin-top:3px">{val_line}</div>'
+            f'<div style="font-size:11px;color:#484f58;margin-top:3px">{val_line}</div>'
             if val_line else ""
         )
 
         st.markdown(
-            f'<div style="border-left:4px solid {color};background:{bg};color:#222;'
+            f'<div style="border-left:3px solid {color};background:#161b22;'
+            f'border:0.5px solid #21262d;border-left:3px solid {color};'
             f'border-radius:6px;padding:10px 14px;margin-bottom:10px">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
             f'<div>'
@@ -143,11 +141,11 @@ def render_alerts_tab() -> None:
             f'letter-spacing:.5px">{category}</span> '
             f'<span style="margin-left:4px;font-size:11px;background:{color};color:#fff;'
             f'padding:1px 7px;border-radius:8px">{lvl.upper()}</span>'
-            f'<br><span style="font-weight:700;font-size:14px;color:#111">{icon} {display_name}</span>'
+            f'<br><span style="font-weight:700;font-size:14px;color:#e6edf3">{display_name}</span>'
             f'</div>'
-            f'<span style="font-size:11px;color:#888;white-space:nowrap;padding-left:8px">{dt_str}</span>'
+            f'<span style="font-size:11px;color:#8899aa;white-space:nowrap;padding-left:8px">{dt_str}</span>'
             f'</div>'
-            f'<div style="font-size:13px;margin-top:5px;color:#333">{why_it_matters}</div>'
+            f'<div style="font-size:13px;margin-top:5px;color:#c9d1d9">{why_it_matters}</div>'
             f'{val_html}'
             f'</div>',
             unsafe_allow_html=True,

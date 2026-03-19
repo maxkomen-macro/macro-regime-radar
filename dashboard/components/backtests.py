@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.db_helpers import load_backtest_results, pivot_backtest
-from components.shared_styles import section_header
+from components.shared_styles import section_header, subsection_header
 
 HORIZONS = ["1M", "3M", "6M", "12M"]
 HORIZON_ORDER = {h: i for i, h in enumerate(HORIZONS)}
@@ -22,7 +22,7 @@ HORIZON_ORDER = {h: i for i, h in enumerate(HORIZONS)}
 
 def render_backtests() -> None:
     """Main entry point — call from app.py inside the Backtests tab."""
-    section_header("🧪 Signal & Regime Backtests")
+    section_header("SIGNAL & REGIME BACKTESTS")
     st.caption("Historical SPY forward returns following signal triggers and regime periods.")
     st.divider()
 
@@ -121,7 +121,7 @@ def render_backtests() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_avg_return_chart(df: pd.DataFrame) -> None:
-    st.markdown("**Avg Return by Horizon**")
+    subsection_header("Avg Return by Horizon")
     avg_df = df[df["metric"] == "avg_return"].copy()
     if avg_df.empty:
         st.info("avg_return data not available.")
@@ -151,7 +151,7 @@ def _render_avg_return_chart(df: pd.DataFrame) -> None:
 
 
 def _render_hit_rate_chart(df: pd.DataFrame) -> None:
-    st.markdown("**Hit Rate by Horizon**")
+    subsection_header("Hit Rate by Horizon")
     hr_df = df[df["metric"] == "hit_rate"].copy()
     if hr_df.empty:
         st.info("hit_rate data not available.")
