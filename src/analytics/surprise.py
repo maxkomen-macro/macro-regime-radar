@@ -149,8 +149,8 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
     """
     rows = []
 
-    # GS10 and GS2 — absolute weekly changes and z-scores
-    for series_id in ("GS10", "GS2"):
+    # DGS10 and DGS2 — absolute weekly changes and z-scores
+    for series_id in ("DGS10", "DGS2"):
         s = load_fred_weekly(conn, series_id)
         if len(s) < MIN_PERIODS:
             logger.warning("[surprise] %s: insufficient data (%d weeks), skipping.", series_id, len(s))
@@ -164,8 +164,8 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
             rows.append((f"{series_id}_weekly_chg_z", dt.strftime("%Y-%m-%d"), float(val)))
 
     # 10Y-2Y Yield Spread weekly change and z-score
-    gs10 = load_fred_weekly(conn, "GS10")
-    gs2  = load_fred_weekly(conn, "GS2")
+    gs10 = load_fred_weekly(conn, "DGS10")
+    gs2  = load_fred_weekly(conn, "DGS2")
     if len(gs10) >= MIN_PERIODS and len(gs2) >= MIN_PERIODS:
         spread     = (gs10 - gs2).dropna()
         spread_chg = weekly_abs_change(spread)

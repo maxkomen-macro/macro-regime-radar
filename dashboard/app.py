@@ -134,8 +134,8 @@ def compute_derived(_wide: pd.DataFrame) -> pd.DataFrame:
         d["CPI_YOY"] = (d["CPIAUCSL"] / d["CPIAUCSL"].shift(12) - 1) * 100
     if "UNRATE" in d.columns:
         d["UNRATE_3M"] = d["UNRATE"] - d["UNRATE"].shift(3)
-    if "GS10" in d.columns and "GS2" in d.columns:
-        d["SPREAD"] = d["GS10"] - d["GS2"]
+    if "DGS10" in d.columns and "DGS2" in d.columns:
+        d["SPREAD"] = d["DGS10"] - d["DGS2"]
     if "INDPRO" in d.columns:
         d["INDPRO_YOY"] = (d["INDPRO"] / d["INDPRO"].shift(12) - 1) * 100
         d["INDPRO_3M"]  = (d["INDPRO"] / d["INDPRO"].shift(3)  - 1) * 100
@@ -585,7 +585,7 @@ def _render_header_bar(latest_regime, as_of) -> None:
     try:
         with sqlite3.connect(DB_PATH) as _c:
             rows = _c.execute(
-                "SELECT value FROM raw_series WHERE series_id='GS10' ORDER BY date DESC LIMIT 2"
+                "SELECT value FROM raw_series WHERE series_id='DGS10' ORDER BY date DESC LIMIT 2"
             ).fetchall()
         if len(rows) == 2:
             gs10_now = float(rows[0][0])

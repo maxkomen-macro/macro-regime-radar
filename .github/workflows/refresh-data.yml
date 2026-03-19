@@ -4,6 +4,8 @@ on:
   schedule:
     # Daily at 11:00 UTC = 6:00 AM ET (before US market open)
     - cron: "0 11 * * *"
+    # Mon–Fri at 8:00 PM EDT = 00:00 UTC (fires Tue–Sat)
+    - cron: "0 0 * * 2-6"
   workflow_dispatch:  # Allow manual trigger from Actions tab
 
 permissions:

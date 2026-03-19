@@ -142,8 +142,8 @@ def compute_derived(wide: pd.DataFrame) -> pd.DataFrame:
         extras["CPI_YOY"]    = (d["CPIAUCSL"] / d["CPIAUCSL"].shift(12) - 1) * 100
     if "UNRATE" in d.columns:
         extras["UNRATE_3M"]  = d["UNRATE"] - d["UNRATE"].shift(3)
-    if "GS10" in d.columns and "GS2" in d.columns:
-        extras["SPREAD"]     = d["GS10"] - d["GS2"]
+    if "DGS10" in d.columns and "DGS2" in d.columns:
+        extras["SPREAD"]     = d["DGS10"] - d["DGS2"]
     if "INDPRO" in d.columns:
         extras["INDPRO_YOY"] = (d["INDPRO"] / d["INDPRO"].shift(12) - 1) * 100
     return d.assign(**extras) if extras else d
@@ -535,11 +535,11 @@ def build_charts(derived: pd.DataFrame, as_of: pd.Timestamp) -> list:
                     f"Difference between 10-year and 2-year Treasury yields — "
                     f"last {CHART_MONTHS} months through {as_of.strftime('%b %Y')}."
                 ),
-                "source": "Source: FRED (GS10, GS2)",
+                "source": "Source: FRED (DGS10, DGS2)",
                 "b64":    b64,
             })
     else:
-        print("[memo] WARNING: SPREAD (GS10/GS2) not available — skipping chart.")
+        print("[memo] WARNING: SPREAD (DGS10/DGS2) not available — skipping chart.")
 
     # 4) VIX (optional)
     s = _slice("VIXCLS")
@@ -744,7 +744,7 @@ _Z_LABELS_MEMO = {
     "GLD_weekly_ret_z":    "GLD (Gold)",
     "UUP_weekly_ret_z":    "UUP (USD)",
     "USO_weekly_ret_z":    "USO (Oil)",
-    "GS10_weekly_chg_z":   "10Y Treasury yield",
+    "DGS10_weekly_chg_z":  "10Y Treasury yield",
     "SPREAD_weekly_chg_z": "10Y–2Y Yield Spread",
     "CPI_yoy_z":           "CPI YoY",
     "VIX_weekly_chg_z":    "VIX (volatility)",
@@ -758,7 +758,7 @@ _Z_TO_RAW_MEMO = {
     "GLD_weekly_ret_z":    "GLD_weekly_ret",
     "UUP_weekly_ret_z":    "UUP_weekly_ret",
     "USO_weekly_ret_z":    "USO_weekly_ret",
-    "GS10_weekly_chg_z":   "GS10_weekly_chg",
+    "DGS10_weekly_chg_z":  "DGS10_weekly_chg",
     "SPREAD_weekly_chg_z": "SPREAD_weekly_chg",
     "CPI_yoy_z":           "CPI_yoy",
     "VIX_weekly_chg_z":    None,
@@ -798,11 +798,11 @@ def build_market_snapshot(market_df: pd.DataFrame, derived_df: pd.DataFrame, wid
 
     # Add rates from raw_series
     if not wide_df.empty:
-        gs2  = wide_df["GS2"].dropna()  if "GS2"  in wide_df.columns else pd.Series(dtype=float)
-        gs10 = wide_df["GS10"].dropna() if "GS10" in wide_df.columns else pd.Series(dtype=float)
+        gs2  = wide_df["DGS2"].dropna()  if "DGS2"  in wide_df.columns else pd.Series(dtype=float)
+        gs10 = wide_df["DGS10"].dropna() if "DGS10" in wide_df.columns else pd.Series(dtype=float)
         if not gs10.empty:
             rows.append({
-                "symbol": "GS10", "label": "10Y Treasury Yield",
+                "symbol": "DGS10", "label": "10Y Treasury Yield",
                 "ret_1w": float(gs10.iloc[-1]) if not gs10.empty else None,
                 "ret_1w_str": f"{float(gs10.iloc[-1]):.2f}%" if not gs10.empty else "N/A",
                 "direction": "—", "z_score": None, "z_str": "",

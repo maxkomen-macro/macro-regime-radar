@@ -75,7 +75,7 @@ Z_NOTABLE = 1.5
 Z_METRIC_LABELS = [
     ("SPY_weekly_ret_z",    "SPY",          "equity momentum"),
     ("VIX_weekly_chg_z",    "VIX",          "volatility"),
-    ("GS10_weekly_chg_z",   "10Y Treasury", "rate momentum"),
+    ("DGS10_weekly_chg_z",  "10Y Treasury", "rate momentum"),
     ("SPREAD_weekly_chg_z", "yield spread", "curve steepening"),
     ("CPI_yoy_z",           "CPI",          "inflation"),
     ("UNRATE_weekly_chg_z", "unemployment", "labor conditions"),
