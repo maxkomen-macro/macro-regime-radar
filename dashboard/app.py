@@ -7,12 +7,15 @@ Run:
 
 import re
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+
+from components.shared_styles import compute_momentum, generate_sparkline_b64, section_header
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config — standalone (no src.* imports to avoid FRED_API_KEY dependency)
@@ -536,6 +539,180 @@ def base_layout(title: str, y_title: str) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# UI Helpers — Phase 3A
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_header_bar(latest_regime, as_of) -> None:
+    """Two-row persistent header: brand + regime (row 1), market stats (row 2)."""
+    # ── SPY pct change (from market_daily) ──────────────────────────────────
+    spy_display, spy_color = "—", "#8899aa"
+    try:
+        with sqlite3.connect(DB_PATH) as _c:
+            rows = _c.execute(
+                "SELECT close FROM market_daily WHERE symbol='SPY' ORDER BY date DESC LIMIT 2"
+            ).fetchall()
+        if len(rows) == 2:
+            spy_now, spy_prev = float(rows[0][0]), float(rows[1][0])
+            chg = (spy_now - spy_prev) / spy_prev
+            spy_display = f"{chg:+.2%}"
+            spy_color = "#3fb950" if chg >= 0 else "#da3633"
+    except Exception:
+        pass
+
+    # ── VIX (monthly from raw_series) ───────────────────────────────────────
+    vix_value_html = '<span style="font-size:13px;font-weight:600;color:#8899aa;">—</span>'
+    try:
+        with sqlite3.connect(DB_PATH) as _c:
+            rows = _c.execute(
+                "SELECT value FROM raw_series WHERE series_id='VIXCLS' ORDER BY date DESC LIMIT 2"
+            ).fetchall()
+        if rows:
+            vix_now = float(rows[0][0])
+            if len(rows) == 2:
+                vix_chg = vix_now - float(rows[1][0])
+                chg_color = "#da3633" if vix_chg > 0 else "#3fb950"
+                vix_value_html = (
+                    f'<span style="font-size:13px;font-weight:600;color:#e6edf3;">{vix_now:.1f}</span>'
+                    f'<span style="font-size:11px;font-weight:500;color:{chg_color};"> ({vix_chg:+.2f})</span>'
+                )
+            else:
+                vix_value_html = f'<span style="font-size:13px;font-weight:600;color:#e6edf3;">{vix_now:.1f}</span>'
+    except Exception:
+        pass
+
+    # ── GS10 in bps (monthly from raw_series) ───────────────────────────────
+    gs10_value_html = '<span style="font-size:13px;font-weight:600;color:#8899aa;">—</span>'
+    try:
+        with sqlite3.connect(DB_PATH) as _c:
+            rows = _c.execute(
+                "SELECT value FROM raw_series WHERE series_id='GS10' ORDER BY date DESC LIMIT 2"
+            ).fetchall()
+        if len(rows) == 2:
+            gs10_now = float(rows[0][0])
+            bps = round((gs10_now - float(rows[1][0])) * 100)
+            bps_color = "#da3633" if bps > 0 else "#3fb950"
+            gs10_value_html = (
+                f'<span style="font-size:13px;font-weight:600;color:#e6edf3;">{gs10_now:.2f}%</span>'
+                f'<span style="font-size:11px;font-weight:500;color:{bps_color};"> ({bps:+d}bps)</span>'
+            )
+        elif rows:
+            gs10_now = float(rows[0][0])
+            gs10_value_html = f'<span style="font-size:13px;font-weight:600;color:#e6edf3;">{gs10_now:.2f}%</span>'
+    except Exception:
+        pass
+
+    # ── Regime badge ─────────────────────────────────────────────────────────
+    BADGE_STYLES = {
+        "Overheating":    "background:rgba(218,54,51,0.12) !important;color:#f08785 !important;border:0.5px solid rgba(218,54,51,0.25)",
+        "Goldilocks":     "background:rgba(63,185,80,0.12) !important;color:#3fb950 !important;border:0.5px solid rgba(63,185,80,0.25)",
+        "Stagflation":    "background:rgba(210,153,34,0.12) !important;color:#d29922 !important;border:0.5px solid rgba(210,153,34,0.25)",
+        "Recession Risk": "background:rgba(218,54,51,0.20) !important;color:#f08785 !important;border:0.5px solid rgba(218,54,51,0.40)",
+    }
+    lbl = str(latest_regime["label"]) if latest_regime is not None else "—"
+    conf_pct = f"{float(latest_regime['confidence']):.1%}" if latest_regime is not None else "—"
+    badge_style = BADGE_STYLES.get(lbl, "background:#21262d !important;color:#8899aa !important;border:0.5px solid #484f58")
+
+    st.markdown(f"""
+<div style="border-bottom:1px solid #21262d;margin:0;padding:0;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px 8px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+        background:#4a9eff;box-shadow:0 0 6px rgba(74,158,255,0.4);flex-shrink:0;"></span>
+      <span style="font-size:15px;font-weight:600;letter-spacing:1.2px;
+        text-transform:uppercase;color:#e6edf3;white-space:nowrap;">Macro Regime Radar</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}">{lbl}</span>
+      <span style="font-size:11px;color:#6e7681;white-space:nowrap;">Conviction: {conf_pct}</span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;padding:0 20px 10px;">
+    <div style="display:flex;flex-direction:column;padding-right:16px;">
+      <span style="font-size:10px;color:#484f58;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">S&amp;P 500</span>
+      <span style="font-size:13px;font-weight:600;color:{spy_color};white-space:nowrap;">{spy_display}</span>
+    </div>
+    <div style="width:1px;height:14px;background:#21262d;margin:0 8px;"></div>
+    <div style="display:flex;flex-direction:column;padding-right:16px;padding-left:8px;">
+      <span style="font-size:10px;color:#484f58;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">VIX</span>
+      <div style="white-space:nowrap;">{vix_value_html}</div>
+    </div>
+    <div style="width:1px;height:14px;background:#21262d;margin:0 8px;"></div>
+    <div style="display:flex;flex-direction:column;padding-left:8px;">
+      <span style="font-size:10px;color:#484f58;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">US 10Y</span>
+      <div style="white-space:nowrap;">{gs10_value_html}</div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+def _render_timestamps(as_of) -> None:
+    """Row: macro data as-of · market data through · updated timestamp."""
+    macro_date = as_of.strftime("%b %Y") if as_of is not None else "—"
+    try:
+        with sqlite3.connect(DB_PATH) as _c:
+            row = _c.execute("SELECT MAX(date) FROM market_daily").fetchone()
+        mkt_date = pd.Timestamp(row[0]).strftime("%b %d, %Y") if row and row[0] else "—"
+    except Exception:
+        mkt_date = "—"
+    updated_str = datetime.now().strftime("%b %d, %Y at %I:%M %p ET")
+    st.markdown(
+        f'<div style="display:flex;justify-content:space-between;align-items:center;'
+        f'flex-wrap:nowrap;padding:4px 0 8px;">'
+        f'<span style="font-size:10px;color:#8899aa;white-space:nowrap;">Macro data as of {macro_date} · '
+        f'Market data through {mkt_date}</span>'
+        f'<span style="font-size:10px;color:#484f58;white-space:nowrap;">Updated {updated_str}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signals, as_of) -> None:
+    """Blue-left-bordered read-through box: regime commentary + playbook bias."""
+    if latest_regime is None:
+        return
+    try:
+        from components.db_helpers import load_playbook as _load_playbook
+    except Exception:
+        _load_playbook = lambda: {}
+
+    lbl  = str(latest_regime["label"])
+    conf = float(latest_regime["confidence"])
+    triggered_now = (
+        latest_signals[latest_signals["triggered"] == 1]["signal_name"].tolist()
+        if not latest_signals.empty else []
+    )
+    prev_regime_label = None
+    if not regimes_df.empty and as_of is not None:
+        prev_rows = regimes_df[regimes_df["date"] < as_of].sort_values("date")
+        if not prev_rows.empty:
+            prev_regime_label = str(prev_rows.iloc[-1]["label"])
+    dur_now = regime_duration_months(regimes_df, as_of) if as_of is not None else 0
+    interpretive_text = regime_commentary_rich(
+        lbl, conf, triggered_now, derived_df,
+        prev_label=prev_regime_label, regime_duration=dur_now,
+    )
+    playbook = _load_playbook()
+    playbook_text = playbook.get("baseline", "—") if playbook else "—"
+    st.markdown(
+        f'<div style="background:#161b22;border:0.5px solid #21262d;'
+        f'border-left:3px solid #4a9eff;border-radius:0 6px 6px 0;'
+        f'padding:12px 16px;margin-bottom:18px;">'
+        f'<div style="font-size:10px;font-weight:600;letter-spacing:0.5px;color:#8899aa;'
+        f'text-transform:uppercase;margin-bottom:6px;">Current read-through</div>'
+        f'<div style="font-size:13px;color:#c9d1d9;line-height:1.55;margin-bottom:10px;">'
+        f'{interpretive_text}</div>'
+        f'<div style="border-top:1px solid #21262d;padding-top:8px;'
+        f'display:flex;align-items:baseline;gap:8px;">'
+        f'<span style="font-size:10px;font-weight:600;letter-spacing:0.4px;color:#8899aa;">'
+        f'Playbook bias</span>'
+        f'<span style="font-size:12px;color:#c9d1d9;">{playbook_text}</span>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Page config + CSS
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -547,13 +724,69 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* ── Whitespace reduction ─────────────────────────────── */
-div.block-container { padding-top: 1rem; padding-bottom: 0rem; }
-[data-testid="stVerticalBlockBorderWrapper"] { gap: 0.3rem; }
-[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] { gap: 0.3rem; }
-/* ── Legacy helpers (kept for any remaining references) ─ */
-.sig-triggered { border-left: 4px solid #e74c3c; }
-.sig-ok         { border-left: 4px solid #2ecc71; }
+/* Streamlit 1.54.0 — Bloomberg-Grade UI Foundation */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ── Hide Streamlit toolbar for full-bleed header ─── */
+header[data-testid="stHeader"] { display: none !important; }
+div.block-container { padding-top: 0 !important; }
+
+/* ── Global font ──────────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Spacing reduction ────────────────────────────── */
+[data-testid="stVerticalBlock"] > div { gap: 0.25rem; }
+
+/* ── Tab bar — Streamlit 1.54.0 ──────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0px;
+    border-bottom: 1px solid #21262d;
+}
+.stTabs [data-baseweb="tab"] {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #8899aa;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.4px;
+    padding: 8px 12px;
+    white-space: nowrap;
+}
+.stTabs [aria-selected="true"][data-baseweb="tab"] {
+    background: transparent !important;
+    border-bottom: 2px solid #4a9eff !important;
+    color: #e6edf3 !important;
+}
+.stTabs [data-baseweb="tab"]:hover { color: #c9d1d9; }
+
+/* ── Legacy signal helpers ───────────────────────── */
+.sig-triggered { border-left: 4px solid #da3633; }
+.sig-ok        { border-left: 4px solid #3fb950; }
+
+/* ── Key Indicator KPI cards ─────────────────────── */
+[data-testid="stMetric"] {
+    background: #161b22;
+    border: 0.5px solid #21262d;
+    border-radius: 6px;
+    padding: 10px;
+}
+[data-testid="stMetricLabel"] > div {
+    font-size: 10px !important;
+    color: #8899aa !important;
+    margin-bottom: 4px;
+}
+[data-testid="stMetricValue"] > div {
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    color: #e6edf3 !important;
+}
+[data-testid="stMetricDelta"] > div {
+    font-size: 10px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -607,61 +840,31 @@ latest_signals = (
 regime_segs = merge_regime_segments(regimes_df)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Global header (always visible)
+# Persistent header bar
 # ─────────────────────────────────────────────────────────────────────────────
 
-st.markdown("# 📡 Macro Regime Radar")
-as_of_str = as_of.strftime("%B %Y") if as_of is not None else "N/A"
-st.markdown(f"*As of **{as_of_str}** · Last updated: {last_upd}*")
-
-# Market data freshness line
-try:
-    from components.db_helpers import get_market_freshness
-    _mf = get_market_freshness()
-    _mkt_parts = []
-    if _mf.get("last_daily_date"):
-        _mkt_parts.append(f"daily close: {_mf['last_daily_date']}")
-    if _mf.get("last_intraday_ts"):
-        _mkt_parts.append(f"intraday: {str(_mf['last_intraday_ts'])[:16]}")
-    if _mkt_parts:
-        st.caption(f"Market data — {' · '.join(_mkt_parts)}")
-        # Staleness warning: warn only if more than 1 business day behind
-        # (skips weekends and holidays naturally)
-        if _mf.get("last_daily_date"):
-            try:
-                import numpy as np
-                _last = pd.Timestamp(_mf["last_daily_date"]).date()
-                _today = pd.Timestamp.today().date()
-                _bdays_old = int(np.busday_count(_last, _today)) - 1
-                if _bdays_old > 1:
-                    st.warning(
-                        f"⚠️ Market data is {_bdays_old} trading day{'s' if _bdays_old != 1 else ''} behind "
-                        f"— re-run `python src/market_data/fetch_market.py --mode incremental`"
-                    )
-            except Exception:
-                pass
-except Exception:
-    pass
+_render_header_bar(latest_regime, as_of)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level tab navigation
 # ─────────────────────────────────────────────────────────────────────────────
 
-tab_dv, tab_ms, tab_macro, tab_bt, tab_al, tab_wp, tab_cal = st.tabs([
-    "⚡ Decision View",
-    "📊 Market Snapshot",
-    "📡 Macro",
-    "🧪 Backtests",
-    "🚨 Alerts",
-    "💲 What's Priced",
-    "📅 Calendar",
+tab_dash, tab_mkt, tab_sig, tab_hist, tab_cal, tab_meth = st.tabs([
+    "Dashboard", "Markets", "Signals & Alerts", "Historical Analysis", "Calendar", "Methodology"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB: Decision View
+# TAB: Dashboard (Decision View + Macro merged)
 # ─────────────────────────────────────────────────────────────────────────────
 
-with tab_dv:
+with tab_dash:
+    # ── Timestamps ───────────────────────────────────────────────────────────
+    _render_timestamps(as_of)
+
+    # ── Read-through box ─────────────────────────────────────────────────────
+    _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signals, as_of)
+
+    # ── Decision View (regime tile, risks, events, signals strip, surprises) ─
     try:
         from components.decision_view import render_decision_view
         render_decision_view(
@@ -674,57 +877,9 @@ with tab_dv:
     except Exception as exc:
         st.error(f"Decision View error: {exc}")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Market Snapshot
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_ms:
-    try:
-        from components.market_snapshot import render_market_snapshot
-        render_market_snapshot(wide_df=wide_df)
-    except Exception as exc:
-        st.error(f"Market Snapshot error: {exc}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Macro (existing content)
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_macro:
-    # ── SECTION 1 — Header / Regime Summary ──────────────────────────────────
     st.divider()
 
-    col_badge, col_stats = st.columns([1, 3])
-
-    with col_badge:
-        if latest_regime is not None:
-            lbl  = latest_regime["label"]
-            conf = float(latest_regime["confidence"])
-            from components.shared_styles import render_regime_badge
-            render_regime_badge(lbl)
-            st.markdown(f"**Confidence:** {conf:.1%}")
-        else:
-            st.warning("No regime data available.")
-
-    with col_stats:
-        if latest_regime is not None and as_of is not None:
-            dur  = regime_duration_months(regimes_df, as_of)
-            sw12 = max(0, regime_switches_n_months(regimes_df, as_of))
-            gt   = float(latest_regime["growth_trend"])
-            it   = float(latest_regime["inflation_trend"])
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Growth Trend",     f"{gt:.3f}")
-            c2.metric("Inflation Trend",  f"{it:.3f}")
-            c3.metric("Months in Regime", str(dur))
-            c4.metric("Switches (12M)",   str(sw12))
-
-    st.divider()
-
-    # ── SECTION 2 — KPI Strip ────────────────────────────────────────────────
-    from components.shared_styles import (
-        compute_momentum,
-        generate_sparkline_b64,
-        section_header,
-    )
+    # ── Key Indicators (KPI strip) ────────────────────────────────────────────
     section_header("Key Indicators")
 
     # rising_bad → rising is bad (red); rising_good → rising is good (green)
@@ -740,9 +895,9 @@ with tab_macro:
         direction = _KPI_DIRECTION.get(series_key, "rising_bad")
         rising = "Rising" in label or "Accelerating" in label
         if direction == "rising_bad":
-            return "#e74c3c" if rising else "#2ecc71"
+            return "#da3633" if rising else "#3fb950"
         else:
-            return "#2ecc71" if rising else "#e74c3c"
+            return "#3fb950" if rising else "#da3633"
 
     def _sparkline_and_momentum(col, series_key: str, derived_col: str) -> None:
         """Render sparkline + momentum label inside an already-active column context."""
@@ -760,7 +915,7 @@ with tab_macro:
             lbl, arrow, fixed_color = compute_momentum(vals)
             color = fixed_color if fixed_color is not None else _momentum_color(lbl, series_key)
             col.markdown(
-                f'<span style="color:{color};font-size:12px">{arrow} {lbl} (3M)</span>',
+                f'<span style="color:{color};font-size:12px">{lbl} (3M)</span>',
                 unsafe_allow_html=True,
             )
 
@@ -807,54 +962,7 @@ with tab_macro:
 
     st.divider()
 
-    # ── SECTION 3 — Signals Panel ─────────────────────────────────────────────
-    section_header("Signal Monitor")
-
-    sig_cols = st.columns(len(SIGNAL_META))
-
-    for i, (sname, smeta) in enumerate(SIGNAL_META.items()):
-        with sig_cols[i]:
-            srow = None
-            if not latest_signals.empty and sname in latest_signals["signal_name"].values:
-                srow = latest_signals[latest_signals["signal_name"] == sname].iloc[0]
-            all_s = (
-                signals_df[signals_df["signal_name"] == sname]
-                if not signals_df.empty else pd.DataFrame()
-            )
-
-            if srow is None:
-                st.markdown(f"**{smeta['label']}**\n\n*No data*")
-                continue
-
-            triggered  = bool(int(srow["triggered"]))
-            val        = float(srow["value"])
-            dur_s      = signal_active_periods(all_s)
-            last_t     = signal_last_triggered(all_s)
-            status     = "TRIGGERED" if triggered else "OK"
-            last_t_str = last_t.strftime("%b %Y") if last_t is not None else "Never"
-            distance   = abs(val - smeta["threshold"])
-
-            hist_values = ()
-            if not all_s.empty:
-                hist_values = tuple(all_s.sort_values("date")["value"].dropna().tolist())
-
-            from components.shared_styles import render_signal_card
-            render_signal_card(
-                name=smeta["label"],
-                status=status,
-                value=val,
-                unit=smeta["unit"],
-                threshold=smeta["threshold"],
-                direction=smeta["direction"],
-                distance=distance,
-                duration_str=dur_s,
-                last_triggered_str=last_t_str,
-                hist_values=hist_values,
-            )
-
-    st.divider()
-
-    # ── SECTION 4 — Charts ────────────────────────────────────────────────────
+    # ── Charts ────────────────────────────────────────────────────────────────
     section_header("Charts")
 
     if derived_df.empty:
@@ -863,7 +971,6 @@ with tab_macro:
         chart_df   = derived_df[derived_df.index >= win_start]
         reg_window = regime_segs[regime_segs["start"] >= win_start] if not regime_segs.empty else pd.DataFrame()
 
-        # Shared chart builder
         def make_line_fig(series: pd.Series, title: str, y_title: str,
                           color: str, hlines=None) -> go.Figure:
             s = apply_norm(series.dropna(), norm_mode)
@@ -949,7 +1056,7 @@ with tab_macro:
 
     st.divider()
 
-    # ── SECTION 5 — Regime History ────────────────────────────────────────────
+    # ── Regime History (Last 12 Months) ──────────────────────────────────────
     section_header("Regime History (Last 12 Months)")
 
     if regimes_df.empty:
@@ -993,44 +1100,7 @@ with tab_macro:
 
     st.divider()
 
-    # ── SECTION 6 — "What It Implies" commentary ──────────────────────────────
-    section_header("What It Implies")
-
-    if latest_regime is not None:
-        triggered_now = (
-            latest_signals[latest_signals["triggered"] == 1]["signal_name"].tolist()
-            if not latest_signals.empty else []
-        )
-        # Determine previous month's regime for trend comparison
-        prev_regime_label = None
-        if not regimes_df.empty and as_of is not None:
-            prev_rows = regimes_df[regimes_df["date"] < as_of].sort_values("date")
-            if not prev_rows.empty:
-                prev_regime_label = str(prev_rows.iloc[-1]["label"])
-        dur_now = regime_duration_months(regimes_df, as_of) if as_of is not None else 0
-
-        commentary = regime_commentary_rich(
-            latest_regime["label"],
-            float(latest_regime["confidence"]),
-            triggered_now,
-            derived_df,
-            prev_label=prev_regime_label,
-            regime_duration=dur_now,
-        )
-        border_color = REGIME_COLORS.get(latest_regime["label"], "#888")
-        st.markdown(
-            f'<div style="border-left:4px solid {border_color};background:rgba(255,255,255,0.04);'
-            f'padding:16px 20px;border-radius:0 6px 6px 0;font-size:15px;line-height:1.6;'
-            f'color:#e0e0e0">'
-            f'{commentary}</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.info("No regime data to generate commentary.")
-
-    st.divider()
-
-    # ── PRO C — Drivers Panel ("Why this regime?") ────────────────────────────
+    # ── Drivers Panel ("Why this regime?") ────────────────────────────────────
     section_header("Why This Regime? — Drivers Panel")
 
     if latest_regime is None or derived_df.empty:
@@ -1101,9 +1171,7 @@ with tab_macro:
             ]
             st.markdown("\n".join(bullets) if bullets else "*Insufficient data for z-score ranking.*")
 
-    st.divider()
-
-    # ── PRO D — Data Freshness & Quality ──────────────────────────────────────
+    # ── Data Freshness & Quality ──────────────────────────────────────────────
     with st.expander("Data Freshness & Quality"):
         if not freshness_df.empty:
             st.markdown("**Latest available date per series**")
@@ -1126,7 +1194,7 @@ with tab_macro:
         else:
             st.info("No freshness data available.")
 
-    # ── PRO E — Downloads ─────────────────────────────────────────────────────
+    # ── Downloads ─────────────────────────────────────────────────────────────
     section_header("Downloads")
 
     dl1, dl2, dl3 = st.columns(3)
@@ -1160,37 +1228,43 @@ with tab_macro:
             )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB: Backtests
+# TAB: Markets
 # ─────────────────────────────────────────────────────────────────────────────
 
-with tab_bt:
+with tab_mkt:
     try:
-        from components.backtests import render_backtests
-        render_backtests()
+        from components.market_snapshot import render_market_snapshot
+        render_market_snapshot(wide_df=wide_df)
     except Exception as exc:
-        st.error(f"Backtests error: {exc}")
+        st.error(f"Market Snapshot error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB: Alerts
+# TAB: Signals & Alerts
 # ─────────────────────────────────────────────────────────────────────────────
 
-with tab_al:
+with tab_sig:
     try:
         from components.alerts_tab import render_alerts_tab
         render_alerts_tab()
     except Exception as exc:
         st.error(f"Alerts error: {exc}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: What's Priced
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_wp:
+    st.markdown("---")
     try:
         from components.whats_priced import render_whats_priced
         render_whats_priced()
     except Exception as exc:
         st.error(f"What's Priced error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Historical Analysis
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_hist:
+    try:
+        from components.backtests import render_backtests
+        render_backtests()
+    except Exception as exc:
+        st.error(f"Backtests error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: Calendar
@@ -1202,3 +1276,20 @@ with tab_cal:
         render_calendar_tab(latest_signals=latest_signals)
     except Exception as exc:
         st.error(f"Calendar error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Methodology
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_meth:
+    st.info("Methodology content will be added in the next phase — regime definitions, signal thresholds, data sources, and update cadence.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Footer
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.markdown("""
+<div style="padding: 8px 20px; border-top: 1px solid #21262d; text-align: center; margin-top: 40px;">
+  <span style="font-size: 9px; color: #3d444d; letter-spacing: 0.3px;">Data: FRED · Polygon.io · Yahoo Finance</span>
+</div>
+""", unsafe_allow_html=True)

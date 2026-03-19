@@ -7,6 +7,7 @@ Provides:
   - render_signal_card(...)         — dark-themed signal card with distance gauge
   - generate_sparkline_b64(...)     — tiny trend chart as base64 PNG
   - compute_momentum(...)           — z-score-based 3-month momentum label
+  - SIGNAL_DISPLAY_NAMES            — maps DB signal_name keys to display names
 """
 
 import base64
@@ -24,26 +25,143 @@ REGIME_COLORS = {
     "Recession Risk": "#95a5a6",
 }
 
+# Maps raw DB signal_name values to professional display names
+SIGNAL_DISPLAY_NAMES = {
+    "yield_curve_inversion": "Curve inversion risk",
+    "unemployment_spike":    "Unemployment spike",
+    "cpi_hot":               "Inflation pressure",
+    "cpi_cold":              "Disinflation signal",
+    "vix_spike":             "VIX spike",
+}
+
 
 def section_header(title: str) -> None:
     """Render a section header with a left accent bar (Bloomberg/FactSet panel style)."""
     st.markdown(
         f'<h2 style="border-left:4px solid #4a9eff;padding-left:12px;'
-        f'margin-top:16px;margin-bottom:12px;color:#e0e0e0;font-size:20px;'
+        f'margin-top:16px;margin-bottom:12px;color:#e6edf3;font-size:20px;'
         f'font-weight:600;border-bottom:none">{title}</h2>',
         unsafe_allow_html=True,
     )
 
 
+_BADGE_MUTED_STYLES = {
+    "Overheating":    "background:rgba(218,54,51,0.12);color:#f08785;border:0.5px solid rgba(218,54,51,0.25)",
+    "Goldilocks":     "background:rgba(63,185,80,0.12);color:#3fb950;border:0.5px solid rgba(63,185,80,0.25)",
+    "Stagflation":    "background:rgba(210,153,34,0.12);color:#d29922;border:0.5px solid rgba(210,153,34,0.25)",
+    "Recession Risk": "background:rgba(218,54,51,0.20);color:#f08785;border:0.5px solid rgba(218,54,51,0.40)",
+}
+
+
 def render_regime_badge(label: str) -> None:
-    """Render a colored, rounded regime badge — identical style on every tab."""
-    color = REGIME_COLORS.get(label, "#888888")
+    """Render a muted translucent regime badge — consistent style on every tab."""
+    style = _BADGE_MUTED_STYLES.get(label, "background:#21262d;color:#8899aa;border:0.5px solid #484f58")
     st.markdown(
-        f'<div style="background:{color};color:white;font-weight:700;font-size:24px;'
-        f'padding:12px 24px;border-radius:8px;display:inline-block;'
-        f'text-shadow:0 1px 2px rgba(0,0,0,.3);letter-spacing:.3px">'
+        f'<div style="{style};font-weight:700;font-size:18px;'
+        f'padding:8px 20px;border-radius:6px;display:inline-block;letter-spacing:.3px">'
         f'{label}</div>',
         unsafe_allow_html=True,
+    )
+
+
+def signal_card_html(
+    name: str,
+    status: str,
+    value: float,
+    unit: str,
+    threshold: float,
+    direction: str,
+    distance: float,
+    duration_str: str,
+    last_triggered_str: str,
+    hist_values: tuple = (),
+) -> str:
+    """Return dark-themed signal card as an HTML string (for embedding in CSS grid layouts).
+
+    Same logic as render_signal_card() but returns HTML instead of calling st.markdown.
+    Includes name nowrap fix: card name is single-line with ellipsis overflow.
+    """
+    triggered = status == "TRIGGERED"
+    unit_str = (" " + unit) if unit else ""
+
+    # ── Gauge calculation ──────────────────────────────────────────────────────
+    fill_pct = 0.0
+    gauge_html = ""
+    if hist_values:
+        if direction == "above":
+            if threshold != 0:
+                fill_pct = (value / threshold) * 100
+            else:
+                fill_pct = 100.0 if value > 0 else 0.0
+        else:  # below: fills as value approaches threshold from above
+            if value <= threshold:
+                fill_pct = 100.0
+            elif value != 0:
+                fill_pct = (threshold / value) * 100
+            else:
+                fill_pct = 0.0
+        fill_pct = max(0.0, min(100.0, fill_pct))
+
+        if fill_pct < 50:
+            gauge_color = "#3fb950"
+        elif fill_pct < 75:
+            gauge_color = "#d29922"
+        elif fill_pct < 95:
+            gauge_color = "#e67e22"
+        else:
+            gauge_color = "#da3633"
+
+        gauge_html = (
+            f'<div style="font-size:9px;color:#484f58;margin-top:6px;margin-bottom:2px;">'
+            f'Threshold proximity</div>'
+            f'<div style="background:#21262d;border-radius:4px;height:16px;width:100%;'
+            f'overflow:hidden;margin:0 0 2px;">'
+            f'<div style="background:{gauge_color};height:100%;width:{fill_pct:.0f}%;'
+            f'border-radius:4px;"></div></div>'
+            f'<div style="display:flex;justify-content:space-between;font-size:11px;'
+            f'color:#8899aa;margin-bottom:2px;">'
+            f'<span>Current: {value:.2f}{unit_str}</span>'
+            f'<span>Trigger: {threshold}</span></div>'
+        )
+
+    # ── Status from fill_pct ──────────────────────────────────────────────────
+    if fill_pct < 50:
+        status_label = "Clear"
+        status_color = "#3fb950"
+    elif fill_pct < 75:
+        status_label = "Watch"
+        status_color = "#d29922"
+    else:
+        status_label = "Triggered"
+        status_color = "#da3633"
+
+    icon_html = (
+        f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
+        f'background:{status_color};flex-shrink:0;"></span>'
+        f'<span style="font-size:9px;color:{status_color};margin-left:4px">{status_label}</span>'
+    )
+
+    # Watch state gets a subtle amber border; all cards get a left accent bar
+    if status_label == "Watch":
+        card_side_border = "border:0.5px solid rgba(210,153,34,0.3);"
+    elif status_label == "Triggered":
+        card_side_border = "border:0.5px solid rgba(218,54,51,0.3);"
+    else:
+        card_side_border = "border:0.5px solid #21262d;"
+
+    return (
+        f'<div style="background:#161b22;{card_side_border}'
+        f'border-left:4px solid {status_color};border-radius:8px;padding:12px;'
+        f'height:100%;font-size:13px;line-height:1.8;color:#e6edf3">'
+        f'<div style="display:flex;align-items:center;margin-bottom:4px;">'
+        f'{icon_html}'
+        f'<b style="font-size:12px;color:#e6edf3;margin-left:6px;white-space:nowrap;'
+        f'overflow:hidden;text-overflow:ellipsis;display:block">{name}</b>'
+        f'</div>'
+        f'<b style="color:#8899aa">Value:</b> {value:.2f}{unit_str}<br>'
+        f'<b style="color:#8899aa">Last alert:</b> {last_triggered_str}'
+        f'{gauge_html}'
+        f'</div>'
     )
 
 
@@ -74,56 +192,13 @@ def render_signal_card(
     last_triggered_str: Formatted last-triggered date string (e.g., "Jan 2025" or "Never")
     hist_values:        Tuple of historical signal values (oldest→newest) for gauge calculation
     """
-    triggered = status == "TRIGGERED"
-    icon = "🔴" if triggered else "🟢"
-    border_color = "#e74c3c" if triggered else "#2ecc71"
-    unit_str = (" " + unit) if unit else ""
-
-    # ── Gauge calculation ──────────────────────────────────────────────────────
-    gauge_html = ""
-    if hist_values:
-        if triggered:
-            fill_pct = 100.0
-        else:
-            if direction == "above":
-                safe_floor = min(0.0, min(hist_values))
-                denom = threshold - safe_floor
-                fill_pct = ((value - safe_floor) / denom * 100) if denom > 0 else 0.0
-            else:  # below
-                safe_ceil = max(hist_values)
-                denom = safe_ceil - threshold
-                fill_pct = ((safe_ceil - value) / denom * 100) if denom > 0 else 0.0
-            fill_pct = max(0.0, min(100.0, fill_pct))
-
-        if fill_pct < 50:
-            gauge_color = "#2ecc71"
-        elif fill_pct < 75:
-            gauge_color = "#f1c40f"
-        elif fill_pct < 95:
-            gauge_color = "#e67e22"
-        else:
-            gauge_color = "#e74c3c"
-
-        gauge_html = (
-            f'<div style="background:#2a2a4a;border-radius:4px;height:16px;width:100%;'
-            f'overflow:hidden;margin:8px 0 2px;">'
-            f'<div style="background:{gauge_color};height:100%;width:{fill_pct:.0f}%;'
-            f'border-radius:4px;"></div></div>'
-            f'<div style="display:flex;justify-content:space-between;font-size:11px;'
-            f'color:#aaa;margin-bottom:2px;">'
-            f'<span>Current: {value:.2f}{unit_str}</span>'
-            f'<span>Trigger: {threshold}</span></div>'
-        )
-
     st.markdown(
-        f'<div style="background:#16213e;border:1px solid #2a2a4a;'
-        f'border-left:4px solid {border_color};border-radius:8px;padding:12px;'
-        f'height:100%;font-size:13px;line-height:1.8;color:#e0e0e0">'
-        f'<b style="font-size:14px;color:#fff">{icon} {name}</b><br>'
-        f'<b style="color:#ccc">Value:</b> {value:.2f}{unit_str}<br>'
-        f'<b style="color:#ccc">Last triggered:</b> {last_triggered_str}'
-        f'{gauge_html}'
-        f'</div>',
+        signal_card_html(
+            name=name, status=status, value=value, unit=unit,
+            threshold=threshold, direction=direction, distance=distance,
+            duration_str=duration_str, last_triggered_str=last_triggered_str,
+            hist_values=hist_values,
+        ),
         unsafe_allow_html=True,
     )
 
