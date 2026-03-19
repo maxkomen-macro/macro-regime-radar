@@ -15,7 +15,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from components.shared_styles import compute_momentum, generate_sparkline_b64, section_header
+from components.shared_styles import compute_momentum, generate_sparkline_b64, section_header, subsection_header
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config — standalone (no src.* imports to avoid FRED_API_KEY dependency)
@@ -622,8 +622,8 @@ def _render_header_bar(latest_regime, as_of) -> None:
         text-transform:uppercase;color:#e6edf3;white-space:nowrap;">Macro Regime Radar</span>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
-      <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}">{lbl}</span>
-      <span style="font-size:11px;color:#6e7681;white-space:nowrap;">Conviction: {conf_pct}</span>
+      <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}" title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>
+      <span style="font-size:11px;color:#6e7681;white-space:nowrap;" title="Reflects the statistical distance of current conditions from regime boundaries">Conviction: {conf_pct}</span>
     </div>
   </div>
   <div style="display:flex;align-items:center;padding:0 20px 10px;">
@@ -739,6 +739,9 @@ html, body, [class*="css"] {
 
 /* ── Spacing reduction ────────────────────────────── */
 [data-testid="stVerticalBlock"] > div { gap: 0.25rem; }
+div.stDivider { margin: 6px 0 !important; }
+hr { margin: 6px 0 !important; }
+[data-testid="stHorizontalBlock"] { gap: 0.5rem !important; }
 
 /* ── Tab bar — Streamlit 1.54.0 ──────────────────── */
 .stTabs [data-baseweb="tab-list"] {
@@ -773,6 +776,8 @@ html, body, [class*="css"] {
     border: 0.5px solid #21262d;
     border-radius: 6px;
     padding: 10px;
+    margin-bottom: 0 !important;
+    padding-bottom: 4px !important;
 }
 [data-testid="stMetricLabel"] > div {
     font-size: 10px !important;
@@ -795,7 +800,7 @@ html, body, [class*="css"] {
 # ─────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## ⚙️ Control Center")
+    st.markdown("**Control Center**")
     date_range  = st.radio("Chart window", ["6M", "1Y", "2Y", "Max"], index=2)
     overlay_reg = st.toggle("Overlay Regimes on Charts", value=False)
     norm_mode   = st.selectbox("Normalization", ["Raw", "Index to 100", "Z-score"])
@@ -1109,7 +1114,7 @@ with tab_dash:
         col_bar, col_tbl = st.columns([1, 2])
 
         with col_bar:
-            st.markdown("**Regime Inputs**")
+            subsection_header("Regime Inputs")
             gt = float(latest_regime["growth_trend"])
             it = float(latest_regime["inflation_trend"])
             fig_b = go.Figure(go.Bar(
@@ -1132,7 +1137,7 @@ with tab_dash:
             st.plotly_chart(fig_b, use_container_width=True)
 
         with col_tbl:
-            st.markdown("**Indicator Snapshot (latest)**")
+            subsection_header("Indicator Snapshot (latest)")
             snap_rows = []
             for col_name, disp_name, unit in [
                 ("CPI_YOY",    "CPI YoY",        "%"),
@@ -1150,7 +1155,7 @@ with tab_dash:
                 })
             st.dataframe(pd.DataFrame(snap_rows), hide_index=True, use_container_width=True)
 
-            st.markdown("**Top Drivers by |Z-score| vs. 2Y window**")
+            subsection_header("Top Drivers by |Z-score| vs. 2Y window")
             win_2y = derived_df[derived_df.index >= derived_df.index.max() - pd.DateOffset(months=24)]
             nice   = {
                 "CPI_YOY":    "CPI YoY",
@@ -1282,7 +1287,11 @@ with tab_cal:
 # ─────────────────────────────────────────────────────────────────────────────
 
 with tab_meth:
-    st.info("Methodology content will be added in the next phase — regime definitions, signal thresholds, data sources, and update cadence.")
+    try:
+        from components.methodology import render_methodology
+        render_methodology()
+    except Exception as exc:
+        st.error(f"Methodology error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Footer

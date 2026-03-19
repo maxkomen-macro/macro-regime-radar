@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from components.db_helpers import get_derived_latest, load_derived_metrics
-from components.shared_styles import section_header
+from components.shared_styles import section_header, subsection_header
 
 METRIC_GROUPS = [
     {
@@ -38,7 +38,7 @@ METRIC_GROUPS = [
 
 def render_whats_priced() -> None:
     """Main entry point — call from app.py inside the What's Priced tab."""
-    section_header("💲 What's Priced")
+    section_header("WHAT'S PRICED")
     st.caption("Policy rate proxies, inflation breakevens, and TIPS real yields — latest data from FRED.")
     st.divider()
 
@@ -52,7 +52,7 @@ def render_whats_priced() -> None:
 
     any_found = False
     for group in METRIC_GROUPS:
-        st.markdown(f"**{group['title']}**")
+        subsection_header(group['title'])
         cols = st.columns(len(group["metrics"]))
         group_found = False
 
@@ -78,7 +78,7 @@ def render_whats_priced() -> None:
     st.divider()
 
     # ── Interpretation ─────────────────────────────────────────────────────────
-    st.markdown("**Trader Interpretation**")
+    section_header("TRADER INTERPRETATION")
     _render_interpretation(dm)
 
 
@@ -148,10 +148,10 @@ def _render_interpretation(dm: pd.DataFrame) -> None:
         bullets.append(f"<b>BE term structure:</b> {body}")
 
     if bullets:
-        rows = "".join(f'<p style="margin:0 0 10px 0;color:#222">{b}</p>' for b in bullets)
+        rows = "".join(f'<p style="margin:0 0 10px 0;color:#c9d1d9">{b}</p>' for b in bullets)
         st.markdown(
-            f'<div style="background:#f8f9fa;border-left:4px solid #3498db;'
-            f'padding:16px 20px;border-radius:6px;line-height:1.8;color:#222">'
+            f'<div style="background:#161b22;border:0.5px solid #21262d;'
+            f'padding:16px 20px;border-radius:6px;line-height:1.8;">'
             f'{rows}</div>',
             unsafe_allow_html=True,
         )

@@ -21,7 +21,7 @@ from components.db_helpers import (
     render_surprises,
 )
 from components.tradingview import render_tv_groups
-from components.shared_styles import section_header
+from components.shared_styles import section_header, subsection_header
 
 WATCHLIST_SYMBOLS = ["SPY", "QQQ", "IWM", "TLT", "HYG", "LQD", "UUP", "GLD", "USO"]
 SYMBOL_LABELS = {
@@ -39,7 +39,7 @@ SYMBOL_LABELS = {
 
 def render_market_snapshot(wide_df: pd.DataFrame) -> None:
     """Main entry point — call from app.py inside the Market Snapshot tab."""
-    section_header("📊 Market Snapshot")
+    section_header("MARKET SNAPSHOT")
     st.divider()
 
     market_ok = has_market_data()
@@ -69,7 +69,7 @@ def render_market_snapshot(wide_df: pd.DataFrame) -> None:
     st.divider()
 
     # ── TradingView widgets ────────────────────────────────────────────────────
-    st.markdown("**Quick Charts (TradingView)**")
+    section_header("QUICK CHARTS (TRADINGVIEW)")
     render_tv_groups()
 
 
@@ -78,7 +78,7 @@ def render_market_snapshot(wide_df: pd.DataFrame) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_rates_bar(wide_df: pd.DataFrame) -> None:
-    st.markdown("**Rates**")
+    section_header("RATES")
     if wide_df.empty:
         st.info("Macro rates data unavailable.")
         return
@@ -119,7 +119,7 @@ def _render_watchlist(
     intraday_df: pd.DataFrame,
     dm: pd.DataFrame,
 ) -> None:
-    st.markdown("**Watchlist**")
+    section_header("WATCHLIST")
     if daily_df.empty:
         st.info("No market data available.")
         return

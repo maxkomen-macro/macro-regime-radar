@@ -11,6 +11,8 @@ Designed to surface the most critical information at a glance:
   - Playbook bias text
 """
 
+from datetime import datetime
+
 import pandas as pd
 import streamlit as st
 
@@ -25,7 +27,7 @@ from components.db_helpers import (
     load_playbook,
     render_surprises,
 )
-from components.shared_styles import render_regime_badge, render_signal_card, section_header, SIGNAL_DISPLAY_NAMES
+from components.shared_styles import render_regime_badge, render_signal_card, section_header, subsection_header, SIGNAL_DISPLAY_NAMES
 
 REGIME_COLORS = {
     "Goldilocks":     "#2ecc71",
@@ -133,7 +135,7 @@ def _render_regime_tile(latest_regime, regimes_df, as_of) -> None:
 
 
 def _render_top_risks(alerts: pd.DataFrame) -> None:
-    st.markdown("**Top Risks**")
+    section_header("TOP RISKS")
     if alerts.empty:
         st.info("No alerts — run `python -m src.analytics.alerts`")
         return
@@ -164,10 +166,11 @@ def _render_top_risks(alerts: pd.DataFrame) -> None:
         val_str = f"  |  {row['value']:.2f}" if pd.notna(row.get("value")) else ""
         st.markdown(
             f'<div style="border-left:3px solid {color};padding:8px 12px;'
-            f'margin-bottom:8px;background:#fafafa;border-radius:4px">'
-            f'<div style="font-size:13px;font-weight:600">{icon} {row["name"]}</div>'
-            f'<div style="font-size:12px;color:#555;margin-top:2px">{row["message"][:120]}</div>'
-            f'<div style="font-size:11px;color:#888;margin-top:2px">'
+            f'margin-bottom:8px;background:#161b22;border:0.5px solid #21262d;'
+            f'border-left:3px solid {color};border-radius:4px">'
+            f'<div style="font-size:13px;font-weight:600;color:#e6edf3">{row["name"]}</div>'
+            f'<div style="font-size:12px;color:#8899aa;margin-top:2px">{row["message"][:120]}</div>'
+            f'<div style="font-size:11px;color:#484f58;margin-top:2px">'
             f'{str(row["date"])[:10]}{val_str}</div>'
             f'</div>',
             unsafe_allow_html=True,
@@ -178,7 +181,7 @@ def _render_top_risks(alerts: pd.DataFrame) -> None:
 
 
 def _render_upcoming_events(calendar: pd.DataFrame, days: int = 7) -> None:
-    st.markdown(f"**Upcoming Events (next {days}d)**")
+    section_header("UPCOMING EVENTS")
     upcoming = get_upcoming_events(calendar, days=days)
     if upcoming.empty:
         st.info("No events in the next 7 days.")
@@ -202,7 +205,7 @@ def _render_upcoming_events(calendar: pd.DataFrame, days: int = 7) -> None:
 
 
 def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame) -> None:
-    st.markdown("**Signal Monitor**")
+    section_header("SIGNAL MONITOR")
     if latest_signals.empty:
         st.info("No signal data loaded — run `python -m src.analytics.signals`")
         return
@@ -258,7 +261,13 @@ def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame
                     if not triggered_rows.empty:
                         last_trig_date = str(triggered_rows.iloc[0]["date"])[:10]
 
-            last_triggered_str = last_trig_date if last_trig_date else "Never"
+            if last_trig_date:
+                try:
+                    last_triggered_str = datetime.strptime(last_trig_date[:10], "%Y-%m-%d").strftime("%b %Y")
+                except ValueError:
+                    last_triggered_str = last_trig_date
+            else:
+                last_triggered_str = "Never"
 
             # Track as-of date for caption
             row_date = str(srow.get("date", ""))[:10]
@@ -287,7 +296,7 @@ def _render_signals_strip(latest_signals: pd.DataFrame, signals_df: pd.DataFrame
 
 
 def _render_priced_highlights(dm: pd.DataFrame) -> None:
-    st.markdown("**What's Priced — Highlights**")
+    section_header("WHAT'S PRICED")
     if dm.empty:
         st.info("No priced data — run `python -m src.analytics.priced`")
         return

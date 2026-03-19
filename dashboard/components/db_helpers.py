@@ -413,12 +413,13 @@ def render_surprises(dm: pd.DataFrame, top_n: int = 10, title: str = "Top Surpri
     Shared helper used in Decision View and Market Snapshot.
     """
     import streamlit as st
+    from components.shared_styles import section_header
     surprises = build_surprises_df(dm, top_n)
     if surprises.empty:
         st.info("No surprise data available — run `python -m src.analytics.surprise`")
         return
 
-    st.markdown(f"**{title}**")
+    section_header(title.upper())
     for i, row in surprises.iterrows():
         z    = row["z_score"]
         icon = "🔴" if abs(z) >= 2.5 else ("🟡" if abs(z) >= 1.5 else "🔵")
@@ -429,7 +430,7 @@ def render_surprises(dm: pd.DataFrame, top_n: int = 10, title: str = "Top Surpri
   <span style="font-size:16px">{icon}</span>
   <div style="flex:1">
     <div style="font-size:13px;line-height:1.4">{row['interpretation']}</div>
-    <div style="height:4px;border-radius:2px;background:#eee;margin-top:3px">
+    <div style="height:4px;border-radius:2px;background:#21262d;margin-top:3px">
       <div style="width:{bar_pct}%;height:4px;background:{bar_color};border-radius:2px"></div>
     </div>
   </div>
