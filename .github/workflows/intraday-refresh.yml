@@ -1,6 +1,6 @@
 name: Intraday Market Refresh
 
-on:
+"on":
   schedule:
     # Every 5 minutes, Mon-Fri, 13:30–21:00 UTC = 9:30 AM–5:00 PM ET
     - cron: "*/5 13-20 * * 1-5"
