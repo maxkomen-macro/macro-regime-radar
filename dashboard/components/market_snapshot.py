@@ -362,7 +362,7 @@ body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe 
 .card {{
   background:#1a1d23; border-radius:10px;
   border:0.5px solid #30363d; border-top:3px solid {group_color};
-  padding:14px;
+  padding:14px; max-width:420px;
 }}
 .pill-up   {{ background-color:#3fb950; color:#173404; font-size:10px; font-weight:500; padding:3px 7px; border-radius:4px; display:inline-block; }}
 .pill-down {{ background-color:#f08785; color:#4A1B0C; font-size:10px; font-weight:500; padding:3px 7px; border-radius:4px; display:inline-block; }}
@@ -489,7 +489,7 @@ def render_market_snapshot(wide_df: pd.DataFrame) -> None:
         if is_heatmap:
             _render_sector_heatmap(prices)
         else:
-            n_cols = 5 if group_name == "Commodities" else min(len(group_symbols), 4)
+            n_cols = 5 if group_name == "Commodities" else (min(len(group_symbols), 4) if len(group_symbols) > 2 else 3)
             cols   = st.columns(n_cols)
             for i, sym in enumerate(group_symbols):
                 with cols[i % n_cols]:
