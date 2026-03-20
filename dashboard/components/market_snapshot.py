@@ -12,6 +12,7 @@ Displays:
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from components.db_helpers import (
     get_current_prices,
@@ -249,14 +250,14 @@ def _render_sector_heatmap(prices: dict) -> None:
         ("XLK", "Technology"),
     ]
 
-    def _intensity(ret: float) -> str:
-        """Return rgba background color scaled by return magnitude."""
-        abs_ret = min(abs(ret), 0.03)   # cap at 3% for color scaling
-        alpha   = abs_ret / 0.03 * 0.22
-        if ret >= 0:
-            return f"rgba(63,185,80,{alpha:.2f})"
-        else:
-            return f"rgba(240,135,133,{alpha:.2f})"
+    def _hm_bg(ret: float) -> str:
+        """Return rgba background color for heatmap cell by return magnitude."""
+        if ret > 0.02:   return "rgba(63,185,80,0.28)"
+        if ret > 0.01:   return "rgba(63,185,80,0.19)"
+        if ret > 0:      return "rgba(63,185,80,0.09)"
+        if ret < -0.02:  return "rgba(240,135,133,0.28)"
+        if ret < -0.01:  return "rgba(240,135,133,0.19)"
+        return "rgba(240,135,133,0.09)"
 
     cells_html = ""
     for sym, name in SECTORS:
@@ -265,40 +266,33 @@ def _render_sector_heatmap(prices: dict) -> None:
             continue
         ret   = p.get("chg_1d_pct", 0) or 0
         price = p.get("close", 0) or 0
-        bg    = _intensity(ret)
+        bg    = _hm_bg(ret)
         color = "#3fb950" if ret >= 0 else "#f08785"
         sign  = "+" if ret >= 0 else ""
         cells_html += f"""
-        <div style="
-            background:{bg};
-            border:0.5px solid var(--color-border-tertiary);
-            border-radius:8px;padding:10px 12px;
-            display:flex;justify-content:space-between;align-items:center;
-        ">
+        <div class="cell" style="background-color:{bg} !important;">
           <div>
-            <div style="font-size:12px;font-weight:500;
-                        color:var(--color-text-primary)">{sym}</div>
-            <div style="font-size:10px;color:var(--color-text-tertiary);
-                        margin-top:1px">{name}</div>
+            <div style="font-size:12px;font-weight:500;color:#e6edf3">{sym}</div>
+            <div style="font-size:10px;color:#8b949e;margin-top:1px">{name}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:13px;font-weight:500;color:{color}">
-              {sign}{ret:.2%}
-            </div>
-            <div style="font-size:10px;color:var(--color-text-tertiary)">
-              {price:.2f}
-            </div>
+            <div style="font-size:13px;font-weight:500;color:{color}">{sign}{ret:.2%}</div>
+            <div style="font-size:10px;color:#8b949e">{price:.2f}</div>
           </div>
         </div>"""
 
-    st.markdown(
-        f"""
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);
-                    gap:6px;margin-bottom:8px">
-          {cells_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
+    components.html(
+        f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+* {{ box-sizing:border-box; margin:0; padding:0; }}
+body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
+.grid {{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }}
+.cell {{ border:0.5px solid #30363d; border-radius:8px; padding:10px 12px;
+         display:flex; justify-content:space-between; align-items:center; }}
+</style></head>
+<body><div class="grid">{cells_html}</div></body></html>""",
+        height=70,
+        scrolling=False,
     )
 
 
@@ -306,7 +300,7 @@ def _render_sector_heatmap(prices: dict) -> None:
 # Per-ticker card
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_ticker_card(sym: str, p: dict, group_color: str) -> None:
+def _render_ticker_card(sym: str, p: dict, group_color: str, sparkline_bars=None) -> None:
     """
     Render a single ticker as a styled card with:
       - Color accent bar at top matching group color
@@ -326,8 +320,7 @@ def _render_ticker_card(sym: str, p: dict, group_color: str) -> None:
     zscore  = p.get("weekly_z")   or 0
     name    = SYMBOL_LABELS.get(sym, sym)
 
-    pill_color = "#3fb950" if chg_1d >= 0 else "#f08785"
-    pill_bg    = "rgba(63,185,80,0.1)" if chg_1d >= 0 else "rgba(240,135,133,0.1)"
+    pill_cls   = "pill-up" if chg_1d >= 0 else "pill-down"
     sign_1d    = "+" if chg_1d >= 0 else ""
     sign_1w    = "+" if chg_1w >= 0 else ""
     sign_1m    = "+" if chg_1m >= 0 else ""
@@ -336,80 +329,72 @@ def _render_ticker_card(sym: str, p: dict, group_color: str) -> None:
 
     # Z-score badge
     if zscore > 1.5:
-        z_bg    = "rgba(240,135,133,0.12)"
-        z_color = "#f08785"
+        z_cls = "zscore-hot"
     elif zscore < -1.5:
-        z_bg    = "rgba(55,138,221,0.12)"
-        z_color = "#378ADD"
+        z_cls = "zscore-cold"
     else:
-        z_bg    = "var(--color-border-tertiary)"
-        z_color = "var(--color-text-tertiary)"
+        z_cls = "zscore-neutral"
     z_text = f"{zscore:+.2f}σ" if zscore else "—"
 
-    st.markdown(
-        f"""
-        <div style="
-            background:var(--color-background-secondary);
-            border-radius:10px;
-            border:0.5px solid var(--color-border-tertiary);
-            padding:14px;
-            position:relative;
-            overflow:hidden;
-        ">
-          <div style="
-              position:absolute;top:0;left:0;right:0;
-              height:2px;background:{group_color};
-              border-radius:10px 10px 0 0;
-          "></div>
-          <div style="display:flex;justify-content:space-between;
-                      align-items:flex-start;margin-bottom:8px">
-            <div>
-              <div style="font-size:13px;font-weight:500;
-                          color:var(--color-text-primary);line-height:1">
-                {sym}
-              </div>
-              <div style="font-size:10px;color:var(--color-text-tertiary);
-                          margin-top:3px">{name}</div>
-            </div>
-            <span style="
-                font-size:10px;font-weight:500;
-                padding:3px 7px;border-radius:4px;
-                color:{pill_color};background:{pill_bg};
-            ">{sign_1d}{chg_1d:.2%}</span>
-          </div>
-          <div style="font-size:20px;font-weight:500;
-                      color:var(--color-text-primary);
-                      letter-spacing:-0.02em;
-                      line-height:1;margin-bottom:8px">
-            {close:.2f}
-          </div>
-          <div style="display:flex;align-items:center;
-                      justify-content:space-between">
-            <span style="font-size:10px;color:var(--color-text-tertiary)">
-              1W <span style="color:{w1_color};font-weight:500">
-                {sign_1w}{chg_1w:.2%}
-              </span>
-            </span>
-            <span style="font-size:10px;color:var(--color-text-tertiary)">
-              1M <span style="color:{m1_color};font-weight:500">
-                {sign_1m}{chg_1m:.2%}
-              </span>
-            </span>
-            <span style="
-                font-size:9px;font-weight:500;
-                padding:2px 5px;border-radius:3px;
-                color:{z_color};background:{z_bg};
-            ">{z_text}</span>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    # Build sparkline HTML (only if bars provided)
+    sparkline_html = ""
+    if sparkline_bars is not None:
+        spark_color = '#3fb950' if chg_1d >= 0 else '#f08785'
+        bars_html = ''.join([
+            f'<div style="width:4px;height:{h}px;background:{spark_color};'
+            f'opacity:0.7;border-radius:1px;flex-shrink:0"></div>'
+            for h in sparkline_bars
+        ])
+        sparkline_html = (
+            '<div style="display:flex;align-items:flex-end;gap:2px;'
+            'height:28px;margin-bottom:8px">'
+            f'{bars_html}'
+            '</div>'
+        )
+
+    card_height = 175
+
+    components.html(
+        f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+* {{ box-sizing:border-box; margin:0; padding:0; }}
+body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
+.card {{
+  background:#1a1d23; border-radius:10px;
+  border:0.5px solid #30363d; border-top:3px solid {group_color};
+  padding:14px;
+}}
+.pill-up   {{ background-color:#3fb950; color:#173404; font-size:10px; font-weight:500; padding:3px 7px; border-radius:4px; display:inline-block; }}
+.pill-down {{ background-color:#f08785; color:#4A1B0C; font-size:10px; font-weight:500; padding:3px 7px; border-radius:4px; display:inline-block; }}
+.zscore-hot     {{ background-color:#f08785; color:#4A1B0C; font-size:9px; font-weight:500; padding:2px 5px; border-radius:3px; display:inline-block; }}
+.zscore-cold    {{ background-color:#378ADD; color:#042C53; font-size:9px; font-weight:500; padding:2px 5px; border-radius:3px; display:inline-block; }}
+.zscore-neutral {{ color:#888780;           font-size:9px; font-weight:500; padding:2px 5px; border-radius:3px; display:inline-block; }}
+</style></head>
+<body><div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+    <div>
+      <div style="font-size:13px;font-weight:500;color:#e6edf3;line-height:1">{sym}</div>
+      <div style="font-size:10px;color:#8b949e;margin-top:3px">{name}</div>
+    </div>
+    <span class="{pill_cls}">{sign_1d}{chg_1d:.2%}</span>
+  </div>
+  <div style="font-size:20px;font-weight:500;color:#e6edf3;letter-spacing:-0.02em;line-height:1;margin-bottom:8px">{close:.2f}</div>
+  {sparkline_html}
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:10px;color:#8b949e">1W <span style="color:{w1_color};font-weight:500">{sign_1w}{chg_1w:.2%}</span></span>
+    <span style="font-size:10px;color:#8b949e">1M <span style="color:{m1_color};font-weight:500">{sign_1m}{chg_1m:.2%}</span></span>
+    <span class="{z_cls}">{z_text}</span>
+  </div>
+</div></body></html>""",
+        height=card_height,
+        scrolling=False,
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def render_market_snapshot(wide_df: pd.DataFrame) -> None:
     """
@@ -504,11 +489,18 @@ def render_market_snapshot(wide_df: pd.DataFrame) -> None:
         if is_heatmap:
             _render_sector_heatmap(prices)
         else:
-            n_cols = min(len(group_symbols), 4)
+            n_cols = 5 if group_name == "Commodities" else min(len(group_symbols), 4)
             cols   = st.columns(n_cols)
             for i, sym in enumerate(group_symbols):
                 with cols[i % n_cols]:
-                    _render_ticker_card(sym, prices.get(sym), group_color)
+                    spark = None
+                    sym_data = daily_df[daily_df["symbol"] == sym].sort_values("date")
+                    recent = sym_data["close"].tail(7).tolist()
+                    if len(recent) >= 7:
+                        mn, mx = min(recent), max(recent)
+                        rng = mx - mn if mx != mn else 1
+                        spark = [int(4 + ((v - mn) / rng) * 20) for v in recent]
+                    _render_ticker_card(sym, prices.get(sym), group_color, sparkline_bars=spark)
 
     # ── Top Surprises ──────────────────────────────────────────────────────────
     st.divider()
