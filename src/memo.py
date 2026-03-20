@@ -1172,14 +1172,35 @@ def generate_memo() -> None:
     regime_ctx = None
     if not regimes.empty:
         r = regimes.iloc[-1].to_dict()
+        prob_gl = r.get("prob_goldilocks")
+        prob_ov = r.get("prob_overheating")
+        prob_st = r.get("prob_stagflation")
+        prob_rr = r.get("prob_recession")
+        has_probs = all(
+            v is not None and not (isinstance(v, float) and np.isnan(v))
+            for v in [prob_gl, prob_ov, prob_st, prob_rr]
+        )
+        dominant_prob = max(float(prob_gl), float(prob_ov), float(prob_st), float(prob_rr)) if has_probs else r["confidence"]  # type: ignore[arg-type]
+        conviction_label = (
+            "High" if dominant_prob > 0.60
+            else "Moderate" if dominant_prob >= 0.40
+            else "Low"
+        )
         regime_ctx = {
             **r,
-            "badge_color":  REGIME_COLORS.get(r["label"], "#888888"),
-            "conf_pct":     f"{r['confidence'] * 100:.0f}%",
-            "growth_dir":   "Expanding" if r["growth_trend"] > 0 else "Contracting",
-            "infl_dir":     "Rising"    if r["inflation_trend"] > 0 else "Falling",
-            "growth_arrow": "▲" if r["growth_trend"] > 0 else "▼",
-            "infl_arrow":   "▲" if r["inflation_trend"] > 0 else "▼",
+            "badge_color":      REGIME_COLORS.get(r["label"], "#888888"),
+            "conf_pct":         f"{r['confidence'] * 100:.0f}%",
+            "growth_dir":       "Expanding" if r["growth_trend"] > 0 else "Contracting",
+            "infl_dir":         "Rising"    if r["inflation_trend"] > 0 else "Falling",
+            "growth_arrow":     "▲" if r["growth_trend"] > 0 else "▼",
+            "infl_arrow":       "▲" if r["inflation_trend"] > 0 else "▼",
+            "has_probs":        has_probs,
+            "prob_gl_pct":      f"{float(prob_gl):.0%}" if has_probs else None,  # type: ignore[arg-type]
+            "prob_ov_pct":      f"{float(prob_ov):.0%}" if has_probs else None,  # type: ignore[arg-type]
+            "prob_st_pct":      f"{float(prob_st):.0%}" if has_probs else None,  # type: ignore[arg-type]
+            "prob_rr_pct":      f"{float(prob_rr):.0%}" if has_probs else None,  # type: ignore[arg-type]
+            "conviction_label": conviction_label,
+            "dominant_prob_pct":f"{dominant_prob:.0%}" if has_probs else None,
         }
 
     # ── What Changed This Week ─────────────────────────────────────────────

@@ -612,6 +612,43 @@ def _render_header_bar(latest_regime, as_of) -> None:
     conf_pct = f"{float(latest_regime['confidence']):.1%}" if latest_regime is not None else "—"
     badge_style = BADGE_STYLES.get(lbl, "background:#21262d !important;color:#8899aa !important;border:0.5px solid #484f58")
 
+    # Build probability distribution display
+    PROB_ABBREVS = {"Goldilocks": "GL", "Overheating": "OV", "Stagflation": "ST", "Recession Risk": "RR"}
+    PROB_COLORS  = {"Goldilocks": "#3fb950", "Overheating": "#f08785", "Stagflation": "#d29922", "Recession Risk": "#95a5a6"}
+    regime_right_html = ""
+    if latest_regime is not None:
+        probs = {
+            "Goldilocks":    latest_regime.get("prob_goldilocks"),
+            "Overheating":   latest_regime.get("prob_overheating"),
+            "Stagflation":   latest_regime.get("prob_stagflation"),
+            "Recession Risk":latest_regime.get("prob_recession"),
+        }
+        has_probs = all(v is not None for v in probs.values())
+        if has_probs:
+            sorted_probs = sorted(probs.items(), key=lambda x: -float(x[1]))
+            dominant_prob_str = f"{float(sorted_probs[0][1]):.0%}"
+            secondary_pills = " &middot; ".join(
+                f'<span style="color:{PROB_COLORS[r]};font-size:10px">{PROB_ABBREVS[r]} {float(p):.0%}</span>'
+                for r, p in sorted_probs[1:]
+            )
+            regime_right_html = (
+                f'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">'
+                f'<div style="display:flex;align-items:center;gap:6px;">'
+                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}" '
+                f'title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>'
+                f'<span style="font-size:11px;font-weight:700;color:{PROB_COLORS.get(lbl, "#8899aa")};white-space:nowrap;">{dominant_prob_str}</span>'
+                f'</div>'
+                f'<div style="font-size:10px;color:#484f58;">{secondary_pills}</div>'
+                f'</div>'
+            )
+        else:
+            regime_right_html = (
+                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}" '
+                f'title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>'
+                f'<span style="font-size:11px;color:#6e7681;white-space:nowrap;" '
+                f'title="Reflects the statistical distance of current conditions from regime boundaries">Conviction: {conf_pct}</span>'
+            )
+
     st.markdown(f"""
 <div style="border-bottom:1px solid #21262d;margin:0;padding:0;">
   <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px 8px;">
@@ -622,8 +659,7 @@ def _render_header_bar(latest_regime, as_of) -> None:
         text-transform:uppercase;color:#e6edf3;white-space:nowrap;">Macro Regime Radar</span>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
-      <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}" title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>
-      <span style="font-size:11px;color:#6e7681;white-space:nowrap;" title="Reflects the statistical distance of current conditions from regime boundaries">Conviction: {conf_pct}</span>
+      {regime_right_html}
     </div>
   </div>
   <div style="display:flex;align-items:center;padding:0 20px 10px;">

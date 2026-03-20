@@ -527,8 +527,14 @@
         {{ regime.label }}
       </div>
       <div class="regime-meta">
-        <div class="conf">{{ regime.conf_pct }}</div>
-        <div class="conf-label">Model Confidence</div>
+        <div class="conf">{{ regime.dominant_prob_pct if regime.has_probs else regime.conf_pct }}</div>
+        <div class="conf-label">{% if regime.has_probs %}Dominant Probability{% else %}Model Confidence{% endif %}</div>
+        {% if regime.has_probs %}
+        <div style="margin-top:6px;font-size:12px;color:#aaa;">
+          Distribution: GL {{ regime.prob_gl_pct }} &bull; OV {{ regime.prob_ov_pct }} &bull; ST {{ regime.prob_st_pct }} &bull; RR {{ regime.prob_rr_pct }}
+        </div>
+        <div style="font-size:11px;color:#888;margin-top:2px;">Conviction: {{ regime.conviction_label }}</div>
+        {% endif %}
         <div class="trend-pills">
           <span class="trend-pill {% if regime.growth_arrow == '▲' %}up{% else %}down{% endif %}">
             {{ regime.growth_arrow }} Growth: {{ regime.growth_dir }}

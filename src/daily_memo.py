@@ -103,15 +103,23 @@ def _table_exists(table: str) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_regime() -> dict:
-    """Return current regime: label, confidence, as_of date."""
-    df = _load("SELECT label, confidence, date FROM regimes ORDER BY date DESC LIMIT 1")
+    """Return current regime: label, confidence, prob distribution, as_of date."""
+    df = _load(
+        "SELECT label, confidence, date, "
+        "prob_goldilocks, prob_overheating, prob_stagflation, prob_recession "
+        "FROM regimes ORDER BY date DESC LIMIT 1"
+    )
     if df.empty:
         return {"label": "Unknown", "confidence": 0.0, "as_of": "N/A"}
     row = df.iloc[0]
     return {
-        "label":      row["label"],
-        "confidence": float(row["confidence"]),
-        "as_of":      row["date"],
+        "label":            row["label"],
+        "confidence":       float(row["confidence"]),
+        "as_of":            row["date"],
+        "prob_goldilocks":  row.get("prob_goldilocks"),
+        "prob_overheating": row.get("prob_overheating"),
+        "prob_stagflation": row.get("prob_stagflation"),
+        "prob_recession":   row.get("prob_recession"),
     }
 
 
@@ -361,6 +369,37 @@ def build_html(
     confidence   = regime.get("confidence", 0.0)
     regime_as_of = regime.get("as_of", "")
 
+    # Build probability detail HTML
+    prob_gl = regime.get("prob_goldilocks")
+    prob_ov = regime.get("prob_overheating")
+    prob_st = regime.get("prob_stagflation")
+    prob_rr = regime.get("prob_recession")
+    has_probs = all(v is not None for v in [prob_gl, prob_ov, prob_st, prob_rr])
+    if has_probs:
+        prob_gl = float(prob_gl)  # type: ignore[arg-type]
+        prob_ov = float(prob_ov)  # type: ignore[arg-type]
+        prob_st = float(prob_st)  # type: ignore[arg-type]
+        prob_rr = float(prob_rr)  # type: ignore[arg-type]
+        dominant_prob = max(prob_gl, prob_ov, prob_st, prob_rr)
+        conviction_label = (
+            "High" if dominant_prob > 0.60
+            else "Moderate" if dominant_prob >= 0.40
+            else "Low"
+        )
+        regime_detail_html = (
+            f"<div style='color:#7f8c8d; font-size:11px; margin-top:4px;'>"
+            f"<b>{dominant_prob:.0%}</b> &bull; as of {regime_as_of}</div>"
+            f"<div style='color:#aaa; font-size:10px; margin-top:2px;'>"
+            f"GL {prob_gl:.0%} &bull; OV {prob_ov:.0%} &bull; "
+            f"ST {prob_st:.0%} &bull; RR {prob_rr:.0%}</div>"
+            f"<div style='color:#888; font-size:10px;'>Conviction: {conviction_label}</div>"
+        )
+    else:
+        regime_detail_html = (
+            f"<div style='color:#7f8c8d; font-size:11px; margin-top:4px;'>"
+            f"{confidence*100:.0f}% conf &bull; as of {regime_as_of}</div>"
+        )
+
     # ── 1. HEADER ─────────────────────────────────────────────────────────────
     header_html = f"""
     <div {_CARD}>
@@ -376,9 +415,7 @@ def build_html(
                        padding:5px 12px; border-radius:20px; white-space:nowrap;">
             {regime_label}
           </span>
-          <div style="color:#7f8c8d; font-size:11px; margin-top:4px;">
-            {confidence*100:.0f}% conf &bull; as of {regime_as_of}
-          </div>
+          {regime_detail_html}
         </div>
       </div>
     </div>
