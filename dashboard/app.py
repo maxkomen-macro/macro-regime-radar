@@ -580,7 +580,7 @@ def _render_header_bar(latest_regime, as_of) -> None:
     except Exception:
         pass
 
-    # ── GS10 in bps (monthly from raw_series) ───────────────────────────────
+    # ── DGS10 in bps (monthly from raw_series) ──────────────────────────────
     gs10_value_html = '<span style="font-size:13px;font-weight:600;color:#8899aa;">—</span>'
     try:
         with sqlite3.connect(DB_PATH) as _c:
