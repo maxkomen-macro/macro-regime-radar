@@ -13,6 +13,7 @@ Designed to surface the most critical information at a glance:
 
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -57,6 +58,8 @@ def render_decision_view(
 ) -> None:
     """Main entry point — call from app.py inside the Decision View tab."""
 
+    _render_regime_prob_distribution(latest_regime, regimes_df)
+
     st.divider()
 
     # Load new-table data
@@ -100,6 +103,79 @@ def render_decision_view(
 # ─────────────────────────────────────────────────────────────────────────────
 # Sub-renderers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _render_regime_prob_distribution(latest_regime, regimes_df: pd.DataFrame) -> None:
+    """Regime probability distribution — horizontal bars + last-month deltas."""
+    if latest_regime is None:
+        return
+
+    prob_gl = latest_regime.get("prob_goldilocks")
+    prob_ov = latest_regime.get("prob_overheating")
+    prob_st = latest_regime.get("prob_stagflation")
+    prob_rr = latest_regime.get("prob_recession")
+
+    if any(
+        v is None or (isinstance(v, float) and np.isnan(v))
+        for v in [prob_gl, prob_ov, prob_st, prob_rr]
+    ):
+        return  # silently skip if not yet populated
+
+    prob_gl  = float(prob_gl)
+    prob_ov  = float(prob_ov)
+    prob_st  = float(prob_st)
+    prob_rr  = float(prob_rr)
+
+    REGIME_PROB_MAP = {
+        "Goldilocks":    ("prob_goldilocks",  prob_gl,  "#2ecc71"),
+        "Overheating":   ("prob_overheating", prob_ov,  "#e67e22"),
+        "Stagflation":   ("prob_stagflation", prob_st,  "#e74c3c"),
+        "Recession Risk":("prob_recession",   prob_rr,  "#95a5a6"),
+    }
+
+    # Last month delta: find most recent prior row
+    cur_date = pd.Timestamp(str(latest_regime["date"])[:10])
+    prior_rows = regimes_df[regimes_df["date"] < cur_date].sort_values("date")
+    prev = prior_rows.iloc[-1] if not prior_rows.empty else None
+
+    section_header("REGIME PROBABILITY DISTRIBUTION")
+
+    sorted_regimes = sorted(REGIME_PROB_MAP.items(), key=lambda x: -x[1][1])
+
+    dominant_prob  = sorted_regimes[0][1][1]
+    dominant_label = sorted_regimes[0][0]
+    if dominant_prob > 0.60:
+        conviction_str = f"High conviction — {dominant_label}"
+    elif dominant_prob >= 0.40:
+        conviction_str = f"Moderate conviction — {dominant_label}"
+    else:
+        conviction_str = "Low conviction — regime transition possible"
+
+    for regime_name, (col_name, prob, color) in sorted_regimes:
+        delta_str = ""
+        if prev is not None and col_name in prev.index:
+            prev_val = prev[col_name]
+            if prev_val is not None and not (isinstance(prev_val, float) and np.isnan(prev_val)):
+                delta = prob - float(prev_val)
+                delta_str = f"({delta:+.0%} vs last mo)"
+
+        bar_col, lbl_col = st.columns([3, 1])
+        with bar_col:
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+                f'<span style="font-size:12px;width:110px;color:#e6edf3;flex-shrink:0">{regime_name}</span>'
+                f'<div style="flex:1;background:#21262d;border-radius:4px;height:8px">'
+                f'<div style="width:{prob*100:.1f}%;background:{color};height:8px;border-radius:4px"></div>'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+        with lbl_col:
+            st.markdown(
+                f'<span style="font-size:12px;color:#8899aa">{prob:.0%} {delta_str}</span>',
+                unsafe_allow_html=True,
+            )
+
+    st.caption(conviction_str)
+
 
 def _render_regime_tile(latest_regime, regimes_df, as_of) -> None:
     st.markdown("**Current Regime**")

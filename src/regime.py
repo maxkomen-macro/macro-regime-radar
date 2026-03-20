@@ -55,6 +55,83 @@ def compute_confidence(growth_zscore: float, inflation_zscore: float) -> float:
     return round(min(0.95, combined / (combined + 1)), 4)
 
 
+def compute_regime_probabilities(
+    growth_trend: float,
+    inflation_trend: float,
+    growth_z: float,
+    inflation_z: float,
+) -> dict:
+    """
+    Compute a probability distribution across all 4 macro regimes using
+    a softmax over signed z-score distances.
+
+    Each regime corresponds to a (growth_sign, inflation_sign) quadrant:
+      Goldilocks    = (+growth, -inflation)
+      Overheating   = (+growth, +inflation)
+      Stagflation   = (-growth, +inflation)
+      Recession Risk= (-growth, -inflation)
+
+    For each regime, affinity = (growth_sign * growth_z) + (inflation_sign * inflation_z).
+    Softmax with temperature=0.7 converts affinities to probabilities.
+
+    Returns dict with keys:
+      prob_goldilocks, prob_overheating, prob_stagflation, prob_recession
+    """
+    REGIME_SIGNS = {
+        "Goldilocks":    ( 1, -1),
+        "Overheating":   ( 1,  1),
+        "Stagflation":   (-1,  1),
+        "Recession Risk":(-1, -1),
+    }
+
+    # Handle NaN inputs gracefully — return uniform distribution
+    if np.isnan(growth_z) or np.isnan(inflation_z):
+        return {
+            "prob_goldilocks":  0.25,
+            "prob_overheating": 0.25,
+            "prob_stagflation": 0.25,
+            "prob_recession":   0.25,
+        }
+
+    # Determine actual data direction (+1 / -1) from trend signs
+    growth_dir = 1 if growth_trend > 0 else -1
+    infl_dir   = 1 if inflation_trend > 0 else -1
+    growth_mag = abs(growth_z)
+    infl_mag   = abs(inflation_z)
+
+    # Affinity: +magnitude if regime's expected direction matches data; -magnitude otherwise.
+    # This guarantees the current (correct-quadrant) regime always has the highest affinity,
+    # so the dominant probability always matches the label (required by TEST 2).
+    affinities = {
+        r: (growth_mag if gs == growth_dir else -growth_mag) +
+           (infl_mag   if is_ == infl_dir  else -infl_mag)
+        for r, (gs, is_) in REGIME_SIGNS.items()
+    }
+
+    # Softmax with temperature scaling
+    TEMPERATURE = 0.7
+    vals = np.array(list(affinities.values()), dtype=float)
+    vals = vals / TEMPERATURE
+    vals = vals - vals.max()   # numerical stability
+    exp_vals = np.exp(vals)
+    probs = exp_vals / exp_vals.sum()
+
+    result = {
+        "prob_goldilocks":  round(float(probs[0]), 4),
+        "prob_overheating": round(float(probs[1]), 4),
+        "prob_stagflation": round(float(probs[2]), 4),
+        "prob_recession":   round(float(probs[3]), 4),
+    }
+
+    # Fix rounding residual — add/subtract from dominant regime
+    total = sum(result.values())
+    if total != 1.0:
+        dominant = max(result, key=result.get)
+        result[dominant] = round(result[dominant] + (1.0 - total), 4)
+
+    return result
+
+
 def run_regime_classification(series_dict: dict) -> pd.DataFrame:
     """
     Classify each month into a macro regime.
@@ -65,7 +142,8 @@ def run_regime_classification(series_dict: dict) -> pd.DataFrame:
 
     Returns
     -------
-    pd.DataFrame with columns: date, label, confidence, growth_trend, inflation_trend
+    pd.DataFrame with columns: date, label, confidence, growth_trend, inflation_trend,
+                                prob_goldilocks, prob_overheating, prob_stagflation, prob_recession
     """
     growth    = series_dict["growth"]
     inflation = series_dict["inflation"]
@@ -87,12 +165,25 @@ def run_regime_classification(series_dict: dict) -> pd.DataFrame:
     labels      = df.apply(lambda r: classify_regime(r["growth_trend"], r["inflation_trend"]), axis=1)
     confidences = df.apply(lambda r: compute_confidence(r["growth_z"], r["inflation_z"]), axis=1)
 
+    probs_list = [
+        compute_regime_probabilities(
+            row["growth_trend"], row["inflation_trend"],
+            row["growth_z"], row["inflation_z"],
+        )
+        for _, row in df.iterrows()
+    ]
+    probs_df = pd.DataFrame(probs_list)
+
     return pd.DataFrame({
-        "date":            df.index.strftime("%Y-%m-%d"),
-        "label":           labels.values,
-        "confidence":      confidences.values,
-        "growth_trend":    df["growth_trend"].values,
-        "inflation_trend": df["inflation_trend"].values,
+        "date":             pd.DatetimeIndex(df.index).strftime("%Y-%m-%d"),
+        "label":            labels.values,
+        "confidence":       confidences.values,
+        "growth_trend":     df["growth_trend"].values,
+        "inflation_trend":  df["inflation_trend"].values,
+        "prob_goldilocks":  probs_df["prob_goldilocks"].values,
+        "prob_overheating": probs_df["prob_overheating"].values,
+        "prob_stagflation": probs_df["prob_stagflation"].values,
+        "prob_recession":   probs_df["prob_recession"].values,
     })
 
 
@@ -108,6 +199,10 @@ def save_regimes(df: pd.DataFrame) -> None:
                 row["confidence"],
                 row["growth_trend"],
                 row["inflation_trend"],
+                row["prob_goldilocks"],
+                row["prob_overheating"],
+                row["prob_stagflation"],
+                row["prob_recession"],
                 computed_at,
             )
             for _, row in df.iterrows()
@@ -115,13 +210,19 @@ def save_regimes(df: pd.DataFrame) -> None:
         conn.executemany(
             """
             INSERT INTO regimes
-                (date, label, confidence, growth_trend, inflation_trend, computed_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (date, label, confidence, growth_trend, inflation_trend,
+                 prob_goldilocks, prob_overheating, prob_stagflation, prob_recession,
+                 computed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date) DO UPDATE SET
                 label           = excluded.label,
                 confidence      = excluded.confidence,
                 growth_trend    = excluded.growth_trend,
                 inflation_trend = excluded.inflation_trend,
+                prob_goldilocks  = excluded.prob_goldilocks,
+                prob_overheating = excluded.prob_overheating,
+                prob_stagflation = excluded.prob_stagflation,
+                prob_recession   = excluded.prob_recession,
                 computed_at     = excluded.computed_at
             """,
             rows,
