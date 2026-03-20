@@ -96,12 +96,14 @@ def _upsert_daily(conn: sqlite3.Connection, rows: list[tuple]) -> int:
     return len(rows)
 
 
-def _upsert_intraday(conn: sqlite3.Connection, rows: list[tuple]) -> int:
+def _upsert_intraday(conn: sqlite3.Connection, rows: list[tuple], source: str = "yfinance") -> int:
+    # rows are 9-tuples: (symbol, ts, open, high, low, close, volume, vwap, fetched_at)
+    # splice source between vwap (index 7) and fetched_at (index 8)
     conn.executemany(
         """
         INSERT INTO market_intraday
             (symbol, ts, interval, open, high, low, close, volume, vwap, source, fetched_at)
-        VALUES (?, ?, '5m', ?, ?, ?, ?, ?, ?, 'polygon', ?)
+        VALUES (?, ?, '5m', ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(symbol, ts, interval) DO UPDATE SET
             open=excluded.open,
             high=excluded.high,
@@ -111,7 +113,7 @@ def _upsert_intraday(conn: sqlite3.Connection, rows: list[tuple]) -> int:
             vwap=excluded.vwap,
             fetched_at=excluded.fetched_at
         """,
-        rows,
+        [(*row[:8], source, row[8]) for row in rows],
     )
     return len(rows)
 
@@ -222,13 +224,15 @@ def run_incremental(client, assets: dict) -> None:
             conn.commit()
             logger.info("[fetch_market] %s daily: %d rows upserted.", symbol, n)
 
-        # Intraday (today only)
+        # Intraday (today only) — via yfinance, no API key required
+        from src.market_data.yfinance_client import YFinanceClient
+        yf_client = YFinanceClient()
         for symbol in assets.get("intraday", []):
             try:
-                df = client.fetch_intraday_5m(symbol, today_str, today_str)
+                df = yf_client.fetch_intraday_5m(symbol, today_str, today_str)
             except Exception as exc:
                 logger.warning(
-                    "[fetch_market] %s intraday fetch failed: %s — skipping.", symbol, exc
+                    "[fetch_market] %s intraday yfinance failed: %s — skipping.", symbol, exc
                 )
                 continue
 
@@ -240,10 +244,50 @@ def run_incremental(client, assets: dict) -> None:
                 (r.symbol, r.ts, r.open, r.high, r.low, r.close, r.volume, r.vwap, fetched_at)
                 for r in df.itertuples(index=False)
             ]
-            n = _upsert_intraday(conn, rows)
+            n = _upsert_intraday(conn, rows, source="yfinance")
             conn.commit()
             logger.info("[fetch_market] %s intraday: %d rows upserted.", symbol, n)
 
+    finally:
+        conn.close()
+
+
+# ── Intraday-only mode ────────────────────────────────────────────────────────
+
+def run_intraday_only() -> None:
+    """
+    Fetch latest 5m bars for all intraday symbols via yfinance.
+    Called by the intraday GitHub Actions workflow every 5 minutes.
+    Does NOT require POLYGON_API_KEY.
+    """
+    from src.market_data.yfinance_client import YFinanceClient
+
+    assets     = _load_assets()
+    client     = YFinanceClient()
+    today_str  = date.today().isoformat()
+    fetched_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    conn       = _get_conn()
+    try:
+        for symbol in assets.get("intraday", []):
+            try:
+                df = client.fetch_intraday_5m(symbol, today_str, today_str)
+            except Exception as exc:
+                logger.warning(
+                    "[fetch_market] %s intraday yfinance failed: %s — skipping.",
+                    symbol, exc,
+                )
+                continue
+            if df.empty:
+                logger.info("[fetch_market] %s: no intraday bars.", symbol)
+                continue
+            rows = [
+                (r.symbol, r.ts, r.open, r.high, r.low,
+                 r.close, r.volume, r.vwap, fetched_at)
+                for r in df.itertuples(index=False)
+            ]
+            n = _upsert_intraday(conn, rows, source="yfinance")
+            conn.commit()
+            logger.info("[fetch_market] %s intraday: %d rows upserted.", symbol, n)
     finally:
         conn.close()
 
@@ -281,12 +325,25 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch market data from Polygon.io")
     parser.add_argument(
         "--mode",
-        choices=["backfill", "incremental"],
+        choices=["backfill", "incremental", "intraday-only"],
         required=True,
-        help="backfill: full history; incremental: from last stored date to today",
+        help=(
+            "backfill: full daily history via Polygon; "
+            "incremental: daily from last date + today's intraday via yfinance; "
+            "intraday-only: today's 5m bars via yfinance (no API key needed)"
+        ),
     )
     args = parser.parse_args()
 
+    assets = _load_assets()
+
+    if args.mode == "intraday-only":
+        logger.info("[fetch_market] Starting INTRADAY-ONLY update (yfinance)...")
+        run_intraday_only()
+        print_validation(assets)
+        return
+
+    # Polygon modes require API key
     api_key = os.getenv("POLYGON_API_KEY")
     if not api_key:
         logger.error(
@@ -297,8 +354,7 @@ def main() -> None:
 
     from src.market_data.polygon import PolygonClient
 
-    client  = PolygonClient(api_key)
-    assets  = _load_assets()
+    client         = PolygonClient(api_key)
     backfill_years = int(os.getenv("MARKET_DAILY_BACKFILL_YEARS", "10"))
 
     if args.mode == "backfill":

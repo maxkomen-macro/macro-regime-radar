@@ -1,0 +1,61 @@
+name: Intraday Market Refresh
+
+on:
+  schedule:
+    # Every 5 minutes, Mon-Fri, 13:30–21:00 UTC = 9:30 AM–5:00 PM ET
+    - cron: "*/5 13-20 * * 1-5"
+    - cron: "30 13 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  intraday:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch intraday bars (yfinance — no API key needed)
+        run: python src/market_data/fetch_market.py --mode intraday-only
+
+      - name: Trim intraday to last 30 days
+        run: |
+          sqlite3 data/macro_radar.db \
+            "DELETE FROM market_intraday WHERE ts < datetime('now','-30 days');"
+
+      - name: Checkpoint WAL
+        run: sqlite3 data/macro_radar.db "PRAGMA wal_checkpoint(FULL);"
+
+      - name: Check if intraday data changed
+        id: check
+        run: |
+          if git diff --quiet data/macro_radar.db; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/macro_radar.db
+          git commit -m "Intraday refresh [skip ci]"
+          git stash --include-untracked
+          git pull --rebase
+          git stash pop || true
+          git push

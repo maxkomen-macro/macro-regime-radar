@@ -3,7 +3,9 @@ dashboard/components/market_snapshot.py — Market Snapshot tab.
 
 Displays:
   - Rates bar: DGS2, DGS10, 2s10s spread from raw_series
-  - Watchlist: current price, 1D/1W/1M returns, weekly z-score
+  - Risk-Off/Risk-On composite gauge
+  - 7 grouped ticker sections (US Equities, Sectors heatmap, Rates, Credit,
+    Commodities, International, FX & Volatility) with per-ticker cards
   - Top Surprises (shared helper)
   - TradingView widgets by group
 """
@@ -23,31 +25,406 @@ from components.db_helpers import (
 from components.tradingview import render_tv_groups
 from components.shared_styles import section_header, subsection_header
 
-WATCHLIST_SYMBOLS = ["SPY", "QQQ", "IWM", "TLT", "HYG", "LQD", "UUP", "GLD", "USO"]
+WATCHLIST_SYMBOLS = [
+    "SPY", "QQQ", "IWM", "VTV",
+    "XLF", "XLE", "XLI", "XLK",
+    "TLT", "IEF", "SHY",
+    "HYG", "LQD", "EMB",
+    "GLD", "SLV", "USO", "UNG", "CPER",
+    "EFA", "EEM",
+    "UUP", "VIXY",
+]
+
 SYMBOL_LABELS = {
-    "SPY": "S&P 500 ETF",
-    "QQQ": "Nasdaq 100",
-    "IWM": "Russell 2000",
-    "TLT": "20Y Treasury",
-    "HYG": "HY Credit",
-    "LQD": "IG Credit",
-    "UUP": "USD Basket",
-    "GLD": "Gold",
-    "USO": "Oil",
+    "SPY":  "S&P 500 ETF",     "QQQ":  "Nasdaq 100",
+    "IWM":  "Russell 2000",    "VTV":  "Value ETF",
+    "XLF":  "Financials",      "XLE":  "Energy",
+    "XLI":  "Industrials",     "XLK":  "Technology",
+    "TLT":  "20Y Treasury",    "IEF":  "7-10Y Treasury",
+    "SHY":  "1-3Y Treasury",
+    "HYG":  "High Yield",      "LQD":  "Invest. Grade",
+    "EMB":  "EM Bonds",
+    "GLD":  "Gold",            "SLV":  "Silver",
+    "USO":  "Crude Oil",       "UNG":  "Nat Gas",
+    "CPER": "Copper",
+    "EFA":  "Developed Mkts",  "EEM":  "Emerging Mkts",
+    "UUP":  "US Dollar",       "VIXY": "VIX Futures",
 }
 
+WATCHLIST_GROUPS = {
+    "US Equities": {
+        "symbols": ["SPY", "QQQ", "IWM", "VTV"],
+        "color": "#378ADD",
+    },
+    "Sectors": {
+        "symbols": ["XLF", "XLE", "XLI", "XLK"],
+        "color": "#639922",
+        "heatmap": True,
+    },
+    "Rates": {
+        "symbols": ["TLT", "IEF", "SHY"],
+        "color": "#d29922",
+    },
+    "Credit": {
+        "symbols": ["HYG", "LQD", "EMB"],
+        "color": "#f08785",
+    },
+    "Commodities": {
+        "symbols": ["GLD", "SLV", "USO", "UNG", "CPER"],
+        "color": "#EF9F27",
+    },
+    "International": {
+        "symbols": ["EFA", "EEM"],
+        "color": "#7F77DD",
+    },
+    "FX & Volatility": {
+        "symbols": ["UUP", "VIXY"],
+        "color": "#888780",
+    },
+}
+
+_INTRADAY_SYMBOLS = ("SPY", "QQQ", "IWM", "TLT", "GLD", "UUP", "VIXY")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Risk-Off / Risk-On composite
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _compute_risk_score(prices: dict, daily_df: pd.DataFrame) -> float | None:
+    """
+    Compute a Risk-Off/Risk-On composite score from -100 to +100.
+
+    Components (equal weight, each normalized to -1 to +1):
+      1. SPY 1-week return    — positive = risk-on
+      2. VIXY                 — inverted, high VIXY = risk-off
+      3. HYG 1-week return   — positive = risk-on (credit appetite)
+      4. GLD 1-week return   — inverted, high gold = risk-off
+      5. UUP 1-week return   — inverted, strong dollar = risk-off
+
+    Each component is z-scored vs. its own 52-week history, clamped
+    to [-3, +3], then scaled to [-1, +1]. The composite is the mean
+    of all available components × 100, rounded to 1 decimal.
+
+    Returns None if fewer than 3 components are available.
+    """
+    import numpy as np
+
+    COMPONENTS = [
+        ("SPY",  1.0),   # risk-on signal
+        ("VIXY", -1.0),  # inverted — high vol = risk-off
+        ("HYG",  1.0),   # credit appetite = risk-on
+        ("GLD",  -1.0),  # inverted — safe haven = risk-off
+        ("UUP",  -1.0),  # inverted — strong dollar = risk-off
+    ]
+
+    scores = []
+    for sym, direction in COMPONENTS:
+        sym_data = daily_df[daily_df["symbol"] == sym].sort_values("date")
+        if len(sym_data) < 20:
+            continue
+
+        closes = sym_data["close"].values.astype(float)
+        # 1-week return (5 trading days)
+        if len(closes) < 6:
+            continue
+        ret = (closes[-1] - closes[-6]) / closes[-6]
+        # Z-score vs 52-week rolling weekly returns
+        weekly_rets = (closes[5:] - closes[:-5]) / closes[:-5]
+        if len(weekly_rets) < 10:
+            continue
+        mean = weekly_rets.mean()
+        std  = weekly_rets.std()
+        if std == 0:
+            continue
+        z = (ret - mean) / std
+        z = float(np.clip(z, -3, 3))
+        normalized = z / 3.0  # scale to [-1, +1]
+        scores.append(normalized * direction)
+
+    if len(scores) < 3:
+        return None
+
+    composite = float(np.mean(scores)) * 100
+    return round(composite, 1)
+
+
+def _render_risk_gauge(score: float | None) -> None:
+    """
+    Render the Risk-Off/Risk-On composite gauge using st.markdown.
+    Score range: -100 (max risk-off) to +100 (max risk-on).
+    """
+    if score is None:
+        return
+
+    if score >= 30:
+        label    = "Risk-On"
+        color    = "#3fb950"
+        sublabel = "Markets pricing growth and risk appetite"
+    elif score <= -30:
+        label    = "Risk-Off"
+        color    = "#f08785"
+        sublabel = "Markets pricing caution and defensive positioning"
+    else:
+        label    = "Neutral"
+        color    = "#d29922"
+        sublabel = "Mixed signals — no clear directional bias"
+
+    pct = (score + 100) / 2  # map -100..+100 → 0..100 for bar width
+
+    st.markdown(
+        f"""
+        <div style="
+            background:var(--color-background-secondary);
+            border-radius:10px;
+            border:0.5px solid var(--color-border-tertiary);
+            padding:16px 20px;
+            margin-bottom:20px;
+        ">
+          <div style="display:flex;justify-content:space-between;
+                      align-items:flex-start;margin-bottom:10px">
+            <div>
+              <div style="font-size:10px;font-weight:500;
+                          letter-spacing:0.08em;text-transform:uppercase;
+                          color:var(--color-text-tertiary);margin-bottom:4px">
+                Risk sentiment composite
+              </div>
+              <div style="font-size:22px;font-weight:500;color:{color}">
+                {label}
+              </div>
+              <div style="font-size:11px;color:var(--color-text-tertiary);
+                          margin-top:2px">{sublabel}</div>
+            </div>
+            <div style="font-size:28px;font-weight:500;
+                        color:{color};letter-spacing:-0.02em">
+              {score:+.1f}
+            </div>
+          </div>
+          <div style="position:relative;height:6px;
+                      background:var(--color-border-tertiary);
+                      border-radius:3px;overflow:hidden">
+            <div style="
+                position:absolute;left:0;top:0;
+                width:{pct:.1f}%;height:100%;
+                background:{color};border-radius:3px;
+            "></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;
+                      margin-top:4px">
+            <span style="font-size:9px;color:var(--color-text-tertiary)">
+              Risk-off  –100
+            </span>
+            <span style="font-size:9px;color:var(--color-text-tertiary)">
+              0
+            </span>
+            <span style="font-size:9px;color:var(--color-text-tertiary)">
+              +100  Risk-on
+            </span>
+          </div>
+          <div style="font-size:10px;color:var(--color-text-tertiary);
+                      margin-top:8px;padding-top:8px;
+                      border-top:0.5px solid var(--color-border-tertiary)">
+            Components: SPY momentum · HYG credit appetite ·
+            VIXY volatility (inv) · GLD safe-haven (inv) ·
+            UUP dollar strength (inv) · 52W z-score normalized
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sector heatmap
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_sector_heatmap(prices: dict) -> None:
+    """
+    Render the Sectors group as a color-intensity heatmap rather than
+    standard cards. Color intensity scales with 1D return magnitude.
+    """
+    SECTORS = [
+        ("XLF", "Financials"),
+        ("XLE", "Energy"),
+        ("XLI", "Industrials"),
+        ("XLK", "Technology"),
+    ]
+
+    def _intensity(ret: float) -> str:
+        """Return rgba background color scaled by return magnitude."""
+        abs_ret = min(abs(ret), 0.03)   # cap at 3% for color scaling
+        alpha   = abs_ret / 0.03 * 0.22
+        if ret >= 0:
+            return f"rgba(63,185,80,{alpha:.2f})"
+        else:
+            return f"rgba(240,135,133,{alpha:.2f})"
+
+    cells_html = ""
+    for sym, name in SECTORS:
+        p = prices.get(sym)
+        if p is None:
+            continue
+        ret   = p.get("chg_1d_pct", 0) or 0
+        price = p.get("close", 0) or 0
+        bg    = _intensity(ret)
+        color = "#3fb950" if ret >= 0 else "#f08785"
+        sign  = "+" if ret >= 0 else ""
+        cells_html += f"""
+        <div style="
+            background:{bg};
+            border:0.5px solid var(--color-border-tertiary);
+            border-radius:8px;padding:10px 12px;
+            display:flex;justify-content:space-between;align-items:center;
+        ">
+          <div>
+            <div style="font-size:12px;font-weight:500;
+                        color:var(--color-text-primary)">{sym}</div>
+            <div style="font-size:10px;color:var(--color-text-tertiary);
+                        margin-top:1px">{name}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:13px;font-weight:500;color:{color}">
+              {sign}{ret:.2%}
+            </div>
+            <div style="font-size:10px;color:var(--color-text-tertiary)">
+              {price:.2f}
+            </div>
+          </div>
+        </div>"""
+
+    st.markdown(
+        f"""
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);
+                    gap:6px;margin-bottom:8px">
+          {cells_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-ticker card
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_ticker_card(sym: str, p: dict, group_color: str) -> None:
+    """
+    Render a single ticker as a styled card with:
+      - Color accent bar at top matching group color
+      - Ticker + full name
+      - Price (large)
+      - 1D change pill (green/red)
+      - 1W and 1M returns
+      - Z-score badge (color-coded: hot/cold/neutral)
+    """
+    if p is None:
+        return
+
+    close   = p.get("close")      or 0
+    chg_1d  = p.get("chg_1d_pct") or 0
+    chg_1w  = p.get("chg_1w_pct") or 0
+    chg_1m  = p.get("chg_1m_pct") or 0
+    zscore  = p.get("weekly_z")   or 0
+    name    = SYMBOL_LABELS.get(sym, sym)
+
+    pill_color = "#3fb950" if chg_1d >= 0 else "#f08785"
+    pill_bg    = "rgba(63,185,80,0.1)" if chg_1d >= 0 else "rgba(240,135,133,0.1)"
+    sign_1d    = "+" if chg_1d >= 0 else ""
+    sign_1w    = "+" if chg_1w >= 0 else ""
+    sign_1m    = "+" if chg_1m >= 0 else ""
+    w1_color   = "#3fb950" if chg_1w >= 0 else "#f08785"
+    m1_color   = "#3fb950" if chg_1m >= 0 else "#f08785"
+
+    # Z-score badge
+    if zscore > 1.5:
+        z_bg    = "rgba(240,135,133,0.12)"
+        z_color = "#f08785"
+    elif zscore < -1.5:
+        z_bg    = "rgba(55,138,221,0.12)"
+        z_color = "#378ADD"
+    else:
+        z_bg    = "var(--color-border-tertiary)"
+        z_color = "var(--color-text-tertiary)"
+    z_text = f"{zscore:+.2f}σ" if zscore else "—"
+
+    st.markdown(
+        f"""
+        <div style="
+            background:var(--color-background-secondary);
+            border-radius:10px;
+            border:0.5px solid var(--color-border-tertiary);
+            padding:14px;
+            position:relative;
+            overflow:hidden;
+        ">
+          <div style="
+              position:absolute;top:0;left:0;right:0;
+              height:2px;background:{group_color};
+              border-radius:10px 10px 0 0;
+          "></div>
+          <div style="display:flex;justify-content:space-between;
+                      align-items:flex-start;margin-bottom:8px">
+            <div>
+              <div style="font-size:13px;font-weight:500;
+                          color:var(--color-text-primary);line-height:1">
+                {sym}
+              </div>
+              <div style="font-size:10px;color:var(--color-text-tertiary);
+                          margin-top:3px">{name}</div>
+            </div>
+            <span style="
+                font-size:10px;font-weight:500;
+                padding:3px 7px;border-radius:4px;
+                color:{pill_color};background:{pill_bg};
+            ">{sign_1d}{chg_1d:.2%}</span>
+          </div>
+          <div style="font-size:20px;font-weight:500;
+                      color:var(--color-text-primary);
+                      letter-spacing:-0.02em;
+                      line-height:1;margin-bottom:8px">
+            {close:.2f}
+          </div>
+          <div style="display:flex;align-items:center;
+                      justify-content:space-between">
+            <span style="font-size:10px;color:var(--color-text-tertiary)">
+              1W <span style="color:{w1_color};font-weight:500">
+                {sign_1w}{chg_1w:.2%}
+              </span>
+            </span>
+            <span style="font-size:10px;color:var(--color-text-tertiary)">
+              1M <span style="color:{m1_color};font-weight:500">
+                {sign_1m}{chg_1m:.2%}
+              </span>
+            </span>
+            <span style="
+                font-size:9px;font-weight:500;
+                padding:2px 5px;border-radius:3px;
+                color:{z_color};background:{z_bg};
+            ">{z_text}</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main entry point
+# ─────────────────────────────────────────────────────────────────────────────
 
 def render_market_snapshot(wide_df: pd.DataFrame) -> None:
-    """Main entry point — call from app.py inside the Market Snapshot tab."""
+    """
+    Redesigned Markets tab — rates bar, Risk-Off/Risk-On gauge,
+    grouped cards with sector heatmap and per-ticker cards.
+    """
     section_header("MARKET SNAPSHOT")
+    st.divider()
+
+    # ── Rates bar (FRED data — preserved) ────────────────────────────────────
+    _render_rates_bar(wide_df)
     st.divider()
 
     market_ok = has_market_data()
     dm        = load_derived_metrics()
-
-    # ── Rates bar ─────────────────────────────────────────────────────────────
-    _render_rates_bar(wide_df)
-    st.divider()
 
     if not market_ok:
         st.warning(
@@ -58,13 +435,83 @@ def render_market_snapshot(wide_df: pd.DataFrame) -> None:
         render_tv_groups()
         return
 
-    # ── Watchlist table ───────────────────────────────────────────────────────
+    # ── Load data ─────────────────────────────────────────────────────────────
     daily_df    = load_market_daily(tuple(WATCHLIST_SYMBOLS))
-    intraday_df = load_market_intraday(tuple(["SPY", "QQQ"]))
-    _render_watchlist(daily_df, intraday_df, dm)
-    st.divider()
+    intraday_df = load_market_intraday(_INTRADAY_SYMBOLS)
+
+    # ── Build prices dict ─────────────────────────────────────────────────────
+    # Intraday latest close by symbol (for price override during market hours)
+    intraday_prices: dict = {}
+    if not intraday_df.empty:
+        intraday_prices = (
+            intraday_df.sort_values("ts")
+            .groupby("symbol")
+            .last()["close"]
+            .to_dict()
+        )
+
+    prices: dict = {}
+    for sym in WATCHLIST_SYMBOLS:
+        sym_data = daily_df[daily_df["symbol"] == sym].sort_values("date")
+        if sym_data.empty:
+            prices[sym] = None
+            continue
+
+        last  = sym_data.iloc[-1]
+        close = intraday_prices.get(sym, last["close"])
+
+        # ret_1d/ret_1w/ret_1m from load_market_daily are percentage points (×100)
+        # Divide by 100 to get fractions for :.2% formatting in card renderers
+        ret_1d = last.get("ret_1d")
+        ret_1w = last.get("ret_1w")
+        ret_1m = last.get("ret_1m")
+
+        prices[sym] = {
+            "close":      float(close) if close is not None else 0.0,
+            "chg_1d_pct": float(ret_1d) / 100.0 if ret_1d is not None else 0.0,
+            "chg_1w_pct": float(ret_1w) / 100.0 if ret_1w is not None else 0.0,
+            "chg_1m_pct": float(ret_1m) / 100.0 if ret_1m is not None else 0.0,
+            "weekly_z":   get_derived_latest(dm, f"{sym}_weekly_ret_z"),
+        }
+
+    # ── Risk-Off/Risk-On gauge ────────────────────────────────────────────────
+    score = _compute_risk_score(prices, daily_df)
+    _render_risk_gauge(score)
+
+    # ── Grouped ticker sections ───────────────────────────────────────────────
+    for group_name, group_cfg in WATCHLIST_GROUPS.items():
+        group_color   = group_cfg["color"]
+        group_symbols = group_cfg["symbols"]
+        is_heatmap    = group_cfg.get("heatmap", False)
+
+        # Section header — left accent bar + group name
+        st.markdown(
+            f"""
+            <div style="display:flex;align-items:center;gap:10px;
+                        margin:20px 0 12px">
+              <div style="width:3px;height:16px;background:{group_color};
+                          border-radius:2px;flex-shrink:0"></div>
+              <span style="font-size:10px;font-weight:500;
+                           letter-spacing:0.1em;text-transform:uppercase;
+                           color:var(--color-text-secondary)">
+                {group_name}
+              </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if is_heatmap:
+            _render_sector_heatmap(prices)
+        else:
+            n_cols = min(len(group_symbols), 4)
+            cols   = st.columns(n_cols)
+            for i, sym in enumerate(group_symbols):
+                with cols[i % n_cols]:
+                    _render_ticker_card(sym, prices.get(sym), group_color)
 
     # ── Top Surprises ──────────────────────────────────────────────────────────
+    st.divider()
     render_surprises(dm, top_n=10, title="Top Surprises This Week (Macro + Markets)")
     st.divider()
 
@@ -72,9 +519,27 @@ def render_market_snapshot(wide_df: pd.DataFrame) -> None:
     section_header("QUICK CHARTS (TRADINGVIEW)")
     render_tv_groups()
 
+    # ── Footer ────────────────────────────────────────────────────────────────
+    st.markdown(
+        """
+        <div style="
+            font-size:10px;color:var(--color-text-tertiary);
+            margin-top:16px;padding-top:12px;
+            border-top:0.5px solid var(--color-border-tertiary);
+            display:flex;align-items:center;gap:6px;
+        ">
+          <div style="width:5px;height:5px;border-radius:50%;
+                      background:#3fb950;flex-shrink:0"></div>
+          Intraday prices via yfinance · Updated every 5 min during
+          market hours (9:30–4:00 ET) · FRED macro data daily at 6 AM ET
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helpers
+# Rates bar helper (preserved verbatim)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_rates_bar(wide_df: pd.DataFrame) -> None:
@@ -92,8 +557,8 @@ def _render_rates_bar(wide_df: pd.DataFrame) -> None:
         s = series.dropna()
         return float(s.iloc[-1 - n]) if len(s) > n else None
 
-    gs2   = wide_df["DGS2"]   if "DGS2"  in wide_df.columns else pd.Series(dtype=float)
-    gs10  = wide_df["DGS10"]  if "DGS10" in wide_df.columns else pd.Series(dtype=float)
+    gs2   = wide_df["DGS2"]  if "DGS2"  in wide_df.columns else pd.Series(dtype=float)
+    gs10  = wide_df["DGS10"] if "DGS10" in wide_df.columns else pd.Series(dtype=float)
 
     v2   = _latest(gs2)
     v10  = _latest(gs10)
@@ -112,109 +577,3 @@ def _render_rates_bar(wide_df: pd.DataFrame) -> None:
         inv = " 🔴 Inverted" if sp is not None and sp < 0 else ""
         st.metric(f"2s10s Spread{inv}", f"{sp:.2f}%" if sp is not None else "N/A",
                   delta=f"{dsp:+.2f}pp" if dsp is not None else None)
-
-
-def _render_watchlist(
-    daily_df: pd.DataFrame,
-    intraday_df: pd.DataFrame,
-    dm: pd.DataFrame,
-) -> None:
-    section_header("WATCHLIST")
-    if daily_df.empty:
-        st.info("No market data available.")
-        return
-
-    # Current prices
-    prices = get_current_prices(intraday_df, daily_df)
-
-    # Build watchlist rows
-    rows = []
-    latest_daily = (
-        daily_df.sort_values("date")
-        .groupby("symbol")
-        .last()
-        .reset_index()
-    )
-
-    for sym in WATCHLIST_SYMBOLS:
-        sym_data = daily_df[daily_df["symbol"] == sym].sort_values("date")
-        if sym_data.empty:
-            rows.append({
-                "Symbol": sym,
-                "Name":   SYMBOL_LABELS.get(sym, sym),
-                "Price":  "N/A",
-                "1D %":   None,
-                "1W %":   None,
-                "1M %":   None,
-                "W Z-score": None,
-            })
-            continue
-
-        last_row = sym_data.iloc[-1]
-        price    = prices.get(sym, last_row["close"])
-        ret_1d   = last_row.get("ret_1d")
-        ret_1w   = last_row.get("ret_1w")
-        ret_1m   = last_row.get("ret_1m")
-
-        z_col = f"{sym}_weekly_ret_z"
-        z_val = get_derived_latest(dm, z_col) if not dm.empty else None
-
-        rows.append({
-            "Symbol":    sym,
-            "Name":      SYMBOL_LABELS.get(sym, sym),
-            "Price":     f"{price:.2f}" if price else "N/A",
-            "1D %":      ret_1d,
-            "1W %":      ret_1w,
-            "1M %":      ret_1m,
-            "W Z-score": z_val,
-        })
-
-    df_display = pd.DataFrame(rows)
-
-    # Format and style
-    def _fmt_pct(v):
-        if v is None or pd.isna(v):
-            return "—"
-        return f"{v:+.2f}%"
-
-    def _fmt_z(v):
-        if v is None or pd.isna(v):
-            return "—"
-        return f"{v:+.2f}σ"
-
-    df_display["1D %"]      = df_display["1D %"].map(_fmt_pct)
-    df_display["1W %"]      = df_display["1W %"].map(_fmt_pct)
-    df_display["1M %"]      = df_display["1M %"].map(_fmt_pct)
-    df_display["W Z-score"] = df_display["W Z-score"].map(_fmt_z)
-
-    # Color-code return columns: green positive, red negative, grey neutral/missing
-    def _color_return(val):
-        try:
-            num = float(str(val).replace("%", "").replace("+", "").replace("σ", "").strip())
-            if num > 0:
-                return "color: #2ecc71"
-            elif num < 0:
-                return "color: #e74c3c"
-        except (ValueError, AttributeError):
-            pass
-        return "color: #888888"
-
-    styled = (
-        df_display.set_index("Symbol")
-        .style
-        .map(_color_return, subset=["1D %", "1W %", "1M %", "W Z-score"])
-    )
-
-    st.dataframe(
-        styled,
-        use_container_width=True,
-        column_config={
-            "Name":      st.column_config.TextColumn("Name"),
-            "Price":     st.column_config.TextColumn("Price"),
-            "1D %":      st.column_config.TextColumn("1D %"),
-            "1W %":      st.column_config.TextColumn("1W %"),
-            "1M %":      st.column_config.TextColumn("1M %"),
-            "W Z-score": st.column_config.TextColumn("Weekly Z"),
-        },
-    )
-    st.caption("1D/1W/1M returns from market_daily closing prices. Weekly Z-score from derived_metrics.")

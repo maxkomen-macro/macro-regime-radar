@@ -1,20 +1,37 @@
 # config/assets.yml
-# Market symbols tracked via Polygon.
-#
-# daily:    symbols to fetch as OHLCV daily bars (backfill + incremental)
-# intraday: symbols to fetch as 5-minute bars (incremental / today only)
+# daily:    OHLCV daily bars via Polygon (backfill + incremental)
+# intraday: 5-minute bars via yfinance (incremental, market hours only)
 
 daily:
   - SPY    # S&P 500 ETF
   - QQQ    # Nasdaq 100 ETF
   - IWM    # Russell 2000 ETF
   - TLT    # 20+ Year Treasury ETF
+  - IEF    # 7-10 Year Treasury ETF
+  - SHY    # 1-3 Year Treasury ETF
   - HYG    # High Yield Corporate Bond ETF
   - LQD    # Investment Grade Corporate Bond ETF
+  - EMB    # Emerging Market Bonds ETF
   - GLD    # Gold ETF
-  - UUP    # US Dollar Index ETF
+  - SLV    # Silver ETF
   - USO    # Crude Oil ETF
+  - UNG    # Natural Gas ETF
+  - CPER   # Copper ETF
+  - UUP    # US Dollar Index ETF
+  - VIXY   # VIX Short-Term Futures ETF
+  - VTV    # Value ETF
+  - XLF    # Financials Sector ETF
+  - XLE    # Energy Sector ETF
+  - XLI    # Industrials Sector ETF
+  - XLK    # Technology Sector ETF
+  - EFA    # Developed Markets ex-US ETF
+  - EEM    # Emerging Markets ETF
 
 intraday:
   - SPY
   - QQQ
+  - IWM
+  - TLT
+  - GLD
+  - UUP
+  - VIXY
