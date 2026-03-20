@@ -2,7 +2,7 @@
 dashboard/components/market_snapshot.py — Market Snapshot tab.
 
 Displays:
-  - Rates bar: GS2, GS10, 2s10s spread from raw_series
+  - Rates bar: DGS2, DGS10, 2s10s spread from raw_series
   - Watchlist: current price, 1D/1W/1M returns, weekly z-score
   - Top Surprises (shared helper)
   - TradingView widgets by group

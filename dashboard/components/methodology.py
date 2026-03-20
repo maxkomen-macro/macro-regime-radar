@@ -159,7 +159,7 @@ def _render_signal_definitions() -> None:
       <td style="{_TD_STYLE}">10Y − 2Y Treasury spread</td>
       <td style="{_TD_STYLE}">0.00%</td>
       <td style="{_TD_STYLE}">Triggers when spread falls <b>below</b> 0%</td>
-      <td style="{_TD_STYLE}">FRED: GS10, GS2</td>
+      <td style="{_TD_STYLE}">FRED: DGS10, DGS2</td>
     </tr>
     <tr>
       <td style="{_TD_ALT_STYLE}"><span style="color:#e6edf3;font-weight:500">Unemployment spike</span></td>
@@ -273,7 +273,7 @@ def _render_data_sources() -> None:
   <tbody>
     <tr>
       <td style="{_TD_STYLE}"><span style="color:#e6edf3;font-weight:500">FRED</span></td>
-      <td style="{_TD_STYLE}">INDPRO, CPIAUCSL, GS10, GS2, UNRATE, VIXCLS,<br>FEDFUNDS, SOFR, T5YIE, T10YIE, DFII5, DFII10</td>
+      <td style="{_TD_STYLE}">INDPRO, CPIAUCSL, DGS10, DGS2, UNRATE, VIXCLS,<br>FEDFUNDS, SOFR, T5YIE, T10YIE, DFII5, DFII10</td>
       <td style="{_TD_STYLE}">Monthly (daily series resampled to month-end)</td>
     </tr>
     <tr>
