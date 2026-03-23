@@ -51,6 +51,16 @@ PRICED_SERIES = {
 }
 SERIES.update(PRICED_SERIES)   # fetch_all_series() picks these up automatically
 
+# ── Credit Spread Series (BAML / ICE BofA OAS indices) ─────────────────────
+CREDIT_SERIES = {
+    "baml_hy_oas":  "BAMLH0A0HYM2",   # ICE BofA US HY Index OAS (daily, bps)
+    "baml_ig_oas":  "BAMLC0A0CM",     # ICE BofA US Corporate Index OAS (daily, bps)
+    "baml_ccc_oas": "BAMLH0A3HYC",    # ICE BofA CCC & Lower Rated OAS
+    "baml_bb_oas":  "BAMLH0A1HYBB",   # ICE BofA BB US HY Index OAS
+    "baml_b_oas":   "BAMLH0A2HYB",    # ICE BofA Single-B US HY Index OAS
+}
+SERIES.update(CREDIT_SERIES)
+
 # ── Polygon API (optional — no raise) ──────────────────────────────────────
 POLYGON_API_KEY             = os.getenv("POLYGON_API_KEY")
 MARKET_DAILY_BACKFILL_YEARS = int(os.getenv("MARKET_DAILY_BACKFILL_YEARS", "10"))

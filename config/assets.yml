@@ -35,3 +35,10 @@ intraday:
   - GLD
   - UUP
   - VIXY
+
+fred_credit:
+  - BAMLH0A0HYM2  # HY OAS — ICE BofA HY Index Option-Adjusted Spread
+  - BAMLC0A0CM    # IG OAS — ICE BofA US Corporate Index OAS
+  - BAMLH0A3HYC   # CCC OAS — ICE BofA CCC & Lower Rated OAS
+  - BAMLH0A1HYBB  # BB OAS — ICE BofA BB US HY Index OAS
+  - BAMLH0A2HYB   # B OAS  — ICE BofA Single-B US HY Index OAS
