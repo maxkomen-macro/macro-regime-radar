@@ -4,6 +4,7 @@ numpy==1.26.4
 python-dotenv==1.0.1
 streamlit>=1.54.0
 plotly>=6.5.0
+altair>=5.0
 Jinja2>=3.1.0
 matplotlib>=3.8.0
 requests>=2.31.0

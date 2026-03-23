@@ -890,8 +890,8 @@ _render_header_bar(latest_regime, as_of)
 # Top-level tab navigation
 # ─────────────────────────────────────────────────────────────────────────────
 
-tab_dash, tab_mkt, tab_sig, tab_hist, tab_cal, tab_meth = st.tabs([
-    "Dashboard", "Markets", "Signals & Alerts", "Historical Analysis", "Calendar", "Methodology"
+tab_dash, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, tab_meth = st.tabs([
+    "Dashboard", "Markets", "Signals & Alerts", "Historical Analysis", "Calendar", "Credit", "Methodology"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1317,6 +1317,17 @@ with tab_cal:
         render_calendar_tab(latest_signals=latest_signals)
     except Exception as exc:
         st.error(f"Calendar error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Credit (Phase 7 — BAML OAS spreads + analytics)
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_credit:
+    try:
+        from components.credit_tab import render as render_credit
+        render_credit()
+    except Exception as exc:
+        st.error(f"Credit tab error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: Methodology
