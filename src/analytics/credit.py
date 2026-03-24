@@ -215,6 +215,11 @@ def _empty_metrics() -> dict:
         "transition_3m":    {},
         "transition_6m":    {},
         "tight_count":      0,
+        "hy_sparkline":     pd.Series(dtype=float),
+        "ig_sparkline":     pd.Series(dtype=float),
+        "ccc_sparkline":    pd.Series(dtype=float),
+        "bb_sparkline":     pd.Series(dtype=float),
+        "b_sparkline":      pd.Series(dtype=float),
     }
 
 
@@ -237,6 +242,11 @@ def get_credit_metrics() -> dict:
         fedfunds = _load_fedfunds(conn)
     finally:
         conn.close()
+
+    def _sparkline(s: pd.Series) -> pd.Series:
+        if len(s) < 2:
+            return pd.Series(dtype=float)
+        return s.tail(6)
 
     # ── Graceful fallback if no data ─────────────────────────────────────────
     if hy_s.empty:
@@ -319,6 +329,11 @@ def get_credit_metrics() -> dict:
         "transition_3m":      transition_3m,
         "transition_6m":      transition_6m,
         "tight_count":        tight_count,
+        "hy_sparkline":       _sparkline(hy_s),
+        "ig_sparkline":       _sparkline(ig_s),
+        "ccc_sparkline":      _sparkline(ccc_s),
+        "bb_sparkline":       _sparkline(bb_s),
+        "b_sparkline":        _sparkline(b_s),
     }
 
 
