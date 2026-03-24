@@ -115,6 +115,24 @@ def _fmt_chg(v: float | None) -> tuple[str, str]:
     return f"{arrow} {abs(v):.1f} bps", color
 
 
+def _svg_points(sparkline: pd.Series) -> str | None:
+    """Compute SVG polyline points string. Returns None if fewer than 2 points."""
+    try:
+        values = list(sparkline.values)
+    except Exception:
+        return None
+    n = len(values)
+    if n < 2:
+        return None
+    min_v, max_v = min(values), max(values)
+    if max_v == min_v:
+        return " ".join(f"{i/(n-1)*100:.1f},14" for i in range(n))
+    return " ".join(
+        f"{i/(n-1)*100:.1f},{24-(v-min_v)/(max_v-min_v)*20:.1f}"
+        for i, v in enumerate(values)
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Section 2: Spread cards
 # ─────────────────────────────────────────────────────────────────────────────
@@ -134,18 +152,28 @@ def _render_spread_cards(m: dict) -> None:
         return "#4a9eff"  # BB and B — neutral blue
 
     cards_data = [
-        ("HY OAS",   m.get("hy_oas"),  m.get("hy_1w_change"),  "ICE BofA HY Index"),
-        ("IG OAS",   m.get("ig_oas"),  m.get("ig_1w_change"),  "ICE BofA IG Corp"),
-        ("CCC OAS",  m.get("ccc_oas"), m.get("ccc_1w_change"), "Distress indicator"),
-        ("BB OAS",   m.get("bb_oas"),  m.get("bb_1w_change"),  "BB tier spread"),
-        ("B OAS",    m.get("b_oas"),   m.get("b_1w_change"),   "B tier spread"),
+        ("HY OAS",  m.get("hy_oas"),  m.get("hy_1w_change"),  "ICE BofA HY Index",  m.get("hy_sparkline",  pd.Series(dtype=float))),
+        ("IG OAS",  m.get("ig_oas"),  m.get("ig_1w_change"),  "ICE BofA IG Corp",   m.get("ig_sparkline",  pd.Series(dtype=float))),
+        ("CCC OAS", m.get("ccc_oas"), m.get("ccc_1w_change"), "Distress indicator", m.get("ccc_sparkline", pd.Series(dtype=float))),
+        ("BB OAS",  m.get("bb_oas"),  m.get("bb_1w_change"),  "BB tier spread",     m.get("bb_sparkline",  pd.Series(dtype=float))),
+        ("B OAS",   m.get("b_oas"),   m.get("b_1w_change"),   "B tier spread",      m.get("b_sparkline",   pd.Series(dtype=float))),
     ]
 
     cards_html = ""
-    for label, val, chg, sublabel in cards_data:
+    for label, val, chg, sublabel, sparkline in cards_data:
         accent = _accent(label, val)
         val_str = _fmt_bps(val, 0) if val is not None else "—"
         chg_str, chg_color = _fmt_chg(chg)
+        pts = _svg_points(sparkline)
+        if pts:
+            svg_html = (
+                f'<svg width="100%" height="28" viewBox="0 0 100 28" '
+                f'preserveAspectRatio="none" style="display:block;margin-top:6px">'
+                f'<polyline points="{pts}" stroke="{accent}" stroke-width="1.5" fill="none"/>'
+                f'</svg>'
+            )
+        else:
+            svg_html = '<div style="height:28px;margin-top:6px"></div>'
         cards_html += f"""
         <div style="background:#1a1d23;border:0.5px solid #30363d;border-left:3px solid {accent};
                     border-radius:0 8px 8px 0;padding:12px 14px;flex:1;min-width:0">
@@ -155,7 +183,8 @@ def _render_spread_cards(m: dict) -> None:
                       font-family:'SFMono-Regular',Consolas,monospace;letter-spacing:-0.02em;
                       line-height:1">{val_str} <span style="font-size:12px;color:#8b949e">bps</span></div>
           <div style="font-size:10px;color:#8b949e;margin-top:4px">{sublabel}</div>
-          <div style="font-size:11px;color:{chg_color};margin-top:6px;font-weight:500">{chg_str} 1M</div>
+          <div style="font-size:11px;color:{chg_color};margin-top:6px;font-weight:500">{chg_str} vs prev month</div>
+          {svg_html}
         </div>"""
 
     components.html(
@@ -166,7 +195,7 @@ body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe 
 .row {{ display:flex; gap:8px; }}
 </style></head>
 <body><div class="row">{cards_html}</div></body></html>""",
-        height=130,
+        height=165,
         scrolling=False,
     )
 
