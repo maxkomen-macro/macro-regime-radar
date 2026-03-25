@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-03-24T14:49:37.312941",
+  "generated_at": "2026-03-25T05:23:21.117731",
   "as_of": "2026-02-01",
   "regime": "Overheating",
   "confidence": 0.2976,
   "baseline": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
   "because_today": [
     "Because today VIX volatility is extreme (z=+3.58), the VIX signal is significantly elevated versus 2-year norms.",
-    "Because today 10Y Treasury rate momentum is extreme (z=+3.65), the 10Y Treasury signal is significantly elevated versus 2-year norms.",
+    "Because today 10Y Treasury rate momentum is extreme (z=+3.27), the 10Y Treasury signal is significantly elevated versus 2-year norms.",
     "Because today yield spread curve steepening is below trend (z=-1.50).",
     "Because today unemployment labor conditions is above trend (z=+1.87).",
     "Because today 10Y real yield is positive at 2.01%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.64%."
   ],
-  "summary": "Regime: Overheating (confidence 30%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today VIX volatility is extreme (z=+3.58), the VIX signal is significantly elevated versus 2-year norms. Because today 10Y Treasury rate momentum is extreme (z=+3.65), the 10Y Treasury signal is significantly elevated versus 2-year norms. Because today yield spread curve steepening is below trend (z=-1.50).",
+  "summary": "Regime: Overheating (confidence 30%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today VIX volatility is extreme (z=+3.58), the VIX signal is significantly elevated versus 2-year norms. Because today 10Y Treasury rate momentum is extreme (z=+3.27), the 10Y Treasury signal is significantly elevated versus 2-year norms. Because today yield spread curve steepening is below trend (z=-1.50).",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
