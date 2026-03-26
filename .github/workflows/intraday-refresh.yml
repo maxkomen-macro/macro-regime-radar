@@ -7,6 +7,10 @@ name: Intraday Market Refresh
     - cron: "30 13 * * 1-5"
   workflow_dispatch:
 
+concurrency:
+  group: intraday-refresh
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -24,6 +28,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+          cache-dependency-path: "requirements.txt"
 
       - name: Install dependencies
         run: pip install -r requirements.txt
