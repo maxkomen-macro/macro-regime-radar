@@ -10,7 +10,10 @@ Displays:
   - TradingView widgets by group
 """
 
+from datetime import datetime
+
 import pandas as pd
+import pytz
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -392,11 +395,33 @@ body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Main entry point
+# Market hours check + main entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _is_market_hours() -> bool:
+    """Returns True if current time is within NYSE market hours (9:30-16:00 ET)."""
+    et = pytz.timezone("America/New_York")
+    now = datetime.now(et)
+    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    market_open  = now.replace(hour=9,  minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=16, minute=0,  second=0, microsecond=0)
+    return market_open <= now <= market_close
+
+
 def render_market_snapshot(wide_df: pd.DataFrame) -> None:
+    """Main entry point — wraps content in st.fragment during market hours."""
+    if _is_market_hours():
+        @st.fragment(run_every=30)
+        def _live_content():
+            _render_market_content(wide_df)
+        _live_content()
+    else:
+        _render_market_content(wide_df)
+
+
+def _render_market_content(wide_df: pd.DataFrame) -> None:
     """
     Redesigned Markets tab — rates bar, Risk-Off/Risk-On gauge,
     grouped cards with sector heatmap and per-ticker cards.

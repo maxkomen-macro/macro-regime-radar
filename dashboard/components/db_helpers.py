@@ -166,7 +166,7 @@ def get_current_prices(intraday_df: pd.DataFrame, daily_df: pd.DataFrame) -> dic
 # Derived metrics
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def load_derived_metrics() -> pd.DataFrame:
     """
     Load derived_metrics and pivot to wide format: rows=date, cols=name.
@@ -196,7 +196,7 @@ def get_derived_latest(dm: pd.DataFrame, name: str) -> float | None:
 # Alert feed
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def load_alert_feed() -> pd.DataFrame:
     """Load alert_feed sorted newest first."""
     try:
@@ -215,7 +215,7 @@ def load_alert_feed() -> pd.DataFrame:
 # Backtest results
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def load_backtest_results() -> pd.DataFrame:
     """Load backtest_results."""
     try:
@@ -252,7 +252,7 @@ def pivot_backtest(df: pd.DataFrame) -> pd.DataFrame:
 # Event calendar
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def load_event_calendar() -> pd.DataFrame:
     """Load event_calendar sorted by event_datetime ascending."""
     try:
@@ -284,7 +284,7 @@ def get_upcoming_events(cal: pd.DataFrame, days: int = 14) -> pd.DataFrame:
 # Playbook
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def load_playbook() -> dict:
     """Load output/playbook.json. Returns {} if file missing or malformed."""
     try:
