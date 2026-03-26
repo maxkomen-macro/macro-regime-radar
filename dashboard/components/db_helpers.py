@@ -2,7 +2,7 @@
 dashboard/components/db_helpers.py — Shared DB loaders for Trader Pack tables.
 
 Standalone module (no src.config import).
-All loaders use @st.cache_data(ttl=300) for 5-minute cache.
+Market data loaders use @st.cache_data(ttl=300); daily-update loaders use ttl=3600.
 """
 
 import json
