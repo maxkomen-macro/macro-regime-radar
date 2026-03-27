@@ -61,6 +61,13 @@ CREDIT_SERIES = {
 }
 SERIES.update(CREDIT_SERIES)
 
+# ── Recession Risk Series ───────────────────────────────────────────────────
+RECESSION_SERIES = {
+    "usrec": "USREC",    # NBER recession indicator (0/1, monthly)
+    "lei":   "USSLIND",  # Conference Board LEI for US (monthly)
+}
+SERIES.update(RECESSION_SERIES)
+
 # ── Polygon API (optional — no raise) ──────────────────────────────────────
 POLYGON_API_KEY             = os.getenv("POLYGON_API_KEY")
 MARKET_DAILY_BACKFILL_YEARS = int(os.getenv("MARKET_DAILY_BACKFILL_YEARS", "10"))

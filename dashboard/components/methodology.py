@@ -356,6 +356,76 @@ def _render_methodology_notes() -> None:
     st.markdown(_panel(bullets_html), unsafe_allow_html=True)
 
 
+def _render_recession_model() -> None:
+    section_header("RECESSION PROBABILITY MODEL")
+
+    intro = _prose(
+        "The Recession Risk tab runs a standalone <b>logistic regression</b> model trained on "
+        "NBER recession dates. The model is entirely rules-based — no judgment overrides, no "
+        "parameter tuning to improve backtest performance."
+    )
+
+    model_table = f"""
+<table style="{_TABLE_STYLE};margin-top:10px">
+  <thead>
+    <tr>
+      <th style="{_TH_STYLE}">Component</th>
+      <th style="{_TH_STYLE}">Detail</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="{_TD_STYLE}"><span style="color:#e6edf3;font-weight:500">Model type</span></td>
+      <td style="{_TD_STYLE}">Logistic regression (sklearn LogisticRegression, C=1.0, class_weight=balanced)</td>
+    </tr>
+    <tr>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#e6edf3;font-weight:500">Training target</span></td>
+      <td style="{_TD_ALT_STYLE}">NBER USREC indicator (monthly 0/1) — falls back to hardcoded NBER dates if USREC absent from DB</td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}"><span style="color:#e6edf3;font-weight:500">Features (5)</span></td>
+      <td style="{_TD_STYLE}">
+        yield_curve (DGS10−DGS2, %), unemployment (UNRATE, %),
+        hy_spread (BAMLH0A0HYM2, bps), indpro_yoy (INDPRO 12m % chg),
+        lei_proxy (USSLIND or T10YIE−T5YIE fallback)
+      </td>
+    </tr>
+    <tr>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#e6edf3;font-weight:500">Look-ahead bias control</span></td>
+      <td style="{_TD_ALT_STYLE}">All features are lagged 3 months before both training and inference</td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}"><span style="color:#e6edf3;font-weight:500">Output</span></td>
+      <td style="{_TD_STYLE}">12-month recession probability (0–100%); thresholds: Low &lt;20%, Elevated 20–40%, High ≥40%</td>
+    </tr>
+    <tr>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#e6edf3;font-weight:500">Retraining cadence</span></td>
+      <td style="{_TD_ALT_STYLE}">Retrained on every dashboard cold start (@st.cache_resource); no stored model weights</td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}"><span style="color:#e6edf3;font-weight:500">Yield curve percentile</span></td>
+      <td style="{_TD_STYLE}">Computed vs 30yr history in % units (not basis points) to avoid unit mismatch</td>
+    </tr>
+    <tr>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#e6edf3;font-weight:500">Macro divergence</span></td>
+      <td style="{_TD_ALT_STYLE}">
+        HY OAS percentile rank (market signal) minus regime prob_recession (macro signal).
+        &gt;+20: &ldquo;Markets ahead of macro&rdquo; &middot; &lt;−20: &ldquo;Macro ahead of markets&rdquo; &middot; otherwise &ldquo;Aligned&rdquo;
+      </td>
+    </tr>
+  </tbody>
+</table>"""
+
+    limitation = _prose(
+        "<b>Limitation:</b> NBER declares recessions retroactively — USREC may show 0 for recent "
+        "months even if a recession has begun. Only 4 recessions appear in the training sample since "
+        "1990 (small sample). Treat probabilities above 40% as a heightened-vigilance trigger, "
+        "not a confirmed recession call."
+    )
+
+    st.markdown(_panel(intro + model_table + limitation), unsafe_allow_html=True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -367,3 +437,4 @@ def render_methodology() -> None:
     _render_threshold_proximity()
     _render_data_sources()
     _render_methodology_notes()
+    _render_recession_model()

@@ -890,8 +890,9 @@ _render_header_bar(latest_regime, as_of)
 # Top-level tab navigation
 # ─────────────────────────────────────────────────────────────────────────────
 
-tab_dash, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, tab_meth = st.tabs([
-    "Dashboard", "Markets", "Signals & Alerts", "Historical Analysis", "Calendar", "Credit", "Methodology"
+tab_dash, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, tab_rec, tab_meth = st.tabs([
+    "Dashboard", "Markets", "Signals & Alerts", "Historical Analysis",
+    "Calendar", "Credit", "Recession Risk", "Methodology"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -904,6 +905,13 @@ with tab_dash:
 
     # ── Read-through box ─────────────────────────────────────────────────────
     _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signals, as_of)
+
+    # ── Recession risk summary (Phase 8) ──────────────────────────────────────
+    try:
+        from components.recession_tab import render_recession_summary
+        render_recession_summary()
+    except Exception:
+        pass
 
     # ── Decision View (regime tile, risks, events, signals strip, surprises) ─
     try:
@@ -1328,6 +1336,17 @@ with tab_credit:
         render_credit()
     except Exception as exc:
         st.error(f"Credit tab error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Recession Risk (Phase 8)
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_rec:
+    try:
+        from components.recession_tab import render as render_recession
+        render_recession()
+    except Exception as exc:
+        st.error(f"Recession Risk tab error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: Methodology
