@@ -321,9 +321,17 @@ def _render_sensitivity_table(
     def _cell_color(irr: float | None) -> str:
         return _irr_color(irr)
 
-    # Build header row
-    header_cells = "<th></th>" + "".join(
-        f'<th>{x:.1f}x</th>' for x in exit_range
+    # Build two-row header: spanning "EXIT MULTIPLE" label + value row with "ENTRY MULTIPLE" corner
+    n_exit = len(exit_range)
+    header_cells = (
+        f'<tr><th style="text-align:left;padding:5px 8px;font-size:10px;'
+        f'text-transform:uppercase;letter-spacing:.06em;color:{_MUTED};">ENTRY MULTIPLE</th>'
+        f'<th colspan="{n_exit}" style="text-align:center;padding:6px 8px;'
+        f'font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:{_MUTED};'
+        f'border-bottom:0.5px solid {_BORDER};">EXIT MULTIPLE</th></tr>'
+        f'<tr><th></th>'
+        + "".join(f'<th>{x:.1f}x</th>' for x in exit_range)
+        + '</tr>'
     )
 
     rows_html = ""
@@ -346,10 +354,6 @@ def _render_sensitivity_table(
         f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 {_BASE_CSS}
 .wrap {{ margin-bottom: 4px; }}
-.label {{ font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
-         color: {_MUTED}; margin-bottom: 6px; }}
-.axes {{ display: flex; justify-content: space-between; font-size: 10px;
-        color: {_MUTED}; margin-bottom: 2px; }}
 .card {{ background: {_BG2}; border: 0.5px solid {_BORDER}; border-radius: 6px; overflow: hidden; }}
 table {{ width: 100%; border-collapse: collapse; font-size: 11px; }}
 thead tr {{ background: {_BG}; }}
@@ -361,13 +365,9 @@ th {{
 td {{ border-bottom: 0.5px solid {_BORDER}22; }}
 </style></head><body>
 <div class="wrap">
-  <div class="axes">
-    <span>Entry Multiple →</span>
-    <span>← Exit Multiple</span>
-  </div>
   <div class="card">
     <table>
-      <thead><tr>{header_cells}</tr></thead>
+      <thead>{header_cells}</thead>
       <tbody>{rows_html}</tbody>
     </table>
   </div>
@@ -471,6 +471,15 @@ def render() -> None:
     if "lbo_interest_rate" not in st.session_state:
         st.session_state["lbo_interest_rate"] = None  # None = use live rate
 
+    # Sync from slider's Streamlit-managed key — updated before any code runs on rerun,
+    # so the button visibility check below is always current on the same rerun.
+    _slider_val = st.session_state.get("interest_slider")
+    if _slider_val is not None:
+        if abs(_slider_val - live_rate) > 0.001:
+            st.session_state["lbo_interest_rate"] = _slider_val
+        else:
+            st.session_state["lbo_interest_rate"] = None
+
     current_rate = live_rate if st.session_state["lbo_interest_rate"] is None \
                    else st.session_state["lbo_interest_rate"]
 
@@ -507,12 +516,6 @@ def render() -> None:
             value=round(current_rate * 4) / 4,  # snap to nearest 0.25
             step=0.25, key="interest_slider",
         )
-
-        # Track manual override
-        if abs(interest_rate - live_rate) > 0.001:
-            st.session_state["lbo_interest_rate"] = interest_rate
-        else:
-            st.session_state["lbo_interest_rate"] = None
 
         amortization = st.slider("Annual debt amortization (%)", 0.0, 20.0,
                                  value=5.0, step=1.0)

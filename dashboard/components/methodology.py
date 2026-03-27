@@ -430,6 +430,117 @@ def _render_recession_model() -> None:
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _render_lbo_calculator() -> None:
+    section_header("LBO CALCULATOR")
+
+    # Overview
+    st.markdown(
+        _panel(
+            _prose(
+                "Interactive leveraged buyout model with live market data integration. "
+                "Calculates equity returns (IRR, MOIC) for a hypothetical PE acquisition."
+            )
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # Data sources + Model mechanics side by side
+    data_sources = f"""
+<table style="{_TABLE_STYLE}">
+  <thead><tr>
+    <th style="{_TH_STYLE}">Series</th>
+    <th style="{_TH_STYLE}">Description</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td style="{_TD_STYLE}"><code style="font-size:11px;color:#79c0ff">FEDFUNDS</code></td>
+      <td style="{_TD_STYLE}">Fed Funds Rate (FRED, daily)</td>
+    </tr>
+    <tr>
+      <td style="{_TD_ALT_STYLE}"><code style="font-size:11px;color:#79c0ff">BAMLH0A0HYM2</code></td>
+      <td style="{_TD_ALT_STYLE}">ICE BofA US High Yield OAS — stored as % in FRED (e.g. 3.27 = 327 bps)</td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}">All-in Cost</td>
+      <td style="{_TD_STYLE}">Fed Funds + HY Spread (pre-populates interest rate slider)</td>
+    </tr>
+  </tbody>
+</table>"""
+
+    mechanics = f"""
+<table style="{_TABLE_STYLE}">
+  <thead><tr>
+    <th style="{_TH_STYLE}">Metric</th>
+    <th style="{_TH_STYLE}">Formula</th>
+  </tr></thead>
+  <tbody>
+    <tr><td style="{_TD_STYLE}">Entry EV</td><td style="{_TD_STYLE}">EBITDA &times; Entry Multiple</td></tr>
+    <tr><td style="{_TD_ALT_STYLE}">Entry Debt</td><td style="{_TD_ALT_STYLE}">EBITDA &times; Leverage Ratio</td></tr>
+    <tr><td style="{_TD_STYLE}">Entry Equity</td><td style="{_TD_STYLE}">Entry EV &minus; Entry Debt &minus; Transaction Fees</td></tr>
+    <tr><td style="{_TD_ALT_STYLE}">Interest</td><td style="{_TD_ALT_STYLE}">Declining balance — interest on remaining principal each year</td></tr>
+    <tr><td style="{_TD_STYLE}">Exit Equity</td><td style="{_TD_STYLE}">Exit EV &minus; Remaining Debt</td></tr>
+    <tr><td style="{_TD_ALT_STYLE}">MOIC</td><td style="{_TD_ALT_STYLE}">Exit Equity &divide; Entry Equity</td></tr>
+    <tr><td style="{_TD_STYLE}">IRR</td><td style="{_TD_STYLE}">Solved via binary search on NPV (no numpy dependency)</td></tr>
+  </tbody>
+</table>"""
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(
+            _panel(f'<p style="font-size:11px;color:#8899aa;text-transform:uppercase;'
+                   f'letter-spacing:.06em;margin-bottom:8px">Data Sources</p>' + data_sources),
+            unsafe_allow_html=True,
+        )
+    with col2:
+        st.markdown(
+            _panel(f'<p style="font-size:11px;color:#8899aa;text-transform:uppercase;'
+                   f'letter-spacing:.06em;margin-bottom:8px">Model Mechanics</p>' + mechanics),
+            unsafe_allow_html=True,
+        )
+
+    # IRR thresholds
+    thresholds = f"""
+<table style="{_TABLE_STYLE}">
+  <thead><tr>
+    <th style="{_TH_STYLE}">IRR Range</th>
+    <th style="{_TH_STYLE}">Signal</th>
+    <th style="{_TH_STYLE}">Color</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td style="{_TD_STYLE}">&ge;20%</td>
+      <td style="{_TD_STYLE}">Strong returns</td>
+      <td style="{_TD_STYLE}"><span style="background:rgba(46,204,113,0.15);color:#2ecc71;
+        padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Green</span></td>
+    </tr>
+    <tr>
+      <td style="{_TD_ALT_STYLE}">15–20%</td>
+      <td style="{_TD_ALT_STYLE}">Acceptable</td>
+      <td style="{_TD_ALT_STYLE}"><span style="background:rgba(74,158,255,0.15);color:#4a9eff;
+        padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Blue</span></td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}">&lt;15%</td>
+      <td style="{_TD_STYLE}">Below typical PE hurdle rate</td>
+      <td style="{_TD_STYLE}"><span style="background:rgba(230,126,34,0.15);color:#e67e22;
+        padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Orange</span></td>
+    </tr>
+  </tbody>
+</table>
+<p style="font-size:11px;color:#8b949e;margin-top:8px;line-height:1.5">
+  The sensitivity table displays a 5&times;5 IRR grid across entry vs exit multiples,
+  centered on the current slider values and rounded to 0.5&times; increments.
+  Color coding is consistent across the returns banner, schedule table header, and all sensitivity cells.
+</p>"""
+
+    st.markdown(
+        _panel(f'<p style="font-size:11px;color:#8899aa;text-transform:uppercase;'
+               f'letter-spacing:.06em;margin-bottom:8px">IRR Thresholds &amp; Sensitivity</p>'
+               + thresholds),
+        unsafe_allow_html=True,
+    )
+
+
 def render_methodology() -> None:
     """Render the Methodology tab — 5 sections with real values from src/."""
     _render_regime_framework()
@@ -438,3 +549,4 @@ def render_methodology() -> None:
     _render_data_sources()
     _render_methodology_notes()
     _render_recession_model()
+    _render_lbo_calculator()
