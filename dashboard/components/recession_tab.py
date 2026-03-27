@@ -131,7 +131,7 @@ def _gauge_svg(prob: float, color: str) -> str:
     ny = round(100 - 65 * math.sin(angle_rad), 2)
     fill_color = "#2ecc71" if prob < 33 else "#e67e22" if prob < 60 else "#e74c3c"
     return (
-        f'<svg viewBox="0 0 200 110" xmlns="http://www.w3.org/2000/svg"'
+        f'<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg"'
         f' style="width:100%;max-width:200px;display:block;margin:0 auto;">'
         f'<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#30363d"'
         f' stroke-width="12" stroke-linecap="round"/>'
@@ -155,9 +155,9 @@ def _gauge_svg(prob: float, color: str) -> str:
         f'<text x="100" y="82" text-anchor="middle"'
         f' font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif"'
         f' font-size="22" font-weight="700" fill="{color}">{prob:.1f}%</text>'
-        f'<text x="18" y="112" text-anchor="middle" font-size="8" fill="#586069"'
+        f'<text x="18" y="118" text-anchor="middle" font-size="8" fill="#586069"'
         f' font-family="sans-serif">0</text>'
-        f'<text x="182" y="112" text-anchor="middle" font-size="8" fill="#586069"'
+        f'<text x="182" y="118" text-anchor="middle" font-size="8" fill="#586069"'
         f' font-family="sans-serif">100</text>'
         f'</svg>'
     )
@@ -662,7 +662,7 @@ def render() -> None:
     months may show 0 even if a recession has begun.
     This model is a quantitative indicator, not a forecast.
   </div>
-</div>""", height=280)
+</div>""", height=340)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
