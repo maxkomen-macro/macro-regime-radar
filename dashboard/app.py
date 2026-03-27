@@ -890,9 +890,10 @@ _render_header_bar(latest_regime, as_of)
 # Top-level tab navigation
 # ─────────────────────────────────────────────────────────────────────────────
 
-tab_dash, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, tab_rec, tab_meth = st.tabs([
+tab_dash, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, \
+tab_rec, tab_lbo, tab_meth = st.tabs([
     "Dashboard", "Markets", "Signals & Alerts", "Historical Analysis",
-    "Calendar", "Credit", "Recession Risk", "Methodology"
+    "Calendar", "Credit", "Recession Risk", "LBO Calculator", "Methodology"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1347,6 +1348,17 @@ with tab_rec:
         render_recession()
     except Exception as exc:
         st.error(f"Recession Risk tab error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: LBO Calculator (Phase 8B)
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_lbo:
+    try:
+        from components.lbo_tab import render as render_lbo
+        render_lbo()
+    except Exception as exc:
+        st.error(f"LBO Calculator error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: Methodology
