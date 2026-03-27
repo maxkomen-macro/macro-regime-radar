@@ -662,7 +662,7 @@ def render() -> None:
     months may show 0 even if a recession has begun.
     This model is a quantitative indicator, not a forecast.
   </div>
-</div>""", height=220)
+</div>""", height=280)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
