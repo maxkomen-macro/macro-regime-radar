@@ -82,7 +82,7 @@ def _render_live_rate_banner(defaults: dict, live_rate: float) -> None:
     rate = defaults["lbo_all_in_rate"]
     asof = defaults["data_as_of"]
 
-    components.v1.html(
+    components.html(
         f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 {_BASE_CSS}
 .banner {{
@@ -131,7 +131,7 @@ def _render_deal_summary(res: dict) -> None:
     eq   = res["entry_equity"]
     de   = round(debt / eq, 2) if eq and eq > 0 else 0
 
-    components.v1.html(
+    components.html(
         f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 {_BASE_CSS}
 .card {{
@@ -179,7 +179,7 @@ def _render_returns_banner(res: dict) -> None:
     # IRR tooltip via title attribute
     irr_title = "" if irr is not None else ' title="IRR could not be computed for this scenario."'
 
-    components.v1.html(
+    components.html(
         f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 {_BASE_CSS}
 .row {{ display: flex; gap: 10px; }}
@@ -240,7 +240,7 @@ def _render_schedule_table(res: dict) -> None:
 
     height = 60 + n * 32
 
-    components.v1.html(
+    components.html(
         f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 {_BASE_CSS}
 .card {{
@@ -342,7 +342,7 @@ def _render_sensitivity_table(
 
     height = 60 + len(entry_range) * 34
 
-    components.v1.html(
+    components.html(
         f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 {_BASE_CSS}
 .wrap {{ margin-bottom: 4px; }}
@@ -415,7 +415,7 @@ def _render_market_context() -> None:
     else:
         rt = ""
 
-    components.v1.html(
+    components.html(
         f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 {_BASE_CSS}
 .card {{
