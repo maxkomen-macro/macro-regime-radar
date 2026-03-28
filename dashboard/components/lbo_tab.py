@@ -467,21 +467,9 @@ def render() -> None:
     defaults = get_lbo_defaults()
     live_rate = defaults["lbo_all_in_rate"]
 
-    # --- Session state for interest rate ---
-    if "lbo_interest_rate" not in st.session_state:
-        st.session_state["lbo_interest_rate"] = None  # None = use live rate
-
-    # Sync from slider's Streamlit-managed key — updated before any code runs on rerun,
-    # so the button visibility check below is always current on the same rerun.
-    _slider_val = st.session_state.get("interest_slider")
-    if _slider_val is not None:
-        if abs(_slider_val - live_rate) > 0.001:
-            st.session_state["lbo_interest_rate"] = _slider_val
-        else:
-            st.session_state["lbo_interest_rate"] = None
-
-    current_rate = live_rate if st.session_state["lbo_interest_rate"] is None \
-                   else st.session_state["lbo_interest_rate"]
+    # Initialize boolean flag
+    if "lbo_use_live_rate" not in st.session_state:
+        st.session_state.lbo_use_live_rate = True
 
     left, right = st.columns([2, 3])
 
@@ -491,12 +479,6 @@ def render() -> None:
     with left:
         _section_header("DEAL PARAMETERS", _BLUE)
         _render_live_rate_banner(defaults, live_rate)
-
-        # "Use live rate" button — only visible if user deviated
-        if st.session_state["lbo_interest_rate"] is not None:
-            if st.button("↻ Use live rate", key="reset_rate"):
-                st.session_state["lbo_interest_rate"] = None
-                st.rerun()
 
         ebitda = st.slider("Entry EBITDA ($M)", 10.0, 2000.0,
                            value=100.0, step=10.0)
@@ -511,11 +493,30 @@ def render() -> None:
         leverage_ratio = st.slider("Leverage (Debt/EBITDA)", 0.5, 8.0,
                                    value=4.5, step=0.25)
 
+        # Reset button — show before slider, only if not using live rate
+        if not st.session_state.lbo_use_live_rate:
+            if st.button("↻ Use live rate", key="reset_to_live"):
+                st.session_state.lbo_use_live_rate = True
+                st.rerun()
+
+        # Determine slider default
+        slider_default = live_rate if st.session_state.lbo_use_live_rate else st.session_state.get("lbo_manual_rate", live_rate)
+
         interest_rate = st.slider(
-            "Interest rate (%)", 3.0, 20.0,
-            value=round(current_rate * 4) / 4,  # snap to nearest 0.25
-            step=0.25, key="interest_slider",
+            "Interest rate (%)",
+            min_value=3.0,
+            max_value=20.0,
+            value=slider_default,
+            step=0.25,
         )
+
+        # Detect manual change (floating-point tolerance, step is 0.25)
+        if abs(interest_rate - live_rate) > 0.1:
+            st.session_state.lbo_use_live_rate = False
+            st.session_state.lbo_manual_rate = interest_rate
+        else:
+            # User moved slider back to live rate — hide button
+            st.session_state.lbo_use_live_rate = True
 
         amortization = st.slider("Annual debt amortization (%)", 0.0, 20.0,
                                  value=5.0, step=1.0)
