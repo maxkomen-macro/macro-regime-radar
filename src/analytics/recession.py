@@ -397,3 +397,11 @@ def _empty_metrics() -> dict:
         "_current_indpro_yoy":       0.0,
         "_current_lei":              0.0,
     }
+
+
+def get_recession_probability() -> float:
+    """
+    Convenience wrapper — return current recession probability (0–100).
+    Calls get_recession_metrics() and extracts the probability value.
+    """
+    return get_recession_metrics().get("recession_prob", 0.0)

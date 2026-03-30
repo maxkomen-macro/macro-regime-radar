@@ -890,9 +890,9 @@ _render_header_bar(latest_regime, as_of)
 # Top-level tab navigation
 # ─────────────────────────────────────────────────────────────────────────────
 
-tab_dash, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, \
+tab_dash, tab_intel, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, \
 tab_rec, tab_lbo, tab_meth = st.tabs([
-    "Dashboard", "Markets", "Signals & Alerts", "Historical Analysis",
+    "Dashboard", "Intelligence", "Markets", "Signals & Alerts", "Historical Analysis",
     "Calendar", "Credit", "Recession Risk", "LBO Calculator", "Methodology"
 ])
 
@@ -903,6 +903,13 @@ tab_rec, tab_lbo, tab_meth = st.tabs([
 with tab_dash:
     # ── Timestamps ───────────────────────────────────────────────────────────
     _render_timestamps(as_of)
+
+    # ── Market Intelligence summary card (Phase 8C) ───────────────────────
+    try:
+        from components.intelligence_tab import _render_intelligence_dashboard_card
+        _render_intelligence_dashboard_card()
+    except Exception:
+        pass
 
     # ── Read-through box ─────────────────────────────────────────────────────
     _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signals, as_of)
@@ -1276,6 +1283,17 @@ with tab_dash:
                 file_name="signals.csv",
                 mime="text/csv",
             )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Intelligence (Phase 8C)
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_intel:
+    try:
+        from components.intelligence_tab import render as render_intel
+        render_intel()
+    except Exception as exc:
+        st.error(f"Intelligence tab error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: Markets
