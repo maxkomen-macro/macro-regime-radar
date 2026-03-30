@@ -483,12 +483,11 @@ def _render_analogues_timeline(analogues: list[dict]) -> None:
 
     nodes_svg = ""
     for i, a in enumerate(analogues):
-        x       = x_step * (i + 1)
-        score   = a["similarity_score"]
-        color   = a["similarity_color"]
-        period  = a["period"]
-        short   = a["what_happened"][:35] + "…"
-        next_r  = a["next_regime"]
+        x      = x_step * (i + 1)
+        score  = a["similarity_score"]
+        color  = a["similarity_color"]
+        period = a["period"]
+        next_r = a["next_regime"].replace("Recession Risk", "Rec. Risk")
 
         nodes_svg += f"""
         <g>
@@ -497,8 +496,7 @@ def _render_analogues_timeline(analogues: list[dict]) -> None:
           </circle>
           <text x="{x}" y="{y_line - 18}" text-anchor="middle" font-size="11" fill="{color}" font-weight="700">{score}%</text>
           <text x="{x}" y="{y_line + 22}" text-anchor="middle" font-size="10" fill="#e6edf3">{period}</text>
-          <text x="{x}" y="{y_line + 34}" text-anchor="middle" font-size="9" fill="#8b949e">{short}</text>
-          <text x="{x}" y="{y_line + 46}" text-anchor="middle" font-size="9" fill="#4a9eff">→ {next_r}</text>
+          <text x="{x}" y="{y_line + 35}" text-anchor="middle" font-size="9" fill="#4a9eff">→ {next_r}</text>
         </g>"""
 
     html = f"""{_BASE_CSS}
@@ -651,7 +649,7 @@ def _render_scenario_results(result: dict) -> None:
     <ul style="margin:0;padding-left:16px;">{impl_html}</ul>
   </div>
 </div>"""
-    components.html(html, height=520, scrolling=False)
+    components.html(html, height=620, scrolling=False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
