@@ -541,6 +541,106 @@ def _render_lbo_calculator() -> None:
     )
 
 
+def _render_intelligence_methodology() -> None:
+    """Intelligence tab methodology section."""
+    section_header("Market Intelligence")
+
+    intro = """
+<p style="font-size:13px;color:#c9d1d9;line-height:1.6;margin-bottom:12px;">
+The Intelligence tab synthesises all dashboard signals into actionable market narratives
+with forward-looking scenario analysis. It answers the "so what" question — translating
+raw macro data into positioning implications.
+</p>"""
+
+    components_doc = f"""
+<table style="{_TABLE_STYLE}">
+  <thead>
+    <tr>
+      <th style="{_TH_STYLE}">Component</th>
+      <th style="{_TH_STYLE}">Method</th>
+      <th style="{_TH_STYLE}">Output</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="{_TD_STYLE}"><strong>Market Takeaway</strong></td>
+      <td style="{_TD_STYLE}">Combines regime probs, credit conditions (BAMLH0A0HYM2 percentile), and logistic regression recession probability into a 3–4 sentence narrative</td>
+      <td style="{_TD_STYLE}">Narrative, conviction level (High/Medium/Low), primary signal (Risk-On/Mixed/Risk-Off), detected divergences</td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}"><strong>Regime Playbook</strong></td>
+      <td style="{_TD_STYLE}">Static reference data based on historical regime analysis (~1996–present). Sector hit rates from academic literature and historical backtest</td>
+      <td style="{_TD_STYLE}">Overweight/underweight sectors, asset class avg returns and hit rates, key risks and opportunities</td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}"><strong>Duration Analysis</strong></td>
+      <td style="{_TD_STYLE}">Counts consecutive months in current regime from regimes table. Compares to historical average streak for each regime type. Risk indicators computed from market_daily (momentum), BAML OAS (valuation), VIXCLS (sentiment)</td>
+      <td style="{_TD_STYLE}">Months in regime, percentile vs history, status (Early/Mid-Cycle/Extended/Long in Tooth)</td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}"><strong>Transition Probabilities</strong></td>
+      <td style="{_TD_STYLE}">Markov transition matrices computed from DB history (357 monthly regime observations). Falls back to calibrated priors if fewer than 50 transitions. Horizons: 3-month and 6-month</td>
+      <td style="{_TD_STYLE}">Stay probability, transition probs to each other regime, plain-English narrative</td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}"><strong>Historical Analogues</strong></td>
+      <td style="{_TD_STYLE}">Scores 7 pre-encoded historical periods on 4 criteria: regime match (40pt), HY spread percentile proximity (25pt), recession prob proximity (20pt), VIX level proximity (15pt)</td>
+      <td style="{_TD_STYLE}">Top 4 analogues by similarity score, with "what happened next" context</td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}"><strong>Scenario Analysis</strong></td>
+      <td style="{_TD_STYLE}">5 pre-built stress scenarios + custom builder. Regime probability recalculation uses simplified stress multipliers (Approach A): stress score = HY_delta/100 + VIX_delta/20 - SPX_delta/10. Probabilities adjusted proportionally and normalised to 100%</td>
+      <td style="{_TD_STYLE}">Stressed regime probs, probability deltas, positioning implications</td>
+    </tr>
+  </tbody>
+</table>"""
+
+    conviction_doc = f"""
+<table style="{_TABLE_STYLE}">
+  <thead>
+    <tr>
+      <th style="{_TH_STYLE}">Level</th>
+      <th style="{_TH_STYLE}">Condition</th>
+      <th style="{_TH_STYLE}">Color</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="{_TD_STYLE}">High</td>
+      <td style="{_TD_STYLE}">Top regime probability &gt;55% AND no signal divergences</td>
+      <td style="{_TD_STYLE}"><span style="background:rgba(46,204,113,0.15);color:#2ecc71;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Green</span></td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}">Medium</td>
+      <td style="{_TD_STYLE}">Top regime probability 40–55% OR one indicator diverges</td>
+      <td style="{_TD_STYLE}"><span style="background:rgba(74,158,255,0.15);color:#4a9eff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Blue</span></td>
+    </tr>
+    <tr>
+      <td style="{_TD_STYLE}">Low</td>
+      <td style="{_TD_STYLE}">Top regime probability &lt;40% OR multiple divergences</td>
+      <td style="{_TD_STYLE}"><span style="background:rgba(230,126,34,0.15);color:#e67e22;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Orange</span></td>
+    </tr>
+  </tbody>
+</table>"""
+
+    limitations = """
+<p style="font-size:11px;color:#8b949e;margin-top:8px;line-height:1.6;">
+<strong>Limitations:</strong>
+Regime probabilities displayed in the Intelligence tab are approximated from stored confidence scores
+using historical base rates as priors — exact softmax probabilities are not persisted in the database.
+The scenario stress multipliers are simplified linear approximations; a full Z-score recalculation
+through the regime model would be more accurate but is deferred to a future enhancement.
+Historical analogues use a small pre-encoded dataset and should be used as contextual references,
+not predictive signals.
+</p>"""
+
+    st.markdown(_panel(intro + components_doc), unsafe_allow_html=True)
+    st.markdown(_panel(
+        '<p style="font-size:11px;color:#8899aa;text-transform:uppercase;'
+        'letter-spacing:.06em;margin-bottom:8px">Conviction Scoring</p>' + conviction_doc + limitations
+    ), unsafe_allow_html=True)
+
+
 def render_methodology() -> None:
     """Render the Methodology tab — 5 sections with real values from src/."""
     _render_regime_framework()
@@ -550,3 +650,4 @@ def render_methodology() -> None:
     _render_methodology_notes()
     _render_recession_model()
     _render_lbo_calculator()
+    _render_intelligence_methodology()

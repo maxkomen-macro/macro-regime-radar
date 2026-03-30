@@ -126,7 +126,7 @@ def compute_regime_probabilities(
     # Fix rounding residual — add/subtract from dominant regime
     total = sum(result.values())
     if total != 1.0:
-        dominant = max(result, key=result.get)
+        dominant = max(result, key=lambda k: result[k])
         result[dominant] = round(result[dominant] + (1.0 - total), 4)
 
     return result
