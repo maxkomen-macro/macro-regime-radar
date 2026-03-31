@@ -1,0 +1,597 @@
+"""
+src/analytics/allocation.py
+Standalone asset allocation analytics module.
+
+Implements portfolio optimization methods:
+- Mean-Variance Optimization (MVO) — maximize Sharpe ratio
+- Minimum Variance — minimize portfolio volatility
+- Risk Parity — equal risk contribution from each asset
+
+Uses index proxies (^GSPC, ^RUT, GC=F) for longer history pre-ETF-inception.
+NO imports from src.config — avoids FRED_API_KEY requirement.
+"""
+from __future__ import annotations
+
+import sqlite3
+import warnings
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from scipy.optimize import minimize
+
+warnings.filterwarnings("ignore")
+
+# ── Paths ──────────────────────────────────────────────────────────────────────
+ROOT    = Path(__file__).resolve().parent.parent.parent
+DB_PATH = ROOT / "data" / "macro_radar.db"
+
+# ── Asset class configuration ──────────────────────────────────────────────────
+# index: free index proxy to extend history before ETF inception; None = ETF only
+ASSET_CLASSES: Dict[str, Dict] = {
+    "US Large Cap":     {"etf": "SPY",  "index": "^GSPC", "etf_start": "1993-01-29"},
+    "US Small Cap":     {"etf": "IWM",  "index": "^RUT",  "etf_start": "2000-05-26"},
+    "Int'l Developed":  {"etf": "EFA",  "index": None,    "etf_start": "2001-08-27"},
+    "Emerging Markets": {"etf": "EEM",  "index": None,    "etf_start": "2003-04-14"},
+    "US Agg Bond":      {"etf": "AGG",  "index": None,    "etf_start": "2003-09-29"},
+    "US Treasuries":    {"etf": "IEF",  "index": None,    "etf_start": "2002-07-30"},
+    "IG Credit":        {"etf": "LQD",  "index": None,    "etf_start": "2002-07-30"},
+    "High Yield":       {"etf": "HYG",  "index": None,    "etf_start": "2007-04-11"},
+    "Commodities":      {"etf": "DJP",  "index": None,    "etf_start": "2006-06-06"},
+    "Gold":             {"etf": "GLD",  "index": "GC=F",  "etf_start": "2004-11-18"},
+}
+
+REGIME_LABELS: List[str] = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"]
+
+
+# ── Database ───────────────────────────────────────────────────────────────────
+
+def _get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+# ── Data fetching ──────────────────────────────────────────────────────────────
+
+def _fetch_prices(ticker: str, start: str, end: str) -> pd.Series:
+    """Download adjusted close prices via yfinance. Returns empty Series on failure."""
+    try:
+        raw = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+        if raw is None or raw.empty:
+            return pd.Series(dtype=float)
+        col = "Close"
+        if isinstance(raw.columns, pd.MultiIndex):
+            # yfinance returns MultiIndex when multi-ticker
+            if (col, ticker) in raw.columns:
+                return raw[(col, ticker)].dropna()
+            # fallback: first Close column
+            close_cols = [c for c in raw.columns if c[0] == col]
+            if close_cols:
+                return raw[close_cols[0]].dropna()
+            return pd.Series(dtype=float)
+        if col in raw.columns:
+            return raw[col].dropna()
+        return pd.Series(dtype=float)
+    except Exception as exc:
+        print(f"  Warning: could not fetch {ticker}: {exc}")
+        return pd.Series(dtype=float)
+
+
+def get_asset_returns(
+    start_date: str = "1990-01-01",
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Monthly returns (as decimals) for all 10 asset classes.
+
+    For assets with an index proxy:
+      - Fetch index data from start_date → etf_start
+      - Fetch ETF data from etf_start → end_date
+      - Normalize index prices at the splice point and concat
+    For assets without a proxy (index=None):
+      - Fetch ETF from etf_start → end_date only
+    """
+    if end_date is None:
+        end_date = datetime.now().strftime("%Y-%m-%d")
+
+    all_returns: Dict[str, pd.Series] = {}
+
+    for name, cfg in ASSET_CLASSES.items():
+        etf       = cfg["etf"]
+        idx       = cfg["index"]
+        etf_start = cfg["etf_start"]
+
+        # ── Fetch ETF prices ───────────────────────────────────────────────────
+        etf_prices = _fetch_prices(etf, etf_start, end_date)
+
+        if len(etf_prices) == 0:
+            print(f"  Skipping {name}: no ETF data")
+            continue
+
+        combined = etf_prices.copy()
+
+        # ── Splice index proxy for pre-ETF history ─────────────────────────────
+        if idx is not None and start_date < etf_start:
+            idx_prices = _fetch_prices(idx, start_date, etf_start)
+
+            if len(idx_prices) > 0:
+                # Find first ETF price and last index price to compute scale factor
+                first_etf_date  = etf_prices.index[0]
+                # Use closest index price on or before ETF inception
+                pre_splice = idx_prices[idx_prices.index < first_etf_date]
+
+                if len(pre_splice) > 0:
+                    last_idx_price   = pre_splice.iloc[-1]
+                    first_etf_price  = etf_prices.iloc[0]
+                    scale            = first_etf_price / last_idx_price if last_idx_price != 0 else 1.0
+                    scaled_pre       = pre_splice * scale
+                    combined         = pd.concat([scaled_pre, etf_prices])
+                    combined         = combined[~combined.index.duplicated(keep="last")]
+                    combined         = combined.sort_index()
+
+        # ── Monthly returns ────────────────────────────────────────────────────
+        monthly   = combined.resample("ME").last()
+        returns   = monthly.pct_change().dropna()
+        all_returns[name] = returns
+
+    df = pd.DataFrame(all_returns)
+
+    # Keep rows with at least 6 of 10 assets present; forward-fill small gaps.
+    # Do NOT call dropna() — NaN is preserved for assets not yet launched.
+    df = df.dropna(thresh=6)
+    df = df.ffill(limit=2)
+
+    return df
+
+
+# ── Regime data ────────────────────────────────────────────────────────────────
+
+def get_regime_history() -> pd.DataFrame:
+    """Return regime labels indexed by date from the DB."""
+    conn = _get_conn()
+    df = pd.read_sql_query(
+        "SELECT date, label AS regime, confidence FROM regimes ORDER BY date",
+        conn,
+        parse_dates=["date"],
+    )
+    conn.close()
+    return df.set_index("date")
+
+
+def get_current_regime() -> Tuple[str, float]:
+    """Return (label, confidence) for the most recent regime row."""
+    conn = _get_conn()
+    df = pd.read_sql_query(
+        "SELECT label, confidence FROM regimes ORDER BY date DESC LIMIT 1",
+        conn,
+    )
+    conn.close()
+    if df.empty:
+        return "Unknown", 0.0
+    return str(df.iloc[0]["label"]), float(df.iloc[0]["confidence"])
+
+
+def get_risk_free_rate() -> float:
+    """Return annualized risk-free rate from FEDFUNDS in raw_series, or 4.5% fallback."""
+    conn = _get_conn()
+    df = pd.read_sql_query(
+        "SELECT value FROM raw_series WHERE series_id='FEDFUNDS' ORDER BY date DESC LIMIT 1",
+        conn,
+    )
+    conn.close()
+    if df.empty:
+        return 0.045
+    return float(df.iloc[0]["value"]) / 100.0
+
+
+# ── Regime-conditional statistics ─────────────────────────────────────────────
+
+def get_regime_conditional_stats(
+    returns: pd.DataFrame,
+    regimes: pd.DataFrame,
+    min_months: int = 12,
+) -> Dict[str, Dict]:
+    """Annualized mean, std, and Sharpe per regime (only regimes with ≥ min_months)."""
+    rf = get_risk_free_rate()
+
+    combined = returns.copy()
+    combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
+    combined = combined.dropna(subset=["regime"])
+
+    stats: Dict[str, Dict] = {}
+    for regime in REGIME_LABELS:
+        sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+        sub = sub.dropna(axis=1, how="all")   # drop assets with zero observations this regime
+        if len(sub) < min_months:
+            continue
+        mean_ann  = sub.mean() * 12           # skipna=True by default
+        std_ann   = sub.std() * np.sqrt(12)
+        sharpe    = (mean_ann - rf) / std_ann.replace(0, np.nan)
+        stats[regime] = {
+            "mean":     mean_ann,
+            "std":      std_ann,
+            "sharpe":   sharpe,
+            "n_months": len(sub),
+        }
+    return stats
+
+
+def get_regime_conditional_covariance(
+    returns: pd.DataFrame,
+    regimes: pd.DataFrame,
+    min_months: int = 24,
+) -> Dict[str, pd.DataFrame]:
+    """Annualized covariance matrix per regime (only regimes with ≥ min_months)."""
+    combined = returns.copy()
+    combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
+    combined = combined.dropna(subset=["regime"])
+
+    covs: Dict[str, pd.DataFrame] = {}
+    for regime in REGIME_LABELS:
+        sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+        sub = sub.dropna(axis=1, how="all")   # drop assets absent for this regime
+        sub_clean = sub.dropna()              # rectangular block: rows with all remaining assets
+        if len(sub_clean) < min_months:
+            continue
+        covs[regime] = sub_clean.cov() * 12
+    return covs
+
+
+def get_correlation_by_regime(
+    returns: pd.DataFrame,
+    regimes: pd.DataFrame,
+    min_months: int = 12,
+) -> Dict[str, pd.DataFrame]:
+    """Correlation matrix per regime."""
+    combined = returns.copy()
+    combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
+    combined = combined.dropna(subset=["regime"])
+
+    corrs: Dict[str, pd.DataFrame] = {}
+    for regime in REGIME_LABELS:
+        sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+        sub = sub.dropna(axis=1, how="all")
+        sub_clean = sub.dropna()
+        if len(sub_clean) < min_months:
+            continue
+        corrs[regime] = sub_clean.corr()
+    return corrs
+
+
+# ── Portfolio metrics ──────────────────────────────────────────────────────────
+
+def _port_return(w: np.ndarray, mu: np.ndarray) -> float:
+    return float(np.dot(w, mu))
+
+
+def _port_vol(w: np.ndarray, cov: np.ndarray) -> float:
+    v = float(np.sqrt(np.dot(w, np.dot(cov, w))))
+    return max(v, 1e-10)
+
+
+def _port_sharpe(w: np.ndarray, mu: np.ndarray, cov: np.ndarray, rf: float) -> float:
+    return (_port_return(w, mu) - rf) / _port_vol(w, cov)
+
+
+def _regularize(cov: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+    """Add tiny ridge to covariance to avoid singularity."""
+    return cov + eps * np.eye(cov.shape[0])
+
+
+# ── Optimization methods ───────────────────────────────────────────────────────
+
+def mean_variance_optimize(
+    expected_returns: np.ndarray,
+    cov_matrix: np.ndarray,
+    risk_free_rate: float = 0.045,
+    max_weight: float = 0.40,
+    min_weight: float = 0.0,
+) -> Dict:
+    """Maximum-Sharpe-ratio portfolio (Markowitz MVO)."""
+    cov = _regularize(cov_matrix)
+    n   = len(expected_returns)
+    x0  = np.full(n, 1.0 / n)
+
+    result = minimize(
+        lambda w: -_port_sharpe(w, expected_returns, cov, risk_free_rate),
+        x0,
+        method="SLSQP",
+        bounds=[(min_weight, max_weight)] * n,
+        constraints=[{"type": "eq", "fun": lambda w: np.sum(w) - 1}],
+        options={"maxiter": 1000, "ftol": 1e-9},
+    )
+
+    w = result.x if result.success else x0
+    w = np.clip(w, 0, max_weight)
+    w /= w.sum()
+
+    return {
+        "weights":         w,
+        "expected_return": _port_return(w, expected_returns),
+        "volatility":      _port_vol(w, cov),
+        "sharpe_ratio":    _port_sharpe(w, expected_returns, cov, risk_free_rate),
+        "method":          "Mean-Variance (MVO)",
+        "converged":       result.success,
+    }
+
+
+def minimum_variance_optimize(
+    cov_matrix: np.ndarray,
+    max_weight: float = 0.40,
+    min_weight: float = 0.0,
+) -> Dict:
+    """Minimum-variance portfolio (ignores expected returns)."""
+    cov = _regularize(cov_matrix)
+    n   = cov.shape[0]
+    x0  = np.full(n, 1.0 / n)
+
+    result = minimize(
+        lambda w: np.dot(w, np.dot(cov, w)),
+        x0,
+        method="SLSQP",
+        bounds=[(min_weight, max_weight)] * n,
+        constraints=[{"type": "eq", "fun": lambda w: np.sum(w) - 1}],
+        options={"maxiter": 1000, "ftol": 1e-9},
+    )
+
+    w = result.x if result.success else x0
+    w = np.clip(w, 0, max_weight)
+    w /= w.sum()
+
+    return {
+        "weights":   w,
+        "volatility": _port_vol(w, cov),
+        "method":    "Minimum Variance",
+        "converged": result.success,
+    }
+
+
+def risk_parity_optimize(
+    cov_matrix: np.ndarray,
+    max_weight: float = 0.40,
+    min_weight: float = 0.02,
+) -> Dict:
+    """
+    Risk-parity portfolio: each asset contributes equally to total risk.
+    RC_i = w_i * (Σw)_i / σ_p
+    Objective: minimize Σ (RC_i - σ_p/n)²
+    """
+    cov = _regularize(cov_matrix)
+    n   = cov.shape[0]
+
+    # Start with inverse-volatility weights
+    vols = np.sqrt(np.diag(cov))
+    x0   = (1.0 / vols) / (1.0 / vols).sum()
+    x0   = np.clip(x0, min_weight, max_weight)
+    x0  /= x0.sum()
+
+    def objective(w: np.ndarray) -> float:
+        vol = _port_vol(w, cov)
+        marginal = np.dot(cov, w)
+        rc       = w * marginal / vol
+        target   = vol / n
+        return float(np.sum((rc - target) ** 2))
+
+    result = minimize(
+        objective,
+        x0,
+        method="SLSQP",
+        bounds=[(min_weight, max_weight)] * n,
+        constraints=[{"type": "eq", "fun": lambda w: np.sum(w) - 1}],
+        options={"maxiter": 2000, "ftol": 1e-10},
+    )
+
+    w = result.x if result.success else x0
+    w = np.clip(w, min_weight, max_weight)
+    w /= w.sum()
+
+    vol      = _port_vol(w, cov)
+    marginal = np.dot(cov, w)
+    rc       = w * marginal / vol
+
+    return {
+        "weights":           w,
+        "volatility":        vol,
+        "risk_contributions": rc,
+        "method":            "Risk Parity",
+        "converged":         result.success,
+    }
+
+
+# ── Efficient frontier ─────────────────────────────────────────────────────────
+
+def generate_efficient_frontier(
+    expected_returns: np.ndarray,
+    cov_matrix: np.ndarray,
+    risk_free_rate: float = 0.045,
+    n_points: int = 40,
+    max_weight: float = 0.40,
+    min_weight: float = 0.0,
+) -> pd.DataFrame:
+    """Parametric efficient frontier: min-variance at each target return level."""
+    cov = _regularize(cov_matrix)
+    n   = len(expected_returns)
+
+    # Bounds for feasible return range
+    min_var_w   = minimum_variance_optimize(cov, max_weight, min_weight)["weights"]
+    min_var_ret = _port_return(min_var_w, expected_returns)
+    max_ret     = float(np.dot(np.eye(n)[np.argmax(expected_returns)], expected_returns))
+
+    # Avoid going all the way to max (often infeasible with weight caps)
+    target_rets = np.linspace(min_var_ret, max_ret * 0.90, n_points)
+    points: List[Dict] = []
+
+    for tgt in target_rets:
+        res = minimize(
+            lambda w: np.dot(w, np.dot(cov, w)),
+            np.full(n, 1.0 / n),
+            method="SLSQP",
+            bounds=[(min_weight, max_weight)] * n,
+            constraints=[
+                {"type": "eq", "fun": lambda w: np.sum(w) - 1},
+                {"type": "eq", "fun": lambda w, t=tgt: _port_return(w, expected_returns) - t},
+            ],
+            options={"maxiter": 1000, "ftol": 1e-9},
+        )
+        if res.success:
+            w   = np.clip(res.x, 0, max_weight)
+            vol = _port_vol(w, cov)
+            ret = _port_return(w, expected_returns)
+            points.append({
+                "volatility": vol,
+                "return":     ret,
+                "sharpe":     (ret - risk_free_rate) / vol,
+            })
+
+    return pd.DataFrame(points)
+
+
+# ── Drawdown analysis ──────────────────────────────────────────────────────────
+
+def calculate_drawdowns(
+    returns: pd.DataFrame,
+    regimes: pd.DataFrame,
+) -> Dict:
+    """Max drawdown by asset class, overall and by regime."""
+    cum      = (1 + returns).cumprod()
+    run_max  = cum.cummax()
+    dd_series = (cum - run_max) / run_max
+
+    combined = dd_series.copy()
+    combined["regime"] = regimes["regime"].reindex(dd_series.index, method="ffill")
+    combined = combined.dropna(subset=["regime"])
+
+    by_regime: Dict[str, pd.Series] = {}
+    for regime in REGIME_LABELS:
+        sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+        if len(sub) > 0:
+            by_regime[regime] = sub.min()
+
+    return {
+        "by_regime": pd.DataFrame(by_regime),
+        "overall":   dd_series.min(),
+    }
+
+
+# ── Main entry point ───────────────────────────────────────────────────────────
+
+def get_allocation_data() -> Dict:
+    """
+    Fetch all data, run optimizations, and return a dict for the dashboard.
+
+    Keys:
+        current_regime, confidence, rf_rate,
+        regime_stats, regime_correlations,
+        optimizations (mvo/min_var/risk_parity/frontier/asset_names) or None,
+        drawdowns, data_start, data_end, n_months, asset_classes
+    """
+    print("Fetching asset returns (this may take ~30s on first run)...")
+    returns = get_asset_returns(start_date="1990-01-01")
+    n_months   = len(returns)
+    data_start = returns.index[0].strftime("%Y-%m") if n_months else "N/A"
+    data_end   = returns.index[-1].strftime("%Y-%m") if n_months else "N/A"
+    print(f"  {n_months} months  ({data_start} → {data_end})  ×  {len(returns.columns)} assets")
+
+    regimes         = get_regime_history()
+    current_regime, confidence = get_current_regime()
+    rf_rate         = get_risk_free_rate()
+    regime_stats    = get_regime_conditional_stats(returns, regimes)
+    regime_cov      = get_regime_conditional_covariance(returns, regimes)
+    regime_corr     = get_correlation_by_regime(returns, regimes)
+    drawdowns       = calculate_drawdowns(returns, regimes)
+
+    print(f"Current regime: {current_regime}  ({confidence:.0%})")
+    print(f"Risk-free rate: {rf_rate:.2%}")
+
+    optimizations = None
+    if current_regime in regime_stats and current_regime in regime_cov:
+        # Intersect: only assets with a non-NaN mean AND present in the cov matrix
+        stats_assets = [
+            a for a in regime_stats[current_regime]["mean"].index
+            if not np.isnan(regime_stats[current_regime]["mean"][a])
+        ]
+        cov_df      = regime_cov[current_regime]
+        asset_names = [a for a in stats_assets if a in cov_df.index]
+
+        mu  = regime_stats[current_regime]["mean"][asset_names].values
+        cov = cov_df.loc[asset_names, asset_names].values
+
+        print("\nRunning optimizations...")
+        mvo      = mean_variance_optimize(mu, cov, rf_rate)
+        min_var  = minimum_variance_optimize(cov)
+        rp       = risk_parity_optimize(cov)
+
+        # Fill in return / Sharpe for methods that don't compute them internally
+        for res in (min_var, rp):
+            res["expected_return"] = _port_return(res["weights"], mu)
+            res["sharpe_ratio"]    = _port_sharpe(res["weights"], mu, cov, rf_rate)
+
+        frontier = generate_efficient_frontier(mu, cov, rf_rate)
+
+        for label, res in [("MVO", mvo), ("Min Var", min_var), ("Risk Parity", rp)]:
+            print(f"  {label:12s}  ret={res['expected_return']:+.1%}  "
+                  f"vol={res['volatility']:.1%}  Sharpe={res['sharpe_ratio']:.2f}")
+
+        optimizations = {
+            "mvo":         mvo,
+            "min_var":     min_var,
+            "risk_parity": rp,
+            "frontier":    frontier,
+            "asset_names": asset_names,
+        }
+
+    return {
+        "current_regime":      current_regime,
+        "confidence":          confidence,
+        "rf_rate":             rf_rate,
+        "regime_stats":        regime_stats,
+        "regime_correlations": regime_corr,
+        "optimizations":       optimizations,
+        "drawdowns":           drawdowns,
+        "data_start":          data_start,
+        "data_end":            data_end,
+        "n_months":            n_months,
+        "asset_classes":       list(ASSET_CLASSES.keys()),
+    }
+
+
+# ── CLI test ───────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("ASSET ALLOCATION MODULE TEST")
+    print("=" * 60)
+
+    data = get_allocation_data()
+
+    print(f"\n{'=' * 60}")
+    print("RESULTS SUMMARY")
+    print("=" * 60)
+    print(f"Data: {data['n_months']} months ({data['data_start']} → {data['data_end']})")
+    print(f"Risk-free rate: {data['rf_rate']:.2%}")
+
+    if data["optimizations"]:
+        opt = data["optimizations"]
+        print("\n--- Optimization Results ---")
+        for key in ("mvo", "min_var", "risk_parity"):
+            r = opt[key]
+            print(f"\n{r['method']}:")
+            print(f"  Expected Return : {r['expected_return']:+.1%}")
+            print(f"  Volatility      : {r['volatility']:.1%}")
+            print(f"  Sharpe Ratio    : {r['sharpe_ratio']:.2f}")
+            ranked = sorted(zip(opt["asset_names"], r["weights"]), key=lambda x: x[1], reverse=True)
+            print("  Top holdings:")
+            for name, w in ranked[:5]:
+                if w > 0.01:
+                    print(f"    {name:<22} {w:.1%}")
+
+    print("\n--- Regime-Conditional Returns ---")
+    for regime, s in data["regime_stats"].items():
+        print(f"\n{regime} ({s['n_months']} months):")
+        for asset in s["mean"].nlargest(3).index:
+            print(f"  {asset:<22} {s['mean'][asset]:+.1%}")
