@@ -891,9 +891,9 @@ _render_header_bar(latest_regime, as_of)
 # ─────────────────────────────────────────────────────────────────────────────
 
 tab_dash, tab_intel, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, \
-tab_rec, tab_lbo, tab_meth = st.tabs([
+tab_rec, tab_lbo, tab_alloc, tab_meth = st.tabs([
     "Dashboard", "Intelligence", "Markets", "Signals & Alerts", "Historical Analysis",
-    "Calendar", "Credit", "Recession Risk", "LBO Calculator", "Methodology"
+    "Calendar", "Credit", "Recession Risk", "LBO Calculator", "Asset Allocation", "Methodology"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1377,6 +1377,17 @@ with tab_lbo:
         render_lbo()
     except Exception as exc:
         st.error(f"LBO Calculator error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB: Asset Allocation (Phase 9A)
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_alloc:
+    try:
+        from components.allocation_tab import render as render_allocation
+        render_allocation()
+    except Exception as exc:
+        st.error(f"Asset Allocation error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: Methodology
