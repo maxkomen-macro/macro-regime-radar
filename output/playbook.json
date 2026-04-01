@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-01T03:26:17.327571",
+  "generated_at": "2026-04-01T11:48:56.817995",
   "as_of": "2026-02-01",
   "regime": "Overheating",
   "confidence": 0.2979,
@@ -9,6 +9,7 @@
     "Because today VIX volatility is extreme (z=+5.50), the VIX signal is significantly elevated versus 2-year norms.",
     "Because today 10Y Treasury rate momentum is extreme (z=+3.34), the 10Y Treasury signal is significantly elevated versus 2-year norms.",
     "Because today unemployment labor conditions is above trend (z=+1.87).",
+    "Because today HYG credit conditions is above trend (z=+1.66).",
     "Because today 10Y real yield is positive at 2.04%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.64%."
   ],
