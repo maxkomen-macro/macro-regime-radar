@@ -760,6 +760,743 @@ def _render_drawdown_table(drawdowns: dict, asset_classes: list) -> None:
     components.html(html, height=46 * n_rows + 88, scrolling=False)
 
 
+def _render_cvar_section(data: dict) -> None:
+    """Tail Risk (CVaR / Expected Shortfall) section."""
+    cvar_data     = data.get("cvar_95")
+    regime_cvar   = data.get("regime_cvar", {})
+    optimizations = data.get("optimizations") or {}
+    current_regime = data.get("current_regime", "")
+
+    _section_header("TAIL RISK (EXPECTED SHORTFALL)", _NEG)
+    st.caption(
+        "CVaR shows the average loss in the worst 5% of periods — "
+        "more informative than VaR alone because it captures tail severity."
+    )
+
+    if not cvar_data or not cvar_data.get("asset_cvar"):
+        st.info("No CVaR data available.")
+        return
+
+    asset_cvar = cvar_data["asset_cvar"]
+    assets = list(asset_cvar.keys())
+
+    col1, col2 = st.columns([1, 1])
+
+    # ── Left: per-asset CVaR table ────────────────────────────────────────────
+    with col1:
+        rows_html = ""
+        for asset in assets:
+            info  = asset_cvar[asset]
+            cval  = info["cvar"]
+            vval  = info["var"]
+            n     = info["n_periods"]
+            # Red gradient: deeper red for worse (more negative) CVaR
+            intensity = min(abs(cval) / 0.20, 1.0)  # 20% = max depth
+            r = int(30 + intensity * 120)
+            bg = f"rgba({r},0,0,0.35)"
+            rows_html += (
+                f"<tr>"
+                f"<td style='background:{_CARD_BG};color:{_TEXT};border:1px solid {_BORDER};"
+                f"padding:6px 10px;font-size:12px;'>{asset}</td>"
+                f"<td style='background:{bg};border:1px solid {_BORDER};"
+                f"text-align:center;padding:6px 8px;color:{_NEG};font-size:12px;font-weight:600;'>"
+                f"{cval:.1%}</td>"
+                f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                f"text-align:center;padding:6px 8px;color:{_MUTED};font-size:12px;'>"
+                f"{vval:.1%}</td>"
+                f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                f"text-align:center;padding:6px 8px;color:{_MUTED};font-size:11px;'>{n}</td>"
+                f"</tr>"
+            )
+        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>* {{box-sizing:border-box;margin:0;padding:0;}}
+body {{background:{_PAGE_BG};font-family:monospace;padding:2px;}}
+table {{border-collapse:collapse;width:100%;}}</style></head>
+<body><div style="background:{_CARD_BG};border:1px solid {_BORDER};border-radius:8px;
+                 padding:12px;overflow-x:auto;">
+<table>
+  <thead><tr>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:left;font-size:11px;">Asset</th>
+    <th style="background:#161b22;color:{_NEG};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:center;font-size:11px;">CVaR 95%</th>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:center;font-size:11px;">VaR 95%</th>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:center;font-size:11px;">n</th>
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table></div></body></html>"""
+        n_rows = len(assets)
+        components.html(html, height=46 * n_rows + 70, scrolling=False)
+
+    # ── Right: portfolio CVaR by method ──────────────────────────────────────
+    with col2:
+        method_keys = ("mvo", "min_var", "risk_parity", "black_litterman", "hrp")
+        method_labels = {
+            "mvo": "MVO", "min_var": "Min Var", "risk_parity": "Risk Parity",
+            "black_litterman": "Black-Litterman", "hrp": "HRP",
+        }
+        rows = []
+        for key in method_keys:
+            opt = optimizations.get(key)
+            if opt and opt.get("cvar_95"):
+                cval = opt["cvar_95"]["cvar"]
+                rows.append({"method": method_labels[key], "cvar": cval, "color": _METHOD_COLORS[key]})
+
+        if rows:
+            df_cvar = pd.DataFrame(rows)
+            chart = (
+                alt.Chart(df_cvar)
+                .mark_bar(size=22)
+                .encode(
+                    x=alt.X("cvar:Q", title="Portfolio CVaR 95%",
+                            axis=alt.Axis(format=".1%", labelColor=_MUTED, titleColor=_MUTED,
+                                          gridColor="#21262d")),
+                    y=alt.Y("method:N", sort=None, title=None,
+                            axis=alt.Axis(labelColor=_TEXT, labelFontSize=12)),
+                    color=alt.Color("method:N",
+                                    scale=alt.Scale(domain=[r["method"] for r in rows],
+                                                    range=[r["color"] for r in rows]),
+                                    legend=None),
+                    tooltip=[
+                        alt.Tooltip("method:N", title="Method"),
+                        alt.Tooltip("cvar:Q", title="CVaR 95%", format=".2%"),
+                    ],
+                )
+                .properties(
+                    width="container",
+                    height=180,
+                    background=_BG,
+                )
+                .configure_view(strokeWidth=0)
+                .configure_axis(domainColor=_BORDER)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.info("Optimize portfolios first to see portfolio CVaR.")
+
+    # ── Expander: CVaR by regime ──────────────────────────────────────────────
+    valid_regimes = {r: v for r, v in regime_cvar.items() if v is not None}
+    if valid_regimes:
+        with st.expander("CVaR by Regime — tail risk across macro environments"):
+            st.caption(
+                "Shows how the left tail varies across regimes. "
+                "Recession Risk typically has 2-3× worse tail losses than Goldilocks."
+            )
+            # Build table: Asset × Regime CVaR
+            regime_order = [r for r in ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
+                            if r in valid_regimes]
+            header_cells = "".join(
+                f"<th style='background:#161b22;color:{_REGIME_COLORS.get(r, _ACCENT)};"
+                f"border:1px solid {_BORDER};padding:7px 12px;text-align:center;font-size:11px;'>{r}</th>"
+                for r in regime_order
+            )
+            rows_html = ""
+            for asset in assets:
+                row = (
+                    f"<td style='background:{_CARD_BG};color:{_TEXT};border:1px solid {_BORDER};"
+                    f"padding:6px 10px;font-size:12px;'>{asset}</td>"
+                )
+                for regime in regime_order:
+                    ac = valid_regimes[regime]["asset_cvar"].get(asset)
+                    if ac:
+                        cval = ac["cvar"]
+                        intensity = min(abs(cval) / 0.20, 1.0)
+                        r_ch = int(30 + intensity * 120)
+                        bg = f"rgba({r_ch},0,0,0.35)"
+                        row += (
+                            f"<td style='background:{bg};border:1px solid {_BORDER};"
+                            f"text-align:center;padding:6px 8px;color:{_NEG};"
+                            f"font-size:12px;font-weight:600;'>{cval:.1%}</td>"
+                        )
+                    else:
+                        row += (
+                            f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                            f"text-align:center;color:{_MUTED};padding:6px 8px;'>—</td>"
+                        )
+                rows_html += f"<tr>{row}</tr>"
+
+            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>* {{box-sizing:border-box;margin:0;padding:0;}}
+body {{background:{_PAGE_BG};font-family:monospace;padding:2px;}}
+table {{border-collapse:collapse;width:100%;}}</style></head>
+<body><div style="background:{_CARD_BG};border:1px solid {_BORDER};border-radius:8px;
+                 padding:12px;overflow-x:auto;">
+<table>
+  <thead><tr>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:left;font-size:11px;">Asset</th>
+    {header_cells}
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table></div></body></html>"""
+            components.html(html, height=46 * len(assets) + 70, scrolling=False)
+
+    # ── Tail risk context banner ──────────────────────────────────────────────
+    if regime_cvar and current_regime and len(assets) > 0:
+        ref_asset = assets[0]
+        current_val = None
+        worst_regime = None
+        worst_val = 0
+        for r, v in regime_cvar.items():
+            if v and v.get("asset_cvar", {}).get(ref_asset):
+                cv = abs(v["asset_cvar"][ref_asset]["cvar"])
+                if r == current_regime:
+                    current_val = cv
+                if cv > worst_val:
+                    worst_val = cv
+                    worst_regime = r
+        if current_val is not None and worst_regime and worst_regime != current_regime and current_val > 0:
+            ratio = worst_val / current_val
+            st.markdown(
+                f"<div style='background:rgba(74,158,255,0.1);border-left:3px solid {_ACCENT};"
+                f"padding:12px 16px;margin:16px 0;border-radius:0 4px 4px 0;'>"
+                f"<span style='color:{_MUTED};font-size:11px;text-transform:uppercase;'>"
+                f"TAIL RISK CONTEXT</span><br>"
+                f"<span style='color:{_TEXT};'>Current regime "
+                f"(<span style='color:{_REGIME_COLORS.get(current_regime, _TEXT)};'>"
+                f"{current_regime}</span>) has moderate tail risk. "
+                f"<span style='color:{_REGIME_COLORS.get(worst_regime, _TEXT)};'>"
+                f"{worst_regime}</span> historically shows {ratio:.1f}\u00d7 worse "
+                f"drawdowns in the left tail.</span></div>",
+                unsafe_allow_html=True,
+            )
+
+
+def _render_transition_pnl_section(data: dict) -> None:
+    """Regime Transition Impact section."""
+    all_pnl = data.get("transition_pnl") or {}
+
+    _section_header("REGIME TRANSITION IMPACT", _ACCENT)
+    st.caption(
+        "Average 3-month forward returns when the regime changes. "
+        "Shows which assets benefit or suffer during macro transitions."
+    )
+
+    # Filter to transitions with >= 2 occurrences
+    filtered = {k: v for k, v in all_pnl.items() if v.get("count", 0) >= 2}
+    if not filtered:
+        st.info("Insufficient historical transitions (need ≥ 2 occurrences per pair).")
+        return
+
+    transitions = sorted(filtered.keys())
+    selected = st.selectbox("Select transition:", transitions, key="transition_select")
+
+    pnl_data = filtered.get(selected)
+    if not pnl_data:
+        return
+
+    avg_ret  = pnl_data["avg_return"]
+    count    = pnl_data["count"]
+    st.caption(f"Based on {count} historical occurrence(s).")
+
+    df_pnl = pd.DataFrame([
+        {"asset": a, "return": v, "sign": "positive" if v >= 0 else "negative"}
+        for a, v in sorted(avg_ret.items(), key=lambda x: x[1], reverse=True)
+    ])
+
+    chart = (
+        alt.Chart(df_pnl)
+        .mark_bar()
+        .encode(
+            x=alt.X("asset:N", sort="-y", title=None,
+                    axis=alt.Axis(labelColor=_TEXT, labelFontSize=11, labelAngle=-30)),
+            y=alt.Y("return:Q", title="Avg 3m Forward Return",
+                    axis=alt.Axis(format=".1%", labelColor=_MUTED, titleColor=_MUTED,
+                                  gridColor="#21262d")),
+            color=alt.Color(
+                "sign:N",
+                scale=alt.Scale(domain=["positive", "negative"], range=[_POS, _NEG]),
+                legend=None,
+            ),
+            tooltip=[
+                alt.Tooltip("asset:N", title="Asset"),
+                alt.Tooltip("return:Q", title="Avg Return", format=".2%"),
+            ],
+        )
+        .properties(width="container", height=260, background=_BG)
+        .configure_view(strokeWidth=0)
+        .configure_axis(domainColor=_BORDER)
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+
+def _render_real_nominal_section(data: dict) -> None:
+    """Real vs Nominal Returns section."""
+    real_nominal = data.get("real_nominal")
+    current_regime = data.get("current_regime", "")
+
+    _section_header("REAL VS NOMINAL RETURNS", _WARN)
+    st.caption(
+        "Inflation-adjusted returns reveal the true purchasing power impact. "
+        "Critical in Stagflation regimes where nominal returns can be misleading."
+    )
+
+    if not real_nominal:
+        st.info("Real/nominal data unavailable (CPI series not loaded).")
+        return
+
+    show_real = st.toggle(
+        "Show inflation-adjusted (real) returns", value=False, key="real_toggle"
+    )
+
+    regimes_order = [r for r in ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
+                     if r in real_nominal]
+    if not regimes_order:
+        st.info("No regime data for real/nominal comparison.")
+        return
+
+    # Gather all assets
+    all_assets = []
+    for r in regimes_order:
+        for a in real_nominal[r]["nominal"].keys():
+            if a not in all_assets:
+                all_assets.append(a)
+
+    header_cells = "".join(
+        f"<th style='background:#161b22;color:{_REGIME_COLORS.get(r, _ACCENT)};"
+        f"border:1px solid {_BORDER};padding:7px 12px;text-align:center;font-size:11px;'>"
+        f"{r}<br><span style='font-size:9px;color:{_MUTED};'>"
+        f"n={real_nominal[r]['n_months']}m</span></th>"
+        for r in regimes_order
+    )
+
+    rows_html = ""
+    for asset in all_assets:
+        row = (
+            f"<td style='background:{_CARD_BG};color:{_TEXT};border:1px solid {_BORDER};"
+            f"padding:6px 10px;font-size:12px;'>{asset}</td>"
+        )
+        for regime in regimes_order:
+            nom_val  = real_nominal[regime]["nominal"].get(asset, float("nan"))
+            real_val = real_nominal[regime]["real"].get(asset, float("nan"))
+            display  = real_val if show_real else nom_val
+
+            if np.isnan(display):
+                row += (
+                    f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                    f"text-align:center;color:{_MUTED};padding:6px 8px;'>—</td>"
+                )
+                continue
+
+            # Color background by sign
+            if display > 0:
+                bg = "rgba(46,204,113,0.12)"
+                tc = _POS
+            else:
+                bg = "rgba(231,76,60,0.15)"
+                tc = _NEG
+
+            # Inflation erosion warning: nominal positive but real negative
+            erosion_html = ""
+            if not show_real and nom_val > 0 and real_val < 0:
+                erosion_html = (
+                    f"<br><span style='color:{_WARN};font-size:9px;'>&#9888; inflation erosion</span>"
+                )
+
+            row += (
+                f"<td style='background:{bg};border:1px solid {_BORDER};"
+                f"text-align:center;padding:6px 8px;color:{tc};font-size:12px;font-weight:600;'>"
+                f"{display:.1%}{erosion_html}</td>"
+            )
+        rows_html += f"<tr>{row}</tr>"
+
+    label = "Real (Inflation-Adj)" if show_real else "Nominal"
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>* {{box-sizing:border-box;margin:0;padding:0;}}
+body {{background:{_PAGE_BG};font-family:monospace;padding:2px;}}
+table {{border-collapse:collapse;width:100%;}}</style></head>
+<body><div style="background:{_CARD_BG};border:1px solid {_BORDER};border-radius:8px;
+                 padding:12px;overflow-x:auto;">
+<table>
+  <thead><tr>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:left;font-size:11px;">Asset ({label})</th>
+    {header_cells}
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table></div></body></html>"""
+    n_rows = len(all_assets)
+    components.html(html, height=52 * n_rows + 80, scrolling=False)
+
+    # ── Inflation erosion alert ───────────────────────────────────────────────
+    if real_nominal and current_regime and current_regime in real_nominal:
+        regime_data = real_nominal[current_regime]
+        nom_vals = regime_data.get("nominal", {})
+        real_vals = regime_data.get("real", {})
+        erosion_assets = [a for a in nom_vals
+                          if nom_vals.get(a, 0) > 0 and real_vals.get(a, 0) < 0]
+        if erosion_assets:
+            names = ", ".join(erosion_assets[:4])
+            suffix = f" (+{len(erosion_assets) - 4} more)" if len(erosion_assets) > 4 else ""
+            st.markdown(
+                f"<div style='background:rgba(230,126,34,0.1);border-left:3px solid {_WARN};"
+                f"padding:12px 16px;margin:16px 0;border-radius:0 4px 4px 0;'>"
+                f"<span style='color:{_MUTED};font-size:11px;text-transform:uppercase;'>"
+                f"INFLATION ALERT</span><br>"
+                f"<span style='color:{_TEXT};'>In {current_regime}, "
+                f"{len(erosion_assets)} asset(s) show positive nominal returns but negative "
+                f"real returns \u2014 inflation is eroding purchasing power: "
+                f"{names}{suffix}.</span></div>",
+                unsafe_allow_html=True,
+            )
+
+
+def _render_factor_section(data: dict) -> None:
+    """Factor decomposition — regime factor performance + portfolio exposures."""
+    regime_factors    = data.get("regime_factors")
+    portfolio_factors = data.get("portfolio_factors", {})
+
+    _section_header("FACTOR DECOMPOSITION", _ACCENT)
+    st.caption(
+        "Portfolio exposure to Value, Momentum, Quality, Size, and Low Vol factors. "
+        "Shows which systematic risks you're actually taking."
+    )
+
+    if not regime_factors:
+        st.info("Factor data not available.")
+        return
+
+    col1, col2 = st.columns([1, 1])
+
+    # ── Left: Factor × Regime heatmap table ───────────────────────────────────
+    with col1:
+        factors = list(next(iter(regime_factors.values())).keys())
+        regime_order = [r for r in ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
+                        if r in regime_factors]
+
+        header_cells = "".join(
+            f"<th style='background:#161b22;color:{_REGIME_COLORS.get(r, _ACCENT)};"
+            f"border:1px solid {_BORDER};padding:7px 12px;text-align:center;font-size:11px;'>{r}</th>"
+            for r in regime_order
+        )
+        rows_html = ""
+        for factor in factors:
+            row = (
+                f"<td style='background:{_CARD_BG};color:{_TEXT};border:1px solid {_BORDER};"
+                f"padding:6px 10px;font-size:12px;font-weight:500;'>{factor}</td>"
+            )
+            for regime in regime_order:
+                val = regime_factors[regime].get(factor, float("nan"))
+                if np.isnan(val):
+                    row += (
+                        f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                        f"text-align:center;color:{_MUTED};padding:6px 8px;'>—</td>"
+                    )
+                else:
+                    tc = _POS if val >= 0 else _NEG
+                    bg = "rgba(46,204,113,0.12)" if val >= 0 else "rgba(231,76,60,0.15)"
+                    row += (
+                        f"<td style='background:{bg};border:1px solid {_BORDER};"
+                        f"text-align:center;padding:6px 8px;color:{tc};"
+                        f"font-size:12px;font-weight:600;'>{val:+.1%}</td>"
+                    )
+            rows_html += f"<tr>{row}</tr>"
+
+        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>* {{box-sizing:border-box;margin:0;padding:0;}}
+body {{background:{_PAGE_BG};font-family:monospace;padding:2px;}}
+table {{border-collapse:collapse;width:100%;}}</style></head>
+<body><div style="background:{_CARD_BG};border:1px solid {_BORDER};border-radius:8px;
+                 padding:12px;overflow-x:auto;">
+<table>
+  <thead><tr>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:left;font-size:11px;">Factor</th>
+    {header_cells}
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table></div></body></html>"""
+        components.html(html, height=46 * len(factors) + 70, scrolling=False)
+
+    # ── Right: Portfolio factor exposures (betas) bar chart ───────────────────
+    with col2:
+        if not portfolio_factors:
+            st.info("Optimize portfolios first to see factor exposures.")
+            return
+
+        method_labels = {
+            "mvo": "MVO", "min_var": "Min Var", "risk_parity": "Risk Parity",
+            "black_litterman": "Black-Litterman", "hrp": "HRP",
+        }
+        rows = []
+        for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp"):
+            if key in portfolio_factors:
+                for factor, beta in portfolio_factors[key]["exposures"].items():
+                    rows.append({
+                        "Factor": factor,
+                        "Beta":   beta,
+                        "Method": method_labels[key],
+                    })
+
+        if not rows:
+            st.info("No factor exposure data.")
+            return
+
+        df = pd.DataFrame(rows)
+        method_order = [method_labels[k] for k in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp")
+                        if k in portfolio_factors]
+        colors = [_METHOD_COLORS[k] for k in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp")
+                  if k in portfolio_factors]
+
+        chart = (
+            alt.Chart(df)
+            .mark_bar(size=10)
+            .encode(
+                x=alt.X("Beta:Q", title="Factor Beta",
+                        axis=alt.Axis(format=".2f", labelColor=_MUTED, titleColor=_MUTED,
+                                      gridColor="#21262d")),
+                y=alt.Y("Factor:N", sort=None, title=None,
+                        axis=alt.Axis(labelColor=_TEXT, labelFontSize=11)),
+                color=alt.Color("Method:N",
+                                scale=alt.Scale(domain=method_order, range=colors),
+                                legend=alt.Legend(orient="bottom", labelColor=_TEXT,
+                                                  titleColor=_MUTED, titleFontSize=10)),
+                xOffset="Method:N",
+                tooltip=["Factor", "Method", alt.Tooltip("Beta:Q", format=".3f")],
+            )
+            .properties(width="container", height=240, background=_BG)
+            .configure_view(strokeWidth=0)
+            .configure_axis(domainColor=_BORDER, gridColor="#21262d",
+                            tickColor=_BORDER, labelColor=_MUTED, titleColor=_MUTED)
+            .configure_legend(labelColor=_MUTED, titleColor=_MUTED)
+        )
+        st.altair_chart(chart, use_container_width=True)
+
+        st.caption(
+            "Positive beta = tilted toward factor \u00b7 "
+            "Negative = tilted away \u00b7 "
+            "Higher |\u03b2| = stronger exposure"
+        )
+
+    # ── R²/α metric cards ────────────────────────────────────────────────────
+    card_items = []
+    for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp"):
+        if key in portfolio_factors:
+            r2  = portfolio_factors[key]["r_squared"]
+            alp = portfolio_factors[key]["alpha"]
+            card_items.append((method_labels[key], r2, alp, _METHOD_COLORS[key]))
+
+    if card_items:
+        cards_html = "".join(
+            f"<div style='flex:1;min-width:140px;background:{_CARD_BG};"
+            f"border:1px solid {_BORDER};border-top:3px solid {color};"
+            f"border-radius:6px;padding:10px 12px;text-align:center;'>"
+            f"<div style='color:{_MUTED};font-size:10px;text-transform:uppercase;"
+            f"margin-bottom:6px;'>{label}</div>"
+            f"<div style='color:{_TEXT};font-size:16px;font-weight:700;'>"
+            f"R\u00b2={r2:.0%}</div>"
+            f"<div style='color:{_POS if alp >= 0 else _NEG};font-size:12px;"
+            f"margin-top:2px;'>\u03b1={alp:+.1%}</div>"
+            f"</div>"
+            for label, r2, alp, color in card_items
+        )
+        st.markdown(
+            f"<div style='display:flex;gap:10px;margin:16px 0;'>{cards_html}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # ── Key Insight banner ────────────────────────────────────────────────────
+    if portfolio_factors:
+        best_key = max(portfolio_factors, key=lambda k: portfolio_factors[k].get("r_squared", 0))
+        best_r2 = portfolio_factors[best_key]["r_squared"] * 100
+        best_label = method_labels.get(best_key, best_key)
+        st.markdown(
+            f"<div style='background:rgba(74,158,255,0.1);border-left:3px solid {_ACCENT};"
+            f"padding:12px 16px;margin:16px 0;border-radius:0 4px 4px 0;'>"
+            f"<span style='color:{_MUTED};font-size:11px;text-transform:uppercase;'>"
+            f"KEY INSIGHT</span><br>"
+            f"<span style='color:{_TEXT};'>{best_label} has the highest factor explanatory "
+            f"power (R\u00b2={best_r2:.0f}%), meaning its returns are most predictable from "
+            f"systematic factor exposures.</span></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_style_section(data: dict) -> None:
+    """Style / manager selection by regime."""
+    style_data = data.get("style_performance")
+
+    _section_header("STYLE SELECTION", _ACCENT)
+    st.caption(
+        "Growth vs Value, Small vs Large, Active vs Passive performance by regime. "
+        "Guides manager and style tilts."
+    )
+
+    if not style_data:
+        st.info("Style data not available.")
+        return
+
+    regime_options = [r for r in ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
+                      if r in style_data]
+    if not regime_options:
+        st.info("Insufficient data for style analysis.")
+        return
+
+    current = data.get("current_regime", regime_options[0])
+    default_idx = regime_options.index(current) if current in regime_options else 0
+    regime = st.selectbox("Select regime:", regime_options, index=default_idx, key="style_regime_select")
+
+    regime_styles = style_data.get(regime, {})
+    if not regime_styles:
+        st.warning(f"No data for {regime}.")
+        return
+
+    col1, col2 = st.columns([1, 1])
+
+    # ── Left: Style performance table ─────────────────────────────────────────
+    with col1:
+        # Separate core styles from spreads
+        core_styles = {k: v for k, v in regime_styles.items() if "Spread" not in k}
+        sorted_styles = sorted(core_styles.items(), key=lambda x: x[1].get("sharpe", 0), reverse=True)
+
+        rows_html = ""
+        for style, stats in sorted_styles:
+            ret  = stats["return"]
+            vol  = stats["volatility"]
+            sh   = stats["sharpe"]
+            hr   = stats["hit_rate"]
+            tc   = _POS if ret >= 0 else _NEG
+            rows_html += (
+                f"<tr>"
+                f"<td style='background:{_CARD_BG};color:{_TEXT};border:1px solid {_BORDER};"
+                f"padding:6px 10px;font-size:12px;'>{style}</td>"
+                f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                f"text-align:center;padding:6px 8px;color:{tc};font-size:12px;font-weight:600;'>"
+                f"{ret:+.1%}</td>"
+                f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                f"text-align:center;padding:6px 8px;color:{_MUTED};font-size:12px;'>{vol:.1%}</td>"
+                f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                f"text-align:center;padding:6px 8px;color:{_TEXT};font-size:12px;font-weight:600;'>"
+                f"{sh:.2f}</td>"
+                f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                f"text-align:center;padding:6px 8px;color:{_MUTED};font-size:12px;'>{hr:.0%}</td>"
+                f"</tr>"
+            )
+
+        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>* {{box-sizing:border-box;margin:0;padding:0;}}
+body {{background:{_PAGE_BG};font-family:monospace;padding:2px;}}
+table {{border-collapse:collapse;width:100%;}}</style></head>
+<body><div style="background:{_CARD_BG};border:1px solid {_BORDER};border-radius:8px;
+                 padding:12px;overflow-x:auto;">
+<table>
+  <thead><tr>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:left;font-size:11px;">Style</th>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:center;font-size:11px;">Return</th>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:center;font-size:11px;">Vol</th>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:center;font-size:11px;">Sharpe</th>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:center;font-size:11px;">Hit Rate</th>
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table></div></body></html>"""
+        components.html(html, height=46 * len(sorted_styles) + 70, scrolling=False)
+
+    # ── Right: Spread analysis cards ──────────────────────────────────────────
+    with col2:
+        spreads = {k: v for k, v in regime_styles.items() if "Spread" in k}
+        for spread_name, spread_data in spreads.items():
+            val = spread_data.get("return", 0)
+            tc  = _POS if val >= 0 else _NEG
+            arrow = "&#9650;" if val >= 0 else "&#9660;"
+            components.html(
+                f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="background:{_PAGE_BG};font-family:monospace;margin:0;padding:4px;">
+<div style="background:{_CARD_BG};border:1px solid {_BORDER};border-radius:8px;
+            padding:16px;margin-bottom:8px;">
+  <div style="font-size:11px;color:{_MUTED};text-transform:uppercase;letter-spacing:0.1em;">
+    {spread_name}
+  </div>
+  <div style="font-size:28px;font-weight:700;color:{tc};margin-top:6px;">
+    {arrow} {val:+.1%}
+  </div>
+  <div style="font-size:10px;color:{_MUTED};margin-top:4px;">
+    Annualised spread in {regime}
+  </div>
+</div></body></html>""",
+                height=110,
+                scrolling=False,
+            )
+
+
+def _render_currency_section(data: dict) -> None:
+    """Currency overlay — FX performance by regime."""
+    currency_data = data.get("currency_impact")
+
+    _section_header("CURRENCY OVERLAY", _ACCENT)
+    st.caption(
+        "FX impact on international portfolios by regime. "
+        "USD tends to strengthen in Recession Risk (safe haven); EM FX weakens in stress."
+    )
+
+    if not currency_data:
+        st.info("Currency data not available.")
+        return
+
+    regime_order = [r for r in ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
+                    if r in currency_data]
+    if not regime_order:
+        return
+
+    # Gather all currency names
+    currencies = list(next(iter(currency_data.values())).keys())
+
+    header_cells = "".join(
+        f"<th style='background:#161b22;color:{_REGIME_COLORS.get(r, _ACCENT)};"
+        f"border:1px solid {_BORDER};padding:7px 12px;text-align:center;font-size:11px;'>{r}</th>"
+        for r in regime_order
+    )
+
+    rows_html = ""
+    for ccy in currencies:
+        row = (
+            f"<td style='background:{_CARD_BG};color:{_TEXT};border:1px solid {_BORDER};"
+            f"padding:6px 10px;font-size:12px;font-weight:500;'>{ccy}</td>"
+        )
+        for regime in regime_order:
+            info = currency_data[regime].get(ccy)
+            if info is None:
+                row += (
+                    f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"
+                    f"text-align:center;color:{_MUTED};padding:6px 8px;'>—</td>"
+                )
+            else:
+                val = info["return"]
+                vol = info["volatility"]
+                tc  = _POS if val >= 0 else _NEG
+                bg  = "rgba(46,204,113,0.12)" if val >= 0 else "rgba(231,76,60,0.15)"
+                row += (
+                    f"<td style='background:{bg};border:1px solid {_BORDER};"
+                    f"text-align:center;padding:6px 8px;'>"
+                    f"<span style='color:{tc};font-size:12px;font-weight:600;'>{val:+.1%}</span>"
+                    f"<br><span style='color:{_MUTED};font-size:9px;'>vol {vol:.1%}</span>"
+                    f"</td>"
+                )
+        rows_html += f"<tr>{row}</tr>"
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>* {{box-sizing:border-box;margin:0;padding:0;}}
+body {{background:{_PAGE_BG};font-family:monospace;padding:2px;}}
+table {{border-collapse:collapse;width:100%;}}</style></head>
+<body><div style="background:{_CARD_BG};border:1px solid {_BORDER};border-radius:8px;
+                 padding:12px;overflow-x:auto;">
+<table>
+  <thead><tr>
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
+               padding:7px 10px;text-align:left;font-size:11px;">Currency</th>
+    {header_cells}
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table></div></body></html>"""
+    components.html(html, height=52 * len(currencies) + 70, scrolling=False)
+
+
 def _render_risk_analysis(data: dict) -> None:
     regime_corr = data.get("regime_correlations", {})
     drawdowns   = data.get("drawdowns", {})
@@ -770,24 +1507,55 @@ def _render_risk_analysis(data: dict) -> None:
         st.info("Insufficient data for risk analysis.")
         return
 
+    _divider = "<hr style='border:none;border-top:1px solid #21262d;margin:32px 0;'>"
+
+    # Ordered: most impressive first, traditional last
+    _render_factor_section(data)
+    st.markdown(_divider, unsafe_allow_html=True)
+    _render_style_section(data)
+    st.markdown(_divider, unsafe_allow_html=True)
+    _render_cvar_section(data)
+    st.markdown(_divider, unsafe_allow_html=True)
+    _render_transition_pnl_section(data)
+    st.markdown(_divider, unsafe_allow_html=True)
+    _render_currency_section(data)
+    st.markdown(_divider, unsafe_allow_html=True)
+    _render_real_nominal_section(data)
+    st.markdown(_divider, unsafe_allow_html=True)
+
     _section_header("Correlation by Regime")
     default_idx = available.index(current) if current in available else 0
     selected = st.selectbox("Regime", options=available, index=default_idx, key="alloc_corr_regime")
     if selected and selected in regime_corr:
         _render_correlation_heatmap(regime_corr[selected], selected)
+    st.markdown(_divider, unsafe_allow_html=True)
 
     _section_header("Maximum Drawdown by Regime", _NEG)
     components.html(
         f"<body style='background:{_PAGE_BG};font-family:{_FONT};margin:0;padding:0 0 4px 0;'>"
         f"<span style='font-size:11px;color:{_MUTED};'>"
         f"Maximum drawdown recorded during each regime period. "
-        f"<span style='color:{_WARN};'>Orange</span> &gt; −15% · "
-        f"<span style='color:{_NEG};'>Red</span> &gt; −30%"
+        f"<span style='color:{_WARN};'>Orange</span> &gt; \u2212 15% \u00b7 "
+        f"<span style='color:{_NEG};'>Red</span> &gt; \u221230%"
         f"</span></body>",
         height=24,
         scrolling=False,
     )
     _render_drawdown_table(drawdowns, data["asset_classes"])
+
+    # ── Timestamp footer ──────────────────────────────────────────────────────
+    from datetime import date as _date
+    regime_color = _REGIME_COLORS.get(current, _TEXT)
+    st.markdown(
+        f"<div style='text-align:right;color:{_MUTED};font-size:11px;margin-top:32px;"
+        f"padding-top:16px;border-top:1px solid {_BORDER};'>"
+        f"Risk analytics conditioned on "
+        f"<span style='color:{regime_color};'>{current}</span> regime \u00b7 "
+        f"Updated {_date.today().strftime('%Y-%m-%d')} \u00b7 "
+        f"{data.get('n_months', '?')} months of history"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
 
 # ── Main render ────────────────────────────────────────────────────────────────
