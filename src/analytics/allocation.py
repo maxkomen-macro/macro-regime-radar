@@ -283,6 +283,25 @@ def _regularize(cov: np.ndarray, eps: float = 1e-6) -> np.ndarray:
     return cov + eps * np.eye(cov.shape[0])
 
 
+def get_market_cap_weights() -> dict:
+    """
+    Approximate market cap weights for asset classes.
+    Used as prior for Black-Litterman equilibrium.
+    """
+    return {
+        "US Large Cap":     0.40,
+        "US Small Cap":     0.05,
+        "Int'l Developed":  0.20,
+        "Emerging Markets": 0.08,
+        "US Agg Bond":      0.10,
+        "US Treasuries":    0.05,
+        "IG Credit":        0.04,
+        "High Yield":       0.02,
+        "Commodities":      0.02,
+        "Gold":             0.04,
+    }
+
+
 # ── Optimization methods ───────────────────────────────────────────────────────
 
 def mean_variance_optimize(
@@ -400,6 +419,155 @@ def risk_parity_optimize(
         "risk_contributions": rc,
         "method":            "Risk Parity",
         "converged":         result.success,
+    }
+
+
+def black_litterman_optimize(
+    cov_matrix: np.ndarray,
+    asset_names: list,
+    regime_returns: np.ndarray,
+    risk_free_rate: float = 0.02,
+    max_weight: float = 0.40,
+    min_weight: float = 0.0,
+    tau: float = 0.05,
+    delta: float = 2.5,
+) -> Dict:
+    """
+    Black-Litterman portfolio optimization.
+
+    1. Start with equilibrium returns implied by market cap weights.
+    2. Blend with "views" (regime-conditional returns).
+    3. Optimize using blended expected returns.
+    """
+    n   = len(asset_names)
+    reg = 1e-6 * np.eye(n)
+
+    # Market cap weights (prior)
+    mkt_caps = get_market_cap_weights()
+    w_mkt = np.array([mkt_caps.get(name, 1.0 / n) for name in asset_names])
+    w_mkt = w_mkt / w_mkt.sum()
+
+    # Equilibrium returns: π = δ Σ w_mkt
+    pi = delta * cov_matrix @ w_mkt
+
+    # Views: absolute views on each asset
+    P = np.eye(n)
+    Q = regime_returns
+
+    # View uncertainty
+    omega = np.diag(tau * np.diag(P @ cov_matrix @ P.T))
+
+    # BL master formula: posterior expected returns
+    tau_cov_inv = np.linalg.inv(tau * cov_matrix + reg)
+    omega_inv   = np.linalg.inv(omega + reg)
+    M           = np.linalg.inv(tau_cov_inv + P.T @ omega_inv @ P + reg)
+    bl_returns  = M @ (tau_cov_inv @ pi + P.T @ omega_inv @ Q)
+
+    # Optimize Sharpe using BL returns
+    def neg_sharpe(w: np.ndarray) -> float:
+        ret = w @ bl_returns
+        vol = np.sqrt(w @ cov_matrix @ w)
+        return -(ret - risk_free_rate) / vol if vol > 0 else 0.0
+
+    result = minimize(
+        neg_sharpe,
+        w_mkt,
+        method="SLSQP",
+        bounds=[(min_weight, max_weight)] * n,
+        constraints=[{"type": "eq", "fun": lambda w: np.sum(w) - 1}],
+        options={"maxiter": 1000},
+    )
+
+    weights  = result.x if result.success else w_mkt
+    port_ret = float(weights @ bl_returns)
+    port_vol = float(np.sqrt(weights @ cov_matrix @ weights))
+
+    return {
+        "weights":             weights,
+        "expected_return":     port_ret,
+        "volatility":          port_vol,
+        "sharpe_ratio":        (port_ret - risk_free_rate) / port_vol if port_vol > 0 else 0.0,
+        "method":              "Black-Litterman",
+        "equilibrium_returns": pi,
+        "blended_returns":     bl_returns,
+        "converged":           result.success,
+    }
+
+
+def hierarchical_risk_parity_optimize(
+    cov_matrix: np.ndarray,
+    asset_names: list,
+    max_weight: float = 0.40,
+    min_weight: float = 0.02,
+) -> Dict:
+    """
+    Hierarchical Risk Parity (López de Prado, 2016).
+
+    1. Cluster assets by correlation distance.
+    2. Build hierarchical tree via Ward linkage.
+    3. Allocate recursively: split risk inversely proportional to cluster variance.
+    """
+    from scipy.cluster.hierarchy import linkage, leaves_list
+    from scipy.spatial.distance import squareform
+
+    n = len(asset_names)
+
+    # Correlation matrix → distance matrix
+    std  = np.sqrt(np.diag(cov_matrix))
+    corr = cov_matrix / np.outer(std, std)
+    corr = np.clip(corr, -1, 1)
+    dist = np.sqrt(0.5 * (1 - corr))
+    np.fill_diagonal(dist, 0)
+
+    # Hierarchical clustering
+    dist_condensed = squareform(dist)
+    link           = linkage(dist_condensed, method="ward")
+    sort_idx       = leaves_list(link)
+
+    # Quasi-diagonalize covariance
+    sorted_cov = cov_matrix[np.ix_(sort_idx, sort_idx)]
+
+    def get_cluster_var(cov: np.ndarray, indices: list) -> float:
+        sub = cov[np.ix_(indices, indices)]
+        w   = np.ones(len(indices)) / len(indices)
+        return float(w @ sub @ w)
+
+    def recursive_bisection(cov: np.ndarray, indices: list) -> dict:
+        if len(indices) == 1:
+            return {indices[0]: 1.0}
+        mid   = len(indices) // 2
+        left  = indices[:mid]
+        right = indices[mid:]
+        var_l = get_cluster_var(cov, left)
+        var_r = get_cluster_var(cov, right)
+        alpha = 1 - var_l / (var_l + var_r)
+        lw    = recursive_bisection(cov, left)
+        rw    = recursive_bisection(cov, right)
+        out   = {}
+        for idx, w in lw.items():
+            out[idx] = w * alpha
+        for idx, w in rw.items():
+            out[idx] = w * (1 - alpha)
+        return out
+
+    hrp_dict = recursive_bisection(sorted_cov, list(range(n)))
+
+    # Map back to original asset order
+    weights = np.zeros(n)
+    for sorted_pos, w in hrp_dict.items():
+        weights[sort_idx[sorted_pos]] = w
+
+    # Apply constraints and renormalize
+    weights = np.clip(weights, min_weight, max_weight)
+    weights = weights / weights.sum()
+
+    port_vol = float(np.sqrt(weights @ cov_matrix @ weights))
+
+    return {
+        "weights":       weights,
+        "volatility":    port_vol,
+        "method":        "Hierarchical Risk Parity",
+        "cluster_order": [asset_names[i] for i in sort_idx],
     }
 
 
@@ -531,18 +699,56 @@ def get_allocation_data() -> Dict:
             res["expected_return"] = _port_return(res["weights"], mu)
             res["sharpe_ratio"]    = _port_sharpe(res["weights"], mu, cov, rf_rate)
 
+        # Black-Litterman (with fallback)
+        try:
+            bl_result = black_litterman_optimize(cov, asset_names, mu, rf_rate)
+        except Exception as e:
+            print(f"  Black-Litterman failed: {e}, using equal weights")
+            eq_w = np.ones(len(asset_names)) / len(asset_names)
+            bl_result = {
+                "weights":         eq_w,
+                "expected_return": float(eq_w @ mu),
+                "volatility":      float(np.sqrt(eq_w @ cov @ eq_w)),
+                "sharpe_ratio":    0.0,
+                "method":          "Black-Litterman (fallback)",
+                "converged":       False,
+            }
+
+        # Hierarchical Risk Parity (with fallback)
+        try:
+            hrp_result = hierarchical_risk_parity_optimize(cov, asset_names)
+            hrp_result["expected_return"] = float(hrp_result["weights"] @ mu)
+            hrp_result["sharpe_ratio"]    = _port_sharpe(
+                hrp_result["weights"], mu, cov, rf_rate
+            )
+        except Exception as e:
+            print(f"  HRP failed: {e}, using equal weights")
+            eq_w = np.ones(len(asset_names)) / len(asset_names)
+            hrp_result = {
+                "weights":         eq_w,
+                "expected_return": float(eq_w @ mu),
+                "volatility":      float(np.sqrt(eq_w @ cov @ eq_w)),
+                "sharpe_ratio":    0.0,
+                "method":          "HRP (fallback)",
+            }
+
         frontier = generate_efficient_frontier(mu, cov, rf_rate)
 
-        for label, res in [("MVO", mvo), ("Min Var", min_var), ("Risk Parity", rp)]:
-            print(f"  {label:12s}  ret={res['expected_return']:+.1%}  "
+        for label, res in [
+            ("MVO", mvo), ("Min Var", min_var), ("Risk Parity", rp),
+            ("Black-Litterman", bl_result), ("HRP", hrp_result),
+        ]:
+            print(f"  {label:16s}  ret={res['expected_return']:+.1%}  "
                   f"vol={res['volatility']:.1%}  Sharpe={res['sharpe_ratio']:.2f}")
 
         optimizations = {
-            "mvo":         mvo,
-            "min_var":     min_var,
-            "risk_parity": rp,
-            "frontier":    frontier,
-            "asset_names": asset_names,
+            "mvo":              mvo,
+            "min_var":          min_var,
+            "risk_parity":      rp,
+            "black_litterman":  bl_result,
+            "hrp":              hrp_result,
+            "frontier":         frontier,
+            "asset_names":      asset_names,
         }
 
     return {
@@ -577,8 +783,10 @@ if __name__ == "__main__":
 
     if data["optimizations"]:
         opt = data["optimizations"]
-        print("\n--- Optimization Results ---")
-        for key in ("mvo", "min_var", "risk_parity"):
+        print("\n--- Optimization Results (5 Methods) ---")
+        for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp"):
+            if key not in opt:
+                continue
             r = opt[key]
             print(f"\n{r['method']}:")
             print(f"  Expected Return : {r['expected_return']:+.1%}")

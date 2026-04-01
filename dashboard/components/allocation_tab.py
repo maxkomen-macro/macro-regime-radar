@@ -40,15 +40,19 @@ _REGIME_COLORS = {
 }
 
 _METHOD_COLORS = {
-    "mvo":         "#4a9eff",
-    "min_var":     "#2ecc71",
-    "risk_parity": "#e67e22",
+    "mvo":              "#4a9eff",
+    "min_var":          "#2ecc71",
+    "risk_parity":      "#e67e22",
+    "black_litterman":  "#8b5cf6",
+    "hrp":              "#e74c3c",
 }
 
 _METHOD_LABELS = {
-    "mvo":         "Mean-Variance (MVO)",
-    "min_var":     "Minimum Variance",
-    "risk_parity": "Risk Parity",
+    "mvo":              "Mean-Variance (MVO)",
+    "min_var":          "Minimum Variance",
+    "risk_parity":      "Risk Parity",
+    "black_litterman":  "Black-Litterman",
+    "hrp":              "Hierarchical Risk Parity",
 }
 
 _FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
@@ -263,15 +267,25 @@ def _render_overview(data: dict) -> None:
 
 # ── Optimization sub-tab ───────────────────────────────────────────────────────
 
+_METHOD_BADGES = {
+    "mvo":              "RETURN-BASED",
+    "min_var":          "RISK-ONLY",
+    "risk_parity":      "RISK-BALANCED",
+    "black_litterman":  "EQUILIBRIUM + VIEWS",
+    "hrp":              "ML-BASED",
+}
+
+
 def _render_method_card(key: str, result: dict, rf: float) -> None:
-    label  = _METHOD_LABELS[key]
-    color  = _METHOD_COLORS[key]
-    ret    = result.get("expected_return", 0.0)
-    vol    = result.get("volatility", 0.0)
-    sharpe = result.get("sharpe_ratio", 0.0)
-    ok     = result.get("converged", True)
-    note   = "" if ok else " <span style='font-size:9px;color:#8b5cf6;'>(fallback)</span>"
-    ret_color = _POS if ret >= 0 else _NEG
+    label      = _METHOD_LABELS[key]
+    color      = _METHOD_COLORS[key]
+    badge_text = _METHOD_BADGES.get(key, "")
+    ret        = result.get("expected_return", 0.0)
+    vol        = result.get("volatility", 0.0)
+    sharpe     = result.get("sharpe_ratio", 0.0)
+    ok         = result.get("converged", True)
+    note       = "" if ok else " <span style='font-size:9px;color:#8b5cf6;'>(fallback)</span>"
+    ret_color  = _POS if ret >= 0 else _NEG
 
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
@@ -280,7 +294,7 @@ def _render_method_card(key: str, result: dict, rf: float) -> None:
 </style></head>
 <body>
 <div style="
-    background:{_CARD_BG};
+    background:linear-gradient(180deg,#0d1117 0%,#0a0c10 100%);
     border-left:1px solid {_BORDER};
     border-right:1px solid {_BORDER};
     border-bottom:1px solid {_BORDER};
@@ -289,7 +303,12 @@ def _render_method_card(key: str, result: dict, rf: float) -> None:
     padding:16px 20px;
 ">
   <div style="font-size:11px;color:{_MUTED};text-transform:uppercase;
-              letter-spacing:0.1em;margin-bottom:12px;">{label}{note}</div>
+              letter-spacing:0.1em;margin-bottom:12px;">
+    {label}{note}
+    <span style="font-size:8px;padding:2px 6px;background:{color}20;color:{color};
+                 border-radius:4px;text-transform:uppercase;letter-spacing:0.05em;
+                 margin-left:8px;">{badge_text}</span>
+  </div>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
     <div>
       <div style="font-size:10px;color:{_MUTED};margin-bottom:4px;">Expected Return</div>
@@ -302,20 +321,23 @@ def _render_method_card(key: str, result: dict, rf: float) -> None:
     <div>
       <div style="font-size:10px;color:{_MUTED};margin-bottom:4px;">Sharpe Ratio</div>
       <div style="font-size:24px;font-weight:700;color:{color};
-                  text-shadow:0 0 10px {color}4d;">{sharpe:.2f}</div>
+                  text-shadow:0 0 12px {color}40;">{sharpe:.2f}</div>
     </div>
   </div>
 </div>
 </body></html>"""
-    components.html(html, height=112, scrolling=False)
+    components.html(html, height=120, scrolling=False)
 
 
 def _render_weights_chart(opt: dict) -> None:
     _section_header("Portfolio Weights by Method")
 
     asset_names = opt["asset_names"]
+    _ALL_KEYS   = ("mvo", "min_var", "risk_parity", "black_litterman", "hrp")
     rows = []
-    for key in ("mvo", "min_var", "risk_parity"):
+    for key in _ALL_KEYS:
+        if key not in opt:
+            continue
         for asset, w in zip(asset_names, opt[key]["weights"]):
             if w > 0.005:
                 rows.append({
@@ -328,8 +350,8 @@ def _render_weights_chart(opt: dict) -> None:
         return
 
     df = pd.DataFrame(rows)
-    method_order = [_METHOD_LABELS[k] for k in ("mvo", "min_var", "risk_parity")]
-    colors       = [_METHOD_COLORS[k] for k in ("mvo", "min_var", "risk_parity")]
+    method_order = [_METHOD_LABELS[k] for k in _ALL_KEYS if k in opt]
+    colors       = [_METHOD_COLORS[k] for k in _ALL_KEYS if k in opt]
 
     chart = (
         alt.Chart(df)
@@ -392,8 +414,11 @@ def _render_frontier_chart(opt: dict) -> None:
         ]
     )
 
+    _ALL_KEYS     = ("mvo", "min_var", "risk_parity", "black_litterman", "hrp")
     portfolio_pts = []
-    for key in ("mvo", "min_var", "risk_parity"):
+    for key in _ALL_KEYS:
+        if key not in opt:
+            continue
         r = opt[key]
         portfolio_pts.append({
             "volatility": float(r["volatility"]),
@@ -402,8 +427,8 @@ def _render_frontier_chart(opt: dict) -> None:
             "Method":     _METHOD_LABELS[key],
         })
     pt_df        = pd.DataFrame(portfolio_pts)
-    method_order = [_METHOD_LABELS[k] for k in ("mvo", "min_var", "risk_parity")]
-    colors       = [_METHOD_COLORS[k] for k in ("mvo", "min_var", "risk_parity")]
+    method_order = [_METHOD_LABELS[k] for k in _ALL_KEYS if k in opt]
+    colors       = [_METHOD_COLORS[k] for k in _ALL_KEYS if k in opt]
 
     color_scale = alt.Color(
         "Method:N",
@@ -413,7 +438,7 @@ def _render_frontier_chart(opt: dict) -> None:
 
     dots = (
         alt.Chart(pt_df)
-        .mark_point(size=150, filled=True, stroke=_TEXT, strokeWidth=1.5)
+        .mark_point(size=180, filled=True, stroke="#ffffff", strokeWidth=2)
         .encode(
             x="volatility:Q",
             y="return:Q",
@@ -483,6 +508,7 @@ def _render_optimization(data: dict) -> None:
 
     _section_header("Portfolio Metrics", color)
 
+    # Row 1: MVO, Min Variance, Risk Parity
     col1, col2, col3 = st.columns(3)
     with col1:
         _render_method_card("mvo", opt["mvo"], rf)
@@ -491,11 +517,113 @@ def _render_optimization(data: dict) -> None:
     with col3:
         _render_method_card("risk_parity", opt["risk_parity"], rf)
 
+    # Row 2: Black-Litterman, HRP
+    col4, col5 = st.columns(2)
+    with col4:
+        _render_method_card("black_litterman", opt["black_litterman"], rf)
+    with col5:
+        _render_method_card("hrp", opt["hrp"], rf)
+
+    # Key Insight banner
+    insight = _regime_insight(current, opt)
+    components.html(
+        f"<body style='background:{_PAGE_BG};font-family:{_FONT};margin:0;padding:4px 0;'>"
+        f"<div style='background:linear-gradient(90deg,#4a9eff15,transparent);"
+        f"border-left:3px solid {_ACCENT};padding:12px 16px;border-radius:0 6px 6px 0;'>"
+        f"<div style='font-size:10px;color:{_MUTED};text-transform:uppercase;"
+        f"letter-spacing:0.1em;margin-bottom:4px;'>KEY INSIGHT</div>"
+        f"<div style='font-size:13px;color:{_TEXT};'>{insight}</div>"
+        f"</div></body>",
+        height=72,
+        scrolling=False,
+    )
+
     left, right = st.columns([3, 2])
     with left:
         _render_weights_chart(opt)
     with right:
         _render_frontier_chart(opt)
+
+    # Method descriptions expander
+    with st.expander("📚 Understanding the Methods", expanded=False):
+        _methods_explainer_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>* {{box-sizing:border-box;margin:0;padding:0;}} body {{background:#010409;font-family:{_FONT};padding:16px;}} .entry {{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #30363d;}} .entry:last-child {{margin-bottom:0;border-bottom:none;}}</style>
+</head><body>
+<div style="color:{_TEXT};font-size:13px;line-height:1.7;">
+  <div class="entry">
+    <div style="color:#4a9eff;font-weight:600;font-size:14px;margin-bottom:6px;">Mean-Variance (MVO)</div>
+    <div style="color:{_MUTED};">Maximizes Sharpe ratio given expected returns and covariance. The foundation of modern portfolio theory (Markowitz, 1952). Sensitive to return estimates — small input changes can cause large weight swings.</div>
+  </div>
+  <div class="entry">
+    <div style="color:#2ecc71;font-weight:600;font-size:14px;margin-bottom:6px;">Minimum Variance</div>
+    <div style="color:{_MUTED};">Ignores return forecasts entirely — minimizes portfolio volatility using only the covariance matrix. Exploits the low-volatility anomaly: historically, lower-risk portfolios have delivered competitive risk-adjusted returns.</div>
+  </div>
+  <div class="entry">
+    <div style="color:#e67e22;font-weight:600;font-size:14px;margin-bottom:6px;">Risk Parity</div>
+    <div style="color:{_MUTED};">Equal risk contribution from each asset class. Addresses the hidden concentration in traditional portfolios — a 60/40 portfolio is ~90% equity risk. Popularized by Bridgewater's "All Weather" fund.</div>
+  </div>
+  <div class="entry">
+    <div style="color:#8b5cf6;font-weight:600;font-size:14px;margin-bottom:6px;">Black-Litterman</div>
+    <div style="color:{_MUTED};">Starts from market equilibrium returns (what the market implies), then blends with regime-conditional views. More stable than MVO — the industry standard for institutional asset allocation. Developed at Goldman Sachs (1992).</div>
+  </div>
+  <div class="entry">
+    <div style="color:#e74c3c;font-weight:600;font-size:14px;margin-bottom:6px;">Hierarchical Risk Parity (HRP)</div>
+    <div style="color:{_MUTED};">Machine learning approach using hierarchical clustering to group correlated assets, then allocates recursively (López de Prado, 2016). No return estimates needed. More stable than MVO and minimum variance. Cutting-edge methodology.</div>
+  </div>
+</div>
+</body></html>"""
+        components.html(_methods_explainer_html, height=420, scrolling=False)
+
+    # Timestamp footer
+    from datetime import date as _date
+    components.html(
+        f"<body style='background:{_PAGE_BG};font-family:{_FONT};margin:0;padding:4px 0;'>"
+        f"<div style='font-size:11px;color:{_MUTED};text-align:right;"
+        f"padding-top:12px;border-top:1px solid {_BORDER};'>"
+        f"Optimizations conditioned on {current} regime"
+        f"&nbsp;&nbsp;&middot;&nbsp;&nbsp;Updated {_date.today().strftime('%Y-%m-%d')}"
+        f"&nbsp;&nbsp;&middot;&nbsp;&nbsp;Risk-free rate: {rf:.2%}"
+        f"</div></body>",
+        height=36,
+        scrolling=False,
+    )
+
+
+def _regime_insight(regime: str, opt: dict) -> str:
+    """Generate a regime-specific insight sentence from actual optimization weights."""
+    bl_weights      = dict(zip(opt["asset_names"], opt["black_litterman"]["weights"]))
+    mvo_weights     = dict(zip(opt["asset_names"], opt["mvo"]["weights"]))
+    min_var_weights = dict(zip(opt["asset_names"], opt["min_var"]["weights"]))
+    hrp_weights     = dict(zip(opt["asset_names"], opt["hrp"]["weights"]))
+
+    top_bl_asset  = max(bl_weights, key=bl_weights.get)
+    top_bl_weight = bl_weights[top_bl_asset]
+
+    bond_assets = ["US Agg Bond", "US Treasuries", "IG Credit"]
+    avg_bonds   = (
+        sum(min_var_weights.get(a, 0) for a in bond_assets)
+        + sum(hrp_weights.get(a, 0)   for a in bond_assets)
+    ) / 2
+
+    equity_assets = ["US Large Cap", "US Small Cap", "Int'l Developed", "Emerging Markets"]
+    mvo_equity    = sum(mvo_weights.get(a, 0) for a in equity_assets)
+
+    if regime == "Overheating":
+        return (
+            f"Black-Litterman tilts toward {top_bl_asset} ({top_bl_weight:.0%})"
+            f" based on historical Overheating performance"
+        )
+    elif regime == "Recession Risk":
+        return (
+            f"Defensive positioning — Min Variance and HRP favor bonds"
+            f" ({avg_bonds:.0%} avg fixed income)"
+        )
+    elif regime == "Goldilocks":
+        return f"Risk-on regime — MVO maximizes equity exposure ({mvo_equity:.0%} equities)"
+    elif regime == "Stagflation":
+        return "Inflation hedge regime — Gold and commodities feature prominently across methods"
+    else:
+        return f"Optimizations reflect {regime} regime-conditional return and covariance estimates"
 
 
 # ── Risk Analysis sub-tab ──────────────────────────────────────────────────────
@@ -602,7 +730,7 @@ def _render_drawdown_table(drawdowns: dict, asset_classes: list) -> None:
         rows_html += row
 
     header_cells = "".join(
-        f"<th style='background:{_CARD_BG};color:{_REGIME_COLORS.get(r, _ACCENT)};"
+        f"<th style='background:#161b22;color:{_REGIME_COLORS.get(r, _ACCENT)};"
         f"border:1px solid {_BORDER};padding:8px 14px;text-align:center;font-size:12px;'>{r}</th>"
         for r in regimes_present
     )
@@ -614,20 +742,22 @@ def _render_drawdown_table(drawdowns: dict, asset_classes: list) -> None:
   table {{border-collapse:collapse;width:100%;}}
 </style></head>
 <body>
+<div style="background:{_CARD_BG};border:1px solid {_BORDER};border-radius:8px;padding:16px;overflow-x:auto;">
 <table>
   <thead><tr>
-    <th style="background:{_CARD_BG};color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#161b22;color:{_MUTED};border:1px solid {_BORDER};
                padding:8px 14px;text-align:left;font-size:12px;">Asset Class</th>
     {header_cells}
-    <th style="background:{_CARD_BG};color:{_TEXT};border:1px solid {_BORDER};
+    <th style="background:#161b22;color:{_TEXT};border:1px solid {_BORDER};
                padding:8px 14px;text-align:center;font-size:12px;">Overall Max DD</th>
   </tr></thead>
   <tbody>{rows_html}</tbody>
 </table>
+</div>
 </body></html>"""
 
     n_rows = sum(1 for a in asset_classes if a in by_regime.index)
-    components.html(html, height=46 * n_rows + 56, scrolling=False)
+    components.html(html, height=46 * n_rows + 88, scrolling=False)
 
 
 def _render_risk_analysis(data: dict) -> None:
@@ -676,8 +806,7 @@ def render() -> None:
   <div style="border-left:3px solid {_ACCENT};padding-left:14px;">
     <div style="font-size:22px;font-weight:600;color:{_TEXT};">Asset Allocation</div>
     <div style="font-size:12px;color:{_MUTED};margin-top:4px;">
-      Regime-conditional portfolio optimization &nbsp;&middot;&nbsp;
-      MVO &nbsp;&middot;&nbsp; Minimum Variance &nbsp;&middot;&nbsp; Risk Parity
+      Regime-conditional portfolio optimization &nbsp;&mdash;&nbsp; 5 institutional methods
     </div>
   </div>
 </body></html>""",
