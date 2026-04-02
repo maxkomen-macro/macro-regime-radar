@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-02T02:52:10.100890",
+  "generated_at": "2026-04-02T11:44:27.531692",
   "as_of": "2026-02-01",
   "regime": "Overheating",
   "confidence": 0.2979,
@@ -9,7 +9,6 @@
     "Because today 10Y Treasury rate momentum is extreme (z=+2.95), the 10Y Treasury signal is significantly elevated versus 2-year norms.",
     "Because today yield spread curve steepening is below trend (z=-1.50).",
     "Because today unemployment labor conditions is above trend (z=+1.87).",
-    "Because today HYG credit conditions is above trend (z=+1.66).",
     "Because today 10Y real yield is positive at 2.00%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.64%."
   ],
