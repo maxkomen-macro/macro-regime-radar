@@ -363,7 +363,7 @@ def render() -> None:
 
         prob_df = prob_series.reset_index()
         prob_df.columns = ["date", "prob"]
-        prob_df["date"] = pd.to_datetime(prob_df["date"])
+        prob_df.loc[:, "date"] = pd.to_datetime(prob_df["date"])
 
         base_line = alt.Chart(prob_df).mark_line(
             color="#4a9eff", strokeWidth=1.8
@@ -391,8 +391,8 @@ def render() -> None:
         if rec_bands:
             for band_df in rec_bands:
                 band_df = band_df.copy()
-                band_df["y_min"] = 0
-                band_df["y_max"] = 100
+                band_df.loc[:, "y_min"] = 0
+                band_df.loc[:, "y_max"] = 100
                 band = alt.Chart(band_df).mark_rect(
                     color="#e74c3c", opacity=0.15
                 ).encode(
@@ -425,7 +425,7 @@ def render() -> None:
 
             yc_df = yc_daily.reset_index()
             yc_df.columns = ["date", "spread"]
-            yc_df["date"] = pd.to_datetime(yc_df["date"])
+            yc_df.loc[:, "date"] = pd.to_datetime(yc_df["date"])
 
             yc_line = alt.Chart(yc_df).mark_line(
                 color="#4a9eff", strokeWidth=1.2
@@ -441,7 +441,7 @@ def render() -> None:
 
             # Red shading below 0
             yc_below = yc_df.copy()
-            yc_below["zero"] = 0.0
+            yc_below.loc[:, "zero"] = 0.0
             area_inv = alt.Chart(yc_below).mark_area(
                 color="#e74c3c", opacity=0.12
             ).encode(
@@ -456,8 +456,8 @@ def render() -> None:
             rec_band_layers_yc = []
             for bd in rec_bands_yc:
                 bd = bd.copy()
-                bd["y_min"] = -1.5
-                bd["y_max"] = 3.5
+                bd.loc[:, "y_min"] = -1.5
+                bd.loc[:, "y_max"] = 3.5
                 rec_band_layers_yc.append(
                     alt.Chart(bd).mark_rect(color="#e74c3c", opacity=0.12).encode(
                         x="start:T", x2="end:T", y="y_min:Q", y2="y_max:Q"

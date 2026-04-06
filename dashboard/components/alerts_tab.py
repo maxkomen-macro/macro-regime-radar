@@ -159,5 +159,5 @@ def render_alerts_tab() -> None:
         display_cols = ["date", "alert_type", "name", "level", "value", "threshold", "direction", "message"]
         table_df     = filtered[[c for c in display_cols if c in filtered.columns]].copy()
         if "date" in table_df.columns:
-            table_df["date"] = table_df["date"].astype(str).str[:10]
-        st.dataframe(table_df, use_container_width=True, hide_index=True)
+            table_df.loc[:, "date"] = table_df["date"].astype(str).str[:10]
+        st.dataframe(table_df, width="stretch", hide_index=True)
