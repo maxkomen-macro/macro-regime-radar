@@ -70,19 +70,19 @@ def render_backtests() -> None:
             display_cols.append(col)
 
     display_df = pivoted[display_cols].copy()
-    display_df["cohort"]  = display_df["cohort"].str.replace("SPY_", "").str.replace("_", " ")
+    display_df.loc[:, "cohort"]  = display_df["cohort"].str.replace("SPY_", "").str.replace("_", " ")
 
     # Format as percentage
     for col in ["avg_return", "median_return", "hit_rate"]:
         if col in display_df.columns:
-            display_df[col] = display_df[col].apply(
+            display_df.loc[:, col] = display_df[col].apply(
                 lambda v: f"{v:.1%}" if pd.notna(v) else "—"
             )
     if "n" in display_df.columns:
-        display_df["n"] = display_df["n"].apply(lambda v: f"{int(v)}" if pd.notna(v) else "—")
+        display_df.loc[:, "n"] = display_df["n"].apply(lambda v: f"{int(v)}" if pd.notna(v) else "—")
 
     display_df.columns = [c.replace("_", " ").title() for c in display_df.columns]
-    st.dataframe(display_df.set_index("Cohort"), use_container_width=True)
+    st.dataframe(display_df.set_index("Cohort"), width="stretch")
 
     # Warn when any cohort has a dangerously small sample size (1–4 observations).
     if "n" in pivoted.columns:
@@ -128,8 +128,8 @@ def _render_avg_return_chart(df: pd.DataFrame) -> None:
         return
 
     avg_df = avg_df.sort_values("horizon", key=lambda s: s.map(HORIZON_ORDER))
-    avg_df["cohort_clean"] = avg_df["cohort"].str.replace("SPY_", "").str.replace("_", " ")
-    avg_df["value_pct"]    = avg_df["value"] * 100
+    avg_df.loc[:, "cohort_clean"] = avg_df["cohort"].str.replace("SPY_", "").str.replace("_", " ")
+    avg_df.loc[:, "value_pct"]    = avg_df["value"] * 100
 
     fig = px.bar(
         avg_df,
@@ -158,8 +158,8 @@ def _render_hit_rate_chart(df: pd.DataFrame) -> None:
         return
 
     hr_df = hr_df.sort_values("horizon", key=lambda s: s.map(HORIZON_ORDER))
-    hr_df["cohort_clean"] = hr_df["cohort"].str.replace("SPY_", "").str.replace("_", " ")
-    hr_df["value_pct"]    = hr_df["value"] * 100
+    hr_df.loc[:, "cohort_clean"] = hr_df["cohort"].str.replace("SPY_", "").str.replace("_", " ")
+    hr_df.loc[:, "value_pct"]    = hr_df["value"] * 100
 
     fig = px.bar(
         hr_df,

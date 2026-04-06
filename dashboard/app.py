@@ -131,14 +131,14 @@ def load_freshness() -> pd.DataFrame:
 def compute_derived(_wide: pd.DataFrame) -> pd.DataFrame:
     d = _wide.copy()
     if "CPIAUCSL" in d.columns:
-        d["CPI_YOY"] = (d["CPIAUCSL"] / d["CPIAUCSL"].shift(12) - 1) * 100
+        d.loc[:, "CPI_YOY"] = (d["CPIAUCSL"] / d["CPIAUCSL"].shift(12) - 1) * 100
     if "UNRATE" in d.columns:
-        d["UNRATE_3M"] = d["UNRATE"] - d["UNRATE"].shift(3)
+        d.loc[:, "UNRATE_3M"] = d["UNRATE"] - d["UNRATE"].shift(3)
     if "DGS10" in d.columns and "DGS2" in d.columns:
-        d["SPREAD"] = d["DGS10"] - d["DGS2"]
+        d.loc[:, "SPREAD"] = d["DGS10"] - d["DGS2"]
     if "INDPRO" in d.columns:
-        d["INDPRO_YOY"] = (d["INDPRO"] / d["INDPRO"].shift(12) - 1) * 100
-        d["INDPRO_3M"]  = (d["INDPRO"] / d["INDPRO"].shift(3)  - 1) * 100
+        d.loc[:, "INDPRO_YOY"] = (d["INDPRO"] / d["INDPRO"].shift(12) - 1) * 100
+        d.loc[:, "INDPRO_3M"]  = (d["INDPRO"] / d["INDPRO"].shift(3)  - 1) * 100
     return d
 
 
@@ -1205,7 +1205,7 @@ with tab_dash:
                     "Indicator": disp_name,
                     "Value": f"{v:.2f}{unit}" if v is not None else "N/A",
                 })
-            st.dataframe(pd.DataFrame(snap_rows), hide_index=True, use_container_width=True)
+            st.dataframe(pd.DataFrame(snap_rows), hide_index=True, width="stretch")
 
             subsection_header("Top Drivers by |Z-score| vs. 2Y window")
             win_2y = derived_df[derived_df.index >= derived_df.index.max() - pd.DateOffset(months=24)]
@@ -1232,7 +1232,7 @@ with tab_dash:
     with st.expander("Data Freshness & Quality"):
         if not freshness_df.empty:
             st.markdown("**Latest available date per series**")
-            st.dataframe(freshness_df, hide_index=True, use_container_width=True)
+            st.dataframe(freshness_df, hide_index=True, width="stretch")
 
             if not wide_df.empty:
                 st.markdown("**Data completeness in selected window**")
@@ -1247,7 +1247,7 @@ with tab_dash:
                         f"{(total - m) / total * 100:.0f}%" for m in miss.values
                     ],
                 })
-                st.dataframe(miss_rows, hide_index=True, use_container_width=True)
+                st.dataframe(miss_rows, hide_index=True, width="stretch")
         else:
             st.info("No freshness data available.")
 

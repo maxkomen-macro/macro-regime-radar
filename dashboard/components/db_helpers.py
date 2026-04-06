@@ -108,9 +108,9 @@ def load_market_daily(symbols: tuple | None = None) -> pd.DataFrame:
         result_parts = []
         for sym, grp in df.groupby("symbol"):
             g = grp.sort_values("date").copy()
-            g["ret_1d"] = g["close"].pct_change(1) * 100
-            g["ret_1w"] = g["close"].pct_change(5) * 100
-            g["ret_1m"] = g["close"].pct_change(21) * 100
+            g.loc[:, "ret_1d"] = g["close"].pct_change(1) * 100
+            g.loc[:, "ret_1w"] = g["close"].pct_change(5) * 100
+            g.loc[:, "ret_1m"] = g["close"].pct_change(21) * 100
             result_parts.append(g)
         return pd.concat(result_parts).reset_index(drop=True)
     except Exception:
@@ -243,7 +243,7 @@ def pivot_backtest(df: pd.DataFrame) -> pd.DataFrame:
     pivoted.columns.name = None
     # Ensure horizon ordering
     horizon_order = {"1M": 0, "3M": 1, "6M": 2, "12M": 3}
-    pivoted["_h_order"] = pivoted["horizon"].map(horizon_order).fillna(99)
+    pivoted.loc[:, "_h_order"] = pivoted["horizon"].map(horizon_order).fillna(99)
     pivoted = pivoted.sort_values(["cohort", "_h_order"]).drop(columns="_h_order")
     return pivoted
 
@@ -274,7 +274,7 @@ def get_upcoming_events(cal: pd.DataFrame, days: int = 14) -> pd.DataFrame:
     now     = pd.Timestamp.now(tz="UTC").tz_localize(None)
     cutoff  = now + pd.Timedelta(days=days)
     cal_loc = cal.copy()
-    cal_loc["event_dt_naive"] = cal_loc["event_dt"].dt.tz_localize(None)
+    cal_loc.loc[:, "event_dt_naive"] = cal_loc["event_dt"].dt.tz_localize(None)
     return cal_loc[
         (cal_loc["event_dt_naive"] >= now) & (cal_loc["event_dt_naive"] <= cutoff)
     ].reset_index(drop=True)

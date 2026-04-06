@@ -219,12 +219,12 @@ def _render_oas_chart(hy_series: pd.Series, ig_series: pd.Series) -> None:
     # Build combined line data
     hy_df = hy_series.reset_index()
     hy_df.columns = ["date", "value"]
-    hy_df["series"] = "HY OAS"
+    hy_df.loc[:, "series"] = "HY OAS"
 
     ig_df = ig_series.reset_index() if not ig_series.empty else pd.DataFrame(columns=["date", "value"])
     if not ig_df.empty:
         ig_df.columns = ["date", "value"]
-        ig_df["series"] = "IG OAS"
+        ig_df.loc[:, "series"] = "IG OAS"
         line_data = pd.concat([hy_df, ig_df], ignore_index=True)
     else:
         line_data = hy_df
