@@ -893,7 +893,7 @@ _render_header_bar(latest_regime, as_of)
 tab_dash, tab_intel, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, \
 tab_rec, tab_lbo, tab_alloc, tab_meth = st.tabs([
     "Dashboard", "Intelligence", "Markets", "Signals & Alerts", "Historical Analysis",
-    "Calendar", "Credit", "Recession Risk", "LBO Calculator", "Asset Allocation", "Methodology"
+    "Events & Intelligence", "Credit", "Recession Risk", "LBO Calculator", "Asset Allocation", "Methodology"
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1335,15 +1335,15 @@ with tab_hist:
         st.error(f"Backtests error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB: Calendar
+# TAB: Events & Intelligence (Phase 11 — News Feed + Calendar)
 # ─────────────────────────────────────────────────────────────────────────────
 
 with tab_cal:
     try:
-        from components.calendar_tab import render_calendar_tab
-        render_calendar_tab(latest_signals=latest_signals)
+        from components.events_tab import render_events_tab
+        render_events_tab(latest_signals=latest_signals)
     except Exception as exc:
-        st.error(f"Calendar error: {exc}")
+        st.error(f"Events & Intelligence error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB: Credit (Phase 7 — BAML OAS spreads + analytics)

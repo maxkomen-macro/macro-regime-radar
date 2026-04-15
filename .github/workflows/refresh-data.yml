@@ -6,6 +6,8 @@ on:
     - cron: "0 11 * * *"
     # Mon–Fri at 8:00 PM EDT = 00:00 UTC (fires Tue–Sat)
     - cron: "0 0 * * 2-6"
+    # Hourly — news feed only (heavy pipeline steps are skipped on this trigger)
+    - cron: "0 * * * *"
   workflow_dispatch:  # Allow manual trigger from Actions tab
 
 permissions:
@@ -39,32 +41,64 @@ jobs:
         run: |
           echo "FRED_API_KEY=${{ secrets.FRED_API_KEY }}" > .env
           echo "POLYGON_API_KEY=${{ secrets.POLYGON_API_KEY }}" >> .env
+          echo "FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}" >> .env
+          echo "NEWS_API_KEY=${{ secrets.NEWS_API_KEY }}" >> .env
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
 
       - name: Run FRED pipeline (fetch + regimes + signals)
+        if: github.event.schedule != '0 * * * *'
         run: python main.py
 
       - name: Fetch market data (incremental)
+        if: github.event.schedule != '0 * * * *'
         run: python src/market_data/fetch_market.py --mode incremental
 
       - name: Compute macro surprises (z-scores)
+        if: github.event.schedule != '0 * * * *'
         run: python -m src.analytics.surprise
 
       - name: Compute backtest results
+        if: github.event.schedule != '0 * * * *'
         run: python -m src.analytics.backtest
 
       - name: Generate alert feed
+        if: github.event.schedule != '0 * * * *'
         run: python -m src.analytics.alerts
 
       - name: Compute priced metrics
+        if: github.event.schedule != '0 * * * *'
         run: python -m src.analytics.priced
 
       - name: Generate regime playbook
+        if: github.event.schedule != '0 * * * *'
         run: python -m src.analytics.playbook
 
       - name: Reload event calendar (idempotent)
+        if: github.event.schedule != '0 * * * *'
         run: python src/events/load_events.py
 
+      - name: Refresh news feed
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python -c "
+          import os, sys
+          sys.path.insert(0, '.')
+          from src.db_helpers import ensure_news_table
+          from src.analytics.news import fetch_and_store_news
+          ensure_news_table('data/macro_radar.db')
+          n = fetch_and_store_news('data/macro_radar.db', {
+              'finnhub_key': os.environ.get('FINNHUB_API_KEY',''),
+              'newsapi_key': os.environ.get('NEWS_API_KEY',''),
+              'anthropic_key': os.environ.get('ANTHROPIC_API_KEY','')
+          })
+          print(f'Stored {n} new headlines')
+          "
+
       - name: Trim intraday data to last 30 days (prevent DB bloat)
+        if: github.event.schedule != '0 * * * *'
         run: |
           sqlite3 data/macro_radar.db "DELETE FROM market_intraday WHERE ts < datetime('now','-30 days');"
           sqlite3 data/macro_radar.db "VACUUM;"

@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).with_name(".env"))
 
 from src.database   import init_db
+from src.db_helpers import ensure_news_table
 from src.fetch_data import fetch_all_series
 from src import regime
 from src import signals
@@ -29,6 +30,7 @@ def main():
 
     print("\n[1/4] Initializing database...")
     init_db()
+    ensure_news_table()
     _migrate_gs_series()
 
     print("\n[2/4] Fetching data from FRED...")
