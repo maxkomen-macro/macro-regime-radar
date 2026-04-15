@@ -72,6 +72,21 @@ SERIES.update(RECESSION_SERIES)
 POLYGON_API_KEY             = os.getenv("POLYGON_API_KEY")
 MARKET_DAILY_BACKFILL_YEARS = int(os.getenv("MARKET_DAILY_BACKFILL_YEARS", "10"))
 
+
+# ── Secret helper (Streamlit Cloud → st.secrets, CI/local → os.environ) ───────
+def get_secret(key: str) -> str:
+    try:
+        import streamlit as st
+        return st.secrets.get(key, os.environ.get(key, ""))
+    except Exception:
+        return os.environ.get(key, "")
+
+
+# ── News & AI API keys (Phase 11) ──────────────────────────────────────────────
+FINNHUB_API_KEY   = get_secret("FINNHUB_API_KEY")
+NEWS_API_KEY      = get_secret("NEWS_API_KEY")
+ANTHROPIC_API_KEY = get_secret("ANTHROPIC_API_KEY")
+
 # ── Output paths ───────────────────────────────────────────────────────────
 OUTPUT_DIR         = PROJECT_ROOT / "output"
 PLAYBOOK_JSON_PATH = OUTPUT_DIR / "playbook.json"
