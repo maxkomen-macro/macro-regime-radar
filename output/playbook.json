@@ -1,17 +1,17 @@
 {
-  "generated_at": "2026-04-17T03:26:10.035223",
+  "generated_at": "2026-04-18T02:58:10.634133",
   "as_of": "2026-03-01",
   "regime": "Overheating",
   "confidence": 0.5372,
   "baseline": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
   "because_today": [
-    "Because today VIX volatility is extreme (z=-3.91), the VIX signal is significantly depressed versus 2-year norms.",
+    "Because today VIX volatility is extreme (z=-4.01), the VIX signal is significantly depressed versus 2-year norms.",
     "Because today CPI inflation is above trend (z=+1.75).",
     "Because today unemployment labor conditions is below trend (z=-2.00).",
-    "Because today 10Y real yield is positive at 1.90%, real rates are restrictive — a headwind for equities and gold.",
+    "Because today 10Y real yield is positive at 1.93%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.64%."
   ],
-  "summary": "Regime: Overheating (confidence 54%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today VIX volatility is extreme (z=-3.91), the VIX signal is significantly depressed versus 2-year norms. Because today CPI inflation is above trend (z=+1.75). Because today unemployment labor conditions is below trend (z=-2.00).",
+  "summary": "Regime: Overheating (confidence 54%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today VIX volatility is extreme (z=-4.01), the VIX signal is significantly depressed versus 2-year norms. Because today CPI inflation is above trend (z=+1.75). Because today unemployment labor conditions is below trend (z=-2.00).",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
