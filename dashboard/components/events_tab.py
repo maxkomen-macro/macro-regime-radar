@@ -38,6 +38,26 @@ _ACCENT_YELLOW   = "#ffd700"
 _ACCENT_PURPLE   = "#7c3aed"
 _ACCENT_BLUE_DIM = "#1a3a5c"
 
+# ── News source config ────────────────────────────────────────────────────────
+# Adding a new feed requires only a new entry here plus a fetch function in
+# src/analytics/news.py. Render logic reads categories, labels, and badge
+# colors from this dict — no UI changes needed to light up a new source.
+NEWS_SOURCES = {
+    "finnhub": {
+        "label":      "Finnhub",
+        "color":      "#4a9eff",
+        "bg":         "#1a3a5c",
+        "categories": ["M&A", "MACRO", "EARNINGS"],
+    },
+    "newsapi": {
+        "label":      "NewsAPI",
+        "color":      "#2ecc71",
+        "bg":         "#1a3a1a",
+        "categories": ["MACRO", "GEOPOLITICAL", "SECTOR"],
+    },
+}
+_SOURCE_DEFAULT = {"label": "", "color": _MUTED, "bg": "#21262d", "categories": []}
+
 # ── Category badge styles ─────────────────────────────────────────────────────
 _CAT_STYLES = {
     "MACRO":        {"bg": "#1a3a5c",  "color": "#4a9eff"},
@@ -68,54 +88,111 @@ _CAT_SHORT = {
     "GEOPOLITICAL": "GEO", "SECTOR": "SEC",
 }
 
+# ── Regime-aware headline tags ────────────────────────────────────────────────
+# (category, regime) → short phrase (≤ 30 chars) shown under each row.
+# `"*"` is the catch-all when the specific regime isn't keyed.
+_REGIME_TAGS: dict[tuple[str, str], str] = {
+    ("M&A",          "Overheating"):    "Credit expansion signal",
+    ("M&A",          "Goldilocks"):     "Deal flow indicator",
+    ("M&A",          "Stagflation"):    "Strategic consolidation",
+    ("M&A",          "Recession Risk"): "Distressed M&A watch",
+    ("M&A",          "*"):              "Deal flow indicator",
+    ("MACRO",        "*"):              "Policy direction signal",
+    ("GEOPOLITICAL", "Stagflation"):    "Supply chain risk",
+    ("GEOPOLITICAL", "Overheating"):    "Inflation pass-through",
+    ("GEOPOLITICAL", "*"):              "Macro risk factor",
+    ("EARNINGS",     "Recession Risk"): "Earnings deterioration",
+    ("EARNINGS",     "Overheating"):    "Margin pressure signal",
+    ("EARNINGS",     "Goldilocks"):     "Corporate health read",
+    ("EARNINGS",     "*"):              "Corporate health read",
+    ("SECTOR",       "*"):              "Sector rotation signal",
+}
+
 # ── Filter + row button CSS ───────────────────────────────────────────────────
 _FILTER_CSS = """<style>
-/* Filter bar pill buttons — horizontal block */
-div[data-testid="stHorizontalBlock"] > div > div > div > button {
+/* Filter bar pill buttons — unselected (secondary) */
+div[data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"] {
     background: transparent !important;
     border: 1px solid #30363d !important;
-    color: #6e7681 !important;
+    color: #8b949e !important;
     border-radius: 16px !important;
-    padding: 0px 14px !important;
+    padding: 4px 14px !important;
     font-size: 11px !important;
+    font-weight: 600 !important;
     font-family: 'SF Mono', 'Fira Code', monospace !important;
     letter-spacing: 0.8px !important;
     height: 28px !important;
     min-height: 28px !important;
-    line-height: 28px !important;
+    line-height: 1 !important;
     white-space: nowrap !important;
-    display: inline-flex !important;
-    align-items: center !important;
+    width: 100% !important;
+    box-shadow: none !important;
 }
-div[data-testid="stHorizontalBlock"] > div > div > div > button:hover {
+div[data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"]:hover {
     border-color: #4a9eff !important;
     color: #4a9eff !important;
     background: rgba(74,158,255,0.08) !important;
 }
-div[data-testid="stHorizontalBlock"] > div > div > div > button:focus {
-    border-color: #4a9eff !important;
-    color: #4a9eff !important;
-    box-shadow: 0 0 0 2px rgba(74,158,255,0.2) !important;
-    background: rgba(74,158,255,0.08) !important;
+/* Filter bar pill buttons — selected (primary) */
+div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"] {
+    background: #4a9eff !important;
+    border: 1px solid #4a9eff !important;
+    color: #0d1117 !important;
+    border-radius: 16px !important;
+    padding: 4px 14px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    font-family: 'SF Mono', 'Fira Code', monospace !important;
+    letter-spacing: 0.8px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    width: 100% !important;
+    box-shadow: 0 0 0 2px rgba(74,158,255,0.25) !important;
+}
+div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"]:hover {
+    background: #66b0ff !important;
+    border-color: #66b0ff !important;
+    color: #0d1117 !important;
 }
 /* Tighten column padding in filter row */
 div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
     padding: 0 3px !important;
 }
-/* Headline row click buttons — collapse to zero height */
-section[data-testid="stMain"] div[data-testid="stVerticalBlock"]
-    button[kind="secondary"] {
-    height: 0px !important;
-    min-height: 0px !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border: none !important;
-    position: absolute !important;
-    opacity: 0 !important;
+/* Feed row (left: list iframe, right: detail iframe) — align items to top
+   so the right column sizes to the detail card rather than stretching to
+   match the 600px list. Scoped via :has(iframe) so it matches the 2+3
+   column block on this tab. */
+div[data-testid="stHorizontalBlock"]:has(iframe) {
+    align-items: flex-start !important;
 }
-/* Balanced column heights — targets only the 2-column news feed row */
-div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:nth-child(2):last-child) > div[data-testid="stColumn"] {
-    min-height: 600px;
+
+/* LIVE pulse for fresh-data indicator */
+@keyframes ei-pulse {
+    0%   { opacity: 0.35; transform: scale(1.0); }
+    50%  { opacity: 1.0;  transform: scale(1.15); }
+    100% { opacity: 0.35; transform: scale(1.0); }
+}
+.ei-live-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #2ecc71;
+    box-shadow: 0 0 6px rgba(46,204,113,0.7);
+    animation: ei-pulse 1.4s ease-in-out infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+/* Refresh button — a subtle icon-sized round button */
+button[data-testid="baseButton-secondary"][aria-label="ei-refresh"] {
+    border-radius: 50% !important;
+    padding: 0 !important;
+    width: 28px !important;
+    height: 28px !important;
+    min-height: 28px !important;
 }
 </style>"""
 
@@ -182,13 +259,20 @@ def _last_updated(df: pd.DataFrame) -> str:
 
 
 def _sig_dots_html(score: float, accent: str) -> str:
-    """Five coloured significance dots as HTML spans."""
+    """Five filled-circle dots. Active dots use `accent`, inactive use #30363d.
+
+    Uses inline-block divs with a solid background so the dots render as
+    true filled circles on every browser/font — the unicode `●` glyph
+    renders as a faint outline in many system fonts.
+    """
     filled = min(max(int(round(score)), 0), 5)
     parts = []
     for i in range(5):
-        color = accent if i < filled else _BORDER
+        bg = accent if i < filled else "#30363d"
         parts.append(
-            f'<span style="color:{color};font-size:12px;line-height:1;">●</span>'
+            f'<span style="display:inline-block;width:7px;height:7px;'
+            f'border-radius:50%;background:{bg};margin:0 2px;'
+            f'vertical-align:middle;"></span>'
         )
     return "".join(parts)
 
@@ -213,6 +297,76 @@ def _score_color(v: int) -> str:
     if v >= 2:
         return _ACCENT
     return _TEXT_MUTED
+
+
+def _score_verdict(v: int) -> tuple[str, str]:
+    """Verdict label + color for a 1–5 dimension score."""
+    if v >= 4:
+        return ("HIGH",     _ACCENT_RED)
+    if v == 3:
+        return ("MODERATE", _ACCENT_YELLOW)
+    return     ("LOW",      _TEXT_MUTED)
+
+
+def _sig_verdict(score: float) -> tuple[str, str]:
+    """Verdict label + color for overall significance (1.0–5.0)."""
+    if score >= 4.5:
+        return ("CRITICAL",    _ACCENT_RED)
+    if score >= 3.5:
+        return ("HIGH IMPACT", _ACCENT_ORANGE)
+    if score >= 2.5:
+        return ("NOTABLE",     _ACCENT_YELLOW)
+    return     ("ROUTINE",     _ACCENT_GREEN)
+
+
+def _regime_tag(category: str, regime: str) -> str:
+    """Short descriptive tag derived from (category, regime)."""
+    cat = (category or "").upper()
+    reg = regime or ""
+    if (cat, reg) in _REGIME_TAGS:
+        return _REGIME_TAGS[(cat, reg)]
+    if (cat, "*") in _REGIME_TAGS:
+        return _REGIME_TAGS[(cat, "*")]
+    return "Market signal"
+
+
+@st.cache_data(ttl=300)
+def _current_regime(db_path: str) -> str:
+    """Latest regime label from the regimes table (Goldilocks if missing)."""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT label FROM regimes ORDER BY date DESC LIMIT 1"
+            ).fetchone()
+            return (row[0] if row and row[0] else "Goldilocks")
+    except Exception:
+        return "Goldilocks"
+
+
+def _source_badge_style(source_name: str) -> dict:
+    """Map an arbitrary source string to a NEWS_SOURCES entry by substring."""
+    if not source_name:
+        return _SOURCE_DEFAULT
+    src = source_name.lower()
+    for cfg in NEWS_SOURCES.values():
+        label = cfg.get("label", "").lower()
+        if label and label in src:
+            return cfg
+    return _SOURCE_DEFAULT
+
+
+def _is_fresh(df: pd.DataFrame, hours: float = 1.0) -> bool:
+    """True if most recent fetched_at is within `hours` of now."""
+    if df.empty or "fetched_at" not in df.columns:
+        return False
+    try:
+        latest = pd.to_datetime(df["fetched_at"], utc=True, errors="coerce").max()
+        if pd.isna(latest):
+            return False
+        delta = (datetime.now(timezone.utc) - latest.to_pydatetime()).total_seconds()
+        return 0 <= delta <= hours * 3600
+    except Exception:
+        return False
 
 
 # ── Zone 1: Intelligence Summary Bar ─────────────────────────────────────────
@@ -251,31 +405,66 @@ def render_summary_bar(df: pd.DataFrame) -> None:
 
 # ── Zone 2: Filter Bar ────────────────────────────────────────────────────────
 
+# Preserve a stable display order; filter pills are derived from the union
+# of categories across all configured NEWS_SOURCES (FIX 6 — extensible).
+_PILL_ORDER: list[str] = ["MACRO", "M&A", "EARNINGS", "GEOPOLITICAL", "SECTOR"]
+_PILL_SHORT: dict[str, str] = {
+    "MACRO":        "MACRO",
+    "M&A":          "M&A",
+    "EARNINGS":     "EARN",
+    "GEOPOLITICAL": "GEO",
+    "SECTOR":       "SECTOR",
+}
+
+
+def _available_category_labels() -> list[str]:
+    """Derive filter-pill labels from NEWS_SOURCES. `ALL` is always first."""
+    available = {c for s in NEWS_SOURCES.values() for c in s.get("categories", [])}
+    return ["ALL"] + [_PILL_SHORT[c] for c in _PILL_ORDER if c in available]
+
+
 def render_filter_bar() -> None:
-    cat_labels  = ["ALL", "MACRO", "M&A", "EARN", "GEO", "SECTOR"]
+    cat_labels  = _available_category_labels()
     time_labels = ["24H", "48H", "7D"]
 
-    # cols layout: 6 category + 0.3 divider + 3 time + 4 spacer
-    cols = st.columns([1, 1, 1, 1, 1, 1, 0.3, 1, 1, 1, 4])
+    # cols: N category + 0.3 divider + 3 time + spacer + 0.6 refresh
+    n_cat   = len(cat_labels)
+    col_specs = [1] * n_cat + [0.3] + [1] * len(time_labels) + [3.5, 0.6]
+    cols    = st.columns(col_specs)
 
     for i, label in enumerate(cat_labels):
         stored = _CAT_DISPLAY_MAP.get(label, label)
         is_sel = st.session_state["ei_cat"] == stored
-        btn_label = f"● {label}" if is_sel else label
         with cols[i]:
-            if st.button(btn_label, key=f"ei_cat_btn_{label}", type="primary"):
+            if st.button(
+                label,
+                key=f"ei_cat_btn_{label}",
+                type="primary" if is_sel else "secondary",
+                use_container_width=True,
+            ):
                 st.session_state["ei_cat"] = stored
                 st.rerun()
 
-    # col 6 is empty divider
+    # divider column (n_cat) intentionally empty
 
     for j, t in enumerate(time_labels):
         is_sel = st.session_state["ei_time"] == t
-        btn_label = f"● {t}" if is_sel else t
-        with cols[7 + j]:
-            if st.button(btn_label, key=f"ei_time_btn_{t}", type="primary"):
+        with cols[n_cat + 1 + j]:
+            if st.button(
+                t,
+                key=f"ei_time_btn_{t}",
+                type="primary" if is_sel else "secondary",
+                use_container_width=True,
+            ):
                 st.session_state["ei_time"] = t
                 st.rerun()
+
+    # Rightmost: manual refresh button (↻)
+    with cols[-1]:
+        if st.button("↻", key="ei_refresh", help="Refresh news feed",
+                     use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
     st.markdown(
         '<div style="height:1px;background:#21262d;margin:8px 0 12px 0;"></div>',
@@ -285,60 +474,198 @@ def render_filter_bar() -> None:
 
 # ── Zone 3 left: Headline List ────────────────────────────────────────────────
 
-def render_headline_list(df: pd.DataFrame) -> None:
-    n = len(df)
+# Embedded CSS for the single-iframe headline list (Problem 1 fix — no
+# Streamlit widget artifacts, no overlay hacks). All click detection
+# happens via anchor tags with target="_top" that update the parent's
+# query params; render_events_tab() syncs ei_selected back into session.
+_LIST_HTML_CSS = """
+* { box-sizing: border-box; }
+html, body {
+    margin: 0;
+    padding: 0;
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    overflow-x: hidden;
+}
+.ei-list { display: flex; flex-direction: column; }
+.ei-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    text-decoration: none;
+    color: inherit;
+    border-left: 4px solid transparent;
+    border-bottom: 1px solid #21262d;
+    border-radius: 0 4px 4px 0;
+    height: 96px;
+    box-sizing: border-box;
+    overflow: hidden;
+    cursor: pointer;
+    transition: background 120ms ease, border-left-color 120ms ease;
+}
+.ei-row:focus { outline: none; }
+.ei-row.ei-unselected:hover {
+    background: rgba(74,158,255,0.08);
+    border-left-color: rgba(74,158,255,0.45);
+}
+.ei-row.ei-selected {
+    background: rgba(74,158,255,0.22);
+    border-left-color: #4a9eff;
+    box-shadow: inset 0 0 0 1px rgba(74,158,255,0.5),
+                0 0 14px rgba(74,158,255,0.2);
+}
+.ei-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-top: 7px;
+    flex-shrink: 0;
+}
+.ei-content { flex: 1; min-width: 0; }
+.ei-headline {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 4px;
+    color: #e6edf3;
+}
+.ei-selected .ei-headline {
+    color: #4a9eff;
+    font-weight: 700;
+}
+.ei-caret {
+    display: inline-block;
+    color: #4a9eff;
+    font-weight: 900;
+    font-size: 18px;
+    margin-right: 6px;
+    line-height: 1;
+    vertical-align: -1px;
+}
+.ei-meta {
+    color: #6e7681;
+    font-size: 10px;
+    font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+}
+.ei-selected .ei-meta { color: #c9d1d9; }
+.ei-tag {
+    color: #6e7681;
+    font-size: 10px;
+    font-style: italic;
+    letter-spacing: 0.2px;
+}
+.ei-selected .ei-tag { color: #8ab4f8; }
+.ei-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+    align-self: flex-start;
+}
+"""
+
+
+def render_headline_list(df: pd.DataFrame, current_regime: str = "Goldilocks") -> None:
+    n     = len(df)
+    fresh = _is_fresh(df, hours=1.0)
+    live_html = (
+        '<span class="ei-live-dot"></span>'
+        '<span style="color:#2ecc71;font-size:9px;font-weight:700;'
+        'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
+        'margin-right:8px;">LIVE</span>'
+        if fresh else ""
+    )
     st.markdown(
-        f'<div style="color:#8b949e;font-size:10px;font-weight:700;'
+        f'<div style="display:flex;align-items:center;'
+        f'color:#8b949e;font-size:10px;font-weight:700;'
         f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
         f'padding:0 0 8px 0;border-bottom:1px solid #21262d;">'
-        f'HEADLINES <span style="color:#30363d;">({n})</span></div>',
+        f'<span style="flex:1;">HEADLINES '
+        f'<span style="color:#30363d;">({n})</span></span>'
+        f'{live_html}</div>',
         unsafe_allow_html=True,
     )
 
-    with st.container(height=600):
-        for _, item in df.iterrows():
-            sig        = float(item.get("overall_significance", 1.0))
-            sig_color  = _accent_color(sig)
-            cat        = str(item.get("category", ""))
-            cat_style  = _CAT_STYLES.get(cat, _CAT_DEFAULT)
-            cat_short  = _CAT_SHORT.get(cat, cat[:3] if cat else "—")
-            item_id    = int(item["id"])
-            is_sel     = st.session_state["ei_selected"] == item_id
-            bg             = "#1c2128" if is_sel else "transparent"
-            left_bdr       = _ACCENT if is_sel else "transparent"
-            headline_color = "#ffffff" if is_sel else "#e6edf3"
-            headline_e     = html.escape(str(item.get("headline", "")))
-            ta         = _time_ago(str(item.get("published_at", "")))
-            source_e   = html.escape(str(item.get("source", "")))
+    # Build every row as a <a target="_top"> anchor in one HTML blob.
+    # Click = native browser navigation to ?ei_selected=<id>. No buttons,
+    # no overlays, no Streamlit widget artifacts.
+    rows_parts: list[str] = []
+    for _, item in df.iterrows():
+        sig        = float(item.get("overall_significance", 1.0))
+        sig_color  = _accent_color(sig)
+        cat        = str(item.get("category", ""))
+        cat_style  = _CAT_STYLES.get(cat, _CAT_DEFAULT)
+        cat_short  = _CAT_SHORT.get(cat, cat[:3] if cat else "—")
+        item_id    = int(item["id"])
+        is_sel     = st.session_state["ei_selected"] == item_id
+        src_raw    = str(item.get("source", ""))
+        src_cfg    = _source_badge_style(src_raw)
 
-            row_html = (
-                f'<div style="display:flex;align-items:flex-start;gap:8px;'
-                f'padding:8px 10px;background:{bg};'
-                f'border-left:3px solid {left_bdr};'
-                f'border-radius:0 4px 4px 0;margin-bottom:2px;'
-                f'border-bottom:1px solid #21262d;">'
-                f'<div style="width:6px;height:6px;border-radius:50%;'
-                f'background:{sig_color};margin-top:5px;flex-shrink:0;"></div>'
-                f'<div style="flex:1;min-width:0;">'
-                f'<div style="color:{headline_color};font-size:14px;font-weight:500;line-height:1.35;'
-                f'display:-webkit-box;-webkit-line-clamp:2;'
-                f'-webkit-box-orient:vertical;overflow:hidden;'
-                f'margin-bottom:3px;">{headline_e}</div>'
-                f'<div style="color:#6e7681;font-size:11px;'
-                f'font-family:\'SF Mono\',monospace;">'
-                f'{ta} · {source_e}</div>'
-                f'</div>'
-                f'<span style="background:{cat_style["bg"]};color:{cat_style["color"]};'
-                f'font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;'
-                f'white-space:nowrap;flex-shrink:0;'
-                f'font-family:\'SF Mono\',monospace;">{cat_short}</span>'
-                f'</div>'
-            )
+        row_cls      = "ei-row ei-selected" if is_sel else "ei-row ei-unselected"
+        caret        = '<span class="ei-caret">▸</span>' if is_sel else ""
+        headline_e   = html.escape(str(item.get("headline", "")))
+        ta           = html.escape(_time_ago(str(item.get("published_at", ""))))
+        source_e     = html.escape(src_raw)
+        regime_tag_e = html.escape(_regime_tag(cat, current_regime))
 
-            st.markdown(row_html, unsafe_allow_html=True)
-            if st.button(" ", key=f"hl_{item_id}", use_container_width=True):
-                st.session_state["ei_selected"] = item_id
-                st.rerun()
+        rows_parts.append(
+            f'<a class="{row_cls}" href="?ei_selected={item_id}" target="_top" '
+            f'data-id="{item_id}" '
+            f'style="--sig:{sig_color};">'
+            f'<span class="ei-dot" style="background:{sig_color};"></span>'
+            f'<span class="ei-content">'
+            f'<span class="ei-headline">{caret}{headline_e}</span>'
+            f'<span class="ei-meta" style="display:block;">'
+            f'{ta} · <span style="color:{src_cfg["color"]};">{source_e}</span>'
+            f'</span>'
+            f'<span class="ei-tag" style="display:block;">{regime_tag_e}</span>'
+            f'</span>'
+            f'<span class="ei-badge" '
+            f'style="background:{cat_style["bg"]};color:{cat_style["color"]};">'
+            f'{cat_short}</span>'
+            f'</a>'
+        )
+
+    # Inline script — belt-and-suspenders click handler. The anchor's
+    # native target="_top" handles most browsers, but srcdoc iframe base
+    # URI can resolve relative hrefs against about:srcdoc; the explicit
+    # window.top.location.search assignment guarantees navigation.
+    click_script = """
+    <script>
+    (function() {
+        document.querySelectorAll('a.ei-row').forEach(function(el) {
+            el.addEventListener('click', function(e) {
+                var id = this.getAttribute('data-id');
+                if (!id) return;
+                e.preventDefault();
+                try {
+                    window.top.location.search = '?ei_selected=' + id;
+                } catch (err) {
+                    window.location.href = '?ei_selected=' + id;
+                }
+            });
+        });
+    })();
+    </script>
+    """
+
+    list_html = (
+        f'<style>{_LIST_HTML_CSS}</style>'
+        f'<div class="ei-list">{"".join(rows_parts)}</div>'
+        f'{click_script}'
+    )
+    components.html(list_html, height=600, scrolling=True)
 
 
 # ── Zone 3 right: Detail Card ─────────────────────────────────────────────────
@@ -351,7 +678,9 @@ def render_detail_card(row: pd.Series) -> None:
     accent     = sig_color
 
     headline_e  = html.escape(str(row.get("headline", "")))
-    source_e    = html.escape(str(row.get("source", "")))
+    source_raw  = str(row.get("source", "") or "")
+    source_e    = html.escape(source_raw)
+    source_cfg  = _source_badge_style(source_raw)
     ta          = _time_ago(str(row.get("published_at", "")))
     url         = str(row.get("url", "") or "")
     url_e       = html.escape(url)
@@ -382,9 +711,17 @@ def render_detail_card(row: pd.Series) -> None:
             f'white-space:nowrap;">READ FULL ARTICLE →</a>'
         )
 
+    # Colored source chip (FIX 6 — NEWS_SOURCES-driven)
+    src_chip = (
+        f'<span style="background:{source_cfg["bg"]};'
+        f'color:{source_cfg["color"]};font-size:10px;padding:2px 8px;'
+        f'border-radius:8px;font-weight:700;'
+        f'font-family:\'SF Mono\',monospace;letter-spacing:0.3px;">'
+        f'{source_e}</span>'
+    )
+
     # Summary block — strip trailing source name if present
     summary_block = ""
-    source_raw = str(row.get("source", "") or "")
     if summary_raw.strip():
         summary_text = summary_raw
         if source_raw and summary_text.endswith(source_raw):
@@ -394,11 +731,11 @@ def render_detail_card(row: pd.Series) -> None:
             preview += "..."
         summary_block = (
             f'<div style="color:#8b949e;font-size:13px;line-height:1.6;'
-            f'margin-bottom:16px;padding-bottom:16px;'
+            f'margin-bottom:14px;padding-bottom:14px;'
             f'border-bottom:1px solid #21262d;">{preview}</div>'
         )
 
-    # 5-cell score grid
+    # 5-cell score grid — each cell stacks number + verdict + / 5
     score_fields = [
         ("MARKET",     "market_impact"),
         ("DEAL SIZE",  "deal_size"),
@@ -408,35 +745,57 @@ def render_detail_card(row: pd.Series) -> None:
     ]
     score_cells = ""
     for label, field in score_fields:
-        v    = int(row.get(field, 1))
-        sc   = _score_color(v)
-        dots = _sig_dots_html(float(v), sc)
+        v             = int(row.get(field, 1))
+        sc            = _score_color(v)
+        verdict, vcol = _score_verdict(v)
+        dots          = _sig_dots_html(float(v), vcol)
         score_cells += (
             f'<div style="background:#0d1117;border:1px solid #21262d;'
-            f'border-radius:6px;padding:8px;text-align:center;">'
+            f'border-radius:6px;padding:8px 6px;text-align:center;">'
             f'<div style="color:#6e7681;font-size:9px;font-weight:700;'
             f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
             f'margin-bottom:4px;">{label}</div>'
-            f'<div style="color:{sc};font-size:18px;font-weight:700;'
-            f'font-family:\'SF Mono\',monospace;">{v}</div>'
-            f'<div style="display:flex;justify-content:center;gap:2px;margin-top:3px;">'
-            f'{dots}</div>'
+            f'<div style="color:{sc};font-size:20px;font-weight:700;'
+            f'font-family:\'SF Mono\',monospace;line-height:1;">{v}'
+            f'<span style="color:#30363d;font-size:10px;font-weight:600;'
+            f'margin-left:3px;">/ 5</span></div>'
+            f'<div style="color:{vcol};font-size:9px;font-weight:700;'
+            f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
+            f'margin-top:4px;">{verdict}</div>'
+            f'<div style="margin-top:5px;line-height:1;">{dots}</div>'
             f'</div>'
         )
 
-    # Significance bar
-    bar_mb    = "16" if regime_raw.strip() else "0"
-    sig_pct   = f"{sig / 5 * 100:.1f}"
-    sig_bar   = (
+    # Significance bar — labeled "SIGNIFICANCE SCORE" with verdict chip
+    bar_mb             = "14" if regime_raw.strip() else "0"
+    sig_pct            = f"{sig / 5 * 100:.1f}"
+    sig_verdict, svcol = _sig_verdict(sig)
+    sig_bar = (
         f'<div style="margin-bottom:{bar_mb}px;">'
-        f'<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'
-        f'<span style="color:#6e7681;font-size:10px;'
-        f'font-family:\'SF Mono\',monospace;letter-spacing:1px;">'
-        f'OVERALL SIGNIFICANCE</span>'
-        f'<span style="color:{sig_color};font-size:12px;font-weight:700;'
-        f'font-family:\'SF Mono\',monospace;">{sig:.1f} / 5.0</span>'
+        # Header row: label + sub-label
+        f'<div style="margin-bottom:6px;">'
+        f'<div style="color:#c9d1d9;font-size:11px;font-weight:700;'
+        f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">'
+        f'SIGNIFICANCE SCORE</div>'
+        f'<div style="color:#6e7681;font-size:10px;'
+        f'font-family:system-ui,-apple-system,sans-serif;'
+        f'font-style:italic;margin-top:1px;">'
+        f'measures market, deal, and regime impact (1–5 scale)</div>'
         f'</div>'
-        f'<div style="height:4px;background:#21262d;border-radius:2px;overflow:hidden;">'
+        # Score line: number + verdict chip
+        f'<div style="display:flex;align-items:center;gap:8px;'
+        f'margin-bottom:5px;">'
+        f'<span style="color:{sig_color};font-size:14px;font-weight:700;'
+        f'font-family:\'SF Mono\',monospace;">{sig:.1f} / 5.0</span>'
+        f'<span style="background:{sig_color}22;color:{svcol};'
+        f'border:1px solid {svcol}66;'
+        f'font-size:9px;font-weight:700;letter-spacing:1px;'
+        f'font-family:\'SF Mono\',monospace;'
+        f'padding:2px 8px;border-radius:8px;">{sig_verdict}</span>'
+        f'</div>'
+        # Progress bar
+        f'<div style="height:4px;background:#21262d;'
+        f'border-radius:2px;overflow:hidden;">'
         f'<div style="height:100%;width:{sig_pct}%;'
         f'background:linear-gradient(90deg,{sig_color}88,{sig_color});'
         f'border-radius:2px;"></div>'
@@ -461,21 +820,25 @@ def render_detail_card(row: pd.Series) -> None:
             f'</div></div>'
         )
 
-    card_height = 300 + (80 if summary_raw.strip() else 0) + (50 if regime_raw.strip() else 0)
+    # Fixed 480px height — dynamic calc kept leaving blank space under
+    # short cards. 480 fits the full chrome + badges + headline + score
+    # grid + significance bar comfortably; a long summary or AI block
+    # clips slightly, which is a better trade-off than visible padding.
+    card_height = 480
 
     card_html = (
         f'<div style="background:#161b22;border:1px solid #30363d;'
         f'border-top:3px solid {accent};border-radius:0 8px 8px 8px;'
-        f'padding:20px;font-family:system-ui,-apple-system,sans-serif;'
+        f'padding:18px 20px;font-family:system-ui,-apple-system,sans-serif;'
         f'box-sizing:border-box;">'
-        # Badges row
+        # Badges row — colored source chip (FIX 6)
         f'<div style="display:flex;align-items:center;gap:8px;'
-        f'margin-bottom:14px;flex-wrap:wrap;">'
+        f'margin-bottom:12px;flex-wrap:wrap;">'
         f'<span style="background:{cat_style["bg"]};color:{cat_style["color"]};'
         f'font-size:10px;padding:3px 10px;border-radius:10px;font-weight:700;'
         f'font-family:\'SF Mono\',monospace;letter-spacing:0.5px;">'
         f'{html.escape(cat)}</span>'
-        f'<span style="color:#6e7681;font-size:11px;">{source_e}</span>'
+        f'{src_chip}'
         f'<span style="color:#6e7681;font-size:11px;">·</span>'
         f'<span style="color:#6e7681;font-size:11px;">{ta}</span>'
         f'{deal_badge}'
@@ -483,12 +846,12 @@ def render_detail_card(row: pd.Series) -> None:
         f'</div>'
         # Headline
         f'<div style="color:#e6edf3;font-size:16px;font-weight:600;'
-        f'line-height:1.4;margin-bottom:14px;">{headline_e}</div>'
+        f'line-height:1.4;margin-bottom:12px;">{headline_e}</div>'
         # Summary
         + summary_block
         # Score grid
         + f'<div style="display:grid;grid-template-columns:repeat(5,1fr);'
-        f'gap:8px;margin-bottom:16px;">{score_cells}</div>'
+        f'gap:8px;margin-bottom:14px;">{score_cells}</div>'
         # Significance bar
         + sig_bar
         # AI block
@@ -496,7 +859,7 @@ def render_detail_card(row: pd.Series) -> None:
         + '</div>'
     )
 
-    components.html(card_html, height=card_height)
+    components.html(card_html, height=card_height, scrolling=False)
 
 
 # ── Empty state ───────────────────────────────────────────────────────────────
@@ -652,6 +1015,17 @@ def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
     if "ei_selected" not in st.session_state:
         st.session_state["ei_selected"] = None
 
+    # ── Sync query param → session (headline list anchor clicks) ──────────────
+    # Each headline renders as <a href="?ei_selected=<id>" target="_top">.
+    # Clicking triggers a top-level navigation with that param; read it here
+    # on the subsequent run so the selection survives the reload.
+    qp_selected = st.query_params.get("ei_selected")
+    if qp_selected is not None:
+        try:
+            st.session_state["ei_selected"] = int(qp_selected)
+        except (TypeError, ValueError):
+            pass
+
     # ── Inject CSS ────────────────────────────────────────────────────────────
     st.markdown(_FILTER_CSS, unsafe_allow_html=True)
 
@@ -667,6 +1041,9 @@ def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
         time_map[st.session_state["ei_time"]],
         cat_query,
     )
+
+    # Resolve the current macro regime once per render — powers per-headline tags.
+    current_regime = _current_regime(str(DB_PATH))
 
     # ── Zone 1: Summary bar ───────────────────────────────────────────────────
     render_summary_bar(df)
@@ -691,7 +1068,7 @@ def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
 
         left, right = st.columns([2, 3])
         with left:
-            render_headline_list(df)
+            render_headline_list(df, current_regime=current_regime)
         with right:
             selected = df[df["id"] == st.session_state["ei_selected"]]
             if len(selected) > 0:
