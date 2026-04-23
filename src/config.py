@@ -83,9 +83,10 @@ def get_secret(key: str) -> str:
 
 
 # ── News & AI API keys (Phase 11) ──────────────────────────────────────────────
-FINNHUB_API_KEY   = get_secret("FINNHUB_API_KEY")
-NEWS_API_KEY      = get_secret("NEWS_API_KEY")
-ANTHROPIC_API_KEY = get_secret("ANTHROPIC_API_KEY")
+FINNHUB_API_KEY    = get_secret("FINNHUB_API_KEY")
+NEWS_API_KEY       = get_secret("NEWS_API_KEY")
+ANTHROPIC_API_KEY  = get_secret("ANTHROPIC_API_KEY")
+PERPLEXITY_API_KEY = get_secret("PERPLEXITY_API_KEY")
 
 # ── Output paths ───────────────────────────────────────────────────────────
 OUTPUT_DIR         = PROJECT_ROOT / "output"

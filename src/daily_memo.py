@@ -14,12 +14,15 @@ Stdout (for GitHub Actions metadata capture):
 Standalone — does NOT import src.config so no FRED_API_KEY is required.
 """
 
+import html as _html_mod
+import os
 import sqlite3
 import sys
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
 import pandas as pd
+import requests
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Paths
@@ -29,6 +32,13 @@ ROOT       = Path(__file__).resolve().parent.parent
 DB_PATH    = ROOT / "data" / "macro_radar.db"
 OUTPUT_DIR = ROOT / "output"
 MEMO_PATH  = OUTPUT_DIR / "daily_memo.html"
+
+# Make `src.*` importable when invoked as `python src/daily_memo.py`.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.analytics.news       import REGIME_SYSTEM_PROMPT  # noqa: E402
+from src.analytics.perplexity import sonar_research        # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
@@ -282,6 +292,40 @@ def load_top_movers(n: int = 3) -> list[dict]:
     return movers
 
 
+def load_top_news(n: int = 3) -> list[dict]:
+    """Return the most recent N headlines with overall_significance >= 4.0.
+
+    Used both to build the Perplexity research query and to feed Claude the
+    set of headlines that should anchor today's regime narrative.
+    """
+    if not _table_exists("news_feed"):
+        return []
+    df = _load(
+        """
+        SELECT headline, summary, regime_interpretation, perplexity_research,
+               overall_significance, published_at, source
+        FROM news_feed
+        WHERE overall_significance >= 4.0
+          AND published_at >= datetime('now', '-36 hours')
+        ORDER BY published_at DESC
+        LIMIT ?
+        """,
+        params=(n,),
+    )
+    if df.empty:
+        return []
+    return [
+        {
+            "headline":              str(row["headline"]),
+            "summary":               str(row.get("summary") or "")[:280],
+            "regime_interpretation": str(row.get("regime_interpretation") or ""),
+            "perplexity_research":   str(row.get("perplexity_research") or ""),
+            "source":                str(row.get("source") or ""),
+        }
+        for _, row in df.iterrows()
+    ]
+
+
 def load_calendar(days: int = 2) -> list[dict]:
     """Return economic events in the next `days` calendar days (UTC)."""
     if not _table_exists("event_calendar"):
@@ -310,6 +354,210 @@ def load_calendar(days: int = 2) -> list[dict]:
             "importance": str(row["importance"]).lower(),
         })
     return events
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Intelligence layer — Perplexity context + Claude Opus narrative
+# ─────────────────────────────────────────────────────────────────────────────
+
+_MEMO_RESEARCH_SYSTEM_PROMPT = (
+    "You are a macro finance research analyst. Produce a ≤200-word grounded "
+    "briefing on today's macro backdrop and the provided headlines. Prioritize "
+    "fresh, primary-source context (Fed, BLS, Treasury releases, central-bank "
+    "speeches, earnings prints). Cite sources."
+)
+
+
+def fetch_memo_research_context(
+    regime_label: str,
+    top_news: list[dict],
+    api_key: str,
+) -> str:
+    """Query Perplexity Sonar for real-time grounding of today's memo.
+
+    Returns an empty string on missing key or any failure — memo renders
+    without the research block in that case.
+    """
+    if not api_key or not regime_label:
+        return ""
+    headlines = "; ".join(n["headline"] for n in top_news[:3] if n.get("headline"))
+    if not headlines:
+        query = (
+            f"Briefing for traders: current macro regime is {regime_label}. "
+            "What are the most important macro developments in the last 24 "
+            "hours and what should we watch today?"
+        )
+    else:
+        query = (
+            f"Current macro regime: {regime_label}. Recent top headlines: "
+            f"{headlines}. Provide a trader-focused grounding brief with the "
+            "most important context a portfolio manager needs right now."
+        )
+    res = sonar_research(query, _MEMO_RESEARCH_SYSTEM_PROMPT, api_key, max_tokens=500)
+    content   = (res.get("content") or "").strip()
+    citations = res.get("citations") or []
+    if content and citations:
+        srcs = "\n".join(f"- {u}" for u in citations[:4])
+        return f"{content}\n\nSources:\n{srcs}"
+    return content
+
+
+def generate_narrative(
+    regime:     dict,
+    levels:     dict,
+    top_news:   list[dict],
+    research:   str,
+    api_key:    str,
+) -> str:
+    """Generate the memo's analyst-prose regime narrative.
+
+    Uses claude-opus-4-7 with adaptive thinking so the model can reason
+    through cross-currents before writing rather than pattern-matching to a
+    template. The shared regime/scoring system prompt is sent as a
+    cache-eligible content block.
+
+    Returns "" on missing key or any API failure — the memo renders without
+    the narrative block in that case, preserving backwards compatibility.
+    """
+    if not api_key:
+        return ""
+
+    regime_label = regime.get("label", "Unknown")
+    confidence   = regime.get("confidence", 0.0)
+    probs = {
+        "Goldilocks":  regime.get("prob_goldilocks"),
+        "Overheating": regime.get("prob_overheating"),
+        "Stagflation": regime.get("prob_stagflation"),
+        "Recession":   regime.get("prob_recession"),
+    }
+
+    def _fmt_level(key: str, label: str, unit: str = "%") -> str:
+        d = levels.get(key, {}) or {}
+        v = d.get("value")
+        if v is None:
+            return f"{label}: n/a"
+        chg = d.get("change", 0.0) or 0.0
+        sign = "+" if chg >= 0 else ""
+        return f"{label}: {v:.2f}{unit} ({sign}{chg:.2f} MoM)"
+
+    level_lines = "\n".join([
+        _fmt_level("FEDFUNDS", "Fed Funds"),
+        _fmt_level("DGS10",    "10Y UST"),
+        _fmt_level("SPREAD",   "2s10s"),
+        _fmt_level("VIXCLS",   "VIX", unit=""),
+    ])
+
+    news_lines = ""
+    if top_news:
+        for i, n in enumerate(top_news[:3], 1):
+            interp = f" — {n['regime_interpretation']}" if n.get("regime_interpretation") else ""
+            news_lines += f"{i}. {n['headline']} [{n.get('source','')}]{interp}\n"
+    else:
+        news_lines = "(no high-significance headlines in the last 36h)\n"
+
+    research_block = (
+        f"\nPERPLEXITY RESEARCH CONTEXT (real-time, sourced):\n{research}\n"
+        if research.strip() else ""
+    )
+
+    user_content = (
+        f"Write today's regime narrative for the daily briefing.\n\n"
+        f"CURRENT REGIME: {regime_label} (confidence {confidence:.0%})\n"
+        f"PROBABILITIES: {probs}\n\n"
+        f"KEY LEVELS:\n{level_lines}\n\n"
+        f"HIGH-SIGNIFICANCE HEADLINES (last 36h):\n{news_lines}"
+        f"{research_block}\n"
+        "Deliverables (4 short paragraphs, ~220 words total, no bullets):\n"
+        "  1. REGIME READ — what the data says about the regime right now; "
+        "whether today's prints/headlines reinforce or challenge it.\n"
+        "  2. CROSS-CURRENTS — the single most interesting tension or "
+        "contradiction in the data today.\n"
+        "  3. WHAT'S PRICED vs WHAT'S AT RISK — one sentence each.\n"
+        "  4. WHAT TO WATCH — the specific release, speaker, or market tell "
+        "to watch over the next 24-48h.\n\n"
+        "Write like a human PM briefing a colleague. Concrete. Specific. "
+        "No hedging language. No recap of the headlines themselves. "
+        "Plain text only — no markdown, no headers, no bullet points."
+    )
+
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key":         api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type":      "application/json",
+            },
+            json={
+                "model":      "claude-opus-4-7",
+                "max_tokens": 1400,
+                "thinking":   {"type": "adaptive"},
+                "system": [{
+                    "type":          "text",
+                    "text":          REGIME_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }],
+                "messages": [{"role": "user", "content": user_content}],
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        for block in payload.get("content", []):
+            if block.get("type") == "text":
+                return (block.get("text") or "").strip()
+        return ""
+    except Exception:
+        return ""
+
+
+def _render_narrative_html(narrative: str, research: str) -> str:
+    """Render the Opus narrative + (optionally) the Perplexity sources block."""
+    if not narrative.strip():
+        return ""
+
+    # Narrative — split paragraphs on double newline; fall back to single \n.
+    raw_paras = [p.strip() for p in narrative.split("\n\n") if p.strip()]
+    if len(raw_paras) == 1:
+        raw_paras = [p.strip() for p in narrative.split("\n") if p.strip()]
+    para_html = "".join(
+        f'<p style="color:#d0d4dc; font-size:13px; line-height:1.55; '
+        f'margin:0 0 10px 0;">{_html_mod.escape(p)}</p>'
+        for p in raw_paras
+    )
+
+    # Perplexity sources sidebar — only rendered if research includes citations.
+    sources_html = ""
+    if "Sources:" in research:
+        _, _, sources_part = research.partition("Sources:")
+        urls = [ln.strip(" -\t") for ln in sources_part.splitlines() if ln.strip(" -\t")]
+        if urls:
+            links = "".join(
+                f'<li style="margin-bottom:3px;">'
+                f'<a href="{_html_mod.escape(u)}" '
+                f'style="color:#4a9eff; text-decoration:none; font-size:11px;" '
+                f'target="_blank">{_html_mod.escape(u)}</a></li>'
+                for u in urls[:4]
+            )
+            sources_html = (
+                '<div style="margin-top:10px; padding-top:10px; '
+                'border-top:1px solid #2c3e50;">'
+                '<div style="color:#7c3aed; font-size:9px; font-weight:700; '
+                'letter-spacing:1px; margin-bottom:5px;">'
+                '◆ PERPLEXITY SOURCES</div>'
+                f'<ul style="margin:0; padding-left:14px;">{links}</ul>'
+                '</div>'
+            )
+
+    return (
+        f'<div {_CARD}>'
+        f'{_section_header("Regime Read")}'
+        f'<div style="color:#95a5a6; font-size:10px; letter-spacing:1px; '
+        f'margin-bottom:8px;">◆ CLAUDE OPUS 4.7 · ADAPTIVE THINKING</div>'
+        f'{para_html}'
+        f'{sources_html}'
+        f'</div>'
+    )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HTML helpers
@@ -359,6 +607,7 @@ def build_html(
     movers:    list[dict],
     calendar:  list[dict],
     today:     date,
+    narrative_html: str = "",
 ) -> str:
 
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -596,6 +845,7 @@ def build_html(
              font-family:Arial, Helvetica, sans-serif;">
   <div style="max-width:600px; margin:0 auto;">
     {header_html}
+    {narrative_html}
     {levels_html}
     {watchlist_html}
     {signals_html}
@@ -620,6 +870,19 @@ def main() -> None:
     signals    = load_signals()
     movers     = load_top_movers(n=3)
     calendar   = load_calendar(days=2)
+    top_news   = load_top_news(n=3)
+
+    # Intelligence layer — Perplexity grounding + Opus 4.7 narrative.
+    # Both are fully optional: missing keys / API failures fall back to the
+    # standard memo with no narrative block.
+    anthropic_key  = os.environ.get("ANTHROPIC_API_KEY",  "")
+    perplexity_key = os.environ.get("PERPLEXITY_API_KEY", "")
+
+    research  = fetch_memo_research_context(
+        regime.get("label", ""), top_news, perplexity_key,
+    )
+    narrative = generate_narrative(regime, levels, top_news, research, anthropic_key)
+    narrative_html = _render_narrative_html(narrative, research)
 
     html = build_html(
         regime=regime,
@@ -630,6 +893,7 @@ def main() -> None:
         movers=movers,
         calendar=calendar,
         today=today,
+        narrative_html=narrative_html,
     )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
