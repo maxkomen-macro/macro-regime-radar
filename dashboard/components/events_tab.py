@@ -58,6 +58,44 @@ NEWS_SOURCES = {
 }
 _SOURCE_DEFAULT = {"label": "", "color": _MUTED, "bg": "#21262d", "categories": []}
 
+# ── Source credibility tiers ─────────────────────────────────────────────────
+# Display-only. To add FT/WSJ/Economist as actual sources, add their RSS
+# feeds or APIs to src/analytics/news.py in Phase 12.
+SOURCE_TIERS = {
+    "ft":                  1,
+    "financial times":     1,
+    "wsj":                 1,
+    "wall street journal": 1,
+    "economist":           1,
+    "nyt":                 1,
+    "new york times":      1,
+    "bloomberg":           1,
+    "reuters":             1,
+    "cnbc":                2,
+    "businesswire":        2,
+    "seekingalpha":        2,
+    "barrons":             2,
+    "marketwatch":         2,
+    "globalnewswire":      3,
+    "pr newswire":         3,
+    "prnewswire":          3,
+}
+
+# Tier → (color, weight) for source name in the row meta line.
+_TIER_STYLES = {
+    1: ("#e6edf3", 600),
+    2: ("#8b949e", 500),
+    3: ("#6e7681", 400),
+}
+
+
+def _source_tier(source: str) -> int:
+    s = (source or "").lower()
+    for key, tier in SOURCE_TIERS.items():
+        if key in s:
+            return tier
+    return 2
+
 # ── Category badge styles ─────────────────────────────────────────────────────
 _CAT_STYLES = {
     "MACRO":        {"bg": "#1a3a5c",  "color": "#4a9eff"},
@@ -127,6 +165,13 @@ div[data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"] {
     white-space: nowrap !important;
     width: 100% !important;
     box-shadow: none !important;
+    text-align: center !important;
+    /* Defeat the invisible-overlay rule below so pills stay visible */
+    opacity: 1 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    position: static !important;
+    z-index: auto !important;
 }
 div[data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"]:hover {
     border-color: #4a9eff !important;
@@ -150,6 +195,13 @@ div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"] {
     white-space: nowrap !important;
     width: 100% !important;
     box-shadow: 0 0 0 2px rgba(74,158,255,0.25) !important;
+    text-align: center !important;
+    /* Defeat the invisible-overlay rule below so pills stay visible */
+    opacity: 1 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    position: static !important;
+    z-index: auto !important;
 }
 div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"]:hover {
     background: #66b0ff !important;
@@ -160,12 +212,98 @@ div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"]:hover {
 div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
     padding: 0 3px !important;
 }
-/* Feed row (left: list iframe, right: detail iframe) — align items to top
-   so the right column sizes to the detail card rather than stretching to
-   match the 600px list. Scoped via :has(iframe) so it matches the 2+3
-   column block on this tab. */
-div[data-testid="stHorizontalBlock"]:has(iframe) {
-    align-items: flex-start !important;
+
+/* ─── Headline rows — clean terminal feed (FT + Bloomberg) ───────────── */
+.ei-hrow {
+    display: block;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid #21262d;
+    padding: 12px 16px;
+    margin: 0;
+    cursor: pointer;
+    transition: background 100ms ease, border-left-color 100ms ease;
+}
+.ei-hrow:hover { background: #161b22; }
+.ei-hrow-sel {
+    background: #1c2128;
+    border-left-color: #4a9eff;
+}
+.ei-hrow-sel .ei-hrow-head { color: #4a9eff; }
+.ei-hrow-sel .ei-hrow-cat  { filter: brightness(1.2); }
+
+.ei-hrow-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+.ei-hrow-cat {
+    font-family: 'SF Mono','Fira Code',monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+}
+.ei-hrow-sig {
+    font-family: 'SF Mono','Fira Code',monospace;
+    font-size: 12px;
+    font-weight: 700;
+}
+.ei-hrow-head {
+    font-family: system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #e6edf3;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+    margin-bottom: 6px;
+}
+.ei-hrow-meta {
+    font-family: 'SF Mono','Fira Code',monospace;
+    font-size: 11px;
+    color: #6e7681;
+    margin-bottom: 4px;
+}
+.ei-hrow-sep  { color: #30363d; margin: 0 6px; }
+.ei-hrow-time { color: #6e7681; }
+.ei-hrow-tag {
+    font-family: system-ui,-apple-system,sans-serif;
+    font-style: italic;
+    font-size: 11px;
+    color: rgba(74,158,255,0.7);
+}
+
+/* ─── Invisible overlay button — sits on top of the .ei-hrow above it ──
+   Filter / refresh pills stay styled by the stHorizontalBlock-scoped
+   rules above (higher specificity), so only headline-row buttons hit
+   these transparent-overlay rules. */
+.stButton > button[kind="secondary"],
+.stButton > button[kind="primary"] {
+    position: relative !important;
+    width: 100% !important;
+    height: 112px !important;
+    min-height: 112px !important;
+    margin-top: -114px !important;
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    opacity: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+    z-index: 2;
+}
+.stButton > button[kind="secondary"]:hover,
+.stButton > button[kind="primary"]:hover {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 
 /* LIVE pulse for fresh-data indicator */
@@ -475,109 +613,15 @@ def render_filter_bar() -> None:
 
 # ── Zone 3 left: Headline List ────────────────────────────────────────────────
 
-# Embedded CSS for the single-iframe headline list (Problem 1 fix — no
-# Streamlit widget artifacts, no overlay hacks). All click detection
-# happens via anchor tags with target="_top" that update the parent's
-# query params; render_events_tab() syncs ei_selected back into session.
-_LIST_HTML_CSS = """
-* { box-sizing: border-box; }
-html, body {
-    margin: 0;
-    padding: 0;
-    background: #0d1117;
-    color: #e6edf3;
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    overflow-x: hidden;
-}
-.ei-list { display: flex; flex-direction: column; }
-.ei-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 10px 12px;
-    text-decoration: none;
-    color: inherit;
-    border-left: 4px solid transparent;
-    border-bottom: 1px solid #21262d;
-    border-radius: 0 4px 4px 0;
-    height: 96px;
-    box-sizing: border-box;
-    overflow: hidden;
-    cursor: pointer;
-    transition: background 120ms ease, border-left-color 120ms ease;
-}
-.ei-row:focus { outline: none; }
-.ei-row.ei-unselected:hover {
-    background: rgba(74,158,255,0.08);
-    border-left-color: rgba(74,158,255,0.45);
-}
-.ei-row.ei-selected {
-    background: rgba(74,158,255,0.22);
-    border-left-color: #4a9eff;
-    box-shadow: inset 0 0 0 1px rgba(74,158,255,0.5),
-                0 0 14px rgba(74,158,255,0.2);
-}
-.ei-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    margin-top: 7px;
-    flex-shrink: 0;
-}
-.ei-content { flex: 1; min-width: 0; }
-.ei-headline {
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    margin-bottom: 4px;
-    color: #e6edf3;
-}
-.ei-selected .ei-headline {
-    color: #4a9eff;
-    font-weight: 700;
-}
-.ei-caret {
-    display: inline-block;
-    color: #4a9eff;
-    font-weight: 900;
-    font-size: 18px;
-    margin-right: 6px;
-    line-height: 1;
-    vertical-align: -1px;
-}
-.ei-meta {
-    color: #6e7681;
-    font-size: 10px;
-    font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
-    letter-spacing: 0.3px;
-    margin-bottom: 2px;
-}
-.ei-selected .ei-meta { color: #c9d1d9; }
-.ei-tag {
-    color: #6e7681;
-    font-size: 10px;
-    font-style: italic;
-    letter-spacing: 0.2px;
-}
-.ei-selected .ei-tag { color: #8ab4f8; }
-.ei-badge {
-    font-size: 9px;
-    padding: 2px 6px;
-    border-radius: 8px;
-    font-weight: 700;
-    white-space: nowrap;
-    flex-shrink: 0;
-    font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
-    align-self: flex-start;
-}
-"""
-
 
 def render_headline_list(df: pd.DataFrame, current_regime: str = "Goldilocks") -> None:
+    """Native Streamlit headline list — one st.button per row.
+
+    Click detection uses session_state, not query_params. Each row button's
+    `type` reflects selection state (primary=selected, secondary=not). Row
+    styling lives in _FILTER_CSS (scoped via absence of stHorizontalBlock
+    ancestor). A scrollable st.container caps the list height at 600px.
+    """
     n     = len(df)
     fresh = _is_fresh(df, hours=1.0)
     live_html = (
@@ -598,114 +642,132 @@ def render_headline_list(df: pd.DataFrame, current_regime: str = "Goldilocks") -
         unsafe_allow_html=True,
     )
 
-    # Build every row as a <a target="_top"> anchor in one HTML blob.
-    # Click = native browser navigation to ?ei_selected=<id>. No buttons,
-    # no overlays, no Streamlit widget artifacts.
-    rows_parts: list[str] = []
-    for _, item in df.iterrows():
-        sig        = float(item.get("overall_significance", 1.0))
-        sig_color  = _accent_color(sig)
-        cat        = str(item.get("category", ""))
-        cat_style  = _CAT_STYLES.get(cat, _CAT_DEFAULT)
-        cat_short  = _CAT_SHORT.get(cat, cat[:3] if cat else "—")
-        item_id    = int(item["id"])
-        is_sel     = st.session_state["ei_selected"] == item_id
-        src_raw    = str(item.get("source", ""))
-        src_cfg    = _source_badge_style(src_raw)
+    list_box = st.container(height=600, border=False)
+    with list_box:
+        for _, item in df.iterrows():
+            item_id   = int(item["id"])
+            is_sel    = st.session_state["ei_selected"] == item_id
+            headline  = str(item.get("headline", ""))
+            ta        = _time_ago(str(item.get("published_at", "")))
+            cat       = str(item.get("category", ""))
+            cat_short = _CAT_SHORT.get(cat, cat[:3] if cat else "—")
+            src_raw   = str(item.get("source", ""))
+            sig       = float(item.get("overall_significance", 1.0) or 1.0)
 
-        row_cls      = "ei-row ei-selected" if is_sel else "ei-row ei-unselected"
-        caret        = '<span class="ei-caret">▸</span>' if is_sel else ""
-        headline_e   = html.escape(str(item.get("headline", "")))
-        ta           = html.escape(_time_ago(str(item.get("published_at", ""))))
-        source_e     = html.escape(src_raw)
-        regime_tag_e = html.escape(_regime_tag(cat, current_regime))
+            # Significance number color (per spec): gray < 2.5, yellow 2.5–3.5,
+            # red ≥ 3.5. This drives the top-right digit only — no label.
+            if sig >= 3.5:
+                sig_color = _ACCENT_RED
+            elif sig >= 2.5:
+                sig_color = _ACCENT_YELLOW
+            else:
+                sig_color = _TEXT_MUTED
 
-        rows_parts.append(
-            f'<a class="{row_cls}" href="?ei_selected={item_id}" target="_top" '
-            f'data-id="{item_id}" '
-            f'style="--sig:{sig_color};">'
-            f'<span class="ei-dot" style="background:{sig_color};"></span>'
-            f'<span class="ei-content">'
-            f'<span class="ei-headline">{caret}{headline_e}</span>'
-            f'<span class="ei-meta" style="display:block;">'
-            f'{ta} · <span style="color:{src_cfg["color"]};">{source_e}</span>'
-            f'</span>'
-            f'<span class="ei-tag" style="display:block;">{regime_tag_e}</span>'
-            f'</span>'
-            f'<span class="ei-badge" '
-            f'style="background:{cat_style["bg"]};color:{cat_style["color"]};">'
-            f'{cat_short}</span>'
-            f'</a>'
-        )
+            cat_style  = _CAT_STYLES.get(cat, _CAT_DEFAULT)
+            tag        = _regime_tag(cat, current_regime)
+            tier       = _source_tier(src_raw)
+            t_color, t_weight = _TIER_STYLES.get(tier, _TIER_STYLES[2])
 
-    # Inline script — belt-and-suspenders click handler. The anchor's
-    # native target="_top" handles most browsers, but srcdoc iframe base
-    # URI can resolve relative hrefs against about:srcdoc; the explicit
-    # window.top.location.search assignment guarantees navigation.
-    click_script = """
-    <script>
-    (function() {
-        document.querySelectorAll('a.ei-row').forEach(function(el) {
-            el.addEventListener('click', function(e) {
-                var id = this.getAttribute('data-id');
-                if (!id) return;
-                e.preventDefault();
-                try {
-                    window.top.location.search = '?ei_selected=' + id;
-                } catch (err) {
-                    window.location.href = '?ei_selected=' + id;
-                }
-            });
-        });
-    })();
-    </script>
-    """
+            headline_e  = html.escape(headline)
+            src_e       = html.escape(src_raw)
+            ta_e        = html.escape(ta)
+            tag_e       = html.escape(tag)
+            cat_short_e = html.escape(cat_short)
 
-    list_html = (
-        f'<style>{_LIST_HTML_CSS}</style>'
-        f'<div class="ei-list">{"".join(rows_parts)}</div>'
-        f'{click_script}'
-    )
-    components.html(list_html, height=600, scrolling=True)
+            sel_class = " ei-hrow-sel" if is_sel else ""
+            cat_badge = (
+                f'<span class="ei-hrow-cat" style="background:'
+                f'{cat_style["bg"]};color:{cat_style["color"]};">'
+                f'{cat_short_e}</span>'
+            ) if cat_short else ""
+
+            sig_num = (
+                f'<span class="ei-hrow-sig" style="color:{sig_color};">'
+                f'{sig:.1f}</span>'
+            )
+
+            meta_inner = ""
+            if src_e:
+                meta_inner += (
+                    f'<span style="color:{t_color};font-weight:{t_weight};">'
+                    f'{src_e}</span>'
+                )
+            if src_e and ta_e:
+                meta_inner += '<span class="ei-hrow-sep">·</span>'
+            if ta_e:
+                meta_inner += f'<span class="ei-hrow-time">{ta_e}</span>'
+
+            tag_block = (
+                f'<div class="ei-hrow-tag">{tag_e}</div>' if tag_e else ""
+            )
+
+            row_html = (
+                f'<div class="ei-hrow{sel_class}">'
+                f'<div class="ei-hrow-top">{cat_badge}{sig_num}</div>'
+                f'<div class="ei-hrow-head">{headline_e}</div>'
+                f'<div class="ei-hrow-meta">{meta_inner}</div>'
+                f'{tag_block}'
+                f'</div>'
+            )
+            st.markdown(row_html, unsafe_allow_html=True)
+
+            # Invisible click target — overlaps the .ei-hrow above via
+            # negative margin in the row-button CSS rules.
+            if st.button(
+                " ",
+                key=f"ei_row_{item_id}",
+                type="primary" if is_sel else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["ei_selected"] = item_id
+                st.rerun()
 
 
 # ── Zone 3 right: Detail Card ─────────────────────────────────────────────────
 
 def render_detail_card(row: pd.Series) -> None:
+    """Detail card built from native Streamlit elements.
+
+    No outer iframe wrapping — that was what caused the earlier about:srcdoc
+    navigation bug and left blank space below short cards. Each section is
+    its own `st.markdown` / `st.progress` / `st.columns` block, separated by
+    `st.divider()`. Height is whatever the content needs; no fixed container.
+    `components.v1.html()` is used only for the five small score boxes.
+    """
     cat        = str(row.get("category", ""))
     cat_style  = _CAT_STYLES.get(cat, _CAT_DEFAULT)
     sig        = float(row.get("overall_significance", 1.0))
     sig_color  = _accent_color(sig)
-    accent     = sig_color
 
-    headline_e  = html.escape(str(row.get("headline", "")))
-    source_raw  = str(row.get("source", "") or "")
-    source_e    = html.escape(source_raw)
-    source_cfg  = _source_badge_style(source_raw)
-    ta          = _time_ago(str(row.get("published_at", "")))
-    url         = str(row.get("url", "") or "")
-    url_e       = html.escape(url)
-    summary_raw = str(row.get("summary", "") or "")
+    headline_e   = html.escape(str(row.get("headline", "")))
+    source_raw   = str(row.get("source", "") or "")
+    source_e     = html.escape(source_raw)
+    tier         = _source_tier(source_raw)
+    t_color, t_weight = _TIER_STYLES.get(tier, _TIER_STYLES[2])
+    ta           = _time_ago(str(row.get("published_at", "")))
+    ta_e         = html.escape(ta)
+    url          = str(row.get("url", "") or "")
+    url_e        = html.escape(url)
+    summary_raw  = str(row.get("summary", "") or "")
     regime_raw   = str(row.get("regime_interpretation", "") or "")
     research_raw = str(row.get("perplexity_research", "") or "")
 
-    # Deal size badge (M&A only, deal_size > 1)
+    # ── Section 1: Header bar ────────────────────────────────────────────
     deal_size  = int(row.get("deal_size", 1))
     deal_badge = ""
     if cat == "M&A" and deal_size > 1:
         deal_label = _DEAL_LABELS.get(deal_size, "")
         deal_badge = (
             f'<span style="background:#3a2a0a;color:#ff8c00;'
-            f'font-size:10px;padding:3px 8px;border-radius:10px;'
-            f'font-weight:700;font-family:\'SF Mono\',monospace;">'
-            f'{html.escape(deal_label)}</span>'
+            f'font-size:10px;padding:2px 8px;border-radius:10px;'
+            f'font-weight:700;font-family:\'SF Mono\',monospace;'
+            f'margin-left:4px;">{html.escape(deal_label)}</span>'
         )
 
-    # Read article link
     url_btn = ""
     if url:
         url_btn = (
-            f'<a href="{url_e}" target="_blank" style="'
+            f'<a href="{url_e}" target="_blank" rel="noopener" style="'
             f'margin-left:auto;background:rgba(74,158,255,0.1);'
             f'border:1px solid rgba(74,158,255,0.3);color:#4a9eff;'
             f'font-size:11px;padding:4px 12px;border-radius:12px;'
@@ -713,31 +775,86 @@ def render_detail_card(row: pd.Series) -> None:
             f'white-space:nowrap;">READ FULL ARTICLE →</a>'
         )
 
-    # Colored source chip (FIX 6 — NEWS_SOURCES-driven)
+    cat_badge = (
+        f'<span style="background:{cat_style["bg"]};color:{cat_style["color"]};'
+        f'font-size:10px;padding:2px 10px;border-radius:10px;font-weight:700;'
+        f'font-family:\'SF Mono\',monospace;letter-spacing:0.8px;'
+        f'text-transform:uppercase;">{html.escape(cat)}</span>'
+    )
     src_chip = (
-        f'<span style="background:{source_cfg["bg"]};'
-        f'color:{source_cfg["color"]};font-size:10px;padding:2px 8px;'
-        f'border-radius:8px;font-weight:700;'
-        f'font-family:\'SF Mono\',monospace;letter-spacing:0.3px;">'
+        f'<span style="color:{t_color};font-weight:{t_weight};'
+        f'font-size:11px;font-family:\'SF Mono\',monospace;">'
         f'{source_e}</span>'
+    ) if source_e else ""
+    time_chip = (
+        f'<span style="color:#6e7681;font-size:11px;'
+        f'font-family:\'SF Mono\',monospace;">{ta_e}</span>'
+    ) if ta_e else ""
+    sep = '<span style="color:#30363d;font-size:11px;">·</span>'
+
+    header_parts = [cat_badge]
+    if src_chip:
+        header_parts += [sep, src_chip]
+    if time_chip:
+        header_parts += [sep, time_chip]
+    if deal_badge:
+        header_parts.append(deal_badge)
+    if url_btn:
+        header_parts.append(url_btn)
+
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:8px;'
+        'flex-wrap:wrap;">'
+        + "".join(header_parts)
+        + "</div>",
+        unsafe_allow_html=True,
     )
 
-    # Summary block — strip trailing source name if present
-    summary_block = ""
+    # ── Section 2: Headline ──────────────────────────────────────────────
+    st.markdown(
+        f'<div style="color:#e6edf3;font-size:20px;font-weight:700;'
+        f'line-height:1.35;margin:14px 0 0 0;'
+        f'font-family:system-ui,-apple-system,sans-serif;">{headline_e}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Section 3: Summary (optional) ────────────────────────────────────
     if summary_raw.strip():
+        st.divider()
         summary_text = summary_raw
         if source_raw and summary_text.endswith(source_raw):
             summary_text = summary_text[: -len(source_raw)].strip()
-        preview = html.escape(summary_text[:300])
-        if len(summary_text) > 300:
-            preview += "..."
-        summary_block = (
-            f'<div style="color:#8b949e;font-size:13px;line-height:1.6;'
-            f'margin-bottom:14px;padding-bottom:14px;'
-            f'border-bottom:1px solid #21262d;">{preview}</div>'
+        summary_e = html.escape(summary_text)
+        st.markdown(
+            f'<div style="border-left:3px solid {cat_style["color"]};'
+            f'padding:2px 0 2px 12px;color:#8b949e;font-size:13px;'
+            f'line-height:1.6;font-family:system-ui,-apple-system,sans-serif;">'
+            f'{summary_e}</div>',
+            unsafe_allow_html=True,
         )
 
-    # 5-cell score grid — each cell stacks number + verdict + / 5
+    # ── Section 4: Significance ──────────────────────────────────────────
+    st.divider()
+    sig_verdict, svcol = _sig_verdict(sig)
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:12px;'
+        f'margin-bottom:8px;">'
+        f'<span style="color:#6e7681;font-size:11px;font-weight:700;'
+        f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">'
+        f'SIGNIFICANCE</span>'
+        f'<span style="color:{sig_color};font-size:18px;font-weight:700;'
+        f'font-family:\'SF Mono\',monospace;">{sig:.1f}'
+        f'<span style="color:#30363d;font-size:12px;font-weight:600;'
+        f'margin-left:3px;">/ 5.0</span></span>'
+        f'<span style="background:{sig_color}22;color:{svcol};'
+        f'border:1px solid {svcol}66;font-size:9px;font-weight:700;'
+        f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
+        f'padding:2px 8px;border-radius:8px;">{sig_verdict}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+    st.progress(min(max(sig / 5.0, 0.0), 1.0))
+
     score_fields = [
         ("MARKET",     "market_impact"),
         ("DEAL SIZE",  "deal_size"),
@@ -745,188 +862,82 @@ def render_detail_card(row: pd.Series) -> None:
         ("TIMELINESS", "time_sensitivity"),
         ("REGIME",     "regime_relevance"),
     ]
-    score_cells = ""
-    for label, field in score_fields:
+    score_cols = st.columns(5)
+    for col, (label, field) in zip(score_cols, score_fields):
         v             = int(row.get(field, 1))
         sc            = _score_color(v)
         verdict, vcol = _score_verdict(v)
         dots          = _sig_dots_html(float(v), vcol)
-        score_cells += (
-            f'<div style="background:#0d1117;border:1px solid #21262d;'
-            f'border-radius:6px;padding:8px 6px;text-align:center;">'
-            f'<div style="color:#6e7681;font-size:9px;font-weight:700;'
-            f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
-            f'margin-bottom:4px;">{label}</div>'
-            f'<div style="color:{sc};font-size:20px;font-weight:700;'
-            f'font-family:\'SF Mono\',monospace;line-height:1;">{v}'
-            f'<span style="color:#30363d;font-size:10px;font-weight:600;'
-            f'margin-left:3px;">/ 5</span></div>'
-            f'<div style="color:{vcol};font-size:9px;font-weight:700;'
-            f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
-            f'margin-top:4px;">{verdict}</div>'
-            f'<div style="margin-top:5px;line-height:1;">{dots}</div>'
-            f'</div>'
-        )
+        with col:
+            components.html(
+                f'<div style="background:#0d1117;border:1px solid #21262d;'
+                f'border-radius:6px;padding:6px 4px;text-align:center;'
+                f'font-family:system-ui,-apple-system,sans-serif;">'
+                f'<div style="color:#6e7681;font-size:9px;font-weight:700;'
+                f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
+                f'margin-bottom:3px;">{label}</div>'
+                f'<div style="color:{sc};font-size:18px;font-weight:700;'
+                f'font-family:\'SF Mono\',monospace;line-height:1;">{v}'
+                f'<span style="color:#30363d;font-size:9px;font-weight:600;'
+                f'margin-left:2px;">/5</span></div>'
+                f'<div style="color:{vcol};font-size:9px;font-weight:700;'
+                f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
+                f'margin-top:3px;">{verdict}</div>'
+                f'<div style="margin-top:4px;line-height:1;">{dots}</div>'
+                f'</div>',
+                height=78,
+            )
 
-    # Significance bar — labeled "SIGNIFICANCE SCORE" with verdict chip
-    bar_mb             = "14" if regime_raw.strip() else "0"
-    sig_pct            = f"{sig / 5 * 100:.1f}"
-    sig_verdict, svcol = _sig_verdict(sig)
-    sig_bar = (
-        f'<div style="margin-bottom:{bar_mb}px;">'
-        # Header row: label + sub-label
-        f'<div style="margin-bottom:6px;">'
-        f'<div style="color:#c9d1d9;font-size:11px;font-weight:700;'
-        f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">'
-        f'SIGNIFICANCE SCORE</div>'
-        f'<div style="color:#6e7681;font-size:10px;'
-        f'font-family:system-ui,-apple-system,sans-serif;'
-        f'font-style:italic;margin-top:1px;">'
-        f'measures market, deal, and regime impact (1–5 scale)</div>'
-        f'</div>'
-        # Score line: number + verdict chip
-        f'<div style="display:flex;align-items:center;gap:8px;'
-        f'margin-bottom:5px;">'
-        f'<span style="color:{sig_color};font-size:14px;font-weight:700;'
-        f'font-family:\'SF Mono\',monospace;">{sig:.1f} / 5.0</span>'
-        f'<span style="background:{sig_color}22;color:{svcol};'
-        f'border:1px solid {svcol}66;'
-        f'font-size:9px;font-weight:700;letter-spacing:1px;'
-        f'font-family:\'SF Mono\',monospace;'
-        f'padding:2px 8px;border-radius:8px;">{sig_verdict}</span>'
-        f'</div>'
-        # Progress bar
-        f'<div style="height:4px;background:#21262d;'
-        f'border-radius:2px;overflow:hidden;">'
-        f'<div style="height:100%;width:{sig_pct}%;'
-        f'background:linear-gradient(90deg,{sig_color}88,{sig_color});'
-        f'border-radius:2px;"></div>'
-        f'</div>'
-        f'</div>'
-    )
-
-    # AI regime interpretation block
-    regime_block = ""
+    # ── Section 5: Regime interpretation (optional) ──────────────────────
     if regime_raw.strip():
-        regime_e     = html.escape(regime_raw)
-        regime_block = (
-            f'<div style="background:#0d1117;border:1px solid #21262d;'
-            f'border-left:3px solid #7c3aed;border-radius:0 6px 6px 0;'
-            f'padding:10px 14px;display:flex;align-items:flex-start;gap:10px;">'
-            f'<div>'
-            f'<div style="color:#7c3aed;font-size:9px;font-weight:700;'
-            f'font-family:\'SF Mono\',monospace;letter-spacing:1px;'
-            f'margin-bottom:3px;">◆ AI REGIME ANALYSIS</div>'
-            f'<div style="color:#8b949e;font-size:12px;line-height:1.5;'
-            f'font-style:italic;">{regime_e}</div>'
-            f'</div></div>'
+        st.divider()
+        regime_e = html.escape(regime_raw)
+        st.markdown(
+            f'<div style="color:#2ecc71;font-size:10px;font-weight:700;'
+            f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
+            f'margin-bottom:6px;">REGIME READ</div>'
+            f'<div style="color:#8b949e;font-size:12px;line-height:1.55;'
+            f'font-style:italic;'
+            f'font-family:system-ui,-apple-system,sans-serif;">'
+            f'{regime_e}</div>',
+            unsafe_allow_html=True,
         )
 
-    # Perplexity deep-research block — distinct green chrome, below AI block.
-    # Split content body from `Sources:` footer so URLs can be auto-linkified.
-    research_block = ""
+    # ── Section 6: Perplexity research (optional, supplementary) ────────
     if research_raw.strip():
+        st.divider()
         body_text, _, sources_text = research_raw.partition("Sources:")
-        body_e  = html.escape(body_text.strip())
+        body_e = html.escape(body_text.strip())
         src_html = ""
         if sources_text.strip():
             srcs = [ln.strip(" -\t") for ln in sources_text.splitlines()
                     if ln.strip(" -\t")]
             if srcs:
                 link_items = "".join(
-                    f'<a href="{html.escape(u)}" target="_blank" '
+                    f'<a href="{html.escape(u)}" target="_blank" rel="noopener" '
                     f'style="color:#2ecc71;text-decoration:none;'
-                    f'font-size:10px;display:block;'
-                    f'overflow:hidden;text-overflow:ellipsis;'
-                    f'white-space:nowrap;">{html.escape(u)}</a>'
+                    f'font-size:10px;display:block;overflow:hidden;'
+                    f'text-overflow:ellipsis;white-space:nowrap;">'
+                    f'{html.escape(u)}</a>'
                     for u in srcs[:5]
                 )
                 src_html = (
                     f'<div style="margin-top:8px;padding-top:8px;'
-                    f'border-top:1px solid #21262d;'
-                    f'color:#6e7681;font-size:9px;font-weight:700;'
-                    f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
-                    f'margin-bottom:4px;">SOURCES</div>'
-                    f'<div>{link_items}</div>'
+                    f'border-top:1px solid #21262d;color:#6e7681;'
+                    f'font-size:9px;font-weight:700;letter-spacing:1px;'
+                    f'font-family:\'SF Mono\',monospace;margin-bottom:4px;">'
+                    f'SOURCES</div><div>{link_items}</div>'
                 )
-        research_block = (
-            f'<div style="background:#0d1117;border:1px solid #21262d;'
-            f'border-left:3px solid #2ecc71;border-radius:0 6px 6px 0;'
-            f'padding:10px 14px;margin-top:8px;">'
-            f'<div style="color:#2ecc71;font-size:9px;font-weight:700;'
-            f'font-family:\'SF Mono\',monospace;letter-spacing:1px;'
-            f'margin-bottom:4px;">◆ PERPLEXITY RESEARCH</div>'
-            f'<div style="color:#8b949e;font-size:12px;line-height:1.5;'
-            f'white-space:pre-wrap;">{body_e}</div>'
-            f'{src_html}'
-            f'</div>'
+        st.markdown(
+            f'<div style="color:#2ecc71;font-size:10px;font-weight:700;'
+            f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
+            f'margin-bottom:6px;">◆ PERPLEXITY RESEARCH</div>'
+            f'<div style="color:#8b949e;font-size:12px;line-height:1.55;'
+            f'white-space:pre-wrap;'
+            f'font-family:system-ui,-apple-system,sans-serif;">{body_e}</div>'
+            f'{src_html}',
+            unsafe_allow_html=True,
         )
-
-    # Fixed 480px height — dynamic calc kept leaving blank space under
-    # short cards. 480 fits the full chrome + badges + headline + score
-    # grid + significance bar comfortably; a long summary or AI block
-    # clips slightly, which is a better trade-off than visible padding.
-    # Bump to 720 when a Perplexity research block is present so the
-    # multi-line research body + sources render without being cut off.
-    card_height = 720 if research_block else 480
-
-    # Wrap card content in a self-contained HTML document. `<base target="_parent">`
-    # ensures that any link without an explicit target attribute escapes the
-    # iframe to the parent window instead of resolving against the iframe's own
-    # URL (which in Streamlit is `about:srcdoc` → falls back to the parent URL,
-    # causing the full dashboard to render inside the card iframe). Links that
-    # set `target="_blank"` explicitly still open in a new tab.
-    card_body = (
-        f'<div style="background:#161b22;border:1px solid #30363d;'
-        f'border-top:3px solid {accent};border-radius:0 8px 8px 8px;'
-        f'padding:18px 20px;font-family:system-ui,-apple-system,sans-serif;'
-        f'box-sizing:border-box;">'
-        # Badges row — colored source chip (FIX 6)
-        f'<div style="display:flex;align-items:center;gap:8px;'
-        f'margin-bottom:12px;flex-wrap:wrap;">'
-        f'<span style="background:{cat_style["bg"]};color:{cat_style["color"]};'
-        f'font-size:10px;padding:3px 10px;border-radius:10px;font-weight:700;'
-        f'font-family:\'SF Mono\',monospace;letter-spacing:0.5px;">'
-        f'{html.escape(cat)}</span>'
-        f'{src_chip}'
-        f'<span style="color:#6e7681;font-size:11px;">·</span>'
-        f'<span style="color:#6e7681;font-size:11px;">{ta}</span>'
-        f'{deal_badge}'
-        f'{url_btn}'
-        f'</div>'
-        # Headline
-        f'<div style="color:#e6edf3;font-size:16px;font-weight:600;'
-        f'line-height:1.4;margin-bottom:12px;">{headline_e}</div>'
-        # Summary
-        + summary_block
-        # Score grid
-        + f'<div style="display:grid;grid-template-columns:repeat(5,1fr);'
-        f'gap:8px;margin-bottom:14px;">{score_cells}</div>'
-        # Significance bar
-        + sig_bar
-        # AI block
-        + regime_block
-        # Perplexity research block
-        + research_block
-        + '</div>'
-    )
-
-    card_html = (
-        '<!DOCTYPE html>'
-        '<html lang="en">'
-        '<head>'
-        '<meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        # Any unflagged link opens in the parent window, never inside this iframe.
-        '<base target="_parent">'
-        '</head>'
-        '<body style="margin:0;padding:0;background:transparent;'
-        'font-family:system-ui,-apple-system,sans-serif;">'
-        + card_body +
-        '</body></html>'
-    )
-
-    components.html(card_html, height=card_height, scrolling=False)
 
 
 # ── Empty state ───────────────────────────────────────────────────────────────
@@ -1082,20 +1093,11 @@ def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
     if "ei_selected" not in st.session_state:
         st.session_state["ei_selected"] = None
 
-    # ── Sync query param → session (headline list anchor clicks) ──────────────
-    # Each headline renders as <a href="?ei_selected=<id>" target="_top">.
-    # Clicking triggers a top-level navigation with that param; we read it
-    # here, hand the value to session_state, and immediately clear the URL
-    # param so `?ei_selected=X` does not persist across re-runs (a lingering
-    # param can confuse iframe children — notably, any stray relative href
-    # inside the detail-card iframe will resolve against the polluted parent
-    # URL and load the entire dashboard into the iframe).
-    qp_selected = st.query_params.get("ei_selected")
-    if qp_selected is not None:
-        try:
-            st.session_state["ei_selected"] = int(qp_selected)
-        except (TypeError, ValueError):
-            pass
+    # Strip any lingering ?ei_selected= param left over from prior sessions
+    # that used query-param-based click detection. Click detection now lives
+    # entirely in session_state; the URL param would only pollute the parent
+    # URL for any child iframe on the page.
+    if "ei_selected" in st.query_params:
         try:
             del st.query_params["ei_selected"]
         except Exception:
@@ -1141,7 +1143,7 @@ def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
         if st.session_state["ei_selected"] is None:
             st.session_state["ei_selected"] = int(df.iloc[0]["id"])
 
-        left, right = st.columns([2, 3])
+        left, right = st.columns([2, 3], vertical_alignment="top")
         with left:
             render_headline_list(df, current_regime=current_regime)
         with right:
