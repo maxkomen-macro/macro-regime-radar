@@ -27,6 +27,7 @@ def ensure_news_table(db_path: str | None = None) -> None:
                 regime_relevance INTEGER DEFAULT 1,
                 overall_significance REAL DEFAULT 1.0,
                 regime_interpretation TEXT,
+                perplexity_research TEXT,
                 ticker TEXT,
                 UNIQUE(headline, published_at)
             );
@@ -37,4 +38,8 @@ def ensure_news_table(db_path: str | None = None) -> None:
             CREATE INDEX IF NOT EXISTS idx_news_category
                 ON news_feed(category);
         """)
+        # Idempotent migration for existing DBs that predate perplexity_research
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(news_feed)")}
+        if "perplexity_research" not in cols:
+            conn.execute("ALTER TABLE news_feed ADD COLUMN perplexity_research TEXT")
         conn.commit()

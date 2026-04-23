@@ -208,7 +208,8 @@ def load_news(db_path: str, time_hours: int, category: str) -> pd.DataFrame:
         base_cols = """SELECT id, headline, summary, url, source, category,
                               published_at, fetched_at, market_impact, deal_size,
                               sector_relevance, time_sensitivity, regime_relevance,
-                              overall_significance, regime_interpretation, ticker
+                              overall_significance, regime_interpretation,
+                              perplexity_research, ticker
                        FROM news_feed
                        WHERE published_at >= datetime('now', ?)"""
         if category != "ALL":
@@ -685,7 +686,8 @@ def render_detail_card(row: pd.Series) -> None:
     url         = str(row.get("url", "") or "")
     url_e       = html.escape(url)
     summary_raw = str(row.get("summary", "") or "")
-    regime_raw  = str(row.get("regime_interpretation", "") or "")
+    regime_raw   = str(row.get("regime_interpretation", "") or "")
+    research_raw = str(row.get("perplexity_research", "") or "")
 
     # Deal size badge (M&A only, deal_size > 1)
     deal_size  = int(row.get("deal_size", 1))
@@ -820,13 +822,61 @@ def render_detail_card(row: pd.Series) -> None:
             f'</div></div>'
         )
 
+    # Perplexity deep-research block — distinct green chrome, below AI block.
+    # Split content body from `Sources:` footer so URLs can be auto-linkified.
+    research_block = ""
+    if research_raw.strip():
+        body_text, _, sources_text = research_raw.partition("Sources:")
+        body_e  = html.escape(body_text.strip())
+        src_html = ""
+        if sources_text.strip():
+            srcs = [ln.strip(" -\t") for ln in sources_text.splitlines()
+                    if ln.strip(" -\t")]
+            if srcs:
+                link_items = "".join(
+                    f'<a href="{html.escape(u)}" target="_blank" '
+                    f'style="color:#2ecc71;text-decoration:none;'
+                    f'font-size:10px;display:block;'
+                    f'overflow:hidden;text-overflow:ellipsis;'
+                    f'white-space:nowrap;">{html.escape(u)}</a>'
+                    for u in srcs[:5]
+                )
+                src_html = (
+                    f'<div style="margin-top:8px;padding-top:8px;'
+                    f'border-top:1px solid #21262d;'
+                    f'color:#6e7681;font-size:9px;font-weight:700;'
+                    f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
+                    f'margin-bottom:4px;">SOURCES</div>'
+                    f'<div>{link_items}</div>'
+                )
+        research_block = (
+            f'<div style="background:#0d1117;border:1px solid #21262d;'
+            f'border-left:3px solid #2ecc71;border-radius:0 6px 6px 0;'
+            f'padding:10px 14px;margin-top:8px;">'
+            f'<div style="color:#2ecc71;font-size:9px;font-weight:700;'
+            f'font-family:\'SF Mono\',monospace;letter-spacing:1px;'
+            f'margin-bottom:4px;">◆ PERPLEXITY RESEARCH</div>'
+            f'<div style="color:#8b949e;font-size:12px;line-height:1.5;'
+            f'white-space:pre-wrap;">{body_e}</div>'
+            f'{src_html}'
+            f'</div>'
+        )
+
     # Fixed 480px height — dynamic calc kept leaving blank space under
     # short cards. 480 fits the full chrome + badges + headline + score
     # grid + significance bar comfortably; a long summary or AI block
     # clips slightly, which is a better trade-off than visible padding.
-    card_height = 480
+    # Bump to 720 when a Perplexity research block is present so the
+    # multi-line research body + sources render without being cut off.
+    card_height = 720 if research_block else 480
 
-    card_html = (
+    # Wrap card content in a self-contained HTML document. `<base target="_parent">`
+    # ensures that any link without an explicit target attribute escapes the
+    # iframe to the parent window instead of resolving against the iframe's own
+    # URL (which in Streamlit is `about:srcdoc` → falls back to the parent URL,
+    # causing the full dashboard to render inside the card iframe). Links that
+    # set `target="_blank"` explicitly still open in a new tab.
+    card_body = (
         f'<div style="background:#161b22;border:1px solid #30363d;'
         f'border-top:3px solid {accent};border-radius:0 8px 8px 8px;'
         f'padding:18px 20px;font-family:system-ui,-apple-system,sans-serif;'
@@ -856,7 +906,24 @@ def render_detail_card(row: pd.Series) -> None:
         + sig_bar
         # AI block
         + regime_block
+        # Perplexity research block
+        + research_block
         + '</div>'
+    )
+
+    card_html = (
+        '<!DOCTYPE html>'
+        '<html lang="en">'
+        '<head>'
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        # Any unflagged link opens in the parent window, never inside this iframe.
+        '<base target="_parent">'
+        '</head>'
+        '<body style="margin:0;padding:0;background:transparent;'
+        'font-family:system-ui,-apple-system,sans-serif;">'
+        + card_body +
+        '</body></html>'
     )
 
     components.html(card_html, height=card_height, scrolling=False)
@@ -1017,13 +1084,21 @@ def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
 
     # ── Sync query param → session (headline list anchor clicks) ──────────────
     # Each headline renders as <a href="?ei_selected=<id>" target="_top">.
-    # Clicking triggers a top-level navigation with that param; read it here
-    # on the subsequent run so the selection survives the reload.
+    # Clicking triggers a top-level navigation with that param; we read it
+    # here, hand the value to session_state, and immediately clear the URL
+    # param so `?ei_selected=X` does not persist across re-runs (a lingering
+    # param can confuse iframe children — notably, any stray relative href
+    # inside the detail-card iframe will resolve against the polluted parent
+    # URL and load the entire dashboard into the iframe).
     qp_selected = st.query_params.get("ei_selected")
     if qp_selected is not None:
         try:
             st.session_state["ei_selected"] = int(qp_selected)
         except (TypeError, ValueError):
+            pass
+        try:
+            del st.query_params["ei_selected"]
+        except Exception:
             pass
 
     # ── Inject CSS ────────────────────────────────────────────────────────────

@@ -1,11 +1,14 @@
 """src/analytics/news.py — News fetch, classify, score, and store pipeline."""
 
+import json
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
+
+from src.analytics.perplexity import format_with_citations, sonar_research
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -51,6 +54,109 @@ _MAJOR_SECTORS = [
 ]
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "macro_radar.db"
+
+
+# ── Shared Claude system prompt (prompt-cached across calls) ──────────────────
+#
+# Used by both news.py (per-headline structured scoring) and daily_memo.py
+# (daily Opus narrative). Sent as a content block with cache_control so the
+# Anthropic cache serves identical system prompts across calls within 1 hour.
+
+REGIME_SYSTEM_PROMPT = """You are a senior macro research analyst at a hedge fund.
+
+REGIME TAXONOMY
+Four macroeconomic regimes, each with distinct growth/inflation signatures:
+  • Goldilocks  — growth trending up, inflation contained
+  • Overheating — growth hot, inflation accelerating
+  • Stagflation — growth slowing, inflation sticky or rising
+  • Deflation   — growth contracting, inflation falling / Recession Risk
+
+SIGNIFICANCE RUBRIC (1-5 on each of 5 dimensions)
+
+market (market impact)
+  5  Fed/FOMC/rate decisions, emergency actions
+  4  Tier-1 data prints: CPI, PPI, jobs report, GDP, earnings beats/misses
+  3  Large M&A ($1B+), credit events
+  2  Guidance/outlook changes, rating actions
+  1  Routine news with minimal cross-asset read
+
+deal_size (M&A only; 1 for non-M&A)
+  5  ≥$50B deal or "trillion"
+  4  $10-50B
+  3  $1-10B
+  2  <$1B disclosed
+  1  non-M&A or undisclosed
+
+sector (sector relevance)
+  5  Cross-sector story touching ≥2 major sectors
+  4  Single sector + high-impact ticker (SPY/QQQ/TLT/etc.)
+  3  Single sector focus
+  2  High-impact ticker mentioned only
+  1  Narrow/irrelevant
+
+timeliness (time sensitivity)
+  5  Breaking (≤2h old)
+  4  Recent (≤6h)
+  3  Same-day (≤24h)
+  2  Within 48h
+  1  Stale
+
+regime (relevance to the current regime)
+  5  Directly reinforces or refutes the current regime
+  3  Partial confirmation
+  1  Neutral / off-topic for macro regime framing
+
+OUTPUT CONTRACT
+Respond with structured data only. Interpretation must be ≤20 words,
+declarative, macro-framed. macro_theme is one of MACRO, M&A, EARNINGS,
+GEO, SECTOR."""
+
+
+_SCORING_TOOL = {
+    "name":        "record_headline_analysis",
+    "description": "Record the macro-regime analysis of a single headline.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "headline": {"type": "string"},
+            "regime_interpretation": {
+                "type":        "string",
+                "description": "One-sentence (≤20 words) macro regime interpretation.",
+            },
+            "significance_scores": {
+                "type": "object",
+                "properties": {
+                    "market":     {"type": "integer", "minimum": 1, "maximum": 5},
+                    "deal_size":  {"type": "integer", "minimum": 1, "maximum": 5},
+                    "sector":     {"type": "integer", "minimum": 1, "maximum": 5},
+                    "timeliness": {"type": "integer", "minimum": 1, "maximum": 5},
+                    "regime":     {"type": "integer", "minimum": 1, "maximum": 5},
+                },
+                "required": ["market", "deal_size", "sector", "timeliness", "regime"],
+            },
+            "overall": {"type": "number", "minimum": 1.0, "maximum": 5.0},
+            "macro_theme": {
+                "type": "string",
+                "enum": ["MACRO", "M&A", "EARNINGS", "GEO", "SECTOR"],
+            },
+        },
+        "required": [
+            "headline", "regime_interpretation",
+            "significance_scores", "overall", "macro_theme",
+        ],
+    },
+}
+
+
+# ── Perplexity system prompt for per-headline research ────────────────────────
+
+NEWS_RESEARCH_SYSTEM_PROMPT = (
+    "You are a macro finance research analyst. Given a recent news headline "
+    "and the current macroeconomic regime, produce a concise (≤150 words) "
+    "sourced research note: (1) why the headline matters in this regime, "
+    "(2) the most relevant prior context a trader should know, (3) what to "
+    "watch next. Cite primary sources."
+)
 
 
 # ── Category Classifier ────────────────────────────────────────────────────────
@@ -291,35 +397,50 @@ def _deduplicate(items: list[dict]) -> list[dict]:
     return unique
 
 
-# ── Claude Interpreter ─────────────────────────────────────────────────────────
+# ── Claude Structured-Output Interpreter ──────────────────────────────────────
 
-def get_regime_interpretation(
+def get_structured_interpretation(
     headline: str,
     summary: str,
     current_regime: str,
     regime_probabilities: dict,
     api_key: str,
-) -> str:
+) -> dict:
+    """Call Claude Haiku with a forced tool-schema to get schema-guaranteed JSON.
+
+    Uses tool_use with `tool_choice` forced to `record_headline_analysis`, which
+    guarantees Anthropic's API returns a tool_use block whose `input` validates
+    against `_SCORING_TOOL["input_schema"]`. Zero possibility of malformed JSON
+    writing to the DB.
+
+    System prompt is sent as a cache-eligible content block (1h ephemeral TTL)
+    so identical text across the hourly refresh + daily memo call hits cache.
+
+    Returns
+    -------
+    dict
+        {"regime_interpretation": str, "macro_theme": str,
+         "significance_scores": {...}, "overall": float}.
+        Empty strings / zero scores on any failure.
     """
-    Call Claude Haiku for a one-sentence macro regime interpretation.
-    Only call for items where overall_significance >= 4.0 (enforced by caller).
-    Returns "" on any error.
-    """
+    empty = {
+        "regime_interpretation": "",
+        "macro_theme":           "",
+        "significance_scores":   {},
+        "overall":               0.0,
+    }
     if not api_key:
-        return ""
-    prompt = (
-        "You are a macro analyst. In one sentence (max 15 words), interpret how "
-        "this headline relates to the current macro regime.\n\n"
+        return empty
+
+    user_content = (
         f"Current regime: {current_regime}\n"
         f"Regime probabilities: {regime_probabilities}\n"
         f"Headline: {headline}\n"
-        f"Summary: {summary[:200] if summary else 'N/A'}\n\n"
-        "Respond with ONLY the one-sentence interpretation. No preamble.\n"
-        "Examples:\n"
-        '- "Confirms Overheating pressure; rate cuts increasingly unlikely near-term."\n'
-        '- "Risk-off signal; supports Stagflation regime probability rising."\n'
-        '- "Neutral for regime; company-specific beat with limited macro read."'
+        f"Summary: {(summary or 'N/A')[:400]}\n\n"
+        "Score this headline and write a ≤20-word regime interpretation. "
+        "Call record_headline_analysis with your result."
     )
+
     try:
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -330,15 +451,49 @@ def get_regime_interpretation(
             },
             json={
                 "model":      "claude-haiku-4-5-20251001",
-                "max_tokens": 60,
-                "messages":   [{"role": "user", "content": prompt}],
+                "max_tokens": 400,
+                "system": [{
+                    "type":          "text",
+                    "text":          REGIME_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }],
+                "tools":       [_SCORING_TOOL],
+                "tool_choice": {"type": "tool", "name": _SCORING_TOOL["name"]},
+                "messages":    [{"role": "user", "content": user_content}],
             },
-            timeout=20,
+            timeout=25,
         )
         resp.raise_for_status()
-        return resp.json()["content"][0]["text"].strip()
+        payload = resp.json()
+        for block in payload.get("content", []):
+            if block.get("type") == "tool_use" and block.get("name") == _SCORING_TOOL["name"]:
+                data = block.get("input") or {}
+                return {
+                    "regime_interpretation": str(data.get("regime_interpretation", "")).strip(),
+                    "macro_theme":           str(data.get("macro_theme", "")).strip(),
+                    "significance_scores":   data.get("significance_scores") or {},
+                    "overall":               float(data.get("overall", 0.0) or 0.0),
+                }
+        return empty
     except Exception:
-        return ""
+        return empty
+
+
+def get_regime_interpretation(
+    headline: str,
+    summary: str,
+    current_regime: str,
+    regime_probabilities: dict,
+    api_key: str,
+) -> str:
+    """Backwards-compatible shim: return only the interpretation string.
+
+    Retained so any external caller (tests, ad-hoc scripts) continues to work.
+    New code should call `get_structured_interpretation` directly.
+    """
+    return get_structured_interpretation(
+        headline, summary, current_regime, regime_probabilities, api_key,
+    ).get("regime_interpretation", "")
 
 
 # ── Main Orchestrator ─────────────────────────────────────────────────────────
@@ -354,9 +509,10 @@ def fetch_and_store_news(db_path: str, config: dict) -> int:
     Returns:
         Number of new rows inserted.
     """
-    finnhub_key   = config.get("finnhub_key", "")
-    newsapi_key   = config.get("newsapi_key", "")
-    anthropic_key = config.get("anthropic_key", "")
+    finnhub_key    = config.get("finnhub_key", "")
+    newsapi_key    = config.get("newsapi_key", "")
+    anthropic_key  = config.get("anthropic_key", "")
+    perplexity_key = config.get("perplexity_key", "")
 
     # 1. Get current regime from DB
     current_regime = "Goldilocks"
@@ -387,9 +543,14 @@ def fetch_and_store_news(db_path: str, config: dict) -> int:
     if not all_items:
         return 0
 
-    # 3. Classify, score, and optionally interpret
-    ai_calls = 0
-    enriched = []
+    # 3. Classify, score, and optionally interpret + research
+    #    Rule-based scoring remains authoritative for DB writes. For headlines
+    #    above the significance threshold we additionally call Claude (for a
+    #    schema-guaranteed interpretation) and Perplexity (for grounded
+    #    research), both capped per-run to protect API budgets.
+    ai_calls  = 0
+    ppx_calls = 0
+    enriched  = []
     for item in all_items:
         item["category"] = classify_category(
             item.get("headline", ""), item.get("summary", "")
@@ -397,17 +558,30 @@ def fetch_and_store_news(db_path: str, config: dict) -> int:
         scores = score_significance(item, current_regime)
         item.update(scores)
 
-        if item["overall_significance"] >= 4.0 and ai_calls < 5:
-            item["regime_interpretation"] = get_regime_interpretation(
-                item["headline"],
-                item.get("summary", ""),
-                current_regime,
-                regime_probs,
-                anthropic_key,
-            )
-            ai_calls += 1
-        else:
-            item["regime_interpretation"] = ""
+        item["regime_interpretation"] = ""
+        item["perplexity_research"]   = ""
+
+        if item["overall_significance"] >= 4.0:
+            if ai_calls < 5:
+                result = get_structured_interpretation(
+                    item["headline"],
+                    item.get("summary", ""),
+                    current_regime,
+                    regime_probs,
+                    anthropic_key,
+                )
+                item["regime_interpretation"] = result.get("regime_interpretation", "")
+                ai_calls += 1
+
+            if ppx_calls < 5 and perplexity_key:
+                query = (
+                    f"Current macro regime: {current_regime}. "
+                    f"Headline: {item['headline']}. "
+                    f"What does a trader need to know about this now?"
+                )
+                res = sonar_research(query, NEWS_RESEARCH_SYSTEM_PROMPT, perplexity_key)
+                item["perplexity_research"] = format_with_citations(res)
+                ppx_calls += 1
 
         enriched.append(item)
 
@@ -422,8 +596,8 @@ def fetch_and_store_news(db_path: str, config: dict) -> int:
                            (headline, summary, url, source, category, published_at,
                             market_impact, deal_size, sector_relevance, time_sensitivity,
                             regime_relevance, overall_significance, regime_interpretation,
-                            ticker)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            perplexity_research, ticker)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             item.get("headline", ""),
                             item.get("summary", ""),
@@ -438,6 +612,7 @@ def fetch_and_store_news(db_path: str, config: dict) -> int:
                             item["regime_relevance"],
                             item["overall_significance"],
                             item.get("regime_interpretation", ""),
+                            item.get("perplexity_research", ""),
                             item.get("ticker", ""),
                         ),
                     )
