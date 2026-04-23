@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS regimes (
     confidence       REAL    NOT NULL,
     growth_trend     REAL,
     inflation_trend  REAL,
+    prob_goldilocks  REAL,
+    prob_overheating REAL,
+    prob_stagflation REAL,
+    prob_recession   REAL,
     computed_at      TEXT    NOT NULL
 );
 

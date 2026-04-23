@@ -1,12 +1,49 @@
-from pathlib import Path
+import os
 import sqlite3
+import sys
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).with_name(".env"))
+PROJECT_ROOT = Path(__file__).resolve().parent
 
-from src.database   import init_db
-from src.db_helpers import ensure_news_table
-from src.fetch_data import fetch_all_series
+
+def _load_secrets_toml() -> None:
+    """Copy keys from .streamlit/secrets.toml into os.environ if unset.
+
+    Lets `python main.py` run in a fresh terminal without manual `export`
+    commands. CI-provided env vars win — we only fill missing keys.
+    """
+    try:
+        import tomllib
+    except ImportError:
+        return
+    path = PROJECT_ROOT / ".streamlit" / "secrets.toml"
+    if not path.exists():
+        return
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return
+    for key in (
+        "FINNHUB_API_KEY", "NEWS_API_KEY",
+        "ANTHROPIC_API_KEY", "PERPLEXITY_API_KEY",
+        "FRED_API_KEY", "POLYGON_API_KEY",
+    ):
+        val = data.get(key)
+        if isinstance(val, str) and val and not os.environ.get(key):
+            os.environ[key] = val
+
+
+# Load local secrets BEFORE importing src.config (which asserts FRED_API_KEY).
+_load_secrets_toml()
+load_dotenv(PROJECT_ROOT / ".env")
+
+from src.database    import init_db
+from src.db_helpers  import ensure_news_table
+from src.migrate     import run_migration
+from src.fetch_data  import fetch_all_series
 from src import regime
 from src import signals
 from src.config import DB_PATH
@@ -28,19 +65,33 @@ def main():
     print("  Macro Regime Radar")
     print("=" * 60)
 
-    print("\n[1/4] Initializing database...")
+    print("\n[1/5] Initializing database...")
     init_db()
     ensure_news_table()
+    run_migration()
     _migrate_gs_series()
 
-    print("\n[2/4] Fetching data from FRED...")
+    print("\n[2/5] Fetching data from FRED...")
     series_dict = fetch_all_series()
 
-    print("\n[3/4] Computing regime classifications...")
+    print("\n[3/5] Computing regime classifications...")
     regime_df = regime.run(series_dict)
 
-    print("\n[4/4] Detecting macro signals...")
+    print("\n[4/5] Detecting macro signals...")
     signals.run(series_dict)
+
+    print("\n[5/5] Refreshing news feed...")
+    from src.analytics.news import fetch_and_store_news
+    try:
+        n = fetch_and_store_news(str(DB_PATH), {
+            "finnhub_key":    os.environ.get("FINNHUB_API_KEY", ""),
+            "newsapi_key":    os.environ.get("NEWS_API_KEY", ""),
+            "anthropic_key":  os.environ.get("ANTHROPIC_API_KEY", ""),
+            "perplexity_key": os.environ.get("PERPLEXITY_API_KEY", ""),
+        })
+        print(f"[news] Stored {n} new headlines.")
+    except Exception as exc:
+        print(f"[news] WARNING: news refresh failed: {exc}", file=sys.stderr)
 
     latest = regime_df.iloc[-1]
     print("\n" + "=" * 60)
