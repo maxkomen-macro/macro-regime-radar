@@ -33,6 +33,31 @@ DB_PATH    = ROOT / "data" / "macro_radar.db"
 OUTPUT_DIR = ROOT / "output"
 MEMO_PATH  = OUTPUT_DIR / "daily_memo.html"
 
+
+def _load_secrets_toml() -> None:
+    """Copy keys from .streamlit/secrets.toml into os.environ if unset.
+
+    Kept local (not imported from src.config) so this module stays standalone
+    — the docstring above explicitly avoids src.config to sidestep FRED_API_KEY.
+    """
+    try:
+        import tomllib
+    except ImportError:
+        return
+    path = ROOT / ".streamlit" / "secrets.toml"
+    if not path.exists():
+        return
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return
+    for key in ("ANTHROPIC_API_KEY", "PERPLEXITY_API_KEY",
+                "FINNHUB_API_KEY", "NEWS_API_KEY"):
+        val = data.get(key)
+        if isinstance(val, str) and val and not os.environ.get(key):
+            os.environ[key] = val
+
 # Make `src.*` importable when invoked as `python src/daily_memo.py`.
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -550,7 +575,7 @@ def _render_narrative_html(narrative: str, research: str) -> str:
 
     return (
         f'<div {_CARD}>'
-        f'{_section_header("Regime Read")}'
+        f'{_section_header("REGIME READ")}'
         f'<div style="color:#95a5a6; font-size:10px; letter-spacing:1px; '
         f'margin-bottom:8px;">◆ CLAUDE OPUS 4.7 · ADAPTIVE THINKING</div>'
         f'{para_html}'
@@ -862,6 +887,7 @@ def build_html(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    _load_secrets_toml()
     today = date.today()
 
     regime     = load_regime()

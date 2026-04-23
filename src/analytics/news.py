@@ -331,7 +331,7 @@ def fetch_finnhub_news(api_key: str, hours_back: int = 24) -> list[dict]:
 
 # ── NewsAPI Fetcher ────────────────────────────────────────────────────────────
 
-def fetch_newsapi_news(api_key: str, hours_back: int = 24) -> list[dict]:
+def fetch_newsapi_news(api_key: str, hours_back: int = 72) -> list[dict]:
     """Fetch macro and M&A news from NewsAPI."""
     if not api_key:
         return []
@@ -543,47 +543,54 @@ def fetch_and_store_news(db_path: str, config: dict) -> int:
     if not all_items:
         return 0
 
-    # 3. Classify, score, and optionally interpret + research
-    #    Rule-based scoring remains authoritative for DB writes. For headlines
-    #    above the significance threshold we additionally call Claude (for a
-    #    schema-guaranteed interpretation) and Perplexity (for grounded
-    #    research), both capped per-run to protect API budgets.
-    ai_calls  = 0
-    ppx_calls = 0
-    enriched  = []
+    # 3. Classify and score every item; then enrich the top-N by rule score
+    #    with Claude (schema-guaranteed interpretation + authoritative overall
+    #    score) and Perplexity (grounded research). Top-N instead of a fixed
+    #    threshold guarantees enrichment runs even on days where rule-based
+    #    scoring caps below 3.0.
     for item in all_items:
         item["category"] = classify_category(
             item.get("headline", ""), item.get("summary", "")
         )
         scores = score_significance(item, current_regime)
         item.update(scores)
-
         item["regime_interpretation"] = ""
         item["perplexity_research"]   = ""
 
-        if item["overall_significance"] >= 4.0:
-            if ai_calls < 5:
-                result = get_structured_interpretation(
-                    item["headline"],
-                    item.get("summary", ""),
-                    current_regime,
-                    regime_probs,
-                    anthropic_key,
-                )
-                item["regime_interpretation"] = result.get("regime_interpretation", "")
-                ai_calls += 1
+    TOP_N = 5
+    enrich_ids = {
+        id(it) for it in sorted(
+            all_items,
+            key=lambda x: x["overall_significance"],
+            reverse=True,
+        )[:TOP_N]
+    }
 
-            if ppx_calls < 5 and perplexity_key:
-                query = (
-                    f"Current macro regime: {current_regime}. "
-                    f"Headline: {item['headline']}. "
-                    f"What does a trader need to know about this now?"
-                )
-                res = sonar_research(query, NEWS_RESEARCH_SYSTEM_PROMPT, perplexity_key)
-                item["perplexity_research"] = format_with_citations(res)
-                ppx_calls += 1
+    for item in all_items:
+        if id(item) not in enrich_ids:
+            continue
+        if anthropic_key:
+            result = get_structured_interpretation(
+                item["headline"],
+                item.get("summary", ""),
+                current_regime,
+                regime_probs,
+                anthropic_key,
+            )
+            item["regime_interpretation"] = result.get("regime_interpretation", "")
+            claude_overall = float(result.get("overall", 0.0) or 0.0)
+            if claude_overall > 0:
+                item["overall_significance"] = claude_overall
+        if perplexity_key:
+            query = (
+                f"Current macro regime: {current_regime}. "
+                f"Headline: {item['headline']}. "
+                f"What does a trader need to know about this now?"
+            )
+            res = sonar_research(query, NEWS_RESEARCH_SYSTEM_PROMPT, perplexity_key)
+            item["perplexity_research"] = format_with_citations(res)
 
-        enriched.append(item)
+    enriched = all_items
 
     # 4. Insert into DB and prune old rows
     inserted = 0
