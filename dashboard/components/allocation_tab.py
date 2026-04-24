@@ -45,6 +45,8 @@ _METHOD_COLORS = {
     "risk_parity":      "#e67e22",
     "black_litterman":  "#8b5cf6",
     "hrp":              "#e74c3c",
+    "cvar":             "#f5a623",
+    "herc":             "#1abc9c",
 }
 
 _METHOD_LABELS = {
@@ -53,6 +55,8 @@ _METHOD_LABELS = {
     "risk_parity":      "Risk Parity",
     "black_litterman":  "Black-Litterman",
     "hrp":              "Hierarchical Risk Parity",
+    "cvar":             "Min CVaR (Tail Risk)",
+    "herc":             "HERC",
 }
 
 _FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
@@ -273,6 +277,8 @@ _METHOD_BADGES = {
     "risk_parity":      "RISK-BALANCED",
     "black_litterman":  "EQUILIBRIUM + VIEWS",
     "hrp":              "ML-BASED",
+    "cvar":             "TAIL-RISK",
+    "herc":             "HIERARCHICAL",
 }
 
 
@@ -333,7 +339,7 @@ def _render_weights_chart(opt: dict) -> None:
     _section_header("Portfolio Weights by Method")
 
     asset_names = opt["asset_names"]
-    _ALL_KEYS   = ("mvo", "min_var", "risk_parity", "black_litterman", "hrp")
+    _ALL_KEYS   = ("mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc")
     rows = []
     for key in _ALL_KEYS:
         if key not in opt:
@@ -479,6 +485,121 @@ def _render_frontier_chart(opt: dict) -> None:
     st.altair_chart(chart, use_container_width=True)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_daily_returns_for_tearsheet(asset_names: tuple[str, ...]) -> pd.DataFrame:
+    """Cached daily-returns fetch for the given asset classes + SPY."""
+    from src.analytics.allocation import get_daily_asset_returns
+    universe = list(asset_names)
+    if "US Large Cap" not in universe:
+        universe = ["US Large Cap"] + universe  # ensure SPY/Large-Cap proxy for benchmark
+    return get_daily_asset_returns(asset_classes=universe)
+
+
+def _render_tearsheet_section(opt: dict) -> None:
+    """
+    Institutional performance tearsheet (quantstats) for a user-chosen method.
+
+    Takes the optimized weights, builds a static-weight daily portfolio return
+    stream, and renders the full quantstats HTML report with SPY as benchmark.
+    """
+    _section_header("Performance Tearsheet")
+
+    # Only include method keys actually present in opt
+    available_keys = [k for k in ("mvo", "min_var", "risk_parity", "black_litterman",
+                                  "hrp", "cvar", "herc") if k in opt]
+    if not available_keys:
+        st.info("No optimized portfolios available to tearsheet.")
+        return
+
+    components.html(
+        f"<body style='background:{_PAGE_BG};font-family:{_FONT};margin:0;padding:2px 0;'>"
+        f"<span style='font-size:11px;color:{_MUTED};'>"
+        f"Institutional quantstats report &mdash; Sharpe, Sortino, drawdowns, "
+        f"monthly heatmap, benchmark comparison vs. SPY"
+        f"</span></body>",
+        height=28,
+        scrolling=False,
+    )
+
+    col_sel, col_btn = st.columns([3, 1])
+    with col_sel:
+        method_key = st.selectbox(
+            "Method",
+            options=available_keys,
+            format_func=lambda k: _METHOD_LABELS.get(k, k),
+            key="tearsheet_method_select",
+        )
+    with col_btn:
+        st.write("")  # spacer for alignment with selectbox label
+        st.write("")
+        generate = st.button("Generate Tearsheet", type="primary",
+                             key="tearsheet_gen_btn", use_container_width=True)
+
+    if not generate:
+        return
+
+    asset_names = list(opt["asset_names"])
+    weights_arr = np.array(opt[method_key]["weights"], dtype=float)
+    weights_map = {name: float(w) for name, w in zip(asset_names, weights_arr) if w > 1e-6}
+
+    with st.spinner("Building institutional tearsheet… (fetching daily returns, running quantstats)"):
+        try:
+            daily = _load_daily_returns_for_tearsheet(tuple(asset_names))
+        except Exception as exc:
+            st.error(f"Failed to fetch daily returns: {exc}")
+            return
+
+        try:
+            from src.analytics.allocation import portfolio_daily_returns
+            port_rets = portfolio_daily_returns(weights_map, daily)
+            if "US Large Cap" not in daily.columns:
+                st.error("Benchmark (SPY / US Large Cap) daily returns missing.")
+                return
+            bench_rets = daily["US Large Cap"].dropna()
+            # Align indices
+            common_idx = port_rets.index.intersection(bench_rets.index)
+            if len(common_idx) < 250:
+                st.error(f"Insufficient overlapping daily history for tearsheet "
+                         f"({len(common_idx)} days). Need ≥ 250.")
+                return
+            port_rets  = port_rets.loc[common_idx]
+            bench_rets = bench_rets.loc[common_idx]
+        except Exception as exc:
+            st.error(f"Failed to build portfolio return series: {exc}")
+            return
+
+        try:
+            import quantstats as qs
+            qs.extend_pandas()
+
+            out_dir = Path(__file__).resolve().parent.parent.parent / "output" / "tearsheets"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            from datetime import date as _date
+            stamp = _date.today().strftime("%Y%m%d")
+            out_path = out_dir / f"tearsheet_{method_key}_{stamp}.html"
+
+            title = f"{_METHOD_LABELS[method_key]} Portfolio vs. SPY"
+            qs.reports.html(
+                returns=port_rets,
+                benchmark=bench_rets,
+                output=str(out_path),
+                title=title,
+                download_filename=out_path.name,
+            )
+        except Exception as exc:
+            st.error(f"quantstats report generation failed: {exc}")
+            return
+
+    try:
+        html_body = out_path.read_text()
+    except Exception as exc:
+        st.error(f"Failed to read generated tearsheet HTML: {exc}")
+        return
+
+    st.caption(f"Saved to `{out_path.relative_to(Path(__file__).resolve().parent.parent.parent)}`")
+    components.html(html_body, height=2200, scrolling=True)
+
+
 def _render_optimization(data: dict) -> None:
     opt = data.get("optimizations")
     if opt is None:
@@ -524,6 +645,14 @@ def _render_optimization(data: dict) -> None:
     with col5:
         _render_method_card("hrp", opt["hrp"], rf)
 
+    # Row 3: Min CVaR, HERC (Phase 12B — riskfolio-lib)
+    if "cvar" in opt and "herc" in opt:
+        col6, col7 = st.columns(2)
+        with col6:
+            _render_method_card("cvar", opt["cvar"], rf)
+        with col7:
+            _render_method_card("herc", opt["herc"], rf)
+
     # Key Insight banner
     insight = _regime_insight(current, opt)
     components.html(
@@ -543,6 +672,9 @@ def _render_optimization(data: dict) -> None:
         _render_weights_chart(opt)
     with right:
         _render_frontier_chart(opt)
+
+    # ── Performance Tearsheet (Phase 12B — quantstats) ──────────────────────
+    _render_tearsheet_section(opt)
 
     # Method descriptions expander
     with st.expander("📚 Understanding the Methods", expanded=False):
@@ -570,9 +702,17 @@ def _render_optimization(data: dict) -> None:
     <div style="color:#e74c3c;font-weight:600;font-size:14px;margin-bottom:6px;">Hierarchical Risk Parity (HRP)</div>
     <div style="color:{_MUTED};">Machine learning approach using hierarchical clustering to group correlated assets, then allocates recursively (López de Prado, 2016). No return estimates needed. More stable than MVO and minimum variance. Cutting-edge methodology.</div>
   </div>
+  <div class="entry">
+    <div style="color:#f5a623;font-weight:600;font-size:14px;margin-bottom:6px;">Min CVaR (Tail Risk)</div>
+    <div style="color:{_MUTED};">Minimizes expected loss in the worst 5% of scenarios (Conditional Value-at-Risk). Directly targets tail risk rather than symmetric volatility — the standard risk measure for hedge funds, insurance, and regulated institutions (Basel III).</div>
+  </div>
+  <div class="entry">
+    <div style="color:#1abc9c;font-weight:600;font-size:14px;margin-bottom:6px;">HERC (Hierarchical Equal Risk Contribution)</div>
+    <div style="color:{_MUTED};">Extension of HRP that allocates risk equally across hierarchical clusters rather than via recursive bisection. Typically produces more balanced weights in correlated universes (Raffinot, 2018).</div>
+  </div>
 </div>
 </body></html>"""
-        components.html(_methods_explainer_html, height=420, scrolling=False)
+        components.html(_methods_explainer_html, height=620, scrolling=False)
 
     # Timestamp footer
     from datetime import date as _date
@@ -1574,7 +1714,7 @@ def render() -> None:
   <div style="border-left:3px solid {_ACCENT};padding-left:14px;">
     <div style="font-size:22px;font-weight:600;color:{_TEXT};">Asset Allocation</div>
     <div style="font-size:12px;color:{_MUTED};margin-top:4px;">
-      Regime-conditional portfolio optimization &nbsp;&mdash;&nbsp; 5 institutional methods
+      Regime-conditional portfolio optimization &nbsp;&mdash;&nbsp; 7 institutional methods
     </div>
   </div>
 </body></html>""",

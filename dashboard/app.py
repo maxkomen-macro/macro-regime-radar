@@ -1251,6 +1251,14 @@ with tab_dash:
         else:
             st.info("No freshness data available.")
 
+    # ── Macro Forecasts (Phase 12C — Prophet) ─────────────────────────────────
+    section_header("Macro Forecasts")
+    try:
+        from components.macro_forecasts import render_macro_forecasts
+        render_macro_forecasts()
+    except Exception as exc:
+        st.warning(f"Macro Forecasts unavailable: {exc}")
+
     # ── Downloads ─────────────────────────────────────────────────────────────
     section_header("Downloads")
 
