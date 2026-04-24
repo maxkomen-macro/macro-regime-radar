@@ -85,6 +85,20 @@ CREATE TABLE IF NOT EXISTS event_calendar (
     source         TEXT    NOT NULL DEFAULT 'manual_csv',
     created_at     TEXT    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS factor_data (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    date        TEXT    NOT NULL,             -- YYYY-MM-DD
+    mkt_rf      REAL,                         -- Mkt minus Rf, decimal (not %)
+    smb         REAL,                         -- Small-minus-Big
+    hml         REAL,                         -- High-minus-Low
+    rmw         REAL,                         -- Robust-minus-Weak
+    cma         REAL,                         -- Conservative-minus-Aggressive
+    rf          REAL,                         -- risk-free (decimal)
+    source      TEXT    NOT NULL DEFAULT 'openbb_kenneth_french',
+    fetched_at  TEXT    NOT NULL,
+    UNIQUE(date)
+);
 """
 
 

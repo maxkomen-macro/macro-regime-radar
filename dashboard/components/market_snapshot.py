@@ -399,6 +399,139 @@ body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GARCH(1,1) volatility card
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@st.cache_resource(ttl=3600, show_spinner=False)
+def _cached_garch_signal() -> dict:
+    from src.analytics.volatility import compute_garch_signal
+    return compute_garch_signal()
+
+
+def _regime_label_for_signal() -> str | None:
+    """Best-effort current macro regime label. None if unavailable."""
+    try:
+        from src.analytics.regimes import get_current_regime_probs
+        probs = get_current_regime_probs()
+        if not probs:
+            return None
+        label = max(probs, key=probs.get)
+        return label.replace("_", " ").title()
+    except Exception:
+        return None
+
+
+def _render_volatility_card() -> None:
+    """Render the SPY GARCH(1,1) volatility signal card above the watchlist groups."""
+    sig = _cached_garch_signal()
+
+    if sig.get("status") != "ok":
+        reason = sig.get("reason", "unavailable")
+        components.html(
+            f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+* {{ box-sizing:border-box; margin:0; padding:0; }}
+body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
+.card {{ background:#1a1d23; border-radius:10px; border:0.5px solid #30363d;
+        border-top:3px solid #8b949e; padding:14px; max-width:420px; }}
+</style></head><body>
+<div class="card">
+  <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;color:#8b949e;
+              text-transform:uppercase;margin-bottom:6px">SPY Volatility</div>
+  <div style="font-size:13px;color:#e6edf3;margin-bottom:4px">Model unavailable</div>
+  <div style="font-size:10px;color:#8b949e">{reason}</div>
+</div></body></html>""",
+            height=110,
+            scrolling=False,
+        )
+        return
+
+    cv        = sig["conditional_vol_annual_pct"]
+    fcst      = sig["forecast_5d_annual_pct"]
+    realized  = sig.get("realized_vol_30d_pct")
+    regime    = sig["regime"]
+    direction = sig["direction"]
+    spark     = sig["spark_60d"] or []
+
+    regime_color = {"LOW": "#3fb950", "ELEVATED": "#d29922", "HIGH": "#f08785"}[regime]
+    arrow        = "↑" if direction == "rising" else "↓"
+    fcst_color   = "#f08785" if direction == "rising" else "#3fb950"
+
+    # 60-day sparkline as SVG polyline — consistent line chart, unlike the
+    # bar-style spark on ticker cards (a continuous series reads better here).
+    sparkline_html = ""
+    if len(spark) >= 2:
+        w, h = 380, 36
+        mn, mx = min(spark), max(spark)
+        rng = (mx - mn) if mx != mn else 1.0
+        pts = []
+        for i, v in enumerate(spark):
+            x = (i / (len(spark) - 1)) * (w - 4) + 2
+            y = h - 2 - ((v - mn) / rng) * (h - 4)
+            pts.append(f"{x:.1f},{y:.1f}")
+        points = " ".join(pts)
+        sparkline_html = (
+            f'<svg width="100%" height="{h}" viewBox="0 0 {w} {h}" '
+            f'preserveAspectRatio="none" style="display:block;margin-bottom:8px">'
+            f'<polyline points="{points}" fill="none" stroke="{regime_color}" '
+            f'stroke-width="1.25" opacity="0.85" /></svg>'
+        )
+
+    realized_html = (
+        f"<span style=\"color:#e6edf3;font-weight:500\">{realized:.2f}%</span>"
+        if realized is not None else "<span style=\"color:#8b949e\">—</span>"
+    )
+
+    # Regime context one-liner: current macro regime + vol percentile within the
+    # trailing 60 days shown on the sparkline (approximate; full per-regime
+    # historical distribution would require joining `regimes` with vol history —
+    # left as a future refinement rather than faked).
+    macro = _regime_label_for_signal()
+    if len(spark) >= 10:
+        sorted_spark = sorted(spark)
+        rank = sum(1 for v in sorted_spark if v <= cv) / len(sorted_spark)
+        pct = int(round(rank * 100))
+        ctx = f"{macro} · {pct}th pctile of last 60d vol" if macro else f"{pct}th pctile of last 60d vol"
+    else:
+        ctx = macro or ""
+
+    components.html(
+        f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+* {{ box-sizing:border-box; margin:0; padding:0; }}
+body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
+.card {{ background:#1a1d23; border-radius:10px; border:0.5px solid #30363d;
+        border-top:3px solid {regime_color}; padding:14px; max-width:420px; }}
+.pill {{ background-color:{regime_color}; color:#0e1117; font-size:10px;
+        font-weight:600; padding:3px 7px; border-radius:4px;
+        display:inline-block; letter-spacing:0.05em; }}
+</style></head><body><div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+    <div>
+      <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;
+                  color:#8b949e;text-transform:uppercase">SPY Volatility</div>
+      <div style="font-size:10px;color:#8b949e;margin-top:3px">Conditional, annualized</div>
+    </div>
+    <span class="pill">{regime}</span>
+  </div>
+  <div style="font-size:24px;font-weight:500;color:#e6edf3;letter-spacing:-0.02em;
+              line-height:1;margin-bottom:10px">{cv:.2f}%</div>
+  {sparkline_html}
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+    <span style="font-size:10px;color:#8b949e">5D FCST
+      <span style="color:{fcst_color};font-weight:500">{arrow} {fcst:.2f}%</span></span>
+    <span style="font-size:10px;color:#8b949e">30D REALIZED {realized_html}</span>
+  </div>
+  <div style="font-size:10px;color:#8b949e;margin-bottom:4px">{ctx}</div>
+  <div style="font-size:9px;color:#6e7681;letter-spacing:0.02em">GARCH(1,1) · SPY daily returns</div>
+</div></body></html>""",
+        height=230,
+        scrolling=False,
+    )
+
+
 def _is_market_hours() -> bool:
     """Returns True if current time is within NYSE market hours (9:30-16:00 ET)."""
     et = pytz.timezone("America/New_York")
@@ -487,6 +620,9 @@ def _render_market_content(wide_df: pd.DataFrame) -> None:
     # ── Risk-Off/Risk-On gauge ────────────────────────────────────────────────
     score = _compute_risk_score(prices, daily_df)
     _render_risk_gauge(score)
+
+    # ── GARCH(1,1) volatility signal card ─────────────────────────────────────
+    _render_volatility_card()
 
     # ── Grouped ticker sections ───────────────────────────────────────────────
     for group_name, group_cfg in WATCHLIST_GROUPS.items():
