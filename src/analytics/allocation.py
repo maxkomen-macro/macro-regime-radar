@@ -179,6 +179,72 @@ def get_asset_returns(
     return df
 
 
+def get_daily_asset_returns(
+    asset_classes: Optional[List[str]] = None,
+    start_date: str = "2000-01-01",
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Daily returns for the specified asset classes, using the same splicing logic
+    as `get_asset_returns` but without the monthly resample. Used for tearsheet
+    generation (quantstats) and daily factor attribution.
+
+    If `asset_classes` is None, returns all 10.
+    """
+    if end_date is None:
+        end_date = datetime.now().strftime("%Y-%m-%d")
+    names = asset_classes if asset_classes else list(ASSET_CLASSES.keys())
+
+    all_returns: Dict[str, pd.Series] = {}
+    for name in names:
+        if name not in ASSET_CLASSES:
+            continue
+        cfg       = ASSET_CLASSES[name]
+        etf       = cfg["etf"]
+        idx       = cfg["index"]
+        etf_start = cfg["etf_start"]
+
+        etf_prices = _fetch_prices(etf, etf_start, end_date)
+        if len(etf_prices) == 0:
+            continue
+
+        combined = etf_prices.copy()
+
+        if idx is not None and start_date < etf_start:
+            idx_prices = _fetch_prices(idx, start_date, etf_start)
+            if len(idx_prices) > 0:
+                first_etf_date = etf_prices.index[0]
+                pre_splice     = idx_prices[idx_prices.index < first_etf_date]
+                if len(pre_splice) > 0:
+                    last_idx_price  = pre_splice.iloc[-1]
+                    first_etf_price = etf_prices.iloc[0]
+                    scale           = first_etf_price / last_idx_price if last_idx_price != 0 else 1.0
+                    scaled_pre      = pre_splice * scale
+                    combined        = pd.concat([scaled_pre, etf_prices])
+                    combined        = combined[~combined.index.duplicated(keep="last")]
+                    combined        = combined.sort_index()
+
+        daily_returns = combined.pct_change().dropna()
+        all_returns[name] = daily_returns
+
+    df = pd.DataFrame(all_returns)
+    df.index = pd.to_datetime(df.index)
+    df.index.name = "date"
+    return df
+
+
+def portfolio_daily_returns(weights: Dict[str, float], daily_returns: pd.DataFrame) -> pd.Series:
+    """
+    Combine daily asset returns into a single portfolio return series using static
+    weights. Drops any dates where the required assets have NaN (pre-inception).
+    """
+    names    = [n for n in weights.keys() if n in daily_returns.columns]
+    w        = np.array([weights[n] for n in names], dtype=float)
+    sub      = daily_returns[names].dropna()
+    port_ret = pd.Series(sub.values @ w, index=sub.index, name="portfolio")
+    return port_ret
+
+
 # ── Regime data ────────────────────────────────────────────────────────────────
 
 def get_regime_history() -> pd.DataFrame:
@@ -598,6 +664,107 @@ def hierarchical_risk_parity_optimize(
         "volatility":    port_vol,
         "method":        "Hierarchical Risk Parity",
         "cluster_order": [asset_names[i] for i in sort_idx],
+    }
+
+
+def cvar_optimize(
+    monthly_returns: pd.DataFrame,
+    cov_matrix: np.ndarray,
+    max_weight: float = 0.40,
+    min_weight: float = 0.0,
+    alpha: float = 0.05,
+) -> Dict:
+    """
+    Min CVaR (tail-risk) portfolio via riskfolio-lib.
+
+    `monthly_returns` must already be filtered to the target regime and to `asset_names`
+    aligned with `cov_matrix` (which is ANNUALIZED — consistent with the rest of this
+    module). Weights are optimized on monthly returns; the returned volatility is
+    annualized via the supplied cov matrix.
+    """
+    import riskfolio as rp
+
+    asset_names = list(monthly_returns.columns)
+    n           = len(asset_names)
+
+    port = rp.Portfolio(returns=monthly_returns.dropna())
+    port.assets_stats(method_mu="hist", method_cov="hist")
+    port.upperlng = max_weight
+    port.lowerlng = min_weight
+
+    w_df = port.optimization(
+        model="Classic", rm="CVaR", obj="MinRisk",
+        rf=0, l=0, hist=True,
+    )
+
+    if w_df is None or w_df.empty:
+        weights = np.full(n, 1.0 / n)
+        converged = False
+    else:
+        weights = w_df.reindex(asset_names).to_numpy().flatten()
+        weights = np.nan_to_num(weights, nan=0.0)
+        weights = np.clip(weights, 0.0, max_weight)
+        total = weights.sum()
+        weights = weights / total if total > 0 else np.full(n, 1.0 / n)
+        converged = True
+
+    ann_vol = float(np.sqrt(weights @ cov_matrix @ weights))
+
+    return {
+        "weights":    weights,
+        "volatility": ann_vol,
+        "method":     "Min CVaR (Tail Risk)",
+        "converged":  converged,
+        "alpha":      alpha,
+    }
+
+
+def herc_optimize(
+    monthly_returns: pd.DataFrame,
+    cov_matrix: np.ndarray,
+    max_weight: float = 0.40,
+) -> Dict:
+    """
+    Hierarchical Equal Risk Contribution (HERC) via riskfolio-lib.
+
+    HERC clusters assets and allocates risk equally within each cluster, then
+    across clusters. More stable than classical HRP for highly correlated universes.
+    """
+    import riskfolio as rp
+
+    asset_names = list(monthly_returns.columns)
+    n           = len(asset_names)
+
+    port = rp.HCPortfolio(returns=monthly_returns.dropna())
+
+    w_df = port.optimization(
+        model="HERC",
+        codependence="pearson",
+        rm="MV",
+        rf=0,
+        linkage="ward",
+        max_k=10,
+        leaf_order=True,
+    )
+
+    if w_df is None or w_df.empty:
+        weights = np.full(n, 1.0 / n)
+        converged = False
+    else:
+        weights = w_df.reindex(asset_names).to_numpy().flatten()
+        weights = np.nan_to_num(weights, nan=0.0)
+        weights = np.clip(weights, 0.0, max_weight)
+        total = weights.sum()
+        weights = weights / total if total > 0 else np.full(n, 1.0 / n)
+        converged = True
+
+    ann_vol = float(np.sqrt(weights @ cov_matrix @ weights))
+
+    return {
+        "weights":    weights,
+        "volatility": ann_vol,
+        "method":     "HERC",
+        "converged":  converged,
     }
 
 
@@ -1120,6 +1287,15 @@ def get_allocation_data() -> Dict:
         mu  = regime_stats[current_regime]["mean"][asset_names].values
         cov = cov_df.loc[asset_names, asset_names].values
 
+        # Raw monthly returns for the current regime — needed by riskfolio-based
+        # optimizers (CVaR, HERC) which run stats on the returns themselves.
+        returns_with_regime = returns.copy()
+        returns_with_regime["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
+        regime_monthly_returns = (
+            returns_with_regime.loc[returns_with_regime["regime"] == current_regime, asset_names]
+            .dropna()
+        )
+
         print("\nRunning optimizations...")
         mvo      = mean_variance_optimize(mu, cov, rf_rate)
         min_var  = minimum_variance_optimize(cov)
@@ -1163,11 +1339,50 @@ def get_allocation_data() -> Dict:
                 "method":          "HRP (fallback)",
             }
 
+        # Min CVaR — tail-risk optimization via riskfolio (with fallback)
+        try:
+            cvar_result = cvar_optimize(regime_monthly_returns, cov)
+            cvar_result["expected_return"] = float(cvar_result["weights"] @ mu)
+            cvar_result["sharpe_ratio"]    = _port_sharpe(
+                cvar_result["weights"], mu, cov, rf_rate
+            )
+        except Exception as e:
+            print(f"  CVaR optimization failed: {e}, using equal weights")
+            eq_w = np.ones(len(asset_names)) / len(asset_names)
+            cvar_result = {
+                "weights":         eq_w,
+                "expected_return": float(eq_w @ mu),
+                "volatility":      float(np.sqrt(eq_w @ cov @ eq_w)),
+                "sharpe_ratio":    0.0,
+                "method":          "Min CVaR (fallback)",
+                "converged":       False,
+            }
+
+        # HERC — hierarchical equal risk contribution (with fallback)
+        try:
+            herc_result = herc_optimize(regime_monthly_returns, cov)
+            herc_result["expected_return"] = float(herc_result["weights"] @ mu)
+            herc_result["sharpe_ratio"]    = _port_sharpe(
+                herc_result["weights"], mu, cov, rf_rate
+            )
+        except Exception as e:
+            print(f"  HERC optimization failed: {e}, using equal weights")
+            eq_w = np.ones(len(asset_names)) / len(asset_names)
+            herc_result = {
+                "weights":         eq_w,
+                "expected_return": float(eq_w @ mu),
+                "volatility":      float(np.sqrt(eq_w @ cov @ eq_w)),
+                "sharpe_ratio":    0.0,
+                "method":          "HERC (fallback)",
+                "converged":       False,
+            }
+
         frontier = generate_efficient_frontier(mu, cov, rf_rate)
 
         for label, res in [
             ("MVO", mvo), ("Min Var", min_var), ("Risk Parity", rp),
             ("Black-Litterman", bl_result), ("HRP", hrp_result),
+            ("Min CVaR", cvar_result), ("HERC", herc_result),
         ]:
             print(f"  {label:16s}  ret={res['expected_return']:+.1%}  "
                   f"vol={res['volatility']:.1%}  Sharpe={res['sharpe_ratio']:.2f}")
@@ -1178,6 +1393,8 @@ def get_allocation_data() -> Dict:
             "risk_parity":      rp,
             "black_litterman":  bl_result,
             "hrp":              hrp_result,
+            "cvar":             cvar_result,
+            "herc":             herc_result,
             "frontier":         frontier,
             "asset_names":      asset_names,
         }
@@ -1219,7 +1436,7 @@ def get_allocation_data() -> Dict:
     # Add portfolio CVaR per optimisation method
     if optimizations is not None:
         opt_assets = optimizations.get("asset_names", list(returns.columns))
-        for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp"):
+        for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"):
             if key in optimizations:
                 w = np.array(optimizations[key]["weights"])
                 optimizations[key]["cvar_95"] = calculate_cvar(
@@ -1252,7 +1469,7 @@ def get_allocation_data() -> Dict:
             regime_factors = calculate_regime_factor_performance(factor_rets, regimes_df)
         if optimizations is not None:
             opt_assets = optimizations.get("asset_names", list(returns.columns))
-            for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp"):
+            for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"):
                 if key in optimizations:
                     w = np.array(optimizations[key]["weights"])
                     port_rets = (returns[opt_assets] * w).sum(axis=1)
@@ -1320,7 +1537,7 @@ if __name__ == "__main__":
     if data["optimizations"]:
         opt = data["optimizations"]
         print("\n--- Optimization Results (5 Methods) ---")
-        for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp"):
+        for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"):
             if key not in opt:
                 continue
             r = opt[key]
