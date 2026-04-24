@@ -11,3 +11,4 @@ logs/*
 *.db-wal
 data/*.db-shm
 data/*.db-wal
+output/tearsheets/
