@@ -262,7 +262,7 @@ def score_significance(item: dict, current_regime: str) -> dict:
     Returns dict with keys: market_impact, deal_size, sector_relevance,
     time_sensitivity, regime_relevance, overall_significance.
     """
-    text = (item.get("headline", "") + " " + item.get("summary", "")).lower()
+    text = ((item.get("headline") or "") + " " + (item.get("summary") or "")).lower()
     category = item.get(
         "category",
         classify_category(item.get("headline", ""), item.get("summary", "")),
