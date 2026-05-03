@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.analytics.chat import AgentError, MacroRadarAgent
+from src.analytics.chat import (
+    AgentError,
+    MacroRadarAgent,
+    NetworkError,
+    RateLimited,
+)
 from src.config import get_secret
 
 SUGGESTED_PROMPTS = [
@@ -85,6 +90,12 @@ def _chat_dialog() -> None:
                 ]
                 stream = agent.ask_streaming(user_input, history=history)
                 full = st.write_stream(stream)
+            except RateLimited:
+                full = "_Hit a rate limit — try again in a moment._"
+                st.markdown(full)
+            except NetworkError:
+                full = "_AI service unreachable. Please retry._"
+                st.markdown(full)
             except AgentError as exc:
                 full = f"_AI assistant error: {exc}_"
                 st.markdown(full)
