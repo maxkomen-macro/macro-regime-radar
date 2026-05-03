@@ -8,7 +8,7 @@ name: Intraday Market Refresh
   workflow_dispatch:
 
 concurrency:
-  group: intraday-refresh
+  group: data-write
   cancel-in-progress: false
 
 permissions:
@@ -60,7 +60,17 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/macro_radar.db
           git commit -m "Intraday refresh [skip ci]"
-          git stash --include-untracked
-          git pull --rebase
-          git stash pop || true
-          git push
+          for i in 1 2 3 4 5; do
+            git fetch origin main
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            git reset --soft origin/main
+            git commit -m "$COMMIT_MSG"
+            if git push; then
+              echo "Push succeeded on attempt $i"
+              exit 0
+            fi
+            echo "Push failed on attempt $i, retrying..."
+            sleep $((RANDOM % 10 + 5))
+          done
+          echo "Push failed after 5 attempts"
+          exit 1
