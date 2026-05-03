@@ -1084,6 +1084,12 @@ def _render_calendar_section() -> None:
 
 def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
     """Main entry point — call from app.py inside the Events & Intelligence tab."""
+    from utils.tab_context import register_tab_context
+    register_tab_context("Events & Intelligence", {
+        "shows": "ranked news headlines (5-dimension significance), regime interpretations, Perplexity-cited research",
+        "key_tools": ["get_recent_headlines"],
+        "tables": ["news_feed"],
+    })
 
     # ── Session state defaults ────────────────────────────────────────────────
     if "ei_cat" not in st.session_state:

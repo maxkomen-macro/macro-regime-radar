@@ -901,6 +901,22 @@ tab_rec, tab_lbo, tab_alloc, tab_meth = st.tabs([
 # ─────────────────────────────────────────────────────────────────────────────
 
 with tab_dash:
+    # ── Tab context registration (Phase 12) ──────────────────────────────────
+    try:
+        from utils.tab_context import register_tab_context
+        _dash_metrics = {
+            "shows": "regime read-through, signal strip, key indicators (CPI/UNRATE/spread/VIX), regime history, drivers panel",
+            "key_tools": ["get_current_regime", "get_signal_status", "get_recession_probability"],
+        }
+        if latest_regime is not None:
+            _dash_metrics["regime_label"]      = str(latest_regime["label"])
+            _dash_metrics["regime_confidence"] = float(latest_regime["confidence"])
+        if not latest_signals.empty:
+            _dash_metrics["signals_triggered"] = int(latest_signals["triggered"].sum())
+        register_tab_context("Dashboard", _dash_metrics)
+    except Exception:
+        pass
+
     # ── Timestamps ───────────────────────────────────────────────────────────
     _render_timestamps(as_of)
 

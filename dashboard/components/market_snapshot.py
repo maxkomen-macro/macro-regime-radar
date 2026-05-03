@@ -545,6 +545,11 @@ def _is_market_hours() -> bool:
 
 def render_market_snapshot(wide_df: pd.DataFrame) -> None:
     """Main entry point — wraps content in st.fragment during market hours."""
+    from utils.tab_context import register_tab_context
+    register_tab_context("Markets", {
+        "shows": "risk-sentiment composite, GARCH volatility regime, sector heatmap, ticker cards (SPY/QQQ/TLT/GLD/etc.)",
+        "key_tools": ["get_market_snapshot"],
+    })
     if _is_market_hours():
         @st.fragment(run_every=30)
         def _live_content():

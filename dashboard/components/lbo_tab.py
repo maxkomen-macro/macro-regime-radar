@@ -463,9 +463,15 @@ def _render_market_context() -> None:
 # ---------------------------------------------------------------------------
 
 def render() -> None:
+    from utils.tab_context import register_tab_context
     # Load live defaults once
     defaults = get_lbo_defaults()
     live_rate = defaults["lbo_all_in_rate"]
+    register_tab_context("LBO Calculator", {
+        "shows": "interactive LBO model — entry EV, financing structure, IRR / MOIC / equity gain. Live all-in rate sourced from credit data.",
+        "lbo_all_in_rate": live_rate,
+        "key_tools":       ["get_credit_snapshot"],
+    })
 
     # Initialize boolean flag
     if "lbo_use_live_rate" not in st.session_state:

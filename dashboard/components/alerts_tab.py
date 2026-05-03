@@ -39,6 +39,12 @@ def _friendly_name(raw: str) -> str:
 
 def render_alerts_tab() -> None:
     """Main entry point — call from app.py inside the Alerts tab."""
+    from utils.tab_context import register_tab_context
+    register_tab_context("Signals & Alerts", {
+        "shows": "live macro/market alerts feed grouped by level (risk/watch/info), plus 'what's priced' macro signal scoreboard",
+        "key_tools": ["get_signal_status", "query_database"],
+        "tables": ["alert_feed", "signals"],
+    })
     section_header("ALERTS FEED")
     st.caption("Macro signal and market-based alerts, newest first.")
     st.divider()

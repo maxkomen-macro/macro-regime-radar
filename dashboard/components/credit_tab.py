@@ -708,8 +708,18 @@ tr:last-child {{ border-bottom:none; }}
 def render() -> None:
     """Render the full Credit tab."""
     from src.analytics.credit import get_credit_metrics
+    from utils.tab_context import register_tab_context
 
     m = get_credit_metrics()
+    register_tab_context("Credit", {
+        "shows": "IG/HY/CCC/BB/B OAS spreads, distress ratio, LBO all-in financing cost, credit regime",
+        "credit_regime":   m.get("credit_label"),
+        "ig_oas_bps":      m.get("ig_oas"),
+        "hy_oas_bps":      m.get("hy_oas"),
+        "hy_ig_ratio":     m.get("hy_ig_ratio"),
+        "lbo_all_in_cost": m.get("lbo_all_in_cost"),
+        "key_tools":       ["get_credit_snapshot"],
+    })
 
     label = m.get("credit_label", "No data")
     color = m.get("credit_label_color", "#8b949e")

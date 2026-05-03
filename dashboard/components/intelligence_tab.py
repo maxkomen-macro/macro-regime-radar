@@ -717,6 +717,11 @@ def _render_intelligence_dashboard_card() -> None:
 
 def render() -> None:
     """Render the full Market Intelligence tab."""
+    from utils.tab_context import register_tab_context
+    register_tab_context("Intelligence", {
+        "shows": "regime narrative, conviction, transition probabilities, playbook bias, duration",
+        "key_tools": ["get_current_regime", "get_signal_status"],
+    })
 
     # ── Data loading (cached) ─────────────────────────────────────────────────
     @st.cache_data(ttl=60)
