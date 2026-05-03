@@ -88,6 +88,7 @@ flowchart LR
 - **Daily and weekly HTML memos** — fully automated; daily memo via `src/daily_memo.py`, weekly memo via `src/memo.py`
 - **Bloomberg dark aesthetic** — every component built with a consistent dark color system (`#0d1117` background, `#161b22` cards, `#30363d` borders, `#4a9eff` accent)
 - **Four automated workflows** — daily macro refresh, intraday refresh during market hours, daily memo generation, weekly memo generation. Both DB-writing workflows share a `data-write` concurrency group and use a soft-reset retry loop to prevent SQLite binary conflicts
+- **Conversational AI assistant** — floating bottom-right widget available on every tab. Tab-aware (knows what you're looking at), tool-using (queries the live SQLite DB for regime / signal / credit / market / news state in natural language), session-only history. SELECT-only SQL guard, 10-iteration tool-call cap. Powered by Claude Sonnet 4.5 via the Anthropic SDK
 
 ---
 
