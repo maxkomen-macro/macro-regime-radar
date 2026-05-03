@@ -705,12 +705,17 @@ tr:last-child {{ border-bottom:none; }}
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_credit_metrics() -> dict:
+    from src.analytics.credit import get_credit_metrics
+    return get_credit_metrics()
+
+
 def render() -> None:
     """Render the full Credit tab."""
-    from src.analytics.credit import get_credit_metrics
     from utils.tab_context import register_tab_context
 
-    m = get_credit_metrics()
+    m = _load_credit_metrics()
     register_tab_context("Credit", {
         "shows": "IG/HY/CCC/BB/B OAS spreads, distress ratio, LBO all-in financing cost, credit regime",
         "credit_regime":   m.get("credit_label"),
