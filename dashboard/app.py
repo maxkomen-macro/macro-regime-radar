@@ -1409,6 +1409,16 @@ with tab_meth:
         st.error(f"Methodology error: {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Floating AI Analyst (Phase 12) — appears on every tab
+# ─────────────────────────────────────────────────────────────────────────────
+
+try:
+    from components.chat_widget import render_chat_launcher
+    render_chat_launcher()
+except Exception as exc:
+    st.caption(f"AI Analyst widget error: {exc}")
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Footer
 # ─────────────────────────────────────────────────────────────────────────────
 
