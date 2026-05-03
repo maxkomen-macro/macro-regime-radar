@@ -16,7 +16,7 @@ Single source of truth for Claude Code sessions on this repo. Keep tight; verify
 
 ## Phase Status
 
-Phases 0–11 are complete. Phase 12 (conversational AI assistant) is the next planned phase but has not been started — **do not write Phase 12 architecture into this file until it ships.** For per-phase scope, read `git log` and recent commit messages.
+Phases 0–12 are complete. For per-phase scope, read `git log` and recent commit messages.
 
 ---
 
@@ -219,8 +219,66 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 - Do not replace the workflow retry loop with stash/rebase patterns.
 - Do not remove `data/macro_radar.db merge=ours` from `.gitattributes`.
 - Do not introduce historical-range-based `fill_pct` for signal cards.
-- Do not document Phase 12 architecture in this file until Phase 12 ships.
 - Do not silently swallow errors — surface them in the UI or log to session state.
+- Do not let the chat agent run non-`SELECT` SQL — `is_safe_select` in `src/analytics/chat.py` enforces this and is covered by `tests/test_chat_sql_guard.py`.
+- Do not persist chat history to the DB — Phase 12 is intentionally session-only so visitors never see prior visitors' conversations.
+
+---
+
+## Phase 12 — Conversational AI Assistant
+
+**Status:** Complete (May 3 2026).
+
+**Where it lives:** Floating bottom-right FAB rendered on every tab. Click opens an `@st.dialog` modal containing the chat. Wired in once at the end of `dashboard/app.py`, after the last `with tab_meth:` block.
+
+**Files added:**
+- `src/analytics/chat.py` — `MacroRadarAgent`, `SYSTEM_PROMPT_TEMPLATE`, 8 tool definitions, tool-use loop (10-iteration cap), `is_safe_select` SQL guard, `RateLimited` / `NetworkError` / `AgentError` exception hierarchy.
+- `dashboard/components/chat_widget.py` — `render_chat_launcher()` (FAB) and `_chat_dialog()` (modal). Streams via `st.write_stream` over `MacroRadarAgent.ask_streaming`.
+- `dashboard/utils/tab_context.py` — `register_tab_context(tab_name, metrics, kind="live")` writes to `st.session_state.current_tab_context`.
+- `tests/test_chat_sql_guard.py` — 21 unit tests covering allowed SELECT/CTE forms and rejecting DDL/DML/PRAGMA/ATTACH/chained statements.
+
+**Files modified:** `dashboard/app.py` (launcher wire-up + Dashboard tab context call); all 11 tab render functions in `dashboard/components/` plus the inline Dashboard block (`register_tab_context` call at entry).
+
+**Tools (8):**
+- `query_database(sql)` — read-only SELECT only; capped at 200 rows.
+- `get_current_regime()` — latest `regimes` row (label, confidence, growth/inflation trends, 4 probabilities).
+- `get_signal_status(signal_name?)` — latest signal rows from `signals`.
+- `get_recession_probability()` — latest + 1m / 3m / 6m prior `prob_recession`.
+- `get_credit_snapshot()` — latest IG/HY/CCC/BB/B OAS plus 10Y UST (returned in both pct and bps).
+- `get_market_snapshot(ticker)` — latest close + 1d/5d/1m/YTD return from `market_daily`.
+- `get_recent_headlines(limit, min_significance)` — top items from `news_feed` with `regime_interpretation` and `perplexity_research`.
+- `explain_current_view()` — reads `st.session_state.current_tab_context`.
+
+**Model:** `claude-sonnet-4-5-20250929` via the official `anthropic` SDK (already in `requirements.txt`).
+
+**API key:** `ANTHROPIC_API_KEY` loaded via `src.config.get_secret` (same pattern as Phase 11 news pipeline). Missing key → FAB silently replaced with a muted "AI Assistant unavailable — API key not configured" caption; no traceback.
+
+**SQL guard:** `is_safe_select` rejects anything that isn't a single `SELECT` (or `WITH … SELECT`) statement. Bans interior `;`, all DDL/DML, PRAGMA, ATTACH/DETACH, VACUUM, REINDEX, TRUNCATE.
+
+**Cost guards:** history sent to the API is capped at the last `HISTORY_TURN_LIMIT = 20` turns. Token usage accumulates in `st.session_state.chat_token_log` (input/output) and renders in the dialog footer.
+
+**Persistence model:** Session-only via `st.session_state.chat_messages`. NO new DB table. Reason: public Streamlit app shared across visitors; persistent history would leak prior visitors' conversations to recruiters. Refresh clears history.
+
+**Suggested prompts (recruiter-facing — do not change without thinking):**
+1. "What's driving the current regime?"
+2. "Explain what I'm looking at on this tab"
+3. "Should I be worried about recession risk right now?"
+4. "Top headlines today and why they matter"
+
+**Tab context pattern:** every tab calls `register_tab_context("<TabName>", {...})` at the top of its render function. The metrics dict is intentionally a small static description (`shows`, `key_tools`) plus 0–6 live numeric metrics where they are cheap to extract — the agent's other tools fetch live data when needed. `Methodology` registers with `kind="reference"` since its content is static.
+
+**Known gotchas discovered during build:**
+- `anthropic` was pinned in `requirements.txt` but not actually installed locally — installed it during dev. The Streamlit Cloud build will pick it up from `requirements.txt` automatically.
+- BAML OAS values in `raw_series` are stored as percent (e.g., `0.81`), not basis points — `get_credit_snapshot` returns both `value_pct` and `value_bps` to avoid ambiguity in tool output.
+- The FAB uses CSS `:has()` selectors targeting a marker `<div id="macro-chat-fab-mark">` to position the next `stElementContainer` (the button) as fixed bottom-right. Modern browsers only.
+- `st.dialog` (Streamlit ≥1.31) needs to be called during a script run to open. The button click triggers a rerun and re-invokes the decorated function, which is sufficient.
+- Streaming uses `client.messages.stream(...).text_stream` events — tool_use blocks resolve silently between iterations.
+
+**Deferred to Phase 12.5:**
+- Web search tool (latest news beyond `news_feed`).
+- Inline chart generation in chat responses.
+- Persistent history with auth.
+- Voice I/O.
 
 ---
 
@@ -239,4 +297,4 @@ When in doubt: delete more than you add. Stale documentation is worse than missi
 
 ---
 
-*Last meaningful update: May 2 2026 — README audit corrections folded in (Perplexity as first-class data source, USSLIND framing fixed, env var name corrected, market data path clarified).*
+*Last meaningful update: May 3 2026 — Phase 12 (conversational AI assistant) shipped: floating tab-aware chat with read-only SQL guard, 8 tools, session-only history.*
