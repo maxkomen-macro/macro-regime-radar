@@ -391,6 +391,18 @@ class AgentError(Exception):
     """Raised for unrecoverable agent errors surfaced to the UI."""
 
 
+class RateLimited(AgentError):
+    """Raised when the upstream API rate-limits us."""
+
+
+class NetworkError(AgentError):
+    """Raised on connection issues talking to the upstream API."""
+
+
+# Cap conversation history sent to the API to avoid runaway costs.
+HISTORY_TURN_LIMIT = 20
+
+
 class MacroRadarAgent:
     """Anthropic-backed agent with tool-use loop and SQL guard."""
 
@@ -421,7 +433,9 @@ class MacroRadarAgent:
         to the final answer, those chunks are yielded too (typical end-state).
         """
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(state_snapshot=_build_state_snapshot())
-        messages: list[dict] = list(history or [])
+        # Trim history to the last N turns (each user/assistant pair = 2 entries).
+        trimmed = list(history or [])[-HISTORY_TURN_LIMIT * 2:]
+        messages: list[dict] = trimmed
         messages.append({"role": "user", "content": user_msg})
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
@@ -437,6 +451,10 @@ class MacroRadarAgent:
                         if getattr(event, "type", None) == "text":
                             yield event.text
                     final = stream.get_final_message()
+            except anthropic.RateLimitError as exc:
+                raise RateLimited("Hit a rate limit — try again in a moment.") from exc
+            except anthropic.APIConnectionError as exc:
+                raise NetworkError("AI service unreachable. Please retry.") from exc
             except anthropic.APIStatusError as exc:
                 raise AgentError(f"Anthropic API error: {exc}") from exc
 
