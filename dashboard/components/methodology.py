@@ -643,6 +643,18 @@ not predictive signals.
 
 def render_methodology() -> None:
     """Render the Methodology tab — 5 sections with real values from src/."""
+    from utils.tab_context import register_tab_context
+    register_tab_context(
+        "Methodology",
+        {
+            "shows": "regime framework (2x2 growth/inflation), signal definitions and thresholds, model lineage, data sources, pipeline schedule",
+            "regime_taxonomy": ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"],
+            "growth_indicator": "INDPRO 3-month OLS slope",
+            "inflation_indicator": "CPIAUCSL 3-month OLS slope",
+            "recession_model": "Logistic regression trained on NBER recession dates",
+        },
+        kind="reference",
+    )
     _render_regime_framework()
     _render_signal_definitions()
     _render_threshold_proximity()

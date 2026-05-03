@@ -265,7 +265,16 @@ def _generate_interpretation(m: dict) -> str:
 # ── Public: full tab render ───────────────────────────────────────────────────
 
 def render() -> None:
+    from utils.tab_context import register_tab_context
     m = _get_recession_data()
+    register_tab_context("Recession Risk", {
+        "shows": "12-month recession probability, yield-curve 2s10s spread, model vs market divergence, inversion duration",
+        "recession_probability_12m": m.get("recession_prob"),
+        "recession_label":           m.get("recession_label"),
+        "yield_curve_2s10s":         m.get("yield_curve_spread"),
+        "is_inverted":               m.get("is_inverted"),
+        "key_tools":                 ["get_recession_probability"],
+    })
 
     # ── SECTION 1: Status bar ─────────────────────────────────────────────────
     if m["recession_label"] == "No data":

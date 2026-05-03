@@ -37,6 +37,12 @@ HORIZON_ORDER = {h: i for i, h in enumerate(HORIZONS)}
 
 def render_backtests() -> None:
     """Main entry point — call from app.py inside the Backtests tab."""
+    from utils.tab_context import register_tab_context
+    register_tab_context("Historical Analysis", {
+        "shows": "SPY forward returns by signal trigger and regime cohort across 1M/3M/6M/12M horizons",
+        "key_tools": ["query_database"],
+        "tables": ["backtest_results"],
+    })
     section_header("SIGNAL & REGIME BACKTESTS")
     st.caption("Historical SPY forward returns following signal triggers and regime periods.")
     st.divider()

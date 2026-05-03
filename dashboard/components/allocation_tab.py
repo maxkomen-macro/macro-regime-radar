@@ -1708,6 +1708,12 @@ def _load_allocation_data() -> dict:
 
 def render() -> None:
     """Entry point called from dashboard/app.py."""
+    from utils.tab_context import register_tab_context
+    register_tab_context("Asset Allocation", {
+        "shows": "regime-conditional asset return stats, optimization methods (MVO / min-var / risk-parity), efficient frontier",
+        "key_tools": ["query_database"],
+        "tables": ["factor_data", "market_daily"],
+    })
     components.html(
         f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="background:{_PAGE_BG};font-family:{_FONT};margin:0;padding:2px 0 4px 2px;">
