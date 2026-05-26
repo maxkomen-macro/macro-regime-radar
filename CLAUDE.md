@@ -9,7 +9,7 @@ Single source of truth for Claude Code sessions on this repo. Keep tight; verify
 - **Live:** macro-regime-radar.streamlit.app
 - **Repo:** github.com/maxkomen-macro/macro-regime-radar
 - **Local path:** `/Users/maxkomen/Python Macro/macro-regime-radar` (note the space — escape in shell)
-- **Stack:** Python 3.12, Streamlit, SQLite (`data/macro_radar.db`), FRED + yfinance + Finnhub + NewsAPI, Anthropic API, Perplexity Sonar API, scikit-learn, plotly/altair, openbb, arch, riskfolio-lib, quantstats, prophet. Hosted on Streamlit Community Cloud, automated via GitHub Actions.
+- **Stack:** Python 3.12, Streamlit, SQLite (`data/macro_radar.db`), FRED + yfinance + Finnhub + NewsAPI + RSS (feedparser), Anthropic API, Perplexity Sonar API, scikit-learn, plotly/altair, openbb, arch, riskfolio-lib, quantstats, prophet. Hosted on Streamlit Community Cloud, automated via GitHub Actions.
 - **Tabs:** 11 total. Names live in `dashboard/app.py` (around line 893).
 
 ---
@@ -43,7 +43,7 @@ Dark theme only. No alternative palettes.
 2. **Caching:** `@st.cache_resource` for scikit-learn estimators, fitted pipelines, and other model objects. `@st.cache_data` for DataFrames, arrays, dicts. Mixing these causes pickling errors or silently stale models.
 3. **DataFrames:** pass `width="stretch"` (the new syntax replacing deprecated `use_container_width=True`).
 4. **Pandas:** use `df.loc[mask, col] = value`. Never use chained indexing `df[col][mask] = value` — raises `ChainedAssignmentError` in modern pandas.
-5. **Fragments:** scope `st.fragment(run_every=N)` narrowly. Wrapping a whole tab in a fragment causes session state issues.
+5. **Fragments:** scope `st.fragment(run_every=N)` narrowly. Wrapping a whole tab in a fragment causes session state issues. Example: the Events & Intelligence two-column feed (`_render_feed` in `events_tab.py`) is a fragment, and headline clicks call `st.rerun(scope="fragment")` so selecting an article re-renders only the feed — not the summary-bar / calendar `components.html` iframes. That full-tab rerun was the source of click latency.
 
 ---
 
@@ -55,7 +55,7 @@ Dark theme only. No alternative palettes.
 - **`USSLIND` is a frozen historical series.** FRED stopped publishing it in February 2020 — the local DB has 288 rows ending `2020-02-01` and that is the entire dataset that will ever exist. The series is still present in `RECESSION_SERIES` (`src/config.py`) because it is used as historical training data for the recession model. **Never remove `USSLIND` from config without first confirming the recession model has been retrained without it.** For live recession signal computation, the breakeven proxy above is what's actually being read.
 - **IRR:** `numpy.irr` was removed in recent numpy versions. Use binary search on NPV. Do not reintroduce `numpy.irr`. Implementation lives in `src/analytics/lbo.py` (look for `_compute_irr`).
 - **Market data:** `yfinance` (keyless) for both daily and intraday. `src/market_data/polygon.py` exists as legacy code and `POLYGON_API_KEY` is still read from secrets, but it is **not in the active fetch path.** Live workflow `intraday-refresh.yml` says explicitly "yfinance — no API key needed". If you find yourself touching `polygon.py`, you're probably on the wrong path — verify with the user before continuing.
-- **News pipeline:** Finnhub (general + M&A) and NewsAPI (macro + M&A) are ingested via `src/analytics/news.py`. Five-dimension significance scoring lives there. Top-significance items get an Anthropic interpretation pass and a per-item Perplexity Sonar (cited research) enrichment. Both outputs persist into `news_feed` (`regime_interpretation` and `perplexity_research` columns).
+- **News pipeline:** Finnhub (general + M&A), NewsAPI (macro + M&A), and keyless **RSS feeds** (`fetch_rss_news` + `RSS_FEEDS`: Federal Reserve, NYT Business, CNBC, FT Markets, MarketWatch — via `feedparser`) are ingested via `src/analytics/news.py`. All three flow through the same dedupe → classify → five-dimension significance scoring → store path. Top-significance items get an Anthropic interpretation pass and a per-item Perplexity Sonar (cited research) enrichment. Both outputs persist into `news_feed` (`regime_interpretation` and `perplexity_research` columns). RSS source labels are tier-colored in the dashboard via `events_tab.SOURCE_TIERS`.
 
 ---
 

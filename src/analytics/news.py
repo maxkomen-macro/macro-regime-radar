@@ -375,6 +375,72 @@ def fetch_newsapi_news(api_key: str, hours_back: int = 72) -> list[dict]:
     return results
 
 
+# ── RSS Fetcher ────────────────────────────────────────────────────────────────
+
+# Curated free, high-signal macro/markets RSS feeds. No API key required.
+# (source_label, feed_url). source_label drives tier coloring in the dashboard
+# via events_tab.SOURCE_TIERS (ft / nyt / cnbc / marketwatch already keyed).
+RSS_FEEDS = [
+    ("Federal Reserve", "https://www.federalreserve.gov/feeds/press_all.xml"),
+    ("NYT Business",    "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml"),
+    ("CNBC",            "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"),
+    ("FT Markets",      "https://www.ft.com/markets?format=rss"),
+    ("MarketWatch",     "https://feeds.content.dowjones.io/public/rss/mw_topstories"),
+]
+
+_RSS_UA = "Mozilla/5.0 (compatible; MacroRegimeRadar/1.0; +https://macro-regime-radar.streamlit.app)"
+
+
+def fetch_rss_news(
+    hours_back: int = 48,
+    feeds: list[tuple[str, str]] | None = None,
+) -> list[dict]:
+    """Fetch recent items from a curated set of financial RSS feeds.
+
+    Each feed is fetched with a hard timeout so a slow/hung feed can't stall
+    the pipeline, then parsed with feedparser (tolerant of the RSS/Atom format
+    variety across outlets). Items older than `hours_back` are dropped. Returns
+    the same dict shape as the Finnhub/NewsAPI fetchers.
+    """
+    import feedparser
+
+    feed_list = feeds if feeds is not None else RSS_FEEDS
+    cutoff    = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+    results: list[dict] = []
+
+    for label, url in feed_list:
+        try:
+            resp = requests.get(url, timeout=15, headers={"User-Agent": _RSS_UA})
+            resp.raise_for_status()
+            parsed = feedparser.parse(resp.content)
+        except Exception:
+            continue
+        for entry in parsed.entries:
+            try:
+                pub_struct = entry.get("published_parsed") or entry.get("updated_parsed")
+                if not pub_struct:
+                    continue
+                pub = datetime(*pub_struct[:6], tzinfo=timezone.utc)
+                if pub < cutoff:
+                    continue
+                title = (entry.get("title") or "").strip()
+                if not title:
+                    continue
+                summary = entry.get("summary") or entry.get("description") or ""
+                summary = re.sub(r"<[^>]+>", "", summary).strip()
+                results.append({
+                    "headline":     title,
+                    "summary":      summary,
+                    "url":          entry.get("link", ""),
+                    "source":       label,
+                    "published_at": pub.isoformat(),
+                    "ticker":       "",
+                })
+            except (KeyError, TypeError, ValueError):
+                continue
+    return results
+
+
 # ── Deduplication ─────────────────────────────────────────────────────────────
 
 def _word_overlap(a: str, b: str) -> float:
@@ -535,10 +601,11 @@ def fetch_and_store_news(db_path: str, config: dict) -> int:
     except Exception:
         pass
 
-    # 2. Fetch from both sources
+    # 2. Fetch from all sources (Finnhub + NewsAPI need keys; RSS is keyless)
     finnhub_items = fetch_finnhub_news(finnhub_key)
     newsapi_items = fetch_newsapi_news(newsapi_key)
-    all_items = _deduplicate(finnhub_items + newsapi_items)
+    rss_items     = fetch_rss_news()
+    all_items = _deduplicate(finnhub_items + newsapi_items + rss_items)
 
     if not all_items:
         return 0

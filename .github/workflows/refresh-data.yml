@@ -9,6 +9,11 @@ on:
     # Hourly — news feed only (heavy pipeline steps are skipped on this trigger)
     - cron: "0 * * * *"
   workflow_dispatch:  # Allow manual trigger from Actions tab
+    inputs:
+      news_only:
+        description: "Refresh only the news feed (skip FRED/market/analytics — fast)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -51,35 +56,35 @@ jobs:
           echo "PERPLEXITY_API_KEY=${{ secrets.PERPLEXITY_API_KEY }}" >> .env
 
       - name: Run FRED pipeline (fetch + regimes + signals)
-        if: github.event.schedule != '0 * * * *'
+        if: github.event.schedule != '0 * * * *' && github.event.inputs.news_only != 'true'
         run: python main.py
 
       - name: Fetch market data (incremental)
-        if: github.event.schedule != '0 * * * *'
+        if: github.event.schedule != '0 * * * *' && github.event.inputs.news_only != 'true'
         run: python src/market_data/fetch_market.py --mode incremental
 
       - name: Compute macro surprises (z-scores)
-        if: github.event.schedule != '0 * * * *'
+        if: github.event.schedule != '0 * * * *' && github.event.inputs.news_only != 'true'
         run: python -m src.analytics.surprise
 
       - name: Compute backtest results
-        if: github.event.schedule != '0 * * * *'
+        if: github.event.schedule != '0 * * * *' && github.event.inputs.news_only != 'true'
         run: python -m src.analytics.backtest
 
       - name: Generate alert feed
-        if: github.event.schedule != '0 * * * *'
+        if: github.event.schedule != '0 * * * *' && github.event.inputs.news_only != 'true'
         run: python -m src.analytics.alerts
 
       - name: Compute priced metrics
-        if: github.event.schedule != '0 * * * *'
+        if: github.event.schedule != '0 * * * *' && github.event.inputs.news_only != 'true'
         run: python -m src.analytics.priced
 
       - name: Generate regime playbook
-        if: github.event.schedule != '0 * * * *'
+        if: github.event.schedule != '0 * * * *' && github.event.inputs.news_only != 'true'
         run: python -m src.analytics.playbook
 
       - name: Reload event calendar (idempotent)
-        if: github.event.schedule != '0 * * * *'
+        if: github.event.schedule != '0 * * * *' && github.event.inputs.news_only != 'true'
         run: python src/events/load_events.py
 
       - name: Refresh news feed
@@ -105,7 +110,7 @@ jobs:
           "
 
       - name: Trim intraday data to last 30 days (prevent DB bloat)
-        if: github.event.schedule != '0 * * * *'
+        if: github.event.schedule != '0 * * * *' && github.event.inputs.news_only != 'true'
         run: |
           sqlite3 data/macro_radar.db "DELETE FROM market_intraday WHERE ts < datetime('now','-30 days');"
           sqlite3 data/macro_radar.db "VACUUM;"

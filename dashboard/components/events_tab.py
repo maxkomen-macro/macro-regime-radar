@@ -62,6 +62,7 @@ _SOURCE_DEFAULT = {"label": "", "color": _MUTED, "bg": "#21262d", "categories": 
 # Display-only. To add FT/WSJ/Economist as actual sources, add their RSS
 # feeds or APIs to src/analytics/news.py in Phase 12.
 SOURCE_TIERS = {
+    "federal reserve":     1,
     "ft":                  1,
     "financial times":     1,
     "wsj":                 1,
@@ -720,7 +721,11 @@ def render_headline_list(df: pd.DataFrame, current_regime: str = "Goldilocks") -
                 use_container_width=True,
             ):
                 st.session_state["ei_selected"] = item_id
-                st.rerun()
+                # Scoped rerun: only the feed fragment re-renders, not the
+                # whole tab (summary bar + calendar iframes stay put). This is
+                # what makes article selection feel instant. Requires this
+                # function to be called from within _render_feed (a fragment).
+                st.rerun(scope="fragment")
 
 
 # ── Zone 3 right: Detail Card ─────────────────────────────────────────────────
@@ -1080,6 +1085,31 @@ def _render_calendar_section() -> None:
     components.html(calendar_html, height=50 + 36 + n * 42 + 60, scrolling=False)
 
 
+# ── Zone 3: Two-column feed (isolated fragment) ───────────────────────────────
+
+@st.fragment
+def _render_feed(df: pd.DataFrame, current_regime: str) -> None:
+    """Headline list (left) + detail card (right) as an isolated fragment.
+
+    Clicking a headline reruns ONLY this fragment (see the scoped st.rerun in
+    render_headline_list), so the summary-bar iframe, filter bar, and the
+    events-calendar iframe are NOT rebuilt on every selection. That full-tab
+    rebuild — multiple components.html iframes + ~150 row widgets — was the
+    source of the click latency.
+    """
+    left, right = st.columns([2, 3], vertical_alignment="top")
+    with left:
+        render_headline_list(df, current_regime=current_regime)
+    with right:
+        selected = df[df["id"] == st.session_state["ei_selected"]]
+        if len(selected) > 0:
+            render_detail_card(selected.iloc[0])
+        else:
+            # Selected id not in current filter — fall back to first item.
+            st.session_state["ei_selected"] = int(df.iloc[0]["id"])
+            render_detail_card(df.iloc[0])
+
+
 # ── Main render ───────────────────────────────────────────────────────────────
 
 def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
@@ -1149,17 +1179,7 @@ def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
         if st.session_state["ei_selected"] is None:
             st.session_state["ei_selected"] = int(df.iloc[0]["id"])
 
-        left, right = st.columns([2, 3], vertical_alignment="top")
-        with left:
-            render_headline_list(df, current_regime=current_regime)
-        with right:
-            selected = df[df["id"] == st.session_state["ei_selected"]]
-            if len(selected) > 0:
-                render_detail_card(selected.iloc[0])
-            else:
-                # Fallback: selected id not in current filter — show first item
-                st.session_state["ei_selected"] = int(df.iloc[0]["id"])
-                render_detail_card(df.iloc[0])
+        _render_feed(df, current_regime)
 
     # ── Zone 4: Calendar ──────────────────────────────────────────────────────
     _render_calendar_section()
