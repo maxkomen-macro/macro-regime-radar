@@ -106,7 +106,7 @@ Note: there are also `daily-memo.yml` and `weekly-memo.yml` workflows. They gene
 
 ### Retry loop pattern
 
-The "Commit and push" step in BOTH DB-writing workflows uses a 5-attempt retry loop with `git reset --soft origin/main` instead of the old `git stash` / `git pull --rebase` / `git stash pop` pattern:
+The "Commit and push" step in BOTH DB-writing workflows uses a 5-attempt retry loop with `git reset --soft origin/main` instead of the old `git stash` / `git pull --rebase` / `git stash pop` pattern. The **entire attempt — fetch, reset, commit, push — is one `&&` conditional** so a transient failure on any step retries instead of aborting:
 
 ```yaml
 git config user.name "github-actions[bot]"
@@ -114,16 +114,16 @@ git config user.email "github-actions[bot]@users.noreply.github.com"
 git add data/macro_radar.db
 git add output/playbook.json 2>/dev/null || true   # refresh-data.yml only
 git commit -m "<EXISTING_COMMIT_MESSAGE>"
+COMMIT_MSG=$(git log -1 --pretty=%B)
 for i in 1 2 3 4 5; do
-  git fetch origin main
-  COMMIT_MSG=$(git log -1 --pretty=%B)
-  git reset --soft origin/main
-  git commit -m "$COMMIT_MSG"
-  if git push; then
+  if git fetch origin main \
+     && git reset --soft origin/main \
+     && git commit -m "$COMMIT_MSG" \
+     && git push; then
     echo "Push succeeded on attempt $i"
     exit 0
   fi
-  echo "Push failed on attempt $i, retrying..."
+  echo "Attempt $i failed (fetch/reset/commit/push), retrying..."
   sleep $((RANDOM % 10 + 5))
 done
 echo "Push failed after 5 attempts"
@@ -133,6 +133,8 @@ exit 1
 ### Why this works
 
 `git reset --soft origin/main` moves the branch pointer to origin's tip while keeping the staged DB changes, then re-commits on top. **No rebase, no merge, no binary conflict possible.** Each attempt has a 5–14s random backoff.
+
+**Why the whole attempt is one `if … &&` chain (2026-05-26 fix):** GitHub Actions runs `run:` steps under `bash -e` (errexit). A *bare* `git fetch origin main` inside the loop would, on a transient HTTP 403 during ref listing, abort the entire step immediately — the retry loop never executes (no "retrying…" line is ever printed). Only `git push` was previously protected by its `if`. Folding fetch/reset/commit into the same conditional makes every network step retryable. This is what the 2026-05-26 transient-403 failure exposed: the loop existed but was dead for fetch-side errors.
 
 ### Commit messages preserved across the soft reset
 
