@@ -1,5 +1,8 @@
 """
-src/market_data/fetch_market.py — Fetch and persist market data from Polygon.
+src/market_data/fetch_market.py — Fetch and persist market data from Yahoo Finance.
+
+Daily and intraday bars both come from yfinance (keyless). polygon.py is dormant
+legacy and is no longer imported here.
 
 Does NOT import src.config — opens DB with inline _get_conn() to avoid the
 FRED_API_KEY EnvironmentError.
@@ -30,7 +33,7 @@ ROOT    = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "macro_radar.db"
 CFG_DIR = ROOT / "config"
 
-# Ensure project root is on sys.path so `from src.market_data.polygon import ...`
+# Ensure project root is on sys.path so `from src.market_data.yfinance_client import ...`
 # works when this file is run as a script (python src/market_data/fetch_market.py).
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -81,7 +84,7 @@ def _upsert_daily(conn: sqlite3.Connection, rows: list[tuple]) -> int:
         """
         INSERT INTO market_daily
             (symbol, date, open, high, low, close, volume, vwap, source, fetched_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'polygon', ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'yfinance', ?)
         ON CONFLICT(symbol, date) DO UPDATE SET
             open=excluded.open,
             high=excluded.high,
@@ -322,15 +325,15 @@ def print_validation(assets: dict) -> None:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fetch market data from Polygon.io")
+    parser = argparse.ArgumentParser(description="Fetch market data from Yahoo Finance")
     parser.add_argument(
         "--mode",
         choices=["backfill", "incremental", "intraday-only"],
         required=True,
         help=(
-            "backfill: full daily history via Polygon; "
+            "backfill: full daily history via yfinance; "
             "incremental: daily from last date + today's intraday via yfinance; "
-            "intraday-only: today's 5m bars via yfinance (no API key needed)"
+            "intraday-only: today's 5m bars via yfinance (all keyless)"
         ),
     )
     args = parser.parse_args()
@@ -343,18 +346,9 @@ def main() -> None:
         print_validation(assets)
         return
 
-    # Polygon modes require API key
-    api_key = os.getenv("POLYGON_API_KEY")
-    if not api_key:
-        logger.error(
-            "[fetch_market] POLYGON_API_KEY not set. "
-            "Add it to .env or set as environment variable."
-        )
-        sys.exit(1)
+    from src.market_data.yfinance_client import YFinanceClient
 
-    from src.market_data.polygon import PolygonClient
-
-    client         = PolygonClient(api_key)
+    client         = YFinanceClient()
     backfill_years = int(os.getenv("MARKET_DAILY_BACKFILL_YEARS", "10"))
 
     if args.mode == "backfill":
