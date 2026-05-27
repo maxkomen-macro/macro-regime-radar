@@ -54,7 +54,8 @@ Dark theme only. No alternative palettes.
 - **Inflation expectations:** `T10YIE` and `T5YIE` are the live signals. Breakeven proxy `T10YIE − T5YIE` is the operative input for current readings.
 - **`USSLIND` is a frozen historical series.** FRED stopped publishing it in February 2020 — the local DB has 288 rows ending `2020-02-01` and that is the entire dataset that will ever exist. The series is still present in `RECESSION_SERIES` (`src/config.py`) because it is used as historical training data for the recession model. **Never remove `USSLIND` from config without first confirming the recession model has been retrained without it.** For live recession signal computation, the breakeven proxy above is what's actually being read.
 - **IRR:** `numpy.irr` was removed in recent numpy versions. Use binary search on NPV. Do not reintroduce `numpy.irr`. Implementation lives in `src/analytics/lbo.py` (look for `_compute_irr`).
-- **Market data:** `yfinance` (keyless) for both daily and intraday. `src/market_data/polygon.py` exists as legacy code and `POLYGON_API_KEY` is still read from secrets, but it is **not in the active fetch path.** Live workflow `intraday-refresh.yml` says explicitly "yfinance — no API key needed". If you find yourself touching `polygon.py`, you're probably on the wrong path — verify with the user before continuing.
+- **Market data:** `yfinance` (keyless) for both daily and intraday. The active client is `src/market_data/yfinance_client.py` (`fetch_daily` + `fetch_intraday_5m`); `src/market_data/fetch_market.py` uses it for every mode (`backfill`, `incremental`, `intraday-only`) and **no longer requires `POLYGON_API_KEY`**. `src/market_data/polygon.py` and `config/providers.yml` remain on disk as dormant legacy — imported by nothing in the live pipeline. If you find yourself touching `polygon.py`, you're on the wrong path — verify with the user before continuing.
+- **Migrated daily fetch off Polygon → yfinance (May 26 2026).** Symptom was Polygon free-tier 429s: the 12s-per-request throttle plus 60/120/240s backoffs made `--mode incremental` stall for 13+ min across the 23 daily symbols. The daily path now uses the same keyless yfinance source the intraday path already used. Daily rows are written with `source='yfinance'`.
 - **News pipeline:** Finnhub (general + M&A), NewsAPI (macro + M&A), and keyless **RSS feeds** (`fetch_rss_news` + `RSS_FEEDS`: Federal Reserve, NYT Business, CNBC, FT Markets, MarketWatch — via `feedparser`) are ingested via `src/analytics/news.py`. All three flow through the same dedupe → classify → five-dimension significance scoring → store path. Top-significance items get an Anthropic interpretation pass and a per-item Perplexity Sonar (cited research) enrichment. Both outputs persist into `news_feed` (`regime_interpretation` and `perplexity_research` columns). RSS source labels are tier-colored in the dashboard via `events_tab.SOURCE_TIERS`.
 
 ---
@@ -83,6 +84,19 @@ Dark theme only. No alternative palettes.
 - List tables: `sqlite3 data/macro_radar.db ".tables"`
 
 Tables added since v1: `news_feed` (Phase 11) and `factor_data` (Fama-French factors via openbb).
+
+---
+
+## Local Read-Only API (`api/`, for Atlas)
+
+A small **FastAPI** service exposes the radar's latest outputs to same-machine consumers (Atlas). **Localhost-only, read-only.** Lives in the top-level `api/` package — intentionally self-contained: it does **not** import `src.config` (so it runs without `FRED_API_KEY`) or `anthropic`.
+
+- **Deps:** `requirements-api.txt` (`fastapi`, `uvicorn[standard]`, `httpx`). Kept **separate from `requirements.txt`** so the Streamlit Cloud build doesn't pull them — this service is local only.
+- **Run:** `uvicorn api.main:app --host 127.0.0.1 --port 8787`
+- **DB access:** `api/db.py` opens a fresh read-only connection per request via `file:...?mode=ro` (same pattern as `src/analytics/chat.py:_ro_conn`) and closes it immediately — tolerates the git-checkout DB swap and concurrent WAL writes. Never writes; verified by byte-identical DB mtime after a read batch.
+- **Endpoints (latest-snapshot only):** `/health`, `/regime/latest`, `/signals/latest`, `/series` (catalog), `/series/latest`, `/series/{series_id}/latest`.
+- **Contract:** schema-faithful (fields mirror `regimes` / `signals` / `raw_series` columns). Field names will be adapted to Atlas's MacroBridge agent when the Atlas side is wired (Build #6).
+- **Tests:** `tests/test_api.py` (FastAPI `TestClient` against the real read-only DB; skips if the DB file is absent).
 
 ---
 
@@ -197,7 +211,7 @@ All secrets via `st.secrets[]` in production (Streamlit Cloud secrets manager). 
 | `NEWS_API_KEY` | Optional — required for news ingest. **Note the underscore.** Code uses `NEWS_API_KEY`, not `NEWSAPI_KEY` |
 | `ANTHROPIC_API_KEY` | Optional — required for AI regime interpretation |
 | `PERPLEXITY_API_KEY` | Optional — required for Sonar research enrichment |
-| `POLYGON_API_KEY` | Legacy — yfinance is the active path; `POLYGON_API_KEY` is not used in the live pipeline |
+| `POLYGON_API_KEY` | Legacy — yfinance is the active path; no longer read by the pipeline. Safe to leave in secrets or remove |
 
 Without the four optional Phase-11 keys, the news, AI interpretation, and research-citation pipelines silently produce no output (this is intentional — the dashboard still works for non-news functionality).
 
@@ -217,7 +231,7 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 - Do not use `GS2` / `GS10` for daily yield analysis — use `DGS2` / `DGS10`.
 - Do not remove `USSLIND` from `RECESSION_SERIES` config without retraining the recession model — the 288 historical rows are training data, not a live signal.
 - Do not assume the env var is `NEWSAPI_KEY` — code uses `NEWS_API_KEY` (underscore).
-- Do not extend the `polygon.py` code path — yfinance is the live market data source.
+- Do not extend or reintroduce the `polygon.py` code path — yfinance (`yfinance_client.py`) is the live market data source for daily and intraday.
 - Do not replace the workflow retry loop with stash/rebase patterns.
 - Do not remove `data/macro_radar.db merge=ours` from `.gitattributes`.
 - Do not introduce historical-range-based `fill_pct` for signal cards.
@@ -299,4 +313,4 @@ When in doubt: delete more than you add. Stale documentation is worse than missi
 
 ---
 
-*Last meaningful update: May 3 2026 — Phase 12 (conversational AI assistant) shipped: floating tab-aware chat with read-only SQL guard, 8 tools, session-only history.*
+*Last meaningful update: May 26 2026 — daily market-data fetch migrated off Polygon onto keyless yfinance (`fetch_market.py` no longer needs `POLYGON_API_KEY`); fixed the incremental-refresh 429 stalls.*
