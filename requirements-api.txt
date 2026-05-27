@@ -1,0 +1,6 @@
+# Local read-only API for Atlas (api/). Kept separate from requirements.txt so
+# the Streamlit Cloud build (Python 3.12 deploy target) does not pull these in —
+# this service runs locally only. Install with: pip install -r requirements-api.txt
+fastapi
+uvicorn[standard]
+httpx  # required by fastapi.testclient.TestClient (tests/test_api.py)
