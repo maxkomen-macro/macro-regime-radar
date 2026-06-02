@@ -5,14 +5,17 @@ Run:
     streamlit run dashboard/app.py
 """
 
+import os
 import re
 import sqlite3
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 
 from components.shared_styles import compute_momentum, generate_sparkline_b64, section_header, subsection_header
@@ -22,6 +25,70 @@ from components.shared_styles import compute_momentum, generate_sparkline_b64, s
 # ─────────────────────────────────────────────────────────────────────────────
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "macro_radar.db"
+
+# ── Live data snapshot ────────────────────────────────────────────────────────
+# The SQLite DB is no longer committed to git (committing this ~10 MB binary hourly
+# bloated the repo and broke Streamlit Cloud's deploy clone). The refresh workflows
+# publish it to the PRIVATE `data-latest` GitHub Release instead. The app downloads
+# the latest snapshot into DB_PATH at startup via the GitHub API, authenticated with
+# GH_DB_TOKEN (a read-only PAT in Streamlit Cloud secrets — the repo is private, so
+# the asset is not publicly reachable). No token (local dev) → on-disk DB untouched.
+_GH_API_REPO = "https://api.github.com/repos/maxkomen-macro/macro-regime-radar"
+_DB_ASSET_NAME = "macro_radar.db"
+
+
+def _gh_db_token() -> str:
+    try:
+        tok = st.secrets.get("GH_DB_TOKEN", "")
+    except Exception:
+        tok = ""
+    return tok or os.environ.get("GH_DB_TOKEN", "")
+
+
+@st.cache_resource(ttl=900)
+def _refresh_db_snapshot() -> str:
+    """Download the latest DB snapshot from the private data-latest Release into
+    DB_PATH (atomic). Cached per container; re-runs at most every 15 min. No token
+    configured (e.g. local dev) → leave whatever DB is already on disk untouched."""
+    token = _gh_db_token()
+    if not token:
+        return str(DB_PATH)
+    auth = {"Authorization": f"Bearer {token}",
+            "User-Agent": "macro-regime-radar-dashboard"}
+    # 1) resolve the current asset on the data-latest release (id changes per upload)
+    meta = requests.get(
+        f"{_GH_API_REPO}/releases/tags/data-latest",
+        headers={**auth, "Accept": "application/vnd.github+json"},
+        timeout=30,
+    )
+    meta.raise_for_status()
+    asset = next(
+        (a for a in meta.json().get("assets", []) if a["name"] == _DB_ASSET_NAME),
+        None,
+    )
+    if asset is None:
+        return str(DB_PATH)
+    # 2) stream the asset bytes. requests drops the auth header on the cross-host
+    #    redirect to the signed CDN URL, so there is no double-auth rejection.
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(DB_PATH.parent), suffix=".db.tmp")
+    os.close(fd)
+    try:
+        with requests.get(
+            asset["url"],
+            headers={**auth, "Accept": "application/octet-stream"},
+            stream=True,
+            timeout=120,
+        ) as dl, open(tmp, "wb") as out:
+            dl.raise_for_status()
+            for chunk in dl.iter_content(65536):
+                out.write(chunk)
+        os.replace(tmp, DB_PATH)  # atomic swap into place
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return str(DB_PATH)
+
 
 REGIME_COLORS = {
     "Goldilocks":     "#2ecc71",
@@ -757,6 +824,16 @@ st.set_page_config(
     page_title="Macro Regime Radar",
     page_icon="📡",
 )
+
+# On Streamlit Cloud (GH_DB_TOKEN in secrets), pull the latest DB snapshot from the
+# private data-latest Release before any loaders run. No token (local dev) → no-op.
+try:
+    _refresh_db_snapshot()
+except Exception as _db_err:  # surface, don't crash — fall back to on-disk DB
+    st.warning(
+        f"Could not refresh the live data snapshot ({_db_err}). "
+        "Showing the most recent data available."
+    )
 
 st.markdown("""
 <style>

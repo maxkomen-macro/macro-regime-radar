@@ -75,13 +75,22 @@ Dark theme only. No alternative palettes.
 
 ## Database
 
-`data/macro_radar.db` is the local SQLite store, refreshed by scheduled workflows.
+`data/macro_radar.db` is the SQLite store (11 tables; 10 excluding `sqlite_sequence`).
 
-- 11 tables in active use (10 excluding `sqlite_sequence`).
-- Excluded from local git tracking via `.git/info/exclude` — will not appear as modified locally.
-- Do **not** add it back to tracking. Do **not** commit it.
-- Inspect schema: `sqlite3 data/macro_radar.db ".schema"`
-- List tables: `sqlite3 data/macro_radar.db ".tables"`
+**It is NOT in git.** Committing this ~10 MB binary on every hourly refresh bloated the repo
+to ~283 MB and broke Streamlit Cloud's deploy clone (the clone timed out → "Failed to
+download the sources"). As of Jun 2026 the DB is **gitignored** and shipped as a rolling
+**GitHub Release asset** on the **`data-latest`** tag instead:
+
+- **Writers** (`refresh-data.yml`, `intraday-refresh.yml`) `gh release download` the DB from
+  `data-latest` at job start, run their incremental update, then `gh release upload … --clobber`
+  it back. They are in the `data-write` concurrency group so uploads don't race.
+- **Readers** (`daily-memo.yml`, `weekly-memo.yml`) download it read-only to build the memos.
+- **Dashboard** (`dashboard/app.py`) downloads the latest asset into `DB_PATH` at startup via
+  the GitHub API, authenticated with **`GH_DB_TOKEN`** (a read-only PAT in Streamlit Cloud
+  secrets — the repo is private, so the asset is not publicly reachable), cached
+  `@st.cache_resource(ttl=900)`. No token locally → dev uses the on-disk DB untouched.
+- Do **not** re-add the DB to git tracking. Inspect locally: `sqlite3 data/macro_radar.db ".tables"`.
 
 Tables added since v1: `news_feed` (Phase 11) and `factor_data` (Fama-French factors via openbb).
 
@@ -114,9 +123,16 @@ concurrency:
   cancel-in-progress: false
 ```
 
-The two workflows queue against each other instead of racing. Only one DB-writing workflow runs at a time.
+The two workflows queue against each other instead of racing — still important now that both
+publish the DB to the same `data-latest` release asset (serialized so `--clobber` uploads don't race).
 
-Note: there are also `daily-memo.yml` and `weekly-memo.yml` workflows. They generate HTML memos and do not write to `data/macro_radar.db` directly, so they are not part of the `data-write` concurrency group.
+**Update (Jun 2026):** the DB is no longer committed to git — it's downloaded from and uploaded
+to the `data-latest` Release (see **Database**). The retry / `reset --soft origin/main` loop below
+now guards only `refresh-data.yml`'s small `output/playbook.json` commit; `intraday-refresh.yml`
+no longer pushes to git at all.
+
+Note: `daily-memo.yml` and `weekly-memo.yml` generate HTML memos and do not write the DB back, so
+they are not in the `data-write` concurrency group (they only download the DB read-only).
 
 ### Retry loop pattern
 
@@ -212,6 +228,7 @@ All secrets via `st.secrets[]` in production (Streamlit Cloud secrets manager). 
 | `ANTHROPIC_API_KEY` | Optional — required for AI regime interpretation |
 | `PERPLEXITY_API_KEY` | Optional — required for Sonar research enrichment |
 | `POLYGON_API_KEY` | Legacy — yfinance is the active path; no longer read by the pipeline. Safe to leave in secrets or remove |
+| `GH_DB_TOKEN` | Dashboard only (Streamlit Cloud secret) — fine-grained PAT with **Contents: Read** on this repo. Lets `dashboard/app.py` download `data/macro_radar.db` from the private `data-latest` Release. Not needed locally; workflows use the built-in `GITHUB_TOKEN` |
 
 Without the four optional Phase-11 keys, the news, AI interpretation, and research-citation pipelines silently produce no output (this is intentional — the dashboard still works for non-news functionality).
 
@@ -313,4 +330,4 @@ When in doubt: delete more than you add. Stale documentation is worse than missi
 
 ---
 
-*Last meaningful update: May 26 2026 — daily market-data fetch migrated off Polygon onto keyless yfinance (`fetch_market.py` no longer needs `POLYGON_API_KEY`); fixed the incremental-refresh 429 stalls.*
+*Last meaningful update: Jun 2 2026 — stopped committing `data/macro_radar.db` to git (it bloated the repo to ~283 MB and broke Streamlit Cloud's deploy clone); purged it from history and now ship it as the `data-latest` GitHub Release asset, downloaded by the workflows (built-in `GITHUB_TOKEN`) and by the dashboard at startup (authenticated with `GH_DB_TOKEN`, since the repo is private).*

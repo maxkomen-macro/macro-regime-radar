@@ -31,6 +31,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Fetch current DB snapshot from data-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          if gh release view data-latest >/dev/null 2>&1; then
+            gh release download data-latest --pattern macro_radar.db --dir data --clobber
+            echo "DB snapshot: $(du -h data/macro_radar.db | cut -f1)"
+          else
+            echo "No data-latest release yet; proceeding without a prior DB."
+          fi
+
       - name: Write .env for scripts that use load_dotenv()
         run: |
           echo "FRED_API_KEY=${{ secrets.FRED_API_KEY }}" > .env

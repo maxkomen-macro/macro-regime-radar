@@ -46,6 +46,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Fetch current DB snapshot from data-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          if gh release view data-latest >/dev/null 2>&1; then
+            gh release download data-latest --pattern macro_radar.db --dir data --clobber
+            echo "DB snapshot: $(du -h data/macro_radar.db | cut -f1)"
+          else
+            echo "No data-latest release yet; proceeding without a prior DB."
+          fi
+
       - name: Write .env for scripts that use load_dotenv()
         run: |
           echo "FRED_API_KEY=${{ secrets.FRED_API_KEY }}" > .env
@@ -121,39 +133,38 @@ jobs:
       - name: Clean up .env before commit
         run: rm -f .env
 
-      - name: Check if database changed
-        id: check_changes
+      - name: Publish updated DB snapshot to data-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git diff --name-only
-          if git diff --quiet data/macro_radar.db output/playbook.json 2>/dev/null; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+          gh release view data-latest >/dev/null 2>&1 \
+            || gh release create data-latest --title "Latest data snapshot" \
+                 --notes "Rolling SQLite snapshot published by the refresh workflows. Not stored in git history."
+          gh release upload data-latest data/macro_radar.db --clobber
+          echo "Uploaded DB snapshot ($(du -h data/macro_radar.db | cut -f1)) to data-latest."
 
-      - name: Commit and push updated data
-        if: steps.check_changes.outputs.changed == 'true'
+      - name: Commit playbook.json if it changed
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/macro_radar.db
-          git add output/playbook.json 2>/dev/null || true
-          git commit -m "Auto-refresh data [skip ci]"
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          # Whole attempt (fetch/reset/commit/push) is one conditional so a
-          # transient failure on ANY step triggers a retry instead of aborting
-          # the job under `set -e`. A bare `git fetch` here would short-circuit
-          # the loop on the first HTTP 403 (2026-05-26 transient-403 incident).
-          for i in 1 2 3 4 5; do
-            if git fetch origin main \
-               && git reset --soft origin/main \
-               && git commit -m "$COMMIT_MSG" \
-               && git push; then
-              echo "Push succeeded on attempt $i"
-              exit 0
-            fi
-            echo "Attempt $i failed (fetch/reset/commit/push), retrying..."
-            sleep $((RANDOM % 10 + 5))
-          done
-          echo "Push failed after 5 attempts"
-          exit 1
+          if git diff --quiet output/playbook.json 2>/dev/null; then
+            echo "playbook.json unchanged — nothing to commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add output/playbook.json
+            git commit -m "Update playbook [skip ci]"
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            # Same retry/soft-reset pattern as before; only a tiny text file now.
+            for i in 1 2 3 4 5; do
+              if git fetch origin main \
+                 && git reset --soft origin/main \
+                 && git commit -m "$COMMIT_MSG" \
+                 && git push; then
+                echo "Push succeeded on attempt $i"
+                exit 0
+              fi
+              echo "Attempt $i failed (fetch/reset/commit/push), retrying..."
+              sleep $((RANDOM % 10 + 5))
+            done
+            echo "Push failed after 5 attempts"
+            exit 1
+          fi
