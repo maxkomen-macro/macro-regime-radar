@@ -5,8 +5,11 @@ Run:
     streamlit run dashboard/app.py
 """
 
+import os
 import re
 import sqlite3
+import tempfile
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +25,34 @@ from components.shared_styles import compute_momentum, generate_sparkline_b64, s
 # ─────────────────────────────────────────────────────────────────────────────
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "macro_radar.db"
+
+# ── Live data snapshot ────────────────────────────────────────────────────────
+# The SQLite DB is no longer committed to git (committing this ~10 MB binary
+# hourly bloated the repo and broke Streamlit Cloud's deploy clone). The refresh
+# workflows publish it to the `data-latest` GitHub Release instead. On Streamlit
+# Cloud (env MRR_REMOTE_DB=1) the app downloads the latest snapshot into DB_PATH
+# at startup, refreshed at most every 15 min. Local dev (flag unset) is untouched.
+_DB_RELEASE_URL = (
+    "https://github.com/maxkomen-macro/macro-regime-radar/"
+    "releases/download/data-latest/macro_radar.db"
+)
+
+
+@st.cache_resource(ttl=900)
+def _refresh_db_snapshot() -> str:
+    """Download the latest DB snapshot from the data-latest Release into DB_PATH
+    (atomic write). Cached per container; re-runs at most every 15 minutes."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(DB_PATH.parent), suffix=".db.tmp")
+    os.close(fd)
+    try:
+        urllib.request.urlretrieve(_DB_RELEASE_URL, tmp)
+        os.replace(tmp, DB_PATH)  # atomic swap into place
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return str(DB_PATH)
+
 
 REGIME_COLORS = {
     "Goldilocks":     "#2ecc71",
@@ -757,6 +788,17 @@ st.set_page_config(
     page_title="Macro Regime Radar",
     page_icon="📡",
 )
+
+# On Streamlit Cloud, pull the latest DB snapshot from the data-latest Release
+# before any loaders run. Guarded by MRR_REMOTE_DB so local dev stays on its own DB.
+if os.environ.get("MRR_REMOTE_DB") == "1":
+    try:
+        _refresh_db_snapshot()
+    except Exception as _db_err:  # surface, don't crash — fall back to on-disk DB
+        st.warning(
+            f"Could not refresh the live data snapshot ({_db_err}). "
+            "Showing the most recent data available."
+        )
 
 st.markdown("""
 <style>

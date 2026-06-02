@@ -75,13 +75,21 @@ Dark theme only. No alternative palettes.
 
 ## Database
 
-`data/macro_radar.db` is the local SQLite store, refreshed by scheduled workflows.
+`data/macro_radar.db` is the SQLite store (11 tables; 10 excluding `sqlite_sequence`).
 
-- 11 tables in active use (10 excluding `sqlite_sequence`).
-- Excluded from local git tracking via `.git/info/exclude` — will not appear as modified locally.
-- Do **not** add it back to tracking. Do **not** commit it.
-- Inspect schema: `sqlite3 data/macro_radar.db ".schema"`
-- List tables: `sqlite3 data/macro_radar.db ".tables"`
+**It is NOT in git.** Committing this ~10 MB binary on every hourly refresh bloated the repo
+to ~283 MB and broke Streamlit Cloud's deploy clone (the clone timed out → "Failed to
+download the sources"). As of Jun 2026 the DB is **gitignored** and shipped as a rolling
+**GitHub Release asset** on the **`data-latest`** tag instead:
+
+- **Writers** (`refresh-data.yml`, `intraday-refresh.yml`) `gh release download` the DB from
+  `data-latest` at job start, run their incremental update, then `gh release upload … --clobber`
+  it back. They are in the `data-write` concurrency group so uploads don't race.
+- **Readers** (`daily-memo.yml`, `weekly-memo.yml`) download it read-only to build the memos.
+- **Dashboard** (`dashboard/app.py`) downloads the latest asset into `DB_PATH` at startup when
+  env **`MRR_REMOTE_DB=1`** (set in Streamlit Cloud), cached `@st.cache_resource(ttl=900)`.
+  Locally the flag is unset, so dev uses the on-disk DB untouched.
+- Do **not** re-add the DB to git tracking. Inspect locally: `sqlite3 data/macro_radar.db ".tables"`.
 
 Tables added since v1: `news_feed` (Phase 11) and `factor_data` (Fama-French factors via openbb).
 
@@ -114,9 +122,16 @@ concurrency:
   cancel-in-progress: false
 ```
 
-The two workflows queue against each other instead of racing. Only one DB-writing workflow runs at a time.
+The two workflows queue against each other instead of racing — still important now that both
+publish the DB to the same `data-latest` release asset (serialized so `--clobber` uploads don't race).
 
-Note: there are also `daily-memo.yml` and `weekly-memo.yml` workflows. They generate HTML memos and do not write to `data/macro_radar.db` directly, so they are not part of the `data-write` concurrency group.
+**Update (Jun 2026):** the DB is no longer committed to git — it's downloaded from and uploaded
+to the `data-latest` Release (see **Database**). The retry / `reset --soft origin/main` loop below
+now guards only `refresh-data.yml`'s small `output/playbook.json` commit; `intraday-refresh.yml`
+no longer pushes to git at all.
+
+Note: `daily-memo.yml` and `weekly-memo.yml` generate HTML memos and do not write the DB back, so
+they are not in the `data-write` concurrency group (they only download the DB read-only).
 
 ### Retry loop pattern
 
@@ -313,4 +328,4 @@ When in doubt: delete more than you add. Stale documentation is worse than missi
 
 ---
 
-*Last meaningful update: May 26 2026 — daily market-data fetch migrated off Polygon onto keyless yfinance (`fetch_market.py` no longer needs `POLYGON_API_KEY`); fixed the incremental-refresh 429 stalls.*
+*Last meaningful update: Jun 2 2026 — stopped committing `data/macro_radar.db` to git (it bloated the repo to ~283 MB and broke Streamlit Cloud's deploy clone); purged it from history and now ship it as the `data-latest` GitHub Release asset, downloaded by the workflows and by the dashboard at startup (`MRR_REMOTE_DB=1`).*
