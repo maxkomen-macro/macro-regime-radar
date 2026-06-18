@@ -1,16 +1,17 @@
 {
-  "generated_at": "2026-06-18T04:29:33.243763",
+  "generated_at": "2026-06-18T13:58:36.223896",
   "as_of": "2026-05-01",
   "regime": "Overheating",
   "confidence": 0.58,
   "baseline": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
   "because_today": [
+    "Because today VIX volatility is above trend (z=+1.63).",
     "Because today yield spread curve steepening is below trend (z=-1.62).",
     "Because today CPI inflation is extreme (z=+3.86), the CPI signal is significantly elevated versus 2-year norms.",
     "Because today 10Y real yield is positive at 2.14%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.63%."
   ],
-  "summary": "Regime: Overheating (confidence 58%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today yield spread curve steepening is below trend (z=-1.62). Because today CPI inflation is extreme (z=+3.86), the CPI signal is significantly elevated versus 2-year norms. Because today 10Y real yield is positive at 2.14%, real rates are restrictive — a headwind for equities and gold.",
+  "summary": "Regime: Overheating (confidence 58%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today VIX volatility is above trend (z=+1.63). Because today yield spread curve steepening is below trend (z=-1.62). Because today CPI inflation is extreme (z=+3.86), the CPI signal is significantly elevated versus 2-year norms.",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
