@@ -550,6 +550,15 @@ def render() -> None:
             default_indpro = float(m.get("_current_indpro_yoy", 0.0))
             default_lei    = float(m.get("_current_lei", 0.0))
 
+            # Clamp live defaults into each slider's bounds — st.slider raises
+            # StreamlitAPIException (breaking the whole tab) when value falls
+            # outside min/max, and crisis readings can exceed these ranges
+            # (HY OAS peaked ~2,182 bps in 2008 vs the 2,000 slider max).
+            default_spread = max(-200, min(300, default_spread))
+            default_unrate = max(2.0, min(15.0, default_unrate))
+            default_hy     = max(100, min(2000, default_hy))
+            default_indpro = max(-20.0, min(10.0, default_indpro))
+
             if st.button("Reset to current values", key="rec_reset"):
                 st.session_state.pop("rec_yc",    None)
                 st.session_state.pop("rec_ur",    None)
