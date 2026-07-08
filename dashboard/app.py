@@ -609,15 +609,44 @@ def base_layout(title: str, y_title: str) -> dict:
 # UI Helpers — Phase 3A
 # ─────────────────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _header_market_stats() -> dict:
+    """Last-two observations for the header KPIs + freshest market date.
+
+    Cached (5 min) so the always-rendered header doesn't reopen SQLite
+    connections on every widget rerun — the underlying tables update at most
+    every few minutes. Each query is isolated so one missing table doesn't
+    blank the other KPIs (mirrors the previous per-block try/except).
+    """
+    out = {"spy": None, "vix": None, "dgs10": None, "max_market_date": None}
+    try:
+        with sqlite3.connect(DB_PATH) as _c:
+            for key, sql in (
+                ("spy",   "SELECT close FROM market_daily WHERE symbol='SPY' ORDER BY date DESC LIMIT 2"),
+                ("vix",   "SELECT value FROM raw_series WHERE series_id='VIXCLS' ORDER BY date DESC LIMIT 2"),
+                ("dgs10", "SELECT value FROM raw_series WHERE series_id='DGS10' ORDER BY date DESC LIMIT 2"),
+            ):
+                try:
+                    out[key] = [tuple(r) for r in _c.execute(sql).fetchall()]
+                except Exception:
+                    pass
+            try:
+                out["max_market_date"] = _c.execute("SELECT MAX(date) FROM market_daily").fetchone()[0]
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return out
+
+
 def _render_header_bar(latest_regime, as_of) -> None:
     """Two-row persistent header: brand + regime (row 1), market stats (row 2)."""
+    stats = _header_market_stats()
+
     # ── SPY pct change (from market_daily) ──────────────────────────────────
     spy_display, spy_color = "—", "#8899aa"
     try:
-        with sqlite3.connect(DB_PATH) as _c:
-            rows = _c.execute(
-                "SELECT close FROM market_daily WHERE symbol='SPY' ORDER BY date DESC LIMIT 2"
-            ).fetchall()
+        rows = stats["spy"] or []
         if len(rows) == 2:
             spy_now, spy_prev = float(rows[0][0]), float(rows[1][0])
             chg = (spy_now - spy_prev) / spy_prev
@@ -629,10 +658,7 @@ def _render_header_bar(latest_regime, as_of) -> None:
     # ── VIX (monthly from raw_series) ───────────────────────────────────────
     vix_value_html = '<span style="font-size:13px;font-weight:600;color:#8899aa;">—</span>'
     try:
-        with sqlite3.connect(DB_PATH) as _c:
-            rows = _c.execute(
-                "SELECT value FROM raw_series WHERE series_id='VIXCLS' ORDER BY date DESC LIMIT 2"
-            ).fetchall()
+        rows = stats["vix"] or []
         if rows:
             vix_now = float(rows[0][0])
             if len(rows) == 2:
@@ -650,10 +676,7 @@ def _render_header_bar(latest_regime, as_of) -> None:
     # ── DGS10 in bps (monthly from raw_series) ──────────────────────────────
     gs10_value_html = '<span style="font-size:13px;font-weight:600;color:#8899aa;">—</span>'
     try:
-        with sqlite3.connect(DB_PATH) as _c:
-            rows = _c.execute(
-                "SELECT value FROM raw_series WHERE series_id='DGS10' ORDER BY date DESC LIMIT 2"
-            ).fetchall()
+        rows = stats["dgs10"] or []
         if len(rows) == 2:
             gs10_now = float(rows[0][0])
             bps = round((gs10_now - float(rows[1][0])) * 100)
@@ -753,9 +776,8 @@ def _render_timestamps(as_of) -> None:
     """Row: macro data as-of · market data through · updated timestamp."""
     macro_date = as_of.strftime("%b %Y") if as_of is not None else "—"
     try:
-        with sqlite3.connect(DB_PATH) as _c:
-            row = _c.execute("SELECT MAX(date) FROM market_daily").fetchone()
-        mkt_date = pd.Timestamp(row[0]).strftime("%b %d, %Y") if row and row[0] else "—"
+        mkt_raw = _header_market_stats()["max_market_date"]
+        mkt_date = pd.Timestamp(mkt_raw).strftime("%b %d, %Y") if mkt_raw else "—"
     except Exception:
         mkt_date = "—"
     updated_str = datetime.now().strftime("%b %d, %Y at %I:%M %p ET")
