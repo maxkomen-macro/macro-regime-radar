@@ -1,5 +1,5 @@
 # config/assets.yml
-# daily:    OHLCV daily bars via Polygon (backfill + incremental)
+# daily:    OHLCV daily bars via yfinance (backfill + incremental)
 # intraday: 5-minute bars via yfinance (incremental, market hours only)
 
 daily:

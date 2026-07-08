@@ -384,7 +384,7 @@ ORDER BY horizon, avg_return DESC;
 ## Setup
 
 ```bash
-git clone https://github.com/maxkomen-macro/regime-radar.git
+git clone https://github.com/maxkomen-macro/macro-regime-radar.git
 cd macro-regime-radar
 python -m venv .venv
 source .venv/bin/activate
