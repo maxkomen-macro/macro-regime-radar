@@ -11,6 +11,7 @@ Designed to surface the most critical information at a glance:
   - Playbook bias text
 """
 
+import html
 from datetime import datetime
 
 import numpy as np
@@ -244,10 +245,10 @@ def _render_top_risks(alerts: pd.DataFrame) -> None:
             f'<div style="border-left:3px solid {color};padding:8px 12px;'
             f'margin-bottom:8px;background:#161b22;border:0.5px solid #21262d;'
             f'border-left:3px solid {color};border-radius:4px">'
-            f'<div style="font-size:13px;font-weight:600;color:#e6edf3">{row["name"]}</div>'
-            f'<div style="font-size:12px;color:#8899aa;margin-top:2px">{row["message"][:120]}</div>'
+            f'<div style="font-size:13px;font-weight:600;color:#e6edf3">{html.escape(str(row["name"]))}</div>'
+            f'<div style="font-size:12px;color:#8899aa;margin-top:2px">{html.escape(str(row["message"])[:120])}</div>'
             f'<div style="font-size:11px;color:#484f58;margin-top:2px">'
-            f'{str(row["date"])[:10]}{val_str}</div>'
+            f'{html.escape(str(row["date"])[:10])}{val_str}</div>'
             f'</div>',
             unsafe_allow_html=True,
         )

@@ -7,6 +7,8 @@ Displays alert_feed with:
   - Color-coded severity
 """
 
+import html
+
 import pandas as pd
 import streamlit as st
 
@@ -131,6 +133,14 @@ def render_alerts_tab() -> None:
             why_it_matters = raw_msg.split(".")[0] if "." in raw_msg else raw_msg[:120]
 
         dt_str = str(row.get("date", ""))[:10]
+
+        # Escape DB-sourced text before HTML interpolation (same defence
+        # events_tab applies to news content).
+        category       = html.escape(str(category))
+        display_name   = html.escape(str(display_name))
+        why_it_matters = html.escape(str(why_it_matters))
+        val_line       = html.escape(val_line)
+        dt_str         = html.escape(dt_str)
 
         val_html = (
             f'<div style="font-size:11px;color:#484f58;margin-top:3px">{val_line}</div>'
