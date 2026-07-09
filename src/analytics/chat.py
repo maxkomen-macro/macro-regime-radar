@@ -34,7 +34,7 @@ MAX_TOOL_ITERATIONS = 10
 
 _FORBIDDEN_KEYWORDS = re.compile(
     r"\b(insert|update|delete|drop|alter|replace|create|attach|detach|"
-    r"vacuum|pragma|reindex|truncate)\b",
+    r"vacuum|pragma\w*|reindex|truncate|randomblob|zeroblob|load_extension)\b",
     re.IGNORECASE,
 )
 
@@ -44,6 +44,10 @@ def is_safe_select(sql: str) -> bool:
 
     Rejects anything with forbidden DDL/DML keywords, multiple statements,
     or non-SELECT openings. CTEs (`WITH ... SELECT`) are allowed.
+
+    `pragma\\w*` also blocks table-valued forms like pragma_table_info();
+    randomblob/zeroblob are blocked as memory-exhaustion vectors since the
+    row cap does not bound per-cell size.
     """
     if not isinstance(sql, str):
         return False

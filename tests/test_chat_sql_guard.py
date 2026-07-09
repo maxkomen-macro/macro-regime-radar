@@ -96,3 +96,32 @@ def test_reject_replace():
 
 def test_reject_vacuum():
     assert not is_safe_select("VACUUM")
+
+
+def test_reject_pragma_table_valued_function():
+    # `pragma_table_info` must not slip past the `pragma` keyword check
+    # (underscore is a word character, so `\bpragma\b` alone misses it).
+    assert not is_safe_select("SELECT * FROM pragma_table_info('regimes')")
+
+
+def test_reject_pragma_index_list_function():
+    assert not is_safe_select("SELECT name FROM pragma_index_list('signals')")
+
+
+def test_reject_randomblob():
+    # Unbounded blob construction — row cap does not bound per-cell size.
+    assert not is_safe_select("SELECT randomblob(999999999)")
+
+
+def test_reject_zeroblob():
+    assert not is_safe_select("SELECT zeroblob(999999999)")
+
+
+def test_reject_load_extension():
+    assert not is_safe_select("SELECT load_extension('/tmp/evil.so')")
+
+
+def test_allow_identifier_containing_keyword_substring():
+    # Columns like `update_date` / `created_at` must NOT be false-positives:
+    # `\bupdate\b` / `\bcreate\b` do not match inside a larger identifier.
+    assert is_safe_select("SELECT update_date, created_at FROM regimes")
