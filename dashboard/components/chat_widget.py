@@ -127,13 +127,11 @@ def _chat_dialog() -> None:
 
 _FAB_CSS = """
 <style>
-/* Macro Regime Radar — Chat FAB positioning */
-.element-container:has(> div > div > #macro-chat-fab-mark),
-div[data-testid="stElementContainer"]:has(> div > #macro-chat-fab-mark) {
-    display: none !important;
-}
-.element-container:has(> div > div > #macro-chat-fab-mark) + .element-container,
-div[data-testid="stElementContainer"]:has(> div > #macro-chat-fab-mark) + div[data-testid="stElementContainer"] {
+/* Macro Regime Radar — Chat FAB positioning.
+   Target the button's stable key-derived container class directly
+   (st.button(key="__macro_chat_fab__") -> container class st-key-__macro_chat_fab__).
+   Robust across Streamlit DOM nesting; no marker / :has() / sibling chain. */
+.st-key-__macro_chat_fab__ {
     position: fixed !important;
     bottom: 24px !important;
     right: 24px !important;
@@ -141,8 +139,7 @@ div[data-testid="stElementContainer"]:has(> div > #macro-chat-fab-mark) + div[da
     width: auto !important;
     margin: 0 !important;
 }
-.element-container:has(> div > div > #macro-chat-fab-mark) + .element-container button,
-div[data-testid="stElementContainer"]:has(> div > #macro-chat-fab-mark) + div[data-testid="stElementContainer"] button {
+.st-key-__macro_chat_fab__ button {
     background: #161b22 !important;
     color: #e6edf3 !important;
     border: 1px solid #4a9eff !important;
@@ -154,8 +151,7 @@ div[data-testid="stElementContainer"]:has(> div > #macro-chat-fab-mark) + div[da
     box-shadow: 0 4px 14px rgba(74,158,255,0.25), 0 0 0 1px rgba(74,158,255,0.15) !important;
     transition: transform 0.15s ease, box-shadow 0.15s ease !important;
 }
-.element-container:has(> div > div > #macro-chat-fab-mark) + .element-container button:hover,
-div[data-testid="stElementContainer"]:has(> div > #macro-chat-fab-mark) + div[data-testid="stElementContainer"] button:hover {
+.st-key-__macro_chat_fab__ button:hover {
     transform: translateY(-1px) !important;
     box-shadow: 0 6px 18px rgba(74,158,255,0.40), 0 0 0 1px rgba(74,158,255,0.30) !important;
 }
@@ -179,8 +175,6 @@ def render_chat_launcher() -> None:
         return
 
     _ensure_state()
-    st.markdown(_FAB_CSS, unsafe_allow_html=True)
-    # Marker: positioning CSS targets this element's next sibling.
-    st.markdown("<div id='macro-chat-fab-mark'></div>", unsafe_allow_html=True)
+    st.html(_FAB_CSS)
     if st.button("💬 AI Analyst", key="__macro_chat_fab__"):
         _chat_dialog()
