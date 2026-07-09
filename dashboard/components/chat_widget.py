@@ -140,6 +140,8 @@ _FAB_CSS = """
     margin: 0 !important;
 }
 .st-key-__macro_chat_fab__ button {
+    /* app hides non-column st.buttons via .stButton>button{opacity:0}; force the FAB visible */
+    opacity: 1 !important;
     background: #161b22 !important;
     color: #e6edf3 !important;
     border: 1px solid #4a9eff !important;
