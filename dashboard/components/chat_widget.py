@@ -139,7 +139,7 @@ _FAB_CSS = """
     width: auto !important;
     margin: 0 !important;
 }
-.st-key-__macro_chat_fab__ button {
+div[data-testid="stElementContainer"].st-key-__macro_chat_fab__ button {
     /* app hides non-column st.buttons via .stButton>button{opacity:0}; force the FAB visible */
     opacity: 1 !important;
     background: #161b22 !important;
@@ -153,7 +153,7 @@ _FAB_CSS = """
     box-shadow: 0 4px 14px rgba(74,158,255,0.25), 0 0 0 1px rgba(74,158,255,0.15) !important;
     transition: transform 0.15s ease, box-shadow 0.15s ease !important;
 }
-.st-key-__macro_chat_fab__ button:hover {
+div[data-testid="stElementContainer"].st-key-__macro_chat_fab__ button:hover {
     transform: translateY(-1px) !important;
     box-shadow: 0 6px 18px rgba(74,158,255,0.40), 0 0 0 1px rgba(74,158,255,0.30) !important;
 }
