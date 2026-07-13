@@ -146,9 +146,9 @@ div[data-testid="stElementContainer"].st-key-__macro_chat_fab__ button {
     color: #e6edf3 !important;
     border: 1px solid #4a9eff !important;
     border-radius: 999px !important;
-    padding: 10px 18px !important;
+    padding: 6px 12px !important;
     font-weight: 600 !important;
-    font-size: 12px !important;
+    font-size: 11px !important;
     letter-spacing: 0.4px !important;
     box-shadow: 0 4px 14px rgba(74,158,255,0.25), 0 0 0 1px rgba(74,158,255,0.15) !important;
     transition: transform 0.15s ease, box-shadow 0.15s ease !important;
