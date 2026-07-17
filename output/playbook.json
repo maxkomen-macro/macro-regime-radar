@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-07-16T12:16:22.914277",
+  "generated_at": "2026-07-17T03:16:42.830705",
   "as_of": "2026-05-01",
   "regime": "Overheating",
   "confidence": 0.5797,
   "baseline": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
   "because_today": [
-    "Because today yield spread curve steepening is above trend (z=+1.55).",
+    "Because today yield spread curve steepening is above trend (z=+1.87).",
     "Because today unemployment labor conditions is below trend (z=-2.05).",
-    "Because today 10Y real yield is positive at 2.33%, real rates are restrictive — a headwind for equities and gold.",
+    "Because today 10Y real yield is positive at 2.32%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.63%."
   ],
-  "summary": "Regime: Overheating (confidence 58%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today yield spread curve steepening is above trend (z=+1.55). Because today unemployment labor conditions is below trend (z=-2.05). Because today 10Y real yield is positive at 2.33%, real rates are restrictive — a headwind for equities and gold.",
+  "summary": "Regime: Overheating (confidence 58%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today yield spread curve steepening is above trend (z=+1.87). Because today unemployment labor conditions is below trend (z=-2.05). Because today 10Y real yield is positive at 2.32%, real rates are restrictive — a headwind for equities and gold.",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
