@@ -1,16 +1,15 @@
 {
-  "generated_at": "2026-07-20T13:03:09.839083",
+  "generated_at": "2026-07-21T03:19:30.420127",
   "as_of": "2026-06-01",
   "regime": "Overheating",
   "confidence": 0.2649,
   "baseline": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
   "because_today": [
-    "Because today yield spread curve steepening is above trend (z=+1.71).",
     "Because today unemployment labor conditions is below trend (z=-2.05).",
-    "Because today 10Y real yield is positive at 2.35%, real rates are restrictive — a headwind for equities and gold.",
+    "Because today 10Y real yield is positive at 2.31%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.63%."
   ],
-  "summary": "Regime: Overheating (confidence 26%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today yield spread curve steepening is above trend (z=+1.71). Because today unemployment labor conditions is below trend (z=-2.05). Because today 10Y real yield is positive at 2.35%, real rates are restrictive — a headwind for equities and gold.",
+  "summary": "Regime: Overheating (confidence 26%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because today unemployment labor conditions is below trend (z=-2.05). Because today 10Y real yield is positive at 2.31%, real rates are restrictive — a headwind for equities and gold. Policy rate (FEDFUNDS) is at 3.63%.",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
