@@ -1,5 +1,5 @@
 """
-dashboard/app.py — Macro Regime Radar Dashboard (Phase 3 + Trader Pack)
+dashboard/app.py — Macro Regime Radar Dashboard
 
 Run:
     streamlit run dashboard/app.py
@@ -940,7 +940,7 @@ with st.sidebar:
     overlay_reg = st.toggle("Overlay Regimes on Charts", value=False)
     norm_mode   = st.selectbox("Normalization", ["Raw", "Index to 100", "Z-score"])
     st.divider()
-    st.caption("Macro Regime Radar · Phase 3 + Trader Pack")
+    st.caption("Macro Regime Radar")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Load all macro data (shared across tabs)
@@ -1539,6 +1539,6 @@ except Exception as exc:
 
 st.markdown("""
 <div style="padding: 8px 20px; border-top: 1px solid #21262d; text-align: center; margin-top: 40px;">
-  <span style="font-size: 9px; color: #3d444d; letter-spacing: 0.3px;">Data: FRED · Polygon.io · Yahoo Finance</span>
+  <span style="font-size: 9px; color: #3d444d; letter-spacing: 0.3px;">Data: FRED · Yahoo Finance (yfinance) · Finnhub · NewsAPI · RSS</span>
 </div>
 """, unsafe_allow_html=True)

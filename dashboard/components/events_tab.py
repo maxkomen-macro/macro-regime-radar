@@ -338,19 +338,21 @@ button[data-testid="baseButton-secondary"][aria-label="ei-refresh"] {
 
 # ── Data loader ───────────────────────────────────────────────────────────────
 
+_NEWS_COLS = """SELECT id, headline, summary, url, source, category,
+                       published_at, fetched_at, market_impact, deal_size,
+                       sector_relevance, time_sensitivity, regime_relevance,
+                       overall_significance, regime_interpretation,
+                       perplexity_research, ticker
+                FROM news_feed"""
+
+
 @st.cache_data(ttl=300)
 def load_news(db_path: str, time_hours: int, category: str) -> pd.DataFrame:
     """Load news_feed rows filtered by time window and optional category."""
     try:
         conn = sqlite3.connect(db_path)
         time_filter = f"-{time_hours} hours"
-        base_cols = """SELECT id, headline, summary, url, source, category,
-                              published_at, fetched_at, market_impact, deal_size,
-                              sector_relevance, time_sensitivity, regime_relevance,
-                              overall_significance, regime_interpretation,
-                              perplexity_research, ticker
-                       FROM news_feed
-                       WHERE published_at >= datetime('now', ?)"""
+        base_cols = _NEWS_COLS + " WHERE published_at >= datetime('now', ?)"
         if category != "ALL":
             df = pd.read_sql_query(
                 base_cols + " AND category = ? ORDER BY overall_significance DESC,"
@@ -364,6 +366,35 @@ def load_news(db_path: str, time_hours: int, category: str) -> pd.DataFrame:
                 " published_at DESC LIMIT 150",
                 conn,
                 params=(time_filter,),
+            )
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def load_latest_news(db_path: str, category: str, limit: int = 50) -> pd.DataFrame:
+    """Latest-available fallback: most recent stored headlines regardless of age.
+
+    Used when the recency-windowed query returns nothing (stalled pipeline or
+    stale local snapshot) so the tab shows dated headlines with their
+    timestamps instead of zeros and empty states. Newest first.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        if category != "ALL":
+            df = pd.read_sql_query(
+                _NEWS_COLS + " WHERE category = ?"
+                " ORDER BY published_at DESC LIMIT ?",
+                conn,
+                params=(category, limit),
+            )
+        else:
+            df = pd.read_sql_query(
+                _NEWS_COLS + " ORDER BY published_at DESC LIMIT ?",
+                conn,
+                params=(limit,),
             )
         conn.close()
         return df
@@ -1155,11 +1186,42 @@ def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
         cat_query,
     )
 
+    # Latest-available fallback: an empty recency window must never render as
+    # zeros + empty states while dated coverage exists in the table.
+    fallback_note = None
+    if df.empty:
+        latest_df = load_latest_news(str(DB_PATH), cat_query, limit=50)
+        if not latest_df.empty:
+            newest = pd.to_datetime(
+                latest_df["published_at"], utc=True, errors="coerce"
+            ).max()
+            newest_str = (
+                newest.strftime("%b %d, %Y %H:%M UTC") if pd.notna(newest) else "unknown"
+            )
+            cat_lbl = st.session_state["ei_cat"]
+            scope = "" if cat_lbl == "ALL" else f" {cat_lbl}"
+            fallback_note = (
+                f"No{scope} headlines in the last {st.session_state['ei_time']} — "
+                f"latest stored coverage is {newest_str}; "
+                f"showing the {len(latest_df)} most recent."
+            )
+            df = latest_df
+
     # Resolve the current macro regime once per render — powers per-headline tags.
     current_regime = _current_regime(str(DB_PATH))
 
     # ── Zone 1: Summary bar ───────────────────────────────────────────────────
     render_summary_bar(df)
+
+    if fallback_note:
+        st.markdown(
+            f'<div style="background:{_CARD_BG};border:1px solid {_BORDER};'
+            f'border-left:3px solid {_ACCENT_YELLOW};border-radius:0 6px 6px 0;'
+            f'padding:8px 14px;margin:0 0 12px 0;color:{_MUTED};font-size:12px;'
+            f'font-family:system-ui,-apple-system,sans-serif;">'
+            f'{html.escape(fallback_note)}</div>',
+            unsafe_allow_html=True,
+        )
 
     # ── Zone 2: Filter bar ────────────────────────────────────────────────────
     render_filter_bar()
@@ -1168,9 +1230,9 @@ def render_events_tab(latest_signals: pd.DataFrame | None = None) -> None:
     if df.empty:
         st.markdown(
             _empty_state(
-                "No headlines loaded yet",
-                "Run the Refresh News Feed step or wait for the scheduled workflow "
-                "to populate the news_feed table.",
+                "No headlines stored",
+                "The news_feed table is empty. Run the Refresh News Feed step or "
+                "wait for the scheduled workflow to populate it.",
             ),
             unsafe_allow_html=True,
         )

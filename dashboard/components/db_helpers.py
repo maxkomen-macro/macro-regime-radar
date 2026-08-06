@@ -7,7 +7,10 @@ Market data loaders use @st.cache_data(ttl=300); daily-update loaders use ttl=36
 
 import json
 import sqlite3
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import pandas as pd
 import streamlit as st
@@ -361,11 +364,11 @@ _Z_TO_RAW = {
 }
 
 
-def _z_interpretation(label: str, z: float, raw_val: float | None) -> str:
-    direction = "surged" if z > 0 else "fell"
-    mag = "sharply" if abs(z) >= 2.5 else ("notably" if abs(z) >= 1.5 else "modestly")
-    raw_str = f" ({raw_val:+.2f}%)" if raw_val is not None else ""
-    return f"{label} {direction} {mag}{raw_str} — {abs(z):.1f}σ move"
+def _z_interpretation(metric: str, label: str, z: float, raw_val: float | None) -> str:
+    # Shared phrasing lives in src.utils.format so the dashboard and the memo
+    # can't diverge; it knows which metrics are levels vs changes and their units.
+    from src.utils.format import z_interpretation
+    return z_interpretation(metric, label, z, raw_val)
 
 
 def build_surprises_df(dm: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
@@ -399,7 +402,7 @@ def build_surprises_df(dm: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
             "label":          label,
             "z_score":        z,
             "raw_value":      raw_val,
-            "interpretation": _z_interpretation(label, z, raw_val),
+            "interpretation": _z_interpretation(col, label, z, raw_val),
         })
     if not rows:
         return pd.DataFrame()

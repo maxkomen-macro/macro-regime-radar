@@ -838,10 +838,10 @@ def build_surprise_ranking(derived_df: pd.DataFrame, top_n: int = 10) -> list:
             if not rs.empty:
                 raw_val = float(rs.iloc[0])
 
-        direction  = "surged" if z > 0 else "fell"
-        magnitude  = "sharply" if abs(z) >= 2.5 else ("notably" if abs(z) >= 1.5 else "modestly")
-        raw_str    = f" ({raw_val:+.2f}%)" if raw_val is not None else ""
-        interp     = f"{label} {direction} {magnitude}{raw_str} — {abs(z):.1f}σ move"
+        # Shared phrasing (src.utils.format) — knows levels vs changes and units,
+        # so the memo can never again call a CPI level a weekly surge.
+        from src.utils.format import z_interpretation
+        interp = z_interpretation(col, label, z, raw_val)
         rows.append({
             "label":          label,
             "z_score":        z,

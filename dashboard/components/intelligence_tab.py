@@ -41,6 +41,7 @@ from src.analytics.intelligence import (
 from src.analytics.regimes import get_current_regime_probs
 from src.analytics.credit import get_credit_metrics
 from src.analytics.recession import get_recession_probability
+from src.utils.format import ordinal
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CSS constants
@@ -146,7 +147,7 @@ def _render_narrative_card(takeaway: dict, duration: dict) -> None:
   <div style="display:flex;gap:20px;font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:8px;flex-wrap:wrap;">
     <span>Signal: <strong style="color:{signal_color};">{signal}</strong></span>
     <span>Duration: <strong style="color:var(--text);">{dur_months:.1f}mo</strong> ({dur_status})</span>
-    <span style="margin-left:auto;font-size:11px;">Updated {updated}</span>
+    <span style="margin-left:auto;font-size:11px;">Macro data as of {updated}</span>
   </div>
 </div>"""
     components.html(html, height=INTELLIGENCE_CARD_HEIGHT, scrolling=False)
@@ -160,7 +161,7 @@ def _render_regime_gauge(state: dict, probs: dict) -> None:
     """Animated SVG semicircular gauge."""
     label    = state["label"]
     regime_c = REGIME_COLORS.get(label, "#4a9eff")
-    probs100 = state["approx_probs"]  # {display name: int}
+    probs100 = state["probs"]  # stored softmax prob_* columns, {display name: int}
     top_prob = probs100.get(label, 30)
 
     # SVG gauge: semicircle, angle from 0° (left) to 180° (right)
@@ -382,7 +383,7 @@ def _render_duration_card(duration: dict) -> None:
   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px;">
     <div>
       <div class="metric-big" style="color:{s_color};">{months:.1f}mo</div>
-      <div class="metric-label">{regime} · {pct_dur:.0f}th percentile</div>
+      <div class="metric-label">{regime} · {ordinal(pct_dur)} percentile</div>
     </div>
     <div style="text-align:right;">
       <div style="font-size:12px;color:var(--muted);">Historical avg</div>
@@ -851,7 +852,7 @@ def render() -> None:
                     with c1:
                         st.metric("Similarity", f"{a['similarity_score']}%")
                     with c2:
-                        st.metric("HY Spread Pct", f"{a['hy_spread_pct']}th")
+                        st.metric("HY Spread Pct", ordinal(a["hy_spread_pct"]))
                     with c3:
                         st.metric("Next Regime", a["next_regime"])
                     st.markdown(f"**What happened:** {a['what_happened']}")

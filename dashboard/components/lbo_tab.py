@@ -14,6 +14,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.analytics.lbo import get_lbo_defaults, run_lbo_model
+from src.utils.format import ordinal
 
 # ---------------------------------------------------------------------------
 # Constants — dark theme
@@ -103,7 +104,7 @@ def _render_live_rate_banner(defaults: dict, live_rate: float) -> None:
 .asof {{ font-size: 10px; color: {_MUTED}; margin-top: 5px; }}
 </style></head><body>
 <div class="banner">
-  <div class="label">Live Financing Rate</div>
+  <div class="label">Financing Rate</div>
   <div class="formula">
     <span class="pill">Fed Funds <strong>{ff:.2f}%</strong></span>
     <span class="plus">+</span>
@@ -398,7 +399,7 @@ def _render_market_context() -> None:
 
     hy_str   = f"{hy_oas:.0f} bps" if hy_oas is not None else "—"
     cost_str = lbo_cost or "—"
-    rank_str = f" ({hy_pct_rank}th pct vs 30yr history)" if hy_pct_rank is not None else ""
+    rank_str = f" ({ordinal(hy_pct_rank)} pct vs 30yr history)" if hy_pct_rank is not None else ""
 
     # Read-through sentence
     if lbo_cost:

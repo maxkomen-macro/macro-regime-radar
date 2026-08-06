@@ -85,9 +85,18 @@ def _section_header(title: str, color: str = _ACCENT) -> None:
 
 
 def _render_regime_banner(data: dict) -> None:
-    """Gradient banner showing current regime, confidence and data range."""
+    """Gradient banner showing current regime, model probability and data range."""
     current = data["current_regime"]
     color   = _REGIME_COLORS.get(current, _ACCENT)
+    dominant_prob = data.get("dominant_prob")
+    if dominant_prob is not None:
+        # Stored softmax probability — same source as the header badge
+        prob_line = (
+            f"{dominant_prob:.0%} model probability &middot; "
+            f"{data['confidence']:.0%} conviction"
+        )
+    else:
+        prob_line = f"{data['confidence']:.0%} conviction"
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
   * {{box-sizing:border-box;margin:0;padding:0;}}
@@ -107,7 +116,7 @@ def _render_regime_banner(data: dict) -> None:
                   letter-spacing:0.1em;margin-bottom:4px;">Current Regime</div>
       <div style="font-size:20px;font-weight:600;color:{color};">{current}</div>
       <div style="font-size:11px;color:{_MUTED};margin-top:3px;">
-        {data['confidence']:.0%} confidence
+        {prob_line}
       </div>
     </div>
     <div style="text-align:right;">

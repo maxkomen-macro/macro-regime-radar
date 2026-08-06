@@ -23,6 +23,8 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from src.utils.format import ordinal
+
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "macro_radar.db"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -467,8 +469,8 @@ def _render_percentile_card(m: dict) -> None:
     ig_color = _bar_color(ig_rank)
     hy_interp = _interp(hy_rank)
     ig_interp = _interp(ig_rank)
-    hy_rank_str = f"{hy_rank}th" if hy_rank is not None else "—"
-    ig_rank_str = f"{ig_rank}th" if ig_rank is not None else "—"
+    hy_rank_str = ordinal(hy_rank) if hy_rank is not None else "—"
+    ig_rank_str = ordinal(ig_rank) if ig_rank is not None else "—"
 
     components.html(
         f"""<!DOCTYPE html>
@@ -567,8 +569,8 @@ tr:hover td {{ background:rgba(255,255,255,0.02); }}
     <tbody>{rows_html}</tbody>
   </table>
   <div class="footer">
-    Returns are approximate medians from academic and industry research.
-    Phase 8 will replace with live backtest from this dashboard's regime history.
+    Static reference table — approximate medians from academic and industry
+    research, not computed from this dashboard's data.
   </div>
 </div>
 </body></html>""",
@@ -741,8 +743,8 @@ def render() -> None:
         f'font-size:14px;padding:3px 12px;border-radius:4px;background:rgba(0,0,0,0.25)">'
         f'● {label}</span>'
         f'</div>'
-        f'<span style="font-size:10px;color:#484f58">FRED BAML series · refreshed daily 6 AM ET'
-        f' · as of {as_of}</span>'
+        f'<span style="font-size:10px;color:#484f58">FRED BAML series · monthly observations'
+        f' · latest {as_of}</span>'
         f'</div>',
         unsafe_allow_html=True,
     )

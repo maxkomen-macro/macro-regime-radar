@@ -259,17 +259,36 @@ def get_regime_history() -> pd.DataFrame:
     return df.set_index("date")
 
 
-def get_current_regime() -> Tuple[str, float]:
-    """Return (label, confidence) for the most recent regime row."""
+def get_current_regime() -> Tuple[str, float, Optional[float]]:
+    """Return (label, confidence, dominant_prob) for the most recent regime row.
+
+    dominant_prob is the stored softmax probability of the labeled regime
+    (regimes.prob_* columns) — the same number the header badge shows. None
+    for legacy rows where the prob_* columns are NULL.
+    """
     conn = _get_conn()
     df = pd.read_sql_query(
-        "SELECT label, confidence FROM regimes ORDER BY date DESC LIMIT 1",
+        "SELECT label, confidence, prob_goldilocks, prob_overheating, "
+        "prob_stagflation, prob_recession "
+        "FROM regimes ORDER BY date DESC LIMIT 1",
         conn,
     )
     conn.close()
     if df.empty:
-        return "Unknown", 0.0
-    return str(df.iloc[0]["label"]), float(df.iloc[0]["confidence"])
+        return "Unknown", 0.0, None
+    label = str(df.iloc[0]["label"])
+    prob_col = {
+        "Goldilocks":     "prob_goldilocks",
+        "Overheating":    "prob_overheating",
+        "Stagflation":    "prob_stagflation",
+        "Recession Risk": "prob_recession",
+    }.get(label)
+    dominant_prob = None
+    if prob_col is not None:
+        val = df.iloc[0][prob_col]
+        if val is not None and not pd.isna(val):
+            dominant_prob = float(val)
+    return label, float(df.iloc[0]["confidence"]), dominant_prob
 
 
 def get_risk_free_rate() -> float:
@@ -1251,7 +1270,8 @@ def get_allocation_data() -> Dict:
     Fetch all data, run optimizations, and return a dict for the dashboard.
 
     Keys:
-        current_regime, confidence, rf_rate,
+        current_regime, confidence, dominant_prob (stored softmax prob of the
+        labeled regime, 0–1 or None), rf_rate,
         regime_stats, regime_correlations,
         optimizations (mvo/min_var/risk_parity/frontier/asset_names) or None,
         drawdowns, data_start, data_end, n_months, asset_classes
@@ -1264,7 +1284,7 @@ def get_allocation_data() -> Dict:
     print(f"  {n_months} months  ({data_start} → {data_end})  ×  {len(returns.columns)} assets")
 
     regimes         = get_regime_history()
-    current_regime, confidence = get_current_regime()
+    current_regime, confidence, dominant_prob = get_current_regime()
     rf_rate         = get_risk_free_rate()
     regime_stats    = get_regime_conditional_stats(returns, regimes)
     regime_cov      = get_regime_conditional_covariance(returns, regimes)
@@ -1498,6 +1518,7 @@ def get_allocation_data() -> Dict:
     return {
         "current_regime":      current_regime,
         "confidence":          confidence,
+        "dominant_prob":       dominant_prob,
         "rf_rate":             rf_rate,
         "regime_stats":        regime_stats,
         "regime_correlations": regime_corr,

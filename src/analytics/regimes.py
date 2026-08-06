@@ -34,21 +34,33 @@ def _get_conn() -> sqlite3.Connection:
 
 def get_current_regime_probs() -> dict[str, float]:
     """
-    Return approximate regime probabilities as floats (0–1) for the most recent month.
-
-    Since exact softmax probabilities are not stored in the regimes table, we derive
-    them from the stored confidence score using historical base rates as priors.
+    Return the stored softmax regime probabilities as floats (0–1) for the most
+    recent month, read from the regimes table's prob_* columns (written by
+    src/regime.py). Falls back to a confidence-based approximation only for
+    legacy rows where the prob_* columns are NULL.
 
     Keys: 'goldilocks', 'overheating', 'stagflation', 'recession_risk'
     """
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT label, confidence FROM regimes ORDER BY date DESC LIMIT 1"
+            "SELECT label, confidence, prob_goldilocks, prob_overheating, "
+            "prob_stagflation, prob_recession "
+            "FROM regimes ORDER BY date DESC LIMIT 1"
         ).fetchone()
         if not row:
             return {k.lower().replace(" ", "_"): 0.25 for k in REGIME_BASE_RATES}
 
+        stored = {
+            "goldilocks":     row["prob_goldilocks"],
+            "overheating":    row["prob_overheating"],
+            "stagflation":    row["prob_stagflation"],
+            "recession_risk": row["prob_recession"],
+        }
+        if all(v is not None for v in stored.values()):
+            return {k: round(float(v), 4) for k, v in stored.items()}
+
+        # Legacy fallback: prob_* columns NULL — approximate from confidence
         label = row["label"]
         confidence = float(row["confidence"])
 

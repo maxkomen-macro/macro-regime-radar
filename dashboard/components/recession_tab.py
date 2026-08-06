@@ -15,6 +15,8 @@ import altair as alt
 import streamlit as st
 import streamlit.components.v1 as components
 
+from src.utils.format import ordinal
+
 # ── Caching ──────────────────────────────────────────────────────────────────
 
 @st.cache_resource
@@ -124,12 +126,15 @@ def _gauge_svg(prob: float, color: str) -> str:
     ARC_LEN  = math.pi * 80
     fill_len = ARC_LEN * (prob / 100.0)
     gap_len  = ARC_LEN - fill_len + 1000
-    g_end    = ARC_LEN * 0.33
-    o_end    = ARC_LEN * 0.60
+    # Band boundaries match _classify_prob (src/analytics/recession.py) and the
+    # Methodology tab: Low <20%, Elevated 20-40%, High >=40%. The arc must show
+    # the same bands the badge announces.
+    g_end    = ARC_LEN * 0.20
+    o_end    = ARC_LEN * 0.40
     angle_rad = math.radians(180.0 - (prob / 100.0) * 180.0)
     nx = round(100 + 65 * math.cos(angle_rad), 2)
     ny = round(100 - 65 * math.sin(angle_rad), 2)
-    fill_color = "#2ecc71" if prob < 33 else "#e67e22" if prob < 60 else "#e74c3c"
+    fill_color = "#2ecc71" if prob < 20 else "#e67e22" if prob < 40 else "#e74c3c"
     return (
         f'<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg"'
         f' style="width:100%;max-width:200px;display:block;margin:0 auto;">'
@@ -301,7 +306,7 @@ def render() -> None:
             <span style="font-size:12px;color:#8b949e;">12-month recession probability</span>
           </div>
           <span style="font-size:11px;color:#586069;">
-            Logistic regression · trained on NBER recession dates · updated daily
+            Logistic regression · trained on NBER recession dates · monthly inputs through {m.get("data_as_of", "—")}
           </span>
         </div>""",
         unsafe_allow_html=True,
@@ -334,7 +339,7 @@ def render() -> None:
         inv_note = (
             f'<span style="color:#e74c3c;">Inverted {inv_dur} months</span>'
             if m["is_inverted"]
-            else f'<span style="color:#2ecc71;">{pct_rank}th pct vs 30yr history</span>'
+            else f'<span style="color:#2ecc71;">{ordinal(pct_rank)} pct vs 30yr history</span>'
         )
         _html(f"""
 <div class="card card-accent" style="--accent:{spread_color}">
@@ -517,7 +522,7 @@ def render() -> None:
         inv_color = "#e74c3c" if m["is_inverted"] else "#2ecc71"
         inv_txt   = (
             f"Inverted {inv_dur} months" if m["is_inverted"]
-            else f"{pct_rank}th pct vs 30yr"
+            else f"{ordinal(pct_rank)} pct vs 30yr"
         )
         progress_pct = max(0, min(100, pct_rank))
         _html(f"""

@@ -10,13 +10,18 @@ Displays:
   - TradingView widgets by group
 """
 
+import sys
 from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import pandas as pd
 import pytz
 import streamlit as st
 import streamlit.components.v1 as components
 
+from src.utils.format import ordinal
 from components.db_helpers import (
     get_current_prices,
     get_derived_latest,
@@ -493,7 +498,7 @@ body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe 
         sorted_spark = sorted(spark)
         rank = sum(1 for v in sorted_spark if v <= cv) / len(sorted_spark)
         pct = int(round(rank * 100))
-        ctx = f"{macro} · {pct}th pctile of last 60d vol" if macro else f"{pct}th pctile of last 60d vol"
+        ctx = f"{macro} · {ordinal(pct)} pctile of last 60d vol" if macro else f"{ordinal(pct)} pctile of last 60d vol"
     else:
         ctx = macro or ""
 

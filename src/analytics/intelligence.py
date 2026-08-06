@@ -20,6 +20,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.utils.format import ordinal
+
 ROOT    = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "macro_radar.db"
 
@@ -480,7 +482,9 @@ def _pct_rank(series: pd.Series, current_val: float) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _derive_probs_from_confidence(label: str, confidence: float) -> dict[str, int]:
-    """Convert regime label + confidence to full probability distribution (0–100 ints)."""
+    """Legacy fallback ONLY (regimes rows with NULL prob_* columns): approximate a
+    probability distribution (0–100 ints) from label + confidence. The live path
+    reads the stored softmax prob_* columns in _get_current_regime_state."""
     remaining = 1.0 - confidence
     other_total = sum(v for k, v in REGIME_BASE_RATES.items() if k != label)
     probs: dict[str, int] = {}
@@ -503,7 +507,9 @@ def _derive_probs_from_confidence(label: str, confidence: float) -> dict[str, in
 def _get_current_regime_state(conn: sqlite3.Connection | None = None) -> dict:
     """
     Query regimes table for the latest row.
-    Returns dict with label, confidence, approx_probs (keyed by display name), date.
+    Returns dict with label, confidence, probs (stored softmax prob_* columns,
+    0–100 ints keyed by display name), date. Falls back to a confidence-based
+    approximation only for legacy rows where prob_* are NULL.
     """
     _close = False
     if conn is None:
@@ -511,21 +517,38 @@ def _get_current_regime_state(conn: sqlite3.Connection | None = None) -> dict:
         _close = True
     try:
         row = conn.execute(
-            "SELECT date, label, confidence FROM regimes ORDER BY date DESC LIMIT 1"
+            "SELECT date, label, confidence, prob_goldilocks, prob_overheating, "
+            "prob_stagflation, prob_recession "
+            "FROM regimes ORDER BY date DESC LIMIT 1"
         ).fetchone()
         if not row:
             label = "Goldilocks"
             confidence = 0.30
             date_str = "N/A"
+            probs = _derive_probs_from_confidence(label, confidence)
         else:
             label = row["label"]
             confidence = float(row["confidence"])
             date_str = row["date"]
-        probs = _derive_probs_from_confidence(label, confidence)
+            stored = {
+                "Goldilocks":     row["prob_goldilocks"],
+                "Overheating":    row["prob_overheating"],
+                "Stagflation":    row["prob_stagflation"],
+                "Recession Risk": row["prob_recession"],
+            }
+            if all(v is not None for v in stored.values()):
+                probs = {k: round(float(v) * 100) for k, v in stored.items()}
+                # Fix rounding so the four probabilities sum to 100
+                residual = 100 - sum(probs.values())
+                if residual:
+                    dominant = max(probs, key=lambda k: probs[k])
+                    probs[dominant] += residual
+            else:
+                probs = _derive_probs_from_confidence(label, confidence)
         return {
             "label": label,
             "confidence": confidence,
-            "approx_probs": probs,
+            "probs": probs,
             "date": date_str,
         }
     finally:
@@ -722,12 +745,19 @@ def generate_market_takeaway(
     # Safe fallbacks
     if hy_pct is None:
         hy_pct = 50
-    rec_prob = recession_prob if recession_prob is not None else 15.0
+    # Neutral stand-in for branching only when the model is unavailable —
+    # the narrative sentence below is suppressed in that case, never invented.
+    rec_available = recession_prob is not None
+    rec_prob = recession_prob if rec_available else 15.0
 
-    # ── Divergence detection ─────────────────────────────────────────────────
+    # ── Divergence detection (+ regime as-of date for honest freshness) ──────
     divergences: list[str] = []
+    regime_as_of = None
     conn = _get_conn()
     try:
+        row_d = conn.execute("SELECT MAX(date) FROM regimes").fetchone()
+        if row_d and row_d[0]:
+            regime_as_of = pd.Timestamp(row_d[0]).strftime("%b %Y")
         dgs10 = _load_series("DGS10", conn)
         dgs2  = _load_series("DGS2",  conn)
         if not dgs10.empty and not dgs2.empty:
@@ -762,7 +792,7 @@ def generate_market_takeaway(
         primary_signal = "Mixed"
 
     # ── Narrative construction ───────────────────────────────────────────────
-    spread_desc = f"{hy_pct}th percentile"
+    spread_desc = f"{ordinal(hy_pct)} percentile"
     if hy_pct < 20:
         spread_qual = "historically tight"
     elif hy_pct < 40:
@@ -774,12 +804,15 @@ def generate_market_takeaway(
     else:
         spread_qual = "historically wide"
 
-    if rec_prob < 15:
-        rec_context = f"recession risk remains low at {rec_prob:.0f}%"
-    elif rec_prob < 30:
-        rec_context = f"recession risk is elevated at {rec_prob:.0f}%"
+    # Bands match the recession tab / Methodology classification (Low <20, Elevated 20–40, High ≥40)
+    if not rec_available:
+        rec_context = ""
+    elif rec_prob < 20:
+        rec_context = f"the 12-month recession model reads {rec_prob:.1f}% — low"
+    elif rec_prob < 40:
+        rec_context = f"the 12-month recession model reads {rec_prob:.1f}% — elevated"
     else:
-        rec_context = f"recession risk is high at {rec_prob:.0f}% — watch closely"
+        rec_context = f"the 12-month recession model reads {rec_prob:.1f}% — high, watch closely"
 
     if primary_signal == "Risk-On":
         implication = (
@@ -804,15 +837,18 @@ def generate_market_takeaway(
     else:
         div_sentence = ""
 
+    rec_sentence = f"{rec_context[0].upper()}{rec_context[1:]}. " if rec_context else ""
     narrative = (
         f"Markets are in <strong>{top_regime}</strong> regime ({top_prob}% probability) "
         f"with credit spreads at the <strong>{spread_desc}</strong> — {spread_qual}. "
         f"{div_sentence}"
-        f"{rec_context.capitalize()}. "
+        f"{rec_sentence}"
         f"{implication}"
     )
 
-    updated_ago = "Just now"
+    # Honest freshness: the narrative is built from the latest stored regime row,
+    # so stamp it with that row's month — never "Just now" over month-old inputs.
+    updated_ago = regime_as_of or "—"
 
     return {
         "narrative":        narrative,
@@ -1349,7 +1385,7 @@ def run_scenario(
 
     # Get current regime state
     state = _get_current_regime_state()
-    current_probs = state["approx_probs"]  # {"Goldilocks": 30, ...}
+    current_probs = state["probs"]  # stored softmax, {"Goldilocks": 30, ...}
 
     stressed_probs = _estimate_stressed_probs(current_probs, shocks)
     prob_changes = {

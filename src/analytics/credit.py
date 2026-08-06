@@ -28,6 +28,8 @@ import sqlite3
 from pathlib import Path
 
 import numpy as np
+
+from src.utils.format import ordinal
 import pandas as pd
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
@@ -351,8 +353,8 @@ if __name__ == "__main__":
     print(f"HY/IG ratio  : {m['hy_ig_ratio']}")
     print(f"Distress %   : {m['distress_ratio']}%")
     print(f"LBO all-in   : {m['lbo_all_in_cost']}")
-    print(f"HY pct rank  : {m['hy_pct_rank']}th percentile")
-    print(f"IG pct rank  : {m['ig_pct_rank']}th percentile")
+    print(f"HY pct rank  : {ordinal(m['hy_pct_rank'])} percentile")
+    print(f"IG pct rank  : {ordinal(m['ig_pct_rank'])} percentile")
     if m["transition_3m"]:
         print(f"3M matrix states: {list(m['transition_3m'].keys())}")
     else:

@@ -277,9 +277,9 @@ def _render_data_sources() -> None:
       <td style="{_TD_STYLE}">Monthly (daily series resampled to month-end)</td>
     </tr>
     <tr>
-      <td style="{_TD_ALT_STYLE}"><span style="color:#e6edf3;font-weight:500">Polygon.io</span></td>
-      <td style="{_TD_ALT_STYLE}">SPY, QQQ, IWM, TLT, HYG, LQD, UUP, GLD, USO</td>
-      <td style="{_TD_ALT_STYLE}">Daily (OHLCV + derived returns)</td>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#e6edf3;font-weight:500">Yahoo Finance (yfinance)</span></td>
+      <td style="{_TD_ALT_STYLE}">SPY, QQQ, IWM, TLT, HYG, LQD, UUP, GLD, USO<br>+ sector / international / vol ETFs (23 daily symbols)</td>
+      <td style="{_TD_ALT_STYLE}">Daily OHLCV + 5-min intraday during market hours</td>
     </tr>
     <tr>
       <td style="{_TD_STYLE}"><span style="color:#e6edf3;font-weight:500">Manual</span></td>
@@ -303,7 +303,7 @@ def _render_data_sources() -> None:
       <td style="{_TD_STYLE}">Daily at 11:00 UTC (GitHub Actions cron)</td>
     </tr>
     <tr>
-      <td style="{_TD_ALT_STYLE}">Market data fetch (Polygon.io)</td>
+      <td style="{_TD_ALT_STYLE}">Market data fetch (yfinance)</td>
       <td style="{_TD_ALT_STYLE}">Daily incremental, same workflow</td>
     </tr>
     <tr>
