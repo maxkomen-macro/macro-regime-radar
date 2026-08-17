@@ -132,11 +132,17 @@ def run_lbo_model(
 
     Returns dict with deal summary, returns, annual schedule, and viability.
     """
-    # --- Entry structure ---
+    # --- Entry structure (sources must cover uses) ---
+    # Uses = purchase price (entry EV) + transaction fees; sources = debt +
+    # sponsor equity. Fees are a USE of funds, so they INCREASE the equity
+    # check. The original formula subtracted them (entry_ev - debt - fees),
+    # which understated the check and made rising fees flatter IRR/MOIC —
+    # the fee slider moved returns the wrong way (night-2 critique P0,
+    # fixed 2026-08-07; pinned by test_api_lbo_fee_direction).
     entry_ev     = ebitda * entry_multiple
     entry_debt   = ebitda * leverage_ratio
     fee_dollars  = entry_ev * mgmt_fee_pct / 100
-    entry_equity = entry_ev - entry_debt - fee_dollars
+    entry_equity = entry_ev + fee_dollars - entry_debt
 
     if entry_equity <= 0:
         return {
@@ -151,7 +157,7 @@ def run_lbo_model(
             "equity_gain": None,
             "schedule":    [],
             "viable":      False,
-            "error_msg":   "Leverage too high — debt exceeds entry EV",
+            "error_msg":   "Leverage too high — debt exceeds entry EV plus fees",
         }
 
     # --- Annual schedule (declining balance interest) ---
