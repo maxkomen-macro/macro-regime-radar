@@ -1,0 +1,95 @@
+:root{
+/* ── Base surfaces — GitHub-dark lineage, taken from the dashboard source ── */
+--void:#010409;          /* deepest well: iframe backdrops, terminal body */
+--bg-base:#0d1117;       /* app background */
+--bg-base-alt:#0e1117;   /* streamlit page background variant */
+--surface:#161b22;       /* cards, signal cards, panels */
+--surface-raised:#21262d;/* gauge tracks, chips, hover fills */
+--surface-hover:#1c2230;
+
+/* ── Lines ── */
+--line-hair:#21262d;     /* 0.5px hairlines, section-header underline */
+--line:#30363d;          /* standard card / table borders */
+--line-strong:#484f58;   /* emphasised dividers, muted badge borders */
+
+/* ── Text ── */
+--text:#e6edf3;          /* primary */
+--text-2:#c9d1d9;        /* subsection headers, body copy */
+--text-muted:#8b949e;    /* secondary copy */
+--text-label:#8899aa;    /* uppercase section labels */
+--text-faint:#484f58;    /* meta, timestamps, axis */
+
+/* ── Accent ── */
+--accent:#4a9eff;        /* the one brand blue: links, focus, sparklines */
+--accent-dim:rgba(74,158,255,.12);
+--accent-line:rgba(74,158,255,.35);
+--accent-alt:#1f77b4;    /* streamlit theme primary */
+
+/* ── Semantic / directional ── */
+--pos:#3fb950;           /* up, clear, risk-on */
+--pos-soft:#2ecc71;      /* memo + chart green */
+--neg:#da3633;           /* down, triggered */
+--neg-soft:#e74c3c;      /* memo + chart red */
+--neg-text:#f08785;      /* red text on dark, keeps contrast */
+--warn:#d29922;          /* watch */
+--warn-hot:#e67e22;      /* overheating, elevated */
+--neutral:#95a5a6;       /* flat, no-change, recession-risk grey */
+--research:#7c3aed;      /* Perplexity cited-research accent */
+
+/* ── Alert levels (alert_feed.level) ── */
+--level-info:var(--accent);
+--level-watch:var(--warn);
+--level-risk:var(--neg);
+
+/* ── Regime colours (src/regime.py × shared_styles.REGIME_COLORS) ── */
+--regime-goldilocks:#2ecc71;
+--regime-overheating:#e67e22;
+--regime-stagflation:#e74c3c;
+--regime-recession:#95a5a6;
+
+/* Muted translucent regime badge fills — 12% fill / 25% border, derived from
+   the regime ramp above (owner ruling 2026-08-06, day-1 session). BUNDLE
+   CORRECTION: the bundle's _BADGE_MUTED_STYLES keyed Overheating to red and
+   Stagflation to amber, contradicting the regime ramp 16px away; one hue per
+   regime everywhere now. Text rungs stay AA on their own tints — Stagflation's
+   #e74c3c reads 4.0:1 as text, so it shifts to red-on-dark #f08785 (6.2:1),
+   the documented "red as text" rule; the other three bases clear 4.5:1 as-is. */
+--badge-goldilocks-bg:rgba(46,204,113,.12);
+--badge-goldilocks-fg:#2ecc71;
+--badge-goldilocks-line:rgba(46,204,113,.25);
+--badge-overheating-bg:rgba(230,126,34,.12);
+--badge-overheating-fg:#e67e22;
+--badge-overheating-line:rgba(230,126,34,.25);
+--badge-stagflation-bg:rgba(231,76,60,.12);
+--badge-stagflation-fg:#f08785;
+--badge-stagflation-line:rgba(231,76,60,.25);
+--badge-recession-bg:rgba(149,165,166,.12);
+--badge-recession-fg:#95a5a6;
+--badge-recession-line:rgba(149,165,166,.25);
+
+/* ── Gauge fill ramp — threshold proximity, signal_card_html ── */
+--gauge-0:#3fb950;   /* <50% of threshold */
+--gauge-50:#d29922;  /* 50–75% */
+--gauge-75:#e67e22;  /* 75–95% */
+--gauge-95:#da3633;  /* >=95% */
+
+/* ── Memo palette — the emailed daily/weekly briefing runs its own darker,
+      bluer scheme so it survives email clients ── */
+--memo-bg:#1a1a2e;
+--memo-card:#16213e;
+--memo-line:#2c3e50;
+--memo-text:#e0e0e0;
+--memo-text-2:#d0d4dc;
+--memo-label:#bdc3c7;
+--memo-muted:#7f8c8d;
+--memo-faint:#4a5568;
+--memo-link:#3498db;
+
+/* ── Semantic aliases ── */
+--surface-card:var(--surface);
+--surface-page:var(--bg-base);
+--text-body:var(--text-2);
+--text-heading:var(--text);
+--border-card:var(--line-hair);
+--link:var(--accent);
+}

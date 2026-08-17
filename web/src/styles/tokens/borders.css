@@ -1,0 +1,28 @@
+:root{
+/* Radii — small and consistent. Nothing in the product is pill-shaped
+   except the memo regime chip (20px). */
+--r-xs:3px;   /* gauge bars, inline chips */
+--r-sm:4px;
+--r-md:6px;   /* cards, badges, buttons — the default */
+--r-lg:8px;   /* memo cards */
+--r-pill:20px;/* memo regime chip only */
+
+/* Strokes — 0.5px hairline is the house rule; 1px only for dividers */
+--bw-hair:.5px; /* @kind spacing */
+--bw:1px; /* @kind spacing */
+--bw-accent:3px; /* @kind spacing */ /* left accent bar on intelligence / read-through panels */
+
+--border-hair:var(--bw-hair) solid var(--line-hair); /* @kind other */
+--border-card:var(--bw-hair) solid var(--line-hair); /* @kind other */
+--border-strong:var(--bw) solid var(--line); /* @kind other */
+--divider:var(--bw) solid var(--line-hair); /* @kind other */
+
+/* Elevation: this system is flat. Depth comes from surface value, not shadow.
+   The only shadows in use are focus rings and the floating chat widget. */
+--shadow-none:none; /* @kind shadow */
+--shadow-float:0 8px 24px rgba(1,4,9,.6);
+--ring-accent:0 0 0 1px var(--accent-line);
+--glow-pos:0 0 8px rgba(63,185,80,.45);
+--glow-neg:0 0 8px rgba(218,54,51,.45);
+--glow-accent:0 0 10px rgba(74,158,255,.45);
+}

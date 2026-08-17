@@ -1,0 +1,30 @@
+:root{
+/* Dense terminal scale — the dashboard pads in 2px increments below 12 */
+--sp-0:0; /* @kind spacing */
+--sp-1:2px;
+--sp-2:3px;
+--sp-3:4px;
+--sp-4:6px;
+--sp-5:8px;
+--sp-6:10px;
+--sp-7:12px;   /* card padding, default */
+--sp-8:16px;
+--sp-9:20px;
+--sp-10:24px;
+--sp-11:32px;
+--sp-12:40px;
+
+--gap-chip:4px;
+--gap-inline:8px;
+--gap-card:12px;
+--gap-section:16px;
+
+--pad-card:12px;
+--pad-card-lg:16px;
+--pad-badge:8px 20px; /* @kind spacing */
+--pad-chip:2px 6px; /* @kind spacing */
+--pad-cell:8px 12px; /* @kind spacing */
+
+--maxw-memo:600px; /* @kind other */
+--maxw-prose:74ch; /* @kind other */
+}

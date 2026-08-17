@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Macro Regime Radar — a live quantitative macro terminal. FRED data, a four-regime classifier, five monitored signals, automated Claude briefings."
+    />
+    <!-- Audience 1 arrives via LinkedIn — give the unfurl card real copy.
+         og:image is an owner decision (no logo exists; a terminal screenshot
+         would be on-brand). -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Macro Regime Radar" />
+    <meta
+      property="og:description"
+      content="A live quantitative macro terminal: FRED → classifier → signals → Claude briefings, refreshed daily."
+    />
+    <meta name="twitter:card" content="summary" />
+    <!-- The brand mark is the wordmark's pulsing blue dot; the favicon is that dot. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230d1117'/%3E%3Ccircle cx='8' cy='8' r='4' fill='%234a9eff'/%3E%3C/svg%3E"
+    />
+    <title>Macro Regime Radar</title>
+    <style>
+      /* Pre-hydration paint: keep the first frame dark, never white. */
+      html { background: #0d1117; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,6 +1,19 @@
-# Local read-only API for Atlas (api/). Kept separate from requirements.txt so
-# the Streamlit Cloud build (Python 3.12 deploy target) does not pull these in —
-# this service runs locally only. Install with: pip install -r requirements-api.txt
+# API service deps (api/). Kept separate from requirements.txt so the Streamlit
+# Cloud build (Python 3.12 deploy target) does not pull these in.
+# Install with: pip install -r requirements-api.txt
 fastapi
 uvicorn[standard]
-httpx  # required by fastapi.testclient.TestClient (tests/test_api.py)
+httpx  # TestClient (tests/test_api.py) + the EODHD delayed-quote REST poll (api/stream.py)
+# api/stream.py uses the websockets CLIENT API for the upstream EODHD feeds —
+# uvicorn[standard] happens to bundle it, but our use is a direct dependency:
+websockets
+# /api/recession/probability imports src/analytics/recession.py, which trains
+# the logistic-regression model in-process (no artifact on disk):
+pandas
+numpy
+scikit-learn
+# /api/allocation imports src/analytics/allocation.py, which downloads asset
+# return histories via yfinance on a cold call (then TTL-cached 1h). scipy
+# arrives with scikit-learn; riskfolio-lib is NOT installed — the CVaR/HERC
+# optimizers fall back to equal weight, flagged converged=false in the payload.
+yfinance

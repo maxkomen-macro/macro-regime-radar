@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-06T10:34:00Z",
+  "title": "Design System: Macro Regime Radar",
+  "extensions": {
+    "colorMeta": {
+      "accent-blue": {
+        "role": "primary",
+        "displayName": "Accent Blue",
+        "canonical": "#4a9eff",
+        "tonalRamp": ["oklch(25% 0.09 255)", "oklch(35% 0.11 255)", "oklch(45% 0.13 255)", "oklch(55% 0.14 255)", "oklch(67% 0.14 255)", "oklch(75% 0.12 255)", "oklch(85% 0.08 255)", "oklch(93% 0.04 255)"]
+      },
+      "up-green": {
+        "role": "semantic-directional",
+        "displayName": "Up Green",
+        "canonical": "#3fb950",
+        "tonalRamp": ["oklch(25% 0.08 145)", "oklch(35% 0.11 145)", "oklch(45% 0.13 145)", "oklch(55% 0.15 145)", "oklch(67% 0.16 145)", "oklch(76% 0.14 145)", "oklch(86% 0.10 145)", "oklch(94% 0.05 145)"]
+      },
+      "down-red": {
+        "role": "semantic-directional",
+        "displayName": "Down Red",
+        "canonical": "#da3633",
+        "tonalRamp": ["oklch(25% 0.10 27)", "oklch(35% 0.13 27)", "oklch(45% 0.16 27)", "oklch(55% 0.19 27)", "oklch(60% 0.19 27)", "oklch(70% 0.15 27)", "oklch(82% 0.09 27)", "oklch(93% 0.04 27)"]
+      },
+      "watch-amber": {
+        "role": "semantic-status",
+        "displayName": "Watch Amber",
+        "canonical": "#d29922",
+        "tonalRamp": ["oklch(28% 0.06 85)", "oklch(38% 0.08 85)", "oklch(48% 0.10 85)", "oklch(58% 0.12 85)", "oklch(70% 0.13 85)", "oklch(78% 0.12 85)", "oklch(87% 0.08 85)", "oklch(95% 0.04 85)"]
+      },
+      "research-violet": {
+        "role": "attribution",
+        "displayName": "Research Violet",
+        "canonical": "#7c3aed",
+        "tonalRamp": ["oklch(25% 0.12 293)", "oklch(35% 0.16 293)", "oklch(45% 0.20 293)", "oklch(52% 0.22 293)", "oklch(62% 0.19 293)", "oklch(72% 0.15 293)", "oklch(83% 0.10 293)", "oklch(93% 0.05 293)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero figures (34px), 26px metrics, and the wordmark (uppercase, ~0.14em tracking). Space Grotesk 700." },
+      "headline": { "displayName": "Headline", "purpose": "The regime badge and the one-sentence market read. Space Grotesk 500–700, 18–20px." },
+      "title": { "displayName": "Title", "purpose": "Card titles and table text. IBM Plex Sans 500, 12px." },
+      "body": { "displayName": "Body", "purpose": "Prose and memo body. IBM Plex Sans 400, 13px / 1.55, max 74ch." },
+      "label": { "displayName": "Label", "purpose": "UPPERCASE mono section labels (11px, +0.5px). Meta 10px +1px; eyebrows/column headers 9px +1.5px." }
+    },
+    "shadows": [
+      { "name": "shadow-float", "value": "0 8px 24px rgba(1,4,9,.6)", "purpose": "The floating assistant only — the single drop shadow in the system. Everything else is flat." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(.2,.8,.3,1)", "purpose": "Default exit easing for hovers and fills." },
+      { "name": "ease-in-out", "value": "cubic-bezier(.4,0,.2,1)", "purpose": "Pulse and symmetric transitions." },
+      { "name": "dur-fast", "value": "140ms", "purpose": "Hover transitions." },
+      { "name": "dur", "value": "220ms", "purpose": "Default transitions." },
+      { "name": "dur-slow", "value": "420ms", "purpose": "Gauge and bar refills." },
+      { "name": "pulse-period", "value": "2.4s", "purpose": "Live-dot pulse (opacity 1→0.35, scale 1→0.86). One pulsing element per screen region." },
+      { "name": "tick-flash", "value": "600ms", "purpose": "Directional green/red wash when a value updates." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat dark panel every module sits in; tone swaps border color only.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-label\">KEY LEVELS</div><div class=\"ds-card-body\">Hairline border, flat surface, 12px pad.</div></div>",
+      "css": ".ds-card { background: var(--surface, #161b22); border: 0.5px solid var(--line-hair, #21262d); border-radius: 6px; padding: 12px; color: var(--text, #e6edf3); font-family: 'IBM Plex Sans', system-ui, sans-serif; } .ds-card-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-label, #8899aa); padding-bottom: 4px; border-bottom: 1px solid var(--line-hair, #21262d); margin-bottom: 10px; } .ds-card-body { font-size: 12px; color: var(--text-muted, #8b949e); }"
+    },
+    {
+      "name": "Regime Badge",
+      "kind": "chip",
+      "refersTo": "regime-badge",
+      "description": "States the current macro regime — muted 12% fill / 25% border, never solid.",
+      "html": "<span class=\"ds-regime-badge\">Overheating <span class=\"ds-regime-conf\">83%</span></span>",
+      "css": ".ds-regime-badge { display: inline-flex; align-items: baseline; gap: 8px; background: rgba(218,54,51,.12); color: #f08785; border: 0.5px solid rgba(218,54,51,.25); border-radius: 6px; padding: 8px 20px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; letter-spacing: 0.3px; } .ds-regime-conf { font-family: 'IBM Plex Mono', monospace; font-size: 12px; opacity: 0.75; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Status Tag",
+      "kind": "chip",
+      "refersTo": "tag-neutral",
+      "description": "9px mono uppercase chip; tones map to meaning, not decoration.",
+      "html": "<span class=\"ds-tag ds-tag-warn\">Watch</span> <span class=\"ds-tag ds-tag-pos\">Clear</span> <span class=\"ds-tag ds-tag-neg\">Triggered</span>",
+      "css": ".ds-tag { display: inline-flex; align-items: center; border-radius: 3px; padding: 2px 6px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-right: 4px; } .ds-tag-warn { background: rgba(210,153,34,.12); color: #d29922; border: 0.5px solid rgba(210,153,34,.25); } .ds-tag-pos { background: rgba(63,185,80,.12); color: #3fb950; border: 0.5px solid rgba(63,185,80,.25); } .ds-tag-neg { background: rgba(218,54,51,.12); color: #f08785; border: 0.5px solid rgba(218,54,51,.25); }"
+    },
+    {
+      "name": "Signal Card",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Signature component: monitored signal with derived status and threshold-proximity gauge.",
+      "html": "<div class=\"ds-signal\"><div class=\"ds-signal-head\"><span class=\"ds-signal-name\">Inflation pressure</span><span class=\"ds-signal-status\"><span class=\"ds-signal-dot\"></span>WATCH</span></div><div class=\"ds-signal-value\">3.29% YoY</div><div class=\"ds-signal-caption\">THRESHOLD PROXIMITY</div><div class=\"ds-signal-track\"><div class=\"ds-signal-fill\"></div></div><div class=\"ds-signal-meta\">Last alert: Mar 2026</div></div>",
+      "css": ".ds-signal { background: var(--surface, #161b22); border: 0.5px solid rgba(210,153,34,.3); border-radius: 6px; padding: 12px; font-family: 'IBM Plex Sans', system-ui, sans-serif; max-width: 240px; } .ds-signal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; } .ds-signal-name { font-size: 12px; font-weight: 500; color: var(--text, #e6edf3); } .ds-signal-status { display: flex; align-items: center; gap: 4px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #d29922; } .ds-signal-dot { width: 6px; height: 6px; border-radius: 50%; background: #d29922; } .ds-signal-value { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text, #e6edf3); } .ds-signal-caption { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1px; color: var(--text-faint, #484f58); margin-top: 8px; margin-bottom: 3px; } .ds-signal-track { background: var(--surface-raised, #21262d); border-radius: 3px; height: 4px; overflow: hidden; margin-bottom: 8px; } .ds-signal-fill { background: #d29922; height: 100%; width: 68%; border-radius: 3px; transition: width 420ms cubic-bezier(.2,.8,.3,1); } .ds-signal-meta { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text-faint, #484f58); }"
+    },
+    {
+      "name": "Alert Row",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "One alert-feed entry; the 3px left rail carries the level color.",
+      "html": "<div class=\"ds-alert\"><span class=\"ds-alert-level\">WATCH</span><span class=\"ds-alert-body\"><span class=\"ds-alert-name\">VIX_shock</span><span class=\"ds-alert-msg\">VIX weekly z-score=2.41 — above 2.0 watch threshold.</span></span><span class=\"ds-alert-date\">2026-05-01</span></div>",
+      "css": ".ds-alert { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 10px; padding: 10px 12px; background: var(--surface, #161b22); border: 0.5px solid var(--line-hair, #21262d); border-left: 3px solid #d29922; border-radius: 3px; font-family: 'IBM Plex Sans', system-ui, sans-serif; } .ds-alert-level { font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700; letter-spacing: 1.5px; color: #d29922; min-width: 44px; } .ds-alert-name { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text, #e6edf3); } .ds-alert-msg { font-size: 12px; color: var(--text-muted, #8b949e); margin-left: 8px; } .ds-alert-date { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text-faint, #484f58); white-space: nowrap; }"
+    },
+    {
+      "name": "Tab Bar",
+      "kind": "nav",
+      "refersTo": "card",
+      "description": "Text tabs on a hairline rule; 2px accent underline marks active. Never pills or fills.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-active\">Dashboard</button><button class=\"ds-tab\">Regime Lab</button><button class=\"ds-tab\">Markets</button><button class=\"ds-tab\">Credit</button></div>",
+      "css": ".ds-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--line, #30363d); font-family: 'IBM Plex Sans', system-ui, sans-serif; } .ds-tab { appearance: none; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted, #8b949e); font-size: 13px; font-weight: 400; padding: 0 0 10px; margin-bottom: -1px; cursor: pointer; transition: color 140ms cubic-bezier(.2,.8,.3,1); } .ds-tab:hover { color: var(--text-2, #c9d1d9); } .ds-tab:focus-visible { outline: 1px solid #4a9eff; outline-offset: 2px; } .ds-tab-active { border-bottom-color: #4a9eff; color: var(--text, #e6edf3); font-weight: 600; }"
+    },
+    {
+      "name": "Stat Tile",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Label / value / delta triple; ▲ green, ▼ red, → grey; green is 'up', not 'good'.",
+      "html": "<div class=\"ds-stat\"><div class=\"ds-stat-label\">10Y TREASURY</div><div class=\"ds-stat-value\">4.40%</div><div class=\"ds-stat-delta\">▲ +10bps</div></div>",
+      "css": ".ds-stat { font-family: 'IBM Plex Mono', monospace; } .ds-stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-faint, #484f58); margin-bottom: 4px; } .ds-stat-value { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text, #e6edf3); line-height: 1.1; } .ds-stat-delta { font-size: 12px; color: #2ecc71; margin-top: 2px; font-variant-numeric: tabular-nums; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "A terminal that is awake.",
+    "overview": "Dark, dense, information-first. The product states, it does not sell — every screen is built from real model output and market data, set in a strict three-face type system on GitHub-dark surfaces with one blue accent. Density is the aesthetic: 12px card padding, 12px grid gaps, hairline borders. If a screen feels empty, the answer is more data, not decoration. The system is awake, not animated: the only motion tells you something changed.",
+    "keyCharacteristics": [
+      "GitHub-dark surface stack (#010409 → #0d1117 → #161b22 → #21262d), flat, no gradients",
+      "One brand accent (#4a9eff) that never means \"good\"",
+      "Three typefaces with mechanical jobs; every number is mono with tabular figures",
+      "0.5px hairline borders; 3px left rail marks generated/elevated content",
+      "Unicode glyph vocabulary (▲ ▼ → ↗ ↘ ◆ ✓ ×) instead of an icon set",
+      "Desk-note voice: declarative, present tense, every claim carries its number"
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "#4a9eff is the only brand color. It never encodes good/bad — valence belongs exclusively to the directional layer.", "section": "colors" },
+      { "name": "The 12% Fill Rule", "body": "Regime and status tints render at 12% fill / 25% border. A solid regime-colored block is always wrong.", "section": "colors" },
+      { "name": "The Mono Number Rule", "body": "If it is a figure, label, ticker, timestamp, or column header, it is IBM Plex Mono with tabular-nums — without exception. If it is a headline it is Space Grotesk; otherwise IBM Plex Sans.", "section": "typography" },
+      { "name": "The Tracking Rule", "body": "Tracking widens as type shrinks: 0.5px at 11px, 1px at 10px, 1.5px at 9px — and inverts to −0.02em on large mono figures.", "section": "typography" },
+      { "name": "The Flat Rule", "body": "A new shadow anywhere is a defect (the assistant float excepted). If depth is needed, step the surface value.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do put every number, label, ticker, timestamp, and column header in IBM Plex Mono with tabular figures.",
+      "Do give every metric its label, unit, timeframe, and a one-line desk-note caption.",
+      "Do use the closed status vocabulary: Clear/Watch/Triggered · info/watch/risk · Risk-On/Risk-Off · Aligned/Diverges.",
+      "Do use 0.5px hairlines as the default border and step surface value for depth.",
+      "Do state freshness honestly and fall back to latest-available data with its date instead of an empty state.",
+      "Do respect prefers-reduced-motion on every animation, and keep focus rings always.",
+      "Do end anything that leaves the app with \"Automated briefing from Macro Regime Radar. Not investment advice.\""
+    ],
+    "donts": [
+      "Don't add an icon library, draw custom SVG icons, or substitute emoji — the glyph vocabulary is Unicode.",
+      "Don't use gradients, photography, illustration, texture, blur, or drop shadows (assistant float excepted).",
+      "Don't render regime colors as solid blocks — 12% fill / 25% border always.",
+      "Don't let #4a9eff mean \"good\" or use color as the only status channel.",
+      "Don't nest cards in cards or add hover background fills outside tables.",
+      "Don't soften the terminal: no Inter-everything, no generic-SaaS layouts, no decorative motion, nothing lighter than 400.",
+      "Don't show a naked number: every figure ships with label, unit, and timeframe."
+    ]
+  }
+}
