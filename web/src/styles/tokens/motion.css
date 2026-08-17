@@ -1,0 +1,25 @@
+:root{
+--ease-out:cubic-bezier(.2,.8,.3,1); /* @kind other */
+--ease-in-out:cubic-bezier(.4,0,.2,1); /* @kind other */
+--dur-instant:80ms; /* @kind other */
+--dur-fast:140ms; /* @kind other */
+--dur:220ms; /* @kind other */
+--dur-slow:420ms; /* @kind other */
+--pulse-period:2.4s; /* @kind other */   /* live status dot */
+--tick-flash:600ms; /* @kind other */    /* price update flash */
+--refresh-period:30s; /* @kind other */  /* market snapshot auto-refresh cadence */
+}
+
+/* The three motions this brand owns. Nothing bounces, nothing slides in. */
+@keyframes mrr-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.86)}}
+@keyframes mrr-blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+@keyframes mrr-flash-up{0%{background:rgba(63,185,80,.28)}100%{background:transparent}}
+@keyframes mrr-flash-down{0%{background:rgba(218,54,51,.28)}100%{background:transparent}}
+@keyframes mrr-sweep{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}
+
+.mrr-live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--pos);animation:mrr-pulse var(--pulse-period) var(--ease-in-out) infinite}
+.mrr-caret{display:inline-block;width:7px;height:1em;background:var(--accent);vertical-align:-2px;animation:mrr-blink 1.1s step-end infinite}
+
+@media (prefers-reduced-motion:reduce){
+  .mrr-live-dot,.mrr-caret{animation:none}
+}

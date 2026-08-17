@@ -1,0 +1,59 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "space grotesk",
+        "createdAt": "2026-08-06T11:11:23.982Z",
+        "reason": "Owner-pinned in the overnight brief: Space Grotesk is the display face (web/DESIGN.md typography)"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "web/src/components/intel/IntelBanner.jsx"
+        ],
+        "createdAt": "2026-08-06T11:11:24.018Z",
+        "reason": "3px left rail = pinned mark for generated content (DESIGN.md Shapes)"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "web/src/components/intel/ReadThrough.jsx"
+        ],
+        "createdAt": "2026-08-06T11:11:24.053Z",
+        "reason": "3px left rail = pinned mark for generated content (DESIGN.md Shapes)"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "web/src/components/signals/AlertRow.jsx"
+        ],
+        "createdAt": "2026-08-06T11:11:24.087Z",
+        "reason": "3px left rail carries the alert level color (DESIGN.md Components)"
+      },
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "web/src/styles/app.css"
+        ],
+        "createdAt": "2026-08-06T11:24:23.096Z",
+        "reason": "False positive: the flagged line is the prefers-reduced-motion rule that DISABLES width transitions (attribute selector contains the literal string)"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "web/src/screens/markets/ChartPanel.tsx"
+        ],
+        "createdAt": "2026-08-07T01:40:00.000Z",
+        "reason": "3px left rail = pinned mark for elevated content (DESIGN.md Shapes); the chart panel's accent rail also ties it to the selected tape row's rail, same idiom as the palette's active row"
+      }
+    ]
+  }
+}

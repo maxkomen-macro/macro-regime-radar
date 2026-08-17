@@ -8,7 +8,7 @@ Single source of truth for Claude Code sessions on this repo. Keep tight; verify
 
 - **Live:** macro-regime-radar.streamlit.app
 - **Repo:** github.com/maxkomen-macro/macro-regime-radar
-- **Local path:** `/Users/maxkomen/Python Macro/macro-regime-radar` (note the space — escape in shell)
+- **Local path:** `/Users/maxkomen/Projects/Macro/macro-regime-radar` (moved Aug 5 2026; the old `/Users/maxkomen/Python Macro/` path is dead)
 - **Stack:** Python 3.12, Streamlit, SQLite (`data/macro_radar.db`), FRED + yfinance + Finnhub + NewsAPI + RSS (feedparser), Anthropic API, Perplexity Sonar API, scikit-learn, plotly/altair, openbb, arch, riskfolio-lib, quantstats, prophet. Hosted on Streamlit Community Cloud, automated via GitHub Actions.
 - **Tabs:** 11 total. Names live in `dashboard/app.py` (around line 893).
 
@@ -96,16 +96,22 @@ Tables added since v1: `news_feed` (Phase 11) and `factor_data` (Fama-French fac
 
 ---
 
-## Local Read-Only API (`api/`, for Atlas)
+## FastAPI Service (`api/` — Atlas + React front end)
 
-A small **FastAPI** service exposes the radar's latest outputs to same-machine consumers (Atlas). **Localhost-only, read-only.** Lives in the top-level `api/` package — intentionally self-contained: it does **not** import `src.config` (so it runs without `FRED_API_KEY`) or `anthropic`.
+A **FastAPI** service in the top-level `api/` package — intentionally self-contained: it does **not** import `src.config` (so it runs without `FRED_API_KEY`) or `anthropic`. Two endpoint groups:
 
-- **Deps:** `requirements-api.txt` (`fastapi`, `uvicorn[standard]`, `httpx`). Kept **separate from `requirements.txt`** so the Streamlit Cloud build doesn't pull them — this service is local only.
-- **Run:** `uvicorn api.main:app --host 127.0.0.1 --port 8787`
-- **DB access:** `api/db.py` opens a fresh read-only connection per request via `file:...?mode=ro` (same pattern as `src/analytics/chat.py:_ro_conn`) and closes it immediately — tolerates the git-checkout DB swap and concurrent WAL writes. Never writes; verified by byte-identical DB mtime after a read batch.
-- **Endpoints (latest-snapshot only):** `/health`, `/regime/latest`, `/signals/latest`, `/series` (catalog), `/series/latest`, `/series/{series_id}/latest`.
-- **Contract:** schema-faithful (fields mirror `regimes` / `signals` / `raw_series` columns). Field names will be adapted to Atlas's MacroBridge agent when the Atlas side is wired (Build #6).
-- **Tests:** `tests/test_api.py` (FastAPI `TestClient` against the real read-only DB; skips if the DB file is absent).
+- **Unprefixed** (`/health`, `/regime/latest`, `/signals/latest`, `/series*`) — the original latest-snapshot contract for Atlas. Do not rename fields without coordinating with Atlas's MacroBridge agent.
+- **`/api/*`** (Aug 2026, React-migration build-order step 1) — one endpoint per table the Streamlit dashboard reads, mirroring the dashboard loaders' SQL: `/api/regime/latest`, `/api/regime/history`, `/api/signals/latest`, `/api/alerts`, `/api/news`, `/api/market/daily`, `/api/market/intraday`, `/api/calendar` (pre-filtered upcoming window), `/api/backtests` (pivoted long→wide server-side), `/api/credit/oas` (pct **and** bps + sparkline history), `/api/recession/probability`, `/api/freshness`.
+
+Details:
+
+- **Deps:** `requirements-api.txt` (`fastapi`, `uvicorn[standard]`, `httpx`, plus `pandas`/`numpy`/`scikit-learn` for the recession endpoint). Kept **separate from `requirements.txt`** so the Streamlit Cloud build doesn't pull them.
+- **Run:** `uvicorn api.main:app --host 127.0.0.1 --port 8787` (local `.venv/` in the repo has the deps).
+- **CORS:** allows only the Vite dev origins (`localhost:5173` / `127.0.0.1:5173`), GET only. The built React bundle will be served same-origin from this app, so production needs no CORS.
+- **DB access:** `api/db.py` opens a fresh read-only connection per request via `file:...?mode=ro` and closes it immediately — tolerates the DB swap and concurrent WAL writes. Verified byte-identical DB mtime after a full test run.
+- **Recession exception:** `/api/recession/probability` imports `src/analytics/recession.py`, which trains the logistic model in-process on every call (no artifact on disk) and opens its own read-write conn with WAL pragma — same behavior the Streamlit tab always had. `api/recession_cache.py` wraps it in a 15-min TTL cache (~1s cold, ~10ms warm) and converts the pandas Series to `[{date, value}]` lists. Its probability is the **recession model's**, not `regimes.prob_recession` — the response carries `probability_source: "recession_model"` to disambiguate.
+- **Gotcha:** `/api/credit/oas` anchors its `days` window to `date('now')`; if FRED credit data is stale beyond the window, the endpoint 404s. Default `days=90` gives ample slack.
+- **Tests:** `tests/test_api.py` (FastAPI `TestClient` against the real read-only DB; skips if the DB file is absent). Alerts tests are shape-only — `alert_feed` has ~1 row.
 
 ---
 
@@ -327,6 +333,15 @@ Every Claude Code session that ships code to `main` is responsible for updating 
 6. Do not add Phase Nx architecture sections until that phase has shipped — speculative documentation drifts faster than no documentation.
 
 When in doubt: delete more than you add. Stale documentation is worse than missing documentation.
+
+---
+
+## React Migration (in progress — nothing ships without explicit user approval)
+
+- **Design source of truth:** `/Users/maxkomen/Documents/Trading-Research-Docs/Macro Regime Radar Design System/` — read `HANDOFF_REACT_MIGRATION.md` there first. `styles.css` + `tokens/` and `components/**/*.jsx` are shippable near as-is; `ui_kits/` are fixture-data references only.
+- **Design tooling:** the `impeccable` Claude Code plugin (v4.0.4, user scope, from `pbakaus/impeccable`) is installed — use `/impeccable` (audit, critique, polish, …) alongside the handoff bundle for all UI work.
+- **Step 1 (API) is built** — see the FastAPI section above. Steps 2+ (tokens/components, shell, tabs, assistant streaming endpoint) not started.
+- **Do not commit or push any migration work without the user's explicit say-so.**
 
 ---
 

@@ -1,0 +1,210 @@
+/* App-level chrome — owned by web/, layered after the verbatim token files.
+   Browser surfaces (scrollbars) + the jargon-definition affordance + the two
+   overlay surfaces (alert drawer, command palette). No new colors, no new
+   type sizes: everything references the token layer. */
+
+/* Scrollbars — the parts we didn't draw still carry the design. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface-raised);
+  border-radius: var(--r-sm);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--line-strong);
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-raised) var(--bg-base);
+}
+
+html,
+body {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+}
+
+/* The house focus ring — DESIGN.md: "1px accent, 2px offset, never removed".
+   Was mandated but implemented nowhere globally (critique 2026-08-06); the
+   palette input's inset variant stays via its more specific rule. */
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Jargon terms — dotted underline, plain-language definition on hover/focus.
+   Content comes from the confusion index. Native title="" is the v1 fallback;
+   the styled tooltip is the ::after pattern below. */
+.jargon {
+  /* The dotted underline is the "definition available" affordance — functional,
+     so it sits at muted per the 2026-08-06 contrast ruling. */
+  text-decoration: underline dotted var(--text-muted);
+  text-underline-offset: 2px;
+  cursor: help;
+  position: relative;
+}
+.jargon:hover,
+.jargon:focus-visible {
+  text-decoration-color: var(--text-muted);
+}
+.jargon::after {
+  content: attr(data-def);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  width: max-content;
+  max-width: 320px;
+  background: var(--surface-raised);
+  color: var(--text-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-s);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.5;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  pointer-events: none;
+  white-space: normal;
+}
+.jargon:hover::after,
+.jargon:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Overlay scrim — shared by the drawer and the palette. Flat, no blur. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(1, 4, 9, 0.55);
+  z-index: 50;
+}
+
+/* Alert drawer — right side panel. */
+.alert-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 92vw;
+  background: var(--surface);
+  border-left: 0.5px solid var(--line); /* hairline house rule; 1px is reserved */
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Command palette — centered near the top. */
+.palette {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 560px;
+  max-width: 92vw;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  z-index: 60;
+  overflow: hidden;
+}
+.palette input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--void);
+  border: none;
+  border-bottom: 1px solid var(--line-hair);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  padding: 12px 14px;
+  /* Focus ring stays (the constitution never removes it); inset so the
+     ring hugs the input inside the palette frame. */
+}
+.palette input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
+.palette input::placeholder {
+  color: var(--text-muted);
+}
+.palette-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.palette-row[data-active="true"] {
+  background: var(--accent-dim);
+  border-left-color: var(--accent);
+}
+
+/* ── House slider (Recession sensitivity, LBO, scenario builder) ────────
+   Native range input on the 4px gauge-track idiom: raised track, accent
+   fill painted via inline gradient, 12px square-ish thumb. */
+.mrr-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: var(--r-xs);
+  outline-offset: 4px;
+  cursor: pointer;
+}
+.mrr-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-xs);
+  background: var(--text);
+  border: 0.5px solid var(--line);
+}
+.mrr-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-xs);
+  background: var(--text);
+  border: 0.5px solid var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jargon::after {
+    transition: none;
+  }
+  /* The bundle's motion.css silences pulse + caret only — but the components
+     set the same animations inline (SignalCard's Triggered dot, StatTile's
+     live dot, IntelBanner's dot) and the tick flash + gauge refills are also
+     motion. Targeted attribute matches on the inline styles — not a global
+     animation kill; state changes still render instantly. The refill match is
+     `transition: transform` because GaugeBar/ProbabilityBar animate scaleX
+     (owner ruling 2026-08-06) — they are the only inline transform
+     transitions in the app. */
+  [style*="mrr-flash"],
+  [style*="mrr-pulse"] {
+    animation: none !important;
+  }
+  [style*="transition: transform"],
+  [style*="transition:transform"] {
+    transition: none !important;
+  }
+}

@@ -1,0 +1,41 @@
+:root{
+--font-display:"Space Grotesk","IBM Plex Sans",system-ui,sans-serif;
+--font-ui:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+--font-mono:"IBM Plex Mono","SF Mono","Fira Code",SFMono-Regular,Consolas,monospace;
+
+/* Size ramp — every value is one the dashboard actually uses */
+--fs-micro:9px;    /* gauge captions, status words */
+--fs-meta:10px;    /* timestamps, "Last alert:" */
+--fs-label:11px;   /* UPPERCASE section labels */
+--fs-body-s:12px;  /* card titles, table cells */
+--fs-body:13px;    /* prose, memo body */
+--fs-value:18px;   /* signal card value, regime badge */
+--fs-value-lg:20px;/* rank numbers */
+--fs-metric:26px;  /* hero metric */
+--fs-hero:34px;    /* dashboard headline number */
+
+--lh-tight:1; /* @kind font */
+--lh-snug:1.35; /* @kind font */
+--lh-body:1.55; /* @kind font */
+--lh-loose:1.6; /* @kind font */
+
+--fw-regular:400; /* @kind font */
+--fw-medium:500; /* @kind font */
+--fw-semibold:600; /* @kind font */
+--fw-bold:700; /* @kind font */
+
+/* Tracking — the terminal signature */
+--ls-label:.5px; /* @kind font */   /* 11px uppercase section header */
+--ls-micro:1px; /* @kind font */    /* 9–10px meta labels */
+--ls-wide:1.5px; /* @kind font */   /* eyebrow / column headers */
+--ls-badge:.3px; /* @kind font */
+--ls-numeric:-.02em; /* @kind font */ /* large mono numbers pull tighter */
+
+--numeric:tabular-nums; /* @kind font */
+}
+
+/* Utility classes — thin, opt-in; components style themselves inline */
+.mrr-display{font-family:var(--font-display);font-weight:700;letter-spacing:-.01em}
+.mrr-mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.mrr-label{font-family:var(--font-mono);font-size:var(--fs-label);font-weight:var(--fw-semibold);text-transform:uppercase;letter-spacing:var(--ls-label);color:var(--text-label)}
+.mrr-eyebrow{font-family:var(--font-mono);font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:var(--ls-wide);color:var(--text-faint)}
