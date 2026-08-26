@@ -72,7 +72,9 @@ export default function MethodologyScreen() {
         <SectionHeader
           title="Monitored signals"
           right={
-            signals.data ? `live thresholds · latest print ${fmtMonYr(signals.data.date)}` : "live thresholds"
+            signals.data
+              ? `live thresholds · monthly cadence · latest print ${fmtMonYr(signals.data.date)}`
+              : "live thresholds · monthly cadence"
           }
         />
         <Card style={{ padding: 0 }}>
@@ -115,6 +117,15 @@ export default function MethodologyScreen() {
           read); display names and units on this page are presentation copy. One status rule for
           all five: the stored trigger flag owns Triggered; Watch starts at 50% threshold
           proximity; Clear is everything below.
+          {/* The Latest column is the monthly signals snapshot — the weekly
+              derived series on Markets and the live tape quote both carry
+              different levels for the same metric, by cadence not by error. */}
+          {signals.data ? (
+            <div style={{ marginTop: 2 }}>
+              monthly signal print · {fmtMonYr(signals.data.date)} · the weekly derived series and
+              the live tape on Markets carry their own levels for the same metric.
+            </div>
+          ) : null}
         </Caption>
       </section>
 

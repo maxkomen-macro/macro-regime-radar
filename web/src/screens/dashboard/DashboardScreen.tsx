@@ -382,7 +382,15 @@ export default function DashboardScreen() {
                   />
                   <Caption>
                     {meta.trigger(row.threshold)}
-                    {carried ? ` As of ${fmtMonYr(row.date)} · ${meta.cadence} pending.` : ""}
+                    {/* Provenance stamp, unconditional: these cards read the
+                        monthly signal snapshot, so the same metric prints a
+                        different level here than on the live tape (VIX) or in
+                        the weekly derived series (CPI). Stating cadence and
+                        source month on every card is the reconciliation. */}
+                    <div style={{ marginTop: 2 }}>
+                      monthly signal print · {fmtMonYr(row.date)}
+                      {carried ? ` · ${meta.cadence} pending` : ""}
+                    </div>
                   </Caption>
                 </div>
               );
@@ -411,7 +419,10 @@ export default function DashboardScreen() {
                     No print on file yet — this signal has no stored history.
                   </div>
                 </Card>
-                <Caption>{meta.trigger(null)}</Caption>
+                <Caption>
+                  {meta.trigger(null)}
+                  <div style={{ marginTop: 2 }}>monthly signal print · none on file</div>
+                </Caption>
               </div>
             );
           })}
