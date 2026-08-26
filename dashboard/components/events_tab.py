@@ -352,7 +352,14 @@ def load_news(db_path: str, time_hours: int, category: str) -> pd.DataFrame:
     try:
         conn = sqlite3.connect(db_path)
         time_filter = f"-{time_hours} hours"
-        base_cols = _NEWS_COLS + " WHERE published_at >= datetime('now', ?)"
+        # published_at mixes formats in the DB ("2026-08-06T08:17:15+00:00" vs
+        # "2026-07-30 02:08:34") while datetime('now', ...) yields the space form —
+        # lexicographic 'T' > ' ' let same-day rows leak past the window boundary.
+        # Normalize to "YYYY-MM-DD HH:MM:SS" for comparison (same fix as api/db.py).
+        base_cols = _NEWS_COLS + (
+            " WHERE replace(substr(published_at, 1, 19), 'T', ' ')"
+            " >= datetime('now', ?)"
+        )
         if category != "ALL":
             df = pd.read_sql_query(
                 base_cols + " AND category = ? ORDER BY overall_significance DESC,"

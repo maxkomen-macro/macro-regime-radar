@@ -692,11 +692,12 @@ def _render_header_bar(latest_regime, as_of) -> None:
         pass
 
     # ── Regime badge ─────────────────────────────────────────────────────────
+    # Hue source: the regime ramp (REGIME_COLORS / web tokens) — 2026-08-26 back-port.
     BADGE_STYLES = {
-        "Overheating":    "background:rgba(218,54,51,0.12) !important;color:#f08785 !important;border:0.5px solid rgba(218,54,51,0.25)",
-        "Goldilocks":     "background:rgba(63,185,80,0.12) !important;color:#3fb950 !important;border:0.5px solid rgba(63,185,80,0.25)",
-        "Stagflation":    "background:rgba(210,153,34,0.12) !important;color:#d29922 !important;border:0.5px solid rgba(210,153,34,0.25)",
-        "Recession Risk": "background:rgba(218,54,51,0.20) !important;color:#f08785 !important;border:0.5px solid rgba(218,54,51,0.40)",
+        "Overheating":    "background:rgba(230,126,34,0.12) !important;color:#e67e22 !important;border:0.5px solid rgba(230,126,34,0.25)",
+        "Goldilocks":     "background:rgba(46,204,113,0.12) !important;color:#2ecc71 !important;border:0.5px solid rgba(46,204,113,0.25)",
+        "Stagflation":    "background:rgba(231,76,60,0.12) !important;color:#f08785 !important;border:0.5px solid rgba(231,76,60,0.25)",
+        "Recession Risk": "background:rgba(149,165,166,0.12) !important;color:#95a5a6 !important;border:0.5px solid rgba(149,165,166,0.25)",
     }
     lbl = str(latest_regime["label"]) if latest_regime is not None else "—"
     conf_pct = f"{float(latest_regime['confidence']):.1%}" if latest_regime is not None else "—"
