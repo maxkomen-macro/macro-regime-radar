@@ -38,4 +38,5 @@
 .mrr-display{font-family:var(--font-display);font-weight:700;letter-spacing:-.01em}
 .mrr-mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 .mrr-label{font-family:var(--font-mono);font-size:var(--fs-label);font-weight:var(--fw-semibold);text-transform:uppercase;letter-spacing:var(--ls-label);color:var(--text-label)}
-.mrr-eyebrow{font-family:var(--font-mono);font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:var(--ls-wide);color:var(--text-faint)}
+/* .mrr-eyebrow deleted — zero usages, and its --text-faint colour contradicted
+   the live implementation: eyebrowStyle in screens/shared/screen-ui.tsx (--text-label). */

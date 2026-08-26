@@ -1,6 +1,9 @@
 export interface StatusDotProps {
   status?: "live" | "clear" | "watch" | "risk" | "idle" | "accent";
-  /** Optional uppercase mono label rendered beside the dot. */
+  /**
+   * Optional uppercase mono label rendered beside the dot. Takes the status
+   * colour, except `idle` — faint dot, `--text-muted` label.
+   */
   label?: string;
   /** Force the pulse on/off. Defaults to on for `live`. */
   pulse?: boolean;

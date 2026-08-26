@@ -74,8 +74,17 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
           placeholder="Jump to tab or section —"
           aria-label="Filter destinations"
           spellCheck={false}
+          /* Focus stays in the input while ↑/↓ move the highlight, so screen
+             readers only learn the active row from aria-activedescendant.
+             aria-controls makes that cross-subtree reference resolvable. */
+          aria-controls="palette-listbox"
+          aria-activedescendant={matches[active] ? `palette-opt-${active}` : undefined}
         />
-        <div style={{ maxHeight: "46vh", overflowY: "auto", padding: "6px 0" }} role="listbox">
+        <div
+          id="palette-listbox"
+          style={{ maxHeight: "46vh", overflowY: "auto", padding: "6px 0" }}
+          role="listbox"
+        >
           {matches.length === 0 ? (
             <div
               style={{
@@ -90,6 +99,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
             matches.map((m, i) => (
               <div
                 key={`${m.tabSlug}-${m.sectionId ?? "tab"}`}
+                id={`palette-opt-${i}`}
                 className="palette-row"
                 data-active={i === active}
                 role="option"

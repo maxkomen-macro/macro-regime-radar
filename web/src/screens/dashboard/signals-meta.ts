@@ -16,6 +16,12 @@ export interface SignalMeta {
   format: (v: number) => string;
   /** One-line desk-note trigger sentence, composed from the server threshold. */
   trigger: (threshold: number | null) => string;
+  /**
+   * Cadence of the UNDERLYING series, not of the card. Currently unrendered:
+   * the dashboard's carried-forward caption used to interpolate this and read
+   * "monthly signal print · X · daily pending" for the daily series, so that
+   * suffix is now cadence-neutral. Kept as reference metadata.
+   */
   cadence: "monthly print" | "daily";
 }
 

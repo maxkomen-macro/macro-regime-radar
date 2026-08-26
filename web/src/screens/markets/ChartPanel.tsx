@@ -222,7 +222,13 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
         borderRadius: "var(--r-md)",
         padding: "var(--pad-card)",
         marginBottom: 12,
-        outline: "none",
+        /* No `outline: none` here. The panel is programmatically focused when a
+           symbol opens; killing the outline would also kill the house
+           :focus-visible ring (app.css / base.css) for the keyboard path.
+           Browsers only
+           match :focus-visible on a programmatic .focus() when the preceding
+           interaction was a keyboard one — so keyboard users get the ring and
+           mouse users don't. That is exactly the behaviour we want. */
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>

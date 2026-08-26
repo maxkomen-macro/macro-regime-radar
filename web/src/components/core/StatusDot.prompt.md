@@ -8,3 +8,4 @@ The system's "this is live" tell — a 6px dot, pulsing on a 2.4s cycle.
 
 - Only `live` pulses by default. Pass `pulse={false}` when several dots share a view — one pulsing thing per screen region.
 - Pairs with an uppercase mono label; never with sentence-case text.
+- The label takes the status colour, with one exception: `idle` keeps the faint dot but renders its label at `--text-muted` so the word stays readable.

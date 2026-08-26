@@ -594,8 +594,11 @@ function ScenariosSection() {
             </div>
 
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10 }}>
+              {/* v === 0 is a real data label ("no change"), not decoration —
+                  it reads at --text-muted like the negatives. The faint-zero
+                  exception belongs to ProbabilityBar's own legend only. */}
               {Object.entries(r.prob_changes).map(([k, v]) => (
-                <span key={k} style={{ ...mono, fontSize: "var(--fs-meta)", color: v > 0 ? "var(--warn)" : v < 0 ? "var(--text-muted)" : "var(--text-faint)" }}>
+                <span key={k} style={{ ...mono, fontSize: "var(--fs-meta)", color: v > 0 ? "var(--warn)" : "var(--text-muted)" }}>
                   {k.replace("_", " ")} {v >= 0 ? "+" : ""}
                   {Math.round(v)}pp
                 </span>

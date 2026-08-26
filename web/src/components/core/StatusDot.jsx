@@ -9,8 +9,16 @@ const COLORS = {
   accent: "var(--accent)",
 };
 
+// The dot is decoration and may sit at --text-faint; the label is text a reader
+// has to read, so `idle` reads its word at --text-muted (AA) instead of the
+// ~2:1 faint token. Every other status colour already clears contrast.
+const LABEL_COLORS = {
+  idle: "var(--text-muted)",
+};
+
 export function StatusDot({ status = "live", label, pulse, size = 6, style, ...rest }) {
   const color = COLORS[status] || COLORS.live;
+  const labelColor = LABEL_COLORS[status] || color;
   const animate = pulse === undefined ? status === "live" : pulse;
   return (
     <span
@@ -34,7 +42,7 @@ export function StatusDot({ status = "live", label, pulse, size = 6, style, ...r
             fontSize: "var(--fs-micro)",
             letterSpacing: "var(--ls-micro)",
             textTransform: "uppercase",
-            color,
+            color: labelColor,
           }}
         >
           {label}

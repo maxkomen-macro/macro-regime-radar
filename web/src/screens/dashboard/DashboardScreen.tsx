@@ -36,7 +36,9 @@ import Jargon from "../shared/Jargon";
 /* ── small shared bits ─────────────────────────────────────────────────── */
 
 // Captions are secondary copy, not meta — --text-muted keeps them AA-readable
-// (5.6:1); --text-faint stays reserved for true meta (timestamps, axis).
+// (5.6:1). --text-faint is decorative-only per DESIGN.md: null dashes,
+// disclosure glyphs, row indices, dots, zero-legend entries, disabled state.
+// Anything a reader must read — timestamps, axis values — stays --text-muted.
 const capStyle: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: 10,
@@ -389,7 +391,12 @@ export default function DashboardScreen() {
                         source month on every card is the reconciliation. */}
                     <div style={{ marginTop: 2 }}>
                       monthly signal print · {fmtMonYr(row.date)}
-                      {carried ? ` · ${meta.cadence} pending` : ""}
+                      {/* Cadence-neutral suffix: the pending thing is always the
+                          next monthly snapshot, whatever the underlying series'
+                          own cadence is. Interpolating meta.cadence produced
+                          "monthly signal print · X · daily pending" for the
+                          daily-series signals (VIX, curve). */}
+                      {carried ? " · monthly print pending" : ""}
                     </div>
                   </Caption>
                 </div>
