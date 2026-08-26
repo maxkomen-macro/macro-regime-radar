@@ -98,20 +98,25 @@ Tables added since v1: `news_feed` (Phase 11) and `factor_data` (Fama-French fac
 
 ## FastAPI Service (`api/` — Atlas + React front end)
 
-A **FastAPI** service in the top-level `api/` package — intentionally self-contained: it does **not** import `src.config` (so it runs without `FRED_API_KEY`) or `anthropic`. Two endpoint groups:
+A **FastAPI** service (`version="1.3.0"`) in the top-level `api/` package — intentionally self-contained: it does **not** import `src.config` (so it runs without `FRED_API_KEY`), and every heavy dep (`anthropic`, pandas/scikit-learn, riskfolio) is imported lazily at the point of use, never at module import. Endpoint groups:
 
-- **Unprefixed** (`/health`, `/regime/latest`, `/signals/latest`, `/series*`) — the original latest-snapshot contract for Atlas. Do not rename fields without coordinating with Atlas's MacroBridge agent.
-- **`/api/*`** (Aug 2026, React-migration build-order step 1) — one endpoint per table the Streamlit dashboard reads, mirroring the dashboard loaders' SQL: `/api/regime/latest`, `/api/regime/history`, `/api/signals/latest`, `/api/alerts`, `/api/news`, `/api/market/daily`, `/api/market/intraday`, `/api/calendar` (pre-filtered upcoming window), `/api/backtests` (pivoted long→wide server-side), `/api/credit/oas` (pct **and** bps + sparkline history), `/api/recession/probability`, `/api/freshness`.
+- **Unprefixed** (6 routes: `/health`, `/regime/latest`, `/signals/latest`, `/series`, `/series/latest`, `/series/{series_id}/latest`) — the original latest-snapshot contract for Atlas. Do not rename fields without coordinating with Atlas's MacroBridge agent.
+- **`/api/*`** (28 routes on the `api` router) — one endpoint per table or computation the Streamlit dashboard reads: table endpoints mirror the dashboard loaders' SQL (`api/db.py`), computed ones call the same `src/analytics/*` modules the tabs do. Regime (`/latest`, `/history`, `/intelligence`, `/playbooks`, `/duration`, `/transitions`, `/analogues`, `/scenarios`, POST `/scenario`), `/signals/latest` (server-computed threshold, direction, distance-to-trigger, status — the frozen Atlas route keeps the old shape), `/priced`, `/surprises`, `/alerts`, `/news` + `/news/latest`, `/market/daily`, `/market/intraday`, `/calendar` (upcoming window) + `/calendar/recent`, `/backtests` (pivoted long→wide server-side), `/credit/oas` (pct **and** bps + sparklines) + `/credit/metrics`, `/recession/probability` + POST `/recession/scenario`, `/lbo/defaults` + POST `/lbo/run`, `/allocation`, `/freshness`.
+- **Live + assistant:** WebSocket `/api/stream/ws` and `GET /api/stream/debug` (EODHD relay, `api/stream.py` — one upstream connection per feed, the token never crosses to the client), and **POST `/api/assistant/ask`** (`api/chat.py`) which streams the Phase-12 agent as SSE (`data: {"delta"}` frames, terminal `event: done`).
 
 Details:
 
-- **Deps:** `requirements-api.txt` (`fastapi`, `uvicorn[standard]`, `httpx`, plus `pandas`/`numpy`/`scikit-learn` for the recession endpoint). Kept **separate from `requirements.txt`** so the Streamlit Cloud build doesn't pull them.
-- **Run:** `uvicorn api.main:app --host 127.0.0.1 --port 8787` (local `.venv/` in the repo has the deps).
-- **CORS:** allows only the Vite dev origins (`localhost:5173` / `127.0.0.1:5173`), GET only. The built React bundle will be served same-origin from this app, so production needs no CORS.
+- **Deps:** `requirements-api.txt` — `fastapi`, `uvicorn[standard]`, `httpx`, `websockets`, `pandas`/`numpy`/`scikit-learn` (recession), `yfinance` + `riskfolio-lib==7.3.*` (allocation), `anthropic` (assistant). Kept **separate from `requirements.txt`** so the Streamlit Cloud build doesn't pull them. The riskfolio pin is load-bearing: `herc_optimize` in `src/analytics/allocation.py` carries a shim for 7.3.0's broken HERC kwarg forwarding — remove the pin only together with the shim.
+- **Run:** `uvicorn api.main:app --host 127.0.0.1 --port 8000` (local `.venv/` in the repo has the deps). **Port 8000 everywhere** — the Vite dev server on :5173 proxies to it.
+- **CORS:** the Vite dev origins (`localhost:5173` / `127.0.0.1:5173`) by default; the `CORS_ORIGINS` env var (comma-separated) **replaces** them for a split deploy. Methods are **GET + POST** — every POST (scenario, recession sensitivity, LBO, assistant) is pure computation over stored data; nothing writes. The built bundle served same-origin needs no CORS. Effective origins are logged in the lifespan startup block.
+- **Static bundle:** when `web/dist` exists, `api/main.py` mounts `/assets` + `/fonts` and adds an SPA catch-all, so one process serves the API and the built React app. Paths whose first segment is `api|health|regime|signals|series` stay JSON 404s. No `dist` → nothing is mounted and the Vite dev flow is unchanged.
+- **DB bootstrap:** `api/bootstrap.py` downloads the `macro_radar.db` asset from the `data-latest` Release at lifespan start using `GH_DB_TOKEN` (temp file beside `DB_PATH` + `os.replace` atomic swap, so a reader never sees a torn file). No token → no-op; dev keeps the on-disk DB untouched. `BOOTSTRAP_DB_MAX_AGE_MIN` re-downloads a stale startup DB (unset = only-if-missing); `BOOTSTRAP_DB_REFRESH_MIN > 0` arms a periodic refresh task.
 - **DB access:** `api/db.py` opens a fresh read-only connection per request via `file:...?mode=ro` and closes it immediately — tolerates the DB swap and concurrent WAL writes. Verified byte-identical DB mtime after a full test run.
 - **Recession exception:** `/api/recession/probability` imports `src/analytics/recession.py`, which trains the logistic model in-process on every call (no artifact on disk) and opens its own read-write conn with WAL pragma — same behavior the Streamlit tab always had. `api/recession_cache.py` wraps it in a 15-min TTL cache (~1s cold, ~10ms warm) and converts the pandas Series to `[{date, value}]` lists. Its probability is the **recession model's**, not `regimes.prob_recession` — the response carries `probability_source: "recession_model"` to disambiguate.
+- **Analytics caches:** `api/analytics_cache.py` applies the same TTL-cache-plus-JSON-conversion pattern to the intelligence, credit, and allocation payloads. `/api/allocation` is the one endpoint without a strict response model (asset×regime matrices keyed by data) and its cold call downloads return histories via yfinance (~30–60 s) before serving from a 1-hour cache.
+- **Assistant:** shares `src/analytics/chat.py` — `is_safe_select` and the tool table are **imported, never copied**; `tests/test_api.py::test_assistant_guard_identity_no_local_copy` asserts `api/chat.py` carries no guard symbols of its own. That module no longer imports `src.config`: it has its own `DB_PATH` and `get_secret` (env → `st.secrets` → repo-root `.env`), plus a `TAB_CONTEXT` ContextVar so `explain_current_view` works without Streamlit session state. `POST /api/assistant/ask` is **unauthenticated and unthrottled** — `docs/redesign/DEPLOY.md` gates public exposure on adding auth, rate limiting, and request-size caps.
 - **Gotcha:** `/api/credit/oas` anchors its `days` window to `date('now')`; if FRED credit data is stale beyond the window, the endpoint 404s. Default `days=90` gives ample slack.
-- **Tests:** `tests/test_api.py` (FastAPI `TestClient` against the real read-only DB; skips if the DB file is absent). Alerts tests are shape-only — `alert_feed` has ~1 row.
+- **Tests:** `tests/test_api.py` (FastAPI `TestClient` against the real read-only DB; skips if the DB file is absent) covers every route group plus the SSE frame contract (stub agent, no tokens spent) and the SPA-fallback/JSON-404 split. Alerts tests are shape-only — `alert_feed` has ~1 row.
 
 ---
 
@@ -234,7 +239,8 @@ All secrets via `st.secrets[]` in production (Streamlit Cloud secrets manager). 
 | `ANTHROPIC_API_KEY` | Optional — required for AI regime interpretation |
 | `PERPLEXITY_API_KEY` | Optional — required for Sonar research enrichment |
 | `POLYGON_API_KEY` | Legacy — yfinance is the active path; no longer read by the pipeline. Safe to leave in secrets or remove |
-| `GH_DB_TOKEN` | Dashboard only (Streamlit Cloud secret) — fine-grained PAT with **Contents: Read** on this repo. Lets `dashboard/app.py` download `data/macro_radar.db` from the private `data-latest` Release. Not needed locally; workflows use the built-in `GITHUB_TOKEN` |
+| `GH_DB_TOKEN` | Fine-grained PAT with **Contents: Read** on this repo. Lets `dashboard/app.py` (Streamlit Cloud secret) and `api/bootstrap.py` (env var) download `data/macro_radar.db` from the private `data-latest` Release. Not needed locally; workflows use the built-in `GITHUB_TOKEN` |
+| `EODHD_API_TOKEN` | API only — read by `api/stream.py` (env, else repo-root `.env`) for the live-quote relay. Absent → feeds stay off and the client falls back to its DB poll. Never sent to the browser |
 
 Without the four optional Phase-11 keys, the news, AI interpretation, and research-citation pipelines silently produce no output (this is intentional — the dashboard still works for non-news functionality).
 
@@ -260,6 +266,7 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 - Do not introduce historical-range-based `fill_pct` for signal cards.
 - Do not silently swallow errors — surface them in the UI or log to session state.
 - Do not let the chat agent run non-`SELECT` SQL — `is_safe_select` in `src/analytics/chat.py` enforces this and is covered by `tests/test_chat_sql_guard.py`.
+- Do not copy `is_safe_select` (or any tool implementation) into another module — **import** it from `src/analytics/chat.py`. A forked copy is exactly how the hardening drifts back out; `tests/test_api.py` fails if `api/chat.py` grows its own.
 - Do not persist chat history to the DB — Phase 12 is intentionally session-only so visitors never see prior visitors' conversations.
 
 ---
@@ -274,7 +281,7 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 - `src/analytics/chat.py` — `MacroRadarAgent`, `SYSTEM_PROMPT_TEMPLATE`, 8 tool definitions, tool-use loop (10-iteration cap), `is_safe_select` SQL guard, `RateLimited` / `NetworkError` / `AgentError` exception hierarchy.
 - `dashboard/components/chat_widget.py` — `render_chat_launcher()` (FAB) and `_chat_dialog()` (modal). Streams via `st.write_stream` over `MacroRadarAgent.ask_streaming`.
 - `dashboard/utils/tab_context.py` — `register_tab_context(tab_name, metrics, kind="live")` writes to `st.session_state.current_tab_context`.
-- `tests/test_chat_sql_guard.py` — 21 unit tests covering allowed SELECT/CTE forms and rejecting DDL/DML/PRAGMA/ATTACH/chained statements.
+- `tests/test_chat_sql_guard.py` — unit tests covering allowed SELECT/CTE forms and rejecting DDL/DML/PRAGMA/ATTACH/chained statements.
 
 **Files modified:** `dashboard/app.py` (launcher wire-up + Dashboard tab context call); all 11 tab render functions in `dashboard/components/` plus the inline Dashboard block (`register_tab_context` call at entry).
 
@@ -286,13 +293,13 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 - `get_credit_snapshot()` — latest IG/HY/CCC/BB/B OAS plus 10Y UST (returned in both pct and bps).
 - `get_market_snapshot(ticker)` — latest close + 1d/5d/1m/YTD return from `market_daily`.
 - `get_recent_headlines(limit, min_significance)` — top items from `news_feed` with `regime_interpretation` and `perplexity_research`.
-- `explain_current_view()` — reads `st.session_state.current_tab_context`.
+- `explain_current_view()` — reads the `TAB_CONTEXT` ContextVar (set per request by `api/chat.py`), falling back to `st.session_state.current_tab_context`.
 
 **Model:** `claude-sonnet-4-5-20250929` via the official `anthropic` SDK (already in `requirements.txt`).
 
-**API key:** `ANTHROPIC_API_KEY` loaded via `src.config.get_secret` (same pattern as Phase 11 news pipeline). Missing key → FAB silently replaced with a muted "AI Assistant unavailable — API key not configured" caption; no traceback.
+**API key:** `ANTHROPIC_API_KEY` loaded via `src/analytics/chat.py`'s own `get_secret` (env → `st.secrets` → repo-root `.env`) — *not* `src.config`, which would drag in the `FRED_API_KEY` requirement and break the key-less FastAPI path. Missing key → FAB silently replaced with a muted "AI Assistant unavailable — API key not configured" caption; no traceback.
 
-**SQL guard:** `is_safe_select` rejects anything that isn't a single `SELECT` (or `WITH … SELECT`) statement. Bans interior `;`, all DDL/DML, PRAGMA, ATTACH/DETACH, VACUUM, REINDEX, TRUNCATE.
+**SQL guard:** `is_safe_select` rejects anything that isn't a single `SELECT` (or `WITH … SELECT`) statement. Bans interior `;`, all DDL/DML, PRAGMA (including table-valued `pragma_*`), ATTACH/DETACH, VACUUM, REINDEX, TRUNCATE, `randomblob`/`zeroblob`, `load_extension`. `query_database` additionally installs a SQLite progress handler that aborts a query after ~20M VM instructions — the bound the keyword guard can't express (e.g. an unbounded `WITH RECURSIVE`).
 
 **Cost guards:** history sent to the API is capped at the last `HISTORY_TURN_LIMIT = 20` turns. Token usage accumulates in `st.session_state.chat_token_log` (input/output) and renders in the dialog footer.
 
@@ -340,9 +347,12 @@ When in doubt: delete more than you add. Stale documentation is worse than missi
 
 - **Design source of truth:** `/Users/maxkomen/Documents/Trading-Research-Docs/Macro Regime Radar Design System/` — read `HANDOFF_REACT_MIGRATION.md` there first. `styles.css` + `tokens/` and `components/**/*.jsx` are shippable near as-is; `ui_kits/` are fixture-data references only.
 - **Design tooling:** the `impeccable` Claude Code plugin (v4.0.4, user scope, from `pbakaus/impeccable`) is installed — use `/impeccable` (audit, critique, polish, …) alongside the handoff bundle for all UI work.
-- **Step 1 (API) is built** — see the FastAPI section above. Steps 2+ (tokens/components, shell, tabs, assistant streaming endpoint) not started.
-- **Do not commit or push any migration work without the user's explicit say-so.**
+- **Step 1 (API) is built** — see the FastAPI section above.
+- **Steps 2–4 are built on branch `react-rebuild`** (as of 2026-08-26). `web/` is a Vite + React 18 + TypeScript app: all 7 tabs (Dashboard, Regime Lab, Markets, Credit, Recession, News & Calendar, Tools) plus Methodology and the assistant panel (`web/src/screens/shell/AssistantPanel.tsx` over `POST /api/assistant/ask`), a responsive foundation (`web/src/lib/useBreakpoint.ts` — mobile <480 / tablet <768 / desktop <1024 / wide; the sole width-conditional mechanism) and h1→h2→h3 heading semantics. Product and design contracts for it live in `web/PRODUCT.md` and `web/DESIGN.md`. A `Dockerfile` plus `docs/redesign/DEPLOY.md` describe two working deploys (split Vercel + backend host, or a single same-origin host). **Nothing is deployed and the branch is not pushed.** Session ledger: `proposals/OVERNIGHT_BUILD_LOG.md`.
+- **Do not commit, push, merge, or deploy any migration work without the user's explicit say-so.**
 
 ---
 
-*Last meaningful update: Jun 2 2026 — stopped committing `data/macro_radar.db` to git (it bloated the repo to ~283 MB and broke Streamlit Cloud's deploy clone); purged it from history and now ship it as the `data-latest` GitHub Release asset, downloaded by the workflows (built-in `GITHUB_TOKEN`) and by the dashboard at startup (authenticated with `GH_DB_TOKEN`, since the repo is private).*
+*Last meaningful update: Aug 26 2026 — refreshed the FastAPI section for the `react-rebuild` branch (assistant SSE endpoint, EODHD relay, DB bootstrap, same-origin bundle serving, env-driven CORS, port 8000) and recorded that migration steps 2–4 are built but neither pushed nor deployed.*
+
+*Jun 2 2026 — stopped committing `data/macro_radar.db` to git (it bloated the repo to ~283 MB and broke Streamlit Cloud's deploy clone); purged it from history and now ship it as the `data-latest` GitHub Release asset, downloaded by the workflows (built-in `GITHUB_TOKEN`) and by the dashboard at startup (authenticated with `GH_DB_TOKEN`, since the repo is private).*

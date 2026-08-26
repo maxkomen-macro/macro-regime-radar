@@ -294,8 +294,12 @@ before changing an API.
   the data behind it is current.
 - ReadThrough: 2–4 paragraphs of model prose behind a blue rail (model output, not
   measured data); single-sentence bias footer.
-- NewsCard: significance colors itself (≥7 red, ≥5 orange, ≥4 amber); attribution
-  glyphs ◆ CLAUDE and ◆ PERPLEXITY are kept — they say which model produced which text.
+- NewsCard: significance colors itself; `sigScale?: 10 | 5` selects the bands (ratified
+  2026-08-26, raised in the night-2 report). Default 10 keeps the legacy ≥7 red / ≥5
+  orange / ≥4 amber; `sigScale={5}` aligns them to the pipeline's own 1–5 significance
+  ladder (≥4.5 red / ≥3.5 orange / ≥2.5 amber) and appends the "/ 5" denominator so the
+  number is never read against the wrong scale. Attribution glyphs ◆ CLAUDE and
+  ◆ PERPLEXITY are kept — they say which model produced which text.
 
 ## Do's and Don'ts
 

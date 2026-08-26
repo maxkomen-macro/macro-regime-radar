@@ -1,5 +1,9 @@
 # Day-1 Session Report — Rulings, Signals Truth, Markets v1 + Live Layer
 
+> Historical record (2026-08-06/07). The "nothing committed, nothing pushed" statements
+> below described that session; this work was committed to branch `react-rebuild` on
+> 2026-08-17 and extended 2026-08-26 (see `proposals/OVERNIGHT_BUILD_LOG.md`).
+
 Session: 2026-08-06, day (local only — **nothing committed, nothing pushed**).
 Scope delivered: the three approved design rulings applied; `/api/signals/latest`
 rebuilt with server-side truth + carry-forward and the client mirror deleted;

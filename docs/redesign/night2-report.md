@@ -1,5 +1,9 @@
 # Night-2 Report — Five Tabs, Ratifications, API Round 2
 
+> Historical record (2026-08-06/07). The "nothing committed, nothing pushed" statements
+> below described that session; this work was committed to branch `react-rebuild` on
+> 2026-08-17 and extended 2026-08-26 (see `proposals/OVERNIGHT_BUILD_LOG.md`).
+
 Session: 2026-08-06 → 07, overnight (local only — **nothing committed, nothing pushed**).
 Scope delivered: the three ratifications + carried fixes applied (contrast sweep,
 double-YoY, tape eyebrows); the API extended with 14 endpoints for the new tabs;

@@ -52,9 +52,11 @@ auditable data pipeline. The design language states this rather than sells it.
 
 ## Operating Context
 
-- **Data plane:** FastAPI `api/` serves 12 read-only `/api/*` endpoints over the SQLite
-  snapshot (`data/macro_radar.db`), mirroring the Streamlit loaders' SQL [repo]. During
-  development the client assumes `http://127.0.0.1:8000` [brief].
+- **Data plane:** FastAPI `api/` serves 28 `/api/*` router routes over the SQLite snapshot
+  (`data/macro_radar.db`) — table endpoints mirror the Streamlit loaders' SQL, computed
+  ones call the same `src/analytics/*` modules the tabs do — plus the unprefixed Atlas
+  group, the stream WebSocket/debug pair, and `POST /api/assistant/ask` (count as of
+  2026-08-26) [repo]. During development the client assumes `http://127.0.0.1:8000` [brief].
 - **Cadence truth [repo]:** regimes/signals are monthly-cadence; market daily bars are
   daily (yfinance); intraday is 5-min for SPY/QQQ; news is hourly with a rolling 7-day
   retention window; the calendar is a hand-maintained CSV through Dec 2026. Freshness
@@ -75,15 +77,23 @@ auditable data pipeline. The design language states this rather than sells it.
 - Unprefixed API endpoints (`/regime/latest`, `/signals/latest`, `/series*`) are a frozen
   contract with Atlas's MacroBridge agent; `/api/*` field names mirror the dashboard
   loaders. Do not rename fields [repo].
-- The ticker strip polls `/api/market/intraday` for now; a real-time EODHD WebSocket
-  layer is a later step — leave a clearly-marked seam, do not build it [brief].
-- The assistant (chat) is out of scope for the v1 shell; its streaming endpoint and the
-  SELECT-only SQL guard stay server-side when it arrives [repo].
-- Signal status is derived, not passed: fill% <50 Clear, 50–75 Watch, ≥75 Triggered [bundle].
+- The ticker strip runs on the EODHD WebSocket relay (`api/stream.py` → `/api/stream/ws`),
+  built 2026-08-06; the token stays server-side and never reaches the browser. Absent
+  `EODHD_API_TOKEN` the feeds stay off and the client falls back to the
+  `/api/market/intraday` DB poll [repo].
+- The assistant is built (2026-08-26): `POST /api/assistant/ask` streams SSE from
+  `api/chat.py`, rendered by `web/src/screens/shell/AssistantPanel.tsx`. The SELECT-only
+  SQL guard stays server-side and is **imported** from `src/analytics/chat.py`, never
+  copied [repo].
+- Signal status is server-computed and passed: `/api/signals/latest` returns `status`
+  (the stored triggered flag owns "Triggered"), and the client renders it (ruled
+  2026-08-06). The fill%-derived ladder — <50 Clear, 50–75 Watch, ≥75 Triggered — is the
+  fallback only when no `status` is present [repo + bundle].
 - Regime labels are a closed set of four; alert levels a closed set of three [repo].
-- **Undecided** (owner decisions, not to be made unilaterally): production hosting
-  (Fly/Railway/Render), when the React client replaces Streamlit, EODHD subscription,
-  assistant architecture.
+- **Undecided** (owner decisions, not to be made unilaterally): production hosting — the
+  runbook exists (`docs/redesign/DEPLOY.md`, split Vercel + backend or single same-origin
+  host) but the choice of host is the owner's [repo]; when the React client replaces
+  Streamlit; EODHD subscription.
 
 ## Brand Commitments
 
