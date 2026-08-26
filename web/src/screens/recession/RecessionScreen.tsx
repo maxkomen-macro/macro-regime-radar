@@ -13,6 +13,7 @@ import { Card, SectionHeader, Tag } from "../../components";
 import { useRecessionProbability, useRecessionScenario } from "../../api/queries";
 import type { RecessionScenarioRequest } from "../../api/types";
 import { fmtMonYr, ordinal } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import LineChart, { type ChartBand } from "../dashboard/LineChart";
 import Jargon from "../shared/Jargon";
 import { Caption, SliderRow, StateNote, eyebrowStyle, mono, useDebounced, useHashScroll } from "../shared/screen-ui";
@@ -94,6 +95,7 @@ const TENOR_ORDER = ["1M", "3M", "6M", "1Y", "2Y", "5Y", "10Y", "30Y"];
 export default function RecessionScreen() {
   const q = useRecessionProbability();
   const m = q.data;
+  const { isNarrow, isMobile } = useBreakpoint();
 
   // Sensitivity state — seeded from live inputs once data arrives.
   const [inputs, setInputs] = useState<RecessionScenarioRequest | null>(null);
@@ -172,10 +174,22 @@ export default function RecessionScreen() {
           title="Probability model"
           right={`logistic regression · NBER-trained · monthly inputs through ${fmtMonYr(m.data_as_of)}`}
         />
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr)", gap: 12 }}>
           <Card>
             <div style={eyebrowStyle}>12-month recession probability</div>
-            <div style={{ display: "flex", gap: 20, alignItems: "flex-start", marginTop: 8 }}>
+            {/* Phone: the dial takes the full column and the band legend sits
+                under it — side by side it squeezed the arc below legibility.
+                Stacked it stretches, so the dial's width:100%/max-width:260 has
+                a definite width to resolve against instead of shrink-to-fit. */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: isMobile ? "column" : "row",
+                gap: isMobile ? 10 : 20,
+                alignItems: isMobile ? "stretch" : "flex-start",
+                marginTop: 8,
+              }}
+            >
               <Gauge prob={prob} label={m.recession_label} color={probColor(prob)} />
               <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
                 {(
@@ -286,7 +300,7 @@ export default function RecessionScreen() {
       {/* ── Curve monitor ─────────────────────────────────────────────── */}
       <section id="curve">
         <SectionHeader title="Curve monitor" right="2s10s daily · 30 years · FRED" />
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,2fr) minmax(0,1fr)", gap: 12 }}>
           <Card>
             <LineChart
               series={[
@@ -388,7 +402,16 @@ export default function RecessionScreen() {
             </div>
           )}
           {open && effective && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px", marginTop: 14 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)",
+                // Stacked, the sliders sit directly above the readout, so the
+                // 4px row gutter of the two-column layout becomes a real gap.
+                gap: isNarrow ? 14 : "4px 24px",
+                marginTop: 14,
+              }}
+            >
               <div>
                 <SliderRow
                   label="Yield curve 2s10s"
@@ -495,7 +518,7 @@ export default function RecessionScreen() {
       {/* ── Model transparency ────────────────────────────────────────── */}
       <section id="transparency">
         <SectionHeader title="Model transparency" right="coefficients · training metadata" />
-        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1.4fr) minmax(0,1fr)", gap: 12 }}>
           <Card>
             <div style={eyebrowStyle}>Feature coefficients · log-odds per σ</div>
             <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
@@ -504,7 +527,21 @@ export default function RecessionScreen() {
                 const width = Math.min((Math.abs(coef) / 3) * 100, 100);
                 const riskFactor = coef > 0;
                 return (
-                  <div key={name} style={{ display: "grid", gridTemplateColumns: "170px 1fr 70px 90px", gap: 10, alignItems: "center" }}>
+                  <div
+                    key={name}
+                    style={{
+                      display: "grid",
+                      // Phone keeps all four columns — label, bar, coefficient,
+                      // current reading — on tracks narrow enough to fit the
+                      // ~326px card interior at 375. The bar keeps a 40px floor
+                      // so it stays a bar; the label wraps instead of clipping.
+                      gridTemplateColumns: isMobile
+                        ? "minmax(104px,150px) minmax(40px,1fr) 50px 70px"
+                        : "170px minmax(0,1fr) 70px 90px",
+                      gap: 10,
+                      alignItems: "center",
+                    }}
+                  >
                     <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
                       {f.label}
                     </span>

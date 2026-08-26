@@ -28,6 +28,7 @@ import {
   useSignalsLatest,
 } from "../../api/queries";
 import { daysSince, fmtBps, fmtDate, fmtMonYr, fmtPct, fmtSigned, fmtWholePct, ordinal } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import type { Regime } from "../../api/types";
 import { SIGNALS_META, SIGNAL_ORDER } from "./signals-meta";
 import LineChart, { type ChartSeries } from "./LineChart";
@@ -161,6 +162,10 @@ function Accordion({ panels, defaultOpenId }: { panels: PanelDef[]; defaultOpenI
 
 export default function DashboardScreen() {
   const location = useLocation();
+  // The only width-conditional input on this screen: three grids that hold five
+  // or three fixed tracks at desk width and would print 60px columns on a
+  // phone. At and above 768 every value below resolves to the original string.
+  const { isMobile, isNarrow } = useBreakpoint();
   const regime = useRegimeLatest();
   const history = useRegimeHistory(36);
   const signals = useSignalsLatest();
@@ -364,7 +369,20 @@ export default function DashboardScreen() {
           Bars show distance to trigger · Clear &lt;50% · Watch ≥50% · Triggered = threshold
           crossed.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12 }}>
+        {/* Five signal cards: one per row on a phone (the gauge + "Last alert"
+            line need the width), self-fitting 2–4 up between 480 and 767, the
+            fixed five-track desk row at 768 and above. */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile
+              ? "minmax(0,1fr)"
+              : isNarrow
+                ? "repeat(auto-fit,minmax(150px,1fr))"
+                : "repeat(5,minmax(0,1fr))",
+            gap: 12,
+          }}
+        >
           {SIGNAL_ORDER.map((name) => {
             const meta = SIGNALS_META[name];
             const row = reportingByName.get(name);
@@ -442,7 +460,9 @@ export default function DashboardScreen() {
           title="Key levels"
           right={credit.data?.as_of ? `FRED · latest ${fmtDate(credit.data.as_of)}` : "FRED"}
         />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+        {/* Three KPI cards, each carrying a multi-sentence caption: they stack
+            on a phone rather than squeeze the captions into ribbons. */}
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "repeat(3,minmax(0,1fr))", gap: 12 }}>
           <Card accentBar tone={recession.data?.recession_label.includes("High") ? "risk" : recession.data?.recession_label.includes("Elevated") ? "watch" : "clear"}>
             <StatTile
               label="Recession model · 12m"
@@ -512,7 +532,18 @@ export default function DashboardScreen() {
           </Card>
         </div>
 
-        <Card style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 16, marginTop: 12 }}>
+        {/* Five small stat tiles — short labels and numbers, so these self-fit
+            (two up at 375, three by 480) instead of becoming a five-screen
+            column. Gated on isNarrow: unconditional auto-fit would print ten
+            tracks at desk width, not the designed five. */}
+        <Card
+          style={{
+            display: "grid",
+            gridTemplateColumns: isNarrow ? "repeat(auto-fit,minmax(110px,1fr))" : "repeat(5,minmax(0,1fr))",
+            gap: 16,
+            marginTop: 12,
+          }}
+        >
           <div>
             <StatTile
               label="Fed Funds"

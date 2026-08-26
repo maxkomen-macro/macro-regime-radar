@@ -14,6 +14,7 @@ import { Card, NewsCard, SectionHeader, StatTile, Tag } from "../../components";
 import { useCalendar, useCalendarRecent, useNews, useNewsLatest } from "../../api/queries";
 import type { CalendarEvent, NewsItem } from "../../api/types";
 import { fmtDate } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, mono, useHashScroll } from "../shared/screen-ui";
 
@@ -104,91 +105,104 @@ function researchBody(research: string | null): string | null {
 
 function CalendarRows({ events, past }: { events: CalendarEvent[]; past?: boolean }) {
   const now = Date.now();
+  const label = past ? "Recent macro events" : "Upcoming macro events";
   return (
-    <div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "130px 1fr 90px 110px",
-          gap: 12,
-          padding: "6px 12px",
-          borderBottom: "1px solid var(--line-hair)",
-        }}
-      >
-        {["Date", "Event", "Priority", "Source"].map((h, i) => (
-          <span
-            key={h}
-            style={{
-              ...mono,
-              fontSize: "var(--fs-micro)",
-              textTransform: "uppercase",
-              letterSpacing: "var(--ls-wide)",
-              color: "var(--text-muted)",
-              textAlign: i >= 2 ? "right" : "left",
-            }}
-          >
-            {h}
-          </span>
-        ))}
+    // Fixed-track table: it scrolls inside its own card under ~520px rather
+    // than widening the page (the tape's convention, MarketsScreen.tsx:587).
+    // Nothing in here is focusable, so the scroller takes a tab stop of its
+    // own — otherwise a keyboard-only visitor can't reach the Source column.
+    <div style={{ overflowX: "auto" }} tabIndex={0} role="group" aria-label={`${label} · scrollable`}>
+      <div role="table" aria-label={label} style={{ minWidth: 520 }}>
+        <div
+          role="row"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "130px 1fr 90px 110px",
+            gap: 12,
+            padding: "6px 12px",
+            borderBottom: "1px solid var(--line-hair)",
+          }}
+        >
+          {["Date", "Event", "Priority", "Source"].map((h, i) => (
+            <span
+              key={h}
+              role="columnheader"
+              style={{
+                ...mono,
+                fontSize: "var(--fs-micro)",
+                textTransform: "uppercase",
+                letterSpacing: "var(--ls-wide)",
+                color: "var(--text-muted)",
+                textAlign: i >= 2 ? "right" : "left",
+              }}
+            >
+              {h}
+            </span>
+          ))}
+        </div>
+        {events.map((e, i) => {
+          const dt = new Date(e.event_datetime).getTime();
+          const deltaDays = Math.floor((dt - now) / 86_400_000);
+          const isToday = !past && deltaDays === 0;
+          const soon = !past && deltaDays > 0 && deltaDays <= 7;
+          return (
+            <div
+              key={e.id}
+              role="row"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "130px 1fr 90px 110px",
+                gap: 12,
+                padding: "7px 12px",
+                alignItems: "baseline",
+                background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent",
+              }}
+            >
+              <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", color: past ? "var(--text-muted)" : "var(--text)" }}>
+                {fmtDate(e.event_datetime)}
+                {past && <span style={{ color: "var(--text-muted)" }}> · elapsed</span>}
+                {isToday && (
+                  <span style={{ color: "var(--neg-text)", fontWeight: 700 }}> · TODAY</span>
+                )}
+                {soon && <span style={{ color: "var(--warn)" }}> · +{deltaDays}d</span>}
+              </span>
+              <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
+                {e.event_name}
+              </span>
+              <span role="cell" style={{ textAlign: "right" }}>
+                {/* Elapsed events don't wear live priority colors (critique). */}
+                <Tag
+                  tone={
+                    past
+                      ? "neutral"
+                      : e.importance === "high"
+                        ? "neg"
+                        : e.importance === "medium"
+                          ? "warn"
+                          : e.importance === "low"
+                            ? "pos"
+                            : "neutral"
+                  }
+                  size="sm"
+                >
+                  {e.importance ?? "—"}
+                </Tag>
+              </span>
+              <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", textAlign: "right" }}>
+                {e.source === "manual_csv" ? "hand-maintained" : (e.source ?? "—")}
+              </span>
+            </div>
+          );
+        })}
       </div>
-      {events.map((e, i) => {
-        const dt = new Date(e.event_datetime).getTime();
-        const deltaDays = Math.floor((dt - now) / 86_400_000);
-        const isToday = !past && deltaDays === 0;
-        const soon = !past && deltaDays > 0 && deltaDays <= 7;
-        return (
-          <div
-            key={e.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "130px 1fr 90px 110px",
-              gap: 12,
-              padding: "7px 12px",
-              alignItems: "baseline",
-              background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent",
-            }}
-          >
-            <span style={{ ...mono, fontSize: "var(--fs-body-s)", color: past ? "var(--text-muted)" : "var(--text)" }}>
-              {fmtDate(e.event_datetime)}
-              {past && <span style={{ color: "var(--text-muted)" }}> · elapsed</span>}
-              {isToday && (
-                <span style={{ color: "var(--neg-text)", fontWeight: 700 }}> · TODAY</span>
-              )}
-              {soon && <span style={{ color: "var(--warn)" }}> · +{deltaDays}d</span>}
-            </span>
-            <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
-              {e.event_name}
-            </span>
-            <span style={{ textAlign: "right" }}>
-              {/* Elapsed events don't wear live priority colors (critique). */}
-              <Tag
-                tone={
-                  past
-                    ? "neutral"
-                    : e.importance === "high"
-                      ? "neg"
-                      : e.importance === "medium"
-                        ? "warn"
-                        : e.importance === "low"
-                          ? "pos"
-                          : "neutral"
-                }
-                size="sm"
-              >
-                {e.importance ?? "—"}
-              </Tag>
-            </span>
-            <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", textAlign: "right" }}>
-              {e.source === "manual_csv" ? "hand-maintained" : (e.source ?? "—")}
-            </span>
-          </div>
-        );
-      })}
     </div>
   );
 }
 
 export default function NewsScreen() {
+  // <768 the two-up feed stacks: a NewsCard is prose, and prose in a 170px
+  // column is unreadable (lib/useBreakpoint.ts). Nothing else moves.
+  const { isNarrow } = useBreakpoint();
   const [hours, setHours] = useState<number>(168);
   const [cat, setCat] = useState<string | null>(null);
   const [minSig, setMinSig] = useState<number | undefined>(undefined);
@@ -244,7 +258,9 @@ export default function NewsScreen() {
 
         {/* Summary counters — "+" marks a capped fetch, and a zero category
             renders as an em dash so it reads "none filed", not "broken". */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12 }}>
+        {/* Five identical counters: auto-fit reflows them (3-up at 375) and
+            collapses to exactly repeat(5,1fr) wherever five still fit. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(96px,1fr))", gap: 12 }}>
           <StatTile
             label="Headlines"
             value={`${feed.length}${(windowed.data?.length ?? 0) >= 150 ? "+" : ""}`}
@@ -303,7 +319,7 @@ export default function NewsScreen() {
         )}
 
         {/* Feed */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12, marginTop: 12, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12, marginTop: 12, alignItems: "start" }}>
           {shown.map((item) => (
             <NewsCard
               key={item.id}

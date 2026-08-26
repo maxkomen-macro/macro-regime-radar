@@ -3,8 +3,12 @@ import React from "react";
 /**
  * Header ticker strip. Items tick with a directional flash when `value` changes,
  * mirroring the 30-second st.fragment refresh on the Markets tab.
+ *
+ * `compact` is the narrow-viewport mode: a tighter gap, and the row scrolls
+ * itself instead of pushing the page wide (three items at their desk gap do not
+ * fit a 375px screen).
  */
-export function TickerStrip({ items = [], style, ...rest }) {
+export function TickerStrip({ items = [], compact = false, style, ...rest }) {
   const prev = React.useRef({});
   const [flash, setFlash] = React.useState({});
 
@@ -28,8 +32,9 @@ export function TickerStrip({ items = [], style, ...rest }) {
       style={{
         display: "flex",
         alignItems: "flex-start",
-        gap: "var(--sp-11)",
+        gap: compact ? "var(--sp-8)" : "var(--sp-11)",
         fontFamily: "var(--font-mono)",
+        ...(compact ? { overflowX: "auto" } : null),
         ...style,
       }}
     >
@@ -39,6 +44,9 @@ export function TickerStrip({ items = [], style, ...rest }) {
           style={{
             padding: "var(--sp-2) var(--sp-4)",
             borderRadius: "var(--r-xs)",
+            // Scrolling only works if the items keep their natural width —
+            // otherwise flex shrinks them and the values wrap instead.
+            ...(compact ? { flexShrink: 0 } : null),
             animation: flash[it.label] ? `mrr-flash-${flash[it.label]} var(--tick-flash) var(--ease-out)` : "none",
           }}
         >

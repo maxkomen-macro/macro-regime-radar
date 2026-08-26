@@ -9,6 +9,8 @@
 
 import { useId } from "react";
 
+import { useBreakpoint } from "../../lib/useBreakpoint";
+
 export interface ChartSeries {
   label: string;
   color: string;
@@ -36,12 +38,19 @@ interface Props {
   showLast?: boolean;
 }
 
-const W = 720;
 const PAD_X = 6;
 const PAD_Y = 8;
 
 export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixed(2), caption, bands, hlines, showLast = true }: Props) {
   const uid = useId();
+  // The svg is width:100%, so the viewBox width sets the scale factor for
+  // everything authored in user units — in-svg text most of all. A 720-unit
+  // box in a ~300px phone card renders at ~0.4x (8px labels → 3px, illegible)
+  // and squashes the plot to a sliver. Halving the box under 768px puts the
+  // scale back near 1:1. Plain render-time derivation: no effect, no ref, no
+  // memo — a breakpoint flip is just a re-render with new numbers.
+  const { isNarrow } = useBreakpoint();
+  const W = isNarrow ? 360 : 720;
   const all = series.flatMap((s) => s.points.map((p) => p.y)).filter((y) => Number.isFinite(y));
   if (!all.length) {
     return (
@@ -165,8 +174,11 @@ export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixe
                 strokeDasharray="2 5"
                 vectorEffect="non-scaling-stroke"
               />
+              {/* The one label authored INSIDE the svg, so it is the one that
+                  shrinks with the viewBox: 8u in the 360 box still lands under
+                  8px on a phone. 10u there ≈ 8.3px rendered. */}
               {h.label && (
-                <text x={W - PAD_X - 2} y={hy - 3} textAnchor="end" fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: 8 }}>
+                <text x={W - PAD_X - 2} y={hy - 3} textAnchor="end" fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: isNarrow ? 10 : 8 }}>
                   {h.label}
                 </text>
               )}

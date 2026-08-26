@@ -15,6 +15,7 @@ import { Link } from "react-router-dom";
 import { useAllocation } from "../../api/queries";
 import type { AllocationData, FrameData } from "../../api/types";
 import { fmtMonYr } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, eyebrowStyle, mono } from "../shared/screen-ui";
 import FrontierChart, { type FrontierMarker } from "./FrontierChart";
@@ -100,6 +101,7 @@ function frameCell(f: FrameData, rowIdx: number, col: string): number | null {
 }
 
 export default function AllocationPanel() {
+  const { isNarrow } = useBreakpoint();
   const q = useAllocation();
   const a = q.data;
   const [riskBlock, setRiskBlock] = useState<(typeof RISK_BLOCKS)[number]["id"]>("factors");
@@ -196,8 +198,13 @@ export default function AllocationPanel() {
               separate heuristic, not odds) — read the current column first
             </span>
           </div>
+          {/* `display: contents` row wrappers give assistive tech the table
+              structure the visual grid implies, without adding a box that
+              would break the single-grid layout. */}
           <div style={{ overflowX: "auto" }}>
             <div
+              role="table"
+              aria-label="Regime-conditional performance"
               style={{
                 display: "grid",
                 gridTemplateColumns: `150px repeat(${regimes.length}, 1fr)`,
@@ -205,16 +212,18 @@ export default function AllocationPanel() {
                 minWidth: 640,
               }}
             >
-              <span />
-              {regimes.map((r) => (
-                <span key={r} style={{ ...cellHead, color: r === curRegime ? REGIME_COLORS[r] : "var(--text-muted)" }}>
-                  {r}
-                  {r === curRegime ? " ←" : ""}
-                </span>
-              ))}
+              <div role="row" style={{ display: "contents" }}>
+                <span role="columnheader" />
+                {regimes.map((r) => (
+                  <span role="columnheader" key={r} style={{ ...cellHead, color: r === curRegime ? REGIME_COLORS[r] : "var(--text-muted)" }}>
+                    {r}
+                    {r === curRegime ? " ←" : ""}
+                  </span>
+                ))}
+              </div>
               {names.map((asset) => (
-                <Fragment key={asset}>
-                  <span key={`${asset}-l`} style={rowLabel}>
+                <div role="row" style={{ display: "contents" }} key={asset}>
+                  <span role="rowheader" key={`${asset}-l`} style={rowLabel}>
                     {asset}
                   </span>
                   {regimes.map((r) => {
@@ -223,6 +232,7 @@ export default function AllocationPanel() {
                     const sr = s?.sharpe?.[asset] ?? null;
                     return (
                       <span
+                        role="cell"
                         key={`${asset}-${r}`}
                         style={{
                           ...mono,
@@ -243,14 +253,16 @@ export default function AllocationPanel() {
                       </span>
                     );
                   })}
-                </Fragment>
+                </div>
               ))}
-              <span style={{ ...rowLabel, color: "var(--text-muted)" }}>months in regime</span>
-              {regimes.map((r) => (
-                <span key={`${r}-n`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                  n={a.regime_stats[r].n_months}
-                </span>
-              ))}
+              <div role="row" style={{ display: "contents" }}>
+                <span role="rowheader" style={{ ...rowLabel, color: "var(--text-muted)" }}>months in regime</span>
+                {regimes.map((r) => (
+                  <span role="cell" key={`${r}-n`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
+                    n={a.regime_stats[r].n_months}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
           <Caption>
@@ -307,13 +319,24 @@ export default function AllocationPanel() {
           </Card>
         ) : (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+            {/* The 4-up desk grid becomes a fill-what-fits grid under 768 —
+                two cards at 375, three by ~620. */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isNarrow ? "repeat(auto-fit, minmax(160px, 1fr))" : "repeat(4,minmax(0,1fr))",
+                gap: 12,
+              }}
+            >
               {METHODS.map((m) => {
                 const o = opt[m.key];
                 if (!o) return null;
                 return (
                   <Card key={m.key}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+                    {/* "Black-Litterman" + its nowrap badge need ~225px; on a
+                        narrow card the badge drops to its own line instead of
+                        pushing the page sideways. */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6, flexWrap: isNarrow ? "wrap" : "nowrap" }}>
                       <span style={eyebrowStyle}>{m.label}</span>
                       <Tag tone={isFallback(o) ? "warn" : "neutral"} size="sm">
                         {isFallback(o) ? "fallback" : m.badge}
@@ -354,7 +377,14 @@ export default function AllocationPanel() {
               weight, tagged fallback.
             </Caption>
 
-            <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 12, marginTop: 12 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,3fr) minmax(0,2fr)",
+                gap: 12,
+                marginTop: 12,
+              }}
+            >
               <Card>
                 <div style={{ ...eyebrowStyle, marginBottom: 8 }}>
                   Efficient frontier · annualized risk vs return
@@ -369,22 +399,25 @@ export default function AllocationPanel() {
               <Card>
                 <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Weights by method · %</div>
                 <div style={{ overflowX: "auto" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: `130px repeat(${METHODS.length}, 1fr)`, gap: "1px 4px", minWidth: 480 }}>
-                    <span />
-                    {METHODS.map((m) => (
-                      <span key={m.key} style={{ ...cellHead, padding: "2px 4px", fontSize: 8 }}>
-                        {m.key === "black_litterman" ? "B-L" : m.label}
-                      </span>
-                    ))}
+                  <div role="table" aria-label="Weights by method" style={{ display: "grid", gridTemplateColumns: `130px repeat(${METHODS.length}, 1fr)`, gap: "1px 4px", minWidth: 480 }}>
+                    <div role="row" style={{ display: "contents" }}>
+                      <span role="columnheader" />
+                      {METHODS.map((m) => (
+                        <span role="columnheader" key={m.key} style={{ ...cellHead, padding: "2px 4px", fontSize: 8 }}>
+                          {m.key === "black_litterman" ? "B-L" : m.label}
+                        </span>
+                      ))}
+                    </div>
                     {names.map((asset, ai) => (
-                      <Fragment key={asset}>
-                        <span key={`${asset}-w`} style={{ ...rowLabel, fontSize: "var(--fs-meta)" }}>
+                      <div role="row" style={{ display: "contents" }} key={asset}>
+                        <span role="rowheader" key={`${asset}-w`} style={{ ...rowLabel, fontSize: "var(--fs-meta)" }}>
                           {asset}
                         </span>
                         {METHODS.map((m) => {
                           const w = opt[m.key]?.weights?.[ai] ?? null;
                           return (
                             <span
+                              role="cell"
                               key={`${asset}-${m.key}`}
                               style={{
                                 ...mono,
@@ -399,7 +432,7 @@ export default function AllocationPanel() {
                             </span>
                           );
                         })}
-                      </Fragment>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -492,7 +525,9 @@ export default function AllocationPanel() {
 
         {riskBlock === "style" && (
           <Card>
-            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "baseline" }}>
+            {/* Four regime names plus their label overrun a phone card in one
+                line — the row wraps below 768 and is unchanged above it. */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "baseline", flexWrap: isNarrow ? "wrap" : "nowrap" }}>
               <span style={eyebrowStyle}>Style performance in</span>
               {regimes.map((r) => (
                 <button
@@ -516,33 +551,37 @@ export default function AllocationPanel() {
               ))}
             </div>
             {a.style_performance?.[effStyleRegime] ? (
-              <div style={{ display: "grid", gridTemplateColumns: "140px repeat(4,1fr)", gap: "2px 8px" }}>
-                {["", "Return", "Vol", "Sharpe", "Hit rate"].map((h, i) => (
-                  <span key={h || "corner"} style={i ? cellHead : undefined}>
-                    {h}
-                  </span>
-                ))}
-                {Object.entries(a.style_performance[effStyleRegime])
-                  .sort((x, y) => (y[1].sharpe ?? 0) - (x[1].sharpe ?? 0))
-                  .map(([style, s]) => (
-                    <Fragment key={style}>
-                      <span key={style} style={rowLabel}>
-                        {style}
+              <div style={{ overflowX: "auto" }}>
+                <div role="table" aria-label="Style performance by regime" style={{ display: "grid", gridTemplateColumns: "140px repeat(4,1fr)", gap: "2px 8px", minWidth: 440 }}>
+                  <div role="row" style={{ display: "contents" }}>
+                    {["", "Return", "Vol", "Sharpe", "Hit rate"].map((h, i) => (
+                      <span role="columnheader" key={h || "corner"} style={i ? cellHead : undefined}>
+                        {h}
                       </span>
-                      <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: s.return < 0 ? "var(--neg-text)" : "var(--text)" }}>
-                        {spct(s.return)}
-                      </span>
-                      <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                        {pct(s.volatility)}
-                      </span>
-                      <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>
-                        {s.sharpe.toFixed(2)}
-                      </span>
-                      <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                        {pct(s.hit_rate, 0)}
-                      </span>
-                    </Fragment>
-                  ))}
+                    ))}
+                  </div>
+                  {Object.entries(a.style_performance[effStyleRegime])
+                    .sort((x, y) => (y[1].sharpe ?? 0) - (x[1].sharpe ?? 0))
+                    .map(([style, s]) => (
+                      <div role="row" style={{ display: "contents" }} key={style}>
+                        <span role="rowheader" key={style} style={rowLabel}>
+                          {style}
+                        </span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: s.return < 0 ? "var(--neg-text)" : "var(--text)" }}>
+                          {spct(s.return)}
+                        </span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
+                          {pct(s.volatility)}
+                        </span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>
+                          {s.sharpe.toFixed(2)}
+                        </span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
+                          {pct(s.hit_rate, 0)}
+                        </span>
+                      </div>
+                    ))}
+                </div>
               </div>
             ) : (
               <StateNote>Style history unavailable for this regime (needs ≥6 months).</StateNote>
@@ -557,10 +596,10 @@ export default function AllocationPanel() {
 
         {riskBlock === "tail" && (
           <Card>
-            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1.4fr) minmax(0,1fr)", gap: 20 }}>
               <div>
                 <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Asset tail risk · monthly, 95%</div>
-                <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 70px 70px", gap: "2px 8px", alignItems: "center" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "150px minmax(0,1fr) 70px 70px", gap: "2px 8px", alignItems: "center" }}>
                   <span />
                   <span />
                   <span style={cellHead}>CVaR</span>
@@ -648,7 +687,7 @@ export default function AllocationPanel() {
               ))}
             </div>
             {effTransPair && a.transition_pnl[effTransPair] ? (
-              <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 80px", gap: "2px 8px", alignItems: "center" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "150px minmax(0,1fr) 80px", gap: "2px 8px", alignItems: "center" }}>
                 {Object.entries(a.transition_pnl[effTransPair].avg_return).map(([asset, r]) => (
                   <Fragment key={asset}>
                     <span key={asset} style={rowLabel}>
@@ -684,37 +723,41 @@ export default function AllocationPanel() {
           <Card>
             <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Currency moves by regime · annualized</div>
             {a.currency_impact && Object.keys(a.currency_impact).length ? (
-              <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${regimes.length},1fr)`, gap: "2px 8px" }}>
-                <span />
-                {regimes.map((r) => (
-                  <span key={r} style={cellHead}>
-                    {r}
-                  </span>
-                ))}
-                {[
-                  ...new Set(Object.values(a.currency_impact).flatMap((byPair) => Object.keys(byPair))),
-                ].map((pair) => (
-                  <Fragment key={pair}>
-                    <span key={pair} style={rowLabel}>
-                      {pair}
-                    </span>
-                    {regimes.map((r) => {
-                      const c = a.currency_impact?.[r]?.[pair];
-                      return (
-                        <span key={`${pair}-${r}`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>
-                          {c ? (
-                            <>
-                              <span style={{ color: c.return < 0 ? "var(--neg-text)" : "var(--text)" }}>{spct(c.return)}</span>
-                              <span style={{ color: "var(--text-muted)" }}> · σ{pct(c.volatility, 0)}</span>
-                            </>
-                          ) : (
-                            "—"
-                          )}
-                        </span>
-                      );
-                    })}
-                  </Fragment>
-                ))}
+              <div style={{ overflowX: "auto" }}>
+                <div role="table" aria-label="Currency moves by regime" style={{ display: "grid", gridTemplateColumns: `120px repeat(${regimes.length},1fr)`, gap: "2px 8px", minWidth: 520 }}>
+                  <div role="row" style={{ display: "contents" }}>
+                    <span role="columnheader" />
+                    {regimes.map((r) => (
+                      <span role="columnheader" key={r} style={cellHead}>
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                  {[
+                    ...new Set(Object.values(a.currency_impact).flatMap((byPair) => Object.keys(byPair))),
+                  ].map((pair) => (
+                    <div role="row" style={{ display: "contents" }} key={pair}>
+                      <span role="rowheader" key={pair} style={rowLabel}>
+                        {pair}
+                      </span>
+                      {regimes.map((r) => {
+                        const c = a.currency_impact?.[r]?.[pair];
+                        return (
+                          <span role="cell" key={`${pair}-${r}`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>
+                            {c ? (
+                              <>
+                                <span style={{ color: c.return < 0 ? "var(--neg-text)" : "var(--text)" }}>{spct(c.return)}</span>
+                                <span style={{ color: "var(--text-muted)" }}> · σ{pct(c.volatility, 0)}</span>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : (
               <StateNote>Currency history unavailable from the vendor this session.</StateNote>
@@ -732,34 +775,38 @@ export default function AllocationPanel() {
               Real vs nominal · {curRegime} months (n={a.real_nominal[curRegime]?.n_months ?? "—"})
             </div>
             {a.real_nominal[curRegime] ? (
-              <div style={{ display: "grid", gridTemplateColumns: "150px repeat(3,1fr)", gap: "2px 8px" }}>
-                <span />
-                {["Nominal", "Real", "Inflation drag"].map((h) => (
-                  <span key={h} style={cellHead}>
-                    {h}
-                  </span>
-                ))}
-                {Object.keys(a.real_nominal[curRegime].nominal).map((asset) => {
-                  const rn = a.real_nominal[curRegime];
-                  const nom = rn.nominal[asset];
-                  const real = rn.real[asset];
-                  const eroded = nom > 0 && real < 0;
-                  return (
-                    <Fragment key={asset}>
-                      <span style={rowLabel}>
-                        {asset}
-                        {eroded ? <span style={{ color: "var(--warn)" }}> ▪ eroded</span> : ""}
+              <div style={{ overflowX: "auto" }}>
+                <div role="table" aria-label="Real vs nominal returns by asset" style={{ display: "grid", gridTemplateColumns: "150px repeat(3,1fr)", gap: "2px 8px", minWidth: 420 }}>
+                  <div role="row" style={{ display: "contents" }}>
+                    <span role="columnheader" />
+                    {["Nominal", "Real", "Inflation drag"].map((h) => (
+                      <span role="columnheader" key={h} style={cellHead}>
+                        {h}
                       </span>
-                      <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>{spct(nom)}</span>
-                      <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: real < 0 ? "var(--neg-text)" : "var(--text)" }}>
-                        {spct(real)}
-                      </span>
-                      <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                        {spct(rn.inflation_drag[asset] ?? 0)}
-                      </span>
-                    </Fragment>
-                  );
-                })}
+                    ))}
+                  </div>
+                  {Object.keys(a.real_nominal[curRegime].nominal).map((asset) => {
+                    const rn = a.real_nominal[curRegime];
+                    const nom = rn.nominal[asset];
+                    const real = rn.real[asset];
+                    const eroded = nom > 0 && real < 0;
+                    return (
+                      <div role="row" style={{ display: "contents" }} key={asset}>
+                        <span role="rowheader" style={rowLabel}>
+                          {asset}
+                          {eroded ? <span style={{ color: "var(--warn)" }}> ▪ eroded</span> : ""}
+                        </span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>{spct(nom)}</span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: real < 0 ? "var(--neg-text)" : "var(--text)" }}>
+                          {spct(real)}
+                        </span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
+                          {spct(rn.inflation_drag[asset] ?? 0)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <StateNote>No inflation-adjusted view for this regime.</StateNote>
@@ -773,7 +820,9 @@ export default function AllocationPanel() {
 
         {riskBlock === "correlation" && (
           <Card>
-            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "baseline" }}>
+            {/* Same wrap rule as the style chips — four regime names plus the
+                label don't fit one phone line. */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "baseline", flexWrap: isNarrow ? "wrap" : "nowrap" }}>
               <span style={eyebrowStyle}>Correlations in</span>
               {regimes.map((r) => (
                 <button
@@ -799,6 +848,8 @@ export default function AllocationPanel() {
             {a.regime_correlations[effCorrRegime] ? (
               <div style={{ overflowX: "auto" }}>
                 <div
+                  role="table"
+                  aria-label={`Asset correlations in ${effCorrRegime}`}
                   style={{
                     display: "grid",
                     gridTemplateColumns: `130px repeat(${a.regime_correlations[effCorrRegime].columns.length}, 1fr)`,
@@ -806,26 +857,28 @@ export default function AllocationPanel() {
                     minWidth: 700,
                   }}
                 >
-                  <span />
-                  {a.regime_correlations[effCorrRegime].columns.map((c) => (
-                    <span key={c} style={{ ...mono, fontSize: 8, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", padding: "2px 1px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                      {c.replace("US ", "")}
-                    </span>
-                  ))}
+                  <div role="row" style={{ display: "contents" }}>
+                    <span role="columnheader" />
+                    {a.regime_correlations[effCorrRegime].columns.map((c) => (
+                      <span role="columnheader" key={c} style={{ ...mono, fontSize: 8, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", padding: "2px 1px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                        {c.replace("US ", "")}
+                      </span>
+                    ))}
+                  </div>
                   {a.regime_correlations[effCorrRegime].index.map((rowName, ri) => (
-                    <Fragment key={String(rowName)}>
-                      <span key={String(rowName)} style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "3px 4px" }}>
+                    <div role="row" style={{ display: "contents" }} key={String(rowName)}>
+                      <span role="rowheader" key={String(rowName)} style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "3px 4px" }}>
                         {String(rowName)}
                       </span>
                       {a.regime_correlations[effCorrRegime].columns.map((col, ci) => {
                         const v = a.regime_correlations[effCorrRegime].data[ri]?.[ci] ?? null;
                         return (
-                          <span key={`${rowName}-${col}`} style={{ ...mono, fontSize: "var(--fs-micro)", textAlign: "center", padding: "3px 1px", background: ri === ci ? "transparent" : corrBg(v), color: ri === ci ? "var(--text-faint)" : "var(--text-2)" }}>
+                          <span role="cell" key={`${rowName}-${col}`} style={{ ...mono, fontSize: "var(--fs-micro)", textAlign: "center", padding: "3px 1px", background: ri === ci ? "transparent" : corrBg(v), color: ri === ci ? "var(--text-faint)" : "var(--text-2)" }}>
                             {v != null ? v.toFixed(2) : "—"}
                           </span>
                         );
                       })}
-                    </Fragment>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -848,33 +901,37 @@ export default function AllocationPanel() {
         {riskBlock === "drawdowns" && a.drawdowns?.by_regime?.columns && (
           <Card>
             <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Maximum drawdown · by regime and overall</div>
-            <div style={{ display: "grid", gridTemplateColumns: `150px repeat(${a.drawdowns.by_regime.columns.length + 1},1fr)`, gap: "2px 8px" }}>
-              <span />
-              {a.drawdowns.by_regime.columns.map((c) => (
-                <span key={c} style={cellHead}>
-                  {c}
-                </span>
-              ))}
-              <span style={cellHead}>Overall</span>
-              {a.drawdowns.by_regime.index.map((asset, ri) => (
-                <Fragment key={String(asset)}>
-                  <span key={String(asset)} style={rowLabel}>
-                    {String(asset)}
-                  </span>
-                  {a.drawdowns.by_regime.columns.map((col) => {
-                    const v = frameCell(a.drawdowns.by_regime, ri, col);
-                    const color = v == null ? "var(--text-muted)" : v < -0.3 ? "var(--neg-text)" : v < -0.15 ? "var(--warn-hot)" : "var(--text-muted)";
-                    return (
-                      <span key={`${asset}-${col}`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color }}>
-                        {v != null ? spct(v) : "—"}
-                      </span>
-                    );
-                  })}
-                  <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", fontWeight: 600, color: (a.drawdowns.overall[String(asset)] ?? 0) < -0.3 ? "var(--neg-text)" : "var(--text)" }}>
-                    {a.drawdowns.overall[String(asset)] != null ? spct(a.drawdowns.overall[String(asset)]) : "—"}
-                  </span>
-                </Fragment>
-              ))}
+            <div style={{ overflowX: "auto" }}>
+              <div role="table" aria-label="Maximum drawdown by regime and overall" style={{ display: "grid", gridTemplateColumns: `150px repeat(${a.drawdowns.by_regime.columns.length + 1},1fr)`, gap: "2px 8px", minWidth: 560 }}>
+                <div role="row" style={{ display: "contents" }}>
+                  <span role="columnheader" />
+                  {a.drawdowns.by_regime.columns.map((c) => (
+                    <span role="columnheader" key={c} style={cellHead}>
+                      {c}
+                    </span>
+                  ))}
+                  <span role="columnheader" style={cellHead}>Overall</span>
+                </div>
+                {a.drawdowns.by_regime.index.map((asset, ri) => (
+                  <div role="row" style={{ display: "contents" }} key={String(asset)}>
+                    <span role="rowheader" key={String(asset)} style={rowLabel}>
+                      {String(asset)}
+                    </span>
+                    {a.drawdowns.by_regime.columns.map((col) => {
+                      const v = frameCell(a.drawdowns.by_regime, ri, col);
+                      const color = v == null ? "var(--text-muted)" : v < -0.3 ? "var(--neg-text)" : v < -0.15 ? "var(--warn-hot)" : "var(--text-muted)";
+                      return (
+                        <span role="cell" key={`${asset}-${col}`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color }}>
+                          {v != null ? spct(v) : "—"}
+                        </span>
+                      );
+                    })}
+                    <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", fontWeight: 600, color: (a.drawdowns.overall[String(asset)] ?? 0) < -0.3 ? "var(--neg-text)" : "var(--text)" }}>
+                      {a.drawdowns.overall[String(asset)] != null ? spct(a.drawdowns.overall[String(asset)]) : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
             <Caption>
               Worst peak-to-trough loss per asset, split by the regime it happened in. A −50%{" "}

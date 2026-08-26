@@ -8,13 +8,14 @@
  * (Fed Funds + HY OAS) whose sole owner is Credit → Financing conditions.
  */
 
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, DataTable } from "../../components";
 import { useLboDefaults, useLboRun } from "../../api/queries";
 import type { LboRequest } from "../../api/types";
 import Jargon from "../shared/Jargon";
 import { fmtDate } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, SliderRow, StateNote, eyebrowStyle, fmtMillions, mono, useDebounced } from "../shared/screen-ui";
 
 const BASE_INPUTS: Omit<LboRequest, "interest_rate"> = {
@@ -45,6 +46,7 @@ function cellBg(irr: number | null): string {
 }
 
 export default function LboPanel() {
+  const { isMobile, isNarrow } = useBreakpoint();
   const defaults = useLboDefaults();
   const liveRate = defaults.data?.lbo_all_in_rate ?? null;
   // Compare against the value the slider can actually hold — a live rate
@@ -82,9 +84,23 @@ export default function LboPanel() {
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 12, alignItems: "start" }}>
+    // Below 768 the two desk columns become one: inputs first, because the
+    // sliders are what a phone visitor came to move, then the results they
+    // drive directly underneath.
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,2fr) minmax(0,3fr)",
+        gap: 12,
+        alignItems: "start",
+      }}
+    >
       {/* ── Inputs ────────────────────────────────────────────────────── */}
-      <div style={{ display: "grid", gap: 12 }}>
+      {/* minWidth:0 — Tools' sections are plain blocks, so the global
+          `main section { min-width: 0 }` rule never reaches these columns.
+          Without it a grid item keeps its content-based automatic minimum and
+          overflows its own track. No-op wherever the track is already wider. */}
+      <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
         <Card accentBar>
           <div style={eyebrowStyle}>Live financing rate</div>
           <div style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, marginTop: 6 }}>
@@ -219,12 +235,28 @@ export default function LboPanel() {
       </div>
 
       {/* ── Results ───────────────────────────────────────────────────── */}
-      <div style={{ display: "grid", gap: 12 }}>
+      {/* Same lever, and this is the column that measured 497px at 375: the
+          schedule table's min-content was propagating up through the banner
+          Card and dragging the page sideways. */}
+      <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
         <Card tone={res && !res.viable ? "risk" : "default"}>
           {res ? (
             res.viable ? (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+                {/* 30px numerals need ~145px each once equity gain runs to
+                    "+$4,470M" — three tracks only clear that from ~620px up,
+                    so mobile stacks and the tablet band fits what it can. */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile
+                      ? "minmax(0,1fr)"
+                      : isNarrow
+                        ? "repeat(auto-fit, minmax(150px, 1fr))"
+                        : "repeat(3,minmax(0,1fr))",
+                    gap: 12,
+                  }}
+                >
                   <div>
                     <div style={eyebrowStyle}>IRR</div>
                     <div style={{ ...mono, fontSize: 30, fontWeight: 700, color: irrColor(res.irr, true), marginTop: 4 }}>
@@ -273,26 +305,34 @@ export default function LboPanel() {
         </Card>
 
         {res?.viable && res.schedule.length > 0 && (
-          <Card>
+          /* The column above is itself a grid, so its auto track would still be
+             floored by this card's min-content (the wide table) — the card has
+             to be allowed to shrink too, or the scroll well never engages. */
+          <Card style={{ minWidth: 0 }}>
             <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Annual schedule · $M</div>
-            <DataTable
-              columns={[
-                { key: "year", label: "Year", mono: true },
-                { key: "ebitda", label: "EBITDA", align: "right", mono: true },
-                { key: "implied_ev", label: "Implied EV", align: "right", mono: true },
-                { key: "debt_start", label: "Debt start", align: "right", mono: true },
-                { key: "debt_end", label: "Debt end", align: "right", mono: true },
-                { key: "interest", label: "Interest", align: "right", mono: true },
-              ]}
-              rows={res.schedule.map((y) => ({
-                year: y.year === res.schedule.length ? `${y.year} · exit` : String(y.year),
-                ebitda: y.ebitda.toFixed(1),
-                implied_ev: y.implied_ev.toFixed(1),
-                debt_start: y.debt_start.toFixed(1),
-                debt_end: y.debt_end.toFixed(1),
-                interest: y.interest.toFixed(1),
-              }))}
-            />
+            {/* Six nowrap numeric columns can't compress below ~450px — the
+                schedule scrolls inside its own well rather than dragging the
+                page sideways on a phone. */}
+            <div style={{ overflowX: "auto" }}>
+              <DataTable
+                columns={[
+                  { key: "year", label: "Year", mono: true },
+                  { key: "ebitda", label: "EBITDA", align: "right", mono: true },
+                  { key: "implied_ev", label: "Implied EV", align: "right", mono: true },
+                  { key: "debt_start", label: "Debt start", align: "right", mono: true },
+                  { key: "debt_end", label: "Debt end", align: "right", mono: true },
+                  { key: "interest", label: "Interest", align: "right", mono: true },
+                ]}
+                rows={res.schedule.map((y) => ({
+                  year: y.year === res.schedule.length ? `${y.year} · exit` : String(y.year),
+                  ebitda: y.ebitda.toFixed(1),
+                  implied_ev: y.implied_ev.toFixed(1),
+                  debt_start: y.debt_start.toFixed(1),
+                  debt_end: y.debt_end.toFixed(1),
+                  interest: y.interest.toFixed(1),
+                }))}
+              />
+            </div>
             <Caption>
               Interest accrues on the declining balance; amortization retires{" "}
               {inputs.amortization_rate.toFixed(0)}% of the original debt each year. EBITDA
@@ -303,58 +343,73 @@ export default function LboPanel() {
         )}
 
         {sens && (
-          <Card>
+          <Card style={{ minWidth: 0 }}>
             <div style={{ ...eyebrowStyle, marginBottom: 8 }}>
               IRR sensitivity · entry × exit multiple
             </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: `110px repeat(${sens.exit_multiples.length}, 1fr)`,
-                gap: 2,
-              }}
-            >
-              <span style={{ ...mono, fontSize: 9, letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", alignSelf: "end", whiteSpace: "nowrap" }}>
-                entry \ exit
-              </span>
-              {sens.exit_multiples.map((xm) => (
-                <span key={xm} style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", textAlign: "right", padding: "0 8px" }}>
-                  {xm.toFixed(1)}×
-                </span>
-              ))}
-              {sens.entry_multiples.map((em, ri) => (
-                <Fragment key={em}>
-                  <span key={`r-${em}`} style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
-                    {em.toFixed(1)}×
+            {/* A 6-track numeric grid can't compress to a phone card; it
+                scrolls in its own well. `display: contents` on each row keeps
+                the single-grid layout byte-identical while giving assistive
+                tech the row/cell structure the visual grid implies. */}
+            <div style={{ overflowX: "auto" }}>
+              <div
+                role="table"
+                aria-label="IRR sensitivity — entry vs exit multiple"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `110px repeat(${sens.exit_multiples.length}, 1fr)`,
+                  gap: 2,
+                  // 380, not 460: the results column is only ~396px at 768,
+                  // and a floor above that would hang a scrollbar on a laptop
+                  // where the grid already fits.
+                  minWidth: 380,
+                }}
+              >
+                <div role="row" style={{ display: "contents" }}>
+                  <span role="columnheader" style={{ ...mono, fontSize: 9, letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", alignSelf: "end", whiteSpace: "nowrap" }}>
+                    entry \ exit
                   </span>
-                  {sens.exit_multiples.map((xm, ci) => {
-                    const irr = sens.irr_grid[ri]?.[ci] ?? null;
-                    // Outline the server's own center — Python and JS round
-                    // .25 halves differently (audit).
-                    const isCurrent =
-                      Math.abs(em - sens.entry_center) < 1e-9 &&
-                      Math.abs(xm - sens.exit_center) < 1e-9;
-                    return (
-                      <span
-                        key={`${em}-${xm}`}
-                        style={{
-                          ...mono,
-                          fontSize: "var(--fs-meta)",
-                          textAlign: "right",
-                          padding: "6px 8px",
-                          borderRadius: "var(--r-xs)",
-                          background: cellBg(irr),
-                          border: isCurrent ? "1px solid var(--accent)" : "1px solid transparent",
-                          fontWeight: isCurrent ? 700 : 400,
-                          color: irr == null ? "var(--text-muted)" : "var(--text)",
-                        }}
-                      >
-                        {irr == null ? "n/a" : `${irr.toFixed(1)}%`}
-                      </span>
-                    );
-                  })}
-                </Fragment>
-              ))}
+                  {sens.exit_multiples.map((xm) => (
+                    <span role="columnheader" key={xm} style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", textAlign: "right", padding: "0 8px" }}>
+                      {xm.toFixed(1)}×
+                    </span>
+                  ))}
+                </div>
+                {sens.entry_multiples.map((em, ri) => (
+                  <div role="row" style={{ display: "contents" }} key={em}>
+                    <span role="rowheader" key={`r-${em}`} style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
+                      {em.toFixed(1)}×
+                    </span>
+                    {sens.exit_multiples.map((xm, ci) => {
+                      const irr = sens.irr_grid[ri]?.[ci] ?? null;
+                      // Outline the server's own center — Python and JS round
+                      // .25 halves differently (audit).
+                      const isCurrent =
+                        Math.abs(em - sens.entry_center) < 1e-9 &&
+                        Math.abs(xm - sens.exit_center) < 1e-9;
+                      return (
+                        <span
+                          role="cell"
+                          key={`${em}-${xm}`}
+                          style={{
+                            ...mono,
+                            fontSize: "var(--fs-meta)",
+                            textAlign: "right",
+                            padding: "6px 8px",
+                            borderRadius: "var(--r-xs)",
+                            background: cellBg(irr),
+                            border: isCurrent ? "1px solid var(--accent)" : "1px solid transparent",
+                            fontWeight: isCurrent ? 700 : 400,
+                            color: irr == null ? "var(--text-muted)" : "var(--text)",
+                          }}
+                        >
+                          {irr == null ? "n/a" : `${irr.toFixed(1)}%`}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             </div>
             <Caption>
               Every cell reruns the full model at that entry/exit pair, everything else held. Green

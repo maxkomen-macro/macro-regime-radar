@@ -28,6 +28,7 @@ import {
   type LiveQuote,
 } from "../../live/quotes";
 import { fmtDate, fmtSigned, fmtSignedPct } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import type { DailyBar } from "../../api/types";
 import { CHART_PANEL_ID } from "./chart-panel-id";
 import Jargon from "../shared/Jargon";
@@ -462,6 +463,11 @@ function FeedStatusLine() {
 /* ── screen ────────────────────────────────────────────────────────────── */
 
 export default function MarketsScreen() {
+  // The one width-conditional mechanism on this screen (lib/useBreakpoint.ts):
+  // below 768 the multi-column blocks collapse, at and above it nothing moves.
+  // The two tape grids are NOT width-conditional — fixed tracks scrolling
+  // inside their own card is the honest answer for a 9-column price table.
+  const { isMobile, isNarrow } = useBreakpoint();
   const quotes = useQuotes();
   const status = useStreamStatus();
   const daily = useMarketDaily(DAILY_FETCH, 60);
@@ -669,7 +675,10 @@ export default function MarketsScreen() {
           title="Sector heatmap"
           right={marketDailyDate ? `daily closes · ${fmtDate(marketDailyDate)}` : "daily closes"}
         />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+        {/* Four homogeneous tiles: auto-fit reflows them (2-up at 375) with no
+            width conditional at all — auto-fit collapses the empty tracks, so
+            at any width that fits four they stay exactly repeat(4,1fr). */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 12 }}>
           {SECTORS.map(({ symbol, name }) => {
             const bars = barsBySymbol.get(symbol);
             const ret = bars?.length ? bars[bars.length - 1].ret_1d : null;
@@ -717,13 +726,15 @@ export default function MarketsScreen() {
           }
         />
         {pricedGroups.length ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(3,minmax(0,1fr))", gap: 12 }}>
             {pricedGroups.map(([group, metrics]) => (
               <Card key={group}>
                 <div style={{ ...mono, fontSize: "var(--fs-label)", textTransform: "uppercase", letterSpacing: "var(--ls-label)", color: "var(--text-label)", marginBottom: 10 }}>
                   {group}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {/* Groups already stack at <768, so the pairs keep two columns
+                    there; only phone portrait is too narrow for two tiles. */}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)", gap: 12 }}>
                   {metrics.map((p) => (
                     <StatTile
                       key={p.metric}
@@ -781,7 +792,10 @@ export default function MarketsScreen() {
         />
         <Card>
           {surprises.data?.length ? (
-            <div style={{ display: "grid", gap: 10 }}>
+            // A ranked list, not a table: the rows carry no column headers, so
+            // list semantics (not role="table") are the honest mapping and give
+            // AT users the "1 of 10" count the rank column shows visually.
+            <div style={{ display: "grid", gap: 10 }} role="list">
               {surprises.data.map((s, i) => {
                 const az = Math.abs(s.z_score);
                 // Color keys off the DISPLAYED one-decimal value — a row
@@ -792,7 +806,21 @@ export default function MarketsScreen() {
                 const barColor = azShown >= 2.5 ? "var(--neg)" : azShown >= 1.5 ? "var(--warn)" : "var(--accent)";
                 const pct = Math.min((az / 3) * 100, 100);
                 return (
-                  <div key={s.metric} style={{ display: "grid", gridTemplateColumns: "18px 1fr 120px 52px", gap: 12, alignItems: "center" }}>
+                  // Row shape is kept at every width — the σ bar's fixed track
+                  // gives up width to the interpretation instead of forcing a
+                  // stack, which would orphan the number from its sentence.
+                  <div
+                    key={s.metric}
+                    role="listitem"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isNarrow
+                        ? "18px minmax(0,1fr) minmax(48px,80px) 44px"
+                        : "18px minmax(0,1fr) 120px 52px",
+                      gap: 12,
+                      alignItems: "center",
+                    }}
+                  >
                     <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-faint)" }}>{i + 1}</span>
                     <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)", lineHeight: 1.5 }}>
                       {s.interpretation}

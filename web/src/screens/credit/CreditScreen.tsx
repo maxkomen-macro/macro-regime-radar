@@ -9,12 +9,12 @@
  * and percent stated together, #26 HY/IG ratio norm.
  */
 
-import { Fragment } from "react";
 import { Link } from "react-router-dom";
 import { Card, SectionHeader, Sparkline, Tag } from "../../components";
 import { useCreditMetrics } from "../../api/queries";
 import type { CreditMetrics, DatedValue } from "../../api/types";
 import { ordinal } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import LineChart from "../dashboard/LineChart";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, eyebrowStyle, mono, useHashScroll } from "../shared/screen-ui";
@@ -125,22 +125,27 @@ function TransitionMatrix({
   matrix,
   current,
   title,
+  ariaLabel,
   emptyStates = [],
 }: {
   matrix: Record<string, Record<string, number>>;
   current: string;
   title: string;
+  /** Accessible name for the grid — the visible title is an eyebrow, so the
+   * ARIA table carries its own label ("… 3M" / "… 6M"). */
+  ariaLabel: string;
   /** States with zero historical months — their rows render as "—", not as
    * measured 0% cells (critique: a never-occurred state is empty, not calm). */
   emptyStates?: string[];
 }) {
+  const { isNarrow } = useBreakpoint();
   if (!matrix || !Object.keys(matrix).length) {
     return <StateNote>Not enough monthly history for transition odds (needs 60 months).</StateNote>;
   }
   const cell = (from: string, to: string) => {
     if (emptyStates.includes(from)) {
       return (
-        <div key={to} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "5px 8px", color: "var(--text-faint)" }}>
+        <div key={to} role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "5px 8px", color: "var(--text-faint)" }}>
           —
         </div>
       );
@@ -159,6 +164,7 @@ function TransitionMatrix({
     return (
       <div
         key={to}
+        role="cell"
         style={{
           ...mono,
           fontSize: "var(--fs-meta)",
@@ -176,29 +182,44 @@ function TransitionMatrix({
   return (
     <div>
       <div style={{ ...eyebrowStyle, marginBottom: 6 }}>{title}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "64px repeat(4, 1fr)", gap: 2, alignItems: "center" }}>
-        <span />
-        {CREDIT_STATES.map((s) => (
-          <span key={s} style={{ ...mono, fontSize: 9, letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "right", padding: "0 8px" }}>
-            → {s}
-          </span>
-        ))}
-        {CREDIT_STATES.map((from) => (
-          <Fragment key={from}>
-            <span
-              key={`${from}-label`}
-              style={{
-                ...mono,
-                fontSize: "var(--fs-meta)",
-                color: from === current ? STATE_COLORS[from] : "var(--text-muted)",
-                fontWeight: from === current ? 700 : 400,
-              }}
-            >
-              {from}
-            </span>
-            {CREDIT_STATES.map((to) => cell(from, to))}
-          </Fragment>
-        ))}
+      {/* The label column plus four state columns need ~360px before the
+          "→ Stressed" headers start wrapping. Below 768 the matrix claims that
+          width and scrolls inside its own card rather than pushing the page
+          sideways; at and above 768 there is no floor, so the desk layout sizes
+          the tracks exactly as it always did. */}
+      <div style={{ overflowX: "auto" }}>
+        <div
+          role="table"
+          aria-label={ariaLabel}
+          style={{ display: "grid", gridTemplateColumns: "64px repeat(4, 1fr)", gap: 2, alignItems: "center", minWidth: isNarrow ? 360 : undefined }}
+        >
+          {/* display:contents keeps the ARIA rows out of the layout — the cells
+              stay direct participants of this one grid. */}
+          <div role="row" style={{ display: "contents" }}>
+            <span role="columnheader" aria-label="From state" />
+            {CREDIT_STATES.map((s) => (
+              <span key={s} role="columnheader" style={{ ...mono, fontSize: 9, letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "right", padding: "0 8px" }}>
+                → {s}
+              </span>
+            ))}
+          </div>
+          {CREDIT_STATES.map((from) => (
+            <div key={from} role="row" style={{ display: "contents" }}>
+              <span
+                role="rowheader"
+                style={{
+                  ...mono,
+                  fontSize: "var(--fs-meta)",
+                  color: from === current ? STATE_COLORS[from] : "var(--text-muted)",
+                  fontWeight: from === current ? 700 : 400,
+                }}
+              >
+                {from}
+              </span>
+              {CREDIT_STATES.map((to) => cell(from, to))}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -207,6 +228,7 @@ function TransitionMatrix({
 export default function CreditScreen() {
   const q = useCreditMetrics();
   const m = q.data;
+  const { isNarrow, isMobile } = useBreakpoint();
   useHashScroll(m);
 
   if (!m) {
@@ -252,7 +274,7 @@ export default function CreditScreen() {
             </>
           }
         />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12 }}>
           {HERO_TIERS.map((t) => (
             <SpreadCard key={t.key} m={m} tier={t} big />
           ))}
@@ -302,12 +324,24 @@ export default function CreditScreen() {
       {/* ── Quality ladder ────────────────────────────────────────────── */}
       <section id="quality-ladder">
         <SectionHeader title="Quality ladder" right="BB · B · CCC detail · monthly" />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            // Three rungs stay a row while they fit; the tablet tier packs what
+            // it can (2 + 1) and the phone stacks the ladder top to bottom.
+            gridTemplateColumns: isMobile
+              ? "minmax(0,1fr)"
+              : isNarrow
+                ? "repeat(auto-fit, minmax(180px,1fr))"
+                : "repeat(3,minmax(0,1fr))",
+            gap: 12,
+          }}
+        >
           {LADDER_TIERS.map((t) => (
             <SpreadCard key={t.key} m={m} tier={t} />
           ))}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12, marginTop: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12, marginTop: 12 }}>
           <Card>
             <div style={eyebrowStyle}>HY / IG ratio</div>
             <div style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, marginTop: 6 }}>
@@ -372,17 +406,19 @@ export default function CreditScreen() {
         </div>
 
         <Card style={{ marginTop: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 20 }}>
             <TransitionMatrix
               matrix={m.transition_3m}
               current={m.credit_label}
               title="3-month transition odds"
+              ariaLabel="Credit-state transition matrix 3M"
               emptyStates={m.tight_count === 0 ? ["Tight"] : []}
             />
             <TransitionMatrix
               matrix={m.transition_6m}
               current={m.credit_label}
               title="6-month transition odds"
+              ariaLabel="Credit-state transition matrix 6M"
               emptyStates={m.tight_count === 0 ? ["Tight"] : []}
             />
           </div>
@@ -410,7 +446,7 @@ export default function CreditScreen() {
       {/* ── Financing conditions (sole owner; Tools · LBO links here) ── */}
       <section id="financing">
         <SectionHeader title="Financing conditions" right="Fed Funds + HY OAS · monthly" />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12 }}>
           <Card accentBar>
             <div style={eyebrowStyle}>LBO all-in cost</div>
             <div style={{ ...mono, fontSize: 26, fontWeight: 600, marginTop: 6 }}>

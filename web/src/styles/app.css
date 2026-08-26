@@ -32,6 +32,24 @@ button {
   font: inherit;
 }
 
+/* ── Layout: kill grid/flex item min-content propagation ────────────────
+   Every screen renders a root grid whose children are <section>s. A grid (or
+   flex) item's automatic minimum size is its content's MIN-CONTENT width, not
+   zero — so one wide descendant (the Regime Lab Gantt's 1385px svg, the tape's
+   fixed-track table) makes its section that wide, the section widens the page
+   root, and the whole document scrolls sideways. That happens even when the
+   wide thing already sits in its own `overflow-x: auto` well: the well can only
+   scroll once its own box has been allowed to shrink.
+
+   `min-width: 0` restores the shrinkable default. It is a no-op for a section
+   in normal block layout (block boxes take their container's width regardless),
+   so this only ever binds where a <section> is a flex/grid item — exactly the
+   screen roots. MethodologyScreen carries the same value inline with its own
+   explanation; harmless duplication, left in place. */
+main section {
+  min-width: 0;
+}
+
 /* The house focus ring — DESIGN.md: "1px accent, 2px offset, never removed".
    Was mandated but implemented nowhere globally (critique 2026-08-06); the
    palette input's inset variant stays via its more specific rule. */
@@ -55,9 +73,25 @@ button {
 .jargon:focus-visible {
   text-decoration-color: var(--text-muted);
 }
+/* The hidden tooltip is `display: none`, not merely `visibility: hidden`.
+   A visibility-hidden absolutely-positioned box still generates a box, and a
+   `width: max-content` box up to 320px wide hanging off a term near the right
+   gutter still counts toward the document's scrollable overflow region — so
+   every jargon term at desk width was quietly adding horizontal page scroll it
+   never showed (1440px viewport measured a 1642px scrollWidth on Dashboard).
+   display:none generates no box, so there is nothing to overflow.
+
+   Cost: the opacity fade is now instant in both directions (a display change
+   gives the transition no start style to run from). DESIGN.md is explicit that
+   "the only motion tells you something changed" and that nothing fades — a
+   tooltip appearing is a state change, not an animation, so instant is if
+   anything the more house-correct behaviour. The opacity/visibility pair is
+   kept below so the fade returns for free if someone later adds
+   `transition-behavior: allow-discrete` + `@starting-style`. */
 .jargon::after {
   content: attr(data-def);
   position: absolute;
+  display: none;
   left: 0;
   top: calc(100% + 6px);
   z-index: 40;
@@ -82,6 +116,7 @@ button {
 }
 .jargon:hover::after,
 .jargon:focus-visible::after {
+  display: block;
   opacity: 1;
   visibility: visible;
 }

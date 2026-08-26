@@ -14,6 +14,11 @@ export interface TickerItem {
 
 export interface TickerStripProps {
   items?: TickerItem[];
+  /**
+   * Narrow-viewport mode: tighter gap (16px vs 32px) and the row scrolls
+   * horizontally instead of forcing the page wide. Default false = desk layout.
+   */
+  compact?: boolean;
   style?: React.CSSProperties;
 }
 

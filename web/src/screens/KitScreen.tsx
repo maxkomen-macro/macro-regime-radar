@@ -94,7 +94,7 @@ export default function KitScreen() {
 
       {/* ── Core ─────────────────────────────────────────────────────── */}
       <SectionHeader title="Core — Card · SectionHeader · Tag · StatusDot" right="core.card.html" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12 }}>
         <Card>
           <SectionHeader title="Default" style={{ marginTop: 0 }} right="12px pad" />
           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Hairline border, flat surface.</div>
@@ -131,13 +131,13 @@ export default function KitScreen() {
 
       {/* ── Data ─────────────────────────────────────────────────────── */}
       <SectionHeader title="Data — StatTile · GaugeBar · Sparkline · ProbabilityBar · DataTable" right="data.card.html" />
-      <Card style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+      <Card style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 16 }}>
         <StatTile label="Fed Funds" value="3.64%" delta="0.00" direction="flat" />
         <StatTile label="10Y Treasury" value="4.30%" delta="+0.10" direction="up" live />
         <StatTile label="2s10s Spread" value="+52 bps" delta="+0.01" direction="up" />
         <StatTile label="VIX" value="18.92" delta="-6.33" direction="down" />
       </Card>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginTop: 12 }}>
         <Card>
           <div
             style={{
@@ -202,7 +202,7 @@ export default function KitScreen() {
         <RegimeBadge label="Recession Risk" />
         <RegimeBadge label="Overheating" size="sm" />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12, marginTop: 12 }}>
         <SignalCard name="Curve inversion risk" value="0.52%" fillPct={34} lastTriggered="Jan 2025" />
         <SignalCard name="Inflation pressure" value="3.29% YoY" fillPct={68} lastTriggered="Mar 2026" />
         <SignalCard name="VIX spike" value="18.92" fillPct={96} lastTriggered="Apr 2026" />

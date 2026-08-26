@@ -10,6 +10,7 @@ import { Link } from "react-router-dom";
 import { ProbabilityBar, RegimeBadge } from "../components";
 import { useRegimeLatest } from "../api/queries";
 import { fmtMonYr, fmtWholePct } from "../lib/format";
+import { useBreakpoint } from "../lib/useBreakpoint";
 import type { Regime } from "../api/types";
 
 /** Last good regime payload — "dated beats empty" for the one-visit visitor. */
@@ -51,6 +52,11 @@ function liveRead(r: Regime): { sentence: string; probs: Record<string, number> 
 
 export default function LandingPage() {
   const regime = useRegimeLatest();
+  // This page renders outside AppShell, so it owns its own gutter — same
+  // ladder as the shell's (AppShell.tsx) so "/" and "/app" line up when the
+  // visitor crosses the CTA. 28px is unchanged at 768 and above.
+  const { isMobile, isNarrow } = useBreakpoint();
+  const gutter = isMobile ? 12 : isNarrow ? 14 : 28;
 
   useEffect(() => {
     if (regime.data) {
@@ -75,7 +81,7 @@ export default function LandingPage() {
         fontFamily: "var(--font-ui)",
         display: "grid",
         gridTemplateRows: "auto 1fr auto",
-        padding: "24px 28px",
+        padding: `24px ${gutter}px`,
         boxSizing: "border-box",
       }}
     >

@@ -9,6 +9,7 @@
 import { Card, SectionHeader, Tag } from "../../components";
 import { useSignalsLatest } from "../../api/queries";
 import { fmtMonYr } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, StateNote, eyebrowStyle, mono } from "../shared/screen-ui";
 
 const REGIME_DEFS: { name: string; color: string; def: string }[] = [
@@ -36,7 +37,7 @@ const SIGNAL_UNITS: Record<string, string> = {
 
 function LegendRow({ swatch, label, detail }: { swatch: string; label: string; detail: string }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "14px 130px 1fr", gap: 10, alignItems: "baseline" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "14px 130px minmax(0,1fr)", gap: 10, alignItems: "baseline" }}>
       <span style={{ width: 10, height: 10, borderRadius: "var(--r-xs)", background: swatch, display: "inline-block", alignSelf: "center" }} />
       <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>{label}</span>
       <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>{detail}</span>
@@ -46,12 +47,17 @@ function LegendRow({ swatch, label, detail }: { swatch: string; label: string; d
 
 export default function MethodologyScreen() {
   const signals = useSignalsLatest();
+  // Reference prose in two-up cards: one column below 768, the designed pair at
+  // and above it. Every conditional on this page resolves to its original
+  // string at desk width.
+  const { isNarrow } = useBreakpoint();
+  const twoUp = isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))";
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <section>
         <SectionHeader title="The four regimes" right="a 4-way softmax classifier over growth and inflation trends" />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: twoUp, gap: 12 }}>
           {REGIME_DEFS.map((r) => (
             <Card key={r.name}>
               <span style={{ ...mono, fontSize: "var(--fs-body-s)", fontWeight: 700, color: r.color }}>{r.name}</span>
@@ -68,7 +74,12 @@ export default function MethodologyScreen() {
         </Caption>
       </section>
 
-      <section>
+      {/* minWidth:0 is load-bearing, not decoration: this <section> is an item
+          of the page grid above, whose automatic minimum size is its content's
+          min-content width — the 560px table track below would push the whole
+          page wider than the phone viewport instead of scrolling inside its
+          card. Zero at every width; it only ever binds under 560. */}
+      <section style={{ minWidth: 0 }}>
         <SectionHeader
           title="Monitored signals"
           right={
@@ -77,36 +88,46 @@ export default function MethodologyScreen() {
               : "live thresholds · monthly cadence"
           }
         />
-        <Card style={{ padding: 0 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 110px 110px 1fr", gap: 12, padding: "6px 12px", borderBottom: "1px solid var(--line-hair)" }}>
-            {["Signal", "Trigger", "Latest", "Status rule"].map((h, i) => (
-              <span key={h} style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-wide)", color: "var(--text-muted)", textAlign: i === 1 || i === 2 ? "right" : "left" }}>
-                {h}
-              </span>
-            ))}
+        {/* Genuinely tabular: four columns that only read as a table when they
+            stay in one track, so it scrolls inside the card under ~560px rather
+            than collapsing into stacked key/value pairs (house rule, see
+            MarketsScreen's tape). The rows are real elements, so ARIA table
+            semantics go straight on them — no display:contents needed. */}
+        <Card style={{ padding: 0, overflowX: "auto" }}>
+          <div role="table" aria-label="Monitored signals" style={{ minWidth: 560 }}>
+            <div role="row" style={{ display: "grid", gridTemplateColumns: "1.4fr 110px 110px 1fr", gap: 12, padding: "6px 12px", borderBottom: "1px solid var(--line-hair)" }}>
+              {["Signal", "Trigger", "Latest", "Status rule"].map((h, i) => (
+                <span key={h} role="columnheader" style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-wide)", color: "var(--text-muted)", textAlign: i === 1 || i === 2 ? "right" : "left" }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+            {signals.data
+              ? signals.data.signals.map((s, i) => (
+                  <div key={s.signal_name} role="row" style={{ display: "grid", gridTemplateColumns: "1.4fr 110px 110px 1fr", gap: 12, padding: "7px 12px", background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent", alignItems: "baseline" }}>
+                    <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
+                      {SIGNAL_NAMES[s.signal_name] ?? s.signal_name.replace(/_/g, " ")}
+                    </span>
+                    <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right" }}>
+                      {s.direction == null || s.threshold == null
+                        ? "—"
+                        : `${s.direction === "below" ? "<" : ">"} ${s.threshold}${SIGNAL_UNITS[s.signal_name] ?? ""}`}
+                    </span>
+                    <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: "var(--text-muted)" }}>
+                      {s.value.toFixed(2)}
+                      {SIGNAL_UNITS[s.signal_name] ?? ""}
+                    </span>
+                    <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
+                      {s.status ?? "—"}
+                      {s.distance_pct != null ? ` · ${Math.round(s.distance_pct)}% of trigger` : ""}
+                    </span>
+                  </div>
+                ))
+              : null}
           </div>
-          {signals.data ? (
-            signals.data.signals.map((s, i) => (
-              <div key={s.signal_name} style={{ display: "grid", gridTemplateColumns: "1.4fr 110px 110px 1fr", gap: 12, padding: "7px 12px", background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent", alignItems: "baseline" }}>
-                <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
-                  {SIGNAL_NAMES[s.signal_name] ?? s.signal_name.replace(/_/g, " ")}
-                </span>
-                <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right" }}>
-                  {s.direction == null || s.threshold == null
-                    ? "—"
-                    : `${s.direction === "below" ? "<" : ">"} ${s.threshold}${SIGNAL_UNITS[s.signal_name] ?? ""}`}
-                </span>
-                <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: "var(--text-muted)" }}>
-                  {s.value.toFixed(2)}
-                  {SIGNAL_UNITS[s.signal_name] ?? ""}
-                </span>
-                <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
-                  {s.status ?? "—"}
-                  {s.distance_pct != null ? ` · ${Math.round(s.distance_pct)}% of trigger` : ""}
-                </span>
-              </div>
-            ))
-          ) : (
+          {/* Loading/error copy sits outside the table element: a one-cell row
+              in a four-column table is a lie to a screen reader. */}
+          {signals.data ? null : (
             <div style={{ padding: 12 }}>
               <StateNote loading={signals.isLoading} error={signals.isError} />
             </div>
@@ -131,7 +152,16 @@ export default function MethodologyScreen() {
 
       <section>
         <SectionHeader title="Meaning ramps & vocabularies" right="closed sets — the app never invents synonyms" />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+        {/* Four homogeneous legend cards — these self-fit below 768 instead of
+            hard-collapsing. The 260px floor is set by LegendRow's own fixed
+            14px + 130px tracks: a narrower card would overflow its own text. */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isNarrow ? "repeat(auto-fit,minmax(260px,1fr))" : "repeat(2,minmax(0,1fr))",
+            gap: 12,
+          }}
+        >
           <Card>
             <div style={eyebrowStyle}>Threshold-proximity gauge</div>
             <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
@@ -177,7 +207,7 @@ export default function MethodologyScreen() {
 
       <section>
         <SectionHeader title="Models & measurements" right="what is computed, what is reference" />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: twoUp, gap: 12 }}>
           <Card>
             <div style={eyebrowStyle}>Computed live from stored data</div>
             <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", lineHeight: 1.7, marginTop: 6 }}>

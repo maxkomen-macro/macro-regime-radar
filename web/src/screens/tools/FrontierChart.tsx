@@ -5,6 +5,7 @@
  */
 
 import type { FrameData } from "../../api/types";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import { mono } from "../shared/screen-ui";
 
 export interface FrontierMarker {
@@ -14,13 +15,20 @@ export interface FrontierMarker {
   color: string;
 }
 
-const W = 720;
 const H = 220;
-const PAD_L = 8;
-const PAD_R = 60;
 const PAD_Y = 16;
 
 export default function FrontierChart({ frontier, markers }: { frontier: FrameData; markers: FrontierMarker[] }) {
+  // Every label here lives inside the svg, so the viewBox width is the whole
+  // legibility story: 720u scaled into a ~300px phone card renders 9u type at
+  // ~3.7px. Halving the box (and trimming the right gutter, which is a fixed
+  // number of units and so eats a bigger share of a narrow box) restores it.
+  // Hook runs before the early returns below — order must stay unconditional.
+  const { isNarrow } = useBreakpoint();
+  const W = isNarrow ? 360 : 720;
+  const PAD_L = isNarrow ? 12 : 8;
+  const PAD_R = isNarrow ? 44 : 60;
+  const FS = isNarrow ? 10 : 9;
   if (!frontier?.columns || !frontier?.data) {
     return <span style={{ ...mono, fontSize: 10, color: "var(--text-muted)" }}>Frontier unavailable.</span>;
   }
@@ -57,7 +65,7 @@ export default function FrontierChart({ frontier, markers }: { frontier: FrameDa
         {ticks(vMin, vMax).map((v) => (
           <g key={`vt-${v}`}>
             <line x1={X(v)} x2={X(v)} y1={PAD_Y} y2={H - PAD_Y} stroke="var(--line-hair)" strokeWidth="0.5" />
-            <text x={X(v)} y={H - 2} textAnchor="middle" fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: 9 }}>
+            <text x={X(v)} y={H - 2} textAnchor="middle" fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: FS }}>
               {(v * 100).toFixed(0)}%
             </text>
           </g>
@@ -65,7 +73,7 @@ export default function FrontierChart({ frontier, markers }: { frontier: FrameDa
         {ticks(rMin, rMax).map((r) => (
           <g key={`rt-${r}`}>
             <line x1={PAD_L} x2={W - PAD_R} y1={Y(r)} y2={Y(r)} stroke="var(--line-hair)" strokeWidth="0.5" />
-            <text x={W - PAD_R + 4} y={Y(r) + 3} fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: 9 }}>
+            <text x={W - PAD_R + 4} y={Y(r) + 3} fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: FS }}>
               {(r * 100).toFixed(0)}%
             </text>
           </g>
@@ -73,17 +81,19 @@ export default function FrontierChart({ frontier, markers }: { frontier: FrameDa
         <path d={d} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         {markers.map((m) => {
           // Labels flip to the left of the dot near the right rail so long
-          // names ("Black-Litterman") never clip.
-          const nearRight = X(m.vol) > W - PAD_R - 100;
+          // names ("Black-Litterman") never clip. The threshold is a label
+          // WIDTH in user units, not a fraction of the plot, so it tracks the
+          // type size rather than the viewBox.
+          const nearRight = X(m.vol) > W - PAD_R - (isNarrow ? 112 : 100);
           return (
             <g key={m.label}>
-              <circle cx={X(m.vol)} cy={Y(m.ret)} r="3.5" fill={m.color} />
+              <circle cx={X(m.vol)} cy={Y(m.ret)} r={isNarrow ? 4.5 : 3.5} fill={m.color} />
               <text
                 x={nearRight ? X(m.vol) - 7 : X(m.vol) + 7}
                 y={Y(m.ret) + 3}
                 textAnchor={nearRight ? "end" : "start"}
                 fill="var(--text-muted)"
-                style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: ".05em" }}
+                style={{ fontFamily: "var(--font-mono)", fontSize: FS, letterSpacing: ".05em" }}
               >
                 {m.label}
               </text>

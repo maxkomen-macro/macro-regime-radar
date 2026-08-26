@@ -12,8 +12,10 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { ProbabilityBar, RegimeBadge, TabBar } from "../../components";
 import { useAlerts, useFreshness, useRegimeLatest } from "../../api/queries";
 import { daysSince, fmtDate, fmtIntradayTs, fmtMonYr } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import { METHODOLOGY_SLUG, TABS, tabBySlug } from "./sections";
 import AlertDrawer from "./AlertDrawer";
+import AssistantPanel, { type AssistantTabContext } from "./AssistantPanel";
 import CommandPalette from "./CommandPalette";
 import TickerLive from "./TickerLive";
 import DashboardScreen from "../dashboard/DashboardScreen";
@@ -32,7 +34,7 @@ const mono = (size: number | string, color: string): React.CSSProperties => ({
   color,
 });
 
-function AlertsTrigger({ onOpen }: { onOpen: () => void }) {
+function AlertsTrigger({ onOpen, touch = false }: { onOpen: () => void; touch?: boolean }) {
   const alerts = useAlerts(200);
   const rows = alerts.data ?? [];
   const recent = rows.filter((a) => daysSince(a.date) <= 7);
@@ -52,7 +54,9 @@ function AlertsTrigger({ onOpen }: { onOpen: () => void }) {
         border: "0.5px solid var(--line-hair)",
         borderRadius: "var(--r-xs)",
         cursor: "pointer",
-        padding: "3px 8px",
+        // Finger-sized on narrow viewports; the desk chip stays 3px/8px.
+        padding: touch ? "6px 10px" : "3px 8px",
+        ...(touch ? { minHeight: 32 } : null),
         display: "inline-flex",
         alignItems: "center",
         gap: 6,
@@ -82,6 +86,7 @@ export default function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
+  const { isMobile, isNarrow } = useBreakpoint();
   const regime = useRegimeLatest();
   const freshness = useFreshness();
 
@@ -114,6 +119,20 @@ export default function AppShell() {
   }, [freshness.data?.market_intraday_ts]);
   const dotLive = streamLive || intradayFresh;
 
+  // What the assistant is told the visitor is looking at — the route slug plus
+  // the section list from the nav registry, so "explain this tab" has an anchor.
+  const tabContext = useMemo<AssistantTabContext>(
+    () =>
+      isMethodology
+        ? { tab: METHODOLOGY_SLUG, label: "Methodology", sections: [] }
+        : {
+            tab: tab?.slug ?? "dashboard",
+            label: tab?.label ?? "Dashboard",
+            sections: (tab?.sections ?? []).map((s) => s.label),
+          },
+    [isMethodology, tab],
+  );
+
   const probs = regime.data
     ? {
         goldilocks: regime.data.prob_goldilocks ?? 0,
@@ -129,6 +148,8 @@ export default function AppShell() {
   if (!tab && !isMethodology) return <Navigate to="/app/dashboard" replace />;
 
   const f = freshness.data;
+  // One page gutter, shared by the header and main so their columns line up.
+  const gutter = isMobile ? 12 : isNarrow ? 14 : 28;
 
   return (
     <div
@@ -139,13 +160,16 @@ export default function AppShell() {
         fontFamily: "var(--font-ui)",
       }}
     >
-      <header style={{ padding: "18px 28px 0" }}>
+      <header style={{ padding: `18px ${gutter}px 0` }}>
+        {/* Below 768 the two header columns stack: wordmark + ticker, then the
+            regime block full-width. Above it, the desk row is unchanged. */}
         <div
           style={{
             display: "flex",
-            alignItems: "flex-start",
+            flexDirection: isNarrow ? "column" : "row",
+            alignItems: isNarrow ? "stretch" : "flex-start",
             justifyContent: "space-between",
-            gap: 24,
+            gap: isNarrow ? 14 : 24,
           }}
         >
           <div>
@@ -190,7 +214,13 @@ export default function AppShell() {
             <TickerLive />
           </div>
 
-          <div style={{ textAlign: "right", minWidth: 250 }}>
+          <div
+            style={
+              isNarrow
+                ? { textAlign: "left" } // full-width block; the 250px floor would only force overflow
+                : { textAlign: "right", minWidth: 250 }
+            }
+          >
             {regime.data ? (
               <RegimeBadge label={regime.data.label} size="sm" confidence={dominantProb} />
             ) : (
@@ -205,12 +235,13 @@ export default function AppShell() {
               style={{
                 marginTop: 10,
                 display: "flex",
-                justifyContent: "flex-end",
+                justifyContent: isNarrow ? "flex-start" : "flex-end",
                 alignItems: "center",
+                flexWrap: isNarrow ? "wrap" : "nowrap",
                 gap: 12,
               }}
             >
-              <AlertsTrigger onOpen={() => setDrawerOpen(true)} />
+              <AlertsTrigger onOpen={() => setDrawerOpen(true)} touch={isNarrow} />
               <Link
                 to={`/app/${METHODOLOGY_SLUG}`}
                 style={{
@@ -223,7 +254,9 @@ export default function AppShell() {
               </Link>
               <button
                 onClick={() => setPaletteOpen(true)}
-                aria-label="Open command palette"
+                // The accessible name contains the visible "⌘K" — WCAG 2.5.3
+                // label-in-name, so a voice user can say what they can see.
+                aria-label="⌘K — open command palette"
                 title="Jump to any tab or section — ⌘K (Mac) / Ctrl+K"
                 style={{
                   appearance: "none",
@@ -231,7 +264,8 @@ export default function AppShell() {
                   border: "0.5px solid var(--line-hair)",
                   borderRadius: "var(--r-xs)",
                   cursor: "pointer",
-                  padding: "3px 8px",
+                  padding: isNarrow ? "6px 10px" : "3px 8px",
+                  ...(isNarrow ? { minHeight: 32 } : null),
                   ...mono("var(--fs-meta)", "var(--text-muted)"),
                   letterSpacing: "var(--ls-micro)",
                 }}
@@ -247,16 +281,20 @@ export default function AppShell() {
             tabs={TABS.map((t) => ({ id: t.slug, label: t.label }))}
             active={isMethodology ? "" : (tab?.slug ?? "")}
             onChange={(id: string) => navigate(`/app/${id}`)}
+            touch={isNarrow}
           />
         </div>
       </header>
 
-      <main style={{ padding: "14px 28px 90px" }}>
+      {/* The 90px floor is the assistant launcher's clearance (fixed, bottom:20)
+          — it holds at every width, so the last card never sits under it. */}
+      <main style={{ padding: `14px ${gutter}px 90px` }}>
         <div
           style={{
             display: "flex",
+            flexDirection: isNarrow ? "column" : "row",
             justifyContent: "space-between",
-            gap: 20,
+            gap: isNarrow ? 4 : 20,
             marginBottom: 12,
             letterSpacing: ".06em",
             ...mono(10, "var(--text-muted)"),
@@ -271,7 +309,7 @@ export default function AppShell() {
                 ? "Freshness unavailable — API error"
                 : "Freshness —"}
           </span>
-          <span style={{ whiteSpace: "nowrap" }}>
+          <span style={{ whiteSpace: isNarrow ? "normal" : "nowrap" }}>
             {f?.market_intraday_ts ? `Stored intraday to ${fmtIntradayTs(f.market_intraday_ts)}` : ""}
             {/* The stored stamps lag the live tape by design — say so, or the
                 freshness line reads stale next to ticking rows (critique). */}
@@ -300,6 +338,8 @@ export default function AppShell() {
 
       <AlertDrawer open={drawerOpen} onClose={closeDrawer} />
       <CommandPalette open={paletteOpen} onClose={closePalette} />
+      {/* Floating assistant — app shell only; the landing page stays quiet. */}
+      <AssistantPanel tabContext={tabContext} />
     </div>
   );
 }

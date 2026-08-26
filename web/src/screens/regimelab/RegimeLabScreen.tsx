@@ -28,6 +28,7 @@ import {
 } from "../../api/queries";
 import type { Regime, ScenarioShocks } from "../../api/types";
 import { fmtMonYr, ordinal } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import { Caption, SliderRow, StateNote, eyebrowStyle, mono, useDebounced, useHashScroll } from "../shared/screen-ui";
 
@@ -103,13 +104,16 @@ function TakeawaySection() {
 
 function PlaybookSection({ currentRegime }: { currentRegime: string | undefined }) {
   const q = useRegimePlaybooks();
+  const { isMobile, isNarrow } = useBreakpoint();
   const [selected, setSelected] = useState<string | null>(null);
   const active = selected ?? currentRegime ?? "Goldilocks";
   const pb = q.data?.[active];
   return (
     <section id="playbook">
       <SectionHeader title="Playbook" right="static reference · not live data" />
-      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+      {/* Four regime names in one row need ~430px; below 768 they wrap onto a
+          second line instead of pushing the page into a horizontal scroll. */}
+      <div style={{ display: "flex", gap: 6, flexWrap: isNarrow ? "wrap" : undefined, marginBottom: 10 }}>
         {REGIMES.map((r) => (
           <button
             key={r}
@@ -135,7 +139,7 @@ function PlaybookSection({ currentRegime }: { currentRegime: string | undefined 
         ))}
       </div>
       {pb ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr)", gap: 12 }}>
           <Card>
             <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)", lineHeight: 1.6 }}>
               {pb.description}
@@ -145,7 +149,7 @@ function PlaybookSection({ currentRegime }: { currentRegime: string | undefined 
               spell {pb.avg_duration_months.toFixed(1)}mo — the measured number lives in Cycle
               position below
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 16px", marginTop: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)", gap: "4px 16px", marginTop: 10 }}>
               {Object.entries(pb.asset_performance).map(([asset, p]) => (
                 <div key={asset} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>{asset}</span>
@@ -171,7 +175,7 @@ function PlaybookSection({ currentRegime }: { currentRegime: string | undefined 
                   {side}
                 </div>
                 {pb.sector_tilts[side].map((t) => (
-                  <div key={t.sector} style={{ display: "grid", gridTemplateColumns: "1fr 80px 34px", gap: 8, alignItems: "center", marginTop: 4 }}>
+                  <div key={t.sector} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 80px 34px", gap: 8, alignItems: "center", marginTop: 4 }}>
                     <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>{t.sector}</span>
                     <span style={{ height: 4, borderRadius: "var(--r-xs)", background: "var(--surface-raised)", overflow: "hidden" }}>
                       <span style={{ display: "block", height: "100%", width: `${Math.min(t.strength, 100)}%`, background: side === "overweight" ? "var(--pos)" : "var(--neg)" }} />
@@ -224,12 +228,16 @@ function PlaybookSection({ currentRegime }: { currentRegime: string | undefined 
 
 function CycleSection() {
   const q = useRegimeDuration();
+  const { isNarrow } = useBreakpoint();
   const d = q.data;
+  // One rounded string drives both the number and its plural, so "1 months"
+  // can't come back if toFixed and Math.round ever disagree at a .5 boundary.
+  const monthsText = d ? d.months_in_regime.toFixed(0) : "0";
   return (
     <section id="cycle">
       <SectionHeader title="Cycle position" right="spell length vs 30 years of stored history" />
       {d ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1.3fr) minmax(0,1fr)", gap: 12 }}>
           <Card>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
               <span style={{ ...mono, fontSize: 30, fontWeight: 700 }}>{d.months_in_regime.toFixed(0)}mo</span>
@@ -246,7 +254,8 @@ function CycleSection() {
               <span>2× avg</span>
             </div>
             <Caption>
-              {d.current_regime} has run {d.months_in_regime.toFixed(0)} months — longer than{" "}
+              {d.current_regime} has run {monthsText} month{monthsText === "1" ? "" : "s"} — longer
+              than{" "}
               {d.percentile_duration.toFixed(0)}% of past {d.current_regime} spells, which average{" "}
               {d.historical_avg_months.toFixed(1)} months. {d.status} means{" "}
               {d.status === "Early"
@@ -268,7 +277,7 @@ function CycleSection() {
                   ["Complacency", d.risk_indicators.sentiment],
                 ] as const
               ).map(([label, v]) => (
-                <div key={label} style={{ display: "grid", gridTemplateColumns: "130px 1fr 46px", gap: 10, alignItems: "center" }}>
+                <div key={label} style={{ display: "grid", gridTemplateColumns: "130px minmax(0,1fr) 46px", gap: 10, alignItems: "center" }}>
                   <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>{label}</span>
                   <span style={{ height: 4, borderRadius: "var(--r-xs)", background: "var(--surface-raised)", overflow: "hidden" }}>
                     <span style={{ display: "block", height: "100%", width: `${v}%`, background: v < 40 ? "var(--pos)" : v < 70 ? "var(--warn-hot)" : "var(--neg)" }} />
@@ -297,15 +306,16 @@ function CycleSection() {
 
 function TransitionsSection() {
   const q = useTransitions();
+  const { isNarrow } = useBreakpoint();
   const t = q.data;
   return (
     <section id="transitions">
       <SectionHeader title="Transition outlook" right="empirical odds from 30 years of monthly regime history" />
       {t ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)", gap: 12 }}>
           <Card>
             <div style={eyebrowStyle}>Next 3 months</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 46px", gap: 10, alignItems: "center", marginTop: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 100px 46px", gap: 10, alignItems: "center", marginTop: 10 }}>
               <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
                 stays {t.current_regime}
               </span>
@@ -333,7 +343,7 @@ function TransitionsSection() {
           </Card>
           <Card>
             <div style={eyebrowStyle}>Next 6 months</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 46px", gap: 10, alignItems: "center", marginTop: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 100px 46px", gap: 10, alignItems: "center", marginTop: 10 }}>
               {(() => {
                 // The 6M rows exclude the self-transition, so without this row
                 // the column sums to ~60% and reads broken (critique). The
@@ -392,12 +402,13 @@ function TransitionsSection() {
 
 function AnaloguesSection() {
   const q = useAnalogues();
+  const { isNarrow } = useBreakpoint();
   return (
     <section id="analogues">
       <SectionHeader title="Historical analogues" right="closest past setups from a 7-period reference corpus" />
       {q.data?.length ? (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12 }}>
             {q.data.map((an) => (
               <Card key={an.period}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
@@ -452,6 +463,7 @@ const SHOCK_DEFAULTS: ScenarioShocks = {
 
 function ScenariosSection() {
   const defs = useScenarioDefs();
+  const { isMobile, isNarrow } = useBreakpoint();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [custom, setCustom] = useState(false);
   const [shocks, setShocks] = useState<ScenarioShocks>(SHOCK_DEFAULTS);
@@ -509,7 +521,9 @@ function ScenariosSection() {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: custom ? "1fr 1.6fr" : "1fr", gap: 12 }}>
+      {/* Below 768 the custom split collapses too — sliders above their result,
+          which is also the order you read them in. */}
+      <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : custom ? "minmax(0,1fr) minmax(0,1.6fr)" : "minmax(0,1fr)", gap: 12 }}>
         {custom && (
           <Card>
             <div style={{ ...eyebrowStyle, marginBottom: 10 }}>Shock inputs</div>
@@ -578,7 +592,7 @@ function ScenariosSection() {
               </span>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)", gap: 16, marginTop: 12 }}>
               <div>
                 <div style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", marginBottom: 4 }}>
                   stored odds today
@@ -609,7 +623,7 @@ function ScenariosSection() {
               </span>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16, marginTop: 12, borderTop: "0.5px solid var(--line-hair)", paddingTop: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1.4fr) minmax(0,1fr)", gap: 16, marginTop: 12, borderTop: "0.5px solid var(--line-hair)", paddingTop: 10 }}>
               <div>
                 <div style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--accent)" }}>
                   positioning
@@ -690,6 +704,8 @@ function mergeSegments(rows: Regime[]): Segment[] {
 
 function GanttSection() {
   const q = useRegimeHistory();
+  // Hook stays above the empty-data early return — order must be unconditional.
+  const { isNarrow } = useBreakpoint();
   // Keep query-data identity in the memo deps — a `?? []` literal would mint
   // a new array every render and bust the memo while loading (audit).
   const segs = useMemo(() => mergeSegments(q.data ?? []), [q.data]);
@@ -727,37 +743,46 @@ function GanttSection() {
         right={`${rows.length} monthly calls · ${fmtMonYr(rows[0].date)} → ${fmtMonYr(rows[rows.length - 1].date)} · ${switches12} switch${switches12 === 1 ? "" : "es"} in the last 12mo`}
       />
       <Card>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ display: "block", width: "100%", height: "auto" }} role="img" aria-label="Regime history Gantt — one lane per regime, colored spans mark the months the classifier called it">
-          {REGIMES.map((r, ri) => (
-            <g key={r}>
-              <text x={0} y={ri * ROW_H + 13} fill={REGIME_COLORS[r]} style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: ".08em" }}>
-                {r.toUpperCase()}
-              </text>
-              <line x1={LABEL_W} x2={W - 4} y1={ri * ROW_H + 9.5} y2={ri * ROW_H + 9.5} stroke="var(--line-hair)" strokeWidth="0.5" />
-            </g>
-          ))}
-          {segs.map((s) => {
-            const ri = REGIMES.indexOf(s.label as (typeof REGIMES)[number]);
-            if (ri === -1) return null;
-            const x0 = X(s.start);
-            const x1 = Math.max(X(s.end) + (X(s.end) - x0) / Math.max(s.months, 1), x0 + 1.2);
-            return (
-              <rect key={`${s.label}-${s.start}`} x={x0} y={ri * ROW_H + 3} width={x1 - x0} height={13} rx={1.5} fill={REGIME_COLORS[s.label]} fillOpacity={0.28} stroke={REGIME_COLORS[s.label]} strokeOpacity={0.5} strokeWidth={0.5}>
-                <title>
-                  {s.label} · {fmtMonYr(s.start)} → {fmtMonYr(s.end)} ({s.months}mo)
-                </title>
-              </rect>
-            );
-          })}
-          {years.map((y) => (
-            <g key={y}>
-              <line x1={X(y)} x2={X(y)} y1={2} y2={ROW_H * 4} stroke="var(--line-hair)" strokeWidth="0.5" />
-              <text x={X(y) + 2} y={ROW_H * 4 + 12} fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: 8.5, letterSpacing: ".05em" }}>
-                {y.slice(0, 4)}
-              </text>
-            </g>
-          ))}
-        </svg>
+        {/* Every label in this chart is SVG-native, so shrinking the 1385-unit
+            box into a ~350px phone card would render the 9px lane names at
+            ~2.5px. Below 768 the svg keeps its intrinsic pixel size and the
+            wrapper scrolls it instead — 1:1 type, one axis of scroll, and the
+            chart itself is untouched. At 768+ the fluid width:100% is exactly
+            as it was. */}
+        <div style={isNarrow ? { overflowX: "auto" } : undefined}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={isNarrow ? { display: "block", width: W, height: H } : { display: "block", width: "100%", height: "auto" }} role="img" aria-label="Regime history Gantt — one lane per regime, colored spans mark the months the classifier called it">
+            {REGIMES.map((r, ri) => (
+              <g key={r}>
+                <text x={0} y={ri * ROW_H + 13} fill={REGIME_COLORS[r]} style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: ".08em" }}>
+                  {r.toUpperCase()}
+                </text>
+                <line x1={LABEL_W} x2={W - 4} y1={ri * ROW_H + 9.5} y2={ri * ROW_H + 9.5} stroke="var(--line-hair)" strokeWidth="0.5" />
+              </g>
+            ))}
+            {segs.map((s) => {
+              const ri = REGIMES.indexOf(s.label as (typeof REGIMES)[number]);
+              if (ri === -1) return null;
+              const x0 = X(s.start);
+              const x1 = Math.max(X(s.end) + (X(s.end) - x0) / Math.max(s.months, 1), x0 + 1.2);
+              return (
+                <rect key={`${s.label}-${s.start}`} x={x0} y={ri * ROW_H + 3} width={x1 - x0} height={13} rx={1.5} fill={REGIME_COLORS[s.label]} fillOpacity={0.28} stroke={REGIME_COLORS[s.label]} strokeOpacity={0.5} strokeWidth={0.5}>
+                  <title>
+                    {s.label} · {fmtMonYr(s.start)} → {fmtMonYr(s.end)} ({s.months}mo)
+                  </title>
+                </rect>
+              );
+            })}
+            {years.map((y) => (
+              <g key={y}>
+                <line x1={X(y)} x2={X(y)} y1={2} y2={ROW_H * 4} stroke="var(--line-hair)" strokeWidth="0.5" />
+                <text x={X(y) + 2} y={ROW_H * 4 + 12} fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: 8.5, letterSpacing: ".05em" }}>
+                  {y.slice(0, 4)}
+                </text>
+              </g>
+            ))}
+          </svg>
+        </div>
+        {isNarrow && <Caption>scroll → 30 years</Caption>}
         <Caption>
           Every monthly call the classifier has made, one lane per regime — hover a span for its
           dates. Long unbroken bands are stable macro; rapid lane-hopping marks the turns. The last
@@ -781,6 +806,7 @@ const COHORT_NAMES: Record<string, string> = {
 function BacktestsSection() {
   const q = useBacktests();
   const alloc = useAllocation();
+  const { isNarrow } = useBreakpoint();
   const [kind, setKind] = useState<"regime" | "signal">("regime");
   const rows = useMemo(() => {
     const filtered = (q.data ?? []).filter((r) =>
@@ -845,40 +871,46 @@ function BacktestsSection() {
       </div>
       {rows.length ? (
         <Card style={{ padding: 0, overflowX: "auto" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1.6fr) 60px 90px 90px 80px 60px", gap: 12, padding: "6px 12px", borderBottom: "1px solid var(--line-hair)" }}>
-            {["Cohort", "Horizon", "Avg return", "Median", "Hit rate", "N"].map((h, i) => (
-              <span key={h} style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-wide)", color: "var(--text-muted)", textAlign: i > 0 ? "right" : "left" }}>
-                {h}
-              </span>
-            ))}
+          {/* The Card scrolls; this inner box carries the table role and, below
+              768, the 674px the six columns actually need (590 tracks + 60 gaps
+              + 24 padding) so the row stripes and header rule span the whole
+              scrolled width instead of stopping at the viewport edge. */}
+          <div role="table" aria-label="Backtests" style={{ minWidth: isNarrow ? 674 : undefined }}>
+            <div role="row" style={{ display: "grid", gridTemplateColumns: "minmax(210px,1.6fr) 60px 90px 90px 80px 60px", gap: 12, padding: "6px 12px", borderBottom: "1px solid var(--line-hair)" }}>
+              {["Cohort", "Horizon", "Avg return", "Median", "Hit rate", "N"].map((h, i) => (
+                <span key={h} role="columnheader" style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-wide)", color: "var(--text-muted)", textAlign: i > 0 ? "right" : "left" }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+            {rows.map((r, i) => {
+              // ▪ flags fragility: tiny samples AND extreme hit rates — a 100%
+              // on 17 samples is exactly what a quant reader probes (critique;
+              // confusion #12).
+              const small =
+                ((r.n ?? 0) > 0 && (r.n ?? 0) <= 4) || r.hit_rate === 1 || r.hit_rate === 0;
+              return (
+                <div key={`${r.cohort}-${r.horizon}`} role="row" style={{ display: "grid", gridTemplateColumns: "minmax(210px,1.6fr) 60px 90px 90px 80px 60px", gap: 12, padding: "6px 12px", background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent", alignItems: "baseline" }}>
+                  <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
+                    {COHORT_NAMES[r.cohort] ?? r.cohort}
+                  </span>
+                  <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right" }}>{r.horizon}</span>
+                  <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: (r.avg_return ?? 0) >= 0 ? "var(--pos)" : "var(--neg-text)" }}>
+                    {r.avg_return != null ? `${r.avg_return >= 0 ? "+" : ""}${(r.avg_return * 100).toFixed(1)}%` : "—"}
+                  </span>
+                  <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: "var(--text-muted)" }}>
+                    {r.median_return != null ? `${r.median_return >= 0 ? "+" : ""}${(r.median_return * 100).toFixed(1)}%` : "—"}
+                  </span>
+                  <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: small ? "var(--warn)" : "var(--text)" }}>
+                    {r.hit_rate != null ? `${(r.hit_rate * 100).toFixed(0)}%${small ? " ▪" : ""}` : "—"}
+                  </span>
+                  <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: "var(--text-muted)" }}>
+                    {r.n != null ? r.n.toFixed(0) : "—"}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-          {rows.map((r, i) => {
-            // ▪ flags fragility: tiny samples AND extreme hit rates — a 100%
-            // on 17 samples is exactly what a quant reader probes (critique;
-            // confusion #12).
-            const small =
-              ((r.n ?? 0) > 0 && (r.n ?? 0) <= 4) || r.hit_rate === 1 || r.hit_rate === 0;
-            return (
-              <div key={`${r.cohort}-${r.horizon}`} style={{ display: "grid", gridTemplateColumns: "minmax(210px,1.6fr) 60px 90px 90px 80px 60px", gap: 12, padding: "6px 12px", background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent", alignItems: "baseline" }}>
-                <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
-                  {COHORT_NAMES[r.cohort] ?? r.cohort}
-                </span>
-                <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right" }}>{r.horizon}</span>
-                <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: (r.avg_return ?? 0) >= 0 ? "var(--pos)" : "var(--neg-text)" }}>
-                  {r.avg_return != null ? `${r.avg_return >= 0 ? "+" : ""}${(r.avg_return * 100).toFixed(1)}%` : "—"}
-                </span>
-                <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: "var(--text-muted)" }}>
-                  {r.median_return != null ? `${r.median_return >= 0 ? "+" : ""}${(r.median_return * 100).toFixed(1)}%` : "—"}
-                </span>
-                <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: small ? "var(--warn)" : "var(--text)" }}>
-                  {r.hit_rate != null ? `${(r.hit_rate * 100).toFixed(0)}%${small ? " ▪" : ""}` : "—"}
-                </span>
-                <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: "var(--text-muted)" }}>
-                  {r.n != null ? r.n.toFixed(0) : "—"}
-                </span>
-              </div>
-            );
-          })}
         </Card>
       ) : (
         <Card>
@@ -897,28 +929,37 @@ function BacktestsSection() {
         <div style={{ ...eyebrowStyle, marginBottom: 6 }}>Factor returns by regime · annualized</div>
         {alloc.data && factorNames.length ? (
           <Card>
-            <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${regimes.length},1fr)`, gap: "2px 8px" }}>
-              <span />
-              {regimes.map((r) => (
-                <span key={r} style={{ ...mono, fontSize: 9, letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "right", padding: "4px 8px" }}>
-                  {r}
-                </span>
-              ))}
-              {factorNames.map((f) => (
-                <Fragment key={f}>
-                  <span key={f} style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)", padding: "4px 0" }}>
-                    {f}
-                  </span>
-                  {regimes.map((r) => {
-                    const v = alloc.data?.regime_factors[r]?.[f] ?? null;
-                    return (
-                      <span key={`${f}-${r}`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: v == null ? "var(--text-muted)" : v < 0 ? "var(--neg-text)" : "var(--pos)" }}>
-                        {v != null ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%` : "—"}
-                      </span>
-                    );
-                  })}
-                </Fragment>
-              ))}
+            {/* A label column plus four regime columns needs ~560px; below 768
+                this scrolls inside its own box instead of crushing the factor
+                names. Row wrappers are display:contents, so the one grid — and
+                its wide rendering — is unchanged while the roles give screen
+                readers real rows. */}
+            <div style={{ overflowX: isNarrow ? "auto" : undefined }}>
+              <div role="table" aria-label="Factor returns by regime" style={{ display: "grid", gridTemplateColumns: `120px repeat(${regimes.length},1fr)`, gap: "2px 8px", minWidth: isNarrow ? 560 : undefined }}>
+                <div role="row" style={{ display: "contents" }}>
+                  <span role="columnheader" aria-label="Factor" />
+                  {regimes.map((r) => (
+                    <span key={r} role="columnheader" style={{ ...mono, fontSize: 9, letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "right", padding: "4px 8px" }}>
+                      {r}
+                    </span>
+                  ))}
+                </div>
+                {factorNames.map((f) => (
+                  <div key={f} role="row" style={{ display: "contents" }}>
+                    <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)", padding: "4px 0" }}>
+                      {f}
+                    </span>
+                    {regimes.map((r) => {
+                      const v = alloc.data?.regime_factors[r]?.[f] ?? null;
+                      return (
+                        <span key={`${f}-${r}`} role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: v == null ? "var(--text-muted)" : v < 0 ? "var(--neg-text)" : "var(--pos)" }}>
+                          {v != null ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%` : "—"}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             </div>
             <Caption>
               Long/short ETF-proxy factors (Value, Momentum, Quality, Size, Low Vol) annualized

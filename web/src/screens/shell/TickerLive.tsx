@@ -13,6 +13,7 @@ import { TickerStrip } from "../../components";
 import { useCreditOas, useMarketDaily, useMarketIntraday } from "../../api/queries";
 import { useQuotes } from "../../live/quotes";
 import { fmtBps, fmtPct, fmtSignedPct } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 
 interface TickerItem {
   label: string;
@@ -30,6 +31,7 @@ function lastBySymbol<T extends { symbol: string }>(rows: T[] | undefined): Map<
 }
 
 export default function TickerLive() {
+  const { isNarrow } = useBreakpoint();
   const quotes = useQuotes();
   const intraday = useMarketIntraday(["SPY", "QQQ"]);
   const daily = useMarketDaily(["SPY", "QQQ"], 14);
@@ -95,7 +97,9 @@ export default function TickerLive() {
     return out;
   }, [quotes, intraday.data, daily.data, credit.data]);
 
-  return <TickerStrip items={items} style={{ marginTop: 14 }} />;
+  // Below 768 the three items don't fit the screen: compact tightens the gap
+  // and lets the strip scroll itself rather than widening the whole page.
+  return <TickerStrip items={items} compact={isNarrow} style={{ marginTop: 14 }} />;
 }
 
 export { lastBySymbol };

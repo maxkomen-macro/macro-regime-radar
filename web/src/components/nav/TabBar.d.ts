@@ -3,6 +3,11 @@ export interface TabBarProps {
   tabs?: (string | { id: string; label: string })[];
   active?: string;
   onChange?: (id: string) => void;
+  /**
+   * Finger-sized tabs (40px min height) for narrow viewports. Default false =
+   * the desk row's compact height.
+   */
+  touch?: boolean;
   style?: React.CSSProperties;
 }
 
