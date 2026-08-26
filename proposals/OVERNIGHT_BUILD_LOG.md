@@ -236,3 +236,25 @@ api/ edits — restart required before final functionality review picks up the a
   interactive-only; the audit trail lives in both commit messages + this ledger).
 - Owner follow-ups (minor, not fixed tonight): factor-table rowheader consistency (D3),
   unlabeled corner columnheader in style table (D4), calendar wrapper unconditional tabIndex (D5).
+## ALL 9 BUILD PHASES COMMITTED. Boundary suites: .venv 84 passed · anaconda 45 passed
+  (tests/ wholesale under .venv mis-collects test_streamlit_backports — interpreter-split by
+  design; documented run commands are per-suite).
+## FINAL PHASE — both independent reviews dispatched (security → FINAL_SECURITY_REVIEW.md;
+  functionality → FINAL_FUNCTIONALITY_REVIEW.md; fresh agents, no implementers).
+## FINAL SECURITY REVIEW — WRITTEN (proposals/FINAL_SECURITY_REVIEW.md)
+- VERDICT: NOT safe to deploy publicly as-is. SQL injection surface: ZERO (36 routes verified,
+  all bound params; assistant guard single-sourced, ro connection, instruction bound, row cap).
+  Secrets/artifacts clean (git history empty for .env; only .example templates tracked).
+- Ordered must-fix before ANY public exposure: (1) auth on /api/assistant/ask, (2) rate limit +
+  concurrency cap, (3) input-size caps, (4) sync threadpool starvation fix, (5) genericize
+  AgentError SSE echo, (6) auth on the data/compute routes broadly. Should-fix: docs/debug
+  gating, error-detail leaks, rw-WAL reconciliation, stray 0-byte data/macro.db untrack.
+## FINAL FUNCTIONALITY REVIEW — WRITTEN (proposals/FINAL_FUNCTIONALITY_REVIEW.md)
+- 40/40 route-width combos: 0 console errors, 0 page errors, 0 failed requests, 0 h-overflow
+  (scrollWidth == innerWidth exactly). 8/8 interactions verified (1 known harness quirk).
+  Cross-surface numbers consistent everywhere (HY 269 bps, FF 3.63%, 2s10s +46 bps).
+- 3 non-blocking findings: GL 65 vs 64 residual-rounding (intelligence.py:540-545); /kit dev
+  route URL-reachable with fixture data; harness regex needs /i.
+- VERDICT: ready for morning review, desktop and mobile.
+
+# RUN COMPLETE — 2026-08-26. All 9 phases + final reviews done. Nothing pushed, nothing deployed.
