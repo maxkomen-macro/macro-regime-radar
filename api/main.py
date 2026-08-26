@@ -7,31 +7,103 @@ Two endpoint groups:
 - `/api/*` — React-migration endpoints (design handoff build-order step 1),
   mirroring every table the Streamlit dashboard reads.
 
-CORS allows the Vite dev server origins only; the service still binds
-localhost. Run with:
+CORS: the Vite dev-server origins by default; the CORS_ORIGINS env var
+(comma-separated) replaces them for a split deploy. When web/dist exists the
+built React bundle is served same-origin from this app (no CORS needed).
+Run with:
 
-    uvicorn api.main:app --host 127.0.0.1 --port 8787
+    uvicorn api.main:app --host 127.0.0.1 --port 8000
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
+import os
 from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from api import db, stream
+from api import bootstrap, db, stream
 from api.chat import router as assistant_router
+
+# Make INFO-level app logs visible under bare `uvicorn` (its default logging
+# config handles only its own loggers; root has no handler, so the lifespan
+# startup block and stream feed transitions would vanish). basicConfig is a
+# no-op when a root handler already exists.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+log = logging.getLogger("mrr.api")
+
+_WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
+
+# Vite dev-server origins — the dev default when CORS_ORIGINS is unset.
+_DEV_CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+CORS_ORIGINS = [
+    o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()
+] or _DEV_CORS_ORIGINS
+
+
+def _anthropic_key_resolvable() -> bool:
+    """Presence check only — the value never reaches a log line."""
+    try:
+        # Lazy import: pulls the anthropic SDK; src.analytics.chat deliberately
+        # never imports src.config, so no FRED_API_KEY requirement sneaks in.
+        from src.analytics.chat import get_secret
+
+        return bool(get_secret("ANTHROPIC_API_KEY"))
+    except Exception:
+        return False
+
+
+def _log_startup_state() -> None:
+    """One honest block at lifespan start — presence yes/no only, never values."""
+    if db.DB_PATH.exists():
+        mtime = datetime.fromtimestamp(db.DB_PATH.stat().st_mtime).isoformat(timespec="seconds")
+        db_state = f"present (mtime {mtime})"
+    else:
+        db_state = "MISSING"
+    log.info(
+        "startup: web/dist %s",
+        "found — serving the built bundle same-origin"
+        if _WEB_DIST.is_dir()
+        else "absent — SPA not mounted; dev flow (Vite :5173) unchanged",
+    )
+    log.info("startup: DB %s at %s", db_state, db.DB_PATH)
+    log.info("startup: GH_DB_TOKEN %s", "yes" if os.environ.get("GH_DB_TOKEN") else "no")
+    log.info("startup: EODHD_API_TOKEN %s", "yes" if stream.hub.token else "no")
+    log.info("startup: ANTHROPIC_API_KEY resolvable: %s", "yes" if _anthropic_key_resolvable() else "no")
+    log.info("startup: effective CORS origins: %s", CORS_ORIGINS)
 
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
+    _log_startup_state()
+    # DB bootstrap (api/bootstrap.py) — a no-op without GH_DB_TOKEN. Runs
+    # before the stream hub so a fresh deploy has data before it serves.
+    try:
+        await asyncio.to_thread(bootstrap.refresh_db)
+    except Exception:
+        log.exception("DB bootstrap failed — continuing with the on-disk DB")
+    refresh_task: asyncio.Task | None = None
+    interval_min = bootstrap.refresh_interval_min()
+    if interval_min > 0:
+        refresh_task = asyncio.create_task(bootstrap.periodic_refresh(interval_min))
     # EODHD relay (api/stream.py) — a no-op when EODHD_API_TOKEN is absent:
     # feeds stay "off" and the client falls back to its DB poll.
     stream.hub.start()
     yield
+    if refresh_task is not None:
+        refresh_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await refresh_task
     await stream.hub.stop()
 
 
@@ -42,13 +114,15 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
-# React dev server (Vite) origins only — the built bundle will be served
-# same-origin from this app, so production needs no CORS at all. POST covers
-# the calculators (LBO, scenario stress, recession sensitivity) — every POST
-# is pure computation over stored data; nothing writes.
+# Vite dev-server origins by default; CORS_ORIGINS (comma-separated env)
+# replaces them when set — this is how a split deploy adds the Vercel origin.
+# The built bundle served same-origin from this app needs no CORS at all.
+# POST covers the calculators (LBO, scenario stress, recession sensitivity) —
+# every POST is pure computation over stored data; nothing writes. The
+# effective origins are logged in the lifespan startup block.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -947,3 +1021,29 @@ def api_stream_debug() -> dict:
         "symbols_stored": len(stream.hub.quotes),
         **stream.hub.stats,
     }
+
+
+# ── Static bundle (Phase 8: one process serves everything) ───────────────────
+# When web/dist exists (docker image, or a local `npm run build`), mount the
+# built React app. Every API route above is registered first, so /api/*, the
+# unprefixed Atlas routes, and /api/stream/ws keep priority — the catch-all
+# only ever sees paths nothing else matched. Absent dist (dev): skip the
+# mounts entirely; the Vite dev server on :5173 proxies /api as before.
+
+# First path segments owned by the API — an unmatched path under any of these
+# is a JSON 404 (exactly the pre-mount behavior), never the SPA shell.
+_NON_SPA_FIRST_SEGMENTS = {"api", "health", "regime", "signals", "series"}
+
+if _WEB_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_WEB_DIST / "assets"), name="assets")
+    app.mount("/fonts", StaticFiles(directory=_WEB_DIST / "fonts"), name="fonts")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str) -> FileResponse:
+        """SPA fallback: client-side routes (/, /app/*, /kit) get index.html;
+        unknown API-ish paths stay JSON 404s exactly as before the mount."""
+        if full_path.split("/", 1)[0] in _NON_SPA_FIRST_SEGMENTS:
+            raise HTTPException(status_code=404, detail="Not Found")
+        return FileResponse(_WEB_DIST / "index.html")
+else:
+    log.info("web/dist absent — SPA not mounted; dev flow (Vite :5173) unchanged")

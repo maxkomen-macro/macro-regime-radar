@@ -692,3 +692,54 @@ def test_assistant_ask_sse_frame_contract(monkeypatch):
     assert 'data: {"delta": "world."}' in body
     assert body.rstrip().endswith("event: done\ndata: {}")
     assert "event: error" not in body
+
+
+# ── Phase 8: SPA serving (deploy readiness) ──────────────────────────────────
+# api/main.py mounts web/dist when it exists; API routes keep priority and the
+# catch-all serves index.html only for client-side routes.
+
+from pathlib import Path  # noqa: E402 — Phase 8 append block
+
+_WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
+_dist_absent = not _WEB_DIST.is_dir()
+
+
+@pytest.mark.skipif(_dist_absent, reason="web/dist not built")
+def test_spa_fallback_serves_index_for_client_routes():
+    for path in ("/", "/app/markets", "/kit"):
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert r.headers["content-type"].startswith("text/html"), path
+        assert '<div id="root">' in r.text, path
+
+
+def test_unknown_api_path_is_json_404_not_html():
+    """Unknown API-ish paths must stay JSON 404s (pre-mount behavior), never
+    the SPA shell — with or without dist present."""
+    for path in ("/api/nope", "/api/regime/nope", "/health/nope", "/series/x/y/z"):
+        r = client.get(path)
+        assert r.status_code == 404, path
+        assert r.headers["content-type"].startswith("application/json"), path
+        assert "detail" in r.json(), path
+
+
+def test_health_still_json_after_spa_mount():
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/json")
+    assert set(r.json()) == {"status", "db_present"}
+
+
+@pytest.mark.skipif(_dist_absent, reason="web/dist not built")
+def test_static_asset_served_with_correct_content_type():
+    css = next(iter((_WEB_DIST / "assets").glob("*.css")), None)
+    assert css is not None, "built bundle has no CSS asset"
+    r = client.get(f"/assets/{css.name}")
+    assert r.status_code == 200
+    assert "text/css" in r.headers["content-type"]
+
+    js = next(iter((_WEB_DIST / "assets").glob("*.js")), None)
+    assert js is not None, "built bundle has no JS asset"
+    r = client.get(f"/assets/{js.name}")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]

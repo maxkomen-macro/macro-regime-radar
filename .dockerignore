@@ -1,0 +1,25 @@
+# Keep the build context tiny and secret-free. Stage 2 copies only api/, src/,
+# requirements-api.txt; stage 1 copies web/ (minus the ignores below).
+.git
+.venv
+**/node_modules
+# dist is built in-stage (stage 1) — never taken from the host:
+web/dist
+# Never ship a stale local DB — the container bootstraps from data-latest:
+data/*.db*
+data
+# Secrets never enter the context:
+**/.env*
+.streamlit
+**/__pycache__
+*.pyc
+logs
+output
+proposals
+docs
+notebooks
+tests
+.github
+.claude
+scripts
+*.md

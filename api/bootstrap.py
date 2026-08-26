@@ -1,0 +1,140 @@
+"""api/bootstrap.py — DB snapshot bootstrap from the private data-latest Release.
+
+Ports the proven dashboard pattern (dashboard/app.py:_refresh_db_snapshot) to
+the FastAPI service: when GH_DB_TOKEN is set, resolve the `macro_radar.db`
+asset on the `data-latest` GitHub Release (repo maxkomen-macro/macro-regime-radar)
+and download it atomically into api.db.DB_PATH — temp file in the same
+directory + os.replace(), so a reader never sees a torn file (api/db.py opens
+a fresh read-only connection per request and tolerates the swap).
+
+Behavior knobs (all env; the token is never logged):
+- GH_DB_TOKEN               read-only Contents PAT. Absent → no-op: dev keeps
+                            whatever DB is on disk, untouched.
+- BOOTSTRAP_DB_MAX_AGE_MIN  if set, a startup DB older than this many minutes
+                            is re-downloaded; unset → download only when the
+                            DB file is missing.
+- BOOTSTRAP_DB_REFRESH_MIN  if > 0, a lifespan task re-downloads every N
+                            minutes (default 0 = disabled).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import tempfile
+import time
+
+import httpx
+
+from api.db import DB_PATH
+
+log = logging.getLogger("mrr.bootstrap")
+
+_GH_API_REPO = "https://api.github.com/repos/maxkomen-macro/macro-regime-radar"
+_DB_ASSET_NAME = "macro_radar.db"
+
+
+def _token() -> str:
+    return os.environ.get("GH_DB_TOKEN", "")
+
+
+def refresh_interval_min() -> float:
+    """BOOTSTRAP_DB_REFRESH_MIN as a float, 0 (disabled) on unset/garbage."""
+    raw = os.environ.get("BOOTSTRAP_DB_REFRESH_MIN", "0")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        log.warning("BOOTSTRAP_DB_REFRESH_MIN=%r is not a number — refresh disabled", raw)
+        return 0.0
+
+
+def _max_age_min() -> float | None:
+    """BOOTSTRAP_DB_MAX_AGE_MIN as a float, None (only-if-missing) on unset/garbage."""
+    raw = os.environ.get("BOOTSTRAP_DB_MAX_AGE_MIN")
+    if raw is None or raw.strip() == "":
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        log.warning("BOOTSTRAP_DB_MAX_AGE_MIN=%r is not a number — treating as unset", raw)
+        return None
+
+
+def _should_download() -> bool:
+    if not DB_PATH.exists():
+        return True
+    max_age = _max_age_min()
+    if max_age is None:
+        return False  # default: only-if-missing
+    age_min = (time.time() - DB_PATH.stat().st_mtime) / 60.0
+    return age_min > max_age
+
+
+def refresh_db(force: bool = False) -> bool:
+    """Download the latest snapshot into DB_PATH if warranted. Returns True
+    when a new file was swapped into place. Blocking — call at startup or via
+    asyncio.to_thread from the event loop."""
+    token = _token()
+    if not token:
+        log.info("GH_DB_TOKEN not set — DB bootstrap skipped; serving the on-disk DB as-is")
+        return False
+    if not force and not _should_download():
+        log.info("DB present and within freshness policy — bootstrap download skipped")
+        return False
+
+    auth = {
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "macro-regime-radar-api",
+    }
+    with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+        # 1) resolve the current asset on data-latest (its id changes per upload)
+        meta = client.get(
+            f"{_GH_API_REPO}/releases/tags/data-latest",
+            headers={**auth, "Accept": "application/vnd.github+json"},
+        )
+        meta.raise_for_status()
+        asset = next(
+            (a for a in meta.json().get("assets", []) if a["name"] == _DB_ASSET_NAME),
+            None,
+        )
+        if asset is None:
+            log.warning("data-latest release has no %s asset — keeping on-disk DB", _DB_ASSET_NAME)
+            return False
+        # 2) stream the bytes to a temp file beside DB_PATH, then swap atomically.
+        #    httpx (like requests in the dashboard) drops the Authorization header
+        #    on the cross-host redirect to the signed CDN URL, so no double-auth
+        #    rejection there.
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(DB_PATH.parent), suffix=".db.tmp")
+        os.close(fd)
+        try:
+            with client.stream(
+                "GET",
+                asset["url"],
+                headers={**auth, "Accept": "application/octet-stream"},
+                timeout=120.0,
+            ) as dl, open(tmp, "wb") as out:
+                dl.raise_for_status()
+                for chunk in dl.iter_bytes(65536):
+                    out.write(chunk)
+            os.replace(tmp, DB_PATH)  # atomic swap into place
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+    log.info("DB snapshot downloaded from data-latest (%d bytes)", DB_PATH.stat().st_size)
+    return True
+
+
+async def periodic_refresh(interval_min: float) -> None:
+    """Lifespan task: re-download every interval_min minutes. Single task,
+    exceptions logged and swallowed (never fatal), cancelled on shutdown."""
+    log.info("periodic DB refresh armed: every %.0f min", interval_min)
+    while True:
+        await asyncio.sleep(interval_min * 60.0)
+        try:
+            await asyncio.to_thread(refresh_db, True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("periodic DB refresh failed — will retry next interval")
