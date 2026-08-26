@@ -90,17 +90,20 @@ export default function LandingPage() {
             display: "inline-block",
           }}
         />
-        <span
+        {/* The wordmark is this page's only <h1>. `margin: 0` pins away the UA
+            h1 margin-block; font-size/weight were already explicit. */}
+        <h1
           style={{
             fontFamily: "var(--font-display)",
             fontSize: 19,
             fontWeight: 700,
             letterSpacing: ".14em",
             textTransform: "uppercase",
+            margin: 0,
           }}
         >
           Macro Regime Radar
-        </span>
+        </h1>
       </header>
 
       <main

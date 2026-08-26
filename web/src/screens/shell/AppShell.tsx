@@ -170,7 +170,10 @@ export default function AppShell() {
                   background: dotLive ? "var(--accent)" : "var(--text-faint)",
                 }}
               />
-              <span
+              {/* The wordmark is the page's only <h1> — the app renders no other
+                  heading above h2 (SectionHeader emits h2/h3). `margin: 0` pins
+                  away the UA h1 margin-block; font-size/weight are already set. */}
+              <h1
                 style={{
                   fontFamily: "var(--font-display)",
                   fontSize: 19,
@@ -178,10 +181,11 @@ export default function AppShell() {
                   letterSpacing: ".14em",
                   textTransform: "uppercase",
                   color: "var(--text)",
+                  margin: 0,
                 }}
               >
                 Macro Regime Radar
-              </span>
+              </h1>
             </Link>
             <TickerLive />
           </div>
