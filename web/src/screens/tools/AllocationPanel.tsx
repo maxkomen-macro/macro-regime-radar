@@ -13,7 +13,7 @@ import { Fragment, useMemo, useState } from "react";
 import { Card, SectionHeader, Tag } from "../../components";
 import { Link } from "react-router-dom";
 import { useAllocation } from "../../api/queries";
-import type { FrameData } from "../../api/types";
+import type { AllocationData, FrameData } from "../../api/types";
 import { fmtMonYr } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, eyebrowStyle, mono } from "../shared/screen-ui";
@@ -130,7 +130,16 @@ export default function AllocationPanel() {
     );
   }
 
-  const names = a.optimizations.asset_names;
+  // The source gates the whole optimizer block on the current regime having
+  // enough covariance history, so the payload ships optimizations: null when a
+  // thin regime is live. types.ts declares the member non-null — narrow here
+  // rather than let the panel read through a null.
+  const opt: AllocationData["optimizations"] | null = a.optimizations ?? null;
+  // asset_names lives inside that block; without it the row order falls back to
+  // the regime-stats keys — same source columns, same order.
+  const names: string[] =
+    opt?.asset_names ??
+    [...new Set(Object.values(a.regime_stats).flatMap((s) => Object.keys(s?.mean ?? {})))];
   const curRegime = a.current_regime;
   const effCorrRegime = corrRegime ?? curRegime;
   const effStyleRegime = styleRegime ?? curRegime;
@@ -143,14 +152,14 @@ export default function AllocationPanel() {
   // Plain derivation, deliberately NOT a hook: any hook after the loading
   // early-return changes the hook count when data lands (crashed live —
   // "Rendered more hooks than during the previous render").
-  const frontierMarkers: FrontierMarker[] = METHODS.filter(
-    (m) => a.optimizations[m.key] && !isFallback(a.optimizations[m.key]),
-  ).map((m) => ({
-    label: m.label,
-    vol: a.optimizations[m.key].volatility,
-    ret: a.optimizations[m.key].expected_return,
-    color: m.color,
-  }));
+  const frontierMarkers: FrontierMarker[] = !opt
+    ? []
+    : METHODS.filter((m) => opt[m.key] && !isFallback(opt[m.key])).map((m) => ({
+        label: m.label,
+        vol: opt[m.key].volatility,
+        ret: opt[m.key].expected_return,
+        color: m.color,
+      }));
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -275,106 +284,130 @@ export default function AllocationPanel() {
 
       {/* ── Optimization ──────────────────────────────────────────────── */}
       <section id="allocation-optimization">
-        <SectionHeader title="Optimization" right="max 40% per asset · long-only" />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-          {METHODS.map((m) => {
-            const o = a.optimizations[m.key];
-            if (!o) return null;
-            return (
-              <Card key={m.key}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
-                  <span style={eyebrowStyle}>{m.label}</span>
-                  <Tag tone={isFallback(o) ? "warn" : "neutral"} size="sm">
-                    {isFallback(o) ? "fallback" : m.badge}
-                  </Tag>
-                </div>
-                <div style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, marginTop: 6 }}>
-                  {spct(o.expected_return)}
-                </div>
-                <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: 2 }}>
-                  {/* Fallback paths report sharpe_ratio=0.0 unconditionally —
-                      printing it beside +10.5%/8.7% vol is an arithmetic lie
-                      (critique P0). */}
-                  vol {pct(o.volatility)} · SR {isFallback(o) ? "—" : o.sharpe_ratio.toFixed(2)}
-                </div>
-                {isFallback(o) && (
-                  <div style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", marginTop: 2 }}>
-                    equal weight — Sharpe not computed
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+        <SectionHeader
+          title="Optimization"
+          right={opt ? "max 40% per asset · long-only" : "unavailable — regime history too short"}
+        />
+        {!opt ? (
+          /* Weights, the frontier and portfolio CVaR all read the same regime
+             covariance block — when the source can't build it, none of the
+             three exist and the panel says so rather than half-drawing them. */
           <Card>
-            <div style={eyebrowStyle}>How to read the methods</div>
-            <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", lineHeight: 1.6, marginTop: 6 }}>
-              Return-seekers (<Jargon term="efficient frontier">Mean-Variance</Jargon>,{" "}
-              <Jargon term="Black-Litterman">Black-Litterman</Jargon>) chase the regime&apos;s
-              historical returns; risk shops (Min Variance,{" "}
-              <Jargon term="risk parity">Risk Parity</Jargon>, <Jargon term="HRP">HRP</Jargon>)
-              ignore returns and budget risk; tail methods (<Jargon term="CVaR">Min CVaR</Jargon>,{" "}
-              <Jargon term="HERC">HERC</Jargon>) target the worst months.
-            </div>
-          </Card>
-        </div>
-        <Caption>
-          Seven ways to slice the same {names.length} assets — different questions, not
-          better/worse answers. Min CVaR and HERC are unavailable this session; both show equal
-          weight, tagged fallback.
-        </Caption>
-
-        <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 12, marginTop: 12 }}>
-          <Card>
-            <div style={{ ...eyebrowStyle, marginBottom: 8 }}>
-              Efficient frontier · annualized risk vs return
-            </div>
-            <FrontierChart frontier={a.optimizations.frontier} markers={frontierMarkers} />
+            <div style={{ ...eyebrowStyle, marginBottom: 6 }}>No optimizer output this session</div>
+            <StateNote>
+              Optimizers need 24 months of {curRegime} covariance history inside the{" "}
+              {fmtMonYr(`${a.data_start}-01`)} → {fmtMonYr(`${a.data_end}-01`)} return window — the
+              store doesn&apos;t have them yet. Regime-conditional statistics above, and the risk
+              lenses below, still stand.
+            </StateNote>
             <Caption>
-              The <Jargon term="efficient frontier">frontier</Jargon> is the best return available
-              at each volatility under the 40% cap; the marked portfolios are where each method
-              lands. Equal-weight fallbacks (Min CVaR, HERC) are omitted from the plane.
+              Weights by method, the efficient frontier, and portfolio-level CVaR all wait on that
+              same block; the per-asset tail numbers under Risk analysis never depended on it.
             </Caption>
           </Card>
-          <Card>
-            <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Weights by method · %</div>
-            <div style={{ overflowX: "auto" }}>
-              <div style={{ display: "grid", gridTemplateColumns: `130px repeat(${METHODS.length}, 1fr)`, gap: "1px 4px", minWidth: 480 }}>
-                <span />
-                {METHODS.map((m) => (
-                  <span key={m.key} style={{ ...cellHead, padding: "2px 4px", fontSize: 8 }}>
-                    {m.key === "black_litterman" ? "B-L" : m.label}
-                  </span>
-                ))}
-                {names.map((asset, ai) => (
-                  <Fragment key={asset}>
-                    <span key={`${asset}-w`} style={{ ...rowLabel, fontSize: "var(--fs-meta)" }}>
-                      {asset}
-                    </span>
-                    {METHODS.map((m) => {
-                      const w = a.optimizations[m.key]?.weights?.[ai] ?? null;
-                      return (
-                        <span
-                          key={`${asset}-${m.key}`}
-                          style={{
-                            ...mono,
-                            fontSize: "var(--fs-micro)",
-                            textAlign: "right",
-                            padding: "3px 4px",
-                            color: w != null && w > 0.005 ? "var(--text)" : "var(--text-faint)",
-                            background: w != null && w >= 0.3 ? "rgba(74,158,255,.10)" : "transparent",
-                          }}
-                        >
-                          {w != null ? `${Math.round(w * 100)}` : "—"}
-                        </span>
-                      );
-                    })}
-                  </Fragment>
-                ))}
-              </div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+              {METHODS.map((m) => {
+                const o = opt[m.key];
+                if (!o) return null;
+                return (
+                  <Card key={m.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+                      <span style={eyebrowStyle}>{m.label}</span>
+                      <Tag tone={isFallback(o) ? "warn" : "neutral"} size="sm">
+                        {isFallback(o) ? "fallback" : m.badge}
+                      </Tag>
+                    </div>
+                    <div style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, marginTop: 6 }}>
+                      {spct(o.expected_return)}
+                    </div>
+                    <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: 2 }}>
+                      {/* Fallback paths report sharpe_ratio=0.0 unconditionally —
+                          printing it beside +10.5%/8.7% vol is an arithmetic lie
+                          (critique P0). */}
+                      vol {pct(o.volatility)} · SR {isFallback(o) ? "—" : o.sharpe_ratio.toFixed(2)}
+                    </div>
+                    {isFallback(o) && (
+                      <div style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", marginTop: 2 }}>
+                        equal weight — Sharpe not computed
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+              <Card>
+                <div style={eyebrowStyle}>How to read the methods</div>
+                <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", lineHeight: 1.6, marginTop: 6 }}>
+                  Return-seekers (<Jargon term="efficient frontier">Mean-Variance</Jargon>,{" "}
+                  <Jargon term="Black-Litterman">Black-Litterman</Jargon>) chase the regime&apos;s
+                  historical returns; risk shops (Min Variance,{" "}
+                  <Jargon term="risk parity">Risk Parity</Jargon>, <Jargon term="HRP">HRP</Jargon>)
+                  ignore returns and budget risk; tail methods (<Jargon term="CVaR">Min CVaR</Jargon>,{" "}
+                  <Jargon term="HERC">HERC</Jargon>) target the worst months.
+                </div>
+              </Card>
             </div>
-            <Caption>Cells at the 30%+ concentration edge tint blue; zeros sit faint.</Caption>
-          </Card>
-        </div>
+            <Caption>
+              Seven ways to slice the same {names.length} assets — different questions, not
+              better/worse answers. Min CVaR and HERC are unavailable this session; both show equal
+              weight, tagged fallback.
+            </Caption>
+
+            <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 12, marginTop: 12 }}>
+              <Card>
+                <div style={{ ...eyebrowStyle, marginBottom: 8 }}>
+                  Efficient frontier · annualized risk vs return
+                </div>
+                <FrontierChart frontier={opt.frontier} markers={frontierMarkers} />
+                <Caption>
+                  The <Jargon term="efficient frontier">frontier</Jargon> is the best return available
+                  at each volatility under the 40% cap; the marked portfolios are where each method
+                  lands. Equal-weight fallbacks (Min CVaR, HERC) are omitted from the plane.
+                </Caption>
+              </Card>
+              <Card>
+                <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Weights by method · %</div>
+                <div style={{ overflowX: "auto" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: `130px repeat(${METHODS.length}, 1fr)`, gap: "1px 4px", minWidth: 480 }}>
+                    <span />
+                    {METHODS.map((m) => (
+                      <span key={m.key} style={{ ...cellHead, padding: "2px 4px", fontSize: 8 }}>
+                        {m.key === "black_litterman" ? "B-L" : m.label}
+                      </span>
+                    ))}
+                    {names.map((asset, ai) => (
+                      <Fragment key={asset}>
+                        <span key={`${asset}-w`} style={{ ...rowLabel, fontSize: "var(--fs-meta)" }}>
+                          {asset}
+                        </span>
+                        {METHODS.map((m) => {
+                          const w = opt[m.key]?.weights?.[ai] ?? null;
+                          return (
+                            <span
+                              key={`${asset}-${m.key}`}
+                              style={{
+                                ...mono,
+                                fontSize: "var(--fs-micro)",
+                                textAlign: "right",
+                                padding: "3px 4px",
+                                color: w != null && w > 0.005 ? "var(--text)" : "var(--text-faint)",
+                                background: w != null && w >= 0.3 ? "rgba(74,158,255,.10)" : "transparent",
+                              }}
+                            >
+                              {w != null ? `${Math.round(w * 100)}` : "—"}
+                            </span>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </div>
+                </div>
+                <Caption>Cells at the 30%+ concentration edge tint blue; zeros sit faint.</Caption>
+              </Card>
+            </div>
+          </>
+        )}
       </section>
 
       {/* ── Risk analysis (paginated) ─────────────────────────────────── */}
@@ -415,7 +448,7 @@ export default function AllocationPanel() {
               {METHODS.filter((m) => a.portfolio_factors[m.key]).map((m) => {
                 const pf = a.portfolio_factors[m.key];
                 if (!pf) return null;
-                const fb = isFallback(a.optimizations[m.key]);
+                const fb = isFallback(opt?.[m.key]);
                 return (
                   <div key={m.key} style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
                     <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-2)", minWidth: 130 }}>
@@ -435,6 +468,15 @@ export default function AllocationPanel() {
                 );
               })}
             </div>
+            {!opt && (
+              /* Betas are regressed on optimizer weights upstream, so this grid
+                 ships empty alongside a null optimization block — say it rather
+                 than leave the lens blank. */
+              <StateNote>
+                Portfolio betas are regressed on the optimizer weights; with none for {curRegime}{" "}
+                this session there are no portfolio rows to show.
+              </StateNote>
+            )}
             <Caption>
               Factors are long/short ETF proxies (Value IWD−IWF, Momentum MTUM−SPY, Quality
               QUAL−SPY, Size IWM−SPY, Low Vol USMV−SPY) — the Fama-French idea without their data
@@ -545,19 +587,31 @@ export default function AllocationPanel() {
                 <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Portfolio CVaR by method</div>
                 <div style={{ display: "grid", gap: 6 }}>
                   {METHODS.map((m) => {
-                    const o = a.optimizations[m.key];
-                    if (!o || o.cvar_95 == null) return null;
+                    const o = opt?.[m.key];
+                    const pc = o?.cvar_95 ?? null;
+                    // With weights on file, a method with no portfolio CVaR is
+                    // dropped as before; with no weights at all every method
+                    // keeps its row and prints the house dash.
+                    if (opt && pc == null) return null;
                     return (
                       <div key={m.key} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                         <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
                           {m.label}
                           {isFallback(o) ? " (fallback)" : ""}
                         </span>
-                        <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--neg-text)" }}>{spct(o.cvar_95)}</span>
+                        <span style={{ ...mono, fontSize: "var(--fs-meta)", color: pc != null ? "var(--neg-text)" : "var(--text-muted)" }}>
+                          {pc != null ? spct(pc) : "—"}
+                        </span>
                       </div>
                     );
                   })}
                 </div>
+                {!opt && (
+                  <Caption>
+                    Portfolio CVaR weights the assets by an optimizer solution; there is none for{" "}
+                    {curRegime} this session, so every method reads —.
+                  </Caption>
+                )}
               </div>
             </div>
             <Caption>
