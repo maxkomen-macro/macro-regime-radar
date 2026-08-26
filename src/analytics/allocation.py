@@ -357,6 +357,23 @@ def get_regime_conditional_covariance(
     return covs
 
 
+def _regime_month_counts(
+    returns: pd.DataFrame,
+    regimes: pd.DataFrame,
+    regime: str,
+) -> Tuple[int, int]:
+    """Month counts for one regime, applying the exact filtering the gate
+    functions above use: (stats_months, cov_months) — stats_months is the row
+    count get_regime_conditional_stats sees (min 12), cov_months the
+    rectangular row count get_regime_conditional_covariance sees (min 24)."""
+    combined = returns.copy()
+    combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
+    combined = combined.dropna(subset=["regime"])
+    sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+    sub = sub.dropna(axis=1, how="all")
+    return len(sub), len(sub.dropna())
+
+
 def get_correlation_by_regime(
     returns: pd.DataFrame,
     regimes: pd.DataFrame,
@@ -682,6 +699,7 @@ def hierarchical_risk_parity_optimize(
         "weights":       weights,
         "volatility":    port_vol,
         "method":        "Hierarchical Risk Parity",
+        "converged":     True,
         "cluster_order": [asset_names[i] for i in sort_idx],
     }
 
@@ -756,15 +774,34 @@ def herc_optimize(
 
     port = rp.HCPortfolio(returns=monthly_returns.dropna())
 
-    w_df = port.optimization(
-        model="HERC",
-        codependence="pearson",
-        rm="MV",
-        rf=0,
-        linkage="ward",
-        max_k=10,
-        leaf_order=True,
-    )
+    def _run() -> pd.DataFrame:
+        return port.optimization(
+            model="HERC",
+            codependence="pearson",
+            rm="MV",
+            rf=0,
+            linkage="ward",
+            max_k=10,
+            leaf_order=True,
+        )
+
+    try:
+        w_df = _run()
+    except TypeError as e:
+        if "unexpected keyword argument" not in str(e):
+            raise
+        # riskfolio 7.3.0 regression: optimization() forwards linkage/bound
+        # kwargs into _hierarchical_recursive_bisection(), whose signature no
+        # longer accepts them — model="HERC" raises TypeError on every call.
+        # The ward linkage is already consumed by Step-1 tree clustering and
+        # weight bounds are applied in Step-4 after bisection, so stripping the
+        # stray kwargs from the internal call is behavior-identical HERC.
+        # Remove this shim once fixed upstream.
+        inner = port._hierarchical_recursive_bisection
+        port._hierarchical_recursive_bisection = lambda Z, **kw: inner(
+            Z, **{k: v for k, v in kw.items() if k in ("rm", "rf", "model")}
+        )
+        w_df = _run()
 
     if w_df is None or w_df.empty:
         weights = np.full(n, 1.0 / n)
@@ -919,6 +956,22 @@ def calculate_cvar(
         "asset_cvar":    asset_cvar,
         "portfolio_cvar": portfolio_cvar,
     }
+
+
+def _attach_portfolio_cvar(
+    optimizations: Dict,
+    returns: pd.DataFrame,
+    opt_assets: List[str],
+) -> None:
+    """Attach cvar_95 — the {cvar, var, worst_periods} dict from
+    calculate_cvar (or None) — to each optimizer result in place.
+    Pure: no DB, no network."""
+    for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"):
+        if key in optimizations:
+            w = np.array(optimizations[key]["weights"])
+            optimizations[key]["cvar_95"] = calculate_cvar(
+                returns[opt_assets], weights=w, confidence=0.95
+            )["portfolio_cvar"]
 
 
 def calculate_regime_cvar(
@@ -1274,6 +1327,8 @@ def get_allocation_data() -> Dict:
         labeled regime, 0–1 or None), rf_rate,
         regime_stats, regime_correlations,
         optimizations (mvo/min_var/risk_parity/frontier/asset_names) or None,
+        optimizations_skipped (why the optimization gate skipped: regime, month
+        counts vs the 12/24 thresholds, data window) or None when they ran,
         drawdowns, data_start, data_end, n_months, asset_classes
     """
     print("Fetching asset returns (this may take ~30s on first run)...")
@@ -1295,6 +1350,7 @@ def get_allocation_data() -> Dict:
     print(f"Risk-free rate: {rf_rate:.2%}")
 
     optimizations = None
+    optimizations_skipped: Optional[Dict] = None
     if current_regime in regime_stats and current_regime in regime_cov:
         # Intersect: only assets with a non-NaN mean AND present in the cov matrix
         stats_assets = [
@@ -1357,6 +1413,7 @@ def get_allocation_data() -> Dict:
                 "volatility":      float(np.sqrt(eq_w @ cov @ eq_w)),
                 "sharpe_ratio":    0.0,
                 "method":          "HRP (fallback)",
+                "converged":       False,
             }
 
         # Min CVaR — tail-risk optimization via riskfolio (with fallback)
@@ -1418,6 +1475,19 @@ def get_allocation_data() -> Dict:
             "frontier":         frontier,
             "asset_names":      asset_names,
         }
+    else:
+        stats_months, cov_months = _regime_month_counts(returns, regimes, current_regime)
+        optimizations_skipped = {
+            "regime":                current_regime,
+            "stats_months":          stats_months,
+            "cov_months":            cov_months,
+            "required_stats_months": 12,
+            "required_cov_months":   24,
+            "window":                f"{data_start} → {data_end}",
+        }
+        print(f"Optimizations skipped: regime '{current_regime}' has "
+              f"{stats_months} stats months (need 12) and {cov_months} "
+              f"rectangular cov months (need 24) in {data_start} → {data_end}")
 
     # ── Risk analytics (CVaR, transitions, real returns) ───────────────────────
     print("\nComputing risk analytics...")
@@ -1456,12 +1526,7 @@ def get_allocation_data() -> Dict:
     # Add portfolio CVaR per optimisation method
     if optimizations is not None:
         opt_assets = optimizations.get("asset_names", list(returns.columns))
-        for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"):
-            if key in optimizations:
-                w = np.array(optimizations[key]["weights"])
-                optimizations[key]["cvar_95"] = calculate_cvar(
-                    returns[opt_assets], weights=w, confidence=0.95
-                )["portfolio_cvar"]
+        _attach_portfolio_cvar(optimizations, returns, opt_assets)
 
     transition_pnl = calculate_transition_pnl(returns, regimes_df) if not regimes_df.empty else {}
 
@@ -1523,6 +1588,7 @@ def get_allocation_data() -> Dict:
         "regime_stats":        regime_stats,
         "regime_correlations": regime_corr,
         "optimizations":       optimizations,
+        "optimizations_skipped": optimizations_skipped,
         "drawdowns":           drawdowns,
         "data_start":          data_start,
         "data_end":            data_end,

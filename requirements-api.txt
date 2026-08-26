@@ -14,6 +14,11 @@ numpy
 scikit-learn
 # /api/allocation imports src/analytics/allocation.py, which downloads asset
 # return histories via yfinance on a cold call (then TTL-cached 1h). scipy
-# arrives with scikit-learn; riskfolio-lib is NOT installed — the CVaR/HERC
-# optimizers fall back to equal weight, flagged converged=false in the payload.
+# arrives with scikit-learn; riskfolio-lib powers the CVaR/HERC optimizers for
+# real — if its import fails they fall back to equal weight, flagged
+# converged=false in the payload.
 yfinance
+# Pinned to 7.3.x: herc_optimize in src/analytics/allocation.py carries a shim
+# for 7.3.0's broken HERC kwarg forwarding (_hierarchical_recursive_bisection);
+# remove the pin together with the shim once upstream fixes it.
+riskfolio-lib==7.3.*

@@ -588,7 +588,7 @@ export default function AllocationPanel() {
                 <div style={{ display: "grid", gap: 6 }}>
                   {METHODS.map((m) => {
                     const o = opt?.[m.key];
-                    const pc = o?.cvar_95 ?? null;
+                    const pc = o?.cvar_95?.cvar ?? null;
                     // With weights on file, a method with no portfolio CVaR is
                     // dropped as before; with no weights at all every method
                     // keeps its row and prints the house dash.

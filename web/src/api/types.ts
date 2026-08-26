@@ -463,7 +463,9 @@ export interface OptimizationResult {
   sharpe_ratio: number;
   method: string;
   converged: boolean;
-  cvar_95: number | null;
+  /** Portfolio tail risk at 95%, as a dict (NOT a scalar). The payload also
+   * carries `worst_periods`; only the fields consumed here are declared. */
+  cvar_95: { cvar: number; var: number } | null;
 }
 
 export interface CvarEntry {
