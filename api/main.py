@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from api import db, stream
+from api.chat import router as assistant_router
 
 
 @asynccontextmanager
@@ -926,6 +927,7 @@ def api_calendar_recent(limit: int = Query(10, ge=1, le=100)) -> list[CalendarEv
 
 
 app.include_router(api)
+app.include_router(assistant_router)
 
 
 @app.websocket("/api/stream/ws")

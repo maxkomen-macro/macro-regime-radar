@@ -22,3 +22,5 @@ yfinance
 # for 7.3.0's broken HERC kwarg forwarding (_hierarchical_recursive_bisection);
 # remove the pin together with the shim once upstream fixes it.
 riskfolio-lib==7.3.*
+# POST /api/assistant/ask (api/chat.py) drives src/analytics/chat.py's agent:
+anthropic

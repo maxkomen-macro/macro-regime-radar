@@ -8,13 +8,57 @@ without Streamlit (tools that need session_state degrade gracefully).
 
 from __future__ import annotations
 
+import contextvars
+import os
 import re
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from src.config import DB_PATH, get_secret
+# ── Config (self-contained) ──────────────────────────────────────────────────
+# Deliberately NOT imported from src.config: that module raises at import time
+# without FRED_API_KEY, and the FastAPI service (api/chat.py) must be able to
+# import this module in key-less environments. DB_PATH resolves to the same
+# file src.config.DB_PATH points at.
+DB_PATH = Path(__file__).resolve().parents[2] / "data" / "macro_radar.db"
+
+# Repo-root .env, parsed as get_secret's last resort (api/stream.py:_load_token
+# idiom). src.config gets .env into os.environ via load_dotenv at import; this
+# module must not import src.config, so bare-uvicorn processes launched without
+# .env in their environment would otherwise never see the keys it holds.
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _env_file_value(key: str) -> str:
+    """`key` from the repo-root .env file, '' if absent/unreadable.
+    The value is never logged and never leaves this process."""
+    try:
+        for line in _ENV_FILE.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith(f"{key}="):
+                return line.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        pass
+    return ""
+
+
+def get_secret(key: str) -> str:
+    """Resolve a secret: env var, else Streamlit secrets where available, else
+    the repo-root .env file. Identical resolution for the Streamlit path and
+    the bare-uvicorn path; returns '' when the key is absent everywhere."""
+    val = os.environ.get(key, "")
+    if val:
+        return val
+    try:
+        import streamlit as st
+        val = st.secrets.get(key, "")
+    except Exception:
+        val = ""
+    return val or _env_file_value(key)
+
 
 # ── Anthropic SDK ─────────────────────────────────────────────────────────────
 # Imported lazily so importing this module doesn't crash if the SDK is missing
@@ -28,6 +72,14 @@ except ImportError:  # pragma: no cover
 MODEL              = "claude-sonnet-4-5-20250929"
 MAX_TOKENS         = 2000
 MAX_TOOL_ITERATIONS = 10
+
+# ── Tab-context bridge (API → tools) ─────────────────────────────────────────
+# The FastAPI layer (api/chat.py) sets this per request so explain_current_view
+# works without Streamlit session state. Streamlit never touches it: the tool
+# falls back to st.session_state when the ContextVar is unset.
+TAB_CONTEXT: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "macro_radar_tab_context", default=None
+)
 
 
 # ── SQL guard ─────────────────────────────────────────────────────────────────
@@ -54,8 +106,8 @@ def is_safe_select(sql: str) -> bool:
     s = sql.strip().rstrip(";").strip()
     if not s:
         return False
-    # Reject statement chaining via `;` — by here at most one trailing `;`
-    # has been stripped, so any remaining semicolons are interior.
+    # Reject statement chaining via `;` — the rstrip above removed the whole
+    # run of trailing semicolons, so any remaining `;` is interior.
     if ";" in s:
         return False
     if _FORBIDDEN_KEYWORDS.search(s):
@@ -80,14 +132,35 @@ def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 
 # ── Tool implementations ──────────────────────────────────────────────────────
 
+# Execution bound for query_database: SQLite invokes the progress handler every
+# _QUERY_PROGRESS_PERIOD VM instructions; after _QUERY_PROGRESS_BUDGET callbacks
+# (≈ 20M instructions — orders of magnitude above any legitimate dashboard
+# query) the handler returns non-zero and SQLite aborts with OperationalError
+# ("interrupted"). Guards against runaway queries the keyword guard cannot see,
+# e.g. an unbounded `WITH RECURSIVE` bomb.
+_QUERY_PROGRESS_PERIOD = 10_000
+_QUERY_PROGRESS_BUDGET = 2_000
+
+
 def _tool_query_database(sql: str) -> dict[str, Any]:
     if not is_safe_select(sql):
         return {"error": "SQL guard: only single-statement SELECT (or WITH ... SELECT) queries are permitted."}
     try:
         with _ro_conn() as conn:
-            cur = conn.execute(sql)
-            rows = cur.fetchmany(200)  # cap at 200 rows
-            cols = [d[0] for d in cur.description] if cur.description else []
+            remaining = _QUERY_PROGRESS_BUDGET
+
+            def _budget_exceeded() -> int:
+                nonlocal remaining
+                remaining -= 1
+                return 1 if remaining < 0 else 0
+
+            conn.set_progress_handler(_budget_exceeded, _QUERY_PROGRESS_PERIOD)
+            try:
+                cur = conn.execute(sql)
+                rows = cur.fetchmany(200)  # cap at 200 rows
+                cols = [d[0] for d in cur.description] if cur.description else []
+            finally:
+                conn.set_progress_handler(None, 0)
         return {"columns": cols, "rows": _rows_to_dicts(rows), "row_count": len(rows)}
     except sqlite3.Error as exc:
         return {"error": f"SQL error: {exc}"}
@@ -220,7 +293,10 @@ def _tool_get_recent_headlines(limit: int = 5, min_significance: int = 3) -> dic
 
 
 def _tool_explain_current_view() -> dict[str, Any]:
-    """Read tab context from Streamlit session state. Empty dict if unavailable."""
+    """Read tab context — the API-set ContextVar first, then Streamlit session state."""
+    api_ctx = TAB_CONTEXT.get()
+    if api_ctx:
+        return api_ctx
     try:
         import streamlit as st
         ctx = st.session_state.get("current_tab_context")

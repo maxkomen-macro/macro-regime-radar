@@ -158,6 +158,79 @@ button {
   border-left-color: var(--accent);
 }
 
+/* ── AI analyst — floating launcher + terminal panel ────────────────────
+   Non-modal on purpose: no scrim, and both sit under the drawer/palette
+   z-index (60) so a modal overlay still covers them. `--shadow-float` is the
+   system's one drop shadow and DESIGN.md reserves it for exactly this. */
+.assistant-launcher {
+  position: fixed;
+  right: 28px; /* page gutter */
+  bottom: 20px;
+  z-index: 45;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-float);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.assistant-launcher:hover {
+  /* Border/text only — hover fills are a table affordance in this system. */
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.assistant-panel {
+  position: fixed;
+  right: 28px;
+  bottom: 62px; /* clears the launcher */
+  width: 380px;
+  /* 92vw is the house overlay clamp; the calc keeps the 28px gutter honest on
+     phone widths, where 92vw + 28px would run off the screen. */
+  max-width: min(92vw, calc(100vw - 44px));
+  max-height: 70vh;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+.assistant-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--void);
+  border: 0.5px solid var(--line-hair);
+  border-radius: var(--r-xs);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body-s);
+  padding: 7px 9px;
+}
+.assistant-input::placeholder {
+  color: var(--text-muted);
+}
+.assistant-input:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+/* Focus ring stays (never removed); inset so it hugs the field inside the frame. */
+.assistant-input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
+
 /* ── House slider (Recession sensitivity, LBO, scenario builder) ────────
    Native range input on the 4px gauge-track idiom: raised track, accent
    fill painted via inline gradient, 12px square-ish thumb. */
@@ -205,6 +278,18 @@ button {
   }
   [style*="transition: transform"],
   [style*="transition:transform"] {
+    transition: none !important;
+  }
+  /* Colour/background eases are motion too — small, but they're the last
+     animated things left. `a` covers base.css's global link colour ease; the
+     attribute matches cover the two inline ones (LandingPage's CTA background,
+     TabBar's tab colour), same idiom as the transform match above. Hover still
+     changes state — instantly. */
+  a,
+  [style*="transition: background"],
+  [style*="transition:background"],
+  [style*="transition: color"],
+  [style*="transition:color"] {
     transition: none !important;
   }
 }

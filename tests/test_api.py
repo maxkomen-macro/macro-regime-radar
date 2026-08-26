@@ -585,6 +585,13 @@ def test_api_calendar_recent_past_only():
 
 def test_api_allocation_smoke():
     """Cold call reaches the data vendor (~30–60 s) then caches for an hour.
+
+    Two legitimate 200 outcomes:
+    - populated ``optimizations`` (with ``optimizations_skipped: null``), or
+    - ``optimizations: null`` plus an ``optimizations_skipped`` reason dict when
+      the current regime's cohort lacks the required history (honest degrade;
+      the client renders an empty-state card for it).
+
     Offline runs get a 502/503 — skip rather than fail (the endpoint's own
     honest degraded mode)."""
     r = client.get("/api/allocation")
@@ -595,11 +602,93 @@ def test_api_allocation_smoke():
     assert body["current_regime"] in {"Goldilocks", "Overheating", "Stagflation", "Recession Risk"}
     assert body["n_months"] > 100
     opts = body["optimizations"]
-    assert {"mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"} <= set(opts)
-    names = opts["asset_names"]
-    for key in ("mvo", "min_var", "risk_parity"):
-        w = opts[key]["weights"]
-        assert len(w) == len(names)
-        assert abs(sum(w) - 1.0) < 0.02
-    # riskfolio is not installed in the API env — CVaR/HERC must say so.
-    assert isinstance(opts["cvar"]["converged"], bool)
+    if opts is None:
+        # Honest degrade: the reason dict must exist and actually explain the skip.
+        skipped = body["optimizations_skipped"]
+        assert isinstance(skipped, dict)
+        assert skipped["regime"] == body["current_regime"]
+        assert skipped["required_stats_months"] == 12
+        assert skipped["required_cov_months"] == 24
+        assert (skipped["stats_months"] < 12) or (skipped["cov_months"] < 24)
+        assert isinstance(skipped["window"], str) and skipped["window"]
+    else:
+        assert body["optimizations_skipped"] is None
+        assert {"mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"} <= set(opts)
+        names = opts["asset_names"]
+        for key in ("mvo", "min_var", "risk_parity"):
+            w = opts[key]["weights"]
+            assert len(w) == len(names)
+            assert abs(sum(w) - 1.0) < 0.02
+        # riskfolio-lib 7.3.0 is installed — CVaR/HERC compute for real
+        # (equal-weight fallback only if the import fails).
+        assert isinstance(opts["cvar"]["converged"], bool)
+
+
+# ── Assistant endpoint (Phase-12 port) ───────────────────────────────────────
+
+def test_assistant_guard_identity_no_local_copy():
+    """The API dispatch path must use src.analytics.chat's guard — never a copy
+    (Aug-17 audit Finding 9). api/chat.py holds no guard symbols of its own, and
+    the tool table the agent dispatches through IS the guarded implementation."""
+    import api.chat as api_chat
+    import src.analytics.chat as chat
+
+    for symbol in ("_FORBIDDEN_KEYWORDS", "is_safe_select", "_tool_query_database"):
+        assert not hasattr(api_chat, symbol), f"api.chat must not carry {symbol}"
+    assert chat._TOOL_IMPLS["query_database"] is chat._tool_query_database
+    assert chat._tool_query_database.__module__ == "src.analytics.chat"
+
+
+def test_assistant_tool_layer_rejects_hostile_sql():
+    """Hostile SQL through the same tool table the endpoint's agent dispatches
+    with must come back as a guard error dict — rejected before any DB touch
+    (the error string is the guard's, not a sqlite one)."""
+    import src.analytics.chat as chat
+
+    query_tool = chat._TOOL_IMPLS["query_database"]
+    for sql in (
+        "SELECT 1; DROP TABLE regimes",
+        "PRAGMA table_info(regimes)",
+        "SELECT load_extension('x')",
+        "SELECT randomblob(999999999)",
+        "INSERT INTO regimes VALUES(1)",
+    ):
+        result = query_tool(sql)
+        assert isinstance(result, dict) and "error" in result, sql
+        assert result["error"].startswith("SQL guard:"), sql
+
+
+def test_assistant_ask_invalid_body_422():
+    r = client.post("/api/assistant/ask", json={"history": []})  # no message
+    assert r.status_code == 422
+    r = client.post("/api/assistant/ask", json={"message": "", "history": []})
+    assert r.status_code == 422  # empty message would be a token spend for nothing
+    r = client.post(
+        "/api/assistant/ask",
+        json={"message": "hi", "history": [{"role": "tool", "content": "x"}]},
+    )
+    assert r.status_code == 422  # role must be user|assistant
+
+
+def test_assistant_ask_sse_frame_contract(monkeypatch):
+    """Pin the SSE frame contract without spending tokens: a stub agent yields
+    two chunks; the response must carry both delta frames then the done frame."""
+    import api.chat as api_chat
+
+    class _StubAgent:
+        def ask_streaming(self, user_msg, history=None):
+            yield "Hello "
+            yield "world."
+
+    monkeypatch.setattr(api_chat, "_agent", _StubAgent())
+    r = client.post(
+        "/api/assistant/ask",
+        json={"message": "hi", "history": [], "tab_context": {"tab": "Dashboard"}},
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    body = r.text
+    assert 'data: {"delta": "Hello "}' in body
+    assert 'data: {"delta": "world."}' in body
+    assert body.rstrip().endswith("event: done\ndata: {}")
+    assert "event: error" not in body
