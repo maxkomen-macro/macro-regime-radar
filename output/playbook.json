@@ -1,15 +1,14 @@
 {
-  "generated_at": "2026-09-04T03:54:41.311893",
+  "generated_at": "2026-09-04T14:38:42.573598",
   "as_of": "2026-07-01",
   "regime": "Goldilocks",
   "confidence": 0.4952,
   "baseline": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
   "because_today": [
-    "Because today unemployment labor conditions is below trend (z=-2.01).",
     "Because today 10Y real yield is positive at 2.45%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.63%."
   ],
-  "summary": "Regime: Goldilocks (confidence 50%). Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable. Because today unemployment labor conditions is below trend (z=-2.01). Because today 10Y real yield is positive at 2.45%, real rates are restrictive — a headwind for equities and gold. Policy rate (FEDFUNDS) is at 3.63%.",
+  "summary": "Regime: Goldilocks (confidence 50%). Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable. Because today 10Y real yield is positive at 2.45%, real rates are restrictive — a headwind for equities and gold. Policy rate (FEDFUNDS) is at 3.63%.",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
