@@ -12,13 +12,22 @@ const ORDER = [
  * the shape of `regimes.prob_*` in the database.
  */
 export function ProbabilityBar({ probs = {}, showLegend = true, height = 8, style, ...rest }) {
-  const rows = ORDER.map(([k, name, abbr, color]) => ({
-    key: k,
-    name,
-    abbr,
-    color,
-    pct: Math.max(0, Math.round((probs[k] ?? 0) * 100)),
-  }));
+  // A regime at 0.4% must not print "0%": rounding to zero would assert a
+  // certainty the model does not hold, so sub-1% shares read "<1%" and only
+  // an exact zero prints 0% (executive pass, 2026-09-05).
+  const rows = ORDER.map(([k, name, abbr, color]) => {
+    const raw = probs[k] ?? 0;
+    const pct = Math.max(0, Math.round(raw * 100));
+    return {
+      key: k,
+      name,
+      abbr,
+      color,
+      pct,
+      text: raw > 0 && pct === 0 ? "<1%" : `${pct}%`,
+      zero: raw <= 0,
+    };
+  });
   // Segments animate via transform, not width (owner ruling 2026-08-06). A
   // flex row can't scaleX per segment (transforms don't reflow neighbours), so
   // each regime paints as a full-width layer scaled to its CUMULATIVE share,
@@ -45,7 +54,7 @@ export function ProbabilityBar({ probs = {}, showLegend = true, height = 8, styl
         {layers.map((r, i) => (
           <div
             key={r.key}
-            title={`${r.name} ${r.pct}%`}
+            title={`${r.name} ${r.text}`}
             style={{
               position: "absolute",
               inset: 0,
@@ -72,8 +81,8 @@ export function ProbabilityBar({ probs = {}, showLegend = true, height = 8, styl
           }}
         >
           {rows.map((r) => (
-            <span key={r.key} style={{ color: r.pct === 0 ? "var(--text-faint)" : r.color }}>
-              {r.abbr} {r.pct}%
+            <span key={r.key} style={{ color: r.zero ? "var(--text-faint)" : r.pct === 0 ? "var(--text-muted)" : r.color }}>
+              {r.abbr} {r.text}
             </span>
           ))}
         </div>

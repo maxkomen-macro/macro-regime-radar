@@ -9,13 +9,14 @@
  */
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { getJson, postJson } from "./client";
+import { ApiError, getJson, postJson } from "./client";
 import type {
   Alert,
   AllocationData,
   Analogue,
   BacktestRow,
   CalendarEvent,
+  CandleRange,
   CreditMetrics,
   CreditOAS,
   DailyBar,
@@ -28,6 +29,14 @@ import type {
   PricedMetric,
   Regime,
   RegimeDuration,
+  SearchResponse,
+  SymbolProfile,
+  CandleSeries,
+  CorporateActions,
+  OptionsChain,
+  OptionsExpirations,
+  ProvidersStatus,
+  StreamDebug,
   RegimePlaybook,
   RecessionMetrics,
   RecessionScenarioRequest,
@@ -75,7 +84,19 @@ export function useAlerts(limit = 200) {
   });
 }
 
-export function useNews(hours = 168, minSignificance?: number, limit = 150, category?: string) {
+/**
+ * `refetchMs` opts one caller into polling (the News feed re-reads the store
+ * every 60s). Omit it and the hook behaves exactly as before: fetch on load,
+ * 5-minute stale time, no timer. Polling only re-reads what the hourly news
+ * pipeline has already scored and stored; it does not fetch wires.
+ */
+export function useNews(
+  hours = 168,
+  minSignificance?: number,
+  limit = 150,
+  category?: string,
+  refetchMs?: number,
+) {
   return useQuery({
     queryKey: ["news", hours, minSignificance ?? "any", limit, category ?? "all"],
     queryFn: () =>
@@ -85,7 +106,9 @@ export function useNews(hours = 168, minSignificance?: number, limit = 150, cate
         limit,
         category,
       }),
-    staleTime: 5 * MINUTE,
+    // undefined = no poll, the same idiom useSymbolCandles uses.
+    refetchInterval: refetchMs,
+    staleTime: refetchMs ? 30_000 : 5 * MINUTE,
   });
 }
 
@@ -354,5 +377,134 @@ export function useCalendarRecent(limit = 10, enabled = true) {
     queryFn: () => getJson<CalendarEvent[]>("/api/calendar/recent", { limit }),
     staleTime: 30 * MINUTE,
     enabled,
+  });
+}
+
+/* ── On-demand symbol layer (EODHD first, yfinance fallback; 2026-09-06) ── */
+
+/** Provider errors are typed: a 404 (unknown symbol / empty range), a 422
+ * (unsupported instrument) and a 403 (not in the plan) are final; everything
+ * else gets one more try. */
+export function providerRetry(failureCount: number, error: unknown): boolean {
+  if (error instanceof ApiError && [403, 404, 422].includes(error.status)) return false;
+  return failureCount < 2;
+}
+
+export function useSymbolSearch(q: string, limit = 10) {
+  const query = q.trim();
+  return useQuery({
+    queryKey: ["symbol", "search", query.toLowerCase(), limit],
+    queryFn: () => getJson<SearchResponse>("/api/market/search", { q: query, limit }),
+    enabled: query.length >= 1,
+    staleTime: 60 * MINUTE,
+    // No placeholder from the previous query: a list of hits must belong to
+    // the text in the box, or Enter picks a symbol the reader never typed
+    // (rapid-switching regression, 2026-09-06).
+  });
+}
+
+/** Delayed quote (EODHD, yfinance fallback) + fundamentals; refetched so the
+ * delayed read stays as current as the source allows. */
+export function useSymbolProfile(symbol: string | null) {
+  return useQuery({
+    queryKey: ["symbol", "profile", symbol],
+    queryFn: () => getJson<SymbolProfile>(`/api/market/profile/${symbol}`),
+    enabled: symbol != null,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: providerRetry,
+  });
+}
+
+/** Candle envelope for any listed symbol. Previous data is kept only across
+ * a RANGE change of the same symbol — a new symbol must never paint the old
+ * symbol's history while its own request is in flight. */
+export function useSymbolCandles(symbol: string | null, range: CandleRange) {
+  return useQuery({
+    queryKey: ["symbol", "candles", symbol, range],
+    queryFn: () => getJson<CandleSeries>(`/api/market/candles/${symbol}`, { range }),
+    enabled: symbol != null,
+    refetchInterval: range === "1D" ? 60_000 : undefined,
+    staleTime: range === "1D" ? 30_000 : 15 * MINUTE,
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[2] === symbol ? prev : undefined),
+    retry: providerRetry,
+  });
+}
+
+export function useCorporateActions(symbol: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ["symbol", "actions", symbol],
+    queryFn: () => getJson<CorporateActions>(`/api/market/actions/${symbol}`),
+    enabled: symbol != null && enabled,
+    staleTime: 6 * 60 * MINUTE,
+    retry: providerRetry,
+  });
+}
+
+/** End-of-day listed expirations (EODHD marketplace). Only fetched once the
+ * Options lens is opened; a 403 means the plan lacks the family. */
+export function useOptionsExpirations(symbol: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["symbol", "options", "expirations", symbol],
+    queryFn: () => getJson<OptionsExpirations>(`/api/market/options/${symbol}/expirations`),
+    enabled: symbol != null && enabled,
+    staleTime: 60 * MINUTE,
+    retry: providerRetry,
+  });
+}
+
+export interface OptionsChainParams {
+  expiration: string | null;
+  type: "call" | "put" | null;
+  page: number;
+  limit: number;
+}
+
+export function useOptionsChain(symbol: string | null, params: OptionsChainParams, enabled: boolean) {
+  const { expiration, type, page, limit } = params;
+  return useQuery({
+    queryKey: ["symbol", "options", "chain", symbol, expiration, type, page, limit],
+    queryFn: () =>
+      getJson<OptionsChain>(`/api/market/options/${symbol}`, {
+        expiration: expiration ?? undefined,
+        type: type ?? undefined,
+        page,
+        limit,
+      }),
+    enabled: symbol != null && expiration != null && enabled,
+    staleTime: 15 * MINUTE,
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[3] === symbol && prevQuery?.queryKey[4] === expiration ? prev : undefined),
+    retry: providerRetry,
+  });
+}
+
+/** Provider matrix + entitlement probe + relay health (diagnostics). */
+export function useProvidersStatus(enabled = true) {
+  return useQuery({
+    queryKey: ["providers", "status"],
+    queryFn: () => getJson<ProvidersStatus>("/api/providers/status"),
+    enabled,
+    staleTime: 5 * MINUTE,
+    refetchInterval: enabled ? 5 * MINUTE : undefined,
+  });
+}
+
+export function useStreamDebug(enabled = true) {
+  return useQuery({
+    queryKey: ["stream", "debug"],
+    queryFn: () => getJson<StreamDebug>("/api/stream/debug"),
+    enabled,
+    staleTime: 20_000,
+    refetchInterval: enabled ? 30_000 : undefined,
+  });
+}
+
+/** Stored headlines tagged to one ticker (7-day retention window). */
+export function useTickerNews(ticker: string | null, hours = 168, limit = 12) {
+  return useQuery({
+    queryKey: ["news", "ticker", ticker, hours, limit],
+    queryFn: () => getJson<NewsItem[]>("/api/news", { hours, limit, ticker: ticker ?? undefined }),
+    enabled: ticker != null,
+    staleTime: 5 * MINUTE,
   });
 }

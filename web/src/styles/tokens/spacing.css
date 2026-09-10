@@ -27,4 +27,5 @@
 
 --maxw-memo:600px; /* @kind other */
 --maxw-prose:74ch; /* @kind other */
+--maxw-frame:1520px; /* @kind other */ /* centered desk frame; charts/tables may fill it, prose stays ≤74ch (2026-09-05) */
 }

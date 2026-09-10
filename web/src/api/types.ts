@@ -195,6 +195,15 @@ export interface Freshness {
   market_intraday_ts: string | null;
   news_published_at: string | null;
   raw_series_date: string | null;
+  /** Source-aware report (api/freshness.py, 2026-09-06); optional so the six
+   * stored maxima stay a stable contract. */
+  generated_at?: string | null;
+  overall?: "current" | "delayed" | "stale" | "unavailable" | null;
+  session?: SessionState | null;
+  sla?: SlaRow[] | null;
+  regime?: RegimeFreshness | null;
+  bootstrap?: BootstrapStatus | null;
+  relay?: { feeds: Record<string, string>; feed_stale: Record<string, boolean>; degraded: boolean; degraded_reasons: string[]; token_configured: boolean } | null;
 }
 
 /* ── Regime Lab (night-2 endpoints) ────────────────────────────────────── */
@@ -474,6 +483,27 @@ export interface CvarEntry {
   n_periods: number;
 }
 
+/** Exact optimizer sample accounting (2026-09-06): the numbers the
+ * covariance gate actually saw for the current regime. */
+export interface OptimizationSample {
+  regime: string;
+  total_regime_months: number;
+  stats_months: number;
+  complete_months: number;
+  cov_months: number;
+  excluded_months: number;
+  excluded_range: string | null;
+  complete_range: string | null;
+  assets_total: number;
+  assets_responsible: { asset: string; missing_months: number }[];
+  required_stats_months: number;
+  required_cov_months: number;
+  stats_ok: boolean;
+  cov_ok: boolean;
+  sentence: string;
+  window?: string;
+}
+
 export interface AllocationData {
   current_regime: RegimeLabel;
   confidence: number;
@@ -481,10 +511,12 @@ export interface AllocationData {
   rf_rate: number;
   regime_stats: Record<string, RegimeStats>;
   regime_correlations: Record<string, FrameData>;
-  optimizations: Record<string, OptimizationResult> & {
+  optimizations: (Record<string, OptimizationResult> & {
     frontier: FrameData;
     asset_names: string[];
-  };
+  }) | null;
+  optimizations_skipped?: (OptimizationSample & { window: string }) | null;
+  optimization_sample?: OptimizationSample | null;
   drawdowns: { by_regime: FrameData; overall: Record<string, number> };
   data_start: string;
   data_end: string;
@@ -497,6 +529,7 @@ export interface AllocationData {
     string,
     { count: number; avg_return: Record<string, number>; total_return?: Record<string, number> }
   >;
+  /** Null whenever the source has no CPI series or the deflation step raised. */
   real_nominal: Record<
     string,
     {
@@ -505,15 +538,288 @@ export interface AllocationData {
       inflation_drag: Record<string, number>;
       n_months: number;
     }
-  >;
+  > | null;
   regime_factors: Record<string, Record<string, number>>;
   portfolio_factors: Record<
     string,
     { exposures: Record<string, number>; r_squared: number; alpha: number } | null
   >;
+  /** The long-short spread rows ("Growth-Value Spread", "Small-Large Spread")
+   * carry a return and nothing else, so the other three are optional. */
   style_performance: Record<
     string,
-    Record<string, { return: number; volatility: number; sharpe: number; hit_rate: number }>
+    Record<
+      string,
+      { return: number; volatility?: number; sharpe?: number; hit_rate?: number }
+    >
   > | null;
   currency_impact: Record<string, Record<string, { return: number; volatility: number }>> | null;
 }
+
+/* ── On-demand symbol layer (Phase-2 Markets expansion) ─────────────────── */
+
+export interface SearchHit {
+  symbol: string;
+  name: string;
+  exchange: string | null;
+  type: string | null;
+  sector: string | null;
+  country?: string | null;
+  currency?: string | null;
+  primary?: boolean;
+}
+
+/** Search envelope (2026-09-06): the provider that answered is part of the
+ * result, so the list can say when yfinance stood in for EODHD. */
+export interface SearchResponse {
+  provider: Provider;
+  fallback_used: boolean;
+  fallback_reason: string | null;
+  fetched_at: string;
+  hits: SearchHit[];
+}
+
+export type Provider = "eodhd" | "yfinance" | "api" | string;
+
+export interface SymbolProfile {
+  symbol: string;
+  name: string;
+  exchange: string | null;
+  currency: string | null;
+  quote_type: string | null;
+  sector: string | null;
+  industry: string | null;
+  last: number;
+  prev_close: number | null;
+  day_change_pct: number | null;
+  day_low: number | null;
+  day_high: number | null;
+  year_low: number | null;
+  year_high: number | null;
+  market_cap: number | null;
+  last_volume: number | null;
+  avg_volume_3m: number | null;
+  trailing_pe: number | null;
+  forward_pe: number | null;
+  eps_ttm: number | null;
+  beta: number | null;
+  dividend_yield: number | null;
+  price_to_book: number | null;
+  profit_margin: number | null;
+  revenue_growth: number | null;
+  fifty_two_wk_change: number | null;
+  fetched_at: string;
+  /** Provenance (2026-09-06). */
+  market_ts: string | null;
+  quote_provider: Provider | null;
+  fundamentals_provider: Provider | null;
+  delayed: boolean;
+  delay_note: string | null;
+  fallback_used: boolean;
+  fallback_reason: string | null;
+}
+
+export interface CandleBar {
+  ts: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number;
+  volume: number | null;
+}
+
+/** One provider per series, always disclosed; never a bare bar list. */
+export interface CandleSeries {
+  symbol: string;
+  provider: Provider;
+  fallback_used: boolean;
+  fallback_reason: string | null;
+  fetched_at: string;
+  market_ts: string | null;
+  delayed: boolean;
+  interval: string;
+  range: CandleRange;
+  exchange: string | null;
+  timezone: string | null;
+  adjustment: string;
+  count: number;
+  bars: CandleBar[];
+}
+
+export interface OptionsExpirations {
+  symbol: string;
+  underlying: string;
+  provider: Provider;
+  as_of: string | null;
+  cadence: "end_of_day";
+  fetched_at: string;
+  expirations: string[];
+  truncated: boolean;
+}
+
+export interface OptionContract {
+  contract: string | null;
+  type: "call" | "put" | string | null;
+  strike: number | null;
+  exp_date: string | null;
+  expiration_type: string | null;
+  dte: number | null;
+  bid: number | null;
+  ask: number | null;
+  last: number | null;
+  midpoint: number | null;
+  volume: number | null;
+  open_interest: number | null;
+  implied_vol: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  rho: number | null;
+  moneyness: number | null;
+  tradetime: string | null;
+  last_quote: string | null;
+}
+
+export interface OptionsChain {
+  symbol: string;
+  underlying: string;
+  provider: Provider;
+  cadence: "end_of_day";
+  as_of: string | null;
+  fetched_at: string;
+  expiration: string;
+  type: string | null;
+  strike_from: number | null;
+  strike_to: number | null;
+  page: number;
+  limit: number;
+  count: number;
+  total: number | null;
+  has_more: boolean;
+  contracts: OptionContract[];
+}
+
+export interface CorporateActions {
+  symbol: string;
+  provider: Provider;
+  fallback_used: boolean;
+  fallback_reason: string | null;
+  fetched_at: string;
+  from: string;
+  splits: { date: string | null; ratio: number | null; text: string | null }[];
+  dividends: {
+    date: string | null;
+    value: number | null;
+    unadjusted_value: number | null;
+    currency: string | null;
+    period: string | null;
+    declaration_date: string | null;
+    record_date: string | null;
+    payment_date: string | null;
+  }[];
+}
+
+/** Typed provider failure body (api/main.py ProviderError handler). */
+export interface ProviderErrorBody {
+  detail: string;
+  kind:
+    | "missing_token"
+    | "unauthorized"
+    | "unknown_symbol"
+    | "unsupported"
+    | "rate_limited"
+    | "timeout"
+    | "unavailable"
+    | "malformed"
+    | "empty"
+    | string;
+  provider: Provider;
+  retryable: boolean;
+}
+
+export interface Entitlement {
+  family: string;
+  available: boolean | null;
+  status: number | null;
+  reason: string;
+  coverage: Record<string, unknown>;
+  checked_at: string | null;
+  source: "probe" | "live";
+}
+
+export interface StreamDebug {
+  generated_at: string;
+  token_configured: boolean;
+  feeds: Record<string, string>;
+  feed_stale: Record<string, boolean>;
+  degraded: boolean;
+  degraded_reasons: string[];
+  clients: number;
+  symbols_stored: number;
+  reconnect_backoff_s: Record<string, number>;
+  subscriptions: { fixed: Record<string, number>; dynamic: number; dynamic_max: number; dynamic_symbols: string[]; active_total: number };
+  session: SessionState;
+  feed_frames: Record<string, number>;
+  feed_connects: Record<string, number>;
+  feed_last_error: Record<string, string | null>;
+  feed_last_frame_at: Record<string, string | null>;
+  feed_last_change_at: Record<string, string | null>;
+  ticks_stored: number;
+  flushes_sent: number;
+}
+
+export interface ProvidersStatus {
+  generated_at: string;
+  eodhd_configured: boolean;
+  primary: Record<string, { primary: string; fallback: string }>;
+  entitlements: Record<string, Entitlement>;
+  cache: Record<string, number>;
+  relay: StreamDebug;
+  security: { assistant_mode: "open" | "key" | "off"; counters: Record<string, number> };
+}
+
+export interface SessionState {
+  exchange: string;
+  timezone: string;
+  phase: "pre" | "open" | "post" | "weekend" | "holiday";
+  is_open: boolean;
+  today_is_trading_day: boolean;
+  early_close: boolean;
+  last_completed_session: string;
+  next_open_utc: string | null;
+  calendar_known: boolean;
+  local_time: string;
+}
+
+export interface SlaRow {
+  feed: string;
+  latest: string | null;
+  expected: string | null;
+  verdict: "current" | "delayed" | "stale" | "unavailable";
+  reason: string;
+}
+
+export interface RegimeFreshness {
+  latest_month: string | null;
+  expected_month: string;
+  common_feature_month: string | null;
+  inputs: { series: string; label: string; latest_month: string | null; expected_month: string; verdict: string }[];
+  blockers: { series: string; label: string; latest_month: string | null; expected_month: string; cause: string }[];
+}
+
+export interface BootstrapStatus {
+  token_configured: boolean;
+  last_attempt_at: string | null;
+  last_result: string | null;
+  last_error: string | null;
+  last_downloaded_at: string | null;
+  asset_updated_at: string | null;
+  asset_size: number | null;
+  refresh_interval_min: number;
+  max_age_min: number | null;
+  db_mtime: string | null;
+  db_size: number | null;
+}
+
+export type CandleRange = "1D" | "5D" | "1M" | "6M" | "1Y" | "5Y" | "MAX";

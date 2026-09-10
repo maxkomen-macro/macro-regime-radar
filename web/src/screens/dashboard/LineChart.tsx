@@ -10,6 +10,7 @@
 import { useId } from "react";
 
 import { useBreakpoint } from "../../lib/useBreakpoint";
+import { fmtDate, fmtMonYr } from "../../lib/format";
 
 export interface ChartSeries {
   label: string;
@@ -54,7 +55,7 @@ export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixe
   const all = series.flatMap((s) => s.points.map((p) => p.y)).filter((y) => Number.isFinite(y));
   if (!all.length) {
     return (
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)" }}>
+      <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
         No datapoints in the window.
       </div>
     );
@@ -87,7 +88,7 @@ export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixe
           gap: 14,
           flexWrap: "wrap",
           fontFamily: "var(--font-mono)",
-          fontSize: 10,
+          fontSize: "var(--fs-micro)",
           letterSpacing: "var(--ls-micro)",
           marginBottom: 6,
           fontVariantNumeric: "tabular-nums",
@@ -103,10 +104,40 @@ export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixe
           );
         })}
         <span style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
-          {first.slice(0, 10)} → {last.slice(0, 10)}
+          {first ? fmtDate(first) : "—"} → {last ? fmtDate(last) : "—"}
         </span>
       </div>
 
+      <div style={{ position: "relative" }}>
+      {/* Reference-line labels are HTML, positioned by the line's share of
+          the plot height, so they render at 11px at every card width instead
+          of scaling with the viewBox; anchored left, clear of the line's tail. */}
+      {hlines?.map((h) => {
+        if (h.y < yMin || h.y > yMax || !h.label) return null;
+        const hy = PAD_Y + (1 - (h.y - yMin) / span) * innerH;
+        return (
+          <span
+            key={`${uid}-hl-${h.y}`}
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              left: 8,
+              top: `${(hy / height) * 100}%`,
+              transform: "translateY(-100%)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-micro)",
+              letterSpacing: "var(--ls-micro)",
+              color: "var(--text-muted)",
+              background: "var(--surface)",
+              padding: "0 3px",
+              lineHeight: 1.3,
+              pointerEvents: "none",
+            }}
+          >
+            {h.label}
+          </span>
+        );
+      })}
       <svg
         viewBox={`0 0 ${W} ${height}`}
         style={{ display: "block", width: "100%", height: "auto" }}
@@ -174,14 +205,6 @@ export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixe
                 strokeDasharray="2 5"
                 vectorEffect="non-scaling-stroke"
               />
-              {/* The one label authored INSIDE the svg, so it is the one that
-                  shrinks with the viewBox: 8u in the 360 box still lands under
-                  8px on a phone. 10u there ≈ 8.3px rendered. */}
-              {h.label && (
-                <text x={W - PAD_X - 2} y={hy - 3} textAnchor="end" fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: isNarrow ? 10 : 8 }}>
-                  {h.label}
-                </text>
-              )}
             </g>
           );
         })}
@@ -206,6 +229,7 @@ export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixe
           );
         })}
       </svg>
+      </div>
 
       {/* x-axis dates (quarter marks) so crossover timing is readable */}
       <div
@@ -213,7 +237,7 @@ export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixe
           display: "flex",
           justifyContent: "space-between",
           fontFamily: "var(--font-mono)",
-          fontSize: 9,
+          fontSize: "var(--fs-micro)",
           letterSpacing: "var(--ls-micro)",
           color: "var(--text-muted)",
           marginTop: 4,
@@ -224,7 +248,7 @@ export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixe
           const pts = series[0]?.points ?? [];
           if (pts.length < 2) return null;
           const idx = [0, Math.round((pts.length - 1) / 3), Math.round(((pts.length - 1) * 2) / 3), pts.length - 1];
-          return [...new Set(idx)].map((i) => <span key={i}>{pts[i].x.slice(0, 7)}</span>);
+          return [...new Set(idx)].map((i) => <span key={i}>{fmtMonYr(pts[i].x)}</span>);
         })()}
       </div>
       {/* y-range in mono under the plot */}
@@ -233,7 +257,7 @@ export default function LineChart({ series, height = 170, yFmt = (v) => v.toFixe
           display: "flex",
           justifyContent: "space-between",
           fontFamily: "var(--font-mono)",
-          fontSize: 9,
+          fontSize: "var(--fs-micro)",
           letterSpacing: "var(--ls-micro)",
           color: "var(--text-muted)",
           marginTop: 2,

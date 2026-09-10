@@ -19,6 +19,10 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, eyebrowStyle, mono } from "../shared/screen-ui";
 import FrontierChart, { type FrontierMarker } from "./FrontierChart";
+import ScrollTable from "../shared/ScrollTable";
+import Disclosure from "../shared/Disclosure";
+import DeskRead, { type LedgerItem } from "../shared/DeskRead";
+import { assessFreshness } from "../shared/freshness";
 
 const REGIME_ORDER = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
 const REGIME_COLORS: Record<string, string> = {
@@ -48,7 +52,7 @@ const isFallback = (o: { converged?: boolean; method?: string } | undefined) =>
 
 const cellHead: React.CSSProperties = {
   ...mono,
-  fontSize: 9,
+  fontSize: "var(--fs-micro)",
   letterSpacing: "var(--ls-wide)",
   textTransform: "uppercase",
   color: "var(--text-muted)",
@@ -84,14 +88,14 @@ function corrBg(v: number | null): string {
 }
 
 const RISK_BLOCKS = [
-  { id: "factors", label: "Factors" },
-  { id: "style", label: "Style" },
-  { id: "tail", label: "Tail risk" },
-  { id: "transitions", label: "Transition P&L" },
-  { id: "currency", label: "Currency" },
-  { id: "real", label: "Real vs nominal" },
-  { id: "correlation", label: "Correlation" },
-  { id: "drawdowns", label: "Drawdowns" },
+  { id: "tail", label: "Tail risk", primary: true },
+  { id: "drawdowns", label: "Drawdowns", primary: true },
+  { id: "correlation", label: "Correlation", primary: true },
+  { id: "factors", label: "Factors", primary: true },
+  { id: "style", label: "Style", primary: false },
+  { id: "transitions", label: "Transition P&L", primary: false },
+  { id: "currency", label: "Currency", primary: false },
+  { id: "real", label: "Real vs nominal", primary: false },
 ] as const;
 
 function frameCell(f: FrameData, rowIdx: number, col: string): number | null {
@@ -100,11 +104,29 @@ function frameCell(f: FrameData, rowIdx: number, col: string): number | null {
   return f.data[rowIdx]?.[ci] ?? null;
 }
 
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+/** Small counts read as words in prose, matching the API's sentence (review P3-4). */
+function numberWord(n: number): string {
+  return NUMBER_WORDS[n] ?? String(n);
+}
+
+/** "2003-06 → 2006-09" → "Jun 2003 → Sep 2006". */
+function fmtMonthRange(range: string): string {
+  return range
+    .split("→")
+    .map((part) => {
+      const t = part.trim();
+      return /^\d{4}-\d{2}$/.test(t) ? fmtMonYr(`${t}-01`) : t;
+    })
+    .join(" → ");
+}
+
 export default function AllocationPanel() {
   const { isNarrow } = useBreakpoint();
   const q = useAllocation();
   const a = q.data;
-  const [riskBlock, setRiskBlock] = useState<(typeof RISK_BLOCKS)[number]["id"]>("factors");
+  const [riskBlock, setRiskBlock] = useState<(typeof RISK_BLOCKS)[number]["id"]>("tail");
+  const [moreLenses, setMoreLenses] = useState(false);
   const [corrRegime, setCorrRegime] = useState<string | null>(null);
   const [styleRegime, setStyleRegime] = useState<string | null>(null);
   const [transPair, setTransPair] = useState<string | null>(null);
@@ -119,7 +141,7 @@ export default function AllocationPanel() {
       <Card>
         <StateNote loading={q.isLoading} error={q.isError}>
           {q.isLoading
-            ? "Building ~24 years of monthly return history — a first load can take up to a minute."
+            ? "Building ~24 years of monthly return history; a first load can take up to a minute."
             : undefined}
         </StateNote>
         {q.isLoading && (
@@ -156,15 +178,70 @@ export default function AllocationPanel() {
   // "Rendered more hooks than during the previous render").
   const frontierMarkers: FrontierMarker[] = !opt
     ? []
-    : METHODS.filter((m) => opt[m.key] && !isFallback(opt[m.key])).map((m) => ({
+    : METHODS.filter(
+        (m) =>
+          opt[m.key] &&
+          !isFallback(opt[m.key]) &&
+          opt[m.key].volatility != null &&
+          opt[m.key].expected_return != null,
+      ).map((m) => ({
         label: m.label,
         vol: opt[m.key].volatility,
         ret: opt[m.key].expected_return,
         color: m.color,
       }));
 
+  /* ── desk read: what the regime matrix says for the current column ──── */
+  const curStats = a.regime_stats[curRegime];
+  const ranked = curStats
+    ? names
+        .map((n) => ({ n, m: curStats.mean?.[n] ?? null, sr: curStats.sharpe?.[n] ?? null }))
+        .filter((x): x is { n: string; m: number; sr: number | null } => x.m != null)
+        .sort((x, y) => y.m - x.m)
+    : [];
+  const best = ranked[0];
+  const worst = ranked[ranked.length - 1];
+  const sample = a.optimizations_skipped ?? a.optimization_sample ?? null;
+  const allocLedger: LedgerItem[] = [
+    { label: "Sample", value: `${curStats?.n_months ?? 0} ${curRegime} months · ${a.n_months} total since ${fmtMonYr(`${a.data_start}-01`)}` },
+    { label: "Risk-free", value: `${pct(a.rf_rate, 2)} Fed Funds` },
+    {
+      label: "Optimizer",
+      value: opt
+        ? "7 methods solved · long-only · 40% cap"
+        : sample?.sentence
+          ? `Unavailable: ${sample.sentence}`
+          : `Unavailable: needs 24 complete ${curRegime} months`,
+      tone: opt ? "var(--pos)" : "var(--warn-hot)",
+      prose: true,
+    },
+  ];
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      <DeskRead
+        eyebrow="Desk read · Asset allocation"
+        conclusion={
+          best && worst
+            ? `In ${curRegime} months since ${fmtMonYr(`${a.data_start}-01`)}, ${best.n} led at ${spct(best.m)} a year${
+                best.sr != null ? ` (Sharpe ${best.sr.toFixed(2)})` : ""
+              } and ${worst.n} lagged at ${spct(worst.m)}.`
+            : `Regime-conditional returns for ${names.length} asset classes since ${fmtMonYr(`${a.data_start}-01`)}.`
+        }
+        why={
+          curStats
+            ? `Read the ${curRegime} column first: it is the weather the classifier calls today at ${a.dominant_prob != null ? Math.round(a.dominant_prob * 100) : "—"}% odds. A positive return with a negative Sharpe means the asset did not cover cash plus its risk; ${curStats.n_months} months is ${
+                curStats.n_months < 36 ? "a thin sample, so treat the column as evidence, not law" : "a workable sample"
+              }.`
+            : undefined
+        }
+        ledger={allocLedger}
+        freshness={[
+          { noun: "Returns", info: assessFreshness(`${a.data_end}-01`, "monthly") },
+          { noun: "Regime labels", info: assessFreshness(null, "reference") },
+        ]}
+      />
+
       {/* ── Overview ──────────────────────────────────────────────────── */}
       <section id="allocation-overview">
         <SectionHeader
@@ -195,13 +272,13 @@ export default function AllocationPanel() {
               {a.dominant_prob != null ? `${Math.round(a.dominant_prob * 100)}% model odds` : ""}
               {" · "}
               <Jargon term="conviction">conviction</Jargon> {Math.round(a.confidence * 100)}% (a
-              separate heuristic, not odds) — read the current column first
+              separate heuristic, not odds); read the current column first
             </span>
           </div>
           {/* `display: contents` row wrappers give assistive tech the table
               structure the visual grid implies, without adding a box that
               would break the single-grid layout. */}
-          <div style={{ overflowX: "auto" }}>
+          <ScrollTable label="Regime-conditional performance">
             <div
               role="table"
               aria-label="Regime-conditional performance"
@@ -264,7 +341,7 @@ export default function AllocationPanel() {
                 ))}
               </div>
             </div>
-          </div>
+          </ScrollTable>
           <Caption>
             Annualized return and <Jargon term="Sharpe">Sharpe</Jargon> per regime since{" "}
             {fmtMonYr(`${a.data_start}-01`)}.{" "}
@@ -279,8 +356,8 @@ export default function AllocationPanel() {
                   if (m != null && sr != null && m > 0 && sr < 0) {
                     return (
                       <>
-                        A positive return with a negative Sharpe — {asset} prints {spct(m)} in{" "}
-                        {r} at SR {sr.toFixed(2)} — means the return does not cover cash plus
+                        A positive return with a negative Sharpe ({asset} prints {spct(m)} in{" "}
+                        {r} at SR {sr.toFixed(2)}) means the return does not cover cash plus
                         the risk taken.
                       </>
                     );
@@ -298,25 +375,56 @@ export default function AllocationPanel() {
       <section id="allocation-optimization">
         <SectionHeader
           title="Optimization"
-          right={opt ? "max 40% per asset · long-only" : "unavailable — regime history too short"}
+          right={opt ? "max 40% per asset · long-only" : "optional enhancement · unavailable this session"}
         />
         {!opt ? (
           /* Weights, the frontier and portfolio CVaR all read the same regime
              covariance block — when the source can't build it, none of the
-             three exist and the panel says so rather than half-drawing them. */
-          <Card>
-            <div style={{ ...eyebrowStyle, marginBottom: 6 }}>No optimizer output this session</div>
-            <StateNote>
-              Optimizers need 24 months of {curRegime} covariance history inside the{" "}
-              {fmtMonYr(`${a.data_start}-01`)} → {fmtMonYr(`${a.data_end}-01`)} return window — the
-              store doesn&apos;t have them yet. Regime-conditional statistics above, and the risk
-              lenses below, still stand.
-            </StateNote>
-            <Caption>
-              Weights by method, the efficient frontier, and portfolio-level CVaR all wait on that
-              same block; the per-asset tail numbers under Risk analysis never depended on it.
-            </Caption>
-          </Card>
+             three exist. The regime matrix above is the primary output; the
+             optimizer is an enhancement that states its exact requirement and
+             stays collapsed (executive pass, 2026-09-05). */
+          <Disclosure
+            title="Optimizer status: no output this session"
+            right={
+              sample
+                ? `${sample.complete_months} of ${sample.total_regime_months} ${curRegime} months complete · ${sample.required_cov_months} required`
+                : `needs 24 complete ${curRegime} months · ${a.regime_stats[curRegime]?.n_months ?? 0} on file, fewer than 24 complete`
+            }
+          >
+            <Card>
+              <p className="mrr-prose" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", lineHeight: 1.6, color: "var(--text-2)", margin: 0 }}>
+                The seven optimizers (Mean-Variance, Min Variance, Risk Parity, Black-Litterman, HRP, Min CVaR, HERC)
+                build a covariance matrix from the current regime&apos;s months inside the{" "}
+                {fmtMonYr(`${a.data_start}-01`)} → {fmtMonYr(`${a.data_end}-01`)} return window and need{" "}
+                {sample?.required_cov_months ?? 24} {curRegime} months in which all {numberWord(sample?.assets_total ?? names.length)}{" "}
+                asset classes have a return (a complete row).{" "}
+                {sample ? (
+                  <>
+                    {sample.sentence} {sample.excluded_months} month{sample.excluded_months === 1 ? " is" : "s are"} excluded
+                    {sample.excluded_range ? ` (${fmtMonthRange(sample.excluded_range)})` : ""}
+                    {sample.assets_responsible.length
+                      ? ` because ${sample.assets_responsible
+                          .map((r) => `${r.asset} has no return in ${r.missing_months} of them`)
+                          .join(", ")}`
+                      : ""}
+                    ; the complete rows run {sample.complete_range ? fmtMonthRange(sample.complete_range) : "—"}.
+                  </>
+                ) : (
+                  <>
+                    The store holds {a.regime_stats[curRegime]?.n_months ?? 0} {curRegime} months, but fewer than 24 of them
+                    are complete across every asset.
+                  </>
+                )}{" "}
+                So no weights, no efficient frontier and no portfolio-level CVaR are produced this session. They return
+                automatically once enough complete {curRegime} months accumulate or the regime changes to one with a long
+                enough history.
+              </p>
+              <Caption>
+                The regime-conditional matrix above and the per-asset risk lenses below never depended on the
+                optimizer and stand as stored empirical analysis.
+              </Caption>
+            </Card>
+          </Disclosure>
         ) : (
           <>
             {/* The 4-up desk grid becomes a fill-what-fits grid under 768 —
@@ -343,17 +451,19 @@ export default function AllocationPanel() {
                       </Tag>
                     </div>
                     <div style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, marginTop: 6 }}>
-                      {spct(o.expected_return)}
+                      {o.expected_return != null ? spct(o.expected_return) : "—"}
                     </div>
                     <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: 2 }}>
                       {/* Fallback paths report sharpe_ratio=0.0 unconditionally —
                           printing it beside +10.5%/8.7% vol is an arithmetic lie
-                          (critique P0). */}
-                      vol {pct(o.volatility)} · SR {isFallback(o) ? "—" : o.sharpe_ratio.toFixed(2)}
+                          (critique P0). A method that ships without the number
+                          at all reads the house dash, same as the style box. */}
+                      vol {o.volatility != null ? pct(o.volatility) : "—"} · SR{" "}
+                      {isFallback(o) || o.sharpe_ratio == null ? "—" : o.sharpe_ratio.toFixed(2)}
                     </div>
                     {isFallback(o) && (
                       <div style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", marginTop: 2 }}>
-                        equal weight — Sharpe not computed
+                        equal weight · Sharpe not computed
                       </div>
                     )}
                   </Card>
@@ -372,7 +482,7 @@ export default function AllocationPanel() {
               </Card>
             </div>
             <Caption>
-              Seven ways to slice the same {names.length} assets — different questions, not
+              Seven ways to slice the same {names.length} assets: different questions, not
               better/worse answers. Min CVaR and HERC are unavailable this session; both show equal
               weight, tagged fallback.
             </Caption>
@@ -398,12 +508,12 @@ export default function AllocationPanel() {
               </Card>
               <Card>
                 <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Weights by method · %</div>
-                <div style={{ overflowX: "auto" }}>
+                <ScrollTable label="Weights by method">
                   <div role="table" aria-label="Weights by method" style={{ display: "grid", gridTemplateColumns: `130px repeat(${METHODS.length}, 1fr)`, gap: "1px 4px", minWidth: 480 }}>
                     <div role="row" style={{ display: "contents" }}>
                       <span role="columnheader" />
                       {METHODS.map((m) => (
-                        <span role="columnheader" key={m.key} style={{ ...cellHead, padding: "2px 4px", fontSize: 8 }}>
+                        <span role="columnheader" key={m.key} style={{ ...cellHead, padding: "2px 4px" }}>
                           {m.key === "black_litterman" ? "B-L" : m.label}
                         </span>
                       ))}
@@ -424,7 +534,7 @@ export default function AllocationPanel() {
                                 fontSize: "var(--fs-micro)",
                                 textAlign: "right",
                                 padding: "3px 4px",
-                                color: w != null && w > 0.005 ? "var(--text)" : "var(--text-faint)",
+                                color: w != null && w > 0.005 ? "var(--text)" : "var(--text-muted)",
                                 background: w != null && w >= 0.3 ? "rgba(74,158,255,.10)" : "transparent",
                               }}
                             >
@@ -435,7 +545,7 @@ export default function AllocationPanel() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </ScrollTable>
                 <Caption>Cells at the 30%+ concentration edge tint blue; zeros sit faint.</Caption>
               </Card>
             </div>
@@ -445,9 +555,9 @@ export default function AllocationPanel() {
 
       {/* ── Risk analysis (paginated) ─────────────────────────────────── */}
       <section id="allocation-risk">
-        <SectionHeader title="Risk analysis" right="eight lenses · paginated" />
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-          {RISK_BLOCKS.map((b) => (
+        <SectionHeader title="Risk analysis" right="one lens at a time · four primary, four more on request" />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+          {RISK_BLOCKS.filter((b) => b.primary || moreLenses || b.id === riskBlock).map((b) => (
             <button
               key={b.id}
               onClick={() => setRiskBlock(b.id)}
@@ -458,7 +568,8 @@ export default function AllocationPanel() {
                 background: riskBlock === b.id ? "rgba(74,158,255,.12)" : "none",
                 border: riskBlock === b.id ? "0.5px solid rgba(74,158,255,.4)" : "0.5px solid var(--line-hair)",
                 borderRadius: "var(--r-xs)",
-                padding: "2px 8px",
+                padding: isNarrow ? "8px 12px" : "5px 10px",
+                minHeight: isNarrow ? 40 : 28,
                 ...mono,
                 fontSize: "var(--fs-micro)",
                 letterSpacing: "var(--ls-micro)",
@@ -469,6 +580,17 @@ export default function AllocationPanel() {
               {b.label}
             </button>
           ))}
+          {!moreLenses ? (
+            <button
+              type="button"
+              className="mrr-btn"
+              data-touch={isNarrow ? "true" : "false"}
+              onClick={() => setMoreLenses(true)}
+              aria-expanded={false}
+            >
+              More lenses ▸
+            </button>
+          ) : null}
         </div>
 
         {riskBlock === "factors" && (
@@ -512,7 +634,7 @@ export default function AllocationPanel() {
             )}
             <Caption>
               Factors are long/short ETF proxies (Value IWD−IWF, Momentum MTUM−SPY, Quality
-              QUAL−SPY, Size IWM−SPY, Low Vol USMV−SPY) — the Fama-French idea without their data
+              QUAL−SPY, Size IWM−SPY, Low Vol USMV−SPY): the Fama-French idea without their data
               files, labeled as such. Betas come from OLS on monthly overlaps. The factor × regime
               return table lives on{" "}
               <Link to="/app/regime-lab#backtests" style={{ color: "var(--accent)" }}>
@@ -551,7 +673,7 @@ export default function AllocationPanel() {
               ))}
             </div>
             {a.style_performance?.[effStyleRegime] ? (
-              <div style={{ overflowX: "auto" }}>
+              <ScrollTable label="Style performance by regime">
                 <div role="table" aria-label="Style performance by regime" style={{ display: "grid", gridTemplateColumns: "140px repeat(4,1fr)", gap: "2px 8px", minWidth: 440 }}>
                   <div role="row" style={{ display: "contents" }}>
                     {["", "Return", "Vol", "Sharpe", "Hit rate"].map((h, i) => (
@@ -560,6 +682,9 @@ export default function AllocationPanel() {
                       </span>
                     ))}
                   </div>
+                  {/* The two long-short spread rows carry only a return in the
+                      source payload, so their vol, Sharpe and hit-rate cells
+                      read the house dash by design, not for missing data. */}
                   {Object.entries(a.style_performance[effStyleRegime])
                     .sort((x, y) => (y[1].sharpe ?? 0) - (x[1].sharpe ?? 0))
                     .map(([style, s]) => (
@@ -567,22 +692,22 @@ export default function AllocationPanel() {
                         <span role="rowheader" key={style} style={rowLabel}>
                           {style}
                         </span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: s.return < 0 ? "var(--neg-text)" : "var(--text)" }}>
-                          {spct(s.return)}
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: (s.return ?? 0) < 0 ? "var(--neg-text)" : "var(--text)" }}>
+                          {s.return != null ? spct(s.return) : "—"}
                         </span>
                         <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                          {pct(s.volatility)}
+                          {s.volatility != null ? pct(s.volatility) : "—"}
                         </span>
                         <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>
-                          {s.sharpe.toFixed(2)}
+                          {s.sharpe != null ? s.sharpe.toFixed(2) : "—"}
                         </span>
                         <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                          {pct(s.hit_rate, 0)}
+                          {s.hit_rate != null ? pct(s.hit_rate, 0) : "—"}
                         </span>
                       </div>
                     ))}
                 </div>
-              </div>
+              </ScrollTable>
             ) : (
               <StateNote>Style history unavailable for this regime (needs ≥6 months).</StateNote>
             )}
@@ -654,9 +779,8 @@ export default function AllocationPanel() {
               </div>
             </div>
             <Caption>
-              <Jargon term="CVaR">CVaR</Jargon> is the average loss in the worst 5% of months —
-              deeper than VaR, which is only the doorway into them. Bars scale to a −20% monthly
-              loss.
+              <Jargon term="CVaR">CVaR</Jargon> is the average loss in the worst 5% of months, deeper
+              than VaR, which is only the doorway into them. Bars scale to a −20% monthly loss.
             </Caption>
           </Card>
         )}
@@ -676,7 +800,8 @@ export default function AllocationPanel() {
                     background: effTransPair === p ? "rgba(74,158,255,.12)" : "none",
                     border: "0.5px solid var(--line-hair)",
                     borderRadius: "var(--r-xs)",
-                    padding: "2px 8px",
+                    padding: isNarrow ? "8px 12px" : "5px 10px",
+                    minHeight: isNarrow ? 40 : 28,
                     ...mono,
                     fontSize: "var(--fs-micro)",
                     color: effTransPair === p ? "var(--accent)" : "var(--text-muted)",
@@ -723,7 +848,7 @@ export default function AllocationPanel() {
           <Card>
             <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Currency moves by regime · annualized</div>
             {a.currency_impact && Object.keys(a.currency_impact).length ? (
-              <div style={{ overflowX: "auto" }}>
+              <ScrollTable label="Currency moves by regime">
                 <div role="table" aria-label="Currency moves by regime" style={{ display: "grid", gridTemplateColumns: `120px repeat(${regimes.length},1fr)`, gap: "2px 8px", minWidth: 520 }}>
                   <div role="row" style={{ display: "contents" }}>
                     <span role="columnheader" />
@@ -758,7 +883,7 @@ export default function AllocationPanel() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </ScrollTable>
             ) : (
               <StateNote>Currency history unavailable from the vendor this session.</StateNote>
             )}
@@ -771,11 +896,14 @@ export default function AllocationPanel() {
 
         {riskBlock === "real" && (
           <Card>
+            {/* The source leaves real_nominal null outright when CPI is missing
+                or the deflation step raises, so every read here goes through
+                the block, not just through the regime key. */}
             <div style={{ ...eyebrowStyle, marginBottom: 8 }}>
-              Real vs nominal · {curRegime} months (n={a.real_nominal[curRegime]?.n_months ?? "—"})
+              Real vs nominal · {curRegime} months (n={a.real_nominal?.[curRegime]?.n_months ?? "—"})
             </div>
-            {a.real_nominal[curRegime] ? (
-              <div style={{ overflowX: "auto" }}>
+            {a.real_nominal?.[curRegime] ? (
+              <ScrollTable label="Real vs nominal returns by asset">
                 <div role="table" aria-label="Real vs nominal returns by asset" style={{ display: "grid", gridTemplateColumns: "150px repeat(3,1fr)", gap: "2px 8px", minWidth: 420 }}>
                   <div role="row" style={{ display: "contents" }}>
                     <span role="columnheader" />
@@ -785,20 +913,21 @@ export default function AllocationPanel() {
                       </span>
                     ))}
                   </div>
-                  {Object.keys(a.real_nominal[curRegime].nominal).map((asset) => {
-                    const rn = a.real_nominal[curRegime];
+                  {Object.keys(a.real_nominal?.[curRegime]?.nominal ?? {}).map((asset) => {
+                    const rn = a.real_nominal?.[curRegime];
+                    if (!rn) return null;
                     const nom = rn.nominal[asset];
                     const real = rn.real[asset];
-                    const eroded = nom > 0 && real < 0;
+                    const eroded = nom != null && real != null && nom > 0 && real < 0;
                     return (
                       <div role="row" style={{ display: "contents" }} key={asset}>
                         <span role="rowheader" style={rowLabel}>
                           {asset}
                           {eroded ? <span style={{ color: "var(--warn)" }}> ▪ eroded</span> : ""}
                         </span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>{spct(nom)}</span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: real < 0 ? "var(--neg-text)" : "var(--text)" }}>
-                          {spct(real)}
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>{nom != null ? spct(nom) : "—"}</span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: (real ?? 0) < 0 ? "var(--neg-text)" : "var(--text)" }}>
+                          {real != null ? spct(real) : "—"}
                         </span>
                         <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
                           {spct(rn.inflation_drag[asset] ?? 0)}
@@ -807,9 +936,13 @@ export default function AllocationPanel() {
                     );
                   })}
                 </div>
-              </div>
+              </ScrollTable>
             ) : (
-              <StateNote>No inflation-adjusted view for this regime.</StateNote>
+              <StateNote>
+                {a.real_nominal
+                  ? "No inflation-adjusted view for this regime."
+                  : "Real-vs-nominal splits unavailable: the source could not compute them this session."}
+              </StateNote>
             )}
             <Caption>
               CPI-deflated returns inside the current regime. ▪ eroded marks assets whose nominal
@@ -846,7 +979,7 @@ export default function AllocationPanel() {
               ))}
             </div>
             {a.regime_correlations[effCorrRegime] ? (
-              <div style={{ overflowX: "auto" }}>
+              <ScrollTable label="Scrollable table">
                 <div
                   role="table"
                   aria-label={`Asset correlations in ${effCorrRegime}`}
@@ -860,7 +993,7 @@ export default function AllocationPanel() {
                   <div role="row" style={{ display: "contents" }}>
                     <span role="columnheader" />
                     {a.regime_correlations[effCorrRegime].columns.map((c) => (
-                      <span role="columnheader" key={c} style={{ ...mono, fontSize: 8, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", padding: "2px 1px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                      <span role="columnheader" key={c} style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: ".02em", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", padding: "2px 2px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
                         {c.replace("US ", "")}
                       </span>
                     ))}
@@ -881,7 +1014,7 @@ export default function AllocationPanel() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </ScrollTable>
             ) : (
               <StateNote>Not enough months in this regime for a stable matrix.</StateNote>
             )}
@@ -901,7 +1034,7 @@ export default function AllocationPanel() {
         {riskBlock === "drawdowns" && a.drawdowns?.by_regime?.columns && (
           <Card>
             <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Maximum drawdown · by regime and overall</div>
-            <div style={{ overflowX: "auto" }}>
+            <ScrollTable label="Maximum drawdown by regime and overall">
               <div role="table" aria-label="Maximum drawdown by regime and overall" style={{ display: "grid", gridTemplateColumns: `150px repeat(${a.drawdowns.by_regime.columns.length + 1},1fr)`, gap: "2px 8px", minWidth: 560 }}>
                 <div role="row" style={{ display: "contents" }}>
                   <span role="columnheader" />
@@ -932,7 +1065,7 @@ export default function AllocationPanel() {
                   </div>
                 ))}
               </div>
-            </div>
+            </ScrollTable>
             <Caption>
               Worst peak-to-trough loss per asset, split by the regime it happened in. A −50%{" "}
               <Jargon term="drawdown">drawdown</Jargon> needs +100% to recover — the asymmetry is
@@ -942,7 +1075,7 @@ export default function AllocationPanel() {
         )}
       </section>
 
-      <div style={{ ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--text-muted)" }}>
+      <div style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: ".06em", color: "var(--text-muted)" }}>
         Monthly total returns for 10 asset classes, index-spliced before ETF inceptions · computed
         by the same allocation engine each session · regimes from the stored classifier history.
       </div>

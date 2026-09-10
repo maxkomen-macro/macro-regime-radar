@@ -1,25 +1,22 @@
 /**
- * Dashboard v1 — locked IA: regime hero (banner + read-through + odds bar),
- * KPI strip, monitored signals, 3-row What's Priced teaser (endpoint-pending
- * seam), macro charts in an in-place accordion. Every number is API data;
- * every metric carries a desk-note caption (confusion-index worklist); jargon
- * gets the dotted-underline definition affordance. No fixture data.
+ * Dashboard — the flagship executive screen (executive pass, 2026-09-05).
+ *
+ * Order of reading, top to bottom: one desk read (conclusion, why it matters,
+ * what changed, what to watch, what would invalidate the call, evidence
+ * freshness) → the five monitored signals → supporting evidence (key levels,
+ * what's priced) → macro charts in the in-place accordion → the composed
+ * read-through and methodology under disclosure. Every number is API data;
+ * every metric carries a desk-note caption; jargon gets the dotted-underline
+ * definition affordance. No fixture data.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import {
-  Card,
-  IntelBanner,
-  ProbabilityBar,
-  ReadThrough,
-  SectionHeader,
-  SignalCard,
-  StatTile,
-} from "../../components";
+import { Card, ProbabilityBar, SectionHeader, SignalCard, StatTile, Tag } from "../../components";
 import {
   useAlerts,
   useCreditOas,
+  useFreshness,
   usePriced,
   useRegimeHistory,
   useRegimeLatest,
@@ -29,35 +26,22 @@ import {
 } from "../../api/queries";
 import { daysSince, fmtBps, fmtDate, fmtMonYr, fmtPct, fmtSigned, fmtWholePct, ordinal } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
-import type { Regime } from "../../api/types";
+import type { Regime, Signal } from "../../api/types";
 import { SIGNALS_META, SIGNAL_ORDER } from "./signals-meta";
 import LineChart, { type ChartSeries } from "./LineChart";
 import Jargon from "../shared/Jargon";
+import { Caption, mono } from "../shared/screen-ui";
+import DeskRead, { type LedgerItem } from "../shared/DeskRead";
+import { assessFreshness } from "../shared/freshness";
+import Disclosure from "../shared/Disclosure";
 
 /* ── small shared bits ─────────────────────────────────────────────────── */
 
-// Captions are secondary copy, not meta — --text-muted keeps them AA-readable
-// (5.6:1). --text-faint is decorative-only per DESIGN.md: null dashes,
-// disclosure glyphs, row indices, dots, zero-legend entries, disabled state.
-// Anything a reader must read — timestamps, axis values — stays --text-muted.
-const capStyle: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 10,
-  letterSpacing: ".04em",
-  color: "var(--text-muted)",
-  lineHeight: 1.5,
-  marginTop: 6,
-};
-
 const errStyle: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 10,
+  fontFamily: "var(--font-ui)",
+  fontSize: "var(--fs-caption)",
   color: "var(--text-muted)",
 };
-
-function Caption({ children }: { children: React.ReactNode }) {
-  return <div style={capStyle}>{children}</div>;
-}
 
 /* ── regime hero ───────────────────────────────────────────────────────── */
 
@@ -66,6 +50,14 @@ const REGIME_NAMES: Record<string, string> = {
   overheating: "Overheating",
   stagflation: "Stagflation",
   recession: "Recession Risk",
+};
+
+/** The classifier's own definition of each quadrant (Methodology copy). */
+const REGIME_MEANING: Record<string, string> = {
+  Goldilocks: "growth trending up while inflation stays calm: the equity-friendly quadrant",
+  Overheating: "growth and inflation both running hot: real assets lead, duration suffers",
+  Stagflation: "inflation hot while growth stalls: the hardest tape, cash and commodities defend",
+  "Recession Risk": "growth rolling over with inflation fading: quality bonds and defensives lead",
 };
 
 function regimeOdds(r: Regime) {
@@ -79,8 +71,6 @@ function regimeOdds(r: Regime) {
   return { probs, lead: ranked[0], runner: ranked[1] };
 }
 
-// IntelBanner's contract carries High/Medium/Low (readme also lists Moderate,
-// but the component .d.ts is the shippable law — logged in the report).
 function convictionWord(c: number): "High" | "Medium" | "Low" {
   if (c >= 0.6) return "High";
   if (c >= 0.4) return "Medium";
@@ -109,6 +99,7 @@ function Accordion({ panels, defaultOpenId }: { panels: PanelDef[]; defaultOpenI
             <button
               onClick={() => setOpenId(open ? null : p.id)}
               aria-expanded={open}
+              aria-controls={`${p.id}-panel`}
               style={{
                 appearance: "none",
                 width: "100%",
@@ -117,6 +108,7 @@ function Accordion({ panels, defaultOpenId }: { panels: PanelDef[]; defaultOpenI
                 border: "0.5px solid var(--line-hair)",
                 borderRadius: "var(--r-xs)",
                 padding: "10px 12px",
+                minHeight: 40,
                 cursor: "pointer",
                 display: "flex",
                 justifyContent: "space-between",
@@ -126,20 +118,21 @@ function Accordion({ panels, defaultOpenId }: { panels: PanelDef[]; defaultOpenI
             >
               <span
                 style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "var(--fs-label)",
+                  fontFamily: "var(--font-ui)",
+                  fontSize: "var(--fs-body-s)",
+                  fontWeight: 500,
                   color: open ? "var(--text)" : "var(--text-2)",
                 }}
               >
-                <span aria-hidden="true" style={{ color: "var(--text-faint)", marginRight: 8 }}>
+                <span aria-hidden="true" style={{ ...mono, color: "var(--text-muted)", marginRight: 8 }}>
                   {open ? "▾" : "▸"}
                 </span>
                 {p.title}
               </span>
               <span
                 style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "var(--fs-micro)",
+                  ...mono,
+                  fontSize: "var(--fs-meta)",
                   letterSpacing: "var(--ls-micro)",
                   color: "var(--text-muted)",
                   whiteSpace: "nowrap",
@@ -148,9 +141,9 @@ function Accordion({ panels, defaultOpenId }: { panels: PanelDef[]; defaultOpenI
                 {p.right}
               </span>
             </button>
-            {open && (
-              <Card style={{ marginTop: 6, borderRadius: "var(--r-xs)" }}>{p.body()}</Card>
-            )}
+            <div id={`${p.id}-panel`} hidden={!open}>
+              {open && <Card style={{ marginTop: 6, borderRadius: "var(--r-xs)" }}>{p.body()}</Card>}
+            </div>
           </div>
         );
       })}
@@ -162,10 +155,7 @@ function Accordion({ panels, defaultOpenId }: { panels: PanelDef[]; defaultOpenI
 
 export default function DashboardScreen() {
   const location = useLocation();
-  // The only width-conditional input on this screen: three grids that hold five
-  // or three fixed tracks at desk width and would print 60px columns on a
-  // phone. At and above 768 every value below resolves to the original string.
-  const { isMobile, isNarrow } = useBreakpoint();
+  const { isMobile, isNarrow, bp } = useBreakpoint();
   const regime = useRegimeLatest();
   const history = useRegimeHistory(36);
   const signals = useSignalsLatest();
@@ -175,6 +165,7 @@ export default function DashboardScreen() {
   const fedFunds = useSeriesLatest("FEDFUNDS");
   const vix = useSeriesLatest("VIXCLS");
   const priced = usePriced();
+  const freshness = useFreshness();
 
   // Palette/hash deep links: scroll the section into view once it exists.
   useEffect(() => {
@@ -183,16 +174,19 @@ export default function DashboardScreen() {
     if (el) el.scrollIntoView({ block: "start" });
   }, [location.hash, regime.data]);
 
+  // Streak and the switch that started it, from the stored monthly history.
   const streak = useMemo(() => {
     const rows = history.data;
     if (!rows?.length) return null;
     const lead = rows[rows.length - 1].label;
     let n = 0;
     for (let i = rows.length - 1; i >= 0 && rows[i].label === lead; i--) n++;
-    return n;
+    const first = rows[rows.length - n];
+    const prev = rows[rows.length - n - 1];
+    return { n, since: first?.date, prev: prev?.label ?? null };
   }, [history.data]);
 
-  // IntelBanner pulse gate (owner ruling 2026-08-06): the dot pulses only when
+  // Desk-read pulse gate (owner ruling 2026-08-06): the dot pulses only when
   // this regime read is new to this browser since its last visit, or when the
   // macro month is inside one monthly print cycle (≤35 days). Otherwise static.
   const bannerStamp = regime.data ? `${regime.data.date}|${regime.data.label}` : null;
@@ -226,126 +220,174 @@ export default function DashboardScreen() {
     return m;
   }, [alerts.data]);
 
-  /* hero content */
-  let banner: React.ReactNode = null;
-  let readThrough: React.ReactNode = null;
-  let oddsCard: React.ReactNode = null;
+  const reporting: Signal[] = signals.data?.signals ?? [];
+  const bySignal = new Map(reporting.map((s) => [s.signal_name, s]));
+  const triggered = reporting.filter((s) => s.triggered);
+  const watching = reporting.filter((s) => s.status === "Watch");
+
+  /* ── desk read ───────────────────────────────────────────────────────── */
+  let deskRead: React.ReactNode = null;
+  let readThrough: string[] = [];
   if (regime.data) {
     const r = regime.data;
     const { probs, lead, runner } = regimeOdds(r);
     const gapPp = Math.round((lead[1] - runner[1]) * 100);
     const readKind =
-      gapPp < 10 ? `a coin-flip read against ${REGIME_NAMES[runner[0]]} at ${fmtWholePct(runner[1])}` :
-      gapPp < 25 ? `a contested read over ${REGIME_NAMES[runner[0]]} at ${fmtWholePct(runner[1])}` :
-      `a clear read — ${REGIME_NAMES[runner[0]]} follows at ${fmtWholePct(runner[1])}`;
+      gapPp < 10
+        ? `a coin flip with ${REGIME_NAMES[runner[0]]} at ${fmtWholePct(runner[1])}`
+        : gapPp < 25
+          ? `a contested lead over ${REGIME_NAMES[runner[0]]} at ${fmtWholePct(runner[1])}`
+          : `a clear lead over ${REGIME_NAMES[runner[0]]} at ${fmtWholePct(runner[1])}`;
     const conviction = convictionWord(r.confidence);
+    const convictionTone = conviction === "High" ? "pos" : conviction === "Medium" ? "accent" : "warn";
 
-    banner = (
-      <IntelBanner
-        live={bannerLive}
-        conviction={conviction}
-        headline={`Markets are in ${r.label} regime at ${fmtWholePct(lead[1])} model odds — ${readKind}, held with ${fmtWholePct(r.confidence)} conviction.`}
-        meta={[
-          ...(recession.data?.recession_prob != null
-            ? [
-                {
-                  label: "Recession model",
-                  value: `${recession.data.recession_prob.toFixed(1)}% · ${recession.data.recession_label}`,
-                  color:
-                    recession.data.recession_label === "High"
-                      ? "var(--neg-text)"
-                      : recession.data.recession_label === "Elevated"
-                        ? "var(--warn-hot)"
-                        : "var(--pos)",
-                },
-              ]
-            : []),
-          ...(streak
-            ? [{ label: "Duration", value: `${streak}mo`, color: "var(--text)" }]
-            : []),
-          { label: "Macro data", value: fmtMonYr(r.date), color: "var(--text)" },
-        ]}
-      />
-    );
-
-    oddsCard = (
-      <Card>
-        <ProbabilityBar probs={probs} height={8} />
-        <Caption>
-          The model splits its <Jargon term="model odds">odds</Jargon> across the four regimes.{" "}
-          {r.label} has led for {streak ?? "—"} month{streak === 1 ? "" : "s"}; the gap to{" "}
-          {REGIME_NAMES[runner[0]]} is {gapPp} point{gapPp === 1 ? "" : "s"}
-          {gapPp < 10 ? " — inside coin-flip range" : ""}.{" "}
-          <Jargon term="conviction">Conviction</Jargon> is a separate number: {fmtWholePct(r.confidence)}.
-        </Caption>
-      </Card>
-    );
-
+    const thr = (name: string, dp = 2) => {
+      const t = bySignal.get(name)?.threshold;
+      return t != null ? t.toFixed(dp) : "its threshold";
+    };
     const vixV = vix.data?.value;
-    // NB: the API's yield_curve_spread scalar is already in bps (43.0), while
-    // its yield_curve_series is in percent (0.43) — inconsistency logged.
-    const p1 =
+
+    // The composed read-through survives, one click down.
+    readThrough = [
       `The drivers on file: the 10Y–2Y spread holds at ${
         recession.data?.yield_curve_spread != null
           ? `${fmtBps(recession.data.yield_curve_spread)} (${fmtPct(recession.data.yield_curve_spread / 100)})`
           : "—"
       }, the VIX sits at ${vixV != null ? vixV.toFixed(2) : "—"}${
-        vixV != null ? (vixV < 15 ? " — calm" : vixV < 25 ? " — subdued" : " — stressed") : ""
+        vixV != null ? (vixV < 15 ? " (calm)" : vixV < 25 ? " (subdued)" : " (stressed)") : ""
       }, and high-yield spreads run ${hy ? `${Math.round(hy.value_bps)} bps` : "—"}${
         hy?.change_1w_bps != null ? ` (${fmtBps(hy.change_1w_bps)} on the week)` : ""
       }. Growth trend reads ${r.growth_trend != null ? fmtSigned(r.growth_trend) : "—"} and inflation trend ${
         r.inflation_trend != null ? fmtSigned(r.inflation_trend) : "—"
-      } — both 3-month slopes of z-scored macro data.`;
-    const reporting = signals.data?.signals ?? [];
-    const bySignal = new Map(reporting.map((s) => [s.signal_name, s]));
-    const thr = (name: string, dp = 2) => {
-      const t = bySignal.get(name)?.threshold;
-      return t != null ? t.toFixed(dp) : "its threshold";
-    };
-    const triggeredN = reporting.filter((s) => s.triggered).length;
-    const watchN = reporting.filter((s) => s.status === "Watch").length;
-    const p2 =
+      }; both are 3-month slopes of z-scored macro data.`,
       `What would change the read: a CPI print above ${thr("cpi_hot")}% YoY trips Inflation pressure, a 2s10s close below ${thr("yield_curve_inversion")}% trips Curve inversion risk, and a VIX close above ${thr("vix_spike")} trips the vol signal. ` +
-      (triggeredN > 0
-        ? `${triggeredN} of the ${reporting.length} monitored signals ${triggeredN === 1 ? "is" : "are"} currently triggered.`
-        : `None of the ${reporting.length} monitored signals is triggered${
-            watchN > 0 ? ` — ${watchN} sit${watchN === 1 ? "s" : ""} in Watch` : ""
-          }.`);
+        (triggered.length > 0
+          ? `${triggered.length} of the ${reporting.length} monitored signals ${triggered.length === 1 ? "is" : "are"} currently triggered.`
+          : `None of the ${reporting.length} monitored signals is triggered${
+              watching.length > 0 ? `; ${watching.length} sit${watching.length === 1 ? "s" : ""} in Watch` : ""
+            }.`),
+    ];
 
-    readThrough = (
-      <ReadThrough
-        label="Current read-through · composed from stored data"
-        paragraphs={[p1, p2]}
+    const changed =
+      streak == null
+        ? "—"
+        : streak.prev && streak.since
+          ? `Switched from ${streak.prev} in ${fmtMonYr(streak.since)} · ${streak.n} month${streak.n === 1 ? "" : "s"} in`
+          : `${streak.n} month${streak.n === 1 ? "" : "s"} unchanged`;
+
+    const watchText = watching.length
+      ? watching
+          .map((s) => `${SIGNALS_META[s.signal_name]?.display ?? s.signal_name} (${Math.round(s.distance_pct ?? 0)}% of trigger)`)
+          .join(" · ")
+      : triggered.length
+        ? `${triggered.length} triggered`
+        : "All five signals clear";
+
+    const invalidates = `CPI > ${thr("cpi_hot")}% YoY · 2s10s < ${thr("yield_curve_inversion")}% · VIX > ${thr("vix_spike", 0)}`;
+
+    const ledger: LedgerItem[] = [
+      {
+        label: "Odds",
+        value: (
+          <div style={{ minWidth: 0, paddingTop: 2 }}>
+            <ProbabilityBar probs={probs} height={6} />
+          </div>
+        ),
+      },
+      { label: "What changed", value: changed, prose: true },
+      {
+        label: triggered.length ? "Triggered" : "Watch",
+        value: watchText,
+        prose: true,
+        tone: triggered.length ? "var(--neg-text)" : watching.length ? "var(--warn)" : "var(--pos)",
+      },
+      { label: "Invalidates", value: invalidates },
+      ...(recession.data?.recession_prob != null
+        ? [
+            {
+              label: "NBER recession model",
+              value: `${recession.data.recession_prob.toFixed(1)}% over 12m · ${recession.data.recession_label} (a separate model from the ${fmtWholePct(probs.recession)} Recession Risk regime odds)`,
+              prose: true,
+              tone:
+                recession.data.recession_label === "High Risk"
+                  ? "var(--neg-text)"
+                  : recession.data.recession_label === "Elevated"
+                    ? "var(--warn-hot)"
+                    : "var(--pos)",
+            },
+          ]
+        : []),
+    ];
+
+    const f = freshness.data;
+    deskRead = (
+      <DeskRead
+        id="regime-hero"
+        eyebrow="Desk read · Dashboard"
+        live={bannerLive}
+        badge={
+          <Tag tone={convictionTone} size="md" uppercase={false}>
+            Model confidence · {conviction} · {fmtWholePct(r.confidence)}
+          </Tag>
+        }
+        conclusion={`${r.label} at ${fmtWholePct(lead[1])} model odds, ${readKind}.`}
+        why={
+          <>
+            {r.label} means {REGIME_MEANING[r.label] ?? "the classifier's leading quadrant"}. The call rests on a growth trend
+            of {r.growth_trend != null ? fmtSigned(r.growth_trend) : "—"} and an inflation trend of{" "}
+            {r.inflation_trend != null ? fmtSigned(r.inflation_trend) : "—"};{" "}
+            <Jargon term="conviction">model confidence</Jargon> of {fmtWholePct(r.confidence)} is a separate reading of how firmly
+            the classifier holds the call.
+          </>
+        }
+        ledger={ledger}
+        // On a phone the header's freshness words sit one screen above; the
+        // desk read does not repeat them (review P3-13).
+        freshness={
+          isMobile
+            ? undefined
+            : [
+                { noun: "Macro", info: assessFreshness(r.date, "monthly") },
+                { noun: "Signals", info: assessFreshness(signals.data?.date ?? f?.signals_date, "monthly") },
+                { noun: "Market", info: assessFreshness(f?.market_daily_date, "daily") },
+              ]
+        }
       />
     );
   }
 
-  /* signals grid */
-  const reportingByName = new Map(signals.data?.signals.map((s) => [s.signal_name, s]) ?? []);
+  /* signals grid — five tracks only at wide width; three on a small laptop or
+     tablet landscape (768–1023), self-fitting pairs between 480 and 767, one
+     per row on a phone. The cards never clip their names. */
+  const signalCols =
+    bp === "wide"
+      ? "repeat(5,minmax(0,1fr))"
+      : bp === "desktop"
+        ? "repeat(3,minmax(0,1fr))"
+        : isMobile
+          ? "minmax(0,1fr)"
+          : "repeat(auto-fit,minmax(200px,1fr))";
 
   return (
-    <div style={{ display: "grid", gap: 14 }}>
-      {/* ── Regime hero ─────────────────────────────────────────────── */}
-      <section id="regime-hero" style={{ display: "grid", gap: 12 }}>
-        {regime.isLoading && (
-          <Card style={{ opacity: 0.4 }}>
-            <span style={errStyle}>Reading the latest regime —</span>
-          </Card>
-        )}
-        {regime.isError && (
-          <Card>
-            <span style={errStyle}>
-              Regime unavailable — the data service did not answer. The read resumes when it is
-              back.
-            </span>
-          </Card>
-        )}
-        {banner}
-        {oddsCard}
-        {readThrough}
-      </section>
+    <div style={{ display: "grid", gap: 16 }}>
+      {/* ── Desk read ───────────────────────────────────────────────── */}
+      {regime.isLoading && (
+        <Card style={{ opacity: 0.6 }}>
+          <span style={errStyle}>Reading the latest regime…</span>
+        </Card>
+      )}
+      {/* Only when there is nothing to read: with snapshot data on screen the
+          shell's status word already says the service is asleep (review P1-2). */}
+      {regime.isError && !regime.data && (
+        <Card tone="risk">
+          <span style={errStyle}>
+            Regime unavailable: the data service did not answer. The read resumes when it is back.
+          </span>
+        </Card>
+      )}
+      {deskRead}
 
-      {/* ── Monitored signals (before KPIs, per the locked IA) ──────── */}
+      {/* ── Monitored signals ───────────────────────────────────────── */}
       <section id="signals">
         <SectionHeader
           title="Monitored signals"
@@ -359,37 +401,28 @@ export default function DashboardScreen() {
         />
         <div
           style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
+            fontFamily: "var(--font-ui)",
+            fontSize: "var(--fs-caption)",
             color: "var(--text-muted)",
             margin: "-4px 0 10px",
-            letterSpacing: ".04em",
           }}
         >
-          Bars show distance to trigger · Clear &lt;50% · Watch ≥50% · Triggered = threshold
-          crossed.
+          Bars show distance to trigger · Clear &lt;50% · Watch ≥50% · Triggered = threshold crossed.
         </div>
-        {/* Five signal cards: one per row on a phone (the gauge + "Last alert"
-            line need the width), self-fitting 2–4 up between 480 and 767, the
-            fixed five-track desk row at 768 and above. */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile
-              ? "minmax(0,1fr)"
-              : isNarrow
-                ? "repeat(auto-fit,minmax(150px,1fr))"
-                : "repeat(5,minmax(0,1fr))",
-            gap: 12,
+            gridTemplateColumns: signalCols,
+            gap: "18px 12px",
           }}
         >
           {SIGNAL_ORDER.map((name) => {
             const meta = SIGNALS_META[name];
-            const row = reportingByName.get(name);
+            const row = bySignal.get(name);
             if (row) {
               // Carried-forward prints state their true month (monthly signals
-              // between releases) instead of dropping out — DESIGN.md's
-              // latest-available-with-its-date rule, now server-enforced.
+              // between releases) instead of dropping out — the latest-available-
+              // with-its-date rule, now server-enforced.
               const carried = row.date !== signals.data?.date;
               return (
                 <div key={name}>
@@ -398,23 +431,13 @@ export default function DashboardScreen() {
                     value={meta.format(row.value)}
                     fillPct={row.distance_pct ?? 0}
                     status={row.status ?? undefined}
-                    lastTriggered={lastAlertBySignal.get(name) ?? "none on file"}
+                    lastTriggered={lastAlertBySignal.get(name) ? fmtDate(lastAlertBySignal.get(name) as string) : "none on file"}
                   />
-                  <Caption>
+                  <Caption style={{ paddingLeft: 12, marginTop: 4 }}>
                     {meta.trigger(row.threshold)}
-                    {/* Provenance stamp, unconditional: these cards read the
-                        monthly signal snapshot, so the same metric prints a
-                        different level here than on the live tape (VIX) or in
-                        the weekly derived series (CPI). Stating cadence and
-                        source month on every card is the reconciliation. */}
                     <div style={{ marginTop: 2 }}>
-                      monthly signal print · {fmtMonYr(row.date)}
-                      {/* Cadence-neutral suffix: the pending thing is always the
-                          next monthly snapshot, whatever the underlying series'
-                          own cadence is. Interpolating meta.cadence produced
-                          "monthly signal print · X · daily pending" for the
-                          daily-series signals (VIX, curve). */}
-                      {carried ? " · monthly print pending" : ""}
+                      Signal print {fmtMonYr(row.date)}
+                      {carried ? " · next monthly print pending" : ""}
                     </div>
                   </Caption>
                 </div>
@@ -435,18 +458,18 @@ export default function DashboardScreen() {
                   </div>
                   <div
                     style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-meta)",
+                      fontFamily: "var(--font-ui)",
+                      fontSize: "var(--fs-caption)",
                       color: "var(--text-muted)",
                       lineHeight: 1.6,
                     }}
                   >
-                    No print on file yet — this signal has no stored history.
+                    {signals.isLoading ? "Reading the signal print…" : "No print on file yet; nothing is stored for this signal."}
                   </div>
                 </Card>
-                <Caption>
+                <Caption style={{ paddingLeft: 12, marginTop: 4 }}>
                   {meta.trigger(null)}
-                  <div style={{ marginTop: 2 }}>monthly signal print · none on file</div>
+                  <div style={{ marginTop: 2 }}>Signal print · none on file</div>
                 </Caption>
               </div>
             );
@@ -454,16 +477,23 @@ export default function DashboardScreen() {
         </div>
       </section>
 
-      {/* ── KPI strip ───────────────────────────────────────────────── */}
+      {/* ── Supporting evidence: key levels ─────────────────────────── */}
       <section id="key-levels">
         <SectionHeader
-          title="Key levels"
+          title="Supporting evidence · key levels"
           right={credit.data?.as_of ? `FRED · latest ${fmtDate(credit.data.as_of)}` : "FRED"}
         />
-        {/* Three KPI cards, each carrying a multi-sentence caption: they stack
-            on a phone rather than squeeze the captions into ribbons. */}
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "repeat(3,minmax(0,1fr))", gap: 12 }}>
-          <Card accentBar tone={recession.data?.recession_label.includes("High") ? "risk" : recession.data?.recession_label.includes("Elevated") ? "watch" : "clear"}>
+          <Card
+            accentBar
+            tone={
+              recession.data?.recession_label.includes("High")
+                ? "risk"
+                : recession.data?.recession_label.includes("Elevated")
+                  ? "watch"
+                  : "clear"
+            }
+          >
             <StatTile
               label="Recession model · 12m"
               value={
@@ -478,16 +508,14 @@ export default function DashboardScreen() {
             <Caption>
               {recession.data?.recession_prob != null ? (
                 <>
-                  {recession.data.recession_prob.toFixed(1)}% sits in the{" "}
-                  {recession.data.recession_label} band — Elevated starts at 20%, High at 40%. The{" "}
-                  <Jargon term="recession model">model</Jargon> trains on{" "}
-                  <Jargon term="NBER">NBER</Jargon> dates; inputs through{" "}
-                  {fmtMonYr(recession.data.data_as_of)}.
+                  {recession.data.recession_prob.toFixed(1)}% sits in the {recession.data.recession_label} band (Elevated
+                  starts at 20%, High at 40%). The <Jargon term="recession model">model</Jargon> trains on{" "}
+                  <Jargon term="NBER">NBER</Jargon> dates; inputs through {fmtMonYr(recession.data.data_as_of)}.
                 </>
               ) : recession.isError ? (
-                "Recession model unavailable — its endpoint trains in-process and may need a warm start."
+                "Recession model unavailable: its endpoint trains in-process and may need a warm start."
               ) : (
-                "Training the recession model — first call takes about a second."
+                "Training the recession model; the first call takes about a second."
               )}
             </Caption>
           </Card>
@@ -495,21 +523,16 @@ export default function DashboardScreen() {
           <Card accentBar tone={recession.data?.is_inverted ? "risk" : "clear"}>
             <StatTile
               label="Yield curve 2s10s"
-              value={
-                recession.data?.yield_curve_spread != null
-                  ? fmtBps(recession.data.yield_curve_spread)
-                  : "—"
-              }
+              value={recession.data?.yield_curve_spread != null ? fmtBps(recession.data.yield_curve_spread) : "—"}
               size="sm"
             />
             <Caption>
               {recession.data?.yield_curve_spread != null ? (
                 <>
-                  The <Jargon term="2s10s">10Y–2Y spread</Jargon> holds at{" "}
-                  {fmtBps(recession.data.yield_curve_spread)} (
+                  The <Jargon term="2s10s">10Y–2Y spread</Jargon> holds at {fmtBps(recession.data.yield_curve_spread)} (
                   {fmtPct(recession.data.yield_curve_spread / 100)})
                   {recession.data.yield_curve_pct_rank != null
-                    ? ` — the ${ordinal(recession.data.yield_curve_pct_rank)} percentile of the model's monthly history`
+                    ? `, the ${ordinal(recession.data.yield_curve_pct_rank)} percentile of the model's monthly history`
                     : ""}
                   . Below 0 is an inversion, the classic pre-recession shape.
                 </>
@@ -520,35 +543,27 @@ export default function DashboardScreen() {
           </Card>
 
           <Card accentBar tone="default">
-            <StatTile
-              label="Model vs market"
-              value={recession.data?.divergence_label ?? "—"}
-              size="sm"
-            />
+            <StatTile label="Model vs market" value={recession.data?.divergence_label ?? "—"} size="sm" />
             <Caption>
-              <Jargon term="divergence">Divergence check</Jargon>: whether the recession model and
-              market risk pricing tell one story.
+              <Jargon term="divergence">Divergence check</Jargon>: whether the recession model and market risk pricing tell
+              one story
+              {recession.data?.divergence_score != null
+                ? `. Score ${fmtSigned(recession.data.divergence_score, 0)} on a −100 to +100 scale; beyond ±20 the divergence is material and requires judgment.`
+                : "."}
             </Caption>
           </Card>
         </div>
 
-        {/* Five small stat tiles — short labels and numbers, so these self-fit
-            (two up at 375, three by 480) instead of becoming a five-screen
-            column. Gated on isNarrow: unconditional auto-fit would print ten
-            tracks at desk width, not the designed five. */}
         <Card
           style={{
             display: "grid",
-            gridTemplateColumns: isNarrow ? "repeat(auto-fit,minmax(110px,1fr))" : "repeat(5,minmax(0,1fr))",
+            gridTemplateColumns: isNarrow ? "repeat(auto-fit,minmax(130px,1fr))" : "repeat(5,minmax(0,1fr))",
             gap: 16,
             marginTop: 12,
           }}
         >
           <div>
-            <StatTile
-              label="Fed Funds"
-              value={fedFunds.data ? fmtPct(fedFunds.data.value) : "—"}
-            />
+            <StatTile label="Fed Funds" value={fedFunds.data ? fmtPct(fedFunds.data.value) : "—"} />
             <Caption>
               Overnight policy rate · monthly average
               {fedFunds.data ? ` · ${fmtMonYr(fedFunds.data.date)}` : ""}.
@@ -583,30 +598,20 @@ export default function DashboardScreen() {
             <StatTile
               label="Growth trend"
               value={regime.data?.growth_trend != null ? fmtSigned(regime.data.growth_trend) : "—"}
-              direction={
-                regime.data?.growth_trend != null && regime.data.growth_trend >= 0 ? "up" : "down"
-              }
+              direction={regime.data?.growth_trend != null && regime.data.growth_trend >= 0 ? "up" : "down"}
             />
             <Caption>
-              3-month slope of the industrial-production <Jargon term="z-score">z-score</Jargon> —
-              feeds the regime call.
+              3-month slope of the industrial-production <Jargon term="z-score">z-score</Jargon>; feeds the regime call.
             </Caption>
           </div>
           <div>
             <StatTile
               label="Inflation trend"
-              value={
-                regime.data?.inflation_trend != null ? fmtSigned(regime.data.inflation_trend) : "—"
-              }
-              direction={
-                regime.data?.inflation_trend != null && regime.data.inflation_trend >= 0
-                  ? "up"
-                  : "down"
-              }
+              value={regime.data?.inflation_trend != null ? fmtSigned(regime.data.inflation_trend) : "—"}
+              direction={regime.data?.inflation_trend != null && regime.data.inflation_trend >= 0 ? "up" : "down"}
             />
             <Caption>
-              3-month slope of the CPI <Jargon term="z-score">z-score</Jargon> — feeds the regime
-              call.
+              3-month slope of the CPI <Jargon term="z-score">z-score</Jargon>; feeds the regime call.
             </Caption>
           </div>
         </Card>
@@ -626,72 +631,51 @@ export default function DashboardScreen() {
               return (
                 <div style={{ fontSize: "var(--fs-body-s)", color: "var(--text-muted)", lineHeight: 1.6 }}>
                   {priced.isError
-                    ? "Market-implied pricing unavailable — the data service did not answer."
+                    ? "Market-implied pricing unavailable: the data service did not answer."
                     : priced.isLoading
-                      ? "Reading market-implied pricing —"
-                      : "No priced metrics on file — the weekly pipeline has not written them yet."}
+                      ? "Reading market-implied pricing…"
+                      : "No priced metrics on file; the weekly pipeline has not written them yet."}
                 </div>
               );
             }
             return (
-              <div style={{ display: "grid", gap: 8 }}>
-                {rows.map((p) => (
-                  <div
-                    key={p.metric}
-                    style={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      borderBottom: "0.5px solid var(--line-hair)",
-                      paddingBottom: 8,
-                    }}
-                  >
-                    <span style={{ fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
-                      {p.label}
-                      <span style={{ color: "var(--text-muted)" }}> · {p.group.toLowerCase()}</span>
-                    </span>
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontVariantNumeric: "tabular-nums",
-                        fontSize: "var(--fs-body)",
-                        fontWeight: 700,
-                        color: "var(--text)",
-                      }}
-                    >
-                      {p.value.toFixed(2)}
-                      {p.unit}
-                      {p.mom_chg != null && (
-                        <span
-                          style={{
-                            marginLeft: 8,
-                            fontWeight: 400,
-                            fontSize: "var(--fs-body-s)",
-                            color: p.mom_chg >= 0 ? "var(--pos)" : "var(--neg-text)",
-                          }}
-                        >
-                          {fmtSigned(p.mom_chg)}
-                          {/* change of a percent-level series is pp, not % */}
-                          {p.unit === "%" ? "pp" : p.unit} MoM
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                ))}
+              <div style={{ display: "grid", gap: 10 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "repeat(3,minmax(0,1fr))",
+                    gap: 16,
+                  }}
+                >
+                  {rows.map((p) => (
+                    <div key={p.metric}>
+                      <StatTile
+                        label={p.label}
+                        value={`${p.value.toFixed(2)}${p.unit}`}
+                        delta={
+                          p.mom_chg != null
+                            ? /* change of a percent-level series is pp, not % */
+                              `${fmtSigned(p.mom_chg)}${p.unit === "%" ? "pp" : p.unit} MoM`
+                            : undefined
+                        }
+                        direction={p.mom_chg != null ? (p.mom_chg >= 0 ? "up" : "down") : undefined}
+                        size="sm"
+                      />
+                      <Caption>
+                        {p.group.toLowerCase()} · weekly pipeline · {fmtDate(p.date)}
+                      </Caption>
+                    </div>
+                  ))}
+                </div>
                 <Caption>
-                  The market&apos;s own pricing — <Jargon term="breakeven">breakevens</Jargon> for
-                  expected inflation, <Jargon term="TIPS">TIPS</Jargon> for real yields. All six
-                  metrics with the policy rate sit in Markets.
+                  The market&apos;s own pricing: <Jargon term="breakeven">breakevens</Jargon> for expected inflation,{" "}
+                  <Jargon term="TIPS">TIPS</Jargon> for real yields. All six metrics with the policy rate sit in Markets.
                 </Caption>
               </div>
             );
           })()}
           <div style={{ marginTop: 10 }}>
-            <Link
-              to="/app/markets#whats-priced-full"
-              style={{ fontSize: "var(--fs-body-s)", color: "var(--accent)" }}
-            >
+            <Link to="/app/markets#whats-priced-full" style={{ fontSize: "var(--fs-body-s)", color: "var(--accent)" }}>
               → See all in Markets
             </Link>
           </div>
@@ -709,6 +693,8 @@ export default function DashboardScreen() {
               title: "Regime odds · 24 months",
               right: history.data ? `${Math.min(history.data.length, 24)} monthly reads` : "—",
               body: () => {
+                if (history.isLoading) return <Caption>Reading the stored classifier history…</Caption>;
+                if (history.isError) return <Caption>Regime history unavailable: the data service did not answer.</Caption>;
                 const rows = (history.data ?? []).slice(-24);
                 const mk = (key: keyof Regime, label: string, color: string): ChartSeries => ({
                   label,
@@ -724,12 +710,12 @@ export default function DashboardScreen() {
                         mk("prob_stagflation", "ST", "var(--regime-stagflation)"),
                         mk("prob_recession", "RR", "var(--regime-recession)"),
                       ]}
-                      yFmt={(v) => `${Math.round(v)}%`}
+                      yFmt={(v) => (v > 0 && v < 1 ? "<1%" : `${Math.round(v)}%`)}
                       caption="Monthly regime odds"
                     />
                     <Caption>
-                      The classifier&apos;s monthly odds per regime — the call is whichever line is
-                      on top; crossovers are regime changes.
+                      The classifier&apos;s monthly odds per regime. The call is whichever line is on top; crossovers are
+                      regime changes.
                     </Caption>
                   </>
                 );
@@ -742,28 +728,27 @@ export default function DashboardScreen() {
                 recession.data?.yield_curve_series.length != null
                   ? `${recession.data.yield_curve_series.length} monthly points`
                   : "—",
-              body: () => (
+              body: () =>
+                recession.isLoading ? (
+                  <Caption>Training the recession model; the first call takes about a second…</Caption>
+                ) : (
                 <>
                   <LineChart
                     series={[
                       {
                         label: "2s10s",
                         color: "var(--accent)",
-                        points: (recession.data?.yield_curve_series ?? []).map((p) => ({
-                          x: p.date,
-                          y: p.value,
-                        })),
+                        points: (recession.data?.yield_curve_series ?? []).map((p) => ({ x: p.date, y: p.value })),
                       },
                     ]}
                     yFmt={(v) => fmtPct(v)}
                     caption="10Y minus 2Y Treasury spread"
                   />
                   <Caption>
-                    Dips below the dashed zero line are inversions — the shape that has preceded
-                    most US recessions.
+                    Dips below the dashed zero line are inversions: the shape that has preceded most US recessions.
                   </Caption>
                 </>
-              ),
+                ),
             },
             {
               id: "chart-recession",
@@ -772,35 +757,38 @@ export default function DashboardScreen() {
                 recession.data?.recession_prob_series.length != null
                   ? `${recession.data.recession_prob_series.length} monthly points`
                   : "—",
-              body: () => (
+              body: () =>
+                recession.isLoading ? (
+                  <Caption>Training the recession model; the first call takes about a second…</Caption>
+                ) : (
                 <>
                   <LineChart
                     series={[
                       {
                         label: "P(recession, 12m)",
                         color: "var(--warn-hot)",
-                        points: (recession.data?.recession_prob_series ?? []).map((p) => ({
-                          x: p.date,
-                          y: p.value,
-                        })),
+                        points: (recession.data?.recession_prob_series ?? []).map((p) => ({ x: p.date, y: p.value })),
                       },
                     ]}
                     yFmt={(v) => `${v.toFixed(0)}%`}
                     caption="Recession model probability history"
                   />
                   <Caption>
-                    Monthly stored series — Elevated starts at 20%, High at 40%. The model&apos;s
-                    current call is {recession.data?.recession_prob?.toFixed(1) ?? "—"}% (the KPI
-                    card above); the plotted tail can differ while a month is partial.
+                    Monthly stored series. Elevated starts at 20%, High at 40%. The model&apos;s current call is{" "}
+                    {recession.data?.recession_prob?.toFixed(1) ?? "—"}% (the evidence card above); the plotted tail can
+                    differ while a month is partial.
                   </Caption>
                 </>
-              ),
+                ),
             },
             {
               id: "chart-credit",
               title: "Credit spreads · 90 days",
               right: credit.data?.as_of ? `latest ${fmtDate(credit.data.as_of)}` : "—",
-              body: () => (
+              body: () =>
+                credit.isLoading ? (
+                  <Caption>Reading credit spreads…</Caption>
+                ) : (
                 <>
                   <LineChart
                     series={[
@@ -819,18 +807,57 @@ export default function DashboardScreen() {
                     caption="IG and HY option-adjusted spreads"
                   />
                   <Caption>
-                    <Jargon term="OAS">Option-adjusted spreads</Jargon>:{" "}
-                    <Jargon term="high-yield">high-yield</Jargon> at{" "}
+                    <Jargon term="OAS">Option-adjusted spreads</Jargon>: <Jargon term="high-yield">high-yield</Jargon> at{" "}
                     {hy ? `${Math.round(hy.value_bps)} bps` : "—"}, investment-grade at{" "}
-                    {ig ? `${Math.round(ig.value_bps)} bps` : "—"} — spreads widen when credit
-                    stress builds. FRED BAML series, monthly observations.
+                    {ig ? `${Math.round(ig.value_bps)} bps` : "—"}; spreads widen when credit stress builds. FRED BAML series,
+                    monthly observations.
                   </Caption>
                 </>
-              ),
+                ),
             },
           ]}
         />
       </section>
+
+      {/* ── Composed read-through and method, one click down ─────────── */}
+      {readThrough.length ? (
+        <section id="read-through">
+          <SectionHeader title="How this read is composed" right="stored data · no model call" />
+          <Disclosure title="Current read-through" right="composed from stored data">
+            <Card accentBar tone="accent">
+              {readThrough.map((p, i) => (
+                <p
+                  key={i}
+                  className="mrr-prose"
+                  style={{
+                    fontSize: "var(--fs-body)",
+                    color: "var(--text-2)",
+                    lineHeight: "var(--lh-body)",
+                    margin: i ? "10px 0 0" : 0,
+                    textWrap: "pretty",
+                  }}
+                >
+                  {p}
+                </p>
+              ))}
+            </Card>
+          </Disclosure>
+          <Disclosure title="Method and provenance" right="reference" style={{ marginTop: 6 }}>
+            <Card>
+              <p className="mrr-prose" style={{ ...errStyle, fontSize: "var(--fs-body-s)", lineHeight: 1.6, margin: 0 }}>
+                The regime is a 4-way softmax classifier over z-scored growth (industrial production) and inflation (CPI)
+                trends, run monthly on FRED data; the four odds always sum to 100% and the header badge shows the dominant
+                stored probability. The five monitored signals compare the latest print against fixed thresholds and are
+                scored server-side; the recession model is a logistic regression trained on NBER dates. Nothing on this
+                screen is re-derived in the browser.{" "}
+                <Link to="/app/methodology" style={{ color: "var(--accent)" }}>
+                  Full methodology →
+                </Link>
+              </p>
+            </Card>
+          </Disclosure>
+        </section>
+      ) : null}
     </div>
   );
 }

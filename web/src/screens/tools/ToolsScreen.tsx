@@ -1,18 +1,19 @@
 /**
  * Tools — locked IA: two interactive calculators as sub-tabs, LBO and Asset
  * Allocation. The sub-tab lives in the URL hash (#lbo / #allocation) so the
- * command palette and cross-tab links land on the right panel.
+ * command palette and cross-tab links land on the right panel. Local tabs
+ * carry tablist semantics via SubTabs (2026-09-05).
  */
 
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { TabBar } from "../../components";
+import SubTabs from "../shared/SubTabs";
 import LboPanel from "./LboPanel";
 import AllocationPanel from "./AllocationPanel";
 
 const SUBTABS = [
-  { id: "lbo", label: "LBO Calculator" },
-  { id: "allocation", label: "Asset Allocation" },
+  { id: "lbo", label: "LBO calculator", hint: "live financing rate" },
+  { id: "allocation", label: "Asset allocation", hint: "regime matrix" },
 ];
 
 function subtabFromHash(hash: string): string {
@@ -32,17 +33,15 @@ export default function ToolsScreen() {
   }, [location.hash]);
 
   return (
-    <div>
-      <div style={{ marginBottom: 14 }}>
-        <TabBar
-          tabs={SUBTABS}
-          active={active}
-          onChange={(id: string) => {
-            setActive(id);
-            history.replaceState(null, "", `#${id}`);
-          }}
-        />
-      </div>
+    <SubTabs
+      tabs={SUBTABS}
+      active={active}
+      label="Tools"
+      onChange={(id) => {
+        setActive(id);
+        history.replaceState(null, "", `#${id}`);
+      }}
+    >
       {active === "lbo" ? (
         <section id="lbo">
           <LboPanel />
@@ -52,6 +51,6 @@ export default function ToolsScreen() {
           <AllocationPanel />
         </section>
       )}
-    </div>
+    </SubTabs>
   );
 }

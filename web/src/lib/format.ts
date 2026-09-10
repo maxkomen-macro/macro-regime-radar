@@ -53,6 +53,27 @@ export function fmtIntradayTs(ts: string): string {
   return `${MONTHS[(m ?? 1) - 1]} ${String(d).padStart(2, "0")}, ${time.slice(0, 5)} ET`;
 }
 
+const ET_STAMP_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+/** A server stamp with no zone ("2026-09-05T22:29:00" or "… 22:29:00") is
+ * UTC: render it as an ET wall time ("Sep 05, 18:29 ET"), never by appending
+ * "ET" to the UTC digits (2026-09-05). Stamps that carry an offset are honoured. */
+export function fmtUtcStampEt(ts: string): string {
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(ts);
+  const d = new Date(hasZone ? ts.replace(" ", "T") : `${ts.replace(" ", "T")}Z`);
+  if (Number.isNaN(d.getTime())) return ts;
+  const parts = ET_STAMP_FMT.formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("month")} ${get("day")}, ${get("hour")}:${get("minute")} ET`;
+}
+
 /** Days from `iso` to now (UTC), fractional. */
 export function daysSince(iso: string): number {
   const t = new Date(iso.length <= 10 ? `${iso}T00:00:00Z` : iso.replace(" ", "T")).getTime();
@@ -74,4 +95,11 @@ export function ordinal(n: number): string {
     default:
       return `${v}th`;
   }
+}
+
+/** Display filter for server- and model-composed prose (takeaway narrative,
+ * news interpretations, cited research): em-dash asides become semicolons —
+ * the house copy rule keeps them out of rendered text. Null-safe. */
+export function tidyProse(s: string): string {
+  return s.replace(/\s+—\s+/g, "; ").replace(/ {2,}/g, " ");
 }

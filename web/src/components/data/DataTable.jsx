@@ -16,7 +16,7 @@ export function DataTable({ columns = [], rows = [], zebra = true, style, ...res
       <thead>
         <tr>
           {columns.map((c) => (
-            <th
+            <th scope="col"
               key={c.key}
               style={{
                 textAlign: c.align || "left",

@@ -18,7 +18,10 @@
 import { Fragment, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { Card, SectionHeader, Sparkline, StatTile } from "../../components";
-import { useMarketDaily, usePriced, useSurprises } from "../../api/queries";
+import { useCreditOas, useFreshness, useMarketDaily, usePriced, useSurprises } from "../../api/queries";
+import DeskRead, { type LedgerItem } from "../shared/DeskRead";
+import ScrollTable from "../shared/ScrollTable";
+import { assessFreshness, type FreshInfo } from "../shared/freshness";
 import {
   LIVE_WINDOW_MS,
   streamIsLive,
@@ -27,11 +30,13 @@ import {
   type FeedState,
   type LiveQuote,
 } from "../../live/quotes";
-import { fmtDate, fmtSigned, fmtSignedPct } from "../../lib/format";
+import { fmtDate, fmtPct, fmtSigned, fmtSignedPct, tidyProse } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import type { DailyBar } from "../../api/types";
 import { CHART_PANEL_ID } from "./chart-panel-id";
 import Jargon from "../shared/Jargon";
+import SingleName from "./SingleName";
+import SymbolSearch from "./SymbolSearch";
 
 // Lazy: lightweight-charts (~60KB gzip) loads only when a row is clicked —
 // it has no business in the first paint of any tab (critique 2026-08-06).
@@ -214,28 +219,41 @@ const headerCell: React.CSSProperties = {
   color: "var(--text-muted)",
   textAlign: "right",
 };
+// Captions are prose: UI face at --fs-caption (the 2026-08-26 readability
+// pass) — mono inside a caption is opt-in per number via <span style={mono}>.
 const capStyle: React.CSSProperties = {
-  ...mono,
-  fontSize: 10,
-  letterSpacing: ".04em",
+  fontFamily: "var(--font-ui)",
+  fontSize: "var(--fs-caption)",
   color: "var(--text-muted)",
-  lineHeight: 1.5,
+  lineHeight: 1.55,
   marginTop: 6,
+  maxWidth: "var(--maxw-prose)",
 };
 
+// A missing figure is information ("no quote"), so the dash reads at muted,
+// never the decorative faint rung (executive pass, 2026-09-05).
 const toneColor = (v: number | null | undefined) =>
-  v == null ? "var(--text-faint)" : v >= 0 ? "var(--pos)" : "var(--neg-text)";
+  v == null ? "var(--text-muted)" : v >= 0 ? "var(--pos)" : "var(--neg-text)";
 
 /* ── tape row ──────────────────────────────────────────────────────────── */
 
-const TAPE_GRID = "76px minmax(140px,1.4fr) 110px 84px 90px 70px 70px 88px 118px";
-const SINGLES_GRID = "76px minmax(140px,1.4fr) 110px 84px 90px 118px";
+// Last track is the AS OF stamp: "Aug 26, 16:29 ET · 15m" is 22 mono chars at
+// the 11px meta size (~145px), so 118px clipped it. The tape scrolls
+// horizontally inside its card below ~1000px, so the extra width is free.
+const TAPE_GRID = "76px minmax(140px,1.4fr) 110px 84px 90px 70px 70px 88px 150px";
+const SINGLES_GRID = "76px minmax(140px,1.4fr) 110px 84px 90px 150px";
+// Below 768 the tape prioritises columns instead of shrinking type: ticker,
+// last, day %, 1M % and the as-of stamp; name, Δ$, 1W and the sparkline wait
+// for a wider screen (the ticker column stays pinned while the rest swipes).
+const TAPE_GRID_NARROW = "64px 96px 76px 70px 130px";
+const SINGLES_GRID_NARROW = "64px 96px 76px 130px";
 
 interface RowProps {
   def: TapeDef;
   quote: LiveQuote | undefined;
   bars: DailyBar[] | undefined;
   wide: boolean; // macro tape carries 1W/1M/spark columns
+  narrow?: boolean; // phone column set
   zebra: boolean;
   selected: boolean;
   onSelect: (symbol: string) => void;
@@ -244,7 +262,7 @@ interface RowProps {
 // memo: the store preserves quote object identity for untick'd symbols, so at
 // the 2Hz paint cap only rows whose price actually moved re-render — the other
 // ~29 bail on shallow props (critique 2026-08-06).
-const TapeRow = memo(function TapeRow({ def, quote, bars, wide, zebra, selected, onSelect }: RowProps) {
+const TapeRow = memo(function TapeRow({ def, quote, bars, wide, narrow = false, zebra, selected, onSelect }: RowProps) {
   // 600ms directional wash on price change — previous value held in a ref
   // (TickerStrip's documented tick-flash pattern).
   const prevRef = useRef<number | null>(null);
@@ -261,6 +279,9 @@ const TapeRow = memo(function TapeRow({ def, quote, bars, wide, zebra, selected,
   }, [p]);
 
   const last = bars?.length ? bars[bars.length - 1] : undefined;
+  // Dated beats empty (review 2026-09-05): with no stream quote the row prints
+  // the newest stored close and its date instead of "no quote".
+  const storedClose = !quote && last?.close != null ? last : undefined;
   const spark = useMemo(
     () => (bars ?? []).slice(-30).map((b) => b.close).filter((c): c is number => c != null),
     [bars],
@@ -278,10 +299,11 @@ const TapeRow = memo(function TapeRow({ def, quote, bars, wide, zebra, selected,
       style={{
         appearance: "none",
         display: "grid",
-        gridTemplateColumns: wide ? TAPE_GRID : SINGLES_GRID,
+        gridTemplateColumns: narrow ? (wide ? TAPE_GRID_NARROW : SINGLES_GRID_NARROW) : wide ? TAPE_GRID : SINGLES_GRID,
         gap: 12,
         alignItems: "baseline",
         width: "100%",
+        minHeight: narrow ? 44 : 36,
         textAlign: "left",
         padding: "8px 12px",
         cursor: "pointer",
@@ -292,46 +314,60 @@ const TapeRow = memo(function TapeRow({ def, quote, bars, wide, zebra, selected,
         color: "var(--text)",
       }}
     >
-      <span style={{ ...mono, fontSize: "var(--fs-body-s)", fontWeight: 700, textAlign: "left" }}>
+      <span className="mrr-tape-ticker" title={def.name} style={{ ...mono, fontSize: "var(--fs-body-s)", fontWeight: 700, textAlign: "left" }}>
         {def.symbol}
       </span>
-      <span
-        style={{
-          fontFamily: "var(--font-ui)",
-          fontSize: "var(--fs-body-s)",
-          color: "var(--text-muted)",
-          overflow: "hidden",
-          whiteSpace: "nowrap",
-          textOverflow: "ellipsis",
-          textAlign: "left",
-        }}
-      >
-        {def.name}
-      </span>
+      {!narrow && (
+        <span
+          style={{
+            fontFamily: "var(--font-ui)",
+            fontSize: "var(--fs-body-s)",
+            color: "var(--text-muted)",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+            textAlign: "left",
+          }}
+        >
+          {def.name}
+        </span>
+      )}
       <span style={{ ...mono, fontSize: "var(--fs-body-s)", fontWeight: 600, textAlign: "right" }}>
-        {quote ? fmtPrice(def, quote.p) : "—"}
+        {quote ? (
+          fmtPrice(def, quote.p)
+        ) : storedClose ? (
+          <span style={{ color: "var(--text-2)" }}>{fmtPrice(def, storedClose.close as number)}</span>
+        ) : (
+          <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>no quote</span>
+        )}
       </span>
-      <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: toneColor(quote?.dc) }}>
-        {num(quote?.dc, (v) => fmtSignedPct(v))}
+      <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: toneColor(quote ? quote.dc : storedClose?.ret_1d) }}>
+        {quote ? num(quote.dc, (v) => fmtSignedPct(v)) : num(storedClose?.ret_1d, (v) => fmtSignedPct(v))}
       </span>
-      <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: toneColor(quote?.dd) }}>
-        {quote?.dd != null ? fmtDayDollar(def, quote.dd) : "—"}
-      </span>
+      {!narrow && (
+        <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: toneColor(quote?.dd) }}>
+          {quote?.dd != null ? fmtDayDollar(def, quote.dd) : "—"}
+        </span>
+      )}
       {wide && (
         <>
-          <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: toneColor(last?.ret_1w) }}>
-            {num(last?.ret_1w, (v) => fmtSignedPct(v, 1))}
-          </span>
+          {!narrow && (
+            <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: toneColor(last?.ret_1w) }}>
+              {num(last?.ret_1w, (v) => fmtSignedPct(v, 1))}
+            </span>
+          )}
           <span style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: toneColor(last?.ret_1m) }}>
             {num(last?.ret_1m, (v) => fmtSignedPct(v, 1))}
           </span>
-          <span style={{ justifySelf: "end", alignSelf: "center" }}>
-            {spark.length >= 2 ? (
-              <Sparkline values={spark} width={84} height={20} color="var(--accent)" />
-            ) : (
-              <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-faint)" }}>—</span>
-            )}
-          </span>
+          {!narrow && (
+            <span style={{ justifySelf: "end", alignSelf: "center" }}>
+              {spark.length >= 2 ? (
+                <Sparkline values={spark} width={84} height={20} color="var(--accent)" />
+              ) : (
+                <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>—</span>
+              )}
+            </span>
+          )}
         </>
       )}
       <span
@@ -344,33 +380,33 @@ const TapeRow = memo(function TapeRow({ def, quote, bars, wide, zebra, selected,
         }}
       >
         {asOf.live ? "● " : ""}
-        {asOf.text}
+        {quote ? asOf.text : storedClose ? `${fmtDate(storedClose.date)} close` : asOf.text}
       </span>
     </button>
   );
 });
 
-function TapeHeader({ wide }: { wide: boolean }) {
+function TapeHeader({ wide, narrow = false }: { wide: boolean; narrow?: boolean }) {
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: wide ? TAPE_GRID : SINGLES_GRID,
+        gridTemplateColumns: narrow ? (wide ? TAPE_GRID_NARROW : SINGLES_GRID_NARROW) : wide ? TAPE_GRID : SINGLES_GRID,
         gap: 12,
         padding: "6px 12px 6px 15px",
         borderBottom: "1px solid var(--line-hair)",
       }}
     >
-      <span style={{ ...headerCell, textAlign: "left" }}>Ticker</span>
-      <span style={{ ...headerCell, textAlign: "left" }}>Name</span>
+      <span className="mrr-tape-ticker" style={{ ...headerCell, textAlign: "left" }}>Ticker</span>
+      {!narrow && <span style={{ ...headerCell, textAlign: "left" }}>Name</span>}
       <span style={headerCell}>Last</span>
       <span style={headerCell}>Day %</span>
-      <span style={headerCell}>Day Δ$</span>
+      {!narrow && <span style={headerCell}>Day Δ$</span>}
       {wide && (
         <>
-          <span style={headerCell}>1W %</span>
+          {!narrow && <span style={headerCell}>1W %</span>}
           <span style={headerCell}>1M %</span>
-          <span style={headerCell}>30 Sess</span>
+          {!narrow && <span style={headerCell}>30 Sess</span>}
         </>
       )}
       <span style={headerCell}>As of</span>
@@ -414,9 +450,12 @@ function feedWord(
     return { text, color: "var(--text-muted)" };
   }
   if (state === "rest") return { text: "15m delayed", color: "var(--text-muted)" };
-  if (state === "auth_failed") return { text: "auth failed", color: "var(--neg-text)" };
+  if (state === "auth_failed") return { text: "feed rejected by the provider", color: "var(--neg-text)" };
+  if (state === "connecting") return { text: "connecting", color: "var(--text-muted)" };
+  if (state === "closed") return { text: "reconnecting", color: "var(--text-muted)" };
   if (state === "off" || state == null) return { text: "off", color: "var(--text-muted)" };
-  return { text: state, color: "var(--text-muted)" };
+  // Never a raw machine state on screen: anything new reads as unavailable.
+  return { text: "unavailable", color: "var(--text-muted)" };
 }
 
 function FeedStatusLine() {
@@ -444,9 +483,11 @@ function FeedStatusLine() {
   // down, per-feed states are stale claims — say the stream is down instead
   // (critique P1: a dead API rendered "CONNECTED" forever).
   if (status.socket !== "open") {
+    // One honest phrase whether the socket is mid-retry or down: the rows
+    // print stored closes with their dates either way.
     return (
-      <span style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--text-muted)" }}>
-        {status.socket === "connecting" ? "stream reconnecting —" : "stream offline · stored data only"}
+      <span style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--warn-hot)" }}>
+        stream unavailable · showing stored closes
       </span>
     );
   }
@@ -473,10 +514,18 @@ export default function MarketsScreen() {
   const daily = useMarketDaily(DAILY_FETCH, 60);
   const priced = usePriced();
   const surprises = useSurprises(10);
+  const credit = useCreditOas(90);
+  const freshness = useFreshness();
   // ?chart=SPY deep-links an open panel (evidence captures, palette jumps).
   const [selected, setSelected] = useState<string | null>(() => {
     const c = new URLSearchParams(window.location.search).get("chart")?.toUpperCase();
     return c && [...MACRO_TAPE, ...SINGLE_NAMES].some((d) => d.symbol === c) ? c : null;
+  });
+  // Single-name research: any listed symbol via the on-demand yfinance layer.
+  // ?name=NVDA deep-links an open deep dive.
+  const [lookupSym, setLookupSym] = useState<string | null>(() => {
+    const c = new URLSearchParams(window.location.search).get("name")?.toUpperCase();
+    return c && /^[A-Z0-9.^=\-]{1,15}$/.test(c) ? c : null;
   });
 
   const barsBySymbol = useMemo(() => {
@@ -543,10 +592,10 @@ export default function MarketsScreen() {
     if (t5 == null || t10 == null) return null;
     const spread = t10 - t5;
     if (spread > 0.1)
-      return `10Y breakeven sits ${spread.toFixed(2)}pp above 5Y — the market prices inflation as persistent, not passing.`;
+      return `10Y breakeven sits ${spread.toFixed(2)}pp above 5Y: the market prices inflation as persistent, not passing.`;
     if (spread < -0.1)
-      return `5Y breakeven sits ${(-spread).toFixed(2)}pp above 10Y — near-term inflation concern, longer term anchored.`;
-    return `5Y and 10Y breakevens sit in line (${t5.toFixed(2)}% / ${t10.toFixed(2)}%) — no meaningful term premium on inflation.`;
+      return `5Y breakeven sits ${(-spread).toFixed(2)}pp above 10Y: near-term inflation concern, longer term anchored.`;
+    return `5Y and 10Y breakevens sit in line (${t5.toFixed(2)}% / ${t10.toFixed(2)}%): no meaningful term premium on inflation.`;
   }, [pricedByMetric]);
 
   const surpriseWeek = useMemo(() => {
@@ -555,18 +604,149 @@ export default function MarketsScreen() {
   }, [surprises.data]);
 
   const groupCaptions: Record<string, React.ReactNode> = {
-    "Policy rate proxies": "Where the overnight rate actually sits — the hurdle every risk asset has to clear.",
+    "Policy rate proxies": "Where the overnight rate actually sits: the hurdle every risk asset has to clear.",
     "Inflation breakevens": (
       <>
-        Nominal minus <Jargon term="TIPS">TIPS</Jargon> yields — the market&apos;s own inflation
+        Nominal minus <Jargon term="TIPS">TIPS</Jargon> yields: the market&apos;s own inflation
         forecast, no survey asked.
       </>
     ),
-    "Real yields (TIPS)": "The after-inflation rate — the gravity working on gold, growth stocks, and long duration.",
+    "Real yields (TIPS)": "The after-inflation rate: the gravity working on gold, growth stocks, and long duration.",
   };
 
+  /* ── desk read: what the tape says right now, composed from the feed ── */
+  const deskRead = (() => {
+    const spy = quotes.get("SPY");
+    const qqq = quotes.get("QQQ");
+    const vixQ = quotes.get("VIX");
+    const ten = credit.data?.series.find((x) => x.label === "UST10Y");
+    const usOpen = nyseSessionOpen();
+    // "Live" means a US symbol actually ticked over the socket inside the live
+    // window; a connected-but-silent feed is not live (crypto ticking at night
+    // must not make the US session read live).
+    const now = Date.now();
+    const usLive =
+      status.socket === "open" &&
+      MACRO_TAPE.some((d) => {
+        if (d.feed !== "us") return false;
+        const q = quotes.get(d.symbol);
+        return q?.src === "ws" && q.t != null && now - q.t < LIVE_WINDOW_MS;
+      });
+    void live;
+    const newestTick = [...quotes.values()].reduce<number | null>((m, q) => (q.t != null && (m == null || q.t > m) ? q.t : m), null);
+    const tapeInfo: FreshInfo = newestTick
+      ? assessFreshness(new Date(newestTick).toISOString(), "intraday")
+      : assessFreshness(null, "intraday");
+    const storedInfo = assessFreshness(marketDailyDate ?? freshness.data?.market_daily_date, "daily");
+    const pricedDate = priced.data?.length ? priced.data.map((p) => p.date).reduce((a, b) => (a > b ? a : b)) : null;
+
+    const sectorRets = SECTORS.map(({ symbol, name }) => {
+      const bars = barsBySymbol.get(symbol);
+      return { name, ret: bars?.length ? bars[bars.length - 1].ret_1d : null };
+    }).filter((x) => x.ret != null) as { name: string; ret: number }[];
+    const lead = sectorRets.length ? sectorRets.reduce((a, b) => (b.ret > a.ret ? b : a)) : null;
+    const lag = sectorRets.length ? sectorRets.reduce((a, b) => (b.ret < a.ret ? b : a)) : null;
+
+    const spyBar = barsBySymbol.get("SPY")?.slice(-1)[0];
+    const qqqBar = barsBySymbol.get("QQQ")?.slice(-1)[0];
+    const spyWord =
+      spy?.dc != null
+        ? `SPY ${fmtSignedPct(spy.dc)}`
+        : spy?.p != null
+          ? `SPY $${spy.p.toFixed(2)} last`
+          : spyBar?.close != null
+            ? `SPY $${spyBar.close.toFixed(2)} (${fmtDate(spyBar.date)} close)`
+            : "SPY unquoted";
+    const qqqWord =
+      qqq?.dc != null
+        ? `, QQQ ${fmtSignedPct(qqq.dc)}`
+        : qqq?.p != null
+          ? `, QQQ $${qqq.p.toFixed(2)}`
+          : qqqBar?.close != null
+            ? `, QQQ $${qqqBar.close.toFixed(2)}`
+            : "";
+    const conclusion = usLive
+      ? `US session live: ${spyWord}${qqq?.dc != null ? `, QQQ ${fmtSignedPct(qqq.dc)}` : ""}${vixQ ? `, VIX ${vixQ.p.toFixed(2)}` : ""}.`
+      : usOpen
+        ? `US session open but the stream is not ticking: ${spyWord}${vixQ ? `, VIX ${vixQ.p.toFixed(2)}` : ""}.`
+        : status.socket !== "open" && !spy
+          ? `Stream unavailable, stored closes shown: ${spyWord}${qqqWord}.`
+          : `US session closed: ${spyWord}${qqqWord}${vixQ ? `, VIX ${vixQ.p.toFixed(2)}` : ""}${
+              spy?.delayed ? " (15-minute delayed quotes)" : ""
+            }.`;
+
+    const ledger: LedgerItem[] = [
+      ...(ten
+        ? [{ label: "US 10Y", value: `${fmtPct(ten.value_pct)}${ten.change_1w_bps != null ? ` · ${ten.change_1w_bps >= 0 ? "+" : ""}${Math.round(ten.change_1w_bps)} bps 1w` : ""}` }]
+        : []),
+      ...(lead && lag
+        ? [
+            {
+              label: "Sectors · 1d",
+              value: `${lead.name} ${fmtSignedPct(lead.ret)} leads · ${lag.name} ${fmtSignedPct(lag.ret)} lags`,
+              prose: true,
+            },
+          ]
+        : []),
+      ...(pricedByMetric.get("T10YIE") && pricedByMetric.get("DFII10")
+        ? [
+            {
+              label: "Priced",
+              value: `10Y breakeven ${pricedByMetric.get("T10YIE")!.value.toFixed(2)}% · 10Y real ${pricedByMetric.get("DFII10")!.value.toFixed(2)}%`,
+            },
+          ]
+        : []),
+      ...(surprises.data?.length
+        ? [
+            {
+              label: "Top surprise",
+              value: tidyProse(surprises.data[0].interpretation),
+              prose: true,
+            },
+          ]
+        : []),
+    ];
+
+    return (
+      <DeskRead
+        eyebrow="Desk read · Markets"
+        live={usLive}
+        conclusion={conclusion}
+        why={
+          usLive
+            ? "Day moves are the exchange feed's own figures. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence."
+            : "Off-hours the board holds the last quote with its timestamp. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence."
+        }
+        ledger={ledger}
+        freshness={[
+          { noun: "Tape", info: tapeInfo },
+          { noun: "Stored candles", info: storedInfo },
+          { noun: "Priced", info: assessFreshness(pricedDate, "weekly") },
+        ]}
+      />
+    );
+  })();
+
   return (
-    <div style={{ display: "grid", gap: 14 }}>
+    <div style={{ display: "grid", gap: 16 }}>
+      {deskRead}
+
+      {/* ── Single-name research: search any listed symbol ───────────── */}
+      <section id="single-name-research">
+        <SectionHeader
+          title="Single-name research"
+          right="any listed symbol · EODHD first, yfinance only as a disclosed fallback · delayed quotes"
+        />
+        <SymbolSearch onSelect={(hit) => setLookupSym(hit.symbol)} />
+        {lookupSym && <SingleName symbol={lookupSym} onClose={() => setLookupSym(null)} />}
+        {!lookupSym && (
+          <div style={{ ...capStyle, marginTop: 8 }}>
+            Type a ticker or company name for a full profile: delayed quote, candles across seven
+            ranges, fundamentals, regime fit since 1996, and the stored news window.
+          </div>
+        )}
+      </section>
+
       {/* ── Watchlist: Macro Tape + Single Names ─────────────────────── */}
       <section id="watchlist">
         <SectionHeader title="Macro tape" right={<FeedStatusLine />} />
@@ -574,8 +754,8 @@ export default function MarketsScreen() {
           <Suspense
             fallback={
               <Card style={{ marginBottom: 12 }}>
-                <span style={{ ...mono, fontSize: 10, color: "var(--text-muted)" }}>
-                  Loading the chart module —
+                <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
+                  Loading the chart module…
                 </span>
               </Card>
             }
@@ -588,10 +768,12 @@ export default function MarketsScreen() {
             />
           </Suspense>
         )}
-        {/* overflow-x scrolls the fixed-track grid under ~1000px instead of
-            silently clipping the freshness column (critique P1). */}
-        <Card style={{ padding: 0, overflowX: "auto" }}>
-          <TapeHeader wide />
+        {/* The well scrolls the fixed-track grid under ~1000px instead of
+            silently clipping the freshness column (critique P1); the ticker
+            column pins and a swipe affordance appears when it overflows. */}
+        <Card style={{ padding: 0 }}>
+          <ScrollTable label="Macro tape">
+          <TapeHeader wide narrow={isNarrow} />
           {TAPE_GROUPS.map((group, gi) => (
             <Fragment key={group.label}>
               {/* 9px uppercase mono eyebrow — one table, groups made visible
@@ -617,6 +799,7 @@ export default function MarketsScreen() {
                   quote={quotes.get(def.symbol)}
                   bars={barsBySymbol.get(def.symbol)}
                   wide
+                  narrow={isNarrow}
                   zebra={i % 2 === 1}
                   selected={selected === def.symbol}
                   onSelect={toggleSelect}
@@ -624,20 +807,24 @@ export default function MarketsScreen() {
               ))}
             </Fragment>
           ))}
+          </ScrollTable>
         </Card>
         <div style={capStyle}>
-          Day moves come straight from the exchange feed&apos;s own day-change figures — never
+          Day moves come straight from the exchange feed&apos;s own day-change figures; never
           recomputed here. 1W / 1M and sparklines come from the stored daily candles
           {marketDailyDate ? ` through ${fmtDate(marketDailyDate)}` : ""}; crypto, FX, VIX and
-          single names have no stored history yet, so those columns stay honest dashes.
+          single names have no stored history yet, so those columns print a dash. A dash under
+          Day % means the feed sent a price without a day change (off-hours REST fill); the as-of
+          stamp says when.
+          {isNarrow ? " Name, Δ$, 1W and the sparkline return above 768px." : ""}
           {/* Cadence + cross-surface reconciliation: the VIX row is a quote off
               this feed, while the Dashboard's VIX spike card reads the monthly
               signals snapshot — two honest levels, two cadences. */}
           <div style={{ marginTop: 2 }}>
-            every row states its own as-of stamp · ● marks a live tick, the rest print the quote
-            time with the 15-minute delay noted where it applies · the dashboard&apos;s VIX spike
-            signal reads the monthly signal print, so it carries a different level than the VIX row
-            here.
+            Every row states its own as-of stamp: ● marks a live tick, the rest print the quote time
+            with the 15-minute delay noted where it applies, and a dated close means the stream had no
+            quote. The dashboard&apos;s VIX spike signal reads the monthly signal print, so it carries a
+            different level than the VIX row here.
           </div>
         </div>
 
@@ -646,8 +833,9 @@ export default function MarketsScreen() {
             title="Single names"
             right={`sorted by day move · re-sorts ${live ? "live" : "as data updates"}`}
           />
-          <Card style={{ padding: 0, overflowX: "auto" }}>
-            <TapeHeader wide={false} />
+          <Card style={{ padding: 0 }}>
+            <ScrollTable label="Single names">
+            <TapeHeader wide={false} narrow={isNarrow} />
             {singlesSorted.map((def, i) => (
               <TapeRow
                 key={def.symbol}
@@ -655,14 +843,16 @@ export default function MarketsScreen() {
                 quote={quotes.get(def.symbol)}
                 bars={undefined}
                 wide={false}
+                narrow={isNarrow}
                 zebra={i % 2 === 1}
                 selected={selected === def.symbol}
                 onSelect={toggleSelect}
               />
             ))}
+            </ScrollTable>
           </Card>
           <div style={capStyle}>
-            Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers —
+            Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers;
             biggest day move on top. Off-hours the board holds at the last close until the next
             session opens.
           </div>
@@ -708,7 +898,7 @@ export default function MarketsScreen() {
           })}
         </div>
         <div style={capStyle}>
-          One-day sector moves from stored closes — tint steps at ±1% and ±2%. Sector ETFs are
+          One-day sector moves from stored closes; tint steps at ±1% and ±2%. Sector ETFs are
           not on the live stream; this block moves once a day.
         </div>
       </section>
@@ -764,12 +954,12 @@ export default function MarketsScreen() {
           </div>
         ) : (
           <Card>
-            <span style={{ ...mono, fontSize: 10, color: "var(--text-muted)" }}>
+            <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
               {priced.isError
-                ? "Market-implied pricing unavailable — the data service did not answer."
+                ? "Market-implied pricing unavailable: the data service did not answer."
                 : priced.isLoading
-                  ? "Reading market-implied pricing —"
-                  : "No priced metrics on file — the weekly pipeline has not written them yet."}
+                  ? "Reading market-implied pricing…"
+                  : "No priced metrics on file; the weekly pipeline has not written them yet."}
             </span>
           </Card>
         )}
@@ -821,9 +1011,9 @@ export default function MarketsScreen() {
                       alignItems: "center",
                     }}
                   >
-                    <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-faint)" }}>{i + 1}</span>
+                    <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>{i + 1}</span>
                     <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)", lineHeight: 1.5 }}>
-                      {s.interpretation}
+                      {tidyProse(s.interpretation)}
                     </span>
                     <span style={{ height: 4, borderRadius: "var(--r-xs)", background: "var(--surface-raised)", overflow: "hidden" }}>
                       <span style={{ display: "block", height: "100%", width: `${pct}%`, background: barColor, borderRadius: "var(--r-xs)" }} />
@@ -836,16 +1026,16 @@ export default function MarketsScreen() {
               })}
             </div>
           ) : (
-            <span style={{ ...mono, fontSize: 10, color: "var(--text-muted)" }}>
+            <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
               {surprises.isError
-                ? "Surprise feed unavailable — the data service did not answer."
+                ? "Surprise feed unavailable: the data service did not answer."
                 : surprises.isLoading
-                  ? "Ranking the week's moves —"
+                  ? "Ranking the week's moves…"
                   : "No surprise data on file for this week."}
             </span>
           )}
           <div style={capStyle}>
-            Weekly moves ranked by <Jargon term="z-score">z-score</Jargon> — how far outside its
+            Weekly moves ranked by <Jargon term="z-score">z-score</Jargon>: how far outside its
             own recent range each market traveled. Bars scale to 3σ; ±1.5σ turns amber, ±2.5σ red.
             {/* Provenance: these rows are the weekly derived-metrics pipeline,
                 not the monthly signals snapshot the Dashboard cards read — a
@@ -853,7 +1043,7 @@ export default function MarketsScreen() {
             <div style={{ marginTop: 2 }}>
               weekly derived series
               {surpriseWeek ? ` · week ending ${fmtDate(surpriseWeek)}` : ""} · macro rows read this
-              pipeline, not the monthly signal prints on the dashboard — the same metric carries a
+              pipeline, not the monthly signal prints on the dashboard; the same metric carries a
               different level on each surface.
             </div>
           </div>
@@ -861,9 +1051,9 @@ export default function MarketsScreen() {
       </section>
 
       {/* ── source line ──────────────────────────────────────────────── */}
-      <div style={{ ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--text-muted)" }}>
-        Live prices via EODHD WebSocket — crypto &amp; FX stream around the clock, US equities
-        during NYSE hours, 15-min-delayed quotes fill the gaps · stored candles and returns via
+      <div style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: ".06em", color: "var(--text-muted)" }}>
+        Live prices via EODHD WebSocket (crypto &amp; FX stream around the clock, US equities
+        during NYSE hours, 15-min-delayed quotes fill the gaps) · stored candles and returns via
         the yfinance pipeline · macro metrics via FRED.
       </div>
     </div>

@@ -57,10 +57,41 @@ auditable data pipeline. The design language states this rather than sells it.
   ones call the same `src/analytics/*` modules the tabs do — plus the unprefixed Atlas
   group, the stream WebSocket/debug pair, and `POST /api/assistant/ask` (count as of
   2026-08-26) [repo]. During development the client assumes `http://127.0.0.1:8000` [brief].
-- **Cadence truth [repo]:** regimes/signals are monthly-cadence; market daily bars are
-  daily (yfinance); intraday is 5-min for SPY/QQQ; news is hourly with a rolling 7-day
-  retention window; the calendar is a hand-maintained CSV through Dec 2026. Freshness
-  messaging must state what the data is, never pretend it is live.
+- **Cadence truth [repo]:** regimes/signals are monthly-cadence; the stored market
+  universe (23 ETFs) is refreshed daily by the pipeline (yfinance); intraday is 5-min for
+  SPY/QQQ; news is hourly with a rolling retention window; the calendar is a
+  hand-maintained CSV through Dec 2026. Freshness messaging must state what the data
+  is, never pretend it is live. Since 2026-09-06 the server publishes source-aware
+  verdicts (`/api/freshness`: current / delayed / stale per feed, the NYSE session, and
+  the exact monthly inputs blocking the regime month) and the shell prints one status
+  word: **Validated snapshot · Delayed · Live · Reconnecting · Backend unavailable**.
+- **Provider hierarchy (2026-09-06) [repo]:** EODHD is the primary market-data provider
+  for everything requested on demand — symbol search, delayed quotes, daily and intraday
+  candles, splits/dividends, exchange hours, end-of-day options, bounded ticks — and for
+  the live tape (WebSocket relay). yfinance is only a **disclosed** fallback (search,
+  candles, quotes) and the source of fundamentals while the EODHD plan excludes them.
+  FRED remains the sole macro authority. Every on-demand payload names its provider,
+  fetch time, market timestamp, delayed/live, and any fallback with its reason; a series
+  never mixes providers and a fallback is never silent. Entitlements are probed once per
+  family at startup and published at `/api/providers/status` (2026-09-06: fundamentals
+  and ticks not in the plan → explicit unavailable states; options entitled).
+- **Any listed symbol [repo]:** stored-universe rows keep their DB history; any other
+  symbol (AMZN, BRK.B, BTC-USD, EURUSD, VIX…) requests EODHD history on demand with
+  ranges 1D/5D/1M/6M/1Y/5Y/MAX (default 6M), never persisted to SQLite, never painted
+  with a previous symbol's bars, and with named states for unknown symbol, unsupported
+  instrument, plan gap, rate limit, timeout, empty range, fallback, and closed session.
+- **Options and ticks scope [repo]:** the Options lens is a collapsed disclosure inside
+  Single-name research — end-of-day EODHD marks, one expiration at a time, calls or
+  puts, server-side pagination and filters, provider Greeks and IV only, no trading
+  recommendation, and an explicit unavailable state when the plan lacks the family.
+  Ticks are bounded windows (≤30 min, ≤5,000 trades) aggregated server-side to
+  one-minute bars, never stored, and gated by entitlement (unavailable on today's plan).
+- **Availability promise [repo]:** the static bundle ships a validated snapshot
+  (`snapshot/latest.json`, built from a validated database) that seeds the cache before
+  first paint, so the shell, Methodology, regime, signals, freshness, stored market
+  tables and the latest stored headlines read with the API asleep; dynamic services
+  connect progressively and never block; the live tape is best-effort on a sleeping
+  host and the status word says so.
 - **The locked IA is the spec of record [brief]:** seven tabs — Dashboard (regime hero +
   signals + KPIs + 3-row What's Priced teaser + macro charts in an in-place accordion) ·
   Regime Lab (playbook, cycle, transitions, analogues, scenarios, regime-history Gantt,
@@ -78,9 +109,15 @@ auditable data pipeline. The design language states this rather than sells it.
   contract with Atlas's MacroBridge agent; `/api/*` field names mirror the dashboard
   loaders. Do not rename fields [repo].
 - The ticker strip runs on the EODHD WebSocket relay (`api/stream.py` → `/api/stream/ws`),
-  built 2026-08-06; the token stays server-side and never reaches the browser. Absent
-  `EODHD_API_TOKEN` the feeds stay off and the client falls back to the
-  `/api/market/intraday` DB poll [repo].
+  built 2026-08-06 and hardened 2026-09-06 (stale-tick detection, degraded verdict,
+  bounded dynamic subscriptions for the symbol a panel is watching, `VITE_WS_BASE`); the
+  token stays server-side and never reaches the browser. Absent `EODHD_API_TOKEN` the
+  feeds stay off and the client falls back to the `/api/market/intraday` DB poll [repo].
+- Public exposure is gated (2026-09-06, `api/security.py`): the assistant is off by
+  default on a public origin set (`ASSISTANT_ACCESS`), every API path is rate limited and
+  size capped, expensive calculators and provider calls have concurrency ceilings,
+  responses carry security headers, and provider failures return typed, sanitized
+  bodies [repo].
 - The assistant is built (2026-08-26): `POST /api/assistant/ask` streams SSE from
   `api/chat.py`, rendered by `web/src/screens/shell/AssistantPanel.tsx`. The SELECT-only
   SQL guard stays server-side and is **imported** from `src/analytics/chat.py`, never
@@ -91,9 +128,11 @@ auditable data pipeline. The design language states this rather than sells it.
   fallback only when no `status` is present [repo + bundle].
 - Regime labels are a closed set of four; alert levels a closed set of three [repo].
 - **Undecided** (owner decisions, not to be made unilaterally): production hosting — the
-  runbook exists (`docs/redesign/DEPLOY.md`, split Vercel + backend or single same-origin
-  host) but the choice of host is the owner's [repo]; when the React client replaces
-  Streamlit; EODHD subscription.
+  runbook (`docs/redesign/DEPLOY.md`) documents a zero-cost mode (static bundle +
+  sleeping free API host, snapshot-backed) and a paid always-on mode; the choice, the
+  keepalive question, and adding `EODHD_API_TOKEN` to the host are the owner's [repo];
+  when the React client replaces Streamlit; the EODHD plan tier (fundamentals and ticks
+  are outside today's plan).
 
 ## Brand Commitments
 
@@ -138,6 +177,11 @@ auditable data pipeline. The design language states this rather than sells it.
    its date stated. An empty state with data in the store is a rendering failure.
 5. **Motion is information.** Pulse = live, tick-flash = changed, caret = awaiting input.
    Nothing else moves. If a screen feels empty, the answer is more data, not decoration.
+6. **Conclusion first (2026-09-05).** Every major screen opens with one desk read:
+   conclusion, why it matters, what changed, what to watch, what would invalidate the
+   call, and how fresh the evidence is. The audit trail (signals, evidence, charts) sits
+   under it and methodology is one click down. The locked IA is unchanged; the reading
+   order inside each tab is now fixed.
 
 ## Accessibility & Inclusion
 

@@ -26,6 +26,9 @@ export function NewsCard({
   time,
   ticker,
   headline,
+  /** Original article URL — the headline becomes a link and a "Read at
+   * source" line appears (contract extension 2026-09-05). */
+  href,
   summary,
   significance,
   sigScale = 10,
@@ -72,11 +75,29 @@ export function NewsCard({
         ) : null}
       </div>
       <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body)", fontWeight: 600, color: "var(--text)", lineHeight: 1.4, textWrap: "pretty" }}>
-        {headline}
+        {href ? (
+          <a href={href} target="_blank" rel="noreferrer" style={{ color: "var(--text)", textDecorationColor: "var(--line-strong)" }}>
+            {headline}
+          </a>
+        ) : (
+          headline
+        )}
       </div>
       {summary ? (
         <div style={{ fontSize: "var(--fs-body-s)", color: "var(--text-muted)", lineHeight: "var(--lh-loose)", marginTop: "var(--sp-4)", textWrap: "pretty" }}>
           {summary}
+        </div>
+      ) : null}
+      {href ? (
+        <div style={{ marginTop: "var(--sp-5)" }}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--accent)" }}
+          >
+            Read at {source || "source"} →
+          </a>
         </div>
       ) : null}
       {hasDetail && expandable ? (
@@ -91,9 +112,10 @@ export function NewsCard({
             marginTop: "var(--sp-6)",
             color: "var(--accent)",
             fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-micro)",
+            fontSize: "var(--fs-meta)",
             letterSpacing: "var(--ls-micro)",
             textTransform: "uppercase",
+            minHeight: 28,
             cursor: "pointer",
           }}
         >

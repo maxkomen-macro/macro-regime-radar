@@ -3,20 +3,25 @@
 --font-ui:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
 --font-mono:"IBM Plex Mono","SF Mono","Fira Code",SFMono-Regular,Consolas,monospace;
 
-/* Size ramp — every value is one the dashboard actually uses */
---fs-micro:9px;    /* gauge captions, status words */
---fs-meta:10px;    /* timestamps, "Last alert:" */
+/* Size ramp — every value is one the dashboard actually uses.
+   Evolved 2026-08-26 (owner-directed readability pass): each rung up one step;
+   mono narrowed to data (numbers, tickers, timestamps, column headers) — prose
+   and captions render in --font-ui at --fs-caption or above. */
+--fs-micro:11px;   /* gauge captions, status words (floor raised 2026-09-05: 10→11) */
+--fs-meta:12px;    /* timestamps, "Last alert:" (11→12) */
 --fs-label:11px;   /* UPPERCASE section labels */
---fs-body-s:12px;  /* card titles, table cells */
---fs-body:13px;    /* prose, memo body */
+--fs-caption:13px; /* desk-note captions — Plex Sans, never mono (12→13) */
+--fs-body-s:13px;  /* card titles, table cells */
+--fs-body:14px;    /* prose, memo body */
 --fs-value:18px;   /* signal card value, regime badge */
+--fs-lead:20px;    /* the desk-read conclusion sentence (added 2026-09-05) */
 --fs-value-lg:20px;/* rank numbers */
 --fs-metric:26px;  /* hero metric */
 --fs-hero:34px;    /* dashboard headline number */
 
 --lh-tight:1; /* @kind font */
 --lh-snug:1.35; /* @kind font */
---lh-body:1.55; /* @kind font */
+--lh-body:1.6; /* @kind font */
 --lh-loose:1.6; /* @kind font */
 
 --fw-regular:400; /* @kind font */
@@ -26,8 +31,8 @@
 
 /* Tracking — the terminal signature */
 --ls-label:.5px; /* @kind font */   /* 11px uppercase section header */
---ls-micro:1px; /* @kind font */    /* 9–10px meta labels */
---ls-wide:1.5px; /* @kind font */   /* eyebrow / column headers */
+--ls-micro:.6px; /* @kind font */   /* 11px meta labels (1→.6px, 2026-09-05) */
+--ls-wide:1px; /* @kind font */   /* eyebrow / column headers (1.5→1px, 2026-09-05) */
 --ls-badge:.3px; /* @kind font */
 --ls-numeric:-.02em; /* @kind font */ /* large mono numbers pull tighter */
 

@@ -1,3 +1,4 @@
+import { useEffect, useId, useRef, useState } from "react";
 /**
  * Dotted-underline jargon affordance — definitions from the confusion index,
  * shown on hover/focus via the .jargon CSS (app.css). Keyboard-reachable.
@@ -20,7 +21,7 @@ const DEFS: Record<string, string> = {
   "z-score":
     "How unusual a reading is versus its own recent range, in standard deviations. ±2 is notable, ±3 is rare.",
   divergence:
-    "Whether the recession model and market risk pricing agree. Aligned = they tell one story; a divergence flags one of them as likely wrong.",
+    "Whether the recession model and market risk pricing agree. Aligned = they tell one story; a material divergence requires judgment about which read to weight.",
   NBER: "The National Bureau of Economic Research — the committee that dates official US recessions; the model trains on its dates.",
   "recession model":
     "A logistic regression on yield-curve, credit and leading-indicator inputs, trained on NBER recession dates, reading the odds of recession within 12 months.",
@@ -51,33 +52,93 @@ const DEFS: Record<string, string> = {
   cohort:
     "A bucket of historical months sharing one condition — a signal being triggered, or the market sitting in one regime.",
   tenor: "A maturity point on the yield curve — the 2Y and 10Y are the stored tenors.",
-  IG: "Investment grade — bonds rated BBB− or better. Their spread is the calm end of the credit market.",
+  IG: "Investment grade: bonds rated BBB− or better. Their spread is the calm end of the credit market.",
   drawdown:
     "Peak-to-trough loss. A −50% drawdown needs a +100% recovery to get back to even.",
   "efficient frontier":
-    "The curve of portfolios offering the highest expected return at each level of risk — anything below the curve is leaving return on the table.",
+    "The curve of portfolios offering the highest expected return at each level of risk; anything below the curve is leaving return on the table.",
   "transition matrix":
     "Historical odds of moving from one state to another over a fixed horizon, counted from the stored monthly history.",
   "risk parity":
-    "Weights sized so each asset contributes equal risk — bonds get more capital than stocks because they move less.",
+    "Weights sized so each asset contributes equal risk; bonds get more capital than stocks because they move less.",
   "Black-Litterman":
     "Starts from market-cap weights as the neutral view, then tilts toward the regime's historical returns.",
   distress:
-    "CCC-rated spreads at 1,000 bps or wider — the market pricing meaningful default risk in the weakest credits.",
-  HRP: "Hierarchical risk parity — clusters assets by how they move together, then budgets risk down the tree. No return forecasts involved.",
-  HERC: "Hierarchical equal risk contribution — HRP's cousin, equalizing risk within and across the clusters.",
-  "R²": "Share of the portfolio's monthly variation the factors explain. 0.3 means 30% — the rest is asset-specific.",
-  alpha: "Annualized return left over after the factor exposures are paid — the part the factors can't explain.",
+    "CCC-rated spreads at 1,000 bps or wider: the market pricing meaningful default risk in the weakest credits.",
+  HRP: "Hierarchical risk parity: clusters assets by how they move together, then budgets risk down the tree. No return forecasts involved.",
+  HERC: "Hierarchical equal risk contribution: HRP's cousin, equalizing risk within and across the clusters.",
+  "R²": "Share of the portfolio's monthly variation the factors explain. 0.3 means 30%; the rest is asset-specific.",
+  alpha: "Annualized return left over after the factor exposures are paid: the part the factors can't explain.",
 };
 
 export default function Jargon({ term, children }: { term: keyof typeof DEFS | string; children?: React.ReactNode }) {
   const def = DEFS[term];
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const closeTimer = useRef<number | null>(null);
+
+  // Escape dismisses without moving focus (WCAG 1.4.13: dismissible).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setPinned(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
   if (!def) return <>{children ?? term}</>;
-  // title carries the definition to screen readers and touch; the styled
-  // ::after tooltip serves pointer + keyboard focus.
+
+  const show = () => {
+    if (closeTimer.current != null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setOpen(true);
+  };
+  // A short grace lets the pointer travel onto the tooltip (hoverable) —
+  // the definition stays while the pointer is on either element (persistent).
+  const hide = () => {
+    if (pinned) return;
+    closeTimer.current = window.setTimeout(() => setOpen(false), 160);
+  };
+
   return (
-    <span className="jargon" tabIndex={0} data-def={def} title={def}>
-      {children ?? term}
+    <span className="jargon-wrap" onMouseEnter={show} onMouseLeave={hide}>
+      <span
+        className="jargon"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-describedby={open ? id : undefined}
+        onFocus={show}
+        onBlur={() => {
+          setPinned(false);
+          hide();
+        }}
+        onClick={() => {
+          const next = !pinned;
+          setPinned(next);
+          setOpen(next);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            const next = !pinned;
+            setPinned(next);
+            setOpen(next);
+          }
+        }}
+      >
+        {children ?? term}
+      </span>
+      <span id={id} role="tooltip" className="jargon-tip" hidden={!open} onMouseEnter={show} onMouseLeave={hide}>
+        {def}
+      </span>
     </span>
   );
 }

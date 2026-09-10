@@ -4,19 +4,28 @@
  * status vocabularies and meaning ramps, model notes, and data provenance.
  * Signal thresholds render from /api/signals/latest so this page can never
  * drift from the server truth it documents.
+ *
+ * 2026-09-05 (executive pass): reads as model documentation, not a wall of
+ * definitions. A "how to read this product" path opens, a contents rail
+ * (sticky at desk width) names the sections, each section says whether it
+ * documents statistical output or reference content, sources are cited with
+ * links, every section links back to the module it explains, and the page
+ * closes with what the model can and cannot claim.
  */
 
+import { Link } from "react-router-dom";
 import { Card, SectionHeader, Tag } from "../../components";
 import { useSignalsLatest } from "../../api/queries";
 import { fmtMonYr } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
-import { Caption, StateNote, eyebrowStyle, mono } from "../shared/screen-ui";
+import ScrollTable from "../shared/ScrollTable";
+import { Caption, StateNote, eyebrowStyle, mono, useHashScroll } from "../shared/screen-ui";
 
 const REGIME_DEFS: { name: string; color: string; def: string }[] = [
-  { name: "Goldilocks", color: "#2ecc71", def: "Growth trending up while inflation stays calm — the equity-friendly quadrant." },
-  { name: "Overheating", color: "#e67e22", def: "Growth and inflation both running hot — real assets lead, duration suffers." },
-  { name: "Stagflation", color: "#e74c3c", def: "Inflation hot while growth stalls — the hardest tape; cash and commodities defend." },
-  { name: "Recession Risk", color: "#95a5a6", def: "Growth rolling over with inflation fading — quality bonds and defensives lead." },
+  { name: "Goldilocks", color: "#2ecc71", def: "Growth trending up while inflation stays calm: the equity-friendly quadrant." },
+  { name: "Overheating", color: "#e67e22", def: "Growth and inflation both running hot: real assets lead, duration suffers." },
+  { name: "Stagflation", color: "#e74c3c", def: "Inflation hot while growth stalls: the hardest tape; cash and commodities defend." },
+  { name: "Recession Risk", color: "#95a5a6", def: "Growth rolling over with inflation fading: quality bonds and defensives lead." },
 ];
 
 const SIGNAL_NAMES: Record<string, string> = {
@@ -35,216 +44,453 @@ const SIGNAL_UNITS: Record<string, string> = {
   vix_spike: "",
 };
 
+const CONTENTS: { id: string; label: string; kind: "read" | "data" | "model" | "reference" | "limits" }[] = [
+  { id: "how-to-read", label: "How to read this product", kind: "read" },
+  { id: "regimes", label: "The four regimes", kind: "model" },
+  { id: "signals", label: "Monitored signals", kind: "model" },
+  { id: "models", label: "Models and scenarios", kind: "model" },
+  { id: "backtests", label: "Backtests and evidence", kind: "model" },
+  { id: "ramps", label: "Meaning ramps and vocabularies", kind: "reference" },
+  { id: "data", label: "Data and sources", kind: "data" },
+  { id: "limits", label: "What the model can and cannot claim", kind: "limits" },
+];
+
+const KIND_WORD: Record<string, string> = {
+  read: "Orientation",
+  data: "Data",
+  model: "Statistical output",
+  reference: "Reference",
+  limits: "Limits",
+};
+
+function ProvenanceTag({ kind }: { kind: "statistical" | "reference" | "data" }) {
+  return (
+    <Tag tone={kind === "statistical" ? "accent" : kind === "data" ? "neutral" : "warn"} size="sm">
+      {kind === "statistical" ? "Statistical output" : kind === "data" ? "Data source" : "Reference content"}
+    </Tag>
+  );
+}
+
 function LegendRow({ swatch, label, detail }: { swatch: string; label: string; detail: string }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "14px 130px minmax(0,1fr)", gap: 10, alignItems: "baseline" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "14px 96px minmax(0,1fr)", gap: 10, alignItems: "baseline" }}>
       <span style={{ width: 10, height: 10, borderRadius: "var(--r-xs)", background: swatch, display: "inline-block", alignSelf: "center" }} />
       <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>{label}</span>
-      <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>{detail}</span>
+      <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)", lineHeight: 1.5 }}>{detail}</span>
     </div>
+  );
+}
+
+const prose: React.CSSProperties = {
+  fontFamily: "var(--font-ui)",
+  fontSize: "var(--fs-body)",
+  lineHeight: "var(--lh-body)",
+  color: "var(--text-2)",
+  margin: 0,
+  maxWidth: "var(--maxw-prose)",
+  textWrap: "pretty",
+};
+
+function ModuleLink({ to, children }: { to: string; children: React.ReactNode }) {
+  return (
+    <Link to={to} style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--accent)" }}>
+      {children}
+    </Link>
   );
 }
 
 export default function MethodologyScreen() {
   const signals = useSignalsLatest();
-  // Reference prose in two-up cards: one column below 768, the designed pair at
-  // and above it. Every conditional on this page resolves to its original
-  // string at desk width.
-  const { isNarrow } = useBreakpoint();
+  const { isNarrow, bp } = useBreakpoint();
   const twoUp = isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))";
+  const rail = bp === "wide";
+  useHashScroll(signals.data);
+
+  const contents = (
+    <nav aria-label="Methodology contents" style={rail ? { position: "sticky", top: 16 } : undefined}>
+      <div style={{ ...eyebrowStyle, marginBottom: 6 }}>Contents</div>
+      <ol style={{ listStyle: "none", margin: 0, padding: 0, display: rail ? "grid" : "flex", flexWrap: "wrap", gap: rail ? 2 : "4px 12px" }}>
+        {CONTENTS.map((c) => (
+          <li key={c.id}>
+            <a
+              href={`#${c.id}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "baseline",
+                gap: 8,
+                minHeight: rail ? 30 : 36,
+                fontFamily: "var(--font-ui)",
+                fontSize: "var(--fs-body-s)",
+                color: "var(--text-2)",
+                textDecoration: "none",
+                padding: rail ? "4px 0" : "6px 0",
+              }}
+            >
+              {c.label}
+              {rail ? (
+                <span style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase" }}>
+                  {KIND_WORD[c.kind]}
+                </span>
+              ) : null}
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <section>
-        <SectionHeader title="The four regimes" right="a 4-way softmax classifier over growth and inflation trends" />
-        <div style={{ display: "grid", gridTemplateColumns: twoUp, gap: 12 }}>
-          {REGIME_DEFS.map((r) => (
-            <Card key={r.name}>
-              <span style={{ ...mono, fontSize: "var(--fs-body-s)", fontWeight: 700, color: r.color }}>{r.name}</span>
-              <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-muted)", lineHeight: 1.55, marginTop: 4 }}>
-                {r.def}
-              </div>
-            </Card>
-          ))}
-        </div>
-        <Caption>
-          Monthly, from z-scored growth (INDPRO) and inflation (CPI) trends through a temperature-0.7
-          softmax — the four probabilities in the header always sum to ~100%. The header badge shows
-          the dominant stored probability; conviction is a separate heuristic and is always labeled.
-        </Caption>
-      </section>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: rail ? "220px minmax(0,1fr)" : "minmax(0,1fr)",
+        gap: rail ? 32 : 16,
+        alignItems: "start",
+      }}
+    >
+      {contents}
 
-      {/* minWidth:0 is load-bearing, not decoration: this <section> is an item
-          of the page grid above, whose automatic minimum size is its content's
-          min-content width — the 560px table track below would push the whole
-          page wider than the phone viewport instead of scrolling inside its
-          card. Zero at every width; it only ever binds under 560. */}
-      <section style={{ minWidth: 0 }}>
-        <SectionHeader
-          title="Monitored signals"
-          right={
-            signals.data
-              ? `live thresholds · monthly cadence · latest print ${fmtMonYr(signals.data.date)}`
-              : "live thresholds · monthly cadence"
-          }
-        />
-        {/* Genuinely tabular: four columns that only read as a table when they
-            stay in one track, so it scrolls inside the card under ~560px rather
-            than collapsing into stacked key/value pairs (house rule, see
-            MarketsScreen's tape). The rows are real elements, so ARIA table
-            semantics go straight on them — no display:contents needed. */}
-        <Card style={{ padding: 0, overflowX: "auto" }}>
-          <div role="table" aria-label="Monitored signals" style={{ minWidth: 560 }}>
-            <div role="row" style={{ display: "grid", gridTemplateColumns: "1.4fr 110px 110px 1fr", gap: 12, padding: "6px 12px", borderBottom: "1px solid var(--line-hair)" }}>
-              {["Signal", "Trigger", "Latest", "Status rule"].map((h, i) => (
-                <span key={h} role="columnheader" style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-wide)", color: "var(--text-muted)", textAlign: i === 1 || i === 2 ? "right" : "left" }}>
-                  {h}
-                </span>
-              ))}
-            </div>
-            {signals.data
-              ? signals.data.signals.map((s, i) => (
-                  <div key={s.signal_name} role="row" style={{ display: "grid", gridTemplateColumns: "1.4fr 110px 110px 1fr", gap: 12, padding: "7px 12px", background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent", alignItems: "baseline" }}>
-                    <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
-                      {SIGNAL_NAMES[s.signal_name] ?? s.signal_name.replace(/_/g, " ")}
-                    </span>
-                    <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right" }}>
-                      {s.direction == null || s.threshold == null
-                        ? "—"
-                        : `${s.direction === "below" ? "<" : ">"} ${s.threshold}${SIGNAL_UNITS[s.signal_name] ?? ""}`}
-                    </span>
-                    <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: "var(--text-muted)" }}>
-                      {s.value.toFixed(2)}
-                      {SIGNAL_UNITS[s.signal_name] ?? ""}
-                    </span>
-                    <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
-                      {s.status ?? "—"}
-                      {s.distance_pct != null ? ` · ${Math.round(s.distance_pct)}% of trigger` : ""}
-                    </span>
-                  </div>
-                ))
-              : null}
-          </div>
-          {/* Loading/error copy sits outside the table element: a one-cell row
-              in a four-column table is a lie to a screen reader. */}
-          {signals.data ? null : (
-            <div style={{ padding: 12 }}>
-              <StateNote loading={signals.isLoading} error={signals.isError} />
-            </div>
-          )}
-        </Card>
-        <Caption>
-          Trigger values and status arrive live from the API (the same payload the signal cards
-          read); display names and units on this page are presentation copy. One status rule for
-          all five: the stored trigger flag owns Triggered; Watch starts at 50% threshold
-          proximity; Clear is everything below.
-          {/* The Latest column is the monthly signals snapshot — the weekly
-              derived series on Markets and the live tape quote both carry
-              different levels for the same metric, by cadence not by error. */}
-          {signals.data ? (
-            <div style={{ marginTop: 2 }}>
-              monthly signal print · {fmtMonYr(signals.data.date)} · the weekly derived series and
-              the live tape on Markets carry their own levels for the same metric.
-            </div>
-          ) : null}
-        </Caption>
-      </section>
+      <div style={{ display: "grid", gap: 20, minWidth: 0 }}>
+        {/* ── How to read ─────────────────────────────────────────────── */}
+        <section id="how-to-read">
+          <SectionHeader title="How to read this product" right="Orientation · the reading order every screen follows" />
+          {/* The card hugs the prose measure instead of spanning a 1,500px
+              frame around a 74ch paragraph (review P3-9). */}
+          <Card style={{ maxWidth: "calc(var(--maxw-prose) + 48px)" }}>
+            <p style={prose}>
+              Every screen opens with a desk read: the conclusion, why it matters, what changed, what to watch, and what
+              would invalidate the call, with the freshness of the evidence stated in words. Under it sit the five
+              monitored signals and the supporting evidence; methodology, formulas and provenance are one click down.
+              Read top to bottom: the first line is the claim, everything below is the audit trail.
+            </p>
+            <ol style={{ ...prose, paddingLeft: 20, marginTop: 10, display: "grid", gap: 4 }}>
+              <li>
+                <b style={{ color: "var(--text)" }}>Regime</b>: which of four macro quadrants the classifier calls, with its odds. Header badge, Dashboard, Regime Lab.
+              </li>
+              <li>
+                <b style={{ color: "var(--text)" }}>Signals</b>: five thresholds watched monthly; Clear, Watch or Triggered. Dashboard.
+              </li>
+              <li>
+                <b style={{ color: "var(--text)" }}>Evidence</b>: credit spreads, the recession model, the curve, the tape. Credit, Recession, Markets.
+              </li>
+              <li>
+                <b style={{ color: "var(--text)" }}>Scenarios and history</b>: stress rules, analogues, backtests. Regime Lab, Tools.
+              </li>
+            </ol>
+            <Caption>
+              Freshness words are a closed set: Current (inside its publication cycle), Delayed (one cycle late), Stale
+              (older), Unavailable, Reference (no cadence). Every stamp prints its date.
+            </Caption>
+          </Card>
+        </section>
 
-      <section>
-        <SectionHeader title="Meaning ramps & vocabularies" right="closed sets — the app never invents synonyms" />
-        {/* Four homogeneous legend cards — these self-fit below 768 instead of
-            hard-collapsing. The 260px floor is set by LegendRow's own fixed
-            14px + 130px tracks: a narrower card would overflow its own text. */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: isNarrow ? "repeat(auto-fit,minmax(260px,1fr))" : "repeat(2,minmax(0,1fr))",
-            gap: 12,
-          }}
-        >
-          <Card>
-            <div style={eyebrowStyle}>Threshold-proximity gauge</div>
-            <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-              <LegendRow swatch="var(--pos)" label="< 50%" detail="Clear — comfortable distance from the trigger" />
-              <LegendRow swatch="var(--warn)" label="50–75%" detail="Watch — inside striking distance" />
-              <LegendRow swatch="var(--warn-hot)" label="75–95%" detail="approaching the trigger" />
-              <LegendRow swatch="var(--neg)" label="≥ 95%" detail="at or past it — Triggered comes from the stored flag" />
-            </div>
-          </Card>
-          <Card>
-            <div style={eyebrowStyle}>Recession-probability bands</div>
-            <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-              <LegendRow swatch="var(--pos)" label="< 20%" detail="Low Risk" />
-              <LegendRow swatch="var(--warn-hot)" label="20–40%" detail="Elevated" />
-              <LegendRow swatch="var(--neg)" label="≥ 40%" detail="High Risk — gauge arc, badge, and this legend share one palette" />
-            </div>
-          </Card>
-          <Card>
-            <div style={eyebrowStyle}>News significance · 1–5</div>
-            <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-              <LegendRow swatch="var(--neg)" label="≥ 4.5" detail="critical" />
-              <LegendRow swatch="var(--warn-hot)" label="≥ 3.5" detail="high impact" />
-              <LegendRow swatch="var(--warn)" label="≥ 2.5" detail="notable" />
-              <LegendRow swatch="var(--text-muted)" label="< 2.5" detail="routine — blend of market, deal size, sector, timing, regime weights" />
-            </div>
-          </Card>
-          <Card>
-            <div style={eyebrowStyle}>Status vocabularies</div>
-            <div style={{ display: "grid", gap: 6, marginTop: 8, fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", lineHeight: 1.6 }}>
-              <span>
-                Signals: <Tag tone="pos" size="sm">Clear</Tag> <Tag tone="warn" size="sm">Watch</Tag>{" "}
-                <Tag tone="neg" size="sm">Triggered</Tag>
+        {/* ── Regimes ─────────────────────────────────────────────────── */}
+        <section id="regimes">
+          <SectionHeader
+            title="The four regimes"
+            right={
+              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+                <ProvenanceTag kind="statistical" />
+                <span>4-way softmax over growth and inflation trends</span>
               </span>
-              <span>
-                Alerts: info · watch · risk — Markets read: Risk-On · Risk-Off · Mixed — model vs
-                market: Aligned · Diverges
-              </span>
-              <span>Credit states: Normal · Tight · Stressed · Crisis (HY/IG bps ladders on the Credit tab)</span>
-            </div>
-          </Card>
-        </div>
-      </section>
-
-      <section>
-        <SectionHeader title="Models & measurements" right="what is computed, what is reference" />
-        <div style={{ display: "grid", gridTemplateColumns: twoUp, gap: 12 }}>
-          <Card>
-            <div style={eyebrowStyle}>Computed live from stored data</div>
-            <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", lineHeight: 1.7, marginTop: 6 }}>
-              Regime probabilities and history · signal states · recession model (logistic
-              regression on NBER dates, features lagged 3 months) · credit metrics, percentiles and
-              transition matrices · weekly surprise z-scores · backtested forward returns ·
-              allocation optimizations and risk analytics (24y of monthly returns) · LBO deal math.
-            </div>
-          </Card>
-          <Card>
-            <div style={eyebrowStyle}>Labeled reference content</div>
-            <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", lineHeight: 1.7, marginTop: 6 }}>
-              Regime playbooks (sector tilts, typical indicators) · the 7-period analogue corpus ·
-              scenario definitions and the stress rule · NBER recession windows. Reference blocks
-              say so in their captions — nothing pretends to be measured that isn&apos;t.
-            </div>
-          </Card>
-        </div>
-      </section>
-
-      <section>
-        <SectionHeader title="Data provenance" right="every feed, its cadence" />
-        <Card>
-          <div style={{ display: "grid", gap: 6, fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", lineHeight: 1.6 }}>
-            <span>FRED — macro series, yields, BAML OAS · refreshed mornings ET, monthly/daily cadences</span>
-            <span>yfinance — daily candles for the stored ETF universe · intraday 5-minute bars for SPY/QQQ</span>
-            <span>EODHD WebSocket — live tape quotes (crypto & FX around the clock; US equities in session; 15-min delayed REST fills)</span>
-            <span>Finnhub · NewsAPI · RSS wires — headlines, hourly, deduped and scored; top items get a Claude regime read and Perplexity-cited research</span>
-            <span>Hand-maintained CSV — the macro-events calendar</span>
+            }
+          />
+          <div style={{ display: "grid", gridTemplateColumns: twoUp, gap: 12 }}>
+            {REGIME_DEFS.map((r) => (
+              <Card key={r.name}>
+                <span style={{ ...mono, fontSize: "var(--fs-body-s)", fontWeight: 700, color: r.color }}>{r.name}</span>
+                <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)", lineHeight: 1.55, marginTop: 4 }}>
+                  {r.def}
+                </div>
+              </Card>
+            ))}
           </div>
           <Caption>
-            Every surface states its own as-of date and falls back to latest-available data with its
-            date instead of an empty screen. Automated briefing from Macro Regime Radar. Not
-            investment advice.
+            Monthly, from z-scored growth (industrial production, FRED INDPRO) and inflation (CPI) trends through a
+            temperature-0.7 softmax; the four probabilities always sum to 100%. The header badge shows the dominant
+            stored probability; conviction is a separate heuristic and is always labeled. Shares under 1% print as
+            &lt;1%, never as a false 0%.{" "}
+            <ModuleLink to="/app/dashboard">Dashboard →</ModuleLink> <ModuleLink to="/app/regime-lab">Regime Lab →</ModuleLink>
           </Caption>
-        </Card>
-      </section>
+        </section>
+
+        {/* ── Signals ─────────────────────────────────────────────────── */}
+        <section id="signals" style={{ minWidth: 0 }}>
+          <SectionHeader
+            title="Monitored signals"
+            right={
+              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+                <ProvenanceTag kind="statistical" />
+                <span>
+                  {signals.data ? `live thresholds · monthly cadence · latest print ${fmtMonYr(signals.data.date)}` : "live thresholds · monthly cadence"}
+                </span>
+              </span>
+            }
+          />
+          <Card style={{ padding: 0 }}>
+            <ScrollTable stickyFirst={false} label="Monitored signals">
+              <div role="table" aria-label="Monitored signals" style={{ minWidth: 560 }}>
+                <div role="row" style={{ display: "grid", gridTemplateColumns: "1.4fr 110px 110px 1fr", gap: 12, padding: "6px 12px", borderBottom: "1px solid var(--line-hair)" }}>
+                  {["Signal", "Trigger", "Latest", "Status rule"].map((h, i) => (
+                    <span key={h} role="columnheader" style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-wide)", color: "var(--text-muted)", textAlign: i === 1 || i === 2 ? "right" : "left" }}>
+                      {h}
+                    </span>
+                  ))}
+                </div>
+                {signals.data
+                  ? signals.data.signals.map((s, i) => (
+                      <div key={s.signal_name} role="row" style={{ display: "grid", gridTemplateColumns: "1.4fr 110px 110px 1fr", gap: 12, padding: "8px 12px", background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent", alignItems: "baseline" }}>
+                        <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
+                          {SIGNAL_NAMES[s.signal_name] ?? s.signal_name.replace(/_/g, " ")}
+                        </span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right" }}>
+                          {s.direction == null || s.threshold == null
+                            ? "—"
+                            : `${s.direction === "below" ? "<" : ">"} ${s.threshold}${SIGNAL_UNITS[s.signal_name] ?? ""}`}
+                        </span>
+                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: "var(--text-muted)" }}>
+                          {s.value.toFixed(2)}
+                          {SIGNAL_UNITS[s.signal_name] ?? ""}
+                        </span>
+                        <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
+                          {s.status ?? "—"}
+                          {s.distance_pct != null ? ` · ${Math.round(s.distance_pct)}% of trigger` : ""}
+                        </span>
+                      </div>
+                    ))
+                  : null}
+              </div>
+            </ScrollTable>
+            {signals.data ? null : (
+              <div style={{ padding: 12 }}>
+                <StateNote loading={signals.isLoading} error={signals.isError} />
+              </div>
+            )}
+          </Card>
+          <Caption>
+            Trigger values and status arrive live from the API (the same payload the signal cards read); display names
+            and units are presentation copy. One status rule for all five: the stored trigger flag owns Triggered;
+            Watch starts at 50% threshold proximity; Clear is everything below. The weekly derived series on Markets
+            and the live tape carry their own levels for the same metric, by cadence, not by error.{" "}
+            <ModuleLink to="/app/dashboard#signals">Signals on the Dashboard →</ModuleLink>
+          </Caption>
+        </section>
+
+        {/* ── Models ──────────────────────────────────────────────────── */}
+        <section id="models">
+          <SectionHeader
+            title="Models and scenarios"
+            right={
+              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+                <ProvenanceTag kind="statistical" />
+                <span>what is computed, and from what</span>
+              </span>
+            }
+          />
+          <div style={{ display: "grid", gridTemplateColumns: twoUp, gap: 12 }}>
+            <Card>
+              <div style={eyebrowStyle}>Recession model</div>
+              <p style={{ ...prose, fontSize: "var(--fs-body-s)", marginTop: 6 }}>
+                A class-balanced logistic regression trained on NBER recession months. Inputs: the 2s10s curve,
+                unemployment, the high-yield spread, industrial-production growth and a leading-indicator proxy (the
+                10Y-minus-5Y inflation breakeven; the original USSLIND series froze in February 2020 and survives only
+                as training history). Features enter with a 3-month lag so the fit never peeks. The model retrains
+                in-process from stored FRED series; there is no saved artifact. Its probability is the model&apos;s own,
+                distinct from the classifier&apos;s Recession Risk odds.{" "}
+                <ModuleLink to="/app/recession">Recession →</ModuleLink>
+              </p>
+            </Card>
+            <Card>
+              <div style={eyebrowStyle}>Credit states and transitions</div>
+              <p style={{ ...prose, fontSize: "var(--fs-body-s)", marginTop: 6 }}>
+                ICE BofA option-adjusted spread indices (FRED BAMLH0A0HYM2, BAMLC0A0CM, and the BB / B / CCC ladders)
+                classified into Normal, Tight, Stressed and Crisis by fixed bps rules; percentiles since 1996; 3- and
+                6-month transition matrices counted from monthly states. The distress ratio is CCC OAS over 1,000
+                bps.{" "}
+                <ModuleLink to="/app/credit">Credit →</ModuleLink>
+              </p>
+            </Card>
+            <Card>
+              <div style={eyebrowStyle}>Scenario builder</div>
+              <p style={{ ...prose, fontSize: "var(--fs-body-s)", marginTop: 6 }}>
+                Five presets and custom shocks (HY spread, 10Y yield, VIX, S&amp;P 500) shift the stored regime odds
+                through a transparent stress rule and renormalize. It sketches direction and rough size; it is not a
+                rerun of the classifier and carries no forecast claim.{" "}
+                <ModuleLink to="/app/regime-lab#scenarios">Scenarios →</ModuleLink>
+              </p>
+            </Card>
+            <Card>
+              <div style={eyebrowStyle}>Allocation and LBO engines</div>
+              <p style={{ ...prose, fontSize: "var(--fs-body-s)", marginTop: 6 }}>
+                Allocation: ~24 years of monthly returns for ten asset classes, index-spliced before ETF inceptions,
+                cut by stored regime months; seven optimizers (long-only, 40% cap) run only when the current regime
+                has 24 contiguous months of covariance history. LBO: server-side deal math with IRR by bisection on
+                NPV; the financing rate defaults to Fed Funds plus the HY spread.{" "}
+                <ModuleLink to="/app/tools#allocation">Allocation →</ModuleLink>{" "}
+                <ModuleLink to="/app/tools#lbo">LBO →</ModuleLink>
+              </p>
+            </Card>
+          </div>
+        </section>
+
+        {/* ── Backtests ───────────────────────────────────────────────── */}
+        <section id="backtests">
+          <SectionHeader
+            title="Backtests and evidence"
+            right={
+              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+                <ProvenanceTag kind="statistical" />
+                <span>stored empirical analysis</span>
+              </span>
+            }
+          />
+          <Card>
+            <p style={prose}>
+              Backtests measure SPY forward returns over trading-day horizons (1M = 21 days … 12M = 252 days) after
+              each regime began or each signal fired, from the stored monthly classifier history. Fragile cells (four
+              or fewer samples, or a perfect 100% / 0% hit rate) are flagged in the table; a 50% hit rate is a coin
+              flip. Factor returns by regime use long/short ETF proxies for Value, Momentum, Quality, Size and Low
+              Volatility, labeled as proxies. Historical analogues score regime match (40), HY-spread percentile
+              proximity (25), recession-odds proximity (20) and VIX proximity (15) against seven studied periods: a
+              study aid, not a prediction.{" "}
+              <ModuleLink to="/app/regime-lab#backtests">Backtests →</ModuleLink>{" "}
+              <ModuleLink to="/app/regime-lab#analogues">Analogues →</ModuleLink>
+            </p>
+          </Card>
+        </section>
+
+        {/* ── Ramps ───────────────────────────────────────────────────── */}
+        <section id="ramps">
+          <SectionHeader
+            title="Meaning ramps and vocabularies"
+            right={
+              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+                <ProvenanceTag kind="reference" />
+                <span>closed sets · the app never invents synonyms</span>
+              </span>
+            }
+          />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isNarrow ? "repeat(auto-fit,minmax(260px,1fr))" : "repeat(2,minmax(0,1fr))",
+              gap: 12,
+            }}
+          >
+            <Card>
+              <div style={eyebrowStyle}>Threshold-proximity gauge</div>
+              <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                <LegendRow swatch="var(--pos)" label="< 50%" detail="Clear: comfortable distance from the trigger" />
+                <LegendRow swatch="var(--warn)" label="50–75%" detail="Watch: inside striking distance" />
+                <LegendRow swatch="var(--warn-hot)" label="75–95%" detail="approaching the trigger" />
+                <LegendRow swatch="var(--neg)" label="≥ 95%" detail="at or past it: Triggered comes from the stored flag" />
+              </div>
+            </Card>
+            <Card>
+              <div style={eyebrowStyle}>Recession-probability bands</div>
+              <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                <LegendRow swatch="var(--pos)" label="< 20%" detail="Low Risk" />
+                <LegendRow swatch="var(--warn-hot)" label="20–40%" detail="Elevated" />
+                <LegendRow swatch="var(--neg)" label="≥ 40%" detail="High Risk: gauge arc, badge, and this legend share one palette" />
+              </div>
+            </Card>
+            <Card>
+              <div style={eyebrowStyle}>Freshness states</div>
+              <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                <LegendRow swatch="var(--pos)" label="Current" detail="inside one publication cycle of its cadence (monthly: 45 days; daily: 4 days; intraday: 20 minutes)" />
+                <LegendRow swatch="var(--warn)" label="Delayed" detail="one cycle late, still usable with its date stated" />
+                <LegendRow swatch="var(--warn-hot)" label="Stale" detail="older than that: context, not a live read" />
+                <LegendRow swatch="var(--neg-text)" label="Unavailable" detail="no stamp on file" />
+                <LegendRow swatch="var(--text-muted)" label="Reference" detail="static content without a cadence" />
+              </div>
+            </Card>
+            <Card>
+              <div style={eyebrowStyle}>Status vocabularies</div>
+              <div style={{ display: "grid", gap: 6, marginTop: 8, fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)", lineHeight: 1.6 }}>
+                <span>
+                  Signals: <Tag tone="pos" size="sm">Clear</Tag> <Tag tone="warn" size="sm">Watch</Tag>{" "}
+                  <Tag tone="neg" size="sm">Triggered</Tag>
+                </span>
+                <span>Alerts: Informational · Watch · Risk. Market read: Risk-On · Risk-Off · Mixed. Model vs market: Aligned · Diverges.</span>
+                <span>Credit states: Normal · Tight · Stressed · Crisis (HY / IG bps ladders on the Credit tab).</span>
+                <span>News significance 1–5: ≥ 4.5 critical · ≥ 3.5 high impact · ≥ 2.5 notable · below routine.</span>
+              </div>
+            </Card>
+          </div>
+        </section>
+
+        {/* ── Data ────────────────────────────────────────────────────── */}
+        <section id="data">
+          <SectionHeader
+            title="Data and sources"
+            right={
+              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+                <ProvenanceTag kind="data" />
+                <span>every feed, its cadence, its citation</span>
+              </span>
+            }
+          />
+          <Card>
+            <dl style={{ margin: 0, display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "180px minmax(0,1fr)", gap: "8px 16px" }}>
+              {(
+                [
+                  ["FRED", "https://fred.stlouisfed.org", "Macro series (INDPRO, CPI, unemployment), daily Treasury yields (DGS2, DGS10), ICE BofA OAS indices, breakevens (T5YIE, T10YIE). Refreshed mornings ET; monthly and daily cadences."],
+                  ["yfinance", "https://github.com/ranaroussi/yfinance", "Daily candles for the stored ETF universe; 5-minute bars for SPY and QQQ; on-demand quotes, candles and fundamentals for any listed symbol (delayed up to 15 minutes)."],
+                  ["EODHD", "https://eodhd.com", "Live tape quotes over WebSocket: crypto and FX around the clock, US equities in session, 15-minute delayed REST fills off-hours. The token stays server-side."],
+                  ["Finnhub · NewsAPI · RSS", "https://finnhub.io", "Headlines ingested hourly, deduplicated and scored on five dimensions; the top items each cycle receive a Claude regime interpretation and Perplexity-cited research."],
+                  ["NBER", "https://www.nber.org/research/business-cycle-dating", "Official US recession dates: the recession model's training target and the shaded bands on history charts."],
+                  ["Hand-maintained calendar", null, "FOMC, CPI, jobs and GDP dates through December 2026, kept by hand in a CSV; labeled as such wherever it renders."],
+                ] as const
+              ).map(([name, url, detail]) => (
+                <div key={name} style={{ display: "contents" }}>
+                  <dt style={{ ...mono, fontSize: "var(--fs-body-s)", color: "var(--text)", fontWeight: 600 }}>
+                    {url ? (
+                      <a href={url} target="_blank" rel="noreferrer" style={{ color: "var(--text)" }}>
+                        {name} ↗
+                      </a>
+                    ) : (
+                      name
+                    )}
+                  </dt>
+                  <dd style={{ margin: 0, fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-2)", lineHeight: 1.55, maxWidth: "var(--maxw-prose)" }}>
+                    {detail}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <Caption>
+              Every surface states its own as-of date and falls back to latest-available data with its date instead of
+              an empty screen. Regimes and signals are monthly; market bars daily; intraday 5-minute for SPY and QQQ;
+              news hourly with a rolling window.
+            </Caption>
+          </Card>
+        </section>
+
+        {/* ── Limits ──────────────────────────────────────────────────── */}
+        <section id="limits">
+          <SectionHeader title="What the model can and cannot claim" right="Limits · read before acting on any number" />
+          <Card accentBar>
+            <p style={prose}>
+              <b style={{ color: "var(--text)" }}>It can claim</b> that, on the stored monthly data, the economy sits in
+              one of four quadrants with stated odds; that five monitored series stand at a stated distance from fixed
+              thresholds; that a logistic model trained on NBER dates assigns a stated 12-month recession probability;
+              that credit spreads sit at a stated percentile of their own history; and that, historically, SPY behaved
+              in a stated way after similar readings, with sample sizes shown.
+            </p>
+            <p style={{ ...prose, marginTop: 10 }}>
+              <b style={{ color: "var(--text)" }}>It cannot claim</b> a forecast of returns, the timing of a regime
+              change, or causation. Playbooks, analogues and scenario rules are reference content and stress
+              sketches, not measured outcomes. Small-sample backtests are anecdotes. Monthly inputs mean the regime
+              read can lag the tape by weeks, and the freshness line says exactly how many. Every number here is a
+              claim with its date attached; the desk reads state conclusions, and the audit trail underneath is how a
+              reader checks them.
+            </p>
+            <Caption>
+              Automated briefing from Macro Regime Radar. Not investment advice.
+            </Caption>
+          </Card>
+        </section>
+      </div>
     </div>
   );
 }

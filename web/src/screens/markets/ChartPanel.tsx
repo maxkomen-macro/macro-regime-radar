@@ -4,7 +4,9 @@
  * concrete values). Daily candles come from /api/market/daily; the intraday
  * line exists only where the DB stores it (SPY/QQQ), per the day-1 spec.
  * Symbols outside the stored 23-ETF universe (crypto, FX, single names, VIX)
- * state that honestly instead of faking a history.
+ * request their history on demand from the provider layer (EODHD first,
+ * yfinance disclosed as fallback) with range chips, a provider/as-of caption
+ * and explicit loading and failure states (2026-09-06).
  *
  * Critique fixes (2026-08-06, one pass):
  * - No last-value badge / price line on either series — a red "769.79" chip
@@ -27,8 +29,13 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { useMarketDaily, useMarketIntraday } from "../../api/queries";
-import { fmtDate } from "../../lib/format";
+import { useFreshness, useMarketDaily, useMarketIntraday, useSymbolCandles } from "../../api/queries";
+import type { CandleRange } from "../../api/types";
+import { fmtDate, fmtIntradayTs } from "../../lib/format";
+import { useBreakpoint } from "../../lib/useBreakpoint";
+import { Caption, mono } from "../shared/screen-ui";
+import { candleCaption, describeProviderError } from "../shared/provider-ui";
+import CandleChart from "./CandleChart";
 
 import { CHART_PANEL_ID } from "./chart-panel-id";
 
@@ -67,6 +74,7 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
   // not poll the API for nothing).
   const daily = useMarketDaily(hasHistory ? [symbol] : [], 365);
   const intraday = useMarketIntraday(canIntraday ? [symbol] : [], 48);
+  const freshness = useFreshness();
 
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -97,6 +105,9 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
   );
 
   const activeMode: Mode = mode === "intraday" && canIntraday ? "intraday" : "daily";
+  // An empty intraday window must not leave a 320px blank canvas: the panel
+  // states why, what the store does hold, and offers the daily view instead.
+  const intradayEmpty = activeMode === "intraday" && !intraday.isLoading && intradayPoints.length === 0;
 
   // Opening feedback: bring the panel into view and move focus to it — the
   // trigger row can sit 1,400px below where the panel mounts.
@@ -117,7 +128,7 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
   // Chart lifecycle: create once per mode/symbol-history combination…
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || !hasHistory) return;
+    if (!el || !hasHistory || intradayEmpty) return;
     const chart = createChart(el, {
       autoSize: true,
       layout: {
@@ -139,6 +150,8 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
       },
     });
     chartRef.current = chart;
+    // The library lays itself out with a <table>; it is not data (review P3-15).
+    el.querySelectorAll("table").forEach((t) => t.setAttribute("role", "presentation"));
     // One current price per screen: the tape row owns the live quote, so the
     // series shows no last-value badge and no price line (critique P1 — the
     // old tab was condemned for exactly this contradiction).
@@ -166,7 +179,7 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
       chartRef.current = null;
       chart.remove();
     };
-  }, [hasHistory, activeMode, symbol]);
+  }, [hasHistory, activeMode, symbol, intradayEmpty]);
 
   // …and apply data through the series refs, so a 30s poll updates in place
   // instead of rebuilding the chart.
@@ -234,7 +247,7 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
         <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body-s)", color: "var(--text)" }}>
           <b>{symbol}</b>
-          <span style={{ color: "var(--text-muted)" }}> · {name}</span>
+          <span style={{ color: "var(--text-muted)" }}> · {name.startsWith(symbol) ? name.slice(symbol.length).replace(/^\s*·\s*/, "") || name : name}</span>
           {hasHistory && (
             <span style={{ color: "var(--text-muted)", marginLeft: 8, fontSize: "var(--fs-meta)" }}>
               {activeMode === "daily"
@@ -249,7 +262,7 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
           <button
             onClick={onClose}
             aria-label="Close chart"
-            title="Close — Esc"
+            title="Close · Esc"
             style={{
               appearance: "none",
               background: "none",
@@ -266,37 +279,104 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
           </button>
         </span>
       </div>
-      {hasHistory ? (
-        <>
-          <div ref={containerRef} style={{ height: 320, width: "100%" }} />
-          {activeMode === "intraday" && !intraday.isLoading && intradayPoints.length === 0 && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--fs-meta)",
-                color: "var(--text-muted)",
-                marginTop: 6,
-              }}
-            >
-              No stored 5-minute bars inside the last 48 hours — the store keeps the last two
-              sessions for SPY and QQQ.
-            </div>
-          )}
-        </>
-      ) : (
+      {hasHistory && intradayEmpty ? (
         <div
+          role="status"
           style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-meta)",
-            color: "var(--text-muted)",
+            fontFamily: "var(--font-ui)",
+            fontSize: "var(--fs-caption)",
+            color: "var(--text-2)",
             lineHeight: 1.6,
-            padding: "24px 0",
+            padding: "14px 12px",
+            border: "0.5px solid var(--line-hair)",
+            borderRadius: "var(--r-xs)",
+            maxWidth: "var(--maxw-prose)",
           }}
         >
-          No stored history for {symbol} — the candle store covers the 23-ETF market universe.
-          This row trades on the live tape above; its stream quote is the whole story we hold.
+          <div style={{ fontWeight: 600, color: "var(--text)" }}>No intraday bars in the last 48 hours.</div>
+          <div style={{ marginTop: 4 }}>
+            The store keeps the last two sessions of 5-minute bars for SPY and QQQ
+            {freshness.data?.market_intraday_ts
+              ? `; the newest stored bar is ${fmtIntradayTs(freshness.data.market_intraday_ts)}`
+              : ""}
+            . Daily candles are on file{dailyBars.length ? ` for ${dailyBars.length} sessions through ${fmtDate(String(dailyBars[dailyBars.length - 1].time))}` : ""}.
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <button type="button" className="mrr-btn mrr-btn-accent" onClick={() => setMode("daily")}>
+              Show daily candles
+            </button>
+          </div>
+        </div>
+      ) : hasHistory ? (
+        <div ref={containerRef} style={{ height: 320, width: "100%" }} />
+      ) : (
+        <OnDemandHistory symbol={symbol} />
+      )}
+    </div>
+  );
+}
+
+const RANGES: CandleRange[] = ["1D", "5D", "1M", "6M", "1Y", "5Y", "MAX"];
+
+/** History for a symbol the store does not hold: requested from the provider
+ * layer on open (default 6M), one provider per series, provenance in the
+ * caption, every failure named. A symbol change never shows the previous
+ * symbol's bars (the hook keys on the symbol). */
+export function OnDemandHistory({ symbol }: { symbol: string }) {
+  const { isNarrow } = useBreakpoint();
+  const [range, setRange] = useState<CandleRange>("6M");
+  const q = useSymbolCandles(symbol, range);
+  return (
+    <div>
+      <div role="group" aria-label="Chart range" style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+        {RANGES.map((r) => (
+          <button
+            key={r}
+            type="button"
+            onClick={() => setRange(r)}
+            aria-pressed={range === r}
+            className="mrr-chip-btn"
+            data-touch={isNarrow ? "true" : "false"}
+            style={{
+              background: range === r ? "rgba(74,158,255,.10)" : undefined,
+              borderColor: range === r ? "rgba(74,158,255,.4)" : undefined,
+              color: range === r ? "var(--accent)" : "var(--text-muted)",
+              minWidth: 40,
+              justifyContent: "center",
+            }}
+          >
+            {r}
+          </button>
+        ))}
+        <span style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)", alignSelf: "center" }}>
+          not in the stored universe · requested on demand
+        </span>
+      </div>
+      {q.data?.bars.length ? (
+        <div style={{ position: "relative" }}>
+          <CandleChart bars={q.data.bars} range={q.data.range} interval={q.data.interval} />
+          {q.isFetching && q.data.range !== range ? (
+            <div role="status" style={{ position: "absolute", top: 8, left: 8, ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)", background: "var(--surface)", padding: "2px 6px", borderRadius: "var(--r-xs)" }}>
+              Requesting {range} bars…
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div
+          role="status"
+          style={{ height: 160, display: "grid", placeItems: "center", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: q.isError ? "var(--warn-hot)" : "var(--text-muted)", textAlign: "center", padding: "0 12px" }}
+        >
+          {q.isError
+            ? describeProviderError(q.error, "history", symbol)
+            : q.isPending
+              ? `Requesting ${range} history for ${symbol} from EODHD…`
+              : `No bars in the ${range} range for ${symbol}.`}
         </div>
       )}
+      <Caption>
+        {q.data ? candleCaption(q.data) : "History arrives from EODHD first; yfinance stands in only when EODHD cannot answer, and the caption says so."}{" "}
+        The tape row owns the live quote; this chart owns the history.
+      </Caption>
     </div>
   );
 }

@@ -39,8 +39,10 @@ export function IntelBanner({
         ...style,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--sp-8)", marginBottom: "var(--sp-6)" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: "var(--gap-inline)" }}>
+      {/* flexWrap + nowrap eyebrow: on a narrow screen the chip drops whole to
+          a second line instead of breaking the eyebrow mid-word. */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "var(--sp-8)", marginBottom: "var(--sp-6)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--gap-inline)", whiteSpace: "nowrap" }}>
           <span
             title={live ? "This read is current or new since your last visit" : "No change since your last visit — dates in the meta row"}
             style={{
@@ -75,6 +77,10 @@ export function IntelBanner({
               border: `0.5px solid ${cColor}`,
               borderRadius: "var(--r-sm)",
               padding: "4px 10px",
+              // A chip is a single-line object: it never wraps, and it yields
+              // width to the eyebrow instead of forcing it to break.
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}
           >
             {conviction} conviction

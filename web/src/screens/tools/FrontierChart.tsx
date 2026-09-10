@@ -30,7 +30,7 @@ export default function FrontierChart({ frontier, markers }: { frontier: FrameDa
   const PAD_R = isNarrow ? 44 : 60;
   const FS = isNarrow ? 10 : 9;
   if (!frontier?.columns || !frontier?.data) {
-    return <span style={{ ...mono, fontSize: 10, color: "var(--text-muted)" }}>Frontier unavailable.</span>;
+    return <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>Frontier unavailable.</span>;
   }
   const volIdx = frontier.columns.indexOf("volatility");
   const retIdx = frontier.columns.indexOf("return");
@@ -38,7 +38,7 @@ export default function FrontierChart({ frontier, markers }: { frontier: FrameDa
     .map((row) => ({ vol: row[volIdx], ret: row[retIdx] }))
     .filter((p): p is { vol: number; ret: number } => p.vol != null && p.ret != null);
   if (pts.length < 2) {
-    return <span style={{ ...mono, fontSize: 10, color: "var(--text-muted)" }}>Frontier unavailable.</span>;
+    return <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>Frontier unavailable.</span>;
   }
   const vols = [...pts.map((p) => p.vol), ...markers.map((m) => m.vol)];
   const rets = [...pts.map((p) => p.ret), ...markers.map((m) => m.ret)];
@@ -61,7 +61,7 @@ export default function FrontierChart({ frontier, markers }: { frontier: FrameDa
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ display: "block", width: "100%", height: "auto" }} role="img" aria-label="Efficient frontier — annualized volatility vs return, with optimization methods marked">
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ display: "block", width: "100%", height: "auto" }} role="img" aria-label="Efficient frontier: annualized volatility vs return, with optimization methods marked">
         {ticks(vMin, vMax).map((v) => (
           <g key={`vt-${v}`}>
             <line x1={X(v)} x2={X(v)} y1={PAD_Y} y2={H - PAD_Y} stroke="var(--line-hair)" strokeWidth="0.5" />

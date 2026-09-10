@@ -11,6 +11,9 @@
 
 import { Link } from "react-router-dom";
 import { Card, SectionHeader, Sparkline, Tag } from "../../components";
+import DeskRead, { type LedgerItem } from "../shared/DeskRead";
+import { assessFreshness } from "../shared/freshness";
+import ScrollTable from "../shared/ScrollTable";
 import { useCreditMetrics } from "../../api/queries";
 import type { CreditMetrics, DatedValue } from "../../api/types";
 import { ordinal } from "../../lib/format";
@@ -145,7 +148,7 @@ function TransitionMatrix({
   const cell = (from: string, to: string) => {
     if (emptyStates.includes(from)) {
       return (
-        <div key={to} role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "5px 8px", color: "var(--text-faint)" }}>
+        <div key={to} role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "5px 8px", color: "var(--text-muted)" }}>
           —
         </div>
       );
@@ -187,7 +190,7 @@ function TransitionMatrix({
           width and scrolls inside its own card rather than pushing the page
           sideways; at and above 768 there is no floor, so the desk layout sizes
           the tracks exactly as it always did. */}
-      <div style={{ overflowX: "auto" }}>
+      <ScrollTable stickyFirst={false} label={ariaLabel}>
         <div
           role="table"
           aria-label={ariaLabel}
@@ -198,7 +201,7 @@ function TransitionMatrix({
           <div role="row" style={{ display: "contents" }}>
             <span role="columnheader" aria-label="From state" />
             {CREDIT_STATES.map((s) => (
-              <span key={s} role="columnheader" style={{ ...mono, fontSize: 9, letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "right", padding: "0 8px" }}>
+              <span key={s} role="columnheader" style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "right", padding: "0 8px" }}>
                 → {s}
               </span>
             ))}
@@ -220,7 +223,7 @@ function TransitionMatrix({
             </div>
           ))}
         </div>
-      </div>
+      </ScrollTable>
     </div>
   );
 }
@@ -257,8 +260,100 @@ export default function CreditScreen() {
 
   const distressPct = m.distress_ratio;
 
+  /* ── desk read + the ladder tension, stated once, up top ──────────── */
+  const asOfIso = m.hy_series.length ? m.hy_series[m.hy_series.length - 1].date : null;
+  const stateTone =
+    m.credit_label === "Normal" ? "pos" : m.credit_label === "Tight" ? "accent" : m.credit_label === "Stressed" ? "warn" : "neg";
+  const tension = distressPct != null && distressPct >= 80 && (m.credit_label === "Normal" || m.credit_label === "Tight");
+  const ledger: LedgerItem[] = [
+    ...(m.hy_oas != null
+      ? [
+          {
+            label: "HY OAS",
+            value: `${Math.round(m.hy_oas)} bps${m.hy_1w_change != null ? ` · ${m.hy_1w_change >= 0 ? "+" : ""}${Math.round(m.hy_1w_change)} MoM` : ""}${
+              m.hy_pct_rank != null ? ` · ${ordinal(m.hy_pct_rank)} pct` : ""
+            }`,
+          },
+        ]
+      : []),
+    ...(m.ig_oas != null
+      ? [
+          {
+            label: "IG OAS",
+            value: `${Math.round(m.ig_oas)} bps${m.ig_1w_change != null ? ` · ${m.ig_1w_change >= 0 ? "+" : ""}${Math.round(m.ig_1w_change)} MoM` : ""}${
+              m.ig_pct_rank != null ? ` · ${ordinal(m.ig_pct_rank)} pct` : ""
+            }`,
+          },
+        ]
+      : []),
+    ...(m.ccc_oas != null && distressPct != null
+      ? [
+          {
+            label: "CCC distress",
+            value: `${Math.round(m.ccc_oas)} bps · ${distressPct.toFixed(0)}% of the 1,000 bps line`,
+            tone: distressPct >= 100 ? "var(--neg-text)" : distressPct >= 80 ? "var(--warn-hot)" : "var(--text)",
+          },
+        ]
+      : []),
+    ...(stay3 != null ? [{ label: "Stays " + m.credit_label + " · 3m", value: `${stay3}% of past months` }] : []),
+    ...(m.lbo_all_in_cost ? [{ label: "LBO all-in", value: `${m.lbo_all_in_cost} · Fed Funds + HY spread` }] : []),
+  ];
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      <DeskRead
+        eyebrow="Desk read · Credit"
+        live={assessFreshness(asOfIso, "monthly").state === "current"}
+        badge={
+          <Tag tone={stateTone} size="md" uppercase={false}>
+            {m.credit_label} credit
+          </Tag>
+        }
+        conclusion={
+          m.hy_oas != null && m.ig_oas != null
+            ? `Credit reads ${m.credit_label}: high yield at ${Math.round(m.hy_oas)} bps${
+                m.hy_pct_rank != null ? `, the ${ordinal(m.hy_pct_rank)} percentile since 1996,` : ""
+              } with investment grade at ${Math.round(m.ig_oas)} bps.`
+            : `Credit reads ${m.credit_label}.`
+        }
+        why={
+          m.hy_pct_rank != null
+            ? m.hy_pct_rank <= 33
+              ? "Lenders are pricing almost no default stress: spreads this tight leave little cushion, so the risk is asymmetric to widening, not to further tightening."
+              : m.hy_pct_rank <= 67
+                ? "Spreads sit mid-range by history: neither stress nor complacency, so credit is not the deciding input for the regime call right now."
+                : "Lenders are charging real default risk: wide spreads are the credit market's own recession vote and feed the recession model directly."
+            : undefined
+        }
+        ledger={ledger}
+        freshness={[{ noun: "ICE BofA via FRED", info: assessFreshness(asOfIso, "monthly") }]}
+      />
+
+      {/* The callout carries no second rail: the desk read is the screen's one
+          model-output mark above the fold (review P3-7). */}
+      {tension && m.ccc_oas != null && distressPct != null ? (
+        <Card tone="watch">
+          <div style={{ ...eyebrowStyle, color: "var(--warn)" }}>Analytical callout · quality ladder tension</div>
+          <p
+            className="mrr-prose"
+            style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body)", lineHeight: "var(--lh-body)", color: "var(--text)", margin: "8px 0 0", textWrap: "pretty" }}
+          >
+            The index says {m.credit_label}; the weakest rung says stress. CCC spreads sit at {Math.round(m.ccc_oas)} bps,{" "}
+            {distressPct.toFixed(0)}% of the 1,000 bps <Jargon term="distress">distress</Jargon> line, while the broad
+            high-yield index holds {m.hy_oas != null ? Math.round(m.hy_oas) : "—"} bps. Both are true: the two readings
+            describe different rungs of the ladder.
+          </p>
+          <p
+            className="mrr-prose"
+            style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", lineHeight: 1.6, color: "var(--text-2)", margin: "6px 0 0", textWrap: "pretty" }}
+          >
+            What it means: the market is charging default risk only for the marginal borrower. Watch single-B
+            {m.b_oas != null ? ` (${Math.round(m.b_oas)} bps today)` : ""}: stress migrating from CCC into B is how a{" "}
+            {m.credit_label} state turns Stressed (HY above 400 bps).
+          </p>
+        </Card>
+      ) : null}
+
       {/* ── OAS dashboard ─────────────────────────────────────────────── */}
       <section id="oas">
         <SectionHeader
@@ -280,11 +375,11 @@ export default function CreditScreen() {
           ))}
         </div>
         <Caption>
-          <Jargon term="OAS">Option-adjusted spreads</Jargon> — the extra yield corporate bonds pay
+          <Jargon term="OAS">Option-adjusted spreads</Jargon>: the extra yield corporate bonds pay
           over Treasuries.{" "}
           {m.hy_oas != null && m.hy_pct_rank != null && (
             <>
-              High yield sits at {Math.round(m.hy_oas)} bps ({(m.hy_oas / 100).toFixed(2)}pp) — the{" "}
+              High yield sits at {Math.round(m.hy_oas)} bps ({(m.hy_oas / 100).toFixed(2)}pp), the{" "}
               {ordinal(m.hy_pct_rank)} <Jargon term="percentile">percentile</Jargon> of history since
               1996, tighter than {100 - Math.round(m.hy_pct_rank)}% of it.
             </>
@@ -309,14 +404,14 @@ export default function CreditScreen() {
             caption="High-yield and investment-grade option-adjusted spreads, monthly history"
           />
           <Caption>
-            Spreads spike when lenders panic — the shaded bands mark the 2001, 2008–09 and 2020{" "}
+            Spreads spike when lenders panic; the shaded bands mark the 2001, 2008–09 and 2020{" "}
             <Jargon term="NBER">NBER</Jargon> recessions.{" "}
             {m.hy_pct_rank != null &&
               (m.hy_pct_rank <= 33
-                ? "Today's readings sit in the tight third of history — credit markets price almost no default stress."
+                ? "Today's readings sit in the tight third of history: credit markets price almost no default stress."
                 : m.hy_pct_rank <= 67
-                  ? "Today's readings sit mid-range by history — neither stress nor complacency."
-                  : "Today's readings sit in the wide third of history — lenders are charging real default risk.")}
+                  ? "Today's readings sit mid-range by history: neither stress nor complacency."
+                  : "Today's readings sit in the wide third of history: lenders are charging real default risk.")}
           </Caption>
         </Card>
       </section>
@@ -348,7 +443,7 @@ export default function CreditScreen() {
               {m.hy_ig_ratio != null ? `${m.hy_ig_ratio.toFixed(2)}×` : "—"}
             </div>
             <Caption>
-              High-yield trades at {m.hy_ig_ratio?.toFixed(2)}× the investment-grade spread —{" "}
+              High-yield trades at {m.hy_ig_ratio?.toFixed(2)}× the investment-grade spread,{" "}
               {m.hy_ig_ratio != null && Math.abs(m.hy_ig_ratio - 3.5) <= 0.1
                 ? "right on"
                 : m.hy_ig_ratio != null && Math.abs(m.hy_ig_ratio - 3.5) <= 0.75
@@ -386,7 +481,7 @@ export default function CreditScreen() {
                 </div>
                 {distressPct > 100 && (
                   <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--neg-text)", marginTop: 3 }}>
-                    ▲ {(distressPct - 100).toFixed(1)}pp past the line — the bar caps at 100%
+                    ▲ {(distressPct - 100).toFixed(1)}pp past the line; the bar caps at 100%
                   </div>
                 )}
               </>
@@ -394,10 +489,10 @@ export default function CreditScreen() {
             <Caption>
               {m.ccc_oas != null && (
                 <>
-                  CCC spreads sit at {Math.round(m.ccc_oas)} bps — {distressPct?.toFixed(0)}% of the
+                  CCC spreads sit at {Math.round(m.ccc_oas)} bps, {distressPct?.toFixed(0)}% of the
                   1,000 bps <Jargon term="distress">distress</Jargon> line. The weakest credits run
                   hot even while the broad market reads {m.credit_label} at{" "}
-                  {m.hy_oas != null ? Math.round(m.hy_oas) : "—"} bps — the two statements are about
+                  {m.hy_oas != null ? Math.round(m.hy_oas) : "—"} bps; the two statements are about
                   different rungs of the ladder, not a contradiction.
                 </>
               )}
@@ -435,8 +530,8 @@ export default function CreditScreen() {
               <>
                 {" "}
                 {m.tight_count === 0
-                  ? "The Tight state has never occurred since 1996 — its row renders empty, not zero-risk."
-                  : `Tight-state rows rest on only ${m.tight_count} historical months — treat those odds as anecdote.`}
+                  ? "The Tight state has never occurred since 1996; its row renders empty, not zero-risk."
+                  : `Tight-state rows rest on only ${m.tight_count} historical months; treat those odds as anecdote.`}
               </>
             )}
           </Caption>
@@ -453,7 +548,7 @@ export default function CreditScreen() {
               {m.lbo_all_in_cost ?? "—"}
             </div>
             <Caption>
-              Fed Funds plus the high-yield spread — the rough rate a leveraged buyout pays on its
+              Fed Funds plus the high-yield spread: the rough rate a leveraged buyout pays on its
               debt. Pre-GFC deals borrowed near ~7.2%; the 2022 peak touched ~11.4%.
             </Caption>
             <div style={{ marginTop: 8 }}>
@@ -503,7 +598,7 @@ export default function CreditScreen() {
         </div>
       </section>
 
-      <div style={{ ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--text-muted)" }}>
+      <div style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: ".06em", color: "var(--text-muted)" }}>
         ICE BofA option-adjusted spread indices via FRED, monthly observations · classification and
         transition odds computed by the same analytics module the memo reads.
       </div>

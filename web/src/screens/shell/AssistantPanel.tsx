@@ -22,6 +22,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SectionHeader } from "../../components";
 import { capStyle, mono } from "../shared/screen-ui";
+import { fmtDate, fmtMonYr } from "../../lib/format";
+import Markdown from "./Markdown";
 
 /** Same resolution rule as api/client.ts — same-origin in prod, Vite proxy in dev. */
 const API_BASE: string = import.meta.env.VITE_API_BASE ?? "";
@@ -30,7 +32,7 @@ const API_BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const HISTORY_TURN_LIMIT = 20;
 const MAX_HISTORY_ENTRIES = HISTORY_TURN_LIMIT * 2;
 
-const UNREACHABLE = "API unreachable — is the service running?";
+const UNREACHABLE = "API unreachable. Is the service running?";
 
 /** Recruiter-facing openers — the exact four the Streamlit assistant shipped. */
 const SUGGESTED = [
@@ -46,6 +48,16 @@ export interface AssistantTabContext {
   label: string;
   /** Section labels on that tab, in page order. */
   sections: string[];
+  /** "live" for data tabs, "reference" for Methodology (mirrors the Streamlit
+   * register_tab_context kinds). */
+  kind?: "live" | "reference";
+  /** Full route incl. hash, and the anchored section id when there is one. */
+  route?: string;
+  active_section?: string | null;
+  /** Freshness stamps the shell already holds, so the model can cite them. */
+  as_of?: Record<string, string | null>;
+  /** The shell's headline numbers (regime, odds, confidence). */
+  key_metrics?: Record<string, string | number | null>;
 }
 
 interface Turn {
@@ -133,7 +145,7 @@ async function httpErrorMessage(res: Response): Promise<string> {
   } catch {
     /* non-JSON error body — keep the status line */
   }
-  return `Assistant unavailable — ${res.status} ${res.statusText}.`;
+  return `Assistant unavailable: ${res.status} ${res.statusText}.`;
 }
 
 async function streamAsk(
@@ -235,21 +247,31 @@ const buttonBase: React.CSSProperties = {
   cursor: "pointer",
 };
 
-export default function AssistantPanel({ tabContext }: { tabContext: AssistantTabContext | null }) {
-  const [open, setOpen] = useState(false);
+/**
+ * The panel is controlled by the shell (2026-09-05): the launcher is a header
+ * chip so it never floats over data, and the shell returns focus to it when
+ * the panel closes. The conversation survives close/reopen for the session.
+ */
+export default function AssistantPanel({
+  open,
+  onClose,
+  tabContext,
+}: {
+  open: boolean;
+  onClose: () => void;
+  tabContext: AssistantTabContext | null;
+}) {
   const [messages, setMessages] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
 
-  const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const closePanel = useCallback(() => {
-    setOpen(false);
-    launcherRef.current?.focus(); // focus returns to the launcher, drawer/palette rule
-  }, []);
+    onClose();
+  }, [onClose]);
 
   // Escape closes even when focus has left the input.
   useEffect(() => {
@@ -313,7 +335,7 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
         setMessages((prev) => {
           const last = prev[prev.length - 1];
           if (!last || last.role !== "assistant" || last.error || last.content !== "") return prev;
-          return failLast(prev, "No answer came back — the assistant returned an empty response.");
+          return failLast(prev, "No answer came back: the assistant returned an empty response.");
         });
       }
     },
@@ -322,20 +344,6 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
 
   return (
     <>
-      <button
-        ref={launcherRef}
-        className="assistant-launcher"
-        onClick={() => (open ? closePanel() : setOpen(true))}
-        aria-expanded={open}
-        aria-controls="assistant-panel"
-        title="Ask the analyst about the data on this screen"
-      >
-        <span aria-hidden="true" style={{ color: "var(--accent)" }}>
-          ◆
-        </span>{" "}
-        AI Analyst
-      </button>
-
       {open && (
         <div id="assistant-panel" className="assistant-panel" role="dialog" aria-label="AI analyst">
           {/* SectionHeader supplies the house h2 typography; the panel's own
@@ -359,12 +367,14 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
             <button
               onClick={closePanel}
               aria-label="Close AI analyst"
-              title="Close — Esc"
+              title="Close · Esc"
               style={{
                 ...buttonBase,
                 border: "none",
                 color: "var(--text-muted)",
-                fontSize: 14,
+                fontSize: 16,
+                minWidth: 28,
+                minHeight: 28,
                 padding: "2px 6px",
               }}
             >
@@ -377,6 +387,7 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
             role="log"
             aria-live="polite"
             aria-relevant="additions text"
+            aria-busy={streaming}
             style={{ flex: 1, overflowY: "auto", padding: "12px 12px 4px" }}
           >
             {messages.length === 0 ? (
@@ -401,11 +412,12 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
                       disabled={streaming}
                       style={{
                         ...buttonBase,
-                        color: "var(--text-muted)",
-                        fontSize: "var(--fs-meta)",
-                        letterSpacing: "var(--ls-micro)",
+                        fontFamily: "var(--font-ui)",
+                        color: "var(--text-2)",
+                        fontSize: "var(--fs-body-s)",
                         lineHeight: 1.35,
-                        padding: "4px 7px",
+                        minHeight: 32,
+                        padding: "5px 9px",
                         textAlign: "left",
                       }}
                     >
@@ -430,7 +442,7 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
                             : "var(--text-muted)",
                       }}
                     >
-                      {isAssistant ? (m.error ? "◆ Analyst — error" : "◆ Analyst") : "▸ You"}
+                      {isAssistant ? (m.error ? "◆ Analyst · error" : "◆ Analyst") : "▸ You"}
                     </div>
                     <div
                       style={{
@@ -442,18 +454,43 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
                           : isAssistant
                             ? "var(--text)"
                             : "var(--text-2)",
-                        whiteSpace: "pre-wrap",
+                        whiteSpace: isAssistant && !m.error ? "normal" : "pre-wrap",
                         // 3px left rail = generated content (blue for model
                         // output, red when the turn is an error).
                         borderLeft: isAssistant ? `3px solid ${rail}` : "none",
                         paddingLeft: isAssistant ? 8 : 0,
                       }}
                     >
-                      {m.content}
+                      {isAssistant && !m.error ? (
+                        m.content ? (
+                          <Markdown text={m.content} />
+                        ) : streaming && i === messages.length - 1 ? (
+                          <span style={{ color: "var(--text-muted)" }}>Analyzing the stored data…</span>
+                        ) : null
+                      ) : (
+                        m.content
+                      )}
                       {streaming && isAssistant && i === messages.length - 1 ? (
                         <span className="mrr-caret" aria-hidden="true" />
                       ) : null}
                     </div>
+                    {isAssistant && !m.error && m.content && !(streaming && i === messages.length - 1) ? (
+                      <div
+                        style={{
+                          ...mono,
+                          fontSize: "var(--fs-micro)",
+                          letterSpacing: "var(--ls-micro)",
+                          color: "var(--text-muted)",
+                          marginTop: 4,
+                          paddingLeft: 11,
+                        }}
+                      >
+                        Source: stored terminal data
+                        {tabContext?.as_of?.macro ? ` · macro ${fmtMonYr(tabContext.as_of.macro)}` : ""}
+                        {tabContext?.as_of?.market_daily ? ` · market ${fmtDate(tabContext.as_of.market_daily)}` : ""}
+                        {tabContext?.label ? ` · view: ${tabContext.label}` : ""}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })
@@ -478,7 +515,7 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               disabled={streaming}
-              placeholder={streaming ? "Answering —" : "Ask the analyst —"}
+              placeholder={streaming ? "Answering…" : "Ask the analyst…"}
               aria-label="Ask the analyst"
               spellCheck={false}
             />
@@ -487,7 +524,8 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
               disabled={streaming || !draft.trim()}
               style={{
                 ...buttonBase,
-                color: streaming || !draft.trim() ? "var(--text-faint)" : "var(--accent)",
+                color: streaming || !draft.trim() ? "var(--text-muted)" : "var(--accent)",
+                minHeight: 28,
                 fontSize: "var(--fs-meta)",
                 letterSpacing: "var(--ls-micro)",
                 textTransform: "uppercase",
@@ -500,7 +538,7 @@ export default function AssistantPanel({ tabContext }: { tabContext: AssistantTa
           </form>
 
           <div style={{ ...capStyle, margin: 0, padding: "0 12px 10px" }}>
-            Session-only — refresh clears the conversation. Not investment advice.
+            Session-only; refresh clears the conversation. Not investment advice.
           </div>
         </div>
       )}

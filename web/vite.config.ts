@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -6,6 +7,27 @@ import react from "@vitejs/plugin-react";
 // production plan where FastAPI serves the built bundle from one process.
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // Route-level code splitting (2026-09-06): each screen is a React.lazy
+    // chunk; the chart library and React Query get their own vendor chunks
+    // so a screen change never re-downloads the shell.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-query": ["@tanstack/react-query"],
+          "vendor-charts": ["lightweight-charts"],
+        },
+      },
+    },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
+    css: false,
+  },
   server: {
     port: 5173,
     strictPort: true,

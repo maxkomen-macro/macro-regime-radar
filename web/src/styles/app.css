@@ -46,7 +46,9 @@ button {
    so this only ever binds where a <section> is a flex/grid item — exactly the
    screen roots. MethodologyScreen carries the same value inline with its own
    explanation; harmless duplication, left in place. */
-main section {
+main section,
+main [role="tablist"],
+main .mrr-scroll {
   min-width: 0;
 }
 
@@ -88,10 +90,12 @@ main section {
    anything the more house-correct behaviour. The opacity/visibility pair is
    kept below so the fade returns for free if someone later adds
    `transition-behavior: allow-discrete` + `@starting-style`. */
-.jargon::after {
-  content: attr(data-def);
+.jargon-wrap {
+  position: relative;
+  display: inline;
+}
+.jargon-tip {
   position: absolute;
-  display: none;
   left: 0;
   top: calc(100% + 6px);
   z-index: 40;
@@ -108,17 +112,42 @@ main section {
   letter-spacing: 0;
   text-transform: none;
   line-height: 1.5;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity var(--dur-fast) var(--ease-out);
-  pointer-events: none;
   white-space: normal;
+  /* Hoverable (WCAG 1.4.13): the pointer may rest on the definition. */
+  pointer-events: auto;
 }
-.jargon:hover::after,
-.jargon:focus-visible::after {
-  display: block;
-  opacity: 1;
-  visibility: visible;
+.jargon-tip[hidden] {
+  display: none;
+}
+
+/* Skip link: visually hidden until it receives keyboard focus. */
+.mrr-skip {
+  position: absolute;
+  left: 8px;
+  top: -40px;
+  z-index: 60;
+  padding: 6px 10px;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-xs);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-s);
+}
+.mrr-skip:focus-visible {
+  top: 8px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Overlay scrim — shared by the drawer and the palette. Flat, no blur. */
@@ -227,7 +256,7 @@ main section {
 .assistant-panel {
   position: fixed;
   right: 28px;
-  bottom: 62px; /* clears the launcher */
+  bottom: 20px; /* the launcher moved into the header (2026-09-05) */
   width: 380px;
   /* 92vw is the house overlay clamp; the calc keeps the 28px gutter honest on
      phone widths, where 92vw + 28px would run off the screen. */
@@ -326,5 +355,353 @@ main section {
   [style*="transition: color"],
   [style*="transition:color"] {
     transition: none !important;
+  }
+}
+
+/* News arrival flash: the blue is the house attention accent, not a valence color. */
+@keyframes mrr-news-arrive {
+  from {
+    background: rgba(74, 158, 255, 0.1);
+  }
+  to {
+    background: transparent;
+  }
+}
+.mrr-news-new {
+  animation: mrr-news-arrive 1.5s var(--ease-out);
+  border-radius: var(--r-md);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mrr-news-new {
+    animation: none;
+  }
+}
+
+/* ══ Executive foundation (2026-09-05) ═══════════════════════════════════
+   Content frame, responsive table well, house slider with a real hit area,
+   local-nav semantics, markdown for the analyst, and touch-target floors.
+   Everything references the token layer; no new colours. */
+
+/* Content frame — the desk is centered at ≤1520px so a 2160px monitor gets
+   quiet margins instead of 2,000px lines. Charts and tables fill the frame;
+   prose inside it stays at the 74ch measure via .mrr-prose. */
+.mrr-frame {
+  width: 100%;
+  max-width: var(--maxw-frame);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+.mrr-prose {
+  max-width: var(--maxw-prose);
+}
+
+/* Primary nav: text tabs on a hairline rule, 2px accent underline on the
+   active route (aria-current="page"). Links, not buttons — a route is a URL. */
+.mrr-nav {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mrr-nav::-webkit-scrollbar {
+  display: none;
+}
+.mrr-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 2px 7px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: 400;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.mrr-nav a:hover {
+  color: var(--text-2);
+  text-decoration: none;
+}
+.mrr-nav a[aria-current="page"] {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.mrr-nav[data-compact="true"] {
+  gap: 16px;
+}
+.mrr-nav[data-compact="true"] a {
+  font-size: var(--fs-body-s);
+}
+.mrr-nav a.mrr-nav-ref {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+}
+
+/* Header chip buttons (alerts, ⌘K): 28px desk rows, 40px touch rows. */
+.mrr-chip-btn {
+  appearance: none;
+  background: none;
+  border: 0.5px solid var(--line);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 9px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  letter-spacing: var(--ls-micro);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.mrr-chip-btn:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.mrr-chip-btn[data-touch="true"] {
+  /* 44px on touch layouts (WCAG 2.5.8 AAA floor the brief asked for; 2026-09-06). */
+  min-height: 44px;
+  padding: 8px 12px;
+}
+
+/* Responsive table well — pairs with ScrollTable.tsx. */
+.mrr-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--r-xs);
+}
+.mrr-scroll[data-scrollable="true"]:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.mrr-scroll-sticky table th:first-child,
+.mrr-scroll-sticky table td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.mrr-scroll-sticky[data-scrollable="true"] table th:first-child,
+.mrr-scroll-sticky[data-scrollable="true"] table td:first-child {
+  box-shadow: 1px 0 0 var(--line-hair);
+}
+
+/* Tape grids are button rows, not <table>: the ticker cell pins the same way
+   a first column does once the well actually overflows. */
+.mrr-scroll[data-scrollable="true"] .mrr-tape-ticker {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--line-hair);
+  padding-right: 4px;
+}
+
+/* House slider, second generation: the input is a 28px-tall transparent hit
+   area over a 4px track drawn by the wrapper (no gradients), with an 18px
+   thumb. Keyboard focus rings the whole row. */
+.mrr-slider-wrap {
+  position: relative;
+  height: 28px;
+  display: flex;
+  align-items: center;
+}
+.mrr-slider-track,
+.mrr-slider-fill {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  height: 4px;
+  border-radius: var(--r-xs);
+  pointer-events: none;
+}
+.mrr-slider-track {
+  right: 0;
+  background: var(--surface-raised);
+}
+.mrr-slider-fill {
+  background: var(--accent);
+}
+.mrr-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  outline-offset: 2px;
+}
+.mrr-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+.mrr-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: var(--r-sm);
+  background: var(--text);
+  border: 1px solid var(--line-strong);
+}
+.mrr-slider::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+.mrr-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  background: var(--text);
+  border: 1px solid var(--line-strong);
+}
+.mrr-slider:disabled {
+  cursor: default;
+}
+
+/* Typed numeric field that pairs with a slider. */
+.mrr-number {
+  width: 7.5em;
+  box-sizing: border-box;
+  background: var(--void);
+  border: 0.5px solid var(--line);
+  border-radius: var(--r-xs);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-body-s);
+  text-align: right;
+  min-height: 28px;
+  padding: 3px 8px;
+}
+.mrr-number:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.mrr-number[aria-invalid="true"] {
+  border-color: rgba(218, 54, 51, 0.6);
+}
+.mrr-number::-webkit-outer-spin-button,
+.mrr-number::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.mrr-number[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Quiet action button (Reset, Show more): text-first, hairline. */
+.mrr-btn {
+  appearance: none;
+  background: none;
+  border: 0.5px solid var(--line);
+  border-radius: var(--r-xs);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-s);
+  min-height: 28px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.mrr-btn:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.mrr-btn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+.mrr-btn[data-touch="true"] {
+  min-height: 44px;
+  padding: 10px 14px;
+}
+.mrr-btn-accent {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+/* Analyst markdown: model prose is set like memo body, with lists and code
+   the way the terminal already sets data. */
+.mrr-md > :first-child {
+  margin-top: 0;
+}
+.mrr-md > :last-child {
+  margin-bottom: 0;
+}
+.mrr-md p {
+  margin: 0 0 8px;
+}
+.mrr-md h3,
+.mrr-md h4 {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-s);
+  font-weight: 600;
+  color: var(--text);
+  margin: 10px 0 4px;
+}
+.mrr-md ul,
+.mrr-md ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.mrr-md li {
+  margin: 2px 0;
+}
+.mrr-md-code,
+.mrr-md pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  background: var(--void);
+  border: 0.5px solid var(--line-hair);
+  border-radius: var(--r-xs);
+}
+.mrr-md-code {
+  padding: 0 4px;
+}
+.mrr-md pre {
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+.mrr-md hr {
+  border: 0;
+  border-top: 0.5px solid var(--line-hair);
+  margin: 8px 0;
+}
+
+/* The analyst launcher must never sit on top of data on a phone: below 768
+   it docks into a full-width bottom bar with a 44px row, and <main> reserves
+   that height (see AppShell). */
+@media (max-width: 767.98px) {
+  .mrr-number {
+    min-height: 40px;
+    font-size: var(--fs-body);
+  }
+  .assistant-panel {
+    right: 8px;
+    left: 8px;
+    bottom: 12px;
+    width: auto;
+    max-width: none;
+    max-height: 72vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [style*="mrr-pulse"] {
+    animation: none !important;
   }
 }

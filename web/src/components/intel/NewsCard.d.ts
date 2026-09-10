@@ -4,6 +4,8 @@ export interface NewsCardProps {
   time?: string;
   ticker?: string;
   headline: React.ReactNode;
+  /** Original article URL; the headline links out and a "Read at source" line renders (2026-09-05). */
+  href?: string;
   summary?: React.ReactNode;
   /** Overall significance. Colours the SIG readout. */
   significance?: number;

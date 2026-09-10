@@ -43,6 +43,7 @@ export const TABS: TabDef[] = [
     label: "Markets",
     built: true,
     sections: [
+      { id: "single-name-research", label: "Single-name research" },
       { id: "watchlist", label: "Macro tape" },
       { id: "single-names", label: "Single names" },
       { id: "sector-heatmap", label: "Sector heatmap" },
@@ -76,7 +77,7 @@ export const TABS: TabDef[] = [
     label: "News & Calendar",
     built: true,
     sections: [
-      { id: "headlines", label: "Headlines" },
+      { id: "headlines", label: "Priority headlines" },
       { id: "calendar", label: "Macro calendar" },
     ],
   },

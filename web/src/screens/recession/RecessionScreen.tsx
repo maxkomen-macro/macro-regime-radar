@@ -10,6 +10,8 @@
 
 import { useMemo, useState } from "react";
 import { Card, SectionHeader, Tag } from "../../components";
+import DeskRead, { type LedgerItem } from "../shared/DeskRead";
+import { assessFreshness } from "../shared/freshness";
 import { useRecessionProbability, useRecessionScenario } from "../../api/queries";
 import type { RecessionScenarioRequest } from "../../api/types";
 import { fmtMonYr, ordinal } from "../../lib/format";
@@ -50,7 +52,7 @@ function Gauge({ prob, label, color }: { prob: number; label: string; color: str
   let start = 0;
   return (
     <div>
-      <svg viewBox="0 0 200 110" role="img" aria-label={`Recession probability ${prob.toFixed(1)}% — ${label}`} style={{ display: "block", width: "100%", maxWidth: 260 }}>
+      <svg viewBox="0 0 200 110" role="img" aria-label={`Recession probability ${prob.toFixed(1)}% · ${label}`} style={{ display: "block", width: "100%", maxWidth: 260 }}>
         {BANDS.map((b) => {
           const p = arcPath(start / 100, b.to / 100, 80);
           start = b.to;
@@ -95,7 +97,7 @@ const TENOR_ORDER = ["1M", "3M", "6M", "1Y", "2Y", "5Y", "10Y", "30Y"];
 export default function RecessionScreen() {
   const q = useRecessionProbability();
   const m = q.data;
-  const { isNarrow, isMobile } = useBreakpoint();
+  const { isNarrow, isMobile, bp } = useBreakpoint();
 
   // Sensitivity state — seeded from live inputs once data arrives.
   const [inputs, setInputs] = useState<RecessionScenarioRequest | null>(null);
@@ -129,7 +131,7 @@ export default function RecessionScreen() {
     return (
       <Card>
         <StateNote loading={q.isLoading} error={q.isError}>
-          {q.isLoading ? "Training the recession model on stored NBER history —" : undefined}
+          {q.isLoading ? "Training the recession model on stored NBER history…" : undefined}
         </StateNote>
       </Card>
     );
@@ -166,8 +168,64 @@ export default function RecessionScreen() {
     },
   };
 
+  const strongest = coefs[0];
+  const ledger: LedgerItem[] = [
+    {
+      label: "12m odds",
+      value: `${prob.toFixed(1)}% · ${m.recession_label} · bands 20 / 40`,
+      tone: probColor(prob),
+    },
+    ...(spreadBps != null
+      ? [
+          {
+            label: "Curve 2s10s",
+            value: `${spreadBps >= 0 ? "+" : ""}${Math.round(spreadBps)} bps · ${m.is_inverted ? "inverted" : "upward"}${
+              m.yield_curve_pct_rank != null ? ` · ${ordinal(m.yield_curve_pct_rank)} pct of 30y` : ""
+            }`,
+            tone: m.is_inverted ? "var(--neg-text)" : "var(--text)",
+          },
+        ]
+      : []),
+    {
+      label: "Model vs market",
+      value: `${m.divergence_label}${m.divergence_score != null ? ` · ${m.divergence_score >= 0 ? "+" : ""}${Math.round(m.divergence_score)} on ±100` : ""}`,
+      prose: true,
+    },
+    ...(strongest
+      ? [
+          {
+            label: "Strongest input",
+            value: `${FEATURE_LABELS[strongest[0]]?.label ?? strongest[0]} · ${strongest[1] >= 0 ? "+" : ""}${strongest[1].toFixed(2)} log-odds per σ`,
+            prose: true,
+          },
+        ]
+      : []),
+    { label: "Invalidates", value: "2s10s < 0 · HY > 400 bps · unemployment +0.3 pp in 3m", prose: true },
+  ];
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      <DeskRead
+        eyebrow="Desk read · Recession"
+        live={assessFreshness(m.data_as_of, "monthly").state === "current"}
+        badge={
+          <Tag tone={prob < 20 ? "pos" : prob < 40 ? "warn" : "neg"} size="md" uppercase={false}>
+            {m.recession_label}
+          </Tag>
+        }
+        conclusion={`Recession odds ${prob.toFixed(1)}% over 12 months: ${m.recession_label}.`}
+        why={
+          <>
+            The <Jargon term="recession model">logistic model</Jargon> reads {prob.toFixed(1)}% against a ~15% historical
+            base rate; Elevated starts at 20%, High at 40%. {m.divergence_label}: credit pricing and the model{" "}
+            {m.divergence_score != null && Math.abs(m.divergence_score) > 20 ? "disagree. The divergence is material and requires judgment" : "tell one story"}.
+            This is the recession model&apos;s own probability, not the classifier&apos;s Recession Risk odds in the header.
+          </>
+        }
+        ledger={ledger}
+        freshness={[{ noun: "Model inputs", info: assessFreshness(m.data_as_of, "monthly") }]}
+      />
+
       {/* ── Probability model ─────────────────────────────────────────── */}
       <section id="model">
         <SectionHeader
@@ -240,9 +298,9 @@ export default function RecessionScreen() {
               The <Jargon term="2s10s">10Y–2Y spread</Jargon> holds at{" "}
               {spreadBps != null ? `${spreadBps >= 0 ? "+" : ""}${Math.round(spreadBps)} bps (${(spreadBps / 100).toFixed(2)}%)` : "—"}
               {m.is_inverted && m.inversion_duration_months
-                ? ` — inverted for ${m.inversion_duration_months} months.`
+                ? `; inverted for ${m.inversion_duration_months} months.`
                 : m.yield_curve_pct_rank != null
-                  ? ` — the ${ordinal(m.yield_curve_pct_rank)} percentile of 30 years.`
+                  ? `, the ${ordinal(m.yield_curve_pct_rank)} percentile of 30 years.`
                   : "."}{" "}
               An inverted curve has preceded most US recessions.
             </Caption>
@@ -253,10 +311,10 @@ export default function RecessionScreen() {
               {m.divergence_score != null ? `${m.divergence_score >= 0 ? "+" : ""}${Math.round(m.divergence_score)}` : "—"}
             </div>
             <Caption>
-              <Jargon term="divergence">{m.divergence_label}</Jargon> — credit-market pricing (HY
+              <Jargon term="divergence">{m.divergence_label}</Jargon>: credit-market pricing (HY
               percentile) minus the regime model&apos;s recession odds, on a −100 to +100 scale.
-              Beyond ±20, one of the two is likely wrong. The number stays neutral; the word
-              carries the verdict.
+              Beyond ±20 the divergence is material and requires judgment. The number stays
+              neutral; the word carries the verdict.
             </Caption>
           </Card>
         </div>
@@ -284,7 +342,7 @@ export default function RecessionScreen() {
           />
           <Caption>
             The model&apos;s 12-month odds, monthly since{" "}
-            {m.recession_prob_series[0] ? fmtMonYr(m.recession_prob_series[0].date) : "—"} — shaded
+            {m.recession_prob_series[0] ? fmtMonYr(m.recession_prob_series[0].date) : "—"}. Shaded
             bands are actual <Jargon term="NBER">NBER</Jargon> recessions, dashed rules the 20/40
             band edges. The plotted tail (
             {m.recession_prob_series.length
@@ -316,7 +374,7 @@ export default function RecessionScreen() {
               caption="10Y minus 2Y Treasury spread, 30-year history, NBER recessions shaded"
             />
             <Caption>
-              Below the dashed zero line the curve is inverted — short money costs more than long
+              Below the dashed zero line the curve is inverted: short money costs more than long
               money, which only happens when markets expect cuts ahead. Every shaded recession was
               preceded by a dip below zero.
             </Caption>
@@ -324,27 +382,33 @@ export default function RecessionScreen() {
           <Card>
             <div style={eyebrowStyle}>Current curve shape</div>
             <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-              {TENOR_ORDER.map((t) => (
-                <div key={t} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>{t}</span>
-                  <span style={{ ...mono, fontSize: "var(--fs-body-s)", fontWeight: m.curve_shape[t] != null ? 600 : 400, color: m.curve_shape[t] != null ? "var(--text)" : "var(--text-faint)" }}>
-                    {m.curve_shape[t] != null ? `${(m.curve_shape[t] as number).toFixed(2)}%` : "—"}
+              {tenors.map((t) => (
+                <div key={t} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderBottom: "0.5px solid var(--line-hair)", paddingBottom: 4 }}>
+                  <span style={{ ...mono, fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>{t}</span>
+                  <span style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, color: "var(--text)" }}>
+                    {(m.curve_shape[t] as number).toFixed(2)}%
                   </span>
                 </div>
               ))}
+              {TENOR_ORDER.some((t) => m.curve_shape[t] == null) ? (
+                <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4 }}>
+                  Not stored: {TENOR_ORDER.filter((t) => m.curve_shape[t] == null).join(" · ")}. The model reads the
+                  daily FRED 2Y and 10Y series only; other tenors are outside its inputs by design.
+                </div>
+              ) : null}
             </div>
             <Caption>
-              The store holds {tenors.length} <Jargon term="tenor">tenors</Jargon>
               {tenors.length === 2 && m.curve_shape["2Y"] != null && m.curve_shape["10Y"] != null ? (
                 <>
-                  : 2Y at {(m.curve_shape["2Y"] as number).toFixed(2)}% and 10Y at{" "}
-                  {(m.curve_shape["10Y"] as number).toFixed(2)}% — a{" "}
+                  Two stored <Jargon term="tenor">tenors</Jargon>: 2Y at {(m.curve_shape["2Y"] as number).toFixed(2)}% and
+                  10Y at {(m.curve_shape["10Y"] as number).toFixed(2)}%, a{" "}
                   {spreadBps != null ? `${spreadBps >= 0 ? "+" : ""}${Math.round(spreadBps)} bps` : "—"}{" "}
-                  {spreadBps != null && spreadBps >= 0 ? "upward" : "inverted"} slope. Not a broken
-                  chart — daily FRED coverage stops at these two points.
+                  {spreadBps != null && spreadBps >= 0 ? "upward" : "inverted"} slope.
                 </>
               ) : (
-                " with daily FRED coverage."
+                <>
+                  {tenors.length} stored <Jargon term="tenor">tenors</Jargon> with daily FRED coverage.
+                </>
               )}
             </Caption>
           </Card>
@@ -358,12 +422,14 @@ export default function RecessionScreen() {
           <button
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
+            aria-controls="sensitivity-panel"
             style={{
               appearance: "none",
               background: "none",
               border: "none",
               cursor: "pointer",
-              padding: 0,
+              padding: "4px 0",
+              minHeight: 36,
               display: "flex",
               alignItems: "baseline",
               gap: 8,
@@ -374,35 +440,37 @@ export default function RecessionScreen() {
               fontSize: "var(--fs-body-s)",
             }}
           >
-            <span aria-hidden="true" style={{ color: "var(--text-faint)" }}>
+            <span aria-hidden="true" style={{ color: "var(--text-muted)", ...mono }}>
               {open ? "▾" : "▸"}
             </span>
-            <span>
+            <span style={{ flex: "1 1 auto", minWidth: 0 }}>
               Move the model&apos;s five inputs and watch {prob.toFixed(1)}% respond
               {!open && effective && (
-                <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
-                  {" "}
-                  — 2s10s {effective.yield_curve_bps >= 0 ? "+" : ""}
+                // Below the wide tier the meta run takes its own line, so the
+                // expand affordance never lands mid-sentence (review P3-10).
+                <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", display: bp === "wide" ? "inline" : "block", marginTop: bp === "wide" ? 0 : 2 }}>
+                  {bp === "wide" ? " · " : ""}2s10s {effective.yield_curve_bps >= 0 ? "+" : ""}
                   {effective.yield_curve_bps} bps · U-3 {effective.unemployment.toFixed(1)}% · HY{" "}
                   {effective.hy_oas_bps} bps · IP {effective.indpro_yoy.toFixed(1)}% · LEI{" "}
                   {effective.lei.toFixed(1)}pp
                 </span>
               )}
             </span>
-            <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginLeft: "auto" }}>
+            <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginLeft: "auto", flexShrink: 0, alignSelf: "flex-start" }}>
               {open ? "collapse" : "expand"}
             </span>
           </button>
           {open && !effective && (
             <div style={{ marginTop: 12 }}>
               <StateNote>
-                The model&apos;s current inputs are incomplete in this snapshot — nothing honest to
+                The model&apos;s current inputs are incomplete in this snapshot; nothing honest to
                 seed the sliders with.
               </StateNote>
             </div>
           )}
           {open && effective && (
             <div
+              id="sensitivity-panel"
               style={{
                 display: "grid",
                 gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)",
@@ -413,6 +481,9 @@ export default function RecessionScreen() {
               }}
             >
               <div>
+                <div style={{ ...eyebrowStyle, marginBottom: 8 }}>
+                  Model inputs · {inputs ? "modified by you" : "seeded from current readings"}
+                </div>
                 <SliderRow
                   label="Yield curve 2s10s"
                   valueText={`${effective.yield_curve_bps >= 0 ? "+" : ""}${effective.yield_curve_bps} bps`}
@@ -420,6 +491,7 @@ export default function RecessionScreen() {
                   min={-200}
                   max={300}
                   step={5}
+                  input={{ unit: "bps", dp: 0 }}
                   onChange={(v) => setInputs({ ...effective, yield_curve_bps: v })}
                 />
                 <SliderRow
@@ -429,6 +501,7 @@ export default function RecessionScreen() {
                   min={2}
                   max={15}
                   step={0.1}
+                  input={{ unit: "%", dp: 1 }}
                   onChange={(v) => setInputs({ ...effective, unemployment: v })}
                 />
                 <SliderRow
@@ -438,6 +511,7 @@ export default function RecessionScreen() {
                   min={100}
                   max={2000}
                   step={10}
+                  input={{ unit: "bps", dp: 0 }}
                   onChange={(v) => setInputs({ ...effective, hy_oas_bps: v })}
                 />
                 <SliderRow
@@ -447,36 +521,35 @@ export default function RecessionScreen() {
                   min={-20}
                   max={10}
                   step={0.5}
+                  input={{ unit: "%", dp: 1 }}
                   onChange={(v) => setInputs({ ...effective, indpro_yoy: v })}
                 />
                 <SliderRow
                   label={<Jargon term="LEI">Leading-indicator proxy</Jargon>}
+                  name="Leading-indicator proxy"
                   valueText={`${effective.lei.toFixed(1)}pp`}
                   value={effective.lei}
                   min={-5}
                   max={5}
                   step={0.1}
+                  input={{ unit: "pp", dp: 1 }}
                   onChange={(v) => setInputs({ ...effective, lei: v })}
                 />
                 <button
+                  type="button"
+                  className="mrr-btn"
+                  data-touch={isNarrow ? "true" : "false"}
                   onClick={() => setInputs(null)}
-                  style={{
-                    appearance: "none",
-                    background: "none",
-                    border: "0.5px solid var(--line)",
-                    borderRadius: "var(--r-xs)",
-                    cursor: "pointer",
-                    padding: "3px 10px",
-                    ...mono,
-                    fontSize: "var(--fs-meta)",
-                    color: "var(--text-muted)",
-                  }}
+                  disabled={!inputs}
+                  title={inputs ? "Return every input to the model's current reading" : "Inputs already match the current readings"}
                 >
-                  ↻ reset to current readings
+                  ↻ Reset to current readings
                 </button>
               </div>
               <div>
-                <div style={eyebrowStyle}>Adjusted probability</div>
+                <div style={eyebrowStyle}>
+                  {inputs ? "Your adjusted probability" : "Live model estimate · inputs unchanged"}
+                </div>
                 {scenario.data ? (
                   <>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 8 }}>
@@ -499,7 +572,7 @@ export default function RecessionScreen() {
                     )}
                     <Caption>
                       The headline scores 3-month-lagged inputs (the model never peeks); these
-                      sliders score the readings as if they were today&apos;s features — so the
+                      sliders score the readings as if they were today&apos;s features, so the
                       starting position sits near, not on, the headline. Same fitted coefficients,
                       same scaler.
                     </Caption>
@@ -572,10 +645,10 @@ export default function RecessionScreen() {
                   A one-σ rise in {FEATURE_LABELS[coefs[0][0]]?.label ?? coefs[0][0]}{" "}
                   {coefs[0][1] >= 0 ? "adds" : "subtracts"} {Math.abs(coefs[0][1]).toFixed(2)}{" "}
                   {coefs[0][1] >= 0 ? "to" : "from"} the{" "}
-                  <Jargon term="log-odds">log-odds</Jargon> of recession — the model&apos;s
+                  <Jargon term="log-odds">log-odds</Jargon> of recession: the model&apos;s
                   strongest input. Orange bars raise recession odds as they rise; blue bars lower
                   them. Unemployment enters negative because it co-moves with the credit and curve
-                  terms — the fit assigns it the offsetting sign, so read the five together, not
+                  terms; the fit assigns it the offsetting sign, so read the five together, not
                   one at a time.
                 </>
               )}
@@ -607,16 +680,16 @@ export default function RecessionScreen() {
             </div>
             <Caption>
               The <Jargon term="LEI">leading-indicator proxy</Jargon> is the 10Y-minus-5Y inflation
-              breakeven — the original USSLIND series froze in Feb 2020 and survives only as
+              breakeven; the original USSLIND series froze in Feb 2020 and survives only as
               training history.
             </Caption>
           </Card>
         </div>
       </section>
 
-      <div style={{ ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--text-muted)" }}>
+      <div style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: ".06em", color: "var(--text-muted)" }}>
         Model trained in-process from stored FRED series each session (no saved artifact) ·
-        probability is the recession model&apos;s own — a different number from the regime
+        probability is the recession model&apos;s own, a different number from the regime
         classifier&apos;s Recession Risk odds in the header.
       </div>
     </div>

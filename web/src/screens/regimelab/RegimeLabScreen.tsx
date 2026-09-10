@@ -11,8 +11,13 @@
  * #23 regime-spell percentile.
  */
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Card, ProbabilityBar, SectionHeader, Tag } from "../../components";
+import DeskRead, { type LedgerItem } from "../shared/DeskRead";
+import SubTabs from "../shared/SubTabs";
+import ScrollTable from "../shared/ScrollTable";
+import { assessFreshness } from "../shared/freshness";
 import {
   useAllocation,
   useAnalogues,
@@ -21,13 +26,14 @@ import {
   useRegimeHistory,
   useRegimeLatest,
   useRegimePlaybooks,
+  useRecessionProbability,
   useScenarioDefs,
   useScenarioRun,
   useTakeaway,
   useTransitions,
 } from "../../api/queries";
 import type { Regime, ScenarioShocks } from "../../api/types";
-import { fmtMonYr, ordinal } from "../../lib/format";
+import { fmtDate, fmtMonYr, fmtWholePct, ordinal, tidyProse } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import { Caption, SliderRow, StateNote, eyebrowStyle, mono, useDebounced, useHashScroll } from "../shared/screen-ui";
@@ -55,50 +61,106 @@ function parseStrong(narrative: string): React.ReactNode[] {
 
 /* ── Takeaway + playbook ─────────────────────────────────────────────────── */
 
+function splitNarrative(narrative: string): { lead: string; rest: string } {
+  const clean = tidyProse(narrative);
+  const m = /^(.*?[.!?])(?:\s+|$)([\s\S]*)$/.exec(clean);
+  if (!m) return { lead: clean, rest: "" };
+  return { lead: m[1], rest: m[2] };
+}
+
+/** The Regime Lab desk read: the stored takeaway as conclusion + why, with a
+ * ledger of the live cycle, stay odds and divergences (2026-09-05). */
 function TakeawaySection() {
   const q = useTakeaway();
+  const duration = useRegimeDuration();
+  const transitions = useTransitions();
+  const regime = useRegimeLatest();
+  const recession = useRecessionProbability();
   const t = q.data;
   if (!t) {
     return (
       <Card accentBar>
         <StateNote loading={q.isLoading} error={q.isError}>
-          {q.isLoading ? "Assembling the market takeaway — cold call trains the recession model once." : undefined}
+          {q.isLoading ? "Assembling the market takeaway; the cold call trains the recession model once." : undefined}
         </StateNote>
       </Card>
     );
   }
+  const { lead, rest } = splitNarrative(t.narrative);
+  const d = duration.data;
+  const tr = transitions.data;
+  const conf = regime.data?.confidence;
+  const confWord = conf == null ? null : conf >= 0.6 ? "High" : conf >= 0.4 ? "Medium" : "Low";
+  const ledger: LedgerItem[] = [
+    {
+      label: "Market read",
+      value: t.primary_signal,
+      tone: t.primary_signal === "Risk-On" ? "var(--pos)" : t.primary_signal === "Risk-Off" ? "var(--neg-text)" : "var(--warn)",
+    },
+    ...(conf != null
+      ? [{ label: "Model confidence", value: `${fmtWholePct(conf)} · ${confWord} (classifier); takeaway conviction ${t.conviction}`, prose: true }]
+      : []),
+    ...(recession.data
+      ? [
+          {
+            label: "Model vs market",
+            value: `${recession.data.divergence_label}${recession.data.divergence_score != null ? ` · ${recession.data.divergence_score >= 0 ? "+" : ""}${Math.round(recession.data.divergence_score)} on ±100` : ""}`,
+            prose: true,
+            tone: recession.data.divergence_score != null && Math.abs(recession.data.divergence_score) > 20 ? "var(--warn)" : "var(--text-2)",
+          },
+        ]
+      : []),
+    ...(d
+      ? [
+          {
+            label: "Cycle",
+            value: `${d.months_in_regime.toFixed(0)} month${d.months_in_regime.toFixed(0) === "1" ? "" : "s"} in · ${d.status} · avg spell ${d.historical_avg_months.toFixed(1)}mo`,
+            prose: true,
+          },
+        ]
+      : []),
+    ...(tr
+      ? [
+          {
+            label: "Next 3 months",
+            value: `Stays ${tr.current_regime} ${Math.round(tr.stay_probability_3m)}% · highest-risk path → ${tr.highest_risk_transition} ${Math.round(tr.highest_risk_prob)}%`,
+            prose: true,
+          },
+        ]
+      : []),
+    {
+      label: "Takeaway divergences",
+      value: t.divergences.length ? t.divergences.map(tidyProse).join(" · ") : "None flagged by the takeaway; the model-vs-market score above is the quantitative check",
+      prose: true,
+      tone: t.divergences.length ? "var(--warn)" : "var(--text-2)",
+    },
+  ];
   return (
-    <Card accentBar>
-      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginBottom: 8 }}>
-        <span style={eyebrowStyle}>Market takeaway</span>
-        <Tag tone={t.conviction === "High" ? "pos" : t.conviction === "Low" ? "warn" : "neutral"} size="sm">
-          {t.conviction} conviction
+    <DeskRead
+      id="takeaway"
+      eyebrow="Desk read · Regime Lab"
+      live={regime.data != null && assessFreshness(regime.data.date, "monthly").state === "current"}
+      badge={
+        <Tag tone={t.conviction === "High" ? "pos" : t.conviction === "Low" ? "warn" : "accent"} size="md" uppercase={false}>
+          Takeaway conviction · {t.conviction}
         </Tag>
-        <Tag tone={t.primary_signal === "Risk-On" ? "pos" : t.primary_signal === "Risk-Off" ? "neg" : "neutral"} size="sm">
-          {t.primary_signal}
-        </Tag>
-        <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginLeft: "auto" }}>
-          regime data as of {t.updated_ago}
-        </span>
-      </div>
-      <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body)", color: "var(--text-2)", lineHeight: 1.6, maxWidth: "74ch" }}>
-        {parseStrong(t.narrative)}
-      </div>
-      {t.divergences.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          {t.divergences.map((d) => (
-            <div key={d} style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--warn)" }}>
-              ▪ <Jargon term="divergence">divergence</Jargon>: {d}
-            </div>
-          ))}
-        </div>
-      )}
-      <Caption>
-        Composed from the stored regime odds, credit metrics and the recession model —{" "}
-        <Jargon term="conviction">conviction</Jargon> drops when the top odds are thin or the
-        inputs disagree.
-      </Caption>
-    </Card>
+      }
+      conclusion={parseStrong(lead)}
+      why={rest ? parseStrong(rest) : undefined}
+      ledger={ledger}
+      freshness={[
+        { noun: "Regime", info: assessFreshness(regime.data?.date, "monthly") },
+        { noun: "Playbook", info: assessFreshness(null, "reference") },
+      ]}
+      note={
+        <>
+          Composed from the stored regime odds, credit metrics and the recession model; takeaway{" "}
+          <Jargon term="conviction">conviction</Jargon> weighs those three together, so it can read higher than the
+          classifier&apos;s own confidence ({conf != null ? fmtWholePct(conf) : "—"}), which scores only the odds gap.
+          Takeaway stamped {t.updated_ago}.
+        </>
+      }
+    />
   );
 }
 
@@ -110,7 +172,7 @@ function PlaybookSection({ currentRegime }: { currentRegime: string | undefined 
   const pb = q.data?.[active];
   return (
     <section id="playbook">
-      <SectionHeader title="Playbook" right="static reference · not live data" />
+      <SectionHeader title="Playbook" right="Static reference · regime literature, not live data" />
       {/* Four regime names in one row need ~430px; below 768 they wrap onto a
           second line instead of pushing the page into a horizontal scroll. */}
       <div style={{ display: "flex", gap: 6, flexWrap: isNarrow ? "wrap" : undefined, marginBottom: 10 }}>
@@ -125,7 +187,8 @@ function PlaybookSection({ currentRegime }: { currentRegime: string | undefined 
               background: active === r ? "rgba(74,158,255,.10)" : "none",
               border: active === r ? `0.5px solid ${REGIME_COLORS[r]}66` : "0.5px solid var(--line-hair)",
               borderRadius: "var(--r-xs)",
-              padding: "3px 10px",
+              padding: isNarrow ? "8px 12px" : "4px 10px",
+              minHeight: isNarrow ? 40 : 28,
               ...mono,
               fontSize: "var(--fs-micro)",
               letterSpacing: "var(--ls-micro)",
@@ -142,11 +205,11 @@ function PlaybookSection({ currentRegime }: { currentRegime: string | undefined 
         <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr)", gap: 12 }}>
           <Card>
             <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)", lineHeight: 1.6 }}>
-              {pb.description}
+              {tidyProse(pb.description)}
             </div>
             <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: 8 }}>
               ~{pb.historical_frequency.toFixed(0)}% of months in the literature · literature avg
-              spell {pb.avg_duration_months.toFixed(1)}mo — the measured number lives in Cycle
+              spell {pb.avg_duration_months.toFixed(1)}mo; the measured number lives in Cycle
               position below
             </div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)", gap: "4px 16px", marginTop: 10 }}>
@@ -164,7 +227,7 @@ function PlaybookSection({ currentRegime }: { currentRegime: string | undefined 
               Typical tape: curve {pb.typical_indicators.yield_curve?.toLowerCase()}, spreads{" "}
               {pb.typical_indicators.credit_spreads?.toLowerCase()}, VIX{" "}
               {pb.typical_indicators.vix_regime?.toLowerCase()}. Reference numbers from the regime
-              literature — the backtests section below is what this app measured itself.
+              literature; the backtests section below is what this app measured itself.
             </Caption>
           </Card>
           <Card>
@@ -186,7 +249,7 @@ function PlaybookSection({ currentRegime }: { currentRegime: string | undefined 
               </div>
             ))}
             <Caption>
-              Tilt strength runs 0–100 — conviction of the tilt in this playbook, not a return
+              Tilt strength runs 0–100: conviction of the tilt in this playbook, not a return
               forecast.
             </Caption>
           </Card>
@@ -235,7 +298,7 @@ function CycleSection() {
   const monthsText = d ? d.months_in_regime.toFixed(0) : "0";
   return (
     <section id="cycle">
-      <SectionHeader title="Cycle position" right="spell length vs 30 years of stored history" />
+      <SectionHeader title="Cycle position" right="Live model output · spell length vs 30 years of stored history" />
       {d ? (
         <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1.3fr) minmax(0,1fr)", gap: 12 }}>
           <Card>
@@ -248,13 +311,13 @@ function CycleSection() {
             <div style={{ height: 5, borderRadius: "var(--r-xs)", background: "var(--surface-raised)", overflow: "hidden", marginTop: 10 }}>
               <div style={{ height: "100%", width: `${Math.min(d.progress_pct / 2, 100)}%`, background: d.status_color }} />
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", ...mono, fontSize: 9, color: "var(--text-muted)", marginTop: 3 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", marginTop: 3 }}>
               <span>0</span>
               <span>avg {d.historical_avg_months.toFixed(1)}mo</span>
               <span>2× avg</span>
             </div>
             <Caption>
-              {d.current_regime} has run {monthsText} month{monthsText === "1" ? "" : "s"} — longer
+              {d.current_regime} has run {monthsText} month{monthsText === "1" ? "" : "s"}, longer
               than{" "}
               {d.percentile_duration.toFixed(0)}% of past {d.current_regime} spells, which average{" "}
               {d.historical_avg_months.toFixed(1)} months. {d.status} means{" "}
@@ -264,7 +327,7 @@ function CycleSection() {
                   ? "the spell sits inside its normal historical span."
                   : d.status === "Extended"
                     ? "the spell has outlived most of its historical peers."
-                    : "the spell is among the longest on record — age alone argues for a change."}
+                    : "the spell is among the longest on record; age alone argues for a change."}
             </Caption>
           </Card>
           <Card>
@@ -310,7 +373,7 @@ function TransitionsSection() {
   const t = q.data;
   return (
     <section id="transitions">
-      <SectionHeader title="Transition outlook" right="empirical odds from 30 years of monthly regime history" />
+      <SectionHeader title="Transition outlook" right="Stored empirical analysis · 30 years of monthly regime history" />
       {t ? (
         <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)", gap: 12 }}>
           <Card>
@@ -384,7 +447,7 @@ function TransitionsSection() {
             <Caption>
               {t.narrative_6m} Highest-risk path: → {t.highest_risk_transition} at{" "}
               {Math.round(t.highest_risk_prob)}%. Odds are counted month-over-month from the stored
-              classifier history — a <Jargon term="transition matrix">transition matrix</Jargon>,
+              classifier history: a <Jargon term="transition matrix">transition matrix</Jargon>,
               not a forecast model.
             </Caption>
           </Card>
@@ -405,7 +468,7 @@ function AnaloguesSection() {
   const { isNarrow } = useBreakpoint();
   return (
     <section id="analogues">
-      <SectionHeader title="Historical analogues" right="closest past setups from a 7-period reference corpus" />
+      <SectionHeader title="Historical analogues" right="Historical analogy · 7-period reference corpus" />
       {q.data?.length ? (
         <>
           <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12 }}>
@@ -440,7 +503,7 @@ function AnaloguesSection() {
           <Caption>
             Similarity scores regime match (40), HY-spread percentile proximity (25), recession-odds
             proximity (20) and VIX proximity (15) against today&apos;s stored readings. Four closest
-            of seven studied periods — a study aid, not a prediction.
+            of seven studied periods: a study aid, not a prediction.
           </Caption>
         </>
       ) : (
@@ -463,6 +526,7 @@ const SHOCK_DEFAULTS: ScenarioShocks = {
 
 function ScenariosSection() {
   const defs = useScenarioDefs();
+  const regimeNow = useRegimeLatest();
   const { isMobile, isNarrow } = useBreakpoint();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [custom, setCustom] = useState(false);
@@ -480,7 +544,8 @@ function ScenariosSection() {
     background: active ? "rgba(74,158,255,.10)" : "none",
     border: active ? `0.5px solid ${color}` : "0.5px solid var(--line-hair)",
     borderRadius: "var(--r-xs)",
-    padding: "3px 10px",
+    padding: isNarrow ? "8px 12px" : "4px 10px",
+    minHeight: isNarrow ? 40 : 28,
     ...mono,
     fontSize: "var(--fs-micro)",
     letterSpacing: "var(--ls-micro)",
@@ -497,7 +562,7 @@ function ScenariosSection() {
 
   return (
     <section id="scenarios">
-      <SectionHeader title="Scenario builder" right="5 presets · custom shocks · reads stored odds only" />
+      <SectionHeader title="Scenario builder" right="Scenario analysis · stress rule over stored odds, not a classifier rerun" />
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         {defs.data?.map((d) => (
           <button
@@ -534,6 +599,7 @@ function ScenariosSection() {
               min={-200}
               max={500}
               step={10}
+              input={{ unit: "bps", dp: 0 }}
               onChange={(v) => setShocks((s) => ({ ...s, hy_spread_delta_bps: v }))}
             />
             <SliderRow
@@ -543,6 +609,7 @@ function ScenariosSection() {
               min={-150}
               max={200}
               step={5}
+              input={{ unit: "bps", dp: 0 }}
               onChange={(v) => setShocks((s) => ({ ...s, yield_10y_delta_bps: v }))}
             />
             <SliderRow
@@ -552,6 +619,7 @@ function ScenariosSection() {
               min={-10}
               max={50}
               step={1}
+              input={{ unit: "pts", dp: 0 }}
               onChange={(v) => setShocks((s) => ({ ...s, vix_delta: v }))}
             />
             <SliderRow
@@ -561,8 +629,14 @@ function ScenariosSection() {
               min={-40}
               max={20}
               step={1}
+              input={{ unit: "%", dp: 0 }}
               onChange={(v) => setShocks((s) => ({ ...s, spx_delta_pct: v }))}
             />
+            <div style={{ marginTop: 6 }}>
+              <button type="button" className="mrr-btn" data-touch={isNarrow ? "true" : "false"} onClick={() => setShocks(SHOCK_DEFAULTS)}>
+                Reset shocks to zero
+              </button>
+            </div>
           </Card>
         )}
 
@@ -597,7 +671,21 @@ function ScenariosSection() {
                 <div style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", marginBottom: 4 }}>
                   stored odds today
                 </div>
-                <ProbabilityBar probs={toBar(r.current_regime_probs)} height={6} />
+                {/* The classifier's own stored odds, not the stress rule's
+                    renormalised copy: one number, one truth (review 2026-09-05). */}
+                <ProbabilityBar
+                  probs={
+                    regimeNow.data
+                      ? {
+                          goldilocks: regimeNow.data.prob_goldilocks ?? 0,
+                          overheating: regimeNow.data.prob_overheating ?? 0,
+                          stagflation: regimeNow.data.prob_stagflation ?? 0,
+                          recession: regimeNow.data.prob_recession ?? 0,
+                        }
+                      : toBar(r.current_regime_probs)
+                  }
+                  height={6}
+                />
               </div>
               <div>
                 <div style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", marginBottom: 4 }}>
@@ -629,8 +717,8 @@ function ScenariosSection() {
                   positioning
                 </div>
                 {r.positioning_implications.slice(0, 4).map((p) => (
-                  <div key={p} style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", lineHeight: 1.55 }}>
-                    · {p}
+                  <div key={p} style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)", lineHeight: 1.55 }}>
+                    · {tidyProse(p)}
                   </div>
                 ))}
               </div>
@@ -655,7 +743,7 @@ function ScenariosSection() {
             </div>
             <Caption>
               A transparent stress rule (documented in the source) shifts the stored odds by the
-              shock mix and renormalizes — it is a sketch of direction and rough size, not the
+              shock mix and renormalizes; it is a sketch of direction and rough size, not the
               classifier rerun. {r.what_happened_then}
             </Caption>
           </Card>
@@ -666,8 +754,8 @@ function ScenariosSection() {
             ) : run.isError ? (
               <StateNote error />
             ) : (
-              <span style={{ ...mono, fontSize: 10, color: "var(--text-muted)" }}>
-                Pick a prebuilt scenario or build custom shocks — the five presets replay COVID, a
+              <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
+                Pick a prebuilt scenario or build custom shocks. The five presets replay COVID, a
                 rate shock, a soft landing, a stagflation scare and a credit crisis against
                 today&apos;s stored odds.
               </span>
@@ -720,7 +808,7 @@ function GanttSection() {
   if (!rows.length) {
     return (
       <section id="regime-history">
-        <SectionHeader title="Regime history" right="the classifier's full record" />
+        <SectionHeader title="Regime history" right="Live model output · the classifier's full record" />
         <Card>
           <StateNote loading={q.isLoading} error={q.isError} />
         </Card>
@@ -750,10 +838,10 @@ function GanttSection() {
             chart itself is untouched. At 768+ the fluid width:100% is exactly
             as it was. */}
         <div style={isNarrow ? { overflowX: "auto" } : undefined}>
-          <svg viewBox={`0 0 ${W} ${H}`} style={isNarrow ? { display: "block", width: W, height: H } : { display: "block", width: "100%", height: "auto" }} role="img" aria-label="Regime history Gantt — one lane per regime, colored spans mark the months the classifier called it">
+          <svg viewBox={`0 0 ${W} ${H}`} style={isNarrow ? { display: "block", width: W, height: H } : { display: "block", width: "100%", height: "auto" }} role="img" aria-label="Regime history Gantt: one lane per regime, colored spans mark the months the classifier called it">
             {REGIMES.map((r, ri) => (
               <g key={r}>
-                <text x={0} y={ri * ROW_H + 13} fill={REGIME_COLORS[r]} style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: ".08em" }}>
+                <text x={0} y={ri * ROW_H + 13} fill={REGIME_COLORS[r]} style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, letterSpacing: ".06em" }}>
                   {r.toUpperCase()}
                 </text>
                 <line x1={LABEL_W} x2={W - 4} y1={ri * ROW_H + 9.5} y2={ri * ROW_H + 9.5} stroke="var(--line-hair)" strokeWidth="0.5" />
@@ -775,7 +863,7 @@ function GanttSection() {
             {years.map((y) => (
               <g key={y}>
                 <line x1={X(y)} x2={X(y)} y1={2} y2={ROW_H * 4} stroke="var(--line-hair)" strokeWidth="0.5" />
-                <text x={X(y) + 2} y={ROW_H * 4 + 12} fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: 8.5, letterSpacing: ".05em" }}>
+                <text x={X(y) + 2} y={ROW_H * 4 + 12} fill="var(--text-muted)" style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: ".04em" }}>
                   {y.slice(0, 4)}
                 </text>
               </g>
@@ -784,7 +872,7 @@ function GanttSection() {
         </div>
         {isNarrow && <Caption>scroll → 30 years</Caption>}
         <Caption>
-          Every monthly call the classifier has made, one lane per regime — hover a span for its
+          Every monthly call the classifier has made, one lane per regime; hover a span for its
           dates. Long unbroken bands are stable macro; rapid lane-hopping marks the turns. The last
           12 months saw {switches12} regime switch{switches12 === 1 ? "" : "es"}.
         </Caption>
@@ -838,7 +926,7 @@ function BacktestsSection() {
     <section id="backtests">
       <SectionHeader
         title="Backtests & factor attribution"
-        right={computedAt ? `SPY forward returns · computed ${computedAt}` : "SPY forward returns"}
+        right={computedAt ? `Stored empirical analysis · SPY forward returns · computed ${fmtDate(computedAt)}` : "Stored empirical analysis · SPY forward returns"}
       />
       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
         {(
@@ -857,7 +945,8 @@ function BacktestsSection() {
               background: kind === k ? "rgba(74,158,255,.12)" : "none",
               border: kind === k ? "0.5px solid rgba(74,158,255,.4)" : "0.5px solid var(--line-hair)",
               borderRadius: "var(--r-xs)",
-              padding: "2px 8px",
+              padding: isNarrow ? "8px 12px" : "4px 10px",
+              minHeight: isNarrow ? 40 : 28,
               ...mono,
               fontSize: "var(--fs-micro)",
               letterSpacing: "var(--ls-micro)",
@@ -870,8 +959,9 @@ function BacktestsSection() {
         ))}
       </div>
       {rows.length ? (
-        <Card style={{ padding: 0, overflowX: "auto" }}>
-          {/* The Card scrolls; this inner box carries the table role and, below
+        <Card style={{ padding: 0 }}>
+          <ScrollTable stickyFirst={false} label="Backtests table">
+          {/* The well scrolls; this inner box carries the table role and, below
               768, the 674px the six columns actually need (590 tracks + 60 gaps
               + 24 padding) so the row stripes and header rule span the whole
               scrolled width instead of stopping at the viewport edge. */}
@@ -891,8 +981,17 @@ function BacktestsSection() {
                 ((r.n ?? 0) > 0 && (r.n ?? 0) <= 4) || r.hit_rate === 1 || r.hit_rate === 0;
               return (
                 <div key={`${r.cohort}-${r.horizon}`} role="row" style={{ display: "grid", gridTemplateColumns: "minmax(210px,1.6fr) 60px 90px 90px 80px 60px", gap: 12, padding: "6px 12px", background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent", alignItems: "baseline" }}>
-                  <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
-                    {COHORT_NAMES[r.cohort] ?? r.cohort}
+                  {/* Cohort prints once per group; later rows keep it for
+                      screen readers via aria-label so the grid stays scannable
+                      without re-reading the same name four times. */}
+                  <span
+                    role="cell"
+                    aria-label={COHORT_NAMES[r.cohort] ?? r.cohort}
+                    style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}
+                  >
+                    {i === 0 || rows[i - 1].cohort !== r.cohort
+                      ? (COHORT_NAMES[r.cohort] ?? r.cohort)
+                      : ""}
                   </span>
                   <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right" }}>{r.horizon}</span>
                   <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", textAlign: "right", color: (r.avg_return ?? 0) >= 0 ? "var(--pos)" : "var(--neg-text)" }}>
@@ -911,6 +1010,7 @@ function BacktestsSection() {
               );
             })}
           </div>
+          </ScrollTable>
         </Card>
       ) : (
         <Card>
@@ -919,7 +1019,7 @@ function BacktestsSection() {
       )}
       <Caption>
         SPY forward returns after each {kind === "regime" ? "regime began" : "signal fired"},
-        measured over trading-day horizons (1M=21d … 12M=252d). ▪ flags fragile cells — four or
+        measured over trading-day horizons (1M=21d … 12M=252d). ▪ flags fragile cells: four or
         fewer samples, or a perfect 100%/0% <Jargon term="hit rate">hit rate</Jargon>, which is a
         small base, not a guarantee. 50% is a coin flip; read hit rates against that line, not
         zero.
@@ -939,7 +1039,7 @@ function BacktestsSection() {
                 <div role="row" style={{ display: "contents" }}>
                   <span role="columnheader" aria-label="Factor" />
                   {regimes.map((r) => (
-                    <span key={r} role="columnheader" style={{ ...mono, fontSize: 9, letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "right", padding: "4px 8px" }}>
+                    <span key={r} role="columnheader" style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "right", padding: "4px 8px" }}>
                       {r}
                     </span>
                   ))}
@@ -963,7 +1063,7 @@ function BacktestsSection() {
             </div>
             <Caption>
               Long/short ETF-proxy factors (Value, Momentum, Quality, Size, Low Vol) annualized
-              inside each regime&apos;s months — which styles actually paid in each weather. Full
+              inside each regime&apos;s months: which styles actually paid in each weather. Full
               portfolio-level attribution lives in Tools → Allocation → Risk.
             </Caption>
           </Card>
@@ -971,8 +1071,8 @@ function BacktestsSection() {
           <Card>
             <StateNote loading={alloc.isLoading} error={alloc.isError}>
               {alloc.isLoading
-                ? "Factor table computes on the allocation engine — up to a minute cold, then cached an hour."
-                : "Factor history unavailable — the allocation engine could not reach its data vendor."}
+                ? "Factor table computes on the allocation engine; up to a minute cold, then cached an hour."
+                : "Factor history unavailable: the allocation engine could not reach its data vendor."}
             </StateNote>
           </Card>
         )}
@@ -983,20 +1083,79 @@ function BacktestsSection() {
 
 /* ── Screen ──────────────────────────────────────────────────────────────── */
 
+const LAB_TABS = [
+  { id: "overview", label: "Overview", hint: "live model" },
+  { id: "playbook", label: "Playbook", hint: "reference" },
+  { id: "scenarios", label: "Scenarios", hint: "stress rule" },
+  { id: "history", label: "History & analogues", hint: "stored + reference" },
+  { id: "evidence", label: "Empirical evidence", hint: "backtests" },
+] as const;
+type LabTab = (typeof LAB_TABS)[number]["id"];
+
+/** Section anchors (palette jumps, cross-links) map onto the local view that
+ * renders them, so a deep link lands on the right panel and then scrolls. */
+const SECTION_TO_TAB: Record<string, LabTab> = {
+  takeaway: "overview",
+  cycle: "overview",
+  transitions: "overview",
+  playbook: "playbook",
+  scenarios: "scenarios",
+  analogues: "history",
+  "regime-history": "history",
+  backtests: "evidence",
+};
+const TAB_ANCHOR: Record<LabTab, string> = {
+  overview: "takeaway",
+  playbook: "playbook",
+  scenarios: "scenarios",
+  history: "analogues",
+  evidence: "backtests",
+};
+
 export default function RegimeLabScreen() {
   const regime = useRegimeLatest();
-  useHashScroll(regime.data);
+  const location = useLocation();
+  const [active, setActive] = useState<LabTab>(() => SECTION_TO_TAB[location.hash.replace("#", "")] ?? "overview");
+  useEffect(() => {
+    const t = SECTION_TO_TAB[location.hash.replace("#", "")];
+    if (t) setActive(t);
+  }, [location.hash]);
+  useHashScroll(active === "overview" ? regime.data : active);
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <TakeawaySection />
-      <PlaybookSection currentRegime={regime.data?.label} />
-      <CycleSection />
-      <TransitionsSection />
-      <AnaloguesSection />
-      <ScenariosSection />
-      <GanttSection />
-      <BacktestsSection />
-      <div style={{ ...mono, fontSize: 10, letterSpacing: ".06em", color: "var(--text-muted)" }}>
+      <SubTabs
+        tabs={[...LAB_TABS]}
+        active={active}
+        label="Regime Lab views"
+        onChange={(id) => {
+          setActive(id as LabTab);
+          history.replaceState(null, "", `#${TAB_ANCHOR[id as LabTab]}`);
+          window.scrollTo({ top: Math.min(window.scrollY, 0) });
+        }}
+      >
+        <div style={{ display: "grid", gap: 16 }}>
+          {active === "overview" ? (
+            <>
+              <CycleSection />
+              <TransitionsSection />
+            </>
+          ) : active === "playbook" ? (
+            <PlaybookSection currentRegime={regime.data?.label} />
+          ) : active === "scenarios" ? (
+            <ScenariosSection />
+          ) : active === "history" ? (
+            <>
+              <AnaloguesSection />
+              <GanttSection />
+            </>
+          ) : (
+            <BacktestsSection />
+          )}
+        </div>
+      </SubTabs>
+      <div style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: ".04em", color: "var(--text-muted)", lineHeight: 1.5 }}>
         Regime odds, durations and transitions from the stored monthly classifier · playbooks,
         analogue corpus and scenario definitions are labeled reference content · backtests computed
         from stored SPY history.

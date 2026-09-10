@@ -25,42 +25,42 @@ export interface SignalMeta {
   cadence: "monthly print" | "daily";
 }
 
-const num = (t: number | null, dp = 2) => (t != null ? t.toFixed(dp) : "its threshold");
+const num = (t: number | null, dp = 2) => (t != null ? t.toFixed(dp) : null);
 
 export const SIGNALS_META: Record<string, SignalMeta> = {
   yield_curve_inversion: {
     name: "yield_curve_inversion",
     display: "Curve inversion risk",
     format: (v) => `${v.toFixed(2)}%`,
-    trigger: (t) => `Trips when the 10Y–2Y spread closes below ${num(t)}%.`,
+    trigger: (t) => (num(t) ? `Trips when the 10Y–2Y spread closes below ${num(t)}%.` : "Trips when the 10Y–2Y spread closes below its stored trigger."),
     cadence: "daily",
   },
   unemployment_spike: {
     name: "unemployment_spike",
     display: "Unemployment spike",
     format: (v) => `${v.toFixed(2)} pp / 3m`,
-    trigger: (t) => `Trips when unemployment rises ${num(t)} pp or more over 3 months.`,
+    trigger: (t) => (num(t) ? `Trips when unemployment rises ${num(t)} pp or more over 3 months.` : "Trips when the 3-month rise in unemployment reaches its stored trigger."),
     cadence: "monthly print",
   },
   cpi_hot: {
     name: "cpi_hot",
     display: "Inflation pressure",
     format: (v) => `${v.toFixed(2)}% YoY`,
-    trigger: (t) => `Trips when CPI runs above ${num(t)}% YoY.`,
+    trigger: (t) => (num(t) ? `Trips when CPI runs above ${num(t)}% YoY.` : "Trips when CPI runs above its stored trigger."),
     cadence: "monthly print",
   },
   cpi_cold: {
     name: "cpi_cold",
     display: "Disinflation signal",
     format: (v) => `${v.toFixed(2)}% YoY`,
-    trigger: (t) => `Trips when CPI falls below ${num(t)}% YoY.`,
+    trigger: (t) => (num(t) ? `Trips when CPI falls below ${num(t)}% YoY.` : "Trips when CPI falls below its stored trigger."),
     cadence: "monthly print",
   },
   vix_spike: {
     name: "vix_spike",
     display: "VIX spike",
     format: (v) => v.toFixed(2),
-    trigger: (t) => `Trips when the VIX closes above ${num(t)}.`,
+    trigger: (t) => (num(t) ? `Trips when the VIX closes above ${num(t)}.` : "Trips when the VIX closes above its stored trigger."),
     cadence: "daily",
   },
 };
