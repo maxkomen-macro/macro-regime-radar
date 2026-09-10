@@ -258,3 +258,23 @@ api/ edits — restart required before final functionality review picks up the a
 - VERDICT: ready for morning review, desktop and mobile.
 
 # RUN COMPLETE — 2026-08-26. All 9 phases + final reviews done. Nothing pushed, nothing deployed.
+
+---
+
+## 2026-09-06 — release-readiness pass (turn 3)
+
+Scope: finish the React/FastAPI build for publication without publishing. Deliverables and
+evidence are indexed in `proposals/FINAL_RELEASE_READINESS.md`; evidence under
+`proposals/release_readiness_evidence/`. Highlights: EODHD-primary provider layer with
+entitlement probes and disclosed yfinance fallback; typed sanitized errors; token
+redaction in logs (httpx had been logging the token); security middleware and assistant
+gate; NYSE-calendar freshness SLAs with regime blockers; relay stale/degraded detection
+and bounded dynamic subscriptions; validated static snapshot for zero-cost availability;
+workflow modes with validation gates and a validated-db artifact for memos; `make
+sync-data`; UI fixes (palette Enter, Regime Lab sub-tabs at 768/390, LBO cold load,
+allocation exact-month sentence, news classifier, copy, favicon, router flags, code
+splitting, Options lens, on-demand history, provider labels, rapid-switch safety).
+Tests: 262 Python + 7 Streamlit-only + 25 vitest; build clean; actionlint clean.
+Constraints honored: no commit/push/merge/deploy/dispatch, no paid resources, no secrets
+in React or logs, no Polygon, no DB commit, retry/soft-reset preserved.
+

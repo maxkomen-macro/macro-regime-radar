@@ -22,3 +22,15 @@ data/macro_radar.db
 web/node_modules/
 web/dist/
 web/tsconfig.tsbuildinfo
+
+# Browser-audit artifacts (Playwright MCP session logs/snapshots)
+.playwright-mcp/
+
+# Generated static snapshot for zero-cost mode (scripts/build_snapshot.py); never committed.
+web/public/snapshot/
+
+# Review screenshots under proposals/ (250+ PNG/GIF, ~58 MB) stay local — the clone must stay small (see CLAUDE.md → Database).
+proposals/**/*.png
+proposals/**/*.gif
+proposals/**/*.jpg
+proposals/**/*.webp

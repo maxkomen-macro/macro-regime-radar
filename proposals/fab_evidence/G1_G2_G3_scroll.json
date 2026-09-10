@@ -1,0 +1,31 @@
+{
+  "captured": "2026-07-09 ~12:39 PDT, http://localhost:8501 Dashboard tab, fix/fab-float @ 8f9eb37",
+  "viewport": {"vw": 1004, "vh": 746},
+  "G1_scroll_top": {
+    "result": "PASS",
+    "buttonOpacity": "1 (visible)",
+    "buttonBg": "rgb(22,27,34) = #161b22", "buttonBorder": "rgb(74,158,255) = #4a9eff", "buttonRadius": "999px",
+    "containerPosition": "fixed", "containerBottom": "24px", "containerRight": "24px", "containerZIndex": "9999",
+    "rect": {"left": 853, "top": 610, "right": 980, "bottom": 722, "w": 126, "h": 112},
+    "distFromRight": 24, "distFromBottom": 24, "inBottomRightQuadrant": true, "topElIsFab": true,
+    "screenshotId_inline": "ss_80214en3w"
+  },
+  "G2_mid_scroll": {
+    "result": "PASS",
+    "fab_rect": {"left": 853, "top": 610, "right": 980, "bottom": 722},
+    "scrollTop": 1838, "refElementViewportTop": -1830,
+    "note": "FAB viewport rect IDENTICAL to scroll-top while content scrolled to mid -> proves fixed, not absolute"
+  },
+  "G3_bottom_scroll": {
+    "result": "PASS",
+    "fab_rect": {"left": 853, "top": 610, "right": 980, "bottom": 722},
+    "scrollTop": 3675, "scrollHeight": 4421, "refElementViewportTop": -3667,
+    "screenshotId_inline": "ss_4510fszsg",
+    "note": "FAB viewport rect IDENTICAL; page at very bottom (footer 'Data: FRED...' + DOWNLOADS row visible); FAB pinned bottom-right, NOT merged into footer"
+  },
+  "definitive_proof": {
+    "fabRectConstantAcrossTopMidBottom": true,
+    "contentActuallyMoved": true,
+    "scroller": "section.stMain (scrollHeight 4421, clientHeight 746)"
+  }
+}

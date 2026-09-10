@@ -1,155 +1,180 @@
-# DEPLOY.md — Phase 8 runbook (build everything, deploy nothing)
+# DEPLOY.md — publication runbook (build everything, deploy nothing)
 
-Status: **nothing is deployed.** This document is the runbook a human follows
-when the go decision is made. Two working paths exist; the split deploy is the
-architecture of record.
+Status 2026-09-06: **nothing is deployed, committed or pushed.** This is the
+runbook a human follows when the go decision is made. Two modes are
+supported by the code as built; the zero-cost mode is the one this pass
+verified end to end locally.
 
-> **Pre-deploy security must-fixes:** see `FINAL_SECURITY_REVIEW.md` — the
-> assistant endpoint (`POST /api/assistant/ask`) needs auth, rate-limiting,
-> and request-size caps before any public exposure. Do not skip this gate.
-> (If that file is not yet in the repo, it is the security-review phase's
-> deliverable — block on it, not on its absence.)
+## 0. What changed in this pass (2026-09-06)
 
----
+- Provider layer `api/providers/` — EODHD first for search, quotes, daily and
+  intraday candles, splits/dividends, exchange hours, options (end-of-day) and
+  bounded ticks; yfinance only as a **disclosed** fallback; FRED unchanged.
+  Every payload carries `provider`, `fetched_at`, `market_ts`, `delayed`,
+  `fallback_used`, `fallback_reason`. Entitlements are probed once per family
+  at startup (`/api/providers/status`). Today's plan: fundamentals and ticks
+  **not** entitled (403, explicit unavailable states); options entitled.
+- Security gates `api/security.py`: body caps, per-client + global rate
+  limits, assistant gate (`ASSISTANT_ACCESS`), concurrency ceilings, security
+  headers, CSP on the served shell, typed sanitized provider errors, token
+  redaction in logs (`api/logsafe.py`).
+- Freshness `api/freshness.py` + NYSE calendar `api/calendar.py`: source-aware
+  SLA verdicts and regime blockers, used by `/api/freshness` and by
+  `scripts/validate_db.py` in the workflows.
+- Zero-cost availability: `scripts/build_snapshot.py` → `snapshot/latest.json`
+  seeds the React Query cache before first paint (`web/src/api/snapshot.ts`),
+  so stored screens render with the API asleep; the shell says
+  **Validated snapshot / Delayed / Live / Reconnecting / Backend unavailable**.
+- Live relay: stale-tick detection, degraded verdict, bounded dynamic
+  subscriptions (`watch`/`unwatch`, ≤20 symbols, 10-min idle expiry),
+  `VITE_WS_BASE` for a split deploy.
+- Workflows: explicit modes with validation gates and a `validated-db`
+  artifact; the refresh dispatches the memo workflows only after a validated
+  morning full run and they consume that artifact. `make sync-data` for the
+  local copy.
 
-## Architecture of record: SPLIT DEPLOY
-
-React static bundle on **Vercel** + FastAPI backend on an **always-on host**.
+## 1. Zero-cost mode (architecture of record for a free launch)
 
 ```
-Browser ──HTTPS──> Vercel (web/dist static)          ── UI, assets, fonts
-   │
-   └────HTTPS+CORS──> backend host (uvicorn api.main:app)  ── /api/*, Atlas routes
-                          │
-                          ├── GH_DB_TOKEN ──> data-latest Release (DB snapshot)
-                          ├── EODHD_API_TOKEN ──> EODHD WS relay (api/stream.py)
-                          └── ANTHROPIC_API_KEY ──> assistant (api/chat.py)
+Browser ──HTTPS──> static host (web/dist + snapshot/latest.json)      always up
+   │                 Vercel Hobby (free) or Cloudflare Pages (free)
+   ├──HTTPS+CORS──> API host (uvicorn api.main:app)                    may sleep
+   │                 Render free web service (sleeps after idle)
+   └──WSS──────────> same API host, /api/stream/ws (VITE_WS_BASE)      best effort
 ```
 
-### Vercel (frontend)
+Promises this mode keeps, verified locally 2026-09-06 with FastAPI stopped:
 
-Project settings:
+- The shell, Methodology, regime, signals, freshness line, stored market
+  tables and the latest stored headlines render from the validated snapshot
+  with **no** backend; the status word says *Validated snapshot · <date>*.
+- Nothing blocks on the API: the snapshot seed is bounded (2.5 s), health
+  checks are never awaited by the UI, live services connect progressively.
+- Last-known-good: the snapshot is also kept in `localStorage`, so a cold
+  load with the static file unreachable still paints the last validated one.
+- When the API wakes, queries refetch on their own; the word changes to
+  *Delayed* or *Live*.
 
-| Setting | Value |
-|---|---|
-| Root directory | `web/` |
-| Build command | `npm run build` |
-| Output directory | `dist/` |
-| Env var | `VITE_API_BASE=https://<backend-url>` |
+What it cannot promise: a **continuous WebSocket**. No free tier I could
+confirm keeps a process awake without a payment method or an always-on plan
+(section 4), so the live tape is available while the host is awake and
+degrades to delayed/stored data otherwise. No keepalive ping is built or
+scheduled — it is not within the free hosts' intended use and the brief made
+that an owner decision.
 
-`web/src/api/client.ts` already honors `VITE_API_BASE` (defaults to `""` =
-same-origin when unset). Vercel's SPA rewrite: add `web/vercel.json` with
-`{"rewrites": [{"source": "/(.*)", "destination": "/index.html"}]}` at deploy
-time so `/app/*` and `/kit` deep links resolve.
-
-### Backend (always-on host)
-
-**One instance only, ever.** EODHD allows one WS connection per feed per
-token (memory: eodhd-stream-relay); a second instance would fight the first
-for the upstream sockets. Horizontal scaling is off the table until the relay
-is externalized.
-
-| Host | Always-on? | Notes |
-|---|---|---|
-| **Railway** | Yes (paid usage-based; no forced sleep on paid plan) | Simplest Dockerfile deploy; private networking not needed here |
-| **Render** | Paid tier yes; **free tier NO** — spins down after idle and kills the relay + in-process caches | Free tier is disqualified for this app, not merely degraded |
-| **Fly.io** | Yes, if `min_machines_running = 1` and auto-stop disabled | Cheapest always-on VM; config is the sharpest of the three |
-
-**Idle-shutdown is the open question to answer before choosing:** the EODHD
-relay and the 15-min TTL analytics caches die with the process. Any host
-setting that stops the machine on idle silently converts the live tape into
-the 30s DB-poll fallback and makes first requests slow (model retrain).
-Confirm the chosen plan keeps exactly one machine running 24/7.
-
-Backend env (set in the HOST's secret store by the human — never committed,
-never in the image):
-
-| Var | Required? | Purpose |
-|---|---|---|
-| `CORS_ORIGINS` | Yes (split deploy) | Comma-separated allowlist replacing the Vite dev defaults, e.g. `https://<project>.vercel.app` |
-| `GH_DB_TOKEN` | Yes | Read-only **Contents** PAT on maxkomen-macro/macro-regime-radar; `api/bootstrap.py` downloads the DB from the private `data-latest` Release at startup |
-| `BOOTSTRAP_DB_MAX_AGE_MIN` | No | Startup re-download when the on-disk DB is older than N min (unset = download only if missing) |
-| `BOOTSTRAP_DB_REFRESH_MIN` | No | Background re-download every N min (0/unset = disabled). Set ~60 in production so the DB tracks the hourly refresh workflows |
-| `EODHD_API_TOKEN` | Optional feature gate | Live tape relay; absent → feeds stay off, client falls back to DB polling |
-| `ANTHROPIC_API_KEY` | Optional feature gate | Assistant endpoint; absent → assistant returns its configured-off error |
-
-The lifespan logs an honest startup block (dist mounted, DB mtime, token
-presence yes/no, effective CORS) — read it after every deploy.
-
-### Split-deploy commands (human runs)
+### 1a. Static frontend
 
 ```bash
-# 1. Backend — from repo root, image build and push per host's own flow, e.g. Fly:
-fly launch --no-deploy          # once; creates fly.toml (set min_machines_running=1)
-fly secrets set CORS_ORIGINS=https://<project>.vercel.app GH_DB_TOKEN=... \
-    BOOTSTRAP_DB_REFRESH_MIN=60 EODHD_API_TOKEN=... ANTHROPIC_API_KEY=...
-fly deploy                      # builds the repo Dockerfile
-
-# Railway equivalent: railway init && railway up (Dockerfile auto-detected),
-# secrets via the dashboard. Render: new Web Service → Docker → this repo.
-
-# 2. Frontend:
-cd web && npx vercel            # link project; set root=web, build=npm run build, output=dist
-npx vercel env add VITE_API_BASE   # value: https://<backend-url>
-npx vercel --prod
+cd web
+npm ci
+# the snapshot ships with the bundle: download the last validated one first
+gh release download data-latest --repo maxkomen-macro/macro-regime-radar \
+   --pattern snapshot-latest.json --dir public/snapshot && mv public/snapshot/snapshot-latest.json public/snapshot/latest.json
+VITE_API_BASE=https://<api-host> VITE_WS_BASE=wss://<api-host> npm run build   # → dist/
 ```
 
-### WebSocket honesty (split deploy)
+Vercel: root `web/`, build `npm run build`, output `dist/`, env
+`VITE_API_BASE`, `VITE_WS_BASE`, add `web/vercel.json` with
+`{"rewrites": [{"source": "/(.*)", "destination": "/index.html"}]}` so
+`/app/*` deep links resolve. Because the repo is private, the build step
+needs a read token to download the snapshot (`GH_TOKEN` in the Vercel build
+env) — or commit nothing and let the page run on its localStorage copy until
+the API wakes. `VITE_SNAPSHOT_URL` can point at a snapshot hosted elsewhere.
 
-Vercel does **not** proxy the WebSocket. `web/src/live/quotes.ts:108` connects
-to `` `${proto}://${window.location.host}/api/stream/ws` `` — the **page's own
-host**, i.e. Vercel — so in the split deploy the socket never reaches the
-backend and closes. The client's designed fallback then applies: consumers
-poll the DB-backed REST endpoints on a 30s cadence
-(`web/src/api/queries.ts:129`, `refetchInterval: 30_000`). **In split mode the
-live tape degrades to 30s polling.** Fixing that later means adding a
-`VITE_WS_BASE`-style override in quotes.ts (small change, not built in Phase
-8) or moving to the same-origin path below, where the socket works as-is.
+### 1b. API host (free tier)
 
----
+Docker image from the repo `Dockerfile` (one process: API + relay; serves
+`web/dist` same-origin too when present). Environment per
+`docs/RUNBOOK.md` §6; minimum: `GH_DB_TOKEN`, `BOOTSTRAP_DB_MAX_AGE_MIN=60`,
+`BOOTSTRAP_DB_REFRESH_MIN=45`, `CORS_ORIGINS=https://<static-host>`,
+`EODHD_API_TOKEN` (owner adds it on the host; **not** present in GitHub
+Actions and not needed there), `ASSISTANT_ACCESS=off` (default once
+`CORS_ORIGINS` is set), `TRUSTED_PROXY_HOPS=1` behind the host proxy.
+Health check path for the host: `/health/ready` (it touches the database; `/health/live` only proves the event loop is alive). Behind the host's proxy set `TRUSTED_PROXY_HOPS=1` so rate limits key on real clients.
 
-## Same-origin alternative (what the Dockerfile enables)
+On wake the bootstrap downloads a fresh DB when the on-disk one is older than
+`BOOTSTRAP_DB_MAX_AGE_MIN`, validates it (header, `quick_check`, regime rows)
+and swaps it atomically; `/api/freshness.bootstrap` exposes the last attempt,
+result, asset `updated_at`, DB mtime and any sanitized error.
 
-Phase 8's step 1 made `api/main.py` mount `web/dist` when present: **one
-container serves the UI, the API, and the WebSocket from one origin.** No
-CORS_ORIGINS, no VITE_API_BASE, live tape fully working. The trade: no CDN in
-front of the static assets, and the single instance carries all traffic.
+## 2. Full live mode (paid, always-on)
 
-```bash
-docker build -t mrr-api .
-docker run --rm -p 8000:8000 \
-  -e GH_DB_TOKEN=... -e BOOTSTRAP_DB_REFRESH_MIN=60 \
-  -e EODHD_API_TOKEN=... -e ANTHROPIC_API_KEY=... \
-  mrr-api
-# open http://localhost:8000 — UI, /api/*, and /api/stream/ws all same-origin
-```
+Same image on an always-on host (Fly.io `min_machines_running=1`, Railway
+paid, Render paid) with exactly **one** instance: the relay keeps one
+upstream EODHD socket per feed. Either split (static host + API) with
+`VITE_API_BASE`/`VITE_WS_BASE`/`CORS_ORIGINS`/`CSP_CONNECT_SRC`, or
+same-origin (the image serves `web/dist`; no CORS, no env on the frontend).
 
-Deploy the same image to any one always-on Docker host (same table and
-one-instance rule as above). The image ships **no** DB, no .env, no dashboard/
-— data arrives at startup via `GH_DB_TOKEN`. First build is slow: stage 1 runs
-`npm ci` + Vite, stage 2 installs the scientific Python stack
-(scikit-learn, riskfolio-lib).
+## 3. Security gates (built; verify after deploy)
 
-Local no-docker equivalent (what the tests exercise): build the bundle
-(`cd web && npm run build`), then run uvicorn — main.py finds `web/dist` and
-serves it.
+- Assistant: `ASSISTANT_ACCESS` defaults to `off` whenever `CORS_ORIGINS` is
+  set; `key` mode requires `X-Assistant-Key`; 10 req/min per client, 16 KB
+  bodies, `Cache-Control: no-store`, no persistence of visitor chats.
+- Every API path: 64 KB body cap, 600 req/min per client with a 120-request
+  burst and 4000/min global (env-tunable), 4 concurrent expensive
+  calculations, 12 concurrent provider requests, 24 concurrent stored-data
+  reads; 429 with `Retry-After`. The relay socket is capped at 20 per client
+  id and 200 in total, each connection at 30 messages/min and 40 new symbols/h.
+  Behind a proxy set `TRUSTED_PROXY_HOPS` (the header is read from the
+  right, never the spoofable left); set `OPS_ACCESS_KEY` to gate the two
+  diagnostics views.
+- Headers on every response: `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`; CSP
+  on the served `index.html` (`connect-src 'self'` plus `CSP_CONNECT_SRC` —
+  name the API/WS origin there in a split deploy).
+- Inputs: symbols validated by charset/length before any provider call and
+  normalized in `api/providers/symbols.py`; free-text search rejects path
+  separators, `%`, `#`, `?` and control characters and every provider URL
+  segment is percent-encoded; ranges, pagination (offset ≤ 10,000),
+  expiration, strikes and tick windows are closed vocabularies; the
+  assistant's SELECT-only SQL guard is untouched and still imported, never
+  copied.
+- Errors: provider failures return `{detail, kind, provider, retryable}`;
+  unhandled exceptions return a generic 500; no tracebacks, URLs or tokens.
+- Intentionally public endpoints: everything under `/api/*` except
+  `/api/assistant/ask`, plus `/health/*` and the unprefixed Atlas routes —
+  all read-only over stored data or provider caches.
 
----
+## 4. Free-host research (official pages read 2026-09-06)
 
-## Rollback
+| Host | Free compute | Sleeps? | Card required | WebSockets | Notes |
+|---|---|---|---|---|---|
+| Render (free web service) | yes, 750 instance-hours/mo | yes, after ~15 min idle; cold start on next request | no | yes while awake | fits zero-cost mode; the relay stops while asleep |
+| Fly.io | no free allowance for new orgs | n/a | yes | yes | paid path only |
+| Railway | trial credit, then a paid plan | n/a | yes for paid | yes | paid path only |
+| Koyeb | no free web-service compute at the time of checking | n/a | — | — | not an option |
+| Cloudflare Workers / Durable Objects | free tier with WebSocket support | no | no | yes | would require rewriting the relay; not this codebase |
+| Hugging Face Spaces (Docker) | free CPU tier sleeps; persistent always-on tiers are paid | yes | for paid tiers | yes | comparable to Render free |
+| Vercel Hobby | static + serverless, free | static: no | no | no server-side WS | static frontend only |
+| GitHub Pages | free for public repos | no | no | no | this repo is private → not free |
+| Oracle Cloud Always Free VM | free VM | reclaimed when idle for long periods | yes (identity) | yes | possible but outside "no payment method" |
 
-Image-based hosts: **redeploy the previous image** (`fly releases` →
-`fly deploy --image <previous>`; Railway/Render: redeploy prior build from
-the dashboard). Vercel: promote the previous deployment (`vercel rollback`).
-The DB needs no rollback — it re-bootstraps from `data-latest` on start.
+Conclusion stated plainly: **no compliant free host guarantees a continuous
+WebSocket relay.** Zero-cost mode is honest about it (status word, snapshot
+mode); the paid always-on mode is the only way to promise a live tape.
 
----
+## 5. Owner actions before publication (outstanding gates)
 
-## Pre-deploy checklist
+1. Add `EODHD_API_TOKEN` (and `GH_DB_TOKEN`, `ANTHROPIC_API_KEY` if the
+   assistant is wanted) to the API host's secret store. Nothing was created
+   or transferred by the build.
+2. Choose the hosts (section 1 or 2), set the env, deploy the image and the
+   bundle; read the startup log block and the four health endpoints.
+3. Push `react-rebuild` (or merge) and dispatch `Refresh Data` → `verify-only`
+   once to see the validation summary; then `full`.
+4. Decide on a keepalive (not built) and on the assistant access mode.
 
-- [ ] `FINAL_SECURITY_REVIEW.md` must-fixes done (assistant auth / rate-limit / size caps)
-- [ ] `pytest tests/test_api.py` green, including the Phase 8 SPA tests
-- [ ] Exactly ONE backend instance configured; idle-shutdown/sleep disabled
-- [ ] Secrets set in the host store only; nothing in git, nothing in the image
-- [ ] Post-deploy: read the startup log block; confirm DB mtime is recent and tokens show "yes"
-- [ ] Split deploy only: accept (or fix) the 30s-poll tape degradation before announcing "live" quotes
+## 6. Rollback
+
+Image hosts: redeploy the previous image; static host: promote the previous
+deployment. Data: see `docs/RUNBOOK.md` §5 — the Release keeps the
+last-known-good because uploads are validation-gated.
+
+## 7. Pre-deploy checklist
+
+- [ ] `make test-api` green (287 tests on 2026-09-06 with the local snapshot; the Streamlit-only module runs under the anaconda interpreter)
+- [ ] `make test-web` green (typecheck + 25 vitest tests), `make build-web` produces route chunks
+- [ ] `make actionlint` clean; `Refresh Data` dispatched once in `verify-only`
+- [ ] Secrets only in the host store; `EODHD_API_TOKEN` present on the API host
+- [ ] Post-deploy: `/health/ready` 200 (use it as the host's health probe, not `/health/live`), `/api/providers/status` shows the expected entitlements, `/api/stream/debug` not degraded during a session
+- [ ] Static host: `snapshot/latest.json` reachable; stop the API once and confirm the shell says *Validated snapshot*

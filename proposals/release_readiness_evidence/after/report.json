@@ -1,0 +1,322 @@
+[
+  {
+    "name": "landing",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 1360,
+    "hOverflow": false
+  },
+  {
+    "name": "dashboard",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 4366,
+    "hOverflow": false
+  },
+  {
+    "name": "regime-lab",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 2456,
+    "hOverflow": false
+  },
+  {
+    "name": "markets",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 5558,
+    "hOverflow": false
+  },
+  {
+    "name": "credit",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 3867,
+    "hOverflow": false
+  },
+  {
+    "name": "recession",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 3874,
+    "hOverflow": false
+  },
+  {
+    "name": "news",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 4610,
+    "hOverflow": false
+  },
+  {
+    "name": "tools-lbo",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 3135,
+    "hOverflow": false
+  },
+  {
+    "name": "tools-allocation",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 844,
+    "hOverflow": false
+  },
+  {
+    "name": "methodology",
+    "w": 390,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "height": 6128,
+    "hOverflow": false
+  },
+  {
+    "name": "landing",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 1237,
+    "hOverflow": false
+  },
+  {
+    "name": "dashboard",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 2880,
+    "hOverflow": false
+  },
+  {
+    "name": "regime-lab",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 1720,
+    "hOverflow": false
+  },
+  {
+    "name": "markets",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 3889,
+    "hOverflow": false
+  },
+  {
+    "name": "credit",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 2662,
+    "hOverflow": false
+  },
+  {
+    "name": "recession",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 2504,
+    "hOverflow": false
+  },
+  {
+    "name": "news",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 3060,
+    "hOverflow": false
+  },
+  {
+    "name": "tools-lbo",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 1828,
+    "hOverflow": false
+  },
+  {
+    "name": "tools-allocation",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 2280,
+    "hOverflow": false
+  },
+  {
+    "name": "methodology",
+    "w": 768,
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "height": 3878,
+    "hOverflow": false
+  },
+  {
+    "name": "landing",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 900,
+    "hOverflow": false
+  },
+  {
+    "name": "dashboard",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 2332,
+    "hOverflow": false
+  },
+  {
+    "name": "regime-lab",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 1259,
+    "hOverflow": false
+  },
+  {
+    "name": "markets",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 3521,
+    "hOverflow": false
+  },
+  {
+    "name": "credit",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 2432,
+    "hOverflow": false
+  },
+  {
+    "name": "recession",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 2366,
+    "hOverflow": false
+  },
+  {
+    "name": "news",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 2374,
+    "hOverflow": false
+  },
+  {
+    "name": "tools-lbo",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 1505,
+    "hOverflow": false
+  },
+  {
+    "name": "tools-allocation",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 1851,
+    "hOverflow": false
+  },
+  {
+    "name": "methodology",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "height": 3311,
+    "hOverflow": false
+  },
+  {
+    "name": "landing",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 1080,
+    "hOverflow": false
+  },
+  {
+    "name": "dashboard",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 2351,
+    "hOverflow": false
+  },
+  {
+    "name": "regime-lab",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 1259,
+    "hOverflow": false
+  },
+  {
+    "name": "markets",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 3491,
+    "hOverflow": false
+  },
+  {
+    "name": "credit",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 2453,
+    "hOverflow": false
+  },
+  {
+    "name": "recession",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 2399,
+    "hOverflow": false
+  },
+  {
+    "name": "news",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 2374,
+    "hOverflow": false
+  },
+  {
+    "name": "tools-lbo",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 1505,
+    "hOverflow": false
+  },
+  {
+    "name": "tools-allocation",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 1832,
+    "hOverflow": false
+  },
+  {
+    "name": "methodology",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "height": 3291,
+    "hOverflow": false
+  }
+]

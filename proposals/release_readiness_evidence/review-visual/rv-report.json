@@ -1,0 +1,427 @@
+[
+  {
+    "name": "recession",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "bodyScrollWidth": 2160,
+    "height": 2399,
+    "over": [],
+    "tiny": [
+      {
+        "el": "a \"MACRO REGIME RADAR\"",
+        "w": 256,
+        "h": 29
+      },
+      {
+        "el": "button.mrr-chip-btn \"✓ No alerts · 7d · last May 01, 2026\"",
+        "w": 297,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"◆ AI Analyst\"",
+        "w": 112,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"⌘ K\"",
+        "w": 45,
+        "h": 28
+      },
+      {
+        "el": "span.jargon \"logistic model\"",
+        "w": 88,
+        "h": 18
+      },
+      {
+        "el": "span.jargon \"10Y–2Y spread\"",
+        "w": 89,
+        "h": 17
+      },
+      {
+        "el": "span.jargon \"Macro ahead of markets\"",
+        "w": 140,
+        "h": 17
+      },
+      {
+        "el": "span.jargon \"NBER\"",
+        "w": 34,
+        "h": 17
+      },
+      {
+        "el": "span.jargon \"tenors\"",
+        "w": 37,
+        "h": 17
+      },
+      {
+        "el": "button \"▸ Move the model's five inputs and watch 11.6% respond · 2s1\"",
+        "w": 1438,
+        "h": 36
+      },
+      {
+        "el": "span.jargon \"log-odds\"",
+        "w": 52,
+        "h": 17
+      },
+      {
+        "el": "span.jargon \"leading-indicator proxy\"",
+        "w": 135,
+        "h": 17
+      }
+    ],
+    "hOverflow": false
+  },
+  {
+    "name": "news",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "bodyScrollWidth": 2160,
+    "height": 2369,
+    "over": [],
+    "tiny": [
+      {
+        "el": "a \"MACRO REGIME RADAR\"",
+        "w": 256,
+        "h": 29
+      },
+      {
+        "el": "button.mrr-chip-btn \"Alerts · unavailable\"",
+        "w": 176,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"◆ AI Analyst\"",
+        "w": 112,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"⌘ K\"",
+        "w": 45,
+        "h": 28
+      },
+      {
+        "el": "a \"Here’s what Nvidia’s $13 billion Hugging Face deal means for\"",
+        "w": 651,
+        "h": 23
+      },
+      {
+        "el": "a \"Read at MarketWatch →\"",
+        "w": 164,
+        "h": 19
+      },
+      {
+        "el": "a \"Nvidia Buys Hugging Face in $12.9 Billion Deal\"",
+        "w": 394,
+        "h": 23
+      },
+      {
+        "el": "a \"Read at NYT Business →\"",
+        "w": 172,
+        "h": 19
+      },
+      {
+        "el": "a \"Read at CNBC →\"",
+        "w": 109,
+        "h": 19
+      },
+      {
+        "el": "a \"Dell’s AI servers drive a stellar earnings performance, and \"",
+        "w": 639,
+        "h": 23
+      },
+      {
+        "el": "a \"Read at MarketWatch →\"",
+        "w": 164,
+        "h": 19
+      },
+      {
+        "el": "button \"▸Filters all categories · 7D · any significance\"",
+        "w": 1464,
+        "h": 43
+      },
+      {
+        "el": "a \"Churchill Stateside Group Closes Approximately $42 Million i\"",
+        "w": 673,
+        "h": 38
+      },
+      {
+        "el": "a \"Read at BusinessWire →\"",
+        "w": 172,
+        "h": 15
+      },
+      {
+        "el": "a \"Diversified Energy to buy Elliott-backed Birch in $1.8B deal\"",
+        "w": 382,
+        "h": 18
+      },
+      {
+        "el": "a \"Read at SeekingAlpha →\"",
+        "w": 172,
+        "h": 15
+      },
+      {
+        "el": "a \"Trump turns up the heat on Warsh as Fed rate hike looms\"",
+        "w": 369,
+        "h": 18
+      },
+      {
+        "el": "a \"Read at CNBC →\"",
+        "w": 109,
+        "h": 15
+      },
+      {
+        "el": "a \"Trump doubles down on threat to halt trade with top partners\"",
+        "w": 537,
+        "h": 18
+      },
+      {
+        "el": "a \"Read at CNBC →\"",
+        "w": 109,
+        "h": 15
+      },
+      {
+        "el": "a \"Trump Threatens to Halt Some Trade Unless the Fed Cuts Rates\"",
+        "w": 410,
+        "h": 18
+      },
+      {
+        "el": "a \"Read at NYT Business →\"",
+        "w": 172,
+        "h": 15
+      },
+      {
+        "el": "a \"Trump tells Fed to slash rates or he'll end trade with count\"",
+        "w": 528,
+        "h": 18
+      },
+      {
+        "el": "a \"Read at CNBC →\"",
+        "w": 109,
+        "h": 15
+      },
+      {
+        "el": "a \"2-year yield rises to highest since January 2025 after hot j\"",
+        "w": 697,
+        "h": 38
+      },
+      {
+        "el": "a \"Read at CNBC →\"",
+        "w": 109,
+        "h": 15
+      },
+      {
+        "el": "a \"The big August jobs report is due out Friday. Here's what to\"",
+        "w": 665,
+        "h": 18
+      },
+      {
+        "el": "a \"Read at CNBC →\"",
+        "w": 109,
+        "h": 15
+      },
+      {
+        "el": "button.mrr-btn \"Show 38 more headlines\"",
+        "w": 166,
+        "h": 29
+      }
+    ],
+    "hOverflow": false
+  },
+  {
+    "name": "tools-lbo",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "bodyScrollWidth": 2160,
+    "height": 1080,
+    "over": [],
+    "tiny": [
+      {
+        "el": "a \"MACRO REGIME RADAR\"",
+        "w": 256,
+        "h": 29
+      },
+      {
+        "el": "button.mrr-chip-btn \"✓ No alerts · 7d · last May 01, 2026\"",
+        "w": 297,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"◆ AI Analyst\"",
+        "w": 112,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"⌘ K\"",
+        "w": 45,
+        "h": 28
+      },
+      {
+        "el": "button#:r1:-tab-lbo \"LBO calculator live financing rate\"",
+        "w": 235,
+        "h": 32
+      },
+      {
+        "el": "button#:r1:-tab-allocation \"Asset allocation regime matrix\"",
+        "w": 196,
+        "h": 32
+      }
+    ],
+    "hOverflow": false
+  },
+  {
+    "name": "tools-allocation",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "bodyScrollWidth": 2160,
+    "height": 1080,
+    "over": [],
+    "tiny": [
+      {
+        "el": "a \"MACRO REGIME RADAR\"",
+        "w": 256,
+        "h": 29
+      },
+      {
+        "el": "button.mrr-chip-btn \"✓ No alerts · 7d · last May 01, 2026\"",
+        "w": 297,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"◆ AI Analyst\"",
+        "w": 112,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"⌘ K\"",
+        "w": 45,
+        "h": 28
+      },
+      {
+        "el": "button#:r1:-tab-lbo \"LBO calculator live financing rate\"",
+        "w": 232,
+        "h": 32
+      },
+      {
+        "el": "button#:r1:-tab-allocation \"Asset allocation regime matrix\"",
+        "w": 200,
+        "h": 32
+      }
+    ],
+    "hOverflow": false
+  },
+  {
+    "name": "methodology",
+    "w": 2160,
+    "scrollWidth": 2160,
+    "clientWidth": 2160,
+    "bodyScrollWidth": 2160,
+    "height": 3313,
+    "over": [],
+    "tiny": [
+      {
+        "el": "a \"MACRO REGIME RADAR\"",
+        "w": 256,
+        "h": 29
+      },
+      {
+        "el": "button.mrr-chip-btn \"Alerts · unavailable\"",
+        "w": 176,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"◆ AI Analyst\"",
+        "w": 112,
+        "h": 28
+      },
+      {
+        "el": "button.mrr-chip-btn \"⌘ K\"",
+        "w": 45,
+        "h": 28
+      },
+      {
+        "el": "a \"Data and sources DATA\"",
+        "w": 138,
+        "h": 38
+      },
+      {
+        "el": "a \"Dashboard →\"",
+        "w": 86,
+        "h": 15
+      },
+      {
+        "el": "a \"Regime Lab →\"",
+        "w": 94,
+        "h": 15
+      },
+      {
+        "el": "a \"Signals on the Dashboard →\"",
+        "w": 203,
+        "h": 15
+      },
+      {
+        "el": "a \"Recession →\"",
+        "w": 86,
+        "h": 15
+      },
+      {
+        "el": "a \"Credit →\"",
+        "w": 62,
+        "h": 15
+      },
+      {
+        "el": "a \"Scenarios →\"",
+        "w": 86,
+        "h": 15
+      },
+      {
+        "el": "a \"Allocation →\"",
+        "w": 94,
+        "h": 15
+      },
+      {
+        "el": "a \"LBO →\"",
+        "w": 39,
+        "h": 15
+      },
+      {
+        "el": "a \"Backtests →\"",
+        "w": 86,
+        "h": 15
+      },
+      {
+        "el": "a \"Analogues →\"",
+        "w": 86,
+        "h": 15
+      },
+      {
+        "el": "a \"FRED ↗\"",
+        "w": 47,
+        "h": 17
+      },
+      {
+        "el": "a \"yfinance ↗\"",
+        "w": 78,
+        "h": 17
+      },
+      {
+        "el": "a \"EODHD ↗\"",
+        "w": 55,
+        "h": 17
+      },
+      {
+        "el": "a \"Finnhub · NewsAPI · RSS ↗\"",
+        "w": 179,
+        "h": 38
+      },
+      {
+        "el": "a \"NBER ↗\"",
+        "w": 47,
+        "h": 17
+      }
+    ],
+    "hOverflow": false
+  }
+]

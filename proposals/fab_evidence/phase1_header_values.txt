@@ -1,0 +1,32 @@
+PHASE 1 — Header-caching (Merge 5) verification evidence
+Captured 2026-07-09 ~12:03 PDT from http://localhost:8501 (merged code, SHA 6b4f75c).
+Screenshot ID: ss_5534i8a41 (1281x952). Machine-readable header text extracted via JS below.
+
+=== Header KPIs (must be REAL NUMBERS, not "—") ===
+Brand:        MACRO REGIME RADAR
+Regime badge: Overheating 83%   (sub: ST 17% · GL 0% · RR 0%)
+S&P 500:      +0.61%
+VIX:          15.6 (-0.88)
+US 10Y:       4.48% (+4bps)
+Timestamps:   Macro data as of May 2026 · Market data through Jul 09, 2026
+              Updated Jul 09, 2026 at 12:03 PM ET
+
+RESULT: PASS — every header KPI (SPY / VIX / US10Y) shows a real numeric value and the
+regime badge shows a real label+confidence. None fell back to "—". The header no longer
+opens a SQLite connection per KPI per rerun (now served by @st.cache_data _header_market_stats,
+ttl=300), and _render_timestamps reads the same cached max_market_date (shows "Jul 09, 2026").
+
+Raw JS-extracted header block (document.body.innerText, header region):
+  MACRO REGIME RADAR
+  Overheating
+  83%
+  ST 17% · GL 0% · RR 0%
+  S&P 500
+  +0.61%
+  VIX
+  15.6 (-0.88)
+  US 10Y
+  4.48% (+4bps)
+  ...
+  Macro data as of May 2026 · Market data through Jul 09, 2026
+  Updated Jul 09, 2026 at 12:03 PM ET

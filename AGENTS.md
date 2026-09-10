@@ -1,6 +1,6 @@
-# Macro Regime Radar — Claude Code Reference
+# Macro Regime Radar — Codex Reference
 
-Single source of truth for Claude Code sessions on this repo. Keep tight; verify against code before adding new claims. If you can't confirm a fact in five minutes of reading, don't add it.
+Single source of truth for Codex sessions on this repo. Keep tight; verify against code before adding new claims. If you can't confirm a fact in five minutes of reading, don't add it.
 
 ---
 
@@ -301,7 +301,7 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 - `get_recent_headlines(limit, min_significance)` — top items from `news_feed` with `regime_interpretation` and `perplexity_research`.
 - `explain_current_view()` — reads the `TAB_CONTEXT` ContextVar (set per request by `api/chat.py`), falling back to `st.session_state.current_tab_context`.
 
-**Model:** `claude-sonnet-4-5-20250929` via the official `anthropic` SDK (already in `requirements.txt`).
+**Model:** `Codex-sonnet-4-5-20250929` via the official `anthropic` SDK (already in `requirements.txt`).
 
 **API key:** `ANTHROPIC_API_KEY` loaded via `src/analytics/chat.py`'s own `get_secret` (env → `st.secrets` → repo-root `.env`) — *not* `src.config`, which would drag in the `FRED_API_KEY` requirement and break the key-less FastAPI path. Missing key → FAB silently replaced with a muted "AI Assistant unavailable — API key not configured" caption; no traceback.
 
@@ -336,7 +336,7 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 
 ## Maintaining This File
 
-Every Claude Code session that ships code to `main` is responsible for updating this file before its final commit:
+Every Codex session that ships code to `main` is responsible for updating this file before its final commit:
 
 1. If you completed a phase, update "Phase Status".
 2. If you discovered a new gotcha (Streamlit behavior, library quirk, data source issue), add a one-line entry under the relevant section.
@@ -352,16 +352,14 @@ When in doubt: delete more than you add. Stale documentation is worse than missi
 ## React Migration (in progress — nothing ships without explicit user approval)
 
 - **Design source of truth:** `/Users/maxkomen/Documents/Trading-Research-Docs/Macro Regime Radar Design System/` — read `HANDOFF_REACT_MIGRATION.md` there first. `styles.css` + `tokens/` and `components/**/*.jsx` are shippable near as-is; `ui_kits/` are fixture-data references only.
-- **Design tooling:** the `impeccable` Claude Code plugin (v4.0.4, user scope, from `pbakaus/impeccable`) is installed — use `/impeccable` (audit, critique, polish, …) alongside the handoff bundle for all UI work.
+- **Design tooling:** the `impeccable` Codex plugin (v4.0.4, user scope, from `pbakaus/impeccable`) is installed — use `/impeccable` (audit, critique, polish, …) alongside the handoff bundle for all UI work.
 - **Step 1 (API) is built** — see the FastAPI section above.
 - **Steps 2–4 are built on branch `react-rebuild`** (as of 2026-08-26). `web/` is a Vite + React 18 + TypeScript app: all 7 tabs (Dashboard, Regime Lab, Markets, Credit, Recession, News & Calendar, Tools) plus Methodology and the assistant panel (`web/src/screens/shell/AssistantPanel.tsx` over `POST /api/assistant/ask`), a responsive foundation (`web/src/lib/useBreakpoint.ts` — mobile <480 / tablet <768 / desktop <1024 / wide; the sole width-conditional mechanism) and h1→h2→h3 heading semantics. Product and design contracts for it live in `web/PRODUCT.md` and `web/DESIGN.md`. A `Dockerfile` plus `docs/redesign/DEPLOY.md` describe two working deploys (split Vercel + backend host, or a single same-origin host). **Nothing is deployed and the branch is not pushed.** Session ledger: `proposals/OVERNIGHT_BUILD_LOG.md`.
 - **Do not commit, push, merge, or deploy any migration work without the user's explicit say-so.**
 
 ---
 
-*Last meaningful update: Sep 6 2026 — release-readiness pass on `react-rebuild` (uncommitted): EODHD-first provider layer (`api/providers/`), security gates (`api/security.py`, `api/logsafe.py`), source-aware freshness (`api/freshness.py`, `api/calendar.py`), relay hardening, health endpoints, snapshot mode (`scripts/build_snapshot.py` + `web/src/api/snapshot.ts`), workflow modes with validation gates (`scripts/validate_db.py`), `make sync-data`, vitest suite, docs (`docs/RUNBOOK.md`, `docs/redesign/DEPLOY.md`, `proposals/FINAL_RELEASE_READINESS.md`). Nothing committed, pushed, dispatched or deployed.*
-
-*Aug 27 2026 — owner-directed revamp on `react-rebuild` (uncommitted): type ramp up one rung with mono narrowed to data-only (`web/DESIGN.md` records it), ~115 UI-copy fixes banning em-dash asides plus a `tidyProse()` display filter for model-composed text, mobile header collapse, and the Phase-2 single-name layer (`api/lookup.py` + `/api/market/search|profile|candles`, SymbolSearch/SingleName in Markets). A running uvicorn needs a restart to pick up the new routes.*
+*Last meaningful update: Aug 27 2026 — owner-directed revamp on `react-rebuild` (uncommitted): type ramp up one rung with mono narrowed to data-only (`web/DESIGN.md` records it), ~115 UI-copy fixes banning em-dash asides plus a `tidyProse()` display filter for model-composed text, mobile header collapse, and the Phase-2 single-name layer (`api/lookup.py` + `/api/market/search|profile|candles`, SymbolSearch/SingleName in Markets). A running uvicorn needs a restart to pick up the new routes.*
 
 *Aug 26 2026 — refreshed the FastAPI section for the `react-rebuild` branch (assistant SSE endpoint, EODHD relay, DB bootstrap, same-origin bundle serving, env-driven CORS, port 8000) and recorded that migration steps 2–4 are built but neither pushed nor deployed.*
 
