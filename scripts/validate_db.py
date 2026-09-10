@@ -54,6 +54,9 @@ DATE_COLUMNS = {
 # Rolling-window tables shrink by design (intraday trimmed to 30 days, news
 # aged out); their freshness is judged by max date, never by row count.
 TRIMMED_TABLES = {"market_intraday", "news_feed"}
+# Forward-looking by design: scheduled releases are dated ahead of the clock,
+# so a future max date there is the table doing its job, not a fault.
+FORWARD_TABLES = {"event_calendar"}
 MODE_TABLES = {
     "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed"],
     "news-only": ["news_feed"],
@@ -149,6 +152,8 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
     # Stamps ahead of the clock are a fault, never freshness (review P2-3).
     horizon = (now + timedelta(days=1)).strftime("%Y-%m-%d")
     for t, info in cur["tables"].items():
+        if t in FORWARD_TABLES:
+            continue
         mx = info.get("max")
         if mx and re.match(r"^\d{4}-\d{2}-\d{2}", str(mx)) and str(mx)[:10] > horizon:
             failures.append(f"{t}: max date {mx} is in the future")

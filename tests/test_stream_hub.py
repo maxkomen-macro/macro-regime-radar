@@ -131,3 +131,90 @@ def test_per_connection_symbol_budget(monkeypatch):
 
     asyncio.run(run())
     assert h.stats["dynamic_rejected"] == 2
+
+
+# ── upstream reconnect backoff ───────────────────────────────────────────────
+
+
+class _FakeWS:
+    """Minimal stand-in for a websockets connection: records sends, yields frames."""
+
+    def __init__(self, frames):
+        self._frames = list(frames)
+        self.sent = []
+
+    async def send(self, payload):
+        self.sent.append(payload)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._frames:
+            raise StopAsyncIteration
+        return self._frames.pop(0)
+
+
+class _FakeConnect:
+    def __init__(self, ws):
+        self._ws = ws
+
+    async def __aenter__(self):
+        return self._ws
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def _run_feed_with_upstream(monkeypatch, per_connection_frames, max_sleeps):
+    """Drive QuoteHub._run_feed against scripted upstream answers.
+
+    Each entry in ``per_connection_frames`` is the list of JSON frames one
+    connection yields before the socket ends. Returns the sleep delays the loop
+    requested between connections (random jitter patched to zero).
+    """
+    import types
+
+    h = _hub()
+    queue = [list(f) for f in per_connection_frames]
+    delays: list[float] = []
+
+    def fake_connect(url, **kwargs):
+        assert h.token not in delays  # never leaks; keeps the token off the list
+        frames = queue.pop(0) if queue else []
+        return _FakeConnect(_FakeWS([json.dumps(f) for f in frames]))
+
+    async def fake_sleep(delay):
+        delays.append(delay)
+        if len(delays) >= max_sleeps:
+            raise asyncio.CancelledError
+
+    patched_asyncio = types.SimpleNamespace(**vars(asyncio))
+    patched_asyncio.sleep = fake_sleep
+    monkeypatch.setattr(stream, "asyncio", patched_asyncio)
+    monkeypatch.setattr(stream.websockets, "connect", fake_connect)
+    monkeypatch.setattr(stream.random, "random", lambda: 0.0)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(h._run_feed("us"))
+    return h, delays
+
+
+def test_refused_subscription_backs_off_exponentially(monkeypatch):
+    """A 422 (symbols limit) after the socket opens must not reconnect every
+    second forever — the backoff has to grow until EODHD accepts again."""
+    refused = {"status_code": 422, "message": "Symbols limit reached"}
+    h, delays = _run_feed_with_upstream(monkeypatch, [[refused]] * 4, max_sleeps=4)
+    assert delays == [1.0, 2.0, 4.0, 8.0]
+    assert h.stats["feed_last_error"]["us"] == "status 422: Symbols limit reached"
+    assert h.feeds["us"] == "closed"
+
+
+def test_accepted_subscription_resets_backoff(monkeypatch):
+    """Only an accepted subscription (the 200 ack or a tick) resets the backoff;
+    a plain socket open does not."""
+    refused = {"status_code": 422, "message": "Symbols limit reached"}
+    accepted = {"status_code": 200, "message": "Authorized"}
+    _, delays = _run_feed_with_upstream(monkeypatch, [[refused], [refused], [accepted], [refused]], max_sleeps=4)
+    assert delays == [1.0, 2.0, 1.0, 2.0]
+

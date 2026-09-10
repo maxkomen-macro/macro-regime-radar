@@ -134,6 +134,22 @@ def test_future_dates_fail(tmp_path):
     assert any("in the future" in f for f in rep["failures"]) and rep["upload"] is False
 
 
+def test_forward_looking_calendar_is_not_a_future_date_fault(tmp_path):
+    """event_calendar holds scheduled releases, so its max date is always ahead
+    of the clock; that must not trip the future-stamp check (2026-09-10: the
+    check rejected a valid Release asset over a December CPI slot)."""
+    cur = tmp_path / "cur.db"
+    _make(cur)
+    conn = sqlite3.connect(cur)
+    conn.execute("CREATE TABLE event_calendar(event_datetime TEXT, title TEXT)")
+    conn.execute("INSERT INTO event_calendar VALUES ('2026-12-23T13:30:00Z', 'CPI')")
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, None, "market-only", now=NOW)
+    assert not any("in the future" in f for f in rep["failures"])
+    assert rep["verdict"] == "pass"
+
+
 def test_unusable_previous_blocks_upload(tmp_path):
     cur, prev = tmp_path / "cur.db", tmp_path / "prev.db"
     _make(cur)

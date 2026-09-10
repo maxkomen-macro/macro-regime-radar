@@ -496,12 +496,17 @@ class QuoteHub:
                     self.stats["feed_connects"][feed] += 1
                     await ws.send(json.dumps({"action": "subscribe", "symbols": ",".join(self._active_symbols(feed))}))
                     await self._set_feed(feed, "open")
-                    backoff = 1.0
-                    self._backoff[feed] = backoff
                     async for raw in ws:
                         self.stats["feed_frames"][feed] += 1
                         self._mark_frame(feed)
                         msg = json.loads(raw)
+                        if not self._is_auth_error(msg) and backoff != 1.0:
+                            # Reset only once EODHD has accepted the subscription
+                            # (the 200 ack or a tick). Resetting on socket open let a
+                            # refused subscribe (422 symbols limit) reconnect every
+                            # second forever.
+                            backoff = 1.0
+                            self._backoff[feed] = backoff
                         if self._is_auth_error(msg):
                             # EODHD answers the subscribe with a status frame. A
                             # 401/403 is the token; anything else (a per-token

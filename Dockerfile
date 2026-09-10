@@ -35,4 +35,4 @@ COPY --from=webbuild /build/web/dist web/dist
 EXPOSE 8000
 # --limit-concurrency: a burst beyond the worker pool answers 503 instead of
 # queueing without bound (2026-09-06 review).
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--limit-concurrency", "64"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--limit-concurrency", "64", "--timeout-graceful-shutdown", "10"]
