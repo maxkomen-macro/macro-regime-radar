@@ -1,10 +1,16 @@
 name: Intraday Market Refresh
 
+# Five-minute intraday bars during the US session on the lean market
+# dependency set, validated before every publish (2026-09-06). Shares the
+# data-write concurrency group with Refresh Data so uploads never race.
+
 "on":
   schedule:
-    # Every 5 minutes, Mon-Fri, 13:30–21:00 UTC = 9:30 AM–5:00 PM ET
-    - cron: "*/5 13-20 * * 1-5"
-    - cron: "30 13 * * 1-5"
+    # Every 5 minutes at :02, :07, … (off the top of the hour), Mon–Fri,
+    # 13:02–21:57 UTC: covers the 09:30–16:00 ET session in both EDT
+    # (13:30–20:00 UTC) and EST (14:30–21:00 UTC). Pre-open runs find no
+    # new bars, validate as unchanged, and skip the upload.
+    - cron: "2-57/5 13-21 * * 1-5"
   workflow_dispatch:
 
 concurrency:
@@ -28,10 +34,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: "requirements.txt"
+          cache-dependency-path: "requirements-market.txt"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install dependencies (market-only set)
+        run: pip install -r requirements-market.txt
 
       - name: Fetch current DB snapshot from data-latest release
         env:
@@ -40,6 +46,7 @@ jobs:
           mkdir -p data
           if gh release view data-latest >/dev/null 2>&1; then
             gh release download data-latest --pattern macro_radar.db --dir data --clobber
+            cp data/macro_radar.db data/previous.db
             echo "DB snapshot: $(du -h data/macro_radar.db | cut -f1)"
           else
             echo "No data-latest release yet; proceeding without a prior DB."
@@ -56,7 +63,23 @@ jobs:
       - name: Checkpoint WAL
         run: sqlite3 data/macro_radar.db "PRAGMA wal_checkpoint(FULL);"
 
+      - name: Validate the refreshed database
+        id: validate
+        run: |
+          set +e
+          ARGS=()
+          [ -f data/previous.db ] && ARGS+=(--previous data/previous.db)
+          python scripts/validate_db.py data/macro_radar.db "${ARGS[@]}" --mode market-only --json validation.json
+          RC=$?
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Validation failed — the previous data-latest asset stays in place."
+            exit 1
+          fi
+
       - name: Publish updated DB snapshot to data-latest release
+        if: steps.validate.outputs.upload == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -65,3 +88,7 @@ jobs:
                  --notes "Rolling SQLite snapshot published by the refresh workflows. Not stored in git history."
           gh release upload data-latest data/macro_radar.db --clobber
           echo "Uploaded DB snapshot ($(du -h data/macro_radar.db | cut -f1)) to data-latest."
+
+      - name: Note when nothing changed
+        if: steps.validate.outputs.upload != 'true'
+        run: echo "No new intraday bars against the previous snapshot; the previous asset stands." >> "$GITHUB_STEP_SUMMARY"

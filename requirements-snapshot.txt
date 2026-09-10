@@ -1,0 +1,6 @@
+# Adds the in-process FastAPI app for scripts/build_snapshot.py on top of
+# requirements.txt (no server is started; TestClient only). 2026-09-06.
+fastapi
+httpx
+websockets
+pydantic>=2
