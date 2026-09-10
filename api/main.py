@@ -26,20 +26,29 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query, WebSocket
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from api import bootstrap, db, stream
+from api import bootstrap, db, security, stream
+from api import freshness as freshness_mod
 from api.chat import router as assistant_router
+from api.providers import entitlements
+from api.providers import market as market_layer
+from api.providers.errors import ProviderError
 
 # Make INFO-level app logs visible under bare `uvicorn` (its default logging
 # config handles only its own loggers; root has no handler, so the lifespan
 # startup block and stream feed transitions would vanish). basicConfig is a
 # no-op when a root handler already exists.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+# Provider tokens travel as query parameters; keep them out of every log line
+# (httpx's request log included) — api/logsafe.py.
+from api import logsafe  # noqa: E402
+
+logsafe.install()
 log = logging.getLogger("mrr.api")
 
 _WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
@@ -99,7 +108,16 @@ async def _lifespan(_: FastAPI):
     # EODHD relay (api/stream.py) — a no-op when EODHD_API_TOKEN is absent:
     # feeds stay "off" and the client falls back to its DB poll.
     stream.hub.start()
+    # One bounded entitlement probe per API family, off the event loop, so
+    # /api/providers/status can say what the plan covers without guessing.
+    probe_task: asyncio.Task | None = None
+    if os.environ.get("EODHD_PROBE_ON_START", "1") != "0" and market_layer.client().token:
+        probe_task = asyncio.create_task(asyncio.to_thread(entitlements.probe_all, market_layer.client()))
     yield
+    if probe_task is not None and not probe_task.done():
+        probe_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await probe_task
     if refresh_task is not None:
         refresh_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -109,7 +127,7 @@ async def _lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Macro Regime Radar API",
-    version="1.3.0",
+    version="1.4.0",
     description="Read-only access to macro regime, signals, markets, news, and model outputs.",
     lifespan=_lifespan,
 )
@@ -120,12 +138,33 @@ app = FastAPI(
 # POST covers the calculators (LBO, scenario stress, recession sensitivity) —
 # every POST is pure computation over stored data; nothing writes. The
 # effective origins are logged in the lifespan startup block.
+# Publication gates (api/security.py): body caps, per-client and global rate
+# limits, calculator/provider concurrency ceilings, the assistant access gate
+# and security headers. Added before CORS so CORS wraps it — a 429 still
+# carries the CORS headers a browser needs to read the message.
+app.add_middleware(security.SecurityMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(ProviderError)
+async def _provider_error(_: Request, exc: ProviderError) -> JSONResponse:
+    """Provider failures reach the client as a sanitized, typed message —
+    kind + provider + retryable — never a URL, a token, or a traceback."""
+    return JSONResponse(
+        status_code=exc.http_status,
+        content={"detail": exc.public, "kind": exc.kind, "provider": exc.provider, "retryable": exc.retryable},
+    )
+
+
+@app.exception_handler(Exception)
+async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
+    log.exception("unhandled error: %s", type(exc).__name__)
+    return JSONResponse(status_code=500, content={"detail": "Internal error. The incident is logged server-side."})
 
 T = TypeVar("T")
 
@@ -280,6 +319,197 @@ class IntradayPoint(BaseModel):
     volume: float | None
 
 
+class SearchHit(BaseModel):
+    symbol: str
+    name: str
+    exchange: str | None
+    type: str | None
+    sector: str | None
+    country: str | None = None
+    currency: str | None = None
+    primary: bool = True
+
+
+class SearchResponse(BaseModel):
+    provider: str
+    fallback_used: bool
+    fallback_reason: str | None
+    fetched_at: str
+    hits: list[SearchHit]
+
+
+class SymbolProfile(BaseModel):
+    symbol: str
+    name: str
+    exchange: str | None
+    currency: str | None
+    quote_type: str | None
+    sector: str | None
+    industry: str | None
+    last: float
+    prev_close: float | None
+    day_change_pct: float | None
+    day_low: float | None
+    day_high: float | None
+    year_low: float | None
+    year_high: float | None
+    market_cap: float | None
+    last_volume: float | None
+    avg_volume_3m: float | None
+    trailing_pe: float | None
+    forward_pe: float | None
+    eps_ttm: float | None
+    beta: float | None
+    dividend_yield: float | None
+    price_to_book: float | None
+    profit_margin: float | None
+    revenue_growth: float | None
+    fifty_two_wk_change: float | None
+    fetched_at: str
+    # Provenance (2026-09-06): which provider quoted, which supplied
+    # fundamentals, whether the quote is delayed, and any disclosed fallback.
+    market_ts: str | None = None
+    quote_provider: str | None = None
+    fundamentals_provider: str | None = None
+    delayed: bool = True
+    delay_note: str | None = None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+
+
+class CandleBar(BaseModel):
+    ts: str
+    open: float | None
+    high: float | None
+    low: float | None
+    close: float
+    volume: float | None
+
+
+class CandleSeries(BaseModel):
+    """One provider per series, always disclosed — never a bare bar list."""
+
+    symbol: str
+    provider: str
+    fallback_used: bool
+    fallback_reason: str | None
+    fetched_at: str
+    market_ts: str | None
+    delayed: bool
+    interval: str
+    range: str
+    exchange: str | None
+    timezone: str | None
+    adjustment: str
+    count: int
+    bars: list[CandleBar]
+
+
+class SplitEvent(BaseModel):
+    date: str | None
+    ratio: float | None
+    text: str | None
+
+
+class DividendEvent(BaseModel):
+    date: str | None
+    value: float | None
+    unadjusted_value: float | None
+    currency: str | None
+    period: str | None
+    declaration_date: str | None
+    record_date: str | None
+    payment_date: str | None
+
+
+class CorporateActions(BaseModel):
+    symbol: str
+    provider: str
+    fallback_used: bool
+    fallback_reason: str | None
+    fetched_at: str
+    from_: str = Field(alias="from")
+    splits: list[SplitEvent]
+    dividends: list[DividendEvent]
+
+    model_config = {"populate_by_name": True}
+
+
+class OptionsExpirations(BaseModel):
+    symbol: str
+    underlying: str
+    provider: str
+    as_of: str | None
+    cadence: str
+    fetched_at: str
+    expirations: list[str]
+    truncated: bool
+
+
+class OptionContract(BaseModel):
+    contract: str | None
+    type: str | None
+    strike: float | None
+    exp_date: str | None
+    expiration_type: str | None
+    dte: int | None
+    bid: float | None
+    ask: float | None
+    last: float | None
+    midpoint: float | None
+    volume: float | None
+    open_interest: float | None
+    implied_vol: float | None
+    delta: float | None
+    gamma: float | None
+    theta: float | None
+    vega: float | None
+    rho: float | None
+    moneyness: float | None
+    tradetime: str | None
+    last_quote: str | None
+
+
+class OptionsChain(BaseModel):
+    symbol: str
+    underlying: str
+    provider: str
+    cadence: str
+    as_of: str | None
+    fetched_at: str
+    expiration: str
+    type: str | None
+    strike_from: float | None
+    strike_to: float | None
+    page: int
+    limit: int
+    count: int
+    total: int | None
+    has_more: bool
+    contracts: list[OptionContract]
+
+
+class TickBar(BaseModel):
+    ts: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    trades: int
+
+
+class TickBars(BaseModel):
+    symbol: str
+    provider: str
+    fetched_at: str
+    window_from: str | None
+    window_to: str | None
+    last_trade_ts: str | None
+    trades: int
+    bars: list[TickBar]
+
+
 class CalendarEvent(BaseModel):
     id: int
     event_name: str
@@ -384,6 +614,15 @@ class Freshness(BaseModel):
     market_intraday_ts: str | None
     news_published_at: str | None
     raw_series_date: str | None
+    # Source-aware verdicts (api/freshness.py, 2026-09-06). Optional so the
+    # six original fields stay a stable contract for older clients.
+    generated_at: str | None = None
+    overall: str | None = None
+    session: dict | None = None
+    sla: list[dict] | None = None
+    regime: dict | None = None
+    bootstrap: dict | None = None
+    relay: dict | None = None
 
 
 # ── Response models: Regime Lab (2026-08-06, night-2 build) ──────────────────
@@ -709,8 +948,9 @@ def api_news(
     category: str | None = Query(None, description="DB category value, e.g. GEOPOLITICAL"),
     min_significance: float | None = Query(None, ge=0, le=10),
     limit: int = Query(150, ge=1, le=500),
+    ticker: str | None = Query(None, max_length=15, description="Filter to one tagged ticker"),
 ) -> list[NewsItem]:
-    rows = _guarded(lambda: db.news_feed(hours, category, min_significance, limit))
+    rows = _guarded(lambda: db.news_feed(hours, category, min_significance, limit, ticker))
     return [NewsItem(**r) for r in rows]
 
 
@@ -736,6 +976,143 @@ def api_market_intraday(
         raise HTTPException(status_code=422, detail="No symbols given.")
     rows = _guarded(lambda: db.market_intraday(syms, since))
     return [IntradayPoint(**r) for r in rows]
+
+
+# ── On-demand symbol layer (Phase-2 Markets expansion, api/lookup.py) ────────
+# Reaches past the stored 23-ETF universe to any listed symbol via yfinance.
+# Delayed data, honestly stamped; cached per key so bursts cost one upstream
+# call. These three routes are additive — nothing existing changed shape.
+
+
+_QUERY_BAD = set("/\\?#%") | {chr(i) for i in range(32)} | {chr(127)}
+
+
+def _search_query_arg(q: str) -> str:
+    """Free-text search must stay one URL path segment on the provider side:
+    no separators, no percent sequences, no control characters (review P1-1)."""
+    text = q.strip()
+    if not text or len(text) > 40 or any(ch in _QUERY_BAD for ch in text):
+        raise HTTPException(status_code=422, detail="Search text may not contain path separators, '%', '#', '?' or control characters.")
+    return text
+
+
+def _symbol_arg(symbol: str) -> str:
+    """Path symbols are validated here (length + charset) before any provider
+    sees them; canonical spelling happens in api/providers/symbols.py."""
+    sym = symbol.strip()
+    if not (1 <= len(sym) <= 24) or any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.^=-" for ch in sym):
+        raise HTTPException(status_code=422, detail=f"'{symbol}' is not a listable symbol.")
+    return sym
+
+
+@api.get("/market/search", response_model=SearchResponse)
+def api_market_search(
+    q: str = Query(..., min_length=1, max_length=40, description="Free-text symbol/name query"),
+    limit: int = Query(10, ge=1, le=25),
+) -> SearchResponse:
+    from api import lookup
+
+    return SearchResponse(**lookup.search(_search_query_arg(q), limit))
+
+
+@api.get("/market/profile/{symbol}", response_model=SymbolProfile)
+def api_market_profile(symbol: str) -> SymbolProfile:
+    from api import lookup
+
+    return SymbolProfile(**lookup.profile(_symbol_arg(symbol)))
+
+
+@api.get("/market/candles/{symbol}", response_model=CandleSeries)
+def api_market_candles(
+    symbol: str,
+    range_key: str = Query("6M", alias="range", pattern="^(1D|5D|1M|6M|1Y|5Y|MAX)$"),
+) -> CandleSeries:
+    """Candle envelope: EODHD first, yfinance as a disclosed fallback, one
+    provider per series, provenance stamped (api/providers/market.py)."""
+    from api import lookup
+
+    return CandleSeries(**lookup.candles(_symbol_arg(symbol), range_key))
+
+
+@api.get("/market/actions/{symbol}", response_model=CorporateActions)
+def api_market_actions(symbol: str, years: int = Query(5, ge=1, le=20)) -> CorporateActions:
+    return CorporateActions(**market_layer.corporate_actions(_symbol_arg(symbol), years))
+
+
+@api.get("/market/options/{symbol}/expirations", response_model=OptionsExpirations)
+def api_market_options_expirations(symbol: str) -> OptionsExpirations:
+    """End-of-day listed expirations (EODHD marketplace). Entitlement-gated:
+    an unentitled plan answers 403 with kind=unauthorized, never a fabricated chain."""
+    return OptionsExpirations(**market_layer.options_expirations(_symbol_arg(symbol)))
+
+
+@api.get("/market/options/{symbol}", response_model=OptionsChain)
+def api_market_options(
+    symbol: str,
+    expiration: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    type_: str | None = Query(None, alias="type", pattern="^(call|put)$"),
+    strike_from: float | None = Query(None, ge=0),
+    strike_to: float | None = Query(None, ge=0),
+    page: int = Query(0, ge=0, le=500),
+    limit: int = Query(60, ge=1, le=200),
+) -> OptionsChain:
+    """One expiration's contracts, server-side paginated and filtered. Values
+    are EODHD's end-of-day marks and provider Greeks — nothing is computed here."""
+    if strike_from is not None and strike_to is not None and strike_from > strike_to:
+        raise HTTPException(status_code=422, detail="strike_from must not exceed strike_to.")
+    if page * limit > 10_000:
+        raise HTTPException(status_code=422, detail="page × limit may not exceed 10,000 (the provider's offset ceiling).")
+    return OptionsChain(
+        **market_layer.options_chain(
+            _symbol_arg(symbol), expiration=expiration, type_=type_, strike_from=strike_from, strike_to=strike_to, page=page, limit=limit
+        )
+    )
+
+
+@api.get("/market/ticks/{symbol}", response_model=TickBars)
+def api_market_ticks(
+    symbol: str,
+    minutes: int = Query(15, ge=1, le=30),
+    limit: int = Query(2000, ge=1, le=5000),
+) -> TickBars:
+    """Bounded recent-trade window aggregated to one-minute bars server-side.
+    Request window in seconds, provider timestamps in milliseconds, nothing
+    persisted. Entitlement-gated (403 kind=unauthorized on this plan today)."""
+    return TickBars(**market_layer.recent_trades(_symbol_arg(symbol), minutes=minutes, limit=limit))
+
+
+def _ops_gate(request: Request) -> None:
+    """Diagnostics stay open in development; setting OPS_ACCESS_KEY on a
+    public host requires `X-Ops-Key` (review P3-10)."""
+    expected = os.environ.get("OPS_ACCESS_KEY", "").strip()
+    if expected and request.headers.get("x-ops-key", "") != expected:
+        raise HTTPException(status_code=401, detail="Diagnostics require an ops key on this deployment.")
+
+
+@api.get("/providers/status")
+def api_providers_status(request: Request) -> dict:
+    """Which provider is primary per dataset, the cached entitlement probe
+    results, relay health and gate counters — capability and status only,
+    never a token."""
+    _ops_gate(request)
+    return {
+        **market_layer.status(),
+        "relay": stream.hub.debug(),
+        "security": {"assistant_mode": security.assistant_mode(), "counters": _security_counters()},
+    }
+
+
+def _security_counters() -> dict:
+    for m in getattr(app, "user_middleware", []):
+        if m.cls is security.SecurityMiddleware:
+            break
+    # The instantiated middleware lives in the ASGI stack; walk to it.
+    layer = getattr(app, "middleware_stack", None)
+    while layer is not None:
+        if isinstance(layer, security.SecurityMiddleware):
+            return dict(layer.stats)
+        layer = getattr(layer, "app", None)
+    return {}
 
 
 @api.get("/calendar", response_model=list[CalendarEvent])
@@ -774,7 +1151,13 @@ def api_recession_probability() -> RecessionMetrics:
 
 @api.get("/freshness", response_model=Freshness)
 def api_freshness() -> Freshness:
-    return Freshness(**_guarded(db.freshness))
+    """Stored maxima plus source-aware SLA verdicts: the market calendar, the
+    FRED publication rules, the regime's blocking inputs, snapshot provenance
+    and relay health (api/freshness.py)."""
+    base = _guarded(db.freshness)
+    series = _guarded(db.latest_series_all)
+    report = freshness_mod.assess(db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status())
+    return Freshness(**report)
 
 
 # ── Regime Lab endpoints (night-2) ───────────────────────────────────────────
@@ -1012,15 +1395,45 @@ async def api_stream_ws(websocket: WebSocket) -> None:
 
 
 @app.get("/api/stream/debug")
-def api_stream_debug() -> dict:
-    """Relay ops counters — frames per feed, reconnects, stored ticks. No
-    secrets: symbols and counts only."""
-    return {
-        "feeds": stream.hub.feeds,
-        "clients": len(stream.hub._clients),  # noqa: SLF001 — ops introspection
-        "symbols_stored": len(stream.hub.quotes),
-        **stream.hub.stats,
-    }
+def api_stream_debug(request: Request) -> dict:
+    """Relay ops view — feed states, stale flags, degraded verdict, reconnect
+    backoff, last frame per feed, sanitized last error, subscription counts.
+    No secrets: symbols and counts only. Gated by OPS_ACCESS_KEY when set."""
+    _ops_gate(request)
+    return stream.hub.debug()
+
+
+@app.get("/health/live")
+def health_live() -> dict:
+    """Process liveness only — answers as long as the event loop runs."""
+    from datetime import timezone as _tz
+
+    return {"status": "ok", "time": datetime.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
+@app.get("/health/ready")
+def health_ready() -> JSONResponse:
+    """Readiness: the snapshot opens read-only and holds regime rows. 503 with
+    a reason otherwise, so a host's health check keeps traffic off a booting
+    or torn instance without ever exposing a path or token."""
+    try:
+        row = db.latest_regime()
+    except db.DBUnavailable as exc:
+        return JSONResponse(status_code=503, content={"status": "not_ready", "reason": "database unavailable", "detail": str(exc)[:200]})
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(status_code=503, content={"status": "not_ready", "reason": type(exc).__name__})
+    if not row:
+        return JSONResponse(status_code=503, content={"status": "not_ready", "reason": "no regime rows"})
+    boot = bootstrap.status()
+    return JSONResponse(
+        content={
+            "status": "ready",
+            "regime_date": row.get("date"),
+            "db_mtime": boot.get("db_mtime"),
+            "snapshot_downloaded_at": boot.get("last_downloaded_at"),
+            "relay_degraded": stream.hub.degraded()[0],
+        }
+    )
 
 
 # ── Static bundle (Phase 8: one process serves everything) ───────────────────
@@ -1033,6 +1446,18 @@ def api_stream_debug() -> dict:
 # First path segments owned by the API — an unmatched path under any of these
 # is a JSON 404 (exactly the pre-mount behavior), never the SPA shell.
 _NON_SPA_FIRST_SEGMENTS = {"api", "health", "regime", "signals", "series"}
+def _csp() -> str:
+    """Content-Security-Policy for the served shell. Inline styles are part
+    of the React bundle's styling model; scripts are bundle-only. Extra
+    connect targets (a split API/WS host) come from CSP_CONNECT_SRC."""
+    extra = " ".join(o.strip() for o in os.environ.get("CSP_CONNECT_SRC", "").split(",") if o.strip())
+    return (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self' data:; "
+        f"connect-src 'self' {extra}; ".replace("  ", " ")
+        + "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    )
+
 
 if _WEB_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=_WEB_DIST / "assets"), name="assets")
@@ -1044,6 +1469,7 @@ if _WEB_DIST.is_dir():
         unknown API-ish paths stay JSON 404s exactly as before the mount."""
         if full_path.split("/", 1)[0] in _NON_SPA_FIRST_SEGMENTS:
             raise HTTPException(status_code=404, detail="Not Found")
-        return FileResponse(_WEB_DIST / "index.html")
+        return FileResponse(_WEB_DIST / "index.html", headers={"Content-Security-Policy": _csp(), "Cache-Control": "no-cache"})
+
 else:
     log.info("web/dist absent — SPA not mounted; dev flow (Vite :5173) unchanged")

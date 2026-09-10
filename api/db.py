@@ -2,15 +2,23 @@
 
 Mirrors the read-only URI pattern used by the chat agent
 (src/analytics/chat.py:_ro_conn) but is fully self-contained: no src.config
-import (avoids the FRED_API_KEY requirement) and no anthropic import. A fresh
-short-lived connection is opened per call and closed immediately, so the
-service tolerates the local DB file being swapped by the git session routine
-and concurrent WAL writes from refresh jobs.
+import (avoids the FRED_API_KEY requirement) and no anthropic import.
+
+Connections (2026-09-06): one read-only connection per worker thread, reused
+across requests and reopened only when the file underneath changes (the
+bootstrap swap, `make sync-data`), so the service still tolerates the DB
+being replaced and concurrent WAL writes — without the open/close churn that
+deadlocked the worker pool under a burst of concurrent requests (independent
+technical review, P0-1: 39 threads parked in SQLite's unix-VFS mutex). Call
+sites keep their `with closing(_connect())` shape; `close()` on the reused
+connection is a no-op and the real close happens on swap or thread exit.
 """
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import threading
 from contextlib import closing
 from pathlib import Path
 
@@ -25,12 +33,55 @@ def db_present() -> bool:
     return DB_PATH.exists()
 
 
+class _ReusedConnection(sqlite3.Connection):
+    """A thread-owned connection whose public close() is a no-op."""
+
+    def close(self) -> None:  # noqa: D401 — deliberate no-op, see module docstring
+        return None
+
+    def really_close(self) -> None:
+        super().close()
+
+
+_local = threading.local()
+
+
+def _file_key(path: Path) -> tuple[int, int, int]:
+    st = os.stat(path)
+    return (st.st_ino, st.st_mtime_ns, st.st_size)
+
+
 def _connect() -> sqlite3.Connection:
     if not DB_PATH.exists():
         raise DBUnavailable(f"Database not found at {DB_PATH}")
-    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    key = _file_key(DB_PATH)
+    conn = getattr(_local, "conn", None)
+    if conn is not None and getattr(_local, "key", None) == key and getattr(_local, "path", None) == str(DB_PATH):
+        return conn
+    if conn is not None:
+        try:
+            conn.really_close()
+        except sqlite3.Error:
+            pass
+        _local.conn = None
+    try:
+        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, factory=_ReusedConnection)
+    except sqlite3.Error as exc:
+        raise DBUnavailable(f"Database at {DB_PATH} cannot be opened read-only: {exc}") from exc
     conn.row_factory = sqlite3.Row
+    _local.conn, _local.key, _local.path = conn, key, str(DB_PATH)
     return conn
+
+
+def reset_connections_for_tests() -> None:
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        try:
+            conn.really_close()
+        except sqlite3.Error:
+            pass
+    _local.conn = None
+    _local.key = None
 
 
 def latest_regime() -> dict | None:
@@ -339,7 +390,11 @@ def alert_feed(level: str | None, alert_type: str | None, limit: int) -> list[di
 
 
 def news_feed(
-    hours: int, category: str | None, min_significance: float | None, limit: int
+    hours: int,
+    category: str | None,
+    min_significance: float | None,
+    limit: int,
+    ticker: str | None = None,
 ) -> list[dict]:
     # published_at mixes formats in the DB ("2026-08-06T08:17:15+00:00" vs
     # "2026-07-30 02:08:34") while datetime('now', ...) yields the space form —
@@ -360,6 +415,9 @@ def news_feed(
     if min_significance is not None:
         sql += " AND overall_significance >= ?"
         params.append(min_significance)
+    if ticker:
+        sql += " AND upper(ticker) = ?"
+        params.append(ticker.strip().upper())
     sql += " ORDER BY overall_significance DESC, published_at DESC LIMIT ?"
     params.append(limit)
     with closing(_connect()) as conn:

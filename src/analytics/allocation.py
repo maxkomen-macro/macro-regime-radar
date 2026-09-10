@@ -374,6 +374,66 @@ def _regime_month_counts(
     return len(sub), len(sub.dropna())
 
 
+def regime_sample_detail(
+    returns: pd.DataFrame,
+    regimes: pd.DataFrame,
+    regime: str,
+    required_stats_months: int = 12,
+    required_cov_months: int = 24,
+) -> Dict:
+    """Exact sample accounting for one regime (2026-09-06): how many regime
+    months exist, how many are complete across every asset that has any
+    history in the regime (the rectangular block the optimizers need), which
+    months are excluded and which assets are responsible. Applies the same
+    filtering as the gate functions above, so the numbers here are the
+    numbers the gate saw."""
+    combined = returns.copy()
+    combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
+    combined = combined.dropna(subset=["regime"])
+    sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+    total = int(len(sub))
+    sub = sub.dropna(axis=1, how="all")
+    assets = list(sub.columns)
+    complete_mask = sub.notna().all(axis=1) if len(sub.columns) else pd.Series(False, index=sub.index)
+    complete = int(complete_mask.sum())
+    missing = sub.isna().sum()
+    responsible = [
+        {"asset": str(a), "missing_months": int(missing[a])}
+        for a in assets
+        if int(missing[a]) > 0
+    ]
+    responsible.sort(key=lambda r: -r["missing_months"])
+    excluded_index = sub.index[~complete_mask]
+    first_complete = sub.index[complete_mask][0].strftime("%Y-%m") if complete else None
+    last_complete = sub.index[complete_mask][-1].strftime("%Y-%m") if complete else None
+    n_assets = len(assets)
+    words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+    sentence = (
+        f"{complete} of {total} {regime} months have complete returns across all "
+        f"{words.get(n_assets, n_assets)} assets; {required_cov_months} are required."
+    )
+    return {
+        "regime": regime,
+        "total_regime_months": total,
+        "stats_months": total,
+        "complete_months": complete,
+        "cov_months": complete,
+        "excluded_months": int(total - complete),
+        "excluded_range": (
+            f"{excluded_index[0].strftime('%Y-%m')} → {excluded_index[-1].strftime('%Y-%m')}"
+            if len(excluded_index) else None
+        ),
+        "complete_range": f"{first_complete} → {last_complete}" if complete else None,
+        "assets_total": n_assets,
+        "assets_responsible": responsible,
+        "required_stats_months": required_stats_months,
+        "required_cov_months": required_cov_months,
+        "stats_ok": total >= required_stats_months,
+        "cov_ok": complete >= required_cov_months,
+        "sentence": sentence,
+    }
+
+
 def get_correlation_by_regime(
     returns: pd.DataFrame,
     regimes: pd.DataFrame,
@@ -1484,10 +1544,16 @@ def get_allocation_data() -> Dict:
             "required_stats_months": 12,
             "required_cov_months":   24,
             "window":                f"{data_start} → {data_end}",
+            # Exact accounting (2026-09-06): total vs complete months, which
+            # months fall out and which assets cause it.
+            **regime_sample_detail(returns, regimes, current_regime),
         }
         print(f"Optimizations skipped: regime '{current_regime}' has "
               f"{stats_months} stats months (need 12) and {cov_months} "
               f"rectangular cov months (need 24) in {data_start} → {data_end}")
+
+    optimization_sample = regime_sample_detail(returns, regimes, current_regime)
+    optimization_sample["window"] = f"{data_start} → {data_end}"
 
     # ── Risk analytics (CVaR, transitions, real returns) ───────────────────────
     print("\nComputing risk analytics...")

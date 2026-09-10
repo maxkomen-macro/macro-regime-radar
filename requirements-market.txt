@@ -1,0 +1,8 @@
+# Lean dependency set for the market-only / intraday refresh modes
+# (2026-09-06): src/market_data/fetch_market.py + yfinance_client.py.
+pandas==2.2.2
+numpy==1.26.4
+yfinance>=0.2
+pyyaml>=6.0
+python-dotenv==1.0.1
+requests>=2.31.0

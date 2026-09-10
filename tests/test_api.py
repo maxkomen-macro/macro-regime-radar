@@ -344,10 +344,14 @@ def test_api_recession_probability():
 
 def test_api_freshness():
     body = client.get("/api/freshness").json()
-    assert set(body) == {
+    # The six stored maxima are the stable contract; the source-aware report
+    # (2026-09-06: overall verdict, session, per-feed SLA rows, regime
+    # blockers, snapshot provenance, relay) is additive.
+    assert {
         "regimes_date", "signals_date", "market_daily_date",
         "market_intraday_ts", "news_published_at", "raw_series_date",
-    }
+    } <= set(body)
+    assert {"overall", "session", "sla", "regime", "bootstrap"} <= set(body)
     conn = _ro_conn()
     assert body["market_daily_date"] == conn.execute(
         "SELECT MAX(date) FROM market_daily"

@@ -160,20 +160,97 @@ NEWS_RESEARCH_SYSTEM_PROMPT = (
 
 
 # ── Category Classifier ────────────────────────────────────────────────────────
+#
+# Rewritten 2026-09-06. The old classifier returned M&A for any headline that
+# contained a single M&A keyword — and "deal", "billion" and "ipo" were on the
+# list, so "China challenges Korean champions in flash memory race" landed in
+# M&A on the strength of nothing at all. This version scores every category
+# from weighted cue patterns, requires a real transaction cue for M&A, treats
+# an IPO/listing as a capital-markets (SECTOR) event rather than a merger, and
+# falls back to SECTOR — the neutral bucket in the fixed category enum — when
+# no category clears the confidence bar.
+
+_CUES: dict[str, list[tuple[str, int]]] = {
+    "M&A": [
+        (r"\b(acquisition|acquisitions|acquires?|acquired|acquiring)\b", 3),
+        (r"\b(merger|mergers|merges?|merged|merging)\b", 3),
+        (r"\b(takeover|buyout|buy-out|leveraged buyout|lbo)\b", 3),
+        (r"\b(to buy|agreed to buy|agrees to buy|in talks to buy|bid for|bids for|tender offer|offer for)\b", 3),
+        (r"\b(to sell|sells?|sale of|divests?|divestiture|spin-?off|carve-?out)\b.{0,60}\b(unit|division|business|stake|to)\b", 3),
+        (r"\bprivate equity\b.{0,40}\b(buy|acquire|deal|takeover|bid)", 3),
+        (r"\bdeal\b", 1),
+        (r"\$\s?\d[\d,.]*\s?(billion|bn|trillion)\b.{0,30}\b(deal|acquisition|merger|takeover|buyout|bid)\b", 2),
+    ],
+    "MACRO": [
+        (r"\b(federal reserve|fomc|\bfed\b|powell|fed chair|central bank|ecb|boe|boj)\b", 3),
+        (r"\b(inflation|cpi|ppi|pce|core prices)\b", 3),
+        (r"\b(unemployment|jobs report|nonfarm payrolls?|payrolls|jobless claims)\b", 3),
+        (r"\b(gdp|recession|soft landing|stagflation)\b", 3),
+        (r"\b(rate (hike|hikes|cut|cuts|decision)|hikes? rates?|cuts? (its )?(interest )?rates?|holds? rates?|interest rates?)\b", 3),
+        (r"\b(yield curve|treasury yields?|10-year|2-year|basis points|bond yields?)\b", 2),
+        (r"\btreasur(y|ies)\b", 1),
+        (r"\b(credit spreads?|high[- ]yield|investment[- ]grade|junk bonds?|default rates?)\b", 2),
+    ],
+    "EARNINGS": [
+        (r"\b(earnings|quarterly (results|revenue|profit|earnings|report)|q[1-4] (results|revenue|profit|earnings))\b", 3),
+        (r"\b(beats?|misses?|tops?|trails?) (estimates|expectations|forecasts|the street)\b", 3),
+        (r"\b(guidance|outlook)\b.{0,40}\b(raise|raises|raised|cut|cuts|lowers?|lowered|reaffirm|maintain)|\b(raises?|cuts?|lowers?) (its )?(guidance|outlook|forecast)\b", 3),
+        (r"\b(revenue|sales|profit|net income|eps|margins?)\b.{0,40}\b(rose|fell|jumped|slumped|grew|declined|up|down|record)\b", 2),
+        (r"\b(revenue|profit|loss|eps|net income)\b", 1),
+        (r"\bq[1-4]\b", 1),
+    ],
+    "GEOPOLITICAL": [
+        (r"\b(tariffs?|trade war|sanctions?|embargo|export controls?)\b", 3),
+        (r"\b(opec\+?|ceasefire|missile|invasion|war\b|military|geopolitic\w*)\b", 3),
+        (r"\b(russia|ukraine|kremlin|taiwan strait|middle east|iran|israel|gaza)\b", 2),
+        (r"\b(election|congress|senate|white house|debt ceiling|government shutdown|fiscal|treasury secretary)\b", 2),
+        (r"\b(china|beijing|eu\b|brussels)\b", 1),
+    ],
+    "SECTOR": [
+        (r"\b(ipo|initial public offering|public offering|listing|debut|direct listing|spac)\b", 2),
+        (r"\b(bond issuance|debt offering|notes offering|bond sale|convertible)\b", 2),
+        (r"\b(downgrades?|upgrades?|default|bankruptcy|chapter 11|restructuring)\b", 2),
+        (r"\b(chips?|semiconductors?|memory|flash memory|foundry|fab\b|wafers?)\b", 2),
+        (r"\b(production|capacity|factory|plant|manufacturing|supply chain|output)\b", 2),
+        (r"\b(ev|evs|electric vehicles?|autos?|airlines?|banks?|pharma|drug|fda|retail|energy|oil|gas|mining|software|cloud|ai\b)\b", 1),
+        (r"\b(shares?|stock)\b.{0,30}\b(jump|surge|fall|drop|slide|rally|tumble)", 1),
+        (r"\b(launch|launches|unveils?|recall|strike|layoffs?|hiring)\b", 2),
+    ],
+}
+_COMPILED = {cat: [(re.compile(pat, re.IGNORECASE), w) for pat, w in cues] for cat, cues in _CUES.items()}
+# Ties resolve toward the broader read: macro first, then policy, then the
+# company categories; SECTOR is the neutral bucket and never wins a tie.
+_PRIORITY = ["MACRO", "GEOPOLITICAL", "EARNINGS", "M&A", "SECTOR"]
+_MIN_SCORE = 2  # below this no category is confident: the item stays SECTOR (neutral)
+
+
+def score_categories(headline: str, summary: str = "") -> dict[str, int]:
+    """Weighted cue scores per category for one item (headline + summary)."""
+    text = f"{headline or ''} {summary or ''}".lower()
+    scores = {cat: 0 for cat in _COMPILED}
+    for cat, cues in _COMPILED.items():
+        for pat, w in cues:
+            if pat.search(text):
+                scores[cat] += w
+    # A credit-market story (spreads, high yield) is macro; a company credit
+    # event (a downgrade, a default) stays with the company.
+    return scores
+
+
+def classify_with_confidence(headline: str, summary: str = "") -> tuple[str, float]:
+    """(category, confidence 0–1). Confidence is the winning score against a
+    five-point scale, zero when the item falls to the neutral bucket."""
+    scores = score_categories(headline, summary)
+    best = max(_PRIORITY, key=lambda c: (scores[c], -_PRIORITY.index(c)))
+    top = scores[best]
+    if best == "SECTOR" or top < _MIN_SCORE:
+        return "SECTOR", 0.0 if top < _MIN_SCORE else min(1.0, top / 5.0)
+    return best, min(1.0, top / 5.0)
+
 
 def classify_category(headline: str, summary: str) -> str:
-    """Classify a news item into a category based on keyword matching."""
-    text = (headline + " " + (summary or "")).lower()
-
-    if any(kw in text for kw in MA_KEYWORDS):
-        return "M&A"
-    if any(kw in text for kw in MACRO_KEYWORDS):
-        return "MACRO"
-    if any(kw in text for kw in EARNINGS_KEYWORDS):
-        return "EARNINGS"
-    if any(kw in text for kw in GEOPOLITICAL_KEYWORDS):
-        return "GEOPOLITICAL"
-    return "SECTOR"
+    """Classify a news item into MACRO / M&A / EARNINGS / GEOPOLITICAL / SECTOR."""
+    return classify_with_confidence(headline, summary)[0]
 
 
 # ── Significance Scorer ────────────────────────────────────────────────────────
