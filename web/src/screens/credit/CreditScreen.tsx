@@ -1,607 +1,316 @@
 /**
- * Credit — locked IA: OAS dashboard (HY/IG heroes + history), quality ladder
- * (BB/B/CCC + ratio/distress + transition matrices), financing conditions
- * (sole owner of the all-in cost card; Tools · LBO links here).
+ * Credit, rebuilt on TabHero + SummaryCard (redesign Phase 6,
+ * docs/redesign-v2/checklists/06-credit.md B.0).
  *
- * One data source: /api/credit/metrics (src/analytics/credit.py verbatim —
- * values in bps, monthly FRED cadence). Captions follow the confusion-index
- * worklist: #6 ordinal percentiles, #8 distress vs Normal paradox, #16 bps
- * and percent stated together, #26 HY/IG ratio norm.
+ * Order of <main> children, all inside `.mrr-credit`: the hero row (TabHero
+ * `#credit-hero`, whose h1 is the served credit_label with the HY OAS pill and
+ * whose signature chart is the HY / IG OAS history on Lightweight Charts with
+ * the three dashed classification rules and the NBER bands behind a 10Y / MAX
+ * window control, beside SummaryCard `#credit-summary` with the quality-ladder
+ * strip linking to `#quality-ladder`) → the spread monitor (`#oas`) → the
+ * ladder row (`#quality-ladder` | `#credit-state-odds`) → financing
+ * conditions (`#financing`) → the mono disclosure line.
+ *
+ * One data source: /api/credit/metrics (src/analytics/credit.py verbatim:
+ * values in bps, monthly FRED cadence), read once here and passed to the four
+ * panels as `{ m, status }`; FinancingConditions adds /api/lbo/defaults for
+ * its stacked bar. Nothing is re-derived in the browser: every number is a
+ * served field or its formatted value. The only client math is display math
+ * on served points (the ten-year window cut, the plotted window's extremes
+ * and the band list, oas-window.ts), never a probability. Captions follow the
+ * confusion-index worklist: #6 ordinal percentiles, #8 distress vs Normal
+ * paradox, #16 bps and percent stated together, #26 HY/IG ratio norm.
  */
 
-import { Link } from "react-router-dom";
-import { Card, SectionHeader, Sparkline, Tag } from "../../components";
-import DeskRead, { type LedgerItem } from "../shared/DeskRead";
-import { assessFreshness } from "../shared/freshness";
-import ScrollTable from "../shared/ScrollTable";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { Segmented } from "../../components";
 import { useCreditMetrics } from "../../api/queries";
-import type { CreditMetrics, DatedValue } from "../../api/types";
-import { ordinal } from "../../lib/format";
-import { useBreakpoint } from "../../lib/useBreakpoint";
-import LineChart from "../dashboard/LineChart";
+import type { CreditMetrics } from "../../api/types";
+import { fmtBps, fmtMonYr, ordinal } from "../../lib/format";
+import { DASH } from "../dashboard/hero-copy";
 import Jargon from "../shared/Jargon";
-import { Caption, StateNote, eyebrowStyle, mono, useHashScroll } from "../shared/screen-ui";
+import { assessFreshness } from "../shared/freshness";
+import { Caption, StateNote, capStyle, monoNoteStyle, useHashScroll } from "../shared/screen-ui";
+import { DisclosureLine } from "../shared/Disclosure";
+import TabHero, { type TabHeroAction } from "../shared/TabHero";
+import SummaryCard, { type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
+import { CREDIT_GLOW, chartTercile, creditHero, ladderStrip, ratioNormWord, type CreditStatus } from "./hero-copy";
+import { NBER_BANDS, bandList, bandsInWindow, intersectByDate, sliceWindow, windowExtremes } from "./oas-window";
+import SpreadLinesChart, { type SpreadRule, type SpreadSeries } from "./SpreadLinesChart";
+import SpreadMonitor from "./SpreadMonitor";
+import QualityLadder from "./QualityLadder";
+import CreditStateOdds from "./CreditStateOdds";
+import FinancingConditions from "./FinancingConditions";
 
-/** NBER recession windows shaded on the OAS history — the same three the
- * Streamlit tab pins (static reference, monthly resolution). */
-const NBER_BANDS = [
-  { from: "2001-03-01", to: "2001-11-30" },
-  { from: "2007-12-01", to: "2009-06-30" },
-  { from: "2020-02-01", to: "2020-04-30" },
-];
+/* ── small shared bits ─────────────────────────────────────────────────── */
 
-const CREDIT_STATES = ["Normal", "Tight", "Stressed", "Crisis"] as const;
-
-const STATE_COLORS: Record<string, string> = {
-  Normal: "var(--pos)",
-  Tight: "var(--accent)",
-  Stressed: "var(--warn-hot)",
-  Crisis: "var(--neg-text)",
+/** Loading and unavailable headlines ride in the UI face at the hero-sub
+ * size: the serif display face is for answers only (02 B.1 states). */
+const stateHeadline: CSSProperties = {
+  fontFamily: "var(--font-ui)",
+  fontWeight: 500,
+  fontSize: "var(--fs-hero-sub)",
+  lineHeight: "var(--lh-hero-sub)",
+  letterSpacing: 0,
+  fontVariationSettings: "normal",
 };
 
-interface TierDef {
-  key: "hy" | "ig" | "bb" | "b" | "ccc";
-  label: string;
-  name: string;
-  tone: (v: number) => "clear" | "watch" | "risk" | "accent";
-}
-
-const HERO_TIERS: TierDef[] = [
-  {
-    key: "hy",
-    label: "HY",
-    name: "High yield (BB & below)",
-    tone: (v) => (v < 400 ? "clear" : v <= 700 ? "watch" : "risk"),
-  },
-  {
-    key: "ig",
-    label: "IG",
-    name: "Investment grade",
-    tone: (v) => (v <= 150 ? "clear" : "watch"),
-  },
+const HERO_ACTIONS: TabHeroAction[] = [
+  { label: "See the quality ladder", to: "/app/credit#quality-ladder", primary: true },
+  { label: "Price an LBO", to: "/app/tools#lbo" },
 ];
 
-const LADDER_TIERS: TierDef[] = [
-  { key: "bb", label: "BB", name: "Crossover quality", tone: () => "accent" },
-  { key: "b", label: "B", name: "Single-B", tone: () => "accent" },
-  {
-    key: "ccc",
-    label: "CCC",
-    name: "Weakest credits",
-    tone: (v) => (v < 700 ? "watch" : "risk"),
-  },
+const STRIP_TARGET = "/app/credit#quality-ladder";
+
+const n = (v: number): number => Math.round(v);
+
+/** " · "-joined clauses, null ones dropped (the ledger pattern, 269-299). */
+const join = (parts: (string | null)[]): string => parts.filter((p): p is string => p != null).join(" · ");
+
+/* ── the hero OAS chart (B.1.1) ─────────────────────────────────────────── */
+
+type OasWindow = "10y" | "max";
+
+const WINDOW_OPTIONS = [
+  { id: "10y", label: "10Y" },
+  { id: "max", label: "MAX" },
 ];
 
-function chg(m: CreditMetrics, key: TierDef["key"]): number | null {
-  return m[`${key}_1w_change` as keyof CreditMetrics] as number | null;
-}
+/** The three dashed classification rules (credit.html:178 labels). Both
+ * series share the right price scale, so the IG rule sits at 150 on the HY
+ * axis too. Titles are decoration: the caption and the ladder carry the same
+ * thresholds as text. */
+const OAS_RULES: SpreadRule[] = [
+  { series: 0, price: 700, color: "rgba(240,80,63,.7)", title: "CRISIS · HY > 700" },
+  { series: 0, price: 400, color: "rgba(245,181,46,.6)", title: "STRESSED · HY > 400" },
+  { series: 1, price: 150, color: "rgba(88,184,230,.55)", title: "TIGHT · IG > 150" },
+];
 
-function oas(m: CreditMetrics, key: TierDef["key"]): number | null {
-  return m[`${key}_oas` as keyof CreditMetrics] as number | null;
-}
+const swatch = (color: string): CSSProperties => ({
+  display: "inline-block",
+  width: 14,
+  height: 2,
+  background: color,
+  verticalAlign: 3,
+  marginRight: 6,
+});
 
-function spark(m: CreditMetrics, key: TierDef["key"]): DatedValue[] {
-  return m[`${key}_sparkline` as keyof CreditMetrics] as DatedValue[];
-}
+function HeroOasChart({ m, win, onWindow }: { m: CreditMetrics; win: OasWindow; onWindow: (w: OasWindow) => void }) {
+  // Both series run over the exact same date set (245-251, moved); the 10Y
+  // cut is measured from the last served point, never the wall clock.
+  const pairs = useMemo(() => intersectByDate(m.hy_series, m.ig_series), [m.hy_series, m.ig_series]);
+  const plotted = useMemo(() => (win === "10y" ? sliceWindow(pairs, 10) : pairs), [pairs, win]);
+  const series = useMemo<SpreadSeries[]>(
+    () => [
+      { label: "HY OAS", color: "#f5b52e", lineWidth: 2, points: plotted.map((p) => ({ date: p.date, value: p.hy })) },
+      { label: "IG OAS", color: "#58b8e6", lineWidth: 1, points: plotted.map((p) => ({ date: p.date, value: p.ig })) },
+    ],
+    [plotted],
+  );
+  const ext = useMemo(() => windowExtremes(plotted), [plotted]);
+  const bands = useMemo(() => (ext ? bandsInWindow(NBER_BANDS, ext.first, ext.last) : []), [ext]);
+  const tercile = chartTercile(m.hy_pct_rank);
+  const range = ext ? `${fmtMonYr(ext.first)} to ${fmtMonYr(ext.last)}` : "no stored months";
+  const ariaLabel = `High-yield and investment-grade option-adjusted spreads, monthly, ${range}; dashed rules at HY 700, HY 400 and IG 150 bps; shaded NBER recessions`;
 
-/** Spread card — MoM change colors are INVERTED vs equities: widening (+) is
- * red, tightening (−) is green. StatTile's up-green arrow grammar would lie
- * here, so the card is bespoke. */
-function SpreadCard({ m, tier, big }: { m: CreditMetrics; tier: TierDef; big?: boolean }) {
-  const v = oas(m, tier.key);
-  const c = chg(m, tier.key);
-  const sp = spark(m, tier.key).map((p) => p.value);
-  if (v == null) return null;
-  const chgColor = c == null ? "var(--text-muted)" : c >= 0 ? "var(--neg-text)" : "var(--pos)";
   return (
-    <Card tone={tier.tone(v)}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-        <span style={eyebrowStyle}>
-          {tier.label}
-          <span style={{ color: "var(--text-muted)", textTransform: "none", letterSpacing: 0 }}>
-            {" "}
-            · {tier.name}
+    <div style={{ width: "100%", minWidth: 0 }}>
+      <div
+        style={{
+          ...capStyle,
+          marginTop: 0,
+          marginBottom: 8,
+          maxWidth: "none",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 18,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ display: "inline-flex", gap: 18, flexWrap: "wrap" }}>
+          <span>
+            <i aria-hidden="true" style={swatch("var(--amber)")} />
+            HY OAS · bps
+          </span>
+          <span>
+            <i aria-hidden="true" style={swatch("var(--link)")} />
+            IG OAS · bps
           </span>
         </span>
-        {sp.length >= 2 && <Sparkline values={sp} width={64} height={16} color="var(--accent)" />}
+        <Segmented mono label="OAS history window" options={WINDOW_OPTIONS} value={win} onChange={(id) => onWindow(id as OasWindow)} />
       </div>
-      <div
-        style={{
-          ...mono,
-          fontSize: big ? 26 : "var(--fs-value)",
-          fontWeight: 600,
-          letterSpacing: "var(--ls-numeric)",
-          marginTop: 6,
-        }}
-      >
-        {Math.round(v)} <span style={{ fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>bps</span>
-      </div>
-      <div style={{ ...mono, fontSize: "var(--fs-meta)", color: chgColor, marginTop: 2 }}>
-        {c == null ? "—" : `${c >= 0 ? "+" : ""}${Math.round(c)} bps vs prev month`}
-      </div>
-    </Card>
-  );
-}
-
-/** 4×4 credit-state transition matrix (monthly history, 3M or 6M ahead). */
-function TransitionMatrix({
-  matrix,
-  current,
-  title,
-  ariaLabel,
-  emptyStates = [],
-}: {
-  matrix: Record<string, Record<string, number>>;
-  current: string;
-  title: string;
-  /** Accessible name for the grid — the visible title is an eyebrow, so the
-   * ARIA table carries its own label ("… 3M" / "… 6M"). */
-  ariaLabel: string;
-  /** States with zero historical months — their rows render as "—", not as
-   * measured 0% cells (critique: a never-occurred state is empty, not calm). */
-  emptyStates?: string[];
-}) {
-  const { isNarrow } = useBreakpoint();
-  if (!matrix || !Object.keys(matrix).length) {
-    return <StateNote>Not enough monthly history for transition odds (needs 60 months).</StateNote>;
-  }
-  const cell = (from: string, to: string) => {
-    if (emptyStates.includes(from)) {
-      return (
-        <div key={to} role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "5px 8px", color: "var(--text-muted)" }}>
-          —
+      {plotted.length ? (
+        <SpreadLinesChart series={series} rules={OAS_RULES} bands={bands} height={250} ariaLabel={ariaLabel} />
+      ) : (
+        <StateNote>No stored spread history to plot.</StateNote>
+      )}
+      <Caption>
+        Spreads spike when lenders panic;{" "}
+        {bands.length ? (
+          <>
+            the shaded {bands.length === 1 ? "band marks" : "bands mark"} the {bandList(bands.map((b) => b.label))}{" "}
+            <Jargon term="NBER">NBER</Jargon> {bands.length === 1 ? "recession" : "recessions"}.
+          </>
+        ) : (
+          <>
+            no <Jargon term="NBER">NBER</Jargon> recession falls inside this window.
+          </>
+        )}
+        {tercile ? ` ${tercile}` : null}
+      </Caption>
+      {ext ? (
+        <div style={{ ...monoNoteStyle, marginTop: 6 }}>
+          {fmtMonYr(ext.first)} → {fmtMonYr(ext.last)} · HY high {n(ext.hyHigh.value)} bps ({fmtMonYr(ext.hyHigh.date)}) · IG low{" "}
+          {n(ext.igLow.value)} bps ({fmtMonYr(ext.igLow.date)})
         </div>
-      );
-    }
-    const p = matrix[from]?.[to] ?? 0;
-    const onDiag = from === to;
-    const bg =
-      p >= 0.5
-        ? onDiag
-          ? "rgba(63,185,80,.12)"
-          : "rgba(74,158,255,.12)"
-        : p >= 0.2
-          ? "rgba(139,148,158,.10)"
-          : "transparent";
-    const color = p >= 0.2 ? "var(--text)" : "var(--text-muted)";
-    return (
-      <div
-        key={to}
-        role="cell"
-        style={{
-          ...mono,
-          fontSize: "var(--fs-meta)",
-          textAlign: "right",
-          padding: "5px 8px",
-          background: bg,
-          color,
-          borderRadius: "var(--r-xs)",
-        }}
-      >
-        {Math.round(p * 100)}%
-      </div>
-    );
-  };
-  return (
-    <div>
-      <div style={{ ...eyebrowStyle, marginBottom: 6 }}>{title}</div>
-      {/* The label column plus four state columns need ~360px before the
-          "→ Stressed" headers start wrapping. Below 768 the matrix claims that
-          width and scrolls inside its own card rather than pushing the page
-          sideways; at and above 768 there is no floor, so the desk layout sizes
-          the tracks exactly as it always did. */}
-      <ScrollTable stickyFirst={false} label={ariaLabel}>
-        <div
-          role="table"
-          aria-label={ariaLabel}
-          style={{ display: "grid", gridTemplateColumns: "64px repeat(4, 1fr)", gap: 2, alignItems: "center", minWidth: isNarrow ? 360 : undefined }}
-        >
-          {/* display:contents keeps the ARIA rows out of the layout — the cells
-              stay direct participants of this one grid. */}
-          <div role="row" style={{ display: "contents" }}>
-            <span role="columnheader" aria-label="From state" />
-            {CREDIT_STATES.map((s) => (
-              <span key={s} role="columnheader" style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-wide)", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "right", padding: "0 8px" }}>
-                → {s}
-              </span>
-            ))}
-          </div>
-          {CREDIT_STATES.map((from) => (
-            <div key={from} role="row" style={{ display: "contents" }}>
-              <span
-                role="rowheader"
-                style={{
-                  ...mono,
-                  fontSize: "var(--fs-meta)",
-                  color: from === current ? STATE_COLORS[from] : "var(--text-muted)",
-                  fontWeight: from === current ? 700 : 400,
-                }}
-              >
-                {from}
-              </span>
-              {CREDIT_STATES.map((to) => cell(from, to))}
-            </div>
-          ))}
-        </div>
-      </ScrollTable>
+      ) : null}
     </div>
   );
 }
 
+/* ── screen ────────────────────────────────────────────────────────────── */
+
 export default function CreditScreen() {
   const q = useCreditMetrics();
-  const m = q.data;
-  const { isNarrow, isMobile } = useBreakpoint();
+  const m: CreditMetrics | null = q.data ?? null;
+  // The snapshot rule (03 B.1): no error copy while cached data is on screen.
+  const status: CreditStatus = m ? "ready" : q.isError ? "error" : "loading";
+  const [win, setWin] = useState<OasWindow>("10y");
   useHashScroll(m);
 
-  if (!m) {
-    return (
-      <Card>
-        <StateNote loading={q.isLoading} error={q.isError} />
-      </Card>
+  const asOfIso = m?.hy_series.length ? m.hy_series[m.hy_series.length - 1].date : null;
+  const fresh = assessFreshness(asOfIso, "monthly");
+  const copy = m ? creditHero(m) : null;
+
+  /* ── hero ────────────────────────────────────────────────────────────── */
+  const heroShared = {
+    id: "credit-hero",
+    eyebrow: "Credit conditions",
+    live: m != null && fresh.state === "current",
+    actions: HERO_ACTIONS,
+    // No absence before an answer: the chip waits for the payload (or its
+    // error) instead of printing "Unavailable" while the request is pending.
+    freshness: m || q.isError ? [{ noun: "ICE BofA via FRED", info: fresh }] : undefined,
+  };
+  let hero: ReactNode;
+  if (m && copy) {
+    hero = (
+      <TabHero
+        {...heroShared}
+        headline={copy.headline}
+        pill={copy.pill ? <span title={`ICE BofA US High Yield OAS, ${m.data_as_of ?? "latest stored month"}`}>{copy.pill}</span> : undefined}
+        pillTone={copy.pillTone}
+        glow={copy.glow}
+        subhead={copy.subhead}
+        lede={copy.lede}
+        footnote={copy.footnote}
+        chart={<HeroOasChart m={m} win={win} onWindow={setWin} />}
+        placeholder
+      />
     );
+  } else if (q.isError) {
+    hero = (
+      <TabHero
+        {...heroShared}
+        headline={<span style={stateHeadline}>Credit metrics unavailable: the data service did not answer. The read resumes when it is back.</span>}
+        pill="Unavailable"
+        pillTone="gray"
+        glow={CREDIT_GLOW.gray}
+        placeholder
+      />
+    );
+  } else {
+    hero = <TabHero {...heroShared} headline={<span style={stateHeadline}>Reading credit spreads…</span>} glow={CREDIT_GLOW.gray} placeholder />;
   }
 
-  // LineChart maps x by index PER SERIES, so both series must run over the
-  // exact same date set — intersect them (audit: filtering only IG stretched
-  // a shorter IG curve across the full width, shifting it against HY).
-  const igByDate = new Map(m.ig_series.map((p) => [p.date, p.value]));
-  const commonDates = m.hy_series.filter((p) => igByDate.has(p.date));
-  const hySeries = commonDates.map((p) => ({ x: p.date, y: p.value }));
-  const igSeries = commonDates.map((p) => ({ x: p.date, y: igByDate.get(p.date) as number }));
-
-  const stay3 =
-    m.transition_3m?.[m.credit_label]?.[m.credit_label] != null
-      ? Math.round(m.transition_3m[m.credit_label][m.credit_label] * 100)
-      : null;
-  // The client does not rank credit states or sum a "deterioration"
-  // probability — that ordinality belongs to src/analytics/credit.py (audit).
-  // The matrices speak for themselves; stay-probability is a direct read.
-
-  const distressPct = m.distress_ratio;
-
-  /* ── desk read + the ladder tension, stated once, up top ──────────── */
-  const asOfIso = m.hy_series.length ? m.hy_series[m.hy_series.length - 1].date : null;
-  const stateTone =
-    m.credit_label === "Normal" ? "pos" : m.credit_label === "Tight" ? "accent" : m.credit_label === "Stressed" ? "warn" : "neg";
-  const tension = distressPct != null && distressPct >= 80 && (m.credit_label === "Normal" || m.credit_label === "Tight");
-  const ledger: LedgerItem[] = [
-    ...(m.hy_oas != null
-      ? [
-          {
-            label: "HY OAS",
-            value: `${Math.round(m.hy_oas)} bps${m.hy_1w_change != null ? ` · ${m.hy_1w_change >= 0 ? "+" : ""}${Math.round(m.hy_1w_change)} MoM` : ""}${
-              m.hy_pct_rank != null ? ` · ${ordinal(m.hy_pct_rank)} pct` : ""
-            }`,
-          },
-        ]
-      : []),
-    ...(m.ig_oas != null
-      ? [
-          {
-            label: "IG OAS",
-            value: `${Math.round(m.ig_oas)} bps${m.ig_1w_change != null ? ` · ${m.ig_1w_change >= 0 ? "+" : ""}${Math.round(m.ig_1w_change)} MoM` : ""}${
-              m.ig_pct_rank != null ? ` · ${ordinal(m.ig_pct_rank)} pct` : ""
-            }`,
-          },
-        ]
-      : []),
-    ...(m.ccc_oas != null && distressPct != null
-      ? [
-          {
-            label: "CCC distress",
-            value: `${Math.round(m.ccc_oas)} bps · ${distressPct.toFixed(0)}% of the 1,000 bps line`,
-            tone: distressPct >= 100 ? "var(--neg-text)" : distressPct >= 80 ? "var(--warn-hot)" : "var(--text)",
-          },
-        ]
-      : []),
-    ...(stay3 != null ? [{ label: "Stays " + m.credit_label + " · 3m", value: `${stay3}% of past months` }] : []),
-    ...(m.lbo_all_in_cost ? [{ label: "LBO all-in", value: `${m.lbo_all_in_cost} · Fed Funds + HY spread` }] : []),
+  /* ── summary rows (the desk-read ledger, re-homed; B.2) ──────────────── */
+  const note = <StateNote loading={status === "loading"} error={status === "error"} />;
+  const val = (f: (x: CreditMetrics) => ReactNode): ReactNode => (m ? f(m) : note);
+  const stay3 = m?.transition_3m?.[m.credit_label]?.[m.credit_label];
+  const rows: SummaryRow[] = [
+    {
+      id: "hy",
+      label: "HY OAS",
+      value: val((x) =>
+        x.hy_oas != null
+          ? join([`${n(x.hy_oas)} bps`, x.hy_1w_change != null ? `${fmtBps(x.hy_1w_change)} MoM` : null, x.hy_pct_rank != null ? `${ordinal(x.hy_pct_rank)} percentile since 1996` : null])
+          : DASH,
+      ),
+    },
+    {
+      id: "ig",
+      label: "IG OAS",
+      value: val((x) =>
+        x.ig_oas != null
+          ? join([`${n(x.ig_oas)} bps`, x.ig_1w_change != null ? `${fmtBps(x.ig_1w_change)} MoM` : null, x.ig_pct_rank != null ? `${ordinal(x.ig_pct_rank)} percentile since 1996` : null])
+          : DASH,
+      ),
+    },
+    {
+      id: "ccc",
+      label: "CCC distress",
+      value: val((x) =>
+        x.ccc_oas != null
+          ? join([`${n(x.ccc_oas)} bps`, x.ccc_1w_change != null ? `${fmtBps(x.ccc_1w_change)} MoM` : null, x.distress_ratio != null ? `${x.distress_ratio.toFixed(0)}% of the 1,000 bps line` : null])
+          : DASH,
+      ),
+      tone: m?.distress_ratio != null ? (m.distress_ratio >= 100 ? "var(--neg)" : m.distress_ratio >= 80 ? "var(--warn-hot)" : undefined) : undefined,
+    },
+    {
+      id: "ratio",
+      label: "HY / IG ratio",
+      value: val((x) => (x.hy_ig_ratio != null ? `${x.hy_ig_ratio.toFixed(2)}× · ${ratioNormWord(x.hy_ig_ratio)} the ~3.5× long-run norm` : DASH)),
+    },
+    {
+      id: "stay3",
+      label: m ? `Stays ${m.credit_label} · 3m` : "Stay odds · 3m",
+      value: val((x) =>
+        stay3 != null ? `${Math.round(stay3 * 100)}% of past months` : Object.keys(x.transition_3m ?? {}).length ? DASH : "not enough monthly history (needs 60 months)",
+      ),
+    },
+    {
+      id: "lbo",
+      label: "LBO all-in",
+      value: val((x) => (x.lbo_all_in_cost ? `${x.lbo_all_in_cost} · Fed Funds + HY spread` : DASH)),
+    },
   ];
 
+  /* ── status strip: the quality-ladder read, linking to the ladder ─────── */
+  const words = ladderStrip(m, status);
+  const strip: StatusStripProps = {
+    ...words,
+    detail: words.detail || undefined,
+    to: STRIP_TARGET,
+    ariaLabel: `${words.title}. ${words.detail ? `${words.detail}. ` : ""}Jump to the quality ladder.`,
+  };
+
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <DeskRead
-        eyebrow="Desk read · Credit"
-        live={assessFreshness(asOfIso, "monthly").state === "current"}
-        badge={
-          <Tag tone={stateTone} size="md" uppercase={false}>
-            {m.credit_label} credit
-          </Tag>
-        }
-        conclusion={
-          m.hy_oas != null && m.ig_oas != null
-            ? `Credit reads ${m.credit_label}: high yield at ${Math.round(m.hy_oas)} bps${
-                m.hy_pct_rank != null ? `, the ${ordinal(m.hy_pct_rank)} percentile since 1996,` : ""
-              } with investment grade at ${Math.round(m.ig_oas)} bps.`
-            : `Credit reads ${m.credit_label}.`
-        }
-        why={
-          m.hy_pct_rank != null
-            ? m.hy_pct_rank <= 33
-              ? "Lenders are pricing almost no default stress: spreads this tight leave little cushion, so the risk is asymmetric to widening, not to further tightening."
-              : m.hy_pct_rank <= 67
-                ? "Spreads sit mid-range by history: neither stress nor complacency, so credit is not the deciding input for the regime call right now."
-                : "Lenders are charging real default risk: wide spreads are the credit market's own recession vote and feed the recession model directly."
-            : undefined
-        }
-        ledger={ledger}
-        freshness={[{ noun: "ICE BofA via FRED", info: assessFreshness(asOfIso, "monthly") }]}
-      />
-
-      {/* The callout carries no second rail: the desk read is the screen's one
-          model-output mark above the fold (review P3-7). */}
-      {tension && m.ccc_oas != null && distressPct != null ? (
-        <Card tone="watch">
-          <div style={{ ...eyebrowStyle, color: "var(--warn)" }}>Analytical callout · quality ladder tension</div>
-          <p
-            className="mrr-prose"
-            style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body)", lineHeight: "var(--lh-body)", color: "var(--text)", margin: "8px 0 0", textWrap: "pretty" }}
-          >
-            The index says {m.credit_label}; the weakest rung says stress. CCC spreads sit at {Math.round(m.ccc_oas)} bps,{" "}
-            {distressPct.toFixed(0)}% of the 1,000 bps <Jargon term="distress">distress</Jargon> line, while the broad
-            high-yield index holds {m.hy_oas != null ? Math.round(m.hy_oas) : "—"} bps. Both are true: the two readings
-            describe different rungs of the ladder.
-          </p>
-          <p
-            className="mrr-prose"
-            style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", lineHeight: 1.6, color: "var(--text-2)", margin: "6px 0 0", textWrap: "pretty" }}
-          >
-            What it means: the market is charging default risk only for the marginal borrower. Watch single-B
-            {m.b_oas != null ? ` (${Math.round(m.b_oas)} bps today)` : ""}: stress migrating from CCC into B is how a{" "}
-            {m.credit_label} state turns Stressed (HY above 400 bps).
-          </p>
-        </Card>
-      ) : null}
-
-      {/* ── OAS dashboard ─────────────────────────────────────────────── */}
-      <section id="oas">
-        <SectionHeader
-          title="Credit conditions"
-          right={
-            <>
-              <Tag tone={m.credit_label === "Normal" ? "pos" : m.credit_label === "Tight" ? "accent" : m.credit_label === "Stressed" ? "warn" : "neg"} size="sm">
-                {m.credit_label}
-              </Tag>
-              <span style={{ marginLeft: 8 }}>
-                ICE BofA via FRED · monthly · latest {m.data_as_of ?? "—"}
-              </span>
-            </>
-          }
-        />
-        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12 }}>
-          {HERO_TIERS.map((t) => (
-            <SpreadCard key={t.key} m={m} tier={t} big />
-          ))}
-        </div>
-        <Caption>
-          <Jargon term="OAS">Option-adjusted spreads</Jargon>: the extra yield corporate bonds pay
-          over Treasuries.{" "}
-          {m.hy_oas != null && m.hy_pct_rank != null && (
-            <>
-              High yield sits at {Math.round(m.hy_oas)} bps ({(m.hy_oas / 100).toFixed(2)}pp), the{" "}
-              {ordinal(m.hy_pct_rank)} <Jargon term="percentile">percentile</Jargon> of history since
-              1996, tighter than {100 - Math.round(m.hy_pct_rank)}% of it.
-            </>
-          )}{" "}
-          {m.ig_oas != null && m.ig_pct_rank != null && (
-            <>
-              Investment grade holds {Math.round(m.ig_oas)} bps, its {ordinal(m.ig_pct_rank)}{" "}
-              percentile.
-            </>
-          )}
-        </Caption>
-
-        <Card style={{ marginTop: 12 }}>
-          <LineChart
-            series={[
-              { label: "HY OAS", color: "var(--warn-hot)", points: hySeries },
-              { label: "IG OAS", color: "var(--accent)", points: igSeries },
-            ]}
-            height={190}
-            yFmt={(v) => `${Math.round(v)} bps`}
-            bands={NBER_BANDS}
-            caption="High-yield and investment-grade option-adjusted spreads, monthly history"
-          />
-          <Caption>
-            Spreads spike when lenders panic; the shaded bands mark the 2001, 2008–09 and 2020{" "}
-            <Jargon term="NBER">NBER</Jargon> recessions.{" "}
-            {m.hy_pct_rank != null &&
-              (m.hy_pct_rank <= 33
-                ? "Today's readings sit in the tight third of history: credit markets price almost no default stress."
-                : m.hy_pct_rank <= 67
-                  ? "Today's readings sit mid-range by history: neither stress nor complacency."
-                  : "Today's readings sit in the wide third of history: lenders are charging real default risk.")}
-          </Caption>
-        </Card>
-      </section>
-
-      {/* ── Quality ladder ────────────────────────────────────────────── */}
-      <section id="quality-ladder">
-        <SectionHeader title="Quality ladder" right="BB · B · CCC detail · monthly" />
-        <div
-          style={{
-            display: "grid",
-            // Three rungs stay a row while they fit; the tablet tier packs what
-            // it can (2 + 1) and the phone stacks the ladder top to bottom.
-            gridTemplateColumns: isMobile
-              ? "minmax(0,1fr)"
-              : isNarrow
-                ? "repeat(auto-fit, minmax(180px,1fr))"
-                : "repeat(3,minmax(0,1fr))",
-            gap: 12,
-          }}
-        >
-          {LADDER_TIERS.map((t) => (
-            <SpreadCard key={t.key} m={m} tier={t} />
-          ))}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12, marginTop: 12 }}>
-          <Card>
-            <div style={eyebrowStyle}>HY / IG ratio</div>
-            <div style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, marginTop: 6 }}>
-              {m.hy_ig_ratio != null ? `${m.hy_ig_ratio.toFixed(2)}×` : "—"}
-            </div>
-            <Caption>
-              High-yield trades at {m.hy_ig_ratio?.toFixed(2)}× the investment-grade spread,{" "}
-              {m.hy_ig_ratio != null && Math.abs(m.hy_ig_ratio - 3.5) <= 0.1
-                ? "right on"
-                : m.hy_ig_ratio != null && Math.abs(m.hy_ig_ratio - 3.5) <= 0.75
-                  ? "near"
-                  : m.hy_ig_ratio != null && m.hy_ig_ratio > 3.5
-                    ? "above"
-                    : "below"}{" "}
-              the ~3.5× long-run norm (2008 peaked at 8.2×). A rising ratio means the market is
-              punishing weak credits faster than strong ones.
-            </Caption>
-          </Card>
-          <Card tone={distressPct != null && distressPct >= 100 ? "risk" : "default"}>
-            <div style={eyebrowStyle}>Distress ratio</div>
-            <div style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, marginTop: 6 }}>
-              {distressPct != null ? `${distressPct.toFixed(1)}%` : "—"}
-            </div>
-            {distressPct != null && (
-              <>
-                <div
-                  style={{
-                    height: 4,
-                    borderRadius: "var(--r-xs)",
-                    background: "var(--surface-raised)",
-                    overflow: "hidden",
-                    marginTop: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      height: "100%",
-                      width: `${Math.min(distressPct, 100)}%`,
-                      background: distressPct >= 100 ? "var(--neg)" : distressPct >= 80 ? "var(--warn-hot)" : "var(--warn)",
-                    }}
-                  />
-                </div>
-                {distressPct > 100 && (
-                  <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--neg-text)", marginTop: 3 }}>
-                    ▲ {(distressPct - 100).toFixed(1)}pp past the line; the bar caps at 100%
-                  </div>
-                )}
-              </>
-            )}
-            <Caption>
-              {m.ccc_oas != null && (
-                <>
-                  CCC spreads sit at {Math.round(m.ccc_oas)} bps, {distressPct?.toFixed(0)}% of the
-                  1,000 bps <Jargon term="distress">distress</Jargon> line. The weakest credits run
-                  hot even while the broad market reads {m.credit_label} at{" "}
-                  {m.hy_oas != null ? Math.round(m.hy_oas) : "—"} bps; the two statements are about
-                  different rungs of the ladder, not a contradiction.
-                </>
-              )}
-            </Caption>
-          </Card>
-        </div>
-
-        <Card style={{ marginTop: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 20 }}>
-            <TransitionMatrix
-              matrix={m.transition_3m}
-              current={m.credit_label}
-              title="3-month transition odds"
-              ariaLabel="Credit-state transition matrix 3M"
-              emptyStates={m.tight_count === 0 ? ["Tight"] : []}
-            />
-            <TransitionMatrix
-              matrix={m.transition_6m}
-              current={m.credit_label}
-              title="6-month transition odds"
-              ariaLabel="Credit-state transition matrix 6M"
-              emptyStates={m.tight_count === 0 ? ["Tight"] : []}
-            />
-          </div>
-          <Caption>
-            A <Jargon term="transition matrix">transition matrix</Jargon> counted from monthly
-            credit states since 1996.{" "}
-            {stay3 != null && (
-              <>
-                From today&apos;s {m.credit_label} state, spreads stayed {m.credit_label} three
-                months later {stay3}% of the time
-              </>
-            )}
-            .{m.tight_count < 5 && (
-              <>
-                {" "}
-                {m.tight_count === 0
-                  ? "The Tight state has never occurred since 1996; its row renders empty, not zero-risk."
-                  : `Tight-state rows rest on only ${m.tight_count} historical months; treat those odds as anecdote.`}
-              </>
-            )}
-          </Caption>
-        </Card>
-      </section>
-
-      {/* ── Financing conditions (sole owner; Tools · LBO links here) ── */}
-      <section id="financing">
-        <SectionHeader title="Financing conditions" right="Fed Funds + HY OAS · monthly" />
-        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12 }}>
-          <Card accentBar>
-            <div style={eyebrowStyle}>LBO all-in cost</div>
-            <div style={{ ...mono, fontSize: 26, fontWeight: 600, marginTop: 6 }}>
-              {m.lbo_all_in_cost ?? "—"}
-            </div>
-            <Caption>
-              Fed Funds plus the high-yield spread: the rough rate a leveraged buyout pays on its
-              debt. Pre-GFC deals borrowed near ~7.2%; the 2022 peak touched ~11.4%.
-            </Caption>
-            <div style={{ marginTop: 8 }}>
-              <Link
-                to="/app/tools"
-                style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--accent)", letterSpacing: "var(--ls-micro)" }}
-              >
-                → Model a deal at this rate in Tools · LBO
-              </Link>
-            </div>
-          </Card>
-          <Card>
-            <div style={eyebrowStyle}>Classification ladder</div>
-            <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-              {(
-                [
-                  ["Normal", "HY ≤ 400 bps and IG ≤ 150 bps"],
-                  ["Tight", "IG > 150 bps while HY holds ≤ 400"],
-                  ["Stressed", "HY > 400 bps"],
-                  ["Crisis", "HY > 700 bps"],
-                ] as const
-              ).map(([state, rule]) => (
-                <div
-                  key={state}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    padding: "4px 8px",
-                    borderRadius: "var(--r-xs)",
-                    background: state === m.credit_label ? "rgba(74,158,255,.08)" : "transparent",
-                    borderLeft:
-                      state === m.credit_label
-                        ? `3px solid ${STATE_COLORS[state]}`
-                        : "3px solid transparent",
-                  }}
-                >
-                  <span style={{ ...mono, fontSize: "var(--fs-meta)", color: STATE_COLORS[state], fontWeight: state === m.credit_label ? 700 : 400 }}>
-                    {state}
-                    {state === m.credit_label ? " ← today" : ""}
-                  </span>
-                  <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>{rule}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-      </section>
-
-      <div style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: ".06em", color: "var(--text-muted)" }}>
-        ICE BofA option-adjusted spread indices via FRED, monthly observations · classification and
-        transition odds computed by the same analytics module the memo reads.
+    <div className="mrr-credit">
+      {/* ── Hero row ────────────────────────────────────────────────── */}
+      <div className="mrr-hero-row">
+        {hero}
+        <SummaryCard id="credit-summary" as="h2" title="Credit summary" rows={rows} status={strip} />
       </div>
+
+      {/* ── Spread monitor, full width ───────────────────────────────── */}
+      <SpreadMonitor m={m} status={status} />
+
+      {/* ── Ladder row: quality ladder | credit state odds ───────────── */}
+      <div className="mrr-credit-ladder-row">
+        <QualityLadder m={m} status={status} />
+        <CreditStateOdds m={m} status={status} />
+      </div>
+
+      {/* ── Financing conditions (sole owner of the all-in tile) ─────── */}
+      <FinancingConditions m={m} status={status} />
+
+      {/* ── source line ──────────────────────────────────────────────── */}
+      <DisclosureLine>
+        ICE BofA option-adjusted spread indices via FRED, monthly observations · classification checks rules top-down (Crisis, then
+        Stressed, then Tight, else Normal) · transition odds are empirical frequencies from stored monthly states · classification and
+        transition odds computed by the same analytics module the memo reads.
+      </DisclosureLine>
     </div>
   );
 }

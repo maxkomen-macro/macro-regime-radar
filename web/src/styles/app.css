@@ -1401,6 +1401,42 @@ main .mrr-scroll {
   display: grid;
   gap: var(--gap-panel);
 }
+/* Credit (Phase 6, checklist 06 A.10 / B.0): the same one-column panel
+   stack, hero-row margin zeroed. The ladder row pairs the quality ladder with
+   the credit state odds (`minmax(0,1.25fr) minmax(0,1fr)`, credit.html:183),
+   one column below 1200; the ladder body puts the chart beside the two 190px
+   tiles, one column below 768; the financing grid pairs the all-in tile with
+   the classification ladder, one column below 1024; the spread monitor is
+   five SignalCards across at 1200 and up, auto-fit below, one column below
+   480 (media rules in the responsive blocks). */
+.mrr-credit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-credit > .mrr-hero-row {
+  margin-bottom: 0;
+}
+.mrr-credit-ladder-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--gap-col);
+}
+.mrr-credit-ladder-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: var(--gap-tile);
+}
+.mrr-credit-fin {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--gap-tile);
+}
+.mrr-credit-monitor {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
 /* The tape's ticker button (checklist 05 B.7): the keyboard and assistive
    path to the chart panel; the whole row is the pointer target. The selected
    row carries a 3px link rail on its pinned first cell. */
@@ -1515,6 +1551,20 @@ main .mrr-scroll {
   .mrr-mkt-body {
     grid-template-columns: 1fr;
   }
+  .mrr-credit-ladder-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-credit-monitor {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+/* Below 1024 the financing grid stacks the all-in tile over the
+   classification ladder (Credit, Phase 6). */
+@media (max-width: 1023.98px) {
+  .mrr-credit-fin {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Below 860 the sidebar is not rendered (useBreakpoint().shellCompact swaps
@@ -1577,6 +1627,9 @@ main .mrr-scroll {
   .mrr-lab-playbook {
     grid-template-columns: minmax(0, 1fr);
   }
+  .mrr-credit-ladder-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .assistant-panel {
     right: 8px;
     left: 8px;
@@ -1616,6 +1669,9 @@ main .mrr-scroll {
   }
   .mrr-dash-levels,
   .mrr-dash-glance {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-credit-monitor {
     grid-template-columns: minmax(0, 1fr);
   }
 }

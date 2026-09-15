@@ -430,6 +430,37 @@ with `th[scope="row"]` metric names, Level and MoM only); (5) the `DisclosureLin
 Nothing on the page is re-derived in the browser: the risk word counts served
 `ret_1d` signs, and every figure is a served field or its formatted value.
 
+**Credit composition (Phase 6, 2026-09-15).** Inside `<div class="mrr-credit">` (the
+same one-column panel stack, hero-row margin zeroed), top to bottom: (1)
+`.mrr-hero-row`: `TabHero id="credit-hero"` (h1 = the served `credit_label`, "Normal" /
+"Tight" / "Stressed" / "Crisis", with the pill "HY OAS {n} bps"; the subhead "High
+yield at {n} bps, the {Nth} percentile since 1996, with investment grade at {n} bps.";
+the lede's tercile sentence plus the CCC / BB / B month sentence (and, for Tight, the
+state explained with its Jargon affordance); the HY / IG OAS history on Lightweight
+Charts as the signature chart, `SpreadLinesChart`, with the three dashed
+classification rules as price lines, the NBER bands as a full-height histogram on a
+hidden scale, the mono `OAS history window` 10Y / MAX Segmented in the legend row,
+the NBER caption and the mono range line; the `ICE BofA via FRED` freshness chip)
+beside `SummaryCard id="credit-summary"` ("Credit summary": HY OAS · IG OAS · CCC
+distress · HY / IG ratio · Stays {label} · 3m · LBO all-in, and the quality-ladder
+strip worded from `ladderStrip`, amber when CCC widened more than BB and B, under the
+tension rule, or past the 400 bps rule, linking to `#quality-ladder`); (2) `<section
+id="oas">` Spread monitor, full width (`.mrr-credit-monitor`: five `SignalCard`s, HY
+and IG with the "Percentile since 1996" meter, BB / Single-B / CCC without); (3)
+`.mrr-credit-ladder-row` (`minmax(0,1.25fr) minmax(0,1fr)` at 1200 and up, one column
+below): `<section id="quality-ladder">` (`.mrr-credit-ladder-body`: the BB / B / CCC
+six-month chart beside the HY / IG ratio and distress ratio tiles, one column below
+768; the tension callout only while the distress ratio is 80% or more under a Normal
+or Tight label) | `<section id="credit-state-odds">` (`HeatMatrix preset="transition"`
+behind the `Transition horizon` 3 months / 6 months Segmented, three stat tiles, the
+caption); (4) `<section id="financing">` (`.mrr-credit-fin`, one column below 1024:
+the LBO all-in tile with the Fed funds + HY OAS stacked bar from `/api/lbo/defaults`,
+and the classification ladder with today's rule highlighted); (5) the
+`DisclosureLine`. Nothing on the page is re-derived in the browser: every figure is a
+served field or its formatted value; the only client math is the ten-year window cut
+(measured from the last served point, never the wall clock), the plotted window's
+extremes and the band list.
+
 **Gaps.** 16px between top-level columns (`--gap-col`), 14px between stacked panels
 (`--gap-panel`), 12px between tiles inside a panel (`--gap-tile`). Panel padding
 `16px 18px 18px`; tile padding 14 to 16px. The old 2px-increment spacing scale
@@ -850,6 +881,10 @@ Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-15 Phase 6: Credit rebuilt on TabHero / SummaryCard; hero OAS chart on
+  Lightweight Charts (dashed rules, NBER bands, 10Y / MAX); spread monitor on
+  SignalCard; transition odds on HeatMatrix behind a 3m/6m Segmented; the Tight
+  glossary entry
 - 2026-09-15 Phase 5: Markets rebuilt on TabHero / SummaryCard; tape on DataTable
   groups (nine columns, Macro / Single names toggle); single-name panel with 20-day
   average, News disclosure; local old-palette literals removed
