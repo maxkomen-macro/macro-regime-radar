@@ -1097,8 +1097,17 @@ main .mrr-scroll {
 }
 
 /* House slider, second generation: the input is a 28px-tall transparent hit
-   area over a 4px track drawn by the wrapper (no gradients), with an 18px
-   thumb. Keyboard focus rings the whole row. */
+   area over a 4px track drawn by the wrapper (no gradients). Redesign Phase 2
+   (checklist 02 B.12, recession.html): 16px round white thumb with a 4px
+   solid ring (link blue; amber while the row is changed, risk G5 default),
+   a 1px "current reading" tick, rows divided by --line-2. The row's
+   data-changed attribute is set by SliderRow. Keyboard focus rings the input. */
+.mrr-slider-row {
+  border-bottom: 1px solid var(--line-2);
+}
+.mrr-slider-row:last-child {
+  border-bottom: 0;
+}
 .mrr-slider-wrap {
   position: relative;
   height: 28px;
@@ -1111,15 +1120,26 @@ main .mrr-scroll {
   left: 0;
   top: 12px;
   height: 4px;
-  border-radius: var(--r-xs);
+  border-radius: 2px;
   pointer-events: none;
 }
 .mrr-slider-track {
   right: 0;
-  background: var(--surface-raised);
+  background: var(--track);
 }
 .mrr-slider-fill {
-  background: var(--accent);
+  background: var(--link);
+}
+.mrr-slider-row[data-changed="true"] .mrr-slider-fill {
+  background: var(--amber);
+}
+.mrr-slider-tick {
+  position: absolute;
+  top: 7px;
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
 }
 .mrr-slider {
   appearance: none;
@@ -1132,6 +1152,10 @@ main .mrr-scroll {
   cursor: pointer;
   outline-offset: 2px;
 }
+.mrr-slider:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
 .mrr-slider::-webkit-slider-runnable-track {
   height: 4px;
   background: transparent;
@@ -1139,26 +1163,42 @@ main .mrr-scroll {
 .mrr-slider::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  margin-top: -7px;
-  border-radius: var(--r-sm);
-  background: var(--text);
-  border: 1px solid var(--line-strong);
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 4px rgba(88, 184, 230, 0.2);
 }
 .mrr-slider::-moz-range-track {
   height: 4px;
   background: transparent;
 }
 .mrr-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: var(--r-sm);
-  background: var(--text);
-  border: 1px solid var(--line-strong);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 4px rgba(88, 184, 230, 0.2);
+}
+.mrr-slider-row[data-changed="true"] .mrr-slider::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(245, 181, 46, 0.2);
+}
+.mrr-slider-row[data-changed="true"] .mrr-slider::-moz-range-thumb {
+  box-shadow: 0 0 0 4px rgba(245, 181, 46, 0.2);
 }
 .mrr-slider:disabled {
   cursor: default;
+}
+.mrr-slider:disabled::-webkit-slider-thumb {
+  background: var(--text-3);
+  box-shadow: none;
+}
+.mrr-slider:disabled::-moz-range-thumb {
+  background: var(--text-3);
+  box-shadow: none;
 }
 
 /* Typed numeric field that pairs with a slider. */
@@ -1193,25 +1233,34 @@ main .mrr-scroll {
   appearance: textfield;
 }
 
-/* Quiet action button (Reset, Show more): text-first, hairline. */
+/* Small ghost button (Reset, Show more): the mockup .btn-ghost at 30px
+   (redesign Phase 2, checklist 02 B.18). .mrr-btn-accent keeps the link tint;
+   .mrr-btn-primary is the white hero primary for a screen composing it
+   outside TabHero. The 44px data-touch floor is kept. */
 .mrr-btn {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   background: none;
-  border: 0.5px solid var(--line);
-  border-radius: var(--r-xs);
-  color: var(--text-2);
+  border: 1px solid var(--line-white-30);
+  border-radius: var(--r-ctl);
+  color: #fff;
   font-family: var(--font-ui);
-  font-size: var(--fs-body-s);
-  min-height: 28px;
-  padding: 3px 10px;
+  font-weight: 500;
+  font-size: 12.5px;
+  line-height: 1;
+  min-height: 30px;
+  padding: 0 12px;
   cursor: pointer;
 }
 .mrr-btn:hover {
-  color: var(--text);
-  border-color: var(--line-strong);
+  border-color: #fff;
 }
 .mrr-btn:disabled {
-  color: var(--text-muted);
+  color: var(--text-4);
+  border-color: var(--line-white-14);
   cursor: default;
 }
 .mrr-btn[data-touch="true"] {
@@ -1219,8 +1268,62 @@ main .mrr-scroll {
   padding: 10px 14px;
 }
 .mrr-btn-accent {
-  color: var(--accent);
-  border-color: var(--accent-line);
+  color: var(--link);
+  border-color: var(--link-a32);
+}
+.mrr-btn-accent:hover {
+  border-color: var(--link);
+}
+.mrr-btn-primary {
+  background: #fff;
+  color: #0b1117;
+  border-color: #fff;
+}
+.mrr-btn-primary:disabled {
+  background: var(--line-white-14);
+  color: var(--text-4);
+  border-color: transparent;
+}
+
+/* ── Redesign Phase 2 shared rules (checklist 02, pseudo-classes only) ────
+   Components style themselves inline; these carry what inline cannot. */
+
+/* Segmented (core/Segmented): unpressed option brightens on hover. The custom
+   property covers an inline `color: var(--seg-fg, var(--text-2))`. */
+.mrr-seg button:hover:not([aria-pressed="true"]):not(:disabled) {
+  color: var(--text);
+  --seg-fg: var(--text);
+}
+
+/* Section-header link action (mockup .link): text plus the 16px arrow. */
+.mrr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--link);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+/* The mono footer line that closes every tab (mockup .disclosure). */
+.mrr-disclosure-line {
+  margin: 18px 0 0;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.03em;
+  color: var(--text-4);
+  max-width: 1100px;
+}
+
+/* Hero row (spec section 4): TabHero beside the 432px SummaryCard; one
+   column below 1200 (media rule in the responsive block). */
+.mrr-hero-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--summary-w);
+  gap: var(--gap-col);
+  margin-bottom: var(--gap-panel);
 }
 
 /* Analyst markdown: model prose is set like memo body, with lists and code
@@ -1274,11 +1377,19 @@ main .mrr-scroll {
 
 /* ── Responsive (spec §2; `.98` upper bounds like useBreakpoint.ts) ─────── */
 
-/* Below 1200 the strip becomes two columns (the hero-row stacking belongs to
-   Phase 2's .hero-row). */
+/* Below 1200 the strip becomes two columns, the hero row stacks the summary
+   card under the hero, and the hero itself goes single-column. TabHero reads
+   --hero-cols inline (var with the two-column fallback), so overriding the
+   token here beats its inline style without !important. */
 @media (max-width: 1199.98px) {
   .mrr-strip {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .mrr-hero-row {
+    grid-template-columns: 1fr;
+  }
+  .mrr-hero {
+    --hero-cols: 1fr;
   }
 }
 
@@ -1288,6 +1399,10 @@ main .mrr-scroll {
 @media (max-width: 859.98px) {
   .mrr-app {
     grid-template-columns: 1fr;
+  }
+  /* The hero headline reads var(--fs-display) inline; 58 becomes 44 here. */
+  .mrr-hero {
+    --fs-display: 44px;
   }
   .mrr-top {
     grid-template-columns: 1fr auto;
@@ -1310,6 +1425,19 @@ main .mrr-scroll {
   .mrr-number {
     min-height: 40px;
     font-size: var(--fs-body);
+  }
+  /* Panel header (core/SectionHeader layout="panel"): meta and actions drop
+     under the eyebrow on a phone. */
+  .mrr-sec-head {
+    flex-wrap: wrap;
+  }
+  .mrr-sec-sp {
+    margin-left: 0;
+    width: 100%;
+  }
+  /* The hero reads var(--hero-pad) inline; the 30px sides tighten here. */
+  .mrr-hero {
+    --hero-pad: 18px 16px 16px;
   }
   .assistant-panel {
     right: 8px;

@@ -495,31 +495,55 @@ accounts, no server storage, no cross-device sync.
 ## 9. Components
 
 Restyle existing components rather than building parallel ones (spec section 3).
-Every row below is a Phase 2 target unless marked built.
+Phase 2 (2026-09-15) built every row below on `/kit`; the screens adopt TabHero and
+SummaryCard in Phases 3 to 9 (`DeskRead` stays live until each screen's phase), while
+the restyled `Card`, `Tag`, `SubTabs`, `SliderRow`, `Caption` and `Disclosure` already
+change the look of their current call sites. Values are the checklist
+(`docs/redesign-v2/checklists/02-components.md`, section B) as shipped.
 
 | Mockup element | Build from | Notes | Status |
 |---|---|---|---|
-| **TabHero** (58px serif headline, pill, subhead, lede, two buttons, footnote, signature chart on the right) | `screens/shared/DeskRead.tsx` | Same data, new layout: `conclusion` → h1 plus pill, `why` → h2 and lede, `freshness` chips → footnote. The headline is the tab's answer, never the tab name. | Phase 2 |
-| **SummaryCard** (key/value rows plus status strip) | DeskRead `ledger` | Right column, 432px. Status strip mint (all clear) or amber (watch) with a bars icon and a chevron; links to the alert drawer or the relevant section. | Phase 2 |
-| **SignalCard** | `components/signals/SignalCard` | Name, badge, value, 118×30 sparkline, meter label, meter, two mono lines. Reused by Dashboard signals, Credit spread monitor and Recession model inputs. | Phase 2 |
-| **Panel + SectionHeader** | `components/core/Card`, `SectionHeader` | Eyebrow, plain-text description, right slot for meta, a segmented control or a link with an arrow. | Phase 2 |
-| **Badge** (CLEAR / WATCH / alert / info / reference) | `components/core/Tag` | Mono uppercase 11.5px, 7px radius, 1px tinted border, 7% tinted fill, 24px tall. | Phase 2 |
-| **Probability pill** | `components/signals/RegimeBadge` | Mint, amber or gray variants with the soft outer glow; 40px, 999px radius. Phase 1 only moved the badge to the UI face at 500. | Phase 2 |
-| **SubTabs** (label plus hint line) | `screens/shared/SubTabs.tsx` | Hint in mint on the selected tab; tablist semantics kept. | Phase 2 |
-| **Segmented control** | new, small | "Equities / Rates / FX…", range pickers, filters. 28px, 7px radius; pressed state white gradient. | Phase 2 |
-| **Meter** | `components/data/GaugeBar` | 5px `--track`, fill colour set by status. | Phase 2 |
-| **Stacked odds bar** | `components/data/ProbabilityBar` | Regime hues with 2px gaps. | Phase 2 |
-| **Compact DataTable with group rows** | `components/data/DataTable` | Column headers mono 10.5px uppercase .1em; group rows mono 10.5px .14em `--text-4`; cells 13px tabular. | Phase 2 |
-| **SliderRow** | `screens/shared/screen-ui.tsx` | Adds a current-reading tick; a changed value turns amber. | Phase 2 |
-| **HeatMatrix** | new | Credit transition odds and the Tools IRR grid; outline today's row or cell. | Phase 2 |
-| **Charts** | Lightweight Charts for time series and candles; inline SVG for the quadrant, gauge, bridge, ribbon and event timeline | Axis labels Plex Mono 10px #6f7d8a; gridlines `--line-2`. `Sparkline` keeps its flat 10% fill until a `gradient` prop arrives with the restyle. | Phase 2 |
+| **TabHero** (58px serif headline, pill, subhead, lede, two buttons, footnote, signature chart on the right) | `screens/shared/TabHero.tsx`, built from `DeskRead.tsx` (its `FreshnessChip` and types) | Card gradient on a 12px radius and 1px `--line`, 26/30/22 padding, `minmax(0,540px) minmax(0,1fr)` grid with a per-hero radial glow (`glow`, default `rgba(38,220,160,.07)`). Eyebrow 11.5px Plex Sans 500 .24em `--text-eyebrow` with the 6px pulsing mint dot (`live`) or the ◆ glyph; h1 Source Serif 4 700 58px/1.02 -.012em opsz 30 in `#fff` beside the `Pill`; h2 23px/1.3 500 (a paragraph when `as="h2"`); lede 15.5px/1.6 `--text-2` on a 540px measure; 44px 9px-radius buttons, white primary with the 16px arrow, ghost on `--line-white-30` (`to`, `href` or `onClick`); footnote 12.5px `--text-3` joined by aria-hidden bullets, then the freshness chips and the note; the chart slot or the `linear-gradient(135deg,#0f1a24,#0a131b)` placeholder. Below 1200 one column (`--hero-cols`), below 860 a 44px headline (`--fs-display` override on `.mrr-hero`), below 768 18/16/16 padding. `.mrr-hero-row` (app.css) pairs it with the 432px summary column. The headline is the tab's answer, never the tab name. | Built (Phase 2), on `/kit` only |
+| **SummaryCard** (key/value rows plus status strip) | `screens/shared/SummaryCard.tsx`, from DeskRead's `Ledger` (`StatusStrip` exported too) | Card gradient, 12px radius, 18/20/16 padding; eyebrow title (h3, or h2 via `as`); real `dl` rows on a `150px minmax(0,1fr)` grid, 7px vertical padding, 1px `--line-2` dividers, 13.5px: sentence-case `--text-2` labels, `--text` tabular values in the UI face (`tone` recolours a value; `kvLinkStyle` for the mint underlined link). The strip is a router `Link`, `<a>` or `<button>` (never a div with onClick), 10px radius, 28px bars glyph, 18px chevron: mint `linear-gradient(90deg, rgba(18,190,130,.12), rgba(18,190,130,.05))` on `rgba(38,220,160,.34)`; amber `rgba(245,181,46,.12) → .04` on `--amber-a36`; gray (loading / unavailable) `rgba(200,210,220,.08) → .03` on `rgba(200,210,220,.25)`. Title 14px 500 in the tone colour, detail 12px `--text-2`. Absent when there is nothing to report. | Built (Phase 2), on `/kit` only |
+| **SignalCard** | `components/signals/SignalCard` | Tile radius, 14/16/14 padding: name, `Tag` badge (Clear / Watch / Triggered), 21px value, 118×30 sparkline, meter label, 5px meter in the status colour, "Last alert:" and the mono `lines`; `sparkline`, `meterLabel`, `lines`, `badge`, `heading`, `as` props. Reused by Dashboard signals, Credit spread monitor and Recession model inputs. | Built (Phase 2) |
+| **Panel + SectionHeader** | `components/core/Card`, `SectionHeader` | `Card` variants: `panel` (12px, 1px `--line`, `--panel`, 16/18/18), `tile` (9px, `rgba(150,175,200,.10)`, `--tile`, 14px), `card` (gradient); tone borders at the badge alphas; `accentBar` is the callout (3px rail, `0 8px 8px 0`, 10/14 padding, tinted gradient). `SectionHeader`: eyebrow 12px Plex Sans 500 .24em `--text-eyebrow`, no rule; `layout="panel"` adds the 13px `--text-2` description and the right slot (mono 11px .1em meta, actions, `.mrr-link` arrow link, wrapping under 768); `level="sub"` is the 11px .2em sub-eyebrow. The default inline layout keeps `right` inside the heading (label parity). | Built (Phase 2) |
+| **Badge** (CLEAR / WATCH / alert / info / reference) | `components/core/Tag` | Mono 11.5px .1em uppercase, 7px radius, 7% tinted fill, 1px tinted border; heights `xs` 20 / `sm` 24 / `md` 28; tones `clear` / `watch` / `alert` / `info` / `reference` (the old names alias). | Built (Phase 2) |
+| **Probability pill** | `components/core/Pill`; `RegimeBadge` composes it | Mint, amber, gray (plus the overheating and stagflation regime tints); `md` 40px, `sm` 28px, 999px radius, mono 14px .13em uppercase, 10 to 11% fill, 50% border, `--glow-pill` / `--glow-pill-amber`; gray casts no shadow. | Built (Phase 2) |
+| **SubTabs** (label plus hint line) | `screens/shared/SubTabs.tsx` | The tablist is a 12px-radius box on `--panel` with a 1px `--line` border, 6px padding and gap; tabs are 8px-radius buttons (9/16/8 padding; 36px min on wrap tiers, 44px narrow) with a block 14px 500 label and, at wide widths, a block 10.5px mono .08em uppercase hint (`--text-4`, mint when selected); the selected tab sits on `--line-white-14` with the 7% to 2.5% white gradient and a white label; hover brightens the label to `--text`. Hints drop when the row wraps; tablist semantics, roving tabindex and the overflow fade / "More ▸" control are unchanged. | Built (Phase 2) |
+| **Segmented control** | `components/core/Segmented` | `role="group"` of `aria-pressed` buttons: 28px, 7px radius, 12.5px (mono variant 11px .08em uppercase), pressed on `--line-strong` with the 8% to 3% white gradient; hover via `.mrr-seg button:hover` in app.css; 40px `data-touch` on narrow. | Built (Phase 2) |
+| **Meter** | `components/data/GaugeBar` | 5px track on `--track`, 3px radius, fill colour by `tone` (`rampColor` kept); optional `tick`, `gradient`, `scale`; `MeterRow` and `DivergingBar` exports. | Built (Phase 2) |
+| **Stacked odds bar** | `components/data/ProbabilityBar` | 8px default height, 2px gaps, 4px radius, mono 11px legend in fixed regime order (`legend="letter"`, `order="desc"` optional). No transition: flex widths cannot animate on the compositor (risk G4). | Built (Phase 2) |
+| **Compact DataTable with group rows** | `components/data/DataTable` | Column headers mono 10.5px 500 .1em uppercase `--text-3` over a 1px `--line` rule; cells 13px tabular `--text` with 1px `--line-2` dividers (8/10 padding, `compact` 6/8); `groups` render mono 10.5px .14em `--text-4` rows; column `sub` renders an 11.5px secondary label. | Built (Phase 2) |
+| **SliderRow** | `screens/shared/screen-ui.tsx` | Rows 8/0/10 padding divided by 1px `--line-2` (`.mrr-slider-row`); 13px `--text-2` label, 14px 500 tabular value; 4px `--track` track (2px radius) with a `--link` fill; 16px round white thumb with a 4px 20% ring (a solid `box-shadow`, risk G5 default) on the 28px hit band. `baseline` draws the 1px 50%-white current-reading tick; a changed value turns the value, fill, ring and typed `NumberField` amber, sets `data-changed="true"` and prints "│ current reading" in the mono 10px `--text-4` scale row (`scale`, `showScale`, `format`, `changed` props; no scale row until a call site opts in). | Built (Phase 2) |
+| **HeatMatrix** | `components/data/HeatMatrix` | `role="table"` grid for the credit transition odds and the Tools IRR grid; `transitionTint` (alpha 0.55·p, mint diagonal, amber off-diagonal) and `irrTint` (bands at 15 and 20) exported; the current row or cell outlined; null cells print n/a. | Built (Phase 2) |
+| **Charts** | Lightweight Charts for time series and candles; inline SVG for the quadrant, gauge, bridge, ribbon and event timeline | Axis labels Plex Mono 10px #6f7d8a; gridlines `--line-2`. `Sparkline` gained `gradient` (28% to 0 area fill) and `strokeWidth`. The per-tab signature charts arrive with their screens. | Sparkline built (Phase 2); charts per screen |
 | **QuoteCard, FreshnessCard, FreshnessDrawer, Sidebar, TopBar, MobileNav, Watchlist** | shell | Section 7 and 8. | Built (Phase 1) |
 
-Components not in the mapping (`AlertDrawer`, `CommandPalette`, `AssistantPanel`,
-`Disclosure`, `ScrollTable`, `Jargon`, `Markdown`, `NumberField`, `IntelBanner`,
-`ReadThrough`, `NewsCard`, `StatTile`, `StatusDot`, `AlertRow`) flow through the token
-aliases until their owning phase restyles them. `TickerStrip` (`components/nav`) stays
-for `KitScreen` only; the shell no longer imports it.
+**Disclosure, captions and meta (Phase 2, `screens/shared`).** `Disclosure` `row` is
+the mockup Options-lens trigger: a full-width button on an 8px radius, 1px `--line-2`
+border (`--line` while open), 2% white fill, 10/12 padding, the mono ▸/▾ glyph in
+`--text-3`, a 13.5px 500 title, the new 13px `--text-2` `description` (ellipsised at
+desk width, wrapping on a phone) and the `right` meta in mono 10px .1em uppercase
+`--text-3`; `quiet` is the text-only 12.5px `--text-2` trigger (`tone="mint"`: 11.5px
+mint, the News regime-read line); `onToggle` reports the new state; children still
+mount only while open. `DisclosureLine` is the mono 11px/1.6 .03em `--text-4` footer
+paragraph every tab ends with (max 1100px; `.mrr-disclosure-line` carries the same
+values for a plain element). `Caption` / `capStyle` is 13px/1.5 Plex Sans `--text-3`
+(the mockup `.cap` is 12.5px; 13px keeps the sans floor); `Caption mono` /
+`monoNoteStyle` is the 12px/1.55 mono provenance line; `metaStyle` is the mono 11px
+.1em uppercase `--text-3` meta string; `eyebrowStyle` is the 11px .2em Plex Sans 500
+sub-eyebrow in `--text-3` (uppercase stays: the label harvester keys on it).
+`StatTile` values moved to the UI face at 500 (xs 14 / sm 20 / md 24 / lg 30 / xl 40)
+with the mono 11px meta label. Buttons: `.mrr-btn` is the 30px ghost (8px radius,
+`--line-white-30`, white 12.5px 500 text, hover to a white border), `.mrr-btn-accent`
+the link tint, `.mrr-btn-primary` the white hero primary; the 44px `data-touch` floor
+is kept.
+
+Components still outside the mapping (`AlertDrawer`, `CommandPalette`,
+`AssistantPanel`, `ScrollTable`, `Jargon`, `Markdown`, `IntelBanner`, `ReadThrough`,
+`NewsCard`, `StatusDot`, `AlertRow`) flow through the token aliases until their owning
+phase restyles them. `TickerStrip` (`components/nav`) stays for `KitScreen` only; the
+shell no longer imports it.
 
 **States.** Loading, empty, stale, unavailable and error states are sentences in the
 UI face at 13px, never spinners or blanks: "Reading stored data…", "Nothing on file.",
@@ -547,8 +571,8 @@ use `fmtDate`, axis ticks `fmtMonYr`.
 
 **Touch and hit areas.** Interactive controls are at least 28px tall at desk width and
 44px below 768 (chips and buttons carrying `data-touch="true"`, menu rows, sub-tabs).
-Slider thumbs are 18px with a 28px hit band. Inline jargon terms keep the inline-text
-exception.
+Slider thumbs are 16px with a 4px ring on a 28px hit band. Inline jargon terms keep
+the inline-text exception.
 
 ## 10. Freshness, status and provenance
 
@@ -765,6 +789,7 @@ colours, `app.css` news-arrive keyframe).
 
 ## 13. Change log
 
+- 2026-09-15 Phase 2: shared components restyled; KitScreen rebuilt
 - 2026-09-15 Phase 1: spec section 0 adopted; Space Grotesk retired; Source Serif 4
   self-hosted; shell rebuilt (sidebar, top bar, strip, freshness drawer, mobile nav);
   watchlist added; transitional alias block and retire schedule recorded.

@@ -8,6 +8,8 @@
  * Layout: at desk width the conclusion and the ledger sit side by side; on a
  * phone the ledger stacks under the sentence. The 3px accent rail is the house
  * mark for model-composed output and appears here once per screen.
+ *
+ * Deprecated (redesign Phase 2, 2026-09-15): TabHero (./TabHero.tsx) plus SummaryCard (./SummaryCard.tsx) replace this strip screen by screen in Phases 3 to 9; keep it untouched until then.
  */
 
 import type React from "react";

@@ -5,13 +5,20 @@ export interface RegimeProbabilities {
   recession?: number;
 }
 
-export interface ProbabilityBarProps {
+export interface ProbabilityBarProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Softmax probabilities 0–1, keyed like `regimes.prob_*`. */
   probs?: RegimeProbabilities;
   showLegend?: boolean;
+  /** Bar height in px. Default 8. */
   height?: number;
+  /** Gap between segments in px. Default 2. */
+  gap?: number;
+  /** Legend abbreviations: "abbr" GL OV ST RR (default) or "letter" G O S R. */
+  legend?: "abbr" | "letter";
+  /** "fixed" keeps the classifier order (default); "desc" sorts by share. */
+  order?: "fixed" | "desc";
   style?: React.CSSProperties;
 }
 
-/** Stacked four-regime distribution bar with GL / OV / ST / RR legend. */
+/** Stacked four-regime distribution bar with 2px gaps and a mono legend. */
 export function ProbabilityBar(props: ProbabilityBarProps): JSX.Element;

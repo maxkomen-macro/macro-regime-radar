@@ -1,3 +1,10 @@
+/**
+ * Phase 2 checklist (docs/redesign-v2/checklists/02-components.md) section E,
+ * `screens/shared/SubTabs.test.tsx` (append only): the two original cases
+ * below stay verbatim (they pin the tab text, arrow keys, the wrap tier and
+ * the dropped hints); the "boxed tabs" describe at the end covers the B.7
+ * restyle (block uppercase mono hint, mint when selected, bordered tablist).
+ */
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
@@ -54,5 +61,71 @@ describe("SubTabs", () => {
     expect(list.style.overflowX).toBe("visible");
     // Hints are dropped when wrapping so labels stay short.
     expect(screen.getByRole("tab", { name: /Empirical evidence/ }).textContent).toBe("Empirical evidence");
+  });
+});
+
+// Appended for Phase 2 (checklist 02 B.7 / section E): the boxed-tab restyle.
+// jsdom keeps `var()` values literally on longhand `element.style.*` reads;
+// the border shorthand is read from the style attribute text.
+const css = (el: Element | null) => el?.getAttribute("style") ?? "";
+
+describe("SubTabs boxed tabs (checklist 02 B.7)", () => {
+  it("renders the hint as a block small in uppercase mono and colours the selected hint mint", () => {
+    mockViewport("wide");
+    render(<Harness />);
+    const tabs = screen.getAllByRole("tab");
+    // Load-bearing: textContent is still label + hint with no separator.
+    expect(tabs[0].textContent).toBe("Overviewlive model");
+    const selectedHint = tabs[0].querySelector("small") as HTMLElement;
+    const otherHint = tabs[1].querySelector("small") as HTMLElement;
+    expect(selectedHint).not.toBeNull();
+    expect(selectedHint.textContent).toBe("live model");
+    expect(selectedHint.style.display).toBe("block");
+    expect(selectedHint.style.textTransform).toBe("uppercase");
+    expect(css(selectedHint)).toMatch(/var\(--font-mono\)/);
+    expect(selectedHint.style.color).toBe("var(--mint)");
+    expect(otherHint.style.color).toBe("var(--text-4)");
+    // The label is a block <b> in the UI face (set on the <b> or inherited from
+    // the tab button); selected reads white, unselected --text-2 (a var()
+    // fallback chain for the hover rule is fine).
+    const selectedLabel = tabs[0].querySelector("b") as HTMLElement;
+    expect(selectedLabel.textContent).toBe("Overview");
+    expect(selectedLabel.style.display).toBe("block");
+    expect(selectedLabel.style.fontFamily || tabs[0].style.fontFamily).toMatch(/var\(--font-ui\)/);
+    expect(css(selectedLabel)).toMatch(/font(?:-size)?:[^;]*\b14px\b/);
+    expect(css(selectedLabel)).toMatch(/color:\s*(?:#fff|rgb\(255, ?255, ?255\))/);
+    expect((tabs[1].querySelector("b") as HTMLElement).style.color).toMatch(/var\(--text-2\)/);
+    // Selecting another tab moves the mint hint with the selection.
+    fireEvent.click(tabs[1]);
+    expect((screen.getAllByRole("tab")[1].querySelector("small") as HTMLElement).style.color).toBe("var(--mint)");
+    expect((screen.getAllByRole("tab")[0].querySelector("small") as HTMLElement).style.color).toBe("var(--text-4)");
+  });
+
+  it("wraps the tablist in a bordered box", () => {
+    mockViewport("wide");
+    render(<Harness />);
+    const list = screen.getByRole("tablist");
+    expect(list.style.borderRadius).toBe("var(--r-card)");
+    expect(css(list)).toMatch(/border(?:-color)?:[^;]*var\(--line\)/);
+    expect(css(list)).toMatch(/border(?:-width)?:\s*1px/);
+    expect(list.style.background).toBe("var(--panel)");
+    expect(list.style.padding).toBe("6px");
+    expect(list.style.gap).toBe("6px");
+    // Tabs are boxed too: rounded control corners, no underline, no negative margin.
+    const [selected, other] = screen.getAllByRole("tab");
+    expect(selected.style.borderRadius).toBe("var(--r-ctl)");
+    expect(css(selected)).toMatch(/border(?:-color)?:[^;]*var\(--line-white-14\)/);
+    expect(css(selected)).toMatch(/linear-gradient\(180deg, ?rgba\(255, ?255, ?255, ?0?\.07\), ?rgba\(255, ?255, ?255, ?0?\.025\)\)/);
+    expect(css(selected)).not.toMatch(/border-bottom:\s*2px/);
+    expect(selected.style.marginBottom).not.toBe("-1px");
+    expect(css(other)).toMatch(/border(?:-color)?:[^;]*transparent/);
+    expect(css(other)).not.toMatch(/linear-gradient/);
+    // The wrap tier keeps the inline flexWrap / overflowX the first two cases read.
+    mockViewport("desktop");
+    const wrapped = render(<Harness />).container;
+    const wrappedList = wrapped.querySelector("[role='tablist']") as HTMLElement;
+    expect(wrappedList.style.flexWrap).toBe("wrap");
+    expect(wrappedList.style.borderRadius).toBe("var(--r-card)");
+    mockViewport("wide");
   });
 });

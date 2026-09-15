@@ -9,10 +9,13 @@ export { Card } from "./core/Card";
 export { SectionHeader } from "./core/SectionHeader";
 export { StatusDot } from "./core/StatusDot";
 export { Tag } from "./core/Tag";
+export { Pill } from "./core/Pill";
+export { Segmented } from "./core/Segmented";
 
 // data
 export { DataTable } from "./data/DataTable";
-export { GaugeBar, rampColor } from "./data/GaugeBar";
+export { GaugeBar, rampColor, MeterRow, DivergingBar } from "./data/GaugeBar";
+export { HeatMatrix, transitionTint, irrTint } from "./data/HeatMatrix";
 export { ProbabilityBar } from "./data/ProbabilityBar";
 export { Sparkline } from "./data/Sparkline";
 export { StatTile } from "./data/StatTile";

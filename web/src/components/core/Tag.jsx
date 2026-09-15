@@ -1,34 +1,53 @@
 import React from "react";
 
+/* Pre-redesign tone names alias to the mockup badge tints (checklist 02 B.5). */
+const ALIAS = { neutral: "reference", accent: "info", pos: "clear", warn: "watch", neg: "alert" };
+
+/* [text, fill, border] per tone (mockup .badge .b-clear / .b-watch / .b-alert /
+   .b-info / .b-ref; hot and research kept from the old set at the same alphas). */
 const TONES = {
-  neutral: ["var(--surface-raised)", "var(--text-label)", "var(--line-strong)"],
-  accent: ["var(--accent-dim)", "var(--accent)", "var(--accent-line)"],
-  pos: ["rgba(63,185,80,.12)", "var(--pos)", "rgba(63,185,80,.25)"],
-  warn: ["rgba(210,153,34,.12)", "var(--warn)", "rgba(210,153,34,.25)"],
-  hot: ["rgba(230,126,34,.12)", "var(--warn-hot)", "rgba(230,126,34,.30)"],
-  neg: ["rgba(218,54,51,.12)", "var(--neg-text)", "rgba(218,54,51,.25)"],
-  research: ["rgba(124,58,237,.14)", "#a78bfa", "rgba(124,58,237,.35)"],
+  clear: ["var(--mint)", "var(--mint-a07)", "var(--mint-a32)"],
+  watch: ["var(--amber)", "var(--amber-a07)", "var(--amber-a36)"],
+  alert: ["var(--neg)", "rgba(240,80,63,.08)", "rgba(240,80,63,.38)"],
+  info: ["var(--link)", "var(--link-a07)", "var(--link-a32)"],
+  reference: ["var(--text-2)", "rgba(255,255,255,.03)", "var(--line-white-14)"],
+  hot: ["var(--warn-hot)", "rgba(230,126,34,.07)", "rgba(230,126,34,.36)"],
+  research: ["#a78bfa", "rgba(124,58,237,.07)", "rgba(124,58,237,.35)"],
 };
 
-export function Tag({ tone = "neutral", size = "sm", uppercase = true, style, children, ...rest }) {
-  const [bg, fg, line] = TONES[tone] || TONES.neutral;
-  const sm = size === "sm";
+/* sm is the mockup standard badge; xs the compact chip (ticker, Beat / Miss);
+   md carries sentence-case conviction badges. */
+const SIZES = {
+  xs: { height: 20, padding: "0 7px", fontSize: "10px" },
+  sm: { height: 24, padding: "0 11px", fontSize: "var(--fs-badge)" },
+  md: { height: 28, padding: "0 13px", fontSize: "12.5px" },
+};
+
+export function Tag({ tone = "reference", size = "sm", uppercase = true, style, children, ...rest }) {
+  const key = ALIAS[tone] || (TONES[tone] ? tone : "reference");
+  const [fg, bg, line] = TONES[key];
+  const s = SIZES[size] || SIZES.sm;
   return (
     <span
+      data-tone={key}
       {...rest}
       style={{
         display: "inline-flex",
         alignItems: "center",
         gap: "var(--gap-chip)",
+        boxSizing: "border-box",
+        height: s.height,
+        padding: s.padding,
+        borderRadius: "var(--r-badge)",
         background: bg,
         color: fg,
-        border: `0.5px solid ${line}`,
-        borderRadius: "var(--r-xs)",
-        padding: sm ? "2px 6px" : "4px 10px",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderColor: line,
         fontFamily: "var(--font-mono)",
-        fontSize: sm ? "var(--fs-micro)" : "var(--fs-label)",
-        fontWeight: 600,
-        letterSpacing: uppercase ? "var(--ls-micro)" : "0",
+        fontSize: s.fontSize,
+        fontWeight: 500,
+        letterSpacing: uppercase ? "var(--ls-badge-mono)" : "0",
         textTransform: uppercase ? "uppercase" : "none",
         whiteSpace: "nowrap",
         ...style,

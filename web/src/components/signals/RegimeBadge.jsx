@@ -1,44 +1,27 @@
 import React from "react";
+import { Pill } from "../core/Pill";
 
-const STYLES = {
-  Goldilocks: ["var(--badge-goldilocks-bg)", "var(--badge-goldilocks-fg)", "var(--badge-goldilocks-line)"],
-  Overheating: ["var(--badge-overheating-bg)", "var(--badge-overheating-fg)", "var(--badge-overheating-line)"],
-  Stagflation: ["var(--badge-stagflation-bg)", "var(--badge-stagflation-fg)", "var(--badge-stagflation-line)"],
-  "Recession Risk": ["var(--badge-recession-bg)", "var(--badge-recession-fg)", "var(--badge-recession-line)"],
+/* Regime to pill tint (src/regime.py order). Goldilocks is mint (decision 1);
+   an unknown label renders gray. */
+const REGIME_TONE = {
+  Goldilocks: "mint",
+  Overheating: "overheating",
+  Stagflation: "stagflation",
+  "Recession Risk": "gray",
 };
 
-const SIZES = {
-  sm: { padding: "3px 10px", fontSize: "var(--fs-body-s)" },
-  md: { padding: "8px 20px", fontSize: "var(--fs-value)" },
-};
-
-export function RegimeBadge({ label = "Goldilocks", size = "md", confidence, style, ...rest }) {
-  const [bg, fg, line] = STYLES[label] || ["var(--surface-raised)", "var(--text-label)", "var(--line-strong)"];
-  const s = SIZES[size] || SIZES.md;
+/** The current macro regime as the probability pill: label plus, when
+ * `confidence` is set, a trailing `.pct` percentage. */
+export function RegimeBadge({ label = "Goldilocks", size = "md", confidence, tone = "regime", style, ...rest }) {
+  const t = tone && tone !== "regime" ? tone : REGIME_TONE[label] || "gray";
   return (
-    <span
-      {...rest}
-      style={{
-        display: "inline-flex",
-        alignItems: "baseline",
-        gap: "var(--gap-inline)",
-        background: bg,
-        color: fg,
-        border: `0.5px solid ${line}`,
-        borderRadius: "var(--r-md)",
-        fontFamily: "var(--font-ui)",
-        fontWeight: 500,
-        letterSpacing: "var(--ls-badge)",
-        ...s,
-        ...style,
-      }}
-    >
+    <Pill {...rest} tone={t} size={size === "sm" ? "sm" : "md"} style={{ gap: "var(--gap-inline)", ...style }}>
       {label}
       {confidence != null ? (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body-s)", opacity: 0.75, fontVariantNumeric: "tabular-nums" }}>
+        <span className="pct" style={{ color: "inherit", opacity: 0.85, fontVariantNumeric: "tabular-nums" }}>
           {Math.round(confidence * 100)}%
         </span>
       ) : null}
-    </span>
+    </Pill>
   );
 }

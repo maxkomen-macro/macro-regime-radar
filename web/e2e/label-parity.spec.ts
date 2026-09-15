@@ -39,6 +39,8 @@ interface Renames {
 }
 
 const baseline: Baseline = JSON.parse(fs.readFileSync(BASELINE_PATH, "utf8"));
+// Norms are recomputed from the stored raw text so a normalizer refinement applies to both sides.
+for (const s of Object.values(baseline.screens)) for (const l of s.labels) l.norm = normalizeLabel(l.text);
 const renames: Renames = fs.existsSync(RENAMES_PATH) ? JSON.parse(fs.readFileSync(RENAMES_PATH, "utf8")) : {};
 
 const MONTH = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i;
@@ -65,12 +67,21 @@ function ignored(screen: string, l: LabelRec): boolean {
   return false;
 }
 
+// Rename keys are normalized with the same function as the labels, so a
+// normalizer refinement never orphans a reviewed mapping.
+const renameIndex: Record<string, Record<string, string[]>> = {};
+for (const [scope, map] of Object.entries(renames.renames ?? {})) {
+  renameIndex[scope] = {};
+  for (const [from, to] of Object.entries(map)) {
+    renameIndex[scope][normalizeLabel(from)] = (Array.isArray(to) ? to : [to]).map(normalizeLabel);
+  }
+}
+
 function renamedTargets(screen: string, norm: string): string[] {
   const out: string[] = [];
   for (const key of [screen, "*"]) {
-    const t = renames.renames?.[key]?.[norm];
-    if (!t) continue;
-    for (const v of Array.isArray(t) ? t : [t]) out.push(normalizeLabel(v));
+    const t = renameIndex[key]?.[norm];
+    if (t) out.push(...t);
   }
   return out;
 }

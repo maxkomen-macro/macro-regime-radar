@@ -9,6 +9,14 @@
  * wide tier the row wraps, so nothing hides behind a horizontal scroll; at
  * wide widths a row that still overflows shows a fade plus a "More ▸"
  * control, and the selected tab is always scrolled into view.
+ *
+ * 2026-09-15 (redesign Phase 2, checklist B.7): the boxed mockup layout. The
+ * tablist is a bordered, panel-coloured box; each tab is a rounded button with
+ * a block label and, at wide widths, a mono uppercase hint under it (mint on
+ * the selected tab). Semantics, keyboard handling, wrap and overflow logic are
+ * unchanged, and hints are still dropped when the row wraps. Hover brightens
+ * the unselected label through local state (the label colour is inline, so a
+ * stylesheet :hover could not override it).
  */
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
@@ -32,6 +40,8 @@ interface Props {
   style?: React.CSSProperties;
 }
 
+const SELECTED_BG = "linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.025))";
+
 export default function SubTabs({ tabs, active, onChange, label, children, style }: Props) {
   const uid = useId();
   const { isNarrow, bp } = useBreakpoint();
@@ -39,6 +49,7 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
+  const [hover, setHover] = useState<string | null>(null);
   const idx = Math.max(0, tabs.findIndex((t) => t.id === active));
 
   const measure = () => {
@@ -85,21 +96,26 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
     // minWidth 0: as a grid item this root would otherwise inherit the nowrap
     // tab row's min-content width and push the page sideways on a phone.
     <div style={{ minWidth: 0, ...style }}>
-      <div style={{ position: "relative", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ position: "relative", borderRadius: "var(--r-card)" }}>
         <div
           ref={listRef}
           role="tablist"
           aria-label={label}
           onKeyDown={onKey}
           onScroll={measure}
+          className="mrr-subtabs"
           style={{
             display: "flex",
+            alignItems: "stretch",
             flexWrap: wrap ? "wrap" : "nowrap",
-            gap: isNarrow ? "0 4px" : wrap ? "0 14px" : 20,
+            gap: 6,
+            // Room for the fade/controls at wide widths only when needed.
+            padding: !wrap && overflow.right ? "6px 56px 6px 6px" : "6px",
+            borderRadius: "var(--r-card)",
+            border: "1px solid var(--line)",
+            background: "var(--panel)",
             overflowX: wrap ? "visible" : "auto",
             scrollbarWidth: "none",
-            // Room for the fade/controls at wide widths only when needed.
-            paddingRight: !wrap && overflow.right ? 56 : 0,
           }}
         >
           {tabs.map((t, i) => {
@@ -117,37 +133,54 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
                 aria-controls={`${uid}-panel-${t.id}`}
                 tabIndex={on ? 0 : -1}
                 onClick={() => onChange(t.id)}
+                onMouseEnter={() => setHover(t.id)}
+                onMouseLeave={() => setHover((h) => (h === t.id ? null : h))}
+                className="mrr-subtab"
                 style={{
                   appearance: "none",
-                  background: "none",
-                  border: "none",
-                  borderBottom: `2px solid ${on ? "var(--accent)" : "transparent"}`,
-                  marginBottom: -1,
-                  color: on ? "var(--text)" : "var(--text-muted)",
+                  flex: "1 1 auto",
+                  textAlign: "left",
+                  padding: isNarrow ? "9px 12px 8px" : "9px 16px 8px",
+                  borderRadius: "var(--r-ctl)",
+                  borderWidth: 1,
+                  borderStyle: "solid",
+                  borderColor: on ? "var(--line-white-14)" : "transparent",
+                  background: on ? SELECTED_BG : "none",
+                  color: "inherit",
                   fontFamily: "var(--font-ui)",
-                  fontSize: "var(--fs-body-s)",
-                  fontWeight: on ? 600 : 400,
-                  padding: isNarrow ? "12px 8px" : wrap ? "8px 2px 9px" : "0 2px 9px",
-                  minHeight: isNarrow ? 44 : wrap ? 36 : 28,
+                  minHeight: isNarrow ? 44 : wrap ? 36 : undefined,
                   cursor: "pointer",
                   whiteSpace: "nowrap",
-                  display: "inline-flex",
-                  alignItems: "baseline",
-                  gap: 6,
                 }}
               >
-                {t.label}
+                <b
+                  style={{
+                    display: "block",
+                    fontFamily: "var(--font-ui)",
+                    fontWeight: 500,
+                    fontSize: 14,
+                    lineHeight: 1.35,
+                    color: on ? "#fff" : hover === t.id ? "var(--text)" : "var(--text-2)",
+                  }}
+                >
+                  {t.label}
+                </b>
                 {t.hint && !wrap ? (
-                  <span
+                  <small
                     style={{
+                      display: "block",
                       fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-micro)",
-                      color: "var(--text-muted)",
-                      letterSpacing: "var(--ls-micro)",
+                      fontWeight: 400,
+                      fontSize: 10.5,
+                      lineHeight: 1.4,
+                      letterSpacing: ".08em",
+                      textTransform: "uppercase",
+                      color: on ? "var(--mint)" : "var(--text-4)",
+                      marginTop: 1,
                     }}
                   >
                     {t.hint}
-                  </span>
+                  </small>
                 ) : null}
               </button>
             );
@@ -158,20 +191,31 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
             {overflow.left ? (
               <div
                 aria-hidden="true"
-                style={{ position: "absolute", left: 0, top: 0, bottom: 1, width: 36, pointerEvents: "none", background: "linear-gradient(to right, var(--bg-base), transparent)" }}
+                style={{
+                  position: "absolute",
+                  left: 1,
+                  top: 1,
+                  bottom: 1,
+                  width: 36,
+                  pointerEvents: "none",
+                  borderRadius: "var(--r-card) 0 0 var(--r-card)",
+                  background: "linear-gradient(to right, var(--panel), transparent)",
+                }}
               />
             ) : null}
             <div
               style={{
                 position: "absolute",
-                right: 0,
-                top: 0,
+                right: 1,
+                top: 1,
                 bottom: 1,
                 display: "flex",
                 alignItems: "center",
                 gap: 2,
                 paddingLeft: 24,
-                background: "linear-gradient(to right, transparent, var(--bg-base) 40%)",
+                paddingRight: 6,
+                borderRadius: "0 var(--r-card) var(--r-card) 0",
+                background: "linear-gradient(to right, transparent, var(--panel) 40%)",
               }}
             >
               {overflow.left ? (
@@ -193,7 +237,7 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
         id={`${uid}-panel-${active}`}
         aria-labelledby={`${uid}-tab-${active}`}
         tabIndex={-1}
-        style={{ marginTop: 14, outline: "none" }}
+        style={{ marginTop: "var(--gap-panel)", outline: "none" }}
       >
         {children}
       </div>

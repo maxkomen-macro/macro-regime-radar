@@ -14,11 +14,15 @@ export interface LabelRec {
   state: string;
 }
 
-/** Lowercase, collapse whitespace, digits → "#", so data-bearing labels compare stably. */
+/** Lowercase, collapse whitespace, digits → "#", so data-bearing labels compare stably.
+ * Leading decorative glyphs (disclosure carets, status dots, marks) are dropped: they are
+ * decoration, and a restyle may change the glyph or the space after it without changing
+ * the label (Phase 2 Disclosure restyle, 2026-09-15). */
 export function normalizeLabel(s: string): string {
   return s
     .replace(/\s+/g, " ")
     .trim()
+    .replace(/^[▸▾▪●◆✓×›◂▹•·]+\s*/u, "")
     .toLowerCase()
     .replace(/\d+(?:[.,]\d+)*/g, "#");
 }

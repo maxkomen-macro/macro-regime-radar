@@ -68,24 +68,6 @@
 --level-watch:var(--amber);
 --level-risk:var(--neg);
 
-/* Regime badge tints, 12% fill / 25% border. Transitional: Phase 2 restyles
-   RegimeBadge as the probability pill and Tag takes the 7% fill / 1px tinted
-   border rule; until then these keep RegimeBadge, ProbabilityBar and the
-   Landing read on the new hues. Stagflation text stays #f08785 (red as text on
-   dark; #e74c3c reads 4.0:1) until Phase 2 revisits the contrast rule. */
---badge-goldilocks-bg:rgba(38,220,160,.12);
---badge-goldilocks-fg:#26dca0;
---badge-goldilocks-line:rgba(38,220,160,.25);
---badge-overheating-bg:rgba(230,126,34,.12);
---badge-overheating-fg:#e67e22;
---badge-overheating-line:rgba(230,126,34,.25);
---badge-stagflation-bg:rgba(231,76,60,.12);
---badge-stagflation-fg:#f08785;
---badge-stagflation-line:rgba(231,76,60,.25);
---badge-recession-bg:rgba(149,165,166,.12);
---badge-recession-fg:#95a5a6;
---badge-recession-line:rgba(149,165,166,.25);
-
 /* Gauge fill ramp: threshold proximity (GaugeBar, signal cards) */
 --gauge-0:var(--pos);       /* <50% of threshold */
 --gauge-50:var(--amber);    /* 50-75% */

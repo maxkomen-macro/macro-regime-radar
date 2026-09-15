@@ -3,6 +3,12 @@
  * conventions from the Dashboard/Markets screens, a debounce hook, and the
  * house slider row used by every calculator (Recession sensitivity, LBO,
  * scenario builder). Bundle components stay untouched; this is screen code.
+ *
+ * 2026-09-15 (redesign Phase 2, checklist B.12 and B.16): captions restyled to
+ * the mockup `.cap`, a mono caption variant (`.mono-note`), `metaStyle`
+ * (`.meta`) and the sub-eyebrow moved to Plex Sans (`.eyebrow-sm`); the slider
+ * gains the current-reading tick and the amber changed state. Every prior
+ * export keeps its name and shape.
  */
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -14,22 +20,59 @@ export const mono: React.CSSProperties = {
   fontVariantNumeric: "tabular-nums",
 };
 
-/* Captions are prose: they read in the UI face, one step under body size.
-   Mono inside a caption is opt-in per number via <span style={mono}>. */
+/* Captions are prose: they read in the UI face, one step under body size
+   (mockup .cap; 13px keeps the DESIGN.md sans floor, risk G6). Mono inside a
+   caption is opt-in per number via <span style={mono}>, or whole-line via
+   <Caption mono>. */
 export const capStyle: React.CSSProperties = {
   fontFamily: "var(--font-ui)",
+  fontWeight: 400,
   fontSize: "var(--fs-caption)",
-  color: "var(--text-muted)",
-  lineHeight: 1.55,
+  lineHeight: 1.5,
+  color: "var(--text-3)",
   marginTop: 6,
   // Captions under full-frame charts and tables keep a readable measure
   // instead of running the whole 1,500px frame (review 2026-09-05).
   maxWidth: "var(--maxw-prose)",
 };
 
+/** Mono provenance line under a tile or chart (mockup .mono-note). */
+export const monoNoteStyle: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontVariantNumeric: "tabular-nums",
+  fontWeight: 400,
+  fontSize: 12,
+  lineHeight: 1.55,
+  color: "var(--text-3)",
+};
+
+/** Mono uppercase meta string: "Live model output", "5 inputs · latest Aug 2026" (mockup .meta). */
+export const metaStyle: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontVariantNumeric: "tabular-nums",
+  fontWeight: 400,
+  fontSize: 11,
+  letterSpacing: ".1em",
+  textTransform: "uppercase",
+  color: "var(--text-3)",
+};
+
 /** One-line desk-note caption under a chart or metric block. */
-export function Caption({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div style={{ ...capStyle, ...style }}>{children}</div>;
+export function Caption({
+  children,
+  style,
+  mono: isMono = false,
+  as = "div",
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  /** Whole-line mono for provenance strings and the signal-card lines. */
+  mono?: boolean;
+  as?: "div" | "p";
+}) {
+  const Tag = as;
+  const base = isMono ? { ...capStyle, ...monoNoteStyle } : capStyle;
+  return <Tag style={{ ...base, ...(as === "p" ? { marginBottom: 0 } : null), ...style }}>{children}</Tag>;
 }
 
 /** Standardized loading / error / empty line in desk voice — never a spinner,
@@ -55,7 +98,7 @@ export function StateNote({
       style={{
         fontFamily: "var(--font-ui)",
         fontSize: "var(--fs-caption)",
-        color: "var(--text-muted)",
+        color: "var(--text-3)",
       }}
     >
       {text}
@@ -84,13 +127,16 @@ export function useDebounced<T>(value: T, ms: number): T {
   return settled;
 }
 
-/** Mono uppercase micro-eyebrow used for sub-groups inside cards. */
+/** Sub-eyebrow for groups inside panels and tiles: Plex Sans 11px 500, .2em,
+ * uppercase (mockup .eyebrow-sm). The uppercase transform is load-bearing:
+ * the label-parity harvester keys on it. */
 export const eyebrowStyle: React.CSSProperties = {
-  ...mono,
-  fontSize: "var(--fs-micro)",
+  fontFamily: "var(--font-ui)",
+  fontWeight: 500,
+  fontSize: "var(--fs-eyebrow-sm)",
+  letterSpacing: "var(--ls-eyebrow-sm)",
   textTransform: "uppercase",
-  letterSpacing: "var(--ls-wide)",
-  color: "var(--text-label)",
+  color: "var(--text-3)",
 };
 
 interface NumberFieldProps {
@@ -106,6 +152,8 @@ interface NumberFieldProps {
   /** Decimal places to display; defaults from `step`. */
   dp?: number;
   disabled?: boolean;
+  /** Amber text while the value differs from the row's baseline. */
+  changed?: boolean;
 }
 
 function decimalsOf(step: number): number {
@@ -117,7 +165,7 @@ function decimalsOf(step: number): number {
 /** Typed numeric input paired with a slider (2026-09-05). Commits on blur or
  * Enter, clamps to [min, max], and flags out-of-range drafts with
  * aria-invalid while the analyst is still typing. */
-export function NumberField({ id, value, min, max, step, onChange, unit, ariaLabel, dp, disabled }: NumberFieldProps) {
+export function NumberField({ id, value, min, max, step, onChange, unit, ariaLabel, dp, disabled, changed }: NumberFieldProps) {
   const places = dp ?? decimalsOf(step);
   const fmt = (v: number) => v.toFixed(places);
   const [draft, setDraft] = useState(fmt(value));
@@ -153,6 +201,7 @@ export function NumberField({ id, value, min, max, step, onChange, unit, ariaLab
         aria-label={ariaLabel}
         aria-invalid={editing && invalid ? true : undefined}
         title={`Enter a value from ${fmt(min)} to ${fmt(max)}`}
+        style={changed ? { color: "var(--amber)" } : undefined}
         onFocus={() => setEditing(true)}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
@@ -177,7 +226,7 @@ export function NumberField({ id, value, min, max, step, onChange, unit, ariaLab
 
 interface SliderRowProps {
   label: React.ReactNode;
-  /** Preformatted current value, rendered mono right of the label. */
+  /** Preformatted current value, rendered right of the label. */
   valueText: string;
   value: number;
   min: number;
@@ -192,28 +241,72 @@ interface SliderRowProps {
   /** Plain-text name for assistive tech when `label` is an element. */
   name?: string;
   disabled?: boolean;
+  /** The current reading: draws the tick, and the row reads as changed while
+   * `value` differs from it. */
+  baseline?: number;
+  /** Scale-row labels; `left` / `right` default to `format(min)` / `format(max)`,
+   * `mid` to "│ current reading" on a changed row with a baseline. */
+  scale?: { left?: React.ReactNode; right?: React.ReactNode; mid?: React.ReactNode };
+  /** Default: true when `scale` or `baseline` is given, so existing call sites
+   * render no scale row until their phase adds one. */
+  showScale?: boolean;
+  /** Formats the default scale labels (default `String`). */
+  format?: (v: number) => string;
+  /** Explicit changed flag (the LBO "modified deal" case with no single baseline). */
+  changed?: boolean;
+}
+
+/** Position on the track, clamped and rounded to 0.001% so a baseline such as
+ * 4.3 on a 3 to 7 scale prints "32.5%" rather than a floating-point tail. */
+function pctOf(v: number, min: number, max: number): number {
+  if (max === min) return 0;
+  const raw = Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100));
+  return Math.round(raw * 1000) / 1000;
 }
 
 /** The house slider: label + value line over a native range input with a
  * 28px hit area (app.css .mrr-slider-wrap) and an optional typed field.
- * Keyboard accessible by nature; the whole row rings on focus. */
-export function SliderRow({ label, valueText, value, min, max, step, onChange, note, input, name, disabled }: SliderRowProps) {
+ * Keyboard accessible by nature; the whole row rings on focus. A changed value
+ * (vs `baseline`) is amber in the value, the fill and the thumb ring, and the
+ * scale row prints "│ current reading" under the tick, so the state never rides
+ * on colour alone. */
+export function SliderRow({
+  label,
+  valueText,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  note,
+  input,
+  name,
+  disabled,
+  baseline,
+  scale,
+  showScale,
+  format = String,
+  changed: changedProp,
+}: SliderRowProps) {
   const id = useId();
-  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
+  const pct = pctOf(value, min, max);
   const ref = useRef<HTMLInputElement>(null);
   const plainName = name ?? (typeof label === "string" ? label : undefined);
+  const hasBaseline = baseline != null;
+  const changed = changedProp ?? (hasBaseline && value !== baseline);
+  const scaleOn = showScale ?? (scale != null || hasBaseline);
+  const mid = scale?.mid ?? (hasBaseline && changed ? "│ current reading" : null);
   return (
-    <div style={{ marginBottom: 8 }}>
+    <div className="mrr-slider-row" data-changed={changed ? "true" : "false"} style={{ padding: "8px 0 10px", margin: 0 }}>
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: "baseline",
           gap: 12,
           fontFamily: "var(--font-ui)",
-          fontSize: "var(--fs-body-s)",
+          fontSize: 13,
           color: "var(--text-2)",
-          marginBottom: 2,
         }}
       >
         <label htmlFor={id}>{label}</label>
@@ -227,17 +320,28 @@ export function SliderRow({ label, valueText, value, min, max, step, onChange, n
             unit={input.unit}
             dp={input.dp}
             disabled={disabled}
+            changed={changed}
             ariaLabel={plainName ? `${plainName} (typed)` : "Typed value"}
           />
         ) : (
-          <span style={{ ...mono, fontSize: "var(--fs-body-s)", fontWeight: 600, color: "var(--text)" }}>
+          <span
+            className="mrr-slider-value"
+            style={{
+              fontFamily: "var(--font-ui)",
+              fontWeight: 500,
+              fontSize: 14,
+              fontVariantNumeric: "tabular-nums",
+              color: changed ? "var(--amber)" : "var(--text)",
+            }}
+          >
             {valueText}
           </span>
         )}
       </div>
       <div className="mrr-slider-wrap">
         <div className="mrr-slider-track" aria-hidden="true" />
-        <div className="mrr-slider-fill" aria-hidden="true" style={{ width: `${pct}%` }} />
+        <div className="mrr-slider-fill" aria-hidden="true" style={{ width: `${pct}%`, background: changed ? "var(--amber)" : "var(--link)" }} />
+        {hasBaseline ? <div className="mrr-slider-tick" aria-hidden="true" style={{ left: `${pctOf(baseline, min, max)}%` }} /> : null}
         <input
           ref={ref}
           id={id}
@@ -253,6 +357,26 @@ export function SliderRow({ label, valueText, value, min, max, step, onChange, n
           onChange={(e) => onChange(Number(e.target.value))}
         />
       </div>
+      {scaleOn ? (
+        <div
+          className="mrr-slider-scale"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 8,
+            fontFamily: "var(--font-mono)",
+            fontVariantNumeric: "tabular-nums",
+            fontWeight: 400,
+            fontSize: 10,
+            color: "var(--text-4)",
+            marginTop: 2,
+          }}
+        >
+          <span>{scale?.left ?? format(min)}</span>
+          <span>{mid}</span>
+          <span>{scale?.right ?? format(max)}</span>
+        </div>
+      ) : null}
       {note ? <div style={{ ...capStyle, marginTop: 2 }}>{note}</div> : null}
     </div>
   );
