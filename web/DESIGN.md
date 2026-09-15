@@ -407,6 +407,29 @@ Empirical evidence = `<section id="backtests">`; (3) the `DisclosureLine`. Tile 
 collapse to one column below 768; the two ribbons keep their intrinsic width inside
 an `overflow-x: auto` well there.
 
+**Markets composition (Phase 5, 2026-09-15).** Inside `<div class="mrr-mkt">` (the
+same one-column panel stack, hero-row margin zeroed), top to bottom: (1)
+`.mrr-hero-row`: `TabHero id="markets-hero"` (h1 = the risk word read off the four
+stored sector ETFs' one-day moves, "Risk-on" / "Mixed" / "Risk-off", with the pill
+"{up} of {n} sectors up"; the live session sentence as the subhead; the `WeekBars`
+one-week return bars for the 14 stored ETFs as the signature chart; the Tape / Stored
+candles / Priced freshness chips and the basis note) beside `SummaryCard
+id="markets-summary"` ("Cross-asset summary": US 10Y · Sectors · 1d · Dollar · VIX ·
+Priced · Top surprise, and the stream status strip worded from `streamWord` plus the
+tape's feed words, opening the freshness drawer); (2) the `ChartPanel` region
+(`#markets-chart-panel`, full width, only while a tape row is selected; closing it
+returns focus to the row's ticker button); (3) `.mrr-mkt-body` (`minmax(0,1fr)
+var(--summary-w)` at 1200 and up, one column below): the left `.mrr-mkt-stack` with
+`<section id="single-name-research">` (search and the `Chart range` picker in the
+panel header), `<section id="sector-heatmap">`, `<section id="top-surprises">`
+(`DataTable`: rank, release with its interpretation, `DivergingBar`, σ), and the right
+`<section id="watchlist">` Macro tape (`MacroTape`: `DataTable` groups, nine columns,
+the Macro / Single names toggle whose toggled view renders `#single-names`); (4)
+`<section id="whats-priced-full">` full width (three tiles, a plain `table.mrr-priced`
+with `th[scope="row"]` metric names, Level and MoM only); (5) the `DisclosureLine`.
+Nothing on the page is re-derived in the browser: the risk word counts served
+`ret_1d` signs, and every figure is a served field or its formatted value.
+
 **Gaps.** 16px between top-level columns (`--gap-col`), 14px between stacked panels
 (`--gap-panel`), 12px between tiles inside a panel (`--gap-tile`). Panel padding
 `16px 18px 18px`; tile padding 14 to 16px. The old 2px-increment spacing scale
@@ -827,6 +850,9 @@ Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-15 Phase 5: Markets rebuilt on TabHero / SummaryCard; tape on DataTable
+  groups (nine columns, Macro / Single names toggle); single-name panel with 20-day
+  average, News disclosure; local old-palette literals removed
 - 2026-09-15 Phase 4: Regime Lab rebuilt on TabHero / SummaryCard; sub-tabs on Panel,
   Segmented, MeterRow, DataTable groups, HeatMatrix; local old-palette hexes removed
 - 2026-09-15 Phase 3: Dashboard rebuilt on TabHero / SummaryCard; wordmark demoted to a

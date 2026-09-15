@@ -20,3 +20,7 @@ Dense terminal grid on the mockup `.tbl` styling: the macro tape, the debt sched
 - `sub(row)` prints a secondary label (11.5px `--text-3`) inline after the cell; `subBlock` puts it on its own line.
 - `compact` tightens cells to 6px 8px. `zebra` stays on by default; pass `zebra={false}` for the mockup look. `caption` adds a visually hidden table name; `hideHeader` drops the header row.
 - Use `render` to colour a cell by sign; keep colour logic out of the data. Horizontal scrolling and the sticky first column stay `ScrollTable`'s job.
+
+## rowProps (Phase 5)
+
+`rowProps?: (row, index) => HTMLAttributes<tr>`: attributes and handlers spread onto each data row after the key; `style` merges over the zebra background. Group rows never receive them. The macro tape uses it for the row click, the `data-selected` rail and the tick flash animation.

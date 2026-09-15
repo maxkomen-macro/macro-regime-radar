@@ -34,6 +34,12 @@ export interface DataTableProps extends React.TableHTMLAttributes<HTMLTableEleme
   caption?: React.ReactNode;
   hideHeader?: boolean;
   style?: React.CSSProperties;
+  /**
+   * Per-row attributes and handlers spread onto each data `<tr>` after the key
+   * (`data-*`, `onClick`, `style` merged over the zebra background). Group rows
+   * never receive them. Default undefined reproduces the plain table.
+   */
+  rowProps?: (row: any, index: number) => React.HTMLAttributes<HTMLTableRowElement> & Record<`data-${string}`, string | undefined>;
 }
 
 /**

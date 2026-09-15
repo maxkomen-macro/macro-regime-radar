@@ -5,7 +5,8 @@
  * state) and console.json (baseline console errors / failed API requests).
  *
  * Usage (servers already running):  npx playwright test e2e/baseline-capture.spec.ts
- * Output dir override:              BASELINE_DIR=/abs/path
+ * Output dir override:              BASELINE_DIR=/abs/path (default: the branch's captures folder;
+ *                                   the Phase 0 baseline folder additionally needs ALLOW_BASELINE_OVERWRITE=1)
  */
 import { test, type Page } from "@playwright/test";
 import fs from "node:fs";
@@ -14,7 +15,22 @@ import { execSync } from "node:child_process";
 import { extractLabels, type LabelRec } from "./lib/labels";
 import { collect, listTabs, openAllDisclosures, settle, slugify } from "./lib/drive";
 
-const OUT = process.env.BASELINE_DIR ?? path.resolve(process.cwd(), "..", "docs", "redesign-v2", "baseline");
+// Output: BASELINE_DIR when set, else the checked-out branch's capture folder
+// (docs/redesign-v2/captures/<branch-slug>). The Phase 0 reference folder
+// (docs/redesign-v2/baseline) is never the default: a full-suite run on a
+// later branch once overwrote it (Phase 5 verify, 2026-09-15), so writing there
+// now needs ALLOW_BASELINE_OVERWRITE=1 as well.
+const DOCS_DIR = path.resolve(process.cwd(), "..", "docs", "redesign-v2");
+const BRANCH_SLUG = execSync("git rev-parse --abbrev-ref HEAD", { cwd: process.cwd() })
+  .toString()
+  .trim()
+  .replace(/[^A-Za-z0-9._-]+/g, "-");
+const OUT = process.env.BASELINE_DIR ?? path.join(DOCS_DIR, "captures", BRANCH_SLUG);
+if (path.resolve(OUT) === path.join(DOCS_DIR, "baseline") && process.env.ALLOW_BASELINE_OVERWRITE !== "1") {
+  throw new Error(
+    `baseline-capture: refusing to overwrite the Phase 0 reference in ${OUT}; set ALLOW_BASELINE_OVERWRITE=1 to regenerate it on react-rebuild @ cb7c4d8.`,
+  );
+}
 fs.mkdirSync(OUT, { recursive: true });
 
 const SCREENS = [

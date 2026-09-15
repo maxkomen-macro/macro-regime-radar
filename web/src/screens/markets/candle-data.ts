@@ -61,3 +61,20 @@ export function prepareCandles(bars: CandleBar[], intraday: boolean): PreparedCa
 export function prepareVolumes(bars: CandleBar[], intraday: boolean): PreparedVolume[] {
   return dedupeSorted(bars.filter((b) => b.volume != null && b.volume > 0).map((b) => ({ time: toChartTime(b.ts, intraday), value: b.volume as number })));
 }
+
+/** Simple moving average of the last `n` closes, keyed by each bar's time:
+ * nothing for the first `n - 1` bars, then one point per bar (redesign Phase 5,
+ * checklist 05 B.4). Display math on served closes, like a sparkline; it never
+ * replaces a served number. Each window is summed oldest to newest so the
+ * result is the plain mean a reader would compute, not a drifting rolling sum. */
+export function movingAverage(candles: PreparedCandle[], n: number): { time: PreparedCandle["time"]; value: number }[] {
+  const win = Math.floor(n);
+  if (!(win >= 1)) return [];
+  const out: { time: PreparedCandle["time"]; value: number }[] = [];
+  for (let i = win - 1; i < candles.length; i += 1) {
+    let sum = 0;
+    for (let j = i - win + 1; j <= i; j += 1) sum += candles[j].close;
+    out.push({ time: candles[i].time, value: sum / win });
+  }
+  return out;
+}

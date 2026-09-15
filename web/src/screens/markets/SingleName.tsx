@@ -1,20 +1,28 @@
 /**
- * Single-name deep dive — profile, candles, regime context, stored coverage
+ * Single-name deep dive: profile, candles, regime context, stored coverage
  * and an optional end-of-day Options lens for any listed symbol.
  *
  * Data honesty (2026-09-06): every block names its provider. The quote is
  * the EODHD stream when this symbol is on it and ticking (the panel asks the
  * relay to watch it); otherwise the delayed EODHD REST quote, or yfinance
- * standing in — each labeled, with the market timestamp separate from the
+ * standing in, each labeled, with the market timestamp separate from the
  * fetch time. Candles come as a provenance envelope (one provider per
  * series, fallback disclosed); a new symbol never paints the previous
  * symbol's history. The regime table is computed here from monthly closes
  * joined to the stored classifier history; it never re-derives anything a
  * table already asserts.
+ *
+ * 2026-09-15 (redesign Phase 5, checklist 05 B.4): the mockup tile. Identity
+ * row, eight `StatTile size="xs"` fundamentals, the candle chart with its
+ * 20-day average (display math on served closes; the legend shows only on
+ * daily payloads), the regime tiles on the `--r-*` tokens, then the Options
+ * lens and a collapsed "News for {SYM}" disclosure. The chart range is
+ * controlled by the panel header when `range` and `onRangeChange` are both
+ * given; without them the tile keeps its own state and picker.
  */
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import { Card, StatTile } from "../../components";
+import { Card, Segmented, StatTile } from "../../components";
 import {
   useFreshness,
   useNews,
@@ -31,22 +39,29 @@ import type { CandleRange, NewsItem, OptionContract } from "../../api/types";
 import { fmtDate, fmtSignedPct, fmtUtcStampEt } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
-import { Caption, mono } from "../shared/screen-ui";
+import { Caption, eyebrowStyle, metaStyle, mono, monoNoteStyle } from "../shared/screen-ui";
 import { candleCaption, describeProviderError, fallbackNote, fmtProviderStamp, providerName } from "../shared/provider-ui";
 
 const CandleChart = lazy(() => import("./CandleChart"));
 
-const RANGES: CandleRange[] = ["1D", "5D", "1M", "6M", "1Y", "5Y", "MAX"];
+export const RANGES: CandleRange[] = ["1D", "5D", "1M", "6M", "1Y", "5Y", "MAX"];
+const RANGE_OPTIONS = RANGES.map((r) => ({ id: r, label: r }));
+
+/** Window of the simple moving average drawn over daily candles; the legend
+ * names it, so the two must move together. */
+const AVERAGE_DAYS = 20;
 
 const REGIME_ORDER = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
-const REGIME_COLORS: Record<string, string> = {
-  Goldilocks: "#2ecc71",
-  Overheating: "#e67e22",
-  Stagflation: "#e74c3c",
-  "Recession Risk": "#95a5a6",
+/** The regime hue tokens (tokens/colors.css) with the rgb of each token hex
+ * for the tile tints, as the Phase 4 screens paint them; no old-palette hex. */
+const REGIME_HUE: Record<string, { token: string; rgb: string }> = {
+  Goldilocks: { token: "var(--r-goldilocks)", rgb: "38,220,160" },
+  Overheating: { token: "var(--r-overheating)", rgb: "230,126,34" },
+  Stagflation: { token: "var(--r-stagflation)", rgb: "231,76,60" },
+  "Recession Risk": { token: "var(--r-recession)", rgb: "149,165,166" },
 };
 
-/** $5.08T / $312.4B / $87.1M — market-cap style compaction. */
+/** $5.08T / $312.4B / $87.1M: market-cap style compaction. */
 function compactUsd(v: number | null | undefined): string {
   if (v == null) return "—";
   if (v >= 1e12) return `$${(v / 1e12).toFixed(2)}T`;
@@ -72,14 +87,28 @@ function nameToken(name: string | undefined): string | null {
 
 const n2 = (v: number | null | undefined, dp = 2): string => (v == null ? "—" : v.toFixed(dp));
 
+const uiText: React.CSSProperties = { fontFamily: "var(--font-ui)" };
+
 interface Props {
   symbol: string;
   onClose: () => void;
+  /** Controlled range (redesign Phase 5, checklist 05 B.4): when both props are
+   * given the panel header owns the picker and this tile renders none. */
+  range?: CandleRange;
+  onRangeChange?: (range: CandleRange) => void;
 }
 
-export default function SingleName({ symbol, onClose }: Props) {
+export default function SingleName({ symbol, onClose, range: rangeProp, onRangeChange }: Props) {
   const { isNarrow } = useBreakpoint();
-  const [range, setRange] = useState<CandleRange>("6M");
+  const [ownRange, setOwnRange] = useState<CandleRange>("6M");
+  // Controlled only when both props arrive; otherwise the tile keeps today's
+  // state and picker, so the existing tests render unchanged.
+  const controlled = rangeProp != null && onRangeChange != null;
+  const range: CandleRange = controlled ? rangeProp : ownRange;
+  const setRange = (r: CandleRange) => {
+    if (!controlled) setOwnRange(r);
+    onRangeChange?.(r);
+  };
   const profile = useSymbolProfile(symbol);
   const candles = useSymbolCandles(symbol, range);
   const monthly = useSymbolCandles(symbol, "MAX");
@@ -102,6 +131,9 @@ export default function SingleName({ symbol, onClose }: Props) {
   const shownPrice = liveFresh && live ? live.p : p?.last;
   const shownChgPct = liveFresh && live ? live.dc : p?.day_change_pct;
   const session = freshness.data?.session ?? null;
+  // The average is a 20-DAY average only over daily bars; the legend and the
+  // line hide together on intraday, weekly and monthly payloads.
+  const dailyBars = candles.data?.interval === "1d";
 
   useEffect(() => {
     panelRef.current?.scrollIntoView({ block: "nearest" });
@@ -172,6 +204,15 @@ export default function SingleName({ symbol, onClose }: Props) {
     return { rows, matched: true };
   }, [tickerNews.data, generalNews.data, p?.name]);
 
+  // The news hooks fetch on mount, so the disclosure's meta counts the rows
+  // before anyone opens it and no request waits on a click.
+  const newsLoading = tickerNews.isLoading || generalNews.isLoading;
+  const coverageMeta = coverage.rows.length
+    ? `${coverage.rows.length} stored · 7-day window${coverage.matched ? " · headline match" : ""}`
+    : newsLoading
+      ? "reading…"
+      : "none in 7 days";
+
   // ── quote provenance line ────────────────────────────────────────────
   const quoteLine = liveFresh
     ? `live · EODHD stream · ${live?.t ? fmtUtcStampEt(new Date(live.t).toISOString()) : ""}`
@@ -188,92 +229,102 @@ export default function SingleName({ symbol, onClose }: Props) {
         ? describeProviderError(profile.error, "the quote", symbol)
         : "reading the quote…";
 
+  const identityLine = p
+    ? [p.name, p.exchange, p.quote_type, p.sector, p.industry].filter(Boolean).join(" · ")
+    : profile.isPending
+      ? "Loading profile…"
+      : "";
+
   const isUsEquity = p ? p.exchange === "US" && !/^(FX|Crypto|Index)$/i.test(p.quote_type ?? "") : false;
 
   return (
-    <div ref={panelRef} tabIndex={-1} style={{ outline: "none", marginTop: 12 }}>
-      <Card style={{ padding: 16 }}>
-        {/* ── header: identity + price ─────────────────────────────────── */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ minWidth: 220 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 700, color: "var(--text)" }}>
-                {symbol}
+    // Focus lands here when a symbol opens (the search's Enter or a watchlist
+    // click). The base :focus-visible ring stays; nothing removes the outline.
+    <div ref={panelRef} tabIndex={-1}>
+      <Card variant="tile" style={{ padding: "16px 18px 10px" }}>
+        {/* ── identity row: symbol, name and meta, price, legend, provenance, close ── */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
+          <span style={{ ...uiText, fontWeight: 500, fontSize: 20, color: "var(--text)" }}>{symbol}</span>
+          <span style={{ ...uiText, fontSize: 13, color: "var(--text-2)", minWidth: 0 }}>{identityLine}</span>
+          <span style={{ ...uiText, fontWeight: 500, fontSize: 24, fontVariantNumeric: "tabular-nums", color: "var(--text)", marginLeft: 4 }}>
+            {shownPrice != null
+              ? `$${shownPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : profile.isError
+                ? "—"
+                : "…"}
+          </span>
+          {shownChgPct != null && (
+            <span style={{ ...uiText, fontSize: 15, fontVariantNumeric: "tabular-nums", color: shownChgPct >= 0 ? "var(--pos)" : "var(--neg)" }}>
+              {fmtSignedPct(shownChgPct)}
+            </span>
+          )}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, flexWrap: "wrap", minWidth: 0 }}>
+            {dailyBars ? (
+              <span style={{ ...uiText, fontSize: "var(--fs-caption)", color: "var(--text-3)", whiteSpace: "nowrap" }}>
+                <i aria-hidden="true" style={{ display: "inline-block", width: 14, height: 2, background: "var(--link)", verticalAlign: 3, marginRight: 6 }} />
+                {AVERAGE_DAYS}-day average
               </span>
-              <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
-                {p?.name ?? (profile.isPending ? "Loading profile…" : "")}
-              </span>
-            </div>
-            <div style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)", marginTop: 3 }}>
-              {[p?.exchange, p?.quote_type, p?.sector, p?.industry].filter(Boolean).join(" · ") || " "}
-            </div>
-          </div>
-          <div style={{ textAlign: "right", minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, justifyContent: "flex-end" }}>
-              <span style={{ ...mono, fontSize: 26, fontWeight: 600, letterSpacing: "var(--ls-numeric)", color: "var(--text)" }}>
-                {shownPrice != null
-                  ? `$${shownPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  : profile.isError
-                    ? "—"
-                    : "…"}
-              </span>
-              {shownChgPct != null && (
-                <span style={{ ...mono, fontSize: "var(--fs-body)", fontWeight: 700, color: shownChgPct >= 0 ? "var(--pos)" : "var(--neg-text)" }}>
-                  {fmtSignedPct(shownChgPct)}
-                </span>
-              )}
-            </div>
-            <div role="status" style={{ ...mono, fontSize: "var(--fs-meta)", color: liveFresh ? "var(--pos)" : "var(--text-muted)", marginTop: 2, maxWidth: 420 }}>
+            ) : null}
+            <div role="status" style={{ ...monoNoteStyle, color: liveFresh ? "var(--pos)" : monoNoteStyle.color, maxWidth: 420 }}>
               {quoteLine}
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Close · Esc"
+              aria-label="Close single-name panel"
+              className="mrr-btn"
+              data-touch={isNarrow ? "true" : "false"}
+            >
+              × close
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            title="Close · Esc"
-            aria-label="Close single-name panel"
-            className="mrr-chip-btn"
-            data-touch={isNarrow ? "true" : "false"}
-            style={{ color: "var(--text-muted)" }}
-          >
-            × close
-          </button>
         </div>
 
-        {/* ── range chips + chart ──────────────────────────────────────── */}
-        <div role="group" aria-label="Chart range" style={{ display: "flex", gap: 6, margin: "14px 0 8px", flexWrap: "wrap" }}>
-          {RANGES.map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => setRange(r)}
-              aria-pressed={range === r}
-              className="mrr-chip-btn"
-              data-touch={isNarrow ? "true" : "false"}
-              style={{
-                background: range === r ? "rgba(74,158,255,.10)" : undefined,
-                borderColor: range === r ? "rgba(74,158,255,.4)" : undefined,
-                color: range === r ? "var(--accent)" : "var(--text-muted)",
-                minWidth: 40,
-                justifyContent: "center",
-              }}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
+        {/* ── fundamentals row ──────────────────────────────────────────── */}
+        {p && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 14, margin: "12px 0 10px" }}>
+              <StatTile label="Market cap" value={compactUsd(p.market_cap)} size="xs" />
+              <StatTile label="P/E · TTM" value={n2(p.trailing_pe, 1)} size="xs" />
+              <StatTile label="Fwd P/E" value={n2(p.forward_pe, 1)} size="xs" />
+              <StatTile label="Beta" value={n2(p.beta)} size="xs" />
+              <StatTile label="Div yield" value={p.dividend_yield != null ? `${p.dividend_yield.toFixed(2)}%` : "—"} size="xs" />
+              <StatTile
+                label="52W range"
+                value={p.year_low != null && p.year_high != null ? `${p.year_low.toFixed(0)}–${p.year_high.toFixed(0)}` : "—"}
+                size="xs"
+              />
+              <StatTile label="Avg vol · 3M" value={compactNum(p.avg_volume_3m)} size="xs" />
+              <StatTile label="Net margin" value={p.profit_margin != null ? `${(p.profit_margin * 100).toFixed(1)}%` : "—"} size="xs" />
+            </div>
+            <Caption mono>
+              {p.fundamentals_provider
+                ? `Fundamentals via ${providerName(p.fundamentals_provider)}${p.fundamentals_provider === "yfinance" ? " (EODHD fundamentals are not in the plan on this server)" : ""}, refreshed every few minutes; a dash is a field the source does not publish for this security.`
+                : "Fundamentals unavailable for this instrument from either provider."}
+            </Caption>
+          </>
+        )}
+
+        {/* ── range picker (only while the tile owns the range) + chart ─── */}
+        {!controlled ? (
+          <div style={{ margin: "12px 0 8px" }}>
+            <Segmented mono label="Chart range" options={RANGE_OPTIONS} value={range} onChange={(id) => setRange(id as CandleRange)} />
+          </div>
+        ) : null}
         {candles.data?.bars.length ? (
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", marginTop: controlled ? 12 : 0 }}>
             <Suspense
               fallback={
-                <div style={{ height: 320, display: "grid", placeItems: "center", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
+                <div style={{ height: 320, display: "grid", placeItems: "center", ...uiText, fontSize: "var(--fs-caption)", color: "var(--text-3)" }}>
                   Loading the chart module…
                 </div>
               }
             >
-              <CandleChart bars={candles.data.bars} range={candles.data.range} interval={candles.data.interval} />
+              <CandleChart bars={candles.data.bars} range={candles.data.range} interval={candles.data.interval} average={AVERAGE_DAYS} />
             </Suspense>
             {candles.isFetching && candles.data.range !== range ? (
-              <div role="status" style={{ position: "absolute", top: 8, left: 8, ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)", background: "var(--surface)", padding: "2px 6px", borderRadius: "var(--r-xs)" }}>
+              <div role="status" style={{ position: "absolute", top: 8, left: 8, ...metaStyle, background: "var(--tile)", padding: "2px 6px", borderRadius: "var(--r-badge)" }}>
                 Requesting {range} bars…
               </div>
             ) : null}
@@ -281,7 +332,7 @@ export default function SingleName({ symbol, onClose }: Props) {
         ) : (
           <div
             role="status"
-            style={{ height: 120, display: "grid", placeItems: "center", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: candles.isError ? "var(--warn-hot)" : "var(--text-muted)", textAlign: "center", padding: "0 12px" }}
+            style={{ height: 120, marginTop: controlled ? 12 : 0, display: "grid", placeItems: "center", ...uiText, fontSize: "var(--fs-caption)", color: candles.isError ? "var(--warn-hot)" : "var(--text-3)", textAlign: "center", padding: "0 12px" }}
           >
             {candles.isError
               ? describeProviderError(candles.error, "history", symbol)
@@ -290,123 +341,101 @@ export default function SingleName({ symbol, onClose }: Props) {
                 : `No bars in the ${range} range for ${symbol}.`}
           </div>
         )}
-        <Caption>
+        <Caption mono>
           {candles.data
             ? candleCaption(candles.data)
             : "History comes from EODHD first; yfinance stands in only when EODHD cannot answer, and the caption says so."}{" "}
           The tape above owns the live quote; this chart owns the history.
         </Caption>
 
-        {/* ── key stats ────────────────────────────────────────────────── */}
-        {p && (
-          <div style={{ marginTop: 14 }}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(128px,1fr))",
-                gap: 14,
-              }}
-            >
-              <StatTile label="Market cap" value={compactUsd(p.market_cap)} size="sm" />
-              <StatTile label="P/E · TTM" value={n2(p.trailing_pe, 1)} size="sm" />
-              <StatTile label="Fwd P/E" value={n2(p.forward_pe, 1)} size="sm" />
-              <StatTile label="Beta" value={n2(p.beta)} size="sm" />
-              <StatTile label="Div yield" value={p.dividend_yield != null ? `${p.dividend_yield.toFixed(2)}%` : "—"} size="sm" />
-              <StatTile
-                label="52W range"
-                value={p.year_low != null && p.year_high != null ? `${p.year_low.toFixed(0)}–${p.year_high.toFixed(0)}` : "—"}
-                size="sm"
-              />
-              <StatTile label="Avg vol · 3M" value={compactNum(p.avg_volume_3m)} size="sm" />
-              <StatTile label="Net margin" value={p.profit_margin != null ? `${(p.profit_margin * 100).toFixed(1)}%` : "—"} size="sm" />
+        {/* ── regime fit ───────────────────────────────────────────────── */}
+        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <span style={{ ...eyebrowStyle, whiteSpace: "nowrap" }}>Average monthly return by regime</span>
+          {regimeStats ? (
+            <div style={{ display: "flex", gap: 8, flex: 1, flexWrap: "wrap", minWidth: 0 }}>
+              {REGIME_ORDER.map((label) => {
+                const cell = regimeStats.acc.get(label);
+                const hue = REGIME_HUE[label];
+                const avg = cell ? (cell.sum / cell.n) * 100 : null;
+                return (
+                  <div
+                    key={label}
+                    style={{
+                      flex: "1 1 120px",
+                      minWidth: 0,
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: `1px solid rgba(${hue.rgb},.33)`,
+                      background: `rgba(${hue.rgb},.08)`,
+                    }}
+                  >
+                    <div style={{ ...uiText, fontSize: 11.5, color: hue.token }}>{label}</div>
+                    <div style={{ ...uiText, fontWeight: 500, fontSize: 15, fontVariantNumeric: "tabular-nums", marginTop: 1, color: avg == null ? "var(--text-3)" : avg >= 0 ? "var(--pos)" : "var(--neg)" }}>
+                      {avg != null ? `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%` : "—"}
+                    </div>
+                    <div style={{ ...monoNoteStyle, fontSize: 11, lineHeight: 1.4, marginTop: 2 }}>
+                      {cell ? `${Math.round((cell.up / cell.n) * 100)}% up · n=${cell.n}` : "no overlap"}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <Caption>
-              {p.fundamentals_provider
-                ? `Fundamentals via ${providerName(p.fundamentals_provider)}${p.fundamentals_provider === "yfinance" ? " (EODHD fundamentals are not in the plan on this server)" : ""}, refreshed every few minutes; a dash is a field the source does not publish for this security.`
-                : "Fundamentals unavailable for this instrument from either provider."}
-            </Caption>
-          </div>
+          ) : null}
+        </div>
+        {regimeStats ? (
+          <Caption>
+            Average monthly return for {symbol} inside each classifier regime since {regimeStats.firstMonth} (
+            {regimeStats.joined} overlapping months; monthly closes via {providerName(monthly.data?.provider)}); up% is the
+            share of positive months. Small n cells are anecdotes, not laws.
+          </Caption>
+        ) : (
+          <Caption>
+            {monthly.isPending || regimes.isLoading
+              ? "Joining monthly closes with the stored regime history…"
+              : monthly.isError
+                ? describeProviderError(monthly.error, "monthly history", symbol)
+                : "Fewer than 12 months overlap the stored regime history; no regime read for this name."}
+          </Caption>
         )}
 
         {/* ── options lens (US equities and ETFs; end-of-day) ─────────── */}
         {isUsEquity ? <OptionsLens symbol={symbol} /> : null}
 
-        {/* ── regime context ───────────────────────────────────────────── */}
-        <div style={{ marginTop: 14 }}>
-          <div style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-wide)", color: "var(--text-label)", marginBottom: 6 }}>
-            Regime fit · monthly closes × stored classifier
-          </div>
-          {regimeStats ? (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
-                {REGIME_ORDER.map((label) => {
-                  const cell = regimeStats.acc.get(label);
-                  const color = REGIME_COLORS[label];
-                  const avg = cell ? (cell.sum / cell.n) * 100 : null;
-                  return (
-                    <div key={label} style={{ border: `0.5px solid ${color}40`, background: `${color}1f`, borderRadius: "var(--r-xs)", padding: "8px 10px" }}>
-                      <div style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color }}>
-                        {label}
-                      </div>
-                      <div style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, marginTop: 2, color: avg == null ? "var(--text-muted)" : avg >= 0 ? "var(--pos)" : "var(--neg-text)" }}>
-                        {avg != null ? `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%` : "—"}
-                      </div>
-                      <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: 2 }}>
-                        {cell ? `${Math.round((cell.up / cell.n) * 100)}% up · n=${cell.n}` : "no overlap"}
-                      </div>
+        {/* ── stored coverage, collapsed ───────────────────────────────── */}
+        <div style={{ marginTop: 10 }}>
+          <Disclosure
+            title={`News for ${symbol}`}
+            description="Tagged headlines first, then a headline match on the company name"
+            right={coverageMeta}
+            id="single-name-news"
+          >
+            {coverage.rows.length ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                {coverage.rows.map((n) => (
+                  <div key={n.id} style={{ borderBottom: "0.5px solid var(--line-hair)", paddingBottom: 8 }}>
+                    <a href={n.url ?? undefined} target="_blank" rel="noreferrer" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text)", fontWeight: 500 }}>
+                      {n.headline}
+                    </a>
+                    <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: 2 }}>
+                      {[n.source, n.published_at ? fmtDate(n.published_at) : null].filter(Boolean).join(" · ")}
+                      {n.overall_significance != null ? ` · sig ${n.overall_significance.toFixed(1)} / 5` : ""}
                     </div>
-                  );
-                })}
-              </div>
-              <Caption>
-                Average monthly return for {symbol} inside each classifier regime since {regimeStats.firstMonth} (
-                {regimeStats.joined} overlapping months; monthly closes via {providerName(monthly.data?.provider)}); up% is the
-                share of positive months. Small n cells are anecdotes, not laws.
-              </Caption>
-            </>
-          ) : (
-            <Caption>
-              {monthly.isPending || regimes.isLoading
-                ? "Joining monthly closes with the stored regime history…"
-                : monthly.isError
-                  ? describeProviderError(monthly.error, "monthly history", symbol)
-                  : "Fewer than 12 months overlap the stored regime history; no regime read for this name."}
-            </Caption>
-          )}
-        </div>
-
-        {/* ── stored coverage ──────────────────────────────────────────── */}
-        <div style={{ marginTop: 14 }}>
-          <div style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-wide)", color: "var(--text-label)", marginBottom: 6 }}>
-            Stored coverage · 7-day window
-            {coverage.matched ? " · headline match" : ""}
-          </div>
-          {coverage.rows.length ? (
-            <div style={{ display: "grid", gap: 8 }}>
-              {coverage.rows.map((n) => (
-                <div key={n.id} style={{ borderBottom: "0.5px solid var(--line-hair)", paddingBottom: 8 }}>
-                  <a href={n.url ?? undefined} target="_blank" rel="noreferrer" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text)", fontWeight: 500 }}>
-                    {n.headline}
-                  </a>
-                  <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: 2 }}>
-                    {[n.source, n.published_at ? fmtDate(n.published_at) : null].filter(Boolean).join(" · ")}
-                    {n.overall_significance != null ? ` · sig ${n.overall_significance.toFixed(1)} / 5` : ""}
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <Caption>
-              {tickerNews.isLoading || generalNews.isLoading
-                ? "Reading the stored news window…"
-                : `No stored coverage mentions ${symbol} in the last 7 days; the feed keeps a rolling window and ages out by design.`}
-            </Caption>
-          )}
-          {coverage.matched && coverage.rows.length > 0 && (
-            <Caption>
-              No rows are tagged {symbol}; these headlines mention "{nameToken(p?.name) ?? symbol}" by name instead.
-            </Caption>
-          )}
+                ))}
+              </div>
+            ) : (
+              <Caption>
+                {newsLoading
+                  ? "Reading the stored news window…"
+                  : `No stored coverage mentions ${symbol} in the last 7 days; the feed keeps a rolling window and ages out by design.`}
+              </Caption>
+            )}
+            {coverage.matched && coverage.rows.length > 0 && (
+              <Caption>
+                No rows are tagged {symbol}; these headlines mention "{nameToken(p?.name) ?? symbol}" by name instead.
+              </Caption>
+            )}
+          </Disclosure>
         </div>
       </Card>
     </div>
@@ -430,6 +459,11 @@ const COLS: { key: keyof OptionContract; label: string; dp?: number; width?: num
   { key: "vega", label: "V", dp: 3 },
   { key: "moneyness", label: "Moneyness", dp: 3 },
   { key: "dte", label: "DTE", dp: 0 },
+];
+
+const SIDE_OPTIONS = [
+  { id: "call", label: "Calls" },
+  { id: "put", label: "Puts" },
 ];
 
 export function OptionsLens({ symbol }: { symbol: string }) {
@@ -459,8 +493,16 @@ export function OptionsLens({ symbol }: { symbol: string }) {
         : "end-of-day · EODHD · opens on demand";
 
   return (
-    <div style={{ marginTop: 14 }} onClick={() => !open && setOpen(true)} onKeyDown={(e) => e.key === "Enter" && !open && setOpen(true)}>
-      <Disclosure title="Options lens" right={status} id="options-lens">
+    <div style={{ marginTop: 12 }}>
+      {/* Nothing is requested until the first expand (the entitlement probe
+          included); the flag never resets, so a re-collapse keeps the chain. */}
+      <Disclosure
+        title="Options lens"
+        description="Chain by expiration · bid, ask, IV, Greeks"
+        right={status}
+        id="options-lens"
+        onToggle={(next) => next && setOpen(true)}
+      >
         {exps.isPending ? (
           <Caption>Requesting listed expirations for {symbol} from EODHD…</Caption>
         ) : exps.isError ? (
@@ -488,21 +530,7 @@ export function OptionsLens({ symbol }: { symbol: string }) {
                   ))}
                 </select>
               </label>
-              <div role="group" aria-label="Contract type" style={{ display: "inline-flex", gap: 4 }}>
-                {(["call", "put"] as const).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className="mrr-chip-btn"
-                    data-touch={isNarrow ? "true" : "false"}
-                    aria-pressed={side === s}
-                    onClick={() => setSide(s)}
-                    style={{ color: side === s ? "var(--accent)" : "var(--text-muted)", borderColor: side === s ? "rgba(74,158,255,.4)" : undefined }}
-                  >
-                    {s === "call" ? "Calls" : "Puts"}
-                  </button>
-                ))}
-              </div>
+              <Segmented label="Contract type" options={SIDE_OPTIONS} value={side} onChange={(id) => setSide(id as "call" | "put")} />
               {exps.data?.truncated ? <span style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)" }}>first 1,000 contracts scanned for expirations</span> : null}
             </div>
             {chain.isPending ? (

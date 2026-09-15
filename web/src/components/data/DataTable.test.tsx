@@ -4,8 +4,8 @@
  * `.tbl`: `th[scope=col]`, group rows spanning every column, `compact`
  * padding, column `sub` labels, `zebra`, `caption`, `hideHeader`).
  */
-import { describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { DataTable } from "./DataTable";
 
 const COLUMNS = [
@@ -128,5 +128,65 @@ describe("DataTable (checklist 02 B.11)", () => {
     expect(plain.querySelector("caption")).toBeNull();
     expect(plain.querySelectorAll("th")).toHaveLength(3);
     expect(plain.querySelector("tbody")?.querySelectorAll("tr")).toHaveLength(0);
+  });
+});
+
+/* ── redesign Phase 5 (checklist 05 A.12 / E.1): appended case ─────────────── */
+
+describe("DataTable rowProps (checklist 05 A.12)", () => {
+  it("spreads data-*, onClick and a merged style onto each data row, never onto group rows, and reproduces the plain output when omitted", () => {
+    const onClick = vi.fn();
+    const rowProps = (row: (typeof ROWS)[number], index: number) => ({
+      "data-clickable": "",
+      "data-selected": row.id === "qqq" ? "true" : "false",
+      "data-index": String(index),
+      onClick,
+      style: index === 1 ? { animation: "mrr-flash-up 600ms ease-out" } : undefined,
+    });
+    render(
+      <DataTable
+        columns={COLUMNS}
+        rows={ROWS}
+        groups={[
+          { label: "Equities", rows: ROWS.slice(0, 2) },
+          { label: "Rates", rows: ROWS.slice(2) },
+        ]}
+        rowProps={rowProps}
+      />,
+    );
+    const rows = bodyRows(screen.getByRole("table"));
+    const data = rows.filter((r) => !r.classList.contains("mrr-grp"));
+    const groups = rows.filter((r) => r.classList.contains("mrr-grp"));
+    expect(data).toHaveLength(3);
+    expect(groups).toHaveLength(2);
+    for (const r of data) expect(r.hasAttribute("data-clickable")).toBe(true);
+    expect(data.map((r) => r.getAttribute("data-selected"))).toEqual(["false", "true", "false"]);
+    // The index is the row's position inside its group (the callback's second argument).
+    expect(data.map((r) => r.getAttribute("data-index"))).toEqual(["0", "1", "0"]);
+    // `style` merges over the zebra background: the second row keeps its band and gains the animation.
+    expect(data[1].getAttribute("style") ?? "").toMatch(/rgba\(255, ?255, ?255, ?0?\.012\)/);
+    expect(data[1].getAttribute("style") ?? "").toMatch(/mrr-flash-up/);
+    expect(data[0].getAttribute("style") ?? "").not.toMatch(/mrr-flash/);
+    // Clicking a cell fires the row handler once; the row is the target, not the cell.
+    fireEvent.click(screen.getByText("645.20"));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    fireEvent.click(data[2]);
+    expect(onClick).toHaveBeenCalledTimes(2);
+    // Group rows never receive the attributes or the handler.
+    for (const g of groups) {
+      expect(g.hasAttribute("data-clickable")).toBe(false);
+      expect(g.hasAttribute("data-selected")).toBe(false);
+      expect(g.hasAttribute("data-index")).toBe(false);
+      fireEvent.click(g);
+    }
+    expect(onClick).toHaveBeenCalledTimes(2);
+
+    // Omitted (or returning nothing) reproduces today's output byte for byte.
+    const plain = render(<DataTable columns={COLUMNS} rows={ROWS} />).container.innerHTML;
+    const empty = render(<DataTable columns={COLUMNS} rows={ROWS} rowProps={() => ({})} />).container.innerHTML;
+    const explicit = render(<DataTable columns={COLUMNS} rows={ROWS} rowProps={undefined} />).container.innerHTML;
+    expect(empty).toBe(plain);
+    expect(explicit).toBe(plain);
+    expect(plain).not.toContain("data-clickable");
   });
 });

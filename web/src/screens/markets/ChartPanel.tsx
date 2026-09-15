@@ -18,6 +18,13 @@
  * - Opening the panel scrolls it into view and moves focus to it (clicking a
  *   Single-Names row 1,400px below now has visible, announced feedback);
  *   Escape closes it; mode toggles carry aria-pressed.
+ *
+ * Redesign Phase 5 (checklist 05 B.3): restyled to the panel tokens with the
+ * 3px --link rail; Daily / Intraday and the on-demand range chips are mono
+ * `Segmented` groups (same role="group" + aria-label + aria-pressed
+ * semantics); the close chip is the house `.mrr-btn`; the on-demand chart
+ * draws the 20-bar average on daily payloads. Root id, role, label,
+ * tabIndex, the open/close effects and every state string are unchanged.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -31,9 +38,10 @@ import {
 } from "lightweight-charts";
 import { useFreshness, useMarketDaily, useMarketIntraday, useSymbolCandles } from "../../api/queries";
 import type { CandleRange } from "../../api/types";
+import { Segmented } from "../../components";
 import { fmtDate, fmtIntradayTs } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
-import { Caption, mono } from "../shared/screen-ui";
+import { Caption, metaStyle, mono } from "../shared/screen-ui";
 import { candleCaption, describeProviderError } from "../shared/provider-ui";
 import CandleChart from "./CandleChart";
 
@@ -75,6 +83,7 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
   const daily = useMarketDaily(hasHistory ? [symbol] : [], 365);
   const intraday = useMarketIntraday(canIntraday ? [symbol] : [], 48);
   const freshness = useFreshness();
+  const { isNarrow } = useBreakpoint();
 
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -196,30 +205,19 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
     }
   }, [activeMode, intradayPoints]);
 
-  const modeBtn = (m: Mode, label: string, enabled: boolean) => (
-    <button
-      key={m}
-      onClick={() => enabled && setMode(m)}
-      disabled={!enabled}
-      aria-pressed={activeMode === m}
-      title={enabled ? undefined : "Intraday bars are stored for SPY and QQQ only"}
-      style={{
-        appearance: "none",
-        background: activeMode === m ? "var(--accent-dim)" : "none",
-        border: `0.5px solid ${activeMode === m ? "var(--accent-line)" : "var(--line-hair)"}`,
-        borderRadius: "var(--r-xs)",
-        color: enabled ? (activeMode === m ? "var(--accent)" : "var(--text-muted)") : "var(--text-faint)",
-        fontFamily: "var(--font-mono)",
-        fontSize: "var(--fs-meta)",
-        letterSpacing: "var(--ls-micro)",
-        textTransform: "uppercase",
-        padding: "3px 8px",
-        cursor: enabled ? "pointer" : "not-allowed",
-      }}
-    >
-      {label}
-    </button>
-  );
+  // Daily / Intraday as a mono Segmented: the Intraday option is disabled,
+  // with the reason as its title, for every symbol but SPY and QQQ.
+  const modeOptions = [
+    { id: "daily", label: "Daily" },
+    {
+      id: "intraday",
+      label: "Intraday",
+      disabled: !canIntraday,
+      title: canIntraday ? undefined : "Intraday bars are stored for SPY and QQQ only",
+    },
+  ];
+  // "VIX · index" reads "VIX · index" once, not "VIX · VIX · index".
+  const shortName = name.startsWith(symbol) ? name.slice(symbol.length).replace(/^\s*·\s*/, "") || name : name;
 
   return (
     <div
@@ -229,12 +227,14 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
       role="region"
       aria-label={`${symbol} chart panel`}
       style={{
-        background: "var(--surface)",
-        border: "0.5px solid var(--line-hair)",
-        borderLeft: "3px solid var(--accent)",
-        borderRadius: "var(--r-md)",
-        padding: "var(--pad-card)",
-        marginBottom: 12,
+        background: "var(--panel)",
+        // The 1px --line frame with the 3px --link rail on the left, as
+        // longhands so the shorthand and the rail never fight.
+        borderWidth: "1px 1px 1px 3px",
+        borderStyle: "solid",
+        borderColor: "var(--line) var(--line) var(--line) var(--link)",
+        borderRadius: "var(--r-card)",
+        padding: "var(--pad-panel)",
         /* No `outline: none` here. The panel is programmatically focused when a
            symbol opens; killing the outline would also kill the house
            :focus-visible ring (app.css / base.css) for the keyboard path.
@@ -244,36 +244,31 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
            mouse users don't. That is exactly the behaviour we want. */
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-body-s)", color: "var(--text)" }}>
-          <b>{symbol}</b>
-          <span style={{ color: "var(--text-muted)" }}> · {name.startsWith(symbol) ? name.slice(symbol.length).replace(/^\s*·\s*/, "") || name : name}</span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+        {/* "{SYM} · {name} · daily candles · N sessions · through {date}": the
+            symbol in the UI face, the rest as the mono meta string. */}
+        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
+          <span style={{ fontFamily: "var(--font-ui)", fontWeight: 500, fontSize: 15, color: "var(--text)" }}>{symbol}</span>
+          <span style={metaStyle}>· {shortName}</span>
           {hasHistory && (
-            <span style={{ color: "var(--text-muted)", marginLeft: 8, fontSize: "var(--fs-meta)" }}>
+            <span style={metaStyle}>
               {activeMode === "daily"
-                ? `daily candles · ${dailyBars.length} sessions${dailyBars.length ? ` · through ${fmtDate(String(dailyBars[dailyBars.length - 1].time))}` : ""}`
-                : `5-minute bars · last two sessions stored`}
+                ? `· daily candles · ${dailyBars.length} sessions${dailyBars.length ? ` · through ${fmtDate(String(dailyBars[dailyBars.length - 1].time))}` : ""}`
+                : `· 5-minute bars · last two sessions stored`}
             </span>
           )}
         </span>
-        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {hasHistory && modeBtn("daily", "Daily", true)}
-          {hasHistory && modeBtn("intraday", "Intraday", canIntraday)}
+        <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {hasHistory && (
+            <Segmented mono label="Chart mode" options={modeOptions} value={activeMode} onChange={(id) => setMode(id as Mode)} />
+          )}
           <button
+            type="button"
+            className="mrr-btn"
+            data-touch={isNarrow ? "true" : undefined}
             onClick={onClose}
             aria-label="Close chart"
             title="Close · Esc"
-            style={{
-              appearance: "none",
-              background: "none",
-              border: "0.5px solid var(--line-hair)",
-              borderRadius: "var(--r-xs)",
-              color: "var(--text-muted)",
-              fontFamily: "var(--font-mono)",
-              fontSize: "var(--fs-meta)",
-              padding: "3px 8px",
-              cursor: "pointer",
-            }}
           >
             × close
           </button>
@@ -322,39 +317,23 @@ const RANGES: CandleRange[] = ["1D", "5D", "1M", "6M", "1Y", "5Y", "MAX"];
  * layer on open (default 6M), one provider per series, provenance in the
  * caption, every failure named. A symbol change never shows the previous
  * symbol's bars (the hook keys on the symbol). */
+const RANGE_OPTIONS = RANGES.map((r) => ({ id: r, label: r }));
+
 export function OnDemandHistory({ symbol }: { symbol: string }) {
-  const { isNarrow } = useBreakpoint();
   const [range, setRange] = useState<CandleRange>("6M");
   const q = useSymbolCandles(symbol, range);
   return (
     <div>
-      <div role="group" aria-label="Chart range" style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-        {RANGES.map((r) => (
-          <button
-            key={r}
-            type="button"
-            onClick={() => setRange(r)}
-            aria-pressed={range === r}
-            className="mrr-chip-btn"
-            data-touch={isNarrow ? "true" : "false"}
-            style={{
-              background: range === r ? "rgba(74,158,255,.10)" : undefined,
-              borderColor: range === r ? "rgba(74,158,255,.4)" : undefined,
-              color: range === r ? "var(--accent)" : "var(--text-muted)",
-              minWidth: 40,
-              justifyContent: "center",
-            }}
-          >
-            {r}
-          </button>
-        ))}
-        <span style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)", alignSelf: "center" }}>
-          not in the stored universe · requested on demand
-        </span>
+      {/* The range group keeps its role="group" + aria-label + aria-pressed
+          contract through Segmented; the provenance note sits after it. */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+        <Segmented mono label="Chart range" options={RANGE_OPTIONS} value={range} onChange={(id) => setRange(id as CandleRange)} />
+        <span style={metaStyle}>not in the stored universe · requested on demand</span>
       </div>
       {q.data?.bars.length ? (
         <div style={{ position: "relative" }}>
-          <CandleChart bars={q.data.bars} range={q.data.range} interval={q.data.interval} />
+          {/* `average={20}`: the 20-day mean line on daily payloads (CandleChart, Phase 5 B.4). */}
+          <CandleChart bars={q.data.bars} range={q.data.range} interval={q.data.interval} average={20} />
           {q.isFetching && q.data.range !== range ? (
             <div role="status" style={{ position: "absolute", top: 8, left: 8, ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)", background: "var(--surface)", padding: "2px 6px", borderRadius: "var(--r-xs)" }}>
               Requesting {range} bars…

@@ -18,6 +18,8 @@ const TH = {
  * figures everywhere. `groups` adds spanning group rows (mono 10.5px eyebrow);
  * `compact` tightens the cell padding (tape).
  * Columns: {key, label, align, mono, width, render, sub, subBlock}.
+ * `rowProps(row, index)` returns attributes spread onto each data row (tape
+ * rows: click, selected rail, tick flash); group rows never receive them.
  */
 export function DataTable({
   columns = [],
@@ -29,6 +31,7 @@ export function DataTable({
   caption,
   hideHeader = false,
   style,
+  rowProps,
   ...rest
 }) {
   const cellPad = compact ? "6px 8px" : "8px 10px";
@@ -36,8 +39,17 @@ export function DataTable({
   let band = 0;
   const renderRow = (r, i, keyPrefix) => {
     const striped = zebra && band++ % 2 === 1;
+    // rowProps (redesign Phase 5, checklist 05 A.12): per-row attributes and
+    // handlers spread onto the data <tr> after the key, with `style` merged
+    // over the zebra background. Never applied to group rows.
+    const extra = rowProps ? rowProps(r, i) || {} : {};
+    const { style: rowStyle, ...rowRest } = extra;
     return (
-      <tr key={`${keyPrefix}${r.id ?? i}`} style={{ background: striped ? "rgba(255,255,255,.012)" : "transparent" }}>
+      <tr
+        key={`${keyPrefix}${r.id ?? i}`}
+        {...rowRest}
+        style={{ background: striped ? "rgba(255,255,255,.012)" : "transparent", ...rowStyle }}
+      >
         {columns.map((c, ci) => {
           const block = c.subBlock ?? subBlock;
           return (
