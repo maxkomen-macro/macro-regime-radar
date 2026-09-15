@@ -401,3 +401,17 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Needs backend (hidden, logged): push-on-odds meters / largest driver; year-ago curve; scenario contributions; refit stamp;
   months-positive count; per-input dates; input sparklines; per-input state words.
 - Rollback: `git switch redesign/06-credit && git branch -D redesign/07-recession`
+
+### redesign/08-news — f27e6f9 (Phase 8)
+- What changed: News & Calendar rebuilt on TabHero/SummaryCard (countdown hero with the 18-day event timeline, the desk
+  summary with the feed-health strip), NewsCard lead + row variants (badges, chips, score dots, Score breakdown, Regime read
+  disclosure with cited links), the permanent filter bar with sr-only legends, five count tiles, the day-grouped calendar
+  DataTable with Upcoming / Recent and the stored-schedule callout; shared calendar-impact.ts; pure copy helpers.
+- Tests: vitest 563 → 671 (68 files) · e2e 115 → 128 + 11 capture · typecheck 0 · build clean. Parity guarantees green with
+  seven reviewed renames and three data-row ignore rules.
+- Verify loops: 1 (lead headline h4 → h3; two spec locator fixes). Browser landing check with Playwright MCP at 1672 and 390
+  (filters, score breakdown, wire summary, calendar Recent/Upcoming, freshness drawer, hero links).
+- Captures: docs/redesign-v2/captures/redesign-08-news/ (65 files, console clean).
+- Needs backend (hidden, logged): consensus / prior / actuals; the lede's consensus sentence; a served source count; the feed
+  verdict without sla; a recency sort.
+- Rollback: `git switch redesign/07-recession && git branch -D redesign/08-news`
