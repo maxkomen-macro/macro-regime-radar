@@ -340,3 +340,16 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Captures: docs/redesign-v2/captures/redesign-03-dashboard/ (dashboard + 11 interaction captures + 22 route captures, console clean).
 - Needs backend (hidden, logged): signal sparklines; FX/crypto stored history; extra FX/crypto tiles; 2Y/2s10s rates tile.
 - Rollback: `git switch redesign/02-components && git branch -D redesign/03-dashboard`
+
+### redesign/04-regime-lab — 156b843 (Phase 4)
+- What changed: Regime Lab rebuilt on TabHero/SummaryCard (ten-row summary + composition disclosure + odds strip), Overview
+  (cycle, transitions without the unserved deltas, exits tile, ribbon teaser), and the four sub-tabs on Segmented/MeterRow/
+  SliderRow/ProbabilityBar/DataTable groups/HeatMatrix with all current content; hash → sub-tab kept, bare route = Overview;
+  shared narrative helpers; old-palette literals removed; timezone-safe ribbon ticks; freshness chip waits for data.
+- Tests: vitest 226 → 308 (52 files) · e2e 60 → 74 + 11 capture · typecheck 0 · build clean. Parity guarantees green with
+  six reviewed renames and the Cohort ignore rule.
+- Verify loops: 2 (test-side corrections after the usage-limit cut; Back-to-Overview fix; dynamic branch in the stamp checks).
+  Browser landing check with Playwright MCP at 1672 and 390 (all P4 interactions walked).
+- Captures: docs/redesign-v2/captures/redesign-04-regime-lab/ (44 files, console clean).
+- Needs backend (hidden, logged): vs-3-mo-ago deltas; transition-odds history; full analogue corpus; spell start/exit counts; served colours.
+- Rollback: `git switch redesign/03-dashboard && git branch -D redesign/04-regime-lab`
