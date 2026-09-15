@@ -371,3 +371,18 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Needs backend (hidden, logged): priced 1W / 1Y range; surprises Actual / Consensus; VIX percentile; stream latency;
   weekly bars for live-only symbols; FOMC odds / implied rates / 2s10s; the summary's policy-rate row.
 - Rollback: `git switch redesign/04-regime-lab && git branch -D redesign/05-markets`
+
+### redesign/06-credit — 19e0bfb (Phase 6)
+- What changed: Credit rebuilt on TabHero/SummaryCard (credit-label hero with the HY/IG OAS history on Lightweight Charts:
+  labelled dashed rules, NBER bands, 10Y/MAX), the six-row summary with the quality-ladder strip, five SignalCards (Tight
+  jargon affordance), the quality ladder (BB/B/CCC chart, ratio and distress tiles, tension callout), the transition
+  HeatMatrix behind a 3m/6m Segmented, the financing panel (all-in tile + Fed funds/HY bar + classification ladder), the
+  "Tight" glossary entry. Preceded on the branch by the WIP checkpoint 8149b53 (committed on request).
+- Tests: vitest 383 → 489 (60 files) · e2e 89 → 101 + 11 capture · typecheck 0 · build clean. Parity guarantees green with
+  eleven reviewed renames and the callout ignore rule.
+- Verify loops: 1 (labelled chart rules; three test-side corrections). Browser landing check with Playwright MCP at 1672
+  and 390 (MAX range, 6-month odds, Tight tooltip hover/focus/Esc, hash links).
+- Captures: docs/redesign-v2/captures/redesign-06-credit/ (56 files, console clean).
+- Needs backend (hidden, logged): BB/B/CCC percentile meters; two-year ladder chart; ratio 5y average; all-in delta and
+  history; share-of-HY distress metric; served widening threshold.
+- Rollback: `git switch redesign/05-markets && git branch -D redesign/06-credit`
