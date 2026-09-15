@@ -1437,6 +1437,45 @@ main .mrr-scroll {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--gap-tile);
 }
+/* Recession (Phase 7, checklist 07 A.10 / B.0): the same one-column panel
+   stack, hero-row margin zeroed. The model inputs are five SignalCards
+   across (3 / 2 / 1 below 1200 / 768 / 480); the curve monitor puts the
+   2s10s chart beside the 340px curve-shape tile (recession.html:186), one
+   column below 1200; the bottom row pairs Sensitivity with Model
+   transparency (`minmax(0,1.25fr) minmax(0,1fr)`, recession.html:195),
+   `align-items: start` so the collapsed sensitivity panel never stretches
+   to the transparency panel's height (G9), one column below 1200; the open
+   sensitivity grid puts the sliders beside the scenario result, one column
+   below 768 (media rules in the responsive blocks). */
+.mrr-rec {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-rec > .mrr-hero-row {
+  margin-bottom: 0;
+}
+.mrr-rec-inputs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+.mrr-rec-curve {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--gap-tile);
+}
+.mrr-rec-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--gap-col);
+  align-items: start;
+}
+.mrr-rec-sens {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: var(--gap-tile);
+}
 /* The tape's ticker button (checklist 05 B.7): the keyboard and assistive
    path to the chart panel; the whole row is the pointer target. The selected
    row carries a 3px link rail on its pinned first cell. */
@@ -1557,6 +1596,13 @@ main .mrr-scroll {
   .mrr-credit-monitor {
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   }
+  .mrr-rec-inputs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .mrr-rec-curve,
+  .mrr-rec-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Below 1024 the financing grid stacks the all-in tile over the
@@ -1630,6 +1676,12 @@ main .mrr-scroll {
   .mrr-credit-ladder-body {
     grid-template-columns: minmax(0, 1fr);
   }
+  .mrr-rec-inputs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrr-rec-sens {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .assistant-panel {
     right: 8px;
     left: 8px;
@@ -1672,6 +1724,9 @@ main .mrr-scroll {
     grid-template-columns: minmax(0, 1fr);
   }
   .mrr-credit-monitor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-rec-inputs {
     grid-template-columns: minmax(0, 1fr);
   }
 }

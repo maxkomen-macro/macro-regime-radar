@@ -102,7 +102,9 @@ export default function Disclosure({
         <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)", color: row ? "var(--text-3)" : "inherit", flex: "none" }}>
           {open ? "▾" : "▸"}
         </span>
-        <span style={row ? { fontWeight: 500, fontSize: 13.5, flex: "none" } : undefined}>{title}</span>
+        {/* The row title may shrink and wrap (min-width 0): a long title in a
+            390px column otherwise overflows the page (Phase 7 verify). */}
+        <span style={row ? { fontWeight: 500, fontSize: 13.5, flex: "0 1 auto", minWidth: 0 } : undefined}>{title}</span>
         {description != null ? (
           <span
             style={{

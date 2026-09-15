@@ -461,6 +461,40 @@ served field or its formatted value; the only client math is the ten-year window
 (measured from the last served point, never the wall clock), the plotted window's
 extremes and the band list.
 
+**Recession composition (Phase 7, 2026-09-15).** Inside `<div class="mrr-rec">` (the
+same one-column panel stack, hero-row margin zeroed), top to bottom: (1)
+`.mrr-hero-row`: `TabHero id="recession-hero"` (eyebrow "Recession model"; h1 = the
+served `recession_prob` to one decimal, with the served `recession_label` as the pill,
+"Low Risk" mint, "Elevated" and "High Risk" amber; the subhead "Twelve-month odds, up /
+down {n} points in three months." from the stored monthly series; the lede's base-rate
+and band sentence with the Jargon affordance on "logistic model", the served divergence
+clause and the sentence that this probability is the recession model's own; the
+"Stress the inputs" and "Read the model card" hash links; the footnote "Logistic model
+on {n} FRED inputs, lagged 3 months • Scored for {Mon YYYY}"; the `Model inputs`
+freshness chip; the note naming the band and its range; the signature visual is the
+semicircle gauge, `ProbabilityGauge`, band arcs on the server's 20 / 40 edges with the
+words LOW / ELEVATED / HIGH RISK, over the monthly probability line on `LineChart`,
+`ProbabilityHistory`, behind the mono `History window` 24M / Full history Segmented,
+NBER bands shaded and the 20% / 40% rules dashed) beside `SummaryCard
+id="recession-summary"` ("Model summary": 12-month probability · 3 months ago ·
+Strongest input · Curve 2s10s · Model vs market · Regime context · Reference
+thresholds, and the strip worded from `stripSummary`, amber at three consecutive
+month-over-month rises at 0.1 resolution, linking to `#model`); (2) `<section
+id="model">` Model inputs, full width (`.mrr-rec-inputs`: five `SignalCard`s, one per
+served feature, no meter, no sparkline, no threshold lines); (3) `<section id="curve">`
+Curve monitor (`.mrr-rec-curve`: the 2s10s `LineChart` behind the `Curve window` 5Y /
+10Y / 30Y Segmented beside the 340px "Current curve shape" tile, one column below
+1200); (4) `.mrr-rec-bottom` (`minmax(0,1.25fr) minmax(0,1fr)` at 1200 and up,
+`align-items: start`, one column below): the Sensitivity panel whose body is the
+`#sensitivity` Disclosure, collapsed by default (`.mrr-rec-sens`: five `SliderRow`s
+with baseline ticks beside the scenario result, the second display-face number on the
+app, one column below 768) | `<section id="transparency">` Model transparency
+(`DivergingBar` coefficients, the macro-vs-markets tile, the model card); (5) the
+`DisclosureLine`. Nothing on the page is re-derived in the browser: every probability,
+band word, coefficient and divergence figure is a served field or its formatted value;
+the only client math is the three-month delta in points, the count of consecutive
+rises and the 24-month / 5-year / 10-year slices of served series.
+
 **Gaps.** 16px between top-level columns (`--gap-col`), 14px between stacked panels
 (`--gap-panel`), 12px between tiles inside a panel (`--gap-tile`). Panel padding
 `16px 18px 18px`; tile padding 14 to 16px. The old 2px-increment spacing scale
@@ -881,6 +915,8 @@ Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-15 Phase 7: Recession rebuilt on TabHero / SummaryCard; the scenario result
+  is the second display-face number (spec section 1); sensitivity collapsed by default
 - 2026-09-15 Phase 6: Credit rebuilt on TabHero / SummaryCard; hero OAS chart on
   Lightweight Charts (dashed rules, NBER bands, 10Y / MAX); spread monitor on
   SignalCard; transition odds on HeatMatrix behind a 3m/6m Segmented; the Tight
