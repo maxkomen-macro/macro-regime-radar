@@ -1336,6 +1336,32 @@ main .mrr-scroll {
   grid-template-columns: minmax(0, 1fr);
   gap: var(--gap-panel);
 }
+/* Regime Lab (Phase 4, checklist 04 A.11 / B.0): the same stack of panels;
+   the tile grids inside the Overview and Playbook panels collapse to one
+   column below 768 (media rule in the responsive block). */
+.mrr-lab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-lab > .mrr-hero-row {
+  margin-bottom: 0;
+}
+.mrr-lab-tiles-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--gap-tile);
+}
+.mrr-lab-tiles-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+.mrr-lab-playbook {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap-tile);
+}
 .mrr-dash > .mrr-hero-row {
   margin-bottom: 0;
 }
@@ -1488,6 +1514,11 @@ main .mrr-scroll {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .mrr-dash-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-lab-tiles-2,
+  .mrr-lab-tiles-3,
+  .mrr-lab-playbook {
     grid-template-columns: minmax(0, 1fr);
   }
   .assistant-panel {

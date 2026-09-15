@@ -386,6 +386,27 @@ collapsed; (6) `<section id="read-through">`; (7) the `DisclosureLine`. The rout
 only h1 is the hero headline; the sidebar wordmark is a paragraph, and the Dashboard
 status strip and the bell read one `alertSummary` (`shell-status.ts`).
 
+**Regime Lab composition (Phase 4, 2026-09-15).** Inside `<div class="mrr-lab">` (the
+same one-column panel stack, hero-row margin zeroed), top to bottom: (1)
+`.mrr-hero-row`: `TabHero id="takeaway"` (h1 = the served cycle status word, pill "{n}
+months in", the served takeaway narrative as the lede, the growth-vs-inflation
+`QuadrantChart` with its 12-month trail) beside `SummaryCard id="regime-outlook"`
+("Regime odds & outlook": ten rows, the quiet "How this takeaway is composed"
+disclosure, and the status strip, an `a[href$="#transitions"]` worded from the
+classifier's stored Overheating odds three months back); (2) `SubTabs` (Overview,
+Playbook, Scenarios, History & analogues, Empirical evidence; hash-synced through
+`SECTION_TO_TAB` / `TAB_ANCHOR`), whose panel renders one view: Overview = `<section
+id="cycle">` (`.mrr-lab-tiles-2`: spell tile with the avg tick, late-cycle meters),
+`<section id="transitions">` (`.mrr-lab-tiles-3`: 3- and 6-month odds tiles with
+regime swatches and no "vs 3 mo ago" column, the "How past {Regime} spells ended"
+tile), `<section id="regime-history-teaser">` (the four-lane `RegimeRibbon` teaser
+linking to `#regime-history`); Playbook = `<section id="playbook">`
+(`.mrr-lab-playbook`); Scenarios = `<section id="scenarios">`; History & analogues =
+`<section id="analogues">` then `<section id="regime-history">` (the full ribbon);
+Empirical evidence = `<section id="backtests">`; (3) the `DisclosureLine`. Tile grids
+collapse to one column below 768; the two ribbons keep their intrinsic width inside
+an `overflow-x: auto` well there.
+
 **Gaps.** 16px between top-level columns (`--gap-col`), 14px between stacked panels
 (`--gap-panel`), 12px between tiles inside a panel (`--gap-tile`). Panel padding
 `16px 18px 18px`; tile padding 14 to 16px. The old 2px-increment spacing scale
@@ -800,10 +821,14 @@ and are listed in PROGRESS.md so no phase closes with one left: `rgba(74,158,255
 six files, `#8b949e` in `AllocationPanel.tsx` and `CandleChart.tsx`, `#2ecc71` in
 `RegimeLabScreen.tsx`, `AllocationPanel.tsx`, `MethodologyScreen.tsx` and
 `SingleName.tsx`. Phase 1 fixed only the two CSS files (`base.css` link hover and active
-colours, `app.css` news-arrive keyframe).
+colours, `app.css` news-arrive keyframe); Phase 4 cleared `screens/regimelab/` (the
+`#2ecc71` map and the `rgba(74,158,255,…)` chip fills became `REGIME_HUE` tokens and
+Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-15 Phase 4: Regime Lab rebuilt on TabHero / SummaryCard; sub-tabs on Panel,
+  Segmented, MeterRow, DataTable groups, HeatMatrix; local old-palette hexes removed
 - 2026-09-15 Phase 3: Dashboard rebuilt on TabHero / SummaryCard; wordmark demoted to a
   paragraph; the route h1 is the hero headline
 - 2026-09-15 Phase 2: shared components restyled; KitScreen rebuilt

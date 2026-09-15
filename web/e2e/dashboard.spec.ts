@@ -18,9 +18,9 @@ import { collect, settle } from "./lib/drive";
 const DOCS = path.resolve(process.cwd(), "..", "docs", "redesign-v2");
 const CAPTURE_DIR = process.env.CAPTURE_DIR ?? path.join(DOCS, "captures", "redesign-03-dashboard");
 const BASELINE_CONSOLE = path.join(DOCS, "baseline", "console.json");
-const BRANCH = "redesign/03-dashboard";
 
 const git = (a: string) => execSync(`git ${a}`, { encoding: "utf8" }).trim();
+const BRANCH = git("rev-parse --abbrev-ref HEAD"); // the branch under test, never a fixed name: the spec runs on every later branch
 const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** Summary row labels in C.2 order; row 9 reads Watch, or Triggered when a signal is triggered on verify day. */
