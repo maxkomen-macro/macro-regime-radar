@@ -314,3 +314,17 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Open issues: transitional regime pill in the top bar until Phase 10; `/impeccable document` sidecar refresh for the owner;
   Landing live dot colour alias (Phase 10).
 - Rollback: `git switch react-rebuild && git branch -D redesign/01-foundation`
+
+### redesign/02-components — c71f74a (Phase 2)
+- What changed: shared components restyled to spec §3 (Card/SectionHeader/Tag/Pill/Segmented/RegimeBadge/SignalCard,
+  GaugeBar+MeterRow+DivergingBar/ProbabilityBar/DataTable/Sparkline/StatTile/HeatMatrix, TabHero/SummaryCard+StatusStrip/
+  SubTabs/Disclosure+DisclosureLine/SliderRow/Caption), every existing prop kept; /kit rebuilt from kit-manifest.ts
+  (19 sections, 85 variants); tokens --fs-metric/--fs-value-lg/--ls-badge/--badge-* retired; DESIGN.md components section.
+- Tests: vitest 66 → 171 (36 files) · e2e 35 → 45 + 11 capture · typecheck 0 · build clean. Parity guarantees green;
+  label normalizer made glyph-agnostic on both sides (no renames).
+- Verify loops: 1 (normalizer refinement; jsdom-safe assertions; Segmented hover seam; kit.spec API filter).
+  The implementer G agent was cut by the account usage limit after writing the Kit page; the verifier confirmed the
+  remaining items on disk. Browser landing check on /kit with Playwright MCP at 1672.
+- Captures: docs/redesign-v2/captures/redesign-02-components/ (kit.png + 22 route captures, console clean).
+- Open issues: stagflation pill contrast (~3.4:1) and the slider thumb ring flagged for the design lead (QUESTIONS #22, #27).
+- Rollback: `git switch redesign/01-foundation && git branch -D redesign/02-components`
