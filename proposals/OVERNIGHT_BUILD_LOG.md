@@ -386,3 +386,18 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Needs backend (hidden, logged): BB/B/CCC percentile meters; two-year ladder chart; ratio 5y average; all-in delta and
   history; share-of-HY distress metric; served widening threshold.
 - Rollback: `git switch redesign/05-markets && git branch -D redesign/06-credit`
+
+### redesign/07-recession — cd15156 (Phase 7)
+- What changed: Recession rebuilt on TabHero/SummaryCard (probability hero with the semicircle gauge and the 24M / Full
+  history chart), the seven-row summary with the consecutive-rises strip, five model-input SignalCards without invented
+  thresholds, the curve monitor with a 5Y/10Y/30Y window and the curve-shape tile, Sensitivity collapsed by default (SliderRow
+  baselines, Reset, display-face result), Model transparency (diverging coefficients, macro-vs-markets tile, model card);
+  pure copy helpers; the shared Disclosure row title now shrinks at narrow widths.
+- Tests: vitest 489 → 563 (63 files) · e2e 101 → 115 + 11 capture · typecheck 0 · build clean. Parity guarantees green with
+  seven reviewed renames.
+- Verify loops: 1 (the Disclosure overflow). Browser landing check with Playwright MCP at 1672 and 390 (Full history, 5Y,
+  sensitivity open / change / Reset, hash open).
+- Captures: docs/redesign-v2/captures/redesign-07-recession/ (61 files, console clean).
+- Needs backend (hidden, logged): push-on-odds meters / largest driver; year-ago curve; scenario contributions; refit stamp;
+  months-positive count; per-input dates; input sparklines; per-input state words.
+- Rollback: `git switch redesign/06-credit && git branch -D redesign/07-recession`
