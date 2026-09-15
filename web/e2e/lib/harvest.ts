@@ -49,7 +49,47 @@ export async function harvestLabels(page: Page): Promise<LabelRec[]> {
       await openAllDisclosures(page, 6, () => add(`tab:${t.tabLabel}>${u.tabLabel}:disclosures-open`));
     }
   }
+  await exploreSegmented(page, add);
   return out;
+}
+
+/**
+ * Segmented controls (Phase 2, `aria-pressed` option groups) are the redesign's
+ * second view-switch mechanism next to tablists: every option is pressed in
+ * turn, labels harvested, and the original option restored. Groups that
+ * navigate or that disappear mid-loop are skipped.
+ */
+async function exploreSegmented(page: Page, add: (state: string) => Promise<void>): Promise<void> {
+  const groups = page.locator("main [role='group']:has(button[aria-pressed])");
+  const nGroups = Math.min(await groups.count(), 12);
+  for (let g = 0; g < nGroups; g++) {
+    const group = groups.nth(g);
+    if (!(await group.isVisible().catch(() => false))) continue;
+    const label = (await group.getAttribute("aria-label")) ?? `group-${g}`;
+    const options = group.locator("button[aria-pressed]");
+    const n = await options.count();
+    let original = 0;
+    for (let i = 0; i < n; i++) if ((await options.nth(i).getAttribute("aria-pressed")) === "true") original = i;
+    for (let i = 0; i < n; i++) {
+      if (i === original) continue;
+      const opt = options.nth(i);
+      try {
+        await opt.scrollIntoViewIfNeeded({ timeout: 2000 });
+        await opt.click({ timeout: 3000 });
+      } catch {
+        continue;
+      }
+      await settle(page, 400);
+      await add(`seg:${label}:${i}`);
+      await openAllDisclosures(page, 3, () => add(`seg:${label}:${i}:disclosures-open`));
+    }
+    try {
+      await options.nth(original).click({ timeout: 3000 });
+      await settle(page, 300);
+    } catch {
+      /* group gone (navigation or re-render): nothing to restore */
+    }
+  }
 }
 
 /** Shell overlays: alert drawer, command palette, assistant panel (never sends). */

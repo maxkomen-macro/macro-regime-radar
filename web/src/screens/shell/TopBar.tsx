@@ -12,10 +12,10 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { ProbabilityBar, RegimeBadge } from "../../components";
 import { useAlerts } from "../../api/queries";
 import type { Regime } from "../../api/types";
-import { daysSince, fmtDate, fmtMonYr } from "../../lib/format";
+import { fmtMonYr } from "../../lib/format";
 import { mono } from "../shared/screen-ui";
 import { BellIcon, SearchIcon } from "./nav-icons";
-import { regimeProbs, STATUS_COLOR } from "./shell-status";
+import { alertSummary, regimeProbs, STATUS_COLOR } from "./shell-status";
 
 /** Regime badge with the stored dominant probability and, at desk width, the
  * 4 px four-way odds bar. Rendered by the top bar and by MobileNav's row. */
@@ -42,27 +42,18 @@ export function RegimePill({ regime, compact = false }: { regime: UseQueryResult
 
 /** The bell. Its accessible name carries the whole alert sentence; the count
  * badge shows only when there were breaches in the last 7 days; and it never
- * asserts "no alerts" before the feed has answered (2026-09-05 rule). */
+ * asserts "no alerts" before the feed has answered (2026-09-05 rule). The
+ * sentence comes from `alertSummary` (shell-status.ts), the same reading the
+ * Dashboard's status strip prints, so the two can never disagree. */
 export function AlertsTrigger({ onOpen, open = false }: { onOpen: () => void; open?: boolean }) {
   const alerts = useAlerts(200);
-  const rows = alerts.data ?? [];
-  const recent = rows.filter((a) => daysSince(a.date) <= 7);
+  const { state, recent, sentence } = alertSummary(alerts);
+  const pending = state === "loading" || state === "error";
   const worst = recent.some((a) => a.level === "risk")
     ? STATUS_COLOR.neg
     : recent.some((a) => a.level === "watch")
       ? STATUS_COLOR.amber
       : "var(--link)";
-  const last = rows[0];
-  const pending = alerts.isLoading || alerts.isError;
-  const title = pending
-    ? alerts.isError
-      ? "Alert feed unavailable. Open the alert feed."
-      : "Reading the alert feed. Open the alert feed."
-    : recent.length
-      ? `${recent.length} threshold breach${recent.length === 1 ? "" : "es"} in the last 7 days. Open the alert feed.`
-      : last
-        ? `No threshold breaches in the last 7 days. Last alert ${fmtDate(last.date)}. Open the alert feed.`
-        : "No alerts on file. Open the alert feed.";
   return (
     <button
       type="button"
@@ -70,14 +61,15 @@ export function AlertsTrigger({ onOpen, open = false }: { onOpen: () => void; op
       className="mrr-bell"
       aria-haspopup="dialog"
       aria-expanded={open}
-      aria-label={title}
-      title={title}
-      data-state={pending ? (alerts.isError ? "error" : "loading") : recent.length ? "recent" : "clear"}
-      style={{ color: alerts.isError ? STATUS_COLOR.hot : pending ? STATUS_COLOR.text3 : undefined }}
+      aria-label={sentence}
+      title={sentence}
+      // An empty feed ("none") keeps the "clear" value this attribute always carried.
+      data-state={state === "none" ? "clear" : state}
+      style={{ color: state === "error" ? STATUS_COLOR.hot : pending ? STATUS_COLOR.text3 : undefined }}
     >
       <BellIcon />
       <span className="sr-only">Alerts</span>
-      {!pending && recent.length ? (
+      {state === "recent" ? (
         <span className="mrr-bell-count" aria-hidden="true" style={{ color: worst }}>
           {recent.length}
         </span>

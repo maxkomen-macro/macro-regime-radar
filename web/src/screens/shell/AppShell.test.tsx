@@ -12,7 +12,16 @@ import AppShell from "./AppShell";
 import { METHODOLOGY_SLUG, TABS } from "./sections";
 import { renderWithProviders, stubFetch } from "../../test/utils";
 
-vi.mock("../dashboard/DashboardScreen", () => ({ default: () => <div data-testid="dashboard-screen">dashboard</div> }));
+// The Dashboard chunk is mocked; its <h1> stands in for the TabHero headline
+// (Phase 3, checklist 03 A.17): the route's only h1 lives inside <main>.
+vi.mock("../dashboard/DashboardScreen", () => ({
+  default: () => (
+    <div data-testid="dashboard-screen">
+      <h1>Goldilocks</h1>
+      dashboard
+    </div>
+  ),
+}));
 vi.mock("../../live/quotes", () => ({
   LIVE_WINDOW_MS: 120_000,
   useQuotes: () => new Map(),
@@ -105,9 +114,17 @@ describe("AppShell", () => {
     const wordmark = within(aside).getByTitle("Macro Regime Radar · landing page");
     expect(wordmark.tagName).toBe("A");
     expect(wordmark).toHaveAttribute("href", "/");
-    const h1 = within(wordmark).getByRole("heading", { level: 1 });
-    expect(h1.textContent?.replace(/\s+/g, " ").trim()).toMatch(/^MACRO ?REGIME RADAR$/);
+    // Phase 3 (checklist 03 A.15 / A.17): the wordmark is no longer a heading;
+    // its text still reads MACRO REGIME RADAR and it still links to "/". Once
+    // the Dashboard chunk resolves, the document has exactly one h1 and it
+    // sits inside <main> (the TabHero headline), never in the sidebar.
+    expect(within(wordmark).queryByRole("heading")).toBeNull();
+    expect(wordmark.querySelector("h1, h2, h3, h4, h5, h6")).toBeNull();
+    expect(wordmark.textContent?.replace(/\s+/g, " ").trim()).toMatch(/^MACRO ?REGIME RADAR$/);
+    const h1 = await screen.findByRole("heading", { level: 1 });
     expect(document.querySelectorAll("h1")).toHaveLength(1);
+    expect(main?.contains(h1)).toBe(true);
+    expect(aside.contains(h1)).toBe(false);
 
     // Exactly one primary navigation: seven tab links plus Methodology.
     const navs = screen.getAllByRole("navigation", { name: "Primary" });

@@ -79,7 +79,9 @@ for (const [scope, map] of Object.entries(renames.renames ?? {})) {
 
 function renamedTargets(screen: string, norm: string): string[] {
   const out: string[] = [];
-  for (const key of [screen, "*"]) {
+  // The shell-overlay harvest runs on /app/dashboard, so it inherits the dashboard's reviewed renames.
+  const scopes = screen === "shell" ? ["shell", "dashboard", "*"] : [screen, "*"];
+  for (const key of scopes) {
     const t = renameIndex[key]?.[norm];
     if (t) out.push(...t);
   }

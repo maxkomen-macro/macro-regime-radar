@@ -10,7 +10,7 @@
  * that. "Live" is never claimed for the US tape when only crypto or FX tick.
  */
 
-import type { Freshness, Regime, RegimeFreshness } from "../../api/types";
+import type { Alert, Freshness, Regime, RegimeFreshness } from "../../api/types";
 import type { SnapshotMeta } from "../../api/snapshot";
 import type { LiveFeeds, LiveQuote, StreamWord } from "../../live/quotes";
 import { daysSince, fmtDate, fmtIntradayTs, fmtMonYr, fmtUtcStampEt } from "../../lib/format";
@@ -437,4 +437,61 @@ export function composeShellStatus(input: ShellStatusInput): ShellStatus {
     streamLive,
     liveFeeds,
   };
+}
+
+/* ── Alert feed ──────────────────────────────────────────────────────────── */
+
+export type AlertState = "loading" | "error" | "recent" | "clear" | "none";
+
+/** What `useAlerts()` returns, structurally; a query result is assignable. */
+export interface AlertFeed {
+  data: Alert[] | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}
+
+export interface AlertSummary {
+  /** loading / error while the feed is pending or failed; recent when a
+   * breach is under 7 days old; clear when only older alerts exist; none
+   * when the feed is empty. */
+  state: AlertState;
+  /** Alerts dated within the last 7 days, in served order (newest first). */
+  recent: Alert[];
+  /** The newest alert on file, whatever its age. */
+  last: Alert | undefined;
+  /** The bell's whole sentence, also the Dashboard strip's accessible name. */
+  sentence: string;
+}
+
+/** Days an alert counts as recent for the bell badge and the status strip. */
+export const ALERT_RECENT_DAYS = 7;
+
+/**
+ * One reading of the alert feed for the bell (TopBar) and the Dashboard's
+ * status strip, so the two never speak different sentences. It never asserts
+ * "no alerts" before the feed has answered (the 2026-09-05 rule).
+ */
+export function alertSummary(alerts: AlertFeed): AlertSummary {
+  const rows = alerts.data ?? [];
+  const recent = rows.filter((a) => daysSince(a.date) <= ALERT_RECENT_DAYS);
+  const last = rows[0];
+  if (alerts.isError) return { state: "error", recent, last, sentence: "Alert feed unavailable. Open the alert feed." };
+  if (alerts.isLoading) return { state: "loading", recent, last, sentence: "Reading the alert feed. Open the alert feed." };
+  if (recent.length) {
+    return {
+      state: "recent",
+      recent,
+      last,
+      sentence: `${recent.length} threshold breach${recent.length === 1 ? "" : "es"} in the last 7 days. Open the alert feed.`,
+    };
+  }
+  if (last) {
+    return {
+      state: "clear",
+      recent,
+      last,
+      sentence: `No threshold breaches in the last 7 days. Last alert ${fmtDate(last.date)}. Open the alert feed.`,
+    };
+  }
+  return { state: "none", recent, last, sentence: "No alerts on file. Open the alert feed." };
 }

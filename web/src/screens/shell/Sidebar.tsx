@@ -5,8 +5,8 @@
  * watchlist (spec §3.1, built in ./watchlist) and a footer that states in
  * words whether market data is live, the newest stamp and the build version.
  *
- * The wordmark is the page's only <h1> in Phase 1 (checklist I.2); Phase 2's
- * TabHero takes the h1 and this demotes to a <p> in the same commit. The
+ * The wordmark was the page's only <h1> in Phase 1 (checklist I.2); since
+ * Phase 3 it is a <p> and the route's only h1 is the TabHero headline. The
  * source text is uppercase (no text-transform) so the parity harvester still
  * reads the link as "macro regime radar".
  */
@@ -28,10 +28,10 @@ export function Wordmark({ compact = false }: { compact?: boolean }) {
   return (
     <Link to="/" className={compact ? "mrr-logo mrr-logo-compact" : "mrr-logo"} title="Macro Regime Radar · landing page">
       <MountainMark {...(compact ? { width: 30, height: 16 } : {})} />
-      <h1>
+      <p>
         <span>MACRO</span>
         <span>REGIME RADAR</span>
-      </h1>
+      </p>
     </Link>
   );
 }

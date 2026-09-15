@@ -566,7 +566,8 @@ main .mrr-scroll {
   display: block;
   margin-bottom: 8px;
 }
-.mrr-logo h1 {
+.mrr-logo h1,
+.mrr-logo p {
   margin: 0;
   font-family: var(--font-ui);
   font-weight: 500;
@@ -594,7 +595,8 @@ main .mrr-scroll {
 .mrr-logo-compact svg {
   margin: 0;
 }
-.mrr-logo-compact h1 {
+.mrr-logo-compact h1,
+.mrr-logo-compact p {
   display: flex;
   gap: 0.55em;
   white-space: nowrap;
@@ -1326,6 +1328,39 @@ main .mrr-scroll {
   margin-bottom: var(--gap-panel);
 }
 
+/* Dashboard (Phase 3, checklist 03 B.0): the page is a stack of panels 14px
+   apart. The hero row's own bottom margin yields to the stack gap, so hero to
+   signals is one gap, not two. */
+.mrr-dash {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-dash > .mrr-hero-row {
+  margin-bottom: 0;
+}
+/* Key levels: seven slim tiles in one row; 4 / 2 / 1 columns below
+   1200 / 768 / 480 (media rules in the responsive blocks). */
+.mrr-dash-levels {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+/* Bottom row: Markets at a glance | US 10Y | Macro calendar in the mockup's
+   792 / 284 / 324 ratio. Below 1200 the glance panel spans the row and the two
+   cards share the next; below 768 one column. */
+.mrr-dash-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 2.8fr) minmax(0, 1fr) minmax(0, 1.14fr);
+  gap: var(--gap-col);
+}
+/* Glance tiles: four across; 2 below 768, 1 below 480. */
+.mrr-dash-glance {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+
 /* Analyst markdown: model prose is set like memo body, with lists and code
    the way the terminal already sets data. */
 .mrr-md > :first-child {
@@ -1391,6 +1426,15 @@ main .mrr-scroll {
   .mrr-hero {
     --hero-cols: 1fr;
   }
+  .mrr-dash-levels {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .mrr-dash-bottom {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrr-dash-bottom > :first-child {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Below 860 the sidebar is not rendered (useBreakpoint().shellCompact swaps
@@ -1439,6 +1483,13 @@ main .mrr-scroll {
   .mrr-hero {
     --hero-pad: 18px 16px 16px;
   }
+  .mrr-dash-levels,
+  .mrr-dash-glance {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrr-dash-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .assistant-panel {
     right: 8px;
     left: 8px;
@@ -1475,6 +1526,10 @@ main .mrr-scroll {
   }
   .mrr-upd {
     gap: 6px 12px;
+  }
+  .mrr-dash-levels,
+  .mrr-dash-glance {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

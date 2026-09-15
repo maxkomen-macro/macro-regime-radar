@@ -371,6 +371,21 @@ until Phase 10).
 `SummaryCard` 432px on the right, gap 16px), then the tab body, then a mono
 disclosure line (11px, `--text-4`, max-width 1100px) at the end of the tab.
 
+**Dashboard composition (Phase 3, 2026-09-15).** Inside `<div class="mrr-dash">` (a
+one-column grid with the 14px panel gap; the hero row's own bottom margin is zeroed
+there so hero to signals is one gap), top to bottom: (1) `.mrr-hero-row`: `TabHero
+id="regime-hero"` beside `SummaryCard id="regime-summary"`; (2) `<section
+id="signals">` Monitored signals; (3) `<section id="key-levels">` Key levels, the slim
+seven-tile row (`.mrr-dash-levels`: 7 / 4 / 2 / 1 columns at 1200 / 768 / 480); (4)
+`.mrr-dash-bottom` (`minmax(0,2.8fr) minmax(0,1fr) minmax(0,1.14fr)` at 1200 and up;
+below 1200 the glance panel spans the row and the two cards share the next; one column
+below 768): `<section id="markets-glance">` with its four-tile `.mrr-dash-glance` grid
+(2 columns below 768, 1 below 480) and the `#whats-priced` panel, `<section
+id="us10y">`, `<section id="macro-calendar">`; (5) `<section id="macro-charts">`,
+collapsed; (6) `<section id="read-through">`; (7) the `DisclosureLine`. The route's
+only h1 is the hero headline; the sidebar wordmark is a paragraph, and the Dashboard
+status strip and the bell read one `alertSummary` (`shell-status.ts`).
+
 **Gaps.** 16px between top-level columns (`--gap-col`), 14px between stacked panels
 (`--gap-panel`), 12px between tiles inside a panel (`--gap-tile`). Panel padding
 `16px 18px 18px`; tile padding 14 to 16px. The old 2px-increment spacing scale
@@ -426,8 +441,8 @@ border.
 **Sidebar** (`<aside class="mrr-side" aria-label="Sidebar">`, 196px, sticky,
 `overflow-y: auto` so the footer stays reachable with a full watchlist): the wordmark
 (a hand-drawn 48×26 mountain glyph in `--text-wordmark`, then `MACRO` / `REGIME RADAR`
-in the UI face at 12.5px 500 .2em, uppercase in the source text; links to `/`; the
-page's only `<h1>` until `TabHero` takes it in Phase 2), seven nav items (47px, 22px
+in the UI face at 12.5px 500 .2em, uppercase in the source text; links to `/`; a
+`<p>` since Phase 3, the route's only `<h1>` being the `TabHero` headline), seven nav items (47px, 22px
 stroke icons hand-drawn as inline SVG, gap 18, padding-left 24, radius 9;
 `aria-current="page"` on the active route with the white-gradient fill), the
 Methodology secondary item (36px, 13px, `--text-3`, book icon), a divider, the
@@ -503,8 +518,8 @@ change the look of their current call sites. Values are the checklist
 
 | Mockup element | Build from | Notes | Status |
 |---|---|---|---|
-| **TabHero** (58px serif headline, pill, subhead, lede, two buttons, footnote, signature chart on the right) | `screens/shared/TabHero.tsx`, built from `DeskRead.tsx` (its `FreshnessChip` and types) | Card gradient on a 12px radius and 1px `--line`, 26/30/22 padding, `minmax(0,540px) minmax(0,1fr)` grid with a per-hero radial glow (`glow`, default `rgba(38,220,160,.07)`). Eyebrow 11.5px Plex Sans 500 .24em `--text-eyebrow` with the 6px pulsing mint dot (`live`) or the ◆ glyph; h1 Source Serif 4 700 58px/1.02 -.012em opsz 30 in `#fff` beside the `Pill`; h2 23px/1.3 500 (a paragraph when `as="h2"`); lede 15.5px/1.6 `--text-2` on a 540px measure; 44px 9px-radius buttons, white primary with the 16px arrow, ghost on `--line-white-30` (`to`, `href` or `onClick`); footnote 12.5px `--text-3` joined by aria-hidden bullets, then the freshness chips and the note; the chart slot or the `linear-gradient(135deg,#0f1a24,#0a131b)` placeholder. Below 1200 one column (`--hero-cols`), below 860 a 44px headline (`--fs-display` override on `.mrr-hero`), below 768 18/16/16 padding. `.mrr-hero-row` (app.css) pairs it with the 432px summary column. The headline is the tab's answer, never the tab name. | Built (Phase 2), on `/kit` only |
-| **SummaryCard** (key/value rows plus status strip) | `screens/shared/SummaryCard.tsx`, from DeskRead's `Ledger` (`StatusStrip` exported too) | Card gradient, 12px radius, 18/20/16 padding; eyebrow title (h3, or h2 via `as`); real `dl` rows on a `150px minmax(0,1fr)` grid, 7px vertical padding, 1px `--line-2` dividers, 13.5px: sentence-case `--text-2` labels, `--text` tabular values in the UI face (`tone` recolours a value; `kvLinkStyle` for the mint underlined link). The strip is a router `Link`, `<a>` or `<button>` (never a div with onClick), 10px radius, 28px bars glyph, 18px chevron: mint `linear-gradient(90deg, rgba(18,190,130,.12), rgba(18,190,130,.05))` on `rgba(38,220,160,.34)`; amber `rgba(245,181,46,.12) → .04` on `--amber-a36`; gray (loading / unavailable) `rgba(200,210,220,.08) → .03` on `rgba(200,210,220,.25)`. Title 14px 500 in the tone colour, detail 12px `--text-2`. Absent when there is nothing to report. | Built (Phase 2), on `/kit` only |
+| **TabHero** (58px serif headline, pill, subhead, lede, two buttons, footnote, signature chart on the right) | `screens/shared/TabHero.tsx`, built from `DeskRead.tsx` (its `FreshnessChip` and types) | Card gradient on a 12px radius and 1px `--line`, 26/30/22 padding, `minmax(0,540px) minmax(0,1fr)` grid with a per-hero radial glow (`glow`, default `rgba(38,220,160,.07)`). Eyebrow 11.5px Plex Sans 500 .24em `--text-eyebrow` with the 6px pulsing mint dot (`live`) or the ◆ glyph; h1 Source Serif 4 700 58px/1.02 -.012em opsz 30 in `#fff` beside the `Pill`; h2 23px/1.3 500 (a paragraph when `as="h2"`); lede 15.5px/1.6 `--text-2` on a 540px measure; 44px 9px-radius buttons, white primary with the 16px arrow, ghost on `--line-white-30` (`to`, `href` or `onClick`); footnote 12.5px `--text-3` joined by aria-hidden bullets, then the freshness chips and the note; the chart slot or the `linear-gradient(135deg,#0f1a24,#0a131b)` placeholder. Below 1200 one column (`--hero-cols`), below 860 a 44px headline (`--fs-display` override on `.mrr-hero`), below 768 18/16/16 padding. `.mrr-hero-row` (app.css) pairs it with the 432px summary column. The headline is the tab's answer, never the tab name. | Built (Phase 2); Dashboard (Phase 3) |
+| **SummaryCard** (key/value rows plus status strip) | `screens/shared/SummaryCard.tsx`, from DeskRead's `Ledger` (`StatusStrip` exported too) | Card gradient, 12px radius, 18/20/16 padding; eyebrow title (h3, or h2 via `as`); real `dl` rows on a `150px minmax(0,1fr)` grid, 7px vertical padding, 1px `--line-2` dividers, 13.5px: sentence-case `--text-2` labels, `--text` tabular values in the UI face (`tone` recolours a value; `kvLinkStyle` for the mint underlined link). The strip is a router `Link`, `<a>` or `<button>` (never a div with onClick), 10px radius, 28px bars glyph, 18px chevron: mint `linear-gradient(90deg, rgba(18,190,130,.12), rgba(18,190,130,.05))` on `rgba(38,220,160,.34)`; amber `rgba(245,181,46,.12) → .04` on `--amber-a36`; gray (loading / unavailable) `rgba(200,210,220,.08) → .03` on `rgba(200,210,220,.25)`. Title 14px 500 in the tone colour, detail 12px `--text-2`. Absent when there is nothing to report. | Built (Phase 2); Dashboard (Phase 3) |
 | **SignalCard** | `components/signals/SignalCard` | Tile radius, 14/16/14 padding: name, `Tag` badge (Clear / Watch / Triggered), 21px value, 118×30 sparkline, meter label, 5px meter in the status colour, "Last alert:" and the mono `lines`; `sparkline`, `meterLabel`, `lines`, `badge`, `heading`, `as` props. Reused by Dashboard signals, Credit spread monitor and Recession model inputs. | Built (Phase 2) |
 | **Panel + SectionHeader** | `components/core/Card`, `SectionHeader` | `Card` variants: `panel` (12px, 1px `--line`, `--panel`, 16/18/18), `tile` (9px, `rgba(150,175,200,.10)`, `--tile`, 14px), `card` (gradient); tone borders at the badge alphas; `accentBar` is the callout (3px rail, `0 8px 8px 0`, 10/14 padding, tinted gradient). `SectionHeader`: eyebrow 12px Plex Sans 500 .24em `--text-eyebrow`, no rule; `layout="panel"` adds the 13px `--text-2` description and the right slot (mono 11px .1em meta, actions, `.mrr-link` arrow link, wrapping under 768); `level="sub"` is the 11px .2em sub-eyebrow. The default inline layout keeps `right` inside the heading (label parity). | Built (Phase 2) |
 | **Badge** (CLEAR / WATCH / alert / info / reference) | `components/core/Tag` | Mono 11.5px .1em uppercase, 7px radius, 7% tinted fill, 1px tinted border; heights `xs` 20 / `sm` 24 / `md` 28; tones `clear` / `watch` / `alert` / `info` / `reference` (the old names alias). | Built (Phase 2) |
@@ -789,6 +804,8 @@ colours, `app.css` news-arrive keyframe).
 
 ## 13. Change log
 
+- 2026-09-15 Phase 3: Dashboard rebuilt on TabHero / SummaryCard; wordmark demoted to a
+  paragraph; the route h1 is the hero headline
 - 2026-09-15 Phase 2: shared components restyled; KitScreen rebuilt
 - 2026-09-15 Phase 1: spec section 0 adopted; Space Grotesk retired; Source Serif 4
   self-hosted; shell rebuilt (sidebar, top bar, strip, freshness drawer, mobile nav);

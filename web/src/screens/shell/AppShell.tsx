@@ -34,6 +34,7 @@ import MobileNav from "./MobileNav";
 import Sidebar from "./Sidebar";
 import TickerLive from "./TickerLive";
 import TopBar, { RegimePill } from "./TopBar";
+import { ShellActionsContext, type ShellActions } from "./shell-actions";
 import { METHODOLOGY_SLUG, tabBySlug } from "./sections";
 import { composeShellStatus, regimeProbs, STATUS_COLOR } from "./shell-status";
 
@@ -101,6 +102,14 @@ export default function AppShell() {
     if (assistantOpen) closeAssistant();
     else setAssistantOpen(true);
   }, [assistantOpen, closeAssistant]);
+
+  // The overlay openers a screen reaches through useShellActions() (Phase 3:
+  // the Dashboard's status strip opens the alert drawer). One memoised value,
+  // so a quote tick repainting the shell does not re-render every consumer.
+  const shellActions = useMemo<ShellActions>(
+    () => ({ openAlerts: openDrawer, openFreshness, openPalette, openAssistant: () => setAssistantOpen(true) }),
+    [openDrawer, openFreshness, openPalette],
+  );
 
   const tab = tabBySlug(slug);
   const isMethodology = slug === METHODOLOGY_SLUG;
@@ -182,67 +191,69 @@ export default function AppShell() {
 
   return (
     <div className="mrr-app">
-      <a href="#main-content" className="mrr-skip">
-        Skip to content
-      </a>
-      {/* The inert wrapper (useModal) spans the sidebar, the main column and the
-          assistant panel; `display: contents` keeps aside and main as direct
-          grid items. The three modal overlays sit outside it. */}
-      <div id={SHELL_CONTENT_ID} className="mrr-app-content">
-        {shellCompact ? null : <Sidebar activeSlug={activeSlug} status={status} />}
-        <div className="mrr-main">
-          {shellCompact ? <MobileNav activeSlug={activeSlug} onOpenPalette={openPalette} regime={<RegimePill regime={regime} compact />} /> : null}
-          <TopBar
-            regime={regime}
-            compact={shellCompact}
-            paletteOpen={paletteOpen}
-            onOpenPalette={openPalette}
-            assistantOpen={assistantOpen}
-            onToggleAssistant={toggleAssistant}
-            assistantLauncherRef={assistantLauncherRef}
-            drawerOpen={drawerOpen}
-            onOpenDrawer={openDrawer}
-          />
-          <TickerLive status={status} freshnessOpen={freshnessOpen} onOpenFreshness={openFreshness} />
+      <ShellActionsContext.Provider value={shellActions}>
+        <a href="#main-content" className="mrr-skip">
+          Skip to content
+        </a>
+        {/* The inert wrapper (useModal) spans the sidebar, the main column and the
+            assistant panel; `display: contents` keeps aside and main as direct
+            grid items. The three modal overlays sit outside it. */}
+        <div id={SHELL_CONTENT_ID} className="mrr-app-content">
+          {shellCompact ? null : <Sidebar activeSlug={activeSlug} status={status} />}
+          <div className="mrr-main">
+            {shellCompact ? <MobileNav activeSlug={activeSlug} onOpenPalette={openPalette} regime={<RegimePill regime={regime} compact />} /> : null}
+            <TopBar
+              regime={regime}
+              compact={shellCompact}
+              paletteOpen={paletteOpen}
+              onOpenPalette={openPalette}
+              assistantOpen={assistantOpen}
+              onToggleAssistant={toggleAssistant}
+              assistantLauncherRef={assistantLauncherRef}
+              drawerOpen={drawerOpen}
+              onOpenDrawer={openDrawer}
+            />
+            <TickerLive status={status} freshnessOpen={freshnessOpen} onOpenFreshness={openFreshness} />
 
-          <main id="main-content" tabIndex={-1} style={{ outline: "none" }}>
-            {/* The key is load-bearing: it re-mounts the boundary on every tab
-                change, so a tab that crashed once is retried when the visitor
-                navigates away and back rather than staying stuck on the note. */}
-            <ErrorBoundary key={activeSlug} label="This tab">
-              <Suspense fallback={<ScreenLoading label={isMethodology ? "Methodology" : (tab?.label ?? "the screen")} />}>
-                {isMethodology ? (
-                  <MethodologyScreen />
-                ) : tab?.slug === "dashboard" ? (
-                  <DashboardScreen />
-                ) : tab?.slug === "markets" ? (
-                  <MarketsScreen />
-                ) : tab?.slug === "regime-lab" ? (
-                  <RegimeLabScreen />
-                ) : tab?.slug === "credit" ? (
-                  <CreditScreen />
-                ) : tab?.slug === "recession" ? (
-                  <RecessionScreen />
-                ) : tab?.slug === "news" ? (
-                  <NewsScreen />
-                ) : tab?.slug === "tools" ? (
-                  <ToolsScreen />
-                ) : null}
-              </Suspense>
-            </ErrorBoundary>
-          </main>
+            <main id="main-content" tabIndex={-1} style={{ outline: "none" }}>
+              {/* The key is load-bearing: it re-mounts the boundary on every tab
+                  change, so a tab that crashed once is retried when the visitor
+                  navigates away and back rather than staying stuck on the note. */}
+              <ErrorBoundary key={activeSlug} label="This tab">
+                <Suspense fallback={<ScreenLoading label={isMethodology ? "Methodology" : (tab?.label ?? "the screen")} />}>
+                  {isMethodology ? (
+                    <MethodologyScreen />
+                  ) : tab?.slug === "dashboard" ? (
+                    <DashboardScreen />
+                  ) : tab?.slug === "markets" ? (
+                    <MarketsScreen />
+                  ) : tab?.slug === "regime-lab" ? (
+                    <RegimeLabScreen />
+                  ) : tab?.slug === "credit" ? (
+                    <CreditScreen />
+                  ) : tab?.slug === "recession" ? (
+                    <RecessionScreen />
+                  ) : tab?.slug === "news" ? (
+                    <NewsScreen />
+                  ) : tab?.slug === "tools" ? (
+                    <ToolsScreen />
+                  ) : null}
+                </Suspense>
+              </ErrorBoundary>
+            </main>
+          </div>
+
+          {/* Floating analyst panel: app shell only; the landing page stays quiet.
+              It sits inside the inert wrapper so an open drawer or palette covers it. */}
+          <ErrorBoundary label="The AI analyst panel">
+            <AssistantPanel open={assistantOpen} onClose={closeAssistant} tabContext={tabContext} />
+          </ErrorBoundary>
         </div>
 
-        {/* Floating analyst panel: app shell only; the landing page stays quiet.
-            It sits inside the inert wrapper so an open drawer or palette covers it. */}
-        <ErrorBoundary label="The AI analyst panel">
-          <AssistantPanel open={assistantOpen} onClose={closeAssistant} tabContext={tabContext} />
-        </ErrorBoundary>
-      </div>
-
-      <AlertDrawer open={drawerOpen} onClose={closeDrawer} />
-      <CommandPalette open={paletteOpen} onClose={closePalette} />
-      <FreshnessDrawer open={freshnessOpen} onClose={closeFreshness} status={status} />
+        <AlertDrawer open={drawerOpen} onClose={closeDrawer} />
+        <CommandPalette open={paletteOpen} onClose={closePalette} />
+        <FreshnessDrawer open={freshnessOpen} onClose={closeFreshness} status={status} />
+      </ShellActionsContext.Provider>
     </div>
   );
 }
