@@ -278,3 +278,24 @@ Tests: 262 Python + 7 Streamlit-only + 25 vitest; build clean; actionlint clean.
 Constraints honored: no commit/push/merge/deploy/dispatch, no paid resources, no secrets
 in React or logs, no Polygon, no DB commit, retry/soft-reset preserved.
 
+
+---
+
+## 2026-09-15 — UI redesign overnight build (docs/redesign-v2 brief; nothing pushed)
+
+Base: react-rebuild @ cb7c4d8 (level with origin; tracked tree clean; no unmerged fix-loop
+work in web/). Baseline: typecheck 0 errors · vitest 31/31 · API on stored data · Playwright
+MCP and Claude in Chrome both load /app/dashboard with 0 console errors. State files, captures,
+checklists and the morning report live under docs/redesign-v2/ (locally excluded, never committed).
+
+### redesign/00-parity-audit — beb9e91 (Phase 0)
+- What changed: dev tooling only. `@playwright/test` devDependency (matches installed Chromium
+  1243), `web/playwright.config.ts`, `web/e2e/` (baseline capture; section-id, label-parity and
+  news-link specs), `web/src/api/hook-coverage.test.ts`, `web/src/components/intel/news-links.test.tsx`,
+  `.gitignore` += `web/test-results/`, `web/playwright-report/`.
+- Tests: vitest 31 → 37 (14 files) · e2e 18 passed · capture 11 passed. Typecheck 0 errors.
+- Captures: docs/redesign-v2/baseline/ (22 PNGs @1672 px, labels.json 850 labels, console.json:
+  0 errors / 0 failed API requests on every screen, sub-tab, disclosure and overlay).
+- Parity inventory: docs/redesign-v2/PARITY.md (investigator); unaccounted items placed per the
+  brief's conservative default and listed in MORNING_REPORT.md.
+- Open issues: none. Rollback: `git switch react-rebuild && git branch -D redesign/00-parity-audit`.
