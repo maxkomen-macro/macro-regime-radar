@@ -34,3 +34,7 @@ proposals/**/*.png
 proposals/**/*.gif
 proposals/**/*.jpg
 proposals/**/*.webp
+
+# Playwright e2e artifacts (web/e2e specs; captures live under gitignored/excluded folders)
+web/test-results/
+web/playwright-report/
