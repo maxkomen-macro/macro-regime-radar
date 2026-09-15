@@ -328,3 +328,15 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Captures: docs/redesign-v2/captures/redesign-02-components/ (kit.png + 22 route captures, console clean).
 - Open issues: stagflation pill contrast (~3.4:1) and the slider thumb ring flagged for the design lead (QUESTIONS #22, #27).
 - Rollback: `git switch redesign/01-foundation && git branch -D redesign/02-components`
+
+### redesign/03-dashboard — 78cf3b6 (Phase 3)
+- What changed: Dashboard rebuilt to dashboard.png on TabHero/SummaryCard (eleven-row summary with the §0.5 restores and
+  the alert status strip), five SignalCards, key-levels row, Markets at a glance (six Segmented views incl. What's priced),
+  US 10Y card, macro calendar card, collapsed macro charts, read-through/provenance disclosures; shell seams (quote ladder,
+  alertSummary, ShellActionsContext, narrative helpers); wordmark demoted to a paragraph (the hero is the h1).
+- Tests: vitest 171 → 226 (42 files) · e2e 45 → 60 + 11 capture · typecheck 0 · build clean. Parity guarantees green with
+  four reviewed dashboard renames.
+- Verify loops: 1 (harness refinements only). Browser landing check with Playwright MCP at 1672 and 390.
+- Captures: docs/redesign-v2/captures/redesign-03-dashboard/ (dashboard + 11 interaction captures + 22 route captures, console clean).
+- Needs backend (hidden, logged): signal sparklines; FX/crypto stored history; extra FX/crypto tiles; 2Y/2s10s rates tile.
+- Rollback: `git switch redesign/02-components && git branch -D redesign/03-dashboard`
