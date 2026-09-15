@@ -353,3 +353,21 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Captures: docs/redesign-v2/captures/redesign-04-regime-lab/ (44 files, console clean).
 - Needs backend (hidden, logged): vs-3-mo-ago deltas; transition-odds history; full analogue corpus; spell start/exit counts; served colours.
 - Rollback: `git switch redesign/03-dashboard && git branch -D redesign/04-regime-lab`
+
+### redesign/05-markets — c57c4b6 (Phase 5)
+- What changed: Markets rebuilt on TabHero/SummaryCard (risk-word hero with the 1-week bars, six-row summary + stream strip
+  opening the freshness drawer), ChartPanel restyled and mounted full width with focus return, the single-name tile (xs
+  fundamentals, 20-day average, regime tokens, Options lens, News disclosure) with the range picker in the panel header,
+  heatmap tiles, Top surprises DataTable with diverging bars, the macro tape as a grouped compact DataTable (Macro / Single
+  names toggle, rowProps click/rail/flash), What's priced row-header tables; tape.ts extraction; old-palette literals gone.
+- Tests: vitest 308 → 383 (55 files) · e2e 74 → 89 + 11 capture · typecheck 0 · build clean. Parity guarantees green with
+  four reviewed renames and the sort-meta ignore rule.
+- Verify loops: 1 (tape header / rail / heading level / single-name meta fixes). Browser landing check with Playwright MCP
+  at 1672 and 390 (all P5 interactions walked: NVDA search, options chain, news links, 1Y/5D, tape row → panel → Esc,
+  toggle, strip → drawer).
+- Incident: the first full-suite run overwrote the Phase 0 baseline folder (capture spec default); regenerated from a clean
+  cb7c4d8 worktree with the Phase 0 harness, parity re-run green; the spec now defaults to the branch capture folder.
+- Captures: docs/redesign-v2/captures/redesign-05-markets/ (52 files, console clean).
+- Needs backend (hidden, logged): priced 1W / 1Y range; surprises Actual / Consensus; VIX percentile; stream latency;
+  weekly bars for live-only symbols; FOMC odds / implied rates / 2s10s; the summary's policy-rate row.
+- Rollback: `git switch redesign/04-regime-lab && git branch -D redesign/05-markets`
