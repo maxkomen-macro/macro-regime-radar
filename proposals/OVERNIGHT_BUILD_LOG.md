@@ -299,3 +299,18 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Parity inventory: docs/redesign-v2/PARITY.md (investigator); unaccounted items placed per the
   brief's conservative default and listed in MORNING_REPORT.md.
 - Open issues: none. Rollback: `git switch react-rebuild && git branch -D redesign/00-parity-audit`.
+
+### redesign/01-foundation — 8be085e (Phase 1)
+- What changed: spec §0 token layer (222 props, 20 aliases, 16 deleted), Source Serif 4 self-hosted (Space Grotesk retired),
+  dev-only build stamp (Vite plugin), app shell rebuilt to the mockup chrome (sidebar + icons + Methodology + watchlist + footer,
+  top bar with palette trigger / Ask the analyst / bell, ticker strip + freshness card + per-source drawer, MobileNav <860 with a
+  Watchlist disclosure), useBreakpoint.shellCompact, the §3.1 watchlist (localStorage, add/remove/undo/reorder/sync, EOD fallback),
+  MarketsScreen re-reads ?name= on navigation, DESIGN.md rewritten, PRODUCT.md watchlist line.
+- Tests: vitest 37 → 66 (18 files) · e2e 18 → 35 + 11 capture · typecheck 0 · build clean. Parity guarantees green
+  (2 reviewed renames, 3 scoped ignore rules for live tape data).
+- Verify loops: 2 (loop 1: 6 e2e failures → option-row separators + Esc hint (implementer C), MobileNav separator, font file
+  git rm, two ignore rules; loop 2: all green). Browser landing check with Playwright MCP at 1672 and 390.
+- Captures: docs/redesign-v2/captures/redesign-01-foundation/ (22 PNGs, console clean).
+- Open issues: transitional regime pill in the top bar until Phase 10; `/impeccable document` sidecar refresh for the owner;
+  Landing live dot colour alias (Phase 10).
+- Rollback: `git switch react-rebuild && git branch -D redesign/01-foundation`
