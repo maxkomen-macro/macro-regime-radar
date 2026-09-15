@@ -22,6 +22,22 @@ export interface NewsCardProps {
   /** Collapse the detail behind a toggle. Default true. */
   expandable?: boolean;
   style?: React.CSSProperties;
+  /** Phase 8: "row" (default, the list row) or "lead" (the priority tile). */
+  variant?: "row" | "lead";
+  /** Category badge word (MACRO, M&A, EARN, GEO, SECTOR); no badge when absent. */
+  category?: string;
+  categoryTone?: "info" | "watch" | "reference";
+  /** Ticker or deal-size chip and its title ("Ticker" / "M&A deal size"). */
+  chip?: string;
+  chipTitle?: string;
+  /** Row variant: the ET clock ("15:41 ET"). */
+  clock?: string;
+  /** Perplexity research body (rendered under its attribution line). */
+  research?: React.ReactNode;
+  /** Lead variant: the four sub-scores behind "Score breakdown", each [label, value | null]. */
+  dims?: Array<[string, number | null]>;
+  /** Fallback coverage: prints "stored · stale" in the footer. */
+  stale?: boolean;
 }
 
 /**

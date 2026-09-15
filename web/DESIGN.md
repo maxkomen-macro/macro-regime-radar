@@ -495,6 +495,53 @@ band word, coefficient and divergence figure is a served field or its formatted 
 the only client math is the three-month delta in points, the count of consecutive
 rises and the 24-month / 5-year / 10-year slices of served series.
 
+**News & Calendar composition (Phase 8, 2026-09-15).** Inside `<div class="mrr-news">`
+(the same one-column panel stack, hero-row margin zeroed), top to bottom: (1)
+`.mrr-hero-row`: `TabHero id="news-hero"` (eyebrow "Next on the calendar", the live dot
+only while the feed is current and not on fallback; h1 = the countdown to the first
+high-impact event of the served 30-day window, "{event_name} today / tomorrow / in {n}
+days" by ET calendar day, the served name never abbreviated, with the event's impact
+word as the pill, "High impact" amber and the rest gray; the subhead naming the first
+two served events with their ET weekday and wall time; the lede is the lead story's
+two sentences, "{Category} leads the file: {headline} at {x} / 5, the window's highest
+score." then its stored interpretation or the sentence that none was stored; the
+"Open the calendar" and "Filter headlines" same-route hash links; the footnote "{n}
+headlines in {window} • {n} events in the next 30 days • Feed checked {HH:MM} ET"; the
+`Newest headline` and `Calendar` freshness chips, hidden on a phone; the note stating
+the 60s recheck and the hourly ingest; the signature visual is the inline-SVG 18-day
+event timeline, `EventTimeline`, weekends shaded, one tick per ET day, the mint NOW rail,
+one stem and dot per served event with height and colour by the served `importance`,
+amber high, cyan medium, gray low; the loading, unavailable, stored-schedule and
+no-events states swap the h1 for a UI-face sentence) beside `SummaryCard
+id="news-summary"` ("Desk summary": Next event · After that · Coverage · Top
+significance · High impact, no consensus row because nothing serves consensus, and the
+feed-health strip worded from `feedHealth`, mint "Feed current", amber "Feed delayed" /
+"Feed stale" / "Fallback coverage", gray "Feed unavailable" / "Reading feed health…",
+opening the freshness drawer; the served `/api/freshness` news SLA verdict wins over the
+client clock so the strip, the chip and the drawer speak one word); (2) `.mrr-news-body`
+(`minmax(0,1fr) var(--summary-w)` at 1200 and up, `align-items: stretch`, one column
+below): the left `.mrr-news-stack` with `<section id="headlines">` Priority headlines
+("Latest stored headlines" with an amber callout on the fallback; four `NewsCard
+variant="lead"` tiles in the 2x2 `.mrr-news-lead` grid, one column below 768, each with
+the category badge, the ticker or deal-size chip, "Sig {x} / 5" with five mint dots, the
+linked h4 headline, "◆ Why it matters · AI" or "Wire summary", the collapsed "Score
+breakdown", the "Regime read · {n} sources" disclosure and "Read at {source} →"; the
+"How scoring works →" link to `/app/methodology#ramps`) and `<section id="feed">` More
+headlines (the `.mrr-news-filters` fieldset bar: three mono `Segmented` groups, Window
+24H / 48H / 7D, Category ALL / MACRO / M&A / EARN / GEO / SECTOR, Significance ANY SIG /
+≥ 2.5 notable / ≥ 3.5 high, under sr-only legends; the significance caption; five
+`StatTile size="sm"` count tiles in `.mrr-news-tiles`; the list rows as `NewsCard
+variant="row"` on the `.mrr-news-row` five-column grid, clock, badge, headline, detail
+toggle, score, stacking into three lines below 768, each new arrival flashing once
+through `.mrr-news-new`; "Show {n} more headlines" and the top-50 cap caption), and the
+right `<section id="calendar">` (`CalendarPanel`: the Upcoming / Recent `Segmented`,
+the `.mrr-cal-legend` impact legend, the day-grouped `DataTable` with the TODAY / +{n}d /
+elapsed day markers, the stored-schedule callout, the "Recent releases" block and the
+caption); (3) the `DisclosureLine`. Nothing on the page is re-derived in the browser:
+every figure is a served field or a count of served rows, and the only client
+arithmetic is the ET calendar-day delta the countdown, the day markers and the timeline
+columns share.
+
 **Gaps.** 16px between top-level columns (`--gap-col`), 14px between stacked panels
 (`--gap-panel`), 12px between tiles inside a panel (`--gap-tile`). Panel padding
 `16px 18px 18px`; tile padding 14 to 16px. The old 2px-increment spacing scale
@@ -915,6 +962,8 @@ Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-15 Phase 8: News & Calendar rebuilt on TabHero / SummaryCard; NewsCard gains
+  the lead variant; the calendar is a day-grouped DataTable
 - 2026-09-15 Phase 7: Recession rebuilt on TabHero / SummaryCard; the scenario result
   is the second display-face number (spec section 1); sensitivity collapsed by default
 - 2026-09-15 Phase 6: Credit rebuilt on TabHero / SummaryCard; hero OAS chart on

@@ -15,34 +15,14 @@ import { Link } from "react-router-dom";
 import { Card, SectionHeader } from "../../components";
 import { useCalendar, useCalendarRecent } from "../../api/queries";
 import type { CalendarEvent } from "../../api/types";
-import { fmtUtcStampEt } from "../../lib/format";
+import { impactOf, splitStamp } from "../shared/calendar-impact";
 import { Caption, StateNote, mono } from "../shared/screen-ui";
 
-export interface Impact {
-  /** Colour token for the dot. */
-  color: string;
-  /** The word the row carries for assistive tech and the dot's title. */
-  word: string;
-}
-
-const IMPACT: Record<string, Impact> = {
-  high: { color: "var(--amber)", word: "high impact" },
-  medium: { color: "var(--cyan)", word: "medium impact" },
-  low: { color: "var(--text-4)", word: "low impact" },
-};
-
-/** Served values are "high" | "medium" | "low" (src/migrate.py); anything
- * else, including null, reads as the gray dot with an honest word. */
-export function impactOf(importance: string | null | undefined): Impact {
-  return IMPACT[(importance ?? "").toLowerCase()] ?? { color: "var(--text-4)", word: "impact not rated" };
-}
-
-/** ["Sep 11", "08:30 ET"] from a stored UTC stamp. */
-export function splitStamp(ts: string): [string, string] {
-  const stamp = fmtUtcStampEt(ts);
-  const comma = stamp.indexOf(", ");
-  return comma >= 0 ? [stamp.slice(0, comma), stamp.slice(comma + 2)] : [stamp, ""];
-}
+// Impact vocabulary and the stamp splitter live in shared/calendar-impact.ts
+// since Phase 8 (the News screen paints from the same table); re-exported so
+// this card's callers and tests keep their imports.
+export { impactOf, splitStamp } from "../shared/calendar-impact";
+export type { Impact } from "../shared/calendar-impact";
 
 function EventRow({ event, elapsed = false }: { event: CalendarEvent; elapsed?: boolean }) {
   const [date, time] = splitStamp(event.event_datetime);

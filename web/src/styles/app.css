@@ -486,7 +486,7 @@ main .mrr-scroll {
 }
 .mrr-news-new {
   animation: mrr-news-arrive 1.5s var(--ease-out);
-  border-radius: var(--r-md);
+  border-radius: var(--r-tile);
 }
 @media (prefers-reduced-motion: reduce) {
   .mrr-news-new {
@@ -1476,6 +1476,92 @@ main .mrr-scroll {
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
   gap: var(--gap-tile);
 }
+/* News & Calendar (Phase 8, checklist 08 A.8 / B.0): the same one-column
+   panel stack, hero-row margin zeroed. The body grid pairs the left panel
+   stack (Priority headlines over More headlines) with the 432px calendar
+   column, stretched to the stack's height (news.html:172), one column below
+   1200; the lead cards are a 2x2 grid (four cards, discrepancy 11), one
+   column below 768; the count tiles are five across, auto-fit below 768; the
+   filter bar is a fieldset (reset, then the mockup bar) whose three inner
+   fieldsets carry sr-only legends; the list row is the mockup's five-column
+   grid (clock, badge, headline, detail, score, then the opened block spanning
+   the last three), stacking into three lines below 768 (media rules in the
+   responsive blocks). */
+.mrr-news {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-news > .mrr-hero-row {
+  margin-bottom: 0;
+}
+.mrr-news-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--summary-w);
+  gap: var(--gap-col);
+  align-items: stretch;
+}
+.mrr-news-stack {
+  display: grid;
+  gap: var(--gap-panel);
+  align-content: start;
+}
+.mrr-news-lead {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-tile);
+  align-items: stretch;
+}
+.mrr-news-tiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.mrr-news-filters,
+.mrr-news-filters fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.mrr-news-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, 0.015);
+  margin-bottom: 12px;
+}
+.mrr-news-divider {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+}
+/* The list row (intel/NewsCard variant="row"): five cells in DOM order, the
+   opened block sixth. */
+.mrr-news-row {
+  display: grid;
+  grid-template-columns: 60px 86px minmax(0, 1fr) 148px 96px;
+  gap: 12px;
+  align-items: center;
+  min-height: 42px;
+  border-bottom: 1px solid var(--line-2);
+}
+/* The calendar panel's impact legend (news.html:216). */
+.mrr-cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin: -4px 0 10px;
+}
 /* The tape's ticker button (checklist 05 B.7): the keyboard and assistive
    path to the chart panel; the whole row is the pointer target. The selected
    row carries a 3px link rail on its pinned first cell. */
@@ -1603,6 +1689,9 @@ main .mrr-scroll {
   .mrr-rec-bottom {
     grid-template-columns: minmax(0, 1fr);
   }
+  .mrr-news-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Below 1024 the financing grid stacks the all-in tile over the
@@ -1681,6 +1770,34 @@ main .mrr-scroll {
   }
   .mrr-rec-sens {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* News (Phase 8): lead cards one per row, count tiles self-fitting, and
+     the list row's five cells stacked into three lines: clock + badge,
+     the headline, detail + score; the opened block spans both columns.
+     The two spanning rules override the row's inline desk placement
+     (`grid-column: 3 / 6`), hence !important inside this query only. */
+  .mrr-news-lead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-news-tiles {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  }
+  .mrr-news-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 12px;
+    padding: 8px 0;
+  }
+  .mrr-news-row > :nth-child(3) {
+    grid-column: 1 / -1 !important;
+  }
+  .mrr-news-row > :nth-child(4) {
+    text-align: left;
+  }
+  .mrr-news-row > :nth-child(5) {
+    justify-self: end;
+  }
+  .mrr-news-row > :nth-child(n + 6) {
+    grid-column: 1 / -1 !important;
   }
   .assistant-panel {
     right: 8px;

@@ -1,26 +1,71 @@
 /**
- * News & Calendar — locked IA: headline feed (significance filter, category
- * chips, AI enrichment via NewsCard) and the macro-events calendar. Neither
- * section may ever show an empty screen: both carry the latest-available
- * fallback with an amber notice stating the newest stored date (confusion #2;
- * ports the Streamlit fix's behavior, not its code).
+ * News & Calendar, rebuilt on TabHero + SummaryCard (redesign Phase 8,
+ * docs/redesign-v2/checklists/08-news.md B.0).
  *
- * Data: /api/news (windowed) → /api/news/latest (fallback);
- * /api/calendar (upcoming) → /api/calendar/recent (fallback).
+ * Order of <main> children, all inside `.mrr-news`: the hero row (TabHero
+ * `#news-hero`, whose h1 is the countdown to the next high-impact calendar
+ * event with its impact word as the pill, the next two events as the subhead,
+ * the lead story's sentences as the lede and the 18-day event timeline as the
+ * signature visual, beside SummaryCard `#news-summary` with the feed-health
+ * strip opening the freshness drawer) → `.mrr-news-body` (the left stack:
+ * `#headlines` Priority headlines as four lead cards, `#feed` More headlines
+ * with the filter bar, the count tiles and the list rows | the right column,
+ * `#calendar`, the CalendarPanel) → the mono disclosure line.
+ *
+ * Locked IA kept from the first build: neither section may ever show an empty
+ * screen. The windowed feed falls back to the latest stored headlines and the
+ * 30-day calendar to the most recent stored events, each with an amber notice
+ * stating the newest stored date (confusion #2). Data: /api/news (windowed) →
+ * /api/news/latest (fallback); /api/calendar (upcoming) → /api/calendar/recent
+ * (fallback); /api/freshness for the feed's served SLA verdict. Nothing is
+ * re-derived in the browser: every figure is a served field, its formatted
+ * value, or a count of served rows.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Card, NewsCard, SectionHeader, StatTile, Tag } from "../../components";
-import DeskRead, { type LedgerItem } from "../shared/DeskRead";
-import Disclosure from "../shared/Disclosure";
-import ScrollTable from "../shared/ScrollTable";
-import { assessFreshness } from "../shared/freshness";
-import { useCalendar, useCalendarRecent, useNews, useNewsLatest } from "../../api/queries";
-import type { CalendarEvent, NewsItem } from "../../api/types";
-import { fmtDate, tidyProse } from "../../lib/format";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { Card, NewsCard, SectionHeader, Segmented, StatTile } from "../../components";
+import { useCalendar, useCalendarRecent, useFreshness, useNews, useNewsLatest } from "../../api/queries";
+import type { NewsItem } from "../../api/types";
+import { fmtDate, fmtUtcStampEt, tidyProse } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
+import { DASH } from "../dashboard/hero-copy";
+import { DisclosureLine } from "../shared/Disclosure";
+import { assessFreshness } from "../shared/freshness";
 import Jargon from "../shared/Jargon";
-import { Caption, StateNote, mono, useHashScroll } from "../shared/screen-ui";
+import { Caption, StateNote, useHashScroll } from "../shared/screen-ui";
+import SummaryCard, { type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
+import TabHero, { type TabHeroAction } from "../shared/TabHero";
+import { useShellActions } from "../shell/shell-actions";
+import CalendarPanel from "./CalendarPanel";
+import EventTimeline from "./EventTimeline";
+import {
+  DEAL_LABELS,
+  CATEGORY_WORD,
+  NEWS_GLOW,
+  categoryToneOf,
+  clockEt,
+  countdownHeadline,
+  coverageValue,
+  decodeEntities,
+  eventLine,
+  feedHealth,
+  headlineKey,
+  heroPill,
+  heroSubhead,
+  highImpactCount,
+  highImpactValue,
+  leadSentence,
+  mergeFeedVerdict,
+  nextFocusEvent,
+  researchBody,
+  sourcesFromResearch,
+  timeLabel,
+  topSignificanceValue,
+  usefulSummary,
+  whySentence,
+} from "./news-copy";
+import type { CalendarView } from "./news-types";
 
 const WINDOWS = [
   { hours: 24, label: "24H" },
@@ -43,297 +88,76 @@ const SIG_FILTERS = [
   { min: 3.5, label: "≥ 3.5 high" },
 ] as const;
 
-/** M&A deal-size buckets (news pipeline's own labels) — shown only on M&A. */
-const DEAL_LABELS: Record<number, string> = { 2: "<$1B", 3: "$1–10B", 4: "$10–50B", 5: "$50B+" };
-
 const DISPLAY_CAP = 50;
 const PRIORITY_N = 4;
 
-/** Wire text arrives with HTML entities baked in ("APAC&apos;s", "&amp;");
- * decode the common named and numeric forms so no markup leaks into copy. */
-const ENTITIES: Record<string, string> = {
-  amp: "&",
-  apos: "'",
-  quot: '"',
-  lt: "<",
-  gt: ">",
-  nbsp: " ",
-  ndash: "–",
-  mdash: "—",
-  hellip: "…",
-  lsquo: "‘",
-  rsquo: "’",
-  ldquo: "“",
-  rdquo: "”",
-};
-export function decodeEntities(text: string | null | undefined): string {
-  if (!text) return "";
-  return text
-    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(parseInt(n, 10)))
-    .replace(/&([a-z]+);/gi, (m, k: string) => ENTITIES[k.toLowerCase()] ?? m)
-    .replace(/\s+/g, " ")
-    .trim();
-}
+/** The card badge word per category: the CATEGORIES labels keyed by value
+ * (checklist 08 B.3 row 1); the long form stays on the count tiles. */
+const CATEGORY_BADGE: Record<string, string> = {};
+for (const c of CATEGORIES) if (c.value) CATEGORY_BADGE[c.value] = c.label;
 
-/** A summary that only repeats the headline (wire boilerplate, often with
- * the source name appended) adds nothing: drop it. */
-function usefulSummary(headline: string, summary: string | null): string | null {
-  const s = decodeEntities(summary);
-  if (!s) return null;
-  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const h = norm(decodeEntities(headline));
-  const body = norm(s);
-  if (body === h || body.startsWith(h) && body.length - h.length < 24) return null;
-  return s;
-}
+/* The three Segmented groups read the verbatim tables above; "all" and "any"
+   stand for the null / undefined filter values. */
+const WINDOW_OPTIONS = WINDOWS.map((w) => ({ id: String(w.hours), label: w.label }));
+const CATEGORY_OPTIONS = CATEGORIES.map((c) => ({ id: c.value ?? "all", label: c.label }));
+const SIG_OPTIONS = SIG_FILTERS.map((s) => ({ id: s.min == null ? "any" : String(s.min), label: s.label }));
 
-/** Categories the pipeline assigns; the card wears them as a short word. */
-const CATEGORY_WORD: Record<string, string> = {
-  MACRO: "Macro / Fed",
-  "M&A": "M&A",
-  EARNINGS: "Earnings",
-  GEOPOLITICAL: "Geopolitical",
-  SECTOR: "Sector",
+/** Loading and unavailable headlines ride in the UI face at the hero-sub
+ * size: the serif display face is for answers only (02 B.1 states). */
+const stateHeadline: CSSProperties = {
+  fontFamily: "var(--font-ui)",
+  fontWeight: 500,
+  fontSize: "var(--fs-hero-sub)",
+  lineHeight: "var(--lh-hero-sub)",
+  letterSpacing: 0,
+  fontVariationSettings: "normal",
 };
 
-function timeLabel(iso: string | null): string {
-  if (!iso) return "—";
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return iso;
-  const mins = Math.floor((Date.now() - t) / 60_000);
-  // One clock, not two: absolute date always, relative age while recent —
-  // adjacent cards flipping between "43h ago" and "Aug 04" read as two
-  // different columns (critique).
-  if (mins < 60) return `${fmtDate(iso)} · ${Math.max(mins, 0)}m ago`;
-  if (mins < 48 * 60) return `${fmtDate(iso)} · ${Math.floor(mins / 60)}h ago`;
-  return fmtDate(iso);
-}
+const HERO_ACTIONS: TabHeroAction[] = [
+  { label: "Open the calendar", to: "/app/news#calendar", primary: true },
+  { label: "Filter headlines", to: "/app/news#feed" },
+];
 
-/** Story identity for the feed dedupe and the arrival counter. One definition
- * so the two can't drift: a row the dedupe drops must not count as an arrival. */
-function headlineKey(headline: string): string {
-  return headline.trim().toLowerCase().replace(/\s+/g, " ");
-}
+const STRIP_SUFFIX = "Open the data freshness breakdown.";
 
-function Chip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+/** The ticker, else the M&A deal-size bucket in the same chip slot (U12). */
+function chipOf(item: NewsItem): string | undefined {
   return (
-    <button
-      onClick={onClick}
-      aria-pressed={active}
-      style={{
-        appearance: "none",
-        cursor: "pointer",
-        background: active ? "rgba(74,158,255,.12)" : "none",
-        border: active ? "0.5px solid rgba(74,158,255,.4)" : "0.5px solid var(--line-hair)",
-        borderRadius: "var(--r-xs)",
-        padding: "6px 10px",
-        minHeight: 32,
-        ...mono,
-        fontSize: "var(--fs-micro)",
-        letterSpacing: "var(--ls-micro)",
-        textTransform: "uppercase",
-        color: active ? "var(--accent)" : "var(--text-muted)",
-      }}
-    >
-      {children}
-    </button>
+    item.ticker ??
+    (item.category === "M&A" && item.deal_size != null && DEAL_LABELS[item.deal_size] ? DEAL_LABELS[item.deal_size] : undefined)
   );
 }
 
-function sourcesFromResearch(research: string | null): string[] {
-  if (!research) return [];
-  const tail = research.split("Sources:")[1];
-  if (!tail) return [];
-  const urls = tail.match(/https?:\/\/\S+/g) ?? [];
-  return urls.slice(0, 5).map((u) => u.replace(/[),.\]]+$/, ""));
-}
-
-function researchBody(research: string | null): string | null {
-  if (!research) return null;
-  const body = research.split("Sources:")[0].trim();
-  return body || null;
-}
-
-function CalendarRows({ events, past }: { events: CalendarEvent[]; past?: boolean }) {
-  const now = Date.now();
-  const label = past ? "Recent macro events" : "Upcoming macro events";
-  return (
-    // Fixed-track table: it scrolls inside its own card under ~520px rather
-    // than widening the page (the tape's convention, MarketsScreen.tsx:587).
-    // Nothing in here is focusable, so the scroller takes a tab stop of its
-    // own — otherwise a keyboard-only visitor can't reach the Source column.
-    <ScrollTable stickyFirst={false} label={label}>
-      <div role="table" aria-label={label} style={{ minWidth: 520 }}>
-        <div
-          role="row"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "130px 1fr 90px 110px",
-            gap: 12,
-            padding: "6px 12px",
-            borderBottom: "1px solid var(--line-hair)",
-          }}
-        >
-          {["Date", "Event", "Priority", "Source"].map((h, i) => (
-            <span
-              key={h}
-              role="columnheader"
-              style={{
-                ...mono,
-                fontSize: "var(--fs-micro)",
-                textTransform: "uppercase",
-                letterSpacing: "var(--ls-wide)",
-                color: "var(--text-muted)",
-                textAlign: i >= 2 ? "right" : "left",
-              }}
-            >
-              {h}
-            </span>
-          ))}
-        </div>
-        {events.map((e, i) => {
-          const dt = new Date(e.event_datetime).getTime();
-          const deltaDays = Math.floor((dt - now) / 86_400_000);
-          const isToday = !past && deltaDays === 0;
-          const soon = !past && deltaDays > 0 && deltaDays <= 7;
-          return (
-            <div
-              key={e.id}
-              role="row"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "130px 1fr 90px 110px",
-                gap: 12,
-                padding: "7px 12px",
-                alignItems: "baseline",
-                background: i % 2 === 1 ? "rgba(255,255,255,.012)" : "transparent",
-              }}
-            >
-              <span role="cell" style={{ ...mono, fontSize: "var(--fs-body-s)", color: past ? "var(--text-muted)" : "var(--text)" }}>
-                {fmtDate(e.event_datetime)}
-                {past && <span style={{ color: "var(--text-muted)" }}> · elapsed</span>}
-                {isToday && (
-                  <span style={{ color: "var(--neg-text)", fontWeight: 700 }}> · TODAY</span>
-                )}
-                {soon && <span style={{ color: "var(--warn)", whiteSpace: "nowrap" }}> · +{deltaDays}d</span>}
-              </span>
-              <span role="cell" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>
-                {e.event_name}
-              </span>
-              <span role="cell" style={{ textAlign: "right" }}>
-                {/* Elapsed events don't wear live priority colors (critique). */}
-                <Tag
-                  tone={
-                    past
-                      ? "neutral"
-                      : e.importance === "high"
-                        ? "neg"
-                        : e.importance === "medium"
-                          ? "warn"
-                          : e.importance === "low"
-                            ? "pos"
-                            : "neutral"
-                  }
-                  size="sm"
-                >
-                  {e.importance ?? "—"}
-                </Tag>
-              </span>
-              <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", textAlign: "right" }}>
-                {e.source === "manual_csv" ? "hand-maintained" : (e.source ?? "—")}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </ScrollTable>
-  );
-}
-
-/** One priority development: headline (linked), why it matters, regime link,
- * asset / sector tag, source, time, significance. Stale rows say so. */
-function PriorityCard({ item, stale }: { item: NewsItem; stale: boolean }) {
-  const sig = item.overall_significance ?? 0;
-  const sigColor = sig >= 4.5 ? "var(--neg-text)" : sig >= 3.5 ? "var(--warn-hot)" : sig >= 2.5 ? "var(--warn)" : "var(--text-muted)";
-  const why = item.regime_interpretation?.trim()
-    ? tidyProse(decodeEntities(item.regime_interpretation))
-    : researchBody(item.perplexity_research)
-      ? tidyProse(decodeEntities(researchBody(item.perplexity_research)))
-      : usefulSummary(item.headline, item.summary);
-  const dims: [string, number | null][] = [
-    ["Market impact", item.market_impact],
-    ["Regime relevance", item.regime_relevance],
-    ["Sector reach", item.sector_relevance],
-    ["Timeliness at ingest", item.time_sensitivity],
-  ];
-  return (
-    <Card accentBar tone={sig >= 3.5 ? "watch" : "default"} style={{ display: "grid", gap: 8 }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)" }}>
-        <span style={{ color: "var(--text-label)" }}>{item.source ?? "—"}</span>
-        <span>{timeLabel(item.published_at)}</span>
-        {stale ? <span style={{ color: "var(--warn-hot)" }}>stored · stale</span> : null}
-        {item.category ? <span>{CATEGORY_WORD[item.category] ?? item.category}</span> : null}
-        {item.ticker ? <span style={{ color: "var(--accent)" }}>{item.ticker}</span> : null}
-        <span style={{ marginLeft: "auto", color: sigColor, fontWeight: 700 }}>Sig {sig.toFixed(1)} / 5</span>
-      </div>
-      <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-value)", fontWeight: 500, lineHeight: 1.35, color: "var(--text)", textWrap: "pretty" }}>
-        {item.url ? (
-          <a href={item.url} target="_blank" rel="noreferrer" style={{ color: "var(--text)", textDecorationColor: "var(--line-strong)" }}>
-            {decodeEntities(item.headline)}
-          </a>
-        ) : (
-          decodeEntities(item.headline)
-        )}
-      </div>
-      {why ? (
-        <p style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", lineHeight: 1.6, color: "var(--text-2)", margin: 0, textWrap: "pretty" }}>
-          <span style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-micro)", color: item.regime_interpretation?.trim() ? "var(--accent)" : "var(--text-muted)", marginRight: 8 }}>
-            {item.regime_interpretation?.trim() ? "◆ Why it matters" : "Wire summary"}
-          </span>
-          {why}
-        </p>
-      ) : null}
-      <div style={{ display: "flex", gap: "4px 14px", flexWrap: "wrap", ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
-        {dims.map(([k, v]) => (
-          <span key={k}>
-            {k} <span style={{ color: v != null && v >= 4 ? "var(--warn)" : "var(--text-2)" }}>{v != null ? `${v.toFixed(0)} / 5` : "—"}</span>
-          </span>
-        ))}
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
-        {item.url ? (
-          <a href={item.url} target="_blank" rel="noreferrer" style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--accent)" }}>
-            Read at {item.source ?? "source"} →
-          </a>
-        ) : (
-          <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>No source link stored</span>
-        )}
-        {sourcesFromResearch(item.perplexity_research).length ? (
-          <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "#a78bfa" }}>
-            ◆ {sourcesFromResearch(item.perplexity_research).length} cited sources in the feed card
-          </span>
-        ) : null}
-      </div>
-    </Card>
-  );
+/** The card props both variants share: the decoded headline, the AI
+ * interpretation and the Perplexity body as tidied prose, the cited sources
+ * and the wire summary when it adds to the headline. */
+function cardProps(item: NewsItem) {
+  const body = researchBody(item.perplexity_research);
+  const chip = chipOf(item);
+  return {
+    category: item.category ? (CATEGORY_BADGE[item.category] ?? item.category) : undefined,
+    categoryTone: categoryToneOf(item.category),
+    chip,
+    chipTitle: chip ? (item.ticker ? "Ticker" : "M&A deal size") : undefined,
+    source: item.source ?? DASH,
+    headline: decodeEntities(item.headline),
+    href: item.url ?? undefined,
+    summary: usefulSummary(item.headline, item.summary) ?? undefined,
+    significance: item.overall_significance ?? undefined,
+    sigScale: 5 as const,
+    interpretation: item.regime_interpretation?.trim() ? tidyProse(decodeEntities(item.regime_interpretation)) : undefined,
+    research: body ? tidyProse(decodeEntities(body)) : undefined,
+    sources: sourcesFromResearch(item.perplexity_research),
+  };
 }
 
 export default function NewsScreen() {
-  // <768 the two-up feed stacks: a NewsCard is prose, and prose in a 170px
-  // column is unreadable (lib/useBreakpoint.ts). Nothing else moves.
-  const { isNarrow } = useBreakpoint();
+  const { isMobile, isNarrow } = useBreakpoint();
   const [hours, setHours] = useState<number>(168);
   const [cat, setCat] = useState<string | null>(null);
   const [minSig, setMinSig] = useState<number | undefined>(undefined);
+  const [view, setView] = useState<CalendarView>("upcoming");
+  const [showAll, setShowAll] = useState(false);
 
   // Category filters server-side (mirrors the Streamlit loader), so the
   // latest-available fallback fires for ANY empty filter combination — an
@@ -426,21 +250,37 @@ export default function NewsScreen() {
     : null;
 
   // One definition of "high" on the screen: the ≥3.5 band the filter chip uses (review P3-2).
-  const highImpact = feed.filter((r) => (r.overall_significance ?? 0) >= 3.5).length;
+  const highImpact = highImpactCount(feed);
   const windowLabel = WINDOWS.find((w) => w.hours === hours)?.label ?? `${hours}H`;
 
   const calendar = useCalendar(30);
   const calendarEmpty = calendar.isSuccess && (calendar.data?.length ?? 0) === 0;
-  const recentEvents = useCalendarRecent(10, calendarEmpty);
-  const usingCalFallback = calendarEmpty && (recentEvents.data?.length ?? 0) > 0;
-  useHashScroll(shown.length);
+  // Read once the window has answered (the hero's fallback, the toggle's
+  // Recent view and the calendar panel's "Recent releases" block all use it).
+  const recent = useCalendarRecent(10, calendarEmpty || view === "recent" || calendar.isSuccess);
+  const usingCalFallback = calendarEmpty && (recent.data?.length ?? 0) > 0;
+  const freshness = useFreshness();
+  const { openFreshness } = useShellActions();
+  // One identity per settled state, so a palette jump or the hero's hash
+  // actions land after the rows mount and the calendar view settles.
+  const hashReady = useMemo(() => [shown.length, view] as const, [shown.length, view]);
+  useHashScroll(hashReady);
 
   /* ── priority developments: top of the feed by significance ─────────── */
   const newestPublished = feed.reduce<string | null>(
     (acc, r) => (r.published_at && (!acc || r.published_at > acc) ? r.published_at : acc),
     null,
   );
-  const feedFresh = assessFreshness(newestPublished, "hourly");
+  const feedClock = assessFreshness(newestPublished, "hourly");
+  // The stored stamp is UTC: it renders as ET wall time, never "ET" appended
+  // to the UTC digits (format.ts, 2026-09-05), so the chip, the strip and the
+  // row clocks read one clock.
+  const feedFresh = newestPublished ? { ...feedClock, stamp: fmtUtcStampEt(newestPublished) } : feedClock;
+  // The served SLA verdict wins when /api/freshness carries the news row, so
+  // the strip agrees with the drawer's "News feed" line (G13); the client
+  // clock covers snapshot mode and older payloads.
+  const slaNews = freshness.data?.sla?.find((r) => r.feed === "news");
+  const feedInfo = mergeFeedVerdict(feedFresh, slaNews);
   const ranked = useMemo(
     () => [...feed].sort((x, y) => (y.overall_significance ?? 0) - (x.overall_significance ?? 0)),
     [feed],
@@ -448,287 +288,318 @@ export default function NewsScreen() {
   const priority = ranked.slice(0, PRIORITY_N);
   const priorityIds = new Set(priority.map((r) => r.id));
   const rest = shown.filter((r) => !priorityIds.has(r.id));
-  const [showAll, setShowAll] = useState(false);
   const restShown = showAll ? rest : rest.slice(0, 8);
   const topSig = priority[0]?.overall_significance ?? null;
-  const upcoming = (calendar.data ?? []).slice(0, 2);
 
-  const ledger: LedgerItem[] = [
+  const now = Date.now();
+  const events = calendar.data ?? [];
+  const recentRows = recent.data ?? [];
+  const focus = nextFocusEvent(calendar.data);
+  const calError = calendar.isError && !calendar.data;
+  // The empty window's stand-in rows are part of the read: the hero keeps
+  // reading until they answer too.
+  const calLoading = (calendar.isLoading && !calendar.data) || (calendarEmpty && recent.isLoading && !recent.data);
+
+  const feedLoading = (windowed.isLoading && !windowed.data) || (windowedEmpty && fallback.isLoading && !fallback.data);
+  const feedError = windowed.isError && !windowed.data && fallback.isError;
+  const feedState = feed.length ? "ready" : feedError ? "error" : feedLoading ? "loading" : "empty";
+  const capped = (windowed.data?.length ?? 0) >= 150;
+  const checked = windowed.dataUpdatedAt
+    ? new Date(windowed.dataUpdatedAt).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", timeZone: "America/New_York" })
+    : "";
+
+  /* ── hero (B.1) ──────────────────────────────────────────────────────── */
+  const lead = leadSentence(priority[0], usingFallback, feedLoading);
+  const why = whySentence(priority[0], usingFallback);
+  const footnote: ReactNode[] = [
+    usingFallback ? coverageValue(feed, windowLabel, usingFallback, newestFallback, feedFresh.age) : `${feed.length} headlines in ${windowLabel}`,
+    ...(calendar.data ? [usingCalFallback ? "stored schedule" : `${events.length} events in the next 30 days`] : []),
+    ...(checked ? [`Feed checked ${checked} ET`] : []),
+  ];
+  const heroShared = {
+    id: "news-hero",
+    eyebrow: "Next on the calendar",
+    live: !usingFallback && feedInfo.state === "current",
+    lede: why ? `${lead} ${why}` : lead,
+    actions: HERO_ACTIONS,
+    footnote,
+    // On a phone the header's freshness words sit one screen above; the hero
+    // does not repeat them (03 B.1).
+    freshness: isMobile
+      ? undefined
+      : [
+          { noun: "Newest headline", info: feedInfo },
+          { noun: "Calendar", info: assessFreshness(null, "reference") },
+        ],
+    note: "Feed rechecks every 60s; the pipeline scores and stores new headlines hourly.",
+  };
+  let hero: ReactNode;
+  if (focus) {
+    const pill = heroPill(focus);
+    hero = (
+      <TabHero
+        {...heroShared}
+        headline={countdownHeadline(focus, now)}
+        pill={pill.text}
+        pillTone={pill.tone}
+        glow={pill.glow}
+        subhead={heroSubhead(events, now)}
+        chart={<EventTimeline events={events} now={now} />}
+      />
+    );
+  } else if (calError) {
+    const pill = heroPill(null, "unavailable");
+    hero = (
+      <TabHero
+        {...heroShared}
+        headline={<span style={stateHeadline}>Calendar unavailable: the data service did not answer.</span>}
+        pill={pill.text}
+        pillTone={pill.tone}
+        glow={pill.glow}
+        placeholder
+      />
+    );
+  } else if (calLoading) {
+    hero = <TabHero {...heroShared} headline={<span style={stateHeadline}>Reading the calendar…</span>} glow={NEWS_GLOW.gray} placeholder />;
+  } else if (usingCalFallback) {
+    const pill = heroPill(null, "fallback");
+    const end = recentRows[0].event_datetime;
+    hero = (
+      <TabHero
+        {...heroShared}
+        headline={<span style={stateHeadline}>No events in the next 30 days</span>}
+        pill={pill.text}
+        pillTone={pill.tone}
+        glow={pill.glow}
+        subhead={`The calendar snapshot ends ${fmtDate(end)}; the most recent ${recentRows.length} scheduled events are listed below.`}
+        chart={<EventTimeline events={[]} now={now} fallbackEnd={end} />}
+      />
+    );
+  } else {
+    hero = (
+      <TabHero
+        {...heroShared}
+        headline={<span style={stateHeadline}>No events on file</span>}
+        glow={NEWS_GLOW.gray}
+        chart={<EventTimeline events={[]} now={now} />}
+      />
+    );
+  }
+
+  /* ── summary rows (B.2) ──────────────────────────────────────────────── */
+  const calNote = calError ? <StateNote error /> : <StateNote loading />;
+  const feedNote = feedState === "error" ? <StateNote error /> : <StateNote loading />;
+  const calPending = calLoading || calError;
+  const nextEvent: ReactNode = events[0] ? (
+    eventLine(events[0])
+  ) : usingCalFallback ? (
+    <>
+      {eventLine(recentRows[0])}
+      <span style={{ color: "var(--text-3)" }}> · elapsed</span>
+    </>
+  ) : calPending ? (
+    calNote
+  ) : (
+    "No events in the next 30 days"
+  );
+  const afterThat: ReactNode = events[1] ? eventLine(events[1]) : calPending ? calNote : "No second event in the window";
+  const topValue = topSignificanceValue(topSig, priority[0]?.category ?? null);
+
+  const rows: SummaryRow[] = [
+    { id: "next-event", label: "Next event", value: nextEvent },
+    { id: "after-that", label: "After that", value: afterThat },
+    // Row 3, Consensus / prior, is never rendered: nothing serves consensus (F1).
     {
+      id: "coverage",
       label: "Coverage",
-      value: usingFallback
-        ? `Stale: no headlines in ${windowLabel}; newest stored ${newestFallback ? fmtDate(newestFallback) : "—"} (${feedFresh.age} old)`
-        : `${feed.length} stories in ${windowLabel} · ${highImpact} high impact (≥3.5)`,
-      prose: true,
-      tone: usingFallback ? "var(--warn-hot)" : "var(--text)",
+      value: feedState === "loading" || feedState === "error" ? feedNote : coverageValue(feed, windowLabel, usingFallback, newestFallback, feedFresh.age),
+      tone: usingFallback ? "var(--warn-hot)" : undefined,
     },
-    ...(topSig != null
-      ? [{ label: "Top significance", value: `${topSig.toFixed(1)} / 5 · ${priority[0].category ? (CATEGORY_WORD[priority[0].category] ?? priority[0].category) : "uncategorised"}` }]
-      : []),
-    ...(upcoming.length
-      ? [
-          {
-            label: "Next on calendar",
-            value: upcoming.map((e) => `${e.event_name} · ${fmtDate(e.event_datetime)}`).join(" · "),
-            prose: true,
-          },
-        ]
-      : []),
+    ...(topValue != null ? [{ id: "top-significance", label: "Top significance", value: topValue }] : []),
+    { id: "high-impact", label: "High impact", value: feedState === "loading" || feedState === "error" ? feedNote : highImpactValue(feed) },
   ];
 
+  /* ── status strip: feed health, opening the freshness drawer ─────────── */
+  const health = feedHealth({ usingFallback, loading: windowed.isLoading && !windowed.data, feedInfo, feed, newestFallback });
+  const strip: StatusStripProps = {
+    ...health,
+    onClick: openFreshness,
+    ariaHasPopup: "dialog",
+    ariaLabel: [`${health.title}.`, `${health.detail}.`, slaNews?.reason, STRIP_SUFFIX].filter(Boolean).join(" "),
+  };
+
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <DeskRead
-        eyebrow="Desk read · News & Calendar"
-        live={!usingFallback && feedFresh.state === "current"}
-        badge={
-          <Tag tone={usingFallback ? "hot" : feedFresh.state === "current" ? "pos" : "warn"} size="md" uppercase={false}>
-            {usingFallback ? "Fallback coverage" : `Feed ${feedFresh.word.toLowerCase()}`}
-          </Tag>
-        }
-        conclusion={
-          priority[0]
-            ? `${priority[0].category ? (CATEGORY_WORD[priority[0].category] ?? priority[0].category) : "One story"} leads the ${
-                usingFallback ? "stored file" : "file"
-              }: ${decodeEntities(priority[0].headline)} at ${(priority[0].overall_significance ?? 0).toFixed(1)} / 5, the ${
-                usingFallback ? "stored window's" : "window's"
-              } highest score.`
-            : windowed.isLoading
-              ? "Reading the stored headline feed…"
-              : "No headlines on file."
-        }
-        why={
-          priority[0]
-            ? priority[0].regime_interpretation?.trim()
-              ? tidyProse(decodeEntities(priority[0].regime_interpretation))
-              : `The highest-scored story on file (significance ${(priority[0].overall_significance ?? 0).toFixed(1)} / 5)${
-                  usingFallback ? "; it is stored fallback coverage, not today's tape" : ""
-                }. No model interpretation was stored for it, so the score is the only editorial claim made here.`
-            : undefined
-        }
-        ledger={ledger}
-        freshness={[
-          { noun: "Newest headline", info: feedFresh },
-          { noun: "Calendar", info: assessFreshness(null, "reference") },
-        ]}
-        note="Feed rechecks every 60s; the pipeline scores and stores new headlines hourly."
-      />
-
-      {/* ── Priority headlines ─────────────────────────────────────────── */}
-      <section id="headlines">
-        <SectionHeader
-          /* Older stored stories are not "priority developments": when the
-             window is empty the section says what it is showing (2026-09-06). */
-          title={usingFallback ? "Latest stored headlines" : "Priority headlines"}
-          right={
-            `${priority.length} of ${feed.length} · by significance` +
-            (usingFallback ? " · outside the selected window" : "") +
-            (newThisSession > 0 ? ` · ${newThisSession} new this session` : "")
-          }
-        />
-        {usingFallback ? (
-          <Caption style={{ marginTop: -4, marginBottom: 10 }}>
-            No{cat ? ` ${CATEGORY_WORD[cat] ?? cat}` : ""} headlines in the last {windowLabel}
-            {minSig ? ` at significance ≥ ${minSig}` : ""}; the {feed.length} most recent stored stories follow, significance
-            filter not applied.
-          </Caption>
-        ) : null}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))",
-            gap: 12,
-            alignItems: "start",
-          }}
-        >
-          {priority.map((item) => (
-            <PriorityCard key={item.id} item={item} stale={usingFallback} />
-          ))}
-        </div>
-        {!priority.length && (
-          <Card>
-            <StateNote loading={windowed.isLoading || fallback.isLoading} error={windowed.isError}>
-              Nothing on file; the news pipeline has not stored headlines yet.
-            </StateNote>
-          </Card>
-        )}
-      </section>
-
-      {/* ── The rest of the feed, filters one click down ─────────────── */}
-      <section id="feed">
-        <SectionHeader
-          title="More headlines"
-          right={
-            `Finnhub · NewsAPI · RSS · sorted by ${usingFallback ? "recency (fallback)" : "significance"}` +
-            (windowed.dataUpdatedAt
-              ? ` · checked ${new Date(windowed.dataUpdatedAt).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", timeZone: "America/New_York" })} ET`
-              : "")
-          }
-        />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 12, marginBottom: 10 }}>
-          <StatTile
-            label="Headlines"
-            value={`${feed.length}${(windowed.data?.length ?? 0) >= 150 ? "+" : ""}`}
-            size="sm"
-          />
-          <StatTile label="High impact · ≥3.5" value={String(highImpact)} size="sm" />
-          {(
-            [
-              ["M&A", "M&A"],
-              ["Macro / Fed", "MACRO"],
-              ["Geopolitical", "GEOPOLITICAL"],
-            ] as const
-          ).map(([label, catKey]) => {
-            const n = feed.filter((r) => r.category === catKey).length;
-            return <StatTile key={catKey} label={label} value={n ? String(n) : "—"} size="sm" />;
-          })}
-        </div>
-        <Disclosure
-          title="Filters"
-          right={`${cat ? (CATEGORY_WORD[cat] ?? cat) : "all categories"} · ${windowLabel} · ${minSig ? `≥ ${minSig}` : "any significance"}`}
-          defaultOpen={false}
-        >
-          <Card>
-            <div style={{ display: "grid", gap: 10 }}>
-              <div>
-                <div style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-micro)", color: "var(--text-muted)", marginBottom: 6 }}>Category</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {CATEGORIES.map((c) => (
-                    <Chip key={c.label} active={cat === c.value} onClick={() => setCat(c.value)}>
-                      {c.label}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-micro)", color: "var(--text-muted)", marginBottom: 6 }}>Window</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {WINDOWS.map((w) => (
-                    <Chip key={w.label} active={hours === w.hours} onClick={() => setHours(w.hours)}>
-                      {w.label}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div style={{ ...mono, fontSize: "var(--fs-micro)", textTransform: "uppercase", letterSpacing: "var(--ls-micro)", color: "var(--text-muted)", marginBottom: 6 }}>Significance</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {SIG_FILTERS.map((sf) => (
-                    <Chip key={sf.label} active={minSig === sf.min} onClick={() => setMinSig(sf.min)}>
-                      {sf.label}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-              <Caption style={{ marginTop: 0 }}>
-                <Jargon term="significance">Significance</Jargon> is scored 1–5 blending market impact, deal size, sector
-                reach, timeliness and regime fit; ≥4.5 reads red, ≥3.5 orange, ≥2.5 amber. Identical cross-source
-                headlines are shown once.
-              </Caption>
-            </div>
-          </Card>
-        </Disclosure>
-
-        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: 12, marginTop: 12, alignItems: "start" }}>
-          {restShown.map((item) => (
-            // Wrapper carries the arrival flash so the card itself stays a
-            // pure bundle component.
-            <div key={item.id} className={justArrived.has(item.id) ? "mrr-news-new" : undefined}>
-              <NewsCard
-                source={item.source ?? "—"}
-                time={`${timeLabel(item.published_at)}${usingFallback ? " · stored" : ""} · ${item.category ? (CATEGORY_WORD[item.category] ?? item.category) : "—"}`}
-                ticker={
-                  item.ticker ??
-                  (item.category === "M&A" && item.deal_size != null && DEAL_LABELS[item.deal_size]
-                    ? DEAL_LABELS[item.deal_size]
-                    : undefined)
-                }
-                headline={decodeEntities(item.headline)}
-                href={item.url ?? undefined}
-                summary={(() => {
-                  const sum = usefulSummary(item.headline, item.summary);
-                  return sum ? (
-                    <span
-                      style={{
-                        display: "-webkit-box",
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {sum}
-                    </span>
-                  ) : undefined;
-                })()}
-                significance={item.overall_significance ?? undefined}
-                sigScale={5}
-                interpretation={
-                  item.regime_interpretation?.trim()
-                    ? tidyProse(decodeEntities(item.regime_interpretation))
-                    : (() => {
-                        const body = researchBody(item.perplexity_research);
-                        return body ? tidyProse(decodeEntities(body)) : body;
-                      })()
-                }
-                sources={sourcesFromResearch(item.perplexity_research)}
-              />
-            </div>
-          ))}
-        </div>
-        {rest.length > restShown.length ? (
-          <div style={{ marginTop: 10 }}>
-            <button type="button" className="mrr-btn" data-touch={isNarrow ? "true" : "false"} onClick={() => setShowAll(true)}>
-              Show {Math.min(rest.length, DISPLAY_CAP) - restShown.length} more headlines
-            </button>
-          </div>
-        ) : null}
-        {feed.length > DISPLAY_CAP && showAll && (
-          <Caption>
-            Showing the top {DISPLAY_CAP} of {feed.length} by significance; tighten the filters to narrow the list.
-          </Caption>
-        )}
-      </section>
-
-      {/* ── Macro calendar ────────────────────────────────────────────── */}
-      <section id="calendar">
-        <SectionHeader
-          title="Macro calendar"
-          right={usingCalFallback ? "stored schedule" : "next 30 days"}
-        />
-        {usingCalFallback && (
-          <Card tone="watch" style={{ marginBottom: 10 }}>
-            <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-2)", lineHeight: 1.55 }}>
-              <span style={{ color: "var(--warn)", fontWeight: 600 }}>Stored schedule. </span>
-              No upcoming events in the stored window; the calendar snapshot ends{" "}
-              {recentEvents.data?.[0] ? fmtDate(recentEvents.data[0].event_datetime) : "—"}; showing the most recent{" "}
-              {recentEvents.data?.length ?? 0} scheduled events instead.
-            </span>
-          </Card>
-        )}
-        <Card style={{ padding: 0 }}>
-          {calendar.data?.length ? (
-            <CalendarRows events={calendar.data} />
-          ) : recentEvents.data?.length ? (
-            <CalendarRows events={recentEvents.data} past />
-          ) : (
-            <div style={{ padding: 12 }}>
-              <StateNote loading={calendar.isLoading} error={calendar.isError}>
-                No events on file.
-              </StateNote>
-            </div>
-          )}
-        </Card>
-        <Caption>
-          FOMC meetings, CPI, jobs and GDP prints from the hand-maintained schedule; high-priority
-          rows are the ones that can move the regime call.
-        </Caption>
-      </section>
-
-      <div style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: ".06em", color: "var(--text-muted)" }}>
-        Headlines ingest hourly from Finnhub, NewsAPI and RSS wires, dedupe, then score across five
-        dimensions · the store keeps a rolling window, so the feed ages out by design · calendar is
-        maintained by hand.
+    <div className="mrr-news">
+      {/* ── Hero row ────────────────────────────────────────────────── */}
+      <div className="mrr-hero-row">
+        {hero}
+        <SummaryCard id="news-summary" as="h2" title="Desk summary" rows={rows} status={strip} />
       </div>
+
+      <div className="mrr-news-body">
+        <div className="mrr-news-stack">
+          {/* ── Priority headlines ───────────────────────────────────── */}
+          <Card as="section" id="headlines" variant="panel" style={{ minWidth: 0 }}>
+            <SectionHeader
+              layout="panel"
+              as="h2"
+              /* Older stored stories are not "priority developments": when the
+                 window is empty the section says what it is showing (2026-09-06). */
+              title={usingFallback ? "Latest stored headlines" : "Priority headlines"}
+              description={usingFallback ? "Most recent stored stories, significance filter not applied" : `Ranked by significance, last ${windowLabel}`}
+              right={`${priority.length} of ${feed.length} · by significance${usingFallback ? " · outside the selected window" : ""}`}
+              actions={
+                <Link className="mrr-link" to="/app/methodology#ramps">
+                  How scoring works →
+                </Link>
+              }
+            />
+            {usingFallback ? (
+              <Card accentBar tone="watch" style={{ marginBottom: 12 }}>
+                <Caption style={{ marginTop: 0, color: "var(--text-2)" }}>
+                  No{cat ? ` ${CATEGORY_WORD[cat] ?? cat}` : ""} headlines in the last {windowLabel}
+                  {minSig ? ` at significance ≥ ${minSig}` : ""}; the {feed.length} most recent stored stories follow, significance
+                  filter not applied.
+                </Caption>
+              </Card>
+            ) : null}
+            {priority.length ? (
+              <div className="mrr-news-lead">
+                {priority.map((item) => (
+                  <NewsCard
+                    key={item.id}
+                    variant="lead"
+                    {...cardProps(item)}
+                    time={timeLabel(item.published_at)}
+                    dims={[
+                      ["Market impact", item.market_impact],
+                      ["Regime relevance", item.regime_relevance],
+                      ["Sector reach", item.sector_relevance],
+                      ["Timeliness at ingest", item.time_sensitivity],
+                    ]}
+                    stale={usingFallback}
+                  />
+                ))}
+              </div>
+            ) : (
+              <Card variant="tile">
+                <StateNote loading={feedState === "loading"} error={feedState === "error"}>
+                  Nothing on file; the news pipeline has not stored headlines yet.
+                </StateNote>
+              </Card>
+            )}
+          </Card>
+
+          {/* ── More headlines: the filter bar, the count tiles, the rows ── */}
+          <Card as="section" id="feed" variant="panel" style={{ minWidth: 0 }}>
+            <SectionHeader
+              layout="panel"
+              as="h2"
+              title="More headlines"
+              description={usingFallback ? `${feed.length} most recent stored` : `${feed.length}${capped ? "+" : ""} in the last ${windowLabel}`}
+              right={
+                `Finnhub · NewsAPI · RSS · sorted by ${usingFallback ? "recency (fallback)" : "significance"}` +
+                (checked ? ` · checked ${checked} ET` : "") +
+                (newThisSession > 0 ? ` · ${newThisSession} new this session` : "")
+              }
+            />
+            <fieldset className="mrr-news-filters">
+              <legend className="sr-only">Filters</legend>
+              <fieldset>
+                <legend className="sr-only">Window</legend>
+                <Segmented mono label="Window" options={WINDOW_OPTIONS} value={String(hours)} onChange={(id) => setHours(Number(id))} />
+              </fieldset>
+              <span aria-hidden="true" className="mrr-news-divider" />
+              <fieldset>
+                <legend className="sr-only">Category</legend>
+                <Segmented mono label="Category" options={CATEGORY_OPTIONS} value={cat ?? "all"} onChange={(id) => setCat(id === "all" ? null : id)} />
+              </fieldset>
+              <span aria-hidden="true" className="mrr-news-divider" />
+              <fieldset>
+                <legend className="sr-only">Significance</legend>
+                <Segmented
+                  mono
+                  label="Significance"
+                  options={SIG_OPTIONS}
+                  value={minSig == null ? "any" : String(minSig)}
+                  onChange={(id) => setMinSig(id === "any" ? undefined : Number(id))}
+                />
+              </fieldset>
+            </fieldset>
+            <Caption style={{ marginTop: 0, marginBottom: 12 }}>
+              <Jargon term="significance">Significance</Jargon> is scored 1–5 blending market impact, deal size, sector reach,
+              timeliness and regime fit; ≥4.5 reads red, ≥3.5 orange, ≥2.5 amber. Identical cross-source headlines are shown once.
+            </Caption>
+            <div className="mrr-news-tiles">
+              <Card variant="tile" padding="10px 14px">
+                <StatTile label="Headlines" value={feedState === "loading" ? DASH : `${feed.length}${capped ? "+" : ""}`} size="sm" />
+              </Card>
+              <Card variant="tile" padding="10px 14px">
+                <StatTile label="High impact · ≥3.5" value={feedState === "loading" ? DASH : String(highImpact)} size="sm" />
+              </Card>
+              {(
+                [
+                  ["M&A", "M&A"],
+                  ["Macro / Fed", "MACRO"],
+                  ["Geopolitical", "GEOPOLITICAL"],
+                ] as const
+              ).map(([label, catKey]) => {
+                const n = feed.filter((r) => r.category === catKey).length;
+                return (
+                  <Card key={catKey} variant="tile" padding="10px 14px">
+                    <StatTile label={label} value={n ? String(n) : DASH} size="sm" />
+                  </Card>
+                );
+              })}
+            </div>
+            <div className="mrr-news-rows">
+              {restShown.map((item) => (
+                // Wrapper carries the arrival flash so the card itself stays a
+                // pure bundle component.
+                <div key={item.id} className={justArrived.has(item.id) ? "mrr-news-new" : undefined}>
+                  <NewsCard
+                    variant="row"
+                    {...cardProps(item)}
+                    clock={clockEt(item.published_at)}
+                    time={`${timeLabel(item.published_at)}${usingFallback ? " · stored" : ""}`}
+                  />
+                </div>
+              ))}
+            </div>
+            {!restShown.length ? (
+              <Caption style={{ marginTop: 8 }}>
+                {feedState === "ready" ? (
+                  "Every stored headline in this window is under Priority headlines."
+                ) : (
+                  <StateNote loading={feedState === "loading"} error={feedState === "error"} />
+                )}
+              </Caption>
+            ) : null}
+            {rest.length > restShown.length ? (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+                <button type="button" className="mrr-btn" data-touch={isNarrow ? "true" : "false"} onClick={() => setShowAll(true)}>
+                  Show {Math.min(rest.length, DISPLAY_CAP) - restShown.length} more headlines
+                </button>
+              </div>
+            ) : null}
+            {feed.length > DISPLAY_CAP && showAll && (
+              <Caption>
+                Showing the top {DISPLAY_CAP} of {feed.length} by significance; tighten the filters to narrow the list.
+              </Caption>
+            )}
+          </Card>
+        </div>
+
+        {/* ── Macro calendar, the right column ─────────────────────────── */}
+        <CalendarPanel calendar={calendar} recent={recent} usingCalFallback={usingCalFallback} view={view} onViewChange={setView} now={now} />
+      </div>
+
+      <DisclosureLine>
+        Headlines ingest hourly from Finnhub, NewsAPI and RSS wires, dedupe, then score across five dimensions · the store keeps a
+        rolling window, so the feed ages out by design · calendar is maintained by hand · headlines link to the original article ·
+        each pipeline run sends the top 5 by score to Claude for a regime interpretation and to Perplexity for cited research;
+        other items show the wire summary · scores are model estimates.
+      </DisclosureLine>
     </div>
   );
 }
