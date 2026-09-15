@@ -87,7 +87,7 @@ export function IntelBanner({
           </span>
         ) : null}
       </div>
-      <div style={{ fontFamily: "var(--font-display)", fontWeight: 500, fontSize: "var(--fs-value)", color: "var(--text)", lineHeight: 1.45, textWrap: "pretty" }}>{headline}</div>
+      <div style={{ fontFamily: "var(--font-ui)", fontWeight: 500, fontSize: "var(--fs-value)", color: "var(--text)", lineHeight: 1.45, textWrap: "pretty" }}>{headline}</div>
       {meta.length || action ? (
         <div
           style={{

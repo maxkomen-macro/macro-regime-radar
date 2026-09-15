@@ -1,9 +1,13 @@
-/* App-level chrome — owned by web/, layered after the verbatim token files.
-   Browser surfaces (scrollbars) + the jargon-definition affordance + the two
-   overlay surfaces (alert drawer, command palette). No new colors, no new
-   type sizes: everything references the token layer. */
+/* App-level chrome, owned by web/, layered after the verbatim token files.
+   Browser surfaces (scrollbars), the jargon-definition affordance, the overlay
+   surfaces (alert drawer, freshness drawer, command palette, assistant panel)
+   and, since the redesign's Phase 1, the shell itself: the sidebar, the top
+   bar, the ticker strip and the mobile nav (spec §2, docs/redesign-v2). No new
+   colours or sizes outside the token layer: every shell value is a Phase 1
+   token with the mockup's literal as its fallback, so the shell reads the
+   same whether or not a token has landed yet. */
 
-/* Scrollbars — the parts we didn't draw still carry the design. */
+/* Scrollbars: the parts we didn't draw still carry the design. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -35,7 +39,7 @@ button {
 /* ── Layout: kill grid/flex item min-content propagation ────────────────
    Every screen renders a root grid whose children are <section>s. A grid (or
    flex) item's automatic minimum size is its content's MIN-CONTENT width, not
-   zero — so one wide descendant (the Regime Lab Gantt's 1385px svg, the tape's
+   zero; so one wide descendant (the Regime Lab Gantt's 1385px svg, the tape's
    fixed-track table) makes its section that wide, the section widens the page
    root, and the whole document scrolls sideways. That happens even when the
    wide thing already sits in its own `overflow-x: auto` well: the well can only
@@ -43,7 +47,7 @@ button {
 
    `min-width: 0` restores the shrinkable default. It is a no-op for a section
    in normal block layout (block boxes take their container's width regardless),
-   so this only ever binds where a <section> is a flex/grid item — exactly the
+   so this only ever binds where a <section> is a flex/grid item; exactly the
    screen roots. MethodologyScreen carries the same value inline with its own
    explanation; harmless duplication, left in place. */
 main section,
@@ -52,19 +56,18 @@ main .mrr-scroll {
   min-width: 0;
 }
 
-/* The house focus ring — DESIGN.md: "1px accent, 2px offset, never removed".
-   Was mandated but implemented nowhere globally (critique 2026-08-06); the
-   palette input's inset variant stays via its more specific rule. */
+/* The house focus ring (spec §0: never removed): 2px link blue, 2px offset,
+   matching base.css; the palette / assistant inputs keep their inset variants. */
 :focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 2px solid var(--link);
   outline-offset: 2px;
 }
 
-/* Jargon terms — dotted underline, plain-language definition on hover/focus.
+/* Jargon terms: dotted underline, plain-language definition on hover/focus.
    Content comes from the confusion index. Native title="" is the v1 fallback;
    the styled tooltip is the ::after pattern below. */
 .jargon {
-  /* The dotted underline is the "definition available" affordance — functional,
+  /* The dotted underline is the "definition available" affordance; functional,
      so it sits at muted per the 2026-08-06 contrast ruling. */
   text-decoration: underline dotted var(--text-muted);
   text-underline-offset: 2px;
@@ -78,14 +81,14 @@ main .mrr-scroll {
 /* The hidden tooltip is `display: none`, not merely `visibility: hidden`.
    A visibility-hidden absolutely-positioned box still generates a box, and a
    `width: max-content` box up to 320px wide hanging off a term near the right
-   gutter still counts toward the document's scrollable overflow region — so
+   gutter still counts toward the document's scrollable overflow region; so
    every jargon term at desk width was quietly adding horizontal page scroll it
    never showed (1440px viewport measured a 1642px scrollWidth on Dashboard).
    display:none generates no box, so there is nothing to overflow.
 
    Cost: the opacity fade is now instant in both directions (a display change
    gives the transition no start style to run from). DESIGN.md is explicit that
-   "the only motion tells you something changed" and that nothing fades — a
+   "the only motion tells you something changed" and that nothing fades; a
    tooltip appearing is a state change, not an animation, so instant is if
    anything the more house-correct behaviour. The opacity/visibility pair is
    kept below so the fade returns for free if someone later adds
@@ -129,7 +132,7 @@ main .mrr-scroll {
   padding: 6px 10px;
   background: var(--surface-raised);
   color: var(--text);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--link);
   border-radius: var(--r-xs);
   font-family: var(--font-ui);
   font-size: var(--fs-body-s);
@@ -150,7 +153,7 @@ main .mrr-scroll {
   border: 0;
 }
 
-/* Overlay scrim — shared by the drawer and the palette. Flat, no blur. */
+/* Overlay scrim, shared by the drawers and the palette. Flat, no blur. */
 .scrim {
   position: fixed;
   inset: 0;
@@ -158,23 +161,132 @@ main .mrr-scroll {
   z-index: 50;
 }
 
-/* Alert drawer — right side panel. */
-.alert-drawer {
+/* Right-side drawers: the alert drawer (AlertDrawer.tsx keeps its class) and
+   the generalised .mrr-drawer the freshness breakdown uses. 380px, 92vw cap,
+   scrolls inside itself. */
+.alert-drawer,
+.mrr-drawer {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
   width: 380px;
   max-width: 92vw;
-  background: var(--surface);
-  border-left: 0.5px solid var(--line); /* hairline house rule; 1px is reserved */
+  background: var(--panel, var(--surface));
+  border-left: 1px solid var(--line);
   z-index: 60;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
 }
+.mrr-drawer-body {
+  padding: 16px 16px 24px;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+.mrr-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.mrr-drawer-title,
+.mrr-fresh-block h3 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  color: var(--text-eyebrow, var(--text-label));
+  margin: 0;
+}
+.mrr-fresh-block h3 {
+  margin: 0 0 8px;
+}
+.mrr-fresh-status {
+  display: grid;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-fresh-words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.mrr-fresh-kv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+}
+.mrr-fresh-kv dt {
+  color: var(--text-3, var(--text-muted));
+  margin: 0;
+}
+.mrr-fresh-kv dd {
+  color: var(--text);
+  margin: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-meta);
+}
+.mrr-fresh-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+.mrr-fresh-table th {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  color: var(--text-3, var(--text-muted));
+  text-align: left;
+  padding: 0 10px 6px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.mrr-fresh-table td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--line-2, var(--line-hair));
+  vertical-align: top;
+  color: var(--text-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.mrr-fresh-table td.reason {
+  white-space: normal;
+  min-width: 220px;
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-fresh-list {
+  margin: 0;
+  padding-left: 16px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption);
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.mrr-drawer-foot {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-4, var(--text-faint));
+}
 
-/* Command palette — centered near the top. */
+/* Command palette, centered near the top. */
 .palette {
   position: fixed;
   top: 12vh;
@@ -222,7 +334,7 @@ main .mrr-scroll {
   border-left-color: var(--accent);
 }
 
-/* ── AI analyst — floating launcher + terminal panel ────────────────────
+/* ── AI analyst: floating launcher + terminal panel ────────────────────
    Non-modal on purpose: no scrim, and both sit under the drawer/palette
    z-index (60) so a modal overlay still covers them. `--shadow-float` is the
    system's one drop shadow and DESIGN.md reserves it for exactly this. */
@@ -248,7 +360,7 @@ main .mrr-scroll {
   cursor: pointer;
 }
 .assistant-launcher:hover {
-  /* Border/text only — hover fills are a table affordance in this system. */
+  /* Border/text only; hover fills are a table affordance in this system. */
   color: var(--text);
   border-color: var(--line-strong);
 }
@@ -328,14 +440,14 @@ main .mrr-scroll {
   .jargon::after {
     transition: none;
   }
-  /* The bundle's motion.css silences pulse + caret only — but the components
+  /* The bundle's motion.css silences pulse + caret only; but the components
      set the same animations inline (SignalCard's Triggered dot, StatTile's
      live dot, IntelBanner's dot) and the tick flash + gauge refills are also
-     motion. Targeted attribute matches on the inline styles — not a global
+     motion. Targeted attribute matches on the inline styles; not a global
      animation kill; state changes still render instantly. The refill match is
      `transition: transform` because GaugeBar/ProbabilityBar animate scaleX
-     (owner ruling 2026-08-06) — they are the only inline transform
-     transitions in the app. */
+     (owner ruling 2026-08-06); they are the only inline transform
+     transitions in the app. The quote cards' 600ms tick flash is inline too. */
   [style*="mrr-flash"],
   [style*="mrr-pulse"] {
     animation: none !important;
@@ -344,11 +456,11 @@ main .mrr-scroll {
   [style*="transition:transform"] {
     transition: none !important;
   }
-  /* Colour/background eases are motion too — small, but they're the last
+  /* Colour/background eases are motion too; small, but they're the last
      animated things left. `a` covers base.css's global link colour ease; the
      attribute matches cover the two inline ones (LandingPage's CTA background,
      TabBar's tab colour), same idiom as the transform match above. Hover still
-     changes state — instantly. */
+     changes state; instantly. */
   a,
   [style*="transition: background"],
   [style*="transition:background"],
@@ -356,12 +468,17 @@ main .mrr-scroll {
   [style*="transition:color"] {
     transition: none !important;
   }
+  /* The footer live dot pulses via motion.css; the mint glow is a static
+     box-shadow and stays. */
+  .mrr-dot {
+    animation: none !important;
+  }
 }
 
-/* News arrival flash: the blue is the house attention accent, not a valence color. */
+/* News arrival flash: link blue is the house attention accent, not a valence colour. */
 @keyframes mrr-news-arrive {
   from {
-    background: rgba(74, 158, 255, 0.1);
+    background: rgba(88, 184, 230, 0.1);
   }
   to {
     background: transparent;
@@ -378,16 +495,16 @@ main .mrr-scroll {
 }
 
 /* ══ Executive foundation (2026-09-05) ═══════════════════════════════════
-   Content frame, responsive table well, house slider with a real hit area,
-   local-nav semantics, markdown for the analyst, and touch-target floors.
-   Everything references the token layer; no new colours. */
+   Responsive table well, house slider with a real hit area, markdown for the
+   analyst, and touch-target floors. Everything references the token layer;
+   no new colours. */
 
-/* Content frame — the desk is centered at ≤1520px so a 2160px monitor gets
-   quiet margins instead of 2,000px lines. Charts and tables fill the frame;
-   prose inside it stays at the 74ch measure via .mrr-prose. */
+/* Content frame: no longer used by the shell (the redesign's shell fills the
+   viewport, spec §1 / checklist I.16); kept for the Phase 10 cleanup. Prose
+   inside a screen stays at the 74ch measure via .mrr-prose. */
 .mrr-frame {
   width: 100%;
-  max-width: var(--maxw-frame);
+  max-width: var(--maxw-frame, 1520px);
   margin-left: auto;
   margin-right: auto;
   box-sizing: border-box;
@@ -396,56 +513,529 @@ main .mrr-scroll {
   max-width: var(--maxw-prose);
 }
 
-/* Primary nav: text tabs on a hairline rule, 2px accent underline on the
-   active route (aria-current="page"). Links, not buttons — a route is a URL. */
-.mrr-nav {
+/* ══ Shell (redesign Phase 1, spec §2, mockup regime-lab.html) ═══════════
+   196px sidebar beside a main column; no centred frame. Landmarks: <aside
+   aria-label="Sidebar"> holding <nav aria-label="Primary">, <header
+   class="mrr-top">, the strip region, <main id="main-content">. */
+.mrr-app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w, 196px) minmax(0, 1fr);
+  min-height: 100vh;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+/* The inert wrapper (#shell-content) has no box of its own, so the aside and
+   the main column stay direct grid items. */
+.mrr-app-content {
+  display: contents;
+}
+.mrr-main {
+  padding: var(--main-pad, 10px 18px 36px 22px);
+  min-width: 0;
+}
+
+/* Sidebar: sticky, its own scroll when a full watchlist makes it taller than
+   the viewport (checklist I.7). */
+.mrr-side {
+  position: sticky;
+  top: 0;
+  height: 100vh;
   display: flex;
-  gap: 22px;
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
+  flex-direction: column;
+  padding: 28px 4px 18px;
+  box-sizing: border-box;
+  background: var(--sidebar, linear-gradient(180deg, #131e25 0%, #0d161c 100%));
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  overflow-y: auto;
 }
-.mrr-nav::-webkit-scrollbar {
-  display: none;
+
+/* Wordmark: mountain mark over MACRO / REGIME RADAR in the UI face. */
+.mrr-logo {
+  display: block;
+  padding: 0 0 0 32px;
+  margin-bottom: 34px;
+  color: var(--text-wordmark, #dfe6ec);
+  text-decoration: none;
 }
-.mrr-nav a {
+.mrr-logo:hover,
+.mrr-logo:active {
+  color: var(--text);
+  text-decoration: none;
+}
+.mrr-logo svg {
+  display: block;
+  margin-bottom: 8px;
+}
+.mrr-logo h1 {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-weight: 500;
+}
+.mrr-logo span {
+  display: block;
+  font-size: var(--fs-wordmark, 12.5px);
+  font-weight: 500;
+  letter-spacing: var(--ls-wordmark, 0.2em);
+  color: var(--text-wordmark, #dfe6ec);
+  line-height: 1.55;
+}
+.mrr-logo:hover span {
+  color: var(--text);
+}
+/* One-line variant for the MobileNav row. */
+.mrr-logo-compact {
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
-  padding: 0 2px 7px;
-  margin-bottom: -1px;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  min-height: 44px;
+}
+.mrr-logo-compact svg {
+  margin: 0;
+}
+.mrr-logo-compact h1 {
+  display: flex;
+  gap: 0.55em;
+  white-space: nowrap;
+}
+.mrr-logo-compact span {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+}
+
+/* Primary nav: sidebar items with 22px hand-drawn icons; the active route
+   (aria-current="page") carries the white 11%→6% gradient and a 1px border.
+   Links, not buttons: a route is a URL. */
+.mrr-nav {
+  display: grid;
+  gap: 4px;
+}
+.mrr-nav a {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: var(--nav-item-h, 47px);
+  padding: 0 0 0 24px;
+  border-radius: var(--r-nav, 9px);
+  color: var(--text-2);
   font-family: var(--font-ui);
-  font-size: var(--fs-body);
-  font-weight: 400;
+  font-size: var(--fs-nav, 14px);
+  border: 1px solid transparent;
+  box-sizing: border-box;
   text-decoration: none;
   white-space: nowrap;
 }
+.mrr-nav a svg {
+  flex: none;
+  opacity: 0.9;
+}
 .mrr-nav a:hover {
-  color: var(--text-2);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
   text-decoration: none;
 }
 .mrr-nav a[aria-current="page"] {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.06));
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-weight: 500;
+}
+.mrr-nav a.mrr-nav-sub {
+  height: var(--nav-sub-h, 36px);
+  margin-top: 6px;
+  font-size: var(--fs-nav-sub, 13px);
+  color: var(--text-3, var(--text-muted));
+  gap: 20px;
+  padding-left: 26px;
+}
+.mrr-nav a.mrr-nav-sub:hover {
   color: var(--text);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
 }
-.mrr-nav[data-compact="true"] {
-  gap: 16px;
+.mrr-nav a.mrr-nav-sub[aria-current="page"] {
+  color: #fff;
 }
-.mrr-nav[data-compact="true"] a {
-  font-size: var(--fs-body-s);
+.mrr-side-hr {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  margin: 30px 20px 18px;
 }
-.mrr-nav a.mrr-nav-ref {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: var(--fs-meta);
-  letter-spacing: var(--ls-micro);
-  text-transform: uppercase;
+.mrr-side-wl {
+  position: relative;
+  min-height: 0;
+  margin-bottom: 24px;
 }
 
-/* Header chip buttons (alerts, ⌘K): 28px desk rows, 40px touch rows. */
+/* Footer: live dot + word, two-line stamp, version. */
+.mrr-side-foot {
+  margin-top: auto;
+  padding: 0 0 0 26px;
+  font-size: 12px;
+  color: var(--text-3, var(--text-muted));
+  line-height: 1.75;
+}
+.mrr-side-stamp {
+  padding-left: 16px;
+}
+.mrr-side-foot .ver {
+  margin-top: 28px;
+  color: var(--text-4, var(--text-faint));
+}
+.mrr-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mint, #26dca0);
+  box-shadow: var(--glow-dot, 0 0 10px rgba(38, 220, 160, 0.7));
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+.mrr-dot.mrr-dot-idle {
+  background: var(--text-4, var(--text-faint));
+  box-shadow: none;
+  animation: none;
+}
+
+/* Top bar: 1fr / 368px / 1fr. Left cell = transitional regime pill + odds
+   bar (checklist row 13); centre = the palette trigger; right = Ask the
+   analyst, then the bell. No avatar. */
+.mrr-top {
+  display: grid;
+  grid-template-columns: 1fr var(--search-w, 368px) 1fr;
+  align-items: center;
+  height: var(--topbar-h, 40px);
+  margin-bottom: 12px;
+}
+.mrr-top-l {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.mrr-regime {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.mrr-regime-note {
+  white-space: nowrap;
+}
+.mrr-search {
+  grid-column: 2;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--search-h, 38px);
+  padding: 0 8px 0 14px;
+  border-radius: var(--r-nav, 9px);
+  background: var(--field, #141f29);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-3, var(--text-muted));
+  font-family: var(--font-ui);
+  font-size: var(--fs-kv, 13.5px);
+  text-align: left;
+  min-width: 0;
+  cursor: pointer;
+}
+.mrr-search:hover {
+  color: var(--text-2);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.mrr-search svg {
+  flex: none;
+}
+.mrr-search-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mrr-search kbd {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3, var(--text-muted));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+/* The command glyph lives in the system face: Plex Mono has no ⌘. */
+.mrr-cmd-glyph {
+  font-family: system-ui, -apple-system, sans-serif;
+}
+.mrr-top-r {
+  grid-column: 3;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 22px;
+  padding-right: 6px;
+}
+.mrr-ask {
+  appearance: none;
+  height: var(--ask-h, 34px);
+  padding: 0 14px;
+  border-radius: var(--r-nav, 9px);
+  border: 1px solid rgba(38, 220, 160, 0.35);
+  background: rgba(38, 220, 160, 0.07);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mrr-ask:hover {
+  border-color: rgba(38, 220, 160, 0.6);
+}
+.mrr-ask[aria-expanded="true"] {
+  border-color: var(--mint, #26dca0);
+  background: rgba(38, 220, 160, 0.12);
+}
+.mrr-ask-glyph {
+  color: var(--mint, #26dca0);
+}
+.mrr-bell {
+  position: relative;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.mrr-bell:hover {
+  color: var(--text);
+}
+.mrr-bell-count {
+  position: absolute;
+  top: -2px;
+  right: -6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ticker strip: three 54px quote cards and the freshness card. */
+.mrr-strip {
+  display: grid;
+  grid-template-columns: 325px 332px 332px minmax(0, 1fr);
+  gap: var(--gap-col, 16px);
+  margin-bottom: var(--gap-panel, 14px);
+}
+.mrr-quote,
+.mrr-upd {
+  height: var(--strip-h, 54px);
+  border-radius: var(--r-strip, 10px);
+  border: 1px solid var(--line);
+  background: var(--strip-grad, linear-gradient(180deg, #111c26, #0d1720));
+  display: flex;
+  align-items: center;
+  padding: 0 22px 0 26px;
+  box-sizing: border-box;
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.mrr-quote b {
+  font-weight: 500;
+  font-size: var(--fs-quote, 15px);
+  width: 72px;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.mrr-quote .v {
+  font-size: var(--fs-quote, 15px);
+  width: 72px;
+  color: var(--text);
+}
+.mrr-quote .c {
+  font-size: var(--fs-quote-chg, 14px);
+  width: 70px;
+}
+.mrr-quote svg {
+  margin-left: auto;
+  flex: none;
+}
+/* Delayed / stored read tags: 15M, CLOSE, 1W. */
+.mrr-tag {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tag, 9.5px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber, #f5b52e);
+  white-space: nowrap;
+  margin-left: 2px;
+}
+.mrr-tag[data-tone="muted"] {
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-upd {
+  justify-content: space-between;
+  padding: 0 28px 0 24px;
+  gap: 12px;
+}
+.mrr-upd-lines {
+  min-width: 0;
+}
+.mrr-upd small {
+  display: block;
+  font-size: 12px;
+  color: var(--text-3, var(--text-muted));
+  line-height: 1.35;
+}
+.mrr-upd small.mrr-upd-macro {
+  color: var(--text-2);
+}
+.mrr-upd em {
+  font-style: normal;
+  font-size: var(--fs-kv, 13.5px);
+  color: var(--text);
+}
+.mrr-upd-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+.mrr-fresh-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-kv, 13.5px);
+  color: var(--link);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mrr-fresh-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Mobile nav (< 860px): wordmark · regime pill · Menu, then the list. */
+.mrr-mnav {
+  position: relative;
+  margin-bottom: 10px;
+}
+.mrr-mnav-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 44px;
+}
+.mrr-mnav-regime {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.mrr-mnav-menu {
+  appearance: none;
+  margin-left: auto;
+  background: var(--panel, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--r-nav, 9px);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  min-height: 44px;
+  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.mrr-mnav-glyph {
+  font-family: var(--font-mono);
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-mnav-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 4px;
+  background: var(--panel, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--r-card, 12px);
+}
+.mrr-mnav-list a,
+.mrr-mnav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: var(--r-nav, 9px);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  text-decoration: none;
+  box-sizing: border-box;
+}
+.mrr-mnav-list a:hover {
+  color: var(--text);
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.03);
+}
+.mrr-mnav-list a[aria-current="page"] {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.06));
+  color: #fff;
+  font-weight: 500;
+}
+.mrr-mnav-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.mrr-mnav-label svg {
+  flex: none;
+  opacity: 0.9;
+}
+.mrr-mnav-hint {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-micro);
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-mnav-sep {
+  border-top: 1px solid var(--line-2, var(--line-hair));
+  margin-top: 4px;
+  padding-top: 4px;
+}
+.mrr-mnav-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.mrr-mnav-wl {
+  padding: 6px 0 4px;
+  position: relative;
+}
+
+/* Header chip buttons (drawer close ×; the old alerts / ⌘K chips): 28px desk
+   rows, 40px touch rows. */
 .mrr-chip-btn {
   appearance: none;
   background: none;
@@ -473,14 +1063,14 @@ main .mrr-scroll {
   padding: 8px 12px;
 }
 
-/* Responsive table well — pairs with ScrollTable.tsx. */
+/* Responsive table well: pairs with ScrollTable.tsx. */
 .mrr-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border-radius: var(--r-xs);
 }
 .mrr-scroll[data-scrollable="true"]:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 2px solid var(--link);
   outline-offset: 2px;
 }
 .mrr-scroll-sticky table th:first-child,
@@ -682,9 +1272,40 @@ main .mrr-scroll {
   margin: 8px 0;
 }
 
-/* The analyst launcher must never sit on top of data on a phone: below 768
-   it docks into a full-width bottom bar with a 44px row, and <main> reserves
-   that height (see AppShell). */
+/* ── Responsive (spec §2; `.98` upper bounds like useBreakpoint.ts) ─────── */
+
+/* Below 1200 the strip becomes two columns (the hero-row stacking belongs to
+   Phase 2's .hero-row). */
+@media (max-width: 1199.98px) {
+  .mrr-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Below 860 the sidebar is not rendered (useBreakpoint().shellCompact swaps
+   it for MobileNav) and the grid collapses to one column; the top bar keeps
+   the palette trigger on the left and the actions on the right. */
+@media (max-width: 859.98px) {
+  .mrr-app {
+    grid-template-columns: 1fr;
+  }
+  .mrr-top {
+    grid-template-columns: 1fr auto;
+    height: auto;
+    min-height: var(--topbar-h, 40px);
+  }
+  .mrr-search {
+    grid-column: 1;
+  }
+  .mrr-top-r {
+    grid-column: 2;
+    gap: 14px;
+    padding-right: 0;
+  }
+}
+
+/* The analyst panel must never sit on top of data on a phone: below 768 it
+   docks into a full-width bottom bar. */
 @media (max-width: 767.98px) {
   .mrr-number {
     min-height: 40px;
@@ -697,6 +1318,35 @@ main .mrr-scroll {
     width: auto;
     max-width: none;
     max-height: 72vh;
+  }
+}
+
+/* Phone: four cards in two columns leave ~167px per card, so a card wraps
+   into two rows (symbol + price, then change + tag + sparkline) instead of
+   pushing the page wide; the cells lose their fixed desk widths. */
+@media (max-width: 479.98px) {
+  .mrr-quote,
+  .mrr-upd {
+    height: auto;
+    min-height: var(--strip-h, 54px);
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .mrr-quote b,
+  .mrr-quote .v,
+  .mrr-quote .c {
+    width: auto;
+    margin-right: 8px;
+  }
+  .mrr-quote .c:empty {
+    display: none;
+  }
+  .mrr-quote svg {
+    width: 56px;
+  }
+  .mrr-upd {
+    gap: 6px 12px;
   }
 }
 

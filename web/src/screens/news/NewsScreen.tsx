@@ -285,7 +285,7 @@ function PriorityCard({ item, stale }: { item: NewsItem; stale: boolean }) {
         {item.ticker ? <span style={{ color: "var(--accent)" }}>{item.ticker}</span> : null}
         <span style={{ marginLeft: "auto", color: sigColor, fontWeight: 700 }}>Sig {sig.toFixed(1)} / 5</span>
       </div>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-value)", fontWeight: 500, lineHeight: 1.35, color: "var(--text)", textWrap: "pretty" }}>
+      <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-value)", fontWeight: 500, lineHeight: 1.35, color: "var(--text)", textWrap: "pretty" }}>
         {item.url ? (
           <a href={item.url} target="_blank" rel="noreferrer" style={{ color: "var(--text)", textDecorationColor: "var(--line-strong)" }}>
             {decodeEntities(item.headline)}

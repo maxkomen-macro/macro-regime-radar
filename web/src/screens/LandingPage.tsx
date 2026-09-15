@@ -216,10 +216,10 @@ export default function LandingPage() {
           {/* The wordmark is this page's only <h1>. */}
           <h1
             style={{
-              fontFamily: "var(--font-display)",
+              fontFamily: "var(--font-ui)",
               fontSize: isMobile ? 15 : 18,
-              fontWeight: 700,
-              letterSpacing: ".14em",
+              fontWeight: 500,
+              letterSpacing: ".2em",
               textTransform: "uppercase",
               margin: 0,
             }}
@@ -281,7 +281,7 @@ export default function LandingPage() {
                 </div>
                 <p
                   style={{
-                    fontFamily: "var(--font-display)",
+                    fontFamily: "var(--font-ui)",
                     fontSize: isMobile ? "var(--fs-value)" : "var(--fs-lead)",
                     fontWeight: 500,
                     lineHeight: 1.4,

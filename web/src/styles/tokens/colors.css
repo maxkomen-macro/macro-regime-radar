@@ -1,62 +1,81 @@
+/* Colour tokens: the redesign-v2 palette (docs/redesign-v2/UI_SPEC.md section 1,
+   adopted 2026-09-15, Phase 1). Spec names come first. The transitional alias
+   block at the end keeps every pre-redesign variable name resolving on the new
+   palette until the phase that owns its last consumer replaces it; the retire
+   schedule lives in web/DESIGN.md ("Transitional aliases"). Delete an alias only
+   when `grep -rhoE "var\(--name\)" web/src | wc -l` returns 0. */
 :root{
-/* ── Base surfaces — GitHub-dark lineage, taken from the dashboard source ── */
---void:#010409;          /* deepest well: iframe backdrops, terminal body */
---bg-base:#0d1117;       /* app background */
---bg-base-alt:#0e1117;   /* streamlit page background variant */
---surface:#161b22;       /* cards, signal cards, panels */
---surface-raised:#21262d;/* gauge tracks, chips, hover fills */
---surface-hover:#1c2230;
+/* Surfaces */
+--bg:#030a10;            /* page; index.html paints the same value before hydration */
+--panel:#0a121a;         /* section container: panels, drawers, the palette, the assistant */
+--tile:#0e1822;          /* inner card inside a panel (Phase 2) */
+--card-grad:linear-gradient(180deg,#0f1a24 0%,#0a131b 100%); /* hero and summary cards (Phase 2) */
+--sidebar:linear-gradient(180deg,#131e25 0%,#0d161c 100%);   /* .mrr-side */
+--strip-grad:linear-gradient(180deg,#111c26,#0d1720);        /* .mrr-quote, .mrr-upd */
+--field:#141f29;         /* .mrr-search and the watchlist popover field */
+--popover:#111c26;       /* .mrr-popover */
+--toast:#16222d;         /* .mrr-toast */
+--track:#222c39;         /* meter and slider tracks, scrollbar thumb, chips, active search row */
 
-/* ── Lines ── */
---line-hair:#21262d;     /* 0.5px hairlines, section-header underline */
---line:#30363d;          /* standard card / table borders */
---line-strong:#484f58;   /* emphasised dividers, muted badge borders */
+/* Lines */
+--line:rgba(150,175,200,.12);          /* card borders */
+--line-2:rgba(150,175,200,.07);        /* row dividers, chart gridlines */
+--line-strong:rgba(255,255,255,.22);   /* emphasised dividers, pressed segment border */
+--line-white-14:rgba(255,255,255,.14); /* kbd, popover and toast borders */
+--line-white-30:rgba(255,255,255,.3);  /* ghost button */
 
-/* ── Text ── */
---text:#e6edf3;          /* primary */
---text-2:#c9d1d9;        /* subsection headers, body copy */
---text-muted:#8b949e;    /* secondary copy */
---text-label:#8899aa;    /* uppercase section labels */
---text-faint:#484f58;    /* meta, timestamps, axis */
+/* Text ladder */
+--text:#f2f5f8;          /* primary */
+--text-2:#b3c0cd;        /* body copy, key/value labels, nav items */
+--text-3:#8f9daa;        /* secondary; the floor for functional text */
+--text-4:#5f6c78;        /* decorative meta only */
+--text-eyebrow:#b9c6d3;  /* section eyebrows: 12px, 500, .24em */
+--text-wordmark:#dfe6ec; /* wordmark spans and the mountain stroke */
 
-/* ── Accent ── */
---accent:#4a9eff;        /* the one brand blue: links, focus, sparklines */
---accent-dim:rgba(74,158,255,.12);
---accent-line:rgba(74,158,255,.35);
---accent-alt:#1f77b4;    /* streamlit theme primary */
+/* Directional and status */
+--pos:#28d17c;           /* up moves, sparklines: direction, never valence */
+--neg:#f0503f;           /* down moves, triggered; 5.3:1 on --panel, clears AA as text */
+--amber:#f5b52e;         /* WATCH, high-impact events, delayed data */
+--warn-hot:#e67e22;      /* elevated, overheating, stale freshness */
+--mint:#26dca0;          /* CLEAR, live dot, probability pill, current-state highlight */
+--link:#58b8e6;          /* links, focus ring, secondary chart series */
+--link-hover:#79c6eb;    /* a:hover, one step lighter than --link */
+--link-active:#4b9cc3;   /* a:active, one step darker than --link */
+--cyan:#3cc8f0;          /* medium-impact calendar dot */
+--neutral:#95a5a6;       /* flat, no change */
+--research:#7c3aed;      /* Perplexity cited-research attribution, nothing else */
 
-/* ── Semantic / directional ── */
---pos:#3fb950;           /* up, clear, risk-on */
---pos-soft:#2ecc71;      /* memo + chart green */
---neg:#da3633;           /* down, triggered */
---neg-soft:#e74c3c;      /* memo + chart red */
---neg-text:#f08785;      /* red text on dark, keeps contrast */
---warn:#d29922;          /* watch */
---warn-hot:#e67e22;      /* overheating, elevated */
---neutral:#95a5a6;       /* flat, no-change, recession-risk grey */
---research:#7c3aed;      /* Perplexity cited-research accent */
+/* Tint alphas: badge fills 7%, pill fills 10-11%, borders 32-50% */
+--mint-a07:rgba(38,220,160,.07);
+--mint-a11:rgba(38,220,160,.11);
+--mint-a32:rgba(38,220,160,.32);
+--mint-a50:rgba(38,220,160,.5);
+--amber-a07:rgba(245,181,46,.07);
+--amber-a10:rgba(245,181,46,.10);
+--amber-a36:rgba(245,181,46,.36);
+--link-a07:rgba(88,184,230,.07);
+--link-a10:rgba(88,184,230,.10);
+--link-a32:rgba(88,184,230,.32);
 
-/* ── Alert levels (alert_feed.level) ── */
---level-info:var(--accent);
---level-watch:var(--warn);
+/* Regime hues, src/regime.py order. Goldilocks is mint (decision 1, 2026-09-15). */
+--r-goldilocks:#26dca0;
+--r-overheating:#e67e22;
+--r-stagflation:#e74c3c;
+--r-recession:#95a5a6;
+
+/* Alert levels (alert_feed.level) */
+--level-info:var(--link);
+--level-watch:var(--amber);
 --level-risk:var(--neg);
 
-/* ── Regime colours (src/regime.py × shared_styles.REGIME_COLORS) ── */
---regime-goldilocks:#2ecc71;
---regime-overheating:#e67e22;
---regime-stagflation:#e74c3c;
---regime-recession:#95a5a6;
-
-/* Muted translucent regime badge fills — 12% fill / 25% border, derived from
-   the regime ramp above (owner ruling 2026-08-06, day-1 session). BUNDLE
-   CORRECTION: the bundle's _BADGE_MUTED_STYLES keyed Overheating to red and
-   Stagflation to amber, contradicting the regime ramp 16px away; one hue per
-   regime everywhere now. Text rungs stay AA on their own tints — Stagflation's
-   #e74c3c reads 4.0:1 as text, so it shifts to red-on-dark #f08785 (6.2:1),
-   the documented "red as text" rule; the other three bases clear 4.5:1 as-is. */
---badge-goldilocks-bg:rgba(46,204,113,.12);
---badge-goldilocks-fg:#2ecc71;
---badge-goldilocks-line:rgba(46,204,113,.25);
+/* Regime badge tints, 12% fill / 25% border. Transitional: Phase 2 restyles
+   RegimeBadge as the probability pill and Tag takes the 7% fill / 1px tinted
+   border rule; until then these keep RegimeBadge, ProbabilityBar and the
+   Landing read on the new hues. Stagflation text stays #f08785 (red as text on
+   dark; #e74c3c reads 4.0:1) until Phase 2 revisits the contrast rule. */
+--badge-goldilocks-bg:rgba(38,220,160,.12);
+--badge-goldilocks-fg:#26dca0;
+--badge-goldilocks-line:rgba(38,220,160,.25);
 --badge-overheating-bg:rgba(230,126,34,.12);
 --badge-overheating-fg:#e67e22;
 --badge-overheating-line:rgba(230,126,34,.25);
@@ -67,14 +86,14 @@
 --badge-recession-fg:#95a5a6;
 --badge-recession-line:rgba(149,165,166,.25);
 
-/* ── Gauge fill ramp — threshold proximity, signal_card_html ── */
---gauge-0:#3fb950;   /* <50% of threshold */
---gauge-50:#d29922;  /* 50–75% */
---gauge-75:#e67e22;  /* 75–95% */
---gauge-95:#da3633;  /* >=95% */
+/* Gauge fill ramp: threshold proximity (GaugeBar, signal cards) */
+--gauge-0:var(--pos);       /* <50% of threshold */
+--gauge-50:var(--amber);    /* 50-75% */
+--gauge-75:var(--warn-hot); /* 75-95% */
+--gauge-95:var(--neg);      /* >=95% */
 
-/* ── Memo palette — the emailed daily/weekly briefing runs its own darker,
-      bluer scheme so it survives email clients ── */
+/* Memo palette: the emailed daily/weekly briefing runs its own darker, bluer
+   scheme so it survives email clients. Outside the redesign; unchanged. */
 --memo-bg:#1a1a2e;
 --memo-card:#16213e;
 --memo-line:#2c3e50;
@@ -85,11 +104,26 @@
 --memo-faint:#4a5568;
 --memo-link:#3498db;
 
-/* ── Semantic aliases ── */
---surface-card:var(--surface);
---surface-page:var(--bg-base);
---text-body:var(--text-2);
---text-heading:var(--text);
---border-card:var(--line-hair);
---link:var(--accent);
+/* Transitional aliases (retire schedule in DESIGN.md). Every name below is
+   still consumed on cb7c4d8; each resolves to its replacement on the new
+   palette and is deleted by the phase that owns its last consumer. */
+--bg-base:var(--bg);
+--void:var(--bg);
+--surface:var(--panel);
+--surface-raised:var(--track);
+--line-hair:var(--line-2);
+--text-muted:var(--text-3);
+--text-faint:var(--text-4);
+--text-label:var(--text-eyebrow);
+--accent:var(--link);
+--accent-dim:var(--link-a10);
+--accent-line:var(--link-a32);
+--warn:var(--amber);
+--neg-text:var(--neg);
+--pos-soft:var(--pos);
+--neg-soft:var(--neg);
+--regime-goldilocks:var(--r-goldilocks);
+--regime-overheating:var(--r-overheating);
+--regime-stagflation:var(--r-stagflation);
+--regime-recession:var(--r-recession);
 }

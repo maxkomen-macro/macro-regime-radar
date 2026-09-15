@@ -122,6 +122,7 @@ auditable data pipeline. The design language states this rather than sells it.
   `api/chat.py`, rendered by `web/src/screens/shell/AssistantPanel.tsx`. The SELECT-only
   SQL guard stays server-side and is **imported** from `src/analytics/chat.py`, never
   copied [repo].
+- The watchlist is the single per-visitor preference stored in the browser (localStorage key mrr.watchlist.v1: add, remove, reorder; no accounts, no server storage). The assistant's no-persistence rule is unchanged.
 - Signal status is server-computed and passed: `/api/signals/latest` returns `status`
   (the stored triggered flag owns "Triggered"), and the client renders it (ruled
   2026-08-06). The fill%-derived ladder — <50 Clear, 50–75 Watch, ≥75 Triggered — is the

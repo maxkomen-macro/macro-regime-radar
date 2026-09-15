@@ -1,5 +1,5 @@
 :root{
-/* Dense terminal scale — the dashboard pads in 2px increments below 12 */
+/* Dense terminal scale: the product pads in 2px increments below 12 */
 --sp-0:0; /* @kind spacing */
 --sp-1:2px;
 --sp-2:3px;
@@ -7,13 +7,35 @@
 --sp-4:6px;
 --sp-5:8px;
 --sp-6:10px;
---sp-7:12px;   /* card padding, default */
+--sp-7:12px;   /* old card padding default */
 --sp-8:16px;
 --sp-9:20px;
 --sp-10:24px;
 --sp-11:32px;
 --sp-12:40px;
 
+/* Redesign-v2 gaps and padding (UI_SPEC.md section 1, 2026-09-15) */
+--gap-col:16px;    /* between top-level columns; .mrr-strip gap; the hero-row (Phase 2) */
+--gap-panel:14px;  /* between stacked panels; .mrr-strip margin-bottom */
+--gap-tile:12px;   /* between tiles inside a panel (Phase 2) */
+--pad-panel:16px 18px 18px; /* @kind spacing */ /* Panel (Phase 2) */
+--pad-tile:14px;   /* tiles (Phase 2) */
+
+/* Shell dimensions (UI_SPEC.md section 2; regime-lab.html) */
+--sidebar-w:196px;
+--main-pad:10px 18px 36px 22px; /* @kind spacing */ /* .mrr-main; no centred frame */
+--summary-w:432px; /* summary column (Phase 2) */
+--strip-h:54px;    /* quote and freshness cards */
+--topbar-h:40px;   /* .mrr-top row */
+--search-h:38px;   /* palette trigger field */
+--search-w:368px;  /* palette trigger width, the top bar's centre column */
+--ask-h:34px;      /* Ask the analyst chip */
+--nav-item-h:47px;
+--nav-sub-h:36px;  /* Methodology item */
+--nav-icon:22px;
+--wl-row-h:35px;   /* watchlist rows */
+
+/* Pre-redesign gaps and padding, kept for screens not yet restyled */
 --gap-chip:4px;
 --gap-inline:8px;
 --gap-card:12px;
@@ -25,7 +47,11 @@
 --pad-chip:2px 6px; /* @kind spacing */
 --pad-cell:8px 12px; /* @kind spacing */
 
---maxw-memo:600px; /* @kind other */
 --maxw-prose:74ch; /* @kind other */
---maxw-frame:1520px; /* @kind other */ /* centered desk frame; charts/tables may fill it, prose stays ≤74ch (2026-09-05) */
+--maxw-lede:540px; /* @kind other */ /* hero lede measure (Phase 2) */
+
+/* Transitional (retire schedule in DESIGN.md): the shell no longer centres a
+   frame; .mrr-frame in app.css still carries this for the Landing page until
+   Phase 10 removes the class. */
+--maxw-frame:1520px; /* @kind other */
 }

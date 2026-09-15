@@ -36,7 +36,7 @@ interface Props {
   live?: boolean;
   /** Right-aligned chip text beside the eyebrow (conviction, regime tag…). */
   badge?: React.ReactNode;
-  /** The one-sentence conclusion. Space Grotesk, 20px. */
+  /** The one-sentence conclusion. IBM Plex Sans, 20px (TabHero replaces it in Phase 2). */
   conclusion: React.ReactNode;
   /** One or two sentences: why it matters / positioning implication. */
   why?: React.ReactNode;
@@ -206,7 +206,7 @@ export default function DeskRead({
         </div>
         <h2
           style={{
-            fontFamily: "var(--font-display)",
+            fontFamily: "var(--font-ui)",
             fontSize: isNarrow ? "var(--fs-value)" : "var(--fs-lead)",
             fontWeight: 500,
             lineHeight: 1.35,

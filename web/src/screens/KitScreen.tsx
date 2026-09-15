@@ -70,7 +70,7 @@ export default function KitScreen() {
       <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
         <span
           style={{
-            fontFamily: "var(--font-display)",
+            fontFamily: "var(--font-ui)",
             fontSize: 19,
             fontWeight: 700,
             letterSpacing: ".14em",

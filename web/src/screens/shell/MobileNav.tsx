@@ -1,16 +1,49 @@
 /**
- * MobileNav — every destination, discoverable, on a phone (2026-09-05). A
- * "Menu" button with aria-expanded toggles a plain list of the seven tabs
- * plus Methodology; the active route carries aria-current. Not a modal: it
- * is part of the page, closes on navigation, and never hides the alerts
- * trigger or the regime chip behind it.
+ * MobileNav: every destination, discoverable, on a phone (2026-09-05;
+ * restyled for the redesign, Phase 1). Below 860 px the sidebar is not
+ * rendered and this row takes its place: the wordmark link, the transitional
+ * regime pill and a "Menu" button with aria-expanded that toggles a plain
+ * list of the seven tabs plus Methodology; the active route carries
+ * aria-current. Not a modal: it is part of the page, closes on navigation,
+ * and never hides the alerts trigger or the regime pill behind it. The open
+ * list ends with "Jump to a section" (the palette) and a collapsed Watchlist
+ * disclosure so the saved watchlist exists at every width (checklist I.18).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
+import Disclosure from "../shared/Disclosure";
 import { METHODOLOGY_SLUG, TABS } from "./sections";
+import { NavIcon } from "./nav-icons";
+import { Wordmark } from "./Sidebar";
+import Watchlist from "./watchlist/Watchlist";
 
-export default function MobileNav({ activeSlug, onOpenPalette }: { activeSlug: string; onOpenPalette?: () => void }) {
+/** Saved-symbol count for the disclosure title, read straight from the
+ * watchlist's storage key (spec §3.1 shape). Null when storage is empty,
+ * blocked or unreadable, in which case the count is simply omitted. */
+function readWatchlistCount(): number | null {
+  try {
+    const raw = window.localStorage.getItem("mrr.watchlist.v1");
+    if (raw == null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const symbols = (parsed as { version?: unknown; symbols?: unknown }).symbols;
+    return Array.isArray(symbols) ? symbols.length : null;
+  } catch {
+    return null;
+  }
+}
+
+export default function MobileNav({
+  activeSlug,
+  onOpenPalette,
+  regime,
+}: {
+  activeSlug: string;
+  onOpenPalette?: () => void;
+  /** The transitional regime pill (checklist row 13), rendered in the row. */
+  regime?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
 
@@ -32,145 +65,79 @@ export default function MobileNav({ activeSlug, onOpenPalette }: { activeSlug: s
     { slug: METHODOLOGY_SLUG, label: "Methodology" },
   ];
   const current = items.find((i) => i.slug === activeSlug)?.label ?? "Dashboard";
+  const count = open ? readWatchlistCount() : null;
 
   return (
-    <nav aria-label="Primary" style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-controls="mobile-nav-list"
-        style={{
-          appearance: "none",
-          width: "100%",
-          background: "var(--surface)",
-          border: "0.5px solid var(--line)",
-          borderRadius: "var(--r-sm)",
-          color: "var(--text)",
-          fontFamily: "var(--font-ui)",
-          fontSize: "var(--fs-body)",
-          fontWeight: 600,
-          minHeight: 44,
-          padding: "8px 12px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 10,
-          cursor: "pointer",
-        }}
-      >
-        <span>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "var(--fs-micro)",
-              textTransform: "uppercase",
-              letterSpacing: "var(--ls-micro)",
-              color: "var(--text-muted)",
-              marginRight: 10,
-            }}
-          >
-            Screen
+    <nav aria-label="Primary" className="mrr-mnav">
+      <div className="mrr-mnav-row">
+        <Wordmark compact />
+        {regime ? <div className="mrr-mnav-regime">{regime}</div> : null}
+        <button
+          type="button"
+          className="mrr-mnav-menu"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls="mobile-nav-list"
+          aria-label={`Menu · current screen ${current}`}
+          title={`Current screen: ${current}`}
+        >
+          <span aria-hidden="true" className="mrr-mnav-glyph">
+            {open ? "▾" : "▸"}
           </span>
-          {current}
-        </span>
-        <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
-          {open ? "▾" : "▸"} Menu
-        </span>
-      </button>
+          Menu
+        </button>
+      </div>
       <ul
         id="mobile-nav-list"
-        style={{
-          listStyle: "none",
-          margin: "6px 0 0",
-          padding: 4,
-          background: "var(--surface)",
-          border: "0.5px solid var(--line)",
-          borderRadius: "var(--r-sm)",
-          // Inline display would beat the UA's [hidden] rule, so the list's
-          // visibility is set here rather than through the attribute.
-          display: open ? "grid" : "none",
-        }}
+        className="mrr-mnav-list"
+        // Inline display would beat the UA's [hidden] rule, so the list's
+        // visibility is set here rather than through the attribute.
+        style={{ display: open ? "grid" : "none" }}
       >
         {items.map((i) => {
           const on = i.slug === activeSlug;
           return (
             <li key={i.slug}>
-              <Link
-                to={`/app/${i.slug}`}
-                aria-current={on ? "page" : undefined}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  minHeight: 44,
-                  padding: "6px 10px",
-                  borderLeft: `2px solid ${on ? "var(--accent)" : "transparent"}`,
-                  color: on ? "var(--text)" : "var(--text-2)",
-                  fontFamily: "var(--font-ui)",
-                  fontSize: "var(--fs-body)",
-                  fontWeight: on ? 600 : 400,
-                  textDecoration: "none",
-                }}
-              >
-                {i.label}
+              <Link to={`/app/${i.slug}`} aria-current={on ? "page" : undefined}>
+                <span className="mrr-mnav-label">
+                  <NavIcon slug={i.slug} />
+                  {i.label}
+                </span>
                 {i.slug === METHODOLOGY_SLUG ? (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-micro)",
-                      textTransform: "uppercase",
-                      letterSpacing: "var(--ls-micro)",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    Reference
-                  </span>
+                  <>
+                    {" "}
+                    <span className="mrr-mnav-hint">Reference</span>
+                  </>
                 ) : null}
               </Link>
             </li>
           );
         })}
         {onOpenPalette ? (
-          <li style={{ borderTop: "0.5px solid var(--line-hair)", marginTop: 4, paddingTop: 4 }}>
+          <li className="mrr-mnav-sep">
             <button
               type="button"
+              className="mrr-mnav-btn"
               onClick={() => {
                 setOpen(false);
                 onOpenPalette();
               }}
-              style={{
-                appearance: "none",
-                background: "none",
-                border: "none",
-                width: "100%",
-                textAlign: "left",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                minHeight: 44,
-                padding: "6px 10px",
-                color: "var(--text-2)",
-                fontFamily: "var(--font-ui)",
-                fontSize: "var(--fs-body)",
-                cursor: "pointer",
-              }}
             >
               Jump to a section
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "var(--fs-micro)",
-                  textTransform: "uppercase",
-                  letterSpacing: "var(--ls-micro)",
-                  color: "var(--text-muted)",
-                }}
-              >
-                Search
-              </span>
+              {" "}
+              <span className="mrr-mnav-hint">Search</span>
             </button>
           </li>
         ) : null}
+        <li className="mrr-mnav-sep">
+          <Disclosure title={count != null ? `Watchlist (${count})` : "Watchlist"} variant="quiet">
+            {/* The Watchlist root carries id="sidebar-watchlist"; only one
+                instance exists at any width (the sidebar is not rendered here). */}
+            <div className="mrr-mnav-wl">
+              <Watchlist compact />
+            </div>
+          </Disclosure>
+        </li>
       </ul>
     </nav>
   );

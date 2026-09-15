@@ -17,6 +17,7 @@
 
 import { Fragment, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
+import { useLocation } from "react-router-dom";
 import { Card, SectionHeader, Sparkline, StatTile } from "../../components";
 import { useCreditOas, useFreshness, useMarketDaily, usePriced, useSurprises } from "../../api/queries";
 import DeskRead, { type LedgerItem } from "../shared/DeskRead";
@@ -35,6 +36,7 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import type { DailyBar } from "../../api/types";
 import { CHART_PANEL_ID } from "./chart-panel-id";
 import Jargon from "../shared/Jargon";
+import { useHashScroll } from "../shared/screen-ui";
 import SingleName from "./SingleName";
 import SymbolSearch from "./SymbolSearch";
 
@@ -527,6 +529,19 @@ export default function MarketsScreen() {
     const c = new URLSearchParams(window.location.search).get("name")?.toUpperCase();
     return c && /^[A-Z0-9.^=\-]{1,15}$/.test(c) ? c : null;
   });
+  // A watchlist row (sidebar) navigates to ?name=SYM while this screen may
+  // already be mounted (same-tab navigation keeps the ErrorBoundary key), so
+  // the param is re-read on every location change, not only at mount
+  // (redesign Phase 1, checklist F.8). The initializer above covers the
+  // first paint without a flash.
+  const { search } = useLocation();
+  useEffect(() => {
+    const c = new URLSearchParams(search).get("name")?.toUpperCase();
+    if (c && /^[A-Z0-9.^=\-]{1,15}$/.test(c)) setLookupSym(c);
+  }, [search]);
+  // #single-name-research (and the palette's section jumps) land once the
+  // panel exists.
+  useHashScroll(lookupSym);
 
   const barsBySymbol = useMemo(() => {
     const m = new Map<string, DailyBar[]>();
