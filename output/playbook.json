@@ -1,15 +1,16 @@
 {
-  "generated_at": "2026-09-15T15:22:23.683445",
+  "generated_at": "2026-09-16T04:15:00.486148",
   "as_of": "2026-07-01",
   "regime": "Goldilocks",
   "confidence": 0.4952,
   "baseline": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
   "because_today": [
-    "Because today 10Y Treasury rate momentum is above trend (z=+2.01).",
+    "Because today 10Y Treasury rate momentum is above trend (z=+2.10).",
+    "Because today yield spread curve steepening is below trend (z=-1.57).",
     "Because today 10Y real yield is positive at 2.60%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.63%."
   ],
-  "summary": "Regime: Goldilocks (confidence 50%). Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable. Because today 10Y Treasury rate momentum is above trend (z=+2.01). Because today 10Y real yield is positive at 2.60%, real rates are restrictive — a headwind for equities and gold. Policy rate (FEDFUNDS) is at 3.63%.",
+  "summary": "Regime: Goldilocks (confidence 50%). Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable. Because today 10Y Treasury rate momentum is above trend (z=+2.10). Because today yield spread curve steepening is below trend (z=-1.57). Because today 10Y real yield is positive at 2.60%, real rates are restrictive — a headwind for equities and gold.",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
