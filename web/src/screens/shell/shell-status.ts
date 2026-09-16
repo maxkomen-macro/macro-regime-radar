@@ -37,7 +37,7 @@ export const STATUS_COLOR = {
   neg: "var(--neg, #f0503f)",
   hot: "var(--warn-hot, #e67e22)",
   text3: "var(--text-3, var(--text-muted))",
-  text4: "var(--text-4, var(--text-faint))",
+  text4: "var(--text-4)",
 } as const;
 
 export const SNAPSHOT_NOTE =

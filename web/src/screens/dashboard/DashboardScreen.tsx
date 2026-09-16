@@ -353,7 +353,7 @@ export default function DashboardScreen() {
         label: triggered.length ? "Triggered" : "Watch",
         value: watchText,
         prose: true,
-        tone: triggered.length ? "var(--neg-text)" : watching.length ? "var(--warn)" : "var(--pos)",
+        tone: triggered.length ? "var(--neg-text)" : watching.length ? "var(--amber)" : "var(--pos)",
       },
       { id: "invalidates", label: "Invalidates", value: invalidates },
       ...(recession.data?.recession_prob != null
@@ -510,6 +510,11 @@ export default function DashboardScreen() {
                 />
               );
             }
+            // Three states without a row (Phase 10, C #1 and #2): the feed still
+            // reading; the feed down with nothing on hand (U6-014); or a served
+            // response that carries no print for this signal, which names the
+            // cadence in words (no next-run time is served, F2).
+            const feedDown = signals.isError && !signals.data;
             return (
               <SignalCard
                 key={name}
@@ -518,15 +523,17 @@ export default function DashboardScreen() {
                 value={
                   signals.isLoading ? (
                     <StateNote loading>Reading the signal print…</StateNote>
+                  ) : feedDown ? (
+                    <span style={missingPrintStyle}>Signal feed unavailable: the data service did not answer.</span>
                   ) : (
-                    <span style={missingPrintStyle}>No print on file yet; nothing is stored for this signal.</span>
+                    <span style={missingPrintStyle}>No print on file yet for this signal; the daily refresh writes signal prints at 11:17 UTC.</span>
                   )
                 }
                 showGauge={false}
                 lastTriggered={null}
                 badge="Unavailable"
                 tone="reference"
-                lines={[meta.trigger(null), "Signal print · none on file"]}
+                lines={[meta.trigger(null), feedDown ? "Signal print · unavailable" : "Signal print · none on file"]}
               />
             );
           })}
@@ -577,7 +584,7 @@ export default function DashboardScreen() {
                 stored probability. The five monitored signals compare the latest print against fixed thresholds and are
                 scored server-side; the recession model is a logistic regression trained on NBER dates. Nothing on this
                 screen is re-derived in the browser.{" "}
-                <Link to="/app/methodology" style={{ color: "var(--accent)" }}>
+                <Link to="/app/methodology" style={{ color: "var(--link)" }}>
                   Full methodology →
                 </Link>
               </p>

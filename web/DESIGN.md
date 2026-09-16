@@ -1016,6 +1016,24 @@ Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-15 Phase 10: transitional top-bar regime pill and odds bar removed (every
+  summary card carries the regime row); aliases `--accent`, `--accent-dim`,
+  `--accent-line`, `--text-faint` and `--warn` retired after the sweep to `--link`,
+  `--link-a10`, `--link-a32`, `--text-4` and `--amber` (the inset focus rings moved to
+  `--link` first), with `--bw-hair` and `--border-card`; `--text-4` words lifted to
+  `--text-3` (DisclosureLine, slider scale, DataTable group rows, unselected SubTabs
+  hints, GaugeBar scale row and MeterRow delta); `StateNote live` (role="status") on
+  the Recession scenario result and the Allocation status line; SubTabs named
+  "label, hint"; Methodology opens with a UI-face h1; the Landing live dot is
+  `--mint`; the three reduced-motion blocks merged into one; measured responsive
+  steps: hero inner grid stacks below 1520, strip two-up below 1620, glance tiles
+  two-up below 1200, spread-monitor column floor 256px, news score column max-content;
+  verifier pass: SubTabs scroll their own strip (no `scrollIntoView`, so the first Tab
+  stays on the skip link), the typed slider field reverts on Escape, Methodology header
+  metas wrap and the disclosure row meta shrinks at phone width, the divergence-scale
+  and news detail words also read `--text-3`, the priced tables carry names, the
+  Methodology signals table prints its empty note, the kit's fixture grids clamp to
+  their container and its table specimens sit in ScrollTable wells
 - 2026-09-15 Phase 9: Tools rebuilt on TabHero / SummaryCard per tool; LBO body 400 | 1fr
   with the IRR HeatMatrix; Allocation on Segmented / HeatMatrix / DataTable / MeterRow
   with every lens kept

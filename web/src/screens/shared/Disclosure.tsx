@@ -131,7 +131,9 @@ export default function Disclosure({
               textTransform: "uppercase",
               color: "var(--text-3)",
               textAlign: "right",
-              flexShrink: 0,
+              // Shrinkable so a long meta wraps inside a phone-width row instead
+              // of pushing the page wide (Phase 10, 390 px matrix).
+              flexShrink: 1,
               minWidth: 0,
             }}
           >
@@ -160,7 +162,7 @@ export function DisclosureLine({ children, id, style }: { children: ReactNode; i
         fontSize: 11,
         lineHeight: 1.6,
         letterSpacing: ".03em",
-        color: "var(--text-4)",
+        color: "var(--text-3)",
         maxWidth: 1100,
         ...style,
       }}

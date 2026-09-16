@@ -80,10 +80,15 @@ export function Caption({
 export function StateNote({
   loading,
   error,
+  live,
   children,
 }: {
   loading?: boolean;
   error?: boolean;
+  /** role="status" on the span, for result lines and tab-level state lines a
+   * screen reader should hear when they change (redesign Phase 10, U6-022).
+   * Off by default; never put it on a heading. The words never change. */
+  live?: boolean;
   children?: React.ReactNode;
 }) {
   // A caller's own loading sentence ("Building ~24 years of monthly return
@@ -95,6 +100,7 @@ export function StateNote({
       : (children ?? "Nothing on file.");
   return (
     <span
+      role={live ? "status" : undefined}
       style={{
         fontFamily: "var(--font-ui)",
         fontSize: "var(--fs-caption)",
@@ -170,6 +176,9 @@ export function NumberField({ id, value, min, max, step, onChange, unit, ariaLab
   const fmt = (v: number) => v.toFixed(places);
   const [draft, setDraft] = useState(fmt(value));
   const [editing, setEditing] = useState(false);
+  // Escape reverts: the blur it triggers must not commit the stale draft
+  // (Phase 10 a11y pass, B.4 #4).
+  const reverting = useRef(false);
   useEffect(() => {
     if (!editing) setDraft(fmt(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -204,13 +213,22 @@ export function NumberField({ id, value, min, max, step, onChange, unit, ariaLab
         style={changed ? { color: "var(--amber)" } : undefined}
         onFocus={() => setEditing(true)}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        onBlur={() => {
+          if (reverting.current) {
+            reverting.current = false;
+            setEditing(false);
+            setDraft(fmt(value));
+            return;
+          }
+          commit();
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
             commit();
             (e.target as HTMLInputElement).blur();
           } else if (e.key === "Escape") {
+            reverting.current = true;
             setDraft(fmt(value));
             setEditing(false);
             (e.target as HTMLInputElement).blur();
@@ -368,7 +386,7 @@ export function SliderRow({
             fontVariantNumeric: "tabular-nums",
             fontWeight: 400,
             fontSize: 10,
-            color: "var(--text-4)",
+            color: "var(--text-3)",
             marginTop: 2,
           }}
         >

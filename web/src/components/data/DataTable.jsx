@@ -131,7 +131,7 @@ export function DataTable({
                       fontWeight: 400,
                       letterSpacing: ".14em",
                       textTransform: "uppercase",
-                      color: "var(--text-4)",
+                      color: "var(--text-3)",
                       padding: groupPad,
                       borderBottom: 0,
                       textAlign: "left",

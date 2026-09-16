@@ -11,7 +11,7 @@ export function ReadThrough({ label = "Current read-through", paragraphs = [], f
       style={{
         background: "var(--surface)",
         border: "0.5px solid var(--line-hair)",
-        borderLeft: "3px solid var(--accent)",
+        borderLeft: "3px solid var(--link)",
         borderRadius: "var(--r-md)",
         padding: "var(--pad-card-lg)",
         ...style,

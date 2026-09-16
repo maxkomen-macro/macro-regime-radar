@@ -293,15 +293,15 @@ function RowCard({
         open={open}
         onClick={() => setOpen((v) => !v)}
         controls={panelId}
-        style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--text-4)" }}
+        style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--text-3)" }}
       >
         Wire summary
       </Toggle>
     ) : (
-      <span style={{ ...MONO_NOTE, fontSize: 10.5, color: "var(--text-4)", whiteSpace: "nowrap" }}>Wire summary</span>
+      <span style={{ ...MONO_NOTE, fontSize: 10.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>Wire summary</span>
     );
   } else {
-    detail = <span style={{ ...MONO_NOTE, fontSize: 10.5, color: "var(--text-4)", whiteSpace: "nowrap" }}>Headline only</span>;
+    detail = <span style={{ ...MONO_NOTE, fontSize: 10.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>Headline only</span>;
   }
 
   return (

@@ -84,7 +84,8 @@ describe("SubTabs boxed tabs (checklist 02 B.7)", () => {
     expect(selectedHint.style.textTransform).toBe("uppercase");
     expect(css(selectedHint)).toMatch(/var\(--font-mono\)/);
     expect(selectedHint.style.color).toBe("var(--mint)");
-    expect(otherHint.style.color).toBe("var(--text-4)");
+    // Unselected hint words lifted to --text-3 (Phase 10, G18).
+    expect(otherHint.style.color).toBe("var(--text-3)");
     // The label is a block <b> in the UI face (set on the <b> or inherited from
     // the tab button); selected reads white, unselected --text-2 (a var()
     // fallback chain for the hover rule is fine).
@@ -98,7 +99,7 @@ describe("SubTabs boxed tabs (checklist 02 B.7)", () => {
     // Selecting another tab moves the mint hint with the selection.
     fireEvent.click(tabs[1]);
     expect((screen.getAllByRole("tab")[1].querySelector("small") as HTMLElement).style.color).toBe("var(--mint)");
-    expect((screen.getAllByRole("tab")[0].querySelector("small") as HTMLElement).style.color).toBe("var(--text-4)");
+    expect((screen.getAllByRole("tab")[0].querySelector("small") as HTMLElement).style.color).toBe("var(--text-3)");
   });
 
   it("wraps the tablist in a bordered box", () => {
@@ -126,6 +127,44 @@ describe("SubTabs boxed tabs (checklist 02 B.7)", () => {
     const wrappedList = wrapped.querySelector("[role='tablist']") as HTMLElement;
     expect(wrappedList.style.flexWrap).toBe("wrap");
     expect(wrappedList.style.borderRadius).toBe("var(--r-card)");
+    mockViewport("wide");
+  });
+});
+
+// Appended for Phase 10 (checklist 10 A8 / E.1): the accessible name carries the
+// hint ("Playbook, reference"); the visible textContent is unchanged (E.2).
+describe("SubTabs accessible names (checklist 10 A8)", () => {
+  it("each tab is named label, hint while its textContent stays label + hint with no separator", () => {
+    mockViewport("wide");
+    render(<Harness />);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((t) => t.getAttribute("aria-label"))).toEqual([
+      "Overview, live model",
+      "Playbook, reference",
+      "Scenarios, stress rule",
+      "History & analogues, stored + reference",
+      "Empirical evidence, backtests",
+    ]);
+    // Load-bearing (E.2): textContent is still label + hint, no separator, existing case.
+    expect(tabs[0].textContent).toBe("Overviewlive model");
+    expect(tabs[1].textContent).toBe("Playbookreference");
+    // The role query now matches the full name (G10: a regex form for the label alone).
+    expect(screen.getByRole("tab", { name: "Playbook, reference" })).toBe(tabs[1]);
+    expect(screen.getByRole("tab", { name: /^Playbook\b/ })).toBe(tabs[1]);
+  });
+
+  it("a tab without a hint is named by its label alone; the wrap tier drops the hint from the text, not from the name", () => {
+    mockViewport("desktop");
+    render(
+      <SubTabs tabs={[{ id: "a", label: "Only label" }, { id: "b", label: "With hint", hint: "meta" }]} active="a" onChange={() => {}} label="Views">
+        <div>panel</div>
+      </SubTabs>,
+    );
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0].getAttribute("aria-label")).toBe("Only label");
+    expect(tabs[0].textContent).toBe("Only label");
+    expect(tabs[1].getAttribute("aria-label")).toBe("With hint, meta");
+    expect(tabs[1].textContent).toBe("With hint");
     mockViewport("wide");
   });
 });

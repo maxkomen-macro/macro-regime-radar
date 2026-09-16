@@ -11,6 +11,11 @@
  * documents statistical output or reference content, sources are cited with
  * links, every section links back to the module it explains, and the page
  * closes with what the model can and cannot claim.
+ *
+ * 2026-09-15 (redesign Phase 10, checklist 10 C #7): a UI-face h1
+ * "Methodology" (matching document.title) opens the page above the contents
+ * nav in both layouts, so the route has one h1 like every tab; every
+ * SectionHeader keeps its level. The regime swatches read the --r-* tokens.
  */
 
 import { Link } from "react-router-dom";
@@ -22,10 +27,10 @@ import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote, eyebrowStyle, mono, useHashScroll } from "../shared/screen-ui";
 
 const REGIME_DEFS: { name: string; color: string; def: string }[] = [
-  { name: "Goldilocks", color: "#2ecc71", def: "Growth trending up while inflation stays calm: the equity-friendly quadrant." },
-  { name: "Overheating", color: "#e67e22", def: "Growth and inflation both running hot: real assets lead, duration suffers." },
-  { name: "Stagflation", color: "#e74c3c", def: "Inflation hot while growth stalls: the hardest tape; cash and commodities defend." },
-  { name: "Recession Risk", color: "#95a5a6", def: "Growth rolling over with inflation fading: quality bonds and defensives lead." },
+  { name: "Goldilocks", color: "var(--r-goldilocks)", def: "Growth trending up while inflation stays calm: the equity-friendly quadrant." },
+  { name: "Overheating", color: "var(--r-overheating)", def: "Growth and inflation both running hot: real assets lead, duration suffers." },
+  { name: "Stagflation", color: "var(--r-stagflation)", def: "Inflation hot while growth stalls: the hardest tape; cash and commodities defend." },
+  { name: "Recession Risk", color: "var(--r-recession)", def: "Growth rolling over with inflation fading: quality bonds and defensives lead." },
 ];
 
 const SIGNAL_NAMES: Record<string, string> = {
@@ -93,7 +98,7 @@ const prose: React.CSSProperties = {
 
 function ModuleLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
-    <Link to={to} style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--accent)" }}>
+    <Link to={to} style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--link)" }}>
       {children}
     </Link>
   );
@@ -101,7 +106,7 @@ function ModuleLink({ to, children }: { to: string; children: React.ReactNode })
 
 export default function MethodologyScreen() {
   const signals = useSignalsLatest();
-  const { isNarrow, bp } = useBreakpoint();
+  const { isNarrow, bp, shellCompact } = useBreakpoint();
   const twoUp = isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))";
   const rail = bp === "wide";
   useHashScroll(signals.data);
@@ -148,6 +153,23 @@ export default function MethodologyScreen() {
         alignItems: "start",
       }}
     >
+      {/* The route's one h1, in the UI face at the display rung the tab heroes
+          use (58px; 44px below 860 like .mrr-hero), spanning both grid
+          columns so it sits above the contents rail and the sections alike. */}
+      <h1
+        style={{
+          gridColumn: "1 / -1",
+          margin: "6px 0 2px",
+          fontFamily: "var(--font-ui)",
+          fontWeight: 500,
+          fontSize: shellCompact ? 44 : "var(--fs-display)",
+          lineHeight: "var(--lh-display)",
+          letterSpacing: "var(--ls-display)",
+          color: "var(--text)",
+        }}
+      >
+        Methodology
+      </h1>
       {contents}
 
       <div style={{ display: "grid", gap: 20, minWidth: 0 }}>
@@ -189,7 +211,7 @@ export default function MethodologyScreen() {
           <SectionHeader
             title="The four regimes"
             right={
-              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
                 <ProvenanceTag kind="statistical" />
                 <span>4-way softmax over growth and inflation trends</span>
               </span>
@@ -219,7 +241,7 @@ export default function MethodologyScreen() {
           <SectionHeader
             title="Monitored signals"
             right={
-              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
                 <ProvenanceTag kind="statistical" />
                 <span>
                   {signals.data ? `live thresholds · monthly cadence · latest print ${fmtMonYr(signals.data.date)}` : "live thresholds · monthly cadence"}
@@ -266,6 +288,11 @@ export default function MethodologyScreen() {
                 <StateNote loading={signals.isLoading} error={signals.isError} />
               </div>
             )}
+            {signals.data && signals.data.signals.length === 0 ? (
+              <div style={{ padding: 12 }}>
+                <StateNote />
+              </div>
+            ) : null}
           </Card>
           <Caption>
             Trigger values and status arrive live from the API (the same payload the signal cards read); display names
@@ -281,7 +308,7 @@ export default function MethodologyScreen() {
           <SectionHeader
             title="Models and scenarios"
             right={
-              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
                 <ProvenanceTag kind="statistical" />
                 <span>what is computed, and from what</span>
               </span>
@@ -338,7 +365,7 @@ export default function MethodologyScreen() {
           <SectionHeader
             title="Backtests and evidence"
             right={
-              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
                 <ProvenanceTag kind="statistical" />
                 <span>stored empirical analysis</span>
               </span>
@@ -364,7 +391,7 @@ export default function MethodologyScreen() {
           <SectionHeader
             title="Meaning ramps and vocabularies"
             right={
-              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
                 <ProvenanceTag kind="reference" />
                 <span>closed sets · the app never invents synonyms</span>
               </span>
@@ -381,7 +408,7 @@ export default function MethodologyScreen() {
               <div style={eyebrowStyle}>Threshold-proximity gauge</div>
               <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
                 <LegendRow swatch="var(--pos)" label="< 50%" detail="Clear: comfortable distance from the trigger" />
-                <LegendRow swatch="var(--warn)" label="50–75%" detail="Watch: inside striking distance" />
+                <LegendRow swatch="var(--amber)" label="50–75%" detail="Watch: inside striking distance" />
                 <LegendRow swatch="var(--warn-hot)" label="75–95%" detail="approaching the trigger" />
                 <LegendRow swatch="var(--neg)" label="≥ 95%" detail="at or past it: Triggered comes from the stored flag" />
               </div>
@@ -398,7 +425,7 @@ export default function MethodologyScreen() {
               <div style={eyebrowStyle}>Freshness states</div>
               <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
                 <LegendRow swatch="var(--pos)" label="Current" detail="inside one publication cycle of its cadence (monthly: 45 days; daily: 4 days; intraday: 20 minutes)" />
-                <LegendRow swatch="var(--warn)" label="Delayed" detail="one cycle late, still usable with its date stated" />
+                <LegendRow swatch="var(--amber)" label="Delayed" detail="one cycle late, still usable with its date stated" />
                 <LegendRow swatch="var(--warn-hot)" label="Stale" detail="older than that: context, not a live read" />
                 <LegendRow swatch="var(--neg-text)" label="Unavailable" detail="no stamp on file" />
                 <LegendRow swatch="var(--text-muted)" label="Reference" detail="static content without a cadence" />
@@ -424,7 +451,7 @@ export default function MethodologyScreen() {
           <SectionHeader
             title="Data and sources"
             right={
-              <span style={{ display: "inline-flex", gap: 8, alignItems: "baseline" }}>
+              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
                 <ProvenanceTag kind="data" />
                 <span>every feed, its cadence, its citation</span>
               </span>

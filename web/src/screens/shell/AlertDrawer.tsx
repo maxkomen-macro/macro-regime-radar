@@ -20,13 +20,13 @@ import { describeAlert } from "./alert-copy";
 import type { Alert } from "../../api/types";
 
 const LEVEL_COLOR: Record<string, string> = {
-  info: "var(--accent)",
-  watch: "var(--warn)",
+  info: "var(--link)",
+  watch: "var(--amber)",
   risk: "var(--neg-text)",
 };
 
 function AlertItem({ alert, latest }: { alert: Alert; latest: ReturnType<typeof describeAlert> }) {
-  const color = LEVEL_COLOR[alert.level] ?? "var(--accent)";
+  const color = LEVEL_COLOR[alert.level] ?? "var(--link)";
   return (
     <li
       style={{

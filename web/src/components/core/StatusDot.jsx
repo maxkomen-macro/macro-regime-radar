@@ -3,10 +3,10 @@ import React from "react";
 const COLORS = {
   live: "var(--pos)",
   clear: "var(--pos)",
-  watch: "var(--warn)",
+  watch: "var(--amber)",
   risk: "var(--neg)",
-  idle: "var(--text-faint)",
-  accent: "var(--accent)",
+  idle: "var(--text-4)",
+  accent: "var(--link)",
 };
 
 // The dot is decoration and may sit at --text-faint; the label is text a reader

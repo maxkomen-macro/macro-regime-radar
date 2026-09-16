@@ -223,3 +223,128 @@ describe("AppShell", () => {
     await waitFor(() => expect(document.activeElement).toBe(fresh));
   });
 });
+
+// ── Appended for Phase 10 (checklist 10 B.8 / E.1, QUESTIONS 4): the transitional
+// regime pill and odds bar leave the shell; useRegimeLatest still feeds the shell's
+// status word and the assistant context. Two harnesses, installed at module load
+// (before the first render, since useBreakpoint caches its MediaQueryLists in a
+// module singleton and reads `matches` on every measure):
+//   1. a matchMedia keyed by query string, so the compact shell (<860, MobileNav)
+//      renders in jsdom; every query answers false until a test sets it;
+//   2. AssistantPanel wrapped (vi.hoisted + vi.mock with importOriginal) so the
+//      tabContext prop the shell passes is observable while the real panel renders.
+// Nothing above this line changed.
+import { createElement } from "react";
+
+const MEDIA = new Map<string, boolean>();
+window.matchMedia = ((query: string) =>
+  ({
+    get matches() {
+      return MEDIA.get(query) ?? false;
+    },
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }) as unknown as MediaQueryList) as typeof window.matchMedia;
+
+const assistantSeen = vi.hoisted(() => ({ contexts: [] as unknown[] }));
+vi.mock("./AssistantPanel", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./AssistantPanel")>();
+  const Original = mod.default;
+  const Wrapped = (props: Parameters<typeof Original>[0]) => {
+    assistantSeen.contexts.push(props.tabContext);
+    return createElement(Original, props);
+  };
+  return { ...mod, default: Wrapped };
+});
+
+const lastContext = () => assistantSeen.contexts[assistantSeen.contexts.length - 1] as { key_metrics?: Record<string, unknown>; tab?: string } | undefined;
+
+/** The compact shell: desktop tier (768 to 1023) with the shell seam matched. */
+function compactShell() {
+  MEDIA.set("(max-width: 859.98px)", true);
+  MEDIA.set("(min-width: 768px) and (max-width: 1023.98px)", true);
+}
+
+describe("AppShell without the transitional regime pill (checklist 10 B.8)", () => {
+  afterEach(() => {
+    MEDIA.clear();
+    assistantSeen.contexts.length = 0;
+  });
+
+  it("renders no .mrr-regime, .mrr-regime-note, .mrr-top-l or .mrr-mnav-regime and no regime loading words in the top bar at desk width", async () => {
+    renderShell();
+    await screen.findByTestId("dashboard-screen");
+    const header = screen.getByRole("banner");
+    await waitFor(() => expect(header.textContent).not.toContain("Reading regime…"));
+    expect(document.querySelector(".mrr-regime, .mrr-regime-note, .mrr-top-l, .mrr-mnav-regime")).toBeNull();
+    expect(header.textContent).not.toContain("Regime unavailable: API error");
+    expect(header.textContent).not.toMatch(/Goldilocks/);
+    // The chrome the pill sat in still carries the palette trigger, the chip and the bell.
+    expect(within(header).getByRole("button", { name: /Jump to/ })).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: /Ask the analyst/ })).toBeInTheDocument();
+    expect(await within(header).findByRole("button", { name: /alert/i })).toBeInTheDocument();
+  });
+
+  it("renders no pill in the MobileNav row at compact width either", async () => {
+    compactShell();
+    renderShell();
+    await screen.findByTestId("dashboard-screen");
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    expect(screen.queryByRole("complementary", { name: "Sidebar" })).toBeNull();
+    expect(within(nav).getByRole("button", { name: /^Menu · current screen Dashboard$/ })).toBeInTheDocument();
+    expect(document.querySelector(".mrr-mnav-regime")).toBeNull();
+    expect(document.querySelector(".mrr-regime, .mrr-regime-note, .mrr-top-l")).toBeNull();
+    await waitFor(() => expect(nav.textContent).not.toContain("Reading regime…"));
+    expect(nav.textContent).not.toContain("Regime unavailable: API error");
+    expect(screen.getByRole("banner").textContent).not.toContain("Reading regime…");
+  });
+
+  it("the assistant context still reads the regime row from useRegimeLatest (key_metrics.regime)", async () => {
+    renderShell();
+    await screen.findByTestId("dashboard-screen");
+    await waitFor(() => expect(lastContext()?.key_metrics?.regime).toBe("Goldilocks"));
+    expect(lastContext()?.tab).toBe("dashboard");
+    expect(lastContext()?.key_metrics).toMatchObject({ regime: "Goldilocks", dominant_probability: 0.62, confidence: 0.71, regime_date: MONTH });
+  });
+
+  it("the status word still needs the regime query: both shell queries failing reads Data service unavailable, the regime alone answering keeps Delayed", async () => {
+    stubFetch({
+      "/api/regime/latest": () => ({ status: 404, body: { detail: "down" } }),
+      "/api/freshness": () => ({ status: 404, body: { detail: "down" } }),
+      "/api/alerts": () => [],
+      "/api/signals/latest": () => ({ date: MONTH, signals: [] }),
+      "/api/market/daily": () => [],
+      "/api/market/intraday": () => [],
+      "/api/credit/oas": () => creditOas,
+    });
+    const first = renderShell();
+    await screen.findByTestId("dashboard-screen");
+    const strip = screen.getByRole("region", { name: "Market strip and data freshness" });
+    await waitFor(() => expect(strip.textContent).toContain("Data service unavailable"));
+    expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toContain("Data service unavailable");
+    first.unmount();
+
+    stubFetch({
+      "/api/regime/latest": () => regime,
+      "/api/freshness": () => ({ status: 404, body: { detail: "down" } }),
+      "/api/alerts": () => [],
+      "/api/signals/latest": () => ({ date: MONTH, signals: [] }),
+      "/api/market/daily": () => [],
+      "/api/market/intraday": () => [],
+      "/api/credit/oas": () => creditOas,
+    });
+    renderShell();
+    await screen.findByTestId("dashboard-screen");
+    const strip2 = screen.getByRole("region", { name: "Market strip and data freshness" });
+    await waitFor(() => expect(strip2.textContent).toContain("Freshness unavailable · retrying"));
+    expect(strip2.textContent).toContain("Markets delayed");
+    expect(strip2.textContent).not.toContain("Data service unavailable");
+    expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toContain("Delayed market data");
+    await waitFor(() => expect(lastContext()?.key_metrics?.regime).toBe("Goldilocks"));
+  });
+});

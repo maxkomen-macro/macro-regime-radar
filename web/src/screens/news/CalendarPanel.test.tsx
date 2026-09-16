@@ -270,7 +270,8 @@ describe("CalendarPanel (checklist 08 B.5)", () => {
   it("both empty renders No events on file.", async () => {
     stub(routes({ "/api/calendar/recent": () => [], "/api/calendar": () => [] }));
     mount();
-    expect(await within(panel()).findByText("No events on file.")).toBeInTheDocument();
+    // Phase 10 (checklist 10 C #3): the empty note names the cadence in words.
+    expect(await within(panel()).findByText("No events on file; the calendar is a hand-maintained schedule refreshed with the daily run.")).toBeInTheDocument();
     expect(dots()).toHaveLength(0);
     expect(text(panel())).not.toContain("elapsed");
     expect(text(panel())).not.toContain("Stored schedule.");

@@ -484,7 +484,7 @@ export default function NewsScreen() {
             ) : (
               <Card variant="tile">
                 <StateNote loading={feedState === "loading"} error={feedState === "error"}>
-                  Nothing on file; the news pipeline has not stored headlines yet.
+                  Nothing on file; the news pipeline runs hourly (minute 41 UTC) and has not stored headlines yet.
                 </StateNote>
               </Card>
             )}

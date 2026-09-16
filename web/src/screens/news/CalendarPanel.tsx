@@ -171,7 +171,7 @@ export default function CalendarPanel({ calendar, recent, usingCalFallback, view
   } else if (error) {
     body = <StateNote error />;
   } else {
-    body = <StateNote>No events on file.</StateNote>;
+    body = <StateNote>No events on file; the calendar is a hand-maintained schedule refreshed with the daily run.</StateNote>;
   }
 
   const right =

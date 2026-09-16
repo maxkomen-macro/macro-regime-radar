@@ -132,7 +132,7 @@ export function GaugeBar({
             fontFamily: "var(--font-mono)",
             fontSize: 10.5,
             fontWeight: 400,
-            color: "var(--text-4)",
+            color: "var(--text-3)",
             marginTop: 6,
             fontVariantNumeric: "tabular-nums",
           }}
@@ -226,7 +226,7 @@ export function MeterRow({
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: 11,
-            color: deltaTone === "watch" ? "var(--amber)" : "var(--text-4)",
+            color: deltaTone === "watch" ? "var(--amber)" : "var(--text-3)",
             fontVariantNumeric: "tabular-nums",
             whiteSpace: "nowrap",
           }}

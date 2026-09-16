@@ -2,8 +2,8 @@
  * The app shell (redesign Phase 1, spec §2): a 196 px sidebar (wordmark,
  * seven tabs with aria-current, Methodology, the saved watchlist, a footer
  * that says in words whether market data is live) beside a main column that
- * holds the top bar (transitional regime pill, ⌘K palette trigger, "Ask the
- * analyst", the alerts bell), the ticker strip with its freshness card, and
+ * holds the top bar (⌘K palette trigger, "Ask the analyst", the alerts
+ * bell), the ticker strip with its freshness card, and
  * the routed screen. Below 860 px the sidebar gives way to MobileNav.
  *
  * Every behaviour of the 2026-09-05 shell survives the rebuild: Cmd+K /
@@ -33,7 +33,7 @@ import FreshnessDrawer from "./FreshnessDrawer";
 import MobileNav from "./MobileNav";
 import Sidebar from "./Sidebar";
 import TickerLive from "./TickerLive";
-import TopBar, { RegimePill } from "./TopBar";
+import TopBar from "./TopBar";
 import { ShellActionsContext, type ShellActions } from "./shell-actions";
 import { METHODOLOGY_SLUG, tabBySlug } from "./sections";
 import { composeShellStatus, regimeProbs, STATUS_COLOR } from "./shell-status";
@@ -150,8 +150,10 @@ export default function AppShell() {
     [f, freshness.isError, freshness.isLoading, regime.isError, streamWord, streamLive, liveFeeds, stream.degraded, stream.degradedReasons, snapshot],
   );
 
-  // The pill shows the model's stored dominant probability (one number, one
-  // truth), never the separate `confidence` heuristic.
+  // The assistant context carries the model's stored dominant probability
+  // (one number, one truth), never the separate `confidence` heuristic. The
+  // regime query itself stays here for the shell's status word and this
+  // context; its top-bar pill left in Phase 10 (checklist 10 B.8).
   const { dominantProb } = regimeProbs(regime.data);
 
   // What the assistant is told the visitor is looking at: the route, the
@@ -201,10 +203,8 @@ export default function AppShell() {
         <div id={SHELL_CONTENT_ID} className="mrr-app-content">
           {shellCompact ? null : <Sidebar activeSlug={activeSlug} status={status} />}
           <div className="mrr-main">
-            {shellCompact ? <MobileNav activeSlug={activeSlug} onOpenPalette={openPalette} regime={<RegimePill regime={regime} compact />} /> : null}
+            {shellCompact ? <MobileNav activeSlug={activeSlug} onOpenPalette={openPalette} /> : null}
             <TopBar
-              regime={regime}
-              compact={shellCompact}
               paletteOpen={paletteOpen}
               onOpenPalette={openPalette}
               assistantOpen={assistantOpen}

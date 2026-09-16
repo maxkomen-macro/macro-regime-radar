@@ -199,3 +199,28 @@ describe("Caption (checklist 02 B.16)", () => {
     expect(span.style.color).toBe("var(--text-3)");
   });
 });
+
+// Appended for Phase 10 (checklist 10 A9 / E.1, U6-022): StateNote's `live` prop.
+describe("StateNote live (checklist 10 A9)", () => {
+  it("live renders role=status on the span; the default renders no role; the words are unchanged", () => {
+    const live = render(<StateNote live error />).container.firstElementChild as HTMLElement;
+    expect(live.tagName).toBe("SPAN");
+    expect(live.getAttribute("role")).toBe("status");
+    expect(live.textContent).toBe("Unavailable: the data service did not answer.");
+    const plain = render(<StateNote error />).container.firstElementChild as HTMLElement;
+    expect(plain.tagName).toBe("SPAN");
+    expect(plain.hasAttribute("role")).toBe(false);
+    expect(plain.textContent).toBe("Unavailable: the data service did not answer.");
+    const loading = render(<StateNote live loading />).container.firstElementChild as HTMLElement;
+    expect(loading.getAttribute("role")).toBe("status");
+    expect(loading.textContent).toBe("Reading stored data…");
+    expect((render(<StateNote loading />).container.firstElementChild as HTMLElement).hasAttribute("role")).toBe(false);
+    const empty = render(<StateNote live />).container.firstElementChild as HTMLElement;
+    expect(empty.getAttribute("role")).toBe("status");
+    expect(empty.textContent).toBe("Nothing on file.");
+    expect((render(<StateNote />).container.firstElementChild as HTMLElement).hasAttribute("role")).toBe(false);
+    const custom = render(<StateNote live loading>Building ~24 years of monthly return history…</StateNote>).container.firstElementChild as HTMLElement;
+    expect(custom.getAttribute("role")).toBe("status");
+    expect(custom.textContent).toBe("Building ~24 years of monthly return history…");
+  });
+});

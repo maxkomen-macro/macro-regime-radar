@@ -408,7 +408,8 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(stripDetail(button)).toBe("Opens the data freshness breakdown");
     expect(button.getAttribute("aria-label") ?? "").toMatch(/^Reading feed health…\. Opens the data freshness breakdown\. .*Open the data freshness breakdown\.$/);
     expect(text(hero().querySelector(".mrr-hero-lede"))).toBe("Reading the stored headline feed…");
-    expect(text(headlines())).toContain("Nothing on file; the news pipeline has not stored headlines yet.");
+    // Phase 10 (checklist 10 C #4): the empty tile names the hourly cadence.
+    expect(text(headlines())).toContain("Nothing on file; the news pipeline runs hourly (minute 41 UTC) and has not stored headlines yet.");
   });
 
   it("status strip: an empty feed with no stamp reads gray Feed unavailable; the empty note and no Top significance row", async () => {
@@ -420,7 +421,7 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(button).toHaveAttribute("data-tone", "gray");
     expect(stripDetail(button)).toBe("No headline stamp on file");
     expect(text(hero().querySelector(".mrr-hero-lede"))).toBe("No headlines on file.");
-    expect(text(headlines())).toContain("Nothing on file; the news pipeline has not stored headlines yet.");
+    expect(text(headlines())).toContain("Nothing on file; the news pipeline runs hourly (minute 41 UTC) and has not stored headlines yet.");
     expect(dts()).toEqual(["Next event", "After that", "Coverage", "High impact"]);
     expect(text(ddFor("Coverage"))).toBe("0 stories in 7D");
     expect(articles()).toHaveLength(0);
@@ -722,7 +723,8 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     await waitFor(() => expect(text(ddFor("Next event"))).toBe("No events in the next 30 days"));
     expect(text(ddFor("After that"))).toBe("No second event in the window");
     expect(text(hero().querySelector("svg[role='img']"))).toContain("No events on file.");
-    expect(within(calendar()).getByText("No events on file.")).toBeInTheDocument();
+    // Phase 10 (checklist 10 C #3): the panel's empty note names the cadence; the EventTimeline text above is unchanged.
+    expect(within(calendar()).getByText("No events on file; the calendar is a hand-maintained schedule refreshed with the daily run.")).toBeInTheDocument();
   });
 
   it("while the calendar loads the hero reads Reading the calendar… with no pill and the summary rows read the loading note", async () => {

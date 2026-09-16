@@ -160,7 +160,7 @@ describe("MacroCalendarCard (checklist 03 B.7)", () => {
   it("both empty renders No events on file.", async () => {
     stub({ "/api/calendar/recent": () => [], "/api/calendar": () => [] });
     renderWithProviders(<MacroCalendarCard />);
-    expect(await screen.findByText("No events on file.")).toBeInTheDocument();
+    expect(await screen.findByText("No events on file; the calendar is a hand-maintained schedule refreshed with the daily run.")).toBeInTheDocument();
     expect(card().querySelectorAll("[data-importance]")).toHaveLength(0);
     expect(text(card())).not.toContain("elapsed");
   });

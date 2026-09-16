@@ -525,7 +525,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     const card = articles.find((a) => text(a.querySelector("h3")) === "Unemployment spike") as HTMLElement;
     expect(card).toBeDefined();
     const t = text(card);
-    expect(t).toContain("No print on file yet; nothing is stored for this signal.");
+    expect(t).toContain("No print on file yet for this signal; the daily refresh writes signal prints at 11:17 UTC.");
     expect(text(card.querySelector("[data-tone]"))).toBe("Unavailable");
     expect(t).toContain("Trips when the 3-month rise in unemployment reaches its stored trigger.");
     expect(t).toContain("Signal print · none on file");
@@ -729,5 +729,47 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     for (const b of rest) expect(b).toHaveAttribute("aria-expanded", "false");
     expect(byId("chart-regime-panel")).not.toHaveAttribute("hidden");
     await waitFor(() => expect(byId("chart-regime-panel")?.querySelector("svg[role='img']")).not.toBeNull());
+  });
+});
+
+// Appended for Phase 10 (checklist 10 C #1 and #2 / E.1, U6-014): the signal
+// cards without a row when the feed is down versus when it answers empty.
+describe("DashboardScreen signal cards without a row (checklist 10 C #1 and #2)", () => {
+  it("a signals 404 with nothing on hand prints the feed-down copy on all five cards and never No print on file", async () => {
+    stubFetch(routes({ "/api/signals/latest": () => ({ status: 404, body: { detail: "Not Found" } }) }));
+    renderDashboard();
+    const section = await awaitSection("signals");
+    await waitFor(() => expect(text(section)).toContain("signal feed unavailable"));
+    const articles = [...section.querySelectorAll("article")];
+    expect(articles).toHaveLength(5);
+    for (const a of articles) {
+      const t = text(a);
+      expect(t).toContain("Signal feed unavailable: the data service did not answer.");
+      expect(t).toContain("Signal print · unavailable");
+      expect(text(a.querySelector("[data-tone]"))).toBe("Unavailable");
+      expect(t).not.toContain("Reading the signal print");
+      expect(t).not.toContain("Threshold proximity");
+      expect(a.querySelector("svg")).toBeNull();
+    }
+    expect(text(section)).not.toContain("No print on file");
+    expect(text(section)).not.toContain("Signal print · none on file");
+  });
+
+  it("an empty signals payload prints the cadence copy on all five cards with the none-on-file line", async () => {
+    stubFetch(routes({ "/api/signals/latest": () => ({ date: MONTH, signals: [] }) }));
+    renderDashboard();
+    const section = await awaitSection("signals");
+    await waitFor(() => expect(text(section)).toContain("0 signals · latest Sep 01, 2026"));
+    const articles = [...section.querySelectorAll("article")];
+    expect(articles).toHaveLength(5);
+    for (const a of articles) {
+      const t = text(a);
+      expect(t).toContain("No print on file yet for this signal; the daily refresh writes signal prints at 11:17 UTC.");
+      expect(t).toContain("Signal print · none on file");
+      expect(text(a.querySelector("[data-tone]"))).toBe("Unavailable");
+      expect(t).not.toContain("Signal feed unavailable");
+      expect(t).not.toContain("Signal print · unavailable");
+    }
+    expect(text(section)).not.toContain("signal feed unavailable");
   });
 });

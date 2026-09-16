@@ -48,6 +48,7 @@ import {
 import { KIT_SECTIONS, KIT_VARIANTS } from "./kit-manifest";
 import Disclosure, { DisclosureLine } from "./shared/Disclosure";
 import Jargon from "./shared/Jargon";
+import ScrollTable from "./shared/ScrollTable";
 import SubTabs, { type SubTabDef } from "./shared/SubTabs";
 import {
   SummaryCard,
@@ -171,7 +172,7 @@ function Grid({
         display: "grid",
         gridTemplateColumns: cols
           ? `repeat(${cols}, minmax(0,1fr))`
-          : `repeat(auto-fill, minmax(${min}px, 1fr))`,
+          : `repeat(auto-fill, minmax(min(${min}px, 100%), 1fr))`,
         gap,
         alignItems: "start",
         ...style,
@@ -1535,12 +1536,14 @@ export default function KitScreen() {
               <Variant name="panel-padding-zero-table">
                 <Card padding="0">
                   <div style={{ padding: "6px 18px 8px" }}>
-                    <DataTable
-                      columns={DEBT_COLUMNS}
-                      rows={DEBT_ROWS}
-                      zebra={false}
-                      caption="Annual debt schedule inside a padding-0 panel"
-                    />
+                    <ScrollTable label="Annual debt schedule specimen">
+                      <DataTable
+                        columns={DEBT_COLUMNS}
+                        rows={DEBT_ROWS}
+                        zebra={false}
+                        caption="Annual debt schedule inside a padding-0 panel"
+                      />
+                    </ScrollTable>
                   </div>
                 </Card>
               </Variant>
@@ -2134,36 +2137,42 @@ export default function KitScreen() {
           <Grid min={440} gap={16}>
             <Variant name="table-debt-schedule">
               <Card>
-                <DataTable
-                  columns={DEBT_COLUMNS}
-                  rows={DEBT_ROWS}
-                  zebra={false}
-                  caption="Annual debt schedule"
-                />
+                <ScrollTable label="Annual debt schedule specimen">
+                  <DataTable
+                    columns={DEBT_COLUMNS}
+                    rows={DEBT_ROWS}
+                    zebra={false}
+                    caption="Annual debt schedule"
+                  />
+                </ScrollTable>
               </Card>
             </Variant>
             <Variant name="table-compact-grouped-tape">
               <Card>
-                <DataTable
-                  compact
-                  zebra={false}
-                  caption="Macro tape"
-                  columns={TAPE_COLUMNS}
-                  groups={[
-                    { key: "equities", label: "Equities", rows: TAPE_EQUITIES },
-                    { key: "rates", label: "Rates", rows: TAPE_RATES },
-                    { key: "credit", label: "Credit", rows: TAPE_CREDIT },
-                  ]}
-                />
+                <ScrollTable label="Macro tape specimen">
+                  <DataTable
+                    compact
+                    zebra={false}
+                    caption="Macro tape"
+                    columns={TAPE_COLUMNS}
+                    groups={[
+                      { key: "equities", label: "Equities", rows: TAPE_EQUITIES },
+                      { key: "rates", label: "Rates", rows: TAPE_RATES },
+                      { key: "credit", label: "Credit", rows: TAPE_CREDIT },
+                    ]}
+                  />
+                </ScrollTable>
               </Card>
             </Variant>
             <Variant name="table-empty-rows">
               <Card>
-                <DataTable
-                  columns={TAPE_COLUMNS}
-                  rows={[]}
-                  caption="Macro tape, empty"
-                />
+                <ScrollTable label="Empty macro tape specimen">
+                  <DataTable
+                    columns={TAPE_COLUMNS}
+                    rows={[]}
+                    caption="Macro tape, empty"
+                  />
+                </ScrollTable>
                 <div style={{ marginTop: 10 }}>
                   <StateNote />
                 </div>
@@ -2171,13 +2180,15 @@ export default function KitScreen() {
             </Variant>
             <Variant name="table-hide-header-caption">
               <Card>
-                <DataTable
-                  columns={KEY_LEVEL_COLUMNS}
-                  rows={KEY_LEVEL_ROWS}
-                  zebra={false}
-                  hideHeader
-                  caption="Key levels"
-                />
+                <ScrollTable label="Key levels specimen">
+                  <DataTable
+                    columns={KEY_LEVEL_COLUMNS}
+                    rows={KEY_LEVEL_ROWS}
+                    zebra={false}
+                    hideHeader
+                    caption="Key levels"
+                  />
+                </ScrollTable>
               </Card>
             </Variant>
           </Grid>

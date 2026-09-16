@@ -2,8 +2,8 @@ import React from "react";
 
 const CONVICTION = {
   High: "var(--pos)",
-  Medium: "var(--accent)",
-  Low: "var(--warn)",
+  Medium: "var(--link)",
+  Low: "var(--amber)",
 };
 
 /**
@@ -26,7 +26,7 @@ export function IntelBanner({
   style,
   ...rest
 }) {
-  const cColor = CONVICTION[conviction] || "var(--accent)";
+  const cColor = CONVICTION[conviction] || "var(--link)";
   return (
     <div
       {...rest}
@@ -49,7 +49,7 @@ export function IntelBanner({
               width: 6,
               height: 6,
               borderRadius: "50%",
-              background: live ? "var(--pos)" : "var(--text-faint)",
+              background: live ? "var(--pos)" : "var(--text-4)",
               animation: live ? "mrr-pulse var(--pulse-period) var(--ease-in-out) infinite" : "none",
             }}
           />
@@ -115,7 +115,7 @@ export function IntelBanner({
                 appearance: "none",
                 background: "none",
                 border: "none",
-                color: "var(--accent)",
+                color: "var(--link)",
                 fontFamily: "var(--font-ui)",
                 fontSize: "var(--fs-body-s)",
                 cursor: "pointer",

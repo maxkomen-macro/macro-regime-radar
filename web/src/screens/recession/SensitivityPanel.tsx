@@ -220,7 +220,7 @@ export default function SensitivityPanel({ m, status, open, onToggle, inputs, on
                 <div style={{ marginTop: 8 }}>
                   {/* isPending covers the first fetch and the 120 ms debounce
                       window alike, so the slot never flashes "Nothing on file." */}
-                  <StateNote loading={scenario.isPending} error={scenario.isError} />
+                  <StateNote live loading={scenario.isPending} error={scenario.isError} />
                 </div>
               )}
             </Card>

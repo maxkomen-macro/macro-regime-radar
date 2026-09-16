@@ -74,7 +74,7 @@ export default function WhatsPriced({ priced, pricedGroups, groupCaptions, beTer
           {pricedGroups.map(([group, metrics]) => (
             <Card key={group} variant="tile" padding="12px 16px 6px" style={{ minWidth: 0 }}>
               <SectionHeader level="sub" as="h3" title={group} style={{ marginTop: 0, marginBottom: 2 }} />
-              <table className="mrr-priced" style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-ui)", fontSize: 13 }}>
+              <table className="mrr-priced" aria-label={`${group}: what is priced`} style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-ui)", fontSize: 13 }}>
                 <thead>
                   <tr>
                     <th scope="col" className="sr-only">

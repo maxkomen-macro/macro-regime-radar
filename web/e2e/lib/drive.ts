@@ -106,3 +106,73 @@ export function collect(page: Page): { console: ConsoleRec[]; failed: FailedReq[
   });
   return out;
 }
+
+/* ── Appended for Phase 10 (checklist 10 E.3): shared by responsive.spec.ts,
+   a11y.spec.ts and states.spec.ts. Appended exports only; nothing above changed. */
+
+import fs from "node:fs";
+import path from "node:path";
+import { execSync } from "node:child_process";
+
+/** True when the element's top edge sits inside the viewport (the shell.spec.ts:26-33 rule). */
+export async function inView(page: Page, id: string): Promise<boolean> {
+  return page.evaluate((elId) => {
+    const el = document.getElementById(elId);
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.top >= -1 && r.top < window.innerHeight;
+  }, id);
+}
+
+/** The checked-out branch as a folder name ("redesign/10-states-a11y" → "redesign-10-states-a11y"),
+ * the same derivation baseline-capture.spec.ts uses for its default output folder. */
+export function branchSlug(): string {
+  try {
+    return execSync("git rev-parse --abbrev-ref HEAD", { cwd: process.cwd(), encoding: "utf8" })
+      .trim()
+      .replace(/[^A-Za-z0-9._-]+/g, "-");
+  } catch {
+    return "unknown-branch";
+  }
+}
+
+/** docs/redesign-v2 next to web/. */
+export const DOCS_DIR = path.resolve(process.cwd(), "..", "docs", "redesign-v2");
+
+/** Capture folder for the branch under test: CAPTURE_DIR when set, else
+ * docs/redesign-v2/captures/<branch-slug>. Never the Phase 0 baseline folder. */
+export function captureDir(): string {
+  const dir = process.env.CAPTURE_DIR ?? path.join(DOCS_DIR, "captures", branchSlug());
+  if (path.resolve(dir) === path.join(DOCS_DIR, "baseline")) {
+    throw new Error(`captureDir: refusing to write into the Phase 0 reference folder ${dir}`);
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Read-merge-write one key of a JSON object file (console.json, a11y-report.json, ...). */
+export function mergeJsonFile(file: string, key: string, value: unknown): void {
+  let current: Record<string, unknown> = {};
+  try {
+    current = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    current = {};
+  }
+  current[key] = value;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(current, null, 2));
+}
+
+/** Phase 0 baseline console lines per screen (docs/redesign-v2/baseline/console.json),
+ * the known noise a live cell is compared against. Empty when the file is absent. */
+export function baselineConsoleTexts(screen: string): Set<string> {
+  try {
+    const baseline = JSON.parse(fs.readFileSync(path.join(DOCS_DIR, "baseline", "console.json"), "utf8")) as Record<
+      string,
+      { console?: { type: string; text: string }[] }
+    >;
+    return new Set((baseline[screen]?.console ?? []).map((c) => c.text));
+  } catch {
+    return new Set();
+  }
+}

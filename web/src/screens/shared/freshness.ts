@@ -84,7 +84,7 @@ export function freshColor(state: FreshState): string {
     case "current":
       return "var(--pos)";
     case "delayed":
-      return "var(--warn)";
+      return "var(--amber)";
     case "stale":
       return "var(--warn-hot)";
     case "unavailable":

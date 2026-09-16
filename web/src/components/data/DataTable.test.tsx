@@ -70,7 +70,8 @@ describe("DataTable (checklist 02 B.11)", () => {
     expect(group.querySelectorAll("td")).toHaveLength(1);
     expect(td.colSpan).toBe(3);
     expect(td.style.textTransform).toBe("uppercase");
-    expect(td.style.color).toBe("var(--text-4)");
+    // Group-row words lifted to --text-3 (Phase 10, G18: --text-4 is under 4.5:1 for running text).
+    expect(td.style.color).toBe("var(--text-3)");
     expect(td.getAttribute("style") ?? "").toMatch(/var\(--font-mono\)/);
     // Group rows are real rows: screen readers read the group name.
     expect(within(table).getByRole("row", { name: /Equities/ })).toBeInTheDocument();

@@ -87,20 +87,18 @@
 --memo-link:#3498db;
 
 /* Transitional aliases (retire schedule in DESIGN.md). Every name below is
-   still consumed on cb7c4d8; each resolves to its replacement on the new
-   palette and is deleted by the phase that owns its last consumer. */
+   still consumed; each resolves to its replacement on the new palette and is
+   deleted by the phase that owns its last consumer. Retired in Phase 10
+   after the sweep (zero consumers under web/src): --text-faint (--text-4),
+   --accent (--link), --accent-dim (--link-a10), --accent-line (--link-a32),
+   --warn (--amber). */
 --bg-base:var(--bg);
 --void:var(--bg);
 --surface:var(--panel);
 --surface-raised:var(--track);
 --line-hair:var(--line-2);
 --text-muted:var(--text-3);
---text-faint:var(--text-4);
 --text-label:var(--text-eyebrow);
---accent:var(--link);
---accent-dim:var(--link-a10);
---accent-line:var(--link-a32);
---warn:var(--amber);
 --neg-text:var(--neg);
 --pos-soft:var(--pos);
 --neg-soft:var(--neg);

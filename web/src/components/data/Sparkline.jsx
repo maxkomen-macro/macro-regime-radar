@@ -11,7 +11,7 @@ export function Sparkline({
   values = [],
   width = 120,
   height = 30,
-  color = "var(--accent)",
+  color = "var(--link)",
   fill = true,
   gradient = false,
   gradientOpacity = 0.28,

@@ -1,8 +1,8 @@
 import React from "react";
 
 const LEVEL = {
-  info: ["INFO", "var(--accent)"],
-  watch: ["WATCH", "var(--warn)"],
+  info: ["INFO", "var(--link)"],
+  watch: ["WATCH", "var(--amber)"],
   risk: ["RISK", "var(--neg)"],
 };
 

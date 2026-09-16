@@ -62,7 +62,7 @@ function liveRead(r: Regime): { sentence: string; probs: Record<string, number> 
 
 const STATUS_COLOR: Record<string, string> = {
   Clear: "var(--pos)",
-  Watch: "var(--warn)",
+  Watch: "var(--amber)",
   Triggered: "var(--neg-text)",
 };
 
@@ -206,7 +206,7 @@ export default function LandingPage() {
           <span
             className={regime.data ? "mrr-live-dot" : undefined}
             style={{
-              background: regime.data ? "var(--accent)" : "var(--text-faint)",
+              background: regime.data ? "var(--mint)" : "var(--text-4)",
               width: 8,
               height: 8,
               borderRadius: "50%",
@@ -357,17 +357,17 @@ export default function LandingPage() {
                   display: "inline-flex",
                   alignItems: "center",
                   minHeight: 44,
-                  border: "1px solid var(--accent-line)",
+                  border: "1px solid var(--link-a32)",
                   borderRadius: "var(--r-md)",
                   padding: "10px 20px",
                   fontFamily: "var(--font-ui)",
                   fontSize: "var(--fs-body)",
                   fontWeight: 600,
-                  color: "var(--accent)",
+                  color: "var(--link)",
                   textDecoration: "none",
                   transition: "background var(--dur-fast) var(--ease-out)",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-dim)")}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--link-a10)")}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               >
                 Open the terminal →

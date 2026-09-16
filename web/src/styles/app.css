@@ -283,7 +283,7 @@ main .mrr-scroll {
   margin-top: auto;
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
-  color: var(--text-4, var(--text-faint));
+  color: var(--text-4);
 }
 
 /* Command palette, centered near the top. */
@@ -314,7 +314,7 @@ main .mrr-scroll {
      ring hugs the input inside the palette frame. */
 }
 .palette input:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--link);
   outline-offset: -2px;
 }
 .palette input::placeholder {
@@ -330,8 +330,8 @@ main .mrr-scroll {
   border-left: 3px solid transparent;
 }
 .palette-row[data-active="true"] {
-  background: var(--accent-dim);
-  border-left-color: var(--accent);
+  background: var(--link-a10);
+  border-left-color: var(--link);
 }
 
 /* ── AI analyst: floating launcher + terminal panel ────────────────────
@@ -403,7 +403,7 @@ main .mrr-scroll {
 }
 /* Focus ring stays (never removed); inset so it hugs the field inside the frame. */
 .assistant-input:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--link);
   outline-offset: -2px;
 }
 
@@ -436,45 +436,6 @@ main .mrr-scroll {
   border: 0.5px solid var(--line);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .jargon::after {
-    transition: none;
-  }
-  /* The bundle's motion.css silences pulse + caret only; but the components
-     set the same animations inline (SignalCard's Triggered dot, StatTile's
-     live dot, IntelBanner's dot) and the tick flash + gauge refills are also
-     motion. Targeted attribute matches on the inline styles; not a global
-     animation kill; state changes still render instantly. The refill match is
-     `transition: transform` because GaugeBar/ProbabilityBar animate scaleX
-     (owner ruling 2026-08-06); they are the only inline transform
-     transitions in the app. The quote cards' 600ms tick flash is inline too. */
-  [style*="mrr-flash"],
-  [style*="mrr-pulse"] {
-    animation: none !important;
-  }
-  [style*="transition: transform"],
-  [style*="transition:transform"] {
-    transition: none !important;
-  }
-  /* Colour/background eases are motion too; small, but they're the last
-     animated things left. `a` covers base.css's global link colour ease; the
-     attribute matches cover the two inline ones (LandingPage's CTA background,
-     TabBar's tab colour), same idiom as the transform match above. Hover still
-     changes state; instantly. */
-  a,
-  [style*="transition: background"],
-  [style*="transition:background"],
-  [style*="transition: color"],
-  [style*="transition:color"] {
-    transition: none !important;
-  }
-  /* The footer live dot pulses via motion.css; the mint glow is a static
-     box-shadow and stays. */
-  .mrr-dot {
-    animation: none !important;
-  }
-}
-
 /* News arrival flash: link blue is the house attention accent, not a valence colour. */
 @keyframes mrr-news-arrive {
   from {
@@ -487,11 +448,6 @@ main .mrr-scroll {
 .mrr-news-new {
   animation: mrr-news-arrive 1.5s var(--ease-out);
   border-radius: var(--r-tile);
-}
-@media (prefers-reduced-motion: reduce) {
-  .mrr-news-new {
-    animation: none;
-  }
 }
 
 /* ══ Executive foundation (2026-09-05) ═══════════════════════════════════
@@ -682,7 +638,7 @@ main .mrr-scroll {
 }
 .mrr-side-foot .ver {
   margin-top: 28px;
-  color: var(--text-4, var(--text-faint));
+  color: var(--text-4);
 }
 .mrr-dot {
   display: inline-block;
@@ -695,35 +651,27 @@ main .mrr-scroll {
   vertical-align: 1px;
 }
 .mrr-dot.mrr-dot-idle {
-  background: var(--text-4, var(--text-faint));
+  background: var(--text-4);
   box-shadow: none;
   animation: none;
 }
 
-/* Top bar: 1fr / 368px / 1fr. Left cell = transitional regime pill + odds
-   bar (checklist row 13); centre = the palette trigger; right = Ask the
-   analyst, then the bell. No avatar. */
+/* Top bar: 1fr / 368px / 1fr. The palette trigger is placed in track 2 and
+   the right cluster (Ask the analyst, then the bell) in track 3, so the
+   trigger stays centred in the main column and the cluster right-aligned.
+   Track 1 has been empty since Phase 10 (the transitional regime pill and
+   odds bar left, checklist 10 B.8) and is kept so the centring holds. The
+   side tracks stay plain 1fr (auto minimum): between 860 and about 1035px
+   the cluster's min-content (about 210px) exceeds half the leftover width,
+   and the auto minimum lets track 3 grow rather than overlap the trigger;
+   below 860 the row becomes 1fr / auto with the trigger in track 1
+   (responsive block). No avatar. */
 .mrr-top {
   display: grid;
   grid-template-columns: 1fr var(--search-w, 368px) 1fr;
   align-items: center;
   height: var(--topbar-h, 40px);
   margin-bottom: 12px;
-}
-.mrr-top-l {
-  grid-column: 1;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-.mrr-regime {
-  display: inline-flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-.mrr-regime-note {
-  white-space: nowrap;
 }
 .mrr-search {
   grid-column: 2;
@@ -931,7 +879,7 @@ main .mrr-scroll {
   text-underline-offset: 2px;
 }
 
-/* Mobile nav (< 860px): wordmark · regime pill · Menu, then the list. */
+/* Mobile nav (< 860px): wordmark · Menu, then the list. */
 .mrr-mnav {
   position: relative;
   margin-bottom: 10px;
@@ -942,11 +890,6 @@ main .mrr-scroll {
   flex-wrap: wrap;
   gap: 8px 12px;
   min-height: 44px;
-}
-.mrr-mnav-regime {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
 }
 .mrr-mnav-menu {
   appearance: none;
@@ -1209,11 +1152,11 @@ main .mrr-scroll {
   padding: 3px 8px;
 }
 .mrr-number:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--link);
   outline-offset: -1px;
 }
 .mrr-number[aria-invalid="true"] {
-  border-color: rgba(218, 54, 51, 0.6);
+  border-color: rgba(240, 80, 63, 0.6); /* --neg at 60% */
 }
 .mrr-number::-webkit-outer-spin-button,
 .mrr-number::-webkit-inner-spin-button {
@@ -1305,7 +1248,8 @@ main .mrr-scroll {
   font-size: 11px;
   line-height: 1.6;
   letter-spacing: 0.03em;
-  color: var(--text-4);
+  /* --text-3, not --text-4: 11px words must clear AA (Phase 10, G18). */
+  color: var(--text-3);
   max-width: 1100px;
 }
 
@@ -1546,7 +1490,9 @@ main .mrr-scroll {
    opened block sixth. */
 .mrr-news-row {
   display: grid;
-  grid-template-columns: 60px 86px minmax(0, 1fr) 148px 96px;
+  /* The score cell ("Sig 3.4 / 5") measures 102px; a fixed 96px track
+     spilled 6px at every width (Phase 10 verifier). */
+  grid-template-columns: 60px 86px minmax(0, 1fr) 148px minmax(96px, max-content);
   gap: 12px;
   align-items: center;
   min-height: 42px;
@@ -1726,14 +1672,35 @@ main .mrr-scroll {
 
 /* ── Responsive (spec §2; `.98` upper bounds like useBreakpoint.ts) ─────── */
 
-/* Below 1200 the strip becomes two columns, the hero row stacks the summary
-   card under the hero, and the hero itself goes single-column. TabHero reads
-   --hero-cols inline (var with the two-column fallback), so overriding the
-   token here beats its inline style without !important. */
-@media (max-width: 1199.98px) {
+/* Below 1620 the strip goes two-up: its four desk tracks (325 / 332 / 332 /
+   1fr) need 1037px plus about 323px for the freshness card's two lines, so
+   at 1440 the freshness column was 156px (the lines wrapped word by word)
+   and at 1280 it was 0px (the card spilled past the viewport). 1672 keeps
+   the four columns (Phase 10 verifier, QUESTIONS 116). */
+@media (max-width: 1619.98px) {
   .mrr-strip {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* Below 1520 the hero's inner grid stacks the copy over the chart. The hero
+   row stays two columns down to 1200, and the chart column is the viewport
+   minus 1321px (sidebar 196, main padding 40, scrollbar 11, summary card
+   432, row gap 16, hero padding 62, copy column 540, inner gap 24): 0px at
+   1280 and 119px at 1440, under the 200px floor until 1520 (checklist 10
+   G1; Phase 10 verifier, QUESTIONS 117). TabHero reads --hero-cols inline
+   (var with the two-column fallback), so overriding the token here beats
+   its inline style without !important. */
+@media (max-width: 1519.98px) {
+  .mrr-hero {
+    --hero-cols: 1fr;
+  }
+}
+
+/* Below 1200 the hero row stacks the summary card under the hero, and the
+   hero itself stays single-column (the 1520 step above already set it; the
+   line is kept so the cascade below 1200 reads on its own). */
+@media (max-width: 1199.98px) {
   .mrr-hero-row {
     grid-template-columns: 1fr;
   }
@@ -1742,6 +1709,12 @@ main .mrr-scroll {
   }
   .mrr-dash-levels {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  /* Glance tiles two-up below 1200 (Phase 10 verifier): four-up leaves 176px
+     tiles at 1024 (main 777px) and the value cell spills; two-up needs a
+     786px main, so the rule sits with the other sub-1200 stacks. */
+  .mrr-dash-glance {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .mrr-dash-bottom {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1755,8 +1728,15 @@ main .mrr-scroll {
   .mrr-credit-ladder-row {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* 256px, not 200: a SignalCard's value row is the number beside a fixed
+     118px sparkline and an 8px gap, so a 200px tile (three 234px columns
+     at 768; three 213px columns at 900) left 74px or less for a number that
+     needs 77 to 89px ("265 bps", "1076 bps"). 256px keeps 222px inside the
+     tile, 96px for the number; the row self-fits to two columns at 768 and
+     in the 860 to 1023 band, three at 1024 to 1199, five above (Phase 10
+     verifier). */
   .mrr-credit-monitor {
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(256px, 1fr));
   }
   .mrr-rec-inputs {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1830,8 +1810,7 @@ main .mrr-scroll {
   .mrr-hero {
     --hero-pad: 18px 16px 16px;
   }
-  .mrr-dash-levels,
-  .mrr-dash-glance {
+  .mrr-dash-levels {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .mrr-dash-bottom {
@@ -1935,9 +1914,45 @@ main .mrr-scroll {
   }
 }
 
+/* ── Reduced motion (spec §0 "Honor reduced motion"): one block, last in the
+   sheet so it outranks every rule above at equal specificity. Merged in
+   Phase 10 from the three blocks that had grown with the shell; every rule
+   survives. motion.css silences the pulse and caret keyframes; the
+   components set the same animations inline (SignalCard's Triggered dot,
+   StatTile's live dot, IntelBanner's dot, the hero dot), so the attribute
+   matches on the inline styles catch those and the quote cards' tick flash.
+   The refill match is `transition: transform` because GaugeBar and
+   ProbabilityBar animate scaleX (owner ruling 2026-08-06); they are the only
+   inline transform transitions in the app. Colour and background eases are
+   motion too: `a` covers base.css's global link colour ease, the attribute
+   matches the two inline ones (LandingPage's CTA background, TabBar's tab
+   colour). The footer live dot, the news arrival flash and the live-rate
+   switch knob close the list. Not a global animation kill: state changes
+   still render, instantly; the mint glow is a static box-shadow and stays. */
 @media (prefers-reduced-motion: reduce) {
+  .jargon::after {
+    transition: none;
+  }
+  [style*="mrr-flash"],
   [style*="mrr-pulse"] {
     animation: none !important;
+  }
+  [style*="transition: transform"],
+  [style*="transition:transform"] {
+    transition: none !important;
+  }
+  a,
+  [style*="transition: background"],
+  [style*="transition:background"],
+  [style*="transition: color"],
+  [style*="transition:color"] {
+    transition: none !important;
+  }
+  .mrr-dot {
+    animation: none !important;
+  }
+  .mrr-news-new {
+    animation: none;
   }
   .mrr-switch > i {
     transition: none;

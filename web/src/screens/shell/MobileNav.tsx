@@ -1,16 +1,17 @@
 /**
  * MobileNav: every destination, discoverable, on a phone (2026-09-05;
  * restyled for the redesign, Phase 1). Below 860 px the sidebar is not
- * rendered and this row takes its place: the wordmark link, the transitional
- * regime pill and a "Menu" button with aria-expanded that toggles a plain
- * list of the seven tabs plus Methodology; the active route carries
- * aria-current. Not a modal: it is part of the page, closes on navigation,
- * and never hides the alerts trigger or the regime pill behind it. The open
+ * rendered and this row takes its place: the wordmark link and a "Menu"
+ * button with aria-expanded that toggles a plain list of the seven tabs plus
+ * Methodology; the active route carries aria-current. Not a modal: it is part
+ * of the page, closes on navigation, and never hides the alerts trigger
+ * behind it. (The transitional regime pill that shared the row left in Phase
+ * 10, checklist 10 B.8.) The open
  * list ends with "Jump to a section" (the palette) and a collapsed Watchlist
  * disclosure so the saved watchlist exists at every width (checklist I.18).
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import Disclosure from "../shared/Disclosure";
 import { METHODOLOGY_SLUG, TABS } from "./sections";
@@ -37,12 +38,9 @@ function readWatchlistCount(): number | null {
 export default function MobileNav({
   activeSlug,
   onOpenPalette,
-  regime,
 }: {
   activeSlug: string;
   onOpenPalette?: () => void;
-  /** The transitional regime pill (checklist row 13), rendered in the row. */
-  regime?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -71,7 +69,6 @@ export default function MobileNav({
     <nav aria-label="Primary" className="mrr-mnav">
       <div className="mrr-mnav-row">
         <Wordmark compact />
-        {regime ? <div className="mrr-mnav-regime">{regime}</div> : null}
         <button
           type="button"
           className="mrr-mnav-menu"

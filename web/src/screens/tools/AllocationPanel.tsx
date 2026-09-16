@@ -143,7 +143,7 @@ export default function AllocationPanel() {
   if (!a) {
     return (
       <Card>
-        <StateNote loading={q.isLoading} error={q.isError}>
+        <StateNote live loading={q.isLoading} error={q.isError}>
           {q.isLoading
             ? "Building ~24 years of monthly return history; a first load can take up to a minute."
             : undefined}

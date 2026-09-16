@@ -189,7 +189,7 @@ export default function MacroCharts({ history, recession, credit, onOpenChange }
                     series={[
                       {
                         label: "2s10s",
-                        color: "var(--accent)",
+                        color: "var(--link)",
                         points: (recession.data?.yield_curve_series ?? []).map((p) => ({ x: p.date, y: p.value })),
                       },
                     ]}
@@ -246,7 +246,7 @@ export default function MacroCharts({ history, recession, credit, onOpenChange }
                     series={[
                       {
                         label: "IG",
-                        color: "var(--accent)",
+                        color: "var(--link)",
                         points: (ig?.history ?? []).map((p) => ({ x: p.date, y: p.value * 100 })),
                       },
                       {

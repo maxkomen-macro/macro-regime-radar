@@ -30,7 +30,7 @@ export function TabBar({ tabs = [], active, onChange, touch = false, style, ...r
               appearance: "none",
               background: "none",
               border: "none",
-              borderBottom: `2px solid ${on ? "var(--accent)" : "transparent"}`,
+              borderBottom: `2px solid ${on ? "var(--link)" : "transparent"}`,
               color: on ? "var(--text)" : "var(--text-muted)",
               fontFamily: "var(--font-ui)",
               fontSize: "var(--fs-body)",

@@ -18,12 +18,11 @@
 --r-md:6px;   /* the old card / badge / button default */
 
 /* Strokes: 1px is the house border. The .5px hairline survives only in inline
-   strings on screens not yet restyled; retire --bw-hair at Phase 10. */
---bw-hair:.5px; /* @kind spacing */
+   strings on screens not yet restyled. --bw-hair and its one consumer
+   --border-card were retired in Phase 10 (zero consumers under web/src). */
 --bw:1px; /* @kind spacing */
 --bw-accent:3px; /* @kind spacing */ /* left accent bar on intelligence / read-through panels */
 
---border-card:var(--bw-hair) solid var(--line-hair); /* @kind other */
 --border-strong:var(--bw) solid var(--line); /* @kind other */
 --divider:var(--bw) solid var(--line-hair); /* @kind other */
 

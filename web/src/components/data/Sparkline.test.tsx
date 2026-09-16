@@ -71,7 +71,7 @@ describe("Sparkline (checklist 02 B.15)", () => {
     expect(line).toHaveAttribute("stroke-linecap", "round");
     const def = render(<Sparkline values={SERIES} />).container;
     expect(Number(linePath(def)?.getAttribute("stroke-width"))).toBeCloseTo(1.5, 5);
-    expect(linePath(def)).toHaveAttribute("stroke", "var(--accent)");
+    expect(linePath(def)).toHaveAttribute("stroke", "var(--link)");
   });
 
   it("fill=false renders no area path", () => {
@@ -83,7 +83,7 @@ describe("Sparkline (checklist 02 B.15)", () => {
     const flat = render(<Sparkline values={SERIES} width={280} height={40} />).container;
     const area = areaPaths(flat);
     expect(area).toHaveLength(1);
-    expect(area[0]).toHaveAttribute("fill", "var(--accent)");
+    expect(area[0]).toHaveAttribute("fill", "var(--link)");
     expect(Number(area[0].getAttribute("opacity"))).toBeCloseTo(0.1, 5);
     expect(flat.querySelectorAll("path")).toHaveLength(2);
   });

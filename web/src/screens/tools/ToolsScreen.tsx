@@ -67,7 +67,10 @@ export default function ToolsScreen() {
   // the deal would otherwise re-scroll a `#lbo-*` hash while the analyst
   // drags a slider. The hash lands once the tool's data is on the page.
   const ready = active === "lbo" ? deal.run.data != null : alloc.data != null;
-  useHashScroll(ready);
+  // Keyed on the active tool as well: a hash that swaps the sub-tab mounts its
+  // section one commit after the hash changes, so the landing must re-run
+  // then (Phase 10; SubTabs no longer scrolls the page on selection).
+  useHashScroll(`${active}:${ready}`);
 
   const stamp = stampOf(deal.defaults.data);
 

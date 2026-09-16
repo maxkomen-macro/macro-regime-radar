@@ -429,7 +429,7 @@ export default function AssistantPanel({
             ) : (
               messages.map((m, i) => {
                 const isAssistant = m.role === "assistant";
-                const rail = m.error ? "var(--neg)" : "var(--accent)";
+                const rail = m.error ? "var(--neg)" : "var(--link)";
                 return (
                   <div key={i} style={{ marginBottom: 12 }}>
                     <div
@@ -438,7 +438,7 @@ export default function AssistantPanel({
                         color: m.error
                           ? "var(--neg-text)"
                           : isAssistant
-                            ? "var(--accent)"
+                            ? "var(--link)"
                             : "var(--text-muted)",
                       }}
                     >
@@ -524,7 +524,7 @@ export default function AssistantPanel({
               disabled={streaming || !draft.trim()}
               style={{
                 ...buttonBase,
-                color: streaming || !draft.trim() ? "var(--text-muted)" : "var(--accent)",
+                color: streaming || !draft.trim() ? "var(--text-muted)" : "var(--link)",
                 minHeight: 28,
                 fontSize: "var(--fs-meta)",
                 letterSpacing: "var(--ls-micro)",

@@ -160,7 +160,7 @@ export default function DeskRead({
       style={{
         background: "var(--surface)",
         border: "0.5px solid var(--line-hair)",
-        borderLeft: "3px solid var(--accent)",
+        borderLeft: "3px solid var(--link)",
         borderRadius: "var(--r-md)",
         padding: isNarrow ? "14px 14px 12px" : "18px 22px 16px",
         display: "grid",
@@ -187,7 +187,7 @@ export default function DeskRead({
                 width: 6,
                 height: 6,
                 borderRadius: "50%",
-                background: live ? "var(--pos)" : "var(--text-faint)",
+                background: live ? "var(--pos)" : "var(--text-4)",
                 animation: live ? "mrr-pulse var(--pulse-period) var(--ease-in-out) infinite" : "none",
               }}
             />

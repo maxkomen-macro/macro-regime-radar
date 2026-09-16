@@ -126,7 +126,7 @@ function DivergenceTile({ m }: { m: RecessionMetrics }): JSX.Element {
             />
           ) : null}
         </div>
-        <div style={{ ...mono, display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10, color: "var(--text-4)", marginTop: 4 }}>
+        <div style={{ ...mono, display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10, color: "var(--text-3)", marginTop: 4 }}>
           <span>Macro more worried</span>
           <span>±20 material</span>
           <span>Markets more worried</span>

@@ -170,7 +170,7 @@ function PricedPanel({ priced }: { priced: UseQueryResult<PricedMetric[]> }) {
         </div>
       )}
       <div>
-        <Link to="/app/markets#whats-priced-full" style={{ fontSize: "var(--fs-body-s)", color: "var(--accent)" }}>
+        <Link to="/app/markets#whats-priced-full" style={{ fontSize: "var(--fs-body-s)", color: "var(--link)" }}>
           → See all in Markets
         </Link>
       </div>

@@ -17,6 +17,11 @@
  * unchanged, and hints are still dropped when the row wraps. Hover brightens
  * the unselected label through local state (the label colour is inline, so a
  * stylesheet :hover could not override it).
+ *
+ * 2026-09-15 (redesign Phase 10, checklist 10 A8 / G18): each tab carries an
+ * accessible name of "label, hint" (or the label alone) while its visible text
+ * is unchanged; the unselected hint reads at --text-3 so the 10.5px words clear
+ * AA (--text-4 stays for dots, dashes and disabled options only).
  */
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
@@ -70,9 +75,20 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs.length, wrap]);
 
-  // The selected view is always brought into view (keyboard, deep link, resize).
+  // The selected view is always brought into view (keyboard, deep link, resize)
+  // by scrolling the strip itself. `scrollIntoView` would also move the
+  // browser's sequential-focus starting point to the tab, so the first Tab
+  // on the route landed inside the panel instead of on the skip link
+  // (Phase 10 a11y pass, B.4 #1).
   useEffect(() => {
-    refs.current[idx]?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+    const list = listRef.current;
+    const el = refs.current[idx];
+    if (list && el) {
+      const lb = list.getBoundingClientRect();
+      const eb = el.getBoundingClientRect();
+      if (eb.left < lb.left) list.scrollLeft -= lb.left - eb.left;
+      else if (eb.right > lb.right) list.scrollLeft += eb.right - lb.right;
+    }
     measure();
   }, [idx]);
 
@@ -131,6 +147,7 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
                 id={`${uid}-tab-${t.id}`}
                 aria-selected={on}
                 aria-controls={`${uid}-panel-${t.id}`}
+                aria-label={t.hint ? `${t.label}, ${t.hint}` : t.label}
                 tabIndex={on ? 0 : -1}
                 onClick={() => onChange(t.id)}
                 onMouseEnter={() => setHover(t.id)}
@@ -175,7 +192,7 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
                       lineHeight: 1.4,
                       letterSpacing: ".08em",
                       textTransform: "uppercase",
-                      color: on ? "var(--mint)" : "var(--text-4)",
+                      color: on ? "var(--mint)" : "var(--text-3)",
                       marginTop: 1,
                     }}
                   >

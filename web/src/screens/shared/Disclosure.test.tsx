@@ -134,7 +134,8 @@ describe("Disclosure (checklist 02 B.14)", () => {
     expect(line).toHaveClass("mrr-disclosure-line");
     expect(line).toHaveAttribute("id", "credit-footer");
     expect(css(line)).toMatch(/var\(--font-mono\)/);
-    expect(line.style.color).toBe("var(--text-4)");
+    // DisclosureLine words lifted to --text-3 (Phase 10, G18).
+    expect(line.style.color).toBe("var(--text-3)");
     expect(line.style.marginTop).toBe("18px");
     expect(line.style.maxWidth).toBe("1100px");
     expect(css(line)).toMatch(/letter-spacing:\s*\.03em/);

@@ -304,7 +304,7 @@ export default function SymbolSearch({
                 </>
               ) : (
                 <>
-                  <span aria-hidden="true" style={{ ...mono, fontSize: "var(--fs-micro)", color: i === active ? "var(--accent)" : "var(--text-faint)", width: 10 }}>
+                  <span aria-hidden="true" style={{ ...mono, fontSize: "var(--fs-micro)", color: i === active ? "var(--link)" : "var(--text-4)", width: 10 }}>
                     {i === active ? "▸" : ""}
                   </span>{" "}
                   <span style={{ ...mono, fontSize: "var(--fs-body-s)", fontWeight: 600, color: "var(--text)", minWidth: 72 }}>

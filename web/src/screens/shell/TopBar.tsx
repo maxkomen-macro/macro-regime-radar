@@ -1,44 +1,18 @@
 /**
- * Top bar (redesign Phase 1, spec §2): the transitional regime pill and odds
- * bar in the left cell (checklist row 13, kept until every tab's summary card
- * carries the regime row), the 368 px palette trigger in the centre, and on
- * the right the "Ask the analyst" chip followed by the alerts bell. No avatar
- * (decision 6). The bell and the chip must stay inside this <header>: the
- * e2e harvest finds them by `header button[...]`.
+ * Top bar (redesign Phase 1, spec §2): the 368 px palette trigger in the
+ * centre column and, on the right, the "Ask the analyst" chip followed by the
+ * alerts bell. No avatar (decision 6). The transitional regime pill and odds
+ * bar that filled the left cell left in Phase 10 (checklist 10 B.8, QUESTIONS
+ * 4): every tab's summary card carries the regime row, and the regime's
+ * loading and unavailable words live in the hero states. The bell and the
+ * chip must stay inside this <header>: the e2e harvest finds them by
+ * `header button[...]`.
  */
 
 import type { RefObject } from "react";
-import type { UseQueryResult } from "@tanstack/react-query";
-import { ProbabilityBar, RegimeBadge } from "../../components";
 import { useAlerts } from "../../api/queries";
-import type { Regime } from "../../api/types";
-import { fmtMonYr } from "../../lib/format";
-import { mono } from "../shared/screen-ui";
 import { BellIcon, SearchIcon } from "./nav-icons";
-import { alertSummary, regimeProbs, STATUS_COLOR } from "./shell-status";
-
-/** Regime badge with the stored dominant probability and, at desk width, the
- * 4 px four-way odds bar. Rendered by the top bar and by MobileNav's row. */
-export function RegimePill({ regime, compact = false }: { regime: UseQueryResult<Regime>; compact?: boolean }) {
-  const { probs, dominantProb } = regimeProbs(regime.data);
-  if (!regime.data) {
-    return (
-      <span className="mrr-regime-note" style={{ ...mono, fontSize: "var(--fs-body-s)", color: STATUS_COLOR.text3 }}>
-        {regime.isError ? "Regime unavailable: API error" : "Reading regime…"}
-      </span>
-    );
-  }
-  return (
-    <span className="mrr-regime">
-      <span
-        title={`Current regime: ${regime.data.label} at ${Math.round((dominantProb ?? 0) * 100)}% model odds · macro data ${fmtMonYr(regime.data.date)}`}
-      >
-        <RegimeBadge label={regime.data.label} size="sm" confidence={dominantProb} />
-      </span>
-      {!compact && probs ? <ProbabilityBar probs={probs} height={4} showLegend={false} style={{ width: 160 }} /> : null}
-    </span>
-  );
-}
+import { alertSummary, STATUS_COLOR } from "./shell-status";
 
 /** The bell. Its accessible name carries the whole alert sentence; the count
  * badge shows only when there were breaches in the last 7 days; and it never
@@ -79,9 +53,6 @@ export function AlertsTrigger({ onOpen, open = false }: { onOpen: () => void; op
 }
 
 interface TopBarProps {
-  regime: UseQueryResult<Regime>;
-  /** Below 860 px the pill lives in MobileNav's row, so the left cell is omitted. */
-  compact: boolean;
   paletteOpen: boolean;
   onOpenPalette: () => void;
   assistantOpen: boolean;
@@ -92,8 +63,6 @@ interface TopBarProps {
 }
 
 export default function TopBar({
-  regime,
-  compact,
   paletteOpen,
   onOpenPalette,
   assistantOpen,
@@ -104,11 +73,6 @@ export default function TopBar({
 }: TopBarProps) {
   return (
     <header className="mrr-top">
-      {!compact ? (
-        <div className="mrr-top-l">
-          <RegimePill regime={regime} />
-        </div>
-      ) : null}
       <button
         type="button"
         onClick={onOpenPalette}
