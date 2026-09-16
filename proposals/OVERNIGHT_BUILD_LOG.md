@@ -433,3 +433,24 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Needs backend (hidden, logged): rate × leverage grid; IRR-vs-rate line (flat under the served model); year-ago rows;
   the "50 bp" sentence; the cash-sweep caption.
 - Rollback: `git switch redesign/08-news && git branch -D redesign/09-tools`
+
+### redesign/10-states-a11y — d05db40 (Phase 10)
+- What changed: states, responsive and accessibility pass on the finished app. The transitional top-bar regime pill and
+  odds bar removed (summary cards carry the regime row); aliases --accent/--accent-dim/--accent-line/--text-faint/--warn/
+  --bw-hair/--border-card retired at zero consumers; reduced-motion blocks merged. Dashboard signal-card error branch and
+  cadence-bearing empty copy, calendar/news empty notes with their cadence, Methodology h1 and empty note, StateNote live on
+  the scenario result and the allocation status line, SubTabs "label, hint" names, Landing dot on --mint. Measured responsive
+  steps (strip two-up < 1620, hero inner grid stacked < 1520, glance two-up < 1200, monitor tile floor 256 px, news score
+  column, phone-width meta wrapping, kit fixture wells). A11y: SubTabs scroll their own strip (first Tab = skip link), typed
+  slider field reverts on Escape, running micro text off --text-4 to --text-3, priced tables named, Tools hash landing keyed
+  on the active tool.
+- Tests: vitest 781 → 799 (77 files) · e2e 143 → 177 + 11 capture (responsive 5, a11y 22, states 7 new) · typecheck 0 ·
+  build clean. Parity 4/4, no new rename.
+- Verify loops: 1 (nine verifier fixes; see QUESTIONS 116–131). Browser: Playwright MCP at 1672/1440/1280/1024/768/390,
+  keyboard-only pass, reduced-motion emulation, stopped-API cell on Markets and Dashboard; full suite 188 tests with
+  captures (16.7 min).
+- Captures: docs/redesign-v2/captures/redesign-10-states-a11y/ (186 PNG + a11y-report/tab-order/responsive-report/console
+  JSON).
+- Needs backend/build (logged): snapshot coverage on Credit/Recession/Tools/most of Regime Lab; a served next-run time; the
+  relay-down state in the e2e; a current FRED daily verdict; a static pre-hydration shell; colour-only odds lines.
+- Rollback: `git switch redesign/09-tools && git branch -D redesign/10-states-a11y`
