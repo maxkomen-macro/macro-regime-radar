@@ -59,7 +59,7 @@ def tv_symbol_overview(
         "hideSymbolLogo":   False,
         "scalePosition":    "right",
         "scaleMode":        "Normal",
-        "fontFamily":       "-apple-system,BlinkMacSystemFont,Trebuchet MS,Roboto,Ubuntu,sans-serif",
+        "fontFamily":       "'Manrope',-apple-system,BlinkMacSystemFont,Trebuchet MS,Roboto,Ubuntu,sans-serif",
         "fontSize":         "10",
         "noTimeScale":      False,
         "valuesTracking":   "1",

@@ -25,10 +25,10 @@ from components.db_helpers import _query, load_backtest_results, load_market_dai
 from components.shared_styles import section_header, subsection_header
 
 _REGIME_COLORS = {
-    "Goldilocks":     "#2ecc71",
-    "Overheating":    "#e67e22",
-    "Stagflation":    "#e74c3c",
-    "Recession Risk": "#8b5cf6",
+    "Goldilocks":     "#3dbe7a",
+    "Overheating":    "#e0812f",
+    "Stagflation":    "#e05252",
+    "Recession Risk": "#c69842",
 }
 
 HORIZONS = ["1M", "3M", "6M", "12M"]
@@ -169,7 +169,7 @@ def _render_avg_return_chart(df: pd.DataFrame) -> None:
     fig.update_layout(
         height=320,
         margin=dict(l=20, r=20, t=20, b=40),
-        template="plotly_white",
+        template="macro_rr",
         legend=dict(orientation="h", y=-0.3, font=dict(size=10)),
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -201,7 +201,7 @@ def _render_hit_rate_chart(df: pd.DataFrame) -> None:
     fig.update_layout(
         height=320,
         margin=dict(l=20, r=20, t=20, b=40),
-        template="plotly_white",
+        template="macro_rr",
         legend=dict(orientation="h", y=-0.3, font=dict(size=10)),
         yaxis=dict(range=[0, 105]),
     )
@@ -279,14 +279,14 @@ def _regime_segments(regimes_daily: pd.Series) -> list[tuple[pd.Timestamp, pd.Ti
 def _add_regime_shading_mpl(ax, regimes_daily: pd.Series) -> None:
     """Shade each regime segment on a matplotlib axes."""
     for start, end, label in _regime_segments(regimes_daily):
-        color = _REGIME_COLORS.get(label, "#8b949e")
+        color = _REGIME_COLORS.get(label, "#9aa5c8")
         ax.axvspan(start, end, color=color, alpha=0.10, linewidth=0)
 
 
 def _add_regime_shading_plotly(fig: go.Figure, regimes_daily: pd.Series) -> None:
     """Shade regime segments as background rects on a plotly figure."""
     for start, end, label in _regime_segments(regimes_daily):
-        color = _REGIME_COLORS.get(label, "#8b949e")
+        color = _REGIME_COLORS.get(label, "#9aa5c8")
         fig.add_vrect(
             x0=start, x1=end,
             fillcolor=color, opacity=0.10, layer="below", line_width=0,
@@ -394,7 +394,7 @@ def _render_factor_attribution() -> None:
     for label, color in _REGIME_COLORS.items():
         legend_html_parts.append(
             f"<span style='display:inline-flex;align-items:center;margin-right:16px;"
-            f"font-size:11px;color:#8b949e;'>"
+            f"font-size:11px;color:#9aa5c8;'>"
             f"<span style='display:inline-block;width:12px;height:12px;background:{color};"
             f"opacity:0.4;margin-right:6px;border-radius:2px;'></span>{label}</span>"
         )
@@ -422,24 +422,24 @@ def _render_factor_attribution() -> None:
 
     fig = go.Figure()
     factor_colors = {
-        "Value":    "#4a9eff",
-        "Momentum": "#2ecc71",
-        "Quality":  "#8b5cf6",
-        "Size":     "#e67e22",
+        "Value":    "#c69842",
+        "Momentum": "#3dbe7a",
+        "Quality":  "#c69842",
+        "Size":     "#e0812f",
         "Low Vol":  "#1abc9c",
     }
     for col in betas.columns:
         fig.add_trace(go.Scatter(
             x=betas.index, y=betas[col],
             mode="lines", name=col,
-            line=dict(color=factor_colors.get(col, "#e6edf3"), width=1.5),
+            line=dict(color=factor_colors.get(col, "#f2f4fa"), width=1.5),
         ))
     _add_regime_shading_plotly(fig, regimes_daily.loc[betas.index.min():betas.index.max()])
     fig.add_hline(y=0, line_dash="dot", line_color="#555", line_width=1)
     fig.update_layout(
         height=360,
         margin=dict(l=20, r=20, t=20, b=40),
-        template="plotly_white",
+        template="macro_rr",
         legend=dict(orientation="h", y=-0.2, font=dict(size=10)),
         xaxis=dict(title=None),
         yaxis=dict(title="Beta"),

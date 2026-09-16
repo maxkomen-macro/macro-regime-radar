@@ -21,7 +21,7 @@ from components.shared_styles import section_header, SIGNAL_DISPLAY_NAMES
 
 _ET = ZoneInfo("America/New_York")
 
-IMP_COLORS = {"high": "#e74c3c", "medium": "#f39c12", "low": "#95a5a6"}
+IMP_COLORS = {"high": "#e05252", "medium": "#e0812f", "low": "#8a93ad"}
 IMP_ICONS  = {"high": "🔴", "medium": "🟡", "low": "⚪"}
 LEVEL_ICONS = {"risk": "🔴", "watch": "🟡", "info": "🔵"}
 
@@ -110,13 +110,13 @@ def _render_events_table(df: pd.DataFrame, full: bool = False) -> None:
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:10px;'
             f'padding:8px 12px;margin-bottom:6px;border-radius:6px;'
-            f'background:#161b22;border:0.5px solid #21262d;border-left:3px solid {color}">'
+            f'background:#0a1650;border:0.5px solid #172561;border-left:3px solid {color}">'
             f'<div style="flex:1">'
-            f'<span style="font-size:13px;font-weight:{weight};color:#e6edf3">{name}</span><br>'
-            f'<span style="font-size:11px;color:#8899aa">{time_str}</span>'
+            f'<span style="font-size:13px;font-weight:{weight};color:#f2f4fa">{name}</span><br>'
+            f'<span style="font-size:11px;color:#9aa5c8">{time_str}</span>'
             f'</div>'
             f'<div style="text-align:right">'
-            f'<span style="font-size:12px;color:#c9d1d9;font-weight:600">{days_str}</span><br>'
+            f'<span style="font-size:12px;color:#c8cfe6;font-weight:600">{days_str}</span><br>'
             f'<span style="font-size:11px;color:{color}">{imp.upper()}</span>'
             f'</div>'
             f'</div>',
@@ -172,8 +172,8 @@ def _render_what_to_watch(
         return
 
     st.markdown(
-        '<div style="background:#161b22;border:0.5px solid #21262d;border-left:4px solid #4a9eff;'
-        'padding:16px 20px;border-radius:6px;line-height:1.8;color:#c9d1d9">',
+        '<div style="background:#0a1650;border:0.5px solid #172561;border-left:4px solid #c69842;'
+        'padding:16px 20px;border-radius:6px;line-height:1.8;color:#c8cfe6">',
         unsafe_allow_html=True,
     )
     for item in items:

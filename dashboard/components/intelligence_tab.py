@@ -50,16 +50,16 @@ from src.utils.format import ordinal
 _BASE_CSS = """
 <style>
   :root {
-    --accent:   #4a9eff;
-    --green:    #2ecc71;
-    --red:      #e74c3c;
-    --orange:   #e67e22;
-    --bg-card:  rgba(13,17,23,0.97);
-    --border:   rgba(48,54,61,0.85);
-    --text:     #e6edf3;
-    --muted:    #8b949e;
+    --accent:   #c69842;
+    --green:    #3dbe7a;
+    --red:      #e05252;
+    --orange:   #e0812f;
+    --bg-card:  rgba(0,11,61,0.97);
+    --border:   rgba(30,46,110,0.85);
+    --text:     #f2f4fa;
+    --muted:    #9aa5c8;
   }
-  body { margin:0; padding:0; background:transparent; color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  body { margin:0; padding:0; background:transparent; color:var(--text); font-family:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
   .card {
     background: var(--bg-card);
     border: 0.5px solid var(--border);
@@ -93,15 +93,9 @@ _BASE_CSS = """
     animation: pulse 2s infinite;
   }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-  @keyframes glow-green {
-    0%,100%{box-shadow:0 0 2px rgba(46,204,113,0.3)} 50%{box-shadow:0 0 5px rgba(46,204,113,0.4)}
-  }
-  @keyframes glow-blue {
-    0%,100%{box-shadow:0 0 2px rgba(74,158,255,0.3)} 50%{box-shadow:0 0 5px rgba(74,158,255,0.4)}
-  }
-  @keyframes glow-orange {
-    0%,100%{box-shadow:0 0 2px rgba(230,126,34,0.3)} 50%{box-shadow:0 0 5px rgba(230,126,34,0.4)}
-  }
+  @keyframes glow-green { 0%,100%{box-shadow:none} }
+  @keyframes glow-blue { 0%,100%{box-shadow:none} }
+  @keyframes glow-orange { 0%,100%{box-shadow:none} }
   @keyframes fill-bar { from{width:0} to{width:var(--target-w)} }
 </style>
 """
@@ -121,7 +115,7 @@ def _render_narrative_card(takeaway: dict, duration: dict) -> None:
     }.get(conviction, "none")
 
     signal      = takeaway["primary_signal"]
-    signal_color = "#2ecc71" if signal == "Risk-On" else ("#e74c3c" if signal == "Risk-Off" else "#4a9eff")
+    signal_color = "#3dbe7a" if signal == "Risk-On" else ("#e05252" if signal == "Risk-Off" else "#c69842")
     dur_months  = duration.get("months_in_regime", 0)
     dur_status  = duration.get("status", "Early")
     narrative   = takeaway["narrative"]
@@ -160,7 +154,7 @@ def _render_narrative_card(takeaway: dict, duration: dict) -> None:
 def _render_regime_gauge(state: dict, probs: dict) -> None:
     """Animated SVG semicircular gauge."""
     label    = state["label"]
-    regime_c = REGIME_COLORS.get(label, "#4a9eff")
+    regime_c = REGIME_COLORS.get(label, "#c69842")
     probs100 = state["probs"]  # stored softmax prob_* columns, {display name: int}
     top_prob = probs100.get(label, 30)
 
@@ -178,7 +172,7 @@ def _render_regime_gauge(state: dict, probs: dict) -> None:
     # Regime pill HTML
     pills_html = ""
     for regime, pct in sorted(probs100.items(), key=lambda x: -x[1]):
-        c = REGIME_COLORS.get(regime, "#8b949e")
+        c = REGIME_COLORS.get(regime, "#9aa5c8")
         short = regime.replace("Recession Risk", "Rec. Risk")
         active = (f"border:1px solid {c};background:rgba({_hex_to_rgba(c)},0.15);"
                   if regime == label else "border:0.5px solid rgba(255,255,255,0.1);background:rgba(0,0,0,0.2);")
@@ -212,7 +206,7 @@ def _render_regime_gauge(state: dict, probs: dict) -> None:
       <!-- Percentage text -->
       <text x="100" y="85" text-anchor="middle" font-size="26" font-weight="700"
             fill="{regime_c}">{top_prob}%</text>
-      <text x="100" y="102" text-anchor="middle" font-size="11" fill="#8b949e">{label}</text>
+      <text x="100" y="102" text-anchor="middle" font-size="11" fill="#9aa5c8">{label}</text>
     </svg>
   </div>
   <div style="text-align:center;padding:4px 0;line-height:1.8;">
@@ -235,11 +229,11 @@ def _render_playbook_card(playbook: dict) -> None:
         ow_bars += f"""
         <div style="margin-bottom:6px;">
           <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
-            <span style="color:#2ecc71;">▲ {item['sector']}</span>
+            <span style="color:#3dbe7a;">▲ {item['sector']}</span>
           </div>
           <div style="background:rgba(255,255,255,0.06);border-radius:3px;height:6px;overflow:hidden;">
             <div style="width:{w}%;height:100%;
-                        background:linear-gradient(90deg,rgba(46,204,113,0.3),rgba(46,204,113,0.6));
+                        background:linear-gradient(90deg,rgba(61,190,122,0.3),rgba(61,190,122,0.6));
                         border-radius:3px;animation:fill-bar 0.8s ease forwards;
                         --target-w:{w}%;"></div>
           </div>
@@ -250,7 +244,7 @@ def _render_playbook_card(playbook: dict) -> None:
         w = min(25, round(item["strength"] * 0.40))  # cap UW bars at 25% max width — visually distinct from OW
         uw_bars += f"""
         <div style="margin-bottom:6px;">
-          <div style="font-size:11px;margin-bottom:3px;color:#e74c3c;">▼ {item['sector']}</div>
+          <div style="font-size:11px;margin-bottom:3px;color:#e05252;">▼ {item['sector']}</div>
           <div style="background:rgba(255,255,255,0.06);border-radius:3px;height:6px;overflow:hidden;">
             <div style="width:{w}%;height:100%;
                         background:linear-gradient(90deg,rgba(231,76,60,0.3),rgba(231,76,60,0.5));
@@ -263,7 +257,7 @@ def _render_playbook_card(playbook: dict) -> None:
     for asset, data in playbook["asset_performance"].items():
         ret = data["avg_return"]
         hit = data["hit_rate"]
-        ret_color = "#2ecc71" if ret > 0 else "#e74c3c"
+        ret_color = "#3dbe7a" if ret > 0 else "#e05252"
         sign = "+" if ret > 0 else ""
         perf_rows += f"""
         <tr>
@@ -273,8 +267,8 @@ def _render_playbook_card(playbook: dict) -> None:
         </tr>"""
 
     risks_html = "".join(f"<li style='margin-bottom:4px;color:var(--muted);font-size:12px;'>{r}</li>" for r in playbook["key_risks"])
-    warnings_html = "".join(f"<li style='margin-bottom:4px;color:#e67e22;font-size:12px;'>{w}</li>" for w in playbook.get("warning_signs", []))
-    catalysts_html = "".join(f"<li style='margin-bottom:4px;color:#e74c3c;font-size:12px;'>{c}</li>" for c in playbook.get("typical_catalysts", []))
+    warnings_html = "".join(f"<li style='margin-bottom:4px;color:#e0812f;font-size:12px;'>{w}</li>" for w in playbook.get("warning_signs", []))
+    catalysts_html = "".join(f"<li style='margin-bottom:4px;color:#e05252;font-size:12px;'>{c}</li>" for c in playbook.get("typical_catalysts", []))
 
     html = f"""{_BASE_CSS}
 <style>
@@ -293,11 +287,11 @@ def _render_playbook_card(playbook: dict) -> None:
       {ow_bars}
       {uw_bars}
       <div style="margin-top:10px;">
-        <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:#e67e22;margin-bottom:6px;">Warning Signs</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:#e0812f;margin-bottom:6px;">Warning Signs</div>
         <ul style="margin:0;padding-left:16px;">{warnings_html}</ul>
       </div>
       <div style="margin-top:10px;">
-        <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:#e74c3c;margin-bottom:6px;">Typical Catalysts</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:#e05252;margin-bottom:6px;">Typical Catalysts</div>
         <ul style="margin:0;padding-left:16px;">{catalysts_html}</ul>
       </div>
     </div>
@@ -350,26 +344,26 @@ def _render_duration_card(duration: dict) -> None:
 
     def _indicator_bar(label: str, val: int, color: str) -> str:
         v = max(0, min(100, val))
-        bar_grad = ("linear-gradient(90deg,#27ae60,#2ecc71)" if v < 40
-                    else ("linear-gradient(90deg,#d35400,#e67e22)" if v < 70
-                    else "linear-gradient(90deg,#c0392b,#e74c3c)"))
+        bar_grad = ("linear-gradient(90deg,#27ae60,#3dbe7a)" if v < 40
+                    else ("linear-gradient(90deg,#d35400,#e0812f)" if v < 70
+                    else "linear-gradient(90deg,#c0392b,#e05252)"))
         return f"""
         <div style="margin-bottom:8px;">
           <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
             <span style="color:var(--muted);">{label}</span>
             <span style="color:var(--text);font-weight:600;">{v}%</span>
           </div>
-          <div style="background:rgba(255,255,255,0.06);border:0.5px solid #30363d;border-radius:3px;height:5px;">
+          <div style="background:rgba(255,255,255,0.06);border:0.5px solid #1e2e6e;border-radius:3px;height:5px;">
             <div style="width:{v}%;height:100%;background:{bar_grad};border-radius:3px;
                         transition:width 0.8s ease;"></div>
           </div>
         </div>"""
 
     status_labels = [
-        ("Early", "#2ecc71", 0),
-        ("Mid-Cycle", "#4a9eff", 50),
-        ("Extended", "#e67e22", 75),
-        ("Long in Tooth", "#e74c3c", 90),
+        ("Early", "#3dbe7a", 0),
+        ("Mid-Cycle", "#c69842", 50),
+        ("Extended", "#e0812f", 75),
+        ("Long in Tooth", "#e05252", 90),
     ]
     labels_html = ""
     for lbl, col, pos in status_labels:
@@ -402,9 +396,9 @@ def _render_duration_card(duration: dict) -> None:
     {labels_html}
   </div>
   <div class="header" style="margin-bottom:6px;">Risk Indicators</div>
-  {_indicator_bar("Momentum", ri['momentum'], "#4a9eff")}
-  {_indicator_bar("Valuation Stretch", ri['valuation'], "#e67e22")}
-  {_indicator_bar("Complacency", ri['sentiment'], "#e74c3c")}
+  {_indicator_bar("Momentum", ri['momentum'], "#c69842")}
+  {_indicator_bar("Valuation Stretch", ri['valuation'], "#e0812f")}
+  {_indicator_bar("Complacency", ri['sentiment'], "#e05252")}
 </div>"""
     components.html(html, height=DURATION_ROW_HEIGHT, scrolling=False)
 
@@ -418,7 +412,7 @@ def _render_transition_card(transition: dict) -> None:
     hrisk    = transition["highest_risk_transition"]
     hprob    = transition["highest_risk_prob"]
     hcolor   = transition["highest_risk_color"]
-    curr_c   = REGIME_COLORS.get(current, "#4a9eff")
+    curr_c   = REGIME_COLORS.get(current, "#c69842")
 
     # Transition arrow boxes
     boxes_html = ""
@@ -496,8 +490,8 @@ def _render_analogues_timeline(analogues: list[dict]) -> None:
                   style="filter:drop-shadow(0 0 2px {color}66);">
           </circle>
           <text x="{x}" y="{y_line - 18}" text-anchor="middle" font-size="11" fill="{color}" font-weight="700">{score}%</text>
-          <text x="{x}" y="{y_line + 22}" text-anchor="middle" font-size="10" fill="#e6edf3">{period}</text>
-          <text x="{x}" y="{y_line + 35}" text-anchor="middle" font-size="9" fill="#4a9eff">→ {next_r}</text>
+          <text x="{x}" y="{y_line + 22}" text-anchor="middle" font-size="10" fill="#f2f4fa">{period}</text>
+          <text x="{x}" y="{y_line + 35}" text-anchor="middle" font-size="9" fill="#c69842">→ {next_r}</text>
         </g>"""
 
     html = f"""{_BASE_CSS}
@@ -563,11 +557,11 @@ def _render_scenario_results(result: dict) -> None:
         disp   = regime.replace("_", " ").title().replace("Risk", "Risk")
         if "recession" in regime:
             disp = "Recession Risk"
-        color  = REGIME_COLORS.get(disp, "#8b949e")
+        color  = REGIME_COLORS.get(disp, "#9aa5c8")
         prob   = result["stressed_regime_probs"].get(regime, 0)
         change = result["prob_changes"].get(regime, 0)
         sign   = "+" if change >= 0 else ""
-        ch_c   = "#2ecc71" if change > 0 else ("#e74c3c" if change < 0 else "#8b949e")
+        ch_c   = "#3dbe7a" if change > 0 else ("#e05252" if change < 0 else "#9aa5c8")
         is_top = disp == result["most_likely_regime"]
         border = f"border:1px solid {color};" if is_top else "border:1px solid rgba(255,255,255,0.08);"
         probs_html += f"""
@@ -582,14 +576,14 @@ def _render_scenario_results(result: dict) -> None:
         f"<li style='margin-bottom:5px;font-size:12px;color:var(--muted);'>{imp}</li>"
         for imp in result.get("positioning_implications", [])
     )
-    s_color = result.get("color", "#4a9eff")
+    s_color = result.get("color", "#c69842")
 
     # Sector implications
     sect = result.get("sector_implications", {})
     ow_list = sect.get("overweight", [])
     uw_list = sect.get("underweight", [])
-    ow_html = "".join(f"<li style='color:#2ecc71;font-size:12px;margin-bottom:3px;'>{s}</li>" for s in ow_list)
-    uw_html = "".join(f"<li style='color:#e74c3c;font-size:12px;margin-bottom:3px;'>{s}</li>" for s in uw_list)
+    ow_html = "".join(f"<li style='color:#3dbe7a;font-size:12px;margin-bottom:3px;'>{s}</li>" for s in ow_list)
+    uw_html = "".join(f"<li style='color:#e05252;font-size:12px;margin-bottom:3px;'>{s}</li>" for s in uw_list)
     sector_html = ""
     if ow_list or uw_list:
         sector_html = f"""
@@ -597,11 +591,11 @@ def _render_scenario_results(result: dict) -> None:
     <div class="header" style="margin-bottom:6px;">Sector Implications</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
       <div>
-        <div style="font-size:10px;color:#2ecc71;font-weight:700;margin-bottom:4px;">▲ OVERWEIGHT</div>
+        <div style="font-size:10px;color:#3dbe7a;font-weight:700;margin-bottom:4px;">▲ OVERWEIGHT</div>
         <ul style="margin:0;padding-left:14px;">{ow_html}</ul>
       </div>
       <div>
-        <div style="font-size:10px;color:#e74c3c;font-weight:700;margin-bottom:4px;">▼ UNDERWEIGHT</div>
+        <div style="font-size:10px;color:#e05252;font-weight:700;margin-bottom:4px;">▼ UNDERWEIGHT</div>
         <ul style="margin:0;padding-left:14px;">{uw_html}</ul>
       </div>
     </div>
@@ -673,7 +667,7 @@ def _render_intelligence_dashboard_card() -> None:
     conviction       = takeaway["conviction"]
     conviction_color = takeaway["conviction_color"]
     signal           = takeaway["primary_signal"]
-    signal_color     = "#2ecc71" if signal == "Risk-On" else ("#e74c3c" if signal == "Risk-Off" else "#4a9eff")
+    signal_color     = "#3dbe7a" if signal == "Risk-On" else ("#e05252" if signal == "Risk-Off" else "#c69842")
     dur_months       = duration.get("months_in_regime", 0)
     # Strip HTML tags for compact card — show plain text
     plain_narrative = re.sub(r"<[^>]+>", "", takeaway["narrative"])
@@ -687,7 +681,7 @@ def _render_intelligence_dashboard_card() -> None:
         "Low":    "glow-orange 3s infinite",
     }.get(conviction, "none")
 
-    regime_color = REGIME_COLORS.get(regime, "#4a9eff")
+    regime_color = REGIME_COLORS.get(regime, "#c69842")
 
     html = f"""{_BASE_CSS}
 <div class="card green" style="margin-bottom:2px;">
@@ -706,7 +700,7 @@ def _render_intelligence_dashboard_card() -> None:
               border-top:1px solid var(--border);padding-top:6px;flex-wrap:wrap;">
     <span>Signal: <strong style="color:{signal_color};">{signal}</strong></span>
     <span>Duration: <strong style="color:{regime_color};">{dur_months:.1f}mo</strong></span>
-    <span style="margin-left:auto;color:#4a9eff;font-size:11px;">→ See Intelligence tab for full analysis</span>
+    <span style="margin-left:auto;color:#c69842;font-size:11px;">→ See Intelligence tab for full analysis</span>
   </div>
 </div>"""
     components.html(html, height=150, scrolling=False)
@@ -763,7 +757,7 @@ def render() -> None:
     # ── Section 2: Regime Gauge + Playbook ────────────────────────────────────
     st.markdown(
         '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;'
-        'color:#8b949e;margin-bottom:6px;">Regime Analysis</div>',
+        'color:#9aa5c8;margin-bottom:6px;">Regime Analysis</div>',
         unsafe_allow_html=True,
     )
 
@@ -790,7 +784,7 @@ def render() -> None:
     # ── Section 3: Duration + Transitions ────────────────────────────────────
     st.markdown(
         '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;'
-        'color:#8b949e;margin-bottom:6px;">Cycle Analysis</div>',
+        'color:#9aa5c8;margin-bottom:6px;">Cycle Analysis</div>',
         unsafe_allow_html=True,
     )
     col_dur, col_trans = st.columns([1, 1])
@@ -808,22 +802,22 @@ def render() -> None:
     if data["analogues"]:
         st.markdown(
             '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;'
-            'color:#8b949e;margin:6px 0 4px 0;">Explore Analogue</div>',
+            'color:#9aa5c8;margin:6px 0 4px 0;">Explore Analogue</div>',
             unsafe_allow_html=True,
         )
         st.markdown("""<style>
 .stButton > button {
-    border: 0.5px solid #30363d !important;
+    border: 0.5px solid #1e2e6e !important;
     border-radius: 6px !important;
     background: transparent !important;
     transition: all 0.15s ease !important;
     font-size: 11px !important;
-    color: #8b949e !important;
+    color: #9aa5c8 !important;
 }
 .stButton > button:hover {
     background: #1c2128 !important;
-    border-color: #4a9eff !important;
-    color: #e6edf3 !important;
+    border-color: #c69842 !important;
+    color: #f2f4fa !important;
 }
 </style>""", unsafe_allow_html=True)
         cols = st.columns(len(data["analogues"]))
@@ -875,7 +869,7 @@ def render() -> None:
     # ── Section 5: Scenario Analysis ─────────────────────────────────────────
     st.markdown(
         '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;'
-        'color:#8b949e;margin-bottom:6px;">Scenario Analysis</div>',
+        'color:#9aa5c8;margin-bottom:6px;">Scenario Analysis</div>',
         unsafe_allow_html=True,
     )
 

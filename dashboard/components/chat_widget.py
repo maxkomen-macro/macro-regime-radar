@@ -53,7 +53,7 @@ def _chat_dialog() -> None:
     # Suggested prompts (only when history is empty)
     if not st.session_state.chat_messages:
         st.markdown(
-            "<div style='font-size:11px;color:#8899aa;text-transform:uppercase;"
+            "<div style='font-size:11px;color:#9aa5c8;text-transform:uppercase;"
             "letter-spacing:0.5px;margin:8px 0 6px;'>Try asking</div>",
             unsafe_allow_html=True,
         )
@@ -111,7 +111,7 @@ def _chat_dialog() -> None:
     total = tok["input"] + tok["output"]
     cols = st.columns([3, 1])
     cols[0].markdown(
-        f"<div style='font-size:10px;color:#484f58;margin-top:6px;'>"
+        f"<div style='font-size:10px;color:#5c6a99;margin-top:6px;'>"
         f"Tokens this session: {total:,} · in {tok['input']:,} / out {tok['output']:,}"
         f"</div>",
         unsafe_allow_html=True,
@@ -142,20 +142,20 @@ _FAB_CSS = """
 div[data-testid="stElementContainer"].st-key-__macro_chat_fab__ button {
     /* app hides non-column st.buttons via .stButton>button{opacity:0}; force the FAB visible */
     opacity: 1 !important;
-    background: #161b22 !important;
-    color: #e6edf3 !important;
-    border: 1px solid #4a9eff !important;
+    background: #0a1650 !important;
+    color: #f2f4fa !important;
+    border: 1px solid #c69842 !important;
     border-radius: 999px !important;
     padding: 6px 12px !important;
     font-weight: 600 !important;
     font-size: 11px !important;
     letter-spacing: 0.4px !important;
-    box-shadow: 0 4px 14px rgba(74,158,255,0.25), 0 0 0 1px rgba(74,158,255,0.15) !important;
+    box-shadow: none !important; border: 1px solid #c69842 !important;
     transition: transform 0.15s ease, box-shadow 0.15s ease !important;
 }
 div[data-testid="stElementContainer"].st-key-__macro_chat_fab__ button:hover {
     transform: translateY(-1px) !important;
-    box-shadow: 0 6px 18px rgba(74,158,255,0.40), 0 0 0 1px rgba(74,158,255,0.30) !important;
+    box-shadow: none !important;
 }
 </style>
 """
@@ -169,7 +169,7 @@ def render_chat_launcher() -> None:
     if not get_secret("ANTHROPIC_API_KEY"):
         st.markdown(
             "<div style='position:fixed;bottom:24px;right:24px;z-index:9999;"
-            "font-size:10px;color:#8899aa;background:#161b22;border:0.5px solid #21262d;"
+            "font-size:10px;color:#9aa5c8;background:#0a1650;border:0.5px solid #172561;"
             "border-radius:6px;padding:6px 10px;'>"
             "AI Assistant unavailable — API key not configured</div>",
             unsafe_allow_html=True,

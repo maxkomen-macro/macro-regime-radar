@@ -191,33 +191,33 @@ def _render_forecast_chart(series_id: str, forecast: pd.DataFrame) -> None:
         fig.add_trace(go.Scatter(
             x=list(fcst["ds"]) + list(fcst["ds"])[::-1],
             y=list(fcst["yhat_upper"]) + list(fcst["yhat_lower"])[::-1],
-            fill="toself", fillcolor="rgba(74,158,255,0.18)",
+            fill="toself", fillcolor="rgba(198,152,66,0.18)",
             line=dict(width=0), hoverinfo="skip",
             name="80% Interval", showlegend=True,
         ))
         fig.add_trace(go.Scatter(
             x=fcst["ds"], y=fcst["yhat"],
             mode="lines", name="Forecast",
-            line=dict(color="#4a9eff", width=2, dash="dash"),
+            line=dict(color="#c69842", width=2, dash="dash"),
         ))
 
     # Historical line (solid)
     fig.add_trace(go.Scatter(
         x=hist["ds"], y=hist["y_hist"],
         mode="lines", name="History",
-        line=dict(color="#e6edf3", width=2),
+        line=dict(color="#f2f4fa", width=2),
     ))
 
     fig.update_layout(
         height=320,
         margin=dict(l=20, r=20, t=24, b=30),
-        template="plotly_dark",
-        paper_bgcolor="#0d1117",
-        plot_bgcolor="#0d1117",
+        template="macro_rr",
+        paper_bgcolor="#000b3d",
+        plot_bgcolor="#000b3d",
         legend=dict(orientation="h", y=1.1, x=0, font=dict(size=10)),
-        xaxis=dict(title=None, gridcolor="#21262d"),
-        yaxis=dict(title=cfg["unit"], gridcolor="#21262d"),
-        title=dict(text=cfg["label"], font=dict(size=14, color="#e6edf3"), x=0.01),
+        xaxis=dict(title=None, gridcolor="#172561"),
+        yaxis=dict(title=cfg["unit"], gridcolor="#172561"),
+        title=dict(text=cfg["label"], font=dict(size=14, color="#f2f4fa"), x=0.01),
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -249,7 +249,7 @@ def render_macro_forecasts() -> None:
 
             _render_forecast_chart(series_id, forecast)
             st.markdown(
-                f"<div style='font-size:12px;color:#c9d1d9;margin-top:-4px;'>"
+                f"<div style='font-size:12px;color:#c8cfe6;margin-top:-4px;'>"
                 f"{_interpret(series_id, forecast, regime)}</div>",
                 unsafe_allow_html=True,
             )

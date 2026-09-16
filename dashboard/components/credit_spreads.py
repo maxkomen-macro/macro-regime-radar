@@ -30,16 +30,16 @@ _CREDIT_SYMBOLS = ("HYG", "LQD", "TLT", "EMB", "VIXY")
 
 _COLORS = {
     "HYG":  "#e05c5c",   # red-ish — high yield
-    "LQD":  "#4a9eff",   # blue    — investment grade
-    "TLT":  "#d29922",   # gold    — long duration rates
-    "EMB":  "#9b59b6",   # purple  — EM bonds
-    "VIXY": "#95a5a6",   # gray    — volatility
+    "LQD":  "#c69842",   # blue    — investment grade
+    "TLT":  "#e0a33a",   # gold    — long duration rates
+    "EMB":  "#c69842",   # purple  — EM bonds
+    "VIXY": "#8a93ad",   # gray    — volatility
 }
 
 _DARK = dict(
-    paper_bgcolor="#0d1117",
-    plot_bgcolor="#0d1117",
-    font=dict(color="#8899aa", size=11),
+    paper_bgcolor="#000b3d",
+    plot_bgcolor="#000b3d",
+    font=dict(color="#9aa5c8", size=11),
     margin=dict(l=50, r=16, t=36, b=40),
     legend=dict(
         bgcolor="rgba(0,0,0,0)",
@@ -50,8 +50,8 @@ _DARK = dict(
         xanchor="left",
         x=0,
     ),
-    xaxis=dict(gridcolor="#21262d", linecolor="#21262d", showgrid=True, zeroline=False),
-    yaxis=dict(gridcolor="#21262d", linecolor="#21262d", showgrid=True, zeroline=False),
+    xaxis=dict(gridcolor="#172561", linecolor="#172561", showgrid=True, zeroline=False),
+    yaxis=dict(gridcolor="#172561", linecolor="#172561", showgrid=True, zeroline=False),
 )
 
 
@@ -134,12 +134,12 @@ def _credit_regime(signals: dict) -> tuple[str, str]:
     elif z > 0.5:  bull += 1
 
     if bear >= 3:
-        return "Spreads Widening",   "#e74c3c"
+        return "Spreads Widening",   "#e05252"
     if bear >= 1 and bear > bull:
-        return "Widening Risk",      "#e67e22"
+        return "Widening Risk",      "#e0812f"
     if bull >= 2:
-        return "Spreads Tightening", "#2ecc71"
-    return "Neutral / Range-Bound",  "#8899aa"
+        return "Spreads Tightening", "#3dbe7a"
+    return "Neutral / Range-Bound",  "#9aa5c8"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -162,11 +162,11 @@ def _indexed_chart(wide: pd.DataFrame, lookback: int) -> go.Figure:
             line=dict(color=_COLORS[sym], width=1.8),
             hovertemplate=f"<b>{sym}</b><br>%{{x|%b %d, %Y}}<br>Indexed: %{{y:.1f}}<extra></extra>",
         ))
-    fig.add_hline(y=100, line=dict(color="#484f58", width=1, dash="dot"))
+    fig.add_hline(y=100, line=dict(color="#5c6a99", width=1, dash="dot"))
     layout = dict(**_DARK)
     layout["title"] = dict(
         text=f"Credit ETFs — Indexed to 100 ({lookback}d)",
-        font=dict(size=12, color="#8899aa"), x=0,
+        font=dict(size=12, color="#9aa5c8"), x=0,
     )
     layout["yaxis"] = dict(**_DARK["yaxis"], title="Index (base=100)")
     fig.update_layout(**layout)
@@ -193,14 +193,14 @@ def _ratio_chart(wide: pd.DataFrame, lookback: int) -> go.Figure:
     ))
     fig.add_hline(
         y=mean,
-        line=dict(color="#484f58", width=1, dash="dot"),
+        line=dict(color="#5c6a99", width=1, dash="dot"),
         annotation_text=f"{lookback}d avg: {mean:.4f}",
-        annotation=dict(font_size=9, font_color="#484f58"),
+        annotation=dict(font_size=9, font_color="#5c6a99"),
     )
     layout = dict(**_DARK)
     layout["title"] = dict(
         text="HYG / LQD — HY vs IG Spread Proxy",
-        font=dict(size=12, color="#8899aa"), x=0,
+        font=dict(size=12, color="#9aa5c8"), x=0,
     )
     layout["yaxis"] = dict(**_DARK["yaxis"], title="Ratio")
     fig.update_layout(**layout)
@@ -232,10 +232,10 @@ def _credit_vol_chart(wide: pd.DataFrame, lookback: int) -> go.Figure:
     layout = dict(**_DARK)
     layout["title"] = dict(
         text="HYG vs Volatility (VIXY) — Dual Axis",
-        font=dict(size=12, color="#8899aa"), x=0,
+        font=dict(size=12, color="#9aa5c8"), x=0,
     )
     layout["yaxis"]  = dict(
-        title="HYG ($)", gridcolor="#21262d", linecolor="#21262d",
+        title="HYG ($)", gridcolor="#172561", linecolor="#172561",
         titlefont=dict(color=_COLORS["HYG"]),
         tickfont=dict(color=_COLORS["HYG"]),
     )
@@ -259,13 +259,13 @@ def _credit_vol_chart(wide: pd.DataFrame, lookback: int) -> go.Figure:
 
 def _kpi_card(label: str, value_str: str, sub_str: str, color: str) -> str:
     return (
-        f'<div style="background:#161b22;border:0.5px solid #21262d;border-radius:6px;'
+        f'<div style="background:#0a1650;border:0.5px solid #172561;border-radius:6px;'
         f'padding:12px 14px">'
         f'<div style="font-size:10px;font-weight:600;text-transform:uppercase;'
-        f'letter-spacing:0.4px;color:#8899aa;margin-bottom:6px">{label}</div>'
+        f'letter-spacing:0.4px;color:#9aa5c8;margin-bottom:6px">{label}</div>'
         f'<div style="font-size:20px;font-weight:700;color:{color};'
         f'font-variant-numeric:tabular-nums;letter-spacing:-0.5px">{value_str}</div>'
-        f'<div style="font-size:10px;color:#484f58;margin-top:4px">{sub_str}</div>'
+        f'<div style="font-size:10px;color:#5c6a99;margin-top:4px">{sub_str}</div>'
         f'</div>'
     )
 
@@ -273,11 +273,11 @@ def _kpi_card(label: str, value_str: str, sub_str: str, color: str) -> str:
 def _signal_row(name: str, status: str, status_color: str, detail: str) -> str:
     return (
         f'<div style="display:flex;align-items:center;justify-content:space-between;'
-        f'padding:9px 12px;background:#161b22;border:0.5px solid #21262d;'
+        f'padding:9px 12px;background:#0a1650;border:0.5px solid #172561;'
         f'border-radius:6px;margin-bottom:6px">'
-        f'<span style="font-size:12px;color:#c9d1d9">{name}</span>'
+        f'<span style="font-size:12px;color:#c8cfe6">{name}</span>'
         f'<div style="display:flex;align-items:center;gap:8px">'
-        f'<span style="font-size:10px;color:#484f58">{detail}</span>'
+        f'<span style="font-size:10px;color:#5c6a99">{detail}</span>'
         f'<span style="font-size:11px;font-weight:700;color:{status_color};'
         f'min-width:120px;text-align:right">{status}</span>'
         f'</div></div>'
@@ -286,9 +286,9 @@ def _signal_row(name: str, status: str, status_color: str, detail: str) -> str:
 
 def _fmt_pct(v: float | None, decimals: int = 2) -> tuple[str, str]:
     if v is None:
-        return "—", "#8899aa"
+        return "—", "#9aa5c8"
     sign  = "+" if v >= 0 else ""
-    color = "#3fb950" if v >= 0 else "#e74c3c"
+    color = "#3dbe7a" if v >= 0 else "#e05252"
     return f"{sign}{v:.{decimals}f}%", color
 
 
@@ -377,7 +377,7 @@ def render_credit_spreads() -> None:
     lookback = lookback_opt[lb_label]
     with date_col:
         st.markdown(
-            f'<div style="text-align:right;font-size:10px;color:#484f58;padding-top:8px">'
+            f'<div style="text-align:right;font-size:10px;color:#5c6a99;padding-top:8px">'
             f'as of {latest_date}</div>',
             unsafe_allow_html=True,
         )
@@ -386,7 +386,7 @@ def render_credit_spreads() -> None:
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;margin-top:4px">'
         f'<span style="font-size:11px;font-weight:600;text-transform:uppercase;'
-        f'letter-spacing:0.5px;color:#8899aa">Credit Regime</span>'
+        f'letter-spacing:0.5px;color:#9aa5c8">Credit Regime</span>'
         f'<span style="border:0.5px solid {regime_color}55;color:{regime_color};'
         f'font-weight:700;font-size:15px;padding:4px 14px;border-radius:5px;'
         f'background:rgba(0,0,0,0.25)">{regime_label}</span>'
@@ -408,7 +408,7 @@ def render_credit_spreads() -> None:
     ratio_s   = f"{ratio_v:.4f}" if ratio_v is not None else "—"
     ratio_1w  = signals.get("hyg_lqd_ratio_1w_chg")
     ratio_sub = f"1W chg: {ratio_1w:+.2f}%" if ratio_1w is not None else "HY vs IG ratio"
-    ratio_c   = "#3fb950" if (ratio_1w or 0) >= 0 else "#e74c3c"
+    ratio_c   = "#3dbe7a" if (ratio_1w or 0) >= 0 else "#e05252"
 
     with k1: st.markdown(_kpi_card("HYG 1D",   hyg_1d_s, "High Yield ETF",   hyg_1d_c), unsafe_allow_html=True)
     with k2: st.markdown(_kpi_card("LQD 1D",   lqd_1d_s, "Invest. Grade ETF", lqd_1d_c), unsafe_allow_html=True)
@@ -441,24 +441,24 @@ def render_credit_spreads() -> None:
         vs50    = signals.get("hyg_vs_50dma")
         if above50 is not None:
             sl  = "Above 50 DMA" if above50 else "Below 50 DMA"
-            sc  = "#3fb950" if above50 else "#e74c3c"
+            sc  = "#3dbe7a" if above50 else "#e05252"
             det = f"{vs50:+.2f}% vs avg" if vs50 is not None else ""
         else:
-            sl, sc, det = "—", "#8899aa", "Insufficient data"
+            sl, sc, det = "—", "#9aa5c8", "Insufficient data"
         st.markdown(_signal_row("HYG Trend (50 DMA)", sl, sc, det), unsafe_allow_html=True)
 
     with sc2:
         z = signals.get("hyg_lqd_z")
         if z is not None:
             if abs(z) >= 1.5:
-                sl, sc = "Elevated Divergence", "#e67e22"
+                sl, sc = "Elevated Divergence", "#e0812f"
             elif abs(z) >= 0.5:
-                sl, sc = "Mild Divergence",     "#d29922"
+                sl, sc = "Mild Divergence",     "#e0a33a"
             else:
-                sl, sc = "Tracking",            "#3fb950"
+                sl, sc = "Tracking",            "#3dbe7a"
             det = f"z-score: {z:+.2f}σ (3M)"
         else:
-            sl, sc, det = "—", "#8899aa", "Insufficient data"
+            sl, sc, det = "—", "#9aa5c8", "Insufficient data"
         st.markdown(_signal_row("HY vs IG (HYG/LQD)", sl, sc, det), unsafe_allow_html=True)
 
     with sc3:
@@ -467,14 +467,14 @@ def render_credit_spreads() -> None:
         if emb_1m_v is not None and hyg_1m_v is not None:
             diff = emb_1m_v - hyg_1m_v
             if diff > 0.5:
-                sl, sc = "EM Outperforming", "#3fb950"
+                sl, sc = "EM Outperforming", "#3dbe7a"
             elif diff < -0.5:
-                sl, sc = "EM Underperforming", "#e74c3c"
+                sl, sc = "EM Underperforming", "#e05252"
             else:
-                sl, sc = "Tracking US HY",     "#8899aa"
+                sl, sc = "Tracking US HY",     "#9aa5c8"
             det = f"EMB vs HYG 1M: {diff:+.1f}pp"
         else:
-            sl, sc, det = "—", "#8899aa", "Insufficient data"
+            sl, sc, det = "—", "#9aa5c8", "Insufficient data"
         st.markdown(_signal_row("EM Credit (EMB vs HYG)", sl, sc, det), unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:10px'></div>", unsafe_allow_html=True)
@@ -490,8 +490,8 @@ def render_credit_spreads() -> None:
     # ── Narrative ─────────────────────────────────────────────────────────────
     section_header("Credit Market Interpretation")
     st.markdown(
-        f'<div style="background:#161b22;border:0.5px solid #21262d;border-radius:6px;'
-        f'padding:14px 16px;font-size:13px;line-height:1.75;color:#c9d1d9">'
+        f'<div style="background:#0a1650;border:0.5px solid #172561;border-radius:6px;'
+        f'padding:14px 16px;font-size:13px;line-height:1.75;color:#c8cfe6">'
         f'{_narrative(regime_label, signals)}'
         f'</div>',
         unsafe_allow_html=True,
@@ -499,7 +499,7 @@ def render_credit_spreads() -> None:
 
     # ── Methodology note ──────────────────────────────────────────────────────
     st.markdown(
-        '<div style="margin-top:10px;font-size:10px;color:#3d444d">'
+        '<div style="margin-top:10px;font-size:10px;color:#5c6a99">'
         'Proxies: HYG = iShares HY Corp Bond ETF · LQD = iShares IG Corp Bond ETF · '
         'EMB = iShares EM Bond ETF · VIXY = ProShares VIX Short-Term Futures ETF. '
         'HYG/LQD ratio used as a cross-credit spread proxy (not a direct OAS measure). '
