@@ -1,93 +1,85 @@
 /**
- * Asset Allocation — overview (regime-conditional stats), optimization
- * (7 methods + efficient frontier), and risk analysis. Risk analysis is
- * paginated (locked IA: nothing over ~2.5 viewports) — one block at a time
- * behind a chip pager.
+ * Asset Allocation (redesign Phase 9, checklist 09 A.9 to A.12): the
+ * composition root of the `#allocation` sub-tab body. The hero row and the
+ * summary card above it belong to the screen (AllocationHeroRow), the mono
+ * disclosure line below it is the screen's DisclosureLine; this panel renders
+ * the three sections in order: Regime-conditional performance
+ * (`#allocation-overview`), Optimization (`#allocation-optimization`) and
+ * Risk analysis (`#allocation-risk`, one lens at a time).
  *
  * Data: /api/allocation — computed by src/analytics/allocation.py from ~24y
  * of monthly asset returns (downloaded server-side, cached 1h). Methods that
  * need riskfolio-lib (Min CVaR, HERC) fall back to equal weight and say so.
+ *
+ * The vocabulary the three sections share (METHODS, RISK_BLOCKS, REGIME_HUE,
+ * the formatters and the tint bands) lives here, exported. The section modules
+ * read it inside render only, never at module top level, so the import cycle
+ * AllocationPanel → section → AllocationPanel is safe under ESM live bindings
+ * (Vite and vitest alike).
  */
 
-import { Fragment, useMemo, useState } from "react";
-import { Card, SectionHeader, Tag } from "../../components";
-import { Link } from "react-router-dom";
+import { Card } from "../../components";
 import { useAllocation } from "../../api/queries";
 import type { AllocationData, FrameData } from "../../api/types";
 import { fmtMonYr } from "../../lib/format";
-import { useBreakpoint } from "../../lib/useBreakpoint";
-import Jargon from "../shared/Jargon";
-import { Caption, StateNote, eyebrowStyle, mono } from "../shared/screen-ui";
-import FrontierChart, { type FrontierMarker } from "./FrontierChart";
-import ScrollTable from "../shared/ScrollTable";
-import Disclosure from "../shared/Disclosure";
-import DeskRead, { type LedgerItem } from "../shared/DeskRead";
-import { assessFreshness } from "../shared/freshness";
+import { Caption, StateNote } from "../shared/screen-ui";
+import AllocationOverview from "./AllocationOverview";
+import AllocationOptimization from "./AllocationOptimization";
+import RiskLenses from "./RiskLenses";
 
-const REGIME_ORDER = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
-const REGIME_COLORS: Record<string, string> = {
-  Goldilocks: "#2ecc71",
-  Overheating: "#e67e22",
-  Stagflation: "#e74c3c",
-  "Recession Risk": "#95a5a6",
+/** The null-value glyph the tables print (U+2014), never an em-dash aside. */
+export const DASH = "—";
+
+export const REGIME_ORDER = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
+/** The regime hue tokens (tokens/colors.css); the old-palette hexes left in Phase 9. */
+export const REGIME_HUE: Record<string, string> = {
+  Goldilocks: "var(--r-goldilocks)",
+  Overheating: "var(--r-overheating)",
+  Stagflation: "var(--r-stagflation)",
+  "Recession Risk": "var(--r-recession)",
 };
 
-const METHODS: { key: string; label: string; badge: string; color: string }[] = [
-  { key: "mvo", label: "Mean-Variance", badge: "return-based", color: "var(--accent)" },
+/** Marker hues per the checklist 09 B.11 token map. */
+export const METHODS: { key: string; label: string; badge: string; color: string }[] = [
+  { key: "mvo", label: "Mean-Variance", badge: "return-based", color: "var(--link)" },
   { key: "min_var", label: "Min Variance", badge: "risk-only", color: "var(--pos)" },
-  { key: "risk_parity", label: "Risk Parity", badge: "risk-balanced", color: "var(--warn)" },
+  { key: "risk_parity", label: "Risk Parity", badge: "risk-balanced", color: "var(--amber)" },
   { key: "black_litterman", label: "Black-Litterman", badge: "equilibrium + views", color: "var(--warn-hot)" },
   { key: "hrp", label: "HRP", badge: "hierarchical", color: "var(--research)" },
-  { key: "cvar", label: "Min CVaR", badge: "tail-risk", color: "var(--neg-text)" },
-  { key: "herc", label: "HERC", badge: "hierarchical", color: "var(--text-muted)" },
+  { key: "cvar", label: "Min CVaR", badge: "tail-risk", color: "var(--neg)" },
+  { key: "herc", label: "HERC", badge: "hierarchical", color: "var(--text-3)" },
 ];
 
-const pct = (v: number, dp = 1) => `${(v * 100).toFixed(dp)}%`;
-const spct = (v: number, dp = 1) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(dp)}%`;
+export const pct = (v: number, dp = 1) => `${(v * 100).toFixed(dp)}%`;
+export const spct = (v: number, dp = 1) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(dp)}%`;
 
 /** Only an explicit converged:false (or a "(fallback)" method name) marks a
  * fallback — the source omits the flag entirely on some success paths. */
-const isFallback = (o: { converged?: boolean; method?: string } | undefined) =>
+export const isFallback = (o: { converged?: boolean; method?: string } | undefined) =>
   o != null && (o.converged === false || (o.method ?? "").includes("(fallback)"));
 
-const cellHead: React.CSSProperties = {
-  ...mono,
-  fontSize: "var(--fs-micro)",
-  letterSpacing: "var(--ls-wide)",
-  textTransform: "uppercase",
-  color: "var(--text-muted)",
-  textAlign: "right",
-  padding: "4px 8px",
-};
-
-const rowLabel: React.CSSProperties = {
-  fontFamily: "var(--font-ui)",
-  fontSize: "var(--fs-body-s)",
-  color: "var(--text-2)",
-  padding: "4px 0",
-  whiteSpace: "nowrap",
-};
-
-function retBg(v: number | null): string {
+/** Regime-return tint bands (checklist 09 B.10): today's `retBg` bands on the new palette. */
+export function retTint(v: number | null): string {
   if (v == null) return "transparent";
-  if (v >= 0.1) return "rgba(46,204,113,.14)";
-  if (v >= 0.05) return "rgba(46,204,113,.07)";
+  if (v >= 0.1) return "rgba(40,209,124,.14)";
+  if (v >= 0.05) return "rgba(40,209,124,.07)";
   if (v >= 0) return "transparent";
-  if (v >= -0.05) return "rgba(218,54,51,.07)";
-  return "rgba(218,54,51,.14)";
+  if (v >= -0.05) return "rgba(240,80,63,.07)";
+  return "rgba(240,80,63,.14)";
 }
 
-function corrBg(v: number | null): string {
+/** Correlation tint bands (checklist 09 B.12): red clusters, blue diversifiers, on the new palette. */
+export function corrTint(v: number | null): string {
   if (v == null) return "transparent";
-  if (v >= 0.8) return "rgba(218,54,51,.30)";
-  if (v >= 0.5) return "rgba(218,54,51,.18)";
-  if (v >= 0.2) return "rgba(218,54,51,.08)";
+  if (v >= 0.8) return "rgba(240,80,63,.30)";
+  if (v >= 0.5) return "rgba(240,80,63,.18)";
+  if (v >= 0.2) return "rgba(240,80,63,.08)";
   if (v >= -0.2) return "transparent";
-  if (v >= -0.5) return "rgba(74,158,255,.12)";
-  return "rgba(74,158,255,.22)";
+  if (v >= -0.5) return "rgba(88,184,230,.12)";
+  return "rgba(88,184,230,.22)";
 }
 
-const RISK_BLOCKS = [
+export const RISK_BLOCKS = [
   { id: "tail", label: "Tail risk", primary: true },
   { id: "drawdowns", label: "Drawdowns", primary: true },
   { id: "correlation", label: "Correlation", primary: true },
@@ -97,8 +89,9 @@ const RISK_BLOCKS = [
   { id: "currency", label: "Currency", primary: false },
   { id: "real", label: "Real vs nominal", primary: false },
 ] as const;
+export type RiskBlockId = (typeof RISK_BLOCKS)[number]["id"];
 
-function frameCell(f: FrameData, rowIdx: number, col: string): number | null {
+export function frameCell(f: FrameData, rowIdx: number, col: string): number | null {
   const ci = f.columns.indexOf(col);
   if (ci === -1) return null;
   return f.data[rowIdx]?.[ci] ?? null;
@@ -106,12 +99,12 @@ function frameCell(f: FrameData, rowIdx: number, col: string): number | null {
 
 const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 /** Small counts read as words in prose, matching the API's sentence (review P3-4). */
-function numberWord(n: number): string {
+export function numberWord(n: number): string {
   return NUMBER_WORDS[n] ?? String(n);
 }
 
 /** "2003-06 → 2006-09" → "Jun 2003 → Sep 2006". */
-function fmtMonthRange(range: string): string {
+export function fmtMonthRange(range: string): string {
   return range
     .split("→")
     .map((part) => {
@@ -121,20 +114,31 @@ function fmtMonthRange(range: string): string {
     .join(" → ");
 }
 
+/** The regimes the payload carries stats for, in house order. */
+export function regimesOf(a: AllocationData): string[] {
+  return REGIME_ORDER.filter((r) => a.regime_stats[r]);
+}
+
+/** The source gates the whole optimizer block on the current regime having
+ * enough covariance history, so the payload ships optimizations: null when a
+ * thin regime is live. types.ts declares the member non-null — narrow here
+ * rather than let a section read through a null. */
+export function optimizationsOf(a: AllocationData): AllocationData["optimizations"] | null {
+  return a.optimizations ?? null;
+}
+
+/** asset_names lives inside the optimizer block; without it the row order
+ * falls back to the regime-stats keys — same source columns, same order. */
+export function assetNames(a: AllocationData): string[] {
+  return (
+    optimizationsOf(a)?.asset_names ??
+    [...new Set(Object.values(a.regime_stats).flatMap((s) => Object.keys(s?.mean ?? {})))]
+  );
+}
+
 export default function AllocationPanel() {
-  const { isNarrow } = useBreakpoint();
   const q = useAllocation();
   const a = q.data;
-  const [riskBlock, setRiskBlock] = useState<(typeof RISK_BLOCKS)[number]["id"]>("tail");
-  const [moreLenses, setMoreLenses] = useState(false);
-  const [corrRegime, setCorrRegime] = useState<string | null>(null);
-  const [styleRegime, setStyleRegime] = useState<string | null>(null);
-  const [transPair, setTransPair] = useState<string | null>(null);
-
-  const regimes = useMemo(
-    () => (a ? REGIME_ORDER.filter((r) => a.regime_stats[r]) : []),
-    [a],
-  );
 
   if (!a) {
     return (
@@ -154,931 +158,11 @@ export default function AllocationPanel() {
     );
   }
 
-  // The source gates the whole optimizer block on the current regime having
-  // enough covariance history, so the payload ships optimizations: null when a
-  // thin regime is live. types.ts declares the member non-null — narrow here
-  // rather than let the panel read through a null.
-  const opt: AllocationData["optimizations"] | null = a.optimizations ?? null;
-  // asset_names lives inside that block; without it the row order falls back to
-  // the regime-stats keys — same source columns, same order.
-  const names: string[] =
-    opt?.asset_names ??
-    [...new Set(Object.values(a.regime_stats).flatMap((s) => Object.keys(s?.mean ?? {})))];
-  const curRegime = a.current_regime;
-  const effCorrRegime = corrRegime ?? curRegime;
-  const effStyleRegime = styleRegime ?? curRegime;
-
-  const transPairs = Object.entries(a.transition_pnl)
-    .filter(([, v]) => v.count >= 2)
-    .map(([k]) => k);
-  const effTransPair = transPair ?? transPairs[0] ?? null;
-
-  // Plain derivation, deliberately NOT a hook: any hook after the loading
-  // early-return changes the hook count when data lands (crashed live —
-  // "Rendered more hooks than during the previous render").
-  const frontierMarkers: FrontierMarker[] = !opt
-    ? []
-    : METHODS.filter(
-        (m) =>
-          opt[m.key] &&
-          !isFallback(opt[m.key]) &&
-          opt[m.key].volatility != null &&
-          opt[m.key].expected_return != null,
-      ).map((m) => ({
-        label: m.label,
-        vol: opt[m.key].volatility,
-        ret: opt[m.key].expected_return,
-        color: m.color,
-      }));
-
-  /* ── desk read: what the regime matrix says for the current column ──── */
-  const curStats = a.regime_stats[curRegime];
-  const ranked = curStats
-    ? names
-        .map((n) => ({ n, m: curStats.mean?.[n] ?? null, sr: curStats.sharpe?.[n] ?? null }))
-        .filter((x): x is { n: string; m: number; sr: number | null } => x.m != null)
-        .sort((x, y) => y.m - x.m)
-    : [];
-  const best = ranked[0];
-  const worst = ranked[ranked.length - 1];
-  const sample = a.optimizations_skipped ?? a.optimization_sample ?? null;
-  const allocLedger: LedgerItem[] = [
-    { label: "Sample", value: `${curStats?.n_months ?? 0} ${curRegime} months · ${a.n_months} total since ${fmtMonYr(`${a.data_start}-01`)}` },
-    { label: "Risk-free", value: `${pct(a.rf_rate, 2)} Fed Funds` },
-    {
-      label: "Optimizer",
-      value: opt
-        ? "7 methods solved · long-only · 40% cap"
-        : sample?.sentence
-          ? `Unavailable: ${sample.sentence}`
-          : `Unavailable: needs 24 complete ${curRegime} months`,
-      tone: opt ? "var(--pos)" : "var(--warn-hot)",
-      prose: true,
-    },
-  ];
-
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <DeskRead
-        eyebrow="Desk read · Asset allocation"
-        conclusion={
-          best && worst
-            ? `In ${curRegime} months since ${fmtMonYr(`${a.data_start}-01`)}, ${best.n} led at ${spct(best.m)} a year${
-                best.sr != null ? ` (Sharpe ${best.sr.toFixed(2)})` : ""
-              } and ${worst.n} lagged at ${spct(worst.m)}.`
-            : `Regime-conditional returns for ${names.length} asset classes since ${fmtMonYr(`${a.data_start}-01`)}.`
-        }
-        why={
-          curStats
-            ? `Read the ${curRegime} column first: it is the weather the classifier calls today at ${a.dominant_prob != null ? Math.round(a.dominant_prob * 100) : "—"}% odds. A positive return with a negative Sharpe means the asset did not cover cash plus its risk; ${curStats.n_months} months is ${
-                curStats.n_months < 36 ? "a thin sample, so treat the column as evidence, not law" : "a workable sample"
-              }.`
-            : undefined
-        }
-        ledger={allocLedger}
-        freshness={[
-          { noun: "Returns", info: assessFreshness(`${a.data_end}-01`, "monthly") },
-          { noun: "Regime labels", info: assessFreshness(null, "reference") },
-        ]}
-      />
-
-      {/* ── Overview ──────────────────────────────────────────────────── */}
-      <section id="allocation-overview">
-        <SectionHeader
-          title="Regime-conditional performance"
-          right={`${a.n_months} months · ${fmtMonYr(`${a.data_start}-01`)} → ${fmtMonYr(`${a.data_end}-01`)} · risk-free ${pct(a.rf_rate, 2)} (Fed Funds)`}
-        />
-        <Card>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-            {/* Regime chip wears the regime's own 12%/25% treatment, matching
-                the column header 30px below — not the accent (critique). */}
-            <span
-              style={{
-                ...mono,
-                fontSize: "var(--fs-micro)",
-                letterSpacing: "var(--ls-micro)",
-                textTransform: "uppercase",
-                fontWeight: 700,
-                color: REGIME_COLORS[curRegime] ?? "var(--text)",
-                background: `color-mix(in srgb, ${REGIME_COLORS[curRegime] ?? "#8b949e"} 12%, transparent)`,
-                border: `0.5px solid color-mix(in srgb, ${REGIME_COLORS[curRegime] ?? "#8b949e"} 25%, transparent)`,
-                borderRadius: "var(--r-xs)",
-                padding: "2px 8px",
-              }}
-            >
-              {curRegime}
-            </span>
-            <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
-              {a.dominant_prob != null ? `${Math.round(a.dominant_prob * 100)}% model odds` : ""}
-              {" · "}
-              <Jargon term="conviction">conviction</Jargon> {Math.round(a.confidence * 100)}% (a
-              separate heuristic, not odds); read the current column first
-            </span>
-          </div>
-          {/* `display: contents` row wrappers give assistive tech the table
-              structure the visual grid implies, without adding a box that
-              would break the single-grid layout. */}
-          <ScrollTable label="Regime-conditional performance">
-            <div
-              role="table"
-              aria-label="Regime-conditional performance"
-              style={{
-                display: "grid",
-                gridTemplateColumns: `150px repeat(${regimes.length}, 1fr)`,
-                gap: "2px 8px",
-                minWidth: 640,
-              }}
-            >
-              <div role="row" style={{ display: "contents" }}>
-                <span role="columnheader" />
-                {regimes.map((r) => (
-                  <span role="columnheader" key={r} style={{ ...cellHead, color: r === curRegime ? REGIME_COLORS[r] : "var(--text-muted)" }}>
-                    {r}
-                    {r === curRegime ? " ←" : ""}
-                  </span>
-                ))}
-              </div>
-              {names.map((asset) => (
-                <div role="row" style={{ display: "contents" }} key={asset}>
-                  <span role="rowheader" key={`${asset}-l`} style={rowLabel}>
-                    {asset}
-                  </span>
-                  {regimes.map((r) => {
-                    const s = a.regime_stats[r];
-                    const m = s?.mean?.[asset] ?? null;
-                    const sr = s?.sharpe?.[asset] ?? null;
-                    return (
-                      <span
-                        role="cell"
-                        key={`${asset}-${r}`}
-                        style={{
-                          ...mono,
-                          fontSize: "var(--fs-meta)",
-                          textAlign: "right",
-                          padding: "4px 8px",
-                          borderRadius: "var(--r-xs)",
-                          background: retBg(m),
-                        }}
-                      >
-                        <span style={{ color: m != null && m < 0 ? "var(--neg-text)" : "var(--text)" }}>
-                          {m != null ? spct(m) : "—"}
-                        </span>
-                        <span style={{ color: "var(--text-muted)" }}>
-                          {" "}
-                          · SR {sr != null ? sr.toFixed(2) : "—"}
-                        </span>
-                      </span>
-                    );
-                  })}
-                </div>
-              ))}
-              <div role="row" style={{ display: "contents" }}>
-                <span role="rowheader" style={{ ...rowLabel, color: "var(--text-muted)" }}>months in regime</span>
-                {regimes.map((r) => (
-                  <span role="cell" key={`${r}-n`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                    n={a.regime_stats[r].n_months}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </ScrollTable>
-          <Caption>
-            Annualized return and <Jargon term="Sharpe">Sharpe</Jargon> per regime since{" "}
-            {fmtMonYr(`${a.data_start}-01`)}.{" "}
-            {(() => {
-              // Cite a REAL positive-return / negative-Sharpe cell — the
-              // combination the table exists to expose.
-              for (const r of regimes) {
-                const s = a.regime_stats[r];
-                for (const asset of names) {
-                  const m = s?.mean?.[asset];
-                  const sr = s?.sharpe?.[asset];
-                  if (m != null && sr != null && m > 0 && sr < 0) {
-                    return (
-                      <>
-                        A positive return with a negative Sharpe ({asset} prints {spct(m)} in{" "}
-                        {r} at SR {sr.toFixed(2)}) means the return does not cover cash plus
-                        the risk taken.
-                      </>
-                    );
-                  }
-                }
-              }
-              return <>A negative Sharpe means the return does not cover cash plus the risk taken.</>;
-            })()}{" "}
-            Small n columns are anecdotes, not laws.
-          </Caption>
-        </Card>
-      </section>
-
-      {/* ── Optimization ──────────────────────────────────────────────── */}
-      <section id="allocation-optimization">
-        <SectionHeader
-          title="Optimization"
-          right={opt ? "max 40% per asset · long-only" : "optional enhancement · unavailable this session"}
-        />
-        {!opt ? (
-          /* Weights, the frontier and portfolio CVaR all read the same regime
-             covariance block — when the source can't build it, none of the
-             three exist. The regime matrix above is the primary output; the
-             optimizer is an enhancement that states its exact requirement and
-             stays collapsed (executive pass, 2026-09-05). */
-          <Disclosure
-            title="Optimizer status: no output this session"
-            right={
-              sample
-                ? `${sample.complete_months} of ${sample.total_regime_months} ${curRegime} months complete · ${sample.required_cov_months} required`
-                : `needs 24 complete ${curRegime} months · ${a.regime_stats[curRegime]?.n_months ?? 0} on file, fewer than 24 complete`
-            }
-          >
-            <Card>
-              <p className="mrr-prose" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", lineHeight: 1.6, color: "var(--text-2)", margin: 0 }}>
-                The seven optimizers (Mean-Variance, Min Variance, Risk Parity, Black-Litterman, HRP, Min CVaR, HERC)
-                build a covariance matrix from the current regime&apos;s months inside the{" "}
-                {fmtMonYr(`${a.data_start}-01`)} → {fmtMonYr(`${a.data_end}-01`)} return window and need{" "}
-                {sample?.required_cov_months ?? 24} {curRegime} months in which all {numberWord(sample?.assets_total ?? names.length)}{" "}
-                asset classes have a return (a complete row).{" "}
-                {sample ? (
-                  <>
-                    {sample.sentence} {sample.excluded_months} month{sample.excluded_months === 1 ? " is" : "s are"} excluded
-                    {sample.excluded_range ? ` (${fmtMonthRange(sample.excluded_range)})` : ""}
-                    {sample.assets_responsible.length
-                      ? ` because ${sample.assets_responsible
-                          .map((r) => `${r.asset} has no return in ${r.missing_months} of them`)
-                          .join(", ")}`
-                      : ""}
-                    ; the complete rows run {sample.complete_range ? fmtMonthRange(sample.complete_range) : "—"}.
-                  </>
-                ) : (
-                  <>
-                    The store holds {a.regime_stats[curRegime]?.n_months ?? 0} {curRegime} months, but fewer than 24 of them
-                    are complete across every asset.
-                  </>
-                )}{" "}
-                So no weights, no efficient frontier and no portfolio-level CVaR are produced this session. They return
-                automatically once enough complete {curRegime} months accumulate or the regime changes to one with a long
-                enough history.
-              </p>
-              <Caption>
-                The regime-conditional matrix above and the per-asset risk lenses below never depended on the
-                optimizer and stand as stored empirical analysis.
-              </Caption>
-            </Card>
-          </Disclosure>
-        ) : (
-          <>
-            {/* The 4-up desk grid becomes a fill-what-fits grid under 768 —
-                two cards at 375, three by ~620. */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isNarrow ? "repeat(auto-fit, minmax(160px, 1fr))" : "repeat(4,minmax(0,1fr))",
-                gap: 12,
-              }}
-            >
-              {METHODS.map((m) => {
-                const o = opt[m.key];
-                if (!o) return null;
-                return (
-                  <Card key={m.key}>
-                    {/* "Black-Litterman" + its nowrap badge need ~225px; on a
-                        narrow card the badge drops to its own line instead of
-                        pushing the page sideways. */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6, flexWrap: isNarrow ? "wrap" : "nowrap" }}>
-                      <span style={eyebrowStyle}>{m.label}</span>
-                      <Tag tone={isFallback(o) ? "warn" : "neutral"} size="sm">
-                        {isFallback(o) ? "fallback" : m.badge}
-                      </Tag>
-                    </div>
-                    <div style={{ ...mono, fontSize: "var(--fs-value)", fontWeight: 600, marginTop: 6 }}>
-                      {o.expected_return != null ? spct(o.expected_return) : "—"}
-                    </div>
-                    <div style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginTop: 2 }}>
-                      {/* Fallback paths report sharpe_ratio=0.0 unconditionally —
-                          printing it beside +10.5%/8.7% vol is an arithmetic lie
-                          (critique P0). A method that ships without the number
-                          at all reads the house dash, same as the style box. */}
-                      vol {o.volatility != null ? pct(o.volatility) : "—"} · SR{" "}
-                      {isFallback(o) || o.sharpe_ratio == null ? "—" : o.sharpe_ratio.toFixed(2)}
-                    </div>
-                    {isFallback(o) && (
-                      <div style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", marginTop: 2 }}>
-                        equal weight · Sharpe not computed
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-              <Card>
-                <div style={eyebrowStyle}>How to read the methods</div>
-                <div style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-meta)", color: "var(--text-muted)", lineHeight: 1.6, marginTop: 6 }}>
-                  Return-seekers (<Jargon term="efficient frontier">Mean-Variance</Jargon>,{" "}
-                  <Jargon term="Black-Litterman">Black-Litterman</Jargon>) chase the regime&apos;s
-                  historical returns; risk shops (Min Variance,{" "}
-                  <Jargon term="risk parity">Risk Parity</Jargon>, <Jargon term="HRP">HRP</Jargon>)
-                  ignore returns and budget risk; tail methods (<Jargon term="CVaR">Min CVaR</Jargon>,{" "}
-                  <Jargon term="HERC">HERC</Jargon>) target the worst months.
-                </div>
-              </Card>
-            </div>
-            <Caption>
-              Seven ways to slice the same {names.length} assets: different questions, not
-              better/worse answers. Min CVaR and HERC are unavailable this session; both show equal
-              weight, tagged fallback.
-            </Caption>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,3fr) minmax(0,2fr)",
-                gap: 12,
-                marginTop: 12,
-              }}
-            >
-              <Card>
-                <div style={{ ...eyebrowStyle, marginBottom: 8 }}>
-                  Efficient frontier · annualized risk vs return
-                </div>
-                <FrontierChart frontier={opt.frontier} markers={frontierMarkers} />
-                <Caption>
-                  The <Jargon term="efficient frontier">frontier</Jargon> is the best return available
-                  at each volatility under the 40% cap; the marked portfolios are where each method
-                  lands. Equal-weight fallbacks (Min CVaR, HERC) are omitted from the plane.
-                </Caption>
-              </Card>
-              <Card>
-                <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Weights by method · %</div>
-                <ScrollTable label="Weights by method">
-                  <div role="table" aria-label="Weights by method" style={{ display: "grid", gridTemplateColumns: `130px repeat(${METHODS.length}, 1fr)`, gap: "1px 4px", minWidth: 480 }}>
-                    <div role="row" style={{ display: "contents" }}>
-                      <span role="columnheader" />
-                      {METHODS.map((m) => (
-                        <span role="columnheader" key={m.key} style={{ ...cellHead, padding: "2px 4px" }}>
-                          {m.key === "black_litterman" ? "B-L" : m.label}
-                        </span>
-                      ))}
-                    </div>
-                    {names.map((asset, ai) => (
-                      <div role="row" style={{ display: "contents" }} key={asset}>
-                        <span role="rowheader" key={`${asset}-w`} style={{ ...rowLabel, fontSize: "var(--fs-meta)" }}>
-                          {asset}
-                        </span>
-                        {METHODS.map((m) => {
-                          const w = opt[m.key]?.weights?.[ai] ?? null;
-                          return (
-                            <span
-                              role="cell"
-                              key={`${asset}-${m.key}`}
-                              style={{
-                                ...mono,
-                                fontSize: "var(--fs-micro)",
-                                textAlign: "right",
-                                padding: "3px 4px",
-                                color: w != null && w > 0.005 ? "var(--text)" : "var(--text-muted)",
-                                background: w != null && w >= 0.3 ? "rgba(74,158,255,.10)" : "transparent",
-                              }}
-                            >
-                              {w != null ? `${Math.round(w * 100)}` : "—"}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                </ScrollTable>
-                <Caption>Cells at the 30%+ concentration edge tint blue; zeros sit faint.</Caption>
-              </Card>
-            </div>
-          </>
-        )}
-      </section>
-
-      {/* ── Risk analysis (paginated) ─────────────────────────────────── */}
-      <section id="allocation-risk">
-        <SectionHeader title="Risk analysis" right="one lens at a time · four primary, four more on request" />
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
-          {RISK_BLOCKS.filter((b) => b.primary || moreLenses || b.id === riskBlock).map((b) => (
-            <button
-              key={b.id}
-              onClick={() => setRiskBlock(b.id)}
-              aria-pressed={riskBlock === b.id}
-              style={{
-                appearance: "none",
-                cursor: "pointer",
-                background: riskBlock === b.id ? "rgba(74,158,255,.12)" : "none",
-                border: riskBlock === b.id ? "0.5px solid rgba(74,158,255,.4)" : "0.5px solid var(--line-hair)",
-                borderRadius: "var(--r-xs)",
-                padding: isNarrow ? "8px 12px" : "5px 10px",
-                minHeight: isNarrow ? 40 : 28,
-                ...mono,
-                fontSize: "var(--fs-micro)",
-                letterSpacing: "var(--ls-micro)",
-                textTransform: "uppercase",
-                color: riskBlock === b.id ? "var(--accent)" : "var(--text-muted)",
-              }}
-            >
-              {b.label}
-            </button>
-          ))}
-          {!moreLenses ? (
-            <button
-              type="button"
-              className="mrr-btn"
-              data-touch={isNarrow ? "true" : "false"}
-              onClick={() => setMoreLenses(true)}
-              aria-expanded={false}
-            >
-              More lenses ▸
-            </button>
-          ) : null}
-        </div>
-
-        {riskBlock === "factors" && (
-          <Card>
-            {/* The factor × regime table's single home is Regime Lab →
-                Backtests (it appeared verbatim in both places — critique);
-                this lens keeps the portfolio-level betas. */}
-            <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Portfolio factor exposures · OLS betas</div>
-            <div style={{ display: "grid", gap: 6 }}>
-              {METHODS.filter((m) => a.portfolio_factors[m.key]).map((m) => {
-                const pf = a.portfolio_factors[m.key];
-                if (!pf) return null;
-                const fb = isFallback(opt?.[m.key]);
-                return (
-                  <div key={m.key} style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
-                    <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-2)", minWidth: 130 }}>
-                      {m.label}
-                      {fb ? <span style={{ color: "var(--text-muted)" }}> (fallback)</span> : ""}
-                    </span>
-                    {Object.entries(pf.exposures).map(([f, b]) => (
-                      <span key={f} style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
-                        {f} <span style={{ color: b >= 0 ? "var(--text)" : "var(--neg-text)" }}>{b >= 0 ? "+" : ""}{b.toFixed(2)}</span>
-                      </span>
-                    ))}
-                    <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)", marginLeft: "auto" }}>
-                      <Jargon term="R²">R²</Jargon> {pf.r_squared.toFixed(2)} ·{" "}
-                      <Jargon term="alpha">α</Jargon> {spct(pf.alpha)}/yr
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            {!opt && (
-              /* Betas are regressed on optimizer weights upstream, so this grid
-                 ships empty alongside a null optimization block — say it rather
-                 than leave the lens blank. */
-              <StateNote>
-                Portfolio betas are regressed on the optimizer weights; with none for {curRegime}{" "}
-                this session there are no portfolio rows to show.
-              </StateNote>
-            )}
-            <Caption>
-              Factors are long/short ETF proxies (Value IWD−IWF, Momentum MTUM−SPY, Quality
-              QUAL−SPY, Size IWM−SPY, Low Vol USMV−SPY): the Fama-French idea without their data
-              files, labeled as such. Betas come from OLS on monthly overlaps. The factor × regime
-              return table lives on{" "}
-              <Link to="/app/regime-lab#backtests" style={{ color: "var(--accent)" }}>
-                Regime Lab → Backtests
-              </Link>
-              .
-            </Caption>
-          </Card>
-        )}
-
-        {riskBlock === "style" && (
-          <Card>
-            {/* Four regime names plus their label overrun a phone card in one
-                line — the row wraps below 768 and is unchanged above it. */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "baseline", flexWrap: isNarrow ? "wrap" : "nowrap" }}>
-              <span style={eyebrowStyle}>Style performance in</span>
-              {regimes.map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setStyleRegime(r)}
-                  aria-pressed={effStyleRegime === r}
-                  style={{
-                    appearance: "none",
-                    cursor: "pointer",
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    ...mono,
-                    fontSize: "var(--fs-meta)",
-                    color: effStyleRegime === r ? REGIME_COLORS[r] : "var(--text-muted)",
-                    fontWeight: effStyleRegime === r ? 700 : 400,
-                  }}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-            {a.style_performance?.[effStyleRegime] ? (
-              <ScrollTable label="Style performance by regime">
-                <div role="table" aria-label="Style performance by regime" style={{ display: "grid", gridTemplateColumns: "140px repeat(4,1fr)", gap: "2px 8px", minWidth: 440 }}>
-                  <div role="row" style={{ display: "contents" }}>
-                    {["", "Return", "Vol", "Sharpe", "Hit rate"].map((h, i) => (
-                      <span role="columnheader" key={h || "corner"} style={i ? cellHead : undefined}>
-                        {h}
-                      </span>
-                    ))}
-                  </div>
-                  {/* The two long-short spread rows carry only a return in the
-                      source payload, so their vol, Sharpe and hit-rate cells
-                      read the house dash by design, not for missing data. */}
-                  {Object.entries(a.style_performance[effStyleRegime])
-                    .sort((x, y) => (y[1].sharpe ?? 0) - (x[1].sharpe ?? 0))
-                    .map(([style, s]) => (
-                      <div role="row" style={{ display: "contents" }} key={style}>
-                        <span role="rowheader" key={style} style={rowLabel}>
-                          {style}
-                        </span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: (s.return ?? 0) < 0 ? "var(--neg-text)" : "var(--text)" }}>
-                          {s.return != null ? spct(s.return) : "—"}
-                        </span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                          {s.volatility != null ? pct(s.volatility) : "—"}
-                        </span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>
-                          {s.sharpe != null ? s.sharpe.toFixed(2) : "—"}
-                        </span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                          {s.hit_rate != null ? pct(s.hit_rate, 0) : "—"}
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </ScrollTable>
-            ) : (
-              <StateNote>Style history unavailable for this regime (needs ≥6 months).</StateNote>
-            )}
-            <Caption>
-              Annualized style returns inside {effStyleRegime} months only.{" "}
-              <Jargon term="hit rate">Hit rate</Jargon> is the share of those months that finished
-              positive — read it against the month count, not as gospel.
-            </Caption>
-          </Card>
-        )}
-
-        {riskBlock === "tail" && (
-          <Card>
-            <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "minmax(0,1.4fr) minmax(0,1fr)", gap: 20 }}>
-              <div>
-                <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Asset tail risk · monthly, 95%</div>
-                <div style={{ display: "grid", gridTemplateColumns: "150px minmax(0,1fr) 70px 70px", gap: "2px 8px", alignItems: "center" }}>
-                  <span />
-                  <span />
-                  <span style={cellHead}>CVaR</span>
-                  <span style={cellHead}>VaR</span>
-                  {Object.entries(a.cvar_95?.asset_cvar ?? {}).map(([asset, c]) => (
-                    <Fragment key={asset}>
-                      <span key={asset} style={rowLabel}>
-                        {asset}
-                      </span>
-                      <span style={{ height: 4, borderRadius: "var(--r-xs)", background: "var(--surface-raised)", overflow: "hidden" }}>
-                        <span style={{ display: "block", height: "100%", width: `${Math.min((Math.abs(c.cvar) / 0.2) * 100, 100)}%`, background: "var(--neg)" }} />
-                      </span>
-                      <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", color: "var(--neg-text)" }}>
-                        {spct(c.cvar)}
-                      </span>
-                      <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", color: "var(--text-muted)" }}>
-                        {spct(c.var)}
-                      </span>
-                    </Fragment>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Portfolio CVaR by method</div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  {METHODS.map((m) => {
-                    const o = opt?.[m.key];
-                    const pc = o?.cvar_95?.cvar ?? null;
-                    // With weights on file, a method with no portfolio CVaR is
-                    // dropped as before; with no weights at all every method
-                    // keeps its row and prints the house dash.
-                    if (opt && pc == null) return null;
-                    return (
-                      <div key={m.key} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                        <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-muted)" }}>
-                          {m.label}
-                          {isFallback(o) ? " (fallback)" : ""}
-                        </span>
-                        <span style={{ ...mono, fontSize: "var(--fs-meta)", color: pc != null ? "var(--neg-text)" : "var(--text-muted)" }}>
-                          {pc != null ? spct(pc) : "—"}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                {!opt && (
-                  <Caption>
-                    Portfolio CVaR weights the assets by an optimizer solution; there is none for{" "}
-                    {curRegime} this session, so every method reads —.
-                  </Caption>
-                )}
-              </div>
-            </div>
-            <Caption>
-              <Jargon term="CVaR">CVaR</Jargon> is the average loss in the worst 5% of months, deeper
-              than VaR, which is only the doorway into them. Bars scale to a −20% monthly loss.
-            </Caption>
-          </Card>
-        )}
-
-        {riskBlock === "transitions" && (
-          <Card>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-              <span style={eyebrowStyle}>Forward 3M returns after</span>
-              {transPairs.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setTransPair(p)}
-                  aria-pressed={effTransPair === p}
-                  style={{
-                    appearance: "none",
-                    cursor: "pointer",
-                    background: effTransPair === p ? "rgba(74,158,255,.12)" : "none",
-                    border: "0.5px solid var(--line-hair)",
-                    borderRadius: "var(--r-xs)",
-                    padding: isNarrow ? "8px 12px" : "5px 10px",
-                    minHeight: isNarrow ? 40 : 28,
-                    ...mono,
-                    fontSize: "var(--fs-micro)",
-                    color: effTransPair === p ? "var(--accent)" : "var(--text-muted)",
-                  }}
-                >
-                  {p} · n={a.transition_pnl[p].count}
-                </button>
-              ))}
-            </div>
-            {effTransPair && a.transition_pnl[effTransPair] ? (
-              <div style={{ display: "grid", gridTemplateColumns: "150px minmax(0,1fr) 80px", gap: "2px 8px", alignItems: "center" }}>
-                {Object.entries(a.transition_pnl[effTransPair].avg_return).map(([asset, r]) => (
-                  <Fragment key={asset}>
-                    <span key={asset} style={rowLabel}>
-                      {asset}
-                    </span>
-                    <span style={{ height: 4, borderRadius: "var(--r-xs)", background: "var(--surface-raised)", overflow: "hidden", position: "relative" }}>
-                      <span
-                        style={{
-                          display: "block",
-                          height: "100%",
-                          width: `${Math.min((Math.abs(r) / 0.15) * 100, 100)}%`,
-                          background: r >= 0 ? "var(--pos)" : "var(--neg)",
-                        }}
-                      />
-                    </span>
-                    <span style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", color: r >= 0 ? "var(--pos)" : "var(--neg-text)" }}>
-                      {spct(r)}
-                    </span>
-                  </Fragment>
-                ))}
-              </div>
-            ) : (
-              <StateNote>No regime switch has repeated often enough to average (needs n ≥ 2).</StateNote>
-            )}
-            <Caption>
-              Average asset return in the three months after each historical regime switch. Sample
-              counts are tiny by nature — this is a map of what happened, not a forecast.
-            </Caption>
-          </Card>
-        )}
-
-        {riskBlock === "currency" && (
-          <Card>
-            <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Currency moves by regime · annualized</div>
-            {a.currency_impact && Object.keys(a.currency_impact).length ? (
-              <ScrollTable label="Currency moves by regime">
-                <div role="table" aria-label="Currency moves by regime" style={{ display: "grid", gridTemplateColumns: `120px repeat(${regimes.length},1fr)`, gap: "2px 8px", minWidth: 520 }}>
-                  <div role="row" style={{ display: "contents" }}>
-                    <span role="columnheader" />
-                    {regimes.map((r) => (
-                      <span role="columnheader" key={r} style={cellHead}>
-                        {r}
-                      </span>
-                    ))}
-                  </div>
-                  {[
-                    ...new Set(Object.values(a.currency_impact).flatMap((byPair) => Object.keys(byPair))),
-                  ].map((pair) => (
-                    <div role="row" style={{ display: "contents" }} key={pair}>
-                      <span role="rowheader" key={pair} style={rowLabel}>
-                        {pair}
-                      </span>
-                      {regimes.map((r) => {
-                        const c = a.currency_impact?.[r]?.[pair];
-                        return (
-                          <span role="cell" key={`${pair}-${r}`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>
-                            {c ? (
-                              <>
-                                <span style={{ color: c.return < 0 ? "var(--neg-text)" : "var(--text)" }}>{spct(c.return)}</span>
-                                <span style={{ color: "var(--text-muted)" }}> · σ{pct(c.volatility, 0)}</span>
-                              </>
-                            ) : (
-                              "—"
-                            )}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </ScrollTable>
-            ) : (
-              <StateNote>Currency history unavailable from the vendor this session.</StateNote>
-            )}
-            <Caption>
-              Dollar strength is a regime variable: EM FX and the majors swing sign across regimes,
-              which is what an unhedged international sleeve actually feels.
-            </Caption>
-          </Card>
-        )}
-
-        {riskBlock === "real" && (
-          <Card>
-            {/* The source leaves real_nominal null outright when CPI is missing
-                or the deflation step raises, so every read here goes through
-                the block, not just through the regime key. */}
-            <div style={{ ...eyebrowStyle, marginBottom: 8 }}>
-              Real vs nominal · {curRegime} months (n={a.real_nominal?.[curRegime]?.n_months ?? "—"})
-            </div>
-            {a.real_nominal?.[curRegime] ? (
-              <ScrollTable label="Real vs nominal returns by asset">
-                <div role="table" aria-label="Real vs nominal returns by asset" style={{ display: "grid", gridTemplateColumns: "150px repeat(3,1fr)", gap: "2px 8px", minWidth: 420 }}>
-                  <div role="row" style={{ display: "contents" }}>
-                    <span role="columnheader" />
-                    {["Nominal", "Real", "Inflation drag"].map((h) => (
-                      <span role="columnheader" key={h} style={cellHead}>
-                        {h}
-                      </span>
-                    ))}
-                  </div>
-                  {Object.keys(a.real_nominal?.[curRegime]?.nominal ?? {}).map((asset) => {
-                    const rn = a.real_nominal?.[curRegime];
-                    if (!rn) return null;
-                    const nom = rn.nominal[asset];
-                    const real = rn.real[asset];
-                    const eroded = nom != null && real != null && nom > 0 && real < 0;
-                    return (
-                      <div role="row" style={{ display: "contents" }} key={asset}>
-                        <span role="rowheader" style={rowLabel}>
-                          {asset}
-                          {eroded ? <span style={{ color: "var(--warn)" }}> ▪ eroded</span> : ""}
-                        </span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px" }}>{nom != null ? spct(nom) : "—"}</span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: (real ?? 0) < 0 ? "var(--neg-text)" : "var(--text)" }}>
-                          {real != null ? spct(real) : "—"}
-                        </span>
-                        <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color: "var(--text-muted)" }}>
-                          {spct(rn.inflation_drag[asset] ?? 0)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </ScrollTable>
-            ) : (
-              <StateNote>
-                {a.real_nominal
-                  ? "No inflation-adjusted view for this regime."
-                  : "Real-vs-nominal splits unavailable: the source could not compute them this session."}
-              </StateNote>
-            )}
-            <Caption>
-              CPI-deflated returns inside the current regime. ▪ eroded marks assets whose nominal
-              gain turns into a real loss — the quiet failure mode of inflationary regimes.
-            </Caption>
-          </Card>
-        )}
-
-        {riskBlock === "correlation" && (
-          <Card>
-            {/* Same wrap rule as the style chips — four regime names plus the
-                label don't fit one phone line. */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "baseline", flexWrap: isNarrow ? "wrap" : "nowrap" }}>
-              <span style={eyebrowStyle}>Correlations in</span>
-              {regimes.map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setCorrRegime(r)}
-                  aria-pressed={effCorrRegime === r}
-                  style={{
-                    appearance: "none",
-                    cursor: "pointer",
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    ...mono,
-                    fontSize: "var(--fs-meta)",
-                    color: effCorrRegime === r ? REGIME_COLORS[r] : "var(--text-muted)",
-                    fontWeight: effCorrRegime === r ? 700 : 400,
-                  }}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-            {a.regime_correlations[effCorrRegime] ? (
-              <ScrollTable label="Scrollable table">
-                <div
-                  role="table"
-                  aria-label={`Asset correlations in ${effCorrRegime}`}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: `130px repeat(${a.regime_correlations[effCorrRegime].columns.length}, 1fr)`,
-                    gap: 1,
-                    minWidth: 700,
-                  }}
-                >
-                  <div role="row" style={{ display: "contents" }}>
-                    <span role="columnheader" />
-                    {a.regime_correlations[effCorrRegime].columns.map((c) => (
-                      <span role="columnheader" key={c} style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: ".02em", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", padding: "2px 2px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                        {c.replace("US ", "")}
-                      </span>
-                    ))}
-                  </div>
-                  {a.regime_correlations[effCorrRegime].index.map((rowName, ri) => (
-                    <div role="row" style={{ display: "contents" }} key={String(rowName)}>
-                      <span role="rowheader" key={String(rowName)} style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "3px 4px" }}>
-                        {String(rowName)}
-                      </span>
-                      {a.regime_correlations[effCorrRegime].columns.map((col, ci) => {
-                        const v = a.regime_correlations[effCorrRegime].data[ri]?.[ci] ?? null;
-                        return (
-                          <span role="cell" key={`${rowName}-${col}`} style={{ ...mono, fontSize: "var(--fs-micro)", textAlign: "center", padding: "3px 1px", background: ri === ci ? "transparent" : corrBg(v), color: ri === ci ? "var(--text-faint)" : "var(--text-2)" }}>
-                            {v != null ? v.toFixed(2) : "—"}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </ScrollTable>
-            ) : (
-              <StateNote>Not enough months in this regime for a stable matrix.</StateNote>
-            )}
-            <Caption>
-              Red cells cluster together in stress — diversification that exists on paper
-              (Goldilocks) and disappears when needed is the point of checking per regime. Blue
-              cells are the true diversifiers.
-            </Caption>
-          </Card>
-        )}
-
-        {riskBlock === "drawdowns" && !a.drawdowns?.by_regime?.columns && (
-          <Card>
-            <StateNote>Drawdown history unavailable in this payload.</StateNote>
-          </Card>
-        )}
-        {riskBlock === "drawdowns" && a.drawdowns?.by_regime?.columns && (
-          <Card>
-            <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Maximum drawdown · by regime and overall</div>
-            <ScrollTable label="Maximum drawdown by regime and overall">
-              <div role="table" aria-label="Maximum drawdown by regime and overall" style={{ display: "grid", gridTemplateColumns: `150px repeat(${a.drawdowns.by_regime.columns.length + 1},1fr)`, gap: "2px 8px", minWidth: 560 }}>
-                <div role="row" style={{ display: "contents" }}>
-                  <span role="columnheader" />
-                  {a.drawdowns.by_regime.columns.map((c) => (
-                    <span role="columnheader" key={c} style={cellHead}>
-                      {c}
-                    </span>
-                  ))}
-                  <span role="columnheader" style={cellHead}>Overall</span>
-                </div>
-                {a.drawdowns.by_regime.index.map((asset, ri) => (
-                  <div role="row" style={{ display: "contents" }} key={String(asset)}>
-                    <span role="rowheader" key={String(asset)} style={rowLabel}>
-                      {String(asset)}
-                    </span>
-                    {a.drawdowns.by_regime.columns.map((col) => {
-                      const v = frameCell(a.drawdowns.by_regime, ri, col);
-                      const color = v == null ? "var(--text-muted)" : v < -0.3 ? "var(--neg-text)" : v < -0.15 ? "var(--warn-hot)" : "var(--text-muted)";
-                      return (
-                        <span role="cell" key={`${asset}-${col}`} style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", color }}>
-                          {v != null ? spct(v) : "—"}
-                        </span>
-                      );
-                    })}
-                    <span role="cell" style={{ ...mono, fontSize: "var(--fs-meta)", textAlign: "right", padding: "4px 8px", fontWeight: 600, color: (a.drawdowns.overall[String(asset)] ?? 0) < -0.3 ? "var(--neg-text)" : "var(--text)" }}>
-                      {a.drawdowns.overall[String(asset)] != null ? spct(a.drawdowns.overall[String(asset)]) : "—"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </ScrollTable>
-            <Caption>
-              Worst peak-to-trough loss per asset, split by the regime it happened in. A −50%{" "}
-              <Jargon term="drawdown">drawdown</Jargon> needs +100% to recover — the asymmetry is
-              the whole argument for risk budgeting.
-            </Caption>
-          </Card>
-        )}
-      </section>
-
-      <div style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: ".06em", color: "var(--text-muted)" }}>
-        Monthly total returns for 10 asset classes, index-spliced before ETF inceptions · computed
-        by the same allocation engine each session · regimes from the stored classifier history.
-      </div>
+    <div style={{ display: "grid", gap: "var(--gap-panel)", minWidth: 0 }}>
+      <AllocationOverview a={a} />
+      <AllocationOptimization a={a} />
+      <RiskLenses a={a} />
     </div>
   );
 }

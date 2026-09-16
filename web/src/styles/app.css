@@ -1648,6 +1648,82 @@ main .mrr-scroll {
   margin: 8px 0;
 }
 
+/* Tools (Phase 9, checklist 09 A.14 / B.0): the same one-column panel
+   stack, hero-row margin zeroed; the hero row of the active tool sits above
+   the sub-tabs. The LBO body pairs the 400px assumptions panel with the
+   results stack (tools.html:178), one column below 1200; the results stack
+   pairs the schedule with the IRR sensitivity (`minmax(0,1fr) minmax(0,1fr)`),
+   one column below 1200; the four output tiles are four across, auto-fit
+   below 768 and one column below 480 (the LboPanel.tsx:397-406 rule; media
+   rules in the responsive blocks). The switch is the live-rate toggle on the
+   assumptions tile (tools.html:184): 38x22, mint when checked, the track
+   colour otherwise, a 16px knob; the base focus ring; no motion under
+   reduced motion. */
+.mrr-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-tools > .mrr-hero-row {
+  margin-bottom: 0;
+}
+.mrr-tools-lbo {
+  display: grid;
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: var(--gap-col);
+  align-items: start;
+}
+.mrr-tools-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap-col);
+  align-items: start;
+}
+.mrr-tools-outputs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+.mrr-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: var(--track);
+  cursor: pointer;
+}
+.mrr-switch[aria-checked="true"] {
+  background: var(--mint);
+}
+.mrr-switch > i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: left var(--dur-fast) var(--ease-out);
+}
+.mrr-switch[aria-checked="true"] > i {
+  left: 19px;
+  background: #04140e;
+}
+.mrr-switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.mrr-switch:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
 /* ── Responsive (spec §2; `.98` upper bounds like useBreakpoint.ts) ─────── */
 
 /* Below 1200 the strip becomes two columns, the hero row stacks the summary
@@ -1690,6 +1766,10 @@ main .mrr-scroll {
     grid-template-columns: minmax(0, 1fr);
   }
   .mrr-news-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-tools-lbo,
+  .mrr-tools-pair {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -1799,6 +1879,10 @@ main .mrr-scroll {
   .mrr-news-row > :nth-child(n + 6) {
     grid-column: 1 / -1 !important;
   }
+  /* Tools (Phase 9): the four output tiles fit what they can. */
+  .mrr-tools-outputs {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
   .assistant-panel {
     right: 8px;
     left: 8px;
@@ -1846,10 +1930,16 @@ main .mrr-scroll {
   .mrr-rec-inputs {
     grid-template-columns: minmax(0, 1fr);
   }
+  .mrr-tools-outputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   [style*="mrr-pulse"] {
     animation: none !important;
+  }
+  .mrr-switch > i {
+    transition: none;
   }
 }

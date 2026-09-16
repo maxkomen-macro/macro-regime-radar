@@ -542,6 +542,60 @@ every figure is a served field or a count of served rows, and the only client
 arithmetic is the ET calendar-day delta the countdown, the day markers and the timeline
 columns share.
 
+**Tools composition (Phase 9, 2026-09-15).** Inside `<div class="mrr-tools">` (the
+same one-column panel stack, hero-row margin zeroed), top to bottom: (1) the
+`.mrr-hero-row` of the active tool, swapped with the sub-tab and sitting above the
+tablist as on every other tab. On LBO calculator, `TabHero id="lbo-hero"` (eyebrow "LBO
+calculator", the ◆ glyph; h1 = the default deal's served IRR, "{x}% IRR", read from the
+base run of `BASE_INPUTS` at the live rate and never from the modified deal; the pill
+"{x}× MOIC" toned by the IRR bands, mint at 20 and above, amber 15 to 20, gray below;
+the subhead "The default deal at today's {rate}% all-in rate." or the stated 8.50%
+fallback sentence, never moving with the slider; the lede naming the default deal from
+`BASE_INPUTS` and then the calculator sentence; "Adjust assumptions", a hash link to
+`#lbo-assumptions`, and "View financing conditions" into `/app/credit#financing`; the
+footnote is the badge sentence "Clears the 20% PE bar" / "Below the 20% bar · above 15%"
+/ "Below 15%" in the ramp colour, then the `Financing rate` freshness chip; the note
+prints the modified deal's IRR, MOIC and pp against the default only while something is
+modified; the signature visual is the inline-SVG equity value bridge, `EquityBridge`:
+six bars on served fields, entry equity, EBITDA growth, multiple change, debt paydown,
+fees, exit equity, rounded $M values above, two-line labels below, dashed connectors
+between running totals and a 2px stub for a zero step; the loading, rate-unavailable
+and model-unavailable states swap the h1 for a UI-face sentence) beside `SummaryCard
+id="lbo-summary"` ("Live financing": Fed funds · HY OAS · All-in rate · Financing ·
+Structure · Equity check on a viable deal · Vs base case on a modified deal · Credit
+state, a link into `/app/credit#financing` printing the served credit label; the FRED
+strip, mint "Rate synced from FRED", amber "FRED rate delayed" / "FRED rate stale", gray
+"Reading the FRED rate…" / "Rate feed unavailable", a button opening the freshness
+drawer). On Asset allocation, `TabHero id="allocation-hero"` (eyebrow "Asset
+allocation"; h1 = the asset that led the current regime's months, its served
+annualized mean as the pill "{±x}% a year", mint when non-negative; the subhead "Led
+{regime} months since {Mon YYYY} at Sharpe {s}; {asset} lagged at {±y}%."; the lede is
+the read-the-column sentence with the served odds and sample size; "See the
+optimization", a hash link to `#allocation-optimization`, and "Regime Lab backtests"
+into `/app/regime-lab#backtests`; the `Returns` and `Regime labels` chips; the signature
+visual is `RegimeReturnBars`, the current regime's served means as horizontal bars from
+a zero rule, gains right in `--pos`, losses left in `--neg`; the loading state carries
+the return-history sentence, the error state the unavailable sentence) beside
+`SummaryCard id="allocation-summary"` ("Allocation summary": Sample · Risk-free ·
+Optimizer, the solved count read from the served `converged` flags; the strip, mint
+"Optimizer solved · {n} methods", amber "Optimizer solved with {k} fallback(s)" /
+"Optimizer unavailable this session", gray while reading, a hash link to
+`#allocation-optimization`). (2) `SubTabs` (LBO calculator · Asset allocation; the hash
+`#lbo` / `#allocation`, and any `#lbo-*` / `#allocation-*` section id selects its tool
+by prefix) whose panel is `<section id="lbo">` with the `LboPanel` body
+(`.mrr-tools-lbo`, `400px | minmax(0,1fr)`, one column below 1200: `#lbo-assumptions`
+with the live-rate tile and its `.mrr-switch`, the nine sliders in three groups and the
+warnings block, beside the results stack: `#lbo-outputs` on `.mrr-tools-outputs`, four
+tiles across, auto-fit below 768, one column below 480; `.mrr-tools-pair`,
+`#lbo-schedule` | `#lbo-sensitivity`, one column below 1200; the market-check caption)
+or `<section id="allocation">` with the `AllocationPanel` sections
+(`#allocation-overview`, `#allocation-optimization`, `#allocation-risk`). (3) the tool's
+`DisclosureLine`. Nothing on the page is re-derived in the browser: IRR, MOIC, the
+schedule and the sensitivity grid are served by `POST /api/lbo/run` (one request at
+rest, two once the deal is modified; the base run shares the deal run's key until then),
+and the only client arithmetic is the bridge bars, the schedule's paydown and leverage
+columns and the debt-at-exit ratio on served rows.
+
 **Gaps.** 16px between top-level columns (`--gap-col`), 14px between stacked panels
 (`--gap-panel`), 12px between tiles inside a panel (`--gap-tile`). Panel padding
 `16px 18px 18px`; tile padding 14 to 16px. The old 2px-increment spacing scale
@@ -962,6 +1016,9 @@ Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-15 Phase 9: Tools rebuilt on TabHero / SummaryCard per tool; LBO body 400 | 1fr
+  with the IRR HeatMatrix; Allocation on Segmented / HeatMatrix / DataTable / MeterRow
+  with every lens kept
 - 2026-09-15 Phase 8: News & Calendar rebuilt on TabHero / SummaryCard; NewsCard gains
   the lead variant; the calendar is a day-grouped DataTable
 - 2026-09-15 Phase 7: Recession rebuilt on TabHero / SummaryCard; the scenario result
