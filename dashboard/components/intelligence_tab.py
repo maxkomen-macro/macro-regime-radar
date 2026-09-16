@@ -815,7 +815,7 @@ def render() -> None:
     color: #9aa5c8 !important;
 }
 .stButton > button:hover {
-    background: #1c2128 !important;
+    background: #0a1650 !important;
     border-color: #c69842 !important;
     color: #f2f4fa !important;
 }

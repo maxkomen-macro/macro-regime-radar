@@ -21,7 +21,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # ── Design tokens ──────────────────────────────────────────────────────────────
-_PAGE_BG = "#010409"   # outermost body bg inside components.html
+_PAGE_BG = "#000b3d"   # outermost body bg inside components.html
 _BG      = "#000b3d"   # card / container bg
 _CARD_BG = "#000b3d"
 _BORDER  = "#1e2e6e"
@@ -688,7 +688,7 @@ def _render_optimization(data: dict) -> None:
     # Method descriptions expander
     with st.expander("📚 Understanding the Methods", expanded=False):
         _methods_explainer_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>* {{box-sizing:border-box;margin:0;padding:0;}} body {{background:#010409;font-family:{_FONT};padding:16px;}} .entry {{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #1e2e6e;}} .entry:last-child {{margin-bottom:0;border-bottom:none;}}</style>
+<style>* {{box-sizing:border-box;margin:0;padding:0;}} body {{background:#000b3d;font-family:{_FONT};padding:16px;}} .entry {{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #1e2e6e;}} .entry:last-child {{margin-bottom:0;border-bottom:none;}}</style>
 </head><body>
 <div style="color:{_TEXT};font-size:13px;line-height:1.7;">
   <div class="entry">
@@ -866,7 +866,7 @@ def _render_drawdown_table(drawdowns: dict, asset_classes: list) -> None:
         if not np.isnan(overall_dd):
             tc = _dd_color(overall_dd)
             row += (
-                f"<td style='background:#0a0a0a;border:1px solid {_BORDER};"
+                f"<td style='background:#0a1650;border:1px solid {_BORDER};"
                 f"text-align:center;padding:7px 10px;color:{tc};font-size:13px;font-weight:700;'>"
                 f"{overall_dd:.1%}</td>"
             )

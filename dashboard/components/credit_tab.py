@@ -241,7 +241,7 @@ def _render_oas_chart(hy_series: pd.Series, ig_series: pd.Series) -> None:
 
     color_scale = alt.Scale(
         domain=["HY OAS", "IG OAS"],
-        range=["#e0812f", "#c69842"],
+        range=["#c69842", "#7fa6e0"],
     )
 
     lines = (

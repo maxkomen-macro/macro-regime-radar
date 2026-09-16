@@ -226,7 +226,7 @@ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
 }
 .ei-hrow:hover { background: #0a1650; }
 .ei-hrow-sel {
-    background: #1c2128;
+    background: #0a1650;
     border-left-color: #c69842;
 }
 .ei-hrow-sel .ei-hrow-head { color: #c69842; }

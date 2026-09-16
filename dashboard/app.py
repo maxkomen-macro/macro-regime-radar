@@ -900,8 +900,8 @@ div.stDivider, hr { margin: 8px 0 !important; border-color: #172561 !important; 
 
 /* ── Section nav (segmented control) ───────────── */
 [data-testid="stSegmentedControl"] { margin: 2px 0 0; }
-[data-testid="stSegmentedControl"] button,
-[data-testid="stPills"] button {
+button[data-variant="segmented_control"],
+button[data-variant="pills"] {
     border-radius: 6px !important;
     border: 1px solid #1e2e6e !important;
     background: transparent !important;
@@ -911,19 +911,17 @@ div.stDivider, hr { margin: 8px 0 !important; border-color: #172561 !important; 
     padding: 4px 14px !important;
     transition: none !important;
 }
-[data-testid="stSegmentedControl"] button[aria-checked="true"],
-[data-testid="stSegmentedControl"] button[data-selected="true"],
-[data-testid="stPills"] button[aria-checked="true"],
-[data-testid="stPills"] button[data-selected="true"] {
+button[data-variant="segmented_control"][data-selected="true"],
+button[data-variant="pills"][data-selected="true"] {
     background: #c69842 !important;
     border-color: #c69842 !important;
     color: #000b3d !important;
 }
-[data-testid="stSegmentedControl"] button:hover,
-[data-testid="stPills"] button:hover { color: #f2f4fa !important; border-color: #5c6a99 !important; }
-[data-testid="stSegmentedControl"] button:focus-visible,
-[data-testid="stPills"] button:focus-visible { outline: 2px solid #c69842 !important; outline-offset: 2px; }
-[data-testid="stSegmentedControl"] > div > div, [data-testid="stPills"] > div > div { gap: 6px !important; }
+button[data-variant="segmented_control"]:not([data-selected="true"]):hover,
+button[data-variant="pills"]:not([data-selected="true"]):hover { color: #f2f4fa !important; border-color: #5c6a99 !important; }
+button[data-variant="segmented_control"]:focus-visible,
+button[data-variant="pills"]:focus-visible { outline: 2px solid #c69842 !important; outline-offset: 2px; }
+[data-testid="stSegmentedControl"] [role="radiogroup"], [data-testid="stPills"] [role="radiogroup"] { gap: 6px !important; }
 
 /* ── Buttons / popover ─────────────────────────── */
 .stButton > button, [data-testid="stPopover"] > button, [data-testid="stDownloadButton"] > button {
@@ -964,6 +962,15 @@ div.stDivider, hr { margin: 8px 0 !important; border-color: #172561 !important; 
 /* ── Legacy signal helpers ─────────────────────── */
 .sig-triggered { border-left: 4px solid #e05252; }
 .sig-ok        { border-left: 4px solid #3dbe7a; }
+
+/* ── Sliders ───────────────────────────────────── */
+[data-testid="stSliderThumbValue"] { white-space: nowrap !important; font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 11px; }
+[data-testid="stSliderTickBarMin"], [data-testid="stSliderTickBarMax"] { font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 10px; }
+
+/* ── Alerts ────────────────────────────────────── */
+[data-testid="stAlert"] { border-radius: 8px; border: 1px solid #1e2e6e; }
+[data-testid="stAlertContentInfo"], [data-testid="stAlert"] [data-testid="stAlertContentInfo"] { color: #c8cfe6; }
+[data-testid="stAlert"] > div { background: #0a1650 !important; color: #c8cfe6 !important; }
 
 /* ── Brand helpers ─────────────────────────────── */
 .rr-eyebrow { font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#9aa5c8; margin:14px 0 6px; }
@@ -1044,11 +1051,12 @@ with nav_col:
         "Section", SECTIONS, default="Overview", key="rr_section", label_visibility="collapsed",
     ) or "Overview"
 with gear_col:
-    with st.popover("Chart settings"):
-        st.radio("Chart window", ["6M", "1Y", "2Y", "Max"], key="rr_window", horizontal=True)
-        st.toggle("Shade regimes on charts", key="rr_overlay")
-        st.selectbox("Normalization", ["Raw", "Index to 100", "Z-score"], key="rr_norm")
-        st.caption("Applies to Overview charts and downloads.")
+    if section == "Overview":
+        with st.popover("Chart settings"):
+            st.radio("Chart window", ["6M", "1Y", "2Y", "Max"], key="rr_window", horizontal=True)
+            st.toggle("Shade regimes on charts", key="rr_overlay")
+            st.selectbox("Normalization", ["Raw", "Index to 100", "Z-score"], key="rr_norm")
+            st.caption("Applies to Overview charts and downloads.")
 
 
 def _subnav(section_name: str, default: str | None = None) -> str | None:
