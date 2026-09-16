@@ -415,3 +415,21 @@ checklists and the morning report live under docs/redesign-v2/ (locally excluded
 - Needs backend (hidden, logged): consensus / prior / actuals; the lede's consensus sentence; a served source count; the feed
   verdict without sla; a recency sort.
 - Rollback: `git switch redesign/07-recession && git branch -D redesign/08-news`
+
+### redesign/09-tools — 1b4a18d (Phase 9)
+- What changed: Tools rebuilt on TabHero/SummaryCard per tool: the LBO hero (default-deal IRR, MOIC pill, equity bridge),
+  the Live financing summary with the FRED strip, the 400 | 1fr body (assumptions with the live-rate switch and nine
+  SliderRows, outputs with the Default/Modified badge, the eight-column schedule, the IRR HeatMatrix); the Allocation hero
+  and summary with the optimizer strip, the performance HeatMatrix, Optimization behind a method Segmented (or the
+  status disclosure), Risk analysis with all eight lenses; lbo-deal.ts state machine; subtabFromHash prefix rule.
+- Tests: vitest 671 → 781 (76 files) · e2e 128 → 143 + 11 capture · typecheck 0 · build clean. Parity guarantees green with
+  ten reviewed renames.
+- Verify loops: 1 (Vs base case waits for the settled run; chips hidden on a phone; the optimizer sentence as a caption;
+  three spec-side corrections). Browser landing check with Playwright MCP at 1672 and 390 (real ArrowRight slider walk,
+  rate switch, Reset, tab swap, eight lenses, optimizer disclosure).
+- Interruptions: the session restarted after an expired OAuth token cut the first Phase 9 agents; relaunched from the
+  on-disk state (PROGRESS.md 19:22).
+- Captures: docs/redesign-v2/captures/redesign-09-tools/ (80 files, console clean).
+- Needs backend (hidden, logged): rate × leverage grid; IRR-vs-rate line (flat under the served model); year-ago rows;
+  the "50 bp" sentence; the cash-sweep caption.
+- Rollback: `git switch redesign/08-news && git branch -D redesign/09-tools`
