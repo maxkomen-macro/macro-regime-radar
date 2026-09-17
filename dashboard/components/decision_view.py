@@ -202,9 +202,9 @@ def _render_regime_tile(latest_regime, regimes_df, as_of) -> None:
     i_arrow  = "▲" if it >= 0 else "▼"
     st.markdown(
         f'<div style="display:flex;gap:8px;margin-top:6px">'
-        f'<span style="background:{g_color};color:#fff;padding:4px 10px;border-radius:12px;font-size:12px">'
+        f'<span style="background:{g_color};color:#fff;padding:4px 10px;border-radius:3px;font-size:12px">'
         f'Growth {g_arrow} {gt:.2f}</span>'
-        f'<span style="background:{i_color};color:#fff;padding:4px 10px;border-radius:12px;font-size:12px">'
+        f'<span style="background:{i_color};color:#fff;padding:4px 10px;border-radius:3px;font-size:12px">'
         f'Inflation {i_arrow} {it:.2f}</span>'
         f'</div>',
         unsafe_allow_html=True,
@@ -220,9 +220,10 @@ def _render_top_risks(alerts: pd.DataFrame) -> None:
     # Count by level
     level_counts = alerts["level"].value_counts()
     badges_html = " ".join(
-        f'<span style="background:{LEVEL_COLORS.get(lvl,"#888")};color:#fff;'
-        f'padding:3px 9px;border-radius:10px;font-size:12px">'
-        f'{LEVEL_ICONS.get(lvl,"")} {lvl.capitalize()}: {cnt}</span>'
+        f'<span style="display:inline-block;background:#ffffff;color:#0b1540;'
+        f'border:1px solid #d3d7e0;border-left:3px solid {LEVEL_COLORS.get(lvl,"#888")};'
+        f'padding:5px 12px;border-radius:4px;font-size:12px;font-weight:600">'
+        f'{lvl.capitalize()}: {cnt}</span>'
         for lvl, cnt in level_counts.items()
         if lvl in LEVEL_COLORS
     )

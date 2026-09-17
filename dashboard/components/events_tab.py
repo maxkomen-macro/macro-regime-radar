@@ -154,11 +154,11 @@ div[data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"] {
     background: transparent !important;
     border: 1px solid #d3d7e0 !important;
     color: #5b6480 !important;
-    border-radius: 16px !important;
+    border-radius:3px !important;
     padding: 4px 14px !important;
     font-size: 11px !important;
     font-weight: 600 !important;
-    font-family: 'SF Mono', 'Fira Code', monospace !important;
+    font-family: 'Helvetica Neue',Helvetica,Arial,sans-serif !important;
     letter-spacing: 0.8px !important;
     height: 28px !important;
     min-height: 28px !important;
@@ -184,11 +184,11 @@ div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"] {
     background: #000b3d !important;
     border: 1px solid #000b3d !important;
     color: #f3f4f6 !important;
-    border-radius: 16px !important;
+    border-radius:3px !important;
     padding: 4px 14px !important;
     font-size: 11px !important;
     font-weight: 700 !important;
-    font-family: 'SF Mono', 'Fira Code', monospace !important;
+    font-family: 'Helvetica Neue',Helvetica,Arial,sans-serif !important;
     letter-spacing: 0.8px !important;
     height: 28px !important;
     min-height: 28px !important;
@@ -239,16 +239,16 @@ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
     margin-bottom: 6px;
 }
 .ei-hrow-cat {
-    font-family: 'SF Mono','Fira Code',monospace;
+    font-family: 'Helvetica Neue',Helvetica,Arial,sans-serif;
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.8px;
     padding: 2px 8px;
-    border-radius: 10px;
+    border-radius:3px;
     text-transform: uppercase;
 }
 .ei-hrow-sig {
-    font-family: 'SF Mono','Fira Code',monospace;
+    font-family: 'Helvetica Neue',Helvetica,Arial,sans-serif;
     font-size: 12px;
     font-weight: 700;
 }
@@ -266,7 +266,7 @@ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
     margin-bottom: 6px;
 }
 .ei-hrow-meta {
-    font-family: 'SF Mono','Fira Code',monospace;
+    font-family: 'Helvetica Neue',Helvetica,Arial,sans-serif;
     font-size: 11px;
     color: #6f7893;
     margin-bottom: 4px;
@@ -555,10 +555,10 @@ def render_summary_bar(df: pd.DataFrame) -> None:
             f'border-top:2px solid {accent};border-radius:0 0 6px 6px;'
             f'padding:12px 16px;text-align:center;">'
             f'<div style="color:#6f7893;font-size:10px;font-weight:700;'
-            f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
+            f'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
             f'margin-bottom:6px;">{label}</div>'
             f'<div style="color:{accent};font-size:22px;font-weight:700;'
-            f'font-family:\'SF Mono\',monospace;line-height:1;">{count}</div>'
+            f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;line-height:1;">{count}</div>'
             f'</div>'
         )
 
@@ -659,14 +659,14 @@ def render_headline_list(df: pd.DataFrame, current_regime: str = "Goldilocks") -
     live_html = (
         '<span class="ei-live-dot"></span>'
         '<span style="color:#1e9e5a;font-size:9px;font-weight:700;'
-        'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
+        'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
         'margin-right:8px;">LIVE</span>'
         if fresh else ""
     )
     st.markdown(
         f'<div style="display:flex;align-items:center;'
         f'color:#5b6480;font-size:10px;font-weight:700;'
-        f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
+        f'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
         f'padding:0 0 8px 0;border-bottom:1px solid #e3e6ec;">'
         f'<span style="flex:1;">HEADLINES '
         f'<span style="color:#d3d7e0;">({n})</span></span>'
@@ -795,8 +795,8 @@ def render_detail_card(row: pd.Series) -> None:
         deal_label = _DEAL_LABELS.get(deal_size, "")
         deal_badge = (
             f'<span style="background:#3a2a0a;color:#d9772a;'
-            f'font-size:10px;padding:2px 8px;border-radius:10px;'
-            f'font-weight:700;font-family:\'SF Mono\',monospace;'
+            f'font-size:10px;padding:2px 8px;border-radius:3px;'
+            f'font-weight:700;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
             f'margin-left:4px;">{html.escape(deal_label)}</span>'
         )
 
@@ -806,25 +806,25 @@ def render_detail_card(row: pd.Series) -> None:
             f'<a href="{url_e}" target="_blank" rel="noopener" style="'
             f'margin-left:auto;background:rgba(0,11,61,0.1);'
             f'border:1px solid rgba(0,11,61,0.3);color:#000b3d;'
-            f'font-size:11px;padding:4px 12px;border-radius:12px;'
-            f'text-decoration:none;font-family:\'SF Mono\',monospace;'
+            f'font-size:11px;padding:4px 12px;border-radius:3px;'
+            f'text-decoration:none;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
             f'white-space:nowrap;">READ FULL ARTICLE →</a>'
         )
 
     cat_badge = (
         f'<span style="background:{cat_style["bg"]};color:{cat_style["color"]};'
-        f'font-size:10px;padding:2px 10px;border-radius:10px;font-weight:700;'
-        f'font-family:\'SF Mono\',monospace;letter-spacing:0.8px;'
+        f'font-size:10px;padding:2px 10px;border-radius:3px;font-weight:700;'
+        f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;letter-spacing:0.8px;'
         f'text-transform:uppercase;">{html.escape(cat)}</span>'
     )
     src_chip = (
         f'<span style="color:{t_color};font-weight:{t_weight};'
-        f'font-size:11px;font-family:\'SF Mono\',monospace;">'
+        f'font-size:11px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">'
         f'{source_e}</span>'
     ) if source_e else ""
     time_chip = (
         f'<span style="color:#6f7893;font-size:11px;'
-        f'font-family:\'SF Mono\',monospace;">{ta_e}</span>'
+        f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">{ta_e}</span>'
     ) if ta_e else ""
     sep = '<span style="color:#d3d7e0;font-size:11px;">·</span>'
 
@@ -876,15 +876,15 @@ def render_detail_card(row: pd.Series) -> None:
         f'<div style="display:flex;align-items:center;gap:12px;'
         f'margin-bottom:8px;">'
         f'<span style="color:#6f7893;font-size:11px;font-weight:700;'
-        f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">'
+        f'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">'
         f'SIGNIFICANCE</span>'
         f'<span style="color:{sig_color};font-size:18px;font-weight:700;'
-        f'font-family:\'SF Mono\',monospace;">{sig:.1f}'
+        f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">{sig:.1f}'
         f'<span style="color:#d3d7e0;font-size:12px;font-weight:600;'
         f'margin-left:3px;">/ 5.0</span></span>'
         f'<span style="background:{sig_color}22;color:{svcol};'
         f'border:1px solid {svcol}66;font-size:9px;font-weight:700;'
-        f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
+        f'letter-spacing:1px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
         f'padding:2px 8px;border-radius:8px;">{sig_verdict}</span>'
         f'</div>',
         unsafe_allow_html=True,
@@ -910,14 +910,14 @@ def render_detail_card(row: pd.Series) -> None:
                 f'border-radius:6px;padding:6px 4px;text-align:center;'
                 f'font-family:system-ui,-apple-system,sans-serif;">'
                 f'<div style="color:#6f7893;font-size:9px;font-weight:700;'
-                f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
+                f'letter-spacing:1px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
                 f'margin-bottom:3px;">{label}</div>'
                 f'<div style="color:{sc};font-size:18px;font-weight:700;'
-                f'font-family:\'SF Mono\',monospace;line-height:1;">{v}'
+                f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;line-height:1;">{v}'
                 f'<span style="color:#d3d7e0;font-size:9px;font-weight:600;'
                 f'margin-left:2px;">/5</span></div>'
                 f'<div style="color:{vcol};font-size:9px;font-weight:700;'
-                f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
+                f'letter-spacing:1px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
                 f'margin-top:3px;">{verdict}</div>'
                 f'<div style="margin-top:4px;line-height:1;">{dots}</div>'
                 f'</div>',
@@ -930,7 +930,7 @@ def render_detail_card(row: pd.Series) -> None:
         regime_e = html.escape(regime_raw)
         st.markdown(
             f'<div style="color:#1e9e5a;font-size:10px;font-weight:700;'
-            f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
+            f'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
             f'margin-bottom:6px;">REGIME READ</div>'
             f'<div style="color:#5b6480;font-size:12px;line-height:1.55;'
             f'font-style:italic;'
@@ -961,12 +961,12 @@ def render_detail_card(row: pd.Series) -> None:
                     f'<div style="margin-top:8px;padding-top:8px;'
                     f'border-top:1px solid #e3e6ec;color:#6f7893;'
                     f'font-size:9px;font-weight:700;letter-spacing:1px;'
-                    f'font-family:\'SF Mono\',monospace;margin-bottom:4px;">'
+                    f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;margin-bottom:4px;">'
                     f'SOURCES</div><div>{link_items}</div>'
                 )
         st.markdown(
             f'<div style="color:#1e9e5a;font-size:10px;font-weight:700;'
-            f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
+            f'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
             f'margin-bottom:6px;">◆ PERPLEXITY RESEARCH</div>'
             f'<div style="color:#5b6480;font-size:12px;line-height:1.55;'
             f'white-space:pre-wrap;'
@@ -1006,7 +1006,7 @@ def _render_calendar_section() -> None:
         f'padding:20px 0 14px 0;'
         f'border-top:1px solid #d3d7e0;'
         f'margin-top:20px;'
-        f'font-family:\'SF Mono\',\'Fira Code\',monospace;">'
+        f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">'
         f'<div style="width:3px;height:22px;'
         f'background:linear-gradient(180deg,#1e9e5a,#000b3d);'
         f'border-radius:2px;flex-shrink:0;"></div>'
@@ -1042,13 +1042,13 @@ def _render_calendar_section() -> None:
         f'<div style="display:grid;{col_grid};'
         f'padding:6px 12px;border-bottom:1px solid #d3d7e0;margin-bottom:2px;">'
         f'<span style="color:#000b3d;font-size:10px;font-weight:700;'
-        f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">DATE</span>'
+        f'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">DATE</span>'
         f'<span style="color:#000b3d;font-size:10px;font-weight:700;'
-        f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">EVENT</span>'
+        f'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">EVENT</span>'
         f'<span style="color:#000b3d;font-size:10px;font-weight:700;'
-        f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">PRIORITY</span>'
+        f'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">PRIORITY</span>'
         f'<span style="color:#000b3d;font-size:10px;font-weight:700;'
-        f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">SOURCE</span>'
+        f'letter-spacing:1.5px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">SOURCE</span>'
         f'</div>'
     )
 
@@ -1068,13 +1068,13 @@ def _render_calendar_section() -> None:
             if delta_days == 0:
                 countdown = (
                     f'<span style="color:#d23f3f;font-size:10px;'
-                    f'font-family:\'SF Mono\',monospace;font-weight:700;'
+                    f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;font-weight:700;'
                     f'margin-left:6px;">TODAY</span>'
                 )
             elif 0 < delta_days <= 7:
                 countdown = (
                     f'<span style="color:#d9772a;font-size:10px;'
-                    f'font-family:\'SF Mono\',monospace;'
+                    f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;'
                     f'margin-left:6px;">+{delta_days}d</span>'
                 )
             else:
@@ -1086,7 +1086,7 @@ def _render_calendar_section() -> None:
         date_cell = (
             f'<div style="display:flex;align-items:center;">'
             f'<span style="color:#5b6480;font-size:12px;'
-            f'font-family:\'SF Mono\',monospace;">{html.escape(date_label)}</span>'
+            f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;">{html.escape(date_label)}</span>'
             f'{countdown}'
             f'</div>'
         )
@@ -1099,7 +1099,7 @@ def _render_calendar_section() -> None:
             f'<span style="color:#0b1540;font-size:13px;font-weight:500;">'
             f'{event_str}</span>'
             f'<span style="color:{imp_color};font-size:11px;font-weight:700;'
-            f'font-family:\'SF Mono\',monospace;letter-spacing:0.5px;'
+            f'font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;letter-spacing:0.5px;'
             f'text-transform:uppercase;">&#9679;&nbsp;{imp_str}</span>'
             f'<span style="color:#6f7893;font-size:11px;">{src_str}</span>'
             f'</div>'

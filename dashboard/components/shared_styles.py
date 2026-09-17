@@ -103,10 +103,10 @@ def subsection_header(title: str) -> None:
 
 
 _BADGE_MUTED_STYLES = {
-    "Overheating":    "background:rgba(210,63,63,0.12);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.25)",
-    "Goldilocks":     "background:rgba(30,158,90,0.12);color:#1e9e5a;border:0.5px solid rgba(30,158,90,0.25)",
-    "Stagflation":    "background:rgba(184,134,11,0.12);color:#b8860b;border:0.5px solid rgba(184,134,11,0.25)",
-    "Recession Risk": "background:rgba(210,63,63,0.20);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.40)",
+    "Overheating":    "background:#ffffff;color:#c43c3c;border:1px solid #d3d7e0;border-left:3px solid #d9772a",
+    "Goldilocks":     "background:#ffffff;color:#1e9e5a;border:1px solid #d3d7e0;border-left:3px solid #1e9e5a",
+    "Stagflation":    "background:#ffffff;color:#b8860b;border:1px solid #d3d7e0;border-left:3px solid #b8860b",
+    "Recession Risk": "background:#ffffff;color:#c43c3c;border:1px solid #d3d7e0;border-left:3px solid #d23f3f",
 }
 
 
@@ -115,7 +115,7 @@ def render_regime_badge(label: str) -> None:
     style = _BADGE_MUTED_STYLES.get(label, "background:#e3e6ec;color:#5b6480;border:0.5px solid #8a92a8")
     st.markdown(
         f'<div style="{style};font-weight:700;font-size:18px;'
-        f'padding:8px 20px;border-radius:6px;display:inline-block;letter-spacing:.3px">'
+        f'padding:8px 20px;border-radius:3px;display:inline-block;letter-spacing:.3px">'
         f'{label}</div>',
         unsafe_allow_html=True,
     )

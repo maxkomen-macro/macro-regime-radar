@@ -184,7 +184,7 @@ def _render_risk_gauge(score: float | None) -> None:
         f"""
         <div style="
             background:var(--color-background-secondary);
-            border-radius:10px;
+            border-radius:3px;
             border:0.5px solid var(--color-border-tertiary);
             padding:16px 20px;
             margin-bottom:20px;
@@ -368,7 +368,7 @@ def _render_ticker_card(sym: str, p: dict, group_color: str, sparkline_bars=None
 * {{ box-sizing:border-box; margin:0; padding:0; }}
 body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; }}
 .card {{
-  background:#ffffff; border-radius:10px;
+  background:#ffffff; border-radius:3px;
   border:0.5px solid #d3d7e0; border-top:3px solid {group_color};
   padding:14px; max-width:420px;
 }}
@@ -439,7 +439,7 @@ def _render_volatility_card() -> None:
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
 body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; }}
-.card {{ background:#ffffff; border-radius:10px; border:0.5px solid #d3d7e0;
+.card {{ background:#ffffff; border-radius:3px; border:0.5px solid #d3d7e0;
         border-top:3px solid #5b6480; padding:14px; max-width:420px; }}
 </style></head><body>
 <div class="card">
@@ -507,7 +507,7 @@ body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-se
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
 body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; }}
-.card {{ background:#ffffff; border-radius:10px; border:0.5px solid #d3d7e0;
+.card {{ background:#ffffff; border-radius:3px; border:0.5px solid #d3d7e0;
         border-top:3px solid {regime_color}; padding:14px; max-width:420px; }}
 .pill {{ background-color:{regime_color}; color:#f3f4f6; font-size:10px;
         font-weight:600; padding:3px 7px; border-radius:4px;

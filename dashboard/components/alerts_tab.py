@@ -69,7 +69,7 @@ def render_alerts_tab() -> None:
             color = LEVEL_COLORS[lvl]
             badge_parts.append(
                 f'<span style="background:{color};color:#fff;padding:4px 12px;'
-                f'border-radius:12px;font-size:13px;margin-right:6px">'
+                f'border-radius:3px;font-size:13px;margin-right:6px">'
                 f'{LEVEL_ICONS[lvl]} {lvl.capitalize()}: {cnt}</span>'
             )
     if badge_parts:

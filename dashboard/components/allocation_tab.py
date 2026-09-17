@@ -104,8 +104,8 @@ def _render_regime_banner(data: dict) -> None:
 </style></head>
 <body>
 <div style="
-    background:linear-gradient(135deg,{color}1a,{color}05);
-    border:1px solid {color}4d;
+    background:#ffffff;
+    border:1px solid #d3d7e0;
     border-left:3px solid {color};
     border-radius:0 8px 8px 0;
     padding:14px 20px;

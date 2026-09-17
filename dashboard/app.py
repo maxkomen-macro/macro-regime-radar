@@ -724,7 +724,7 @@ def _render_header_bar(latest_regime, as_of) -> None:
             regime_right_html = (
                 f'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">'
                 f'<div style="display:flex;align-items:center;gap:6px;">'
-                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}" '
+                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:3px;{badge_style}" '
                 f'title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>'
                 f'<span style="font-size:11px;font-weight:700;color:{PROB_COLORS.get(lbl, "#9aa5c8")};white-space:nowrap;">{dominant_prob_str}</span>'
                 f'</div>'
@@ -733,7 +733,7 @@ def _render_header_bar(latest_regime, as_of) -> None:
             )
         else:
             regime_right_html = (
-                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}" '
+                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:3px;{badge_style}" '
                 f'title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>'
                 f'<span style="font-size:11px;color:#6f7893;white-space:nowrap;" '
                 f'title="Reflects the statistical distance of current conditions from regime boundaries">Conviction: {conf_pct}</span>'
@@ -1106,7 +1106,8 @@ if section == "Overview":
     _register("Dashboard", _dash_metrics)
 
     _render_timestamps(as_of)
-    _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signals, as_of)
+    with st.expander("Current read-through", expanded=False):
+        _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signals, as_of)
 
     try:
         from components.recession_tab import render_recession_summary
@@ -1344,9 +1345,11 @@ if section == "Overview":
                 fig_gantt.update_yaxes(showticklabels=False, title="")
                 fig_gantt.update_xaxes(tickformat="%b %Y", title="")
                 fig_gantt.update_traces(textposition="inside", insidetextanchor="middle")
-                fig_gantt.update_layout(height=110, margin=dict(l=20, r=20, t=30, b=20),
-                                        template="macro_rr", showlegend=True,
-                                        legend=dict(orientation="h", y=1.4, title=""))
+                fig_gantt.update_traces(textfont=dict(size=12, color="#ffffff"), marker_line_width=0)
+                fig_gantt.update_layout(height=190, margin=dict(l=20, r=20, t=56, b=36),
+                                        bargap=0.35, template="macro_rr", showlegend=True,
+                                        legend=dict(orientation="h", y=1.55, x=0, title="",
+                                                    font=dict(size=12), itemwidth=40))
                 st.plotly_chart(fig_gantt, use_container_width=True)
             if as_of is not None:
                 dur  = regime_duration_months(regimes_df, as_of)

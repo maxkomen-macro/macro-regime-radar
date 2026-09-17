@@ -174,13 +174,12 @@ def _render_regime_gauge(state: dict, probs: dict) -> None:
     for regime, pct in sorted(probs100.items(), key=lambda x: -x[1]):
         c = REGIME_COLORS.get(regime, "#5b6480")
         short = regime.replace("Recession Risk", "Rec. Risk")
-        active = (f"border:1px solid {c};background:rgba({_hex_to_rgba(c)},0.15);"
-                  if regime == label else "border:0.5px solid rgba(255,255,255,0.1);background:rgba(0,0,0,0.2);")
+        active = (f"border:1px solid {c};background:#ffffff;"
+                  if regime == label else "border:1px solid #d3d7e0;background:#ffffff;")
         pills_html += f"""
         <div style="display:inline-flex;align-items:center;gap:6px;
-                    {active}border-radius:20px;
+                    {active}border-radius:3px;
                     padding:6px 12px;font-size:11px;cursor:default;margin:3px 4px;">
-          <span style="width:6px;height:6px;border-radius:50%;background:{c};display:inline-block;"></span>
           <span style="color:{c if regime == label else 'var(--muted)'};">{short}</span>
           <span style="color:var(--text);font-weight:700;">{pct}%</span>
         </div>"""

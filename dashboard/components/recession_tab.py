@@ -75,9 +75,11 @@ body {
 .badge {
   display: inline-block;
   padding: 3px 10px;
-  border-radius: 12px;
+  border-radius: 3px;
   font-size: 12px;
   font-weight: 600;
+  background: #ffffff !important;
+  border: 1px solid #d3d7e0;
 }
 .progress-wrap { background: #d3d7e0; border-radius: 4px; height: 6px; margin: 4px 0 2px; }
 .progress-bar  { border-radius: 4px; height: 6px; }
@@ -190,7 +192,7 @@ def render_recession_summary() -> None:
   <div style="background:#ffffff;border:0.5px solid #d3d7e0;border-left:3px solid {color};
               border-radius:0 6px 6px 0;padding:10px 14px;flex:1;display:flex;align-items:center;gap:10px;">
     <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#5b6480;">Recession Risk</span>
-    <span class="badge" style="background:{color}22;color:{color};">{label}</span>
+    <span class="badge" style="border-left:3px solid {color};color:#0b1540;">{label}</span>
     <span style="font-size:20px;font-weight:700;color:{color};">{prob:.1f}%</span>
   </div>
   <div style="background:#ffffff;border:0.5px solid #d3d7e0;border-left:3px solid {spread_color};
@@ -201,7 +203,7 @@ def render_recession_summary() -> None:
   <div style="background:#ffffff;border:0.5px solid #d3d7e0;border-left:3px solid {div_color};
               border-radius:0 6px 6px 0;padding:10px 14px;flex:1;display:flex;align-items:center;gap:10px;">
     <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#5b6480;">Macro Divergence</span>
-    <span class="badge" style="background:{div_color}22;color:{div_color};">{div_label}</span>
+    <span class="badge" style="border-left:3px solid {div_color};color:#0b1540;">{div_label}</span>
   </div>
 </div>""", height=82)
 
@@ -299,8 +301,9 @@ def render() -> None:
         background:#ffffff;border:0.5px solid #d3d7e0;border-radius:6px;
         padding:10px 16px;margin-bottom:12px;">
           <div style="display:flex;align-items:center;gap:12px;">
-            <span class="badge" style="background:{color}22;color:{color};
-            padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600;">
+            <span style="display:inline-block;background:#ffffff;color:#0b1540;
+            border:1px solid #d3d7e0;border-left:3px solid {color};
+            padding:4px 12px;border-radius:3px;font-size:13px;font-weight:600;">
             {label}</span>
             <span style="font-size:22px;font-weight:700;color:{color};">{prob:.1f}%</span>
             <span style="font-size:12px;color:#5b6480;">12-month recession probability</span>
@@ -608,7 +611,7 @@ def render() -> None:
                       <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;
                       color:#5b6480;">Adjusted probability</span>
                       <span style="font-size:32px;font-weight:700;color:{adj_col};">{adj_prob:.1f}%</span>
-                      <span class="badge" style="background:{adj_col}22;color:{adj_col};
+                      <span class="badge" style="border-left:3px solid {adj_col};color:#0b1540;
                       padding:3px 10px;border-radius:12px;font-size:12px;">{adj_lbl}</span>
                       <span style="font-size:11px;color:#5b6480;">
                         vs baseline {prob:.1f}% ({adj_prob - prob:+.1f}pp)
