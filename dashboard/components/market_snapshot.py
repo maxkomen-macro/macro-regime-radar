@@ -72,11 +72,11 @@ WATCHLIST_GROUPS = {
     },
     "Rates": {
         "symbols": ["TLT", "IEF", "SHY"],
-        "color": "#e0a33a",
+        "color": "#b8860b",
     },
     "Credit": {
         "symbols": ["HYG", "LQD", "EMB"],
-        "color": "#f08c8c",
+        "color": "#c43c3c",
     },
     "Commodities": {
         "symbols": ["GLD", "SLV", "USO", "UNG", "CPER"],
@@ -167,15 +167,15 @@ def _render_risk_gauge(score: float | None) -> None:
 
     if score >= 30:
         label    = "Risk-On"
-        color    = "#3dbe7a"
+        color    = "#1e9e5a"
         sublabel = "Markets pricing growth and risk appetite"
     elif score <= -30:
         label    = "Risk-Off"
-        color    = "#f08c8c"
+        color    = "#c43c3c"
         sublabel = "Markets pricing caution and defensive positioning"
     else:
         label    = "Neutral"
-        color    = "#e0a33a"
+        color    = "#b8860b"
         sublabel = "Mixed signals — no clear directional bias"
 
     pct = (score + 100) / 2  # map -100..+100 → 0..100 for bar width
@@ -260,9 +260,9 @@ def _render_sector_heatmap(prices: dict) -> None:
 
     def _hm_bg(ret: float) -> str:
         """Return rgba background color for heatmap cell by return magnitude."""
-        if ret > 0.02:   return "rgba(61,190,122,0.28)"
-        if ret > 0.01:   return "rgba(61,190,122,0.19)"
-        if ret > 0:      return "rgba(61,190,122,0.09)"
+        if ret > 0.02:   return "rgba(30,158,90,0.28)"
+        if ret > 0.01:   return "rgba(30,158,90,0.19)"
+        if ret > 0:      return "rgba(30,158,90,0.09)"
         if ret < -0.02:  return "rgba(240,135,133,0.28)"
         if ret < -0.01:  return "rgba(240,135,133,0.19)"
         return "rgba(240,135,133,0.09)"
@@ -275,17 +275,17 @@ def _render_sector_heatmap(prices: dict) -> None:
         ret   = p.get("chg_1d_pct", 0) or 0
         price = p.get("close", 0) or 0
         bg    = _hm_bg(ret)
-        color = "#3dbe7a" if ret >= 0 else "#f08c8c"
+        color = "#1e9e5a" if ret >= 0 else "#c43c3c"
         sign  = "+" if ret >= 0 else ""
         cells_html += f"""
         <div class="cell" style="background-color:{bg} !important;">
           <div>
-            <div style="font-size:12px;font-weight:500;color:#f2f4fa">{sym}</div>
-            <div style="font-size:10px;color:#9aa5c8;margin-top:1px">{name}</div>
+            <div style="font-size:12px;font-weight:500;color:#0b1540">{sym}</div>
+            <div style="font-size:10px;color:#5b6480;margin-top:1px">{name}</div>
           </div>
           <div style="text-align:right">
             <div style="font-size:13px;font-weight:500;color:{color}">{sign}{ret:.2%}</div>
-            <div style="font-size:10px;color:#9aa5c8">{price:.2f}</div>
+            <div style="font-size:10px;color:#5b6480">{price:.2f}</div>
           </div>
         </div>"""
 
@@ -293,9 +293,9 @@ def _render_sector_heatmap(prices: dict) -> None:
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; }}
 .grid {{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }}
-.cell {{ border:0.5px solid #1e2e6e; border-radius:8px; padding:10px 12px;
+.cell {{ border:0.5px solid #d3d7e0; border-radius:8px; padding:10px 12px;
          display:flex; justify-content:space-between; align-items:center; }}
 </style></head>
 <body><div class="grid">{cells_html}</div></body></html>""",
@@ -332,8 +332,8 @@ def _render_ticker_card(sym: str, p: dict, group_color: str, sparkline_bars=None
     sign_1d    = "+" if chg_1d >= 0 else ""
     sign_1w    = "+" if chg_1w >= 0 else ""
     sign_1m    = "+" if chg_1m >= 0 else ""
-    w1_color   = "#3dbe7a" if chg_1w >= 0 else "#f08c8c"
-    m1_color   = "#3dbe7a" if chg_1m >= 0 else "#f08c8c"
+    w1_color   = "#1e9e5a" if chg_1w >= 0 else "#c43c3c"
+    m1_color   = "#1e9e5a" if chg_1m >= 0 else "#c43c3c"
 
     # Z-score badge
     if zscore > 1.5:
@@ -347,7 +347,7 @@ def _render_ticker_card(sym: str, p: dict, group_color: str, sparkline_bars=None
     # Build sparkline HTML (only if bars provided)
     sparkline_html = ""
     if sparkline_bars is not None:
-        spark_color = '#3dbe7a' if chg_1d >= 0 else '#f08c8c'
+        spark_color = '#1e9e5a' if chg_1d >= 0 else '#c43c3c'
         bars_html = ''.join([
             f'<div style="width:4px;height:{h}px;background:{spark_color};'
             f'opacity:0.7;border-radius:1px;flex-shrink:0"></div>'
@@ -366,31 +366,31 @@ def _render_ticker_card(sym: str, p: dict, group_color: str, sparkline_bars=None
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; }}
 .card {{
-  background:#0a1650; border-radius:10px;
-  border:0.5px solid #1e2e6e; border-top:3px solid {group_color};
+  background:#ffffff; border-radius:10px;
+  border:0.5px solid #d3d7e0; border-top:3px solid {group_color};
   padding:14px; max-width:420px;
 }}
-.pill-up   {{ background-color:#3dbe7a; color:#173404; font-size:10px; font-weight:500; padding:3px 7px; border-radius:4px; display:inline-block; }}
-.pill-down {{ background-color:#f08c8c; color:#4A1B0C; font-size:10px; font-weight:500; padding:3px 7px; border-radius:4px; display:inline-block; }}
-.zscore-hot     {{ background-color:#f08c8c; color:#4A1B0C; font-size:9px; font-weight:500; padding:2px 5px; border-radius:3px; display:inline-block; }}
+.pill-up   {{ background-color:#1e9e5a; color:#173404; font-size:10px; font-weight:500; padding:3px 7px; border-radius:4px; display:inline-block; }}
+.pill-down {{ background-color:#c43c3c; color:#4A1B0C; font-size:10px; font-weight:500; padding:3px 7px; border-radius:4px; display:inline-block; }}
+.zscore-hot     {{ background-color:#c43c3c; color:#4A1B0C; font-size:9px; font-weight:500; padding:2px 5px; border-radius:3px; display:inline-block; }}
 .zscore-cold    {{ background-color:#378ADD; color:#042C53; font-size:9px; font-weight:500; padding:2px 5px; border-radius:3px; display:inline-block; }}
 .zscore-neutral {{ color:#888780;           font-size:9px; font-weight:500; padding:2px 5px; border-radius:3px; display:inline-block; }}
 </style></head>
 <body><div class="card">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
     <div>
-      <div style="font-size:13px;font-weight:500;color:#f2f4fa;line-height:1">{sym}</div>
-      <div style="font-size:10px;color:#9aa5c8;margin-top:3px">{name}</div>
+      <div style="font-size:13px;font-weight:500;color:#0b1540;line-height:1">{sym}</div>
+      <div style="font-size:10px;color:#5b6480;margin-top:3px">{name}</div>
     </div>
     <span class="{pill_cls}">{sign_1d}{chg_1d:.2%}</span>
   </div>
-  <div style="font-size:20px;font-weight:500;color:#f2f4fa;letter-spacing:-0.02em;line-height:1;margin-bottom:8px">{close:.2f}</div>
+  <div style="font-size:20px;font-weight:500;color:#0b1540;letter-spacing:-0.02em;line-height:1;margin-bottom:8px">{close:.2f}</div>
   {sparkline_html}
   <div style="display:flex;align-items:center;justify-content:space-between">
-    <span style="font-size:10px;color:#9aa5c8">1W <span style="color:{w1_color};font-weight:500">{sign_1w}{chg_1w:.2%}</span></span>
-    <span style="font-size:10px;color:#9aa5c8">1M <span style="color:{m1_color};font-weight:500">{sign_1m}{chg_1m:.2%}</span></span>
+    <span style="font-size:10px;color:#5b6480">1W <span style="color:{w1_color};font-weight:500">{sign_1w}{chg_1w:.2%}</span></span>
+    <span style="font-size:10px;color:#5b6480">1M <span style="color:{m1_color};font-weight:500">{sign_1m}{chg_1m:.2%}</span></span>
     <span class="{z_cls}">{z_text}</span>
   </div>
 </div></body></html>""",
@@ -438,15 +438,15 @@ def _render_volatility_card() -> None:
             f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
-.card {{ background:#0a1650; border-radius:10px; border:0.5px solid #1e2e6e;
-        border-top:3px solid #9aa5c8; padding:14px; max-width:420px; }}
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; }}
+.card {{ background:#ffffff; border-radius:10px; border:0.5px solid #d3d7e0;
+        border-top:3px solid #5b6480; padding:14px; max-width:420px; }}
 </style></head><body>
 <div class="card">
-  <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;color:#9aa5c8;
+  <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;color:#5b6480;
               text-transform:uppercase;margin-bottom:6px">SPY Volatility</div>
-  <div style="font-size:13px;color:#f2f4fa;margin-bottom:4px">Model unavailable</div>
-  <div style="font-size:10px;color:#9aa5c8">{reason}</div>
+  <div style="font-size:13px;color:#0b1540;margin-bottom:4px">Model unavailable</div>
+  <div style="font-size:10px;color:#5b6480">{reason}</div>
 </div></body></html>""",
             height=110,
             scrolling=False,
@@ -460,9 +460,9 @@ body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFo
     direction = sig["direction"]
     spark     = sig["spark_60d"] or []
 
-    regime_color = {"LOW": "#3dbe7a", "ELEVATED": "#e0a33a", "HIGH": "#f08c8c"}[regime]
+    regime_color = {"LOW": "#1e9e5a", "ELEVATED": "#b8860b", "HIGH": "#c43c3c"}[regime]
     arrow        = "↑" if direction == "rising" else "↓"
-    fcst_color   = "#f08c8c" if direction == "rising" else "#3dbe7a"
+    fcst_color   = "#c43c3c" if direction == "rising" else "#1e9e5a"
 
     # 60-day sparkline as SVG polyline — consistent line chart, unlike the
     # bar-style spark on ticker cards (a continuous series reads better here).
@@ -485,8 +485,8 @@ body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFo
         )
 
     realized_html = (
-        f"<span style=\"color:#f2f4fa;font-weight:500\">{realized:.2f}%</span>"
-        if realized is not None else "<span style=\"color:#9aa5c8\">—</span>"
+        f"<span style=\"color:#0b1540;font-weight:500\">{realized:.2f}%</span>"
+        if realized is not None else "<span style=\"color:#5b6480\">—</span>"
     )
 
     # Regime context one-liner: current macro regime + vol percentile within the
@@ -506,31 +506,31 @@ body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFo
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
-.card {{ background:#0a1650; border-radius:10px; border:0.5px solid #1e2e6e;
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; }}
+.card {{ background:#ffffff; border-radius:10px; border:0.5px solid #d3d7e0;
         border-top:3px solid {regime_color}; padding:14px; max-width:420px; }}
-.pill {{ background-color:{regime_color}; color:#000b3d; font-size:10px;
+.pill {{ background-color:{regime_color}; color:#f3f4f6; font-size:10px;
         font-weight:600; padding:3px 7px; border-radius:4px;
         display:inline-block; letter-spacing:0.05em; }}
 </style></head><body><div class="card">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
     <div>
       <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;
-                  color:#9aa5c8;text-transform:uppercase">SPY Volatility</div>
-      <div style="font-size:10px;color:#9aa5c8;margin-top:3px">Conditional, annualized</div>
+                  color:#5b6480;text-transform:uppercase">SPY Volatility</div>
+      <div style="font-size:10px;color:#5b6480;margin-top:3px">Conditional, annualized</div>
     </div>
     <span class="pill">{regime}</span>
   </div>
-  <div style="font-size:24px;font-weight:500;color:#f2f4fa;letter-spacing:-0.02em;
+  <div style="font-size:24px;font-weight:500;color:#0b1540;letter-spacing:-0.02em;
               line-height:1;margin-bottom:10px">{cv:.2f}%</div>
   {sparkline_html}
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-    <span style="font-size:10px;color:#9aa5c8">5D FCST
+    <span style="font-size:10px;color:#5b6480">5D FCST
       <span style="color:{fcst_color};font-weight:500">{arrow} {fcst:.2f}%</span></span>
-    <span style="font-size:10px;color:#9aa5c8">30D REALIZED {realized_html}</span>
+    <span style="font-size:10px;color:#5b6480">30D REALIZED {realized_html}</span>
   </div>
-  <div style="font-size:10px;color:#9aa5c8;margin-bottom:4px">{ctx}</div>
-  <div style="font-size:9px;color:#7c88b0;letter-spacing:0.02em">GARCH(1,1) · SPY daily returns</div>
+  <div style="font-size:10px;color:#5b6480;margin-bottom:4px">{ctx}</div>
+  <div style="font-size:9px;color:#6f7893;letter-spacing:0.02em">GARCH(1,1) · SPY daily returns</div>
 </div></body></html>""",
         height=230,
         scrolling=False,
@@ -692,7 +692,7 @@ def _render_market_content(wide_df: pd.DataFrame) -> None:
             display:flex;align-items:center;gap:6px;
         ">
           <div style="width:5px;height:5px;border-radius:50%;
-                      background:#3dbe7a;flex-shrink:0"></div>
+                      background:#1e9e5a;flex-shrink:0"></div>
           Intraday prices via yfinance · Updated every 5 min during
           market hours (9:30–4:00 ET) · FRED macro data daily at 6 AM ET
         </div>

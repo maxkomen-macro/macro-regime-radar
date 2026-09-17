@@ -21,27 +21,29 @@ import plotly.io as pio
 import streamlit as st
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Macro RR brand tokens (from the Canva brand kit: navy + gold + white)
+# Macro RR brand tokens (Canva kit: off-white sheet, navy margins/accent, gold only in logo)
 # ─────────────────────────────────────────────────────────────────────────────
 
 BRAND = {
-    "navy":    "#000b3d",   # page background
-    "card":    "#0a1650",   # card surface
-    "line":    "#172561",   # subtle divider
-    "border":  "#1e2e6e",   # card border
-    "dim":     "#5c6a99",   # tertiary text
-    "muted":   "#9aa5c8",   # secondary text
-    "text":    "#f2f4fa",   # primary text
-    "gold":    "#c69842",   # single accent
-    "green":   "#3dbe7a",
-    "orange":  "#e0812f",
-    "amber":   "#e0a33a",
-    "red":     "#e05252",
-    "grey":    "#8a93ad",
+    "shell":   "#000b3d",   # app shell / margins / header band (navy)
+    "page":    "#f3f4f6",   # content sheet (off-white)
+    "card":    "#ffffff",   # card surface
+    "line":    "#e3e6ec",   # subtle divider
+    "border":  "#d3d7e0",   # card border
+    "dim":     "#8a92a8",   # tertiary text
+    "muted":   "#5b6480",   # secondary text
+    "text":    "#0b1540",   # primary text
+    "accent":  "#000b3d",   # single accent (navy)
+    "gold":    "#c69842",   # logo crown + header hairline only
+    "green":   "#1e9e5a",
+    "orange":  "#d9772a",
+    "amber":   "#b8860b",
+    "red":     "#d23f3f",
+    "grey":    "#7a829a",
 }
 
-FONT_UI   = "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-FONT_MONO = "'IBM Plex Mono', 'SF Mono', Menlo, monospace"
+FONT_UI   = "'Helvetica Neue', Helvetica, Arial, sans-serif"
+FONT_MONO = "'SF Mono', Menlo, Consolas, monospace"
 
 # Plotly template used by every chart (replaces plotly_white / plotly_dark).
 pio.templates["macro_rr"] = go.layout.Template(
@@ -57,17 +59,17 @@ pio.templates["macro_rr"] = go.layout.Template(
         legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=BRAND["muted"])),
         hoverlabel=dict(bgcolor=BRAND["card"], bordercolor=BRAND["border"],
                         font=dict(color=BRAND["text"], family=FONT_UI)),
-        colorway=[BRAND["gold"], "#7fa6e0", BRAND["green"], BRAND["orange"],
+        colorway=[BRAND["accent"], "#3b6fc4", BRAND["green"], BRAND["orange"],
                   BRAND["red"], BRAND["grey"]],
     )
 )
 pio.templates.default = "macro_rr"
 
 REGIME_COLORS = {
-    "Goldilocks":     "#3dbe7a",
-    "Overheating":    "#e0812f",
-    "Stagflation":    "#e05252",
-    "Recession Risk": "#8a93ad",
+    "Goldilocks":     "#1e9e5a",
+    "Overheating":    "#d9772a",
+    "Stagflation":    "#d23f3f",
+    "Recession Risk": "#7a829a",
 }
 
 # Maps raw DB signal_name values to professional display names
@@ -84,8 +86,8 @@ def section_header(title: str) -> None:
     """Render a section header in the 3A design system style — 11px uppercase, muted."""
     st.markdown(
         f'<div style="font-size:11px;font-weight:600;text-transform:uppercase;'
-        f'letter-spacing:0.5px;color:#9aa5c8;padding-bottom:6px;'
-        f'border-bottom:1px solid #172561;margin-bottom:10px;margin-top:16px">'
+        f'letter-spacing:0.5px;color:#5b6480;padding-bottom:6px;'
+        f'border-bottom:1px solid #e3e6ec;margin-bottom:10px;margin-top:16px">'
         f'{title}</div>',
         unsafe_allow_html=True,
     )
@@ -94,23 +96,23 @@ def section_header(title: str) -> None:
 def subsection_header(title: str) -> None:
     """Render a sub-section header — 12px normal case, lighter text, no border."""
     st.markdown(
-        f'<div style="font-size:12px;font-weight:500;color:#c8cfe6;'
+        f'<div style="font-size:12px;font-weight:500;color:#2c3556;'
         f'margin-top:12px;margin-bottom:6px">{title}</div>',
         unsafe_allow_html=True,
     )
 
 
 _BADGE_MUTED_STYLES = {
-    "Overheating":    "background:rgba(224,82,82,0.12);color:#f08c8c;border:0.5px solid rgba(224,82,82,0.25)",
-    "Goldilocks":     "background:rgba(61,190,122,0.12);color:#3dbe7a;border:0.5px solid rgba(61,190,122,0.25)",
-    "Stagflation":    "background:rgba(224,163,58,0.12);color:#e0a33a;border:0.5px solid rgba(224,163,58,0.25)",
-    "Recession Risk": "background:rgba(224,82,82,0.20);color:#f08c8c;border:0.5px solid rgba(224,82,82,0.40)",
+    "Overheating":    "background:rgba(210,63,63,0.12);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.25)",
+    "Goldilocks":     "background:rgba(30,158,90,0.12);color:#1e9e5a;border:0.5px solid rgba(30,158,90,0.25)",
+    "Stagflation":    "background:rgba(184,134,11,0.12);color:#b8860b;border:0.5px solid rgba(184,134,11,0.25)",
+    "Recession Risk": "background:rgba(210,63,63,0.20);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.40)",
 }
 
 
 def render_regime_badge(label: str) -> None:
     """Render a muted translucent regime badge — consistent style on every tab."""
-    style = _BADGE_MUTED_STYLES.get(label, "background:#172561;color:#9aa5c8;border:0.5px solid #5c6a99")
+    style = _BADGE_MUTED_STYLES.get(label, "background:#e3e6ec;color:#5b6480;border:0.5px solid #8a92a8")
     st.markdown(
         f'<div style="{style};font-weight:700;font-size:18px;'
         f'padding:8px 20px;border-radius:6px;display:inline-block;letter-spacing:.3px">'
@@ -170,18 +172,18 @@ def signal_card_html(
         fill_pct = max(0.0, min(100.0, fill_pct))
 
         if fill_pct < 50:
-            gauge_color = "#3dbe7a"
+            gauge_color = "#1e9e5a"
         elif fill_pct < 75:
-            gauge_color = "#e0a33a"
+            gauge_color = "#b8860b"
         elif fill_pct < 95:
-            gauge_color = "#e0812f"
+            gauge_color = "#d9772a"
         else:
-            gauge_color = "#e05252"
+            gauge_color = "#d23f3f"
 
         gauge_html = (
-            f'<div style="font-size:9px;color:#5c6a99;margin-top:8px;margin-bottom:3px;">'
+            f'<div style="font-size:9px;color:#8a92a8;margin-top:8px;margin-bottom:3px;">'
             f'Threshold proximity</div>'
-            f'<div style="background:#172561;border-radius:3px;height:4px;width:100%;'
+            f'<div style="background:#e3e6ec;border-radius:3px;height:4px;width:100%;'
             f'overflow:hidden;margin-bottom:8px;">'
             f'<div style="background:{gauge_color};height:100%;width:{fill_pct:.0f}%;'
             f'border-radius:3px;"></div></div>'
@@ -190,32 +192,32 @@ def signal_card_html(
     # ── Status from fill_pct ──────────────────────────────────────────────────
     if fill_pct < 50:
         status_label = "Clear"
-        status_color = "#3dbe7a"
+        status_color = "#1e9e5a"
     elif fill_pct < 75:
         status_label = "Watch"
-        status_color = "#e0a33a"
+        status_color = "#b8860b"
     else:
         status_label = "Triggered"
-        status_color = "#e05252"
+        status_color = "#d23f3f"
 
     # Card border: full border, no left accent bar
     if status_label == "Watch":
-        card_border = "border:0.5px solid rgba(224,163,58,0.3);"
+        card_border = "border:0.5px solid rgba(184,134,11,0.3);"
     elif status_label == "Triggered":
-        card_border = "border:0.5px solid rgba(224,82,82,0.3);"
+        card_border = "border:0.5px solid rgba(210,63,63,0.3);"
     else:
-        card_border = "border:0.5px solid #172561;"
+        card_border = "border:0.5px solid #e3e6ec;"
 
     # Optional tooltip for specific signals
     tooltip = _SIGNAL_TOOLTIPS.get(name, "")
     tooltip_attr = f' title="{tooltip}"' if tooltip else ""
 
     return (
-        f'<div style="background:#0a1650;{card_border}border-radius:6px;padding:12px;"'
+        f'<div style="background:#ffffff;{card_border}border-radius:6px;padding:12px;"'
         f'{tooltip_attr}>'
         f'<div style="display:flex;justify-content:space-between;align-items:center;'
         f'margin-bottom:6px;">'
-        f'<span style="font-size:12px;font-weight:500;color:#f2f4fa;white-space:nowrap;'
+        f'<span style="font-size:12px;font-weight:500;color:#0b1540;white-space:nowrap;'
         f'overflow:hidden;text-overflow:ellipsis;max-width:65%">{name}</span>'
         f'<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">'
         f'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;'
@@ -223,10 +225,10 @@ def signal_card_html(
         f'<span style="font-size:9px;color:{status_color}">{status_label}</span>'
         f'</div>'
         f'</div>'
-        f'<div style="font-size:18px;font-weight:600;color:#f2f4fa;'
+        f'<div style="font-size:18px;font-weight:600;color:#0b1540;'
         f'font-variant-numeric:tabular-nums;margin-bottom:2px;">{value_display}</div>'
         f'{gauge_html}'
-        f'<div style="font-size:10px;color:#5c6a99;">Last alert: {last_triggered_str}</div>'
+        f'<div style="font-size:10px;color:#8a92a8;">Last alert: {last_triggered_str}</div>'
         f'</div>'
     )
 
@@ -274,7 +276,7 @@ def generate_sparkline_b64(
     values_tuple: tuple,
     width: int = 120,
     height: int = 30,
-    color: str = "#c69842",
+    color: str = "#000b3d",
 ) -> str | None:
     """Generate a tiny sparkline chart as a base64-encoded PNG.
 
@@ -311,11 +313,11 @@ def compute_momentum(values_tuple: tuple, periods: int = 3) -> tuple:
     """
     values = list(values_tuple)
     if len(values) < periods + 2:
-        return "—", "➡", "#7c88b0"
+        return "—", "➡", "#6f7893"
 
     changes = [values[i] - values[i - periods] for i in range(periods, len(values))]
     if len(changes) < 2:
-        return "—", "➡", "#7c88b0"
+        return "—", "➡", "#6f7893"
 
     recent = changes[-1]
     mean = sum(changes) / len(changes)
@@ -323,7 +325,7 @@ def compute_momentum(values_tuple: tuple, periods: int = 3) -> tuple:
     std = variance ** 0.5
 
     if std == 0:
-        return "Stable", "➡", "#7c88b0"
+        return "Stable", "➡", "#6f7893"
 
     z = (recent - mean) / std
 
@@ -332,7 +334,7 @@ def compute_momentum(values_tuple: tuple, periods: int = 3) -> tuple:
     elif z > 0.5:
         return "Rising", "↗", None
     elif z > -0.5:
-        return "Stable", "➡", "#7c88b0"
+        return "Stable", "➡", "#6f7893"
     elif z > -1.5:
         return "Falling", "↘", None
     else:

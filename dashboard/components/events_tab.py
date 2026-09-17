@@ -23,20 +23,20 @@ from components.db_helpers import get_upcoming_events, load_event_calendar
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "macro_radar.db"
 
 # ── Bloomberg palette ─────────────────────────────────────────────────────────
-_BG              = "#000b3d"
-_CARD_BG         = "#0a1650"
-_BORDER          = "#1e2e6e"
-_BORDER_SUBTLE   = "#172561"
-_TEXT            = "#f2f4fa"
-_MUTED           = "#9aa5c8"
-_TEXT_MUTED      = "#7c88b0"
-_ACCENT          = "#c69842"
-_ACCENT_GREEN    = "#3dbe7a"
-_ACCENT_ORANGE   = "#e0812f"
-_ACCENT_RED      = "#e05252"
+_BG              = "#f3f4f6"
+_CARD_BG         = "#ffffff"
+_BORDER          = "#d3d7e0"
+_BORDER_SUBTLE   = "#e3e6ec"
+_TEXT            = "#0b1540"
+_MUTED           = "#5b6480"
+_TEXT_MUTED      = "#6f7893"
+_ACCENT          = "#000b3d"
+_ACCENT_GREEN    = "#1e9e5a"
+_ACCENT_ORANGE   = "#d9772a"
+_ACCENT_RED      = "#d23f3f"
 _ACCENT_YELLOW   = "#ffd700"
 _ACCENT_PURPLE   = "#7c3aed"
-_ACCENT_BLUE_DIM = "#12245c"
+_ACCENT_BLUE_DIM = "#e8ebf2"
 
 # ── News source config ────────────────────────────────────────────────────────
 # Adding a new feed requires only a new entry here plus a fetch function in
@@ -45,18 +45,18 @@ _ACCENT_BLUE_DIM = "#12245c"
 NEWS_SOURCES = {
     "finnhub": {
         "label":      "Finnhub",
-        "color":      "#c69842",
-        "bg":         "#12245c",
+        "color":      "#000b3d",
+        "bg":         "#e8ebf2",
         "categories": ["M&A", "MACRO", "EARNINGS"],
     },
     "newsapi": {
         "label":      "NewsAPI",
-        "color":      "#3dbe7a",
+        "color":      "#1e9e5a",
         "bg":         "#1a3a1a",
         "categories": ["MACRO", "GEOPOLITICAL", "SECTOR"],
     },
 }
-_SOURCE_DEFAULT = {"label": "", "color": _MUTED, "bg": "#172561", "categories": []}
+_SOURCE_DEFAULT = {"label": "", "color": _MUTED, "bg": "#e3e6ec", "categories": []}
 
 # ── Source credibility tiers ─────────────────────────────────────────────────
 # Display-only. To add FT/WSJ/Economist as actual sources, add their RSS
@@ -84,9 +84,9 @@ SOURCE_TIERS = {
 
 # Tier → (color, weight) for source name in the row meta line.
 _TIER_STYLES = {
-    1: ("#f2f4fa", 600),
-    2: ("#9aa5c8", 500),
-    3: ("#7c88b0", 400),
+    1: ("#0b1540", 600),
+    2: ("#5b6480", 500),
+    3: ("#6f7893", 400),
 }
 
 
@@ -99,13 +99,13 @@ def _source_tier(source: str) -> int:
 
 # ── Category badge styles ─────────────────────────────────────────────────────
 _CAT_STYLES = {
-    "MACRO":        {"bg": "#12245c",  "color": "#c69842"},
-    "M&A":          {"bg": "#3a2a0a",  "color": "#e0812f"},
-    "EARNINGS":     {"bg": "#1a3a1a",  "color": "#3dbe7a"},
-    "GEOPOLITICAL": {"bg": "#3a1a1a",  "color": "#e05252"},
+    "MACRO":        {"bg": "#e8ebf2",  "color": "#000b3d"},
+    "M&A":          {"bg": "#3a2a0a",  "color": "#d9772a"},
+    "EARNINGS":     {"bg": "#1a3a1a",  "color": "#1e9e5a"},
+    "GEOPOLITICAL": {"bg": "#3a1a1a",  "color": "#d23f3f"},
     "SECTOR":       {"bg": "#2a1f3a",  "color": "#a78bfa"},
 }
-_CAT_DEFAULT = {"bg": "#172561", "color": "#9aa5c8"}
+_CAT_DEFAULT = {"bg": "#e3e6ec", "color": "#5b6480"}
 
 # ── Deal size labels ──────────────────────────────────────────────────────────
 _DEAL_LABELS = {2: "<$1B", 3: "$1-10B", 4: "$10-50B", 5: "$50B+"}
@@ -152,8 +152,8 @@ _FILTER_CSS = """<style>
 /* Filter bar pill buttons — unselected (secondary) */
 div[data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"] {
     background: transparent !important;
-    border: 1px solid #1e2e6e !important;
-    color: #9aa5c8 !important;
+    border: 1px solid #d3d7e0 !important;
+    color: #5b6480 !important;
     border-radius: 16px !important;
     padding: 4px 14px !important;
     font-size: 11px !important;
@@ -175,15 +175,15 @@ div[data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"] {
     z-index: auto !important;
 }
 div[data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"]:hover {
-    border-color: #c69842 !important;
-    color: #c69842 !important;
-    background: rgba(198,152,66,0.08) !important;
+    border-color: #000b3d !important;
+    color: #000b3d !important;
+    background: rgba(0,11,61,0.08) !important;
 }
 /* Filter bar pill buttons — selected (primary) */
 div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"] {
-    background: #c69842 !important;
-    border: 1px solid #c69842 !important;
-    color: #000b3d !important;
+    background: #000b3d !important;
+    border: 1px solid #000b3d !important;
+    color: #f3f4f6 !important;
     border-radius: 16px !important;
     padding: 4px 14px !important;
     font-size: 11px !important;
@@ -195,7 +195,7 @@ div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"] {
     line-height: 1 !important;
     white-space: nowrap !important;
     width: 100% !important;
-    box-shadow: 0 0 0 2px rgba(198,152,66,0.25) !important;
+    box-shadow: 0 0 0 2px rgba(0,11,61,0.25) !important;
     text-align: center !important;
     /* Defeat the invisible-overlay rule below so pills stay visible */
     opacity: 1 !important;
@@ -207,7 +207,7 @@ div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"] {
 div[data-testid="stHorizontalBlock"] .stButton > button[kind="primary"]:hover {
     background: #66b0ff !important;
     border-color: #66b0ff !important;
-    color: #000b3d !important;
+    color: #f3f4f6 !important;
 }
 /* Tighten column padding in filter row */
 div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
@@ -218,18 +218,18 @@ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
 .ei-hrow {
     display: block;
     border-left: 3px solid transparent;
-    border-bottom: 1px solid #172561;
+    border-bottom: 1px solid #e3e6ec;
     padding: 12px 16px;
     margin: 0;
     cursor: pointer;
     transition: background 100ms ease, border-left-color 100ms ease;
 }
-.ei-hrow:hover { background: #0a1650; }
+.ei-hrow:hover { background: #ffffff; }
 .ei-hrow-sel {
-    background: #0a1650;
-    border-left-color: #c69842;
+    background: #ffffff;
+    border-left-color: #000b3d;
 }
-.ei-hrow-sel .ei-hrow-head { color: #c69842; }
+.ei-hrow-sel .ei-hrow-head { color: #000b3d; }
 .ei-hrow-sel .ei-hrow-cat  { filter: brightness(1.2); }
 
 .ei-hrow-top {
@@ -257,7 +257,7 @@ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
     font-size: 14px;
     font-weight: 600;
     line-height: 1.4;
-    color: #f2f4fa;
+    color: #0b1540;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
@@ -268,16 +268,16 @@ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
 .ei-hrow-meta {
     font-family: 'SF Mono','Fira Code',monospace;
     font-size: 11px;
-    color: #7c88b0;
+    color: #6f7893;
     margin-bottom: 4px;
 }
-.ei-hrow-sep  { color: #1e2e6e; margin: 0 6px; }
-.ei-hrow-time { color: #7c88b0; }
+.ei-hrow-sep  { color: #d3d7e0; margin: 0 6px; }
+.ei-hrow-time { color: #6f7893; }
 .ei-hrow-tag {
     font-family: system-ui,-apple-system,sans-serif;
     font-style: italic;
     font-size: 11px;
-    color: rgba(198,152,66,0.7);
+    color: rgba(0,11,61,0.7);
 }
 
 /* ─── Invisible overlay button — sits on top of the .ei-hrow above it ──
@@ -318,8 +318,8 @@ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #3dbe7a;
-    box-shadow: 0 0 6px rgba(61,190,122,0.7);
+    background: #1e9e5a;
+    box-shadow: 0 0 6px rgba(30,158,90,0.7);
     animation: ei-pulse 1.4s ease-in-out infinite;
     margin-right: 6px;
     vertical-align: middle;
@@ -430,7 +430,7 @@ def _last_updated(df: pd.DataFrame) -> str:
 
 
 def _sig_dots_html(score: float, accent: str) -> str:
-    """Five filled-circle dots. Active dots use `accent`, inactive use #1e2e6e.
+    """Five filled-circle dots. Active dots use `accent`, inactive use #d3d7e0.
 
     Uses inline-block divs with a solid background so the dots render as
     true filled circles on every browser/font — the unicode `●` glyph
@@ -439,7 +439,7 @@ def _sig_dots_html(score: float, accent: str) -> str:
     filled = min(max(int(round(score)), 0), 5)
     parts = []
     for i in range(5):
-        bg = accent if i < filled else "#1e2e6e"
+        bg = accent if i < filled else "#d3d7e0"
         parts.append(
             f'<span style="display:inline-block;width:7px;height:7px;'
             f'border-radius:50%;background:{bg};margin:0 2px;'
@@ -551,10 +551,10 @@ def render_summary_bar(df: pd.DataFrame) -> None:
 
     def _card(label: str, count: int, accent: str) -> str:
         return (
-            f'<div style="flex:1;background:#0a1650;border:1px solid #1e2e6e;'
+            f'<div style="flex:1;background:#ffffff;border:1px solid #d3d7e0;'
             f'border-top:2px solid {accent};border-radius:0 0 6px 6px;'
             f'padding:12px 16px;text-align:center;">'
-            f'<div style="color:#7c88b0;font-size:10px;font-weight:700;'
+            f'<div style="color:#6f7893;font-size:10px;font-weight:700;'
             f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
             f'margin-bottom:6px;">{label}</div>'
             f'<div style="color:{accent};font-size:22px;font-weight:700;'
@@ -638,7 +638,7 @@ def render_filter_bar() -> None:
             st.rerun()
 
     st.markdown(
-        '<div style="height:1px;background:#172561;margin:8px 0 12px 0;"></div>',
+        '<div style="height:1px;background:#e3e6ec;margin:8px 0 12px 0;"></div>',
         unsafe_allow_html=True,
     )
 
@@ -658,18 +658,18 @@ def render_headline_list(df: pd.DataFrame, current_regime: str = "Goldilocks") -
     fresh = _is_fresh(df, hours=1.0)
     live_html = (
         '<span class="ei-live-dot"></span>'
-        '<span style="color:#3dbe7a;font-size:9px;font-weight:700;'
+        '<span style="color:#1e9e5a;font-size:9px;font-weight:700;'
         'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
         'margin-right:8px;">LIVE</span>'
         if fresh else ""
     )
     st.markdown(
         f'<div style="display:flex;align-items:center;'
-        f'color:#9aa5c8;font-size:10px;font-weight:700;'
+        f'color:#5b6480;font-size:10px;font-weight:700;'
         f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
-        f'padding:0 0 8px 0;border-bottom:1px solid #172561;">'
+        f'padding:0 0 8px 0;border-bottom:1px solid #e3e6ec;">'
         f'<span style="flex:1;">HEADLINES '
-        f'<span style="color:#1e2e6e;">({n})</span></span>'
+        f'<span style="color:#d3d7e0;">({n})</span></span>'
         f'{live_html}</div>',
         unsafe_allow_html=True,
     )
@@ -794,7 +794,7 @@ def render_detail_card(row: pd.Series) -> None:
     if cat == "M&A" and deal_size > 1:
         deal_label = _DEAL_LABELS.get(deal_size, "")
         deal_badge = (
-            f'<span style="background:#3a2a0a;color:#e0812f;'
+            f'<span style="background:#3a2a0a;color:#d9772a;'
             f'font-size:10px;padding:2px 8px;border-radius:10px;'
             f'font-weight:700;font-family:\'SF Mono\',monospace;'
             f'margin-left:4px;">{html.escape(deal_label)}</span>'
@@ -804,8 +804,8 @@ def render_detail_card(row: pd.Series) -> None:
     if url:
         url_btn = (
             f'<a href="{url_e}" target="_blank" rel="noopener" style="'
-            f'margin-left:auto;background:rgba(198,152,66,0.1);'
-            f'border:1px solid rgba(198,152,66,0.3);color:#c69842;'
+            f'margin-left:auto;background:rgba(0,11,61,0.1);'
+            f'border:1px solid rgba(0,11,61,0.3);color:#000b3d;'
             f'font-size:11px;padding:4px 12px;border-radius:12px;'
             f'text-decoration:none;font-family:\'SF Mono\',monospace;'
             f'white-space:nowrap;">READ FULL ARTICLE →</a>'
@@ -823,10 +823,10 @@ def render_detail_card(row: pd.Series) -> None:
         f'{source_e}</span>'
     ) if source_e else ""
     time_chip = (
-        f'<span style="color:#7c88b0;font-size:11px;'
+        f'<span style="color:#6f7893;font-size:11px;'
         f'font-family:\'SF Mono\',monospace;">{ta_e}</span>'
     ) if ta_e else ""
-    sep = '<span style="color:#1e2e6e;font-size:11px;">·</span>'
+    sep = '<span style="color:#d3d7e0;font-size:11px;">·</span>'
 
     header_parts = [cat_badge]
     if src_chip:
@@ -848,7 +848,7 @@ def render_detail_card(row: pd.Series) -> None:
 
     # ── Section 2: Headline ──────────────────────────────────────────────
     st.markdown(
-        f'<div style="color:#f2f4fa;font-size:20px;font-weight:700;'
+        f'<div style="color:#0b1540;font-size:20px;font-weight:700;'
         f'line-height:1.35;margin:14px 0 0 0;'
         f'font-family:system-ui,-apple-system,sans-serif;">{headline_e}</div>',
         unsafe_allow_html=True,
@@ -863,7 +863,7 @@ def render_detail_card(row: pd.Series) -> None:
         summary_e = html.escape(summary_text)
         st.markdown(
             f'<div style="border-left:3px solid {cat_style["color"]};'
-            f'padding:2px 0 2px 12px;color:#9aa5c8;font-size:13px;'
+            f'padding:2px 0 2px 12px;color:#5b6480;font-size:13px;'
             f'line-height:1.6;font-family:system-ui,-apple-system,sans-serif;">'
             f'{summary_e}</div>',
             unsafe_allow_html=True,
@@ -875,12 +875,12 @@ def render_detail_card(row: pd.Series) -> None:
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:12px;'
         f'margin-bottom:8px;">'
-        f'<span style="color:#7c88b0;font-size:11px;font-weight:700;'
+        f'<span style="color:#6f7893;font-size:11px;font-weight:700;'
         f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">'
         f'SIGNIFICANCE</span>'
         f'<span style="color:{sig_color};font-size:18px;font-weight:700;'
         f'font-family:\'SF Mono\',monospace;">{sig:.1f}'
-        f'<span style="color:#1e2e6e;font-size:12px;font-weight:600;'
+        f'<span style="color:#d3d7e0;font-size:12px;font-weight:600;'
         f'margin-left:3px;">/ 5.0</span></span>'
         f'<span style="background:{sig_color}22;color:{svcol};'
         f'border:1px solid {svcol}66;font-size:9px;font-weight:700;'
@@ -906,15 +906,15 @@ def render_detail_card(row: pd.Series) -> None:
         dots          = _sig_dots_html(float(v), vcol)
         with col:
             components.html(
-                f'<div style="background:#000b3d;border:1px solid #172561;'
+                f'<div style="background:#f3f4f6;border:1px solid #e3e6ec;'
                 f'border-radius:6px;padding:6px 4px;text-align:center;'
                 f'font-family:system-ui,-apple-system,sans-serif;">'
-                f'<div style="color:#7c88b0;font-size:9px;font-weight:700;'
+                f'<div style="color:#6f7893;font-size:9px;font-weight:700;'
                 f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
                 f'margin-bottom:3px;">{label}</div>'
                 f'<div style="color:{sc};font-size:18px;font-weight:700;'
                 f'font-family:\'SF Mono\',monospace;line-height:1;">{v}'
-                f'<span style="color:#1e2e6e;font-size:9px;font-weight:600;'
+                f'<span style="color:#d3d7e0;font-size:9px;font-weight:600;'
                 f'margin-left:2px;">/5</span></div>'
                 f'<div style="color:{vcol};font-size:9px;font-weight:700;'
                 f'letter-spacing:1px;font-family:\'SF Mono\',monospace;'
@@ -929,10 +929,10 @@ def render_detail_card(row: pd.Series) -> None:
         st.divider()
         regime_e = html.escape(regime_raw)
         st.markdown(
-            f'<div style="color:#3dbe7a;font-size:10px;font-weight:700;'
+            f'<div style="color:#1e9e5a;font-size:10px;font-weight:700;'
             f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
             f'margin-bottom:6px;">REGIME READ</div>'
-            f'<div style="color:#9aa5c8;font-size:12px;line-height:1.55;'
+            f'<div style="color:#5b6480;font-size:12px;line-height:1.55;'
             f'font-style:italic;'
             f'font-family:system-ui,-apple-system,sans-serif;">'
             f'{regime_e}</div>',
@@ -951,7 +951,7 @@ def render_detail_card(row: pd.Series) -> None:
             if srcs:
                 link_items = "".join(
                     f'<a href="{html.escape(u)}" target="_blank" rel="noopener" '
-                    f'style="color:#3dbe7a;text-decoration:none;'
+                    f'style="color:#1e9e5a;text-decoration:none;'
                     f'font-size:10px;display:block;overflow:hidden;'
                     f'text-overflow:ellipsis;white-space:nowrap;">'
                     f'{html.escape(u)}</a>'
@@ -959,16 +959,16 @@ def render_detail_card(row: pd.Series) -> None:
                 )
                 src_html = (
                     f'<div style="margin-top:8px;padding-top:8px;'
-                    f'border-top:1px solid #172561;color:#7c88b0;'
+                    f'border-top:1px solid #e3e6ec;color:#6f7893;'
                     f'font-size:9px;font-weight:700;letter-spacing:1px;'
                     f'font-family:\'SF Mono\',monospace;margin-bottom:4px;">'
                     f'SOURCES</div><div>{link_items}</div>'
                 )
         st.markdown(
-            f'<div style="color:#3dbe7a;font-size:10px;font-weight:700;'
+            f'<div style="color:#1e9e5a;font-size:10px;font-weight:700;'
             f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;'
             f'margin-bottom:6px;">◆ PERPLEXITY RESEARCH</div>'
-            f'<div style="color:#9aa5c8;font-size:12px;line-height:1.55;'
+            f'<div style="color:#5b6480;font-size:12px;line-height:1.55;'
             f'white-space:pre-wrap;'
             f'font-family:system-ui,-apple-system,sans-serif;">{body_e}</div>'
             f'{src_html}',
@@ -1004,17 +1004,17 @@ def _render_calendar_section() -> None:
         f'<div style="'
         f'display:flex;align-items:center;gap:12px;'
         f'padding:20px 0 14px 0;'
-        f'border-top:1px solid #1e2e6e;'
+        f'border-top:1px solid #d3d7e0;'
         f'margin-top:20px;'
         f'font-family:\'SF Mono\',\'Fira Code\',monospace;">'
         f'<div style="width:3px;height:22px;'
-        f'background:linear-gradient(180deg,#3dbe7a,#c69842);'
+        f'background:linear-gradient(180deg,#1e9e5a,#000b3d);'
         f'border-radius:2px;flex-shrink:0;"></div>'
-        f'<span style="color:#f2f4fa;font-size:13px;font-weight:700;'
+        f'<span style="color:#0b1540;font-size:13px;font-weight:700;'
         f'letter-spacing:2px;">UPCOMING MACRO EVENTS</span>'
-        f'<span style="color:#7c88b0;font-size:11px;">&#183; next 30 days</span>'
+        f'<span style="color:#6f7893;font-size:11px;">&#183; next 30 days</span>'
         f'<div style="flex:1;height:1px;'
-        f'background:linear-gradient(90deg,#1e2e6e,transparent);'
+        f'background:linear-gradient(90deg,#d3d7e0,transparent);'
         f'margin-left:8px;"></div>'
         f'</div>'
     )
@@ -1040,14 +1040,14 @@ def _render_calendar_section() -> None:
     col_grid = "grid-template-columns:110px 1fr 90px 90px"
     table_header = (
         f'<div style="display:grid;{col_grid};'
-        f'padding:6px 12px;border-bottom:1px solid #1e2e6e;margin-bottom:2px;">'
-        f'<span style="color:#c69842;font-size:10px;font-weight:700;'
+        f'padding:6px 12px;border-bottom:1px solid #d3d7e0;margin-bottom:2px;">'
+        f'<span style="color:#000b3d;font-size:10px;font-weight:700;'
         f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">DATE</span>'
-        f'<span style="color:#c69842;font-size:10px;font-weight:700;'
+        f'<span style="color:#000b3d;font-size:10px;font-weight:700;'
         f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">EVENT</span>'
-        f'<span style="color:#c69842;font-size:10px;font-weight:700;'
+        f'<span style="color:#000b3d;font-size:10px;font-weight:700;'
         f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">PRIORITY</span>'
-        f'<span style="color:#c69842;font-size:10px;font-weight:700;'
+        f'<span style="color:#000b3d;font-size:10px;font-weight:700;'
         f'letter-spacing:1.5px;font-family:\'SF Mono\',monospace;">SOURCE</span>'
         f'</div>'
     )
@@ -1067,13 +1067,13 @@ def _render_calendar_section() -> None:
             delta_days = (evt_dt.normalize() - pd.Timestamp(now_utc).normalize()).days
             if delta_days == 0:
                 countdown = (
-                    f'<span style="color:#e05252;font-size:10px;'
+                    f'<span style="color:#d23f3f;font-size:10px;'
                     f'font-family:\'SF Mono\',monospace;font-weight:700;'
                     f'margin-left:6px;">TODAY</span>'
                 )
             elif 0 < delta_days <= 7:
                 countdown = (
-                    f'<span style="color:#e0812f;font-size:10px;'
+                    f'<span style="color:#d9772a;font-size:10px;'
                     f'font-family:\'SF Mono\',monospace;'
                     f'margin-left:6px;">+{delta_days}d</span>'
                 )
@@ -1085,7 +1085,7 @@ def _render_calendar_section() -> None:
 
         date_cell = (
             f'<div style="display:flex;align-items:center;">'
-            f'<span style="color:#9aa5c8;font-size:12px;'
+            f'<span style="color:#5b6480;font-size:12px;'
             f'font-family:\'SF Mono\',monospace;">{html.escape(date_label)}</span>'
             f'{countdown}'
             f'</div>'
@@ -1094,21 +1094,21 @@ def _render_calendar_section() -> None:
         rows_html += (
             f'<div style="display:grid;{col_grid};'
             f'padding:10px 12px;background:{bg};'
-            f'border-bottom:1px solid #172561;align-items:center;">'
+            f'border-bottom:1px solid #e3e6ec;align-items:center;">'
             f'{date_cell}'
-            f'<span style="color:#f2f4fa;font-size:13px;font-weight:500;">'
+            f'<span style="color:#0b1540;font-size:13px;font-weight:500;">'
             f'{event_str}</span>'
             f'<span style="color:{imp_color};font-size:11px;font-weight:700;'
             f'font-family:\'SF Mono\',monospace;letter-spacing:0.5px;'
             f'text-transform:uppercase;">&#9679;&nbsp;{imp_str}</span>'
-            f'<span style="color:#7c88b0;font-size:11px;">{src_str}</span>'
+            f'<span style="color:#6f7893;font-size:11px;">{src_str}</span>'
             f'</div>'
         )
 
     n = len(upcoming)
     calendar_html = (
         cal_header
-        + f'<div style="border:1px solid #1e2e6e;border-radius:6px;overflow:hidden;">'
+        + f'<div style="border:1px solid #d3d7e0;border-radius:6px;overflow:hidden;">'
         + table_header
         + rows_html
         + "</div>"

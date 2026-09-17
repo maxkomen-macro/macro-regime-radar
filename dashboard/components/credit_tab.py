@@ -34,11 +34,11 @@ DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "macro_radar.
 CREDIT_STATES = ["Normal", "Tight", "Stressed", "Crisis"]
 
 _STATE_COLORS = {
-    "Normal":  "#3dbe7a",
-    "Tight":   "#7fa6e0",
-    "Stressed": "#e0812f",
-    "Crisis":  "#e05252",
-    "No data": "#9aa5c8",
+    "Normal":  "#1e9e5a",
+    "Tight":   "#3b6fc4",
+    "Stressed": "#d9772a",
+    "Crisis":  "#d23f3f",
+    "No data": "#5b6480",
 }
 
 # NBER recession dates for chart shading
@@ -89,7 +89,7 @@ def _current_regime() -> str | None:
 # HTML helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _section_header(title: str, accent_color: str = "#c69842") -> None:
+def _section_header(title: str, accent_color: str = "#000b3d") -> None:
     """Render a Bloomberg-style section header with left accent bar."""
     st.markdown(
         f"""
@@ -97,7 +97,7 @@ def _section_header(title: str, accent_color: str = "#c69842") -> None:
           <div style="width:3px;height:16px;background:{accent_color};
                       border-radius:2px;flex-shrink:0"></div>
           <span style="font-size:10px;font-weight:500;letter-spacing:0.1em;
-                       text-transform:uppercase;color:#9aa5c8">{title}</span>
+                       text-transform:uppercase;color:#5b6480">{title}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -111,9 +111,9 @@ def _fmt_bps(v: float | None, decimals: int = 1) -> str:
 def _fmt_chg(v: float | None) -> tuple[str, str]:
     """Return (formatted string with ▲/▼ arrow, CSS color). Red = widening = bad."""
     if v is None:
-        return "—", "#9aa5c8"
+        return "—", "#5b6480"
     arrow = "▲" if v >= 0 else "▼"
-    color = "#e05252" if v >= 0 else "#3dbe7a"  # widening = bad (red)
+    color = "#d23f3f" if v >= 0 else "#1e9e5a"  # widening = bad (red)
     return f"{arrow} {abs(v):.1f} bps", color
 
 
@@ -144,14 +144,14 @@ def _render_spread_cards(m: dict) -> None:
 
     def _accent(key: str, val: float | None) -> str:
         if val is None:
-            return "#5c6a99"
+            return "#8a92a8"
         if key == "HY OAS":
-            return "#3dbe7a" if val < 400 else ("#e0812f" if val <= 700 else "#e05252")
+            return "#1e9e5a" if val < 400 else ("#d9772a" if val <= 700 else "#d23f3f")
         if key == "IG OAS":
-            return "#3dbe7a" if val <= 150 else "#e0812f"
+            return "#1e9e5a" if val <= 150 else "#d9772a"
         if key in ("CCC OAS", "Distress"):
-            return "#e0812f" if val < 700 else "#e05252"
-        return "#c69842"  # BB and B — neutral blue
+            return "#d9772a" if val < 700 else "#d23f3f"
+        return "#000b3d"  # BB and B — neutral blue
 
     cards_data = [
         ("HY OAS",  m.get("hy_oas"),  m.get("hy_1w_change"),  "ICE BofA HY Index",  m.get("hy_sparkline",  pd.Series(dtype=float))),
@@ -177,14 +177,14 @@ def _render_spread_cards(m: dict) -> None:
         else:
             svg_html = '<div style="height:28px;margin-top:6px"></div>'
         cards_html += f"""
-        <div style="background:#0a1650;border:0.5px solid #1e2e6e;border-left:3px solid {accent};
+        <div style="background:#ffffff;border:0.5px solid #d3d7e0;border-left:3px solid {accent};
                     border-radius:0 8px 8px 0;padding:12px 14px;flex:1;min-width:0">
           <div style="font-size:9px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;
-                      color:#9aa5c8;margin-bottom:6px">{label}</div>
-          <div style="font-size:22px;font-weight:500;color:#f2f4fa;
+                      color:#5b6480;margin-bottom:6px">{label}</div>
+          <div style="font-size:22px;font-weight:500;color:#0b1540;
                       font-family:'SFMono-Regular',Consolas,monospace;letter-spacing:-0.02em;
-                      line-height:1">{val_str} <span style="font-size:12px;color:#9aa5c8">bps</span></div>
-          <div style="font-size:10px;color:#9aa5c8;margin-top:4px">{sublabel}</div>
+                      line-height:1">{val_str} <span style="font-size:12px;color:#5b6480">bps</span></div>
+          <div style="font-size:10px;color:#5b6480;margin-top:4px">{sublabel}</div>
           <div style="font-size:11px;color:{chg_color};margin-top:6px;font-weight:500">{chg_str} vs prev month</div>
           {svg_html}
         </div>"""
@@ -193,7 +193,7 @@ def _render_spread_cards(m: dict) -> None:
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:2px; }}
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; padding:2px; }}
 .row {{ display:flex; gap:8px; }}
 </style></head>
 <body><div class="row">{cards_html}</div></body></html>""",
@@ -241,7 +241,7 @@ def _render_oas_chart(hy_series: pd.Series, ig_series: pd.Series) -> None:
 
     color_scale = alt.Scale(
         domain=["HY OAS", "IG OAS"],
-        range=["#c69842", "#7fa6e0"],
+        range=["#000b3d", "#3b6fc4"],
     )
 
     lines = (
@@ -262,7 +262,7 @@ def _render_oas_chart(hy_series: pd.Series, ig_series: pd.Series) -> None:
     if not rec_df.empty:
         bands = (
             alt.Chart(rec_df)
-            .mark_rect(opacity=0.15, color="#e05252")
+            .mark_rect(opacity=0.15, color="#d23f3f")
             .encode(
                 x=alt.X("start:T"),
                 x2=alt.X2("end:T"),
@@ -282,13 +282,13 @@ def _render_oas_chart(hy_series: pd.Series, ig_series: pd.Series) -> None:
         chart
         .configure_view(strokeWidth=0, fill="transparent")
         .configure_axis(
-            gridColor="#1e2e6e",
-            labelColor="#9aa5c8",
-            titleColor="#9aa5c8",
-            domainColor="#1e2e6e",
+            gridColor="#d3d7e0",
+            labelColor="#5b6480",
+            titleColor="#5b6480",
+            domainColor="#d3d7e0",
         )
-        .configure_title(color="#f2f4fa", fontSize=12)
-        .configure_legend(labelColor="#9aa5c8", titleColor="#9aa5c8")
+        .configure_title(color="#0b1540", fontSize=12)
+        .configure_legend(labelColor="#5b6480", titleColor="#5b6480")
     )
 
     st.altair_chart(chart, use_container_width=True)
@@ -307,16 +307,16 @@ def _render_ratio_distress_cards(m: dict) -> None:
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:2px; }}
-.card {{ background:#0a1650; border:0.5px solid #1e2e6e;
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; padding:2px; }}
+.card {{ background:#ffffff; border:0.5px solid #d3d7e0;
          border-radius:8px; padding:14px 16px; margin-bottom:8px; }}
-.label {{ font-size:9px; font-weight:500; letter-spacing:0.1em; text-transform:uppercase; color:#9aa5c8; margin-bottom:6px; }}
-.value {{ font-size:26px; font-weight:500; color:#f2f4fa; font-family:'SFMono-Regular',Consolas,monospace; letter-spacing:-0.02em; }}
-.context {{ font-size:10px; color:#5c6a99; margin-top:6px; }}
-.bar-track {{ height:6px; background:#1e2e6e; border-radius:3px; margin:10px 0 6px; overflow:hidden; }}
+.label {{ font-size:9px; font-weight:500; letter-spacing:0.1em; text-transform:uppercase; color:#5b6480; margin-bottom:6px; }}
+.value {{ font-size:26px; font-weight:500; color:#0b1540; font-family:'SFMono-Regular',Consolas,monospace; letter-spacing:-0.02em; }}
+.context {{ font-size:10px; color:#8a92a8; margin-top:6px; }}
+.bar-track {{ height:6px; background:#d3d7e0; border-radius:3px; margin:10px 0 6px; overflow:hidden; }}
 .bar-fill {{
   height:6px; border-radius:3px;
-  background:linear-gradient(to right, #3dbe7a 0%, #e0812f 50%, #e05252 100%);
+  background:linear-gradient(to right, #1e9e5a 0%, #d9772a 50%, #d23f3f 100%);
   width:{fill}%;
 }}
 </style></head>
@@ -364,24 +364,24 @@ def _render_lbo_card(m: dict) -> None:
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:2px; }}
-.card {{ background:#0a1650; border:0.5px solid #1e2e6e; border-left:3px solid #c69842;
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; padding:2px; }}
+.card {{ background:#ffffff; border:0.5px solid #d3d7e0; border-left:3px solid #000b3d;
          border-radius:0 8px 8px 0; padding:14px 16px; }}
 .row {{ display:flex; justify-content:space-between; padding:5px 0;
-        font-size:12px; color:#9aa5c8; border-bottom:0.5px solid #172561; }}
+        font-size:12px; color:#5b6480; border-bottom:0.5px solid #e3e6ec; }}
 .row:last-of-type {{ border-bottom:none; }}
 .total-row {{ display:flex; justify-content:space-between; padding:8px 0 4px; }}
-.total-val {{ font-size:20px; font-weight:500; color:#c69842;
+.total-val {{ font-size:20px; font-weight:500; color:#000b3d;
               font-family:'SFMono-Regular',Consolas,monospace; }}
-.context {{ font-size:10px; color:#5c6a99; margin-top:8px; }}
-.note {{ font-size:10px; color:#5c6a99; margin-top:10px; font-style:italic; }}
+.context {{ font-size:10px; color:#8a92a8; margin-top:8px; }}
+.note {{ font-size:10px; color:#8a92a8; margin-top:10px; font-style:italic; }}
 </style></head>
 <body><div class="card">
-  <div class="row"><span>Fed Funds rate</span><span style="color:#f2f4fa">{ff_str}</span></div>
-  <div class="row"><span>+ HY OAS spread</span><span style="color:#f2f4fa">{hy_str}</span></div>
-  <div style="height:0.5px;background:#5c6a99;margin:6px 0"></div>
+  <div class="row"><span>Fed Funds rate</span><span style="color:#0b1540">{ff_str}</span></div>
+  <div class="row"><span>+ HY OAS spread</span><span style="color:#0b1540">{hy_str}</span></div>
+  <div style="height:0.5px;background:#8a92a8;margin:6px 0"></div>
   <div class="total-row">
-    <span style="font-size:12px;color:#9aa5c8;align-self:center">All-in cost</span>
+    <span style="font-size:12px;color:#5b6480;align-self:center">All-in cost</span>
     <span class="total-val">{all_str}</span>
   </div>
   <div class="context">Pre-GFC avg ~7.2% &nbsp;·&nbsp; 2022 peak ~11.4%</div>
@@ -400,32 +400,32 @@ def _render_conditions_card(m: dict) -> None:
 
     rows_html = ""
     thresholds = [
-        ("Normal",   "#3dbe7a", "HY < 400 bps, IG < 150 bps"),
-        ("Tight",    "#7fa6e0", "IG > 150 bps"),
-        ("Stressed", "#e0812f", "HY 400–700 bps"),
-        ("Crisis",   "#e05252", "HY > 700 bps"),
+        ("Normal",   "#1e9e5a", "HY < 400 bps, IG < 150 bps"),
+        ("Tight",    "#3b6fc4", "IG > 150 bps"),
+        ("Stressed", "#d9772a", "HY 400–700 bps"),
+        ("Crisis",   "#d23f3f", "HY > 700 bps"),
     ]
     for label, color, desc in thresholds:
         is_current = label == current_label
-        bg = "background:rgba(198,152,66,0.08);" if is_current else ""
+        bg = "background:rgba(0,11,61,0.08);" if is_current else ""
         weight = "font-weight:600;" if is_current else ""
         rows_html += f"""
         <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;
                     border-radius:4px;{bg}margin-bottom:2px">
           <div style="width:8px;height:8px;border-radius:50%;background:{color};flex-shrink:0"></div>
-          <span style="font-size:12px;color:#f2f4fa;{weight}">{label}</span>
-          <span style="font-size:10px;color:#5c6a99;margin-left:auto">{desc}</span>
+          <span style="font-size:12px;color:#0b1540;{weight}">{label}</span>
+          <span style="font-size:10px;color:#8a92a8;margin-left:auto">{desc}</span>
         </div>"""
 
-    current_color = _STATE_COLORS.get(current_label, "#9aa5c8")
+    current_color = _STATE_COLORS.get(current_label, "#5b6480")
 
     components.html(
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:2px; }}
-.card {{ background:#0a1650; border:0.5px solid #1e2e6e; border-radius:8px; padding:14px 16px; }}
-.current {{ font-size:11px; color:#9aa5c8; margin-bottom:10px; }}
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; padding:2px; }}
+.card {{ background:#ffffff; border:0.5px solid #d3d7e0; border-radius:8px; padding:14px 16px; }}
+.current {{ font-size:11px; color:#5b6480; margin-bottom:10px; }}
 </style></head>
 <body><div class="card">
   <div class="current">
@@ -456,12 +456,12 @@ def _render_percentile_card(m: dict) -> None:
 
     def _bar_color(rank: int | None) -> str:
         if rank is None:
-            return "#5c6a99"
+            return "#8a92a8"
         if rank < 33:
-            return "#3dbe7a"
+            return "#1e9e5a"
         elif rank < 67:
-            return "#e0a33a"
-        return "#e05252"
+            return "#b8860b"
+        return "#d23f3f"
 
     hy_fill  = hy_rank or 0
     ig_fill  = ig_rank or 0
@@ -476,14 +476,14 @@ def _render_percentile_card(m: dict) -> None:
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:2px; }}
-.card {{ background:#0a1650; border:0.5px solid #1e2e6e; border-radius:8px; padding:14px 16px; }}
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; padding:2px; }}
+.card {{ background:#ffffff; border:0.5px solid #d3d7e0; border-radius:8px; padding:14px 16px; }}
 .metric {{ margin-bottom:14px; }}
-.metric-label {{ font-size:10px; color:#9aa5c8; margin-bottom:4px; }}
+.metric-label {{ font-size:10px; color:#5b6480; margin-bottom:4px; }}
 .metric-row {{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px; }}
 .rank {{ font-size:20px; font-weight:500; font-family:'SFMono-Regular',Consolas,monospace; }}
-.interp {{ font-size:10px; color:#5c6a99; }}
-.bar-track {{ height:4px; background:#1e2e6e; border-radius:2px; overflow:hidden; }}
+.interp {{ font-size:10px; color:#8a92a8; }}
+.bar-track {{ height:4px; background:#d3d7e0; border-radius:2px; overflow:hidden; }}
 .bar-fill {{ height:4px; border-radius:2px; }}
 </style></head>
 <body><div class="card">
@@ -517,44 +517,44 @@ def _render_regime_table(current_regime: str | None) -> None:
     """HTML table of asset returns by macro regime, with current regime highlighted."""
 
     def _val_color(v: float) -> str:
-        if v > 0.5:   return "#3dbe7a"
-        elif v < -0.5: return "#e05252"
-        return "#9aa5c8"
+        if v > 0.5:   return "#1e9e5a"
+        elif v < -0.5: return "#d23f3f"
+        return "#5b6480"
 
     header_cells = ""
     for col in _REGIME_COLS:
         is_current = col == current_regime
-        bg_style = "background:rgba(198,152,66,0.08);" if is_current else ""
-        weight = "font-weight:600;color:#c69842;" if is_current else ""
-        header_cells += f'<th style="{bg_style}padding:8px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#9aa5c8;text-align:right;{weight}">{col}</th>'
+        bg_style = "background:rgba(0,11,61,0.08);" if is_current else ""
+        weight = "font-weight:600;color:#000b3d;" if is_current else ""
+        header_cells += f'<th style="{bg_style}padding:8px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#5b6480;text-align:right;{weight}">{col}</th>'
 
     rows_html = ""
     for asset, returns in _REGIME_RETURNS.items():
-        row_cells = f'<td style="padding:8px 12px;font-size:12px;color:#f2f4fa;white-space:nowrap">{asset}</td>'
+        row_cells = f'<td style="padding:8px 12px;font-size:12px;color:#0b1540;white-space:nowrap">{asset}</td>'
         for col in _REGIME_COLS:
             v = returns.get(col, 0.0)
             color = _val_color(v)
             sign = "+" if v >= 0 else ""
             is_current = col == current_regime
-            bg_style = "background:rgba(198,152,66,0.08);" if is_current else ""
+            bg_style = "background:rgba(0,11,61,0.08);" if is_current else ""
             row_cells += f'<td style="{bg_style}padding:8px 12px;font-size:12px;color:{color};text-align:right;font-family:\'SFMono-Regular\',Consolas,monospace;font-weight:500">{sign}{v:.1f}%</td>'
         rows_html += f"<tr>{row_cells}</tr>"
 
     # Current regime note
-    regime_note = f'Current regime: <span style="color:#c69842;font-weight:600">{current_regime}</span>' if current_regime else "Current regime: unavailable"
+    regime_note = f'Current regime: <span style="color:#000b3d;font-weight:600">{current_regime}</span>' if current_regime else "Current regime: unavailable"
 
     components.html(
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:2px; }}
-.wrap {{ background:#0a1650; border:0.5px solid #1e2e6e; border-radius:8px; overflow:hidden; }}
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; padding:2px; }}
+.wrap {{ background:#ffffff; border:0.5px solid #d3d7e0; border-radius:8px; overflow:hidden; }}
 table {{ width:100%; border-collapse:collapse; }}
-tr {{ border-bottom:0.5px solid #172561; }}
+tr {{ border-bottom:0.5px solid #e3e6ec; }}
 tr:last-child {{ border-bottom:none; }}
 tr:hover td {{ background:rgba(255,255,255,0.02); }}
-.footer {{ font-size:10px; color:#5c6a99; padding:10px 12px; border-top:0.5px solid #172561; }}
-.regime-note {{ font-size:10px; padding:8px 12px 0; color:#9aa5c8; }}
+.footer {{ font-size:10px; color:#8a92a8; padding:10px 12px; border-top:0.5px solid #e3e6ec; }}
+.regime-note {{ font-size:10px; padding:8px 12px 0; color:#5b6480; }}
 </style></head>
 <body>
 <div class="wrap">
@@ -562,7 +562,7 @@ tr:hover td {{ background:rgba(255,255,255,0.02); }}
   <table>
     <thead>
       <tr>
-        <th style="padding:8px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#9aa5c8;text-align:left">Asset</th>
+        <th style="padding:8px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#5b6480;text-align:left">Asset</th>
         {header_cells}
       </tr>
     </thead>
@@ -586,37 +586,37 @@ tr:hover td {{ background:rgba(255,255,255,0.02); }}
 def _matrix_html(probs: dict, title: str, current_label: str | None) -> str:
     """Build an HTML table for a credit state transition matrix."""
 
-    header_cells = '<th style="padding:8px 10px;font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#5c6a99;text-align:left">From \\ To</th>'
+    header_cells = '<th style="padding:8px 10px;font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#8a92a8;text-align:left">From \\ To</th>'
     for to_s in CREDIT_STATES:
-        color = _STATE_COLORS.get(to_s, "#9aa5c8")
+        color = _STATE_COLORS.get(to_s, "#5b6480")
         header_cells += f'<th style="padding:8px 10px;font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:{color};text-align:center">{to_s}</th>'
 
     rows_html = ""
     for from_s in CREDIT_STATES:
         is_current_row = from_s == current_label
-        row_bg = "background:rgba(198,152,66,0.05);" if is_current_row else ""
-        dot_color = _STATE_COLORS.get(from_s, "#9aa5c8")
-        row_cells = f'<td style="padding:8px 10px;{row_bg}"><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:{dot_color};flex-shrink:0"></span><span style="font-size:12px;color:#f2f4fa">{from_s}</span></span></td>'
+        row_bg = "background:rgba(0,11,61,0.05);" if is_current_row else ""
+        dot_color = _STATE_COLORS.get(from_s, "#5b6480")
+        row_cells = f'<td style="padding:8px 10px;{row_bg}"><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:{dot_color};flex-shrink:0"></span><span style="font-size:12px;color:#0b1540">{from_s}</span></span></td>'
         from_probs = probs.get(from_s, {})
         for to_s in CREDIT_STATES:
             p = from_probs.get(to_s, 0.0)
             pct = int(round(p * 100))
             is_diag = from_s == to_s
             if pct >= 50:
-                cell_color = "#3dbe7a" if is_diag else "#c69842"
-                cell_bg = "rgba(61,190,122,0.12)" if is_diag else "rgba(198,152,66,0.12)"
+                cell_color = "#1e9e5a" if is_diag else "#000b3d"
+                cell_bg = "rgba(30,158,90,0.12)" if is_diag else "rgba(0,11,61,0.12)"
             elif pct >= 20:
-                cell_color = "#3dbe7a" if is_diag else "#58a6ff"
-                cell_bg = "rgba(61,190,122,0.06)" if is_diag else "rgba(198,152,66,0.06)"
+                cell_color = "#1e9e5a" if is_diag else "#58a6ff"
+                cell_bg = "rgba(30,158,90,0.06)" if is_diag else "rgba(0,11,61,0.06)"
             else:
-                cell_color = "#5c6a99"
+                cell_color = "#8a92a8"
                 cell_bg = "transparent"
             row_cells += f'<td style="padding:8px 10px;text-align:center;{row_bg}"><span style="background:{cell_bg};color:{cell_color};font-size:12px;font-weight:500;font-family:\'SFMono-Regular\',Consolas,monospace;padding:2px 6px;border-radius:3px">{pct}%</span></td>'
         rows_html += f"<tr>{row_cells}</tr>"
 
     return f"""
-    <div style="background:#0a1650;border:0.5px solid #1e2e6e;border-radius:8px;overflow:hidden">
-      <div style="padding:10px 12px 0;font-size:10px;color:#9aa5c8;font-weight:500">{title}</div>
+    <div style="background:#ffffff;border:0.5px solid #d3d7e0;border-radius:8px;overflow:hidden">
+      <div style="padding:10px 12px 0;font-size:10px;color:#5b6480;font-weight:500">{title}</div>
       <table style="width:100%;border-collapse:collapse">
         <thead><tr>{header_cells}</tr></thead>
         <tbody>{rows_html}</tbody>
@@ -645,9 +645,9 @@ def _render_transition_matrices(m: dict) -> None:
                 f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:2px; }}
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; padding:2px; }}
 table {{ width:100%; border-collapse:collapse; }}
-tr {{ border-bottom:0.5px solid #172561; }}
+tr {{ border-bottom:0.5px solid #e3e6ec; }}
 tr:last-child {{ border-bottom:none; }}
 </style></head>
 <body>{_matrix_html(t3m, "3-Month transition probabilities", current_label)}</body></html>""",
@@ -661,9 +661,9 @@ tr:last-child {{ border-bottom:none; }}
                 f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ background:#000b3d; font-family:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:2px; }}
+body {{ background:#f3f4f6; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; padding:2px; }}
 table {{ width:100%; border-collapse:collapse; }}
-tr {{ border-bottom:0.5px solid #172561; }}
+tr {{ border-bottom:0.5px solid #e3e6ec; }}
 tr:last-child {{ border-bottom:none; }}
 </style></head>
 <body>{_matrix_html(t6m, "6-Month transition probabilities", current_label)}</body></html>""",
@@ -675,7 +675,7 @@ tr:last-child {{ border-bottom:none; }}
     tight_count = m.get("tight_count", 0)
     if tight_count < 5:
         st.markdown(
-            '<div style="font-size:10px;color:#5c6a99;margin-top:6px;font-style:italic">'
+            '<div style="font-size:10px;color:#8a92a8;margin-top:6px;font-style:italic">'
             'Note: Tight state has insufficient historical observations and is excluded from probability estimates.'
             '</div>',
             unsafe_allow_html=True,
@@ -689,10 +689,10 @@ tr:last-child {{ border-bottom:none; }}
                           if s != current_label and CREDIT_STATES.index(s) > CREDIT_STATES.index(current_label)]
         deterio_6m = int(round(sum(t6m.get(current_label, {}).get(s, 0) for s in deterio_states) * 100))
 
-        label_color = _STATE_COLORS.get(current_label, "#9aa5c8")
+        label_color = _STATE_COLORS.get(current_label, "#5b6480")
         st.markdown(
-            f'<div style="background:#0a1650;border:0.5px solid #172561;border-radius:6px;'
-            f'padding:12px 16px;font-size:12px;line-height:1.7;color:#c8cfe6;margin-top:8px">'
+            f'<div style="background:#ffffff;border:0.5px solid #e3e6ec;border-radius:6px;'
+            f'padding:12px 16px;font-size:12px;line-height:1.7;color:#2c3556;margin-top:8px">'
             f'Current state: <span style="color:{label_color};font-weight:600">{current_label}</span>. '
             f'Based on 30yr history, credit conditions remain <span style="color:{label_color};font-weight:600">'
             f'{current_label}</span> <b>{stay_3m}%</b> of the time over 3 months. '
@@ -729,7 +729,7 @@ def render() -> None:
     })
 
     label = m.get("credit_label", "No data")
-    color = m.get("credit_label_color", "#9aa5c8")
+    color = m.get("credit_label_color", "#5b6480")
     as_of = m.get("data_as_of") or "—"
 
     # ── Section 1: Status bar ─────────────────────────────────────────────────
@@ -738,12 +738,12 @@ def render() -> None:
         f'padding:8px 0;margin-bottom:4px">'
         f'<div style="display:flex;align-items:center;gap:10px">'
         f'<span style="font-size:10px;font-weight:500;text-transform:uppercase;'
-        f'letter-spacing:0.08em;color:#9aa5c8">Credit Regime</span>'
+        f'letter-spacing:0.08em;color:#5b6480">Credit Regime</span>'
         f'<span style="border:0.5px solid {color}55;color:{color};font-weight:700;'
         f'font-size:14px;padding:3px 12px;border-radius:4px;background:rgba(0,0,0,0.25)">'
         f'● {label}</span>'
         f'</div>'
-        f'<span style="font-size:10px;color:#5c6a99">FRED BAML series · monthly observations'
+        f'<span style="font-size:10px;color:#8a92a8">FRED BAML series · monthly observations'
         f' · latest {as_of}</span>'
         f'</div>',
         unsafe_allow_html=True,
@@ -759,13 +759,13 @@ def render() -> None:
         return
 
     # ── Section 2: Spread cards ───────────────────────────────────────────────
-    _section_header("SPREAD LEVELS (BASIS POINTS)", accent_color="#e0812f")
+    _section_header("SPREAD LEVELS (BASIS POINTS)", accent_color="#d9772a")
     _render_spread_cards(m)
 
     st.markdown("<div style='margin-top:6px'></div>", unsafe_allow_html=True)
 
     # ── Section 3: Chart + ratio/distress cards ───────────────────────────────
-    _section_header("OAS HISTORY & SPREAD RATIOS", accent_color="#c69842")
+    _section_header("OAS HISTORY & SPREAD RATIOS", accent_color="#000b3d")
     chart_col, side_col = st.columns([3, 2])
     with chart_col:
         _render_oas_chart(m["hy_series"], m["ig_series"])
@@ -773,34 +773,34 @@ def render() -> None:
         _render_ratio_distress_cards(m)
 
     # ── Section 4: Analytical columns ────────────────────────────────────────
-    _section_header("CREDIT ANALYTICS", accent_color="#c69842")
+    _section_header("CREDIT ANALYTICS", accent_color="#000b3d")
     a1, a2, a3 = st.columns(3)
     with a1:
         st.markdown(
             '<div style="font-size:9px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;'
-            'color:#c69842;margin-bottom:8px">LBO ALL-IN FINANCING COST</div>',
+            'color:#000b3d;margin-bottom:8px">LBO ALL-IN FINANCING COST</div>',
             unsafe_allow_html=True,
         )
         _render_lbo_card(m)
     with a2:
         st.markdown(
             '<div style="font-size:9px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;'
-            'color:#9aa5c8;margin-bottom:8px">CONDITIONS LOGIC</div>',
+            'color:#5b6480;margin-bottom:8px">CONDITIONS LOGIC</div>',
             unsafe_allow_html=True,
         )
         _render_conditions_card(m)
     with a3:
         st.markdown(
             '<div style="font-size:9px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;'
-            'color:#9aa5c8;margin-bottom:8px">SPREAD CONTEXT (30YR)</div>',
+            'color:#5b6480;margin-bottom:8px">SPREAD CONTEXT (30YR)</div>',
             unsafe_allow_html=True,
         )
         _render_percentile_card(m)
 
     # ── Section 5: Regime-conditional performance ─────────────────────────────
-    _section_header("REGIME-CONDITIONAL ASSET PERFORMANCE", accent_color="#c69842")
+    _section_header("REGIME-CONDITIONAL ASSET PERFORMANCE", accent_color="#000b3d")
     st.markdown(
-        '<div style="font-size:11px;color:#5c6a99;margin-bottom:8px;margin-top:-8px">'
+        '<div style="font-size:11px;color:#8a92a8;margin-bottom:8px;margin-top:-8px">'
         'Median annual returns during each macro regime · backtested 1995–present</div>',
         unsafe_allow_html=True,
     )
@@ -808,9 +808,9 @@ def render() -> None:
     _render_regime_table(current_regime)
 
     # ── Section 6: Transition matrix ─────────────────────────────────────────
-    _section_header("CREDIT REGIME TRANSITION MATRIX", accent_color="#c69842")
+    _section_header("CREDIT REGIME TRANSITION MATRIX", accent_color="#000b3d")
     st.markdown(
-        '<div style="font-size:11px;color:#5c6a99;margin-bottom:8px;margin-top:-8px">'
+        '<div style="font-size:11px;color:#8a92a8;margin-bottom:8px;margin-top:-8px">'
         'Historical probability of credit condition changes · computed from 30yr BAML spread history</div>',
         unsafe_allow_html=True,
     )

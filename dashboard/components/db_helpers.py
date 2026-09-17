@@ -427,13 +427,13 @@ def render_surprises(dm: pd.DataFrame, top_n: int = 10, title: str = "Top Surpri
         z    = row["z_score"]
         icon = "🔴" if abs(z) >= 2.5 else ("🟡" if abs(z) >= 1.5 else "🔵")
         bar_pct = min(int(abs(z) / 3.0 * 100), 100)
-        bar_color = "#e05252" if abs(z) >= 2.5 else ("#e0812f" if abs(z) >= 1.5 else "#7fa6e0")
+        bar_color = "#d23f3f" if abs(z) >= 2.5 else ("#d9772a" if abs(z) >= 1.5 else "#3b6fc4")
         st.markdown(
             f"""<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
   <span style="font-size:16px">{icon}</span>
   <div style="flex:1">
     <div style="font-size:13px;line-height:1.4">{row['interpretation']}</div>
-    <div style="height:4px;border-radius:2px;background:#172561;margin-top:3px">
+    <div style="height:4px;border-radius:2px;background:#e3e6ec;margin-top:3px">
       <div style="width:{bar_pct}%;height:4px;background:{bar_color};border-radius:2px"></div>
     </div>
   </div>

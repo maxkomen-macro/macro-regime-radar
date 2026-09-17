@@ -19,19 +19,19 @@ from src.utils.format import ordinal
 # ---------------------------------------------------------------------------
 # Constants — dark theme
 # ---------------------------------------------------------------------------
-_BG        = "#000b3d"
-_BG2       = "#0a1650"
-_BORDER    = "#1e2e6e"
-_TEXT      = "#f2f4fa"
-_MUTED     = "#9aa5c8"
-_BLUE      = "#c69842"
-_GREEN     = "#3dbe7a"
-_ORANGE    = "#e0812f"
-_RED       = "#e05252"
+_BG        = "#f3f4f6"
+_BG2       = "#ffffff"
+_BORDER    = "#d3d7e0"
+_TEXT      = "#0b1540"
+_MUTED     = "#5b6480"
+_BLUE      = "#000b3d"
+_GREEN     = "#1e9e5a"
+_ORANGE    = "#d9772a"
+_RED       = "#d23f3f"
 
 _BASE_CSS = f"""
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{ background: {_BG}; font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+body {{ background: {_BG}; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
        color: {_TEXT}; font-size: 13px; }}
 """
 
@@ -227,7 +227,7 @@ def _render_schedule_table(res: dict) -> None:
     for i, yr in enumerate(schedule):
         is_exit = (i == n - 1)
         weight  = "700" if is_exit else "400"
-        bg      = f"rgba(198,152,66,0.07)" if is_exit else "transparent"
+        bg      = f"rgba(0,11,61,0.07)" if is_exit else "transparent"
         label   = f'Year {yr["year"]} <span style="font-size:9px;color:{color};font-weight:700;">EXIT</span>' if is_exit else f'Year {yr["year"]}'
         rows_html += f"""
         <tr style="background:{bg};">
@@ -314,10 +314,10 @@ def _render_sensitivity_table(
         if irr is None:
             return "rgba(139,148,158,0.10)"
         if irr >= 20:
-            return "rgba(61,190,122,0.15)"
+            return "rgba(30,158,90,0.15)"
         if irr >= 15:
-            return "rgba(198,152,66,0.10)"
-        return "rgba(224,129,47,0.10)"
+            return "rgba(0,11,61,0.10)"
+        return "rgba(217,119,42,0.10)"
 
     def _cell_color(irr: float | None) -> str:
         return _irr_color(irr)

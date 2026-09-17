@@ -32,10 +32,10 @@ from components.db_helpers import (
 from components.shared_styles import render_regime_badge, render_signal_card, section_header, subsection_header, SIGNAL_DISPLAY_NAMES
 
 REGIME_COLORS = {
-    "Goldilocks":     "#3dbe7a",
-    "Overheating":    "#e0812f",
-    "Stagflation":    "#e05252",
-    "Recession Risk": "#8a93ad",
+    "Goldilocks":     "#1e9e5a",
+    "Overheating":    "#d9772a",
+    "Stagflation":    "#d23f3f",
+    "Recession Risk": "#7a829a",
 }
 
 SIGNAL_META = {
@@ -46,7 +46,7 @@ SIGNAL_META = {
     "vix_spike":             {"label": "Vol Spike",          "unit": "",       "threshold": 30.0, "direction": "above"},
 }
 
-LEVEL_COLORS = {"risk": "#e05252", "watch": "#e0812f", "info": "#7fa6e0"}
+LEVEL_COLORS = {"risk": "#d23f3f", "watch": "#d9772a", "info": "#3b6fc4"}
 LEVEL_ICONS  = {"risk": "🔴", "watch": "🟡", "info": "🔵"}
 
 
@@ -127,10 +127,10 @@ def _render_regime_prob_distribution(latest_regime, regimes_df: pd.DataFrame) ->
     prob_rr  = float(prob_rr)
 
     REGIME_PROB_MAP = {
-        "Goldilocks":    ("prob_goldilocks",  prob_gl,  "#3dbe7a"),
-        "Overheating":   ("prob_overheating", prob_ov,  "#e0812f"),
-        "Stagflation":   ("prob_stagflation", prob_st,  "#e05252"),
-        "Recession Risk":("prob_recession",   prob_rr,  "#8a93ad"),
+        "Goldilocks":    ("prob_goldilocks",  prob_gl,  "#1e9e5a"),
+        "Overheating":   ("prob_overheating", prob_ov,  "#d9772a"),
+        "Stagflation":   ("prob_stagflation", prob_st,  "#d23f3f"),
+        "Recession Risk":("prob_recession",   prob_rr,  "#7a829a"),
     }
 
     # Last month delta: find most recent prior row
@@ -163,15 +163,15 @@ def _render_regime_prob_distribution(latest_regime, regimes_df: pd.DataFrame) ->
         with bar_col:
             st.markdown(
                 f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
-                f'<span style="font-size:12px;width:110px;color:#f2f4fa;flex-shrink:0">{regime_name}</span>'
-                f'<div style="flex:1;background:#172561;border-radius:4px;height:8px">'
+                f'<span style="font-size:12px;width:110px;color:#0b1540;flex-shrink:0">{regime_name}</span>'
+                f'<div style="flex:1;background:#e3e6ec;border-radius:4px;height:8px">'
                 f'<div style="width:{prob*100:.1f}%;background:{color};height:8px;border-radius:4px"></div>'
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
         with lbl_col:
             st.markdown(
-                f'<span style="font-size:12px;color:#9aa5c8">{prob:.0%} {delta_str}</span>',
+                f'<span style="font-size:12px;color:#5b6480">{prob:.0%} {delta_str}</span>',
                 unsafe_allow_html=True,
             )
 
@@ -196,8 +196,8 @@ def _render_regime_tile(latest_regime, regimes_df, as_of) -> None:
     st.caption(f"As of {ao_str}")
 
     # Trend pills
-    g_color  = "#3dbe7a" if gt >= 0 else "#e05252"
-    i_color  = "#e05252" if it > 0.5 else ("#e0812f" if it > 0 else "#3dbe7a")
+    g_color  = "#1e9e5a" if gt >= 0 else "#d23f3f"
+    i_color  = "#d23f3f" if it > 0.5 else ("#d9772a" if it > 0 else "#1e9e5a")
     g_arrow  = "▲" if gt >= 0 else "▼"
     i_arrow  = "▲" if it >= 0 else "▼"
     st.markdown(
@@ -243,11 +243,11 @@ def _render_top_risks(alerts: pd.DataFrame) -> None:
         val_str = f"  |  {row['value']:.2f}" if pd.notna(row.get("value")) else ""
         st.markdown(
             f'<div style="border-left:3px solid {color};padding:8px 12px;'
-            f'margin-bottom:8px;background:#0a1650;border:0.5px solid #172561;'
+            f'margin-bottom:8px;background:#ffffff;border:0.5px solid #e3e6ec;'
             f'border-left:3px solid {color};border-radius:4px">'
-            f'<div style="font-size:13px;font-weight:600;color:#f2f4fa">{html.escape(str(row["name"]))}</div>'
-            f'<div style="font-size:12px;color:#9aa5c8;margin-top:2px">{html.escape(str(row["message"])[:120])}</div>'
-            f'<div style="font-size:11px;color:#5c6a99;margin-top:2px">'
+            f'<div style="font-size:13px;font-weight:600;color:#0b1540">{html.escape(str(row["name"]))}</div>'
+            f'<div style="font-size:12px;color:#5b6480;margin-top:2px">{html.escape(str(row["message"])[:120])}</div>'
+            f'<div style="font-size:11px;color:#8a92a8;margin-top:2px">'
             f'{html.escape(str(row["date"])[:10])}{val_str}</div>'
             f'</div>',
             unsafe_allow_html=True,
@@ -264,10 +264,10 @@ def _render_upcoming_events(calendar: pd.DataFrame, days: int = 7) -> None:
         st.info("No events in the next 7 days.")
         return
 
-    imp_colors = {"high": "#e05252", "medium": "#e0812f", "low": "#8a93ad"}
+    imp_colors = {"high": "#d23f3f", "medium": "#d9772a", "low": "#7a829a"}
     for _, row in upcoming.iterrows():
         imp    = row.get("importance", "medium")
-        color  = imp_colors.get(imp, "#8a93ad")
+        color  = imp_colors.get(imp, "#7a829a")
         dt_str = str(row.get("event_datetime", ""))[:10]
         name   = row["event_name"]
         st.markdown(

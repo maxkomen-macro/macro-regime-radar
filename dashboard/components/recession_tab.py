@@ -44,34 +44,34 @@ INVERSION_EPISODES = [
 
 _ALTAIR_CFG = dict(
     stroke_width=0,
-    grid_color="#1e2e6e",
-    label_color="#9aa5c8",
-    title_color="#9aa5c8",
-    domain_color="#1e2e6e",
+    grid_color="#d3d7e0",
+    label_color="#5b6480",
+    title_color="#5b6480",
+    domain_color="#d3d7e0",
     title_font_size=12,
-    title_font_color="#f2f4fa",
-    legend_label="#9aa5c8",
+    title_font_color="#0b1540",
+    legend_label="#5b6480",
 )
 
 _CARD_STYLE = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  background: #000b3d;
-  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #f2f4fa;
+  background: #f3f4f6;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: #0b1540;
 }
 .card {
-  background: #0a1650;
-  border: 0.5px solid #1e2e6e;
+  background: #ffffff;
+  border: 0.5px solid #d3d7e0;
   border-radius: 6px;
   padding: 14px 16px;
   height: 100%;
 }
 .card-accent { border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
-.label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #9aa5c8; margin-bottom: 6px; }
+.label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #5b6480; margin-bottom: 6px; }
 .value { font-size: 28px; font-weight: 700; line-height: 1; }
-.sub   { font-size: 11px; color: #9aa5c8; margin-top: 6px; }
-.context { font-size: 10px; color: #5c6a99; margin-top: 4px; }
+.sub   { font-size: 11px; color: #5b6480; margin-top: 6px; }
+.context { font-size: 10px; color: #8a92a8; margin-top: 4px; }
 .badge {
   display: inline-block;
   padding: 3px 10px;
@@ -79,11 +79,11 @@ body {
   font-size: 12px;
   font-weight: 600;
 }
-.progress-wrap { background: #1e2e6e; border-radius: 4px; height: 6px; margin: 4px 0 2px; }
+.progress-wrap { background: #d3d7e0; border-radius: 4px; height: 6px; margin: 4px 0 2px; }
 .progress-bar  { border-radius: 4px; height: 6px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { color: #9aa5c8; text-align: left; padding: 4px 6px; border-bottom: 1px solid #1e2e6e; font-weight: 500; font-size: 10px; text-transform: uppercase; }
-td { padding: 5px 6px; border-bottom: 0.5px solid #172561; }
+th { color: #5b6480; text-align: left; padding: 4px 6px; border-bottom: 1px solid #d3d7e0; font-weight: 500; font-size: 10px; text-transform: uppercase; }
+td { padding: 5px 6px; border-bottom: 0.5px solid #e3e6ec; }
 """
 
 
@@ -92,13 +92,13 @@ def _altair_dark(chart: alt.Chart) -> alt.Chart:
         chart
         .configure_view(strokeWidth=0, fill="transparent")
         .configure_axis(
-            gridColor="#1e2e6e",
-            labelColor="#9aa5c8",
-            titleColor="#9aa5c8",
-            domainColor="#1e2e6e",
+            gridColor="#d3d7e0",
+            labelColor="#5b6480",
+            titleColor="#5b6480",
+            domainColor="#d3d7e0",
         )
-        .configure_title(color="#f2f4fa", fontSize=12)
-        .configure_legend(labelColor="#9aa5c8", titleColor="#9aa5c8")
+        .configure_title(color="#0b1540", fontSize=12)
+        .configure_legend(labelColor="#5b6480", titleColor="#5b6480")
     )
 
 
@@ -111,11 +111,11 @@ def _html(body: str, height: int) -> None:
     )
 
 
-def _section_header(title: str, color: str = "#c69842") -> None:
+def _section_header(title: str, color: str = "#000b3d") -> None:
     st.markdown(
         f'<div style="border-left:3px solid {color};padding-left:8px;margin:12px 0 8px;">'
         f'<span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;'
-        f'color:#9aa5c8;font-weight:600;">{title}</span></div>',
+        f'color:#5b6480;font-weight:600;">{title}</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -134,20 +134,20 @@ def _gauge_svg(prob: float, color: str) -> str:
     angle_rad = math.radians(180.0 - (prob / 100.0) * 180.0)
     nx = round(100 + 65 * math.cos(angle_rad), 2)
     ny = round(100 - 65 * math.sin(angle_rad), 2)
-    fill_color = "#3dbe7a" if prob < 20 else "#e0812f" if prob < 40 else "#e05252"
+    fill_color = "#1e9e5a" if prob < 20 else "#d9772a" if prob < 40 else "#d23f3f"
     return (
         f'<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg"'
         f' style="width:100%;max-width:200px;display:block;margin:0 auto;">'
-        f'<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#1e2e6e"'
+        f'<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#d3d7e0"'
         f' stroke-width="12" stroke-linecap="round"/>'
-        f'<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#3dbe7a33"'
+        f'<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#1e9e5a33"'
         f' stroke-width="12" stroke-linecap="round"'
         f' stroke-dasharray="{g_end:.1f} {ARC_LEN - g_end + 1000:.1f}"/>'
-        f'<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#e0812f33"'
+        f'<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#d9772a33"'
         f' stroke-width="12" stroke-linecap="round"'
         f' stroke-dasharray="{o_end - g_end:.1f} {ARC_LEN - (o_end - g_end) + 1000:.1f}"'
         f' stroke-dashoffset="{-g_end:.1f}"/>'
-        f'<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#e0525233"'
+        f'<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#d23f3f33"'
         f' stroke-width="12" stroke-linecap="round"'
         f' stroke-dasharray="{ARC_LEN - o_end:.1f} 1000"'
         f' stroke-dashoffset="{-o_end:.1f}"/>'
@@ -158,11 +158,11 @@ def _gauge_svg(prob: float, color: str) -> str:
         f' stroke="{color}" stroke-width="2.5" stroke-linecap="round"/>'
         f'<circle cx="100" cy="100" r="4" fill="{color}"/>'
         f'<text x="100" y="82" text-anchor="middle"'
-        f' font-family="Manrope,-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif"'
+        f' font-family="Helvetica Neue,Helvetica,Arial,\'Segoe UI\',sans-serif"'
         f' font-size="22" font-weight="700" fill="{color}">{prob:.1f}%</text>'
-        f'<text x="18" y="118" text-anchor="middle" font-size="8" fill="#5c6a99"'
+        f'<text x="18" y="118" text-anchor="middle" font-size="8" fill="#8a92a8"'
         f' font-family="sans-serif">0</text>'
-        f'<text x="182" y="118" text-anchor="middle" font-size="8" fill="#5c6a99"'
+        f'<text x="182" y="118" text-anchor="middle" font-size="8" fill="#8a92a8"'
         f' font-family="sans-serif">100</text>'
         f'</svg>'
     )
@@ -181,26 +181,26 @@ def render_recession_summary() -> None:
     color = m["recession_color"]
     spread_bps = m["yield_curve_spread"]
     spread_str = f"{spread_bps:+.0f} bps" if spread_bps is not None else "N/A"
-    spread_color = "#e05252" if (spread_bps is not None and spread_bps < 0) else "#3dbe7a"
+    spread_color = "#d23f3f" if (spread_bps is not None and spread_bps < 0) else "#1e9e5a"
     div_label = m["divergence_label"]
     div_color = m["divergence_color"]
 
     _html(f"""
 <div style="display:flex;gap:8px;align-items:stretch;height:64px;margin-top:12px;margin-bottom:12px;">
-  <div style="background:#0a1650;border:0.5px solid #1e2e6e;border-left:3px solid {color};
+  <div style="background:#ffffff;border:0.5px solid #d3d7e0;border-left:3px solid {color};
               border-radius:0 6px 6px 0;padding:10px 14px;flex:1;display:flex;align-items:center;gap:10px;">
-    <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#9aa5c8;">Recession Risk</span>
+    <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#5b6480;">Recession Risk</span>
     <span class="badge" style="background:{color}22;color:{color};">{label}</span>
     <span style="font-size:20px;font-weight:700;color:{color};">{prob:.1f}%</span>
   </div>
-  <div style="background:#0a1650;border:0.5px solid #1e2e6e;border-left:3px solid {spread_color};
+  <div style="background:#ffffff;border:0.5px solid #d3d7e0;border-left:3px solid {spread_color};
               border-radius:0 6px 6px 0;padding:10px 14px;flex:1;display:flex;align-items:center;gap:10px;">
-    <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#9aa5c8;">Yield Curve 2s10s</span>
+    <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#5b6480;">Yield Curve 2s10s</span>
     <span style="font-size:20px;font-weight:700;color:{spread_color};">{spread_str}</span>
   </div>
-  <div style="background:#0a1650;border:0.5px solid #1e2e6e;border-left:3px solid {div_color};
+  <div style="background:#ffffff;border:0.5px solid #d3d7e0;border-left:3px solid {div_color};
               border-radius:0 6px 6px 0;padding:10px 14px;flex:1;display:flex;align-items:center;gap:10px;">
-    <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#9aa5c8;">Macro Divergence</span>
+    <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#5b6480;">Macro Divergence</span>
     <span class="badge" style="background:{div_color}22;color:{div_color};">{div_label}</span>
   </div>
 </div>""", height=82)
@@ -257,12 +257,12 @@ def _generate_interpretation(m: dict) -> str:
         )
 
     return (
-        f'<div style="background:#0a1650;border:0.5px solid #1e2e6e;'
-        f'border-left:3px solid #c69842;border-radius:0 6px 6px 0;'
+        f'<div style="background:#ffffff;border:0.5px solid #d3d7e0;'
+        f'border-left:3px solid #000b3d;border-radius:0 6px 6px 0;'
         f'padding:12px 16px;margin:10px 0 4px;">'
         f'<div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;'
-        f'color:#9aa5c8;margin-bottom:6px;">CURRENT READ-THROUGH</div>'
-        f'<p style="font-size:13px;color:#c8cfe6;line-height:1.7;margin:0;">'
+        f'color:#5b6480;margin-bottom:6px;">CURRENT READ-THROUGH</div>'
+        f'<p style="font-size:13px;color:#2c3556;line-height:1.7;margin:0;">'
         f'{p_sent}{yc_sent}{div_sent}</p></div>'
     )
 
@@ -296,16 +296,16 @@ def render() -> None:
 
     st.markdown(
         f"""<div style="display:flex;justify-content:space-between;align-items:center;
-        background:#0a1650;border:0.5px solid #1e2e6e;border-radius:6px;
+        background:#ffffff;border:0.5px solid #d3d7e0;border-radius:6px;
         padding:10px 16px;margin-bottom:12px;">
           <div style="display:flex;align-items:center;gap:12px;">
             <span class="badge" style="background:{color}22;color:{color};
             padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600;">
             {label}</span>
             <span style="font-size:22px;font-weight:700;color:{color};">{prob:.1f}%</span>
-            <span style="font-size:12px;color:#9aa5c8;">12-month recession probability</span>
+            <span style="font-size:12px;color:#5b6480;">12-month recession probability</span>
           </div>
-          <span style="font-size:11px;color:#5c6a99;">
+          <span style="font-size:11px;color:#8a92a8;">
             Logistic regression · trained on NBER recession dates · monthly inputs through {m.get("data_as_of", "—")}
           </span>
         </div>""",
@@ -318,7 +318,7 @@ def render() -> None:
 
     spread_bps  = m["yield_curve_spread"]
     spread_str  = f"{spread_bps:+.0f}" if spread_bps is not None else "N/A"
-    spread_color= "#e05252" if (spread_bps is not None and spread_bps < 0) else "#3dbe7a"
+    spread_color= "#d23f3f" if (spread_bps is not None and spread_bps < 0) else "#1e9e5a"
     inv_dur     = m["inversion_duration_months"] or 0
     pct_rank    = m["yield_curve_pct_rank"] if m["yield_curve_pct_rank"] is not None else 50
     div_label   = m["divergence_label"]
@@ -337,9 +337,9 @@ def render() -> None:
 
     with col2:
         inv_note = (
-            f'<span style="color:#e05252;">Inverted {inv_dur} months</span>'
+            f'<span style="color:#d23f3f;">Inverted {inv_dur} months</span>'
             if m["is_inverted"]
-            else f'<span style="color:#3dbe7a;">{ordinal(pct_rank)} pct vs 30yr history</span>'
+            else f'<span style="color:#1e9e5a;">{ordinal(pct_rank)} pct vs 30yr history</span>'
         )
         _html(f"""
 <div class="card card-accent" style="--accent:{spread_color}">
@@ -380,7 +380,7 @@ def render() -> None:
         prob_df.loc[:, "date"] = pd.to_datetime(prob_df["date"])
 
         base_line = alt.Chart(prob_df).mark_line(
-            color="#c69842", strokeWidth=1.8
+            color="#000b3d", strokeWidth=1.8
         ).encode(
             x=alt.X("date:T", title="Date"),
             y=alt.Y(
@@ -392,7 +392,7 @@ def render() -> None:
         )
 
         rule_50 = alt.Chart(pd.DataFrame({"y": [50]})).mark_rule(
-            color="#9aa5c8", strokeDash=[4, 4], strokeWidth=1
+            color="#5b6480", strokeDash=[4, 4], strokeWidth=1
         ).encode(y="y:Q")
 
         rule_cur = alt.Chart(pd.DataFrame({"y": [prob]})).mark_rule(
@@ -408,7 +408,7 @@ def render() -> None:
                 band_df.loc[:, "y_min"] = 0
                 band_df.loc[:, "y_max"] = 100
                 band = alt.Chart(band_df).mark_rect(
-                    color="#e05252", opacity=0.15
+                    color="#d23f3f", opacity=0.15
                 ).encode(
                     x="start:T",
                     x2="end:T",
@@ -442,7 +442,7 @@ def render() -> None:
             yc_df.loc[:, "date"] = pd.to_datetime(yc_df["date"])
 
             yc_line = alt.Chart(yc_df).mark_line(
-                color="#c69842", strokeWidth=1.2
+                color="#000b3d", strokeWidth=1.2
             ).encode(
                 x=alt.X("date:T", title="Date"),
                 y=alt.Y("spread:Q", title="2s10s Spread (%)",
@@ -450,14 +450,14 @@ def render() -> None:
             )
 
             zero_rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
-                color="#e05252", strokeDash=[3, 3], strokeWidth=1
+                color="#d23f3f", strokeDash=[3, 3], strokeWidth=1
             ).encode(y="y:Q")
 
             # Red shading below 0
             yc_below = yc_df.copy()
             yc_below.loc[:, "zero"] = 0.0
             area_inv = alt.Chart(yc_below).mark_area(
-                color="#e05252", opacity=0.12
+                color="#d23f3f", opacity=0.12
             ).encode(
                 x="date:T",
                 y=alt.Y("zero:Q"),
@@ -473,7 +473,7 @@ def render() -> None:
                 bd.loc[:, "y_min"] = -1.5
                 bd.loc[:, "y_max"] = 3.5
                 rec_band_layers_yc.append(
-                    alt.Chart(bd).mark_rect(color="#e05252", opacity=0.12).encode(
+                    alt.Chart(bd).mark_rect(color="#d23f3f", opacity=0.12).encode(
                         x="start:T", x2="end:T", y="y_min:Q", y2="y_max:Q"
                     )
                 )
@@ -497,8 +497,8 @@ def render() -> None:
         if len(shape_rows) >= 2:
             shape_df = pd.DataFrame(shape_rows)
             shape_line = alt.Chart(shape_df).mark_line(
-                color="#c69842", strokeWidth=1.8,
-                point=alt.OverlayMarkDef(color="#c69842", size=40),
+                color="#000b3d", strokeWidth=1.8,
+                point=alt.OverlayMarkDef(color="#000b3d", size=40),
             ).encode(
                 x=alt.X("tenor:O", sort=_tenor_order, title="Maturity"),
                 y=alt.Y("yield:Q", title="Yield (%)",
@@ -515,11 +515,11 @@ def render() -> None:
         inv_rows = "".join(
             f"""<tr>
               <td>{s[:7]}–{e[:7]}</td>
-              <td style="color:#9aa5c8;">{note}</td>
+              <td style="color:#5b6480;">{note}</td>
             </tr>"""
             for s, e, note in INVERSION_EPISODES
         )
-        inv_color = "#e05252" if m["is_inverted"] else "#3dbe7a"
+        inv_color = "#d23f3f" if m["is_inverted"] else "#1e9e5a"
         inv_txt   = (
             f"Inverted {inv_dur} months" if m["is_inverted"]
             else f"{ordinal(pct_rank)} pct vs 30yr"
@@ -602,15 +602,15 @@ def render() -> None:
                 adj_lbl, adj_col = _classify(adj_prob)
 
                 st.markdown(
-                    f"""<div style="margin-top:12px;padding:14px 20px;background:#0a1650;
-                    border:0.5px solid #1e2e6e;border-left:4px solid {adj_col};
+                    f"""<div style="margin-top:12px;padding:14px 20px;background:#ffffff;
+                    border:0.5px solid #d3d7e0;border-left:4px solid {adj_col};
                     border-radius:0 6px 6px 0;display:flex;align-items:center;gap:16px;">
                       <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;
-                      color:#9aa5c8;">Adjusted probability</span>
+                      color:#5b6480;">Adjusted probability</span>
                       <span style="font-size:32px;font-weight:700;color:{adj_col};">{adj_prob:.1f}%</span>
                       <span class="badge" style="background:{adj_col}22;color:{adj_col};
                       padding:3px 10px;border-radius:12px;font-size:12px;">{adj_lbl}</span>
-                      <span style="font-size:11px;color:#9aa5c8;">
+                      <span style="font-size:11px;color:#5b6480;">
                         vs baseline {prob:.1f}% ({adj_prob - prob:+.1f}pp)
                       </span>
                     </div>""",
@@ -645,8 +645,8 @@ def render() -> None:
         rows_html = "".join(
             f"""<tr>
               <td>{feat_labels.get(f, f)}</td>
-              <td style="text-align:right;color:#9aa5c8;">{cur_vals.get(f,'N/A')}</td>
-              <td style="text-align:right;color:{'#3dbe7a' if c > 0 else '#c69842'};font-weight:600;">
+              <td style="text-align:right;color:#5b6480;">{cur_vals.get(f,'N/A')}</td>
+              <td style="text-align:right;color:{'#1e9e5a' if c > 0 else '#000b3d'};font-weight:600;">
                 {c:+.3f}
               </td>
             </tr>"""
@@ -659,7 +659,7 @@ def render() -> None:
     <tr><th>Feature</th><th style="text-align:right;">Current</th><th style="text-align:right;">Coef</th></tr>
     {rows_html}
   </table>
-  <div style="font-size:10px;color:#5c6a99;margin-top:8px;">
+  <div style="font-size:10px;color:#8a92a8;margin-top:8px;">
     Green = recession risk factor · Blue = protective factor
   </div>
 </div>""", height=220)
@@ -672,16 +672,16 @@ def render() -> None:
 <div class="card">
   <div class="label" style="margin-bottom:10px;">Model Metadata</div>
   <table>
-    <tr><td style="color:#9aa5c8;">Training samples</td><td style="text-align:right;">{n} months</td></tr>
-    <tr><td style="color:#9aa5c8;">Features</td><td style="text-align:right;font-size:10px;">{feats}</td></tr>
-    <tr><td style="color:#9aa5c8;">Data as of</td><td style="text-align:right;">{as_of}</td></tr>
-    <tr><td style="color:#9aa5c8;">Look-ahead bias</td><td style="text-align:right;">3-month lag applied</td></tr>
-    <tr><td style="color:#9aa5c8;">Target</td><td style="text-align:right;">NBER USREC indicator</td></tr>
+    <tr><td style="color:#5b6480;">Training samples</td><td style="text-align:right;">{n} months</td></tr>
+    <tr><td style="color:#5b6480;">Features</td><td style="text-align:right;font-size:10px;">{feats}</td></tr>
+    <tr><td style="color:#5b6480;">Data as of</td><td style="text-align:right;">{as_of}</td></tr>
+    <tr><td style="color:#5b6480;">Look-ahead bias</td><td style="text-align:right;">3-month lag applied</td></tr>
+    <tr><td style="color:#5b6480;">Target</td><td style="text-align:right;">NBER USREC indicator</td></tr>
   </table>
-  <div style="font-size:10px;color:#5c6a99;margin-top:10px;line-height:1.5;">
+  <div style="font-size:10px;color:#8a92a8;margin-top:10px;line-height:1.5;">
     Logistic regression with 3-month lagged inputs to avoid look-ahead bias.
     Trained on NBER recession dates 1990–present.<br><br>
-    <strong style="color:#9aa5c8;">Note:</strong> USREC is updated retroactively — recent
+    <strong style="color:#5b6480;">Note:</strong> USREC is updated retroactively — recent
     months may show 0 even if a recession has begun.
     This model is a quantitative indicator, not a forecast.
   </div>
@@ -692,10 +692,10 @@ def render() -> None:
 
 def _classify(p: float) -> tuple[str, str]:
     if p < 20:
-        return "Low Risk", "#3dbe7a"
+        return "Low Risk", "#1e9e5a"
     elif p < 40:
-        return "Elevated", "#e0812f"
-    return "High Risk", "#e05252"
+        return "Elevated", "#d9772a"
+    return "High Risk", "#d23f3f"
 
 
 def _build_recession_bands(usrec: pd.Series) -> list[pd.DataFrame]:

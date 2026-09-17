@@ -91,10 +91,10 @@ def _refresh_db_snapshot() -> str:
 
 
 REGIME_COLORS = {
-    "Goldilocks":     "#3dbe7a",
-    "Overheating":    "#e0812f",
-    "Stagflation":    "#e05252",
-    "Recession Risk": "#8a93ad",
+    "Goldilocks":     "#1e9e5a",
+    "Overheating":    "#d9772a",
+    "Stagflation":    "#d23f3f",
+    "Recession Risk": "#7a829a",
 }
 
 SIGNAL_META = {
@@ -651,7 +651,7 @@ def _render_header_bar(latest_regime, as_of) -> None:
             spy_now, spy_prev = float(rows[0][0]), float(rows[1][0])
             chg = (spy_now - spy_prev) / spy_prev
             spy_display = f"{chg:+.2%}"
-            spy_color = "#3dbe7a" if chg >= 0 else "#e05252"
+            spy_color = "#3dbe7a" if chg >= 0 else "#f08c8c"
     except Exception:
         pass
 
@@ -663,13 +663,13 @@ def _render_header_bar(latest_regime, as_of) -> None:
             vix_now = float(rows[0][0])
             if len(rows) == 2:
                 vix_chg = vix_now - float(rows[1][0])
-                chg_color = "#e05252" if vix_chg > 0 else "#3dbe7a"
+                chg_color = "#f08c8c" if vix_chg > 0 else "#3dbe7a"
                 vix_value_html = (
-                    f'<span style="font-size:13px;font-weight:600;color:#f2f4fa;">{vix_now:.1f}</span>'
+                    f'<span style="font-size:13px;font-weight:600;color:#ffffff;">{vix_now:.1f}</span>'
                     f'<span style="font-size:11px;font-weight:500;color:{chg_color};"> ({vix_chg:+.2f})</span>'
                 )
             else:
-                vix_value_html = f'<span style="font-size:13px;font-weight:600;color:#f2f4fa;">{vix_now:.1f}</span>'
+                vix_value_html = f'<span style="font-size:13px;font-weight:600;color:#ffffff;">{vix_now:.1f}</span>'
     except Exception:
         pass
 
@@ -680,31 +680,31 @@ def _render_header_bar(latest_regime, as_of) -> None:
         if len(rows) == 2:
             gs10_now = float(rows[0][0])
             bps = round((gs10_now - float(rows[1][0])) * 100)
-            bps_color = "#e05252" if bps > 0 else "#3dbe7a"
+            bps_color = "#f08c8c" if bps > 0 else "#3dbe7a"
             gs10_value_html = (
-                f'<span style="font-size:13px;font-weight:600;color:#f2f4fa;">{gs10_now:.2f}%</span>'
+                f'<span style="font-size:13px;font-weight:600;color:#ffffff;">{gs10_now:.2f}%</span>'
                 f'<span style="font-size:11px;font-weight:500;color:{bps_color};"> ({bps:+d}bps)</span>'
             )
         elif rows:
             gs10_now = float(rows[0][0])
-            gs10_value_html = f'<span style="font-size:13px;font-weight:600;color:#f2f4fa;">{gs10_now:.2f}%</span>'
+            gs10_value_html = f'<span style="font-size:13px;font-weight:600;color:#ffffff;">{gs10_now:.2f}%</span>'
     except Exception:
         pass
 
     # ── Regime badge ─────────────────────────────────────────────────────────
     BADGE_STYLES = {
-        "Overheating":    "background:rgba(224,82,82,0.12) !important;color:#f08c8c !important;border:0.5px solid rgba(224,82,82,0.25)",
-        "Goldilocks":     "background:rgba(61,190,122,0.12) !important;color:#3dbe7a !important;border:0.5px solid rgba(61,190,122,0.25)",
-        "Stagflation":    "background:rgba(224,163,58,0.12) !important;color:#e0a33a !important;border:0.5px solid rgba(224,163,58,0.25)",
-        "Recession Risk": "background:rgba(224,82,82,0.20) !important;color:#f08c8c !important;border:0.5px solid rgba(224,82,82,0.40)",
+        "Overheating":    "background:rgba(210,63,63,0.12);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.25)",
+        "Goldilocks":     "background:rgba(30,158,90,0.12);color:#3dbe7a;border:0.5px solid rgba(30,158,90,0.25)",
+        "Stagflation":    "background:rgba(184,134,11,0.12);color:#e0a33a;border:0.5px solid rgba(184,134,11,0.25)",
+        "Recession Risk": "background:rgba(210,63,63,0.20);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.40)",
     }
     lbl = str(latest_regime["label"]) if latest_regime is not None else "—"
     conf_pct = f"{float(latest_regime['confidence']):.1%}" if latest_regime is not None else "—"
-    badge_style = BADGE_STYLES.get(lbl, "background:#172561 !important;color:#9aa5c8 !important;border:0.5px solid #5c6a99")
+    badge_style = BADGE_STYLES.get(lbl, "background:#1e2e6e;color:#c8cfe6;border:0.5px solid #7c88b0")
 
     # Build probability distribution display
     PROB_ABBREVS = {"Goldilocks": "GL", "Overheating": "OV", "Stagflation": "ST", "Recession Risk": "RR"}
-    PROB_COLORS  = {"Goldilocks": "#3dbe7a", "Overheating": "#f08c8c", "Stagflation": "#e0a33a", "Recession Risk": "#8a93ad"}
+    PROB_COLORS  = {"Goldilocks": "#3dbe7a", "Overheating": "#c43c3c", "Stagflation": "#e0a33a", "Recession Risk": "#8a93ad"}
     regime_right_html = ""
     if latest_regime is not None:
         probs = {
@@ -728,24 +728,24 @@ def _render_header_bar(latest_regime, as_of) -> None:
                 f'title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>'
                 f'<span style="font-size:11px;font-weight:700;color:{PROB_COLORS.get(lbl, "#9aa5c8")};white-space:nowrap;">{dominant_prob_str}</span>'
                 f'</div>'
-                f'<div style="font-size:10px;color:#5c6a99;">{secondary_pills}</div>'
+                f'<div style="font-size:10px;color:#7c88b0;">{secondary_pills}</div>'
                 f'</div>'
             )
         else:
             regime_right_html = (
                 f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}" '
                 f'title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>'
-                f'<span style="font-size:11px;color:#7c88b0;white-space:nowrap;" '
+                f'<span style="font-size:11px;color:#6f7893;white-space:nowrap;" '
                 f'title="Reflects the statistical distance of current conditions from regime boundaries">Conviction: {conf_pct}</span>'
             )
 
     st.markdown(f"""
-<div style="border-bottom:1px solid #c69842;margin:0 0 6px;padding:0;">
+<div style="background:#000b3d;color:#ffffff;border-bottom:2px solid #c69842;margin:-16px -40px 10px;padding:0 40px;">
   <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 4px 8px;">
     <div style="display:flex;align-items:center;gap:12px;">
       <img src="data:image/png;base64,{_LOGO_B64}" alt="Macro RR" style="height:26px;width:auto;display:block;" />
       <span style="font-size:11px;font-weight:600;color:#9aa5c8;white-space:nowrap;
-        border-left:1px solid #1e2e6e;padding-left:12px;">Macro Regime Radar</span>
+        border-left:1px solid #d3d7e0;padding-left:12px;">Macro Regime Radar</span>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
       {regime_right_html}
@@ -753,17 +753,17 @@ def _render_header_bar(latest_regime, as_of) -> None:
   </div>
   <div style="display:flex;align-items:center;padding:0 4px 10px;">
     <div style="display:flex;flex-direction:column;padding-right:16px;">
-      <span style="font-size:10px;color:#5c6a99;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">S&amp;P 500</span>
+      <span style="font-size:10px;color:#7c88b0;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">S&amp;P 500</span>
       <span style="font-size:13px;font-weight:600;color:{spy_color};white-space:nowrap;">{spy_display}</span>
     </div>
-    <div style="width:1px;height:14px;background:#172561;margin:0 8px;"></div>
+    <div style="width:1px;height:14px;background:#1e2e6e;margin:0 8px;"></div>
     <div style="display:flex;flex-direction:column;padding-right:16px;padding-left:8px;">
-      <span style="font-size:10px;color:#5c6a99;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">VIX</span>
+      <span style="font-size:10px;color:#7c88b0;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">VIX</span>
       <div style="white-space:nowrap;">{vix_value_html}</div>
     </div>
-    <div style="width:1px;height:14px;background:#172561;margin:0 8px;"></div>
+    <div style="width:1px;height:14px;background:#1e2e6e;margin:0 8px;"></div>
     <div style="display:flex;flex-direction:column;padding-left:8px;">
-      <span style="font-size:10px;color:#5c6a99;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">US 10Y</span>
+      <span style="font-size:10px;color:#7c88b0;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">US 10Y</span>
       <div style="white-space:nowrap;">{gs10_value_html}</div>
     </div>
   </div>
@@ -783,9 +783,9 @@ def _render_timestamps(as_of) -> None:
     st.markdown(
         f'<div style="display:flex;justify-content:space-between;align-items:center;'
         f'flex-wrap:nowrap;padding:4px 0 8px;">'
-        f'<span style="font-size:10px;color:#9aa5c8;white-space:nowrap;">Macro data as of {macro_date} · '
+        f'<span style="font-size:10px;color:#5b6480;white-space:nowrap;">Macro data as of {macro_date} · '
         f'Market data through {mkt_date}</span>'
-        f'<span style="font-size:10px;color:#5c6a99;white-space:nowrap;">Updated {updated_str}</span>'
+        f'<span style="font-size:10px;color:#8a92a8;white-space:nowrap;">Updated {updated_str}</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -819,18 +819,18 @@ def _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signa
     playbook = _load_playbook()
     playbook_text = playbook.get("baseline", "—") if playbook else "—"
     st.markdown(
-        f'<div style="background:#0a1650;border:0.5px solid #172561;'
-        f'border-left:3px solid #c69842;border-radius:0 6px 6px 0;'
+        f'<div style="background:#ffffff;border:0.5px solid #e3e6ec;'
+        f'border-left:3px solid #000b3d;border-radius:0 6px 6px 0;'
         f'padding:12px 16px;margin-bottom:18px;">'
-        f'<div style="font-size:10px;font-weight:600;letter-spacing:0.5px;color:#9aa5c8;'
+        f'<div style="font-size:10px;font-weight:600;letter-spacing:0.5px;color:#5b6480;'
         f'text-transform:uppercase;margin-bottom:6px;">Current read-through</div>'
-        f'<div style="font-size:13px;color:#c8cfe6;line-height:1.55;margin-bottom:10px;">'
+        f'<div style="font-size:13px;color:#2c3556;line-height:1.55;margin-bottom:10px;">'
         f'{interpretive_text}</div>'
-        f'<div style="border-top:1px solid #172561;padding-top:8px;'
+        f'<div style="border-top:1px solid #e3e6ec;padding-top:8px;'
         f'display:flex;align-items:baseline;gap:8px;">'
-        f'<span style="font-size:10px;font-weight:600;letter-spacing:0.4px;color:#9aa5c8;">'
+        f'<span style="font-size:10px;font-weight:600;letter-spacing:0.4px;color:#5b6480;">'
         f'Playbook bias</span>'
-        f'<span style="font-size:12px;color:#c8cfe6;">{playbook_text}</span>'
+        f'<span style="font-size:12px;color:#2c3556;">{playbook_text}</span>'
         f'</div></div>',
         unsafe_allow_html=True,
     )
@@ -874,28 +874,31 @@ except Exception as _db_err:  # surface, don't crash — fall back to on-disk DB
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 /* ── Chrome ─────────────────────────────────────── */
 header[data-testid="stHeader"] { display: none !important; }
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] { display: none !important; }
-div.block-container { padding-top: 0 !important; padding-bottom: 3rem !important; max-width: 1360px; }
+html, body, [data-testid="stApp"], [data-testid="stMain"], [data-testid="stAppViewContainer"] { background: #000b3d !important; }
+[data-testid="stDecoration"], [data-testid="stStatusWidget"] { display: none !important; }
+div.block-container {
+    background: #f3f4f6; max-width: 1360px;
+    padding: 0 40px 3rem !important; margin: 0 auto; min-height: 100vh;
+}
 #MainMenu, footer { visibility: hidden; }
 
 /* ── Type ───────────────────────────────────────── */
 html, body, [class*="css"], .stMarkdown, .stButton, .stSelectbox, .stRadio {
-    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-variant-numeric: tabular-nums;
 }
 [data-testid="stMetricValue"], .mono, code, [data-testid="stDataFrame"] {
-    font-family: 'IBM Plex Mono', 'SF Mono', Menlo, monospace !important;
+    font-family: 'SF Mono', Menlo, Consolas, monospace !important;
 }
 h1, h2, h3 { text-wrap: balance; }
-p { text-wrap: pretty; }
 
 /* ── Spacing ────────────────────────────────────── */
 [data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
-div.stDivider, hr { margin: 8px 0 !important; border-color: #172561 !important; }
+div.stDivider, hr { margin: 8px 0 !important; border-color: #e3e6ec !important; }
 [data-testid="stHorizontalBlock"] { gap: 0.6rem !important; }
 
 /* ── Section nav (segmented control) ───────────── */
@@ -903,9 +906,9 @@ div.stDivider, hr { margin: 8px 0 !important; border-color: #172561 !important; 
 button[data-variant="segmented_control"],
 button[data-variant="pills"] {
     border-radius: 6px !important;
-    border: 1px solid #1e2e6e !important;
-    background: transparent !important;
-    color: #9aa5c8 !important;
+    border: 1px solid #d3d7e0 !important;
+    background: #ffffff !important;
+    color: #2c3556 !important;
     font-size: 12px !important;
     font-weight: 600 !important;
     padding: 4px 14px !important;
@@ -913,68 +916,70 @@ button[data-variant="pills"] {
 }
 button[data-variant="segmented_control"][data-selected="true"],
 button[data-variant="pills"][data-selected="true"] {
-    background: #c69842 !important;
-    border-color: #c69842 !important;
-    color: #000b3d !important;
+    background: #000b3d !important;
+    border-color: #000b3d !important;
+    color: #ffffff !important;
 }
 button[data-variant="segmented_control"]:not([data-selected="true"]):hover,
-button[data-variant="pills"]:not([data-selected="true"]):hover { color: #f2f4fa !important; border-color: #5c6a99 !important; }
+button[data-variant="pills"]:not([data-selected="true"]):hover { color: #000b3d !important; border-color: #000b3d !important; }
 button[data-variant="segmented_control"]:focus-visible,
-button[data-variant="pills"]:focus-visible { outline: 2px solid #c69842 !important; outline-offset: 2px; }
+button[data-variant="pills"]:focus-visible { outline: 2px solid #000b3d !important; outline-offset: 2px; }
 [data-testid="stSegmentedControl"] [role="radiogroup"], [data-testid="stPills"] [role="radiogroup"] { gap: 6px !important; }
 
 /* ── Buttons / popover ─────────────────────────── */
 .stButton > button, [data-testid="stPopover"] > button, [data-testid="stDownloadButton"] > button {
-    border-radius: 6px; border: 1px solid #1e2e6e; background: #0a1650; color: #f2f4fa;
+    border-radius: 6px; border: 1px solid #d3d7e0; background: #ffffff; color: #0b1540;
     font-weight: 600; font-size: 12px; padding: 4px 14px;
 }
+[data-testid="stPopoverBody"], [data-testid="stPopover"] > div[role="dialog"] { background: #ffffff; border: 1px solid #d3d7e0; }
 .stButton > button:hover, [data-testid="stPopover"] > button:hover,
-[data-testid="stDownloadButton"] > button:hover { border-color: #c69842; color: #f2f4fa; }
-.stButton > button:focus-visible { outline: 2px solid #c69842; }
+[data-testid="stDownloadButton"] > button:hover { border-color: #000b3d; color: #0b1540; }
+.stButton > button:focus-visible { outline: 2px solid #000b3d; }
 
 /* ── Nested tabs (kept for Asset Allocation) ───── */
-.stTabs [data-baseweb="tab-list"] { gap: 0px; border-bottom: 1px solid #172561; }
+.stTabs [data-baseweb="tab-list"] { gap: 0px; border-bottom: 1px solid #e3e6ec; }
 .stTabs [data-baseweb="tab"] {
     background: transparent; border: none; border-bottom: 2px solid transparent;
-    color: #9aa5c8; font-size: 12px; font-weight: 600; padding: 8px 12px; white-space: nowrap;
+    color: #5b6480; font-size: 12px; font-weight: 600; padding: 8px 12px; white-space: nowrap;
 }
 .stTabs [aria-selected="true"][data-baseweb="tab"] {
-    background: transparent !important; border-bottom: 2px solid #c69842 !important; color: #f2f4fa !important;
+    background: transparent !important; border-bottom: 2px solid #000b3d !important; color: #0b1540 !important;
 }
-.stTabs [data-baseweb="tab"]:hover { color: #f2f4fa; }
+.stTabs [data-baseweb="tab"]:hover { color: #0b1540; }
 
 /* ── Metric cards ──────────────────────────────── */
 [data-testid="stMetric"] {
-    background: #0a1650; border: 1px solid #1e2e6e; border-radius: 8px;
+    background: #ffffff; border: 1px solid #d3d7e0; border-radius: 8px;
     padding: 12px 14px 8px; margin-bottom: 0 !important;
 }
 [data-testid="stMetricLabel"] > div {
-    font-size: 10px !important; color: #9aa5c8 !important; margin-bottom: 4px;
+    font-size: 10px !important; color: #5b6480 !important; margin-bottom: 4px;
     text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
 }
-[data-testid="stMetricValue"] > div { font-size: 20px !important; font-weight: 500 !important; color: #f2f4fa !important; }
+[data-testid="stMetricValue"] > div { font-size: 20px !important; font-weight: 500 !important; color: #0b1540 !important; }
 [data-testid="stMetricDelta"] > div { font-size: 11px !important; }
 
 /* ── Expanders / dataframes ────────────────────── */
-[data-testid="stExpander"] { border: 1px solid #1e2e6e; border-radius: 8px; background: #0a1650; }
+[data-testid="stExpander"] { border: 1px solid #d3d7e0; border-radius: 8px; background: #ffffff; }
 [data-testid="stExpander"] summary { font-weight: 600; font-size: 12px; }
 
 /* ── Legacy signal helpers ─────────────────────── */
-.sig-triggered { border-left: 4px solid #e05252; }
-.sig-ok        { border-left: 4px solid #3dbe7a; }
+.sig-triggered { border-left: 4px solid #d23f3f; }
+.sig-ok        { border-left: 4px solid #1e9e5a; }
 
 /* ── Sliders ───────────────────────────────────── */
-[data-testid="stSliderThumbValue"] { white-space: nowrap !important; font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 11px; }
-[data-testid="stSliderTickBarMin"], [data-testid="stSliderTickBarMax"] { font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 10px; }
+[data-testid="stSliderThumbValue"], [data-testid="stSliderThumbValue"] p { white-space: nowrap !important; text-wrap: nowrap !important; width: max-content !important; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; }
+[data-testid="stSliderTickBarMin"], [data-testid="stSliderTickBarMax"] { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 10px; }
 
 /* ── Alerts ────────────────────────────────────── */
-[data-testid="stAlert"] { border-radius: 8px; border: 1px solid #1e2e6e; }
-[data-testid="stAlertContentInfo"], [data-testid="stAlert"] [data-testid="stAlertContentInfo"] { color: #c8cfe6; }
-[data-testid="stAlert"] > div { background: #0a1650 !important; color: #c8cfe6 !important; }
+[data-testid="stAlert"] { border-radius: 8px; border: 1px solid #d3d7e0; }
+[data-testid="stAlertContentInfo"], [data-testid="stAlert"] [data-testid="stAlertContentInfo"] { color: #2c3556; }
+[data-testid="stAlert"] > div { background: #ffffff !important; color: #2c3556 !important; }
+[data-testid="stAlert"] { background: #ffffff; }
 
 /* ── Brand helpers ─────────────────────────────── */
-.rr-eyebrow { font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#9aa5c8; margin:14px 0 6px; }
-.rr-note    { font-size:12px; color:#9aa5c8; }
+.rr-eyebrow { font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#000b3d; margin:14px 0 6px; }
+.rr-note    { font-size:12px; color:#5b6480; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1116,20 +1121,20 @@ if section == "Overview":
         direction = _KPI_DIRECTION.get(series_key, "rising_bad")
         rising = "Rising" in label or "Accelerating" in label
         if direction == "rising_bad":
-            return "#e05252" if rising else "#3dbe7a"
-        return "#3dbe7a" if rising else "#e05252"
+            return "#d23f3f" if rising else "#1e9e5a"
+        return "#1e9e5a" if rising else "#d23f3f"
 
     def _kpi_card(label: str, value: str, delta: str | None, delta_good: bool | None,
                   series_key: str | None, derived_col: str | None) -> str:
         delta_html = ""
         if delta:
-            dc = "#9aa5c8" if delta_good is None else ("#3dbe7a" if delta_good else "#e05252")
+            dc = "#5b6480" if delta_good is None else ("#1e9e5a" if delta_good else "#d23f3f")
             delta_html = f'<span style="font-size:11px;color:{dc};margin-left:8px;">{delta}</span>'
         spark_html, mom_html = "", ""
         if series_key and derived_col and not derived_df.empty:
             vals = tuple(gcol(derived_df, derived_col).dropna().iloc[-12:].tolist())
             if len(vals) >= 3:
-                b64 = generate_sparkline_b64(vals, color="#c69842")
+                b64 = generate_sparkline_b64(vals, color="#000b3d")
                 if b64:
                     spark_html = (f'<img src="data:image/png;base64,{b64}" alt="12-month trend" '
                                   f'style="width:100%;height:26px;object-fit:contain;display:block;margin:10px 0 4px;" />')
@@ -1137,10 +1142,10 @@ if section == "Overview":
                 mc = fixed if fixed is not None else _momentum_color(lbl, series_key)
                 mom_html = f'<div style="font-size:11px;color:{mc};">{lbl} (3M)</div>'
         return (
-            f'<div style="background:#0a1650;border:1px solid #1e2e6e;border-radius:8px;padding:12px 14px;min-height:118px;">'
-            f'<div style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9aa5c8;">{label}</div>'
+            f'<div style="background:#ffffff;border:1px solid #d3d7e0;border-radius:8px;padding:12px 14px;min-height:118px;">'
+            f'<div style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#5b6480;">{label}</div>'
             f'<div style="display:flex;align-items:baseline;margin-top:6px;">'
-            f'<span style="font-family:\'IBM Plex Mono\',Menlo,monospace;font-size:22px;font-weight:500;color:#f2f4fa;">{value}</span>'
+            f'<span style="font-family:\'SF Mono\',Menlo,Consolas,monospace;font-size:22px;font-weight:500;color:#0b1540;">{value}</span>'
             f'{delta_html}</div>{spark_html}{mom_html}</div>'
         )
 
@@ -1213,9 +1218,9 @@ if section == "Overview":
                 if hlines and norm_mode == "Raw":
                     for y_val, dash, ann in hlines:
                         fig.add_hline(
-                            y=y_val, line_dash=dash, line_color="#5c6a99", line_width=1,
+                            y=y_val, line_dash=dash, line_color="#8a92a8", line_width=1,
                             annotation_text=ann, annotation_position="top left",
-                            annotation_font_size=11, annotation_font_color="#9aa5c8",
+                            annotation_font_size=11, annotation_font_color="#5b6480",
                         )
                 fig.update_layout(**base_layout(title, y_title))
                 return fig
@@ -1229,7 +1234,7 @@ if section == "Overview":
                 s = gcol(chart_df, "CPI_YOY")
                 if not s.dropna().empty:
                     fig = make_line_fig(
-                        s, "CPI Year-over-Year (%)", "% YoY", "#e05252",
+                        s, "CPI Year-over-Year (%)", "% YoY", "#d23f3f",
                         hlines=[(4.0, "dash", "Hot threshold (4%)"), (1.0, "dot", "Cold threshold (1%)")],
                     )
                     st.plotly_chart(fig, use_container_width=True)
@@ -1238,7 +1243,7 @@ if section == "Overview":
             elif chart_pick == "Unemployment":
                 s = gcol(chart_df, "UNRATE")
                 if not s.dropna().empty:
-                    st.plotly_chart(make_line_fig(s, "Unemployment Rate (%)", "% Unemployed", "#7fa6e0"),
+                    st.plotly_chart(make_line_fig(s, "Unemployment Rate (%)", "% Unemployed", "#3b6fc4"),
                                     use_container_width=True)
                 else:
                     st.warning("Unemployment data not available.")
@@ -1251,15 +1256,15 @@ if section == "Overview":
                         fig = add_regime_bg(fig, reg_window)
                     fig.add_trace(go.Scatter(
                         x=norm_s.index, y=norm_s.values, name="10Y–2Y Spread",
-                        line=dict(color="#c69842", width=2),
-                        fill="tozeroy", fillcolor="rgba(198,152,66,0.12)",
+                        line=dict(color="#000b3d", width=2),
+                        fill="tozeroy", fillcolor="rgba(0,11,61,0.12)",
                         hovertemplate="%{x|%b %Y}: %{y:.2f}%<extra></extra>",
                     ))
                     if norm_mode == "Raw":
                         fig.add_hline(
-                            y=0, line_dash="solid", line_color="#e05252", line_width=1.5,
+                            y=0, line_dash="solid", line_color="#d23f3f", line_width=1.5,
                             annotation_text="Inversion (0%)", annotation_position="top left",
-                            annotation_font_size=11, annotation_font_color="#9aa5c8",
+                            annotation_font_size=11, annotation_font_color="#5b6480",
                         )
                     fig.update_layout(**base_layout("Yield Curve Spread: 10Y – 2Y (%)", "Spread (%)"))
                     st.plotly_chart(fig, use_container_width=True)
@@ -1268,7 +1273,7 @@ if section == "Overview":
             else:
                 s = gcol(chart_df, "VIXCLS")
                 if not s.dropna().empty:
-                    fig = make_line_fig(s, "CBOE Volatility Index (VIX)", "VIX", "#e0812f",
+                    fig = make_line_fig(s, "CBOE Volatility Index (VIX)", "VIX", "#d9772a",
                                         hlines=[(30.0, "dash", "Spike threshold (30)")])
                     st.plotly_chart(fig, use_container_width=True)
                 else:
@@ -1287,7 +1292,7 @@ if section == "Overview":
                 fig_b = go.Figure(go.Bar(
                     x=["Growth Trend", "Inflation Trend"], y=[gt, it],
                     text=[f"{gt:.3f}", f"{it:.3f}"], textposition="outside",
-                    marker_color=["#3dbe7a" if gt >= 0 else "#e05252", "#e05252" if it > 0.5 else "#e0812f"],
+                    marker_color=["#1e9e5a" if gt >= 0 else "#d23f3f", "#d23f3f" if it > 0.5 else "#d9772a"],
                 ))
                 fig_b.update_layout(height=260, margin=dict(l=20, r=20, t=20, b=20),
                                     template="macro_rr", showlegend=False, yaxis_title="Trend value")
@@ -1465,7 +1470,7 @@ except Exception as exc:
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.markdown("""
-<div style="padding: 10px 20px; border-top: 1px solid #172561; text-align: center; margin-top: 40px;">
-  <span style="font-size: 10px; color: #5c6a99;">Data: FRED, Yahoo Finance, Finnhub, NewsAPI, RSS</span>
+<div style="padding: 10px 20px; border-top: 1px solid #e3e6ec; text-align: center; margin-top: 40px;">
+  <span style="font-size: 10px; color: #8a92a8;">Data: FRED, Yahoo Finance, Finnhub, NewsAPI, RSS</span>
 </div>
 """, unsafe_allow_html=True)

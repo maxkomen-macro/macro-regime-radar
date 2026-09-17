@@ -15,32 +15,32 @@ from components.shared_styles import section_header
 
 _TABLE_STYLE = (
     "width:100%;border-collapse:collapse;font-size:12px;"
-    "color:#c8cfe6;margin-bottom:4px"
+    "color:#2c3556;margin-bottom:4px"
 )
 _TH_STYLE = (
-    "background:#172561;color:#9aa5c8;font-weight:600;font-size:11px;"
+    "background:#e3e6ec;color:#5b6480;font-weight:600;font-size:11px;"
     "text-transform:uppercase;letter-spacing:0.4px;padding:7px 10px;"
-    "border:0.5px solid #172561;text-align:left"
+    "border:0.5px solid #e3e6ec;text-align:left"
 )
 _TD_STYLE = (
-    "padding:7px 10px;border:0.5px solid #172561;"
+    "padding:7px 10px;border:0.5px solid #e3e6ec;"
     "vertical-align:top;line-height:1.5"
 )
 _TD_ALT_STYLE = (
-    "padding:7px 10px;border:0.5px solid #172561;"
-    "vertical-align:top;line-height:1.5;background:#000b3d"
+    "padding:7px 10px;border:0.5px solid #e3e6ec;"
+    "vertical-align:top;line-height:1.5;background:#f3f4f6"
 )
 
 _REGIME_BADGES = {
-    "Goldilocks":     "background:rgba(61,190,122,0.12);color:#3dbe7a;border:0.5px solid rgba(61,190,122,0.25)",
-    "Overheating":    "background:rgba(224,82,82,0.12);color:#f08c8c;border:0.5px solid rgba(224,82,82,0.25)",
-    "Stagflation":    "background:rgba(224,163,58,0.12);color:#e0a33a;border:0.5px solid rgba(224,163,58,0.25)",
-    "Recession Risk": "background:rgba(224,82,82,0.20);color:#f08c8c;border:0.5px solid rgba(224,82,82,0.40)",
+    "Goldilocks":     "background:rgba(30,158,90,0.12);color:#1e9e5a;border:0.5px solid rgba(30,158,90,0.25)",
+    "Overheating":    "background:rgba(210,63,63,0.12);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.25)",
+    "Stagflation":    "background:rgba(184,134,11,0.12);color:#b8860b;border:0.5px solid rgba(184,134,11,0.25)",
+    "Recession Risk": "background:rgba(210,63,63,0.20);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.40)",
 }
 
 
 def _badge(regime: str) -> str:
-    style = _REGIME_BADGES.get(regime, "background:#172561;color:#9aa5c8")
+    style = _REGIME_BADGES.get(regime, "background:#e3e6ec;color:#5b6480")
     return (
         f'<span style="{style};padding:2px 8px;border-radius:4px;'
         f'font-size:11px;font-weight:700;white-space:nowrap">{regime}</span>'
@@ -49,7 +49,7 @@ def _badge(regime: str) -> str:
 
 def _panel(html: str) -> str:
     return (
-        f'<div style="background:#0a1650;border:0.5px solid #172561;'
+        f'<div style="background:#ffffff;border:0.5px solid #e3e6ec;'
         f'border-radius:6px;padding:16px 18px;margin-bottom:4px">'
         f'{html}</div>'
     )
@@ -57,7 +57,7 @@ def _panel(html: str) -> str:
 
 def _prose(text: str) -> str:
     return (
-        f'<p style="font-size:13px;color:#c8cfe6;line-height:1.6;margin:8px 0 0 0">'
+        f'<p style="font-size:13px;color:#2c3556;line-height:1.6;margin:8px 0 0 0">'
         f'{text}</p>'
     )
 
@@ -155,35 +155,35 @@ def _render_signal_definitions() -> None:
   </thead>
   <tbody>
     <tr>
-      <td style="{_TD_STYLE}"><span style="color:#f2f4fa;font-weight:500">Curve inversion risk</span></td>
+      <td style="{_TD_STYLE}"><span style="color:#0b1540;font-weight:500">Curve inversion risk</span></td>
       <td style="{_TD_STYLE}">10Y − 2Y Treasury spread</td>
       <td style="{_TD_STYLE}">0.00%</td>
       <td style="{_TD_STYLE}">Triggers when spread falls <b>below</b> 0%</td>
       <td style="{_TD_STYLE}">FRED: DGS10, DGS2</td>
     </tr>
     <tr>
-      <td style="{_TD_ALT_STYLE}"><span style="color:#f2f4fa;font-weight:500">Unemployment spike</span></td>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#0b1540;font-weight:500">Unemployment spike</span></td>
       <td style="{_TD_ALT_STYLE}">3-month change in unemployment rate (UNRATE)</td>
       <td style="{_TD_ALT_STYLE}">+0.30 pp over 3 months</td>
       <td style="{_TD_ALT_STYLE}">Triggers when 3-month rise exceeds <b>+0.3 pp</b></td>
       <td style="{_TD_ALT_STYLE}">FRED: UNRATE</td>
     </tr>
     <tr>
-      <td style="{_TD_STYLE}"><span style="color:#f2f4fa;font-weight:500">Inflation pressure</span></td>
+      <td style="{_TD_STYLE}"><span style="color:#0b1540;font-weight:500">Inflation pressure</span></td>
       <td style="{_TD_STYLE}">CPI year-over-year (CPIAUCSL)</td>
       <td style="{_TD_STYLE}">4.0% YoY</td>
       <td style="{_TD_STYLE}">Triggers when CPI YoY rises <b>above</b> 4.0%</td>
       <td style="{_TD_STYLE}">FRED: CPIAUCSL</td>
     </tr>
     <tr>
-      <td style="{_TD_ALT_STYLE}"><span style="color:#f2f4fa;font-weight:500">Disinflation signal</span></td>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#0b1540;font-weight:500">Disinflation signal</span></td>
       <td style="{_TD_ALT_STYLE}">CPI year-over-year (CPIAUCSL)</td>
       <td style="{_TD_ALT_STYLE}">1.0% YoY</td>
       <td style="{_TD_ALT_STYLE}">Triggers when CPI YoY falls <b>below</b> 1.0%</td>
       <td style="{_TD_ALT_STYLE}">FRED: CPIAUCSL</td>
     </tr>
     <tr>
-      <td style="{_TD_STYLE}"><span style="color:#f2f4fa;font-weight:500">VIX spike</span></td>
+      <td style="{_TD_STYLE}"><span style="color:#0b1540;font-weight:500">VIX spike</span></td>
       <td style="{_TD_STYLE}">CBOE Volatility Index, monthly average</td>
       <td style="{_TD_STYLE}">30.0</td>
       <td style="{_TD_STYLE}">Triggers when monthly VIX rises <b>above</b> 30</td>
@@ -211,8 +211,8 @@ def _render_threshold_proximity() -> None:
     <tr>
       <td style="{_TD_STYLE}">
         <span style="display:inline-flex;align-items:center;gap:6px">
-          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3dbe7a"></span>
-          <span style="color:#3dbe7a;font-weight:600">Clear</span>
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#1e9e5a"></span>
+          <span style="color:#1e9e5a;font-weight:600">Clear</span>
         </span>
       </td>
       <td style="{_TD_STYLE}">Below 50%</td>
@@ -221,8 +221,8 @@ def _render_threshold_proximity() -> None:
     <tr>
       <td style="{_TD_ALT_STYLE}">
         <span style="display:inline-flex;align-items:center;gap:6px">
-          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e0a33a"></span>
-          <span style="color:#e0a33a;font-weight:600">Watch</span>
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#b8860b"></span>
+          <span style="color:#b8860b;font-weight:600">Watch</span>
         </span>
       </td>
       <td style="{_TD_ALT_STYLE}">50–75%</td>
@@ -231,8 +231,8 @@ def _render_threshold_proximity() -> None:
     <tr>
       <td style="{_TD_STYLE}">
         <span style="display:inline-flex;align-items:center;gap:6px">
-          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e05252"></span>
-          <span style="color:#e05252;font-weight:600">Triggered</span>
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#d23f3f"></span>
+          <span style="color:#d23f3f;font-weight:600">Triggered</span>
         </span>
       </td>
       <td style="{_TD_STYLE}">Above 75%</td>
@@ -272,17 +272,17 @@ def _render_data_sources() -> None:
   </thead>
   <tbody>
     <tr>
-      <td style="{_TD_STYLE}"><span style="color:#f2f4fa;font-weight:500">FRED</span></td>
+      <td style="{_TD_STYLE}"><span style="color:#0b1540;font-weight:500">FRED</span></td>
       <td style="{_TD_STYLE}">INDPRO, CPIAUCSL, DGS10, DGS2, UNRATE, VIXCLS,<br>FEDFUNDS, SOFR, T5YIE, T10YIE, DFII5, DFII10</td>
       <td style="{_TD_STYLE}">Monthly (daily series resampled to month-end)</td>
     </tr>
     <tr>
-      <td style="{_TD_ALT_STYLE}"><span style="color:#f2f4fa;font-weight:500">Yahoo Finance (yfinance)</span></td>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#0b1540;font-weight:500">Yahoo Finance (yfinance)</span></td>
       <td style="{_TD_ALT_STYLE}">SPY, QQQ, IWM, TLT, HYG, LQD, UUP, GLD, USO<br>+ sector / international / vol ETFs (23 daily symbols)</td>
       <td style="{_TD_ALT_STYLE}">Daily OHLCV + 5-min intraday during market hours</td>
     </tr>
     <tr>
-      <td style="{_TD_STYLE}"><span style="color:#f2f4fa;font-weight:500">Manual</span></td>
+      <td style="{_TD_STYLE}"><span style="color:#0b1540;font-weight:500">Manual</span></td>
       <td style="{_TD_STYLE}">events/calendar.csv — upcoming macro releases</td>
       <td style="{_TD_STYLE}">Updated as needed</td>
     </tr>
@@ -349,8 +349,8 @@ def _render_methodology_notes() -> None:
     ]
 
     bullets_html = "".join(
-        f'<p style="font-size:13px;color:#9aa5c8;line-height:1.6;margin:0 0 10px 0">'
-        f'<span style="color:#5c6a99;margin-right:6px">—</span>{note}</p>'
+        f'<p style="font-size:13px;color:#5b6480;line-height:1.6;margin:0 0 10px 0">'
+        f'<span style="color:#8a92a8;margin-right:6px">—</span>{note}</p>'
         for note in notes
     )
     st.markdown(_panel(bullets_html), unsafe_allow_html=True)
@@ -375,15 +375,15 @@ def _render_recession_model() -> None:
   </thead>
   <tbody>
     <tr>
-      <td style="{_TD_STYLE}"><span style="color:#f2f4fa;font-weight:500">Model type</span></td>
+      <td style="{_TD_STYLE}"><span style="color:#0b1540;font-weight:500">Model type</span></td>
       <td style="{_TD_STYLE}">Logistic regression (sklearn LogisticRegression, C=1.0, class_weight=balanced)</td>
     </tr>
     <tr>
-      <td style="{_TD_ALT_STYLE}"><span style="color:#f2f4fa;font-weight:500">Training target</span></td>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#0b1540;font-weight:500">Training target</span></td>
       <td style="{_TD_ALT_STYLE}">NBER USREC indicator (monthly 0/1) — falls back to hardcoded NBER dates if USREC absent from DB</td>
     </tr>
     <tr>
-      <td style="{_TD_STYLE}"><span style="color:#f2f4fa;font-weight:500">Features (5)</span></td>
+      <td style="{_TD_STYLE}"><span style="color:#0b1540;font-weight:500">Features (5)</span></td>
       <td style="{_TD_STYLE}">
         yield_curve (DGS10−DGS2, %), unemployment (UNRATE, %),
         hy_spread (BAMLH0A0HYM2, bps), indpro_yoy (INDPRO 12m % chg),
@@ -391,23 +391,23 @@ def _render_recession_model() -> None:
       </td>
     </tr>
     <tr>
-      <td style="{_TD_ALT_STYLE}"><span style="color:#f2f4fa;font-weight:500">Look-ahead bias control</span></td>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#0b1540;font-weight:500">Look-ahead bias control</span></td>
       <td style="{_TD_ALT_STYLE}">All features are lagged 3 months before both training and inference</td>
     </tr>
     <tr>
-      <td style="{_TD_STYLE}"><span style="color:#f2f4fa;font-weight:500">Output</span></td>
+      <td style="{_TD_STYLE}"><span style="color:#0b1540;font-weight:500">Output</span></td>
       <td style="{_TD_STYLE}">12-month recession probability (0–100%); thresholds: Low &lt;20%, Elevated 20–40%, High ≥40%</td>
     </tr>
     <tr>
-      <td style="{_TD_ALT_STYLE}"><span style="color:#f2f4fa;font-weight:500">Retraining cadence</span></td>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#0b1540;font-weight:500">Retraining cadence</span></td>
       <td style="{_TD_ALT_STYLE}">Retrained on every dashboard cold start (@st.cache_resource); no stored model weights</td>
     </tr>
     <tr>
-      <td style="{_TD_STYLE}"><span style="color:#f2f4fa;font-weight:500">Yield curve percentile</span></td>
+      <td style="{_TD_STYLE}"><span style="color:#0b1540;font-weight:500">Yield curve percentile</span></td>
       <td style="{_TD_STYLE}">Computed vs 30yr history in % units (not basis points) to avoid unit mismatch</td>
     </tr>
     <tr>
-      <td style="{_TD_ALT_STYLE}"><span style="color:#f2f4fa;font-weight:500">Macro divergence</span></td>
+      <td style="{_TD_ALT_STYLE}"><span style="color:#0b1540;font-weight:500">Macro divergence</span></td>
       <td style="{_TD_ALT_STYLE}">
         HY OAS percentile rank (market signal) minus regime prob_recession (macro signal).
         &gt;+20: &ldquo;Markets ahead of macro&rdquo; &middot; &lt;−20: &ldquo;Macro ahead of markets&rdquo; &middot; otherwise &ldquo;Aligned&rdquo;
@@ -487,13 +487,13 @@ def _render_lbo_calculator() -> None:
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(
-            _panel(f'<p style="font-size:11px;color:#9aa5c8;text-transform:uppercase;'
+            _panel(f'<p style="font-size:11px;color:#5b6480;text-transform:uppercase;'
                    f'letter-spacing:.06em;margin-bottom:8px">Data Sources</p>' + data_sources),
             unsafe_allow_html=True,
         )
     with col2:
         st.markdown(
-            _panel(f'<p style="font-size:11px;color:#9aa5c8;text-transform:uppercase;'
+            _panel(f'<p style="font-size:11px;color:#5b6480;text-transform:uppercase;'
                    f'letter-spacing:.06em;margin-bottom:8px">Model Mechanics</p>' + mechanics),
             unsafe_allow_html=True,
         )
@@ -510,31 +510,31 @@ def _render_lbo_calculator() -> None:
     <tr>
       <td style="{_TD_STYLE}">&ge;20%</td>
       <td style="{_TD_STYLE}">Strong returns</td>
-      <td style="{_TD_STYLE}"><span style="background:rgba(61,190,122,0.15);color:#3dbe7a;
+      <td style="{_TD_STYLE}"><span style="background:rgba(30,158,90,0.15);color:#1e9e5a;
         padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Green</span></td>
     </tr>
     <tr>
       <td style="{_TD_ALT_STYLE}">15–20%</td>
       <td style="{_TD_ALT_STYLE}">Acceptable</td>
-      <td style="{_TD_ALT_STYLE}"><span style="background:rgba(198,152,66,0.15);color:#c69842;
+      <td style="{_TD_ALT_STYLE}"><span style="background:rgba(0,11,61,0.15);color:#000b3d;
         padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Blue</span></td>
     </tr>
     <tr>
       <td style="{_TD_STYLE}">&lt;15%</td>
       <td style="{_TD_STYLE}">Below typical PE hurdle rate</td>
-      <td style="{_TD_STYLE}"><span style="background:rgba(224,129,47,0.15);color:#e0812f;
+      <td style="{_TD_STYLE}"><span style="background:rgba(217,119,42,0.15);color:#d9772a;
         padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Orange</span></td>
     </tr>
   </tbody>
 </table>
-<p style="font-size:11px;color:#9aa5c8;margin-top:8px;line-height:1.5">
+<p style="font-size:11px;color:#5b6480;margin-top:8px;line-height:1.5">
   The sensitivity table displays a 5&times;5 IRR grid across entry vs exit multiples,
   centered on the current slider values and rounded to 0.5&times; increments.
   Color coding is consistent across the returns banner, schedule table header, and all sensitivity cells.
 </p>"""
 
     st.markdown(
-        _panel(f'<p style="font-size:11px;color:#9aa5c8;text-transform:uppercase;'
+        _panel(f'<p style="font-size:11px;color:#5b6480;text-transform:uppercase;'
                f'letter-spacing:.06em;margin-bottom:8px">IRR Thresholds &amp; Sensitivity</p>'
                + thresholds),
         unsafe_allow_html=True,
@@ -546,7 +546,7 @@ def _render_intelligence_methodology() -> None:
     section_header("Market Intelligence")
 
     intro = """
-<p style="font-size:13px;color:#c8cfe6;line-height:1.6;margin-bottom:12px;">
+<p style="font-size:13px;color:#2c3556;line-height:1.6;margin-bottom:12px;">
 The Intelligence tab synthesises all dashboard signals into actionable market narratives
 with forward-looking scenario analysis. It answers the "so what" question — translating
 raw macro data into positioning implications.
@@ -608,23 +608,23 @@ raw macro data into positioning implications.
     <tr>
       <td style="{_TD_STYLE}">High</td>
       <td style="{_TD_STYLE}">Top regime probability &gt;55% AND no signal divergences</td>
-      <td style="{_TD_STYLE}"><span style="background:rgba(61,190,122,0.15);color:#3dbe7a;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Green</span></td>
+      <td style="{_TD_STYLE}"><span style="background:rgba(30,158,90,0.15);color:#1e9e5a;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Green</span></td>
     </tr>
     <tr>
       <td style="{_TD_STYLE}">Medium</td>
       <td style="{_TD_STYLE}">Top regime probability 40–55% OR one indicator diverges</td>
-      <td style="{_TD_STYLE}"><span style="background:rgba(198,152,66,0.15);color:#c69842;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Blue</span></td>
+      <td style="{_TD_STYLE}"><span style="background:rgba(0,11,61,0.15);color:#000b3d;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Blue</span></td>
     </tr>
     <tr>
       <td style="{_TD_STYLE}">Low</td>
       <td style="{_TD_STYLE}">Top regime probability &lt;40% OR multiple divergences</td>
-      <td style="{_TD_STYLE}"><span style="background:rgba(224,129,47,0.15);color:#e0812f;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Orange</span></td>
+      <td style="{_TD_STYLE}"><span style="background:rgba(217,119,42,0.15);color:#d9772a;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">Orange</span></td>
     </tr>
   </tbody>
 </table>"""
 
     limitations = """
-<p style="font-size:11px;color:#9aa5c8;margin-top:8px;line-height:1.6;">
+<p style="font-size:11px;color:#5b6480;margin-top:8px;line-height:1.6;">
 <strong>Limitations:</strong>
 Regime probabilities displayed in the Intelligence tab are approximated from stored confidence scores
 using historical base rates as priors — exact softmax probabilities are not persisted in the database.
@@ -636,7 +636,7 @@ not predictive signals.
 
     st.markdown(_panel(intro + components_doc), unsafe_allow_html=True)
     st.markdown(_panel(
-        '<p style="font-size:11px;color:#9aa5c8;text-transform:uppercase;'
+        '<p style="font-size:11px;color:#5b6480;text-transform:uppercase;'
         'letter-spacing:.06em;margin-bottom:8px">Conviction Scoring</p>' + conviction_doc + limitations
     ), unsafe_allow_html=True)
 

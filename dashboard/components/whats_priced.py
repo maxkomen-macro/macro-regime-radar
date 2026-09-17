@@ -148,9 +148,9 @@ def _render_interpretation(dm: pd.DataFrame) -> None:
         bullets.append(f"<b>BE term structure:</b> {body}")
 
     if bullets:
-        rows = "".join(f'<p style="margin:0 0 10px 0;color:#c8cfe6">{b}</p>' for b in bullets)
+        rows = "".join(f'<p style="margin:0 0 10px 0;color:#2c3556">{b}</p>' for b in bullets)
         st.markdown(
-            f'<div style="background:#0a1650;border:0.5px solid #172561;'
+            f'<div style="background:#ffffff;border:0.5px solid #e3e6ec;'
             f'padding:16px 20px;border-radius:6px;line-height:1.8;">'
             f'{rows}</div>',
             unsafe_allow_html=True,

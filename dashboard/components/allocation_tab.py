@@ -21,30 +21,30 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # ── Design tokens ──────────────────────────────────────────────────────────────
-_PAGE_BG = "#000b3d"   # outermost body bg inside components.html
-_BG      = "#000b3d"   # card / container bg
-_CARD_BG = "#000b3d"
-_BORDER  = "#1e2e6e"
-_ACCENT  = "#c69842"
-_TEXT    = "#f2f4fa"
-_MUTED   = "#9aa5c8"
-_POS     = "#3dbe7a"
-_NEG     = "#e05252"
-_WARN    = "#e0812f"
+_PAGE_BG = "#f3f4f6"   # outermost body bg inside components.html
+_BG      = "#f3f4f6"   # card / container bg
+_CARD_BG = "#f3f4f6"
+_BORDER  = "#d3d7e0"
+_ACCENT  = "#000b3d"
+_TEXT    = "#0b1540"
+_MUTED   = "#5b6480"
+_POS     = "#1e9e5a"
+_NEG     = "#d23f3f"
+_WARN    = "#d9772a"
 
 _REGIME_COLORS = {
-    "Goldilocks":    "#3dbe7a",
-    "Overheating":   "#e0812f",
-    "Stagflation":   "#e05252",
-    "Recession Risk":"#c69842",
+    "Goldilocks":    "#1e9e5a",
+    "Overheating":   "#d9772a",
+    "Stagflation":   "#d23f3f",
+    "Recession Risk":"#000b3d",
 }
 
 _METHOD_COLORS = {
-    "mvo":              "#c69842",
-    "min_var":          "#3dbe7a",
-    "risk_parity":      "#e0812f",
-    "black_litterman":  "#c69842",
-    "hrp":              "#e05252",
+    "mvo":              "#000b3d",
+    "min_var":          "#1e9e5a",
+    "risk_parity":      "#d9772a",
+    "black_litterman":  "#000b3d",
+    "hrp":              "#d23f3f",
     "cvar":             "#f5a623",
     "herc":             "#1abc9c",
 }
@@ -59,7 +59,7 @@ _METHOD_LABELS = {
     "herc":             "HERC",
 }
 
-_FONT = "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
+_FONT = "'Helvetica Neue',Helvetica,Arial,sans-serif"
 
 
 # ── HTML helpers ───────────────────────────────────────────────────────────────
@@ -154,12 +154,12 @@ def _return_tc(val: float) -> str:
 
 def _corr_color(val: float) -> str:
     """Dark-background diverging palette: blue (neg) → navy (zero) → red (pos)."""
-    if val >= 1.0:   return "#172561"   # diagonal
+    if val >= 1.0:   return "#e3e6ec"   # diagonal
     if val >= 0.8:   return "#7f1d1d"
     if val >= 0.5:   return "#c0392b"
     if val >= 0.2:   return "#7b2828"
     if val >= -0.2:  return "#1a1a2e"
-    if val >= -0.5:  return "#12245c"
+    if val >= -0.5:  return "#e8ebf2"
     return "#1e4976"
 
 
@@ -299,7 +299,7 @@ def _render_method_card(key: str, result: dict, rf: float) -> None:
     vol        = result.get("volatility", 0.0)
     sharpe     = result.get("sharpe_ratio", 0.0)
     ok         = result.get("converged", True)
-    note       = "" if ok else " <span style='font-size:9px;color:#c69842;'>(fallback)</span>"
+    note       = "" if ok else " <span style='font-size:9px;color:#000b3d;'>(fallback)</span>"
     ret_color  = _POS if ret >= 0 else _NEG
 
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -309,7 +309,7 @@ def _render_method_card(key: str, result: dict, rf: float) -> None:
 </style></head>
 <body>
 <div style="
-    background:linear-gradient(180deg,#000b3d 0%,#0a0c10 100%);
+    background:linear-gradient(180deg,#f3f4f6 0%,#0a0c10 100%);
     border-left:1px solid {_BORDER};
     border-right:1px solid {_BORDER};
     border-bottom:1px solid {_BORDER};
@@ -391,7 +391,7 @@ def _render_weights_chart(opt: dict) -> None:
         .configure_view(strokeWidth=0)
         .configure_axis(
             domainColor=_BORDER,
-            gridColor="#172561",
+            gridColor="#e3e6ec",
             tickColor=_BORDER,
             labelColor=_MUTED,
             titleColor=_MUTED,
@@ -484,7 +484,7 @@ def _render_frontier_chart(opt: dict) -> None:
         .configure_view(strokeWidth=0)
         .configure_axis(
             domainColor=_BORDER,
-            gridColor="#172561",
+            gridColor="#e3e6ec",
             tickColor=_BORDER,
             labelColor=_MUTED,
             titleColor=_MUTED,
@@ -666,7 +666,7 @@ def _render_optimization(data: dict) -> None:
     insight = _regime_insight(current, opt)
     components.html(
         f"<body style='background:{_PAGE_BG};font-family:{_FONT};margin:0;padding:4px 0;'>"
-        f"<div style='background:linear-gradient(90deg,#c6984215,transparent);"
+        f"<div style='background:linear-gradient(90deg,#000b3d15,transparent);"
         f"border-left:3px solid {_ACCENT};padding:12px 16px;border-radius:0 6px 6px 0;'>"
         f"<div style='font-size:10px;color:{_MUTED};text-transform:uppercase;"
         f"letter-spacing:0.1em;margin-bottom:4px;'>KEY INSIGHT</div>"
@@ -688,27 +688,27 @@ def _render_optimization(data: dict) -> None:
     # Method descriptions expander
     with st.expander("📚 Understanding the Methods", expanded=False):
         _methods_explainer_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>* {{box-sizing:border-box;margin:0;padding:0;}} body {{background:#000b3d;font-family:{_FONT};padding:16px;}} .entry {{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #1e2e6e;}} .entry:last-child {{margin-bottom:0;border-bottom:none;}}</style>
+<style>* {{box-sizing:border-box;margin:0;padding:0;}} body {{background:#f3f4f6;font-family:{_FONT};padding:16px;}} .entry {{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #d3d7e0;}} .entry:last-child {{margin-bottom:0;border-bottom:none;}}</style>
 </head><body>
 <div style="color:{_TEXT};font-size:13px;line-height:1.7;">
   <div class="entry">
-    <div style="color:#c69842;font-weight:600;font-size:14px;margin-bottom:6px;">Mean-Variance (MVO)</div>
+    <div style="color:#000b3d;font-weight:600;font-size:14px;margin-bottom:6px;">Mean-Variance (MVO)</div>
     <div style="color:{_MUTED};">Maximizes Sharpe ratio given expected returns and covariance. The foundation of modern portfolio theory (Markowitz, 1952). Sensitive to return estimates — small input changes can cause large weight swings.</div>
   </div>
   <div class="entry">
-    <div style="color:#3dbe7a;font-weight:600;font-size:14px;margin-bottom:6px;">Minimum Variance</div>
+    <div style="color:#1e9e5a;font-weight:600;font-size:14px;margin-bottom:6px;">Minimum Variance</div>
     <div style="color:{_MUTED};">Ignores return forecasts entirely — minimizes portfolio volatility using only the covariance matrix. Exploits the low-volatility anomaly: historically, lower-risk portfolios have delivered competitive risk-adjusted returns.</div>
   </div>
   <div class="entry">
-    <div style="color:#e0812f;font-weight:600;font-size:14px;margin-bottom:6px;">Risk Parity</div>
+    <div style="color:#d9772a;font-weight:600;font-size:14px;margin-bottom:6px;">Risk Parity</div>
     <div style="color:{_MUTED};">Equal risk contribution from each asset class. Addresses the hidden concentration in traditional portfolios — a 60/40 portfolio is ~90% equity risk. Popularized by Bridgewater's "All Weather" fund.</div>
   </div>
   <div class="entry">
-    <div style="color:#c69842;font-weight:600;font-size:14px;margin-bottom:6px;">Black-Litterman</div>
+    <div style="color:#000b3d;font-weight:600;font-size:14px;margin-bottom:6px;">Black-Litterman</div>
     <div style="color:{_MUTED};">Starts from market equilibrium returns (what the market implies), then blends with regime-conditional views. More stable than MVO — the industry standard for institutional asset allocation. Developed at Goldman Sachs (1992).</div>
   </div>
   <div class="entry">
-    <div style="color:#e05252;font-weight:600;font-size:14px;margin-bottom:6px;">Hierarchical Risk Parity (HRP)</div>
+    <div style="color:#d23f3f;font-weight:600;font-size:14px;margin-bottom:6px;">Hierarchical Risk Parity (HRP)</div>
     <div style="color:{_MUTED};">Machine learning approach using hierarchical clustering to group correlated assets, then allocates recursively (López de Prado, 2016). No return estimates needed. More stable than MVO and minimum variance. Cutting-edge methodology.</div>
   </div>
   <div class="entry">
@@ -866,7 +866,7 @@ def _render_drawdown_table(drawdowns: dict, asset_classes: list) -> None:
         if not np.isnan(overall_dd):
             tc = _dd_color(overall_dd)
             row += (
-                f"<td style='background:#0a1650;border:1px solid {_BORDER};"
+                f"<td style='background:#ffffff;border:1px solid {_BORDER};"
                 f"text-align:center;padding:7px 10px;color:{tc};font-size:13px;font-weight:700;'>"
                 f"{overall_dd:.1%}</td>"
             )
@@ -879,7 +879,7 @@ def _render_drawdown_table(drawdowns: dict, asset_classes: list) -> None:
         rows_html += row
 
     header_cells = "".join(
-        f"<th style='background:#0a1650;color:{_REGIME_COLORS.get(r, _ACCENT)};"
+        f"<th style='background:#ffffff;color:{_REGIME_COLORS.get(r, _ACCENT)};"
         f"border:1px solid {_BORDER};padding:8px 14px;text-align:center;font-size:12px;'>{r}</th>"
         for r in regimes_present
     )
@@ -894,10 +894,10 @@ def _render_drawdown_table(drawdowns: dict, asset_classes: list) -> None:
 <div style="background:{_CARD_BG};border:1px solid {_BORDER};border-radius:8px;padding:16px;overflow-x:auto;">
 <table>
   <thead><tr>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:8px 14px;text-align:left;font-size:12px;">Asset Class</th>
     {header_cells}
-    <th style="background:#0a1650;color:{_TEXT};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_TEXT};border:1px solid {_BORDER};
                padding:8px 14px;text-align:center;font-size:12px;">Overall Max DD</th>
   </tr></thead>
   <tbody>{rows_html}</tbody>
@@ -965,13 +965,13 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
                  padding:12px;overflow-x:auto;">
 <table>
   <thead><tr>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:left;font-size:11px;">Asset</th>
-    <th style="background:#0a1650;color:{_NEG};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_NEG};border:1px solid {_BORDER};
                padding:7px 10px;text-align:center;font-size:11px;">CVaR 95%</th>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:center;font-size:11px;">VaR 95%</th>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:center;font-size:11px;">n</th>
   </tr></thead>
   <tbody>{rows_html}</tbody>
@@ -1001,7 +1001,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
                 .encode(
                     x=alt.X("cvar:Q", title="Portfolio CVaR 95%",
                             axis=alt.Axis(format=".1%", labelColor=_MUTED, titleColor=_MUTED,
-                                          gridColor="#172561")),
+                                          gridColor="#e3e6ec")),
                     y=alt.Y("method:N", sort=None, title=None,
                             axis=alt.Axis(labelColor=_TEXT, labelFontSize=12)),
                     color=alt.Color("method:N",
@@ -1037,7 +1037,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
             regime_order = [r for r in ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
                             if r in valid_regimes]
             header_cells = "".join(
-                f"<th style='background:#0a1650;color:{_REGIME_COLORS.get(r, _ACCENT)};"
+                f"<th style='background:#ffffff;color:{_REGIME_COLORS.get(r, _ACCENT)};"
                 f"border:1px solid {_BORDER};padding:7px 12px;text-align:center;font-size:11px;'>{r}</th>"
                 for r in regime_order
             )
@@ -1074,7 +1074,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
                  padding:12px;overflow-x:auto;">
 <table>
   <thead><tr>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:left;font-size:11px;">Asset</th>
     {header_cells}
   </tr></thead>
@@ -1099,7 +1099,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
         if current_val is not None and worst_regime and worst_regime != current_regime and current_val > 0:
             ratio = worst_val / current_val
             st.markdown(
-                f"<div style='background:rgba(198,152,66,0.1);border-left:3px solid {_ACCENT};"
+                f"<div style='background:rgba(0,11,61,0.1);border-left:3px solid {_ACCENT};"
                 f"padding:12px 16px;margin:16px 0;border-radius:0 4px 4px 0;'>"
                 f"<span style='color:{_MUTED};font-size:11px;text-transform:uppercase;'>"
                 f"TAIL RISK CONTEXT</span><br>"
@@ -1153,7 +1153,7 @@ def _render_transition_pnl_section(data: dict) -> None:
                     axis=alt.Axis(labelColor=_TEXT, labelFontSize=11, labelAngle=-30)),
             y=alt.Y("return:Q", title="Avg 3m Forward Return",
                     axis=alt.Axis(format=".1%", labelColor=_MUTED, titleColor=_MUTED,
-                                  gridColor="#172561")),
+                                  gridColor="#e3e6ec")),
             color=alt.Color(
                 "sign:N",
                 scale=alt.Scale(domain=["positive", "negative"], range=[_POS, _NEG]),
@@ -1204,7 +1204,7 @@ def _render_real_nominal_section(data: dict) -> None:
                 all_assets.append(a)
 
     header_cells = "".join(
-        f"<th style='background:#0a1650;color:{_REGIME_COLORS.get(r, _ACCENT)};"
+        f"<th style='background:#ffffff;color:{_REGIME_COLORS.get(r, _ACCENT)};"
         f"border:1px solid {_BORDER};padding:7px 12px;text-align:center;font-size:11px;'>"
         f"{r}<br><span style='font-size:9px;color:{_MUTED};'>"
         f"n={real_nominal[r]['n_months']}m</span></th>"
@@ -1231,7 +1231,7 @@ def _render_real_nominal_section(data: dict) -> None:
 
             # Color background by sign
             if display > 0:
-                bg = "rgba(61,190,122,0.12)"
+                bg = "rgba(30,158,90,0.12)"
                 tc = _POS
             else:
                 bg = "rgba(231,76,60,0.15)"
@@ -1260,7 +1260,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
                  padding:12px;overflow-x:auto;">
 <table>
   <thead><tr>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:left;font-size:11px;">Asset ({label})</th>
     {header_cells}
   </tr></thead>
@@ -1280,7 +1280,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
             names = ", ".join(erosion_assets[:4])
             suffix = f" (+{len(erosion_assets) - 4} more)" if len(erosion_assets) > 4 else ""
             st.markdown(
-                f"<div style='background:rgba(224,129,47,0.1);border-left:3px solid {_WARN};"
+                f"<div style='background:rgba(217,119,42,0.1);border-left:3px solid {_WARN};"
                 f"padding:12px 16px;margin:16px 0;border-radius:0 4px 4px 0;'>"
                 f"<span style='color:{_MUTED};font-size:11px;text-transform:uppercase;'>"
                 f"INFLATION ALERT</span><br>"
@@ -1316,7 +1316,7 @@ def _render_factor_section(data: dict) -> None:
                         if r in regime_factors]
 
         header_cells = "".join(
-            f"<th style='background:#0a1650;color:{_REGIME_COLORS.get(r, _ACCENT)};"
+            f"<th style='background:#ffffff;color:{_REGIME_COLORS.get(r, _ACCENT)};"
             f"border:1px solid {_BORDER};padding:7px 12px;text-align:center;font-size:11px;'>{r}</th>"
             for r in regime_order
         )
@@ -1335,7 +1335,7 @@ def _render_factor_section(data: dict) -> None:
                     )
                 else:
                     tc = _POS if val >= 0 else _NEG
-                    bg = "rgba(61,190,122,0.12)" if val >= 0 else "rgba(231,76,60,0.15)"
+                    bg = "rgba(30,158,90,0.12)" if val >= 0 else "rgba(231,76,60,0.15)"
                     row += (
                         f"<td style='background:{bg};border:1px solid {_BORDER};"
                         f"text-align:center;padding:6px 8px;color:{tc};"
@@ -1351,7 +1351,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
                  padding:12px;overflow-x:auto;">
 <table>
   <thead><tr>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:left;font-size:11px;">Factor</th>
     {header_cells}
   </tr></thead>
@@ -1395,7 +1395,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
             .encode(
                 x=alt.X("Beta:Q", title="Factor Beta",
                         axis=alt.Axis(format=".2f", labelColor=_MUTED, titleColor=_MUTED,
-                                      gridColor="#172561")),
+                                      gridColor="#e3e6ec")),
                 y=alt.Y("Factor:N", sort=None, title=None,
                         axis=alt.Axis(labelColor=_TEXT, labelFontSize=11)),
                 color=alt.Color("Method:N",
@@ -1407,7 +1407,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
             )
             .properties(width="container", height=240, background=_BG)
             .configure_view(strokeWidth=0)
-            .configure_axis(domainColor=_BORDER, gridColor="#172561",
+            .configure_axis(domainColor=_BORDER, gridColor="#e3e6ec",
                             tickColor=_BORDER, labelColor=_MUTED, titleColor=_MUTED)
             .configure_legend(labelColor=_MUTED, titleColor=_MUTED)
         )
@@ -1452,7 +1452,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
         best_r2 = portfolio_factors[best_key]["r_squared"] * 100
         best_label = method_labels.get(best_key, best_key)
         st.markdown(
-            f"<div style='background:rgba(198,152,66,0.1);border-left:3px solid {_ACCENT};"
+            f"<div style='background:rgba(0,11,61,0.1);border-left:3px solid {_ACCENT};"
             f"padding:12px 16px;margin:16px 0;border-radius:0 4px 4px 0;'>"
             f"<span style='color:{_MUTED};font-size:11px;text-transform:uppercase;'>"
             f"KEY INSIGHT</span><br>"
@@ -1532,15 +1532,15 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
                  padding:12px;overflow-x:auto;">
 <table>
   <thead><tr>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:left;font-size:11px;">Style</th>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:center;font-size:11px;">Return</th>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:center;font-size:11px;">Vol</th>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:center;font-size:11px;">Sharpe</th>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:center;font-size:11px;">Hit Rate</th>
   </tr></thead>
   <tbody>{rows_html}</tbody>
@@ -1597,7 +1597,7 @@ def _render_currency_section(data: dict) -> None:
     currencies = list(next(iter(currency_data.values())).keys())
 
     header_cells = "".join(
-        f"<th style='background:#0a1650;color:{_REGIME_COLORS.get(r, _ACCENT)};"
+        f"<th style='background:#ffffff;color:{_REGIME_COLORS.get(r, _ACCENT)};"
         f"border:1px solid {_BORDER};padding:7px 12px;text-align:center;font-size:11px;'>{r}</th>"
         for r in regime_order
     )
@@ -1619,7 +1619,7 @@ def _render_currency_section(data: dict) -> None:
                 val = info["return"]
                 vol = info["volatility"]
                 tc  = _POS if val >= 0 else _NEG
-                bg  = "rgba(61,190,122,0.12)" if val >= 0 else "rgba(231,76,60,0.15)"
+                bg  = "rgba(30,158,90,0.12)" if val >= 0 else "rgba(231,76,60,0.15)"
                 row += (
                     f"<td style='background:{bg};border:1px solid {_BORDER};"
                     f"text-align:center;padding:6px 8px;'>"
@@ -1637,7 +1637,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
                  padding:12px;overflow-x:auto;">
 <table>
   <thead><tr>
-    <th style="background:#0a1650;color:{_MUTED};border:1px solid {_BORDER};
+    <th style="background:#ffffff;color:{_MUTED};border:1px solid {_BORDER};
                padding:7px 10px;text-align:left;font-size:11px;">Currency</th>
     {header_cells}
   </tr></thead>
@@ -1656,7 +1656,7 @@ def _render_risk_analysis(data: dict) -> None:
         st.info("Insufficient data for risk analysis.")
         return
 
-    _divider = "<hr style='border:none;border-top:1px solid #172561;margin:32px 0;'>"
+    _divider = "<hr style='border:none;border-top:1px solid #e3e6ec;margin:32px 0;'>"
 
     # Ordered: most impressive first, traditional last
     _render_factor_section(data)
