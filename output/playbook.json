@@ -1,16 +1,17 @@
 {
-  "generated_at": "2026-09-17T15:23:45.863383",
+  "generated_at": "2026-09-18T04:05:02.054733",
   "as_of": "2026-07-01",
   "regime": "Goldilocks",
   "confidence": 0.4952,
   "baseline": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
   "because_today": [
     "Because today VIX volatility is above trend (z=+1.52).",
-    "Because today 10Y Treasury rate momentum is above trend (z=+2.38).",
-    "Because today 10Y real yield is positive at 2.62%, real rates are restrictive — a headwind for equities and gold.",
+    "Because today 10Y Treasury rate momentum is above trend (z=+2.48).",
+    "Because today yield spread curve steepening is below trend (z=-2.38).",
+    "Because today 10Y real yield is positive at 2.68%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.63%."
   ],
-  "summary": "Regime: Goldilocks (confidence 50%). Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable. Because today VIX volatility is above trend (z=+1.52). Because today 10Y Treasury rate momentum is above trend (z=+2.38). Because today 10Y real yield is positive at 2.62%, real rates are restrictive — a headwind for equities and gold.",
+  "summary": "Regime: Goldilocks (confidence 50%). Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable. Because today VIX volatility is above trend (z=+1.52). Because today 10Y Treasury rate momentum is above trend (z=+2.48). Because today yield spread curve steepening is below trend (z=-2.38).",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
