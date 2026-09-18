@@ -91,10 +91,10 @@ def _refresh_db_snapshot() -> str:
 
 
 REGIME_COLORS = {
-    "Goldilocks":     "#2ecc71",
-    "Overheating":    "#e67e22",
-    "Stagflation":    "#e74c3c",
-    "Recession Risk": "#95a5a6",
+    "Goldilocks":     "#1e9e5a",
+    "Overheating":    "#d9772a",
+    "Stagflation":    "#d23f3f",
+    "Recession Risk": "#7a829a",
 }
 
 SIGNAL_META = {
@@ -601,7 +601,7 @@ def base_layout(title: str, y_title: str) -> dict:
         hovermode="x unified",
         height=400,
         margin=dict(l=50, r=20, t=50, b=40),
-        template="plotly_white",
+        template="macro_rr",
     )
 
 
@@ -644,67 +644,67 @@ def _render_header_bar(latest_regime, as_of) -> None:
     stats = _header_market_stats()
 
     # ── SPY pct change (from market_daily) ──────────────────────────────────
-    spy_display, spy_color = "—", "#8899aa"
+    spy_display, spy_color = "—", "#9aa5c8"
     try:
         rows = stats["spy"] or []
         if len(rows) == 2:
             spy_now, spy_prev = float(rows[0][0]), float(rows[1][0])
             chg = (spy_now - spy_prev) / spy_prev
             spy_display = f"{chg:+.2%}"
-            spy_color = "#3fb950" if chg >= 0 else "#da3633"
+            spy_color = "#3dbe7a" if chg >= 0 else "#f08c8c"
     except Exception:
         pass
 
     # ── VIX (monthly from raw_series) ───────────────────────────────────────
-    vix_value_html = '<span style="font-size:13px;font-weight:600;color:#8899aa;">—</span>'
+    vix_value_html = '<span style="font-size:13px;font-weight:600;color:#9aa5c8;">—</span>'
     try:
         rows = stats["vix"] or []
         if rows:
             vix_now = float(rows[0][0])
             if len(rows) == 2:
                 vix_chg = vix_now - float(rows[1][0])
-                chg_color = "#da3633" if vix_chg > 0 else "#3fb950"
+                chg_color = "#f08c8c" if vix_chg > 0 else "#3dbe7a"
                 vix_value_html = (
-                    f'<span style="font-size:13px;font-weight:600;color:#e6edf3;">{vix_now:.1f}</span>'
+                    f'<span style="font-size:13px;font-weight:600;color:#ffffff;">{vix_now:.1f}</span>'
                     f'<span style="font-size:11px;font-weight:500;color:{chg_color};"> ({vix_chg:+.2f})</span>'
                 )
             else:
-                vix_value_html = f'<span style="font-size:13px;font-weight:600;color:#e6edf3;">{vix_now:.1f}</span>'
+                vix_value_html = f'<span style="font-size:13px;font-weight:600;color:#ffffff;">{vix_now:.1f}</span>'
     except Exception:
         pass
 
     # ── DGS10 in bps (monthly from raw_series) ──────────────────────────────
-    gs10_value_html = '<span style="font-size:13px;font-weight:600;color:#8899aa;">—</span>'
+    gs10_value_html = '<span style="font-size:13px;font-weight:600;color:#9aa5c8;">—</span>'
     try:
         rows = stats["dgs10"] or []
         if len(rows) == 2:
             gs10_now = float(rows[0][0])
             bps = round((gs10_now - float(rows[1][0])) * 100)
-            bps_color = "#da3633" if bps > 0 else "#3fb950"
+            bps_color = "#f08c8c" if bps > 0 else "#3dbe7a"
             gs10_value_html = (
-                f'<span style="font-size:13px;font-weight:600;color:#e6edf3;">{gs10_now:.2f}%</span>'
+                f'<span style="font-size:13px;font-weight:600;color:#ffffff;">{gs10_now:.2f}%</span>'
                 f'<span style="font-size:11px;font-weight:500;color:{bps_color};"> ({bps:+d}bps)</span>'
             )
         elif rows:
             gs10_now = float(rows[0][0])
-            gs10_value_html = f'<span style="font-size:13px;font-weight:600;color:#e6edf3;">{gs10_now:.2f}%</span>'
+            gs10_value_html = f'<span style="font-size:13px;font-weight:600;color:#ffffff;">{gs10_now:.2f}%</span>'
     except Exception:
         pass
 
     # ── Regime badge ─────────────────────────────────────────────────────────
     BADGE_STYLES = {
-        "Overheating":    "background:rgba(218,54,51,0.12) !important;color:#f08785 !important;border:0.5px solid rgba(218,54,51,0.25)",
-        "Goldilocks":     "background:rgba(63,185,80,0.12) !important;color:#3fb950 !important;border:0.5px solid rgba(63,185,80,0.25)",
-        "Stagflation":    "background:rgba(210,153,34,0.12) !important;color:#d29922 !important;border:0.5px solid rgba(210,153,34,0.25)",
-        "Recession Risk": "background:rgba(218,54,51,0.20) !important;color:#f08785 !important;border:0.5px solid rgba(218,54,51,0.40)",
+        "Overheating":    "background:rgba(210,63,63,0.12);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.25)",
+        "Goldilocks":     "background:rgba(30,158,90,0.12);color:#3dbe7a;border:0.5px solid rgba(30,158,90,0.25)",
+        "Stagflation":    "background:rgba(184,134,11,0.12);color:#e0a33a;border:0.5px solid rgba(184,134,11,0.25)",
+        "Recession Risk": "background:rgba(210,63,63,0.20);color:#c43c3c;border:0.5px solid rgba(210,63,63,0.40)",
     }
     lbl = str(latest_regime["label"]) if latest_regime is not None else "—"
     conf_pct = f"{float(latest_regime['confidence']):.1%}" if latest_regime is not None else "—"
-    badge_style = BADGE_STYLES.get(lbl, "background:#21262d !important;color:#8899aa !important;border:0.5px solid #484f58")
+    badge_style = BADGE_STYLES.get(lbl, "background:#1e2e6e;color:#c8cfe6;border:0.5px solid #7c88b0")
 
     # Build probability distribution display
     PROB_ABBREVS = {"Goldilocks": "GL", "Overheating": "OV", "Stagflation": "ST", "Recession Risk": "RR"}
-    PROB_COLORS  = {"Goldilocks": "#3fb950", "Overheating": "#f08785", "Stagflation": "#d29922", "Recession Risk": "#95a5a6"}
+    PROB_COLORS  = {"Goldilocks": "#3dbe7a", "Overheating": "#c43c3c", "Stagflation": "#e0a33a", "Recession Risk": "#8a93ad"}
     regime_right_html = ""
     if latest_regime is not None:
         probs = {
@@ -724,47 +724,46 @@ def _render_header_bar(latest_regime, as_of) -> None:
             regime_right_html = (
                 f'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">'
                 f'<div style="display:flex;align-items:center;gap:6px;">'
-                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}" '
+                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:3px;{badge_style}" '
                 f'title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>'
-                f'<span style="font-size:11px;font-weight:700;color:{PROB_COLORS.get(lbl, "#8899aa")};white-space:nowrap;">{dominant_prob_str}</span>'
+                f'<span style="font-size:11px;font-weight:700;color:{PROB_COLORS.get(lbl, "#9aa5c8")};white-space:nowrap;">{dominant_prob_str}</span>'
                 f'</div>'
-                f'<div style="font-size:10px;color:#484f58;">{secondary_pills}</div>'
+                f'<div style="font-size:10px;color:#7c88b0;">{secondary_pills}</div>'
                 f'</div>'
             )
         else:
             regime_right_html = (
-                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;{badge_style}" '
+                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:3px;{badge_style}" '
                 f'title="Current macro regime based on 3-month growth and inflation trends">{lbl}</span>'
-                f'<span style="font-size:11px;color:#6e7681;white-space:nowrap;" '
+                f'<span style="font-size:11px;color:#6f7893;white-space:nowrap;" '
                 f'title="Reflects the statistical distance of current conditions from regime boundaries">Conviction: {conf_pct}</span>'
             )
 
     st.markdown(f"""
-<div style="border-bottom:1px solid #21262d;margin:0;padding:0;">
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px 8px;">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
-        background:#4a9eff;box-shadow:0 0 6px rgba(74,158,255,0.4);flex-shrink:0;"></span>
-      <span style="font-size:15px;font-weight:600;letter-spacing:1.2px;
-        text-transform:uppercase;color:#e6edf3;white-space:nowrap;">Macro Regime Radar</span>
+<div style="background:#000b3d;color:#ffffff;border-bottom:2px solid #c69842;margin:-16px -40px 10px;padding:0 40px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 4px 8px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <img src="data:image/png;base64,{_LOGO_B64}" alt="Macro RR" style="height:26px;width:auto;display:block;" />
+      <span style="font-size:11px;font-weight:600;color:#9aa5c8;white-space:nowrap;
+        border-left:1px solid #d3d7e0;padding-left:12px;">Macro Regime Radar</span>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
       {regime_right_html}
     </div>
   </div>
-  <div style="display:flex;align-items:center;padding:0 20px 10px;">
+  <div style="display:flex;align-items:center;padding:0 4px 10px;">
     <div style="display:flex;flex-direction:column;padding-right:16px;">
-      <span style="font-size:10px;color:#484f58;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">S&amp;P 500</span>
+      <span style="font-size:10px;color:#7c88b0;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">S&amp;P 500</span>
       <span style="font-size:13px;font-weight:600;color:{spy_color};white-space:nowrap;">{spy_display}</span>
     </div>
-    <div style="width:1px;height:14px;background:#21262d;margin:0 8px;"></div>
+    <div style="width:1px;height:14px;background:#1e2e6e;margin:0 8px;"></div>
     <div style="display:flex;flex-direction:column;padding-right:16px;padding-left:8px;">
-      <span style="font-size:10px;color:#484f58;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">VIX</span>
+      <span style="font-size:10px;color:#7c88b0;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">VIX</span>
       <div style="white-space:nowrap;">{vix_value_html}</div>
     </div>
-    <div style="width:1px;height:14px;background:#21262d;margin:0 8px;"></div>
+    <div style="width:1px;height:14px;background:#1e2e6e;margin:0 8px;"></div>
     <div style="display:flex;flex-direction:column;padding-left:8px;">
-      <span style="font-size:10px;color:#484f58;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">US 10Y</span>
+      <span style="font-size:10px;color:#7c88b0;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;">US 10Y</span>
       <div style="white-space:nowrap;">{gs10_value_html}</div>
     </div>
   </div>
@@ -784,9 +783,9 @@ def _render_timestamps(as_of) -> None:
     st.markdown(
         f'<div style="display:flex;justify-content:space-between;align-items:center;'
         f'flex-wrap:nowrap;padding:4px 0 8px;">'
-        f'<span style="font-size:10px;color:#8899aa;white-space:nowrap;">Macro data as of {macro_date} · '
+        f'<span style="font-size:10px;color:#5b6480;white-space:nowrap;">Macro data as of {macro_date} · '
         f'Market data through {mkt_date}</span>'
-        f'<span style="font-size:10px;color:#484f58;white-space:nowrap;">Updated {updated_str}</span>'
+        f'<span style="font-size:10px;color:#8a92a8;white-space:nowrap;">Updated {updated_str}</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -820,31 +819,47 @@ def _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signa
     playbook = _load_playbook()
     playbook_text = playbook.get("baseline", "—") if playbook else "—"
     st.markdown(
-        f'<div style="background:#161b22;border:0.5px solid #21262d;'
-        f'border-left:3px solid #4a9eff;border-radius:0 6px 6px 0;'
+        f'<div style="background:#ffffff;border:0.5px solid #e3e6ec;'
+        f'border-left:3px solid #000b3d;border-radius:0 6px 6px 0;'
         f'padding:12px 16px;margin-bottom:18px;">'
-        f'<div style="font-size:10px;font-weight:600;letter-spacing:0.5px;color:#8899aa;'
+        f'<div style="font-size:10px;font-weight:600;letter-spacing:0.5px;color:#5b6480;'
         f'text-transform:uppercase;margin-bottom:6px;">Current read-through</div>'
-        f'<div style="font-size:13px;color:#c9d1d9;line-height:1.55;margin-bottom:10px;">'
+        f'<div style="font-size:13px;color:#2c3556;line-height:1.55;margin-bottom:10px;">'
         f'{interpretive_text}</div>'
-        f'<div style="border-top:1px solid #21262d;padding-top:8px;'
+        f'<div style="border-top:1px solid #e3e6ec;padding-top:8px;'
         f'display:flex;align-items:baseline;gap:8px;">'
-        f'<span style="font-size:10px;font-weight:600;letter-spacing:0.4px;color:#8899aa;">'
+        f'<span style="font-size:10px;font-weight:600;letter-spacing:0.4px;color:#5b6480;">'
         f'Playbook bias</span>'
-        f'<span style="font-size:12px;color:#c9d1d9;">{playbook_text}</span>'
+        f'<span style="font-size:12px;color:#2c3556;">{playbook_text}</span>'
         f'</div></div>',
         unsafe_allow_html=True,
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Page config + CSS
 # ─────────────────────────────────────────────────────────────────────────────
+# Page config + CSS  (Macro RR brand: navy / gold / white)
+# ─────────────────────────────────────────────────────────────────────────────
+
+import base64
+
+_ASSETS = Path(__file__).resolve().parent / "assets"
+
+
+def _asset_b64(name: str) -> str:
+    try:
+        return base64.b64encode((_ASSETS / name).read_bytes()).decode()
+    except Exception:
+        return ""
+
+
+_LOGO_B64 = _asset_b64("logo_white.png")
 
 st.set_page_config(
     layout="wide",
-    page_title="Macro Regime Radar",
-    page_icon="📡",
+    page_title="Macro RR",
+    page_icon=str(_ASSETS / "favicon.png") if (_ASSETS / "favicon.png").exists() else "📡",
+    initial_sidebar_state="collapsed",
 )
 
 # On Streamlit Cloud (GH_DB_TOKEN in secrets), pull the latest DB snapshot from the
@@ -859,91 +874,129 @@ except Exception as _db_err:  # surface, don't crash — fall back to on-disk DB
 
 st.markdown("""
 <style>
-/* Streamlit 1.54.0 — Bloomberg-Grade UI Foundation */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-/* ── Hide Streamlit toolbar for full-bleed header ─── */
+/* ── Chrome ─────────────────────────────────────── */
 header[data-testid="stHeader"] { display: none !important; }
-div.block-container { padding-top: 0 !important; }
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+html, body, [data-testid="stApp"], [data-testid="stMain"], [data-testid="stAppViewContainer"] { background: #000b3d !important; }
+[data-testid="stDecoration"], [data-testid="stStatusWidget"] { display: none !important; }
+div.block-container {
+    background: #f3f4f6; max-width: 1360px;
+    padding: 0 40px 3rem !important; margin: 0 auto; min-height: 100vh;
+}
+#MainMenu, footer { visibility: hidden; }
 
-/* ── Global font ──────────────────────────────────── */
-html, body, [class*="css"] {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+/* ── Type ───────────────────────────────────────── */
+html, body, [class*="css"], .stMarkdown, .stButton, .stSelectbox, .stRadio {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-variant-numeric: tabular-nums;
 }
-
-/* ── Spacing reduction ────────────────────────────── */
-[data-testid="stVerticalBlock"] > div { gap: 0.25rem; }
-div.stDivider { margin: 6px 0 !important; }
-hr { margin: 6px 0 !important; }
-[data-testid="stHorizontalBlock"] { gap: 0.5rem !important; }
-
-/* ── Tab bar — Streamlit 1.54.0 ──────────────────── */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 0px;
-    border-bottom: 1px solid #21262d;
+[data-testid="stMetricValue"], .mono, code, [data-testid="stDataFrame"] {
+    font-family: 'SF Mono', Menlo, Consolas, monospace !important;
 }
+h1, h2, h3 { text-wrap: balance; }
+
+/* ── Spacing ────────────────────────────────────── */
+[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
+div.stDivider, hr { margin: 8px 0 !important; border-color: #e3e6ec !important; }
+[data-testid="stHorizontalBlock"] { gap: 0.6rem !important; }
+
+/* ── Section nav (segmented control) ───────────── */
+[data-testid="stSegmentedControl"] { margin: 2px 0 0; }
+button[data-variant="segmented_control"],
+button[data-variant="pills"] {
+    border-radius: 6px !important;
+    border: 1px solid #d3d7e0 !important;
+    background: #ffffff !important;
+    color: #2c3556 !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    padding: 4px 14px !important;
+    transition: none !important;
+}
+button[data-variant="segmented_control"][data-selected="true"],
+button[data-variant="pills"][data-selected="true"] {
+    background: #000b3d !important;
+    border-color: #000b3d !important;
+    color: #ffffff !important;
+}
+button[data-variant="segmented_control"]:not([data-selected="true"]):hover,
+button[data-variant="pills"]:not([data-selected="true"]):hover { color: #000b3d !important; border-color: #000b3d !important; }
+button[data-variant="segmented_control"]:focus-visible,
+button[data-variant="pills"]:focus-visible { outline: 2px solid #000b3d !important; outline-offset: 2px; }
+[data-testid="stSegmentedControl"] [role="radiogroup"], [data-testid="stPills"] [role="radiogroup"] { gap: 6px !important; }
+
+/* ── Buttons / popover ─────────────────────────── */
+.stButton > button, [data-testid="stPopover"] > button, [data-testid="stDownloadButton"] > button {
+    border-radius: 6px; border: 1px solid #d3d7e0; background: #ffffff; color: #0b1540;
+    font-weight: 600; font-size: 12px; padding: 4px 14px;
+}
+[data-testid="stPopoverBody"], [data-testid="stPopover"] > div[role="dialog"] { background: #ffffff; border: 1px solid #d3d7e0; }
+.stButton > button:hover, [data-testid="stPopover"] > button:hover,
+[data-testid="stDownloadButton"] > button:hover { border-color: #000b3d; color: #0b1540; }
+.stButton > button:focus-visible { outline: 2px solid #000b3d; }
+
+/* ── Nested tabs (kept for Asset Allocation) ───── */
+.stTabs [data-baseweb="tab-list"] { gap: 0px; border-bottom: 1px solid #e3e6ec; }
 .stTabs [data-baseweb="tab"] {
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    color: #8899aa;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.4px;
-    padding: 8px 12px;
-    white-space: nowrap;
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    color: #5b6480; font-size: 12px; font-weight: 600; padding: 8px 12px; white-space: nowrap;
 }
 .stTabs [aria-selected="true"][data-baseweb="tab"] {
-    background: transparent !important;
-    border-bottom: 2px solid #4a9eff !important;
-    color: #e6edf3 !important;
+    background: transparent !important; border-bottom: 2px solid #000b3d !important; color: #0b1540 !important;
 }
-.stTabs [data-baseweb="tab"]:hover { color: #c9d1d9; }
+.stTabs [data-baseweb="tab"]:hover { color: #0b1540; }
 
-/* ── Legacy signal helpers ───────────────────────── */
-.sig-triggered { border-left: 4px solid #da3633; }
-.sig-ok        { border-left: 4px solid #3fb950; }
-
-/* ── Key Indicator KPI cards ─────────────────────── */
+/* ── Metric cards ──────────────────────────────── */
 [data-testid="stMetric"] {
-    background: #161b22;
-    border: 0.5px solid #21262d;
-    border-radius: 6px;
-    padding: 10px;
-    margin-bottom: 0 !important;
-    padding-bottom: 4px !important;
+    background: #ffffff; border: 1px solid #d3d7e0; border-radius: 8px;
+    padding: 12px 14px 8px; margin-bottom: 0 !important;
 }
 [data-testid="stMetricLabel"] > div {
-    font-size: 10px !important;
-    color: #8899aa !important;
-    margin-bottom: 4px;
+    font-size: 10px !important; color: #5b6480 !important; margin-bottom: 4px;
+    text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
 }
-[data-testid="stMetricValue"] > div {
-    font-size: 16px !important;
-    font-weight: 600 !important;
-    color: #e6edf3 !important;
-}
-[data-testid="stMetricDelta"] > div {
-    font-size: 10px !important;
-}
+[data-testid="stMetricValue"] > div { font-size: 20px !important; font-weight: 500 !important; color: #0b1540 !important; }
+[data-testid="stMetricDelta"] > div { font-size: 11px !important; }
+
+/* ── Expanders / dataframes ────────────────────── */
+[data-testid="stExpander"] { border: 1px solid #d3d7e0; border-radius: 8px; background: #ffffff; }
+[data-testid="stExpander"] summary { font-weight: 600; font-size: 12px; }
+
+/* ── Legacy signal helpers ─────────────────────── */
+.sig-triggered { border-left: 4px solid #d23f3f; }
+.sig-ok        { border-left: 4px solid #1e9e5a; }
+
+/* ── Sliders ───────────────────────────────────── */
+[data-testid="stSliderThumbValue"], [data-testid="stSliderThumbValue"] p { white-space: nowrap !important; text-wrap: nowrap !important; width: max-content !important; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; }
+[data-testid="stSliderTickBarMin"], [data-testid="stSliderTickBarMax"] { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 10px; }
+
+/* ── Alerts ────────────────────────────────────── */
+[data-testid="stAlert"] { border-radius: 8px; border: 1px solid #d3d7e0; }
+[data-testid="stAlertContentInfo"], [data-testid="stAlert"] [data-testid="stAlertContentInfo"] { color: #2c3556; }
+[data-testid="stAlert"] > div { background: #ffffff !important; color: #2c3556 !important; }
+[data-testid="stAlert"] { background: #ffffff; }
+
+/* ── Brand helpers ─────────────────────────────── */
+.rr-eyebrow { font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#000b3d; margin:14px 0 6px; }
+.rr-note    { font-size:12px; color:#5b6480; }
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Sidebar — Control Center
+# Chart settings (moved out of the sidebar; read from session state)
 # ─────────────────────────────────────────────────────────────────────────────
 
-with st.sidebar:
-    st.markdown("**Control Center**")
-    date_range  = st.radio("Chart window", ["6M", "1Y", "2Y", "Max"], index=2)
-    overlay_reg = st.toggle("Overlay Regimes on Charts", value=False)
-    norm_mode   = st.selectbox("Normalization", ["Raw", "Index to 100", "Z-score"])
-    st.divider()
-    st.caption("Macro Regime Radar")
+st.session_state.setdefault("rr_window", "2Y")
+st.session_state.setdefault("rr_overlay", False)
+st.session_state.setdefault("rr_norm", "Raw")
+
+date_range  = st.session_state["rr_window"]
+overlay_reg = st.session_state["rr_overlay"]
+norm_mode   = st.session_state["rr_norm"]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Load all macro data (shared across tabs)
+# Load all macro data (shared across sections)
 # ─────────────────────────────────────────────────────────────────────────────
 
 regimes_df   = load_regimes()
@@ -986,545 +1039,427 @@ regime_segs = merge_regime_segments(regimes_df)
 _render_header_bar(latest_regime, as_of)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Top-level tab navigation
+# Section navigation — 4 sections, every former tab reachable one click deeper
 # ─────────────────────────────────────────────────────────────────────────────
 
-tab_dash, tab_intel, tab_mkt, tab_sig, tab_hist, tab_cal, tab_credit, \
-tab_rec, tab_lbo, tab_alloc, tab_meth = st.tabs([
-    "Dashboard", "Intelligence", "Markets", "Signals & Alerts", "Historical Analysis",
-    "Events & Intelligence", "Credit", "Recession Risk", "LBO Calculator", "Asset Allocation", "Methodology"
-])
+SECTIONS = ["Overview", "Markets", "Risk", "Models"]
+SUBVIEWS = {
+    "Overview": ["Signals & risks", "Charts", "Why this regime", "Intelligence", "Forecasts", "Data"],
+    "Markets":  ["Snapshot", "Alerts & pricing", "Credit"],
+    "Risk":     ["Recession", "Backtests", "News & events"],
+    "Models":   ["LBO calculator", "Asset allocation", "Methodology"],
+}
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Dashboard (Decision View + Macro merged)
-# ─────────────────────────────────────────────────────────────────────────────
+nav_col, gear_col = st.columns([6, 1], vertical_alignment="center")
+with nav_col:
+    section = st.segmented_control(
+        "Section", SECTIONS, default="Overview", key="rr_section", label_visibility="collapsed",
+    ) or "Overview"
+with gear_col:
+    if section == "Overview":
+        with st.popover("Chart settings"):
+            st.radio("Chart window", ["6M", "1Y", "2Y", "Max"], key="rr_window", horizontal=True)
+            st.toggle("Shade regimes on charts", key="rr_overlay")
+            st.selectbox("Normalization", ["Raw", "Index to 100", "Z-score"], key="rr_norm")
+            st.caption("Applies to Overview charts and downloads.")
 
-with tab_dash:
-    # ── Tab context registration (Phase 12) ──────────────────────────────────
+
+def _subnav(section_name: str, default: str | None = None) -> str | None:
+    """Row of pills selecting one panel inside a section. Nothing renders until picked."""
+    options = SUBVIEWS[section_name]
+    picked = st.pills(
+        f"{section_name} panels", options, default=default,
+        key=f"rr_sub_{section_name}", label_visibility="collapsed",
+    )
+    return picked
+
+
+def _register(tab_name: str, metrics: dict, kind: str = "live") -> None:
     try:
         from utils.tab_context import register_tab_context
-        _dash_metrics = {
-            "shows": "regime read-through, signal strip, key indicators (CPI/UNRATE/spread/VIX), regime history, drivers panel",
-            "key_tools": ["get_current_regime", "get_signal_status", "get_recession_probability"],
-        }
-        if latest_regime is not None:
-            _dash_metrics["regime_label"]      = str(latest_regime["label"])
-            _dash_metrics["regime_confidence"] = float(latest_regime["confidence"])
-        if not latest_signals.empty:
-            _dash_metrics["signals_triggered"] = int(latest_signals["triggered"].sum())
-        register_tab_context("Dashboard", _dash_metrics)
+        register_tab_context(tab_name, metrics, kind=kind)
     except Exception:
         pass
 
-    # ── Timestamps ───────────────────────────────────────────────────────────
-    _render_timestamps(as_of)
 
-    # ── Market Intelligence summary card (Phase 8C) ───────────────────────
+def _safe(label: str, fn, *args, **kwargs) -> None:
     try:
-        from components.intelligence_tab import _render_intelligence_dashboard_card
-        _render_intelligence_dashboard_card()
-    except Exception:
-        pass
+        fn(*args, **kwargs)
+    except Exception as exc:
+        st.error(f"{label} error: {exc}")
 
-    # ── Read-through box ─────────────────────────────────────────────────────
-    _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signals, as_of)
 
-    # ── Recession risk summary (Phase 8) ──────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION: Overview  (hero = read-through + KPIs; everything else behind pills)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if section == "Overview":
+    _dash_metrics = {
+        "shows": "regime read-through, recession summary, key indicators (CPI/UNRATE/spread/VIX)",
+        "key_tools": ["get_current_regime", "get_signal_status", "get_recession_probability"],
+    }
+    if latest_regime is not None:
+        _dash_metrics["regime_label"]      = str(latest_regime["label"])
+        _dash_metrics["regime_confidence"] = float(latest_regime["confidence"])
+    if not latest_signals.empty:
+        _dash_metrics["signals_triggered"] = int(latest_signals["triggered"].sum())
+    _register("Dashboard", _dash_metrics)
+
+    _render_timestamps(as_of)
+    with st.expander("Current read-through", expanded=False):
+        _render_read_through_box(latest_regime, derived_df, regimes_df, latest_signals, as_of)
+
     try:
         from components.recession_tab import render_recession_summary
         render_recession_summary()
     except Exception:
         pass
 
-    # ── Decision View (regime tile, risks, events, signals strip, surprises) ─
-    try:
-        from components.decision_view import render_decision_view
-        render_decision_view(
-            latest_regime=latest_regime,
-            regimes_df=regimes_df,
-            latest_signals=latest_signals,
-            signals_df=signals_df,
-            as_of=as_of,
-        )
-    except Exception as exc:
-        st.error(f"Decision View error: {exc}")
-
-    st.divider()
-
-    # ── Key Indicators (KPI strip) ────────────────────────────────────────────
-    section_header("Key Indicators")
-
-    # rising_bad → rising is bad (red); rising_good → rising is good (green)
-    _KPI_DIRECTION = {
-        "CPI_YOY": "rising_bad",
-        "UNRATE":  "rising_bad",
-        "SPREAD":  "rising_good",
-        "VIXCLS":  "rising_bad",
-    }
+    # ── Key indicators (self-contained brand cards: label, value, delta, sparkline, momentum) ──
+    _KPI_DIRECTION = {"CPI_YOY": "rising_bad", "UNRATE": "rising_bad", "SPREAD": "rising_good", "VIXCLS": "rising_bad"}
 
     def _momentum_color(label: str, series_key: str) -> str:
-        """Return CSS color for a momentum label based on series direction."""
         direction = _KPI_DIRECTION.get(series_key, "rising_bad")
         rising = "Rising" in label or "Accelerating" in label
         if direction == "rising_bad":
-            return "#da3633" if rising else "#3fb950"
-        else:
-            return "#3fb950" if rising else "#da3633"
+            return "#d23f3f" if rising else "#1e9e5a"
+        return "#1e9e5a" if rising else "#d23f3f"
 
-    def _sparkline_and_momentum(col, series_key: str, derived_col: str) -> None:
-        """Render sparkline + momentum label inside an already-active column context."""
-        vals_series = gcol(derived_df, derived_col).dropna()
-        vals = tuple(vals_series.iloc[-12:].tolist())
-        if len(vals) >= 3:
-            spark_color = "#4a9eff"
-            b64 = generate_sparkline_b64(vals, color=spark_color)
-            if b64:
-                col.markdown(
-                    f'<img src="data:image/png;base64,{b64}" '
-                    f'style="width:100%;margin:4px 0 2px;" />',
-                    unsafe_allow_html=True,
-                )
-            lbl, arrow, fixed_color = compute_momentum(vals)
-            color = fixed_color if fixed_color is not None else _momentum_color(lbl, series_key)
-            col.markdown(
-                f'<span style="color:{color};font-size:12px">{lbl} (3M)</span>',
-                unsafe_allow_html=True,
-            )
-
-    kpi = st.columns(5)
+    def _kpi_card(label: str, value: str, delta: str | None, delta_good: bool | None,
+                  series_key: str | None, derived_col: str | None) -> str:
+        delta_html = ""
+        if delta:
+            dc = "#5b6480" if delta_good is None else ("#1e9e5a" if delta_good else "#d23f3f")
+            delta_html = f'<span style="font-size:11px;color:{dc};margin-left:8px;">{delta}</span>'
+        spark_html, mom_html = "", ""
+        if series_key and derived_col and not derived_df.empty:
+            vals = tuple(gcol(derived_df, derived_col).dropna().iloc[-12:].tolist())
+            if len(vals) >= 3:
+                b64 = generate_sparkline_b64(vals, color="#000b3d")
+                if b64:
+                    spark_html = (f'<img src="data:image/png;base64,{b64}" alt="12-month trend" '
+                                  f'style="width:100%;height:26px;object-fit:contain;display:block;margin:10px 0 4px;" />')
+                lbl, arrow, fixed = compute_momentum(vals)
+                mc = fixed if fixed is not None else _momentum_color(lbl, series_key)
+                mom_html = f'<div style="font-size:11px;color:{mc};">{lbl} (3M)</div>'
+        return (
+            f'<div style="background:#ffffff;border:1px solid #d3d7e0;border-radius:8px;padding:12px 14px;min-height:118px;">'
+            f'<div style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#5b6480;">{label}</div>'
+            f'<div style="display:flex;align-items:baseline;margin-top:6px;">'
+            f'<span style="font-family:\'SF Mono\',Menlo,Consolas,monospace;font-size:22px;font-weight:500;color:#0b1540;">{value}</span>'
+            f'{delta_html}</div>{spark_html}{mom_html}</div>'
+        )
 
     if not derived_df.empty:
-        # 1. CPI YoY
         cpi_val  = _latest(gcol(derived_df, "CPI_YOY"))
         cpi_prev = _prev(gcol(derived_df, "CPI_YOY"))
-        cpi_d    = f"{cpi_val - cpi_prev:+.2f}pp" if (cpi_val is not None and cpi_prev is not None) else None
-        kpi[0].metric("CPI YoY (%)", f"{cpi_val:.2f}" if cpi_val is not None else "N/A", delta=cpi_d)
-        _sparkline_and_momentum(kpi[0], "CPI_YOY", "CPI_YOY")
-
-        # 2. Unemployment
-        ur_val = _latest(gcol(derived_df, "UNRATE"))
-        ur_3m  = _latest(gcol(derived_df, "UNRATE_3M"))
-        ur_d   = f"{ur_3m:+.2f}pp (3M)" if ur_3m is not None else None
-        kpi[1].metric("Unemployment Rate", f"{ur_val:.1f}%" if ur_val is not None else "N/A", delta=ur_d)
-        _sparkline_and_momentum(kpi[1], "UNRATE", "UNRATE")
-
-        # 3. Yield spread
+        cpi_chg  = (cpi_val - cpi_prev) if (cpi_val is not None and cpi_prev is not None) else None
+        ur_val   = _latest(gcol(derived_df, "UNRATE"))
+        ur_3m    = _latest(gcol(derived_df, "UNRATE_3M"))
         sp_val   = _latest(gcol(derived_df, "SPREAD"))
         inverted = sp_val is not None and sp_val < 0
-        sp_label = "10Y–2Y Spread" + (" 🔴 Inverted" if inverted else "")
-        kpi[2].metric(sp_label, f"{sp_val:.2f}%" if sp_val is not None else "N/A")
-        _sparkline_and_momentum(kpi[2], "SPREAD", "SPREAD")
-
-        # 4. VIX
-        vix_val = _latest(gcol(derived_df, "VIXCLS"))
-        vix_d   = f"{vix_val - 30:.1f} from 30" if vix_val is not None else None
-        kpi[3].metric("VIX", f"{vix_val:.1f}" if vix_val is not None else "N/A", delta=vix_d)
-        _sparkline_and_momentum(kpi[3], "VIXCLS", "VIXCLS")
-
-        # 5. Regime trend inputs
-        if latest_regime is not None:
-            kpi[4].metric(
-                "Growth / Infl Trend",
-                f"{float(latest_regime['growth_trend']):.3f} / {float(latest_regime['inflation_trend']):.3f}",
-            )
-        else:
-            kpi[4].metric("Growth / Infl Trend", "N/A")
+        vix_val  = _latest(gcol(derived_df, "VIXCLS"))
+        trend    = (f"{float(latest_regime['growth_trend']):.3f} / {float(latest_regime['inflation_trend']):.3f}"
+                    if latest_regime is not None else "N/A")
+        cards = [
+            _kpi_card("CPI YoY (%)", f"{cpi_val:.2f}" if cpi_val is not None else "N/A",
+                      f"{cpi_chg:+.2f}pp" if cpi_chg is not None else None,
+                      (cpi_chg <= 0) if cpi_chg is not None else None, "CPI_YOY", "CPI_YOY"),
+            _kpi_card("Unemployment rate", f"{ur_val:.1f}%" if ur_val is not None else "N/A",
+                      f"{ur_3m:+.2f}pp (3M)" if ur_3m is not None else None,
+                      (ur_3m <= 0) if ur_3m is not None else None, "UNRATE", "UNRATE"),
+            _kpi_card("10Y–2Y spread" + (" (inverted)" if inverted else ""),
+                      f"{sp_val:.2f}%" if sp_val is not None else "N/A", None, None, "SPREAD", "SPREAD"),
+            _kpi_card("VIX", f"{vix_val:.1f}" if vix_val is not None else "N/A",
+                      f"{vix_val - 30:+.1f} vs 30" if vix_val is not None else None,
+                      (vix_val < 30) if vix_val is not None else None, "VIXCLS", "VIXCLS"),
+            _kpi_card("Growth / infl trend", trend, None, None, None, None),
+        ]
+        st.markdown(
+            '<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0 4px;">'
+            + "".join(cards) + "</div>",
+            unsafe_allow_html=True,
+        )
     else:
         st.warning("Raw series unavailable — KPIs cannot be computed.")
 
-    st.divider()
+    st.markdown('<div class="rr-eyebrow">Open a panel</div>', unsafe_allow_html=True)
+    panel = _subnav("Overview")
 
-    # ── Charts ────────────────────────────────────────────────────────────────
-    section_header("Charts")
+    # ── Panel: Signals & risks (former Decision View) ────────────────────────
+    if panel == "Signals & risks":
+        try:
+            from components.decision_view import render_decision_view
+            render_decision_view(
+                latest_regime=latest_regime, regimes_df=regimes_df,
+                latest_signals=latest_signals, signals_df=signals_df, as_of=as_of,
+            )
+        except Exception as exc:
+            st.error(f"Decision View error: {exc}")
 
-    if derived_df.empty:
-        st.warning("No raw series data available for charts.")
-    else:
-        chart_df   = derived_df[derived_df.index >= win_start]
-        reg_window = regime_segs[regime_segs["start"] >= win_start] if not regime_segs.empty else pd.DataFrame()
+    # ── Panel: Charts ────────────────────────────────────────────────────────
+    elif panel == "Charts":
+        if derived_df.empty:
+            st.warning("No raw series data available for charts.")
+        else:
+            chart_df   = derived_df[derived_df.index >= win_start]
+            reg_window = regime_segs[regime_segs["start"] >= win_start] if not regime_segs.empty else pd.DataFrame()
 
-        def make_line_fig(series: pd.Series, title: str, y_title: str,
-                          color: str, hlines=None) -> go.Figure:
-            s = apply_norm(series.dropna(), norm_mode)
-            fig = go.Figure()
-            if overlay_reg and not reg_window.empty:
-                fig = add_regime_bg(fig, reg_window)
-            fig.add_trace(go.Scatter(
-                x=s.index, y=s.values,
-                name=y_title,
-                line=dict(color=color, width=2),
-                hovertemplate="%{x|%b %Y}: %{y:.2f}<extra></extra>",
-            ))
-            if hlines and norm_mode == "Raw":
-                for y_val, dash, ann in hlines:
-                    fig.add_hline(
-                        y=y_val, line_dash=dash, line_color="#555", line_width=1,
-                        annotation_text=ann, annotation_position="top left",
-                        annotation_font_size=11,
-                    )
-            fig.update_layout(**base_layout(title, y_title))
-            return fig
-
-        ctab1, ctab2, ctab3, ctab4 = st.tabs(["CPI YoY", "Unemployment", "Yield Curve", "VIX"])
-
-        with ctab1:
-            s = gcol(chart_df, "CPI_YOY")
-            if not s.dropna().empty:
-                fig = make_line_fig(
-                    s, "CPI Year-over-Year (%)", "% YoY", "#e74c3c",
-                    hlines=[
-                        (4.0, "dash", "Hot threshold (4%)"),
-                        (1.0, "dot",  "Cold threshold (1%)"),
-                    ],
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("CPI YoY not available in selected window.")
-
-        with ctab2:
-            s = gcol(chart_df, "UNRATE")
-            if not s.dropna().empty:
-                fig = make_line_fig(s, "Unemployment Rate (%)", "% Unemployed", "#3498db")
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("Unemployment data not available.")
-
-        with ctab3:
-            s = gcol(chart_df, "SPREAD")
-            if not s.dropna().empty:
-                norm_s = apply_norm(s.dropna(), norm_mode)
+            def make_line_fig(series: pd.Series, title: str, y_title: str,
+                              color: str, hlines=None) -> go.Figure:
+                s = apply_norm(series.dropna(), norm_mode)
                 fig = go.Figure()
                 if overlay_reg and not reg_window.empty:
                     fig = add_regime_bg(fig, reg_window)
                 fig.add_trace(go.Scatter(
-                    x=norm_s.index, y=norm_s.values,
-                    name="10Y–2Y Spread",
-                    line=dict(color="#9b59b6", width=2),
-                    fill="tozeroy",
-                    fillcolor="rgba(155,89,182,0.12)",
-                    hovertemplate="%{x|%b %Y}: %{y:.2f}%<extra></extra>",
+                    x=s.index, y=s.values, name=y_title,
+                    line=dict(color=color, width=2),
+                    hovertemplate="%{x|%b %Y}: %{y:.2f}<extra></extra>",
                 ))
-                if norm_mode == "Raw":
-                    fig.add_hline(
-                        y=0, line_dash="solid", line_color="#e74c3c", line_width=1.5,
-                        annotation_text="Inversion (0%)", annotation_position="top left",
-                        annotation_font_size=11,
+                if hlines and norm_mode == "Raw":
+                    for y_val, dash, ann in hlines:
+                        fig.add_hline(
+                            y=y_val, line_dash=dash, line_color="#8a92a8", line_width=1,
+                            annotation_text=ann, annotation_position="top left",
+                            annotation_font_size=11, annotation_font_color="#5b6480",
+                        )
+                fig.update_layout(**base_layout(title, y_title))
+                return fig
+
+            chart_pick = st.pills(
+                "Series", ["CPI YoY", "Unemployment", "Yield curve", "VIX"],
+                default="CPI YoY", key="rr_chart_pick", label_visibility="collapsed",
+            ) or "CPI YoY"
+
+            if chart_pick == "CPI YoY":
+                s = gcol(chart_df, "CPI_YOY")
+                if not s.dropna().empty:
+                    fig = make_line_fig(
+                        s, "CPI Year-over-Year (%)", "% YoY", "#d23f3f",
+                        hlines=[(4.0, "dash", "Hot threshold (4%)"), (1.0, "dot", "Cold threshold (1%)")],
                     )
-                fig.update_layout(**base_layout("Yield Curve Spread: 10Y – 2Y (%)", "Spread (%)"))
-                st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("CPI YoY not available in selected window.")
+            elif chart_pick == "Unemployment":
+                s = gcol(chart_df, "UNRATE")
+                if not s.dropna().empty:
+                    st.plotly_chart(make_line_fig(s, "Unemployment Rate (%)", "% Unemployed", "#3b6fc4"),
+                                    use_container_width=True)
+                else:
+                    st.warning("Unemployment data not available.")
+            elif chart_pick == "Yield curve":
+                s = gcol(chart_df, "SPREAD")
+                if not s.dropna().empty:
+                    norm_s = apply_norm(s.dropna(), norm_mode)
+                    fig = go.Figure()
+                    if overlay_reg and not reg_window.empty:
+                        fig = add_regime_bg(fig, reg_window)
+                    fig.add_trace(go.Scatter(
+                        x=norm_s.index, y=norm_s.values, name="10Y–2Y Spread",
+                        line=dict(color="#000b3d", width=2),
+                        fill="tozeroy", fillcolor="rgba(0,11,61,0.12)",
+                        hovertemplate="%{x|%b %Y}: %{y:.2f}%<extra></extra>",
+                    ))
+                    if norm_mode == "Raw":
+                        fig.add_hline(
+                            y=0, line_dash="solid", line_color="#d23f3f", line_width=1.5,
+                            annotation_text="Inversion (0%)", annotation_position="top left",
+                            annotation_font_size=11, annotation_font_color="#5b6480",
+                        )
+                    fig.update_layout(**base_layout("Yield Curve Spread: 10Y – 2Y (%)", "Spread (%)"))
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("Yield spread data not available.")
             else:
-                st.warning("Yield spread data not available.")
+                s = gcol(chart_df, "VIXCLS")
+                if not s.dropna().empty:
+                    fig = make_line_fig(s, "CBOE Volatility Index (VIX)", "VIX", "#d9772a",
+                                        hlines=[(30.0, "dash", "Spike threshold (30)")])
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("VIX data not available.")
 
-        with ctab4:
-            s = gcol(chart_df, "VIXCLS")
-            if not s.dropna().empty:
-                fig = make_line_fig(
-                    s, "CBOE Volatility Index (VIX)", "VIX", "#f39c12",
-                    hlines=[(30.0, "dash", "Spike threshold (30)")],
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("VIX data not available.")
-
-    st.divider()
-
-    # ── Regime History (Last 12 Months) ──────────────────────────────────────
-    section_header("Regime History (Last 12 Months)")
-
-    if regimes_df.empty:
-        st.warning("No regime data available.")
-    else:
-        twelve_ago = (as_of - pd.DateOffset(months=12)) if as_of is not None else pd.Timestamp("2020-01-01")
-        hist_segs  = regime_segs[regime_segs["start"] >= twelve_ago].copy()
-
-        if hist_segs.empty:
-            st.info("No regime segments in the last 12 months.")
+    # ── Panel: Why this regime (drivers + 12-month history) ──────────────────
+    elif panel == "Why this regime":
+        if latest_regime is None or derived_df.empty:
+            st.info("No regime or derived data available.")
         else:
-            fig_gantt = px.timeline(
-                hist_segs,
-                x_start="start",
-                x_end="end",
-                y="Task",
-                color="label",
-                color_discrete_map=REGIME_COLORS,
-                hover_data={"label": True, "confidence": ":.1%", "Task": False},
-                labels={"label": "Regime"},
-                text="label",
-            )
-            fig_gantt.update_yaxes(showticklabels=False, title="")
-            fig_gantt.update_xaxes(tickformat="%b %Y", title="")
-            fig_gantt.update_traces(textposition="inside", insidetextanchor="middle")
-            fig_gantt.update_layout(
-                height=110,
-                margin=dict(l=20, r=20, t=30, b=20),
-                template="plotly_white",
-                showlegend=True,
-                legend=dict(orientation="h", y=1.4, title=""),
-            )
-            st.plotly_chart(fig_gantt, use_container_width=True)
+            col_bar, col_tbl = st.columns([1, 2])
+            with col_bar:
+                subsection_header("Regime inputs")
+                gt = float(latest_regime["growth_trend"])
+                it = float(latest_regime["inflation_trend"])
+                fig_b = go.Figure(go.Bar(
+                    x=["Growth Trend", "Inflation Trend"], y=[gt, it],
+                    text=[f"{gt:.3f}", f"{it:.3f}"], textposition="outside",
+                    marker_color=["#1e9e5a" if gt >= 0 else "#d23f3f", "#d23f3f" if it > 0.5 else "#d9772a"],
+                ))
+                fig_b.update_layout(height=260, margin=dict(l=20, r=20, t=20, b=20),
+                                    template="macro_rr", showlegend=False, yaxis_title="Trend value")
+                st.plotly_chart(fig_b, use_container_width=True)
 
-        if as_of is not None:
-            dur  = regime_duration_months(regimes_df, as_of)
-            sw12 = max(0, regime_switches_n_months(regimes_df, as_of))
-            c1, c2 = st.columns(2)
-            c1.metric("Months in Current Regime", str(dur))
-            c2.metric("Regime Switches (12M)", str(sw12))
+            with col_tbl:
+                subsection_header("Indicator snapshot (latest)")
+                snap_rows = []
+                for col_name, disp_name, unit in [
+                    ("CPI_YOY", "CPI YoY", "%"), ("INDPRO_YOY", "INDPRO YoY", "%"),
+                    ("INDPRO_3M", "INDPRO 3M Chg", "%"), ("UNRATE", "Unemployment", "%"),
+                    ("UNRATE_3M", "UNRATE 3M Chg", "pp"), ("SPREAD", "10Y–2Y Spread", "%"),
+                    ("VIXCLS", "VIX", ""),
+                ]:
+                    v = _latest(gcol(derived_df, col_name))
+                    snap_rows.append({"Indicator": disp_name, "Value": f"{v:.2f}{unit}" if v is not None else "N/A"})
+                st.dataframe(pd.DataFrame(snap_rows), hide_index=True, width="stretch")
 
-    st.divider()
+                subsection_header("Top drivers by |z-score| vs. 2Y window")
+                win_2y = derived_df[derived_df.index >= derived_df.index.max() - pd.DateOffset(months=24)]
+                nice = {"CPI_YOY": "CPI YoY", "INDPRO_YOY": "INDPRO YoY", "UNRATE": "Unemployment",
+                        "SPREAD": "Yield Spread", "VIXCLS": "VIX"}
+                zscores = {}
+                for cn in nice:
+                    s = gcol(win_2y, cn).dropna()
+                    if len(s) >= 3 and s.std() != 0:
+                        zscores[cn] = float((s.iloc[-1] - s.mean()) / s.std())
+                bullets = [
+                    f"- **{nice[k]}**: {v:+.2f}σ ({'above' if v > 0 else 'below'} 2Y avg)"
+                    for k, v in sorted(zscores.items(), key=lambda x: abs(x[1]), reverse=True)[:4]
+                ]
+                st.markdown("\n".join(bullets) if bullets else "*Insufficient data for z-score ranking.*")
 
-    # ── Drivers Panel ("Why this regime?") ────────────────────────────────────
-    section_header("Why This Regime? — Drivers Panel")
+        section_header("Regime history (last 12 months)")
+        if regimes_df.empty:
+            st.warning("No regime data available.")
+        else:
+            twelve_ago = (as_of - pd.DateOffset(months=12)) if as_of is not None else pd.Timestamp("2020-01-01")
+            hist_segs  = regime_segs[regime_segs["start"] >= twelve_ago].copy()
+            if hist_segs.empty:
+                st.info("No regime segments in the last 12 months.")
+            else:
+                fig_gantt = px.timeline(
+                    hist_segs, x_start="start", x_end="end", y="Task", color="label",
+                    color_discrete_map=REGIME_COLORS,
+                    hover_data={"label": True, "confidence": ":.1%", "Task": False},
+                    labels={"label": "Regime"}, text="label",
+                )
+                fig_gantt.update_yaxes(showticklabels=False, title="")
+                fig_gantt.update_xaxes(tickformat="%b %Y", title="")
+                fig_gantt.update_traces(textposition="inside", insidetextanchor="middle")
+                fig_gantt.update_traces(textfont=dict(size=12, color="#ffffff"), marker_line_width=0)
+                fig_gantt.update_layout(height=190, margin=dict(l=20, r=20, t=56, b=36),
+                                        bargap=0.35, template="macro_rr", showlegend=True,
+                                        legend=dict(orientation="h", y=1.55, x=0, title="",
+                                                    font=dict(size=12), itemwidth=40))
+                st.plotly_chart(fig_gantt, use_container_width=True)
+            if as_of is not None:
+                dur  = regime_duration_months(regimes_df, as_of)
+                sw12 = max(0, regime_switches_n_months(regimes_df, as_of))
+                c1, c2 = st.columns(2)
+                c1.metric("Months in current regime", str(dur))
+                c2.metric("Regime switches (12M)", str(sw12))
 
-    if latest_regime is None or derived_df.empty:
-        st.info("No regime or derived data available.")
-    else:
-        col_bar, col_tbl = st.columns([1, 2])
+    # ── Panel: Intelligence (former Intelligence tab) ────────────────────────
+    elif panel == "Intelligence":
+        try:
+            from components.intelligence_tab import render as render_intel
+            render_intel()
+        except Exception as exc:
+            st.error(f"Intelligence error: {exc}")
 
-        with col_bar:
-            subsection_header("Regime Inputs")
-            gt = float(latest_regime["growth_trend"])
-            it = float(latest_regime["inflation_trend"])
-            fig_b = go.Figure(go.Bar(
-                x=["Growth Trend", "Inflation Trend"],
-                y=[gt, it],
-                text=[f"{gt:.3f}", f"{it:.3f}"],
-                textposition="outside",
-                marker_color=[
-                    "#2ecc71" if gt >= 0 else "#e74c3c",
-                    "#e74c3c" if it > 0.5 else "#f39c12",
-                ],
-            ))
-            fig_b.update_layout(
-                height=260,
-                margin=dict(l=20, r=20, t=20, b=20),
-                template="plotly_white",
-                showlegend=False,
-                yaxis_title="Trend value",
-            )
-            st.plotly_chart(fig_b, use_container_width=True)
+    # ── Panel: Forecasts ─────────────────────────────────────────────────────
+    elif panel == "Forecasts":
+        try:
+            from components.macro_forecasts import render_macro_forecasts
+            render_macro_forecasts()
+        except Exception as exc:
+            st.warning(f"Macro Forecasts unavailable: {exc}")
 
-        with col_tbl:
-            subsection_header("Indicator Snapshot (latest)")
-            snap_rows = []
-            for col_name, disp_name, unit in [
-                ("CPI_YOY",    "CPI YoY",        "%"),
-                ("INDPRO_YOY", "INDPRO YoY",     "%"),
-                ("INDPRO_3M",  "INDPRO 3M Chg",  "%"),
-                ("UNRATE",     "Unemployment",   "%"),
-                ("UNRATE_3M",  "UNRATE 3M Chg", "pp"),
-                ("SPREAD",     "10Y–2Y Spread",  "%"),
-                ("VIXCLS",     "VIX",             ""),
-            ]:
-                v = _latest(gcol(derived_df, col_name))
-                snap_rows.append({
-                    "Indicator": disp_name,
-                    "Value": f"{v:.2f}{unit}" if v is not None else "N/A",
-                })
-            st.dataframe(pd.DataFrame(snap_rows), hide_index=True, width="stretch")
-
-            subsection_header("Top Drivers by |Z-score| vs. 2Y window")
-            win_2y = derived_df[derived_df.index >= derived_df.index.max() - pd.DateOffset(months=24)]
-            nice   = {
-                "CPI_YOY":    "CPI YoY",
-                "INDPRO_YOY": "INDPRO YoY",
-                "UNRATE":     "Unemployment",
-                "SPREAD":     "Yield Spread",
-                "VIXCLS":     "VIX",
-            }
-            zscores = {}
-            for cn in nice:
-                s = gcol(win_2y, cn).dropna()
-                if len(s) >= 3 and s.std() != 0:
-                    zscores[cn] = float((s.iloc[-1] - s.mean()) / s.std())
-
-            bullets = [
-                f"- **{nice[k]}**: {v:+.2f}σ ({'above' if v > 0 else 'below'} 2Y avg)"
-                for k, v in sorted(zscores.items(), key=lambda x: abs(x[1]), reverse=True)[:4]
-            ]
-            st.markdown("\n".join(bullets) if bullets else "*Insufficient data for z-score ranking.*")
-
-    # ── Data Freshness & Quality ──────────────────────────────────────────────
-    with st.expander("Data Freshness & Quality"):
+    # ── Panel: Data (freshness + downloads) ──────────────────────────────────
+    elif panel == "Data":
         if not freshness_df.empty:
-            st.markdown("**Latest available date per series**")
+            subsection_header("Latest available date per series")
             st.dataframe(freshness_df, hide_index=True, width="stretch")
-
             if not wide_df.empty:
-                st.markdown("**Data completeness in selected window**")
+                subsection_header("Data completeness in selected window")
                 wdf   = wide_df[wide_df.index >= win_start]
                 miss  = wdf.isnull().sum()
                 total = len(wdf)
-                miss_rows = pd.DataFrame({
-                    "Series":       miss.index,
-                    "Missing Rows": miss.values,
-                    "Total Rows":   total,
-                    "Completeness": [
-                        f"{(total - m) / total * 100:.0f}%" for m in miss.values
-                    ],
-                })
-                st.dataframe(miss_rows, hide_index=True, width="stretch")
+                st.dataframe(pd.DataFrame({
+                    "Series": miss.index, "Missing Rows": miss.values, "Total Rows": total,
+                    "Completeness": [f"{(total - m) / total * 100:.0f}%" for m in miss.values],
+                }), hide_index=True, width="stretch")
         else:
             st.info("No freshness data available.")
 
-    # ── Macro Forecasts (Phase 12C — Prophet) ─────────────────────────────────
-    section_header("Macro Forecasts")
-    try:
-        from components.macro_forecasts import render_macro_forecasts
-        render_macro_forecasts()
-    except Exception as exc:
-        st.warning(f"Macro Forecasts unavailable: {exc}")
-
-    # ── Downloads ─────────────────────────────────────────────────────────────
-    section_header("Downloads")
-
-    dl1, dl2, dl3 = st.columns(3)
-
-    with dl1:
-        if not wide_df.empty:
-            df_dl = wide_df[wide_df.index >= win_start].reset_index()
-            st.download_button(
-                "⬇ Raw Series (selected window)",
-                data=df_dl.to_csv(index=False).encode(),
-                file_name=f"raw_series_{date_range}.csv",
-                mime="text/csv",
-            )
-
-    with dl2:
-        if not regimes_df.empty:
-            st.download_button(
-                "⬇ Regimes Table",
-                data=regimes_df.to_csv(index=False).encode(),
-                file_name="regimes.csv",
-                mime="text/csv",
-            )
-
-    with dl3:
-        if not signals_df.empty:
-            st.download_button(
-                "⬇ Signals Table",
-                data=signals_df.to_csv(index=False).encode(),
-                file_name="signals.csv",
-                mime="text/csv",
-            )
+        subsection_header("Downloads")
+        dl1, dl2, dl3 = st.columns(3)
+        with dl1:
+            if not wide_df.empty:
+                df_dl = wide_df[wide_df.index >= win_start].reset_index()
+                st.download_button("Download raw series (window)", data=df_dl.to_csv(index=False).encode(),
+                                   file_name=f"raw_series_{date_range}.csv", mime="text/csv")
+        with dl2:
+            if not regimes_df.empty:
+                st.download_button("Download regimes table", data=regimes_df.to_csv(index=False).encode(),
+                                   file_name="regimes.csv", mime="text/csv")
+        with dl3:
+            if not signals_df.empty:
+                st.download_button("Download signals table", data=signals_df.to_csv(index=False).encode(),
+                                   file_name="signals.csv", mime="text/csv")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB: Intelligence (Phase 8C)
+# SECTION: Markets  (Snapshot · Alerts & pricing · Credit)
 # ─────────────────────────────────────────────────────────────────────────────
 
-with tab_intel:
-    try:
-        from components.intelligence_tab import render as render_intel
-        render_intel()
-    except Exception as exc:
-        st.error(f"Intelligence tab error: {exc}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Markets
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_mkt:
-    try:
+elif section == "Markets":
+    panel = _subnav("Markets", default="Snapshot")
+    if panel == "Snapshot":
         from components.market_snapshot import render_market_snapshot
-        render_market_snapshot(wide_df=wide_df)
-    except Exception as exc:
-        st.error(f"Market Snapshot error: {exc}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Signals & Alerts
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_sig:
-    try:
+        _safe("Market Snapshot", render_market_snapshot, wide_df=wide_df)
+    elif panel == "Alerts & pricing":
         from components.alerts_tab import render_alerts_tab
-        render_alerts_tab()
-    except Exception as exc:
-        st.error(f"Alerts error: {exc}")
-    st.markdown("---")
-    try:
         from components.whats_priced import render_whats_priced
-        render_whats_priced()
-    except Exception as exc:
-        st.error(f"What's Priced error: {exc}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Historical Analysis
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_hist:
-    try:
-        from components.backtests import render_backtests
-        render_backtests()
-    except Exception as exc:
-        st.error(f"Backtests error: {exc}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Events & Intelligence (Phase 11 — News Feed + Calendar)
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_cal:
-    try:
-        from components.events_tab import render_events_tab
-        render_events_tab(latest_signals=latest_signals)
-    except Exception as exc:
-        st.error(f"Events & Intelligence error: {exc}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Credit (Phase 7 — BAML OAS spreads + analytics)
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_credit:
-    try:
+        _safe("Alerts", render_alerts_tab)
+        st.markdown("---")
+        _safe("What's Priced", render_whats_priced)
+    elif panel == "Credit":
         from components.credit_tab import render as render_credit
-        render_credit()
-    except Exception as exc:
-        st.error(f"Credit tab error: {exc}")
+        _safe("Credit", render_credit)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB: Recession Risk (Phase 8)
+# SECTION: Risk  (Recession · Backtests · News & events)
 # ─────────────────────────────────────────────────────────────────────────────
 
-with tab_rec:
-    try:
+elif section == "Risk":
+    panel = _subnav("Risk", default="Recession")
+    if panel == "Recession":
         from components.recession_tab import render as render_recession
-        render_recession()
-    except Exception as exc:
-        st.error(f"Recession Risk tab error: {exc}")
+        _safe("Recession Risk", render_recession)
+    elif panel == "Backtests":
+        from components.backtests import render_backtests
+        _safe("Backtests", render_backtests)
+    elif panel == "News & events":
+        from components.events_tab import render_events_tab
+        _safe("Events & Intelligence", render_events_tab, latest_signals=latest_signals)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB: LBO Calculator (Phase 8B)
+# SECTION: Models  (LBO · Asset allocation · Methodology)
 # ─────────────────────────────────────────────────────────────────────────────
 
-with tab_lbo:
-    try:
+elif section == "Models":
+    panel = _subnav("Models", default="LBO calculator")
+    if panel == "LBO calculator":
         from components.lbo_tab import render as render_lbo
-        render_lbo()
-    except Exception as exc:
-        st.error(f"LBO Calculator error: {exc}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Asset Allocation (Phase 9A)
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_alloc:
-    try:
+        _safe("LBO Calculator", render_lbo)
+    elif panel == "Asset allocation":
         from components.allocation_tab import render as render_allocation
-        render_allocation()
-    except Exception as exc:
-        st.error(f"Asset Allocation error: {exc}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB: Methodology
-# ─────────────────────────────────────────────────────────────────────────────
-
-with tab_meth:
-    try:
+        _safe("Asset Allocation", render_allocation)
+    elif panel == "Methodology":
         from components.methodology import render_methodology
-        render_methodology()
-    except Exception as exc:
-        st.error(f"Methodology error: {exc}")
+        _safe("Methodology", render_methodology)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Floating AI Analyst (Phase 12) — appears on every tab
+# Floating AI Analyst — appears on every section
 # ─────────────────────────────────────────────────────────────────────────────
 
 try:
@@ -1538,7 +1473,7 @@ except Exception as exc:
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.markdown("""
-<div style="padding: 8px 20px; border-top: 1px solid #21262d; text-align: center; margin-top: 40px;">
-  <span style="font-size: 9px; color: #3d444d; letter-spacing: 0.3px;">Data: FRED · Yahoo Finance (yfinance) · Finnhub · NewsAPI · RSS</span>
+<div style="padding: 10px 20px; border-top: 1px solid #e3e6ec; text-align: center; margin-top: 40px;">
+  <span style="font-size: 10px; color: #8a92a8;">Data: FRED, Yahoo Finance, Finnhub, NewsAPI, RSS</span>
 </div>
 """, unsafe_allow_html=True)

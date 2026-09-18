@@ -21,7 +21,7 @@ from components.shared_styles import section_header, SIGNAL_DISPLAY_NAMES
 
 _ET = ZoneInfo("America/New_York")
 
-IMP_COLORS = {"high": "#e74c3c", "medium": "#f39c12", "low": "#95a5a6"}
+IMP_COLORS = {"high": "#d23f3f", "medium": "#d9772a", "low": "#7a829a"}
 IMP_ICONS  = {"high": "🔴", "medium": "🟡", "low": "⚪"}
 LEVEL_ICONS = {"risk": "🔴", "watch": "🟡", "info": "🔵"}
 
@@ -110,13 +110,13 @@ def _render_events_table(df: pd.DataFrame, full: bool = False) -> None:
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:10px;'
             f'padding:8px 12px;margin-bottom:6px;border-radius:6px;'
-            f'background:#161b22;border:0.5px solid #21262d;border-left:3px solid {color}">'
+            f'background:#ffffff;border:0.5px solid #e3e6ec;border-left:3px solid {color}">'
             f'<div style="flex:1">'
-            f'<span style="font-size:13px;font-weight:{weight};color:#e6edf3">{name}</span><br>'
-            f'<span style="font-size:11px;color:#8899aa">{time_str}</span>'
+            f'<span style="font-size:13px;font-weight:{weight};color:#0b1540">{name}</span><br>'
+            f'<span style="font-size:11px;color:#5b6480">{time_str}</span>'
             f'</div>'
             f'<div style="text-align:right">'
-            f'<span style="font-size:12px;color:#c9d1d9;font-weight:600">{days_str}</span><br>'
+            f'<span style="font-size:12px;color:#2c3556;font-weight:600">{days_str}</span><br>'
             f'<span style="font-size:11px;color:{color}">{imp.upper()}</span>'
             f'</div>'
             f'</div>',
@@ -172,8 +172,8 @@ def _render_what_to_watch(
         return
 
     st.markdown(
-        '<div style="background:#161b22;border:0.5px solid #21262d;border-left:4px solid #4a9eff;'
-        'padding:16px 20px;border-radius:6px;line-height:1.8;color:#c9d1d9">',
+        '<div style="background:#ffffff;border:0.5px solid #e3e6ec;border-left:4px solid #000b3d;'
+        'padding:16px 20px;border-radius:6px;line-height:1.8;color:#2c3556">',
         unsafe_allow_html=True,
     )
     for item in items:

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Macro RR UI</title>
+<meta name="description" content="Redesigned Macro Regime Radar dashboard on the Macro RR brand: off-white sheet, navy margins, four sections, every model one click deeper.">
+<link rel="icon" href="../../dashboard/assets/favicon.png">
+<style>
+  :root{
+    --shell:#000b3d; --page:#f3f4f6; --card:#ffffff; --line:#e3e6ec; --border:#d3d7e0;
+    --text:#0b1540; --muted:#5b6480; --dim:#8a92a8; --gold:#c69842;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--shell);color:var(--text);font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .band{max-width:1360px;margin:0 auto;padding:22px 24px 16px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:2px solid var(--gold)}
+  .band img{height:28px;display:block}
+  .band .sub{font-size:12px;color:#9aa5c8;border-left:1px solid #1e2e6e;padding-left:12px}
+  .band a{color:#fff;text-decoration:none;font-size:12px;font-weight:600;border:1px solid #1e2e6e;padding:6px 12px;border-radius:4px}
+  .band a:hover{border-color:var(--gold)}
+  .sheet{max-width:1360px;margin:0 auto;background:var(--page);padding:28px 24px 48px;min-height:100vh}
+  h1{font-size:26px;margin:0 0 6px;text-wrap:balance}
+  .lede{color:var(--muted);margin:0 0 22px;max-width:62ch;font-size:15px;line-height:1.5}
+  nav{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 20px}
+  nav button{font:inherit;font-size:12px;font-weight:600;padding:6px 14px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:#2c3556;cursor:pointer}
+  nav button[aria-pressed="true"]{background:var(--shell);border-color:var(--shell);color:#fff}
+  nav button:hover:not([aria-pressed="true"]){border-color:var(--shell);color:var(--shell)}
+  nav button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  .view{display:none}
+  .view.on{display:block}
+  .view h2{font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+  .shot{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .shot img{width:100%;height:auto;display:block}
+  .meta{display:flex;justify-content:space-between;gap:12px;margin-top:10px;font-size:12px;color:var(--dim);flex-wrap:wrap}
+  .meta a{color:var(--shell);font-weight:600;text-decoration:none}
+  footer{max-width:1360px;margin:0 auto;padding:12px 24px 24px;color:#5c6a99;font-size:11px;text-align:center}
+  @media (max-width:640px){.band{padding:16px}.sheet{padding:20px 16px 40px}.band .sub{display:none}}
+</style>
+</head>
+<body>
+  <header class="band">
+    <div style="display:flex;align-items:center;gap:12px">
+      <img src="../../dashboard/assets/logo_white.png" alt="Macro RR">
+      <span class="sub">Macro Regime Radar</span>
+    </div>
+    <a href="https://github.com/maxkomen-macro/macro-regime-radar/tree/redesign/macro-rr-brand">Branch on GitHub</a>
+  </header>
+
+  <main class="sheet">
+    <h1>The redesigned dashboard</h1>
+    <p class="lede">Four sections instead of eleven tabs. Each one opens with a short read and puts the rest behind a button. Every original view is still here. Pick a view below to see it full length.</p>
+
+    <nav id="nav" aria-label="Views"></nav>
+    <div id="views"></div>
+  </main>
+
+  <footer>Screenshots from the redesign branch. Data: FRED, Yahoo Finance, Finnhub, NewsAPI, RSS.</footer>
+
+<script>
+  const VIEWS = [
+    ["01-overview",          "Overview",              "Recession strip and key indicators. The read-through and every panel sit behind a button."],
+    ["02-overview-signals",  "Signals & risks",       "Regime probabilities, top risks, signal monitor, what's priced, surprises."],
+    ["03-overview-charts",   "Charts",                "One series at a time. Window and normalization live in Chart settings."],
+    ["04-overview-why",      "Why this regime",       "Drivers panel and 12-month regime history."],
+    ["05-overview-intel",    "Intelligence",          "Narrative card, playbook, analogues and scenarios."],
+    ["06-overview-data",     "Data",                  "Series freshness, completeness and CSV downloads."],
+    ["07-markets-snapshot",  "Markets: Snapshot",     "Live prices, sector heat, volatility and rates."],
+    ["08-markets-alerts",    "Markets: Alerts",       "Alert feed plus what the market has priced in."],
+    ["09-markets-credit",    "Markets: Credit",       "BAML spreads, LBO cost, regime tables and transition matrices."],
+    ["10-risk-recession",    "Risk: Recession",       "Logistic model gauge, yield curve monitor, sensitivity sliders."],
+    ["11-risk-backtests",    "Risk: Backtests",       "Signal and regime backtests, factor attribution."],
+    ["12-risk-news",         "Risk: News & events",   "Calendar plus scored headline feed."],
+    ["13-models-lbo",        "Models: LBO",           "Deal parameters, returns, schedule and IRR sensitivity."],
+    ["14-models-allocation", "Models: Allocation",    "Regime-conditional performance, optimization, risk analysis."],
+    ["15-models-methodology","Models: Methodology",   "How every model and signal is built."],
+  ];
+  const nav = document.getElementById("nav"), views = document.getElementById("views");
+  VIEWS.forEach(([stem, title, sub], i) => {
+    const b = document.createElement("button");
+    b.textContent = title; b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+    b.addEventListener("click", () => show(stem));
+    b.dataset.stem = stem; nav.appendChild(b);
+    const v = document.createElement("section");
+    v.className = "view" + (i === 0 ? " on" : ""); v.id = "v-" + stem;
+    v.innerHTML = `<h2>${title}</h2><div class="shot"><img loading="${i === 0 ? "eager" : "lazy"}" src="../images/redesign/${stem}.jpg" alt="${title} view of the Macro RR dashboard"></div>
+      <div class="meta"><span>${sub}</span><a href="../images/redesign/${stem}.jpg">Open full size</a></div>`;
+    views.appendChild(v);
+  });
+  function show(stem){
+    document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === "v-" + stem));
+    nav.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.stem === stem ? "true" : "false"));
+    try { history.replaceState(null, "", "#" + stem); } catch (e) {}
+  }
+  const h = location.hash.slice(1); if (h && VIEWS.some(v => v[0] === h)) show(h);
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Macro Regime Radar
 
-**A Bloomberg-terminal-style quantitative macro platform — regime classification, recession modeling, portfolio optimization, LBO analysis, and AI-augmented news intelligence across 11 interactive tabs. Refreshed automatically; zero manual intervention.**
+**A Bloomberg-terminal-style quantitative macro platform — regime classification, recession modeling, portfolio optimization, LBO analysis, and AI-augmented news intelligence across 4 sections and 14 panels. Refreshed automatically; zero manual intervention.**
 
 ---
 
@@ -55,23 +55,18 @@ flowchart LR
 
 ---
 
-## Dashboard Tabs
+## Dashboard Navigation
 
-| # | Tab | Purpose |
-|---|-----|---------|
-| 1 | Dashboard | Top-level summary — regime card, recession probability card, key signals |
-| 2 | Intelligence | Macro narrative + AI commentary |
-| 3 | Markets | Live market snapshot, intraday auto-refresh during market hours |
-| 4 | Signals & Alerts | Signal cards with threshold-ratio fill bars |
-| 5 | Historical Analysis | Backtests, regime history, Markov transition matrices |
-| 6 | Events & Intelligence | Economic calendar + news reader (Finnhub + NewsAPI + Anthropic + Perplexity) |
-| 7 | Credit | BAML OAS spreads, 30yr UST, LBO all-in cost, regime performance, transition matrices |
-| 8 | Recession Risk | Logistic regression model, SVG gauge, yield curve monitor, sensitivity sliders |
-| 9 | LBO Calculator | Capital structure modeling with IRR via binary search |
-| 10 | Asset Allocation | 5 optimization methods, CVaR, factor decomposition, currency overlay |
-| 11 | Methodology | Written documentation of every model and signal |
+The dashboard is organised into 4 sections. Each section shows a compact hero and a row of panel buttons; a panel renders only when you open it, so nothing loads until you ask for it. Every one of the original 11 views is still here, one click deeper.
 
----
+| Section | Hero | Panels |
+|---|---|---|
+| Overview | Regime read-through, recession strip, 5 key indicators | Signals & risks, Charts, Why this regime, Intelligence, Forecasts, Data |
+| Markets | | Snapshot (live prices, intraday refresh), Alerts & pricing, Credit |
+| Risk | | Recession, Backtests, News & events |
+| Models | | LBO calculator, Asset allocation, Methodology |
+
+Chart window, regime shading and normalization live behind the **Chart settings** button on Overview. The AI Analyst floats bottom-right on every section.
 
 ## Features
 
