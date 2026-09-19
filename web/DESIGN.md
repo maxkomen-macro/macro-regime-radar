@@ -607,8 +607,9 @@ becomes two columns; below 860px (`max-width: 859.98px`) the sidebar hides, the 
 bar becomes `1fr auto`, and `MobileNav` takes over. Anything that changes the DOM (the
 sidebar ↔ `MobileNav` swap) reads `useBreakpoint().shellCompact` (< 860); the four
 existing tiers (mobile < 480, tablet < 768, desktop < 1024, wide) are untouched and
-remain the only width-conditional mechanism for screen bodies. The strip is persistent
-at every width (two columns below 1200, four cards always).
+remain the only width-conditional mechanism for screen bodies. The strip renders on six
+of the eight routes (not Recession or Methodology, section 7): four columns from 1620,
+two from 768, one card per row below 768.
 
 Density is deliberate and waived against generic-density heuristics: this is a
 terminal.
@@ -648,8 +649,9 @@ border.
 
 ## 7. Shell
 
-**Sidebar** (`<aside class="mrr-side" aria-label="Sidebar">`, 196px, sticky,
-`overflow-y: auto` so the footer stays reachable with a full watchlist): the wordmark
+**Sidebar** (`<aside id="mrr-sidebar" class="mrr-side" aria-label="Sidebar">`, 196px,
+sticky, one viewport tall; the watchlist block takes the height the other blocks leave
+and scrolls its rows inside it, so the pinned footer never sits on a row): the wordmark
 (a hand-drawn 48×26 mountain glyph in `--text-wordmark`, then `MACRO` / `REGIME RADAR`
 in the UI face at 12.5px 500 .2em, uppercase in the source text; links to `/`; a
 `<p>` since Phase 3, the route's only `<h1>` being the `TabHero` headline), seven nav items (47px, 22px
@@ -681,7 +683,24 @@ the freshness card (two 12px lines, each with a 6px dot: "Markets live · <ET cl
 or "Markets delayed · <stamp>" or "Validated snapshot · <date>", then "Macro monthly ·
 latest <Mon YYYY>"; "Freshness ›" opens the per-source drawer). "Markets live" prints
 only when the status word is Live, with " · crypto/FX only" whenever the US feed is
-quiet.
+quiet. Each quote card is a fixed-slot quote tile (Iteration 1, `QuoteSlots` in
+`QuoteCard.tsx`, grid `.mrr-qslots`): symbol, value, change, tag, spark, always all
+five in that order, so a feed with no day change prints a muted "—" in the change slot
+and keeps its tag, and a missing sparkline leaves an 80×26 placeholder.
+
+**Collapsing the sidebar and where the strip lives (Iteration 1, S3 and S4).** From
+860px up, a 28px control beside the wordmark ("Hide navigation", a hand-drawn panel
+glyph, `aria-controls="mrr-sidebar"`) collapses the sidebar to a 56px rail (at most
+64px) holding the same control ("Show navigation") on top and the freshness entry at
+the bottom; the main column takes the freed width. Ctrl+\ (⌘+\ on a Mac) toggles it
+too, except while typing in a field, and the palette lists the same action with that
+shortcut. Focus follows to the new control. The state is stored in the browser beside
+the watchlist (section 8). Below 860 nothing changes: MobileNav, no rail. The strip is
+absent on Recession and Methodology (reference reading); the sidebar footer's status
+line is a button (`data-testid="sidebar-freshness"`, named "Data freshness: …") that
+opens the freshness drawer on every route, as does the rail's dot and a "Data
+freshness" row in the open MobileNav list. Its dot takes the `live_quotes` state's tone
+when `/api/freshness` serves `series[]`.
 
 **Dev-only build stamp.** A Vite plugin (`web/vite.config.ts`, `apply: "serve"`)
 injects `<meta name="mrr-build" content="<branch>@<sha7>">`, computed once when the
@@ -701,8 +720,10 @@ drawer is open (all three sit outside it); `ErrorBoundary key={activeSlug}` and
 
 ## 8. Watchlist
 
-The sidebar watchlist (spec section 3.1, decision 6) is the single per-visitor
-preference stored in the browser: `localStorage` key `mrr.watchlist.v1`, shaped
+The sidebar watchlist (spec section 3.1, decision 6) is one of the two per-visitor
+preferences stored in the browser (the other is the sidebar's collapsed state,
+`mrr.sidebar.v1` = `{ version: 1, collapsed }`, corrupt reads as expanded):
+`localStorage` key `mrr.watchlist.v1`, shaped
 `{ version: 1, symbols: [{ symbol, addedAt }] }`, defaults SPY, QQQ, IWM, EEM, validated
 on load (uppercase, `^[A-Z0-9.^=-]{1,15}$`, deduped, capped at 12; corrupt data falls
 back to the defaults and rewrites storage; unavailable storage keeps the list in memory
@@ -1016,6 +1037,13 @@ Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-19 Iteration 1, shell: the sidebar footer is pinned under a watchlist that
+  scrolls inside its own block (short viewports tighten the fixed blocks in three
+  steps); the sidebar collapses to a 56px rail (control, Ctrl/⌘+\, palette action,
+  `mrr.sidebar.v1`); strip quote cards share the fixed-slot tile and stack one per row
+  below 768; no strip on Recession and Methodology; the sidebar footer, the rail and the
+  MobileNav list open the freshness drawer; `fresh-state.ts` renders the per-series
+  freshness states (FRESHNESS_CONTRACT §5)
 - 2026-09-15 Phase 10: transitional top-bar regime pill and odds bar removed (every
   summary card carries the regime row); aliases `--accent`, `--accent-dim`,
   `--accent-line`, `--text-faint` and `--warn` retired after the sweep to `--link`,

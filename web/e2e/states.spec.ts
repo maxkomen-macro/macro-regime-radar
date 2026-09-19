@@ -98,6 +98,17 @@ async function finishCell(cell: Cell, def: RouteDef, width: number, state: State
 
 const strip = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
 const card = (page: Page) => strip(page).locator(".mrr-upd-lines");
+/** Iteration 1 S4: no strip on Recession and Methodology; the sidebar's freshness entry opens the drawer there. */
+const hasStrip = (slug: string) => slug !== "recession" && slug !== METHODOLOGY_SLUG;
+/** The freshness drawer's trigger for a route: the strip card's "Freshness ›", else the sidebar entry (the MobileNav list's below 860). */
+async function openFreshness(page: Page, slug: string, width: number): Promise<void> {
+  if (hasStrip(slug)) {
+    await strip(page).getByRole("button", { name: /^Freshness/ }).click();
+    return;
+  }
+  if (width < 860) await page.locator("button[aria-controls='mobile-nav-list']").click();
+  await page.getByTestId("sidebar-freshness").click();
+}
 const heroPill = (page: Page, heroId: string) => page.locator(`#${heroId} .mrr-pill`);
 const stripTitle = (page: Page, summaryId: string) => page.locator(`#${summaryId} .mrr-status .mrr-status-title`);
 const section = (page: Page, id: string) => page.locator(`#${id}`);
@@ -325,9 +336,14 @@ for (const vp of [DESK, PHONE]) {
         await page.goto(def.route, { waitUntil: "domcontentloaded" });
         await page.locator("main").waitFor();
         // Shell (B.7 row 1): the card, the footer, the bell; no pill anywhere (contract 6).
-        await expect(card(page)).toContainText("Data service unavailable", { timeout: 20_000 }); // FreshnessCard.tsx:72
-        await expect(card(page)).toContainText("Freshness unavailable · retrying"); // FreshnessCard.tsx:84
-        if (vp.width >= 860) await expect(page.locator(".mrr-side-foot")).toContainText("Data service unavailable"); // shell-status.ts:163
+        // Iteration 1 S4: Recession and Methodology carry no strip; the footer states it there.
+        if (hasStrip(def.slug)) {
+          await expect(card(page)).toContainText("Data service unavailable", { timeout: 20_000 }); // FreshnessCard.tsx:72
+          await expect(card(page)).toContainText("Freshness unavailable · retrying"); // FreshnessCard.tsx:84
+        } else {
+          await expect(strip(page)).toHaveCount(0);
+        }
+        if (vp.width >= 860) await expect(page.locator(".mrr-side-foot")).toContainText("Data service unavailable", { timeout: 20_000 }); // shell-status.ts:163
         await expect(page.locator("header .mrr-bell")).toHaveAttribute("data-state", "error", { timeout: 20_000 });
         await expectNoRegimePill(page);
         await checkError(page, def.slug);
@@ -349,17 +365,20 @@ for (const vp of [DESK, PHONE]) {
         await page.goto(def.route, { waitUntil: "domcontentloaded" });
         await page.locator("main").waitFor();
         // The word arrives once both shell queries have failed (G11): a 20 s poll.
-        await expect(card(page)).toContainText("Validated snapshot", { timeout: 20_000 }); // FreshnessCard.tsx:68
-        if (vp.width >= 860) await expect(page.locator(".mrr-side-foot")).toContainText("Validated snapshot"); // shell-status.ts:165
+        if (hasStrip(def.slug)) await expect(card(page)).toContainText("Validated snapshot", { timeout: 20_000 }); // FreshnessCard.tsx:68
+        else await expect(strip(page)).toHaveCount(0); // Iteration 1 S4
+        if (vp.width >= 860) await expect(page.locator(".mrr-side-foot")).toContainText("Validated snapshot", { timeout: 20_000 }); // shell-status.ts:165
         await expectNoRegimePill(page);
         // The drawer's first block carries SNAPSHOT_NOTE (FreshnessDrawer.tsx:111-113).
-        await strip(page).getByRole("button", { name: /^Freshness/ }).click();
+        await openFreshness(page, def.slug, vp.width);
         const drawer = page.locator("#freshness-drawer");
         await expect(drawer).toBeVisible();
         await expect(drawer).toContainText(SNAPSHOT_NOTE);
         await expect(drawer).toContainText("Validated snapshot");
         await page.keyboard.press("Escape");
         await expect(drawer).toBeHidden();
+        // Below 860 the MobileNav list stays open behind the drawer (its focus return); close it.
+        if (!hasStrip(def.slug) && vp.width < 860) await page.keyboard.press("Escape");
         await checkSnapshot(page, def.slug, seededLabel);
         await settle(page, 300);
         await finishCell(cell, def, vp.width, "snapshot", { seededLabel });
@@ -383,7 +402,8 @@ test("loading cells (unseeded, API delayed) on the eight tab routes at 1672", as
       // Before hydration #root is empty (F5): wait for main, then read inside the delay window.
       await page.locator("main").waitFor();
       const mounted = Date.now() - t0;
-      await expect(card(page)).toContainText("Reading freshness…"); // FreshnessCard.tsx:87
+      if (hasStrip(def.slug)) await expect(card(page)).toContainText("Reading freshness…"); // FreshnessCard.tsx:87
+      else await expect(strip(page)).toHaveCount(0); // Iteration 1 S4: no strip on Recession and Methodology
       await expect(page.locator("header .mrr-bell")).toHaveAttribute("aria-label", "Reading the alert feed. Open the alert feed."); // shell-status.ts:479
       await checkLoading(page, def.slug);
       // A beat for fonts so the capture shows the settled loading paint, still inside the delay.

@@ -9,6 +9,10 @@
  * 10, checklist 10 B.8.) The open
  * list ends with "Jump to a section" (the palette) and a collapsed Watchlist
  * disclosure so the saved watchlist exists at every width (checklist I.18).
+ *
+ * Iteration 1 (S4): "Data freshness" closes the open list, the phone twin of
+ * the sidebar's freshness entry (last, so the existing Tab order is kept). It
+ * leaves the list open, so the drawer's focus return lands back on it.
  */
 
 import { useEffect, useState } from "react";
@@ -16,6 +20,7 @@ import { Link, useLocation } from "react-router-dom";
 import Disclosure from "../shared/Disclosure";
 import { METHODOLOGY_SLUG, TABS } from "./sections";
 import { NavIcon } from "./nav-icons";
+import { footerWords, type ShellStatus } from "./shell-status";
 import { Wordmark } from "./Sidebar";
 import Watchlist from "./watchlist/Watchlist";
 
@@ -38,9 +43,16 @@ function readWatchlistCount(): number | null {
 export default function MobileNav({
   activeSlug,
   onOpenPalette,
+  status,
+  freshnessOpen = false,
+  onOpenFreshness,
 }: {
   activeSlug: string;
   onOpenPalette?: () => void;
+  /** The shell status, for the freshness entry's hint. */
+  status?: ShellStatus;
+  freshnessOpen?: boolean;
+  onOpenFreshness?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -52,7 +64,9 @@ export default function MobileNav({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      // An Escape an open modal already handled (useModal prevents it) is
+      // not for the list: closing it would hide the drawer's return target.
+      if (e.key === "Escape" && !e.defaultPrevented) setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -135,6 +149,32 @@ export default function MobileNav({
             </div>
           </Disclosure>
         </li>
+        {onOpenFreshness ? (
+          <li className="mrr-mnav-sep">
+            <button
+              type="button"
+              className="mrr-mnav-btn"
+              data-testid="sidebar-freshness"
+              aria-haspopup="dialog"
+              aria-expanded={freshnessOpen}
+              aria-controls="freshness-drawer"
+              onClick={(e) => {
+                // Focused first so the drawer returns focus here (Safari does
+                // not focus a clicked button).
+                e.currentTarget.focus();
+                onOpenFreshness();
+              }}
+            >
+              Data freshness
+              {status ? (
+                <>
+                  {" "}
+                  <span className="mrr-mnav-hint">{footerWords(status.statusWord, status.liveFeeds)}</span>
+                </>
+              ) : null}
+            </button>
+          </li>
+        ) : null}
       </ul>
     </nav>
   );

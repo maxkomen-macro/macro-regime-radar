@@ -5,6 +5,14 @@
  * never told a stored close is the tape. The card flashes for 600 ms when the
  * price ticks (the TickerStrip idiom), silenced under reduced motion by the
  * `[style*="mrr-flash"]` rule in app.css.
+ *
+ * Iteration 1 (S2): the card is the first user of the fixed-slot quote tile.
+ * Five slots, always present and always in this order (`data-slot` symbol,
+ * value, change, tag, spark) on one grid (`.mrr-qslots` in app.css), so every
+ * strip card is the same height at every width: a feed with no day change
+ * prints "—" in the change slot and keeps its tag (LAST, 15M) in the tag
+ * slot, and a missing sparkline leaves an aria-hidden placeholder of the
+ * same box. `QuoteSlots` is exported for the Dashboard's glance tiles.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -28,16 +36,87 @@ export interface QuoteCardProps {
   /** Direction, not valence: green is up, red is down, for yields too. */
   changeTone?: "pos" | "neg";
   tag?: QuoteTag;
-  /** Oldest to newest; fewer than two points renders an empty box. */
+  /** Oldest to newest; fewer than two points renders the placeholder. */
   series?: number[];
   title?: string;
 }
+
+/** The five slots of the fixed-slot quote tile, in DOM order. */
+export const QUOTE_SLOTS = ["symbol", "value", "change", "tag", "spark"] as const;
+export type QuoteSlot = (typeof QUOTE_SLOTS)[number];
+
+/** What the change slot prints when the feed sends no day change. */
+export const NO_CHANGE = "—";
+
+/** The strip's sparkline box; the placeholder takes the same size. */
+export const SPARK_W = 80;
+export const SPARK_H = 26;
 
 const TONE_COLOR = {
   pos: "var(--pos, #28d17c)",
   neg: "var(--neg, #f0503f)",
   flat: "var(--text-3, var(--text-muted))",
 } as const;
+
+/** Direction colour for a change tone; muted when there is none. */
+export function quoteToneColor(tone: QuoteCardProps["changeTone"]): string {
+  return tone ? TONE_COLOR[tone] : TONE_COLOR.flat;
+}
+
+export interface QuoteSlotsProps extends Omit<QuoteCardProps, "raw" | "title"> {
+  sparkWidth?: number;
+  sparkHeight?: number;
+}
+
+/**
+ * The five slot elements, for a container carrying `.mrr-qslots` (the grid
+ * that places them). Every slot renders whatever the read lacks, so tiles in
+ * a row never differ in shape.
+ */
+export function QuoteSlots({ symbol, price, change, changeTone, tag, series, sparkWidth = SPARK_W, sparkHeight = SPARK_H }: QuoteSlotsProps) {
+  const color = quoteToneColor(changeTone);
+  // An empty string is a missing change too: the slot never reads blank.
+  const hasChange = typeof change === "string" && change.trim() !== "";
+  const hasSpark = (series?.length ?? 0) >= 2;
+  return (
+    <>
+      {/* The inner span is load-bearing: the label-parity harvester reads
+          uppercase eyebrows from span/div/p/small/dd/td, never from <b>, and
+          text-transform inherits, so the span is what keeps SPY / QQQ / US 10Y
+          in the baseline set. */}
+      <b data-slot="symbol">
+        <span>{symbol}</span>
+      </b>
+      <span className="v" data-slot="value">
+        {price}
+      </span>
+      <span
+        className="c"
+        data-slot="change"
+        data-empty={hasChange ? undefined : "true"}
+        style={hasChange ? { color } : undefined}
+        title={hasChange ? undefined : "No day change from this feed"}
+      >
+        {hasChange ? change : NO_CHANGE}
+      </span>
+      <span className="t" data-slot="tag">
+        {tag ? (
+          <span className="mrr-tag" data-tone={tag.tone ?? "amber"} title={tag.title}>
+            {tag.text}
+          </span>
+        ) : null}
+      </span>
+      {/* Decorative: the numbers sit in the slots beside it. */}
+      <span className="k" data-slot="spark" aria-hidden="true">
+        {hasSpark ? (
+          <Sparkline values={series ?? []} width={sparkWidth} height={sparkHeight} color={color} />
+        ) : (
+          <span className="mrr-spark-ph" aria-hidden="true" style={{ width: sparkWidth, height: sparkHeight }} />
+        )}
+      </span>
+    </>
+  );
+}
 
 export default function QuoteCard({ symbol, price, raw, change, changeTone, tag, series, title }: QuoteCardProps) {
   const prev = useRef<number | undefined>(undefined);
@@ -52,31 +131,14 @@ export default function QuoteCard({ symbol, price, raw, change, changeTone, tag,
     return () => clearTimeout(t);
   }, [raw]);
 
-  const color = changeTone ? TONE_COLOR[changeTone] : TONE_COLOR.flat;
   return (
     <div
-      className="mrr-quote"
+      className="mrr-quote mrr-qslots"
       data-symbol={symbol}
       title={title}
       style={flash ? { animation: `mrr-flash-${flash} var(--tick-flash) var(--ease-out)` } : undefined}
     >
-      {/* The inner span is load-bearing: the label-parity harvester reads
-          uppercase eyebrows from span/div/p/small/dd/td, never from <b>, and
-          text-transform inherits, so the span is what keeps SPY / QQQ / US 10Y
-          in the baseline set. */}
-      <b>
-        <span>{symbol}</span>
-      </b>
-      <span className="v">{price}</span>
-      <span className="c" style={change ? { color } : undefined}>
-        {change ?? ""}
-      </span>
-      {tag ? (
-        <span className="mrr-tag" data-tone={tag.tone ?? "amber"} title={tag.title}>
-          {tag.text}
-        </span>
-      ) : null}
-      <Sparkline values={series ?? []} width={80} height={26} color={color} />
+      <QuoteSlots symbol={symbol} price={price} change={change} changeTone={changeTone} tag={tag} series={series} />
     </div>
   );
 }

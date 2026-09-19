@@ -106,6 +106,17 @@ export interface PaletteEntry {
   hint: string;
 }
 
+/** A palette entry that runs a shell command instead of navigating
+ * (Iteration 1, S3: "Hide navigation" / "Show navigation"). The shell builds
+ * these per render; `hint` is the keyboard shortcut, shown as a kbd. */
+export interface PaletteAction {
+  kind: "action";
+  id: string;
+  label: string;
+  hint: string;
+  run: () => void;
+}
+
 export const PALETTE_ENTRIES: PaletteEntry[] = [
   ...TABS.map<PaletteEntry>((t) => ({
     kind: "tab",

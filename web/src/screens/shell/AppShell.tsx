@@ -16,6 +16,13 @@
  * drawer all mount here. The status vocabulary (Live / Delayed /
  * Reconnecting / Backend unavailable / Validated snapshot) is composed once
  * in shell-status.ts and shared by the strip card, the drawer and the footer.
+ *
+ * Iteration 1: at 860 px and up the sidebar collapses to a 56 px rail (S3):
+ * the toggle beside the wordmark, Ctrl+\ or ⌘+\ (wired beside ⌘K below) and
+ * a palette action all flip one stored preference (sidebar-state.ts), and
+ * focus follows to the new toggle. The strip is not rendered on Recession
+ * and Methodology (S4); the sidebar's freshness entry (the rail's, and the
+ * MobileNav list's below 860) opens the same drawer on every route.
  */
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -31,12 +38,17 @@ import AssistantPanel, { type AssistantTabContext } from "./AssistantPanel";
 import CommandPalette from "./CommandPalette";
 import FreshnessDrawer from "./FreshnessDrawer";
 import MobileNav from "./MobileNav";
-import Sidebar from "./Sidebar";
+import Sidebar, { SidebarRail } from "./Sidebar";
 import TickerLive from "./TickerLive";
 import TopBar from "./TopBar";
 import { ShellActionsContext, type ShellActions } from "./shell-actions";
-import { METHODOLOGY_SLUG, tabBySlug } from "./sections";
+import { METHODOLOGY_SLUG, tabBySlug, type PaletteAction } from "./sections";
 import { composeShellStatus, regimeProbs, STATUS_COLOR } from "./shell-status";
+import { isEditableTarget, isSidebarShortcut, sidebarShortcutLabel, useSidebarCollapsed } from "./sidebar-state";
+
+/** Reference routes without the ticker strip (S4): the sidebar's freshness
+ * entry is their way into the drawer. */
+const NO_STRIP_SLUGS: ReadonlySet<string> = new Set(["recession", METHODOLOGY_SLUG]);
 
 // Route-level code splitting (2026-09-06): each screen is its own chunk, so
 // the shell paints first and a screen's libraries load only when it opens.
@@ -70,17 +82,39 @@ export default function AppShell() {
   const regime = useRegimeLatest();
   const freshness = useFreshness();
 
-  // Cmd+K / Ctrl+K.
+  // Collapsible sidebar (S3). Every toggle hands focus to the toggle that
+  // replaces the one just used (sidebar ↔ rail), once the swap has rendered.
+  const [sidebarCollapsed, toggleSidebarState] = useSidebarCollapsed();
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
+  const focusToggleNext = useRef(false);
+  const toggleSidebar = useCallback(() => {
+    focusToggleNext.current = true;
+    toggleSidebarState();
+  }, [toggleSidebarState]);
+  useEffect(() => {
+    if (!focusToggleNext.current) return;
+    focusToggleNext.current = false;
+    sidebarToggleRef.current?.focus();
+  }, [sidebarCollapsed]);
+  const shellCompactRef = useRef(shellCompact);
+  shellCompactRef.current = shellCompact;
+
+  // Cmd+K / Ctrl+K; Cmd+\ / Ctrl+\ toggles the sidebar at desk width, never
+  // while the visitor is typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+      } else if (isSidebarShortcut(e)) {
+        if (shellCompactRef.current || isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+        e.preventDefault();
+        toggleSidebar();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [toggleSidebar]);
 
   // Top-level navigation starts at the top of the new screen; an explicit
   // anchor (#section) is honoured by the screens' own hash-scroll effect.
@@ -114,6 +148,24 @@ export default function AppShell() {
   const tab = tabBySlug(slug);
   const isMethodology = slug === METHODOLOGY_SLUG;
   const activeSlug = isMethodology ? METHODOLOGY_SLUG : (tab?.slug ?? "dashboard");
+  const showStrip = !NO_STRIP_SLUGS.has(activeSlug);
+
+  // The palette's one action entry (S3), desk width only.
+  const paletteActions = useMemo<PaletteAction[]>(
+    () =>
+      shellCompact
+        ? []
+        : [
+            {
+              kind: "action",
+              id: "toggle-sidebar",
+              label: sidebarCollapsed ? "Show navigation" : "Hide navigation",
+              hint: sidebarShortcutLabel(),
+              run: toggleSidebar,
+            },
+          ],
+    [shellCompact, sidebarCollapsed, toggleSidebar],
+  );
 
   // The footer dot pulses only when data is genuinely live: the EODHD stream
   // first (ticks under two minutes old), else a fresh DB intraday write.
@@ -192,7 +244,7 @@ export default function AppShell() {
   if (!tab && !isMethodology) return <Navigate to="/app/dashboard" replace />;
 
   return (
-    <div className="mrr-app">
+    <div className="mrr-app" data-sidebar={shellCompact ? undefined : sidebarCollapsed ? "collapsed" : "expanded"}>
       <ShellActionsContext.Provider value={shellActions}>
         <a href="#main-content" className="mrr-skip">
           Skip to content
@@ -201,9 +253,34 @@ export default function AppShell() {
             assistant panel; `display: contents` keeps aside and main as direct
             grid items. The three modal overlays sit outside it. */}
         <div id={SHELL_CONTENT_ID} className="mrr-app-content">
-          {shellCompact ? null : <Sidebar activeSlug={activeSlug} status={status} />}
+          {shellCompact ? null : sidebarCollapsed ? (
+            <SidebarRail
+              status={status}
+              onToggle={toggleSidebar}
+              toggleRef={sidebarToggleRef}
+              freshnessOpen={freshnessOpen}
+              onOpenFreshness={openFreshness}
+            />
+          ) : (
+            <Sidebar
+              activeSlug={activeSlug}
+              status={status}
+              onToggle={toggleSidebar}
+              toggleRef={sidebarToggleRef}
+              freshnessOpen={freshnessOpen}
+              onOpenFreshness={openFreshness}
+            />
+          )}
           <div className="mrr-main">
-            {shellCompact ? <MobileNav activeSlug={activeSlug} onOpenPalette={openPalette} /> : null}
+            {shellCompact ? (
+              <MobileNav
+                activeSlug={activeSlug}
+                onOpenPalette={openPalette}
+                status={status}
+                freshnessOpen={freshnessOpen}
+                onOpenFreshness={openFreshness}
+              />
+            ) : null}
             <TopBar
               paletteOpen={paletteOpen}
               onOpenPalette={openPalette}
@@ -213,7 +290,7 @@ export default function AppShell() {
               drawerOpen={drawerOpen}
               onOpenDrawer={openDrawer}
             />
-            <TickerLive status={status} freshnessOpen={freshnessOpen} onOpenFreshness={openFreshness} />
+            {showStrip ? <TickerLive status={status} freshnessOpen={freshnessOpen} onOpenFreshness={openFreshness} /> : null}
 
             <main id="main-content" tabIndex={-1} style={{ outline: "none" }}>
               {/* The key is load-bearing: it re-mounts the boundary on every tab
@@ -251,7 +328,7 @@ export default function AppShell() {
         </div>
 
         <AlertDrawer open={drawerOpen} onClose={closeDrawer} />
-        <CommandPalette open={paletteOpen} onClose={closePalette} />
+        <CommandPalette open={paletteOpen} onClose={closePalette} actions={paletteActions} />
         <FreshnessDrawer open={freshnessOpen} onClose={closeFreshness} status={status} />
       </ShellActionsContext.Provider>
     </div>

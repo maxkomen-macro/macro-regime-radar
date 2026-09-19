@@ -66,6 +66,9 @@ const PAGES: PageDef[] = [
   { slug: "kit", route: "/kit", screen: "kit", hero: false, app: false },
 ];
 
+/** Iteration 1 S4: routes that render no ticker strip. */
+const NO_STRIP_TABS: ReadonlySet<string> = new Set(["recession", METHODOLOGY_SLUG]);
+
 const WIDTHS = [
   { width: 1672, height: 941 },
   { width: 1280, height: 941 },
@@ -78,12 +81,13 @@ const WIDTHS = [
    landmark) fails the width test but never hides the cells after it. */
 
 /** B.1 expectations per width (the verifier's measured breakpoints, QUESTIONS 116 to 118).
- * The strip is four columns at 1672 and `repeat(2, minmax(0, 1fr))` from 1619.98 down with no
- * phone override (app.css): at 390 the two columns stay and each quote card wraps inside. */
+ * The strip is four columns at 1672 and `repeat(2, minmax(0, 1fr))` from 1619.98 down to 768;
+ * below 768 it is one card per row (Iteration 1 S2: every quote card keeps the one-row slot
+ * grid, so all three stay the same height). */
 function expectedLayout(width: number) {
   return {
     sidebar: width >= 860,
-    stripCols: width >= 1620 ? 4 : 2,
+    stripCols: width >= 1620 ? 4 : width >= 768 ? 2 : 1,
     heroRowCols: width >= 1200 ? 2 : 1,
     heroInnerCols: width >= 1520 ? 2 : 1,
     h1Px: width < 860 ? 44 : null,
@@ -199,7 +203,8 @@ for (const vp of WIDTHS) {
         if (def.app) {
           expect.soft(landmarks.header, `${def.slug}: header`).toBeGreaterThanOrEqual(1);
           expect.soft(landmarks.primaryNav, `${def.slug}: one nav[aria-label=Primary]`).toBe(1);
-          expect.soft(landmarks.strip, `${def.slug}: the strip region`).toBe(1);
+          // Iteration 1 S4: the strip is absent on Recession and Methodology.
+          expect.soft(landmarks.strip, `${def.slug}: the strip region`).toBe(NO_STRIP_TABS.has(def.tab ?? def.slug) ? 0 : 1);
           expect.soft(landmarks.main, `${def.slug}: main#main-content`).toBe(1);
           expect.soft(landmarks.sidebar, `${def.slug}: aside[aria-label=Sidebar] only above 860`).toBe(want.sidebar ? 1 : 0);
           expect.soft(landmarks.skipLinkFirst, `${def.slug}: the skip link is the first tabbable`).toBe(true);
@@ -224,7 +229,7 @@ for (const vp of WIDTHS) {
 
         /* B.1: the layout the width decides. */
         const layout = await page.evaluate(measureLayout);
-        if (def.app) {
+        if (def.app && !NO_STRIP_TABS.has(def.tab ?? def.slug)) {
           expect.soft(layout.stripChildren, `${def.slug}: the strip's four cards`).toBe(4);
           expect.soft(layout.stripChildren / layout.stripRows, `${def.slug}: strip columns at ${vp.width}`).toBe(want.stripCols);
         }

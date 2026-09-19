@@ -1,14 +1,48 @@
 /**
  * Cmd+K palette, v1: tabs + sections only (locked IA). Type to filter,
  * ↑/↓ to move, Enter to jump, Esc to close.
+ *
+ * Iteration 1 (S3): the shell may pass `actions`, entries that run a command
+ * instead of navigating (today only "Hide navigation" / "Show navigation").
+ * They list after the destinations, carry their shortcut as a kbd hint, and
+ * close the palette before running.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { PALETTE_ENTRIES, type PaletteEntry } from "./sections";
+import { PALETTE_ENTRIES, type PaletteAction, type PaletteEntry } from "./sections";
 import { useModal } from "../shared/useModal";
 
-export default function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+type PaletteItem = PaletteEntry | PaletteAction;
+
+const itemKey = (m: PaletteItem) => (m.kind === "action" ? `action-${m.id}` : `${m.tabSlug}-${m.sectionId ?? "tab"}`);
+
+/** The kbd hint: the ⌘ glyph lives in the system face (Plex Mono has none). */
+function ShortcutHint({ text }: { text: string }) {
+  const cmd = text.startsWith("⌘");
+  return (
+    <kbd className="palette-kbd">
+      {cmd ? (
+        <>
+          <span className="mrr-cmd-glyph">⌘</span>
+          {text.slice(1)}
+        </>
+      ) : (
+        text
+      )}
+    </kbd>
+  );
+}
+
+export default function CommandPalette({
+  open,
+  onClose,
+  actions = [],
+}: {
+  open: boolean;
+  onClose: () => void;
+  actions?: PaletteAction[];
+}) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -19,13 +53,12 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const jumpedRef = useRef(false);
   const navigate = useNavigate();
 
-  const matches = useMemo(() => {
+  const matches = useMemo<PaletteItem[]>(() => {
+    const all: PaletteItem[] = [...PALETTE_ENTRIES, ...actions];
     const q = query.trim().toLowerCase();
-    if (!q) return PALETTE_ENTRIES;
-    return PALETTE_ENTRIES.filter(
-      (e) => e.label.toLowerCase().includes(q) || e.hint.toLowerCase().includes(q),
-    );
-  }, [query]);
+    if (!q) return all;
+    return all.filter((e) => e.label.toLowerCase().includes(q) || e.hint.toLowerCase().includes(q));
+  }, [query, actions]);
 
   // Focus trap, inert page, Escape, and focus return (2026-09-05).
   useModal(open, panelRef, { onClose, initialFocus: inputRef });
@@ -49,14 +82,16 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
 
   if (!open) return null;
 
-  const go = (e: PaletteEntry) => {
+  const go = (e: PaletteItem) => {
     if (jumpedRef.current) return;
     jumpedRef.current = true;
     // Close first, then navigate: the modal cleanup restores focus to the
     // trigger (a plain focus, never a click) and un-inerts the page before
-    // the new screen mounts.
+    // the new screen mounts. An action runs in the same batch, so whatever
+    // it focuses wins over the restore.
     onClose();
-    navigate(`/app/${e.tabSlug}${e.sectionId ? `#${e.sectionId}` : ""}`);
+    if (e.kind === "action") e.run();
+    else navigate(`/app/${e.tabSlug}${e.sectionId ? `#${e.sectionId}` : ""}`);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -112,7 +147,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
           {matches.length === 0 ? null : (
             matches.map((m, i) => (
               <div
-                key={`${m.tabSlug}-${m.sectionId ?? "tab"}`}
+                key={itemKey(m)}
                 id={`palette-opt-${i}`}
                 className="palette-row"
                 data-active={i === active}
@@ -130,18 +165,22 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
                 >
                   {m.label}
                 </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--fs-micro)",
-                    letterSpacing: "var(--ls-micro)",
-                    textTransform: "uppercase",
-                    color: "var(--text-muted)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {m.kind === "section" ? `${m.hint} §` : m.hint}
-                </span>
+                {m.kind === "action" ? (
+                  <ShortcutHint text={m.hint} />
+                ) : (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "var(--fs-micro)",
+                      letterSpacing: "var(--ls-micro)",
+                      textTransform: "uppercase",
+                      color: "var(--text-muted)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {m.kind === "section" ? `${m.hint} §` : m.hint}
+                  </span>
+                )}
               </div>
             ))
           )}

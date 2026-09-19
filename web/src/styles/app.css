@@ -333,6 +333,16 @@ main .mrr-scroll {
   background: var(--link-a10);
   border-left-color: var(--link);
 }
+/* An action row's shortcut (Iteration 1, S3), drawn like the top bar's ⌘ K. */
+.palette-kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3, var(--text-muted));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
 
 /* ── AI analyst: floating launcher + terminal panel ────────────────────
    Non-modal on purpose: no scrim, and both sit under the drawer/palette
@@ -480,6 +490,11 @@ main .mrr-scroll {
   color: var(--text);
   font-family: var(--font-ui);
 }
+/* Collapsed (Iteration 1, S3): the 56px rail replaces the sidebar and the
+   main column takes the freed width. */
+.mrr-app[data-sidebar="collapsed"] {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
 /* The inert wrapper (#shell-content) has no box of its own, so the aside and
    the main column stay direct grid items. */
 .mrr-app-content {
@@ -490,8 +505,13 @@ main .mrr-scroll {
   min-width: 0;
 }
 
-/* Sidebar: sticky, its own scroll when a full watchlist makes it taller than
-   the viewport (checklist I.7). */
+/* Sidebar: sticky and one viewport tall, a column of fixed blocks around one
+   flexible one (Iteration 1, S1): the head, the nav and the divider on top,
+   the footer pinned at the bottom, and the watchlist between them taking the
+   remaining height, its rows scrolling inside it. The footer used to be
+   drawn over the rows once the list outgrew the space. The column scrolls as
+   a whole only when a viewport is too short for even the fixed blocks (the
+   short-viewport steps below keep that under 470px). */
 .mrr-side {
   position: sticky;
   top: 0;
@@ -503,6 +523,83 @@ main .mrr-scroll {
   background: var(--sidebar, linear-gradient(180deg, #131e25 0%, #0d161c 100%));
   border-right: 1px solid rgba(255, 255, 255, 0.05);
   overflow-y: auto;
+}
+.mrr-side > * {
+  flex: none;
+}
+/* Head: the wordmark and the collapse control on one row. */
+.mrr-side-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 34px;
+}
+.mrr-side-head .mrr-logo {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.mrr-side-head .mrr-logo span {
+  white-space: nowrap;
+}
+/* The collapse control (S3): a 28px ghost square, the watchlist "+" idiom,
+   top-aligned with the mountain mark. The rail holds the same control. */
+.mrr-side-toggle {
+  appearance: none;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: none;
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+.mrr-side-toggle:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.mrr-side-toggle svg {
+  display: block;
+}
+
+/* The rail (S3): 56px, sticky, the toggle on top and the freshness entry at
+   the bottom. */
+.mrr-rail {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 0 18px;
+  box-sizing: border-box;
+  background: var(--sidebar, linear-gradient(180deg, #131e25 0%, #0d161c 100%));
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+.mrr-rail-fresh {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+.mrr-rail-fresh:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.mrr-rail-fresh .mrr-dot {
+  margin-right: 0;
+  vertical-align: 0;
 }
 
 /* Wordmark: mountain mark over MACRO / REGIME RADAR in the UI face. */
@@ -617,27 +714,77 @@ main .mrr-scroll {
 .mrr-side-hr {
   border: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
-  margin: 30px 20px 18px;
+  margin: 30px 20px 14px;
 }
-.mrr-side-wl {
-  position: relative;
+/* The watchlist block takes what the fixed blocks leave (S1). Inside it the
+   head and the "Saved in this browser" note keep their size and the rows
+   shrink and scroll (the 8-row cap in watchlist.css still applies). The 4px
+   top padding keeps the "+" focus ring inside the clip. */
+.mrr-side .mrr-side-wl {
+  flex: 1 1 auto;
   min-height: 0;
-  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  padding-top: 4px;
+  margin-bottom: 16px;
+}
+.mrr-side-wl > .mrr-wl {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mrr-side-wl .mrr-wl-head,
+.mrr-side-wl .mrr-wl-note,
+.mrr-side-wl .mrr-wl-empty {
+  flex: none;
+}
+.mrr-side-wl .mrr-wl-rows {
+  flex: 0 1 auto;
+  min-height: 0;
 }
 
-/* Footer: live dot + word, two-line stamp, version. */
+/* Footer: live dot + word, two-line stamp, version. Not part of the scroll:
+   it stays pinned under the watchlist block. The dot, the word and the stamp
+   are one button that opens the freshness drawer (S4). */
 .mrr-side-foot {
   margin-top: auto;
-  padding: 0 0 0 26px;
+  padding: 0 0 0 22px;
   font-size: 12px;
   color: var(--text-3, var(--text-muted));
   line-height: 1.75;
 }
+.mrr-side-fresh {
+  appearance: none;
+  display: block;
+  width: calc(100% - 8px);
+  margin: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mrr-side-fresh:hover {
+  color: var(--text-2);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.mrr-side-status {
+  display: block;
+}
 .mrr-side-stamp {
+  display: block;
   padding-left: 16px;
 }
 .mrr-side-foot .ver {
-  margin-top: 28px;
+  margin-top: 14px;
+  padding-left: 4px;
   color: var(--text-4);
 }
 .mrr-dot {
@@ -654,6 +801,100 @@ main .mrr-scroll {
   background: var(--text-4);
   box-shadow: none;
   animation: none;
+}
+/* The dot coloured from the live_quotes series state when /api/freshness
+   carries series[] (fresh-state.ts tones): only "live" glows and pulses. */
+.mrr-dot[data-tone="delayed"],
+.mrr-dot[data-tone="neutral"],
+.mrr-dot[data-tone="stale"],
+.mrr-dot[data-tone="fallback"],
+.mrr-dot[data-tone="unknown"] {
+  box-shadow: none;
+  animation: none;
+}
+.mrr-dot[data-tone="delayed"] {
+  background: var(--amber, #f5b52e);
+}
+.mrr-dot[data-tone="neutral"] {
+  background: var(--text-3, var(--text-muted));
+}
+.mrr-dot[data-tone="stale"] {
+  background: var(--warn-hot, #e67e22);
+}
+.mrr-dot[data-tone="fallback"],
+.mrr-dot[data-tone="unknown"] {
+  background: var(--text-4);
+}
+
+/* Short viewports (S1): the fixed blocks tighten in three steps so the
+   watchlist keeps rows in view (four at 900px, two at 760px, one at 600px).
+   From 1000px of height up nothing changes. */
+@media (max-height: 999.98px) {
+  .mrr-side-head {
+    margin-bottom: 22px;
+  }
+  .mrr-nav a {
+    height: 44px;
+  }
+  .mrr-side-hr {
+    margin: 20px 20px 10px;
+  }
+  .mrr-side-foot .ver {
+    margin-top: 8px;
+  }
+}
+@media (max-height: 859.98px) {
+  .mrr-side-head {
+    margin-bottom: 16px;
+  }
+  .mrr-nav a {
+    height: 38px;
+  }
+  .mrr-nav a.mrr-nav-sub {
+    height: 32px;
+  }
+  .mrr-side-hr {
+    margin: 14px 20px 8px;
+  }
+  .mrr-side-foot .ver {
+    margin-top: 4px;
+  }
+}
+@media (max-height: 759.98px) {
+  .mrr-side {
+    padding: 16px 4px 10px;
+  }
+  .mrr-rail {
+    padding: 16px 0 10px;
+  }
+  .mrr-side-head {
+    margin-bottom: 12px;
+  }
+  .mrr-nav {
+    gap: 2px;
+  }
+  .mrr-nav a {
+    height: 32px;
+  }
+  .mrr-nav a.mrr-nav-sub {
+    height: 28px;
+    margin-top: 2px;
+  }
+  .mrr-side-hr {
+    margin: 8px 20px 6px;
+  }
+  .mrr-side-foot {
+    line-height: 1.5;
+  }
+  .mrr-side-foot .ver {
+    margin-top: 2px;
+  }
+  .mrr-side-wl .mrr-wl-head {
+    margin-bottom: 6px;
+  }
+  .mrr-side-wl .mrr-wl-note {
+    padding-top: 6px;
+  }
 }
 
 /* Top bar: 1fr / 368px / 1fr. The palette trigger is placed in track 2 and
@@ -800,24 +1041,51 @@ main .mrr-scroll {
   font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;
 }
+/* The fixed-slot quote tile (Iteration 1, S2): symbol · value · change · tag
+   · spark on one grid, every slot always rendered (QuoteSlots in
+   QuoteCard.tsx), so a missing change or sparkline leaves a marked slot and
+   every tile in a row keeps one shape. The three text tracks keep the
+   mockup's 72 / 72 / 70 px and give way to their content when the card is
+   narrow; the tag track is its content (never squeezed under the spark) and
+   takes the slack, which parks the spark at the right edge as the old auto
+   margin did. Overflow is clipped so a card narrower than its slots can
+   never spill into its neighbour. */
+.mrr-qslots {
+  display: grid;
+  grid-template-columns: minmax(min-content, 72px) minmax(min-content, 72px) minmax(min-content, 70px) auto 80px;
+  column-gap: 6px;
+  align-items: center;
+}
+.mrr-qslots > [data-slot] {
+  white-space: nowrap;
+}
+.mrr-quote.mrr-qslots {
+  overflow: hidden;
+}
 .mrr-quote b {
   font-weight: 500;
   font-size: var(--fs-quote, 15px);
-  width: 72px;
   text-transform: uppercase;
   color: var(--text);
 }
 .mrr-quote .v {
   font-size: var(--fs-quote, 15px);
-  width: 72px;
   color: var(--text);
 }
 .mrr-quote .c {
   font-size: var(--fs-quote-chg, 14px);
-  width: 70px;
 }
-.mrr-quote svg {
-  margin-left: auto;
+/* No day change: the dash is a marked absence, in the muted ink. */
+.mrr-qslots .c[data-empty="true"] {
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-qslots > [data-slot="spark"] {
+  display: flex;
+  justify-content: flex-end;
+}
+.mrr-qslots > [data-slot="spark"] svg,
+.mrr-spark-ph {
+  display: block;
   flex: none;
 }
 /* Delayed / stored read tags: 15M, CLOSE, 1W. */
@@ -1762,11 +2030,22 @@ main .mrr-scroll {
   }
 }
 
+/* Just above 860 the expanded sidebar leaves ~299px strip cards, under the
+   ~266px of slots plus the desk padding a US 10Y card needs (S2); the
+   padding tightens until the cards pass 314px near 900. */
+@media (min-width: 860px) and (max-width: 899.98px) {
+  .mrr-quote {
+    padding: 0 14px 0 16px;
+  }
+}
+
 /* Below 860 the sidebar is not rendered (useBreakpoint().shellCompact swaps
    it for MobileNav) and the grid collapses to one column; the top bar keeps
-   the palette trigger on the left and the actions on the right. */
+   the palette trigger on the left and the actions on the right. The
+   collapsed-rail track is reset too: the rail is not rendered here either. */
 @media (max-width: 859.98px) {
-  .mrr-app {
+  .mrr-app,
+  .mrr-app[data-sidebar="collapsed"] {
     grid-template-columns: 1fr;
   }
   /* The hero headline reads var(--fs-display) inline; 58 becomes 44 here. */
@@ -1791,6 +2070,21 @@ main .mrr-scroll {
 /* The analyst panel must never sit on top of data on a phone: below 768 it
    docks into a full-width bottom bar. */
 @media (max-width: 767.98px) {
+  /* Strip one card per row (Iteration 1, S2): two columns left ~167px cards
+     at 390 that wrapped unevenly, and the US 10Y card stretched to the
+     freshness card beside it. One per row keeps every quote card 54px on the
+     one-row slot grid; the freshness card takes its own row and its height. */
+  .mrr-strip {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .mrr-upd {
+    height: auto;
+    min-height: var(--strip-h, 54px);
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
   .mrr-number {
     min-height: 40px;
     font-size: var(--fs-body);
@@ -1872,32 +2166,12 @@ main .mrr-scroll {
   }
 }
 
-/* Phone: four cards in two columns leave ~167px per card, so a card wraps
-   into two rows (symbol + price, then change + tag + sparkline) instead of
-   pushing the page wide; the cells lose their fixed desk widths. */
+/* Phone: the four strip cards stack one per row, each quote card keeping the
+   one fixed-slot layout it has at every width; its desk padding tightens so
+   the five slots fit a 350px card. */
 @media (max-width: 479.98px) {
-  .mrr-quote,
-  .mrr-upd {
-    height: auto;
-    min-height: var(--strip-h, 54px);
-    padding: 8px 12px;
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-  .mrr-quote b,
-  .mrr-quote .v,
-  .mrr-quote .c {
-    width: auto;
-    margin-right: 8px;
-  }
-  .mrr-quote .c:empty {
-    display: none;
-  }
-  .mrr-quote svg {
-    width: 56px;
-  }
-  .mrr-upd {
-    gap: 6px 12px;
+  .mrr-quote {
+    padding: 0 14px 0 16px;
   }
   .mrr-dash-levels,
   .mrr-dash-glance {

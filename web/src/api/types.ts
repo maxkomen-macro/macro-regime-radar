@@ -49,6 +49,9 @@ export interface SignalsSnapshot {
   /** Newest as-of date across the set. */
   date: string;
   signals: Signal[];
+  /** B3: per-series state on /api/signals/latest only (the frozen Atlas
+   * /signals/latest keeps the old shape). */
+  freshness?: Record<string, SeriesState> | null;
 }
 
 export interface Alert {
@@ -111,6 +114,10 @@ export interface CalendarEvent {
   event_datetime: string;
   importance: string | null;
   source: string | null;
+  /** B5: set on large-cap earnings rows (kind "earnings"), which the calendar
+   * routes return only with ?include=earnings. */
+  symbol?: string | null;
+  kind?: string | null;
 }
 
 export interface BacktestRow {
@@ -142,6 +149,8 @@ export interface CreditSeries {
 export interface CreditOAS {
   as_of: string | null;
   series: CreditSeries[];
+  /** B3: the five BAML series and DGS10 (FRESHNESS_CONTRACT §6). */
+  freshness?: Record<string, SeriesState> | null;
 }
 
 export interface RecessionMetrics {
@@ -165,6 +174,8 @@ export interface RecessionMetrics {
   data_as_of: string;
   curve_shape: Record<string, number | null>;
   current_inputs: Record<string, number | null>;
+  /** B3: per-series state for the model's inputs (FRESHNESS_CONTRACT §6). */
+  freshness?: Record<string, SeriesState> | null;
 }
 
 export interface PricedMetric {
@@ -204,6 +215,43 @@ export interface Freshness {
   regime?: RegimeFreshness | null;
   bootstrap?: BootstrapStatus | null;
   relay?: { feeds: Record<string, string>; feed_stale: Record<string, boolean>; degraded: boolean; degraded_reasons: string[]; token_configured: boolean } | null;
+  /** B3 (2026-09-18): one state object per source, rendered by
+   * screens/shared/fresh-state.ts (docs/redesign-v2/FRESHNESS_CONTRACT.md §1). */
+  series?: SeriesState[];
+  /** Set by the snapshot builder: every state is "unknown" until the live
+   * report replaces it (FRESHNESS_CONTRACT §5). */
+  seeded?: boolean;
+}
+
+/* ── Per-series freshness (B3, docs/redesign-v2/FRESHNESS_CONTRACT.md) ──── */
+
+/** Closed set; any other word from the server renders as "unknown". Not the
+ * same type as screens/shared/freshness.ts `FreshState` (the older
+ * cadence-assessed chip vocabulary). */
+export type FreshState = "live" | "delayed" | "close" | "stale" | "fallback" | "unknown";
+
+export interface SeriesState {
+  /** "DGS10", "market_daily", "live_quotes", "lbo_all_in_rate", … */
+  id: string;
+  /** Plain-English name, ready for display. */
+  label: string;
+  kind: "fred" | "market" | "live" | "derived";
+  cadence: "daily" | "monthly" | "5min" | "tick" | "60s";
+  /** The true observation date or stamp: YYYY-MM-DD (daily, monthly = the
+   * first of the print's month), YYYY-MM-DD HH:MM:SS New York wall time
+   * (intraday bars) or an ISO UTC timestamp (relay ticks). */
+  as_of: string | null;
+  state: FreshState;
+  /** Only for "live" (0) and "delayed" (N minutes). */
+  delay_min: number | null;
+  /** Publications behind the newest one due; null when not applicable. */
+  cycles_behind: number | null;
+  /** Exactly (state === "stale"). */
+  stale: boolean;
+  /** True only for a series the source no longer publishes (USSLIND). */
+  discontinued: boolean;
+  /** One plain sentence for a tooltip or Details, never the headline. */
+  reason: string;
 }
 
 /* ── Regime Lab (night-2 endpoints) ────────────────────────────────────── */
@@ -371,6 +419,8 @@ export interface CreditMetrics {
   ccc_sparkline: DatedValue[];
   bb_sparkline: DatedValue[];
   b_sparkline: DatedValue[];
+  /** B3: the five BAML series and FEDFUNDS (FRESHNESS_CONTRACT §6). */
+  freshness?: Record<string, SeriesState> | null;
 }
 
 /* ── Recession sensitivity ─────────────────────────────────────────────── */
@@ -397,7 +447,17 @@ export interface LboDefaults {
   fedfunds: number;
   hy_oas_pct: number;
   lbo_all_in_rate: number;
+  /** The later stored row stamp, or "unavailable"; the freshness block has
+   * the true dates. */
   data_as_of: string;
+  /** B3: "fallback" when the stated defaults stand in for stored rates. */
+  status?: "live" | "fallback";
+  is_fallback?: boolean;
+  /** The stored row dates of the two components. */
+  fedfunds_as_of?: string | null;
+  hy_oas_as_of?: string | null;
+  /** B3: FEDFUNDS, BAMLH0A0HYM2 and lbo_all_in_rate (FRESHNESS_CONTRACT §6). */
+  freshness?: Record<string, SeriesState> | null;
 }
 
 export interface LboRequest {
