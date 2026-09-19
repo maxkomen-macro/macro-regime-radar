@@ -58,8 +58,13 @@ export function fmtProviderStamp(stamp: string | null | undefined): string {
 }
 
 /** A typed sentence for a provider failure. `what` reads like "history" or
- * "the quote"; `symbol` is the house spelling. */
-export function describeProviderError(err: unknown, what: string, symbol: string): string {
+ * "the quote"; `symbol` is the house spelling. `snapshot` (CP4): the session
+ * runs on the validated snapshot, which carries no provider data, so a
+ * request that never reached the service says the read is not in it. */
+export function describeProviderError(err: unknown, what: string, symbol: string, snapshot = false): string {
+  const What = `${what[0].toUpperCase()}${what.slice(1)}`;
+  const unreached = !(err instanceof ApiError) || err.kind === "unreachable";
+  if (snapshot && unreached) return `${What} for ${symbol} comes live from the market data provider and is not in this snapshot.`;
   if (!(err instanceof ApiError)) return `Unavailable: ${what} for ${symbol} did not load.`;
   switch (err.kind) {
     case "unknown_symbol":
@@ -77,7 +82,8 @@ export function describeProviderError(err: unknown, what: string, symbol: string
     case "timeout":
       return `The data provider did not answer in time for ${symbol}; retrying.`;
     case "unreachable":
-      return "The data service is unreachable; stored data stays on screen until it returns.";
+      // CP4: name what failed and for which ticker.
+      return `${What} for ${symbol} unavailable: the data service did not answer.`;
     case "malformed":
       return "The data provider answered unreadably; retrying.";
     case "unavailable":

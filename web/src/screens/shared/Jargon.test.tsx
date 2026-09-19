@@ -50,7 +50,7 @@ describe("Jargon tooltip (WCAG 1.4.13)", () => {
     fireEvent.focus(trigger);
     const tip = screen.getByRole("tooltip");
     expect(tip).toBeVisible();
-    expect((tip.textContent ?? "").startsWith("IG spreads above 150 bp: financing strain")).toBe(true);
+    expect((tip.textContent ?? "").startsWith("IG spreads above 150 bps: financing strain")).toBe(true);
     expect(tip.textContent).not.toContain("—");
     expect(trigger.getAttribute("aria-describedby")).toBe(tip.id);
     trigger.focus();

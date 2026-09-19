@@ -15,6 +15,7 @@ import type { RecessionMetrics } from "../../api/types";
 import { fmtMonYr } from "../../lib/format";
 import LineChart from "../dashboard/LineChart";
 import { DASH } from "../dashboard/hero-copy";
+import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
 import { Caption, monoNoteStyle } from "../shared/screen-ui";
 import { lastMonths, usrecBands } from "./recession-copy";
@@ -65,12 +66,20 @@ export default function ProbabilityHistory({ m }: { m: RecessionMetrics }): JSX.
         showLast={false}
         caption="Model recession probability history with NBER recessions shaded"
       />
-      <Caption mono>
+      {/* G4 (Iteration 1 step 5): three sentences, not two, because the
+          plotted tail and the headline are different numbers (a partial-month
+          fit vs the newest complete monthly read) and would be misread as a
+          disagreement without the third. The lag sentence sits behind Details. */}
+      <Caption mono copyMax={3}>
         The model&apos;s 12-month odds, monthly since {plotted[0] ? fmtMonYr(plotted[0].date) : DASH}. Shaded bands are actual{" "}
         <Jargon term="NBER">NBER</Jargon> recessions, dashed rules the 20/40 band edges. The plotted tail ({tail ? `${tail.value.toFixed(0)}%` : DASH})
-        is a partial-month fit; the headline {prob.toFixed(1)}% is the newest complete monthly read. Features enter with a 3-month lag so the line
-        never peeks at data it wouldn&apos;t have had.
+        is a partial-month fit; the headline {prob.toFixed(1)}% is the newest complete monthly read.
       </Caption>
+      <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+        <Caption mono style={{ marginTop: 0 }}>
+          Features enter with a 3-month lag so the line never peeks at data it wouldn&apos;t have had.
+        </Caption>
+      </Disclosure>
     </div>
   );
 }

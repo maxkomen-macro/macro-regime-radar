@@ -25,7 +25,7 @@ import type { LiveQuote } from "../../live/quotes";
 import { fmtSignedPct } from "../../lib/format";
 import { monDD } from "../shared/fresh-state";
 import { dayKeyEt } from "../shared/calendar-impact";
-import { Caption, StateNote, eyebrowStyle } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote, eyebrowStyle } from "../shared/screen-ui";
 import { readCandles } from "../shell/watchlist/useWatchlistQuote";
 import { SINGLE_NAMES, asOfCell, nyseSessionOpen, type TapeDef } from "./tape";
 
@@ -52,6 +52,9 @@ export interface MoversRead {
   losers: MoverRead[];
   /** Names with neither a stream change nor two stored closes. */
   missing: TapeDef[];
+  /** A candle request for a missing name failed (CP4: the empty state then
+   * says the prices did not load, never that none exist). */
+  error?: boolean;
 }
 
 const SLOTS = 3;
@@ -81,6 +84,7 @@ export function useMoversRead(quotes: ReadonlyMap<string, LiveQuote>, sessionOpe
   const reads: MoverRead[] = [];
   const missing: TapeDef[] = [];
   let loading = false;
+  let error = false;
   for (const def of SINGLE_NAMES) {
     const q = quotes.get(def.symbol);
     if (q?.dc != null) {
@@ -97,6 +101,7 @@ export function useMoversRead(quotes: ReadonlyMap<string, LiveQuote>, sessionOpe
     } else if (res?.isPending) {
       loading = true;
     } else {
+      if (res?.isError) error = true;
       missing.push(def);
     }
   }
@@ -107,6 +112,7 @@ export function useMoversRead(quotes: ReadonlyMap<string, LiveQuote>, sessionOpe
     gainers: ranked.filter((m) => m.change > 0).slice(0, SLOTS),
     losers: [...ranked].reverse().filter((m) => m.change < 0).slice(0, SLOTS),
     missing,
+    error,
   };
 }
 
@@ -182,6 +188,9 @@ export default function Movers({ read, onOpen }: { read: MoversRead; onOpen: (sy
     );
   } else if (read.loading) {
     body = <StateNote loading>Reading the single names' day moves…</StateNote>;
+  } else if (read.error) {
+    // CP4: neither the stream nor the candles answered.
+    body = <StateNote error missing={MISSING.market} />;
   } else {
     body = (
       <StateNote>

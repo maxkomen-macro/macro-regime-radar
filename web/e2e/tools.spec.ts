@@ -369,12 +369,19 @@ test.describe("tools (checklist 09 E.3)", () => {
     else if (/^FRED rate (?:delayed|stale)$/.test(title)) expect(tone).toBe("amber");
     else expect(tone).toBe("gray");
     // E1: the strip and the rate tile's caption print the same as-of word per component.
-    const words = /^Fed funds: (.+) · HY spread: (.+)$/.exec(detail);
+    // Iteration 1 step 5 (G4): the strip is one line, "Fed <word> · HY <word>",
+    // or the weaker component alone when both do not fit.
+    const words = /^Fed (.+) · HY (.+)$/.exec(detail);
+    const single = /^(Fed funds|HY spread) (.+)$/.exec(detail);
     if (defaults.is_fallback !== true && defaults.data_as_of !== "unavailable" && words) {
       const caption = await contentText(assumptions(page));
       expect(caption).toContain(`(monthly average, ${words[1]})`);
       expect(caption).toContain(`(daily, ${words[2]})`);
       note("as-of", `Fed funds ${words[1]} · HY spread ${words[2]}`);
+    } else if (defaults.is_fallback !== true && defaults.data_as_of !== "unavailable" && single) {
+      const caption = await contentText(assumptions(page));
+      expect(caption).toContain(single[1] === "Fed funds" ? `(monthly average, ${single[2]})` : `(daily, ${single[2]})`);
+      note("as-of", detail);
     } else if (defaults.is_fallback !== true && defaults.data_as_of !== "unavailable") {
       // A pre-B3 payload (no freshness block): the legacy stored-through strip.
       expect(storedThrough(detail), "the strip prints the stored-through date").not.toBe("");
@@ -647,12 +654,13 @@ test.describe("tools (checklist 09 E.3)", () => {
     note("strip", `${title} · ${detail} · tone ${tone}`);
     if (a.optimizations == null) {
       expect(tone).toBe("amber");
-      expect(title).toBe("Optimizer unavailable this session");
-      expect(detail).toMatch(/months complete · \d+ required$|^needs 24 complete /);
-      if (a.optimizations_skipped) expect(detail).toBe(`${a.optimizations_skipped.complete_months} of ${a.optimizations_skipped.total_regime_months} ${a.current_regime} months complete · ${a.optimizations_skipped.required_cov_months} required`);
+      // Iteration 1 step 5 (G4): one status line each; the full sample sentence is the optimization section's.
+      expect(title).toBe("Optimizer skipped this session");
+      expect(detail).toMatch(/complete months · \d+ required$|^needs 24 complete /);
+      if (a.optimizations_skipped) expect(detail).toBe(`${a.optimizations_skipped.complete_months} complete months · ${a.optimizations_skipped.required_cov_months} required`);
     } else {
       expect(["mint", "amber"]).toContain(tone);
-      expect(title).toMatch(/^Optimizer solved(?: · 7 methods| with \d+ fallbacks?)$/);
+      expect(title).toMatch(/^Optimizer solved · (?:7 methods|\d+ fallbacks?)$/);
     }
     await strip.click();
     await expect.poll(() => inView(page, "allocation-optimization"), { timeout: 15_000 }).toBe(true);

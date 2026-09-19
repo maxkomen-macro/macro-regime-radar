@@ -15,6 +15,7 @@
 
 import { useId, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { useBreakpoint } from "../../lib/useBreakpoint";
 import type { LedgerItem } from "./DeskRead";
 
 /** A Ledger row with the label widened to a ReactNode (Jargon) and an optional
@@ -99,12 +100,16 @@ const EYEBROW: CSSProperties = {
 export function StatusStrip({ tone = "mint", title, detail, to, href, onClick, ariaLabel, ariaHasPopup, id, style }: StatusStripProps) {
   const t = STRIP_TONES[tone];
   const interactive = Boolean(to || href || onClick);
+  // Below 480 the strip tightens its padding, gaps and glyph (a useBreakpoint
+  // padding consumer) so each status line keeps one line at 390 (G4).
+  const { isMobile } = useBreakpoint();
+  const glyph = isMobile ? 22 : 28;
   const base: CSSProperties = {
     marginTop: "auto",
     display: "flex",
     alignItems: "center",
-    gap: 16,
-    padding: "11px 18px",
+    gap: isMobile ? 10 : 16,
+    padding: isMobile ? "10px 12px" : "11px 18px",
     borderRadius: 10,
     background: t.background,
     borderWidth: 1,
@@ -121,19 +126,24 @@ export function StatusStrip({ tone = "mint", title, detail, to, href, onClick, a
   };
   const body = (
     <>
-      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true" fill="currentColor" style={{ flex: "none", color: t.color }}>
+      <svg width={glyph} height={glyph} viewBox="0 0 28 28" aria-hidden="true" fill="currentColor" style={{ flex: "none", color: t.color }}>
         <rect x="3" y="17" width="4" height="8" rx="1" />
         <rect x="10" y="12" width="4" height="13" rx="1" />
         <rect x="17" y="6" width="4" height="19" rx="1" />
       </svg>
+      {/* G4 (Iteration 1 step 5): the title and the detail are each one
+          status line (`data-copy="status"`), one rendered line at every width;
+          anything longer belongs in the drawer or section the strip opens. */}
       <div style={{ minWidth: 0 }}>
-        <b style={{ fontWeight: 500, fontSize: 14 }}>
+        <b data-copy="status" style={{ display: "block", fontWeight: 500, fontSize: 14, lineHeight: 1.4 }}>
           <span className="mrr-status-title" style={{ color: t.color }}>
             {title}
           </span>
         </b>
         {detail != null ? (
-          <small style={{ display: "block", fontSize: 12, color: "var(--text-2)" }}>{detail}</small>
+          <small data-copy="status" style={{ display: "block", fontSize: 12, lineHeight: 1.45, color: "var(--text-2)" }}>
+            {detail}
+          </small>
         ) : null}
       </div>
       {interactive ? (

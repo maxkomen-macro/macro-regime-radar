@@ -32,7 +32,7 @@ const STATES = ["Normal", "Tight", "Stressed", "Crisis"];
 /** Spread monitor card names in order (C.2) and the closed badge set. */
 const CARD_NAMES = ["High yield", "Investment grade", "BB", "Single-B", "CCC"];
 const BADGES = new Set(["Normal", "Stressed", "Crisis", "Tight", "Monitor", "Watch", "Distressed", "Unavailable"]);
-const TIGHT_DEF = "IG spreads above 150 bp: financing strain";
+const TIGHT_DEF = "IG spreads above 150 bps: financing strain";
 const GUARD = "Rate components unavailable; the all-in figure above is the stored monthly read.";
 /** The three NBER windows the hero caption names (oas-window.ts NBER_BANDS). */
 const NBER = [
@@ -312,7 +312,7 @@ test.describe("credit (checklist 06 E.3)", () => {
     await expect(strip).toHaveCount(1);
     await expect(strip).toHaveClass(/mrr-status/);
     const title = await contentText(strip.locator(".mrr-status-title"));
-    expect(title).toMatch(/^(?:Watch · CCC widening|Watch · CCC at \d+(?:\.\d)?% of the distress line|(?:Stressed|Crisis) · HY \d+ bps|Clear · ladder in step)$/);
+    expect(title).toMatch(/^(?:Watch · CCC widening|Watch · CCC \d+(?:\.\d)?% of distress|(?:Stressed|Crisis) · HY \d+ bps|Clear · ladder in step)$/);
     expect(await strip.getAttribute("aria-label")).toMatch(new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\. .+\\. Jump to the quality ladder\\.$`));
     const hasCallout = (await ladder(page).getByText(/Analytical callout · quality ladder tension/i).count()) > 0;
     const tone = (await strip.getAttribute("data-tone")) ?? "";

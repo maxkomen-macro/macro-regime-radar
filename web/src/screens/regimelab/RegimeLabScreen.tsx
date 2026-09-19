@@ -26,11 +26,11 @@ import { assessFreshness } from "../shared/freshness";
 import { useRegimeDuration, useRegimeHistory, useRegimeLatest, useRecessionProbability, useTakeaway, useTransitions } from "../../api/queries";
 import { fmtMonYr, fmtSigned, fmtWholePct, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
-import { Caption, StateNote, useHashScroll } from "../shared/screen-ui";
+import { Caption, MISSING, MISSING_ROW, StateNote, missingNote, useHashScroll, useSnapshotMode, type MissingSource } from "../shared/screen-ui";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
 import TabHero from "../shared/TabHero";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
-import { parseStrong } from "../shared/narrative";
+import { parseStrong, takeMarkedSentences } from "../shared/narrative";
 import { DASH, convictionWord } from "../dashboard/hero-copy";
 import { CYCLE_GLOW, cycleHero, monthsText, stripSummary } from "./hero-copy";
 import { stay6m, trailPoints, yearsOfHistory } from "./regime-history";
@@ -97,6 +97,7 @@ export default function RegimeLabScreen() {
   const regimeHistory = useRegimeHistory();
   const takeaway = useTakeaway();
   const duration = useRegimeDuration();
+  const snapshot = useSnapshotMode();
   const transitions = useTransitions();
   const recession = useRecessionProbability();
   const location = useLocation();
@@ -127,10 +128,14 @@ export default function RegimeLabScreen() {
   if (r) footnote.push(`Classifier month ${fmtMonYr(r.date)} (${assessFreshness(r.date, "monthly").age} old)`);
   if (years != null) footnote.push(`${years} year${years === 1 ? "" : "s"} of monthly regime history`);
 
-  const lede: ReactNode = t ? (
-    parseStrong(tidyProse(t.narrative))
+  // G4 (Iteration 1 step 5): the served narrative is model-composed, so the
+  // visible lede is its first three sentences by construction and the rest,
+  // verbatim, sits behind the hero's Details.
+  const narrative = t ? takeMarkedSentences(tidyProse(t.narrative), 3) : null;
+  const lede: ReactNode = narrative ? (
+    parseStrong(narrative.shown)
   ) : takeaway.isError ? (
-    <StateNote>Takeaway unavailable: the data service did not answer.</StateNote>
+    <StateNote error missing={MISSING.takeaway} />
   ) : (
     <StateNote loading>Assembling the market takeaway; the cold call trains the recession model once.</StateNote>
   );
@@ -140,6 +145,7 @@ export default function RegimeLabScreen() {
     eyebrow: "Cycle position",
     live: r != null && assessFreshness(r.date, "monthly").state === "current",
     lede,
+    ledeMore: narrative?.rest ? parseStrong(narrative.rest) : undefined,
     actions: HERO_ACTIONS,
     footnote,
     // No absence before an answer: the Regime chip waits for the stored row
@@ -158,7 +164,7 @@ export default function RegimeLabScreen() {
   ) : duration.isError && !d ? (
     <TabHero
       {...heroShared}
-      headline={<span style={stateHeadline}>Cycle position unavailable: the data service did not answer.</span>}
+      headline={<span style={stateHeadline}>{missingNote(MISSING.cycle, snapshot)}</span>}
       pill="Unavailable"
       pillTone="gray"
       glow={CYCLE_GLOW.gray}
@@ -169,7 +175,9 @@ export default function RegimeLabScreen() {
 
   /* ── summary rows ────────────────────────────────────────────────────── */
   const regimeNote = <StateNote loading={regime.isLoading} error={regime.isError && !r} />;
-  const pending = (q: { isError: boolean }) => (q.isError ? <StateNote error /> : <StateNote loading />);
+  // CP4: a failed row names its source (the first row of each) or says so briefly.
+  const pending = (q: { isError: boolean }, missing: MissingSource | typeof MISSING_ROW = MISSING_ROW) =>
+    q.isError ? <StateNote error missing={missing} /> : <StateNote loading />;
   const months = d ? monthsText(d.months_in_regime) : "0";
   const six = tr?.transitions_6m[0];
   const summaryRows: SummaryRow[] = [
@@ -209,7 +217,7 @@ export default function RegimeLabScreen() {
       label: "Next 3 months",
       value: tr
         ? `Stays ${tr.current_regime} ${Math.round(tr.stay_probability_3m)}% · highest-risk path → ${tr.highest_risk_transition} ${Math.round(tr.highest_risk_prob)}%`
-        : pending(transitions),
+        : pending(transitions, MISSING.transitions),
     },
     {
       id: "next-6m",
@@ -221,12 +229,12 @@ export default function RegimeLabScreen() {
     {
       id: "spell-length",
       label: "Spell length",
-      value: d ? `${months} month${months === "1" ? "" : "s"} in · ${d.status} · avg spell ${d.historical_avg_months.toFixed(1)}mo` : pending(duration),
+      value: d ? `${months} month${months === "1" ? "" : "s"} in · ${d.status} · avg spell ${d.historical_avg_months.toFixed(1)}mo` : pending(duration, MISSING.cycle),
     },
     {
       id: "market-read",
       label: "Market read",
-      value: t ? t.primary_signal : pending(takeaway),
+      value: t ? t.primary_signal : pending(takeaway, MISSING.takeaway),
       tone: t ? (t.primary_signal === "Risk-On" ? "var(--pos)" : t.primary_signal === "Risk-Off" ? "var(--neg)" : "var(--amber)") : undefined,
     },
     {
@@ -251,7 +259,7 @@ export default function RegimeLabScreen() {
       value: rec ? (
         `${rec.divergence_label}${rec.divergence_score != null ? ` · ${fmtSigned(rec.divergence_score, 0)} on ±100` : ""}`
       ) : recession.isError ? (
-        <StateNote error />
+        <StateNote error missing={MISSING.recession} />
       ) : (
         <StateNote loading>Training the recession model; the first call takes about a second.</StateNote>
       ),

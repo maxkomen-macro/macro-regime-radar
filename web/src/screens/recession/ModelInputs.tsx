@@ -20,7 +20,7 @@ import { Card, SectionHeader, SignalCard } from "../../components";
 import type { RecessionMetrics } from "../../api/types";
 import { fmtMonYr, fmtSigned, ordinal } from "../../lib/format";
 import Jargon from "../shared/Jargon";
-import { Caption, StateNote } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote } from "../shared/screen-ui";
 import { featureCurrent, featureLabel } from "./recession-copy";
 import type { RecessionPanelProps } from "./panel-props";
 
@@ -136,7 +136,7 @@ export default function ModelInputs({ m, status }: RecessionPanelProps): JSX.Ele
         </>
       ) : (
         <Card variant="tile">
-          <StateNote loading={status === "loading"} error={status === "error"} />
+          <StateNote loading={status === "loading"} error={status === "error"} missing={MISSING.recession} />
         </Card>
       )}
     </Card>

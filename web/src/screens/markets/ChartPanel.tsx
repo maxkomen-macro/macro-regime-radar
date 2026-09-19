@@ -41,7 +41,7 @@ import type { CandleRange } from "../../api/types";
 import { Segmented } from "../../components";
 import { fmtDate, fmtIntradayTs } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
-import { Caption, metaStyle, mono } from "../shared/screen-ui";
+import { Caption, MISSING, metaStyle, missingNote, mono, useSnapshotMode } from "../shared/screen-ui";
 import { candleCaption, describeProviderError } from "../shared/provider-ui";
 import CandleChart from "./CandleChart";
 
@@ -116,7 +116,12 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
   const activeMode: Mode = mode === "intraday" && canIntraday ? "intraday" : "daily";
   // An empty intraday window must not leave a 320px blank canvas: the panel
   // states why, what the store does hold, and offers the daily view instead.
-  const intradayEmpty = activeMode === "intraday" && !intraday.isLoading && intradayPoints.length === 0;
+  const intradayEmpty = activeMode === "intraday" && !intraday.isLoading && !intraday.isError && intradayPoints.length === 0;
+  // CP4: a failed stored read names what is missing instead of leaving an
+  // empty canvas (the snapshot carries no market bars).
+  const snapshot = useSnapshotMode();
+  const storedMissing =
+    hasHistory && (activeMode === "daily" ? daily.isError && dailyBars.length === 0 : intraday.isError && intradayPoints.length === 0);
 
   // Opening feedback: bring the panel into view and move focus to it — the
   // trigger row can sit 1,400px below where the panel mounts.
@@ -137,7 +142,7 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
   // Chart lifecycle: create once per mode/symbol-history combination…
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || !hasHistory || intradayEmpty) return;
+    if (!el || !hasHistory || intradayEmpty || storedMissing) return;
     const chart = createChart(el, {
       autoSize: true,
       layout: {
@@ -188,7 +193,7 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
       chartRef.current = null;
       chart.remove();
     };
-  }, [hasHistory, activeMode, symbol, intradayEmpty]);
+  }, [hasHistory, activeMode, symbol, intradayEmpty, storedMissing]);
 
   // …and apply data through the series refs, so a 30s poll updates in place
   // instead of rebuilding the chart.
@@ -274,7 +279,11 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
           </button>
         </span>
       </div>
-      {hasHistory && intradayEmpty ? (
+      {storedMissing ? (
+        <div role="status" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-2)", padding: "14px 12px" }}>
+          {missingNote(activeMode === "daily" ? MISSING.closes : MISSING.intraday, snapshot)}
+        </div>
+      ) : hasHistory && intradayEmpty ? (
         <div
           role="status"
           style={{
@@ -320,6 +329,7 @@ const RANGES: CandleRange[] = ["1D", "5D", "1M", "6M", "1Y", "5Y", "MAX"];
 const RANGE_OPTIONS = RANGES.map((r) => ({ id: r, label: r }));
 
 export function OnDemandHistory({ symbol }: { symbol: string }) {
+  const snapshot = useSnapshotMode();
   const [range, setRange] = useState<CandleRange>("6M");
   const q = useSymbolCandles(symbol, range);
   return (
@@ -346,7 +356,7 @@ export function OnDemandHistory({ symbol }: { symbol: string }) {
           style={{ height: 160, display: "grid", placeItems: "center", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: q.isError ? "var(--warn-hot)" : "var(--text-muted)", textAlign: "center", padding: "0 12px" }}
         >
           {q.isError
-            ? describeProviderError(q.error, "history", symbol)
+            ? describeProviderError(q.error, "history", symbol, snapshot)
             : q.isPending
               ? `Requesting ${range} history for ${symbol} from EODHD…`
               : `No bars in the ${range} range for ${symbol}.`}

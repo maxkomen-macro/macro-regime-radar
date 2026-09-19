@@ -547,7 +547,7 @@ const KEY_LEVEL_COLUMNS = [
 const KEY_LEVEL_ROWS = [
   { id: "ff", label: "Fed funds", value: "3.64%" },
   { id: "10y", label: "US 10Y", value: "4.30%" },
-  { id: "2s10s", label: "2s10s", value: "+41 bp" },
+  { id: "2s10s", label: "2s10s", value: "+41 bps" },
   { id: "vix", label: "VIX", value: "18.92" },
 ];
 
@@ -1012,7 +1012,7 @@ const CREDIT_ROWS: SummaryRow[] = [
   {
     id: "ccc",
     label: "CCC OAS",
-    value: "8.42% (+41 bp / 1M)",
+    value: "8.42% (+41 bps / 1M)",
     tone: "var(--amber)",
   },
   { id: "hy", label: "HY OAS", value: "2.91%" },
@@ -1148,7 +1148,7 @@ export default function KitScreen() {
                 pill="Elevated"
                 pillTone="amber"
                 subhead="Odds within 12 months, up from 28% in June."
-                lede="The curve is flat, high-yield spreads are 40 bp wider than in June and the leading-indicator proxy has rolled over. Odds this high have preceded four of the last six downturns within a year."
+                lede="The curve is flat, high-yield spreads are 40 bps wider than in June and the leading-indicator proxy has rolled over. Odds this high have preceded four of the last six downturns within a year."
                 actions={[{ label: "Open the model", to: "/app/recession" }]}
                 footnote={["Model inputs through Aug 2026", "Threshold 30%"]}
                 freshness={[{ noun: "Macro", info: FRESH_MACRO_DELAYED }]}
@@ -1223,7 +1223,7 @@ export default function KitScreen() {
                 status={{
                   tone: "amber",
                   title: "Watch · CCC widening",
-                  detail: "+41 bp in a month while BB and B held flat",
+                  detail: "+41 bps in a month while BB and B held flat",
                   to: "/app/credit#quality-ladder",
                 }}
               />
@@ -1318,7 +1318,7 @@ export default function KitScreen() {
                 lastTriggered={null}
                 sparkline={HY_24}
                 lines={[
-                  "1M change: +6 bp",
+                  "1M change: +6 bps",
                   "Series BAMLH0A0HYM2 · Sep 08, 2026",
                 ]}
               />
@@ -1511,7 +1511,7 @@ export default function KitScreen() {
                       marginTop: 4,
                     }}
                   >
-                    CCC spreads widened 41 bp in a month while BB and B held
+                    CCC spreads widened 41 bps in a month while BB and B held
                     flat; the weakest credits are being repriced first.
                   </div>
                 </Card>
@@ -2598,7 +2598,7 @@ export default function KitScreen() {
                 <StatTile
                   label="US 10Y"
                   value="4.30%"
-                  delta="+10 bp"
+                  delta="+10 bps"
                   direction="up"
                 />
                 <StatTile

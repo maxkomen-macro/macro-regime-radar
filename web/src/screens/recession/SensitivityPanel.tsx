@@ -23,7 +23,7 @@ import type { RecessionScenarioRequest } from "../../api/types";
 import { fmtSigned } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
-import { Caption, SliderRow, StateNote, capStyle, eyebrowStyle, mono, useDebounced } from "../shared/screen-ui";
+import { Caption, MISSING, SliderRow, StateNote, capStyle, eyebrowStyle, mono, useDebounced } from "../shared/screen-ui";
 import { BREAKEVEN_LABEL, labelTone, toneColor } from "./recession-copy";
 import type { SensitivityPanelProps } from "./panel-props";
 
@@ -75,7 +75,7 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
     // B.8: the header plus a state note in place of the sliders until data arrives.
     body = (
       <Card variant="tile">
-        <StateNote loading={status === "loading"} error={status === "error"} />
+        <StateNote loading={status === "loading"} error={status === "error"} missing={MISSING.recession} />
       </Card>
     );
   } else if (!effective) {
@@ -276,7 +276,7 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
                 <div style={{ marginTop: 8 }}>
                   {/* isPending covers the first fetch and the 120 ms debounce
                     window alike, so the slot never flashes "Nothing on file." */}
-                  <StateNote live loading={scenario.isPending} error={scenario.isError} />
+                  <StateNote live loading={scenario.isPending} error={scenario.isError} missing={MISSING.recessionScenario} />
                 </div>
               )}
             </div>

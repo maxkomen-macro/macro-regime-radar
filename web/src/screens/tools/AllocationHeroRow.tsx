@@ -18,13 +18,12 @@ import { fmtMonYr } from "../../lib/format";
 import type { AllocationData } from "../../api/types";
 import { assessFreshness } from "../shared/freshness";
 import { HeroChartFrame } from "../shared/HeroChart";
-import { StateNote } from "../shared/screen-ui";
+import { MISSING, MISSING_ROW, StateNote, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import SummaryCard, { type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import {
   ALLOCATION_EYEBROW,
   ALLOCATION_GLOW,
-  ERROR_HEADLINE,
   LOADING_HEADLINE,
   LOADING_LEDE,
   LOADING_SUBHEAD,
@@ -171,6 +170,7 @@ export default function AllocationHeroRow() {
   // Freshness chips are hidden on a phone (the checklist 03 B.1 convention every tab follows).
   const { isMobile } = useBreakpoint();
   const q = useAllocation();
+  const snapshot = useSnapshotMode();
   const a: AllocationData | null = q.data ?? null;
   const loading = q.isLoading && !a;
   const error = q.isError && !a;
@@ -208,7 +208,7 @@ export default function AllocationHeroRow() {
     hero = (
       <TabHero
         {...heroShared}
-        headline={<span style={stateHeadline}>{ERROR_HEADLINE}</span>}
+        headline={<span style={stateHeadline}>{missingNote(MISSING.allocation, snapshot)}</span>}
         pill="Unavailable"
         pillTone="gray"
         glow={ALLOCATION_GLOW.gray}
@@ -229,7 +229,9 @@ export default function AllocationHeroRow() {
   }
 
   /* ── summary rows (B.9) ──────────────────────────────────────────────── */
-  const note = <StateNote loading={loading} error={error} />;
+  // CP4: the first row names the engine and why it is missing; the rest say so briefly.
+  const lead = <StateNote loading={loading} error={error} missing={MISSING.allocation} />;
+  const note = <StateNote loading={loading} error={error} missing={MISSING_ROW} />;
   const curStats = a ? currentStats(a) : undefined;
   const optimizer = a ? optimizerRow(a) : null;
   const ranked = a ? allocationSummary(a) : null;
@@ -238,7 +240,7 @@ export default function AllocationHeroRow() {
     {
       id: "sample",
       label: "Sample",
-      value: a ? `${curStats?.n_months ?? 0} ${a.current_regime} months · ${a.n_months} total since ${startMonYr(a)}` : note,
+      value: a ? `${curStats?.n_months ?? 0} ${a.current_regime} months · ${a.n_months} total since ${startMonYr(a)}` : lead,
     },
     // Iteration 1 G2 (T3): served figures fill the card beside the taller
     // desk hero: the regime's leader and laggard (the ranked served means the
@@ -252,7 +254,7 @@ export default function AllocationHeroRow() {
   ];
 
   /* ── status strip: the optimizer state, a hash link to the section ───── */
-  const words = allocationStrip(a ?? undefined, loading);
+  const words = allocationStrip(a ?? undefined, loading, snapshot);
   const strip: StatusStripProps = {
     ...words,
     to: STRIP_TARGET,

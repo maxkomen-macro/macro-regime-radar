@@ -32,6 +32,7 @@ import { Card, SectionHeader, Tag } from "../../components";
 import { useSignalsLatest } from "../../api/queries";
 import { fmtMonYr } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
+import Disclosure from "../shared/Disclosure";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote, eyebrowStyle, mono, useHashScroll } from "../shared/screen-ui";
 
@@ -186,7 +187,10 @@ export default function MethodologyScreen() {
               measure is kept inside the card). */}
           <Card>
             <div className="mrr-meth-read">
-              <p style={prose}>
+              {/* The route's lede (G4, Iteration 1 step 5: Methodology has no
+                  TabHero, so its opening paragraph carries the marker; three
+                  sentences at most). */}
+              <p style={prose} data-copy="lede">
                 Every screen opens with a desk read: the conclusion, why it matters, what changed, what to watch, and what
                 would invalidate the call, with the freshness of the evidence stated in words. Under it sit the five
                 monitored signals and the supporting evidence; methodology, formulas and provenance are one click down.
@@ -236,13 +240,19 @@ export default function MethodologyScreen() {
               </Card>
             ))}
           </div>
+          {/* G4 (Iteration 1 step 5): two visible caption sentences, the third
+              behind Details; the module links sit on their own line. */}
           <Caption>
             Monthly, from z-scored growth (industrial production, FRED INDPRO) and inflation (CPI) trends through a
             temperature-0.7 softmax; the four probabilities always sum to 100%. The header badge shows the dominant
-            stored probability; conviction is a separate heuristic and is always labeled. Shares under 1% print as
-            &lt;1%, never as a false 0%.{" "}
-            <ModuleLink to="/app/dashboard">Dashboard →</ModuleLink> <ModuleLink to="/app/regime-lab">Regime Lab →</ModuleLink>
+            stored probability; conviction is a separate heuristic and is always labeled.
           </Caption>
+          <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+            <Caption style={{ marginTop: 0 }}>Shares under 1% print as &lt;1%, never as a false 0%.</Caption>
+          </Disclosure>
+          <div style={{ marginTop: 2 }}>
+            <ModuleLink to="/app/dashboard">Dashboard →</ModuleLink> <ModuleLink to="/app/regime-lab">Regime Lab →</ModuleLink>
+          </div>
         </section>
 
         {/* ── Signals ─────────────────────────────────────────────────── */}
@@ -304,13 +314,21 @@ export default function MethodologyScreen() {
               </div>
             ) : null}
           </Card>
+          {/* G4 (Iteration 1 step 5): two visible caption sentences, the third
+              behind Details; the module link sits on its own line. */}
           <Caption>
             Trigger values and status arrive live from the API (the same payload the signal cards read); display names
             and units are presentation copy. One status rule for all five: the stored trigger flag owns Triggered;
-            Watch starts at 50% threshold proximity; Clear is everything below. The weekly derived series on Markets
-            and the live tape carry their own levels for the same metric, by cadence, not by error.{" "}
-            <ModuleLink to="/app/dashboard#signals">Signals on the Dashboard →</ModuleLink>
+            Watch starts at 50% threshold proximity; Clear is everything below.
           </Caption>
+          <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+            <Caption style={{ marginTop: 0 }}>
+              The weekly derived series on Markets and the live tape carry their own levels for the same metric, by cadence, not by error.
+            </Caption>
+          </Disclosure>
+          <div style={{ marginTop: 2 }}>
+            <ModuleLink to="/app/dashboard#signals">Signals on the Dashboard →</ModuleLink>
+          </div>
         </section>
 
         {/* ── Models ──────────────────────────────────────────────────── */}

@@ -97,7 +97,7 @@ const PENDING = () => new Promise<never>(() => {});
 const RULES = ["HY spread above 700 bps", "HY spread above 400 bps", "IG spread above 150 bps", "None of the above · HY 312, IG 94"];
 const CAPTION_C20 = "Fed Funds plus the high-yield spread: the rough rate a leveraged buyout pays on its debt. Pre-GFC deals borrowed near ~7.2%; the 2022 peak touched ~11.4%.";
 const GUARD = "Rate components unavailable; the all-in figure above is the stored monthly read.";
-const TIGHT_DEF = "IG spreads above 150 bp: financing strain";
+const TIGHT_DEF = "IG spreads above 150 bps: financing strain";
 
 /* ── harness ─────────────────────────────────────────────────────────────── */
 

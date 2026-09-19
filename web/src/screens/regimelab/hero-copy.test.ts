@@ -115,17 +115,17 @@ describe("stripSummary (checklist 04 B.2 table)", () => {
   });
 
   it("error reads gray with the unavailable copy", () => {
-    expect(stripSummary(undefined, "error")).toEqual({ tone: "gray", title: "Overheating odds unavailable", detail: "The stored classifier history did not answer" });
+    expect(stripSummary(undefined, "error")).toEqual({ tone: "gray", title: "Overheating odds unavailable", detail: "The data service did not answer" });
     expect(stripSummary(rows([0.07, 0.07, 0.07, 0.12]), "error").tone).toBe("gray");
   });
 
   it("rising (+1 point or more, rounded) reads amber with the Up copy and both months", () => {
     const seven = stripSummary(rows([0.05, 0.06, 0.07, 0.12]), "ready");
-    expect(seven).toEqual({ tone: "amber", title: "Watch · Overheating odds rising", detail: "Up 7 pts over the last 3 classifier months · Jun 2026 → Sep 2026" });
+    expect(seven).toEqual({ tone: "amber", title: "Watch · Overheating odds rising", detail: "Up 7 pts · Jun 2026 → Sep 2026" });
     const one = stripSummary(rows([0.07, 0.07, 0.07, 0.08]), "ready");
     expect(one.tone).toBe("amber");
     expect(one.title).toBe("Watch · Overheating odds rising");
-    expect(one.detail).toMatch(/^Up 1 pts? over the last 3 classifier months · Jun 2026 → Sep 2026$/);
+    expect(one.detail).toMatch(/^Up 1 pts? · Jun 2026 → Sep 2026$/);
     // 0.6 of a point rounds to 1 and counts as rising; 0.4 does not.
     expect(stripSummary(rows([0.07, 0.07, 0.07, 0.076]), "ready").tone).toBe("amber");
     expect(stripSummary(rows([0.07, 0.07, 0.07, 0.074]), "ready").tone).toBe("mint");
@@ -135,15 +135,15 @@ describe("stripSummary (checklist 04 B.2 table)", () => {
     const flat = stripSummary(rows([0.07, 0.07, 0.07, 0.07]), "ready");
     expect(flat.tone).toBe("mint");
     expect(flat.title).toBe("Overheating odds not rising");
-    expect(flat.detail).toMatch(/^\+?0 pts over the last 3 classifier months · Jun 2026 → Sep 2026$/);
+    expect(flat.detail).toMatch(/^\+?0 pts · Jun 2026 → Sep 2026$/);
     const down = stripSummary(rows([0.1, 0.09, 0.08, 0.07]), "ready");
     expect(down.tone).toBe("mint");
     expect(down.title).toBe("Overheating odds not rising");
-    expect(down.detail).toMatch(/^[−-]3 pts over the last 3 classifier months · Jun 2026 → Sep 2026$/);
+    expect(down.detail).toMatch(/^[−-]3 pts · Jun 2026 → Sep 2026$/);
     // The title word always agrees with the sign of the printed delta.
     expect(down.detail).not.toMatch(/^Up/);
     // Fewer than four rows, a null probability, or no rows at all: unavailable.
-    const unavailable = { tone: "gray", title: "Overheating odds unavailable", detail: "The stored classifier history did not answer" };
+    const unavailable = { tone: "gray", title: "Overheating odds unavailable", detail: "The data service did not answer" };
     expect(stripSummary(rows([0.07, 0.07, 0.07]), "ready")).toEqual(unavailable);
     expect(stripSummary(rows([null, 0.07, 0.07, 0.07]), "ready")).toEqual(unavailable);
     expect(stripSummary(rows([0.07, 0.07, 0.07, null]), "ready")).toEqual(unavailable);

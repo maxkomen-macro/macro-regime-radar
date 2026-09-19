@@ -17,7 +17,7 @@ import { Card, SectionHeader, StatTile } from "../../components";
 import type { CreditOAS, RecessionMetrics, Regime } from "../../api/types";
 import { fmtBps, fmtDate, fmtMonYr, fmtPct, fmtSigned, ordinal } from "../../lib/format";
 import Jargon from "../shared/Jargon";
-import { Caption } from "../shared/screen-ui";
+import { Caption, MISSING, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import { DASH } from "./hero-copy";
 
 export interface SeriesLatest {
@@ -47,6 +47,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
   const r = regime.data;
   const rec = recession.data;
   const ten = credit.data?.series.find((s) => s.label === "UST10Y");
+  const snapshot = useSnapshotMode();
 
   return (
     <Card as="section" id="key-levels" variant="panel" style={{ minWidth: 0 }}>
@@ -112,6 +113,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
                 {rec.yield_curve_pct_rank != null ? `, the ${ordinal(rec.yield_curve_pct_rank)} percentile of the model's monthly history` : ""}. Below 0
                 is an inversion, the classic pre-recession shape.
               </>
+            ) : recession.isError ? (
+              missingNote(MISSING.curve, snapshot)
             ) : (
               "Curve data arrives with the recession model response."
             )}
@@ -132,7 +135,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
                 {fmtMonYr(rec.data_as_of)}.
               </>
             ) : recession.isError ? (
-              "Recession model unavailable: its endpoint trains in-process and may need a warm start."
+              missingNote(MISSING.recession, snapshot)
             ) : (
               "Training the recession model; the first call takes about a second."
             )}

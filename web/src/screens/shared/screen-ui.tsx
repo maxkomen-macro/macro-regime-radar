@@ -11,9 +11,11 @@
  * export keeps its name and shape.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import type React from "react";
+import { InDetailsContext } from "./Disclosure";
+import { useSnapshotMeta } from "../../api/snapshot";
 
 export const mono: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
@@ -57,30 +59,161 @@ export const metaStyle: React.CSSProperties = {
   color: "var(--text-3)",
 };
 
-/** One-line desk-note caption under a chart or metric block. */
+/** The G4 copy classes (docs/redesign-v2/ITERATION_1.md, Iteration 1 step
+ * 5): `data-copy` marks the copy a reader sees with every disclosure closed,
+ * and the copy-iteration e2e spec caps it: a hero lede at most three
+ * sentences, a caption at most two, a status line one rendered line. */
+export type CopyKind = "lede" | "caption" | "status";
+
+/** The marker attributes for one element; none inside an open Disclosure
+ * panel (the text behind "Details" is not capped). `max` is the rare third
+ * caption sentence a number would be misread without; the call site says why. */
+export function useCopyMarker(kind: CopyKind | false | undefined, max?: 3): Record<string, string> {
+  const inDetails = useContext(InDetailsContext);
+  if (!kind || inDetails) return {};
+  return max ? { "data-copy": kind, "data-copy-max": String(max) } : { "data-copy": kind };
+}
+
+/** One-line desk-note caption under a chart or metric block. Marked
+ * `data-copy="caption"` (G4: at most two sentences); `copy="status"` marks a
+ * one-line status instead, `copy={false}` leaves it unmarked. */
 export function Caption({
   children,
   style,
   mono: isMono = false,
   as = "div",
+  copy = "caption",
+  copyMax,
 }: {
   children: React.ReactNode;
   style?: React.CSSProperties;
   /** Whole-line mono for provenance strings and the signal-card lines. */
   mono?: boolean;
   as?: "div" | "p";
+  /** The G4 copy class this caption is capped by (default "caption"). */
+  copy?: CopyKind | false;
+  /** 3 only where a number would be misread without the third sentence. */
+  copyMax?: 3;
 }) {
   const Tag = as;
+  const marker = useCopyMarker(copy, copyMax);
   const base = isMono ? { ...capStyle, ...monoNoteStyle } : capStyle;
-  return <Tag style={{ ...base, ...(as === "p" ? { marginBottom: 0 } : null), ...style }}>{children}</Tag>;
+  return (
+    <Tag {...marker} style={{ ...base, ...(as === "p" ? { marginBottom: 0 } : null), ...style }}>
+      {children}
+    </Tag>
+  );
+}
+
+/* ── CP4: a block with nothing to show names what is missing ─────────────
+ * Iteration 1, CP4: any block with no data for the current selection says
+ * what is missing and why; it never renders blank. The validated snapshot
+ * (api/snapshot.ts) carries the stored tables only, so every block fed by a
+ * server computation or a market provider has nothing to show on a static
+ * deploy: there it says the block is not in this snapshot and why; with no
+ * snapshot it says what failed. One sentence, built here once. */
+
+/** What a block reads, named once: `what` leads the failed-call sentence
+ * ("Recession model unavailable: the data service did not answer."),
+ * `snapshot` is the whole sentence a snapshot session prints. */
+export interface MissingSource {
+  what: string;
+  snapshot: string;
+}
+
+/** The sources the validated snapshot does not carry
+ * (docs/redesign-v2/BACKEND_FIXES_REPORT.md, "Snapshot mode", Not covered). */
+export const MISSING = {
+  recession: {
+    what: "Recession model",
+    snapshot: "The recession model is computed live on the server and is not in this snapshot.",
+  },
+  curve: {
+    what: "Yield curve",
+    snapshot: "The 2s10s reading comes with the recession model, which is not in this snapshot.",
+  },
+  recessionScenario: {
+    what: "Recession model rescoring",
+    snapshot: "The recession model rescores on the server; it is not available in this snapshot.",
+  },
+  takeaway: {
+    what: "Takeaway",
+    snapshot: "The market takeaway is composed live on the server and is not in this snapshot.",
+  },
+  cycle: {
+    what: "Cycle position",
+    snapshot: "Cycle position and spell duration are computed live on the server and are not in this snapshot.",
+  },
+  transitions: {
+    what: "Transition odds",
+    snapshot: "Transition odds are computed live on the server and are not in this snapshot.",
+  },
+  scenarios: {
+    what: "Scenario builder",
+    snapshot: "The scenario builder runs on the server; it is not available in this snapshot.",
+  },
+  analogues: {
+    what: "Historical analogues",
+    snapshot: "Historical analogues are matched live on the server and are not in this snapshot.",
+  },
+  lbo: {
+    what: "LBO calculator",
+    snapshot: "The LBO calculator runs on the server; it is not available in this snapshot.",
+  },
+  lboRate: {
+    what: "LBO financing rate",
+    snapshot: "The LBO financing rate is read on the server and is not in this snapshot.",
+  },
+  allocation: {
+    what: "Allocation engine",
+    snapshot: "The asset allocation engine runs on the server; it is not available in this snapshot.",
+  },
+  market: {
+    what: "Market prices",
+    snapshot: "Live and stored market prices are not in this snapshot.",
+  },
+  closes: {
+    what: "Stored closes",
+    snapshot: "Stored market closes are not in this snapshot.",
+  },
+  intraday: {
+    what: "Stored intraday bars",
+    snapshot: "Stored intraday bars are not in this snapshot.",
+  },
+  quotes: {
+    what: "Live quotes",
+    snapshot: "Live market quotes are not in this snapshot.",
+  },
+} as const satisfies Record<string, MissingSource>;
+
+/** The short form for a summary row whose label names the block, under a
+ * card that leads with the full sentence. */
+export const MISSING_ROW = "row" as const;
+
+/** The failed-call sentence with no snapshot on hand. */
+export const DID_NOT_ANSWER = "Unavailable: the data service did not answer.";
+
+/** CP4's one sentence: in a snapshot session the snapshot sentence, else what
+ * failed. `"row"` is the short form for a labelled summary row. */
+export function missingNote(what: MissingSource | typeof MISSING_ROW, snapshot: boolean): string {
+  if (what === MISSING_ROW) return snapshot ? "Not in this snapshot." : DID_NOT_ANSWER;
+  return snapshot ? what.snapshot : `${what.what} unavailable: the data service did not answer.`;
+}
+
+/** True when a validated snapshot seeded this session (the static deploy, or
+ * a sleeping backend): a failed block then says it is not in the snapshot. */
+export function useSnapshotMode(): boolean {
+  return useSnapshotMeta() != null;
 }
 
 /** Standardized loading / error / empty line in desk voice — never a spinner,
- * never a blank. */
+ * never a blank. With `missing`, the error line names the block and why
+ * (CP4, `missingNote`). */
 export function StateNote({
   loading,
   error,
   live,
+  missing,
   children,
 }: {
   loading?: boolean;
@@ -89,12 +222,18 @@ export function StateNote({
    * screen reader should hear when they change (redesign Phase 10, U6-022).
    * Off by default; never put it on a heading. The words never change. */
   live?: boolean;
+  /** The block's source (a `MISSING` entry) or `"row"`: the error line then
+   * reads `missingNote(missing, snapshot)` instead of the generic line. */
+  missing?: MissingSource | typeof MISSING_ROW;
   children?: React.ReactNode;
 }) {
+  const snapshot = useSnapshotMode();
   // A caller's own loading sentence ("Building ~24 years of monthly return
   // history…") outranks the generic line; it was being dropped (review fix).
   const text = error
-    ? "Unavailable: the data service did not answer."
+    ? missing
+      ? missingNote(missing, snapshot)
+      : DID_NOT_ANSWER
     : loading
       ? (children ?? "Reading stored data…")
       : (children ?? "Nothing on file.");

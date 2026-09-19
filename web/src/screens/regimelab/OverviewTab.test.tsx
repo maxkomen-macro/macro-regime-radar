@@ -299,7 +299,8 @@ describe("OverviewTab (checklist 04 B.4 to B.6)", () => {
     stubFetch(routes({ "/api/regime/duration": () => ({ status: 404, body: { detail: "Not Found" } }) }));
     const first = renderWithProviders(<OverviewTab />, { route: "/app/regime-lab" });
     const cycle = await awaitSection("cycle");
-    expect(await within(cycle).findByText("Unavailable: the data service did not answer.")).toBeInTheDocument();
+    // CP4: the note names the block that failed.
+    expect(await within(cycle).findByText("Cycle position unavailable: the data service did not answer.")).toBeInTheDocument();
     expect(text(cycle)).not.toContain("6 mo");
     expect(text(cycle)).not.toContain("Late-cycle");
     expect(tiles(cycle)).toHaveLength(1);
@@ -309,7 +310,7 @@ describe("OverviewTab (checklist 04 B.4 to B.6)", () => {
     stubFetch(routes({ "/api/regime/transitions": () => ({ status: 500, body: { detail: "down" } }) }));
     const second = renderWithProviders(<OverviewTab />, { route: "/app/regime-lab" });
     const transitions = await awaitSection("transitions");
-    expect(await within(transitions).findByText("Unavailable: the data service did not answer.")).toBeInTheDocument();
+    expect(await within(transitions).findByText("Transition odds unavailable: the data service did not answer.")).toBeInTheDocument();
     expect(text(transitions)).not.toContain("stays");
     await waitFor(() => expect(text(transitions)).toMatch(/2\s*into Overheating/));
     expect(within(transitions).getByRole("heading", { level: 3, name: "How past Goldilocks spells ended" })).toBeInTheDocument();

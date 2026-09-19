@@ -115,17 +115,24 @@ const SEEDED: RecessionScenarioRequest = { yield_curve_bps: 35, unemployment: 4.
 /* ── copy (C.2) ──────────────────────────────────────────────────────────── */
 
 const LOADING_HEADLINE = "Training the recession model on stored NBER history…";
-const ERROR_HEADLINE = "Recession model unavailable: its endpoint trains in-process and may need a warm start.";
+// CP4: the one sentence naming the model (screen-ui missingNote); the panels print it too.
+const ERROR_HEADLINE = "Recession model unavailable: the data service did not answer.";
 const LOADING_ROW = "Training the recession model; the first call takes about a second.";
 const STATE_LOADING = "Reading stored data…";
 const STATE_ERROR = "Unavailable: the data service did not answer.";
 const SUBHEAD = "Twelve-month odds, up 1.4 points in three months.";
+// Iteration 1 step 5 (G4): the visible lede is three sentences; the material
+// divergence's second sentence sits behind the hero's Details (LEDE_MORE).
 const LEDE =
-  "The logistic model scores twelve-month odds against a ~15% historical base rate; Elevated starts at 20%, High Risk at 40%. Macro ahead of markets: credit pricing and the model disagree. The divergence is material and requires judgment. This is the recession model's own probability, not the classifier's Recession Risk odds (the Regime context row).";
+  "The logistic model scores twelve-month odds against a ~15% historical base rate; Elevated starts at 20%, High Risk at 40%. Macro ahead of markets: credit pricing and the model disagree. This is the recession model's own probability, not the classifier's Recession Risk odds (the Regime context row).";
+const LEDE_MORE = "The divergence is material and requires judgment.";
 const NOTE = "Sits in the Low Risk band (under 20%); the historical base rate runs ~15% and 2008 peaked near 89%.";
 const PILL_TITLE = "The recession model's own band: Low Risk under 20%, Elevated 20 to 40%, High Risk 40% and above";
+// Iteration 1 step 5 (G4): three visible sentences (data-copy-max 3: the tail
+// and the headline are different numbers); the lag sentence sits behind Details.
 const CHART_CAPTION_24M =
-  "The model's 12-month odds, monthly since Oct 2024. Shaded bands are actual NBER recessions, dashed rules the 20/40 band edges. The plotted tail (10%) is a partial-month fit; the headline 11.6% is the newest complete monthly read. Features enter with a 3-month lag so the line never peeks at data it wouldn't have had.";
+  "The model's 12-month odds, monthly since Oct 2024. Shaded bands are actual NBER recessions, dashed rules the 20/40 band edges. The plotted tail (10%) is a partial-month fit; the headline 11.6% is the newest complete monthly read.";
+const CHART_CAPTION_MORE = "Features enter with a 3-month lag so the line never peeks at data it wouldn't have had.";
 // Iteration 1 X2 adds two served rows (Training sample, Inputs through) before the reference thresholds.
 const SUMMARY_LABELS = ["12-month probability", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Inputs through", "Reference thresholds"];
 const THRESHOLDS = "2s10s < 0 · HY > 400 bps · unemployment +0.3 pp in 3m";
@@ -371,6 +378,10 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     const lede = hero().querySelector(".mrr-hero-lede") as HTMLElement;
     expect(text(lede)).toBe(LEDE);
     expect(text(lede)).toContain("recession model's own probability");
+    expect(lede).toHaveAttribute("data-copy", "lede");
+    expect(text(hero())).not.toContain(LEDE_MORE);
+    fireEvent.click(within(hero().querySelector(".mrr-hero-copy") as HTMLElement).getByRole("button", { name: /Details/ }));
+    expect(text(hero())).toContain(LEDE_MORE);
     expect(within(lede).getByRole("button", { name: "logistic model" })).toHaveClass("jargon");
     await waitFor(() => expect(dts()).toEqual(SUMMARY_LABELS));
     expect(text(hero())).not.toContain("Goldilocks");
@@ -412,6 +423,9 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(legendRange(viz)).toBe("Oct 31, 2024 → Sep 30, 2026");
     expect(text(viz)).toContain(CHART_CAPTION_24M);
     expect(text(viz)).toContain("the headline 11.6%");
+    expect(text(viz)).not.toContain(CHART_CAPTION_MORE);
+    fireEvent.click(within(viz).getByRole("button", { name: /Details/ }));
+    expect(text(viz)).toContain(CHART_CAPTION_MORE);
     expect(within(viz).getByRole("button", { name: "NBER" })).toHaveClass("jargon");
     expect(text(viz)).not.toContain("20% Elevated");
     expect(text(viz)).not.toContain("40% High Risk");
@@ -505,8 +519,9 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(link).toHaveClass("mrr-status-amber");
     expect(link).toHaveAttribute("data-tone", "amber");
     expect(stripTitle(link)).toBe("Watch · 3 straight rises");
-    expect(stripDetail(link)).toBe("Probability up each month since May 2026 · 10.2% → 11.6%");
-    expect(link.getAttribute("aria-label")).toBe("Watch · 3 straight rises. Probability up each month since May 2026 · 10.2% → 11.6%. Opens the model inputs.");
+    // Iteration 1 step 5 (G4): one status line.
+    expect(stripDetail(link)).toBe("Since May 2026 · 10.2% → 11.6%");
+    expect(link.getAttribute("aria-label")).toBe("Watch · 3 straight rises. Since May 2026 · 10.2% → 11.6%. Opens the model inputs.");
     expect(summary().querySelectorAll(".mrr-status")).toHaveLength(1);
   });
 
@@ -519,7 +534,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(link).not.toHaveClass("mrr-status-amber");
     expect(link).toHaveAttribute("href", "/app/recession#model");
     expect(stripTitle(link)).toBe("No consecutive rises");
-    expect(stripDetail(link)).toBe("0.0 pts vs 3 months ago · Jun 2026 → Sep 2026");
+    expect(stripDetail(link)).toBe("0.0 pts · Jun 2026 → Sep 2026");
     expect(text(within(hero()).getByRole("heading", { level: 2 }))).toBe("Twelve-month odds, unchanged over three months.");
     await waitFor(() => expect(dts()).toEqual(SUMMARY_LABELS));
     expect(text(ddFor("3 months ago"))).toBe("11.6% 0.0 pts · Jun 2026");
@@ -917,7 +932,9 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
   it("metrics 404 without data renders the error headline with the gray Unavailable pill, the gray Recession model unavailable strip and the error notes", async () => {
     stubFetch(without("/api/recession/probability"));
     renderRecession();
-    expect(await screen.findByText(ERROR_HEADLINE)).toBeInTheDocument();
+    // The panels print the same sentence (CP4), so the headline is read in the hero.
+    await waitFor(() => expect(hero()).not.toBeNull());
+    expect(await within(hero()).findByText(ERROR_HEADLINE)).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Recession model unavailable");
     expect(document.querySelectorAll("h1")).toHaveLength(1);
     const pill = hero().querySelector(".mrr-pill");
@@ -932,7 +949,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(summary())).toContain(STATE_ERROR);
     for (const id of ["model", "curve", "transparency"]) {
       const section = await awaitSection(id);
-      expect(text(section), id).toContain(STATE_ERROR);
+      expect(text(section), id).toContain(ERROR_HEADLINE);
     }
     expect(gaugeSvg()).toBeNull();
     expect(posted).toHaveLength(0);

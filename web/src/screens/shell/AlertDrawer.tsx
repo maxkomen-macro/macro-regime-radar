@@ -46,7 +46,8 @@ function AlertItem({ alert, latest }: { alert: Alert; latest: ReturnType<typeof 
           {latest.when}
         </span>
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+      {/* The row's status line (G4: one rendered line): severity and state. */}
+      <div data-copy="status" style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap", lineHeight: 1.5 }}>
         <span
           style={{
             ...mono,
@@ -117,6 +118,18 @@ export default function AlertDrawer({ open, onClose }: { open: boolean; onClose:
   const recent = rows.filter((a) => daysSince(a.date) <= 7);
   const newest = rows[0];
   const quietDays = newest ? Math.floor(daysSince(newest.date)) : null;
+  // G4 (Iteration 1 step 5): the status line is one rendered line at every
+  // width; how long the feed has been quiet, and what fired last, is the
+  // sentence under it, unchanged.
+  const statusNote = alerts.isLoading
+    ? null
+    : alerts.isError
+      ? "The data service did not answer."
+      : recent.length
+        ? null
+        : newest
+          ? `The feed has been quiet for ${quietDays} days; the last alert was ${describeAlert(newest, latestBySignal.get(newest.name)).title} in ${fmtMonYr(newest.date)}.`
+          : "The feed starts with the first threshold breach.";
 
   return (
     <>
@@ -127,7 +140,7 @@ export default function AlertDrawer({ open, onClose }: { open: boolean; onClose:
         role="dialog"
         aria-modal="true"
         aria-labelledby="alert-drawer-title"
-        aria-describedby="alert-drawer-status"
+        aria-describedby={statusNote ? "alert-drawer-status alert-drawer-note" : "alert-drawer-status"}
         tabIndex={-1}
       >
         <div style={{ padding: "16px 16px 24px" }}>
@@ -160,6 +173,7 @@ export default function AlertDrawer({ open, onClose }: { open: boolean; onClose:
 
           <p
             id="alert-drawer-status"
+            data-copy="status"
             style={{
               fontFamily: "var(--font-ui)",
               fontSize: "var(--fs-body-s)",
@@ -172,13 +186,28 @@ export default function AlertDrawer({ open, onClose }: { open: boolean; onClose:
             {alerts.isLoading
               ? "Loading alert history…"
               : alerts.isError
-                ? "Alert feed unavailable: the data service did not answer."
+                ? "Alert feed unavailable."
                 : recent.length
                   ? `${recent.length} threshold breach${recent.length === 1 ? "" : "es"} in the last 7 days.`
                   : newest
-                    ? `No threshold breaches in the last 7 days. The feed has been quiet for ${quietDays} days; the last alert was ${describeAlert(newest, latestBySignal.get(newest.name)).title} in ${fmtMonYr(newest.date)}.`
-                    : "No alerts on file; the feed starts with the first threshold breach."}
+                    ? "No threshold breaches in the last 7 days."
+                    : "No alerts on file."}
           </p>
+          {statusNote ? (
+            <p
+              id="alert-drawer-note"
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: "var(--fs-caption)",
+                lineHeight: 1.55,
+                color: "var(--text-2)",
+                margin: "4px 0 0",
+                textWrap: "pretty",
+              }}
+            >
+              {statusNote}
+            </p>
+          ) : null}
           {!alerts.isLoading && !alerts.isError ? (
             <p
               style={{

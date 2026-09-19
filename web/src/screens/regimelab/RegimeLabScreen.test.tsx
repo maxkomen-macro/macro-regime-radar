@@ -465,7 +465,7 @@ describe("RegimeLabScreen (checklist 04 E.1)", () => {
     expect(link).toHaveAttribute("href", "/app/regime-lab#transitions");
     expect(link).toHaveAttribute("data-tone", "mint");
     expect(text(link.querySelector("b"))).toBe("Overheating odds not rising");
-    expect(text(link.querySelector("small"))).toMatch(/^[−-]3 pts over the last 3 classifier months · Jun 2026 → Sep 2026$/);
+    expect(text(link.querySelector("small"))).toMatch(/^[−-]3 pts · Jun 2026 → Sep 2026$/);
     expect(link.getAttribute("aria-label")).toBe(`${text(link.querySelector("b"))}. ${text(link.querySelector("small"))}`);
     expect(summary().querySelectorAll(".mrr-status")).toHaveLength(1);
   });
@@ -477,7 +477,7 @@ describe("RegimeLabScreen (checklist 04 E.1)", () => {
     const link = await awaitStrip();
     await waitFor(() => expect(link).toHaveAttribute("data-tone", "amber"));
     expect(text(link.querySelector("b"))).toBe("Watch · Overheating odds rising");
-    expect(text(link.querySelector("small"))).toBe("Up 2 pts over the last 3 classifier months · Jun 2026 → Sep 2026");
+    expect(text(link.querySelector("small"))).toBe("Up 2 pts · Jun 2026 → Sep 2026");
     expect(link).toHaveAttribute("href", "/app/regime-lab#transitions");
   });
 
@@ -569,7 +569,9 @@ describe("RegimeLabScreen (checklist 04 E.1)", () => {
   it("duration 404 renders the error headline with the Unavailable pill while the lede and summary still render", async () => {
     stubFetch(without("/api/regime/duration"));
     renderLab();
-    expect(await screen.findByText("Cycle position unavailable: the data service did not answer.")).toBeInTheDocument();
+    // The Spell length row prints the same sentence (CP4), so the headline is read in the hero.
+    await waitFor(() => expect(hero()).not.toBeNull());
+    expect(await within(hero()).findByText("Cycle position unavailable: the data service did not answer.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Cycle position unavailable");
     expect(document.querySelectorAll("h1")).toHaveLength(1);
     const pill = hero().querySelector(".mrr-pill");
@@ -579,7 +581,8 @@ describe("RegimeLabScreen (checklist 04 E.1)", () => {
     expect(text(hero())).not.toMatch(/\d+ months? in/);
     expect(screen.queryByText("Reading the cycle position…")).toBeNull();
     await waitFor(() => expect(text(hero())).toContain(FIRST_SENTENCE));
-    await waitFor(() => expect(text(ddFor("Spell length"))).toBe("Unavailable: the data service did not answer."));
+    // CP4: the first row of a failed source names it.
+    await waitFor(() => expect(text(ddFor("Spell length"))).toBe("Cycle position unavailable: the data service did not answer."));
     await waitFor(() => expect(text(ddFor("Market read"))).toBe("Risk-On"));
   });
 
@@ -600,7 +603,9 @@ describe("RegimeLabScreen (checklist 04 E.1)", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Early");
     expect(text(hero().querySelector(".mrr-pill"))).toBe("6 months in");
     await waitFor(() => expect(dts()).toEqual(LABELS));
-    for (const label of ["Market read", "Takeaway conviction", "Takeaway divergences"]) {
+    // CP4: the source's first row names it; the rows under it say so briefly.
+    await waitFor(() => expect(text(ddFor("Market read"))).toBe("Takeaway unavailable: the data service did not answer."));
+    for (const label of ["Takeaway conviction", "Takeaway divergences"]) {
       await waitFor(() => expect(text(ddFor(label)), label).toBe("Unavailable: the data service did not answer."));
     }
     expect(within(summary()).queryByRole("button", { name: /How this takeaway is composed/ })).toBeNull();

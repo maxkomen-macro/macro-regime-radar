@@ -24,7 +24,9 @@
 import { Fragment, useId, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Pill } from "../../components";
+import { takeSentences } from "../../lib/sentences";
 import { FreshnessChip, type FreshnessTag } from "./DeskRead";
+import Disclosure from "./Disclosure";
 
 export type TabHeroPillTone = "mint" | "amber" | "gray";
 
@@ -57,8 +59,12 @@ export interface TabHeroProps {
   pillTone?: TabHeroPillTone;
   /** One sentence under the headline (h2, or a paragraph when as="h2"). */
   subhead?: ReactNode;
-  /** The why-it-matters paragraph. */
+  /** The why-it-matters paragraph (G4: at most three sentences, marked
+   * `data-copy="lede"`). */
   lede?: ReactNode;
+  /** The rest of a longer lede, verbatim, behind a "Details" disclosure right
+   * under it (Iteration 1 step 5: nothing is deleted). */
+  ledeMore?: ReactNode;
   /** Primary first; the mockup shows two. */
   actions?: TabHeroAction[];
   /** A control that rides in the action row after the buttons (the Markets
@@ -81,6 +87,9 @@ export interface TabHeroProps {
   id?: string;
   style?: CSSProperties;
 }
+
+/** G4: a hero lede shows at most three sentences. */
+export const LEDE_SENTENCES = 3;
 
 export const HERO_GLOW_DEFAULT = "rgba(38,220,160,.07)";
 export const HERO_PLACEHOLDER_GRADIENT = "linear-gradient(135deg,#0f1a24,#0a131b)";
@@ -170,6 +179,7 @@ export function TabHero({
   pillTone = "mint",
   subhead,
   lede,
+  ledeMore,
   actions,
   actionsAfter,
   footnote,
@@ -185,6 +195,25 @@ export function TabHero({
   const uid = useId();
   const h1Id = `${uid}-h1`;
   const Heading = as;
+  // G4 by construction (Iteration 1 step 5): a plain-string lede shows its
+  // first three sentences; the rest, verbatim, leads the Details panel. A
+  // composed (ReactNode) lede is capped by its screen and passes `ledeMore`.
+  let ledeShown: ReactNode = lede;
+  let ledeRest: ReactNode = ledeMore;
+  if (typeof lede === "string") {
+    const parts = takeSentences(lede, LEDE_SENTENCES);
+    if (parts.rest) {
+      ledeShown = parts.shown;
+      ledeRest =
+        ledeMore != null && ledeMore !== "" ? (
+          <>
+            {parts.rest} {ledeMore}
+          </>
+        ) : (
+          parts.rest
+        );
+    }
+  }
   const hasViz = chart != null || placeholder;
   const ordered = orderActions(actions);
   const items = footnote ?? [];
@@ -294,6 +323,7 @@ export function TabHero({
         {lede != null ? (
           <p
             className="mrr-hero-lede"
+            data-copy="lede"
             style={{
               fontFamily: "var(--font-ui)",
               fontSize: "var(--fs-lede)",
@@ -304,8 +334,25 @@ export function TabHero({
               textWrap: "pretty",
             }}
           >
-            {lede}
+            {ledeShown}
           </p>
+        ) : null}
+        {ledeRest != null && ledeRest !== "" ? (
+          <Disclosure variant="quiet" title="Details" style={{ maxWidth: "var(--maxw-lede)", marginTop: 2 }}>
+            <p
+              className="mrr-hero-lede-more"
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: "var(--fs-caption)",
+                lineHeight: 1.6,
+                color: "var(--text-2)",
+                margin: 0,
+                textWrap: "pretty",
+              }}
+            >
+              {ledeRest}
+            </p>
+          </Disclosure>
         ) : null}
 
         {ordered.length || actionsAfter != null ? (

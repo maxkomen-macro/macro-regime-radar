@@ -193,6 +193,7 @@ export function RegimeOddsChart({ rows: all, months = 24 }: RegimeOddsChartProps
           {draw(w, h - CAP_H)}
           <figcaption
             className="mrr-odds-cap"
+            data-copy="caption"
             style={{
               marginTop: 6,
               height: CAP_H - 6,

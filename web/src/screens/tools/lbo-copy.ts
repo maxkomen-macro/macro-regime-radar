@@ -11,10 +11,11 @@
  */
 
 import { ApiError } from "../../api/client";
-import type { LboDefaults, LboRequest, LboResult } from "../../api/types";
+import type { LboDefaults, LboRequest, LboResult, SeriesState } from "../../api/types";
 import { fmtDate } from "../../lib/format";
 import { freshLabel, normalizeState, type FreshLabel } from "../shared/fresh-state";
 import { assessFreshness } from "../shared/freshness";
+import { MISSING, missingNote } from "../shared/screen-ui";
 import type { StatusTone } from "../shared/SummaryCard";
 import type { TabHeroPillTone } from "../shared/TabHero";
 import { FALLBACK_RATE, irrTone, type IrrTone } from "./lbo-deal";
@@ -94,6 +95,9 @@ export interface LboHeroArgs {
   runPending: boolean;
   /** The base run's error, when it has no result. */
   baseError?: unknown;
+  /** A validated snapshot seeded the session (CP4): the calculator, which
+   * runs on the server, is not in it. */
+  snapshot?: boolean;
 }
 
 /** "A $100M EBITDA business bought at 8.00× with 4.50× leverage, growing 5.0%
@@ -130,9 +134,12 @@ export function signedPp(d: number): string {
 }
 
 /** The `LboRunState` sentence for a failed run (LboPanel.tsx:57-72), so the
- * hero's subhead and the Outputs panel say the same thing. */
-export function runErrorSentence(error: unknown): string {
+ * hero's subhead and the Outputs panel say the same thing. In a snapshot
+ * session a run that never reached the service says the calculator is not in
+ * the snapshot (CP4). */
+export function runErrorSentence(error: unknown, snapshot = false): string {
   const e = error instanceof ApiError ? error : null;
+  if (snapshot && (e == null || e.status === 0)) return missingNote(MISSING.lbo, true);
   if (e?.status === 503) return "The deal model is unavailable on this server (calculator engine not installed).";
   if (e?.status === 422) return `The service rejected these inputs: ${e.message}`;
   if (e?.status === 0) return "The data service did not answer; the deal model will rerun when it returns.";
@@ -154,12 +161,18 @@ export function lboHero(args: LboHeroArgs): LboHeroCopy {
   const shared = { eyebrow: LBO_EYEBROW, lede: `${dealSentence(args.baseInputs)} ${CALCULATOR_SENTENCE}` };
   const quiet = { pill: null, pillTone: "gray" as const, glow: LBO_GLOW.gray, footnote: null, footnoteColor: null, note: null };
 
-  // Rule 7: the loading and error sentences, in the UI face.
-  if (args.defaults.isError && !args.defaults.data) {
+  // Rule 7: the loading and error sentences, in the UI face. CP4: with the
+  // rate and the default deal both unanswered (or on a snapshot, where the
+  // calculator cannot run) the hero names the calculator as missing.
+  const rateDown = args.defaults.isError && !args.defaults.data;
+  if (rateDown && !args.baseRes && (args.baseError || args.snapshot)) {
+    return { ...shared, ...quiet, state: "run-error", headline: missingNote(MISSING.lbo, args.snapshot === true), pill: "Unavailable", subhead: null };
+  }
+  if (rateDown) {
     return { ...shared, ...quiet, state: "rate-error", headline: RATE_UNAVAILABLE_HEADLINE, pill: "Unavailable", subhead: null };
   }
   if (args.baseError && !args.baseRes) {
-    return { ...shared, ...quiet, state: "run-error", headline: RUN_UNAVAILABLE_HEADLINE, subhead: runErrorSentence(args.baseError) };
+    return { ...shared, ...quiet, state: "run-error", headline: RUN_UNAVAILABLE_HEADLINE, subhead: runErrorSentence(args.baseError, args.snapshot === true) };
   }
   if (args.defaults.isLoading || !args.baseRes) {
     return { ...shared, ...quiet, state: "loading", headline: LOADING_HEADLINE, subhead: null };
@@ -222,24 +235,49 @@ export function componentAsOf(d: LboDefaults | undefined | null): { fed: FreshLa
   return { fed: freshLabel(d?.freshness?.FEDFUNDS), hy: freshLabel(d?.freshness?.BAMLH0A0HYM2) };
 }
 
-export function lboStrip(defaults: DefaultsLike): StripWords {
+/** A status line's character budget: about 200 px of 12 px text, one line in
+ * the narrowest strip (390 px). */
+const STRIP_LINE_CHARS = 36;
+
+/** State rank for "the weaker component" (higher is weaker). */
+const STATE_RANK: Record<string, number> = { live: 0, close: 0, delayed: 1, stale: 2, fallback: 3 };
+
+/** The B3 detail: both components' as-of words when they fit one line
+ * ("Fed Aug 2026 print · HY Sep 17"), else the weaker component's alone
+ * (the summary rows print both). */
+export function componentDetail(d: LboDefaults): string {
+  const { fed, hy } = componentAsOf(d);
+  const both = `Fed ${fed.word} · HY ${hy.word}`;
+  if (both.length <= STRIP_LINE_CHARS) return both;
+  const rank = (s: SeriesState | null | undefined) => STATE_RANK[normalizeState(s?.state)] ?? 4;
+  const fedWeaker = rank(d.freshness?.FEDFUNDS) >= rank(d.freshness?.BAMLH0A0HYM2);
+  return fedWeaker ? `Fed funds ${fed.word}` : `HY spread ${hy.word}`;
+}
+
+export function lboStrip(defaults: DefaultsLike, snapshot = false): StripWords {
+  // Iteration 1 step 5 (G4): every detail is one line at 390 px. The
+  // components' words are the summary rows' (Fed funds, HY OAS) and the
+  // fallback rate is the Financing row's.
+  if (defaults.isError && !defaults.data && snapshot) {
+    // CP4: the rate is read on the server, so a snapshot session has none.
+    return { tone: "gray", title: "Rate feed not in this snapshot", detail: "The rate is read on the server" };
+  }
   if (defaults.isError && !defaults.data) {
-    return { tone: "gray", title: "Rate feed unavailable", detail: `The data service did not answer; the stated ${FALLBACK_RATE.toFixed(2)}% rate is in use` };
+    return { tone: "gray", title: "Rate feed unavailable", detail: `The stated ${FALLBACK_RATE.toFixed(2)}% rate is in use` };
   }
   if (defaults.isLoading || !defaults.data) {
     return { tone: "gray", title: "Reading the FRED rate…", detail: "Opens the data freshness breakdown" };
   }
   const stamp = stampOf(defaults.data);
   if (!stamp) {
-    return { tone: "gray", title: "Rate feed unavailable", detail: "FRED rows missing; the engine's fallback rate is in use" };
+    return { tone: "gray", title: "Rate feed unavailable", detail: "No FRED rows · fallback rate in use" };
   }
   // B3 payloads: the rate's own state (judged by its weaker component) and
   // each component's as-of word; a state the UI does not know reads unknown
   // and never a healthy tone.
   const block = defaults.data.freshness;
   if (block) {
-    const { fed, hy } = componentAsOf(defaults.data);
-    const detail = `Fed funds: ${fed.word} · HY spread: ${hy.word}`;
+    const detail = componentDetail(defaults.data);
     switch (normalizeState(block.lbo_all_in_rate?.state)) {
       case "live":
       case "close":
@@ -249,14 +287,14 @@ export function lboStrip(defaults: DefaultsLike): StripWords {
       case "stale":
         return { tone: "amber", title: "FRED rate stale", detail };
       case "fallback":
-        return { tone: "gray", title: "Rate feed unavailable", detail: "FRED rows missing; the engine's fallback rate is in use" };
+        return { tone: "gray", title: "Rate feed unavailable", detail: "No FRED rows · fallback rate in use" };
       default:
         return { tone: "gray", title: "FRED rate · as of unknown", detail };
     }
   }
   const info = assessFreshness(stamp, "monthly");
   const through = `Stored through ${fmtDate(stamp)}`;
-  if (info.state === "current") return { tone: "mint", title: "Rate synced from FRED", detail: `${through} · refreshes with the daily pipeline` };
-  if (info.state === "delayed") return { tone: "amber", title: "FRED rate delayed", detail: `${through} · ${info.age} old` };
-  return { tone: "amber", title: "FRED rate stale", detail: `${through} · ${info.age} old` };
+  if (info.state === "current") return { tone: "mint", title: "Rate synced from FRED", detail: through };
+  if (info.state === "delayed") return { tone: "amber", title: "FRED rate delayed", detail: through };
+  return { tone: "amber", title: "FRED rate stale", detail: through };
 }

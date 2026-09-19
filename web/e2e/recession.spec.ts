@@ -352,12 +352,12 @@ test.describe("recession (checklist 07 E.3)", () => {
     if (streak >= 3) {
       expect(title).toBe(`Watch · ${streak} straight rises`);
       expect(tone).toBe("amber");
-      expect(detail).toBe(`Probability up each month since ${fmtMonYr(day(series[i - streak].date))} · ${series[i - streak].value.toFixed(1)}% → ${series[i].value.toFixed(1)}%`);
+      expect(detail).toBe(`Since ${fmtMonYr(day(series[i - streak].date))} · ${series[i - streak].value.toFixed(1)}% → ${series[i].value.toFixed(1)}%`);
     } else {
       expect(title).toBe("No consecutive rises");
       expect(tone).toBe("mint");
-      if (i >= 3) expect(detail).toMatch(/^[+-]?\d+\.\d pts vs 3 months ago · [A-Z][a-z]{2} \d{4} → [A-Z][a-z]{2} \d{4}$/);
-      else expect(detail).toBe("Fewer than four stored months on file");
+      if (i >= 3) expect(detail).toMatch(/^[+-]?\d+\.\d pts · [A-Z][a-z]{2} \d{4} → [A-Z][a-z]{2} \d{4}$/);
+      else expect(detail).toBe("Fewer than four months on file");
     }
     await expect(strip).toHaveClass(new RegExp(`mrr-status-${tone}`));
 

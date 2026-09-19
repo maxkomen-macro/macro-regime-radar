@@ -12,6 +12,7 @@ import { Card, HeatMatrix, SectionHeader, Tag } from "../../components";
 import type { HeatCell } from "../../components/data/HeatMatrix";
 import type { AllocationData } from "../../api/types";
 import { fmtMonYr } from "../../lib/format";
+import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, monoNoteStyle } from "../shared/screen-ui";
@@ -120,9 +121,12 @@ export default function AllocationOverview({ a }: { a: AllocationData }) {
             }
           }
           return <>A negative Sharpe means the return does not cover cash plus the risk taken.</>;
-        })()}{" "}
-        Small n columns are anecdotes, not laws.
+        })()}
       </Caption>
+      {/* G4 (Iteration 1 step 5): two visible sentences; the third behind Details. */}
+      <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+        <Caption style={{ marginTop: 0 }}>Small n columns are anecdotes, not laws.</Caption>
+      </Disclosure>
     </Card>
   );
 }

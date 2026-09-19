@@ -345,9 +345,10 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     // The stamp is the ET wall time of the stored UTC stamp (12:40 ET for 16:40Z), never UTC digits labelled ET.
     const stamp = fmtUtcStampEt(NEWEST);
     expect(stamp).toBe("Sep 16, 12:40 ET");
-    expect(stripDetail(button)).toBe(`Newest headline ${stamp} · 5 sources`);
+    // Iteration 1 step 5 (G4): one status line; the outlet count is the Outlets row's.
+    expect(stripDetail(button)).toBe(`Newest headline ${stamp}`);
     const label = button.getAttribute("aria-label") ?? "";
-    expect(label.startsWith(`Feed current. Newest headline ${stamp} · 5 sources. `)).toBe(true);
+    expect(label.startsWith(`Feed current. Newest headline ${stamp}. `)).toBe(true);
     expect(label).toContain("Newest stored headline is inside 90 minutes (US business hours).");
     expect(label.endsWith("Open the data freshness breakdown.")).toBe(true);
     expect(summary().querySelectorAll(".mrr-status")).toHaveLength(1);
@@ -362,7 +363,7 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(button).toHaveAttribute("data-tone", "amber");
     const info = assessFreshness(NEWEST, "hourly");
     expect(info.state).toBe("current");
-    expect(stripDetail(button)).toBe(`Newest headline ${fmtUtcStampEt(NEWEST)} · ${info.age} old · 5 sources`);
+    expect(stripDetail(button)).toBe(`Newest ${fmtUtcStampEt(NEWEST)} · ${info.age} old`);
     expect(button.getAttribute("aria-label")).toContain(DELAYED_REASON);
     expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
     // The chip speaks the same verdict.
@@ -379,7 +380,7 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(button).toHaveAttribute("data-tone", "amber");
     const info = assessFreshness(stale, "hourly");
     expect(info.state).toBe("delayed");
-    expect(stripDetail(button)).toBe(`Newest headline ${fmtUtcStampEt(stale)} · ${info.age} old · 5 sources`);
+    expect(stripDetail(button)).toBe(`Newest ${fmtUtcStampEt(stale)} · ${info.age} old`);
     // The hero chip prints the same wall-time stamp as the strip.
     expect(text(hero().querySelector(".mrr-hero-chips"))).toContain(fmtUtcStampEt(stale));
     expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
@@ -392,7 +393,7 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     const button = await awaitStrip();
     await waitFor(() => expect(stripTitle(button)).toBe("Fallback coverage"));
     expect(button).toHaveAttribute("data-tone", "amber");
-    expect(stripDetail(button)).toBe("Newest stored Sep 14, 2026 · 2 days old · 6 stored stories");
+    expect(stripDetail(button)).toBe("6 stories · newest Sep 14, 2026");
     expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
     expect(within(headlines()).getByRole("heading", { level: 2, name: "Latest stored headlines" })).toBeInTheDocument();
     expect(text(headlines())).toContain("No headlines in the last 7D; the 6 most recent stored stories follow, significance filter not applied.");

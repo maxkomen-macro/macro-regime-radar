@@ -116,10 +116,11 @@ describe("allocationStrip (the four B.9 states)", () => {
   });
 
   it("solved with a fallback: amber, the count and the names at equal weight", () => {
-    expect(allocationStrip(FULL, false)).toMatchObject({ tone: "amber", title: "Optimizer solved with 1 fallback", detail: "Min CVaR at equal weight" });
+    // Iteration 1 step 5 (G4): title and detail one line each.
+    expect(allocationStrip(FULL, false)).toMatchObject({ tone: "amber", title: "Optimizer solved · 1 fallback", detail: "Min CVaR at equal weight" });
     expect(allocationStrip(withMethod("hrp", { converged: false }), false)).toMatchObject({
       tone: "amber",
-      title: "Optimizer solved with 2 fallbacks",
+      title: "Optimizer solved · 2 fallbacks",
       detail: "HRP and Min CVaR at equal weight",
     });
   });
@@ -128,15 +129,15 @@ describe("allocationStrip (the four B.9 states)", () => {
     expect(allocationStrip(ALL_CONVERGED, false)).toMatchObject({ tone: "mint", title: "Optimizer solved · 7 methods", detail: "max 40% per asset · long-only" });
   });
 
-  it("no optimizer output: amber, Optimizer unavailable this session, the T27 sample detail or the 24-months fallback", () => {
+  it("no optimizer output: amber, Optimizer skipped this session, the T27 sample detail or the 24-months fallback", () => {
     expect(allocationStrip(NULL_OPT, false)).toMatchObject({
       tone: "amber",
-      title: "Optimizer unavailable this session",
-      detail: `${SAMPLE.complete_months} of ${SAMPLE.total_regime_months} Goldilocks months complete · ${SAMPLE.required_cov_months} required`,
+      title: "Optimizer skipped this session",
+      detail: `${SAMPLE.complete_months} complete months · ${SAMPLE.required_cov_months} required`,
     });
-    expect(allocationStrip(NULL_OPT, false).detail).toBe("21 of 28 Goldilocks months complete · 24 required");
+    expect(allocationStrip(NULL_OPT, false).detail).toBe("21 complete months · 24 required");
     const noSample: AllocationData = { ...NULL_OPT, optimizations_skipped: null, optimization_sample: null };
-    expect(allocationStrip(noSample, false)).toMatchObject({ tone: "amber", title: "Optimizer unavailable this session", detail: "needs 24 complete Goldilocks months" });
+    expect(allocationStrip(noSample, false)).toMatchObject({ tone: "amber", title: "Optimizer skipped this session", detail: "needs 24 complete months" });
   });
 
   it("no rendered strip string carries an em-dash", () => {

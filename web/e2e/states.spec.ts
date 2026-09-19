@@ -47,8 +47,14 @@ const SIGNAL_EMPTY = "No print on file yet for this signal; the daily refresh wr
 const SIGNAL_PRINT_NONE = "Signal print · none on file";
 const CALENDAR_EMPTY = "No events on file; the calendar is a hand-maintained schedule refreshed with the daily run.";
 const NEWS_EMPTY = "Nothing on file; the news pipeline runs hourly (minute 41 UTC) and has not stored headlines yet.";
-/** lbo-copy.ts:52 RATE_UNAVAILABLE_HEADLINE (FALLBACK_RATE 8.50). */
-const LBO_RATE_UNAVAILABLE = "Financing rate unavailable: the data service did not answer. The calculator falls back to the stated 8.50% rate.";
+/** CP4 (Iteration 1 step 5): screen-ui.tsx missingNote(MISSING.*), with no snapshot and in a snapshot session. */
+const RECESSION_DOWN = "Recession model unavailable: the data service did not answer.";
+const RECESSION_SNAPSHOT = "The recession model is computed live on the server and is not in this snapshot.";
+const CYCLE_DOWN = "Cycle position unavailable: the data service did not answer.";
+const CYCLE_SNAPSHOT = "Cycle position and spell duration are computed live on the server and are not in this snapshot.";
+const LBO_DOWN = "LBO calculator unavailable: the data service did not answer.";
+const LBO_SNAPSHOT = "The LBO calculator runs on the server; it is not available in this snapshot.";
+const CLOSES_SNAPSHOT = "Stored market closes are not in this snapshot.";
 const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
 
 interface RouteDef {
@@ -154,7 +160,7 @@ async function checkError(page: Page, slug: string): Promise<void> {
       await expect(heroPill(page, "takeaway")).toHaveText("Unavailable");
       await expect(section(page, "takeaway")).toContainText("Takeaway unavailable: the data service did not answer."); // RegimeLabScreen.tsx:133
       await expect(stripTitle(page, "regime-outlook")).toHaveText("Overheating odds unavailable"); // regimelab/hero-copy.ts:117
-      await expect(section(page, "cycle")).toContainText(NOTE_ERROR); // OverviewTab.tsx:125
+      await expect(section(page, "cycle")).toContainText(CYCLE_DOWN); // OverviewTab.tsx StateNote missing={MISSING.cycle} (CP4)
       break;
     }
     case "markets": {
@@ -181,11 +187,11 @@ async function checkError(page: Page, slug: string): Promise<void> {
       break;
     }
     case "recession": {
-      await expect(section(page, "recession-hero")).toContainText("Recession model unavailable: its endpoint trains in-process and may need a warm start.", { timeout: 20_000 }); // RecessionScreen.tsx:76
+      await expect(section(page, "recession-hero")).toContainText(RECESSION_DOWN, { timeout: 20_000 }); // RecessionScreen.tsx missingNote(MISSING.recession) (CP4)
       await expect(heroPill(page, "recession-hero")).toHaveText("Unavailable");
-      for (const id of ["model", "curve", "transparency"]) await expect(section(page, id), id).toContainText(NOTE_ERROR);
+      for (const id of ["model", "curve", "transparency"]) await expect(section(page, id), id).toContainText(RECESSION_DOWN);
       // SensitivityPanel.tsx:78-84: with no model the row is not rendered; the card carries the error note.
-      await expect(sensitivityCard(page)).toContainText(NOTE_ERROR);
+      await expect(sensitivityCard(page)).toContainText(RECESSION_DOWN);
       break;
     }
     case "news": {
@@ -199,7 +205,8 @@ async function checkError(page: Page, slug: string): Promise<void> {
       // lbo-copy.ts lboHero: with the defaults unanswered the hero is the rate-error state
       // (RATE_UNAVAILABLE_HEADLINE, lbo-copy.ts:52); "Deal model unavailable" (09 C.1, U6-015,
       // unverified in the checklist) is the run-error state and needs a served defaults payload.
-      await expect(section(page, "lbo-hero")).toContainText(LBO_RATE_UNAVAILABLE, { timeout: 20_000 });
+      // CP4: with the rate and the default deal both unanswered the hero names the calculator (lbo-copy.ts lboHero).
+      await expect(section(page, "lbo-hero")).toContainText(LBO_DOWN, { timeout: 20_000 });
       await expect(heroPill(page, "lbo-hero")).toHaveText(/^Unavailable$/);
       // LboPanel.tsx LboRunState: the ApiError status 0 sentence in the Outputs column.
       await expect(section(page, "lbo")).toContainText("The data service did not answer; the deal model will rerun when it returns.", { timeout: 20_000 });
@@ -223,8 +230,8 @@ async function checkSnapshot(page: Page, slug: string, seededLabel: string | nul
       // The seeded regime paints; no hero error copy (DashboardScreen.tsx:421-436 rule).
       await expect(page.locator("main h1")).toHaveText(seededLabel ? new RegExp(`^${seededLabel}$`) : new RegExp(`^(?:${REGIMES.join("|")})$`));
       await expect(section(page, "regime-hero")).not.toContainText("Regime unavailable");
-      // The recession model is not seeded (F1): the key-level tile says so (KeyLevels.tsx:128-130).
-      await expect(section(page, "key-levels")).toContainText("Recession model unavailable: its endpoint trains in-process and may need a warm start.", { timeout: 20_000 });
+      // The recession model is not seeded (F1): the key-level tile says so (KeyLevels.tsx, CP4 snapshot wording).
+      await expect(section(page, "key-levels")).toContainText(RECESSION_SNAPSHOT, { timeout: 20_000 });
       break;
     }
     case "regime-lab": {
@@ -232,14 +239,14 @@ async function checkSnapshot(page: Page, slug: string, seededLabel: string | nul
       await expect(section(page, "regime-history-teaser").locator("svg[role='img']")).toHaveCount(1, { timeout: 20_000 });
       await expect(stripTitle(page, "regime-outlook")).toHaveText(/^(?:Watch · Overheating odds rising|Overheating odds not rising)$/);
       await expect(section(page, "regime-outlook")).toContainText(new RegExp(REGIMES.join("|")));
-      await expect(section(page, "takeaway")).toContainText("Cycle position unavailable: the data service did not answer.", { timeout: 20_000 });
+      await expect(section(page, "takeaway")).toContainText(CYCLE_SNAPSHOT, { timeout: 20_000 }); // CP4 snapshot wording
       break;
     }
     case "markets": {
       // priced and surprises are seeded; market/daily is not (F1).
       await expect(section(page, "whats-priced-full")).not.toContainText("Market-implied pricing unavailable");
       await expect(section(page, "top-surprises")).not.toContainText("Surprise feed unavailable");
-      await expect(section(page, "markets-hero")).toContainText("Stored closes unavailable: the data service did not answer.", { timeout: 20_000 });
+      await expect(section(page, "markets-hero")).toContainText(CLOSES_SNAPSHOT, { timeout: 20_000 }); // CP4 snapshot wording
       break;
     }
     case "credit": {
@@ -249,8 +256,8 @@ async function checkSnapshot(page: Page, slug: string, seededLabel: string | nul
       break;
     }
     case "recession": {
-      await expect(section(page, "recession-hero")).toContainText("Recession model unavailable", { timeout: 20_000 });
-      await expect(section(page, "model")).toContainText(NOTE_ERROR);
+      await expect(section(page, "recession-hero")).toContainText(RECESSION_SNAPSHOT, { timeout: 20_000 }); // CP4 snapshot wording
+      await expect(section(page, "model")).toContainText(RECESSION_SNAPSHOT);
       break;
     }
     case "news": {
@@ -261,9 +268,9 @@ async function checkSnapshot(page: Page, slug: string, seededLabel: string | nul
       break;
     }
     case "tools": {
-      // Neither lbo/defaults nor allocation is seeded (F1): the rate-error hero under the snapshot card.
-      await expect(section(page, "lbo-hero")).toContainText(LBO_RATE_UNAVAILABLE, { timeout: 20_000 });
-      await expect(section(page, "lbo")).toContainText("The data service did not answer; the deal model will rerun when it returns.", { timeout: 20_000 });
+      // Neither lbo/defaults nor allocation is seeded (F1): CP4, the hero and the Outputs say the calculator is not in the snapshot.
+      await expect(section(page, "lbo-hero")).toContainText(LBO_SNAPSHOT, { timeout: 20_000 });
+      await expect(section(page, "lbo")).toContainText(LBO_SNAPSHOT, { timeout: 20_000 });
       break;
     }
     case METHODOLOGY_SLUG: {

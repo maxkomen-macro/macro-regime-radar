@@ -15,7 +15,8 @@ import { Card, SectionHeader, Tag } from "../../components";
 import { useAnalogues, useRegimeHistory } from "../../api/queries";
 import { fmtMonYr } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
-import { Caption, StateNote, eyebrowStyle, mono, monoNoteStyle } from "../shared/screen-ui";
+import Disclosure from "../shared/Disclosure";
+import { Caption, MISSING, StateNote, eyebrowStyle, mono, monoNoteStyle } from "../shared/screen-ui";
 import RegimeRibbon from "./RegimeRibbon";
 import { switchesInLast12 } from "./regime-history";
 
@@ -76,7 +77,11 @@ function AnaloguesSection() {
         </>
       ) : (
         <Card variant="tile">
-          <StateNote loading={q.isLoading} error={q.isError} />
+          {q.data ? (
+            <StateNote>No historical analogues on file for today&apos;s readings.</StateNote>
+          ) : (
+            <StateNote loading={q.isLoading} error={q.isError} missing={MISSING.analogues} />
+          )}
         </Card>
       )}
     </Card>
@@ -112,10 +117,17 @@ function RegimeHistorySection() {
           variant="full"
           ariaLabel="Regime history Gantt: one lane per regime, colored spans mark the months the classifier called it"
         />
+        {/* G4 (Iteration 1 step 5): two visible sentences; the switch count
+            (also in the header meta) sits behind Details. */}
         <Caption>
           Every monthly call the classifier has made, one lane per regime; hover a span for its dates. Long unbroken bands are stable
-          macro; rapid lane-hopping marks the turns. The last 12 months saw {k} regime switch{k === 1 ? "" : "es"}.
+          macro; rapid lane-hopping marks the turns.
         </Caption>
+        <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+          <Caption style={{ marginTop: 0 }}>
+            The last 12 months saw {k} regime switch{k === 1 ? "" : "es"}.
+          </Caption>
+        </Disclosure>
       </Card>
     </Card>
   );

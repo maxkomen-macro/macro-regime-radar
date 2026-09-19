@@ -20,7 +20,7 @@ import { fmtMonYr, fmtSigned } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
-import { Caption, StateNote, capStyle, eyebrowStyle, mono } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote, capStyle, eyebrowStyle, mono } from "../shared/screen-ui";
 import { BREAKEVEN_LABEL, featureCurrent, featureLabel } from "./recession-copy";
 import type { RecessionPanelProps } from "./panel-props";
 
@@ -206,7 +206,7 @@ export default function TransparencyPanel({ m, status }: RecessionPanelProps): J
         </div>
       ) : (
         <Card variant="tile">
-          <StateNote loading={status === "loading"} error={status === "error"} />
+          <StateNote loading={status === "loading"} error={status === "error"} missing={MISSING.recession} />
         </Card>
       )}
     </Card>

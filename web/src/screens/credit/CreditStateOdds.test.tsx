@@ -263,7 +263,7 @@ describe("CreditStateOdds (checklist 06 B.6 / E.1)", () => {
     fireEvent.focus(term);
     const tip = screen.getByRole("tooltip");
     expect(tip).toBeVisible();
-    expect((tip.textContent ?? "").startsWith("IG spreads above 150 bp: financing strain")).toBe(true);
+    expect((tip.textContent ?? "").startsWith("IG spreads above 150 bps: financing strain")).toBe(true);
   });
 
   it("empty matrices render the 60-months note in place of the grid and no tiles", () => {

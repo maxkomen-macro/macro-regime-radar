@@ -32,7 +32,7 @@ import { fmtBps, fmtMonYr, fmtSigned, fmtWholePct, ordinal } from "../../lib/for
 import { DASH } from "../dashboard/hero-copy";
 import { assessFreshness } from "../shared/freshness";
 import { HeroChartFrame } from "../shared/HeroChart";
-import { StateNote, useHashScroll } from "../shared/screen-ui";
+import { MISSING, MISSING_ROW, StateNote, missingNote, useHashScroll, useSnapshotMode } from "../shared/screen-ui";
 import { DisclosureLine } from "../shared/Disclosure";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
@@ -85,7 +85,6 @@ const gaugeWidth = (w: number): number => Math.floor(Math.min(w * GAUGE_SHARE, G
 const gaugeHeight = (w: number): number => Math.round(gaugeWidth(w) * GAUGE_ASPECT);
 
 const LOADING_HEADLINE = "Training the recession model on stored NBER history…";
-const ERROR_HEADLINE = "Recession model unavailable: its endpoint trains in-process and may need a warm start.";
 const LOADING_ROW = "Training the recession model; the first call takes about a second.";
 
 /** The classifier's stored odds for its own label (types.ts Regime). */
@@ -106,6 +105,7 @@ function labelOdds(r: Regime): number | null {
 export default function RecessionScreen() {
   const q = useRecessionProbability();
   const regime = useRegimeLatest();
+  const snapshot = useSnapshotMode();
   const m: RecessionMetrics | null = q.data ?? null;
   // The snapshot rule (03 B.1): no error copy while cached data is on screen.
   const status: RecessionStatus = m ? "ready" : q.isError ? "error" : "loading";
@@ -145,6 +145,7 @@ export default function RecessionScreen() {
         glow={copy.glow}
         subhead={copy.subhead}
         lede={copy.lede}
+        ledeMore={copy.ledeMore ?? undefined}
         footnote={copy.footnote}
         note={copy.note}
         chart={
@@ -168,14 +169,27 @@ export default function RecessionScreen() {
       />
     );
   } else if (q.isError) {
-    hero = <TabHero {...heroShared} headline={<span style={stateHeadline}>{ERROR_HEADLINE}</span>} pill="Unavailable" pillTone="gray" glow={RECESSION_GLOW.gray} placeholder />;
+    // CP4: the one sentence naming the model and why it is missing.
+    hero = (
+      <TabHero
+        {...heroShared}
+        headline={<span style={stateHeadline}>{missingNote(MISSING.recession, snapshot)}</span>}
+        pill="Unavailable"
+        pillTone="gray"
+        glow={RECESSION_GLOW.gray}
+        placeholder
+      />
+    );
   } else {
     hero = <TabHero {...heroShared} headline={<span style={stateHeadline}>{LOADING_HEADLINE}</span>} glow={RECESSION_GLOW.gray} placeholder />;
   }
 
   /* ── summary rows (B.2, C.2 order) ───────────────────────────────────── */
-  const note = status === "error" ? <StateNote error /> : <StateNote loading>{LOADING_ROW}</StateNote>;
-  const val = (f: (x: RecessionMetrics) => ReactNode): ReactNode => (m ? f(m) : note);
+  // CP4: the first row names the model and why it is missing; the rows under
+  // it say so briefly (their labels name the reading).
+  const lead = status === "error" ? <StateNote error missing={MISSING.recession} /> : <StateNote loading>{LOADING_ROW}</StateNote>;
+  const note = status === "error" ? <StateNote error missing={MISSING_ROW} /> : <StateNote loading>{LOADING_ROW}</StateNote>;
+  const val = (f: (x: RecessionMetrics) => ReactNode, first = false): ReactNode => (m ? f(m) : first ? lead : note);
   const series = m?.recession_prob_series ?? [];
   const i = m ? headlineIndex(series, m.recession_prob) : -1;
   const change = m && i >= 0 ? deltaPoints(series, i, 3) : null;
@@ -187,7 +201,7 @@ export default function RecessionScreen() {
     {
       id: "probability",
       label: "12-month probability",
-      value: val((x) => `${prob.toFixed(1)}% · ${x.recession_label}`),
+      value: val((x) => `${prob.toFixed(1)}% · ${x.recession_label}`, true),
       tone: toneColor(tone),
     },
     {
@@ -274,7 +288,7 @@ export default function RecessionScreen() {
   ];
 
   /* ── status strip: consecutive rises, linking to the model inputs ────── */
-  const words = stripSummary(m ?? undefined, { isLoading: status === "loading", isError: status === "error" });
+  const words = stripSummary(m ?? undefined, { isLoading: status === "loading", isError: status === "error", snapshot });
   const strip: StatusStripProps = {
     ...words,
     to: STRIP_TARGET,

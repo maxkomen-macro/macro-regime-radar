@@ -30,7 +30,7 @@ import { fmtDate, fmtSignedPct } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
 import ScrollTable from "../shared/ScrollTable";
-import { Caption, metaStyle } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote, metaStyle } from "../shared/screen-ui";
 import { CHART_PANEL_ID } from "./chart-panel-id";
 import {
   MACRO_TAPE,
@@ -65,6 +65,9 @@ export interface MacroTapeProps {
   live: boolean;
   /** `marketDailyDate` for the caption's "through {date}". */
   storedThrough: string | null;
+  /** The stored-close request failed with nothing on hand (CP4): the tape
+   * then says which prices are missing and why. */
+  storedError?: boolean;
 }
 
 /* ── the visible provenance line (M2) ──────────────────────────────────── */
@@ -119,6 +122,35 @@ export function tapeStatusLine(args: {
     return `Delayed: the US feed is not ticking, so US rows print their newest quote, ${fmtEtStamp(usT)}${usDelayed ? " (15 minutes delayed)" : ""}.${stored}`;
   }
   return `Showing the last close: US rows hold their final quote from ${fmtEtStamp(usT)}${othersLive ? ", while crypto and FX tick live" : ""}.${stored}`;
+}
+
+/**
+ * The tape's one-line status (Iteration 1 step 5, G4: one rendered line at
+ * every width, 390 px included): live, delayed or the last close, with the
+ * stamp. `full` is `tapeStatusLine`'s sentence, verbatim, which moves behind
+ * the panel's Details disclosure; nothing is dropped.
+ */
+export function tapeStatus(args: Parameters<typeof tapeStatusLine>[0]): { line: string; full: string } {
+  const full = tapeStatusLine(args);
+  const { socketOpen, usLive, quotes, storedThrough } = args;
+  const sessionOpen = args.sessionOpen ?? nyseSessionOpen();
+  let usT: number | null = null;
+  let usDelayed = false;
+  for (const d of US_DEFS) {
+    const q = quotes.get(d.symbol);
+    if (q?.t != null && (usT == null || q.t > usT)) {
+      usT = q.t;
+      usDelayed = q.delayed;
+    }
+  }
+  const through = storedThrough ? `Last close · stored through ${fmtDate(storedThrough)}` : null;
+  let line: string;
+  if (usLive && usT != null) line = `Live · newest US tick ${fmtEtStamp(usT)}`;
+  else if (!socketOpen) line = through ?? "Stream not connected · no close stored yet";
+  else if (usT == null) line = through ?? "No US quote or stored close on file yet.";
+  else if (sessionOpen) line = `Delayed${usDelayed ? " 15 min" : ""} · US quote ${fmtEtStamp(usT)}`;
+  else line = `Last close · US final quote ${fmtEtStamp(usT)}`;
+  return { line, full };
 }
 
 /* ── feed status line (moved verbatim from MarketsScreen, M29) ─────────── */
@@ -298,11 +330,19 @@ export default function MacroTape({
   registerRow,
   live,
   storedThrough,
+  storedError = false,
 }: MacroTapeProps): JSX.Element {
   const { isNarrow } = useBreakpoint();
   const flash = useTickFlash(quotes);
   const status = useStreamStatus();
-  const statusLine = tapeStatusLine({ socketOpen: status.socket === "open", usLive: live, quotes, storedThrough });
+  const statusLine = tapeStatus({ socketOpen: status.socket === "open", usLive: live, quotes, storedThrough });
+  // CP4: with the stored closes unanswered the tape names what is missing
+  // (closes alone while the stream is up, every price when it is not); the
+  // single names read the stream alone, so they name the live quotes.
+  const socketOpen = status.socket === "open";
+  const storedGone = storedError && storedThrough == null;
+  const singlesUnquoted = !socketOpen && singles.every((d) => quotes.get(d.symbol)?.p == null);
+  const statusText = storedGone && !socketOpen ? "Stream not connected" : statusLine.line;
 
   // One stable ref callback per symbol: React re-invokes a ref only when the
   // callback identity changes, so the 2 Hz snapshots never churn the screen's
@@ -399,6 +439,11 @@ export default function MacroTape({
           />
         </ScrollTable>
       </Card>
+      {storedGone ? (
+        <div style={{ marginTop: 8 }}>
+          <StateNote error missing={socketOpen ? MISSING.closes : MISSING.market} />
+        </div>
+      ) : null}
 
       {/* The single names sit under the macro tape, always on screen (M3b);
           `#single-names` is the palette and hash target. */}
@@ -418,6 +463,11 @@ export default function MacroTape({
             />
           </ScrollTable>
         </Card>
+        {singlesUnquoted ? (
+          <div style={{ marginTop: 8 }}>
+            <StateNote error missing={MISSING.quotes} />
+          </div>
+        ) : null}
         <Caption>
           Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers;
           biggest day move on top. Off-hours the board holds at the last close until the next
@@ -426,9 +476,12 @@ export default function MacroTape({
       </div>
 
       {/* M2: one visible line saying live or last close, with its stamp; the
-          full provenance sits one click down on the same panel. */}
-      <Caption style={{ marginTop: 14, color: "var(--text-2)" }}>{statusLine}</Caption>
+          full provenance sits one click down on the same panel. G4 (step 5):
+          the line is one rendered line at every width; its full sentence
+          leads the Details panel. */}
+      <Caption copy="status" style={{ marginTop: 14, color: "var(--text-2)" }}>{statusText}</Caption>
       <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+        <Caption style={{ marginTop: 0, marginBottom: 4, color: "var(--text-2)" }}>{statusLine.full}</Caption>
         <Caption style={{ marginTop: 0 }}>
           Day moves come straight from the exchange feed&apos;s own day-change figures; never
           recomputed here. 1W / 1M and sparklines come from the stored daily candles

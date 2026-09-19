@@ -41,7 +41,7 @@ import { LIVE_WINDOW_MS, streamWord, useQuotes, useStreamStatus, type LiveQuote,
 import { fmtDate, fmtPct, fmtSignedPct, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { assessFreshness, type FreshInfo } from "../shared/freshness";
-import { Caption, StateNote, metaStyle, useHashScroll } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote, metaStyle, missingNote, useHashScroll, useSnapshotMode } from "../shared/screen-ui";
 import { DisclosureLine } from "../shared/Disclosure";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import SummaryCard, { type StatusStripProps, type StatusTone, type SummaryRow } from "../shared/SummaryCard";
@@ -94,20 +94,29 @@ interface LiveByFeed {
 
 /* ── stream status strip ───────────────────────────────────────────────── */
 
+/** A status line's character budget: about 200 px of 12 px text, one line in
+ * the narrowest strip (390 px) (Iteration 1 step 5, G4). */
+const STRIP_LINE_CHARS = 36;
+
 /**
  * The summary card's strip, worded through the one function every surface
  * shares (`streamWord`) and the tape's own feed words (`feedWord`), so the
  * strip's title agrees with the freshness card's first line. It opens the
  * data freshness breakdown; the sentence is its accessible name.
+ *
+ * Iteration 1 step 5 (G4): the detail is one line at every width. It names
+ * the US tape's word and the other feeds that are ticking live; the quiet
+ * feeds are the drawer's (Live relay), the VIX delay is the VIX row's.
  */
 function streamStrip(status: StreamStatus, quotes: ReadonlyMap<string, LiveQuote>, live: LiveByFeed, openFreshness: () => void): StatusStripProps {
   const word = streamWord(status, quotes);
-  const feeds = [
-    `US ${feedWord("us", status.feeds.us, live.us).text}`,
-    `crypto ${feedWord("crypto", status.feeds.crypto, live.crypto).text}`,
-    `FX ${feedWord("forex", status.feeds.forex, live.forex).text}`,
-    `VIX ${feedWord("vix", status.feeds.vix, false).text}`,
-  ].join(" · ");
+  const liveOthers = [
+    feedWord("crypto", status.feeds.crypto, live.crypto).text === "● live" ? "crypto" : null,
+    feedWord("forex", status.feeds.forex, live.forex).text === "● live" ? "FX" : null,
+  ].filter((x): x is string => x != null);
+  const feeds = [`US ${feedWord("us", status.feeds.us, live.us).text}`, liveOthers.length ? `${liveOthers.join(", ")} ● live` : null]
+    .filter(Boolean)
+    .join(" · ");
   let tone: StatusTone;
   let title: string;
   let detail: string;
@@ -140,7 +149,8 @@ function streamStrip(status: StreamStatus, quotes: ReadonlyMap<string, LiveQuote
   // A degraded relay says why in the reader words the freshness card prints.
   if (status.degraded) {
     tone = "amber";
-    detail = `${degradedReason(status.degradedReasons) ?? "a feed is degraded"} · ${feeds}`;
+    const reason = degradedReason(status.degradedReasons) ?? "a feed is degraded";
+    detail = `${reason} · ${feeds}`.length <= STRIP_LINE_CHARS ? `${reason} · ${feeds}` : reason;
   }
   return {
     tone,
@@ -159,6 +169,9 @@ export default function MarketsScreen() {
   const quotes = useQuotes();
   const status = useStreamStatus();
   const daily = useMarketDaily(DAILY_FETCH, 60);
+  const snapshot = useSnapshotMode();
+  // CP4: the stored-close request failed with nothing on hand.
+  const storedError = daily.isError && !daily.data;
   const priced = usePriced();
   const surprises = useSurprises(10);
   const credit = useCreditOas(90);
@@ -509,7 +522,7 @@ export default function MarketsScreen() {
   ];
 
   /* ── summary rows (the desk-read ledger, re-homed) ───────────────────── */
-  const dailyNote = <StateNote loading={!daily.data && !daily.isError} error={daily.isError && !daily.data} />;
+  const dailyNote = <StateNote loading={!daily.data && !daily.isError} error={storedError} missing={MISSING.closes} />;
   const rows: SummaryRow[] = [];
   rows.push({
     id: "us10y",
@@ -733,7 +746,9 @@ export default function MarketsScreen() {
         live={usLive}
         headline={
           <span style={stateHeadline}>
-            Stored closes unavailable: the data service did not answer. The tape keeps its live quotes.
+            {/* CP4: what is missing and why; the second sentence only while the stream is up. */}
+            {missingNote(MISSING.closes, snapshot)}
+            {status.socket === "open" ? " The tape keeps its live quotes." : ""}
           </span>
         }
         pill="Unavailable"
@@ -833,7 +848,11 @@ export default function MarketsScreen() {
             )}
           </Card>
 
-          <SectorHeatmap barsBySymbol={barsBySymbol} marketDailyDate={marketDailyDate} />
+          <SectorHeatmap
+            barsBySymbol={barsBySymbol}
+            marketDailyDate={marketDailyDate}
+            status={storedError ? "error" : daily.data ? "ready" : "loading"}
+          />
 
           <Movers read={movers} onOpen={openName} />
 
@@ -849,6 +868,7 @@ export default function MarketsScreen() {
           registerRow={registerRow}
           live={usLive}
           storedThrough={marketDailyDate}
+          storedError={storedError}
         />
       </div>
 

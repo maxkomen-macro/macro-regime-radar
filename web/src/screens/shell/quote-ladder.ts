@@ -38,6 +38,10 @@ export interface QuoteLadderOptions {
    * leaves the NO PRICE tag off rather than asserting an absence before an
    * answer (the strip's 2026-09-05 rule). */
   dailyLoading?: boolean;
+  /** CP4: why no price exists when the stored read failed ("Live and stored
+   * market prices are not in this snapshot."). The NO PRICE tag and the card
+   * carry it as their title instead of the generic line. */
+  unavailable?: string;
 }
 
 const DELAYED_TAG: QuoteTag = { text: "15M", title: "15-minute delayed quote (REST fill)", tone: "amber" };
@@ -136,6 +140,7 @@ export function quoteFor(
   return {
     symbol: sym,
     price: "—",
-    tag: opts.dailyLoading ? undefined : NO_PRICE_TAG,
+    tag: opts.dailyLoading ? undefined : opts.unavailable ? { ...NO_PRICE_TAG, title: opts.unavailable } : NO_PRICE_TAG,
+    ...(opts.unavailable && !opts.dailyLoading ? { title: opts.unavailable } : null),
   };
 }

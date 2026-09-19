@@ -146,7 +146,13 @@ export function SignalCard({
           ))}
         </div>
       ) : null}
-      {caption != null && caption !== false ? <div style={CAPTION}>{caption}</div> : null}
+      {/* G4 (Iteration 1 step 5): the caption slot is a tile caption, at most
+          two sentences (`data-copy="caption"`, capped by the copy spec). */}
+      {caption != null && caption !== false ? (
+        <div data-copy="caption" style={CAPTION}>
+          {caption}
+        </div>
+      ) : null}
     </Comp>
   );
 }

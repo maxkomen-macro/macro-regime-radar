@@ -36,7 +36,9 @@ export interface RecessionHeroCopy {
   glow: string;
   subhead: string;
   lede: ReactNode;
-  /** Plain-text form of the lede for tests. */
+  /** The lede's sentence past the visible three, behind Details (G4), or null. */
+  ledeMore: string | null;
+  /** Plain-text form of the whole lede paragraph (visible part plus `ledeMore`). */
   ledeText: string;
   note: string;
   footnote: string[];
@@ -255,10 +257,16 @@ const LEDE_MID = " scores twelve-month odds against a ~15% historical base rate;
 const LEDE_TAIL = " This is the recession model's own probability, not the classifier's Recession Risk odds (the Regime context row).";
 
 /** The divergence clause (X4, verbatim): the served label, then whether the
- * two readings agree, by the server's ±20 materiality band. */
-function divergenceClause(m: RecessionMetrics): string {
+ * two readings agree, by the server's ±20 materiality band. `more` is the
+ * material case's second sentence, which sits behind the lede's Details
+ * (G4, Iteration 1 step 5: the visible lede is three sentences by
+ * construction; the Transparency panel states the same ±20 rule). */
+function divergenceParts(m: RecessionMetrics): { head: string; more: string | null } {
   const material = m.divergence_score != null && Math.abs(m.divergence_score) > 20;
-  return `${m.divergence_label}: credit pricing and the model ${material ? "disagree. The divergence is material and requires judgment" : "tell one story"}.`;
+  return {
+    head: `${m.divergence_label}: credit pricing and the model ${material ? "disagree" : "tell one story"}.`,
+    more: material ? "The divergence is material and requires judgment." : null,
+  };
 }
 
 export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
@@ -280,7 +288,11 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
   else subhead = "Twelve-month odds, unchanged over three months.";
 
   // Rule 3: X4 with its three edits; the Jargon affordance on "logistic model".
-  const divergence = divergenceClause(m);
+  // G4: the visible lede is the model sentence, the divergence word and the
+  // own-probability pointer (three sentences); the material case's second
+  // sentence is `ledeMore`. `ledeText` stays the whole paragraph.
+  const div = divergenceParts(m);
+  const divergence = div.more ? `${div.head.slice(0, -1)}. ${div.more}` : div.head;
   const ledeText = `${LEDE_HEAD}${LEDE_TERM}${LEDE_MID}${divergence}${LEDE_TAIL}`;
   const lede = createElement(
     Fragment,
@@ -288,9 +300,10 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
     LEDE_HEAD,
     createElement(Jargon, { term: "recession model" }, LEDE_TERM),
     LEDE_MID,
-    divergence,
+    div.head,
     LEDE_TAIL,
   );
+  const ledeMore = div.more;
 
   // Rule 4: the band and its range, without the number (the h1 carries it).
   const range = bandRange(label);
@@ -304,7 +317,7 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
   const pillTone = pillToneFor(label);
   const glow = tone === "clear" ? RECESSION_GLOW.mint : tone === "watch" || tone === "alert" ? RECESSION_GLOW.amber : RECESSION_GLOW.gray;
 
-  return { headline, pill: label, pillTone, glow, subhead, lede, ledeText, note, footnote };
+  return { headline, pill: label, pillTone, glow, subhead, lede, ledeMore, ledeText, note, footnote };
 }
 
 /* ── the summary strip (B.2 table, rule 8) ────────────────────────────── */
@@ -313,8 +326,10 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
  * "three straight rises"; two would over-alarm on monthly noise). */
 export const RISE_STREAK_WATCH = 3;
 
-export function stripSummary(m: RecessionMetrics | undefined, q: { isLoading: boolean; isError: boolean }): StripSummary {
+export function stripSummary(m: RecessionMetrics | undefined, q: { isLoading: boolean; isError: boolean; snapshot?: boolean }): StripSummary {
   if (!m) {
+    // CP4: a snapshot session says the model is not in it, and why.
+    if (q.isError && q.snapshot) return { tone: "gray", title: "Model not in this snapshot", detail: "Computed live on the server" };
     return q.isError
       ? { tone: "gray", title: "Recession model unavailable", detail: "The data service did not answer" }
       : { tone: "gray", title: "Reading the recession model…", detail: "Opens the model inputs" };
@@ -328,14 +343,17 @@ export function stripSummary(m: RecessionMetrics | undefined, q: { isLoading: bo
     return {
       tone: "amber",
       title: `Watch · ${streak} straight rises`,
-      detail: `Probability up each month since ${fmtMonYr(base.date)} · ${base.value.toFixed(1)}% → ${series[i].value.toFixed(1)}%`,
+      // G4 (Iteration 1 step 5): one line at 390 px; the title says the
+      // probability rose each month.
+      detail: `Since ${fmtMonYr(base.date)} · ${base.value.toFixed(1)}% → ${series[i].value.toFixed(1)}%`,
     };
   }
   const change = deltaPoints(series, i, 3);
-  if (!change) return { tone: "mint", title: "No consecutive rises", detail: "Fewer than four stored months on file" };
+  if (!change) return { tone: "mint", title: "No consecutive rises", detail: "Fewer than four months on file" };
+  // The two end months name the 3-month window (G4: one line at 390 px).
   return {
     tone: "mint",
     title: "No consecutive rises",
-    detail: `${fmtSigned(change.delta, 1)} pts vs 3 months ago · ${fmtMonYr(change.prior.date)} → ${fmtMonYr(series[i].date)}`,
+    detail: `${fmtSigned(change.delta, 1)} pts · ${fmtMonYr(change.prior.date)} → ${fmtMonYr(series[i].date)}`,
   };
 }

@@ -240,7 +240,7 @@ describe("news-copy: summary and strip helpers (checklist 08 B.2)", () => {
     expect(feedHealth({ usingFallback: true, loading: false, feedInfo: stale, feed: FEED, newestFallback: "2026-09-14T13:00:00Z" })).toEqual({
       tone: "amber",
       title: "Fallback coverage",
-      detail: "Newest stored Sep 14, 2026 · 2 days old · 4 stored stories",
+      detail: "4 stories · newest Sep 14, 2026",
     });
     expect(feedHealth({ usingFallback: true, loading: false, feedInfo: fresh({ age: "2 days" }), feed: FEED, newestFallback: "2026-09-14T13:00:00Z" }).title).toBe("Fallback coverage");
   });
@@ -249,7 +249,7 @@ describe("news-copy: summary and strip helpers (checklist 08 B.2)", () => {
     expect(feedHealth({ usingFallback: false, loading: false, feedInfo: fresh(), feed: FEED, newestFallback: null })).toEqual({
       tone: "mint",
       title: "Feed current",
-      detail: "Newest headline Sep 16, 16:40 ET · 2 sources",
+      detail: "Newest headline Sep 16, 16:40 ET",
     });
   });
 
@@ -258,13 +258,13 @@ describe("news-copy: summary and strip helpers (checklist 08 B.2)", () => {
     expect(feedHealth({ usingFallback: false, loading: false, feedInfo: delayed, feed: FEED, newestFallback: null })).toEqual({
       tone: "amber",
       title: "Feed delayed",
-      detail: "Newest headline Sep 16, 16:40 ET · 3 hours old · 2 sources",
+      detail: "Newest Sep 16, 16:40 ET · 3 hours old",
     });
     const stale = fresh({ state: "stale", word: "Stale", stamp: "Sep 12, 09:05 ET", ageDays: 4, age: "4 days" });
     expect(feedHealth({ usingFallback: false, loading: false, feedInfo: stale, feed: FEED, newestFallback: null })).toEqual({
       tone: "amber",
       title: "Feed stale",
-      detail: "Newest headline Sep 12, 09:05 ET · 4 days old · 2 sources",
+      detail: "Newest Sep 12, 09:05 ET · 4 days old",
     });
   });
 

@@ -315,48 +315,49 @@ describe("ladderStrip (checklist 06 B.2 strip table)", () => {
     const s = ladderStrip(metrics(), "ready");
     expect(s.tone).toBe("amber");
     expect(s.title).toBe("Watch · CCC widening");
-    expect(s.detail).toBe("+29 bps in a month · BB -3 bps · B +2 bps");
+    // Iteration 1 step 5 (G4): one status line, the rungs closed by one unit.
+    expect(s.detail).toBe("CCC +29 · BB -3 · B +2 bps MoM");
   });
 
   it("diverging outranks tension and past: a Crisis fixture with CCC widening most still reads Watch · CCC widening", () => {
     const s = ladderStrip(metrics({ ...CRISIS, ccc_1w_change: 40, bb_1w_change: 5, b_1w_change: 8 }), "ready");
     expect(s.title).toBe("Watch · CCC widening");
     expect(s.tone).toBe("amber");
-    expect(s.detail).toBe("+40 bps in a month · BB +5 bps · B +8 bps");
+    expect(s.detail).toBe("CCC +40 · BB +5 · B +8 bps MoM");
   });
 
   it("the diverging detail drops null clauses", () => {
-    expect(ladderStrip(metrics({ bb_1w_change: null }), "ready").detail).toBe("+29 bps in a month · B +2 bps");
-    expect(ladderStrip(metrics({ b_1w_change: null }), "ready").detail).toBe("+29 bps in a month · BB -3 bps");
-    expect(ladderStrip(metrics({ bb_1w_change: null, b_1w_change: null }), "ready").detail).toBe("+29 bps in a month");
+    expect(ladderStrip(metrics({ bb_1w_change: null }), "ready").detail).toBe("CCC +29 · B +2 bps MoM");
+    expect(ladderStrip(metrics({ b_1w_change: null }), "ready").detail).toBe("CCC +29 · BB -3 bps MoM");
+    expect(ladderStrip(metrics({ bb_1w_change: null, b_1w_change: null }), "ready").detail).toBe("CCC +29 bps MoM");
   });
 
-  it("tension without divergence: amber Watch · CCC at {x}% of the distress line, the weakest-rung detail naming the label", () => {
+  it("tension without divergence: amber Watch · CCC {x}% of distress, the weakest-rung detail naming the label", () => {
     const s = ladderStrip(metrics(TENSION), "ready");
     expect(s.tone).toBe("amber");
-    expect(s.title).toMatch(/^Watch · CCC at 91(?:\.0)?% of the distress line$/);
-    expect(s.detail).toBe("The weakest rung prices stress while the index reads Normal");
+    expect(s.title).toMatch(/^Watch · CCC 91(?:\.0)?% of distress$/);
+    expect(s.detail).toBe("Weakest rung stressed · index Normal");
     const tight = ladderStrip(metrics({ ...TIGHT, ccc_oas: 880, ccc_1w_change: 10, bb_1w_change: 12, b_1w_change: 15, ccc_pct_of_distress_line: 88 }), "ready");
-    expect(tight.title).toMatch(/^Watch · CCC at 88(?:\.0)?% of the distress line$/);
-    expect(tight.detail).toBe("The weakest rung prices stress while the index reads Tight");
+    expect(tight.title).toMatch(/^Watch · CCC 88(?:\.0)?% of distress$/);
+    expect(tight.detail).toBe("Weakest rung stressed · index Tight");
   });
 
   it("past the rules: amber {label} · HY {n} bps naming the 400 rule for Stressed and the 700 rule for Crisis", () => {
     const stressed = ladderStrip(metrics(STRESSED), "ready");
     expect(stressed.tone).toBe("amber");
     expect(stressed.title).toBe("Stressed · HY 486 bps");
-    expect(stressed.detail).toBe("The index is past the 400 bps rule; the ladder tiles show the rungs");
+    expect(stressed.detail).toBe("HY past the 400 bps rule");
     const crisis = ladderStrip(metrics(CRISIS), "ready");
     expect(crisis.tone).toBe("amber");
     expect(crisis.title).toBe("Crisis · HY 812 bps");
-    expect(crisis.detail).toBe("The index is past the 700 bps rule; the ladder tiles show the rungs");
+    expect(crisis.detail).toBe("HY past the 700 bps rule");
   });
 
   it("nothing flagged: mint Clear · ladder in step with the CCC move and the distress share", () => {
     const s = ladderStrip(metrics(IN_STEP), "ready");
     expect(s.tone).toBe("mint");
     expect(s.title).toBe("Clear · ladder in step");
-    expect(s.detail).toMatch(/^CCC -4 bps in a month · distress 58(?:\.0)?% of the 1,000 bps line$/);
+    expect(s.detail).toMatch(/^CCC -4 bps MoM · distress 58(?:\.0)?%$/);
     const tight = ladderStrip(metrics(TIGHT), "ready");
     expect(tight.tone).toBe("mint");
     expect(tight.title).toBe("Clear · ladder in step");
@@ -365,10 +366,10 @@ describe("ladderStrip (checklist 06 B.2 strip table)", () => {
   it("the clear detail drops null clauses and never prints null", () => {
     const noCcc = ladderStrip(metrics({ ...IN_STEP, ccc_1w_change: null }), "ready");
     expect(noCcc.title).toBe("Clear · ladder in step");
-    expect(noCcc.detail).toMatch(/^distress 58(?:\.0)?% of the 1,000 bps line$/);
+    expect(noCcc.detail).toMatch(/^distress 58(?:\.0)?%$/);
     const noDistress = ladderStrip(metrics({ ...IN_STEP, ccc_pct_of_distress_line: null }), "ready");
     expect(noDistress.title).toBe("Clear · ladder in step");
-    expect(noDistress.detail).toBe("CCC -4 bps in a month");
+    expect(noDistress.detail).toBe("CCC -4 bps MoM");
     const neither = ladderStrip(metrics({ ...IN_STEP, ccc_1w_change: null, ccc_pct_of_distress_line: null }), "ready");
     expect(neither.title).toBe("Clear · ladder in step");
     expect(neither.detail).not.toContain("null");

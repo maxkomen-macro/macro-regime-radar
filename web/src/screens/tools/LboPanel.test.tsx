@@ -332,6 +332,9 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     expect(cells.filter((c) => p9Text(c) === "n/a")).toHaveLength(1);
     const legend = p9Text(section.querySelector(".mrr-heat-legend"));
     for (const s of ["20% or more", "Below 15%", "Exit multiple →"]) expect(legend).toContain(s);
+    // Iteration 1 step 5 (G4): the third caption sentence sits behind Details.
+    expect(p9Text(section)).not.toContain("The outlined cell is the current scenario.");
+    fireEvent.click(within(section).getByRole("button", { name: /Details/ }));
     expect(p9Text(section)).toContain("The outlined cell is the current scenario.");
     expect(screen.queryByRole("button", { name: /Rate × leverage/ })).toBeNull();
     expect(screen.queryByRole("heading", { name: /IRR vs financing rate/i })).toBeNull();

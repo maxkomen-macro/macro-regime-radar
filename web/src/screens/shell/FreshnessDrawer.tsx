@@ -102,18 +102,26 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
 
   const { f, statusWord, macroFresh, marketFresh, signalsFresh, intradayFreshInfo, signalsDiffer, streamLive } = status;
 
+  // G4 (Iteration 1 step 5): the summary line is one rendered line at 390 px.
+  // It keeps the status word and the ticking feeds ("crypto/FX only"); the
+  // rest of the old suffix (the session word or a degraded reason) opens the
+  // sentence under it, verbatim.
+  const suffixWords = status.liveSuffix.replace(/^ · /, "").split(" · ").filter(Boolean);
+  const chipSuffix = suffixWords[0]?.endsWith(" only") ? ` · ${suffixWords[0]}` : "";
+  const suffixRest = (chipSuffix ? suffixWords.slice(1) : suffixWords).join(" · ");
   const statusChip = (
     <span title={status.statusTitle} style={{ color: status.statusColor, whiteSpace: "nowrap" }}>
       <span aria-hidden="true">{STATUS_GLYPH[statusWord] ?? "▪"}</span> {statusWord}
-      {status.liveSuffix}
+      {chipSuffix}
       {status.snapshotDate}
     </span>
   );
 
-  const sentence =
+  const baseSentence =
     statusWord === "Validated snapshot"
       ? `${SNAPSHOT_NOTE} ${impactSentence(macroFresh, marketFresh, false)}`
       : (status.blockerNote ?? impactSentence(macroFresh, marketFresh, streamLive));
+  const sentence = suffixRest ? `${suffixRest.charAt(0).toUpperCase()}${suffixRest.slice(1)}. ${baseSentence}` : baseSentence;
 
   const sla: SlaRow[] = f?.sla ?? [];
   const relay = f?.relay ?? null;
@@ -155,7 +163,8 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
           <div role="status" aria-label="Data freshness" className="mrr-fresh-status">
             {f ? (
               <>
-                <div>{statusChip}</div>
+                {/* The drawer's summary line (G4: one rendered line). */}
+                <div data-copy="status">{statusChip}</div>
                 <p style={{ margin: 0, color: "var(--text-2)", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", lineHeight: 1.55, textWrap: "pretty" }}>
                   {sentence}
                 </p>

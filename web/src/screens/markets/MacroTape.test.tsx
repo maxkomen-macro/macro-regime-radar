@@ -257,9 +257,12 @@ describe("MacroTape (checklist 05 B.7)", () => {
     renderTape();
     const details = within(panel()).getByRole("button", { name: /Details/ });
     expect(details).toHaveAttribute("aria-expanded", "false");
-    expect(text(panel())).toContain("Showing the last close: the stream is not connected, so rows print stored closes through Sep 18, 2026.");
+    // Iteration 1 step 5 (G4): one status line visible; its full sentence leads the Details panel.
+    expect(text(panel())).toContain("Last close · stored through Sep 18, 2026");
+    expect(text(panel())).not.toContain("Showing the last close: the stream is not connected");
     fireEvent.click(details);
     expect(details).toHaveAttribute("aria-expanded", "true");
+    expect(text(panel())).toContain("Showing the last close: the stream is not connected, so rows print stored closes through Sep 18, 2026.");
     expect(text(panel())).toContain("A dash under Day % means the feed sent a price without a day change");
     expect(text(panel())).toContain("The dashboard's VIX spike signal reads the monthly signal print");
   });

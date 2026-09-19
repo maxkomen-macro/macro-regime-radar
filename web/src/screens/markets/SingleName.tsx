@@ -46,7 +46,7 @@ import type { CandleRange, NewsItem, OptionContract } from "../../api/types";
 import { fmtDate, fmtSignedPct, fmtUtcStampEt } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
-import { Caption, eyebrowStyle, metaStyle, mono, monoNoteStyle } from "../shared/screen-ui";
+import { Caption, eyebrowStyle, metaStyle, mono, monoNoteStyle, useSnapshotMode } from "../shared/screen-ui";
 import { candleCaption, describeProviderError, fallbackNote, fmtProviderStamp, providerName } from "../shared/provider-ui";
 
 const CandleChart = lazy(() => import("./CandleChart"));
@@ -112,6 +112,7 @@ interface Props {
 
 export default function SingleName({ symbol, onClose, range: rangeProp, onRangeChange }: Props) {
   const { isNarrow } = useBreakpoint();
+  const snapshot = useSnapshotMode();
   const [ownRange, setOwnRange] = useState<CandleRange>("6M");
   // Controlled only when both props arrive; otherwise the tile keeps today's
   // state and picker, so the existing tests render unchanged.
@@ -245,7 +246,7 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
           .filter(Boolean)
           .join(" · ")
       : profile.isError
-        ? describeProviderError(profile.error, "the quote", symbol)
+        ? describeProviderError(profile.error, "the quote", symbol, snapshot)
         : "reading the quote…";
 
   const identityLine = p
@@ -280,7 +281,7 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
             </button>
           </div>
           <Caption>
-            {describeProviderError(profile.error, "the quote", symbol)} Search by company name, or check the spelling of a share
+            {describeProviderError(profile.error, "the quote", symbol, snapshot)} Search by company name, or check the spelling of a share
             class (BRK.B).
           </Caption>
         </Card>
@@ -391,7 +392,7 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
             style={{ height: 120, marginTop: controlled ? 12 : 0, display: "grid", placeItems: "center", ...uiText, fontSize: "var(--fs-caption)", color: candles.isError ? "var(--warn-hot)" : "var(--text-3)", textAlign: "center", padding: "0 12px" }}
           >
             {candles.isError
-              ? describeProviderError(candles.error, "history", symbol)
+              ? describeProviderError(candles.error, "history", symbol, snapshot)
               : candles.isPending
                 ? `Requesting ${range} history for ${symbol} from EODHD…`
                 : `No bars in the ${range} range for ${symbol}.`}
@@ -449,7 +450,7 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
             {monthly.isPending || regimes.isLoading
               ? "Joining monthly closes with the stored regime history…"
               : monthly.isError
-                ? describeProviderError(monthly.error, "monthly history", symbol)
+                ? describeProviderError(monthly.error, "monthly history", symbol, snapshot)
                 : regimes.isError
                   ? `The stored regime history did not load, so there is no regime read for ${symbol}.`
                   : "Fewer than 12 months overlap the stored regime history; no regime read for this name."}
@@ -536,6 +537,7 @@ const SIDE_OPTIONS = [
 
 export function OptionsLens({ symbol }: { symbol: string }) {
   const { isNarrow } = useBreakpoint();
+  const snapshot = useSnapshotMode();
   const [open, setOpen] = useState(false);
   const [exp, setExp] = useState<string | null>(null);
   const [side, setSide] = useState<"call" | "put">("call");
@@ -579,7 +581,7 @@ export function OptionsLens({ symbol }: { symbol: string }) {
           <div role="status" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--warn-hot)", lineHeight: 1.55 }}>
             {unentitled
               ? "Options data is not included in the EODHD plan configured on this server; no chain is shown rather than a fabricated one. The provider status page records the check."
-              : describeProviderError(exps.error, "options data", symbol)}
+              : describeProviderError(exps.error, "options data", symbol, snapshot)}
           </div>
         ) : (
           <>
@@ -607,7 +609,7 @@ export function OptionsLens({ symbol }: { symbol: string }) {
               <Caption>Requesting {side}s for {exp} from EODHD…</Caption>
             ) : chain.isError ? (
               <div role="status" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--warn-hot)" }}>
-                {describeProviderError(chain.error, "the option chain", symbol)}
+                {describeProviderError(chain.error, "the option chain", symbol, snapshot)}
               </div>
             ) : chain.data && chain.data.contracts.length === 0 ? (
               <Caption>No {side} contracts on file for {symbol} expiring {exp}.</Caption>

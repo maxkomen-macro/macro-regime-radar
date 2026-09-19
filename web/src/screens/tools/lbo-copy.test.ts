@@ -196,7 +196,8 @@ describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
     expect(lboStrip(q({ isError: true }))).toMatchObject({
       tone: "gray",
       title: "Rate feed unavailable",
-      detail: "The data service did not answer; the stated 8.50% rate is in use",
+      // Iteration 1 step 5 (G4): one status line.
+      detail: "The stated 8.50% rate is in use",
     });
   });
 
@@ -204,7 +205,7 @@ describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
     expect(lboStrip(q({ data: LBO_DEFAULTS_FALLBACK }))).toMatchObject({
       tone: "gray",
       title: "Rate feed unavailable",
-      detail: "FRED rows missing; the engine's fallback rate is in use",
+      detail: "No FRED rows · fallback rate in use",
     });
   });
 
@@ -213,9 +214,9 @@ describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
     expect(lboStrip(q({ data: LBO_DEFAULTS }))).toMatchObject({
       tone: "mint",
       title: "Rate synced from FRED",
-      detail: `Stored through ${fmtDate(LBO_DEFAULTS.data_as_of)} · refreshes with the daily pipeline`,
+      detail: `Stored through ${fmtDate(LBO_DEFAULTS.data_as_of)}`,
     });
-    expect(lboStrip(q({ data: LBO_DEFAULTS })).detail).toBe("Stored through Sep 01, 2026 · refreshes with the daily pipeline");
+    expect(lboStrip(q({ data: LBO_DEFAULTS })).detail).toBe("Stored through Sep 01, 2026");
   });
 
   it("E1: a B3 stated-default payload (is_fallback) reads Rate feed unavailable even with a dated data_as_of", () => {
@@ -223,12 +224,12 @@ describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
     expect(isStatedDefault(LBO_DEFAULTS_FALLBACK)).toBe(true);
     expect(isStatedDefault(LBO_DEFAULTS)).toBe(false);
     expect(isStatedDefault(LBO_DEFAULTS_B3)).toBe(false);
-    expect(lboStrip(q({ data: LBO_DEFAULTS_STATED }))).toMatchObject({ tone: "gray", title: "Rate feed unavailable", detail: "FRED rows missing; the engine's fallback rate is in use" });
+    expect(lboStrip(q({ data: LBO_DEFAULTS_STATED }))).toMatchObject({ tone: "gray", title: "Rate feed unavailable", detail: "No FRED rows · fallback rate in use" });
   });
 
   it("E1: a B3 payload reads the rate's served state and each component's as-of word (never the month stamp)", () => {
-    expect(lboStrip(q({ data: LBO_DEFAULTS_B3 }))).toEqual({ tone: "mint", title: "Rate synced from FRED", detail: "Fed funds: Aug 2026 print · HY spread: Sep 17" });
-    expect(lboStrip(q({ data: LBO_DEFAULTS_B3_UNKNOWN }))).toEqual({ tone: "gray", title: "FRED rate · as of unknown", detail: "Fed funds: Aug 2026 print · HY spread: As of unknown" });
+    expect(lboStrip(q({ data: LBO_DEFAULTS_B3 }))).toEqual({ tone: "mint", title: "Rate synced from FRED", detail: "Fed Aug 2026 print · HY Sep 17" });
+    expect(lboStrip(q({ data: LBO_DEFAULTS_B3_UNKNOWN }))).toEqual({ tone: "gray", title: "FRED rate · as of unknown", detail: "HY spread As of unknown" });
     expect(componentAsOf(LBO_DEFAULTS_B3).hy.word).toBe("Sep 17");
     expect(componentAsOf(LBO_DEFAULTS).hy.word).toBe("As of unknown");
   });
@@ -237,13 +238,37 @@ describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
     const data = { ...LBO_DEFAULTS, data_as_of: "2026-07-10" };
     const info = assessFreshness(data.data_as_of, "monthly");
     expect(info.state).toBe("delayed");
-    expect(lboStrip(q({ data }))).toMatchObject({ tone: "amber", title: "FRED rate delayed", detail: `Stored through Jul 10, 2026 · ${info.age} old` });
+    expect(lboStrip(q({ data }))).toMatchObject({ tone: "amber", title: "FRED rate delayed", detail: "Stored through Jul 10, 2026" });
   });
 
   it("stale: amber, FRED rate stale, the same detail form", () => {
     const data = { ...LBO_DEFAULTS, data_as_of: "2026-05-01" };
     const info = assessFreshness(data.data_as_of, "monthly");
     expect(info.state).toBe("stale");
-    expect(lboStrip(q({ data }))).toMatchObject({ tone: "amber", title: "FRED rate stale", detail: `Stored through May 01, 2026 · ${info.age} old` });
+    expect(lboStrip(q({ data }))).toMatchObject({ tone: "amber", title: "FRED rate stale", detail: "Stored through May 01, 2026" });
+  });
+});
+
+/* ── CP4 (Iteration 1 step 5): the calculator names itself as missing ─────── */
+
+describe("lboHero and lboStrip: CP4 missing-calculator wording", () => {
+  it("the rate and the default deal both unanswered: the hero names the LBO calculator; a snapshot session says it is not in the snapshot", () => {
+    const unreachable = new ApiError(0, "/api/lbo/run", "The data service is unreachable.", "unreachable", true);
+    const down = lboHero(args({ defaults: q({ isError: true }), clampedLive: null, baseRes: undefined, res: undefined, baseError: unreachable }));
+    expect(down.headline).toBe("LBO calculator unavailable: the data service did not answer.");
+    expect(down.pill).toBe("Unavailable");
+    const snap = lboHero(args({ defaults: q({ isError: true }), clampedLive: null, baseRes: undefined, res: undefined, snapshot: true }));
+    expect(snap.headline).toBe("The LBO calculator runs on the server; it is not available in this snapshot.");
+    // A snapshot session with the rate on hand keeps the run-error subhead in snapshot words.
+    const run = lboHero(args({ baseRes: undefined, res: undefined, runPending: false, baseError: unreachable, snapshot: true }));
+    expect(run.subhead).toBe("The LBO calculator runs on the server; it is not available in this snapshot.");
+    // The rate alone missing (the deal still pending) keeps the rate-error headline.
+    const rateOnly = lboHero(args({ defaults: q({ isError: true }), clampedLive: null, baseRes: undefined, res: undefined }));
+    expect(rateOnly.headline).toBe("Financing rate unavailable: the data service did not answer. The calculator falls back to the stated 8.50% rate.");
+  });
+
+  it("the strip says the rate feed is not in the snapshot", () => {
+    expect(lboStrip(q({ isError: true }), true)).toMatchObject({ tone: "gray", title: "Rate feed not in this snapshot", detail: "The rate is read on the server" });
+    expect(lboStrip(q({ isError: true })).title).toBe("Rate feed unavailable");
   });
 });

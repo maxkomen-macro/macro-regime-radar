@@ -66,7 +66,7 @@ export const TABS: TabDef[] = [
     label: "Recession",
     built: true,
     sections: [
-      { id: "model", label: "Probability model" },
+      { id: "model", label: "Model inputs" },
       { id: "curve", label: "Curve monitor" },
       { id: "sensitivity", label: "Sensitivity sliders" },
       { id: "transparency", label: "Model transparency" },

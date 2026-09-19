@@ -126,7 +126,9 @@ const SUBHEAD = "High yield at 312 bps, the 12th percentile since 1996, with inv
 const TERCILE_TIGHT = "Lenders are pricing almost no default stress: spreads this tight leave little cushion, so the risk is asymmetric to widening, not to further tightening.";
 const LADDER_SENTENCE = "CCC moved +29 bps in the month, BB -3 bps and B +2 bps.";
 const CHART_TERCILE_TIGHT = "Today's readings sit in the tight third of history: credit markets price almost no default stress.";
-const CAPTION_C10 = "Option-adjusted spreads: the extra yield corporate bonds pay over Treasuries. High yield sits at 312 bps (3.12pp), the 12th percentile of history since 1996, tighter than 88% of it. Investment grade holds 94 bps, its 18th percentile.";
+// Iteration 1 step 5 (G4): two visible sentences; the IG sentence sits behind Details (CAPTION_C10_MORE).
+const CAPTION_C10 = "Option-adjusted spreads: the extra yield corporate bonds pay over Treasuries. High yield sits at 312 bps (3.12pp), the 12th percentile of history since 1996, tighter than 88% of it.";
+const CAPTION_C10_MORE = "Investment grade holds 94 bps, its 18th percentile.";
 const CAPTION_C16 = "High-yield trades at 3.32× the investment-grade spread, near the ~3.5× long-run norm (2008 peaked at 8.2×). A rising ratio means the market is punishing weak credits faster than strong ones.";
 const CAPTION_C17 = "CCC spreads sit at 1042 bps, 104% of the 1,000 bps distress line. The weakest credits run hot even while the broad market reads Normal at 312 bps; the two statements are about different rungs of the ladder, not a contradiction.";
 // Iteration 1 C3 / G4: two sentences visible; the third and the second paragraph sit behind Details.
@@ -406,8 +408,9 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     expect(link).toHaveClass("mrr-status-amber");
     expect(link).toHaveAttribute("data-tone", "amber");
     expect(stripTitle(link)).toBe("Watch · CCC widening");
-    expect(stripDetail(link)).toBe("+29 bps in a month · BB -3 bps · B +2 bps");
-    expect(link.getAttribute("aria-label")).toBe("Watch · CCC widening. +29 bps in a month · BB -3 bps · B +2 bps. Jump to the quality ladder.");
+    // Iteration 1 step 5 (G4): one status line.
+    expect(stripDetail(link)).toBe("CCC +29 · BB -3 · B +2 bps MoM");
+    expect(link.getAttribute("aria-label")).toBe("Watch · CCC widening. CCC +29 · BB -3 · B +2 bps MoM. Jump to the quality ladder.");
     expect(summary().querySelectorAll(".mrr-status")).toHaveLength(1);
   });
 
@@ -420,7 +423,7 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     expect(link).not.toHaveClass("mrr-status-amber");
     expect(link).toHaveAttribute("href", "/app/credit#quality-ladder");
     expect(stripTitle(link)).toBe("Clear · ladder in step");
-    expect(stripDetail(link)).toMatch(/^CCC -4 bps in a month · distress 58(?:\.0)?% of the 1,000 bps line$/);
+    expect(stripDetail(link)).toMatch(/^CCC -4 bps MoM · distress 58(?:\.0)?%$/);
     const ladder = await awaitSection("quality-ladder");
     expect(text(ladder)).not.toContain("Analytical callout");
   });
@@ -485,6 +488,9 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     await awaitHero();
     const oas = await awaitSection("oas");
     expect(text(oas)).toContain(CAPTION_C10);
+    expect(text(oas)).not.toContain(CAPTION_C10_MORE);
+    fireEvent.click(within(oas).getByRole("button", { name: /Details/ }));
+    expect(text(oas)).toContain(CAPTION_C10_MORE);
     expect(within(oas).getByRole("button", { name: "Option-adjusted spreads" })).toHaveClass("jargon");
     expect(within(oas).getByRole("button", { name: "percentile" })).toHaveClass("jargon");
   });
@@ -513,7 +519,7 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     let link = await awaitStrip();
     expect(link).toHaveClass("mrr-status-amber");
     expect(stripTitle(link)).toBe("Stressed · HY 486 bps");
-    expect(stripDetail(link)).toBe("The index is past the 400 bps rule; the ladder tiles show the rungs");
+    expect(stripDetail(link)).toBe("HY past the 400 bps rule");
     expect(text(ddFor("Stays Stressed · 3m"))).toBe("58% of past months");
     stressed.unmount();
 
@@ -525,7 +531,7 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     expect(badgeOf(cardNamed("High yield"))).toHaveAttribute("data-tone", "alert");
     link = await awaitStrip();
     expect(stripTitle(link)).toBe("Crisis · HY 812 bps");
-    expect(stripDetail(link)).toBe("The index is past the 700 bps rule; the ladder tiles show the rungs");
+    expect(stripDetail(link)).toBe("HY past the 700 bps rule");
   });
 
   it("a null ig_oas renders the IG card with the dash value, the Unavailable badge, the reference tone and no meter", async () => {

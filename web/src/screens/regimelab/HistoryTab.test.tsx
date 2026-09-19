@@ -8,7 +8,7 @@
  * the tab owns its hooks. The 26-month history fixture ends Sep 2026.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { waitFor, within } from "@testing-library/react";
+import { fireEvent, waitFor, within } from "@testing-library/react";
 import HistoryTab from "./HistoryTab";
 import type { Analogue, Regime, RegimeLabel } from "../../api/types";
 import { renderWithProviders, stubFetch } from "../../test/utils";
@@ -166,7 +166,11 @@ describe("HistoryTab (checklist 04 B.9)", () => {
     expect(svg).toHaveAttribute("aria-label", "Regime history Gantt: one lane per regime, colored spans mark the months the classifier called it");
     expect(svg.querySelectorAll("rect").length).toBeGreaterThan(4);
     expect(svg.querySelectorAll("rect title")).toHaveLength(8);
-    expect(text(section)).toContain("Every monthly call the classifier has made, one lane per regime; hover a span for its dates. Long unbroken bands are stable macro; rapid lane-hopping marks the turns. The last 12 months saw 1 regime switch.");
+    // Iteration 1 step 5 (G4): two visible caption sentences; the switch count sits behind Details.
+    expect(text(section)).toContain("Every monthly call the classifier has made, one lane per regime; hover a span for its dates. Long unbroken bands are stable macro; rapid lane-hopping marks the turns.");
+    expect(text(section)).not.toContain("The last 12 months saw 1 regime switch.");
+    fireEvent.click(within(section).getByRole("button", { name: /Details/ }));
+    expect(text(section)).toContain("The last 12 months saw 1 regime switch.");
     expect(byId("regime-history-teaser")).toBeNull();
     // The order on the sub-tab: analogues first, then the full ribbon.
     expect((byId("analogues") as HTMLElement).compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -177,6 +181,7 @@ describe("HistoryTab (checklist 04 B.9)", () => {
     renderWithProviders(<HistoryTab />, { route: "/app/regime-lab#regime-history" });
     const section = await awaitSection("regime-history");
     await waitFor(() => expect(text(section)).toContain("23 monthly calls · Nov 2024 → Sep 2026 · 3 switches in the last 12mo"));
+    fireEvent.click(within(section).getByRole("button", { name: /Details/ }));
     expect(text(section)).toContain("The last 12 months saw 3 regime switches.");
   });
 
@@ -195,7 +200,8 @@ describe("HistoryTab (checklist 04 B.9)", () => {
     stubFetch(routes({ "/api/regime/analogues": () => ({ status: 500, body: { detail: "down" } }) }));
     const first = renderWithProviders(<HistoryTab />, { route: "/app/regime-lab#analogues" });
     const analogues = await awaitSection("analogues");
-    expect(await within(analogues).findByText("Unavailable: the data service did not answer.")).toBeInTheDocument();
+    // CP4: the note names the block that failed.
+    expect(await within(analogues).findByText("Historical analogues unavailable: the data service did not answer.")).toBeInTheDocument();
     expect(text(analogues)).not.toContain("/100 match");
     await waitFor(() => expect((byId("regime-history") as HTMLElement).querySelector("svg[role='img']")).not.toBeNull());
     first.unmount();

@@ -32,9 +32,10 @@ import {
 } from "../../api/queries";
 import type { Signal } from "../../api/types";
 import { daysSince, fmtBps, fmtDate, fmtMonYr, fmtPct, fmtSigned, fmtWholePct, tidyProse } from "../../lib/format";
+import { takeSentences } from "../../lib/sentences";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
-import { Caption, StateNote, useHashScroll } from "../shared/screen-ui";
+import { Caption, MISSING, MISSING_ROW, StateNote, useHashScroll } from "../shared/screen-ui";
 import { assessFreshness } from "../shared/freshness";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
 import TabHero from "../shared/TabHero";
@@ -129,7 +130,9 @@ export function closingSentence(narrative: string): string {
 
 /** The strip's words from the bell's reading (`alertSummary`, shell-status.ts),
  * so the two never speak different sentences; the sentence is the strip's
- * accessible name. */
+ * accessible name. G4 (Iteration 1 step 5): the title and the detail are one
+ * line each at every width; the longer words are the drawer's (its first row
+ * is the latest alert, and an empty feed says where the feed starts). */
 function alertStrip(s: AlertSummary, openAlerts: () => void): StatusStripProps {
   const base = { onClick: openAlerts, ariaHasPopup: "dialog" as const, ariaLabel: s.sentence };
   switch (s.state) {
@@ -143,13 +146,13 @@ function alertStrip(s: AlertSummary, openAlerts: () => void): StatusStripProps {
         ...base,
         tone: "amber",
         title: `${s.recent.length} alert${s.recent.length === 1 ? "" : "s"} · 7 days`,
-        detail: `Latest: ${SIGNALS_META[a.name]?.display ?? a.name} · ${fmtDate(a.date)}`,
+        detail: `${SIGNALS_META[a.name]?.display ?? a.name} · ${fmtDate(a.date)}`,
       };
     }
     case "clear":
       return { ...base, tone: "mint", title: "No alerts · 7 days", detail: s.last ? `Last alert ${fmtDate(s.last.date)}` : undefined };
     default:
-      return { ...base, tone: "mint", title: "No alerts on file", detail: "The feed starts with the first threshold breach" };
+      return { ...base, tone: "mint", title: "No alerts on file", detail: "Opens the alert feed" };
   }
 }
 
@@ -247,7 +250,7 @@ export default function DashboardScreen() {
     value: rec
       ? `${rec.divergence_label}${rec.divergence_score != null ? ` · ${fmtSigned(rec.divergence_score, 0)} on ±100` : ""}`
       : recession.isError
-        ? <StateNote error />
+        ? <StateNote error missing={MISSING_ROW} />
         : <StateNote loading>Training the recession model; the first call takes about a second.</StateNote>,
     tone: rec?.divergence_score != null && Math.abs(rec.divergence_score) > 20 ? "var(--amber)" : undefined,
   };
@@ -258,7 +261,7 @@ export default function DashboardScreen() {
     value: tr
       ? `Stays ${tr.current_regime} ${Math.round(tr.stay_probability_3m)}% · highest-risk path → ${tr.highest_risk_transition} ${Math.round(tr.highest_risk_prob)}%`
       : transitions.isError
-        ? <StateNote error />
+        ? <StateNote error missing={MISSING.transitions} />
         : <StateNote loading />,
   };
   const takeawayRow: SummaryRow = {
@@ -267,7 +270,7 @@ export default function DashboardScreen() {
     value: takeaway.data
       ? parseStrong(closingSentence(takeaway.data.narrative))
       : takeaway.isError
-        ? <StateNote>Takeaway unavailable: the data service did not answer.</StateNote>
+        ? <StateNote error missing={MISSING.takeaway} />
         : <StateNote loading>Assembling the market takeaway; the cold call trains the recession model once.</StateNote>,
   };
 
@@ -375,7 +378,10 @@ export default function DashboardScreen() {
           ]
         : recession.isLoading
           ? [{ id: "nber", label: "NBER recession model", value: <StateNote loading /> }]
-          : []),
+          : recession.isError
+            ? // CP4: the row stays and says the model is missing, and why.
+              [{ id: "nber", label: "NBER recession model", value: <StateNote error missing={MISSING.recession} />, prose: true }]
+            : []),
     );
 
     const f = freshness.data;
@@ -383,6 +389,9 @@ export default function DashboardScreen() {
     // out of the Macro charts accordion); the gradient block holds the slot
     // until the stored history arrives.
     const oddsChart = history.data && history.data.length >= 2 ? <RegimeOddsChart rows={history.data} /> : undefined;
+    // G4: at most three lede sentences by construction; any further sentence
+    // (the Recession Risk clause after a longer meaning) sits behind Details.
+    const ledeParts = takeSentences(copy.ledeClause ? `${copy.lede} ${copy.ledeClause}` : copy.lede, 3);
     hero = (
       <TabHero
         id="regime-hero"
@@ -393,7 +402,8 @@ export default function DashboardScreen() {
         pillTone={copy.pillTone}
         glow={copy.glow}
         subhead={copy.subhead}
-        lede={renderLede(copy.ledeClause ? `${copy.lede} ${copy.ledeClause}` : copy.lede)}
+        lede={renderLede(ledeParts.shown)}
+        ledeMore={ledeParts.rest || undefined}
         actions={HERO_ACTIONS}
         footnote={copy.footnote}
         // On a phone the header's freshness words sit one screen above; the
@@ -423,7 +433,11 @@ export default function DashboardScreen() {
       { id: "what-changed", label: "What changed", value: regimeNote },
       { id: "watch", label: "Watch", value: regimeNote },
       { id: "invalidates", label: "Invalidates", value: regimeNote },
-      { id: "nber", label: "NBER recession model", value: regimeNote },
+      {
+        id: "nber",
+        label: "NBER recession model",
+        value: recession.isError && !recession.data ? <StateNote error missing={MISSING.recession} /> : regimeNote,
+      },
     );
     // Only when there is nothing to read: with snapshot data on screen the
     // shell's status word already says the service is asleep (review P1-2).

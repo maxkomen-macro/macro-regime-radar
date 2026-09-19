@@ -16,7 +16,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Link } from "react-router-dom";
 import { useCreditMetrics } from "../../api/queries";
-import { StateNote, fmtMillions } from "../shared/screen-ui";
+import { MISSING, MISSING_ROW, StateNote, fmtMillions, useSnapshotMode } from "../shared/screen-ui";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import { useShellActions } from "../shell/shell-actions";
@@ -47,6 +47,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   const runPending = run.isFetching || run.isPending || deal.settling === true;
   const credit = useCreditMetrics();
   const { openFreshness } = useShellActions();
+  const snapshot = useSnapshotMode();
 
   /* ── hero (B.1) ──────────────────────────────────────────────────────── */
   const stated = isStatedDefault(defaults.data);
@@ -60,6 +61,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
     modified,
     runPending,
     baseError: base.error,
+    snapshot,
   });
   // Iteration 1 E1: no month-stamp freshness chip ("Current · Sep 2026") on
   // the rate. The footnote states each component's own as-of word from the
@@ -133,11 +135,13 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
 
   /* ── summary rows (B.2) ──────────────────────────────────────────────── */
   const d = defaults.data;
-  const dNote = <StateNote loading={defaults.isLoading} error={defaults.isError} />;
+  // CP4: the first rate row names the missing rate and why; the rest say so briefly.
+  const dLead = <StateNote loading={defaults.isLoading} error={defaults.isError} missing={MISSING.lboRate} />;
+  const dNote = <StateNote loading={defaults.isLoading} error={defaults.isError} missing={MISSING_ROW} />;
   const creditLabel = credit.data?.credit_label;
   const rows: SummaryRow[] = [
     // E1: each component with its own as-of word; the stated default says so.
-    { id: "fed-funds", label: "Fed funds", value: d ? (stated ? `${d.fedfunds.toFixed(2)}% · Stated default` : `${d.fedfunds.toFixed(2)}% · monthly average, ${fedAsOf.word}`) : dNote },
+    { id: "fed-funds", label: "Fed funds", value: d ? (stated ? `${d.fedfunds.toFixed(2)}% · Stated default` : `${d.fedfunds.toFixed(2)}% · monthly average, ${fedAsOf.word}`) : dLead },
     { id: "hy-oas", label: "HY OAS", value: d ? (stated ? `${d.hy_oas_pct.toFixed(2)}% · Stated default` : `${d.hy_oas_pct.toFixed(2)}% · daily, ${hyAsOf.word}`) : dNote },
     { id: "all-in", label: "All-in rate", value: d ? <b style={{ fontWeight: 500 }}>{d.lbo_all_in_rate.toFixed(2)}%</b> : dNote },
     {
@@ -180,7 +184,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   ];
 
   /* ── status strip: the FRED sync, opening the freshness drawer ───────── */
-  const words = lboStrip(defaults);
+  const words = lboStrip(defaults, snapshot);
   const strip: StatusStripProps = {
     ...words,
     onClick: openFreshness,

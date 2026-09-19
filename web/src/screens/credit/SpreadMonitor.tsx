@@ -19,6 +19,7 @@ import { Card, SectionHeader, SignalCard } from "../../components";
 import type { SignalTone } from "../../components/signals/SignalCard";
 import type { CreditMetrics, DatedValue } from "../../api/types";
 import { fmtBps, ordinal } from "../../lib/format";
+import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote } from "../shared/screen-ui";
 import type { CreditPanelProps } from "./panel-props";
@@ -187,7 +188,9 @@ export default function SpreadMonitor({ m, status }: CreditPanelProps): JSX.Elem
               <TierCard key={t.key} m={m} tier={t} />
             ))}
           </div>
-          {/* C10 caption, verbatim (U-CAP): the percent stated once beside the bps figure. */}
+          {/* C10 caption, verbatim (U-CAP): the percent stated once beside the bps figure.
+              G4 (Iteration 1 step 5): two visible sentences; the investment-grade
+              sentence (also the IG OAS summary row) sits behind Details. */}
           <Caption>
             <Jargon term="OAS">Option-adjusted spreads</Jargon>: the extra yield corporate bonds pay
             over Treasuries.{" "}
@@ -197,14 +200,15 @@ export default function SpreadMonitor({ m, status }: CreditPanelProps): JSX.Elem
                 {ordinal(m.hy_pct_rank)} <Jargon term="percentile">percentile</Jargon> of history since
                 1996, tighter than {100 - Math.round(m.hy_pct_rank)}% of it.
               </>
-            )}{" "}
-            {m.ig_oas != null && m.ig_pct_rank != null && (
-              <>
-                Investment grade holds {Math.round(m.ig_oas)} bps, its {ordinal(m.ig_pct_rank)}{" "}
-                percentile.
-              </>
             )}
           </Caption>
+          {m.ig_oas != null && m.ig_pct_rank != null ? (
+            <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+              <Caption style={{ marginTop: 0 }}>
+                Investment grade holds {Math.round(m.ig_oas)} bps, its {ordinal(m.ig_pct_rank)} percentile.
+              </Caption>
+            </Disclosure>
+          ) : null}
         </>
       ) : (
         <Card variant="tile">

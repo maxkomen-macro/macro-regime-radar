@@ -33,7 +33,7 @@ import { useRegimeDuration, useRegimeHistory, useRegimeLatest, useTransitions } 
 import type { Regime, RegimeDuration, TransitionOutlook } from "../../api/types";
 import { fmtMonYr, ordinal, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
-import { Caption, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
 import Disclosure from "../shared/Disclosure";
 import { STATUS_DEFINITION, cycleStatusTone, monthsText } from "./hero-copy";
 import { REGIMES, REGIME_HUE, completedSpells, exitCounts, regimeHue, spellStart, stay6m } from "./regime-history";
@@ -170,7 +170,7 @@ export function CycleSection({ duration, history }: { duration: UseQueryResult<R
         </div>
       ) : (
         <Card variant="tile">
-          <StateNote loading={duration.isLoading} error={duration.isError} />
+          <StateNote loading={duration.isLoading} error={duration.isError} missing={MISSING.cycle} />
         </Card>
       )}
     </Card>
@@ -245,7 +245,7 @@ export function TransitionsSection({
           // The pending tile takes its own row, so it never stretches to the
           // exits tile's height as a blank band (G2).
           <Card variant="tile" style={{ gridColumn: "1 / -1" }}>
-            <StateNote loading={transitions.isLoading} error={transitions.isError} />
+            <StateNote loading={transitions.isLoading} error={transitions.isError} missing={MISSING.transitions} />
           </Card>
         )}
         <Card variant="tile" padding="14px 18px" className="mrr-lab-exits">

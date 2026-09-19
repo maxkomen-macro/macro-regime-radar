@@ -22,7 +22,7 @@ import { Card } from "../../components";
 import { useAllocation } from "../../api/queries";
 import type { AllocationData, FrameData } from "../../api/types";
 import { fmtMonYr } from "../../lib/format";
-import { Caption, StateNote } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote } from "../shared/screen-ui";
 import AllocationOverview from "./AllocationOverview";
 import AllocationOptimization from "./AllocationOptimization";
 import RiskLenses from "./RiskLenses";
@@ -143,7 +143,7 @@ export default function AllocationPanel() {
   if (!a) {
     return (
       <Card>
-        <StateNote live loading={q.isLoading} error={q.isError}>
+        <StateNote live loading={q.isLoading} error={q.isError} missing={MISSING.allocation}>
           {q.isLoading
             ? "Building ~24 years of monthly return history; a first load can take up to a minute."
             : undefined}

@@ -20,7 +20,7 @@ import { useRegimeLatest, useScenarioDefs, useScenarioRun } from "../../api/quer
 import type { ScenarioShocks } from "../../api/types";
 import { tidyProse } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
-import { Caption, SliderRow, StateNote, eyebrowStyle, mono, monoNoteStyle, useDebounced } from "../shared/screen-ui";
+import { Caption, MISSING, SliderRow, StateNote, eyebrowStyle, mono, monoNoteStyle, useDebounced } from "../shared/screen-ui";
 import { REGIME_HUE } from "./regime-history";
 
 export const SHOCK_DEFAULTS: ScenarioShocks = {
@@ -295,8 +295,9 @@ export default function ScenariosTab() {
           <Card variant="tile">
             {run.isLoading ? (
               <StateNote loading />
-            ) : run.isError ? (
-              <StateNote error />
+            ) : run.isError || (defs.isError && !defs.data) ? (
+              // CP4: the presets and the stress rule both live on the server.
+              <StateNote error missing={MISSING.scenarios} />
             ) : (
               <StateNote>
                 Pick a prebuilt scenario or build custom shocks. The five presets replay COVID, a rate shock, a soft landing, a

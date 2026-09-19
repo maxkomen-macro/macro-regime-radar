@@ -320,7 +320,7 @@ describe("stripSummary (checklist 07 B.2 strip table, C.1 rule 8)", () => {
     const s = stripSummary(BASE, READY);
     expect(s.tone).toBe("amber");
     expect(s.title).toBe("Watch · 3 straight rises");
-    expect(s.detail).toBe("Probability up each month since May 2026 · 10.2% → 11.6%");
+    expect(s.detail).toBe("Since May 2026 · 10.2% → 11.6%");
   });
 
   it("a longer run prints its own count and base month", () => {
@@ -328,31 +328,31 @@ describe("stripSummary (checklist 07 B.2 strip table, C.1 rule 8)", () => {
     const s = stripSummary(four, READY);
     expect(s.tone).toBe("amber");
     expect(s.title).toBe("Watch · 4 straight rises");
-    expect(s.detail).toBe("Probability up each month since Apr 2026 · 9.8% → 11.6%");
+    expect(s.detail).toBe("Since Apr 2026 · 9.8% → 11.6%");
   });
 
   it("flat: mint No consecutive rises with the signed delta and the two months", () => {
     const s = stripSummary(FLAT, READY);
     expect(s.tone).toBe("mint");
     expect(s.title).toBe("No consecutive rises");
-    expect(s.detail).toBe("0.0 pts vs 3 months ago · Jun 2026 → Sep 2026");
+    expect(s.detail).toBe("0.0 pts · Jun 2026 → Sep 2026");
   });
 
   it("two rises stay under the three-rise threshold (G3): mint with the +0.9 pts delta from May to Aug", () => {
     const s = stripSummary(TWO_RISES, READY);
     expect(s.tone).toBe("mint");
     expect(s.title).toBe("No consecutive rises");
-    expect(s.detail).toBe("+0.9 pts vs 3 months ago · May 2026 → Aug 2026");
+    expect(s.detail).toBe("+0.9 pts · May 2026 → Aug 2026");
     const down = stripSummary(DOWN, READY);
     expect(down.tone).toBe("mint");
-    expect(down.detail).toBe("-1.4 pts vs 3 months ago · May 2026 → Aug 2026");
+    expect(down.detail).toBe("-1.4 pts · May 2026 → Aug 2026");
   });
 
   it("fewer than four stored months: mint No consecutive rises with the on-file sentence", () => {
     const s = stripSummary(SHORT, READY);
     expect(s.tone).toBe("mint");
     expect(s.title).toBe("No consecutive rises");
-    expect(s.detail).toBe("Fewer than four stored months on file");
+    expect(s.detail).toBe("Fewer than four months on file");
   });
 
   it("loading reads gray Reading the recession model…, error and an empty series gray Recession model unavailable", () => {

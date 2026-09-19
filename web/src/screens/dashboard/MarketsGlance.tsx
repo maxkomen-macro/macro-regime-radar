@@ -33,7 +33,7 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import { quoteFor } from "../shell/quote-ladder";
 import { QuoteSlots, SPARK_H, SPARK_W, type QuoteCardProps } from "../shell/QuoteCard";
 import Jargon from "../shared/Jargon";
-import { Caption, metaStyle } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote, metaStyle, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import { GLANCE_DAILY_SYMBOLS, GLANCE_TABS, glanceTabFromHash, type GlanceSymbol, type GlanceTabId } from "./glance-symbols";
 
 export interface MarketsGlanceProps {
@@ -70,8 +70,9 @@ export function tileRead(
   quotes: ReadonlyMap<string, LiveQuote>,
   bars: DailyBar[] | undefined,
   dailyLoading = false,
+  unavailable?: string,
 ): QuoteCardProps {
-  const q = quoteFor({ symbol: def.symbol, name: def.name, dp: tileDp(def) }, quotes, undefined, def.stored ? bars : undefined, { dailyLoading });
+  const q = quoteFor({ symbol: def.symbol, name: def.name, dp: tileDp(def) }, quotes, undefined, def.stored ? bars : undefined, { dailyLoading, unavailable });
   let change = q.change;
   let changeTone = q.changeTone;
   if (change == null && q.tag?.text === "CLOSE") {
@@ -171,6 +172,11 @@ export default function MarketsGlance({ onTabChange }: MarketsGlanceProps = {}) 
   const daily = useMarketDaily(GLANCE_DAILY_SYMBOLS, 45);
   const priced = usePriced();
   const [tab, setTab] = useState<GlanceTabId>(() => glanceTabFromHash(location.hash) ?? "equities");
+  const snapshot = useSnapshotMode();
+  // CP4: with the stored closes unanswered a priceless tile says why, and
+  // each view names what is missing under its tiles.
+  const storedError = daily.isError && !daily.data;
+  const unavailable = storedError ? missingNote(MISSING.market, snapshot) : undefined;
 
   // The hash selects the What's priced tab on mount and on every change; a
   // click on another tab is local state and leaves the URL alone.
@@ -204,15 +210,24 @@ export default function MarketsGlance({ onTabChange }: MarketsGlanceProps = {}) 
       />
       {/* Every panel stays mounted; the wrapper carries `hidden` (no display
           rule of its own, so the attribute wins) and the grid class sits inside. */}
-      {GLANCE_TABS.filter((t) => t.id !== "priced").map((t) => (
-        <div key={t.id} id={`glance-${t.id}`} data-glance-tab={t.id} hidden={tab !== t.id}>
-          <div className="mrr-dash-glance">
-            {t.symbols.map((def) => (
-              <GlanceTile key={def.symbol} def={def} read={tileRead(def, quotes, daily.data, daily.isLoading)} />
-            ))}
+      {GLANCE_TABS.filter((t) => t.id !== "priced").map((t) => {
+        const reads = t.symbols.map((def) => tileRead(def, quotes, daily.data, daily.isLoading, unavailable));
+        const anyPrice = reads.some((r) => r.price !== "—");
+        return (
+          <div key={t.id} id={`glance-${t.id}`} data-glance-tab={t.id} hidden={tab !== t.id}>
+            <div className="mrr-dash-glance">
+              {t.symbols.map((def, i) => (
+                <GlanceTile key={def.symbol} def={def} read={reads[i]} />
+              ))}
+            </div>
+            {storedError ? (
+              <div style={{ marginTop: 10 }}>
+                <StateNote error missing={anyPrice ? MISSING.closes : MISSING.market} />
+              </div>
+            ) : null}
           </div>
-        </div>
-      ))}
+        );
+      })}
       <div id="whats-priced" data-glance-tab="priced" hidden={tab !== "priced"}>
         <PricedPanel priced={priced} />
       </div>

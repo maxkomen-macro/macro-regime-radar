@@ -149,6 +149,13 @@ export function creditHero(m: CreditMetrics): CreditHeroCopy {
   return { headline: label, pill, pillTone, glow, subhead, lede, ledeText, footnote };
 }
 
+/** "+29", "-3", "0": a whole-bps move without its unit (the strip closes the
+ * list with one "bps"). */
+function signedInt(v: number): string {
+  const r = Math.round(v);
+  return `${r > 0 ? "+" : ""}${r}`;
+}
+
 export interface LadderStripWords {
   tone: StatusTone;
   title: string;
@@ -158,7 +165,11 @@ export interface LadderStripWords {
 
 /** The summary card's strip: the quality-ladder read from served fields only
  * (B.2 table; rule 8). `diverges` outranks `tension`, which outranks `past`;
- * loading and error come from the query status, never from the payload. */
+ * loading and error come from the query status, never from the payload.
+ * Iteration 1 step 5 (G4): title and detail are one line each at 390 px. The
+ * month-on-month moves read "MoM" like the summary rows, one bps unit closes
+ * the rung list, the CCC row carries "of the 1,000 bps line", and the
+ * tension callout on the ladder the strip opens carries the long sentence. */
 export function ladderStrip(m: CreditMetrics | null, status: CreditStatus = "ready"): LadderStripWords {
   if (!m || status !== "ready") {
     return status === "error"
@@ -174,26 +185,27 @@ export function ladderStrip(m: CreditMetrics | null, status: CreditStatus = "rea
   const clauses = (xs: (string | null)[]): string => xs.filter((x): x is string => x != null).join(" · ");
 
   if (diverges) {
+    const moves = clauses([ccc != null ? `CCC ${signedInt(ccc)}` : null, bb != null ? `BB ${signedInt(bb)}` : null, b != null ? `B ${signedInt(b)}` : null]);
     return {
       tone: "amber",
       title: "Watch · CCC widening",
-      detail: clauses([ccc != null ? `${fmtBps(ccc)} in a month` : null, bb != null ? `BB ${fmtBps(bb)}` : null, b != null ? `B ${fmtBps(b)}` : null]),
+      detail: moves ? `${moves} bps MoM` : "",
     };
   }
   if (tension) {
     return {
       tone: "amber",
-      title: `Watch · CCC at ${distress ?? "—"}% of the distress line`,
-      detail: `The weakest rung prices stress while the index reads ${label}`,
+      title: `Watch · CCC ${distress ?? "—"}% of distress`,
+      detail: `Weakest rung stressed · index ${label}`,
     };
   }
   if (past) {
     return {
       tone: "amber",
       title: m.hy_oas != null ? `${label} · HY ${n(m.hy_oas)} bps` : label,
-      detail: `The index is past the ${label === "Crisis" ? 700 : 400} bps rule; the ladder tiles show the rungs`,
+      detail: `HY past the ${label === "Crisis" ? 700 : 400} bps rule`,
     };
   }
-  const detail = clauses([ccc != null ? `CCC ${fmtBps(ccc)} in a month` : null, distress != null ? `distress ${distress}% of the 1,000 bps line` : null]);
+  const detail = clauses([ccc != null ? `CCC ${fmtBps(ccc)} MoM` : null, distress != null ? `distress ${distress}%` : null]);
   return { tone: "mint", title: "Clear · ladder in step", detail };
 }

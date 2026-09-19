@@ -6,10 +6,12 @@
  * B.16 (Caption in the UI face, `mono` note style, the new `metaStyle` and
  * `monoNoteStyle` exports, StateNote copy unchanged).
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
-import { Caption, SliderRow, StateNote, capStyle, metaStyle, monoNoteStyle } from "./screen-ui";
+import { QueryClient } from "@tanstack/react-query";
+import { applySnapshot, resetSnapshotForTests } from "../../api/snapshot";
+import { Caption, MISSING, MISSING_ROW, SliderRow, StateNote, capStyle, metaStyle, missingNote, monoNoteStyle } from "./screen-ui";
 
 const css = (el: Element | null) => el?.getAttribute("style") ?? "";
 
@@ -222,5 +224,40 @@ describe("StateNote live (checklist 10 A9)", () => {
     const custom = render(<StateNote live loading>Building ~24 years of monthly return history…</StateNote>).container.firstElementChild as HTMLElement;
     expect(custom.getAttribute("role")).toBe("status");
     expect(custom.textContent).toBe("Building ~24 years of monthly return history…");
+  });
+});
+
+/* ── CP4 (Iteration 1 step 5): a block with nothing to show names what is missing ── */
+
+describe("CP4: missingNote and StateNote missing", () => {
+  afterEach(() => resetSnapshotForTests());
+
+  it("names what failed with no snapshot, and what is missing and why in a snapshot session", () => {
+    expect(missingNote(MISSING.recession, false)).toBe("Recession model unavailable: the data service did not answer.");
+    expect(missingNote(MISSING.recession, true)).toBe("The recession model is computed live on the server and is not in this snapshot.");
+    expect(missingNote(MISSING.market, true)).toBe("Live and stored market prices are not in this snapshot.");
+    expect(missingNote(MISSING.lbo, true)).toBe("The LBO calculator runs on the server; it is not available in this snapshot.");
+    expect(missingNote(MISSING_ROW, false)).toBe("Unavailable: the data service did not answer.");
+    expect(missingNote(MISSING_ROW, true)).toBe("Not in this snapshot.");
+    for (const [key, src] of Object.entries(MISSING)) {
+      // One plain sentence each, naming the snapshot; no em-dash asides.
+      expect(src.snapshot, key).toMatch(/snapshot\.$/);
+      expect(src.snapshot, key).not.toContain("\u2014");
+      expect(missingNote(src, false), key).toBe(`${src.what} unavailable: the data service did not answer.`);
+    }
+  });
+
+  it("StateNote's error line reads the source, and the snapshot wording once a snapshot seeded the session", () => {
+    const plain = render(<StateNote error missing={MISSING.lbo} />).container;
+    expect(plain.textContent).toBe("LBO calculator unavailable: the data service did not answer.");
+    // Without `missing` the generic line is unchanged; loading still outranks the source.
+    expect(render(<StateNote error />).container.textContent).toBe("Unavailable: the data service did not answer.");
+    expect(render(<StateNote loading missing={MISSING.lbo} />).container.textContent).toBe("Reading stored data…");
+
+    applySnapshot(new QueryClient(), { generated_at: "2026-09-18T23:00:00Z", entries: { "/api/regime/latest": { label: "Goldilocks" } } }, "static");
+    expect(render(<StateNote error missing={MISSING.lbo} />).container.textContent).toBe(
+      "The LBO calculator runs on the server; it is not available in this snapshot.",
+    );
+    expect(render(<StateNote error missing={MISSING_ROW} />).container.textContent).toBe("Not in this snapshot.");
   });
 });

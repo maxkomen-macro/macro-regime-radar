@@ -21,16 +21,16 @@ import { Link } from "react-router-dom";
 import { Card, DataTable, HeatMatrix, SectionHeader, StatTile, Tag } from "../../components";
 import type { DataTableColumn } from "../../components/data/DataTable";
 import type { HeatCell } from "../../components/data/HeatMatrix";
+import Disclosure from "../shared/Disclosure";
 import ScrollTable from "../shared/ScrollTable";
 import type { LboRequest, LboSensitivity } from "../../api/types";
-import { ApiError } from "../../api/client";
 import Jargon from "../shared/Jargon";
 import { tidyProse } from "../../lib/format";
 import type { FreshLabel } from "../shared/fresh-state";
 import { useBreakpoint } from "../../lib/useBreakpoint";
-import { Caption, SliderRow, StateNote, capStyle, eyebrowStyle, fmtMillions } from "../shared/screen-ui";
+import { Caption, MISSING, SliderRow, StateNote, capStyle, eyebrowStyle, fmtMillions, useSnapshotMode } from "../shared/screen-ui";
 import { FALLBACK_RATE, SLIDERS, useLboDeal, type LboDeal, type SliderGroup } from "./lbo-deal";
-import { componentAsOf, isStatedDefault } from "./lbo-copy";
+import { componentAsOf, isStatedDefault, runErrorSentence } from "./lbo-copy";
 
 /** One component's as-of word (FRESHNESS_CONTRACT §5), the server's reason
  * as its tooltip; a stale value is marked on the word itself. */
@@ -62,16 +62,11 @@ function irrColor(irr: number | null, viable: boolean): string {
  * kind — the calculator engine missing on the server, the service asleep,
  * or a rejected request. */
 export function LboRunState({ pending, fetching, error }: { pending: boolean; fetching: boolean; error: unknown }) {
+  // CP4: one sentence with the hero's subhead (runErrorSentence); in a
+  // snapshot session it says the calculator is not in the snapshot.
+  const snapshot = useSnapshotMode();
   if (error) {
-    const e = error instanceof ApiError ? error : null;
-    const text =
-      e?.status === 503
-        ? "The deal model is unavailable on this server (calculator engine not installed)."
-        : e?.status === 422
-          ? `The service rejected these inputs: ${e.message}`
-          : e?.status === 0
-            ? "The data service did not answer; the deal model will rerun when it returns."
-            : "Unavailable: the data service did not answer.";
+    const text = runErrorSentence(error, snapshot);
     return (
       <div role="status" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--warn-hot)" }}>
         {text}
@@ -153,7 +148,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
   if (defaults.isLoading || inputs == null) {
     return (
       <Card>
-        <StateNote loading={defaults.isLoading} error={defaults.isError} />
+        <StateNote loading={defaults.isLoading} error={defaults.isError} missing={MISSING.lbo} />
       </Card>
     );
   }
@@ -400,8 +395,11 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
                   fees, less {fmtMillions(res.entry_debt)} of debt, is{" "}
                   {fmtMillions(res.entry_equity)} of equity in;{" "}
                   {fmtMillions(res.exit_equity ?? 0)} comes out after {inputs.hold_period} years.
-                  Fees add to the check, so raising them costs returns, as they should.
                 </Caption>
+                {/* G4 (Iteration 1 step 5): two visible sentences; the third behind Details. */}
+                <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+                  <Caption style={{ marginTop: 0 }}>Fees add to the check, so raising them costs returns, as they should.</Caption>
+                </Disclosure>
               </>
             ) : (
               <Card variant="tile" tone="risk" style={{ minWidth: 0 }}>
@@ -470,9 +468,14 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
                 <Caption>
                   Cash for debt service is 60% of EBITDA. It pays interest first; scheduled amortization
                   of {inputs.amortization_rate.toFixed(0)}% of the original debt a year is a floor, and the
-                  remainder sweeps to debt, so a higher rate leaves more debt at exit. EBITDA compounds
-                  at {inputs.ebitda_growth_rate.toFixed(1)}% while the multiple re-rates at exit.
+                  remainder sweeps to debt, so a higher rate leaves more debt at exit.
                 </Caption>
+                {/* G4 (Iteration 1 step 5): two visible sentences; the third behind Details. */}
+                <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+                  <Caption style={{ marginTop: 0 }}>
+                    EBITDA compounds at {inputs.ebitda_growth_rate.toFixed(1)}% while the multiple re-rates at exit.
+                  </Caption>
+                </Disclosure>
               </Card>
             )}
 
@@ -497,8 +500,12 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
                 <Caption>
                   Every cell reruns the full model at that entry/exit pair, everything else held. Green
                   cells clear 20% IRR (the classic PE bar); amber clears 15%; n/a means the deal goes
-                  underwater. The outlined cell is the current scenario.
+                  underwater.
                 </Caption>
+                {/* G4 (Iteration 1 step 5): two visible sentences; the third behind Details. */}
+                <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+                  <Caption style={{ marginTop: 0 }}>The outlined cell is the current scenario.</Caption>
+                </Disclosure>
               </Card>
             )}
           </div>

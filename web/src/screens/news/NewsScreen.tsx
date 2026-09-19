@@ -326,9 +326,13 @@ export default function NewsScreen() {
 
   /* ── hero (B.1) ──────────────────────────────────────────────────────── */
   const lead = leadSentence(priority[0], usingFallback, feedLoading);
-  // G4: the lede stays at three sentences or fewer; a stored interpretation
-  // longer than two sentences reads in full on the lead card's AI read.
-  const why = takeSentences(whySentence(priority[0], usingFallback), 2).shown;
+  // G4: the lede stays at three sentences or fewer by construction, counted
+  // on the whole paragraph (a headline quoted in the lead sentence can carry
+  // a sentence of its own); the rest, verbatim, sits behind the hero's
+  // Details, and the stored interpretation also reads in full on the lead
+  // card's AI read.
+  const why = whySentence(priority[0], usingFallback);
+  const ledeParts = takeSentences(why ? `${lead} ${why}` : lead, 3);
   const footnote: ReactNode[] = [
     usingFallback ? coverageValue(feed, windowLabel, usingFallback, newestFallback, feedFresh.age) : `${feed.length} headlines in ${windowLabel}`,
     ...(calendar.data ? [usingCalFallback ? "stored schedule" : `${events.length} events in the next 30 days`] : []),
@@ -338,7 +342,8 @@ export default function NewsScreen() {
     id: "news-hero",
     eyebrow: "Next on the calendar",
     live: !usingFallback && feedInfo.state === "current",
-    lede: why ? `${lead} ${why}` : lead,
+    lede: ledeParts.shown,
+    ledeMore: ledeParts.rest || undefined,
     actions: HERO_ACTIONS,
     footnote,
     // On a phone the header's freshness words sit one screen above; the hero

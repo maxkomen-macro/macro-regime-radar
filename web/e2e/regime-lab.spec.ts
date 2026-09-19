@@ -216,9 +216,9 @@ test.describe("regime lab (checklist 04 E.3)", () => {
     const detail = await visibleText(strip.locator("small"));
     expect(title).toMatch(/^(?:Watch · Overheating odds rising|Overheating odds not rising)$/);
     if (/^Watch/.test(title)) {
-      expect(detail).toMatch(/^Up \d+ pts? over the last 3 classifier months · [A-Z][a-z]{2} \d{4} → [A-Z][a-z]{2} \d{4}$/);
+      expect(detail).toMatch(/^Up \d+ pts? · [A-Z][a-z]{2} \d{4} → [A-Z][a-z]{2} \d{4}$/);
     } else {
-      const m = /^([+−-]?)(\d+) pts? over the last 3 classifier months · [A-Z][a-z]{2} \d{4} → [A-Z][a-z]{2} \d{4}$/.exec(detail);
+      const m = /^([+−-]?)(\d+) pts? · [A-Z][a-z]{2} \d{4} → [A-Z][a-z]{2} \d{4}$/.exec(detail);
       expect(m, detail).not.toBeNull();
       const signed = (m?.[1] === "-" || m?.[1] === "−" ? -1 : 1) * Number(m?.[2]);
       expect(signed).toBeLessThanOrEqual(0);

@@ -11,12 +11,15 @@ import type { CSSProperties } from "react";
 import { Card, SectionHeader } from "../../components";
 import type { DailyBar } from "../../api/types";
 import { fmtDate, fmtSignedPct } from "../../lib/format";
-import { Caption, monoNoteStyle } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote, monoNoteStyle } from "../shared/screen-ui";
 import { SECTORS } from "./tape";
 
 interface Props {
   barsBySymbol: ReadonlyMap<string, DailyBar[]>;
   marketDailyDate: string | null;
+  /** The stored-close request's state (CP4): with no sector close on hand
+   * the panel says whether the closes failed to load or none are stored. */
+  status?: "ready" | "loading" | "error";
 }
 
 const POS = "40,209,124";
@@ -33,7 +36,8 @@ function tint(ret: number | null): CSSProperties | undefined {
     : { background: `linear-gradient(180deg, rgba(${base},.10), rgba(${base},.055))`, borderColor: `rgba(${base},.22)` };
 }
 
-export default function SectorHeatmap({ barsBySymbol, marketDailyDate }: Props) {
+export default function SectorHeatmap({ barsBySymbol, marketDailyDate, status = "ready" }: Props) {
+  const anyClose = SECTORS.some(({ symbol }) => (barsBySymbol.get(symbol)?.length ?? 0) > 0);
   return (
     <Card as="section" variant="panel" id="sector-heatmap" style={{ minWidth: 0 }}>
       <SectionHeader
@@ -78,6 +82,11 @@ export default function SectorHeatmap({ barsBySymbol, marketDailyDate }: Props) 
           );
         })}
       </div>
+      {!anyClose && status !== "loading" ? (
+        <div style={{ marginTop: 10 }}>
+          {status === "error" ? <StateNote error missing={MISSING.closes} /> : <StateNote>No stored sector closes on file yet.</StateNote>}
+        </div>
+      ) : null}
       <Caption>
         One-day sector moves from stored closes; tint steps at ±1% and ±2%. Sector ETFs are not on the live stream; this
         block moves once a day.

@@ -22,6 +22,7 @@ import { useMemo } from "react";
 import { useCreditOas, useMarketDaily, useMarketIntraday } from "../../api/queries";
 import { useQuotes } from "../../live/quotes";
 import { fmtBps, fmtDate, fmtPct } from "../../lib/format";
+import { MISSING, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import FreshnessCard from "./FreshnessCard";
 import QuoteCard, { type QuoteCardProps } from "./QuoteCard";
 import { quoteFor } from "./quote-ladder";
@@ -44,12 +45,15 @@ export default function TickerLive({ status, freshnessOpen, onOpenFreshness }: P
   const intraday = useMarketIntraday(["SPY", "QQQ"]);
   const daily = useMarketDaily(["SPY", "QQQ"], 45);
   const credit = useCreditOas(90);
+  const snapshot = useSnapshotMode();
+  // CP4: a card with no price says why when the stored closes did not load.
+  const unavailable = daily.isError && !daily.data ? missingNote(MISSING.market, snapshot) : undefined;
 
   const cards = useMemo<QuoteCardProps[]>(() => {
     // SPY and QQQ walk the shared ladder; the US 10Y stays on the credit
     // endpoint below because yields are not on the stream.
     const out: QuoteCardProps[] = ["SPY", "QQQ"].map((symbol) =>
-      quoteFor({ symbol }, quotes, intraday.data, daily.data, { dailyLoading: daily.isLoading }),
+      quoteFor({ symbol }, quotes, intraday.data, daily.data, { dailyLoading: daily.isLoading, unavailable }),
     );
 
     const ten = credit.data?.series.find((s) => s.label === "UST10Y");
@@ -66,11 +70,12 @@ export default function TickerLive({ status, freshnessOpen, onOpenFreshness }: P
         title: `10-year Treasury yield · FRED ${ten.series_id} · ${fmtDate(ten.date)}`,
       });
     } else {
-      out.push({ symbol: "US 10Y", price: "—" });
+      // CP4: the dash says why when the yield did not load.
+      out.push({ symbol: "US 10Y", price: "—", title: credit.isError ? "US 10Y yield unavailable: the data service did not answer." : undefined });
     }
 
     return out;
-  }, [quotes, intraday.data, daily.data, daily.isLoading, credit.data]);
+  }, [quotes, intraday.data, daily.data, daily.isLoading, credit.data, credit.isError, unavailable]);
 
   return (
     <div className="mrr-strip" role="region" aria-label="Market strip and data freshness">

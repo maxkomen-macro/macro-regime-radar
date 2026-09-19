@@ -295,7 +295,8 @@ const ALL_LABELS = ["US 10Y", "Sectors · 1d", "ETFs · 1w", "Dollar", "VIX", "P
 const IDS_IN_ORDER = ["markets-hero", "markets-summary", "single-name-research", "sector-heatmap", "single-name-movers", "top-surprises", "watchlist", "single-names", "whats-priced-full"];
 const EMPTY_PROMPT =
   "Search a ticker or company name in the market read above, or open a mover below, for a full profile: delayed quote, candles across seven ranges, fundamentals, regime fit since 1996, and the stored news window.";
-const ERROR_HEADLINE = "Stored closes unavailable: the data service did not answer. The tape keeps its live quotes.";
+// CP4: the hero names the missing closes; "The tape keeps its live quotes." follows only while the stream is up.
+const ERROR_HEADLINE = "Stored closes unavailable: the data service did not answer.";
 const DISCLOSURE_LINE =
   "Live prices via EODHD WebSocket (crypto & FX stream around the clock, US equities during NYSE hours, 15-min-delayed quotes fill the gaps) · stored candles and returns via the yfinance pipeline · macro metrics via FRED.";
 const OFF_HOURS_LEDE = "Off-hours the board holds the last quote with its timestamp. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence.";
@@ -554,8 +555,9 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
   });
 
   it.each<[word: string, title: string, status: StreamStatus, quotes: Map<string, LiveQuote>, tone: string, detail: RegExp]>([
-    ["Live", "Stream connected", OPEN, LIVE_QUOTES, "mint", /^US (?:● )?live · crypto quiet · FX quiet · VIX 15m delayed$/],
-    ["Delayed", "Quotes delayed", OPEN, DELAYED_QUOTES, "amber", /^US session closed · crypto quiet · FX quiet · VIX 15m delayed$/],
+    // Iteration 1 step 5 (G4): one status line; quiet feeds are the drawer's, the VIX delay the VIX row's.
+    ["Live", "Stream connected", OPEN, LIVE_QUOTES, "mint", /^US (?:● )?live$/],
+    ["Delayed", "Quotes delayed", OPEN, DELAYED_QUOTES, "amber", /^US session closed$/],
     ["Off", "Live feeds off", OFF, new Map(), "gray", /^stored closes and delayed quotes only$/],
     ["Reconnecting", "Stream reconnecting", RECONNECTING, new Map(), "gray", /^stored closes on the tape · retrying$/],
     ["Backend unavailable", "Stream unavailable", BACKEND_DOWN, new Map(), "gray", /^showing stored closes$/],
@@ -584,7 +586,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     const button = await awaitStrip();
     expect(stripTitle(button)).toBe("Stream connected");
     expect(button).toHaveAttribute("data-tone", "amber");
-    expect(stripDetail(button)).toMatch(/^US equity feed silent · US (?:● )?live · crypto quiet · FX quiet · VIX 15m delayed$/);
+    expect(stripDetail(button)).toMatch(/^US equity feed silent · US (?:● )?live$/);
   });
 
   it("clicking the strip calls the shell's openFreshness: a no-op without a provider, the spy with one", async () => {
@@ -867,7 +869,9 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
   it("daily 404 without data renders the error headline with the Unavailable pill while the summary still renders", async () => {
     stubFetch(without("/api/market/daily"));
     renderMarkets();
-    expect(await screen.findByText(ERROR_HEADLINE)).toBeInTheDocument();
+    // The heatmap and the Sectors row print the same sentence (CP4), so the headline is read in the hero.
+    await waitFor(() => expect(hero()).not.toBeNull());
+    expect(await within(hero()).findByText(ERROR_HEADLINE)).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Stored closes unavailable");
     expect(document.querySelectorAll("h1")).toHaveLength(1);
     const pill = hero().querySelector(".mrr-pill");
@@ -996,7 +1000,8 @@ describe("MarketsScreen, Iteration 1 (M3)", () => {
   it("movers: with no stream change and no candles the row says so plainly", async () => {
     renderMarkets();
     await awaitHero();
-    await waitFor(() => expect(text(movers())).toContain("No day change on file for the twelve single names"));
+    // CP4: the candles failed too, so the row says the prices did not load.
+    await waitFor(() => expect(text(movers())).toContain("Market prices unavailable: the data service did not answer."));
     expect(movers().querySelectorAll("button.mrr-mover")).toHaveLength(0);
   });
 

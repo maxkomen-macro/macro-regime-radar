@@ -337,26 +337,26 @@ export function mergeFeedVerdict(feedFresh: FreshInfo, sla: SlaRow | null | unde
 }
 
 /** The status strip words (B.2 table): fallback first, then the reading
- * state, then the feed clock. */
+ * state, then the feed clock. Iteration 1 step 5 (G4): the detail is one line
+ * at 390 px; the outlet count is the Outlets row's and the fallback's age the
+ * Coverage row's. */
 export function feedHealth(args: { usingFallback: boolean; loading: boolean; feedInfo: FreshInfo; feed: NewsItem[]; newestFallback: string | null }): FeedHealth {
   const { usingFallback, loading, feedInfo, feed, newestFallback } = args;
   if (usingFallback) {
     return {
       tone: "amber",
       title: "Fallback coverage",
-      detail: `Newest stored ${newestFallback ? fmtDate(newestFallback) : DASH} · ${feedInfo.age || DASH} old · ${feed.length} stored stories`,
+      detail: `${feed.length} stor${feed.length === 1 ? "y" : "ies"} · newest ${newestFallback ? fmtDate(newestFallback) : DASH}`,
     };
   }
   if (loading) return { tone: "gray", title: "Reading feed health…", detail: "Opens the data freshness breakdown" };
-  const k = sourceCount(feed);
-  const sources = `${k} source${k === 1 ? "" : "s"}`;
   switch (feedInfo.state) {
     case "current":
-      return { tone: "mint", title: "Feed current", detail: `Newest headline ${feedInfo.stamp} · ${sources}` };
+      return { tone: "mint", title: "Feed current", detail: `Newest headline ${feedInfo.stamp}` };
     case "delayed":
-      return { tone: "amber", title: "Feed delayed", detail: `Newest headline ${feedInfo.stamp} · ${feedInfo.age} old · ${sources}` };
+      return { tone: "amber", title: "Feed delayed", detail: `Newest ${feedInfo.stamp} · ${feedInfo.age} old` };
     case "stale":
-      return { tone: "amber", title: "Feed stale", detail: `Newest headline ${feedInfo.stamp} · ${feedInfo.age} old · ${sources}` };
+      return { tone: "amber", title: "Feed stale", detail: `Newest ${feedInfo.stamp} · ${feedInfo.age} old` };
     default:
       return { tone: "gray", title: "Feed unavailable", detail: "No headline stamp on file" };
   }

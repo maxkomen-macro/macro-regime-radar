@@ -107,17 +107,20 @@ export function overheatingRising(deltaPts: number): boolean {
   return Math.round(deltaPts) >= 1;
 }
 
-/** The status strip's words (checklist 04 B.2 table). */
+/** The status strip's words (checklist 04 B.2 table). Iteration 1 step 5
+ * (G4): each is one rendered line at 390 px, so the detail names the three
+ * classifier months by their end points ("Jun 2026 → Sep 2026") instead of
+ * the words "over the last 3 classifier months". */
 export function stripSummary(rows: Regime[] | undefined, state: StripState): StripSummary {
   if (state === "loading") {
     return { tone: "gray", title: "Reading the classifier history…", detail: "Opens the transition outlook" };
   }
   const d = state === "error" ? null : overheatingDelta3m(rows);
   if (!d) {
-    return { tone: "gray", title: "Overheating odds unavailable", detail: "The stored classifier history did not answer" };
+    return { tone: "gray", title: "Overheating odds unavailable", detail: "The data service did not answer" };
   }
   const n = Math.round(d.delta);
-  const span = `over the last 3 classifier months · ${fmtMonYr(d.from)} → ${fmtMonYr(d.to)}`;
+  const span = `· ${fmtMonYr(d.from)} → ${fmtMonYr(d.to)}`;
   if (overheatingRising(d.delta)) {
     return { tone: "amber", title: "Watch · Overheating odds rising", detail: `Up ${n} pts ${span}` };
   }

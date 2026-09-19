@@ -187,29 +187,38 @@ export function optimizerRow(a: AllocationData): { value: string; tone: string }
   };
 }
 
+/** A status line's character budget: about 200 px of 12 px text, one line in
+ * the narrowest strip (390 px). */
+const STRIP_LINE_CHARS = 36;
+
 /** The strip's four states (B.9), plus the gray unavailable strip for a
  * failed request. */
-export function allocationStrip(a: AllocationData | undefined, loading: boolean): AllocationStrip {
+export function allocationStrip(a: AllocationData | undefined, loading: boolean, snapshot = false): AllocationStrip {
   if (!a) {
+    // CP4: a snapshot session says the optimizer is not in it, and why.
+    if (!loading && snapshot) return { tone: "gray", title: "Optimizer not in this snapshot", detail: "It runs on the server" };
     return loading
       ? { tone: "gray", title: "Reading the optimizer state…", detail: "Jumps to the optimization section" }
       : { tone: "gray", title: "Optimizer unavailable", detail: "The data service did not answer" };
   }
+  // Iteration 1 step 5 (G4): title and detail are one line each at 390 px.
+  // The method names and the regime's month counts are the optimization
+  // section's (its status line prints the full sample sentence) and the
+  // Sample row's.
   const { solved, fallbacks } = optimizerStatus(a);
   if (a.optimizations) {
     if (!fallbacks.length) return { tone: "mint", title: `Optimizer solved · ${solved} methods`, detail: "max 40% per asset · long-only" };
+    const named = `${fallbacks.join(" and ")} at equal weight`;
     return {
       tone: "amber",
-      title: `Optimizer solved with ${fallbacks.length} fallback${fallbacks.length === 1 ? "" : "s"}`,
-      detail: `${fallbacks.join(" and ")} at equal weight`,
+      title: `Optimizer solved · ${fallbacks.length} fallback${fallbacks.length === 1 ? "" : "s"}`,
+      detail: named.length <= STRIP_LINE_CHARS ? named : `${fallbacks.length} methods at equal weight`,
     };
   }
   const sample = sampleOf(a);
   return {
     tone: "amber",
-    title: "Optimizer unavailable this session",
-    detail: sample
-      ? `${sample.complete_months} of ${sample.total_regime_months} ${a.current_regime} months complete · ${sample.required_cov_months} required`
-      : `needs 24 complete ${a.current_regime} months`,
+    title: "Optimizer skipped this session",
+    detail: sample ? `${sample.complete_months} complete months · ${sample.required_cov_months} required` : "needs 24 complete months",
   };
 }

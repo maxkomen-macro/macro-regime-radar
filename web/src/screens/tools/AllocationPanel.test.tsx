@@ -235,8 +235,9 @@ describe("AllocationPanel optimization and overview (checklist 09 E.1 row 8)", (
     expect(strip).not.toBeNull();
     expect(strip).toHaveClass("mrr-status");
     expect(strip).toHaveAttribute("data-tone", "amber");
-    expect(p9Text(strip.querySelector(".mrr-status-title"))).toBe("Optimizer unavailable this session");
-    expect(p9Text(strip.querySelector("small"))).toBe("19 of 28 Goldilocks months complete · 24 required");
+    // Iteration 1 step 5 (G4): one status line each; the full sample sentence is the optimization section's.
+    expect(p9Text(strip.querySelector(".mrr-status-title"))).toBe("Optimizer skipped this session");
+    expect(p9Text(strip.querySelector("small"))).toBe("19 complete months · 24 required");
   });
 
   it("the overview matrix has one column header ending ←, the months in regime row with n= cells, the regime Tag, the meta and the chip line; the caption cites the positive-return / negative-Sharpe cell", async () => {
@@ -264,8 +265,11 @@ describe("AllocationPanel optimization and overview (checklist 09 E.1 row 8)", (
     const t = p9Text(p9Overview());
     expect(t).toContain("64% model odds · conviction 50% (a separate heuristic, not odds); read the current column first");
     expect(t).toContain("A positive return with a negative Sharpe (TLT prints +2.1% in Overheating at SR -0.15) means the return does not cover cash plus the risk taken.");
-    expect(t).toContain("Small n columns are anecdotes, not laws.");
     expect(t).toContain("Annualized return and Sharpe per regime since Aug 2002.");
+    // Iteration 1 step 5 (G4): the third caption sentence sits behind Details.
+    expect(t).not.toContain("Small n columns are anecdotes, not laws.");
+    fireEvent.click(within(p9Overview()).getByRole("button", { name: /Details/ }));
+    expect(p9Text(p9Overview())).toContain("Small n columns are anecdotes, not laws.");
     expect(t).not.toContain("—");
   });
 });

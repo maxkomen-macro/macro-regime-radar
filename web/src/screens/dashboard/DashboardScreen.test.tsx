@@ -437,7 +437,8 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(button).toHaveAttribute("data-tone", "amber");
     expect(button).toHaveAttribute("aria-label", "1 threshold breach in the last 7 days. Open the alert feed.");
     expect(text(button)).toContain("1 alert · 7 days");
-    expect(text(button)).toContain(`Latest: Curve inversion risk · ${fmtDate(RECENT_DATE)}`);
+    // Iteration 1 step 5 (G4): one status line; the drawer's first row is the latest.
+    expect(text(button)).toContain(`Curve inversion risk · ${fmtDate(RECENT_DATE)}`);
   });
 
   it("status strip: loading reads gray and asserts nothing about alerts", async () => {
@@ -472,7 +473,8 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(button).toHaveAttribute("data-tone", "mint");
     expect(button).toHaveAttribute("aria-label", "No alerts on file. Open the alert feed.");
     expect(text(button)).toContain("No alerts on file");
-    expect(text(button)).toContain("The feed starts with the first threshold breach");
+    // Iteration 1 step 5 (G4): one status line; the drawer says where the feed starts.
+    expect(text(button)).toContain("Opens the alert feed");
   });
 
   it("clicking the strip calls the shell's openAlerts", async () => {

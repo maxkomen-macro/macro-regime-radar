@@ -54,7 +54,7 @@ const DEFS: Record<string, string> = {
   tenor: "A maturity point on the yield curve — the 2Y and 10Y are the stored tenors.",
   IG: "Investment grade: bonds rated BBB− or better. Their spread is the calm end of the credit market.",
   Tight:
-    "IG spreads above 150 bp: financing strain. The name means tight financing conditions, not tight spreads; it is a worse state than Normal, with high yield still at or under 400 bps.",
+    "IG spreads above 150 bps: financing strain. The name means tight financing conditions, not tight spreads; it is a worse state than Normal, with high yield still at or under 400 bps.",
   drawdown:
     "Peak-to-trough loss. A −50% drawdown needs a +100% recovery to get back to even.",
   "efficient frontier":

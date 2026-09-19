@@ -159,8 +159,9 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     expect(button).toHaveAttribute("aria-haspopup", "dialog");
     expect(button).toHaveAttribute("data-tone", "mint");
     expect(stripTitle(button)).toBe("Rate synced from FRED");
-    expect(stripDetail(button)).toBe("Stored through Sep 01, 2026 · refreshes with the daily pipeline");
-    expect(button.getAttribute("aria-label")).toMatch(/^Rate synced from FRED\. Stored through Sep 01, 2026 · refreshes with the daily pipeline\. Open the data freshness breakdown\.$/);
+    // Iteration 1 step 5 (G4): one status line.
+    expect(stripDetail(button)).toBe("Stored through Sep 01, 2026");
+    expect(button.getAttribute("aria-label")).toMatch(/^Rate synced from FRED\. Stored through Sep 01, 2026\. Open the data freshness breakdown\.$/);
     fireEvent.click(button);
     expect(openFreshness).toHaveBeenCalledTimes(1);
     expect(openAlerts).not.toHaveBeenCalled();
@@ -177,7 +178,7 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     const asOf = [...hero().querySelectorAll<HTMLElement>("[data-role='rate-as-of']")].map((el) => text(el));
     expect(asOf).toEqual(["Fed funds · Aug 2026 print", "HY spread · Sep 17"]);
     const button = await awaitStrip("Rate synced from FRED");
-    expect(stripDetail(button)).toBe("Fed funds: Aug 2026 print · HY spread: Sep 17");
+    expect(stripDetail(button)).toBe("Fed Aug 2026 print · HY Sep 17");
     expect(text(document.body)).not.toMatch(/today|\blive\b|current/i);
   });
 
@@ -200,7 +201,7 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     renderHero();
     const button = await awaitStrip("Rate feed unavailable");
     expect(button).toHaveAttribute("data-tone", "gray");
-    expect(stripDetail(button)).toBe("FRED rows missing; the engine's fallback rate is in use");
+    expect(stripDetail(button)).toBe("No FRED rows · fallback rate in use");
     expect(button).toHaveAttribute("aria-haspopup", "dialog");
   });
 
@@ -215,7 +216,7 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     expect(pill).toHaveAttribute("data-tone", "gray");
     const button = await awaitStrip("Rate feed unavailable");
     expect(button).toHaveAttribute("data-tone", "gray");
-    expect(stripDetail(button)).toBe("The data service did not answer; the stated 8.50% rate is in use");
+    expect(stripDetail(button)).toBe("The stated 8.50% rate is in use");
   });
 
   it("the bridge svg renders on a viable base run (six bars, the entry and exit equity labels) and the placeholder on a non-viable one", async () => {

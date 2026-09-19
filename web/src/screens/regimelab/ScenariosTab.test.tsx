@@ -309,7 +309,8 @@ describe("ScenariosTab (checklist 04 B.8)", () => {
     stubFetch(routes({ "/api/regime/scenario": () => ({ status: 500, body: { detail: "down" } }) }));
     const failed = renderWithProviders(<ScenariosTab />, { route: "/app/regime-lab#scenarios" });
     await waitFor(() => expect(byId("scenarios")).not.toBeNull());
-    expect(await within(section()).findByText("Unavailable: the data service did not answer.")).toBeInTheDocument();
+    // CP4: the note names the block that failed.
+    expect(await within(section()).findByText("Scenario builder unavailable: the data service did not answer.")).toBeInTheDocument();
     expect(within(section()).queryByText(/^stressed odds$/i)).toBeNull();
     failed.unmount();
 

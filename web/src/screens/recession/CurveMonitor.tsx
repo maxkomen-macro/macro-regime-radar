@@ -19,7 +19,7 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import LineChart from "../dashboard/LineChart";
 import { HeroChartFrame } from "../shared/HeroChart";
 import Jargon from "../shared/Jargon";
-import { Caption, StateNote, capStyle, eyebrowStyle, mono } from "../shared/screen-ui";
+import { Caption, MISSING, StateNote, capStyle, eyebrowStyle, mono } from "../shared/screen-ui";
 import { TENOR_ORDER, lastYears, usrecBands } from "./recession-copy";
 import type { CurveMonitorProps, CurveWindow } from "./panel-props";
 
@@ -179,7 +179,7 @@ export default function CurveMonitor({ m, status, range, onRangeChange }: CurveM
         </div>
       ) : (
         <Card variant="tile">
-          <StateNote loading={status === "loading"} error={status === "error"} />
+          <StateNote loading={status === "loading"} error={status === "error"} missing={MISSING.recession} />
         </Card>
       )}
     </Card>

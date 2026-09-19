@@ -13,8 +13,16 @@
  * `DisclosureLine` is the mono footer paragraph every tab ends with.
  */
 
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, useId, useState, type CSSProperties, type ReactNode } from "react";
 import { useBreakpoint } from "../../lib/useBreakpoint";
+
+/**
+ * True inside an open Disclosure panel. The G4 copy markers (`data-copy` on
+ * captions, ledes and status lines, Iteration 1 step 5) mark only the copy a
+ * reader sees with every disclosure closed, so Caption leaves its marker off
+ * inside a panel: the longer text behind "Details" is not capped.
+ */
+export const InDetailsContext = createContext(false);
 
 interface Props {
   title: ReactNode;
@@ -142,7 +150,7 @@ export default function Disclosure({
         ) : null}
       </button>
       <div id={panelId} hidden={!open} style={{ marginTop: row ? 6 : 4 }}>
-        {open ? children : null}
+        <InDetailsContext.Provider value={true}>{open ? children : null}</InDetailsContext.Provider>
       </div>
     </div>
   );
