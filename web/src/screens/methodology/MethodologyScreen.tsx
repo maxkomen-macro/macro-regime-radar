@@ -332,8 +332,8 @@ export default function MethodologyScreen() {
               <p style={{ ...prose, fontSize: "var(--fs-body-s)", marginTop: 6 }}>
                 ICE BofA option-adjusted spread indices (FRED BAMLH0A0HYM2, BAMLC0A0CM, and the BB / B / CCC ladders)
                 classified into Normal, Tight, Stressed and Crisis by fixed bps rules; percentiles since 1996; 3- and
-                6-month transition matrices counted from monthly states. The distress ratio is CCC OAS over 1,000
-                bps.{" "}
+                6-month transition matrices counted from monthly states. CCC vs the distress line is CCC OAS as a
+                percent of 1,000 bps; above 100% means past the line, not a share of issuers.{" "}
                 <ModuleLink to="/app/credit">Credit →</ModuleLink>
               </p>
             </Card>

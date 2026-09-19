@@ -14,7 +14,9 @@ Returns a dict with:
   hy_oas, ig_oas, ccc_oas, bb_oas, b_oas   — latest values in bps (float | None)
   hy_1w_change, ig_1w_change, ...           — 5-business-day change in bps (float | None)
   hy_ig_ratio                               — hy_oas / ig_oas (float | None)
-  distress_ratio                            — ccc_oas / 1000 * 100 as % (float | None)
+  ccc_pct_of_distress_line                  — CCC OAS as % of the 1,000 bps distress line (float | None;
+                                              may exceed 100: a level vs a threshold, not a share)
+  ccc_bps_vs_distress_line                  — CCC OAS minus 1,000 bps, signed (float | None)
   lbo_all_in_cost                           — (FEDFUNDS + hy_oas/100) as "X.XX%" (str | None)
   credit_label                              — "Normal" | "Tight" | "Stressed" | "Crisis" | "No data"
   credit_label_color                        — hex color for label
@@ -205,7 +207,8 @@ def _empty_metrics() -> dict:
         "bb_1w_change":     None,
         "b_1w_change":      None,
         "hy_ig_ratio":      None,
-        "distress_ratio":   None,
+        "ccc_pct_of_distress_line": None,
+        "ccc_bps_vs_distress_line": None,
         "lbo_all_in_cost":  None,
         "credit_label":     "No data",
         "credit_label_color": _LABEL_COLORS["No data"],
@@ -273,7 +276,10 @@ def get_credit_metrics() -> dict:
 
     # ── Derived metrics ───────────────────────────────────────────────────────
     hy_ig_ratio = round(hy_oas / ig_oas, 2) if (hy_oas and ig_oas and ig_oas != 0) else None
-    distress_ratio = round(ccc_oas / 1000 * 100, 1) if ccc_oas is not None else None
+    # B2 (2026-09-18): CCC OAS measured against the 1,000 bps distress line.
+    # A level against a threshold (can exceed 100), never a share of issuers.
+    ccc_pct_of_distress_line = round(ccc_oas / 1000 * 100, 1) if ccc_oas is not None else None
+    ccc_bps_vs_distress_line = round(ccc_oas - 1000, 1) if ccc_oas is not None else None
 
     # LBO all-in cost: FEDFUNDS (already in %) + HY OAS converted to %
     lbo_all_in_cost = None
@@ -319,7 +325,8 @@ def get_credit_metrics() -> dict:
         "bb_1w_change":       _1w_chg(bb_s),
         "b_1w_change":        _1w_chg(b_s),
         "hy_ig_ratio":        hy_ig_ratio,
-        "distress_ratio":     distress_ratio,
+        "ccc_pct_of_distress_line": ccc_pct_of_distress_line,
+        "ccc_bps_vs_distress_line": ccc_bps_vs_distress_line,
         "lbo_all_in_cost":    lbo_all_in_cost,
         "credit_label":       credit_label,
         "credit_label_color": credit_label_color,
@@ -351,7 +358,7 @@ if __name__ == "__main__":
     print(f"CCC OAS      : {m['ccc_oas']} bps")
     print(f"HY 1W chg    : {m['hy_1w_change']} bps")
     print(f"HY/IG ratio  : {m['hy_ig_ratio']}")
-    print(f"Distress %   : {m['distress_ratio']}%")
+    print(f"CCC vs line  : {m['ccc_pct_of_distress_line']}% of 1,000 bps ({m['ccc_bps_vs_distress_line']} bps)")
     print(f"LBO all-in   : {m['lbo_all_in_cost']}")
     print(f"HY pct rank  : {ordinal(m['hy_pct_rank'])} percentile")
     print(f"IG pct rank  : {ordinal(m['ig_pct_rank'])} percentile")

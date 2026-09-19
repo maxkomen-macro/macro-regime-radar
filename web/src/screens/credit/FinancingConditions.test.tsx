@@ -50,7 +50,7 @@ function metrics(over: Partial<CreditMetrics> = {}): CreditMetrics {
     bb_1w_change: -3,
     b_1w_change: 2,
     hy_ig_ratio: 3.32,
-    distress_ratio: 104.2,
+    ccc_pct_of_distress_line: 104.2,
     lbo_all_in_cost: "7.04%",
     credit_label: "Normal",
     credit_label_color: "#28d17c",

@@ -563,6 +563,31 @@ def test_api_lbo_fee_direction():
     assert abs(free["entry_equity"] - (free["entry_ev"] - free["entry_debt"])) < 0.02
 
 
+CREDIT_METRICS_KEYS = {
+    "b_1w_change", "b_oas", "b_sparkline", "bb_1w_change", "bb_oas", "bb_sparkline",
+    "ccc_1w_change", "ccc_oas", "ccc_sparkline", "ccc_pct_of_distress_line", "ccc_bps_vs_distress_line",
+    "credit_label", "credit_label_color", "data_as_of", "hy_1w_change", "hy_ig_ratio", "hy_oas",
+    "hy_pct_rank", "hy_series", "hy_sparkline", "ig_1w_change", "ig_oas", "ig_pct_rank", "ig_series",
+    "ig_sparkline", "lbo_all_in_cost", "tight_count", "transition_3m", "transition_6m",
+}
+
+
+def test_api_credit_distress_line_is_not_a_share():
+    """B2 (2026-09-18): CCC OAS measured against the 1,000 bps distress line is
+    served under names that say so, never framed as a share of a whole. The
+    exact key set pins that the old share-like name is gone; nothing named as a
+    share, percentile or probability leaves the API outside [0, 100]."""
+    body = client.get("/api/credit/metrics").json()
+    assert set(body) == CREDIT_METRICS_KEYS
+    ccc = body["ccc_oas"]
+    if ccc is not None:
+        assert body["ccc_pct_of_distress_line"] == round(ccc / 1000 * 100, 1)
+        assert body["ccc_bps_vs_distress_line"] == round(ccc - 1000, 1)
+    for key, value in body.items():
+        if isinstance(value, (int, float)) and any(t in key for t in ("share", "pct_rank", "prob", "percentile")):
+            assert 0 <= value <= 100, (key, value)
+
+
 def test_api_lbo_rate_reaches_irr():
     """B1 (2026-09-18): the financing rate moves the served IRR, down as the
     rate rises, and the response carries the cash-sweep schedule fields

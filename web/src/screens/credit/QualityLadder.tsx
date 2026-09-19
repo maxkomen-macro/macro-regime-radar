@@ -2,7 +2,7 @@
  * Quality ladder, `<section id="quality-ladder">` (redesign Phase 6,
  * checklist 06 B.5): the BB / B / CCC chart on the six served sparkline
  * points (F2: no longer series is served for the three rungs), the HY / IG
- * ratio tile, the distress ratio tile, and the quality-ladder tension callout
+ * ratio tile, the CCC-vs-distress-line tile, and the quality-ladder tension callout
  * (C7) that renders only while `ladderFlags(m).tension` holds.
  *
  * Every number is a served field; the only client work is display math on
@@ -99,10 +99,10 @@ function RatioTile({ m }: { m: CreditMetrics }) {
 }
 
 function DistressTile({ m }: { m: CreditMetrics }) {
-  const distressPct = m.distress_ratio;
+  const distressPct = m.ccc_pct_of_distress_line;
   return (
     <Card variant="tile" padding="12px 16px" tone={distressPct != null && distressPct >= 100 ? "risk" : "default"}>
-      <div style={eyebrowStyle}>Distress ratio</div>
+      <div style={eyebrowStyle}>CCC vs distress line</div>
       <div className="num" style={tileValue}>
         {distressPct != null ? `${distressPct.toFixed(1)}%` : DASH}
       </div>
@@ -139,7 +139,7 @@ function DistressTile({ m }: { m: CreditMetrics }) {
 
 /** The C7 callout (CreditScreen.tsx:334-355 before Phase 6), verbatim. */
 function TensionCallout({ m }: { m: CreditMetrics }): ReactNode {
-  const distressPct = m.distress_ratio;
+  const distressPct = m.ccc_pct_of_distress_line;
   if (!ladderFlags(m).tension || m.ccc_oas == null || distressPct == null) return null;
   return (
     <Card accentBar tone="watch" style={{ marginTop: 12 }}>

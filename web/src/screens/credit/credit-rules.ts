@@ -23,7 +23,7 @@ export function ladderFlags(m: CreditMetrics): LadderFlags {
   const ccc = m.ccc_1w_change;
   const cccUp = ccc != null && ccc > 0;
   const diverges = cccUp && (m.bb_1w_change ?? 0) < (ccc as number) && (m.b_1w_change ?? 0) < (ccc as number);
-  const tension = m.distress_ratio != null && m.distress_ratio >= 80 && (label === "Normal" || label === "Tight");
+  const tension = m.ccc_pct_of_distress_line != null && m.ccc_pct_of_distress_line >= 80 && (label === "Normal" || label === "Tight");
   const past = label === "Stressed" || label === "Crisis";
   return { cccUp, diverges, tension, past };
 }

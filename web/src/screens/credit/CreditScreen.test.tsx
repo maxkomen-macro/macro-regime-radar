@@ -88,7 +88,7 @@ function metrics(over: Partial<CreditMetrics> = {}): CreditMetrics {
     bb_1w_change: -3,
     b_1w_change: 2,
     hy_ig_ratio: 3.32,
-    distress_ratio: 104.2,
+    ccc_pct_of_distress_line: 104.2,
     lbo_all_in_cost: "7.04%",
     credit_label: "Normal",
     credit_label_color: "#28d17c",
@@ -110,8 +110,8 @@ function metrics(over: Partial<CreditMetrics> = {}): CreditMetrics {
 }
 const METRICS = metrics();
 /** Normal with nothing widening and distress well under the line: mint strip, no callout, no overflow note, CCC "Watch". */
-const IN_STEP: Partial<CreditMetrics> = { ccc_oas: 580, ccc_1w_change: -4, bb_1w_change: -1, b_1w_change: -2, distress_ratio: 58 };
-const STRESSED: Partial<CreditMetrics> = { credit_label: "Stressed", hy_oas: 486, ccc_oas: 950, ccc_1w_change: 3, bb_1w_change: 5, b_1w_change: 8, distress_ratio: 95, hy_pct_rank: 74 };
+const IN_STEP: Partial<CreditMetrics> = { ccc_oas: 580, ccc_1w_change: -4, bb_1w_change: -1, b_1w_change: -2, ccc_pct_of_distress_line: 58 };
+const STRESSED: Partial<CreditMetrics> = { credit_label: "Stressed", hy_oas: 486, ccc_oas: 950, ccc_1w_change: 3, bb_1w_change: 5, b_1w_change: 8, ccc_pct_of_distress_line: 95, hy_pct_rank: 74 };
 const CRISIS: Partial<CreditMetrics> = { ...STRESSED, credit_label: "Crisis", hy_oas: 812, hy_pct_rank: 96 };
 /** Tight: IG past 150 with HY at or under 400; three Tight months on file; in step otherwise. */
 const TIGHT: Partial<CreditMetrics> = { credit_label: "Tight", hy_oas: 372, ig_oas: 160, tight_count: 3, transition_3m: T3_TIGHT, transition_6m: T6_TIGHT, hy_pct_rank: 41, ...IN_STEP };
@@ -550,7 +550,7 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     expect(text(ratio)).toContain("3.32×");
     expect(text(ratio)).toMatch(/\d+\.\d\d×/);
     expect(text(ratio)).toContain(CAPTION_C16);
-    const distress = tileWith(ladder, "Distress ratio");
+    const distress = tileWith(ladder, "CCC vs distress line");
     expect(text(distress)).toContain("104.2%");
     expect(text(distress)).toContain("▲ 4.2pp past the line; the bar caps at 100%");
     expect(text(distress)).toContain(CAPTION_C17);
@@ -580,7 +580,7 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     expect(text(clear)).not.toContain("Analytical callout");
     expect(clear.querySelectorAll(".mrr-prose")).toHaveLength(0);
     expect(text(clear)).not.toContain("past the line");
-    expect(text(tileWith(clear, "Distress ratio"))).toContain("58.0%");
+    expect(text(tileWith(clear, "CCC vs distress line"))).toContain("58.0%");
   });
 
   it("#credit-state-odds renders inside the screen with the horizon control and the 3M grid", async () => {

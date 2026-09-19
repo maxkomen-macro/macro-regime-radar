@@ -1017,7 +1017,7 @@ const CREDIT_ROWS: SummaryRow[] = [
   },
   { id: "hy", label: "HY OAS", value: "2.91%" },
   { id: "ig", label: "IG OAS", value: "0.81%" },
-  { id: "distress", label: "Distress ratio", value: "4.2%" },
+  { id: "distress", label: "CCC vs distress line", value: "107.6%" },
   {
     id: "read",
     label: "Key takeaway",

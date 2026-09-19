@@ -61,7 +61,7 @@ function metrics(over: Partial<CreditMetrics> = {}): CreditMetrics {
     bb_1w_change: -3,
     b_1w_change: 2,
     hy_ig_ratio: 3.32,
-    distress_ratio: 104.2,
+    ccc_pct_of_distress_line: 104.2,
     lbo_all_in_cost: "7.04%",
     credit_label: "Normal",
     credit_label_color: "#28d17c",
@@ -82,12 +82,12 @@ function metrics(over: Partial<CreditMetrics> = {}): CreditMetrics {
   };
 }
 
-/** Normal with nothing widening and the distress ratio well under the line. */
-const IN_STEP: Partial<CreditMetrics> = { ccc_oas: 580, ccc_1w_change: -4, bb_1w_change: -1, b_1w_change: -2, distress_ratio: 58 };
+/** Normal with nothing widening and CCC well under the distress line. */
+const IN_STEP: Partial<CreditMetrics> = { ccc_oas: 580, ccc_1w_change: -4, bb_1w_change: -1, b_1w_change: -2, ccc_pct_of_distress_line: 58 };
 /** Normal, CCC up but by less than BB and B, distress at 91%: tension without divergence. */
-const TENSION: Partial<CreditMetrics> = { ccc_oas: 910, ccc_1w_change: 10, bb_1w_change: 12, b_1w_change: 15, distress_ratio: 91 };
+const TENSION: Partial<CreditMetrics> = { ccc_oas: 910, ccc_1w_change: 10, bb_1w_change: 12, b_1w_change: 15, ccc_pct_of_distress_line: 91 };
 /** Past the 400 rule; no rung diverging; distress high but the label is not Normal or Tight. */
-const STRESSED: Partial<CreditMetrics> = { credit_label: "Stressed", hy_oas: 486, ccc_oas: 950, ccc_1w_change: 3, bb_1w_change: 5, b_1w_change: 8, distress_ratio: 95, hy_pct_rank: 74 };
+const STRESSED: Partial<CreditMetrics> = { credit_label: "Stressed", hy_oas: 486, ccc_oas: 950, ccc_1w_change: 3, bb_1w_change: 5, b_1w_change: 8, ccc_pct_of_distress_line: 95, hy_pct_rank: 74 };
 const CRISIS: Partial<CreditMetrics> = { ...STRESSED, credit_label: "Crisis", hy_oas: 812, hy_pct_rank: 96 };
 const TIGHT: Partial<CreditMetrics> = { credit_label: "Tight", hy_oas: 372, ig_oas: 160, tight_count: 3, hy_pct_rank: 41, ...IN_STEP };
 
@@ -298,10 +298,10 @@ describe("ladderFlags (checklist 06 B.2 booleans, credit-rules.ts)", () => {
   });
 
   it("tension needs distress at 80 or more with a Normal or Tight label; past is Stressed or Crisis", () => {
-    expect(rulesLadderFlags(metrics({ ...IN_STEP, distress_ratio: 80 })).tension).toBe(true);
-    expect(rulesLadderFlags(metrics({ ...IN_STEP, distress_ratio: 79.9 })).tension).toBe(false);
-    expect(rulesLadderFlags(metrics({ ...TIGHT, distress_ratio: 85 })).tension).toBe(true);
-    expect(rulesLadderFlags(metrics({ ...IN_STEP, distress_ratio: null })).tension).toBe(false);
+    expect(rulesLadderFlags(metrics({ ...IN_STEP, ccc_pct_of_distress_line: 80 })).tension).toBe(true);
+    expect(rulesLadderFlags(metrics({ ...IN_STEP, ccc_pct_of_distress_line: 79.9 })).tension).toBe(false);
+    expect(rulesLadderFlags(metrics({ ...TIGHT, ccc_pct_of_distress_line: 85 })).tension).toBe(true);
+    expect(rulesLadderFlags(metrics({ ...IN_STEP, ccc_pct_of_distress_line: null })).tension).toBe(false);
     expect(rulesLadderFlags(metrics(STRESSED))).toEqual({ cccUp: true, diverges: false, tension: false, past: true });
     expect(rulesLadderFlags(metrics(CRISIS))).toEqual({ cccUp: true, diverges: false, tension: false, past: true });
     expect(rulesLadderFlags(metrics(TIGHT)).past).toBe(false);
@@ -336,7 +336,7 @@ describe("ladderStrip (checklist 06 B.2 strip table)", () => {
     expect(s.tone).toBe("amber");
     expect(s.title).toMatch(/^Watch · CCC at 91(?:\.0)?% of the distress line$/);
     expect(s.detail).toBe("The weakest rung prices stress while the index reads Normal");
-    const tight = ladderStrip(metrics({ ...TIGHT, ccc_oas: 880, ccc_1w_change: 10, bb_1w_change: 12, b_1w_change: 15, distress_ratio: 88 }), "ready");
+    const tight = ladderStrip(metrics({ ...TIGHT, ccc_oas: 880, ccc_1w_change: 10, bb_1w_change: 12, b_1w_change: 15, ccc_pct_of_distress_line: 88 }), "ready");
     expect(tight.title).toMatch(/^Watch · CCC at 88(?:\.0)?% of the distress line$/);
     expect(tight.detail).toBe("The weakest rung prices stress while the index reads Tight");
   });
@@ -366,10 +366,10 @@ describe("ladderStrip (checklist 06 B.2 strip table)", () => {
     const noCcc = ladderStrip(metrics({ ...IN_STEP, ccc_1w_change: null }), "ready");
     expect(noCcc.title).toBe("Clear · ladder in step");
     expect(noCcc.detail).toMatch(/^distress 58(?:\.0)?% of the 1,000 bps line$/);
-    const noDistress = ladderStrip(metrics({ ...IN_STEP, distress_ratio: null }), "ready");
+    const noDistress = ladderStrip(metrics({ ...IN_STEP, ccc_pct_of_distress_line: null }), "ready");
     expect(noDistress.title).toBe("Clear · ladder in step");
     expect(noDistress.detail).toBe("CCC -4 bps in a month");
-    const neither = ladderStrip(metrics({ ...IN_STEP, ccc_1w_change: null, distress_ratio: null }), "ready");
+    const neither = ladderStrip(metrics({ ...IN_STEP, ccc_1w_change: null, ccc_pct_of_distress_line: null }), "ready");
     expect(neither.title).toBe("Clear · ladder in step");
     expect(neither.detail).not.toContain("null");
     expect(neither.detail).not.toMatch(/^\s*·|·\s*$/);
@@ -383,7 +383,7 @@ describe("ladderStrip (checklist 06 B.2 strip table)", () => {
   });
 
   it("every strip string is free of em-dashes and the word null", () => {
-    for (const over of [{}, IN_STEP, TENSION, STRESSED, CRISIS, TIGHT, { bb_1w_change: null, b_1w_change: null }, { ...IN_STEP, ccc_1w_change: null, distress_ratio: null }]) {
+    for (const over of [{}, IN_STEP, TENSION, STRESSED, CRISIS, TIGHT, { bb_1w_change: null, b_1w_change: null }, { ...IN_STEP, ccc_1w_change: null, ccc_pct_of_distress_line: null }]) {
       const s = ladderStrip(metrics(over), "ready");
       for (const text of [s.title, s.detail]) {
         expect(text).not.toContain("—");

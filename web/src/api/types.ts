@@ -351,7 +351,10 @@ export interface CreditMetrics {
   bb_1w_change: number | null;
   b_1w_change: number | null;
   hy_ig_ratio: number | null;
-  distress_ratio: number | null;
+  /** B2: CCC OAS as a percent of the 1,000 bps distress line; may exceed 100 (not a share). */
+  ccc_pct_of_distress_line: number | null;
+  /** B2: CCC OAS minus 1,000 bps, signed. Optional so older snapshots still type-check. */
+  ccc_bps_vs_distress_line?: number | null;
   lbo_all_in_cost: string | null;
   credit_label: string;
   credit_label_color: string;

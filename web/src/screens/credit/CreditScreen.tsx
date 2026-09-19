@@ -252,10 +252,10 @@ export default function CreditScreen() {
       label: "CCC distress",
       value: val((x) =>
         x.ccc_oas != null
-          ? join([`${n(x.ccc_oas)} bps`, x.ccc_1w_change != null ? `${fmtBps(x.ccc_1w_change)} MoM` : null, x.distress_ratio != null ? `${x.distress_ratio.toFixed(0)}% of the 1,000 bps line` : null])
+          ? join([`${n(x.ccc_oas)} bps`, x.ccc_1w_change != null ? `${fmtBps(x.ccc_1w_change)} MoM` : null, x.ccc_pct_of_distress_line != null ? `${x.ccc_pct_of_distress_line.toFixed(0)}% of the 1,000 bps line` : null])
           : DASH,
       ),
-      tone: m?.distress_ratio != null ? (m.distress_ratio >= 100 ? "var(--neg)" : m.distress_ratio >= 80 ? "var(--warn-hot)" : undefined) : undefined,
+      tone: m?.ccc_pct_of_distress_line != null ? (m.ccc_pct_of_distress_line >= 100 ? "var(--neg)" : m.ccc_pct_of_distress_line >= 80 ? "var(--warn-hot)" : undefined) : undefined,
     },
     {
       id: "ratio",

@@ -102,6 +102,13 @@
   },
   {
     "key": [
+      "credit",
+      "metrics"
+    ],
+    "path": "/api/credit/metrics"
+  },
+  {
+    "key": [
       "series",
       "VIXCLS",
       "latest"

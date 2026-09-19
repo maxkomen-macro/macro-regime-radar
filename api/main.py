@@ -785,7 +785,10 @@ class CreditMetrics(BaseModel):
     bb_1w_change: float | None
     b_1w_change: float | None
     hy_ig_ratio: float | None
-    distress_ratio: float | None
+    # B2 (2026-09-18): CCC OAS against the 1,000 bps distress line; a level
+    # vs a threshold that may exceed 100, never a share of issuers.
+    ccc_pct_of_distress_line: float | None
+    ccc_bps_vs_distress_line: float | None
     lbo_all_in_cost: str | None
     credit_label: str
     credit_label_color: str
@@ -1256,7 +1259,7 @@ def api_regime_run_scenario(req: ScenarioRequest) -> ScenarioResult:
 @api.get("/credit/metrics", response_model=CreditMetrics)
 def api_credit_metrics() -> CreditMetrics:
     """Full credit dashboard payload from src/analytics/credit.py — OAS levels
-    (bps), percentile ranks, HY/IG ratio, distress ratio, transition matrices,
+    (bps), percentile ranks, HY/IG ratio, CCC vs the 1,000 bps distress line, transition matrices,
     financing cost, and monthly series for charts."""
     from api import analytics_cache
 

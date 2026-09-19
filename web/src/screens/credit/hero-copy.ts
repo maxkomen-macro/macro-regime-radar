@@ -170,7 +170,7 @@ export function ladderStrip(m: CreditMetrics | null, status: CreditStatus = "rea
   const ccc = m.ccc_1w_change;
   const bb = m.bb_1w_change;
   const b = m.b_1w_change;
-  const distress = m.distress_ratio != null ? m.distress_ratio.toFixed(0) : null;
+  const distress = m.ccc_pct_of_distress_line != null ? m.ccc_pct_of_distress_line.toFixed(0) : null;
   const clauses = (xs: (string | null)[]): string => xs.filter((x): x is string => x != null).join(" · ");
 
   if (diverges) {

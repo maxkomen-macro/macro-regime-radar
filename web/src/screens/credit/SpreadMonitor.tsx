@@ -91,9 +91,9 @@ const TIERS: Tier[] = [
     // The 1,000 bps distress line (Jargon "distress"), not today's silent 700 flip (G8).
     badge: (v) => (v < 1000 ? { badge: "Watch", tone: "watch" } : { badge: "Distressed", tone: "alert" }),
     second: (m) =>
-      m.distress_ratio != null ? (
+      m.ccc_pct_of_distress_line != null ? (
         <>
-          Weakest credits · {m.distress_ratio.toFixed(0)}% of the 1,000 bps <Jargon term="distress">distress</Jargon> line.
+          Weakest credits · {m.ccc_pct_of_distress_line.toFixed(0)}% of the 1,000 bps <Jargon term="distress">distress</Jargon> line.
         </>
       ) : (
         "Weakest credits."
