@@ -20,6 +20,7 @@ import { NO_SHELL_ACTIONS, ShellActionsContext, type ShellActions } from "../she
 import type { LiveQuote, StreamStatus } from "../../live/quotes";
 import type { CreditOAS, CreditSeries, DailyBar, Freshness, PricedMetric, Surprise } from "../../api/types";
 import { fmtSigned, fmtSignedPct } from "../../lib/format";
+import { useLocation } from "react-router-dom";
 import { makeClient, renderWithProviders, stubFetch } from "../../test/utils";
 
 /* ── mocks ───────────────────────────────────────────────────────────────── */
@@ -68,9 +69,10 @@ vi.mock("./ChartPanel", () => ({
 
 vi.mock("./SingleName", () => ({
   RANGES: ["1D", "5D", "1M", "6M", "1Y", "5Y", "MAX"],
-  default: ({ symbol, range }: { symbol: string; range?: string }) => (
+  default: ({ symbol, range, onClose }: { symbol: string; range?: string; onClose?: () => void }) => (
     <div data-testid="single-name" data-range={range ?? ""}>
       {symbol}
+      <button type="button" aria-label="Close single-name panel" onClick={onClose} />
     </div>
   ),
 }));
@@ -1029,5 +1031,73 @@ describe("MarketsScreen, Iteration 1 (M3)", () => {
     await waitFor(() => expect(within(single).getByTestId("single-name")).toHaveTextContent("AMD"));
     expect(document.activeElement).toBe(single);
     expect(single).toHaveAttribute("tabindex", "-1");
+  });
+});
+
+/* ── Iteration 1, M5: the address follows the research panel ────────────── */
+
+/** The router's search + hash, printed so a case can read the address. */
+function LocationProbe() {
+  const loc = useLocation();
+  return <output data-testid="location">{`${loc.search}${loc.hash}`}</output>;
+}
+function renderWithProbe(route: string) {
+  return renderWithProviders(
+    <>
+      <main id="main-content">
+        <MarketsScreen />
+      </main>
+      <LocationProbe />
+    </>,
+    { route },
+  );
+}
+const address = () => screen.getByTestId("location").textContent ?? "";
+
+describe("MarketsScreen, Iteration 1 (M5)", () => {
+  it("a search pick writes ?name=<SYM> keeping the hash, a second pick rewrites it, and closing the panel drops it", async () => {
+    stubFetch(
+      routes({
+        "/api/market/search": (url) =>
+          (url.searchParams.get("q") ?? "").toUpperCase() === "AMD"
+            ? searchEnvelope([{ symbol: "AMD", name: "Advanced Micro Devices" }])
+            : searchEnvelope([{ symbol: "NVDA", name: "NVIDIA Corp" }]),
+      }),
+    );
+    renderWithProbe("/app/markets#single-names");
+    await awaitHero();
+    const box = within(hero()).getByRole("combobox", { name: "Search any listed symbol" });
+    fireEvent.change(box, { target: { value: "AMD" } });
+    fireEvent.mouseDown(await screen.findByRole("option", undefined, { timeout: 3000 }));
+    const single = await awaitSection("single-name-research");
+    await waitFor(() => expect(within(single).getByTestId("single-name")).toHaveTextContent("AMD"));
+    await waitFor(() => expect(address()).toBe("?name=AMD#single-names"));
+    fireEvent.change(box, { target: { value: "NVDA" } });
+    await waitFor(() => expect(screen.getByRole("option")).toHaveTextContent("NVDA"), { timeout: 3000 });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(within(single).getByTestId("single-name")).toHaveTextContent("NVDA"));
+    await waitFor(() => expect(address()).toBe("?name=NVDA#single-names"));
+    fireEvent.click(within(single).getByRole("button", { name: "Close single-name panel" }));
+    await waitFor(() => expect(address()).toBe("#single-names"));
+    expect(within(single).queryByTestId("single-name")).toBeNull();
+  });
+
+  it("Enter on a search with no hits opens a ticker-shaped text as ?name=, and names any other text as a miss", async () => {
+    stubFetch(routes({ "/api/market/search": () => searchEnvelope([]) }));
+    renderWithProbe("/app/markets");
+    await awaitHero();
+    const box = within(hero()).getByRole("combobox", { name: "Search any listed symbol" });
+    fireEvent.change(box, { target: { value: "zzzzqx" } });
+    await waitFor(() => expect(document.body.textContent).toMatch(/No listings match "zzzzqx"/), { timeout: 3000 });
+    fireEvent.keyDown(box, { key: "Enter" });
+    const single = await awaitSection("single-name-research");
+    await waitFor(() => expect(within(single).getByTestId("single-name")).toHaveTextContent("ZZZZQX"));
+    await waitFor(() => expect(address()).toBe("?name=ZZZZQX"));
+    fireEvent.change(box, { target: { value: "no such company" } });
+    await waitFor(() => expect(document.body.textContent).toMatch(/No listings match "no such company"/), { timeout: 3000 });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(text(single)).toContain("No listed symbol matches \u201cno such company\u201d."));
+    expect(within(single).queryByTestId("single-name")).toBeNull();
+    await waitFor(() => expect(address()).toBe(""));
   });
 });

@@ -270,3 +270,77 @@ describe("SingleName (checklist 05 B.4, appended)", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/1Y · daily bars · EODHD · through/));
   });
 });
+
+/* ── Iteration 1, M5: no blank block ─────────────────────────────────────── */
+
+describe("SingleName, Iteration 1 (M5)", () => {
+  const down = (kind = "unavailable") => ({ status: 502, body: { detail: "upstream failed", kind, provider: "eodhd", retryable: true } });
+
+  it("an unknown symbol reads one plain sentence in place of the tile, with the provider reason and a close button", async () => {
+    stubFetch({
+      ...common,
+      "/api/market/profile/ZZZZQX": () => ({ status: 404, body: { detail: "No listing found for 'ZZZZQX' on EODHD or yfinance.", kind: "unknown_symbol", provider: "api", retryable: false } }),
+      "/api/market/candles/ZZZZQX": () => ({ status: 404, body: { detail: "No listing", kind: "unknown_symbol", provider: "api", retryable: false } }),
+    });
+    const onClose = vi.fn();
+    renderWithProviders(<SingleName symbol="ZZZZQX" onClose={onClose} />);
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("No listed symbol matches ZZZZQX."));
+    expect(document.body.textContent).toMatch(/No listing found for ZZZZQX on EODHD or yfinance\./);
+    expect(screen.queryByRole("button", { name: /Options lens/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /News for ZZZZQX/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close single-name panel" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("a profile that fails names the missing fundamentals while the chart, the regime caption, the options lens and the news still render", async () => {
+    stubFetch(phase5Routes({ "/api/market/profile/AMZN": () => down() }));
+    renderWithProviders(<SingleName symbol="AMZN" onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("chart")).toBeInTheDocument());
+    await waitFor(() => expect(document.body.textContent).toMatch(/No fundamentals for AMZN: the profile did not load, and the quote line above says why\./), { timeout: 5000 });
+    expect(document.body.textContent).toMatch(/The quote for AMZN is unavailable from the provider right now\./);
+    expect(screen.getByRole("button", { name: /Options lens/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /News for AMZN/ })).toBeInTheDocument();
+    expect(document.body.textContent).toMatch(/Average monthly return by regime/);
+  });
+
+  it("an instrument without listed options says so in one sentence instead of dropping the lens", async () => {
+    stubFetch(phase5Routes({ "/api/market/profile/AMZN": () => ({ ...profile, exchange: "CC", quote_type: "Crypto" }) }));
+    renderWithProviders(<SingleName symbol="AMZN" onClose={() => {}} />);
+    await waitFor(() => expect(document.body.textContent).toMatch(/No options lens for AMZN: listed option chains are served for US equities and ETFs only\./));
+    expect(screen.queryByRole("button", { name: /Options lens/ })).toBeNull();
+  });
+
+  it("an options lens with no listed expirations says so instead of waiting forever", async () => {
+    stubFetch(phase5Routes({ "/api/market/options/AMZN/expirations": () => ({ symbol: "AMZN", provider: "eodhd", as_of: "2026-09-18", expirations: [], truncated: false }) }));
+    renderWithProviders(<SingleName symbol="AMZN" onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("chart")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Options lens/ }));
+    await waitFor(() => expect(document.body.textContent).toMatch(/No listed option expirations on file for AMZN/));
+    expect(document.body.textContent).not.toMatch(/Requesting calls for/);
+  });
+
+  it("news and regime history that fail to load say so, never 'no coverage' or 'fewer than 12 months'", async () => {
+    stubFetch(phase5Routes({ "/api/news": () => down(), "/api/regime/history": () => down() }));
+    renderWithProviders(<SingleName symbol="AMZN" onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("chart")).toBeInTheDocument());
+    const news = await screen.findByRole("button", { name: /News for AMZN/ });
+    await waitFor(() => expect(visible(news)).toMatch(/unavailable$/), { timeout: 5000 });
+    fireEvent.click(news);
+    expect(document.body.textContent).toMatch(/Stored news for AMZN did not load/);
+    expect(document.body.textContent).not.toMatch(/No stored coverage mentions AMZN/);
+    await waitFor(() => expect(document.body.textContent).toMatch(/The stored regime history did not load, so there is no regime read for AMZN\./), { timeout: 5000 });
+  });
+
+  it("an Escape another handler consumed does not close the panel; a plain Escape does", () => {
+    stubFetch(phase5Routes());
+    const onClose = vi.fn();
+    renderWithProviders(<SingleName symbol="AMZN" onClose={onClose} />);
+    const consumed = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    consumed.preventDefault();
+    window.dispatchEvent(consumed);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+

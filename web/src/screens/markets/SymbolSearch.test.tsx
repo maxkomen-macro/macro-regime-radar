@@ -58,4 +58,22 @@ describe("SymbolSearch", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(picked).toEqual(["AAPL"]);
   });
+
+  it("Enter on a settled search with no hits hands the typed text to onSubmitText (M5); a consumed Escape is marked handled", async () => {
+    stubFetch({ "/api/market/search": () => envelope([]) });
+    const submitted: string[] = [];
+    renderWithProviders(<SymbolSearch onSelect={() => {}} onSubmitText={(t) => submitted.push(t)} />);
+    const input = screen.getByRole("combobox", { name: "Search any listed symbol" });
+    fireEvent.change(input, { target: { value: " zzzzqx " } });
+    fireEvent.keyDown(input, { key: "Enter" }); // still debouncing: nothing submitted
+    expect(submitted).toEqual([]);
+    await waitFor(() => expect(document.body.textContent).toMatch(/No listings match "zzzzqx"/), { timeout: 3000 });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(submitted).toEqual(["zzzzqx"]);
+    expect(input).toHaveValue("");
+    fireEvent.change(input, { target: { value: "abc" } });
+    // fireEvent returns false when a handler called preventDefault.
+    expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(false);
+    expect(input).toHaveValue("");
+  });
 });

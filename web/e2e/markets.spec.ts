@@ -277,7 +277,8 @@ test.describe("markets (checklist 05 E.3)", () => {
     await expect(option).toBeVisible({ timeout: 20_000 });
     await option.click();
     await awaitTile(page, "NVDA");
-    expect(page.url()).toMatch(/\/app\/markets$/);
+    // Iteration 1 (M5): the pick writes ?name=NVDA (a replace, no reload: the marker below survives).
+    expect(page.url()).toMatch(/\/app\/markets\?name=NVDA$/);
     expect(await page.evaluate(() => (window as unknown as { __mrrE2E?: number }).__mrrE2E)).toBe(1);
 
     const panel = research(page);
@@ -302,7 +303,7 @@ test.describe("markets (checklist 05 E.3)", () => {
       .not.toBe("pending");
     const outcome = (await rows.count()) > 0 ? `${await rows.count()} stored rows` : "no stored coverage in the window";
     note("news-for-nvda", outcome);
-    expect(page.url()).toMatch(/\/app\/markets$/);
+    expect(page.url()).toMatch(/\/app\/markets\?name=NVDA$/);
     await capture(page, "markets--nvda-news.png");
   });
 

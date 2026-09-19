@@ -19,6 +19,13 @@
  * lens and a collapsed "News for {SYM}" disclosure. The chart range is
  * controlled by the panel header when `range` and `onRangeChange` are both
  * given; without them the tile keeps its own state and picker.
+ *
+ * Iteration 1 (M5): no blank block. A symbol neither provider lists reads
+ * one plain sentence in place of the tile; otherwise every block that has
+ * nothing for this ticker says what is missing in one sentence (fundamentals
+ * that did not load, a regime history that did not load, options not served
+ * for the instrument or no listed expirations, stored news that did not
+ * load) while the other blocks render.
  */
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
@@ -89,6 +96,11 @@ const n2 = (v: number | null | undefined, dp = 2): string => (v == null ? "—" 
 
 const uiText: React.CSSProperties = { fontFamily: "var(--font-ui)" };
 
+/** A provider error that means "nothing is listed under this symbol". */
+export function isUnknownSymbol(err: unknown): boolean {
+  return err instanceof ApiError && err.kind === "unknown_symbol";
+}
+
 interface Props {
   symbol: string;
   onClose: () => void;
@@ -142,7 +154,9 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // An Escape something else consumed (an overlay closing, the search box
+      // clearing) is not a request to close this panel.
+      if (e.key === "Escape" && !e.defaultPrevented) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -207,11 +221,16 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
   // The news hooks fetch on mount, so the disclosure's meta counts the rows
   // before anyone opens it and no request waits on a click.
   const newsLoading = tickerNews.isLoading || generalNews.isLoading;
+  // The tagged read failed and the name match has nothing to stand in with:
+  // say the news did not load, never "no coverage" (M5).
+  const newsFailed = !coverage.rows.length && !newsLoading && tickerNews.isError;
   const coverageMeta = coverage.rows.length
     ? `${coverage.rows.length} stored · 7-day window${coverage.matched ? " · headline match" : ""}`
     : newsLoading
       ? "reading…"
-      : "none in 7 days";
+      : newsFailed
+        ? "unavailable"
+        : "none in 7 days";
 
   // ── quote provenance line ────────────────────────────────────────────
   const quoteLine = liveFresh
@@ -236,6 +255,38 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
       : "";
 
   const isUsEquity = p ? p.exchange === "US" && !/^(FX|Crypto|Index)$/i.test(p.quote_type ?? "") : false;
+
+  // Nothing is listed under this symbol at either provider: one plain
+  // sentence instead of a tile of empty blocks (M5).
+  if (!p && isUnknownSymbol(profile.error)) {
+    return (
+      <div ref={panelRef} tabIndex={-1}>
+        <Card variant="tile" style={{ padding: "16px 18px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
+            <span style={{ ...uiText, fontWeight: 500, fontSize: 20, color: "var(--text)" }}>{symbol}</span>
+            <p role="status" style={{ ...uiText, margin: 0, flex: "1 1 240px", minWidth: 0, fontSize: "var(--fs-body-s)", color: "var(--text)" }}>
+              No listed symbol matches {symbol}.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Close · Esc"
+              aria-label="Close single-name panel"
+              className="mrr-btn"
+              data-touch={isNarrow ? "true" : "false"}
+              style={{ marginLeft: "auto" }}
+            >
+              × close
+            </button>
+          </div>
+          <Caption>
+            {describeProviderError(profile.error, "the quote", symbol)} Search by company name, or check the spelling of a share
+            class (BRK.B).
+          </Caption>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     // Focus lands here when a symbol opens (the search's Enter or a watchlist
@@ -305,6 +356,11 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
             </Caption>
           </>
         )}
+        {!p && profile.isError ? (
+          <div role="status" style={{ ...uiText, margin: "12px 0 4px", fontSize: "var(--fs-caption)", color: "var(--warn-hot)", lineHeight: 1.55 }}>
+            No fundamentals for {symbol}: the profile did not load, and the quote line above says why.
+          </div>
+        ) : null}
 
         {/* ── range picker (only while the tile owns the range) + chart ─── */}
         {!controlled ? (
@@ -394,12 +450,22 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
               ? "Joining monthly closes with the stored regime history…"
               : monthly.isError
                 ? describeProviderError(monthly.error, "monthly history", symbol)
-                : "Fewer than 12 months overlap the stored regime history; no regime read for this name."}
+                : regimes.isError
+                  ? `The stored regime history did not load, so there is no regime read for ${symbol}.`
+                  : "Fewer than 12 months overlap the stored regime history; no regime read for this name."}
           </Caption>
         )}
 
         {/* ── options lens (US equities and ETFs; end-of-day) ─────────── */}
-        {isUsEquity ? <OptionsLens symbol={symbol} /> : null}
+        {isUsEquity || (!p && profile.isError) ? (
+          <OptionsLens symbol={symbol} />
+        ) : p ? (
+          <div style={{ marginTop: 12 }}>
+            <Caption>
+              No options lens for {symbol}: listed option chains are served for US equities and ETFs only.
+            </Caption>
+          </div>
+        ) : null}
 
         {/* ── stored coverage, collapsed ───────────────────────────────── */}
         <div style={{ marginTop: 10 }}>
@@ -427,7 +493,9 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
               <Caption>
                 {newsLoading
                   ? "Reading the stored news window…"
-                  : `No stored coverage mentions ${symbol} in the last 7 days; the feed keeps a rolling window and ages out by design.`}
+                  : newsFailed
+                    ? `Stored news for ${symbol} did not load; the data service did not answer, so nothing here means no coverage.`
+                    : `No stored coverage mentions ${symbol} in the last 7 days; the feed keeps a rolling window and ages out by design.`}
               </Caption>
             )}
             {coverage.matched && coverage.rows.length > 0 && (
@@ -505,6 +573,8 @@ export function OptionsLens({ symbol }: { symbol: string }) {
       >
         {exps.isPending ? (
           <Caption>Requesting listed expirations for {symbol} from EODHD…</Caption>
+        ) : exps.data && list.length === 0 ? (
+          <Caption>No listed option expirations on file for {symbol}; the chain is empty rather than filled in.</Caption>
         ) : exps.isError ? (
           <div role="status" style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--warn-hot)", lineHeight: 1.55 }}>
             {unentitled

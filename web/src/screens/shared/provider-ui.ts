@@ -80,11 +80,14 @@ export function describeProviderError(err: unknown, what: string, symbol: string
       return "The data service is unreachable; stored data stays on screen until it returns.";
     case "malformed":
       return "The data provider answered unreadably; retrying.";
+    case "unavailable":
+      // Iteration 1 (M5): name what is missing and for which ticker.
+      return `${what[0].toUpperCase()}${what.slice(1)} for ${symbol} is unavailable from the provider right now.`;
     default:
       break;
   }
   if (err.status === 404) return `No ${what} found for ${symbol}.`;
   if (err.status === 429) return "Too many requests right now; retry in a moment.";
   if (err.status === 503) return "The data service is starting up or unavailable; retrying.";
-  return `Unavailable: ${err.message}`;
+  return `Unavailable: ${what} for ${symbol} did not load (${err.message.replace(/\.$/, "")}).`;
 }

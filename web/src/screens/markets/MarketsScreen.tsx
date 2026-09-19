@@ -16,6 +16,11 @@
  * single-name research panel; the movers row under the heatmap opens a
  * ticker's panel through `?name=` (the watchlist's path).
  *
+ * Iteration 1 (M5): the address follows the research panel. A search pick
+ * writes `?name=<SYM>` (a replace, other params and the hash kept), closing
+ * the panel drops it, and a search with no hits followed by Enter opens the
+ * typed ticker so the panel can say plainly that nothing is listed under it.
+ *
  * The tape is fed by the EODHD relay (web/src/live/quotes.ts → api/stream.py):
  * crypto and FX stream around the clock, US equities during NYSE hours,
  * 15-min-delayed REST rows fill the gaps, and every row states what it is.
@@ -29,7 +34,8 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Card, SectionHeader, Segmented } from "../../components";
-import { useCreditOas, useFreshness, useMarketDaily, usePriced, useSurprises } from "../../api/queries";
+import { ApiError } from "../../api/client";
+import { useCreditOas, useFreshness, useMarketDaily, usePriced, useSurprises, useSymbolProfile } from "../../api/queries";
 import type { CandleRange, DailyBar, SearchHit } from "../../api/types";
 import { LIVE_WINDOW_MS, streamWord, useQuotes, useStreamStatus, type LiveQuote, type StreamStatus } from "../../live/quotes";
 import { fmtDate, fmtPct, fmtSignedPct, tidyProse } from "../../lib/format";
@@ -175,6 +181,15 @@ export default function MarketsScreen() {
     const c = new URLSearchParams(location.search).get("name")?.toUpperCase();
     return c && SYMBOL_RE.test(c) ? c : null;
   });
+  // Typed text that is not ticker-shaped and matched no listing (M5): the
+  // panel names the miss instead of staying on its empty prompt.
+  const [missText, setMissText] = useState<string | null>(null);
+  // Re-arms the hash landing when the ADDRESS brings a symbol (a watchlist
+  // row, a mover, Back); a search pick rewrites the address itself and must
+  // not send the page back to whatever hash it arrived with (M5).
+  const [navSeq, setNavSeq] = useState(0);
+  const pickedSearch = useRef<string | null>(null);
+  const lastSearch = useRef(location.search);
   // A watchlist row (sidebar) navigates to ?name=SYM while this screen may
   // already be mounted (same-tab navigation keeps the ErrorBoundary key), so
   // the param is re-read on every location change, not only at mount
@@ -182,9 +197,37 @@ export default function MarketsScreen() {
   // first paint without a flash.
   const { search } = location;
   useEffect(() => {
+    if (search === lastSearch.current) return;
+    lastSearch.current = search;
     const c = new URLSearchParams(search).get("name")?.toUpperCase();
-    if (c && SYMBOL_RE.test(c)) setLookupSym(c);
+    if (!c || !SYMBOL_RE.test(c)) return;
+    setLookupSym(c);
+    setMissText(null);
+    if (pickedSearch.current === search) {
+      pickedSearch.current = null;
+      return;
+    }
+    setNavSeq((n) => n + 1);
   }, [search]);
+
+  // Write the panel's symbol into the address (M5): a replace, so Back leaves
+  // the tab rather than stepping through every symbol searched; any other
+  // param and the hash are kept.
+  const navigate = useNavigate();
+  const { pathname, hash } = location;
+  const writeName = useCallback(
+    (symbol: string | null) => {
+      const params = new URLSearchParams(search);
+      if (symbol) params.set("name", symbol);
+      else params.delete("name");
+      const qs = params.toString();
+      const next = qs ? `?${qs}` : "";
+      if (next === search) return;
+      if (symbol) pickedSearch.current = next;
+      navigate({ pathname, search: next, hash }, { replace: true });
+    },
+    [navigate, pathname, search, hash],
+  );
 
   // The single-name chart range lives here so the picker can sit in the
   // panel header (checklist 05 B.4); it resets with the symbol.
@@ -198,16 +241,47 @@ export default function MarketsScreen() {
   // region mounts. The selection only re-arms the scroll for its own hash, so
   // opening a chart never jumps the page back to a stale hash. #single-names
   // is always on the page now (Iteration 1, M3b: no view toggle hides it).
-  useHashScroll(`${lookupSym ?? ""}|${location.hash === `#${CHART_PANEL_ID}` ? (selected ?? "") : ""}`);
+  useHashScroll(`${navSeq}|${location.hash === `#${CHART_PANEL_ID}` ? (selected ?? "") : ""}`);
 
   // The hero's symbol search (Iteration 1, M3c) drives the same panel as the
   // old in-panel search: the pick lands in single-name research, which then
   // scrolls into view and takes focus (it sits below the fold at every width).
   const [jump, setJump] = useState(0);
-  const pickSymbol = useCallback((hit: SearchHit) => {
-    setLookupSym(hit.symbol);
-    setJump((n) => n + 1);
-  }, []);
+  const openLookup = useCallback(
+    (symbol: string) => {
+      setLookupSym(symbol);
+      setMissText(null);
+      setJump((n) => n + 1);
+      writeName(symbol);
+    },
+    [writeName],
+  );
+  const pickSymbol = useCallback((hit: SearchHit) => openLookup(hit.symbol), [openLookup]);
+  // Enter on a search with no hits (M5): a ticker-shaped text is looked up
+  // directly (the profile endpoint may know a listing the search index does
+  // not, and otherwise the panel says nothing is listed under it); any other
+  // text is named as a miss in the panel.
+  const submitText = useCallback(
+    (text: string) => {
+      const sym = text.toUpperCase();
+      if (SYMBOL_RE.test(sym)) {
+        openLookup(sym);
+        return;
+      }
+      setLookupSym(null);
+      setMissText(text);
+      setJump((n) => n + 1);
+      writeName(null);
+    },
+    [openLookup, writeName],
+  );
+  const closeLookup = useCallback(() => {
+    setLookupSym(null);
+    writeName(null);
+  }, [writeName]);
+  // An unknown symbol gets a plain message in the panel and no range picker.
+  const lookupProfile = useSymbolProfile(lookupSym);
+  const lookupUnknown = lookupProfile.error instanceof ApiError && lookupProfile.error.kind === "unknown_symbol";
   useEffect(() => {
     if (!jump) return;
     const el = document.getElementById("single-name-research");
@@ -218,11 +292,11 @@ export default function MarketsScreen() {
   // A mover opens its ticker the way a watchlist row does: through ?name=,
   // landing on the research panel. The symbol and the jump are also set
   // directly, so a second click on a name already in the address still lands.
-  const navigate = useNavigate();
   const openName = useCallback(
     (symbol: string) => {
       navigate(`/app/markets?name=${encodeURIComponent(symbol)}#single-name-research`);
       setLookupSym(symbol);
+      setMissText(null);
       setJump((n) => n + 1);
     },
     [navigate],
@@ -620,7 +694,7 @@ export default function MarketsScreen() {
   // rounded corners, where it is already transparent.
   const heroSearch = (
     <div className="mrr-mkt-hero-search">
-      <SymbolSearch onSelect={pickSymbol} />
+      <SymbolSearch onSelect={pickSymbol} onSubmitText={submitText} />
     </div>
   );
   let hero: ReactNode;
@@ -730,7 +804,7 @@ export default function MarketsScreen() {
               title="Single-name research"
               description="Daily candles with volume"
               actions={
-                lookupSym ? (
+                lookupSym && !lookupUnknown ? (
                   <Segmented
                     mono
                     label="Chart range"
@@ -746,7 +820,11 @@ export default function MarketsScreen() {
               any listed symbol · EODHD first, yfinance only as a disclosed fallback · delayed quotes
             </div>
             {lookupSym ? (
-              <SingleName symbol={lookupSym} range={range} onRangeChange={setRange} onClose={() => setLookupSym(null)} />
+              <SingleName symbol={lookupSym} range={range} onRangeChange={setRange} onClose={closeLookup} />
+            ) : missText ? (
+              <p role="status" style={{ margin: 0, fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", color: "var(--text)" }}>
+                No listed symbol matches &ldquo;{missText}&rdquo;. Try a ticker (NVDA, BRK.B) or a company name from the search list.
+              </p>
             ) : (
               <Caption style={{ marginTop: 0 }}>
                 Search a ticker or company name in the market read above, or open a mover below, for a full profile: delayed

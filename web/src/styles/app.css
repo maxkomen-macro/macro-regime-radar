@@ -179,13 +179,40 @@ main .mrr-scroll {
   flex-direction: column;
   overflow-y: auto;
 }
+/* The freshness drawer (Iteration 1, M4). Measured cause of the right-edge
+   cut-off: the body is a grid whose implicit column is `auto`, and a grid
+   item's automatic minimum is its MIN-CONTENT width, so the five-column feed
+   table (nowrap cells plus a 220px reason column: 709px) widened the track
+   past the 380px drawer. The drawer then scrolled sideways, and focusing the
+   close button (the far end of the widened head) scrolled it 345px right, so
+   the title and the left of every block sat off screen. The `main section`
+   guard at the top of this file does not reach it: the drawer lives outside
+   <main>. Fix: a shrinkable column (minmax(0, 1fr) / min(100%, …)) and
+   `min-width: 0` on every block, a drawer wide enough for the whole feed
+   table at desk widths (720px, still 92vw at most), the feed names allowed
+   to wrap, and below that width the table scrolls inside its own
+   keyboard-reachable ScrollTable well rather than widening the drawer. The
+   key-value blocks sit two-up once the drawer has room for two columns. */
+.mrr-drawer {
+  width: 720px;
+}
 .mrr-drawer-body {
   padding: 16px 16px 24px;
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 18px;
   align-content: start;
   min-height: 100%;
   box-sizing: border-box;
+}
+.mrr-drawer-body > * {
+  min-width: 0;
+}
+.mrr-drawer-head,
+.mrr-fresh-status,
+.mrr-fresh-block-wide,
+.mrr-drawer-foot {
+  grid-column: 1 / -1;
 }
 .mrr-drawer-head {
   display: flex;
@@ -231,10 +258,13 @@ main .mrr-scroll {
 .mrr-fresh-kv dt {
   color: var(--text-3, var(--text-muted));
   margin: 0;
+  min-width: 0;
 }
 .mrr-fresh-kv dd {
   color: var(--text);
   margin: 0;
+  min-width: 0;
+  overflow-wrap: break-word;
   text-align: right;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -270,6 +300,12 @@ main .mrr-scroll {
   white-space: normal;
   min-width: 220px;
   color: var(--text-3, var(--text-muted));
+}
+/* Feed names wrap (M4): "Intraday bars (SPY, QQQ)" on one line cost the
+   table 210px and pushed it past the drawer. */
+.mrr-fresh-table td.feed {
+  white-space: normal;
+  min-width: 7.5em;
 }
 .mrr-fresh-list {
   margin: 0;

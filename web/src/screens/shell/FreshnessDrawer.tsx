@@ -55,9 +55,11 @@ function Verdict({ state }: { state: FreshState | string }) {
   );
 }
 
-function Block({ title, children }: { title: string; children: ReactNode }) {
+/** One titled block. `wide` spans both columns once the drawer is wide enough
+ * to set the key-value blocks two-up (M4); the others take one column. */
+function Block({ title, wide = false, children }: { title: string; wide?: boolean; children: ReactNode }) {
   return (
-    <section className="mrr-fresh-block">
+    <section className={wide ? "mrr-fresh-block mrr-fresh-block-wide" : "mrr-fresh-block"}>
       <h3>{title}</h3>
       {children}
     </section>
@@ -177,7 +179,7 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
           </div>
 
           {f?.overall ? (
-            <Block title="Overall">
+            <Block title="Overall" wide>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)" }}>
                 <Verdict state={f.overall} />
                 <span style={{ color: STATUS_COLOR.text3 }}> · worst verdict across the model's feeds</span>
@@ -186,8 +188,8 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
           ) : null}
 
           {sla.length ? (
-            <Block title="Feeds">
-              <ScrollTable stickyFirst={false} label="Feed freshness">
+            <Block title="Feeds" wide>
+              <ScrollTable label="Feed freshness">
                 <table className="mrr-fresh-table">
                   <thead>
                     <tr>
@@ -201,7 +203,7 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
                   <tbody>
                     {sla.map((row) => (
                       <tr key={row.feed}>
-                        <td>{feedLabel(row.feed, regime)}</td>
+                        <td className="feed">{feedLabel(row.feed, regime)}</td>
                         <td>
                           <Verdict state={row.verdict} />
                         </td>

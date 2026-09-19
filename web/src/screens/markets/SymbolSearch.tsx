@@ -8,6 +8,13 @@
  * field with an Esc hint, results in flow as grid rows with an optional
  * per-row action ("+ Add" / "✓ Listed"), and `onDismiss` for Escape on an
  * empty box. Every default is unchanged for the Markets search.
+ *
+ * Iteration 1 (M5): `onSubmitText` receives the typed text when Enter is
+ * pressed on a settled search with no hits (the Markets research panel then
+ * names the miss instead of doing nothing). While the search is still in
+ * flight Enter picks nothing, as before. Escape that clears the box is
+ * consumed (preventDefault), so a page-level Escape handler, such as the
+ * single-name panel's close, does not also fire.
  */
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -28,6 +35,8 @@ interface Props {
   onDismiss?: () => void;
   /** Field disabled, no list (the watchlist is full). */
   disabled?: boolean;
+  /** Enter on a settled search with no hits: the trimmed text (M5). */
+  onSubmitText?: (text: string) => void;
 }
 
 const DEFAULT_PLACEHOLDER = "Search any ticker or company (e.g. NVDA, BRK.B, Nestlé)…";
@@ -74,6 +83,7 @@ export default function SymbolSearch({
   rowAction,
   onDismiss,
   disabled = false,
+  onSubmitText,
 }: Props) {
   const [text, setText] = useState("");
   const [active, setActive] = useState(0);
@@ -113,6 +123,9 @@ export default function SymbolSearch({
     setOpen(false);
   };
 
+  // The box's text has been searched and every query has answered.
+  const settled = debounced === text && !q.isFetching && !(aliasQuery && alt.isFetching);
+
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "Escape" && onDismiss && text.trim() === "") {
       e.preventDefault();
@@ -120,7 +133,15 @@ export default function SymbolSearch({
       return;
     }
     if (!open || !hits.length) {
-      if (e.key === "Escape") setText("");
+      if (e.key === "Escape") {
+        if (text !== "") e.preventDefault();
+        setText("");
+      } else if (e.key === "Enter" && onSubmitText && !hits.length && text.trim() !== "" && settled) {
+        e.preventDefault();
+        onSubmitText(text.trim());
+        setText("");
+        setOpen(false);
+      }
       return;
     }
     if (e.key === "ArrowDown") {
@@ -133,6 +154,7 @@ export default function SymbolSearch({
       e.preventDefault();
       pick(hits[Math.min(active, hits.length - 1)]);
     } else if (e.key === "Escape") {
+      e.preventDefault();
       setOpen(false);
       setText("");
     }
