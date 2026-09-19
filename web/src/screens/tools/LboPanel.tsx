@@ -427,7 +427,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
                         implied_ev: y.implied_ev.toFixed(1),
                         debt_start: y.debt_start.toFixed(1),
                         interest: y.interest.toFixed(1),
-                        // Mandatory amortization only in this model (lbo.py:164-166): no cash sweep.
+                        // Principal repaid this year: the amortization floor plus the cash sweep (lbo.py run_lbo_model, B1); negative when unpaid interest is added to the debt.
                         paydown: (y.debt_start - y.debt_end).toFixed(1),
                         debt_end: y.debt_end.toFixed(1),
                         leverage: y.ebitda > 0 ? `${(y.debt_end / y.ebitda).toFixed(1)}×` : DASH,
@@ -436,10 +436,10 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
                   />
                 </ScrollTable>
                 <Caption>
-                  Interest accrues on the declining balance; amortization retires{" "}
-                  {inputs.amortization_rate.toFixed(0)}% of the original debt each year. EBITDA
-                  compounds at {inputs.ebitda_growth_rate.toFixed(1)}% while the multiple re-rates at
-                  exit.
+                  Cash for debt service is 60% of EBITDA. It pays interest first; scheduled amortization
+                  of {inputs.amortization_rate.toFixed(0)}% of the original debt a year is a floor, and the
+                  remainder sweeps to debt, so a higher rate leaves more debt at exit. EBITDA compounds
+                  at {inputs.ebitda_growth_rate.toFixed(1)}% while the multiple re-rates at exit.
                 </Caption>
               </Card>
             )}

@@ -43,6 +43,8 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000;
  * server's exact message); the engine's own gate is `entry_equity <= 0`, one
  * fee margin wider, which the e2e spec accounts for against the real server.
  */
+const CASH_FOR_DEBT_SERVICE = 0.6;
+
 export function lboModel(r: LboRequest): LboResult {
   const entry_ev = r.ebitda * r.entry_multiple;
   const entry_debt = r.ebitda * r.leverage_ratio;
@@ -64,19 +66,27 @@ export function lboModel(r: LboRequest): LboResult {
       error_msg: LEVERAGE_MSG,
     };
   }
-  const amort = (entry_debt * r.amortization_rate) / 100;
+  // B1 (2026-09-18): cash for debt service is 60% of EBITDA; it pays interest
+  // first (a shortfall is added to the debt), the remainder sweeps against the
+  // debt (the amortization floor is part of that sweep), and cash left once the
+  // debt is repaid builds up for equity at exit. Mirrors lbo.py run_lbo_model.
   const schedule: LboYear[] = [];
   let debtStart = entry_debt;
+  let cashBalance = 0;
   for (let year = 1; year <= r.hold_period; year++) {
-    const interest = (debtStart * r.interest_rate) / 100;
-    const debtEnd = Math.max(debtStart - amort, 0);
     const ebitda = r.ebitda * (1 + r.ebitda_growth_rate / 100) ** year;
+    const cash = ebitda * CASH_FOR_DEBT_SERVICE;
+    const interest = (debtStart * r.interest_rate) / 100;
+    const interestPaid = Math.min(interest, cash);
+    const principal = Math.min(debtStart, cash - interestPaid);
+    cashBalance += cash - interestPaid - principal;
+    const debtEnd = debtStart - principal + (interest - interestPaid);
     schedule.push({ year, ebitda: r2(ebitda), implied_ev: r2(ebitda * r.exit_multiple), debt_start: r2(debtStart), debt_end: r2(debtEnd), interest: r2(interest) });
     debtStart = debtEnd;
   }
   const exit_ev = r.ebitda * (1 + r.ebitda_growth_rate / 100) ** r.hold_period * r.exit_multiple;
-  const exit_debt = schedule[schedule.length - 1].debt_end;
-  const exit_equity = exit_ev - exit_debt;
+  const exit_debt = debtStart;
+  const exit_equity = exit_ev - exit_debt + cashBalance;
   if (exit_equity <= 0) {
     return {
       entry_ev: r2(entry_ev),

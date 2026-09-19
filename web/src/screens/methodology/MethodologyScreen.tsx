@@ -351,8 +351,10 @@ export default function MethodologyScreen() {
               <p style={{ ...prose, fontSize: "var(--fs-body-s)", marginTop: 6 }}>
                 Allocation: ~24 years of monthly returns for ten asset classes, index-spliced before ETF inceptions,
                 cut by stored regime months; seven optimizers (long-only, 40% cap) run only when the current regime
-                has 24 contiguous months of covariance history. LBO: server-side deal math with IRR by bisection on
-                NPV; the financing rate defaults to Fed Funds plus the HY spread.{" "}
+                has 24 contiguous months of covariance history. LBO: server-side deal math. Cash for debt service is 60% of
+                EBITDA; it pays interest first, scheduled amortization is a floor and the remainder sweeps to debt,
+                so a higher rate lowers the IRR. IRR by bisection on NPV; the financing rate defaults to Fed Funds
+                plus the HY spread.{" "}
                 <ModuleLink to="/app/tools#allocation">Allocation →</ModuleLink>{" "}
                 <ModuleLink to="/app/tools#lbo">LBO →</ModuleLink>
               </p>

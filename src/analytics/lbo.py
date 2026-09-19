@@ -105,6 +105,19 @@ def _compute_irr(cashflows: list) -> float | None:
 # Core LBO model
 # ---------------------------------------------------------------------------
 
+# Cash available for debt service, as a share of each year's EBITDA: a fixed
+# proxy for taxes, capex and working capital (the mockup's documented model,
+# UI_SPEC Tools notes). Owner decision 2026-09-18 (B1): this cash pays
+# interest first, the scheduled amortization is a floor, and the remainder
+# sweeps against the debt, so a higher rate leaves more debt at exit and a
+# lower IRR. Before this, interest never reached the equity cash flows.
+CASH_FOR_DEBT_SERVICE = 0.60
+
+
+def _years_phrase(years: list[int]) -> str:
+    return ("year " if len(years) == 1 else "years ") + ", ".join(str(y) for y in years)
+
+
 def run_lbo_model(
     ebitda: float,
     ebitda_growth_rate: float,
@@ -117,7 +130,14 @@ def run_lbo_model(
     mgmt_fee_pct: float,
 ) -> dict:
     """
-    Run a leveraged buyout model using declining balance interest.
+    Run a leveraged buyout model with an interest-first cash sweep.
+
+    Each year, cash for debt service (CASH_FOR_DEBT_SERVICE x EBITDA) pays the
+    interest due on the opening balance first. Interest the cash cannot cover
+    is added to the debt and noted. The scheduled amortization is a floor;
+    everything left sweeps against the debt, so the floor binds only when the
+    cash cannot cover it (noted too). Once the debt is repaid, the remaining
+    cash builds up and goes to equity at exit.
 
     Parameters (all numeric):
         ebitda              Entry EBITDA ($M)
@@ -127,10 +147,10 @@ def run_lbo_model(
         hold_period         Hold period in years (1-10)
         leverage_ratio      Debt/EBITDA at entry
         interest_rate       All-in interest rate (%)
-        amortization_rate   % of initial debt repaid per year
+        amortization_rate   Scheduled floor: % of entry debt repaid per year
         mgmt_fee_pct        Transaction/mgmt fees as % of entry EV
 
-    Returns dict with deal summary, returns, annual schedule, and viability.
+    Returns dict with deal summary, returns, annual schedule, notes and viability.
     """
     # --- Entry structure (sources must cover uses) ---
     # Uses = purchase price (entry EV) + transaction fees; sources = debt +
@@ -144,6 +164,8 @@ def run_lbo_model(
     fee_dollars  = entry_ev * mgmt_fee_pct / 100
     entry_equity = entry_ev + fee_dollars - entry_debt
 
+    cash_pct = round(CASH_FOR_DEBT_SERVICE * 100, 2)
+
     if entry_equity <= 0:
         return {
             "entry_ev":    entry_ev,
@@ -151,25 +173,48 @@ def run_lbo_model(
             "entry_equity": entry_equity,
             "exit_ev":     None,
             "exit_debt":   None,
+            "exit_cash":   None,
             "exit_equity": None,
             "moic":        None,
             "irr":         None,
             "equity_gain": None,
             "schedule":    [],
+            "notes":       [],
+            "cash_for_debt_service_pct": cash_pct,
             "viable":      False,
             "error_msg":   "Leverage too high — debt exceeds entry EV plus fees",
         }
 
-    # --- Annual schedule (declining balance interest) ---
-    annual_amort = entry_debt * (amortization_rate / 100)
+    # --- Annual schedule: interest first, amortization floor, full sweep ---
+    scheduled_floor = entry_debt * (amortization_rate / 100)
     schedule = []
     debt_start = entry_debt
+    cash_balance = 0.0
+    interest_short_years: list[int] = []
+    amort_short_years: list[int] = []
 
     for year in range(1, hold_period + 1):
-        interest_year = debt_start * (interest_rate / 100)
-        debt_end      = max(debt_start - annual_amort, 0.0)
         ebitda_year   = ebitda * (1 + ebitda_growth_rate / 100) ** year
         implied_ev    = ebitda_year * exit_multiple
+        cash          = ebitda_year * CASH_FOR_DEBT_SERVICE
+
+        interest_due       = debt_start * (interest_rate / 100)
+        interest_paid      = min(interest_due, cash)
+        interest_shortfall = interest_due - interest_paid
+        cash_after_interest = cash - interest_paid
+
+        floor          = min(scheduled_floor, debt_start)
+        principal_paid = min(debt_start, cash_after_interest)
+        amort_shortfall = max(floor - principal_paid, 0.0)
+        sweep          = max(principal_paid - floor, 0.0)
+        cash_retained  = cash_after_interest - principal_paid
+        cash_balance  += cash_retained
+        debt_end       = debt_start - principal_paid + interest_shortfall
+
+        if interest_shortfall > 0.005:
+            interest_short_years.append(year)
+        if amort_shortfall > 0.005:
+            amort_short_years.append(year)
 
         schedule.append({
             "year":       year,
@@ -177,16 +222,38 @@ def run_lbo_model(
             "implied_ev": round(implied_ev, 2),
             "debt_start": round(debt_start, 2),
             "debt_end":   round(debt_end, 2),
-            "interest":   round(interest_year, 2),
+            "interest":   round(interest_due, 2),
+            "cash_available":         round(cash, 2),
+            "interest_paid":          round(interest_paid, 2),
+            "interest_shortfall":     round(interest_shortfall, 2),
+            "scheduled_amortization": round(floor, 2),
+            "amortization_shortfall": round(amort_shortfall, 2),
+            "sweep":                  round(sweep, 2),
+            "principal_paid":         round(principal_paid, 2),
+            "cash_retained":          round(cash_retained, 2),
+            "cash_balance":           round(cash_balance, 2),
         })
 
         debt_start = debt_end  # next year starts with this balance
 
-    # --- Exit structure ---
+    notes: list[str] = []
+    if interest_short_years:
+        notes.append(
+            f"Cash for debt service did not cover the interest in {_years_phrase(interest_short_years)}; "
+            "the unpaid interest was added to the debt."
+        )
+    if amort_short_years:
+        notes.append(
+            f"Cash after interest fell short of the scheduled amortization in {_years_phrase(amort_short_years)}; "
+            "the floor could not be met."
+        )
+
+    # --- Exit structure (net of cash built up after the debt was repaid) ---
     ebitda_exit  = ebitda * (1 + ebitda_growth_rate / 100) ** hold_period
     exit_ev      = ebitda_exit * exit_multiple
-    exit_debt    = schedule[-1]["debt_end"]
-    exit_equity  = exit_ev - exit_debt
+    exit_debt    = debt_start
+    exit_cash    = cash_balance
+    exit_equity  = exit_ev - exit_debt + exit_cash
 
     if exit_equity <= 0:
         return {
@@ -195,11 +262,14 @@ def run_lbo_model(
             "entry_equity": round(entry_equity, 2),
             "exit_ev":     round(exit_ev, 2),
             "exit_debt":   round(exit_debt, 2),
+            "exit_cash":   round(exit_cash, 2),
             "exit_equity": round(exit_equity, 2),
             "moic":        None,
             "irr":         None,
             "equity_gain": round(exit_equity - entry_equity, 2),
             "schedule":    schedule,
+            "notes":       notes,
+            "cash_for_debt_service_pct": cash_pct,
             "viable":      False,
             "error_msg":   "Deal underwater at exit",
         }
@@ -217,11 +287,14 @@ def run_lbo_model(
         "entry_equity": round(entry_equity, 2),
         "exit_ev":     round(exit_ev, 2),
         "exit_debt":   round(exit_debt, 2),
+        "exit_cash":   round(exit_cash, 2),
         "exit_equity": round(exit_equity, 2),
         "moic":        round(moic, 3),
         "irr":         irr,
         "equity_gain": round(exit_equity - entry_equity, 2),
         "schedule":    schedule,
+        "notes":       notes,
+        "cash_for_debt_service_pct": cash_pct,
         "viable":      True,
         "error_msg":   "",
     }

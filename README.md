@@ -79,7 +79,7 @@ flowchart LR
 - **Recession modeling** — scikit-learn logistic regression trained on NBER recession dates, with feature sensitivity sliders and a divergence indicator versus the yield curve signal
 - **Portfolio optimization** — five methods (MVO, Min Var, Risk Parity, Black-Litterman, HRP) with CVaR / Expected Shortfall risk metrics, regime-conditional return estimation, and factor decomposition
 - **Credit analytics** — IG, HY, BB, B, CCC OAS spreads, sparklines, percentile ranks, regime performance tables, 3-month and 6-month Markov transition matrices, all-in LBO cost tracker
-- **LBO modeling** — full capital structure modeling with debt schedules, exit assumptions, and IRR via binary search on NPV
+- **LBO modeling** — capital structure modeling with an interest-first cash sweep (cash for debt service is 60% of EBITDA; scheduled amortization is a floor; the remainder sweeps to debt, so the financing rate moves the IRR), exit assumptions, and IRR via binary search on NPV (see `docs/lbo-model.md`)
 - **News intelligence** — Finnhub + NewsAPI ingest, significance scoring across five dimensions (market impact, deal size, sector relevance, time sensitivity, regime relevance), AI regime interpretation via Anthropic for top-significance items
 - **Cited-research enrichment** — every high-significance news item is also routed through the Perplexity Sonar API to retrieve cited, real-time research context. Output is stored in `news_feed.perplexity_research` and rendered in both the Events & Intelligence tab and the daily memo
 - **Macro surprise engine** — rolling z-scores normalize signals across series with vastly different scales

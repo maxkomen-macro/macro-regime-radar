@@ -848,12 +848,27 @@ class LboRequest(BaseModel):
 
 
 class LboYear(BaseModel):
+    """One schedule year. B1 (2026-09-18): cash for debt service pays the
+    interest due first, the scheduled amortization is a floor and the rest
+    sweeps against the debt; debt_end = debt_start - principal_paid +
+    interest_shortfall, and cash_available = interest_paid + principal_paid +
+    cash_retained."""
+
     year: int
     ebitda: float
     implied_ev: float
     debt_start: float
     debt_end: float
     interest: float
+    cash_available: float
+    interest_paid: float
+    interest_shortfall: float
+    scheduled_amortization: float
+    amortization_shortfall: float
+    sweep: float
+    principal_paid: float
+    cash_retained: float
+    cash_balance: float
 
 
 class LboResult(BaseModel):
@@ -862,11 +877,14 @@ class LboResult(BaseModel):
     entry_equity: float
     exit_ev: float | None
     exit_debt: float | None
+    exit_cash: float | None
     exit_equity: float | None
     moic: float | None
     irr: float | None
     equity_gain: float | None
     schedule: list[LboYear]
+    notes: list[str]
+    cash_for_debt_service_pct: float
     viable: bool
     error_msg: str
 

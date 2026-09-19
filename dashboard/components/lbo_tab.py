@@ -1,6 +1,6 @@
 """
 LBO Calculator tab — Phase 8B.
-Interactive deal model with declining balance interest, sensitivity table,
+Interactive deal model with an interest-first cash sweep (60% of EBITDA), sensitivity table,
 and live all-in financing cost from FEDFUNDS + HY OAS.
 """
 from __future__ import annotations

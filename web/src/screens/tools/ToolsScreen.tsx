@@ -45,7 +45,7 @@ export function subtabFromHash(hash: string): string {
 }
 
 const LBO_DISCLOSURE =
-  "An illustrative model for teaching and screening, not a transaction model. Taxes, capex and working capital are simplified; interest accrues on the declining balance and amortization is fixed. The live rate is Fed funds plus the ICE BofA HY OAS (BAMLH0A0HYM2) from FRED";
+  "An illustrative model for teaching and screening, not a transaction model. Taxes, capex and working capital are simplified into one assumption: cash for debt service is 60% of EBITDA. It pays interest first, scheduled amortization is a floor and the remainder sweeps to debt, so a higher rate lowers the IRR. The live rate is Fed funds plus the ICE BofA HY OAS (BAMLH0A0HYM2) from FRED";
 
 const ALLOCATION_DISCLOSURE =
   "Monthly total returns for 10 asset classes, index-spliced before ETF inceptions · computed by the same allocation engine each session · regimes from the stored classifier history.";

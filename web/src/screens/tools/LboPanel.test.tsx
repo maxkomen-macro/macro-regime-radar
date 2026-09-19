@@ -284,7 +284,8 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     expect(last[6]).toBe(P9_LAST.debt_end.toFixed(1));
     expect(last[7]).toBe(`${(P9_LAST.debt_end / P9_LAST.ebitda).toFixed(1)}×`);
     expect(cells(rows[1])[0]).toBe("1");
-    expect(p9Text(schedule)).toContain(`amortization retires ${BASE_REQ.amortization_rate.toFixed(0)}% of the original debt each year`);
+    expect(p9Text(schedule)).toContain("Cash for debt service is 60% of EBITDA. It pays interest first");
+    expect(p9Text(schedule)).toContain(`amortization of ${BASE_REQ.amortization_rate.toFixed(0)}% of the original debt a year is a floor, and the remainder sweeps to debt`);
   });
 
   it("#lbo-sensitivity: the IRR grid with the corner Entry ↓, five column and row headers, exactly one outlined cell equal to the IRR tile, an n/a cell, the three legend strings and the meta; no Rate × leverage button and no IRR vs financing rate heading", async () => {
@@ -329,7 +330,10 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     expect(out).toContain("Sources cover uses");
     expect(out).toContain(`${fmtMillions(P9_BASE.entry_equity)} of equity in`);
     const irrSpan = [...p9Outputs().querySelectorAll<HTMLElement>("span")].find((s) => p9Text(s) === p9IrrText(P9_BASE.irr) && s.style.color !== "");
-    expect(irrSpan?.style.color).toBe("var(--amber)");
+    // B1 (2026-09-18): with interest now reaching the equity cash flows the base deal at the
+    // live rate clears 20%, so the ramp colour is --pos (it was --amber at the frozen 17.5%).
+    expect(P9_BASE.irr as number).toBeGreaterThanOrEqual(20);
+    expect(irrSpan?.style.color).toBe("var(--pos)");
     expect(out).not.toContain("—");
   });
 

@@ -563,6 +563,27 @@ def test_api_lbo_fee_direction():
     assert abs(free["entry_equity"] - (free["entry_ev"] - free["entry_debt"])) < 0.02
 
 
+def test_api_lbo_rate_reaches_irr():
+    """B1 (2026-09-18): the financing rate moves the served IRR, down as the
+    rate rises, and the response carries the cash-sweep schedule fields
+    (response_model drops undeclared keys, so this also pins the model)."""
+    base = {
+        "ebitda": 100.0, "ebitda_growth_rate": 5.0, "entry_multiple": 8.0,
+        "exit_multiple": 9.0, "hold_period": 5, "leverage_ratio": 4.5,
+        "amortization_rate": 5.0, "mgmt_fee_pct": 1.5,
+    }
+    runs = [client.post("/api/lbo/run", json={**base, "interest_rate": r}).json()["result"] for r in (3.0, 8.6, 20.0)]
+    irrs = [r["irr"] for r in runs]
+    assert irrs[0] > irrs[1] > irrs[2], f"IRR must fall as the rate rises: {irrs}"
+    res = runs[1]
+    assert res["cash_for_debt_service_pct"] == 60.0
+    assert isinstance(res["notes"], list) and res["exit_cash"] is not None
+    row = res["schedule"][0]
+    for key in ("cash_available", "interest_paid", "scheduled_amortization", "sweep", "principal_paid",
+                "interest_shortfall", "amortization_shortfall", "cash_retained", "cash_balance"):
+        assert key in row, key
+
+
 # ── News & calendar fallbacks (night-2) ──────────────────────────────────────
 
 def test_api_news_latest_fallback_ordering():

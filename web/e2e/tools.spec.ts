@@ -469,7 +469,7 @@ test.describe("tools (checklist 09 E.3)", () => {
     expect(await visibleText(page.locator("main"))).not.toContain("│ current reading");
   });
 
-  test("8. rate switch: ArrowRight on Interest rate (all-in) unchecks the switch and reads manual rate; clicking the switch tracks the live rate again; the IRR tile never moves (fact 1)", async ({ page }) => {
+  test("8. rate switch: ArrowRight on Interest rate (all-in) unchecks the switch and reads manual rate; the IRR tile falls as the rate rises (B1 cash sweep); clicking the switch tracks the live rate again and restores the IRR", async ({ page }) => {
     await open(page);
     await awaitLbo(page);
     const irrBefore = await tileValue(page, "IRR");
@@ -484,7 +484,9 @@ test.describe("tools (checklist 09 E.3)", () => {
     await expect(row).toContainText("manual rate");
     expect((await run).status()).toBe(200);
     await settle(page, 400);
-    expect(await tileValue(page, "IRR"), "the served model's IRR does not move with the rate (checklist fact 1)").toBe(irrBefore);
+    const irrAfter = await tileValue(page, "IRR");
+    const pct = (s: string) => Number.parseFloat(s.replace(/[^0-9.]/g, ""));
+    expect(pct(irrAfter), "a higher rate leaves more debt at exit and a lower IRR (B1)").toBeLessThan(pct(irrBefore));
     // "Back to live" restores the base deal's inputs, whose run is already in
     // the query cache (the base run stays enabled and shares the key at rest,
     // checklist 09 B.0), so no second POST is expected here.
@@ -495,7 +497,7 @@ test.describe("tools (checklist 09 E.3)", () => {
     expect(await rangeOf(page, "Interest rate (all-in)").inputValue()).toBe(rateBefore);
     await settle(page, 600);
     expect(await tileValue(page, "IRR")).toBe(irrBefore);
-    note("rate", `IRR ${irrBefore} unchanged through a rate move and back (expected: interest never enters the equity cash flows)`);
+    note("rate", `IRR ${irrBefore} → ${irrAfter} on a +0.25 pp rate move, back to ${irrBefore} with the live rate (B1: interest now reaches the equity cash flows)`);
   });
 
   test("9. warnings (U14): leverage 8 on an 8.00× entry raises meets or exceeds; the entry lowered under the debt turns Outputs to Deal not viable with the server's dash cleaned; Reset clears both", async ({ page }) => {

@@ -477,9 +477,11 @@ def _render_lbo_calculator() -> None:
   <tbody>
     <tr><td style="{_TD_STYLE}">Entry EV</td><td style="{_TD_STYLE}">EBITDA &times; Entry Multiple</td></tr>
     <tr><td style="{_TD_ALT_STYLE}">Entry Debt</td><td style="{_TD_ALT_STYLE}">EBITDA &times; Leverage Ratio</td></tr>
-    <tr><td style="{_TD_STYLE}">Entry Equity</td><td style="{_TD_STYLE}">Entry EV &minus; Entry Debt &minus; Transaction Fees</td></tr>
-    <tr><td style="{_TD_ALT_STYLE}">Interest</td><td style="{_TD_ALT_STYLE}">Declining balance — interest on remaining principal each year</td></tr>
-    <tr><td style="{_TD_STYLE}">Exit Equity</td><td style="{_TD_STYLE}">Exit EV &minus; Remaining Debt</td></tr>
+    <tr><td style="{_TD_STYLE}">Entry Equity</td><td style="{_TD_STYLE}">Entry EV &plus; Transaction Fees &minus; Entry Debt</td></tr>
+    <tr><td style="{_TD_ALT_STYLE}">Cash for debt service</td><td style="{_TD_ALT_STYLE}">60% of each year&rsquo;s EBITDA (one assumption for taxes, capex and working capital)</td></tr>
+    <tr><td style="{_TD_STYLE}">Interest</td><td style="{_TD_STYLE}">On the opening debt each year, paid first from that cash; interest the cash cannot cover is added to the debt</td></tr>
+    <tr><td style="{_TD_ALT_STYLE}">Debt paydown</td><td style="{_TD_ALT_STYLE}">Scheduled amortization is a floor; the cash left after interest sweeps to debt, so a higher rate leaves more debt at exit</td></tr>
+    <tr><td style="{_TD_STYLE}">Exit Equity</td><td style="{_TD_STYLE}">Exit EV &minus; Remaining Debt &plus; Cash built up after the debt is repaid</td></tr>
     <tr><td style="{_TD_ALT_STYLE}">MOIC</td><td style="{_TD_ALT_STYLE}">Exit Equity &divide; Entry Equity</td></tr>
     <tr><td style="{_TD_STYLE}">IRR</td><td style="{_TD_STYLE}">Solved via binary search on NPV (no numpy dependency)</td></tr>
   </tbody>
