@@ -147,6 +147,15 @@ jobs:
         if: steps.mode.outputs.mode == 'full'
         run: python src/events/load_events.py
 
+      # B5: large-cap earnings dates (Finnhub, 90 days ahead) after the manual
+      # calendar, so a hand-maintained row is in place to win. The module prints
+      # one summary line and exits 0 on a missing key or a Finnhub error.
+      - name: Load earnings calendar
+        if: steps.mode.outputs.mode == 'full'
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+        run: python -m src.events.earnings
+
       - name: Refresh news feed
         if: steps.mode.outputs.mode == 'full' || steps.mode.outputs.mode == 'news-only'
         env:

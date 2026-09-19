@@ -448,15 +448,30 @@ def news_latest(category: str | None, limit: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def calendar_recent(limit: int) -> list[dict]:
+def _calendar_sql(conn: sqlite3.Connection, include_earnings: bool) -> tuple[str, str]:
+    """SELECT … FROM event_calendar plus the default kind filter (B5,
+    2026-09-19). Large-cap earnings rows (kind 'earnings', written by
+    src/events/earnings.py) stay out unless asked for: the News hero and the
+    Dashboard's three-row card show the first upcoming rows whatever their
+    importance. A database from before the migration has no symbol/kind
+    columns (and so no earnings rows); both read as NULL."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(event_calendar)")}
+    symbol = "symbol" if "symbol" in cols else "NULL AS symbol"
+    kind = "kind" if "kind" in cols else "NULL AS kind"
+    select = f"SELECT id, event_name, event_datetime, importance, source, {symbol}, {kind} FROM event_calendar"
+    no_earnings = "" if include_earnings or "kind" not in cols else " AND COALESCE(kind, '') <> 'earnings'"
+    return select, no_earnings
+
+
+def calendar_recent(limit: int, include_earnings: bool = False) -> list[dict]:
     """Most recent PAST events, newest first — the calendar's latest-available
     fallback for when the upcoming window is empty (the DB snapshot's
     event_calendar can lag the source CSV)."""
     with closing(_connect()) as conn:
+        select, no_earnings = _calendar_sql(conn, include_earnings)
         rows = conn.execute(
-            "SELECT id, event_name, event_datetime, importance, source "
-            "FROM event_calendar "
-            "WHERE event_datetime < strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
+            f"{select} "
+            f"WHERE event_datetime < strftime('%Y-%m-%dT%H:%M:%SZ', 'now'){no_earnings} "
             "ORDER BY event_datetime DESC LIMIT ?",
             (limit,),
         ).fetchall()
@@ -509,14 +524,14 @@ def market_intraday(symbols: list[str], since: str | None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def event_calendar(days: int) -> list[dict]:
+def event_calendar(days: int, include_earnings: bool = False) -> list[dict]:
     """Upcoming events in [now, now + days], mirroring get_upcoming_events()."""
     with closing(_connect()) as conn:
+        select, no_earnings = _calendar_sql(conn, include_earnings)
         rows = conn.execute(
-            "SELECT id, event_name, event_datetime, importance, source "
-            "FROM event_calendar "
+            f"{select} "
             "WHERE event_datetime >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
-            "AND event_datetime <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?) "
+            f"AND event_datetime <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?){no_earnings} "
             "ORDER BY event_datetime ASC",
             (f"+{days} days",),
         ).fetchall()

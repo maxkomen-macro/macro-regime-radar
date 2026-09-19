@@ -356,11 +356,14 @@ def load_calendar(days: int = 2) -> list[dict]:
     if not _table_exists("event_calendar"):
         return []
 
+    # B5 (2026-09-19): the earnings dates src/events/earnings.py writes stay
+    # out, as in the API's default; `source` exists on every database version.
     df = _load(
         f"""
         SELECT event_name, event_datetime, importance FROM event_calendar
         WHERE datetime(event_datetime) >= datetime('now')
           AND datetime(event_datetime) <= datetime('now', '+{days} days')
+          AND COALESCE(source, '') <> 'finnhub_earnings'
         ORDER BY event_datetime
         """
     )

@@ -13,6 +13,21 @@ from pathlib import Path
 ROOT    = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "data" / "macro_radar.db"
 
+# The base event_calendar table. B5 (2026-09-19): the nullable `symbol` and
+# `kind` columns and the unique index arrive through
+# ensure_event_calendar_schema(), so one path upgrades old and new files alike.
+EVENT_CALENDAR_DDL = """
+CREATE TABLE IF NOT EXISTS event_calendar (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_name     TEXT    NOT NULL,
+    event_datetime TEXT    NOT NULL,          -- ISO 8601: YYYY-MM-DDTHH:MM:SSZ
+    importance     TEXT    NOT NULL,          -- "high" | "medium" | "low"
+    source         TEXT    NOT NULL DEFAULT 'manual_csv',
+    created_at     TEXT    NOT NULL
+);
+"""
+EVENT_CALENDAR_INDEX = "idx_event_calendar_uniq"
+
 MIGRATION_SQL = """
 CREATE TABLE IF NOT EXISTS market_daily (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,16 +91,7 @@ CREATE TABLE IF NOT EXISTS backtest_results (
     value       REAL    NOT NULL,
     computed_at TEXT    NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS event_calendar (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_name     TEXT    NOT NULL,
-    event_datetime TEXT    NOT NULL,          -- ISO 8601: YYYY-MM-DDTHH:MM:SSZ
-    importance     TEXT    NOT NULL,          -- "high" | "medium" | "low"
-    source         TEXT    NOT NULL DEFAULT 'manual_csv',
-    created_at     TEXT    NOT NULL
-);
-
+""" + EVENT_CALENDAR_DDL + """
 CREATE TABLE IF NOT EXISTS factor_data (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     date        TEXT    NOT NULL,             -- YYYY-MM-DD
@@ -102,6 +108,39 @@ CREATE TABLE IF NOT EXISTS factor_data (
 """
 
 
+def ensure_event_calendar_schema(conn: sqlite3.Connection) -> None:
+    """Additive, idempotent event_calendar upgrade (B5, 2026-09-19).
+
+    - `symbol` and `kind`: nullable TEXT columns for rows that belong to one
+      ticker (src/events/earnings.py writes kind 'earnings'); hand-maintained
+      rows leave both NULL. Added with ALTER TABLE only when missing.
+    - idx_event_calendar_uniq on (event_name, event_datetime), which the
+      published database already carries (it was added outside this script)
+      and load_events.py's INSERT OR IGNORE relies on. An existing index of
+      that name is left exactly as it is. When duplicate pairs are already
+      stored the index is not created and no row is removed; a warning says so.
+    """
+    conn.execute(EVENT_CALENDAR_DDL)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(event_calendar)")}
+    for col in ("symbol", "kind"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE event_calendar ADD COLUMN {col} TEXT")
+    if conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?", (EVENT_CALENDAR_INDEX,)
+    ).fetchone():
+        return
+    if conn.execute(
+        "SELECT 1 FROM event_calendar GROUP BY event_name, event_datetime HAVING COUNT(*) > 1 LIMIT 1"
+    ).fetchone():
+        print(
+            f"[migrate] WARNING: event_calendar holds duplicate (event_name, event_datetime) pairs; "
+            f"{EVENT_CALENDAR_INDEX} not created and no row removed.",
+            file=sys.stderr,
+        )
+        return
+    conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {EVENT_CALENDAR_INDEX} ON event_calendar(event_name, event_datetime)")
+
+
 def run_migration() -> None:
     if not DB_PATH.exists():
         print(f"[migrate] ERROR: DB not found at {DB_PATH}", file=sys.stderr)
@@ -111,6 +150,7 @@ def run_migration() -> None:
     conn.execute("PRAGMA journal_mode=WAL")
     try:
         conn.executescript(MIGRATION_SQL)
+        ensure_event_calendar_schema(conn)
         conn.commit()
         print("[migrate] All Trader Pack tables created (or already exist).")
         tables = conn.execute(

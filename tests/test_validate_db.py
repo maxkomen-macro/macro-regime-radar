@@ -161,6 +161,25 @@ def test_forward_looking_calendar_is_not_a_future_date_fault(tmp_path):
     assert rep["verdict"] == "pass"
 
 
+def test_forward_looking_calendar_max_may_move_earlier(tmp_path):
+    """B5 (2026-09-19): earnings dates share event_calendar, so a rescheduled
+    report can pull the table's max date earlier. That is the schedule
+    changing, not data loss: a warning, never a block on publishing. Every
+    other table still fails on a regressed max (test_regression_fails)."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    for path, stamp in ((prev, "2027-01-15T12:00:00Z"), (cur, "2027-01-14T21:30:00Z")):
+        _make(path)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE event_calendar(event_datetime TEXT, title TEXT)")
+        conn.execute("INSERT INTO event_calendar VALUES (?, 'TSM earnings (Q4 2026)')", (stamp,))
+        conn.commit()
+        conn.close()
+    rep = v.validate(cur, prev, "market-only", now=NOW)
+    assert not any("event_calendar" in f for f in rep["failures"]), rep["failures"]
+    assert any("event_calendar" in w and "earlier" in w for w in rep["warnings"]), rep["warnings"]
+    assert rep["verdict"] == "pass"
+
+
 def test_unusable_previous_blocks_upload(tmp_path):
     cur, prev = tmp_path / "cur.db", tmp_path / "prev.db"
     _make(cur)

@@ -7,9 +7,11 @@ decides. Checks, in order:
   1. SQLite header + PRAGMA integrity_check.
   2. Required tables present; row counts and max dates per table.
   3. Against the previous snapshot (when given): no table's max date may
-     regress, no core table may lose more than a fifth of its rows (the
-     rolling-window tables market_intraday and news_feed are exempt), and
-     the refresh must have changed something appropriate to its mode.
+     regress (the forward-looking event_calendar only warns: a rescheduled
+     event can move its latest date in), no core table may lose more than
+     a fifth of its rows (the rolling-window tables market_intraday and
+     news_feed are exempt), and the refresh must have changed something
+     appropriate to its mode.
   4. Source labels on market_daily.
   5. Freshness SLAs through api/freshness.py — the same verdicts the
      running API reports — scoped to the mode (news-only judges news; full
@@ -56,7 +58,9 @@ DATE_COLUMNS = {
 # aged out); their freshness is judged by max date, never by row count.
 TRIMMED_TABLES = {"market_intraday", "news_feed"}
 # Forward-looking by design: scheduled releases are dated ahead of the clock,
-# so a future max date there is the table doing its job, not a fault.
+# so a future max date there is the table doing its job, not a fault. B5
+# (2026-09-19): nor is a max date that moves earlier, since a rescheduled
+# earnings report can pull the table's latest date in; that is a warning.
 FORWARD_TABLES = {"event_calendar"}
 # B4 (2026-09-18): ai_spend_ledger is append-only; a run that spent must
 # publish its rows or the next run (which downloads the published DB) forgets
@@ -247,7 +251,10 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
                     changed_tables.append(t)  # a new, populated table is new content
                 continue
             if info["max"] and p["max"] and str(info["max"]) < str(p["max"]):
-                failures.append(f"{t}: max date regressed {p['max']} → {info['max']}")
+                if t in FORWARD_TABLES:
+                    warnings.append(f"{t}: max date moved earlier {p['max']} → {info['max']} (a scheduled event was rescheduled)")
+                else:
+                    failures.append(f"{t}: max date regressed {p['max']} → {info['max']}")
             if t not in TRIMMED_TABLES and p["rows"] > 20 and info["rows"] < 0.8 * p["rows"]:
                 failures.append(f"{t}: rows fell {p['rows']} → {info['rows']} (more than a fifth)")
             fp_cur = (cur.get("fingerprints") or {}).get(t)

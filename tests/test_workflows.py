@@ -205,6 +205,25 @@ def test_lean_requirement_sets_cover_their_modules():
         assert deps <= {"api"}, (mod, deps)
 
 
+def test_earnings_calendar_loads_after_the_calendar_reload_in_full_mode_only():
+    """B5 (2026-09-19): large-cap earnings dates load right after the
+    hand-maintained calendar (so a manual row is in place to win), in full
+    mode only, with the Finnhub key from secrets. The module prints one
+    summary line and exits 0 on a missing key or a Finnhub error, so the step
+    cannot fail the refresh; full mode installs requirements.txt, which covers
+    its imports."""
+    steps = _load("refresh-data.yml")["jobs"]["refresh"]["steps"]
+    names = [s["name"] for s in steps]
+    step = steps[names.index("Reload event calendar (idempotent)") + 1]
+    assert step["name"] == "Load earnings calendar"
+    assert step["if"] == "steps.mode.outputs.mode == 'full'"
+    assert step["env"] == {"FINNHUB_API_KEY": "${{ secrets.FINNHUB_API_KEY }}"}
+    assert step["run"].strip() == "python -m src.events.earnings"
+    assert names.index("Load earnings calendar") < names.index("Validate the refreshed database")
+    third_party = {m for m in _module_imports(ROOT / "src/events/earnings.py") if m not in STDLIB and m != "src"}
+    assert third_party <= _requirement_modules(ROOT / "requirements.txt"), third_party
+
+
 def test_intraday_validates_its_own_feeds():
     """B6 (2026-09-18): intraday runs validate with --mode intraday, which judges
     market_intraday and treats a stale daily close as a warning, so one missed

@@ -705,9 +705,12 @@ def load_event_calendar_memo() -> pd.DataFrame:
     if not _table_exists("event_calendar"):
         return pd.DataFrame()
     try:
+        # B5 (2026-09-19): the earnings dates src/events/earnings.py writes stay
+        # out, as in the API's default; `source` exists on every database version.
         df = load_df(
             "SELECT event_name, event_datetime, importance "
-            "FROM event_calendar ORDER BY event_datetime ASC"
+            "FROM event_calendar WHERE COALESCE(source, '') <> 'finnhub_earnings' "
+            "ORDER BY event_datetime ASC"
         )
         if not df.empty:
             df = df.assign(event_dt=pd.to_datetime(df["event_datetime"], utc=True))

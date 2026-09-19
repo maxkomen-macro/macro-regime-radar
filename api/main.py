@@ -516,6 +516,10 @@ class CalendarEvent(BaseModel):
     event_datetime: str
     importance: str | None
     source: str | None
+    # B5 (2026-09-19): set on large-cap earnings rows (kind 'earnings'), which
+    # the calendar routes return only with ?include=earnings.
+    symbol: str | None = None
+    kind: str | None = None
 
 
 class BacktestRow(BaseModel):
@@ -1149,9 +1153,15 @@ def _security_counters() -> dict:
     return {}
 
 
+_CALENDAR_INCLUDE = "Opt-in event kinds: 'earnings' adds large-cap earnings dates, which are left out by default"
+
+
 @api.get("/calendar", response_model=list[CalendarEvent])
-def api_calendar(days: int = Query(14, ge=1, le=365)) -> list[CalendarEvent]:
-    rows = _guarded(lambda: db.event_calendar(days))
+def api_calendar(
+    days: int = Query(14, ge=1, le=365),
+    include: str | None = Query(None, pattern="^earnings$", description=_CALENDAR_INCLUDE),
+) -> list[CalendarEvent]:
+    rows = _guarded(lambda: db.event_calendar(days, include_earnings=include == "earnings"))
     return [CalendarEvent(**r) for r in rows]
 
 
@@ -1450,10 +1460,13 @@ def api_news_latest(
 
 
 @api.get("/calendar/recent", response_model=list[CalendarEvent])
-def api_calendar_recent(limit: int = Query(10, ge=1, le=100)) -> list[CalendarEvent]:
+def api_calendar_recent(
+    limit: int = Query(10, ge=1, le=100),
+    include: str | None = Query(None, pattern="^earnings$", description=_CALENDAR_INCLUDE),
+) -> list[CalendarEvent]:
     """Most recent past events (newest first) — the calendar's latest-available
     fallback when the upcoming window is empty."""
-    rows = _guarded(lambda: db.calendar_recent(limit))
+    rows = _guarded(lambda: db.calendar_recent(limit, include_earnings=include == "earnings"))
     return [CalendarEvent(**r) for r in rows]
 
 
