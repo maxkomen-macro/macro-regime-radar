@@ -55,9 +55,11 @@ _LABEL_COLORS = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # Read-only (B3, 2026-09-18): this module only reads, and a read-write
+    # open on a missing path would create an empty database that the API then
+    # serves (and bootstrap would skip downloading over).
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 

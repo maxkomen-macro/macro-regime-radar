@@ -28,6 +28,98 @@ DAILY_INPUTS = ["DGS10", "DGS2", "VIXCLS"]
 NEWS_SLA_MIN_WEEKDAY = 90
 NEWS_SLA_MIN_OFFHOURS = 6 * 60
 
+# ── Per-series state (B3, 2026-09-18) ──────────────────────────────────────
+# One vocabulary for every number on screen, beside the four-word SLA verdict:
+#   live      streaming during the session (delay_min 0)
+#   delayed   a quote or bar N minutes old (delay_min = N)
+#   close     the newest official close or print that is due (cycles_behind 0
+#             for markets and monthly prints; FRED daily within 2 business days)
+#   stale     behind the newest expected publication (cycles_behind says by how many)
+#   fallback  a stated default, not data
+#   unknown   the as-of cannot be established (no true observation date yet,
+#             a feed still connecting, a seeded snapshot)
+# Spec: docs/redesign-v2/FRESHNESS_CONTRACT.md. The registry mirrors the FRED
+# series fetched by src/config.py (parity pinned by tests/test_freshness_state.py);
+# api/ never imports src.config.
+SERIES_REGISTRY: dict[str, dict[str, Any]] = {
+    "DGS10": {"label": "10-year Treasury yield", "cadence": "daily", "calendar": "bond"},
+    "DGS2": {"label": "2-year Treasury yield", "cadence": "daily", "calendar": "bond"},
+    "VIXCLS": {"label": "VIX close (CBOE)", "cadence": "daily", "calendar": "nyse"},
+    "BAMLH0A0HYM2": {"label": "High-yield OAS", "cadence": "daily", "calendar": "bond"},
+    "BAMLC0A0CM": {"label": "Investment-grade OAS", "cadence": "daily", "calendar": "bond"},
+    "BAMLH0A1HYBB": {"label": "BB OAS", "cadence": "daily", "calendar": "bond"},
+    "BAMLH0A2HYB": {"label": "Single-B OAS", "cadence": "daily", "calendar": "bond"},
+    "BAMLH0A3HYC": {"label": "CCC OAS", "cadence": "daily", "calendar": "bond"},
+    "T10YIE": {"label": "10-year breakeven inflation", "cadence": "daily", "calendar": "bond"},
+    "T5YIE": {"label": "5-year breakeven inflation", "cadence": "daily", "calendar": "bond"},
+    "DFII10": {"label": "10-year TIPS yield", "cadence": "daily", "calendar": "bond"},
+    "DFII5": {"label": "5-year TIPS yield", "cadence": "daily", "calendar": "bond"},
+    "SOFR": {"label": "SOFR", "cadence": "daily", "calendar": "bond"},
+    "INDPRO": {"label": "Industrial production", "cadence": "monthly", "rule": "day", "day": 18},
+    "CPIAUCSL": {"label": "CPI (all items)", "cadence": "monthly", "rule": "day", "day": 15},
+    "UNRATE": {"label": "Unemployment rate", "cadence": "monthly", "rule": "first_friday"},
+    "FEDFUNDS": {"label": "Fed funds (effective, monthly)", "cadence": "monthly", "rule": "day", "day": 3},
+    "USREC": {"label": "NBER recession indicator", "cadence": "monthly", "rule": "day", "day": 3},
+    "USSLIND": {"label": "Leading index", "cadence": "monthly", "discontinued": True},
+}
+DAILY_TOLERANCE = 2  # FRED daily: current within 2 business days (FRED posts next day)
+
+
+def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, state: str, *, delay_min: int | None = None,
+           cycles_behind: int | None = None, discontinued: bool = False, reason: str = "") -> dict:
+    return {"id": sid, "label": label, "kind": kind, "cadence": cadence, "as_of": as_of, "state": state,
+            "delay_min": delay_min, "cycles_behind": cycles_behind, "stale": state == "stale",
+            "discontinued": discontinued, "reason": reason}
+
+
+def _expected_month_for(meta: dict, today: date) -> date:
+    if meta.get("rule") == "first_friday":
+        released = today >= cal.first_friday(today.year, today.month)
+    else:
+        released = today.day >= int(meta.get("day", 15))
+    return cal.month_add(date(today.year, today.month, 1), -1 if released else -2)
+
+
+def _daily_expected_and_lag(d: date, today_ny: date, rates: bool) -> tuple[date, int]:
+    is_td = cal.is_bond_trading_day if rates else cal.is_trading_day
+    prev_td = cal.previous_bond_trading_day if rates else cal.previous_trading_day
+    between = cal.bond_business_days_between if rates else cal.business_days_between
+    exp = prev_td(today_ny + timedelta(days=1)) if not is_td(today_ny) else prev_td(today_ny)
+    return exp, between(d, exp)
+
+
+def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, watermark: dict | None) -> dict:
+    """State of one FRED series. Daily series need a watermark (their stored
+    rows are month-stamped); monthly prints are dated by month either way."""
+    meta = SERIES_REGISTRY.get(sid) or {"label": sid, "cadence": "monthly", "rule": "day", "day": 15}
+    label, cadence = meta["label"], meta["cadence"]
+    obs = (watermark or {}).get("last_obs")
+    if meta.get("discontinued"):
+        as_of = obs or stored_date
+        if not as_of:
+            return _state(sid, label, "fred", cadence, None, "unknown", discontinued=True, reason=f"{label} has no stored observations.")
+        return _state(sid, label, "fred", cadence, as_of[:10], "close", cycles_behind=0, discontinued=True,
+                      reason=f"{label} is discontinued at the source; {as_of[:10]} is its final value, kept as historical data.")
+    if cadence == "daily":
+        d = _parse_date(obs)
+        if d is None:
+            return _state(sid, label, "fred", cadence, None, "unknown",
+                          reason=f"{label}: the true observation date is not recorded yet (stored rows are month-stamped).")
+        exp, lag = _daily_expected_and_lag(d, today_ny, meta.get("calendar") == "bond")
+        state = "close" if lag <= DAILY_TOLERANCE else "stale"
+        reason = (f"{label} observed {d.isoformat()}, the newest print due." if lag == 0
+                  else f"{label} observed {d.isoformat()}; {lag} business day(s) behind the {exp.isoformat()} print.")
+        return _state(sid, label, "fred", cadence, d.isoformat(), state, cycles_behind=lag, reason=reason)
+    d = _parse_date(obs or stored_date)
+    if d is None:
+        return _state(sid, label, "fred", cadence, None, "unknown", reason=f"{label} has no stored observations.")
+    month = date(d.year, d.month, 1)
+    exp = _expected_month_for(meta, today_ny)
+    cycles = max(0, (exp.year - month.year) * 12 + exp.month - month.month)
+    reason = (f"{label} for {month.strftime('%b %Y')} is the newest print due." if cycles == 0
+              else f"{label}: {cycles} release(s) behind; {exp.strftime('%b %Y')} is due.")
+    return _state(sid, label, "fred", cadence, month.isoformat(), "close" if cycles == 0 else "stale", cycles_behind=cycles, reason=reason)
+
 
 def _parse_dt(s: str | None, naive_tz=timezone.utc) -> datetime | None:
     """Parse a stored stamp. Stamps without an offset are taken as `naive_tz`
@@ -251,6 +343,55 @@ def assess(
             r["verdict"] = "unavailable"
             r["reason"] = f"Future-dated stamp {r['latest']} (clock or parse fault); not trusted."
 
+    # ── per-series states (B3) ──────────────────────────────────────────────
+    series: list[dict] = []
+    for sid in SERIES_REGISTRY:
+        stored = by_series.get(sid)
+        series.append(fred_series_state(sid, today_ny=today_ny, stored_date=stored.get("date") if stored else None,
+                                        watermark=(watermarks or {}).get(f"fred:{sid}")))
+    md_str = md.isoformat() if md else None
+    md_cycles = cal.business_days_between(md, exp_md) if md else None
+    series.append(_state("market_daily", "Daily closes (stored)", "market", "daily", md_str,
+                         "unknown" if md is None else ("close" if md >= exp_md else "stale"), cycles_behind=md_cycles,
+                         reason="No stored closes." if md is None else (f"Official close of {md_str}, the last completed session." if md >= exp_md
+                                else f"Newest stored close {md_str} is {md_cycles} session(s) older than the last completed session ({exp_md.isoformat()}).")))
+    if mi is None:
+        series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", None, "unknown", reason="No stored intraday bars."))
+    else:
+        mi_et = mi.astimezone(cal.NY).strftime("%Y-%m-%d %H:%M:%S")
+        if session["is_open"]:
+            age = max(0, int((now - mi).total_seconds() // 60))
+            series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", mi_et, "delayed" if age <= 60 else "stale",
+                                 delay_min=age, cycles_behind=0 if age <= 60 else None,
+                                 reason=f"Newest bar {mi_et} ET, {age} min old." if age <= 60 else f"Bars stopped arriving {age} min ago during the session."))
+        else:
+            b = cal.session_bounds(last_session)
+            closed_ok = b is not None and mi >= b[1] - timedelta(minutes=15)
+            series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", mi_et, "close" if closed_ok else "stale",
+                                 cycles_behind=0 if closed_ok else 1,
+                                 reason="Bars run to the last completed session's close." if closed_ok else "Bars stop before the last completed session's close."))
+    if relay:
+        feeds = relay.get("feeds", {})
+        us, vix = feeds.get("us"), feeds.get("vix")
+        last_us = (relay.get("feed_last_frame_at") or {}).get("us")
+        if not relay.get("token_configured") or us is None:
+            st, why = "unknown", "The live relay is not configured on this server; quotes are stored closes."
+        elif us == "connecting":
+            st, why = "unknown", "The live feed is still connecting; freshness is unknown until the first tick."
+        elif not session["is_open"]:
+            st, why = "close", "US session is closed; the last tick stands as the closing print."
+        elif us == "open" and not (relay.get("feed_stale") or {}).get("us"):
+            st, why = "live", "Streaming during the session."
+        else:
+            st, why = "stale", f"US feed state is {us}; ticks are not arriving."
+        series.append(_state("live_quotes", "Live quotes (EODHD relay)", "live", "tick", last_us, st, delay_min=0 if st == "live" else None, reason=why))
+        if vix == "rest":
+            series.append(_state("vix_delayed", "VIX (delayed poll)", "live", "60s", (relay.get("feed_last_frame_at") or {}).get("vix"),
+                                 "delayed", delay_min=15, reason="VIX polls the delayed REST quote every 60 s (15-20 min delay by source)."))
+        else:
+            series.append(_state("vix_delayed", "VIX (delayed poll)", "live", "60s", None, "unknown",
+                                 reason="The VIX poll is connecting." if vix == "connecting" else "The VIX poll is not running."))
+
     model_feeds = {"regime", "signals", "market_daily"} | {f"fred:{s}" for s in list(MONTHLY_INPUTS) + DAILY_INPUTS}
     order = {"current": 0, "delayed": 1, "stale": 2, "unavailable": 3}
     worst = max((order[r["verdict"]] for r in rows if r["feed"] in model_feeds), default=0)
@@ -262,6 +403,7 @@ def assess(
         "overall": overall,
         "session": session,
         "sla": rows,
+        "series": series,
         "regime": {
             "latest_month": reg_month.isoformat() if reg_month else None,
             "expected_month": expected_regime_month.isoformat(),

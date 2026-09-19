@@ -56,6 +56,32 @@ def scrub_status(body: dict) -> dict:
     }
 
 
+SEEDED_REASON = "Seeded snapshot: freshness is unknown until the live report arrives."
+
+
+def _unknown(state: dict) -> dict:
+    return {**state, "state": "unknown", "stale": False, "delay_min": None, "reason": SEEDED_REASON}
+
+
+def seed_freshness(entries: dict) -> dict:
+    """B3 (2026-09-18): a seeded snapshot must never present a frozen healthy
+    verdict. The seed fills the client cache before the live report arrives,
+    so /api/freshness loses its verdict fields (the web then falls back to its
+    own assessment) and every per-series state, there and in each payload's
+    freshness block, reads unknown. As-of dates are kept: they stay true."""
+    out = dict(entries)
+    fr = out.get("/api/freshness")
+    if isinstance(fr, dict):
+        fr = {k: v for k, v in fr.items() if k not in ("overall", "sla")}
+        fr["seeded"] = True
+        fr["series"] = [_unknown(x) for x in fr.get("series") or []]
+        out["/api/freshness"] = fr
+    for path, body in out.items():
+        if path != "/api/freshness" and isinstance(body, dict) and isinstance(body.get("freshness"), dict):
+            out[path] = {**body, "freshness": {k: _unknown(v) for k, v in body["freshness"].items()}}
+    return out
+
+
 def build(db_path: Path | None = None) -> dict:
     if db_path:
         os.environ["MRR_DB_PATH"] = str(db_path)
@@ -92,7 +118,7 @@ def build(db_path: Path | None = None) -> dict:
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "db_mtime": mtime,
         "source": "build_snapshot",
-        "entries": entries,
+        "entries": seed_freshness(entries),
         "problems": problems,
     }
 

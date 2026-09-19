@@ -12,9 +12,11 @@ DB_PATH = ROOT / "data" / "macro_radar.db"
 
 
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # Read-only (B3, 2026-09-18): this module only reads, and a read-write
+    # open on a missing path would create an empty database that the API then
+    # serves (and bootstrap would skip downloading over).
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -29,11 +31,17 @@ def get_lbo_defaults() -> dict:
     Returns dict with live values for interest rate inputs.
     Graceful fallback to reasonable defaults if DB unavailable.
     """
+    # B3 (2026-09-18): the stated defaults are flagged, never passed off as
+    # live. data_as_of keeps the word "unavailable" (the web keys on it).
     _FALLBACK = {
         "fedfunds": 5.33,
         "hy_oas_pct": 3.27,
         "lbo_all_in_rate": 8.60,
         "data_as_of": "unavailable",
+        "status": "fallback",
+        "is_fallback": True,
+        "fedfunds_as_of": None,
+        "hy_oas_as_of": None,
     }
 
     try:
@@ -64,6 +72,12 @@ def get_lbo_defaults() -> dict:
             "hy_oas_pct":     round(hy_oas_pct, 2),
             "lbo_all_in_rate": round(fedfunds + hy_oas_pct, 2),
             "data_as_of":     data_as_of,
+            "status":         "live",
+            "is_fallback":    False,
+            # stored row dates (month-stamped for the daily HY series; the
+            # API's freshness block carries the true observation dates)
+            "fedfunds_as_of": ff_date,
+            "hy_oas_as_of":   hy_date,
         }
     except Exception:
         return _FALLBACK

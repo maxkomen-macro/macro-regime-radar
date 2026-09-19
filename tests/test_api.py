@@ -508,7 +508,8 @@ def test_api_recession_scenario_reproduces_baseline():
 
 def test_api_lbo_defaults_and_run():
     d = client.get("/api/lbo/defaults").json()
-    assert set(d) == {"fedfunds", "hy_oas_pct", "lbo_all_in_rate", "data_as_of"}
+    # B3 (2026-09-18): the fallback flag, component dates and the freshness block join the exact key set.
+    assert set(d) == {"fedfunds", "hy_oas_pct", "lbo_all_in_rate", "data_as_of", "status", "is_fallback", "fedfunds_as_of", "hy_oas_as_of", "freshness"}
     assert abs(d["lbo_all_in_rate"] - (d["fedfunds"] + d["hy_oas_pct"])) < 0.02
 
     req = {
@@ -569,6 +570,7 @@ CREDIT_METRICS_KEYS = {
     "credit_label", "credit_label_color", "data_as_of", "hy_1w_change", "hy_ig_ratio", "hy_oas",
     "hy_pct_rank", "hy_series", "hy_sparkline", "ig_1w_change", "ig_oas", "ig_pct_rank", "ig_series",
     "ig_sparkline", "lbo_all_in_cost", "tight_count", "transition_3m", "transition_6m",
+    "freshness",  # B3 (2026-09-18): per-series state block
 }
 
 

@@ -547,6 +547,7 @@ class CreditSeries(BaseModel):
 class CreditOAS(BaseModel):
     as_of: str | None
     series: list[CreditSeries]
+    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
 
 
 class RecessionMetrics(BaseModel):
@@ -570,6 +571,7 @@ class RecessionMetrics(BaseModel):
     data_as_of: str
     curve_shape: dict[str, float | None]  # tenors absent from raw_series are None
     current_inputs: dict[str, float | None]
+    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
 
 
 class SignalFull(BaseModel):
@@ -586,6 +588,7 @@ class SignalFull(BaseModel):
 class SignalsLatestFull(BaseModel):
     date: str  # newest as-of date across the set
     signals: list[SignalFull]
+    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
 
 
 class PricedMetric(BaseModel):
@@ -623,6 +626,7 @@ class Freshness(BaseModel):
     regime: dict | None = None
     bootstrap: dict | None = None
     relay: dict | None = None
+    series: list[dict] | None = None  # B3: per-series state for every source
 
 
 # ── Response models: Regime Lab (2026-08-06, night-2 build) ──────────────────
@@ -805,6 +809,7 @@ class CreditMetrics(BaseModel):
     ccc_sparkline: list[DatedValue]
     bb_sparkline: list[DatedValue]
     b_sparkline: list[DatedValue]
+    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
 
 
 # ── Response models: Recession sensitivity ───────────────────────────────────
@@ -834,6 +839,11 @@ class LboDefaults(BaseModel):
     hy_oas_pct: float
     lbo_all_in_rate: float
     data_as_of: str
+    status: str = "live"  # B3: "live" or "fallback" (the stated defaults, not data)
+    is_fallback: bool = False
+    fedfunds_as_of: str | None = None
+    hy_oas_as_of: str | None = None
+    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
 
 
 class LboRequest(BaseModel):
@@ -936,7 +946,7 @@ def api_signals_latest() -> SignalsLatestFull:
     snap = _guarded(db.latest_signals_full)
     if snap is None:
         raise HTTPException(status_code=404, detail="No signal data available.")
-    return SignalsLatestFull(**snap)
+    return SignalsLatestFull(**snap, freshness=_freshness_block(SIGNAL_INPUTS))
 
 
 @api.get("/priced", response_model=list[PricedMetric])
@@ -1155,7 +1165,7 @@ def api_credit_oas(
     payload = _guarded(lambda: db.credit_oas(days))
     if not payload["series"]:
         raise HTTPException(status_code=404, detail="No credit series data available.")
-    return CreditOAS(**payload)
+    return CreditOAS(**payload, freshness=_freshness_block(CREDIT_INPUTS + ["DGS10"]))
 
 
 @api.get("/recession/probability", response_model=RecessionMetrics)
@@ -1167,7 +1177,7 @@ def api_recession_probability() -> RecessionMetrics:
     metrics = _guarded(get_cached_recession_metrics)
     if metrics.get("recession_prob") is None:
         raise HTTPException(status_code=404, detail="Recession model has no data.")
-    return RecessionMetrics(**metrics)
+    return RecessionMetrics(**metrics, freshness=_freshness_block(RECESSION_INPUTS))
 
 
 @api.get("/freshness", response_model=Freshness)
@@ -1267,7 +1277,7 @@ def api_credit_metrics() -> CreditMetrics:
     metrics = _guarded(analytics_cache.get_cached_credit_metrics)
     if metrics.get("hy_oas") is None:
         raise HTTPException(status_code=404, detail="No credit series data available.")
-    return CreditMetrics(**metrics)
+    return CreditMetrics(**metrics, freshness=_freshness_block(CREDIT_INPUTS + ["FEDFUNDS"]))
 
 
 # ── Recession sensitivity (night-2) ──────────────────────────────────────────
@@ -1307,7 +1317,46 @@ def api_lbo_defaults() -> LboDefaults:
     """Live financing-rate defaults (Fed Funds + HY OAS) from stored FRED data."""
     from src.analytics.lbo import get_lbo_defaults
 
-    return LboDefaults(**_guarded(get_lbo_defaults))
+    defaults = _guarded(get_lbo_defaults)
+    block = _freshness_block(["FEDFUNDS", "BAMLH0A0HYM2"])
+    block["lbo_all_in_rate"] = _all_in_state(defaults, block)
+    return LboDefaults(**defaults, freshness=block)
+
+
+# ── Per-series freshness blocks (B3, 2026-09-18) ────────────────────────────
+# Each payload that shows stored numbers carries freshness[series_id] = the same
+# per-series state /api/freshness reports, computed per request (cached payload
+# values keep their own dates; the state is judged against now).
+SIGNAL_INPUTS = ["DGS10", "DGS2", "VIXCLS", "BAMLH0A0HYM2", "CPIAUCSL", "UNRATE", "INDPRO"]
+CREDIT_INPUTS = ["BAMLH0A0HYM2", "BAMLC0A0CM", "BAMLH0A1HYBB", "BAMLH0A2HYB", "BAMLH0A3HYC"]
+RECESSION_INPUTS = ["DGS10", "DGS2", "BAMLH0A0HYM2", "T10YIE", "T5YIE", "USSLIND"]
+
+
+def _series_states() -> dict[str, dict]:
+    base = _guarded(db.freshness)
+    series = _guarded(db.latest_series_all)
+    marks = _guarded(db.watermarks)
+    rep = freshness_mod.assess(db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=None, watermarks=marks)
+    return {s["id"]: s for s in rep["series"]}
+
+
+def _freshness_block(ids: list[str]) -> dict[str, dict]:
+    states = _series_states()
+    return {i: states[i] for i in ids if i in states}
+
+
+def _all_in_state(defaults: dict, block: dict[str, dict]) -> dict:
+    """The LBO all-in rate is Fed funds plus the HY spread: fallback when the
+    stated defaults are in use, else the weaker of its two components."""
+    if defaults.get("is_fallback"):
+        return freshness_mod._state("lbo_all_in_rate", "LBO all-in rate", "derived", "daily", None, "fallback",
+                                    reason="The stated default rate (Fed funds 5.33% + HY spread 3.27%); the stored rates are unavailable.")
+    parts = [block.get("FEDFUNDS"), block.get("BAMLH0A0HYM2")]
+    states = [x["state"] for x in parts if x]
+    state = "stale" if "stale" in states else ("unknown" if len(states) < 2 or "unknown" in states else "close")
+    as_of = min((x["as_of"] for x in parts if x and x.get("as_of")), default=None)
+    return freshness_mod._state("lbo_all_in_rate", "LBO all-in rate", "derived", "daily", as_of, state,
+                                reason="Fed funds (monthly average) plus the high-yield spread; judged by its weaker component.")
 
 
 def _round_to_half(x: float) -> float:
