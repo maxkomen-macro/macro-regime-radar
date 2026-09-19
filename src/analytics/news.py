@@ -1,14 +1,24 @@
-"""src/analytics/news.py — News fetch, classify, score, and store pipeline."""
+"""src/analytics/news.py — News fetch, classify, score, store and enrich pipeline.
+
+Since B4 (2026-09-18) the pipeline inserts first and enriches only rows that
+are new in this run, inside a $50/month AI budget recorded call by call in
+ai_spend_ledger (see src/analytics/ai_spend.py and enrich_new_rows below).
+"""
 
 import json
 import re
 import sqlite3
+import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
 
-from src.analytics.perplexity import format_with_citations, sonar_research
+from src.analytics import ai_spend
+from src.analytics.ai_spend import MONTHLY_CAP_USD
+from src.analytics.perplexity import format_with_citations, sonar_call
+from src.db_helpers import ensure_ai_spend_ledger
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -155,8 +165,28 @@ NEWS_RESEARCH_SYSTEM_PROMPT = (
     "and the current macroeconomic regime, produce a concise (≤150 words) "
     "sourced research note: (1) why the headline matters in this regime, "
     "(2) the most relevant prior context a trader should know, (3) what to "
-    "watch next. Cite primary sources."
+    "watch next. Cite primary sources. Answer in at most four sentences."
 )
+
+
+# ── AI enrichment budget (B4, 2026-09-18) ─────────────────────────────────────
+#
+# Enrichment runs only on rows this run inserted whose rule score clears the
+# floor, highest first, at most ENRICH_PER_HOUR per rolling hour counted from
+# the ledger (so the full mode's double pass cannot double spend), inside a
+# wall-clock budget, and never past MONTHLY_CAP_USD (src/analytics/ai_spend.py).
+
+SIGNIFICANCE_FLOOR = 2.5
+ENRICH_PER_HOUR = 10
+ENRICH_WALL_SECONDS = 150
+FUTURE_TOLERANCE = timedelta(minutes=5)   # later-dated candidates are dropped
+INTERPRETATION_MAX_SENTENCES = 2
+RESEARCH_MAX_SENTENCES = 4
+
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+ANTHROPIC_MAX_TOKENS = 400
+RESEARCH_MAX_TOKENS = 350
 
 
 # ── Category Classifier ────────────────────────────────────────────────────────
@@ -300,12 +330,12 @@ def _score_sector_relevance(text: str) -> int:
     return 1
 
 
-def _score_time_sensitivity(published_at: str) -> int:
+def _score_time_sensitivity(published_at: str, now: datetime | None = None) -> int:
     try:
         pub = datetime.fromisoformat(published_at)
         if pub.tzinfo is None:
             pub = pub.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
+        now = now or datetime.now(timezone.utc)
         hours_ago = (now - pub).total_seconds() / 3600
         if hours_ago <= 2:
             return 5
@@ -332,9 +362,10 @@ def _score_regime_relevance(text: str, current_regime: str) -> int:
     return 1
 
 
-def score_significance(item: dict, current_regime: str) -> dict:
+def score_significance(item: dict, current_regime: str, now: datetime | None = None) -> dict:
     """
     Score a news item across 5 dimensions and compute overall_significance.
+    `now` anchors time sensitivity (default: the real clock).
 
     Returns dict with keys: market_impact, deal_size, sector_relevance,
     time_sensitivity, regime_relevance, overall_significance.
@@ -348,7 +379,7 @@ def score_significance(item: dict, current_regime: str) -> dict:
     market_impact    = _score_market_impact(text)
     deal_size        = _score_deal_size(text, category)
     sector_relevance = _score_sector_relevance(text)
-    time_sensitivity = _score_time_sensitivity(item.get("published_at", ""))
+    time_sensitivity = _score_time_sensitivity(item.get("published_at", ""), now)
     regime_relevance = _score_regime_relevance(text, current_regime)
 
     overall = round(
@@ -542,40 +573,22 @@ def _deduplicate(items: list[dict]) -> list[dict]:
 
 # ── Claude Structured-Output Interpreter ──────────────────────────────────────
 
-def get_structured_interpretation(
-    headline: str,
-    summary: str,
-    current_regime: str,
-    regime_probabilities: dict,
-    api_key: str,
-) -> dict:
-    """Call Claude Haiku with a forced tool-schema to get schema-guaranteed JSON.
+_SCORING_TOOL_JSON = json.dumps(_SCORING_TOOL)  # sized for the worst-case estimate
 
-    Uses tool_use with `tool_choice` forced to `record_headline_analysis`, which
-    guarantees Anthropic's API returns a tool_use block whose `input` validates
-    against `_SCORING_TOOL["input_schema"]`. Zero possibility of malformed JSON
-    writing to the DB.
 
-    System prompt is sent as a cache-eligible content block (1h ephemeral TTL)
-    so identical text across the hourly refresh + daily memo call hits cache.
-
-    Returns
-    -------
-    dict
-        {"regime_interpretation": str, "macro_theme": str,
-         "significance_scores": {...}, "overall": float}.
-        Empty strings / zero scores on any failure.
-    """
-    empty = {
+def _empty_interpretation() -> dict:
+    return {
         "regime_interpretation": "",
         "macro_theme":           "",
         "significance_scores":   {},
         "overall":               0.0,
     }
-    if not api_key:
-        return empty
 
-    user_content = (
+
+def _interpretation_user_content(
+    headline: str, summary: str, current_regime: str, regime_probabilities: dict,
+) -> str:
+    return (
         f"Current regime: {current_regime}\n"
         f"Regime probabilities: {regime_probabilities}\n"
         f"Headline: {headline}\n"
@@ -584,17 +597,49 @@ def get_structured_interpretation(
         "Call record_headline_analysis with your result."
     )
 
+
+def call_interpretation(
+    headline: str,
+    summary: str,
+    current_regime: str,
+    regime_probabilities: dict,
+    api_key: str,
+    timeout: int = 25,
+) -> dict:
+    """Call Claude Haiku with a forced tool-schema to get schema-guaranteed JSON.
+
+    Uses tool_use with `tool_choice` forced to `record_headline_analysis`, which
+    guarantees Anthropic's API returns a tool_use block whose `input` validates
+    against `_SCORING_TOOL["input_schema"]`. Zero possibility of malformed JSON
+    writing to the DB. The system prompt is sent as a cache-eligible content
+    block (5-minute ephemeral TTL).
+
+    Never raises. Returns {"result": <get_structured_interpretation dict>,
+    "usage": dict | None, "model": str, "http_status": int | None,
+    "error": str | None, "stop_reason": str | None}. `error` is None on a
+    usable reply, else a short label ("http", "bad_json", "no_tool_use",
+    "no_key", an exception class name), never exception text or a URL.
+    """
+    out = {
+        "result": _empty_interpretation(), "usage": None, "model": ANTHROPIC_MODEL,
+        "http_status": None, "error": None, "stop_reason": None,
+    }
+    if not api_key:
+        out["error"] = "no_key"
+        return out
+
+    user_content = _interpretation_user_content(headline, summary, current_regime, regime_probabilities)
     try:
         resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
+            ANTHROPIC_URL,
             headers={
                 "x-api-key":         api_key,
                 "anthropic-version": "2023-06-01",
                 "content-type":      "application/json",
             },
             json={
-                "model":      "claude-haiku-4-5-20251001",
-                "max_tokens": 400,
+                "model":      ANTHROPIC_MODEL,
+                "max_tokens": ANTHROPIC_MAX_TOKENS,
                 "system": [{
                     "type":          "text",
                     "text":          REGIME_SYSTEM_PROMPT,
@@ -604,22 +649,66 @@ def get_structured_interpretation(
                 "tool_choice": {"type": "tool", "name": _SCORING_TOOL["name"]},
                 "messages":    [{"role": "user", "content": user_content}],
             },
-            timeout=25,
+            timeout=timeout,
         )
-        resp.raise_for_status()
-        payload = resp.json()
-        for block in payload.get("content", []):
+    except Exception as exc:
+        out["error"] = type(exc).__name__
+        return out
+
+    try:
+        status = resp.status_code if isinstance(resp.status_code, int) else None
+        out["http_status"] = status
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            if isinstance(payload.get("usage"), dict):
+                out["usage"] = payload["usage"]
+            out["model"] = payload.get("model") or ANTHROPIC_MODEL
+            out["stop_reason"] = payload.get("stop_reason")
+        if status is None or not 200 <= status < 300:
+            out["error"] = "http"
+            return out
+        if not isinstance(payload, dict):
+            out["error"] = "bad_json"
+            return out
+        for block in payload.get("content") or []:
             if block.get("type") == "tool_use" and block.get("name") == _SCORING_TOOL["name"]:
                 data = block.get("input") or {}
-                return {
+                out["result"] = {
                     "regime_interpretation": str(data.get("regime_interpretation", "")).strip(),
                     "macro_theme":           str(data.get("macro_theme", "")).strip(),
                     "significance_scores":   data.get("significance_scores") or {},
                     "overall":               float(data.get("overall", 0.0) or 0.0),
                 }
-        return empty
-    except Exception:
-        return empty
+                return out
+        out["error"] = "no_tool_use"
+    except Exception as exc:
+        out["result"] = _empty_interpretation()
+        out["error"] = type(exc).__name__
+    return out
+
+
+def get_structured_interpretation(
+    headline: str,
+    summary: str,
+    current_regime: str,
+    regime_probabilities: dict,
+    api_key: str,
+) -> dict:
+    """Schema-guaranteed interpretation of one headline (see call_interpretation).
+
+    Returns
+    -------
+    dict
+        {"regime_interpretation": str, "macro_theme": str,
+         "significance_scores": {...}, "overall": float}.
+        Empty strings / zero scores on any failure.
+    """
+    return call_interpretation(
+        headline, summary, current_regime, regime_probabilities, api_key,
+    )["result"]
 
 
 def get_regime_interpretation(
@@ -639,145 +728,509 @@ def get_regime_interpretation(
     ).get("regime_interpretation", "")
 
 
+# ── Storage caps: complete sentences only (B4) ────────────────────────────────
+#
+# Stored model text is capped at whole sentences and never cut mid-sentence:
+# the research note at four (before its Sources block is appended, so the
+# web's "Sources:" split still works), the interpretation at two. A trailing
+# fragment with no terminal punctuation (a reply cut off by max_tokens) is
+# dropped. Decimals (4.94%, 1.5x), initialisms (U.S.), common abbreviations
+# (e.g., Inc., Sept.), list numerals, citation markers ([1], [1][2]) and
+# markdown emphasis do not end a sentence on their own. "Fed." is a word, not
+# an abbreviation: it ends sentences.
+
+_CLOSERS = r"(?:[\"'”’)\]]|\*{1,2}|_{1,2}| ?\[\d+(?:\s*[,–-]\s*\d+)*\])*"
+_SENTENCE_END = re.compile(r"(?P<punct>[.!?]+|…)(?P<close>" + _CLOSERS + r")(?=\s|$)")
+_TERMINAL_AT_END = re.compile(r"(?:[.!?]+|…)" + _CLOSERS + r"$")
+_OPEN_MARKS = "\"'“‘([*_"
+# Never a sentence end: always followed by more of the same sentence.
+_NEVER_ENDS = frozenset({
+    "e.g", "i.e", "cf", "vs", "approx", "mr", "mrs", "ms", "dr", "prof", "st", "mt", "ft",
+    "gov", "sen", "rep", "gen", "col", "lt", "sgt",
+})
+# An end only before an obvious sentence opener ("…from Apple Inc. The company…").
+_ABBREVIATIONS = frozenset({
+    "inc", "corp", "co", "ltd", "llc", "plc", "bros", "jr", "sr", "etc", "al", "est",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+})
+_NUMBERED = frozenset({"no", "nos", "vol", "fig", "pp"})  # "No. 5"
+_INITIALISM = re.compile(r"(?:[a-z]\.)+[a-z]")  # u.s, u.k, j.p, p.m
+_OPENERS = frozenset({
+    "the", "this", "that", "these", "those", "it", "its", "they", "their", "we", "our",
+    "he", "she", "his", "her", "there", "however", "meanwhile", "but", "and", "yet",
+    "still", "also", "so", "in", "on", "at", "as", "if", "while", "a", "an",
+})
+_LINE_BREAKS = "\r\n\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
+
+
+def _is_sentence_end(text: str, m: re.Match) -> bool:
+    n = len(text)
+    j = m.end()
+    while j < n and text[j].isspace():
+        j += 1
+    if j >= n:
+        return True  # the text ends here
+    while j < n and text[j] in _OPEN_MARKS:
+        j += 1
+    k = j
+    while k < n and text[k].isalnum():
+        k += 1
+    nxt = text[j:k]
+    punct = m.group("punct")
+    if punct == "…" or punct.startswith(".."):
+        return nxt[:1].isupper()  # an ellipsis before lower case runs on
+    if punct != ".":
+        return True  # ? and ! (and runs of them)
+    i = m.start()
+    while i > 0 and not text[i - 1].isspace():
+        i -= 1
+    word = text[i:m.start()].lstrip(_OPEN_MARKS).lower()
+    if not word:
+        return True
+    if word in _NEVER_ENDS:
+        return False
+    if word.isdigit() and len(word) <= 2 and not text[text.rfind("\n", 0, i) + 1:i].strip():
+        return False  # "1." opening a list item
+    if word in _NUMBERED and nxt[:1].isdigit():
+        return False
+    if word in _ABBREVIATIONS or _INITIALISM.fullmatch(word) or (len(word) == 1 and word.isalpha()):
+        return nxt[:1].isupper() and nxt.lower() in _OPENERS
+    return True
+
+
+def _is_label(line: str) -> bool:
+    """A heading or "**Label:**" line belongs to the unit that follows it."""
+    s = line.strip()
+    return (
+        s.startswith("#")
+        or s.rstrip("*_ ").endswith(":")
+        or (len(s) > 4 and s[:2] in ("**", "__") and s[-2:] in ("**", "__"))
+    )
+
+
+def sentence_ends(text: str) -> list[int]:
+    """End offsets of the complete sentences in `text`, in order.
+
+    A sentence ends at terminal punctuation (with any closing quotes,
+    brackets, emphasis markers and citation markers) followed by whitespace
+    or the end of the text, and at a line break after a line that has words
+    but no terminal punctuation (a bullet), unless that line is a label.
+    """
+    ends = {m.end() for m in _SENTENCE_END.finditer(text) if _is_sentence_end(text, m)}
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        content = line.rstrip(_LINE_BREAKS)
+        body = content.rstrip()
+        if (
+            len(content) < len(line)  # a line break follows
+            and any(c.isalnum() for c in body)
+            and not _is_label(body)
+            and not _TERMINAL_AT_END.search(body)
+        ):
+            ends.add(pos + len(body))
+        pos += len(line)
+    return sorted(e for e in ends if text[:e].strip())
+
+
+def cap_sentences(text: str, max_sentences: int, *, keep_lone_fragment: bool = False) -> str:
+    """The first `max_sentences` complete sentences of `text`, verbatim.
+
+    Never cuts inside a sentence, and drops a trailing fragment without
+    terminal punctuation. A text with no complete sentence at all returns ""
+    unless keep_lone_fragment (a short structured field, such as the
+    interpretation, that may legitimately omit its final period).
+    """
+    body = (text or "").strip()
+    if not body or max_sentences < 1:
+        return ""
+    ends = sentence_ends(body)
+    if not ends:
+        return body if keep_lone_fragment else ""
+    return body[: ends[min(max_sentences, len(ends)) - 1]].rstrip()
+
+
+# ── Store: insert first ───────────────────────────────────────────────────────
+
+_INSERT_NEWS = """INSERT OR IGNORE INTO news_feed
+   (headline, summary, url, source, category, published_at,
+    market_impact, deal_size, sector_relevance, time_sensitivity,
+    regime_relevance, overall_significance, regime_interpretation,
+    perplexity_research, ticker)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+
+
+def _parse_published(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def drop_future_dated(
+    items: list[dict],
+    now: datetime | None = None,
+    tolerance: timedelta = FUTURE_TOLERANCE,
+) -> list[dict]:
+    """Drop candidates dated more than `tolerance` ahead of `now`: a feed's bad
+    clock must not become the freshest row. Unparseable dates are kept, as before."""
+    limit = ai_spend.as_utc(now) + tolerance
+    kept = []
+    for item in items:
+        pub = _parse_published(item.get("published_at"))
+        if pub is None or pub <= limit:
+            kept.append(item)
+    return kept
+
+
+def _current_regime(conn: sqlite3.Connection) -> tuple[str, dict]:
+    """Latest regime label and probabilities ("Goldilocks", {} when absent)."""
+    try:
+        row = conn.execute(
+            "SELECT label, prob_goldilocks, prob_overheating, "
+            "prob_stagflation, prob_recession "
+            "FROM regimes ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.Error:
+        return "Goldilocks", {}
+    if not row:
+        return "Goldilocks", {}
+    return row[0] or "Goldilocks", {
+        "Goldilocks":  row[1],
+        "Overheating": row[2],
+        "Stagflation": row[3],
+        "Deflation":   row[4],
+    }
+
+
+def store_new_items(
+    conn: sqlite3.Connection,
+    items: list[dict],
+    current_regime: str,
+    *,
+    now: datetime | None = None,
+) -> list[int]:
+    """Classify, rule-score and INSERT OR IGNORE each candidate; return the ids
+    of the rows this call inserted. A row already stored (same headline and
+    published_at) is left exactly as it is: never rewritten, never re-enriched."""
+    at = ai_spend.as_utc(now)
+    new_ids: list[int] = []
+    failed: dict[str, int] = {}
+    for item in items:
+        item["category"] = classify_category(
+            item.get("headline", ""), item.get("summary", "")
+        )
+        item.update(score_significance(item, current_regime, now=at))
+        try:
+            cur = conn.execute(_INSERT_NEWS, (
+                item.get("headline", ""),
+                item.get("summary", ""),
+                item.get("url", ""),
+                item.get("source", ""),
+                item["category"],
+                item.get("published_at", ""),
+                item["market_impact"],
+                item["deal_size"],
+                item["sector_relevance"],
+                item["time_sensitivity"],
+                item["regime_relevance"],
+                item["overall_significance"],
+                "",  # regime_interpretation: filled by enrich_new_rows
+                "",  # perplexity_research: filled by enrich_new_rows
+                item.get("ticker", ""),
+            ))
+        except Exception as exc:
+            failed[type(exc).__name__] = failed.get(type(exc).__name__, 0) + 1
+            continue
+        if cur.rowcount == 1 and cur.lastrowid:
+            new_ids.append(int(cur.lastrowid))
+    conn.commit()
+    if failed:
+        detail = ", ".join(f"{name}×{n}" for name, n in sorted(failed.items()))
+        print(f"[news] WARNING: {sum(failed.values())} candidates not stored ({detail})", file=sys.stderr)
+    return new_ids
+
+
+def _prune_news(conn: sqlite3.Connection, now: datetime | None = None) -> None:
+    """Headlines age out after 7 days. The AI spend ledger is append-only and
+    is never pruned: its month-to-date sum is the budget."""
+    cutoff = (ai_spend.as_utc(now) - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("DELETE FROM news_feed WHERE published_at < ?", (cutoff,))
+
+
+# ── Enrich: rows new in this run, inside the budget ───────────────────────────
+
+_ROW_COLUMNS = (
+    "id", "headline", "summary", "published_at", "overall_significance",
+    "regime_interpretation", "perplexity_research",
+)
+
+
+def _load_rows(conn: sqlite3.Connection, row_ids) -> list[dict]:
+    ids = sorted({int(i) for i in (row_ids or [])})
+    rows: list[dict] = []
+    for start in range(0, len(ids), 500):
+        chunk = ids[start:start + 500]
+        rows += [
+            dict(zip(_ROW_COLUMNS, r))
+            for r in conn.execute(
+                f"SELECT {', '.join(_ROW_COLUMNS)} FROM news_feed WHERE id IN ({','.join('?' * len(chunk))})",
+                chunk,
+            )
+        ]
+    return rows
+
+
+def _eligible(row: dict, floor: float) -> bool:
+    return (
+        float(row["overall_significance"] or 0.0) >= floor
+        and not (row["regime_interpretation"] or "").strip()
+        and not (row["perplexity_research"] or "").strip()
+    )
+
+
+def _priority(row: dict) -> tuple:
+    """Highest rule score first, then newest, then insertion order."""
+    pub = _parse_published(row["published_at"])
+    return (-float(row["overall_significance"] or 0.0), -(pub.timestamp() if pub else 0.0), row["id"])
+
+
+def _research_query(current_regime: str, headline: str) -> str:
+    return (
+        f"Current macro regime: {current_regime}. "
+        f"Headline: {headline}. "
+        f"What does a trader need to know about this now?"
+    )
+
+
+class _Run:
+    """One enrichment pass: its clock, run id, keys and running counts."""
+
+    def __init__(self, conn, keys, now, run_id, cap):
+        self.conn = conn
+        self.anthropic_key = keys.get("anthropic_key") or ""
+        self.perplexity_key = keys.get("perplexity_key") or ""
+        self._now = now
+        self.run_id = run_id
+        self.cap = cap
+        self.stats = {
+            "new": 0, "eligible": 0, "enriched": 0, "held_hourly": 0, "skipped_cap": 0,
+            "held_time": 0, "calls": 0, "run_cost_usd": 0.0, "month_to_date_usd": 0.0,
+            "cap_usd": cap, "errors": {}, "cap_reached": False, "ledger_error": None,
+            "keys": bool(self.anthropic_key or self.perplexity_key),
+        }
+
+    def now(self) -> datetime:
+        # a fixed clock when injected (tests, replays); per-row real time otherwise
+        return self._now if self._now is not None else ai_spend.utc_now()
+
+    def fits(self, worst_case: float) -> bool:
+        return ai_spend.within_cap(self.conn, worst_case, now=self.now(), cap=self.cap)
+
+    def note_cap(self) -> None:
+        if not self.stats["cap_reached"] and not ai_spend.cap_already_noted(self.conn, self.run_id):
+            ai_spend.record(
+                self.conn, provider="budget", purpose="cap_reached", status="cap_reached",
+                now=self.now(), run_id=self.run_id,
+            )
+        self.stats["cap_reached"] = True
+
+    def record(self, *, provider, purpose, news_id, model, priced, ok, http_status, error) -> None:
+        cost = ai_spend.record(
+            self.conn, provider=provider, purpose=purpose, status="ok" if ok else "error",
+            now=self.now(), model=model, news_id=news_id, priced=priced,
+            http_status=http_status, run_id=self.run_id,
+        )
+        self.stats["calls"] += 1
+        self.stats["run_cost_usd"] += cost
+        if not ok:
+            label = f"{provider} {http_status if error == 'http' and http_status else (error or 'error')}"
+            self.stats["errors"][label] = self.stats["errors"].get(label, 0) + 1
+
+
+def _enrich_one(run: _Run, row: dict, regime: str, probs: dict) -> bool:
+    """Enrich one stored row. False when the cap stopped it before any call."""
+    user_content = _interpretation_user_content(row["headline"], row["summary"], regime, probs)
+    query = _research_query(regime, row["headline"])
+    plan = []
+    if run.anthropic_key:
+        plan.append(("anthropic", ai_spend.anthropic_worst_case(
+            REGIME_SYSTEM_PROMPT, _SCORING_TOOL_JSON, user_content, max_tokens=ANTHROPIC_MAX_TOKENS)))
+    if run.perplexity_key:
+        plan.append(("perplexity", ai_spend.perplexity_worst_case(
+            NEWS_RESEARCH_SYSTEM_PROMPT, query, max_tokens=RESEARCH_MAX_TOKENS)))
+    # An item starts only if every call it would make fits, so the cap never
+    # leaves a headline half enriched; each call still re-checks its own case.
+    if not run.fits(sum(worst for _, worst in plan)):
+        run.note_cap()
+        return False
+
+    interpretation, research, claude_overall, any_ok = "", "", 0.0, False
+    for provider, worst in plan:
+        if not run.fits(worst):
+            run.note_cap()
+            break
+        if provider == "anthropic":
+            res = call_interpretation(row["headline"], row["summary"], regime, probs, run.anthropic_key)
+            ok = res["error"] is None
+            if ok:
+                interpretation = cap_sentences(
+                    res["result"]["regime_interpretation"], INTERPRETATION_MAX_SENTENCES, keep_lone_fragment=True,
+                )
+                claude_overall = float(res["result"]["overall"] or 0.0)
+            run.record(
+                provider="anthropic", purpose="news_interpretation", news_id=row["id"], model=res["model"],
+                priced=ai_spend.anthropic_cost(res["usage"]), ok=ok,
+                http_status=res["http_status"], error=res["error"],
+            )
+        else:
+            res = sonar_call(query, NEWS_RESEARCH_SYSTEM_PROMPT, run.perplexity_key, max_tokens=RESEARCH_MAX_TOKENS)
+            content = ""
+            if res["ok"]:
+                # capped BEFORE the Sources block is appended
+                content = cap_sentences(
+                    res["content"], RESEARCH_MAX_SENTENCES,
+                    keep_lone_fragment=res["finish_reason"] != "length",
+                )
+            ok = bool(content)
+            if ok:
+                research = format_with_citations({"content": content, "citations": res["citations"]})
+            run.record(
+                provider="perplexity", purpose="news_research", news_id=row["id"], model=res["model"],
+                priced=ai_spend.perplexity_cost(res["usage"]), ok=ok,
+                http_status=res["http_status"], error=res["error"] or (None if ok else "empty"),
+            )
+        any_ok = any_ok or ok
+
+    if interpretation or research or claude_overall > 0:
+        run.conn.execute(
+            "UPDATE news_feed SET regime_interpretation = ?, perplexity_research = ?, "
+            "overall_significance = ? WHERE id = ?",
+            (
+                interpretation,
+                research,
+                claude_overall if claude_overall > 0 else row["overall_significance"],
+                row["id"],
+            ),
+        )
+        run.conn.commit()
+    if any_ok:
+        run.stats["enriched"] += 1
+    return True
+
+
+def enrich_new_rows(
+    conn: sqlite3.Connection,
+    row_ids,
+    keys: dict | None,
+    *,
+    now: datetime | None = None,
+    floor: float = SIGNIFICANCE_FLOOR,
+    per_hour: int = ENRICH_PER_HOUR,
+    monthly_cap: float = MONTHLY_CAP_USD,
+    wall_seconds: float = ENRICH_WALL_SECONDS,
+    clock=time.monotonic,
+    run_id: str | None = None,
+    emit=print,
+) -> dict:
+    """Enrich the given news_feed rows (the rows this run inserted) with Claude
+    and Perplexity, inside the budget, and print one summary line.
+
+    Selection: rows whose rule overall_significance >= `floor` and which carry
+    no enrichment yet, highest first, at most `per_hour` per rolling 60 minutes
+    counted from ai_spend_ledger. Enrichment stops when `wall_seconds` have
+    passed, and no call is made unless month-to-date spend plus its worst case
+    fits within `monthly_cap` (one cap_reached ledger row per run otherwise).
+    Every call is recorded in the ledger with its cost from usage. A quiet run
+    (nothing above the floor) makes no HTTP call.
+
+    `keys` uses the fetch_and_store_news config names (anthropic_key,
+    perplexity_key). `now` fixes the clock (default: real time, per row).
+    `run_id` defaults to $GITHUB_RUN_ID. Returns the run's counts, including
+    the printed "line".
+    """
+    run = _Run(conn, keys or {}, now, run_id if run_id is not None else ai_spend.current_run_id(), monthly_cap)
+    stats = run.stats
+    started = clock()
+    try:
+        ensure_ai_spend_ledger(conn)
+        conn.commit()
+        rows = _load_rows(conn, row_ids)
+        stats["new"] = len(rows)
+        eligible = sorted((r for r in rows if _eligible(r, floor)), key=_priority)
+        stats["eligible"] = len(eligible)
+        if eligible and stats["keys"]:
+            room = max(0, per_hour - ai_spend.enrichments_in_last_hour(conn, run.now()))
+            batch = eligible[:room]
+            stats["held_hourly"] = len(eligible) - len(batch)
+            regime, probs = _current_regime(conn)
+            for i, row in enumerate(batch):
+                if clock() - started > wall_seconds:
+                    stats["held_time"] = len(batch) - i
+                    break
+                started_item = _enrich_one(run, row, regime, probs)
+                if stats["cap_reached"]:
+                    stats["skipped_cap"] = len(batch) - i - (1 if started_item else 0)
+                    break
+        stats["month_to_date_usd"] = ai_spend.month_to_date(conn, run.now())
+    except sqlite3.Error as exc:
+        # fail closed: without a readable, writable ledger no further call is made
+        stats["ledger_error"] = type(exc).__name__
+    stats["line"] = ai_spend.summary_line(stats)
+    if emit:
+        emit(stats["line"])
+    return stats
+
+
 # ── Main Orchestrator ─────────────────────────────────────────────────────────
 
-def fetch_and_store_news(db_path: str, config: dict) -> int:
+def fetch_and_store_news(db_path: str, config: dict, *, now: datetime | None = None) -> int:
     """
-    Full pipeline: fetch → deduplicate → classify → score → AI interpret → store.
+    Full pipeline: fetch → deduplicate → drop future-dated → classify → score →
+    store (insert first) → AI-enrich the rows new in this run, inside the
+    budget → prune headlines older than 7 days. Prints one AI summary line.
 
     Args:
         db_path: path to macro_radar.db
-        config: dict with keys finnhub_key, newsapi_key, anthropic_key
+        config: dict with keys finnhub_key, newsapi_key, anthropic_key,
+            perplexity_key
+        now: fixes the clock (tests); default real time
 
     Returns:
         Number of new rows inserted.
     """
-    finnhub_key    = config.get("finnhub_key", "")
-    newsapi_key    = config.get("newsapi_key", "")
-    anthropic_key  = config.get("anthropic_key", "")
-    perplexity_key = config.get("perplexity_key", "")
+    at = ai_spend.as_utc(now)
+    finnhub_key = config.get("finnhub_key", "")
+    newsapi_key = config.get("newsapi_key", "")
 
-    # 1. Get current regime from DB
-    current_regime = "Goldilocks"
-    regime_probs: dict = {}
-    try:
-        with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                "SELECT label, prob_goldilocks, prob_overheating, "
-                "prob_stagflation, prob_recession "
-                "FROM regimes ORDER BY date DESC LIMIT 1"
-            ).fetchone()
-            if row:
-                current_regime = row[0] or "Goldilocks"
-                regime_probs = {
-                    "Goldilocks":  row[1],
-                    "Overheating": row[2],
-                    "Stagflation": row[3],
-                    "Deflation":   row[4],
-                }
-    except Exception:
-        pass
-
-    # 2. Fetch from all sources (Finnhub + NewsAPI need keys; RSS is keyless)
+    # 1. Fetch from all sources (Finnhub + NewsAPI need keys; RSS is keyless)
     finnhub_items = fetch_finnhub_news(finnhub_key)
     newsapi_items = fetch_newsapi_news(newsapi_key)
     rss_items     = fetch_rss_news()
-    all_items = _deduplicate(finnhub_items + newsapi_items + rss_items)
+    # future-dated first, so a bad-clock copy cannot displace a valid duplicate
+    all_items = _deduplicate(drop_future_dated(finnhub_items + newsapi_items + rss_items, at))
 
-    if not all_items:
-        return 0
-
-    # 3. Classify and score every item; then enrich the top-N by rule score
-    #    with Claude (schema-guaranteed interpretation + authoritative overall
-    #    score) and Perplexity (grounded research). Top-N instead of a fixed
-    #    threshold guarantees enrichment runs even on days where rule-based
-    #    scoring caps below 3.0.
-    for item in all_items:
-        item["category"] = classify_category(
-            item.get("headline", ""), item.get("summary", "")
-        )
-        scores = score_significance(item, current_regime)
-        item.update(scores)
-        item["regime_interpretation"] = ""
-        item["perplexity_research"]   = ""
-
-    TOP_N = 5
-    enrich_ids = {
-        id(it) for it in sorted(
-            all_items,
-            key=lambda x: x["overall_significance"],
-            reverse=True,
-        )[:TOP_N]
-    }
-
-    for item in all_items:
-        if id(item) not in enrich_ids:
-            continue
-        if anthropic_key:
-            result = get_structured_interpretation(
-                item["headline"],
-                item.get("summary", ""),
-                current_regime,
-                regime_probs,
-                anthropic_key,
-            )
-            item["regime_interpretation"] = result.get("regime_interpretation", "")
-            claude_overall = float(result.get("overall", 0.0) or 0.0)
-            if claude_overall > 0:
-                item["overall_significance"] = claude_overall
-        if perplexity_key:
-            query = (
-                f"Current macro regime: {current_regime}. "
-                f"Headline: {item['headline']}. "
-                f"What does a trader need to know about this now?"
-            )
-            res = sonar_research(query, NEWS_RESEARCH_SYSTEM_PROMPT, perplexity_key)
-            item["perplexity_research"] = format_with_citations(res)
-
-    enriched = all_items
-
-    # 4. Insert into DB and prune old rows
-    inserted = 0
+    # 2. Store first; 3. enrich only what this run inserted; 4. prune news
+    new_ids: list[int] = []
+    conn = None
     try:
-        with sqlite3.connect(db_path) as conn:
-            for item in enriched:
-                try:
-                    conn.execute(
-                        """INSERT OR IGNORE INTO news_feed
-                           (headline, summary, url, source, category, published_at,
-                            market_impact, deal_size, sector_relevance, time_sensitivity,
-                            regime_relevance, overall_significance, regime_interpretation,
-                            perplexity_research, ticker)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (
-                            item.get("headline", ""),
-                            item.get("summary", ""),
-                            item.get("url", ""),
-                            item.get("source", ""),
-                            item["category"],
-                            item.get("published_at", ""),
-                            item["market_impact"],
-                            item["deal_size"],
-                            item["sector_relevance"],
-                            item["time_sensitivity"],
-                            item["regime_relevance"],
-                            item["overall_significance"],
-                            item.get("regime_interpretation", ""),
-                            item.get("perplexity_research", ""),
-                            item.get("ticker", ""),
-                        ),
-                    )
-                    if conn.execute("SELECT changes()").fetchone()[0] > 0:
-                        inserted += 1
-                except Exception:
-                    continue
-
-            # Prune headlines older than 7 days
-            conn.execute(
-                "DELETE FROM news_feed WHERE published_at < datetime('now', '-7 days')"
-            )
+        conn = sqlite3.connect(db_path)
+        if all_items:
+            current_regime, _ = _current_regime(conn)
+            new_ids = store_new_items(conn, all_items, current_regime, now=at)
+        enrich_new_rows(conn, new_ids, config, now=now)
+        if all_items:
+            _prune_news(conn, at)
             conn.commit()
-    except Exception:
-        pass
-
-    return inserted
+    except sqlite3.Error as exc:
+        print(
+            f"[news] WARNING: news storage failed ({type(exc).__name__}); "
+            f"{len(new_ids)} new rows were stored before it",
+            file=sys.stderr,
+        )
+    finally:
+        if conn is not None:
+            conn.close()
+    return len(new_ids)

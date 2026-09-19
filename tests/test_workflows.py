@@ -188,6 +188,8 @@ def _requirement_modules(req: Path) -> set[str]:
 
 def test_lean_requirement_sets_cover_their_modules():
     news_mods = _module_imports(ROOT / "src/analytics/news.py") | _module_imports(ROOT / "src/analytics/perplexity.py") | _module_imports(ROOT / "src/db_helpers.py")
+    # B4: the AI spend ledger and the monthly cap run on the lean news set too
+    news_mods |= _module_imports(ROOT / "src/analytics/ai_spend.py")
     third_party = {m for m in news_mods if m not in STDLIB and m != "src"}
     assert third_party <= _requirement_modules(ROOT / "requirements-news.txt") | {"feedparser"}, third_party
     market_mods = _module_imports(ROOT / "src/market_data/fetch_market.py") | _module_imports(ROOT / "src/market_data/yfinance_client.py")

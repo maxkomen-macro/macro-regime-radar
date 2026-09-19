@@ -58,9 +58,12 @@ TRIMMED_TABLES = {"market_intraday", "news_feed"}
 # Forward-looking by design: scheduled releases are dated ahead of the clock,
 # so a future max date there is the table doing its job, not a fault.
 FORWARD_TABLES = {"event_calendar"}
+# B4 (2026-09-18): ai_spend_ledger is append-only; a run that spent must
+# publish its rows or the next run (which downloads the published DB) forgets
+# the spend, so new ledger rows count as a change in the modes that enrich.
 MODE_TABLES = {
-    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks"],
-    "news-only": ["news_feed"],
+    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger"],
+    "news-only": ["news_feed", "ai_spend_ledger"],
     "market-only": ["market_daily", "market_intraday", "source_watermarks"],
     # B6 (2026-09-18): intraday runs also capture the official close after the
     # session ends, so a daily close can be their change too.
@@ -88,6 +91,27 @@ FINGERPRINT_SQL = {
 # A FRED series fetched within this window but not advancing is a source
 # outage (a warning); one not checked at all means the refresh missed cycles.
 OUTAGE_WINDOW = timedelta(hours=3)
+# Mirror of src/analytics/ai_spend.MONTHLY_CAP_USD (pinned equal by
+# tests/test_news_budget.py); this script stays stdlib + api/.
+AI_MONTHLY_CAP_USD = 50.0
+
+
+def _ai_spend(path: Path, now: datetime) -> dict | None:
+    """Month-to-date AI spend and call count from ai_spend_ledger (current UTC month)."""
+    month = now.strftime("%Y-%m")
+    try:
+        conn = _open(path)
+        try:
+            cost, calls = conn.execute(
+                "SELECT COALESCE(SUM(cost_usd), 0), COALESCE(SUM(provider <> 'budget'), 0)"
+                " FROM ai_spend_ledger WHERE month = ?",
+                (month,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    return {"month": month, "cost_usd": float(cost or 0.0), "calls": int(calls or 0), "cap_usd": AI_MONTHLY_CAP_USD}
 
 
 def _fingerprint(conn: sqlite3.Connection, sql: str) -> str | None:
@@ -291,6 +315,7 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
         "sla_all": report["sla"],
         "regime": report["regime"],
         "session": report["session"],
+        "ai_spend": _ai_spend(current, now) if "ai_spend_ledger" in cur["tables"] else None,
     }
 
 
@@ -306,6 +331,11 @@ def summary_markdown(rep: dict) -> str:
         f"- Upload: {'yes' if rep.get('upload') else 'no'}",
         f"- Market sources: {json.dumps(cur.get('market_sources', {}))}",
         f"- Session: {rep.get('session', {}).get('phase')} · last completed {rep.get('session', {}).get('last_completed_session')}",
+    ]
+    ai = rep.get("ai_spend")
+    if ai:
+        lines.append(f"- AI spend month-to-date: ${ai['cost_usd']:.2f} of ${ai['cap_usd']:.2f} cap ({ai['calls']} calls)")
+    lines += [
         "",
         "| Table | Rows (prev → new) | Max (prev → new) |",
         "|---|---|---|",
