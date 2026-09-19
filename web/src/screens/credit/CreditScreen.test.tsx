@@ -18,7 +18,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { QueryClient } from "@tanstack/react-query";
 import CreditScreen from "./CreditScreen";
 import type { SpreadLinesChartProps } from "./SpreadLinesChart";
-import type { CreditMetrics, DatedValue, LboDefaults } from "../../api/types";
+import type { CreditMetrics, DatedValue, LboDefaults, SeriesState } from "../../api/types";
 import { makeClient, renderWithProviders, stubFetch } from "../../test/utils";
 
 /* ── mocks ───────────────────────────────────────────────────────────────── */
@@ -73,6 +73,24 @@ const T6: Record<string, Record<string, number>> = { Normal: row(0.7211, 0, 0.22
 const T3_TIGHT = { ...T3, Tight: row(0.6667, 0.3333, 0, 0) };
 const T6_TIGHT = { ...T6, Tight: row(1, 0, 0, 0) };
 
+/** Iteration 1 step 6 (A3): the payload's per-series states (FRESHNESS_CONTRACT §6); the hero chip and its dot read them. */
+const baml = (id: string, state: SeriesState["state"] = "close", as_of: string | null = "2026-09-17"): SeriesState => ({
+  id,
+  label: id,
+  kind: "fred",
+  cadence: "daily",
+  as_of,
+  state,
+  delay_min: null,
+  cycles_behind: state === "close" ? 0 : null,
+  stale: state === "stale",
+  discontinued: false,
+  reason: `${id} reason.`,
+});
+const CREDIT_BLOCK: Record<string, SeriesState> = Object.fromEntries(
+  ["BAMLH0A0HYM2", "BAMLC0A0CM", "BAMLH0A1HYBB", "BAMLH0A2HYB", "BAMLH0A3HYC"].map((id) => [id, baml(id)]),
+);
+
 /** Normal, CCC widening more than BB and B, distress past the line: the diverging + tension default. */
 function metrics(over: Partial<CreditMetrics> = {}): CreditMetrics {
   const six = months(6);
@@ -105,6 +123,7 @@ function metrics(over: Partial<CreditMetrics> = {}): CreditMetrics {
     ccc_sparkline: series(six, 900, 28),
     bb_sparkline: series(six, 200, -2.4),
     b_sparkline: series(six, 290, 1.4),
+    freshness: CREDIT_BLOCK,
     ...over,
   };
 }
@@ -255,14 +274,34 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     expect(pill).toHaveAttribute("data-tone", "mint");
     expect(h1.parentElement?.contains(pill)).toBe(true); // beside the headline
     expect(hero().querySelector("[title^='ICE BofA US High Yield OAS']")).not.toBeNull();
-    expect(hero().querySelector(".mrr-hero-dot")).not.toBeNull(); // Sep 01 stamp is current on Sep 19
+    // A3: the dot follows the served states (every ICE BofA series "close"), never the month's age.
+    expect(hero().querySelector(".mrr-hero-dot")).not.toBeNull();
     expect(css(hero().querySelector(".mrr-hero-glow"))).toMatch(/rgba\(245, ?181, ?46, ?0?\.05\)/);
     expect(text(hero())).toContain("Monthly spreads through Sep 01, 2026");
     expect(text(hero())).toContain("Classification Normal for Sep 2026");
     expect(hero().querySelector("[title^='ICE BofA via FRED']")).not.toBeNull();
+    // A3: the chip's word is the §5 word of the weakest served series.
+    expect(hero().querySelector("[title^='ICE BofA via FRED']")?.textContent).toContain("Sep 17");
     expect(screen.queryByText(LOADING_HEADLINE)).toBeNull();
     expect(text(hero())).not.toContain(ERROR_HEADLINE);
     expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("A3: an unknown served state reads As of unknown on the chip and never pulses; a stale one marks the chip", async () => {
+    stubFetch(withMetrics({ freshness: { ...CREDIT_BLOCK, BAMLH0A0HYM2: baml("BAMLH0A0HYM2", "unknown", null) } }));
+    const first = renderCredit();
+    await awaitHero();
+    const chip = () => hero().querySelector("[title^='ICE BofA via FRED']") as HTMLElement;
+    expect(chip().textContent).toContain("As of unknown");
+    expect(chip()).toHaveAttribute("data-tone", "unknown");
+    expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
+    first.unmount();
+    stubFetch(withMetrics({ freshness: { ...CREDIT_BLOCK, BAMLH0A3HYC: { ...baml("BAMLH0A3HYC", "stale", "2026-09-04"), cycles_behind: 8 } } }));
+    renderCredit();
+    await awaitHero();
+    expect(chip().textContent).toContain("Sep 04 · 8 days behind");
+    expect(chip()).toHaveAttribute("data-stale", "true");
+    expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
   });
 
   it.each<[label: string, over: Partial<CreditMetrics>, tone: string, glow: RegExp]>([
@@ -435,7 +474,10 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     expect(oas.tagName).toBe("SECTION");
     expect(within(oas).getByRole("heading", { level: 2 })).toHaveTextContent(/^Spread monitor$/);
     expect(text(oas)).toContain("Option-adjusted spreads by rating");
-    expect(text(oas)).toContain("5 series · latest Sep 01, 2026");
+    // Iteration 1 step 6 (A1): the month-stamped row date left the meta; the
+    // as-of is the ICE BofA stamp (the series' own §5 word).
+    expect(text(oas)).toContain("5 series");
+    expect(oas.querySelector("[data-stamp]")?.textContent).toMatch(/^ICE BofA via FRED · /);
     expect(within(oas).getByRole("link", { name: /Series notes/ })).toHaveAttribute("href", "/app/methodology#models");
     expect(cards()).toHaveLength(5);
     expect(cards().map((a) => text(a.querySelector("h3")))).toEqual(CARD_NAMES);

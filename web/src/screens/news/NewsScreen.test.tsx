@@ -21,7 +21,6 @@ import NewsScreen from "./NewsScreen";
 import { NO_SHELL_ACTIONS, ShellActionsContext, type ShellActions } from "../shell/shell-actions";
 import type { CalendarEvent, Freshness, NewsItem, SlaRow } from "../../api/types";
 import { fmtUtcStampEt } from "../../lib/format";
-import { assessFreshness } from "../shared/freshness";
 import { renderWithProviders, stubFetch } from "../../test/utils";
 
 /* ── fixtures (Sep 2026) ─────────────────────────────────────────────────── */
@@ -333,11 +332,11 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(text(main())).not.toMatch(/Consensus/);
   });
 
-  it("status strip: a current served verdict reads mint Feed current with the newest stamp and the source count, as a dialog button with the reason in its name", async () => {
+  it("status strip: a current served verdict reads mint Feed on time with the newest stamp and the source count, as a dialog button with the reason in its name", async () => {
     renderNews();
     await awaitHero();
     const button = await awaitStrip();
-    await waitFor(() => expect(stripTitle(button)).toBe("Feed current"));
+    await waitFor(() => expect(stripTitle(button)).toBe("Feed on time"));
     expect(button.tagName).toBe("BUTTON");
     expect(button).toHaveAttribute("type", "button");
     expect(button).toHaveAttribute("aria-haspopup", "dialog");
@@ -348,7 +347,7 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     // Iteration 1 step 5 (G4): one status line; the outlet count is the Outlets row's.
     expect(stripDetail(button)).toBe(`Newest headline ${stamp}`);
     const label = button.getAttribute("aria-label") ?? "";
-    expect(label.startsWith(`Feed current. Newest headline ${stamp}. `)).toBe(true);
+    expect(label.startsWith(`Feed on time. Newest headline ${stamp}. `)).toBe(true);
     expect(label).toContain("Newest stored headline is inside 90 minutes (US business hours).");
     expect(label.endsWith("Open the data freshness breakdown.")).toBe(true);
     expect(summary().querySelectorAll(".mrr-status")).toHaveLength(1);
@@ -361,26 +360,24 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     const button = await awaitStrip();
     await waitFor(() => expect(stripTitle(button)).toBe("Feed delayed"));
     expect(button).toHaveAttribute("data-tone", "amber");
-    const info = assessFreshness(NEWEST, "hourly");
-    expect(info.state).toBe("current");
-    expect(stripDetail(button)).toBe(`Newest ${fmtUtcStampEt(NEWEST)} · ${info.age} old`);
+    // A3 (Iteration 1 step 6): the newest stamp, no browser-counted age.
+    expect(stripDetail(button)).toBe(`Newest ${fmtUtcStampEt(NEWEST)}`);
     expect(button.getAttribute("aria-label")).toContain(DELAYED_REASON);
     expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
-    // The chip speaks the same verdict.
-    expect(text(hero().querySelector(".mrr-hero-chips"))).toMatch(/Delayed/);
+    // The chip speaks the same verdict, with the stale mark.
+    expect(text(hero().querySelector(".mrr-hero-chips"))).toMatch(/· delayed/);
+    expect(hero().querySelector("[title^='Newest headline:']")).toHaveAttribute("data-stale", "true");
   });
 
-  it("status strip: without a served sla row the client clock fills in: a 31-hour-old feed reads Feed delayed", async () => {
+  it("status strip: without a served sla row the feed reads Feed as of unknown (A3: no client clock), with the newest stamp", async () => {
     const stale = "2026-09-15T10:00:00Z";
     stub(routes({ "/api/news": () => WINDOWED.map((i) => ({ ...i, published_at: stale })), "/api/freshness": () => freshness({ sla: null, news_published_at: stale }) }));
     renderNews();
     await awaitHero();
     const button = await awaitStrip();
-    await waitFor(() => expect(stripTitle(button)).toBe("Feed delayed"));
-    expect(button).toHaveAttribute("data-tone", "amber");
-    const info = assessFreshness(stale, "hourly");
-    expect(info.state).toBe("delayed");
-    expect(stripDetail(button)).toBe(`Newest ${fmtUtcStampEt(stale)} · ${info.age} old`);
+    await waitFor(() => expect(stripTitle(button)).toBe("Feed as of unknown"));
+    expect(button).toHaveAttribute("data-tone", "gray");
+    expect(stripDetail(button)).toBe(`Newest headline ${fmtUtcStampEt(stale)}`);
     // The hero chip prints the same wall-time stamp as the strip.
     expect(text(hero().querySelector(".mrr-hero-chips"))).toContain(fmtUtcStampEt(stale));
     expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
@@ -399,11 +396,12 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(text(headlines())).toContain("No headlines in the last 7D; the 6 most recent stored stories follow, significance filter not applied.");
     expect(text(headlines())).toContain("Most recent stored stories, significance filter not applied");
     expect(text(headlines())).toContain("4 of 6 · by significance · outside the selected window");
-    expect(text(ddFor("Coverage"))).toBe("Stale: no headlines in 7D; newest stored Sep 14, 2026 (2 days old)");
+    expect(text(ddFor("Coverage"))).toBe("Stale: no headlines in 7D; newest stored Sep 14, 2026");
     expect(ddFor("Coverage").getAttribute("style") ?? "").toMatch(/var\(--warn-hot\)/);
     expect(text(hero().querySelector(".mrr-hero-lede"))).toContain("leads the stored file");
     expect(text(hero().querySelector(".mrr-hero-lede"))).toContain("it is stored fallback coverage, not today's tape");
-    expect(text(hero().querySelector(".mrr-hero-foot"))).toContain("Stale: no headlines in 7D; newest stored Sep 14, 2026 (2 days old)");
+    expect(text(hero().querySelector(".mrr-hero-foot"))).toContain("Stale: no headlines in 7D; newest stored Sep 14, 2026");
+    expect(text(hero().querySelector(".mrr-hero-foot"))).not.toContain("old)");
     expect(feedDescription()).toBe("6 most recent stored");
     expect(feedMeta()).toContain("sorted by recency (fallback)");
     for (const a of articles()) expect(text(a)).toContain("stored · stale");

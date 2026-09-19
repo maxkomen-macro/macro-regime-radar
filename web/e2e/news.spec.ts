@@ -38,7 +38,8 @@ const OPTIONAL_LABELS = new Set(["Next high impact", "Last release", "By categor
 const TILE_LABELS = ["HEADLINES", "HIGH IMPACT · ≥3.5", "M&A", "MACRO / FED", "GEOPOLITICAL"];
 const COUNTDOWN = /(?:today|tomorrow|in \d+ days)$/;
 const HERO_H1 = /(?:today|tomorrow|in \d+ days)$|^No events in the next 30 days$|^No events on file$|^Calendar unavailable/;
-const STRIP_TITLE = /^(?:Fallback coverage|Feed current|Feed delayed|Feed stale|Feed unavailable|Reading feed health…)$/;
+// Iteration 1 step 6 (A3): "Feed as of unknown" when /api/freshness serves no news verdict (no client clock any more).
+const STRIP_TITLE = /^(?:Fallback coverage|Feed on time|Feed delayed|Feed stale|Feed unavailable|Feed as of unknown|Reading feed health…)$/;
 /** Computed dot colours per B.5 (amber / cyan / the --text-4 rung). */
 const DOT_RGB: Record<string, string> = { high: "rgb(245, 181, 46)", medium: "rgb(60, 200, 240)", low: "rgb(111, 125, 138)" };
 const ELAPSED_RGB = "rgb(95, 108, 120)"; // var(--text-4): the shared impact table's quiet rung (calendar-impact.ts)
@@ -316,7 +317,7 @@ test.describe("news (checklist 08 E.3)", () => {
     const tone = (await strip(page).getAttribute("data-tone")) ?? "";
     expect(await strip(page).getAttribute("aria-label")).toMatch(new RegExp(`^${escapeRe(title)}\\. .*Open the data freshness breakdown\\.$`));
     note("strip", `${title} · ${detail} · tone ${tone}`);
-    if (title === "Feed current") expect(tone).toBe("mint");
+    if (title === "Feed on time") expect(tone).toBe("mint");
     else if (/^Feed (?:delayed|stale)$|^Fallback coverage$/.test(title)) expect(tone).toBe("amber");
     else expect(tone).toBe("gray");
 

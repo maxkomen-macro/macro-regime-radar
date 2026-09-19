@@ -11,6 +11,14 @@
  *
  * States are words first (never colour alone) and every chip prints the date,
  * so "Stale · Aug 25, 2026 · 11 days" is the whole story in one glance.
+ *
+ * RETIRED from display (Iteration 1 step 6, A3): this browser age heuristic
+ * re-derived freshness from stamps, which docs/redesign-v2/
+ * FRESHNESS_CONTRACT.md forbids. Every freshness word on screen now comes
+ * from the server's per-series state through ./fresh-state.ts (freshLabel,
+ * groupLabel, stampLabel, referenceLabel) and ./useFreshReport.ts. Nothing
+ * imports this module; it is kept for reference only. Do not reintroduce it
+ * on a display path.
  */
 
 import { daysSince, fmtDate, fmtIntradayTs, fmtMonYr } from "../../lib/format";

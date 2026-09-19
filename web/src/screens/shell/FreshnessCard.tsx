@@ -4,16 +4,20 @@
  * trigger that opens the per-source breakdown drawer. It replaces the header
  * freshness sentence, which now lives in the drawer verbatim.
  *
- * Honest freshness: "Markets live" prints only when the status word is Live,
- * and names its feeds when the US tape is quiet; the macro line always says
- * "monthly" with the month it is on. Never call monthly data live. Each line
- * is one status line (G4): the long words live in the drawer.
+ * Honest freshness (Iteration 1 step 6, A3): both lines print the §5 word
+ * the server judged (/api/freshness `series[]` through fresh-state.ts). The
+ * market line reads `live_quotes` during the session and the stored daily
+ * close otherwise ("Markets · Close · Sep 18", or "Markets · Sep 14 · 4
+ * sessions behind"); the macro line reads the regime's monthly inputs
+ * ("Macro monthly · Aug 2026 print"). Only a live state glows; unknown is
+ * grey. A seeded snapshot reads "Snapshot · as of …" with no health dot.
+ * Each line is one status line (G4): the reasons live in the titles and
+ * the drawer.
  */
 
 import type { ReactNode } from "react";
 import { useQuotes } from "../../live/quotes";
-import { fmtMonYr } from "../../lib/format";
-import { etClock, freshDotColor, liveFeedsWord, marketStamp, newestTickMs, STATUS_COLOR, type ShellStatus } from "./shell-status";
+import { etClock, labelText, liveFeedsWord, newestTickMs, STATUS_COLOR, toneDotColor, type ShellStatus } from "./shell-status";
 
 /** ET wall clock of the newest websocket tick; its own leaf so the 2 Hz
  * quote store repaints only this text. */
@@ -40,66 +44,70 @@ interface Props {
 }
 
 export default function FreshnessCard({ status, open, onOpen }: Props) {
-  const { statusWord, f } = status;
+  const { statusWord, f, marketLabel, macroLabel, seededLabel } = status;
 
   // G4 (Iteration 1 step 5): each card line is one rendered line at every
-  // width (the card is ~220px of text at 768). The line keeps the status word,
-  // the feeds when the US tape is quiet, and the stamp; the rest of the old
-  // line (the session word, a degraded reason, "last …") moves to the line's
-  // hover title and stays verbatim in the drawer's status line.
+  // width. The connection detail (the session word, a degraded reason, the
+  // ticking feeds) rides in the line's hover title and stays verbatim in the
+  // drawer's status line.
   const suffixWords = status.liveSuffix.replace(/^ · /, "");
+  const connection = suffixWords ? `${suffixWords}. ${status.statusTitle}` : status.statusTitle;
   let line1: ReactNode;
-  let title1 = status.statusTitle;
+  let title1 = connection;
   let dot1: string;
   let glow = false;
-  switch (statusWord) {
-    case "Live":
-      line1 = (
-        <>
-          Markets live · {status.liveFeeds.us ? null : `${liveFeedsWord(status.liveFeeds)} · `}
-          <LiveClock />
-        </>
-      );
-      if (suffixWords) title1 = `${suffixWords}. ${status.statusTitle}`;
-      dot1 = STATUS_COLOR.mint;
-      glow = true;
-      break;
-    case "Delayed":
-    case "Off":
-      line1 = `Markets delayed · ${marketStamp(f)}`;
-      if (suffixWords) title1 = `${suffixWords}. ${status.statusTitle}`;
-      dot1 = STATUS_COLOR.amber;
-      break;
-    case "Reconnecting":
-      line1 = "Markets reconnecting";
-      title1 = `Last ${marketStamp(f)}. ${status.statusTitle}`;
-      dot1 = STATUS_COLOR.text3;
-      break;
-    case "Validated snapshot":
-      line1 = `Validated snapshot${status.snapshotDate}`;
-      dot1 = STATUS_COLOR.amber;
-      break;
-    default:
-      line1 = "Data service unavailable";
-      dot1 = STATUS_COLOR.neg;
+  if (statusWord === "Validated snapshot") {
+    line1 = `Validated snapshot${status.snapshotDate}`;
+    dot1 = STATUS_COLOR.text4; // no health dot on a snapshot (A3)
+  } else if (statusWord === "Backend unavailable") {
+    line1 = "Data service unavailable";
+    dot1 = STATUS_COLOR.neg;
+  } else if (f) {
+    const live = marketLabel.tone === "live";
+    line1 = (
+      <>
+        Markets · {labelText(marketLabel)}
+        {live ? (
+          <>
+            {" · "}
+            {status.liveFeeds.us ? null : `${liveFeedsWord(status.liveFeeds)} · `}
+            <LiveClock />
+          </>
+        ) : null}
+      </>
+    );
+    title1 = marketLabel.reason ? `${marketLabel.reason} ${connection}` : connection;
+    dot1 = toneDotColor(marketLabel);
+    glow = live;
+  } else if (status.freshnessError) {
+    line1 = "Markets · As of unknown";
+    dot1 = STATUS_COLOR.text4;
+  } else {
+    line1 = "Markets · reading…";
+    dot1 = STATUS_COLOR.text4;
   }
+
+  const noDots = Boolean(seededLabel) || statusWord === "Validated snapshot";
 
   // Data on hand wins (the old status line's rule): the error copy shows only
   // when no freshness report exists at all.
   let line2: ReactNode;
+  let title2: string | undefined;
   let dot2: string;
-  if (f?.regimes_date) {
-    line2 = `Macro monthly · latest ${fmtMonYr(f.regimes_date)}`;
-    dot2 = freshDotColor(status.macroFresh.state);
+  if (f && seededLabel) {
+    line2 = seededLabel.word;
+    title2 = "Every state in a seeded snapshot is unknown until the live freshness report replaces it.";
+    dot2 = STATUS_COLOR.text4;
+  } else if (f) {
+    line2 = `Macro monthly · ${labelText(macroLabel)}`;
+    title2 = macroLabel.reason || undefined;
+    dot2 = toneDotColor(macroLabel);
   } else if (status.freshnessError) {
     line2 = "Freshness unavailable · retrying";
     dot2 = STATUS_COLOR.neg;
-  } else if (status.freshnessLoading || !f) {
+  } else {
     line2 = "Reading freshness…";
     dot2 = STATUS_COLOR.text3;
-  } else {
-    line2 = "Macro monthly · no stamp on file";
-    dot2 = STATUS_COLOR.neg;
   }
 
   return (
@@ -108,12 +116,14 @@ export default function FreshnessCard({ status, open, onOpen }: Props) {
           (`data-copy="status"`), one rendered line at every width; the
           per-source detail is the drawer's. */}
       <div className="mrr-upd-lines">
-        <small title={title1} data-copy="status">
-          <Dot color={dot1} glow={glow} />
+        {/* A seeded snapshot carries no health dot at all (§5): its states
+            are unknown until the live report replaces it. */}
+        <small title={title1} data-copy="status" data-tone={f && !seededLabel && statusWord !== "Validated snapshot" && statusWord !== "Backend unavailable" ? marketLabel.tone : undefined}>
+          {noDots ? null : <Dot color={dot1} glow={glow} />}
           {line1}
         </small>
-        <small className="mrr-upd-macro" data-copy="status">
-          <Dot color={dot2} />
+        <small className="mrr-upd-macro" title={title2} data-copy="status" data-tone={f && !seededLabel ? macroLabel.tone : undefined}>
+          {noDots ? null : <Dot color={dot2} />}
           {line2}
         </small>
       </div>

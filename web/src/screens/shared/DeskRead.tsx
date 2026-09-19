@@ -13,8 +13,9 @@
  */
 
 import type React from "react";
+import type { Freshness, SeriesState } from "../../api/types";
 import { useBreakpoint } from "../../lib/useBreakpoint";
-import { assessFreshness, freshColor, freshGlyph, type FreshInfo } from "./freshness";
+import { REGIME_INPUT_IDS, SIGNAL_INPUT_IDS, groupLabel, lookupFrom, marketSeries, freshLabel, seededLabel, toneColor, toneGlyph, type FreshLabel } from "./fresh-state";
 import { mono } from "./screen-ui";
 
 export interface LedgerItem {
@@ -26,9 +27,11 @@ export interface LedgerItem {
   prose?: boolean;
 }
 
+/** A freshness chip (Iteration 1 step 6, A3): the noun it names and the §5
+ * label from fresh-state.ts. Nothing here judges an age. */
 export interface FreshnessTag {
   noun: string;
-  info: FreshInfo;
+  label: FreshLabel;
 }
 
 interface Props {
@@ -49,17 +52,26 @@ interface Props {
   id?: string;
 }
 
-export function FreshnessChip({ noun, info }: FreshnessTag) {
-  const color = freshColor(info.state);
-  // The state word is printed once (the coloured word); reference and
-  // unavailable chips carry only the noun after it (review P3-1).
-  const text =
-    info.state === "reference" || info.state === "unavailable"
-      ? noun
-      : `${noun} · ${info.stamp}${info.state === "current" ? "" : ` · ${info.age} old`}`;
+/** "Macro inputs: Jul 2026 · 1 release behind. Industrial production: …" */
+export function chipTitle(noun: string, label: FreshLabel): string {
+  return `${noun}: ${label.word}${label.muted ? ` ${label.muted}` : ""}${label.reason ? `. ${label.reason}` : ""}`;
+}
+
+/**
+ * The chip prints the noun, then the §5 word or stamp (FRESHNESS_CONTRACT
+ * §5, word for word), then the muted tail a FRED daily close carries. Only
+ * a live state is mint; unknown is grey and never a health mark; a stale
+ * state marks the word itself (`data-stale`). The server's reason sentence
+ * is the tooltip.
+ */
+export function FreshnessChip({ noun, label }: FreshnessTag) {
+  const color = toneColor(label.tone);
   return (
     <span
-      title={`${noun}: ${info.word}${info.stamp ? ` · ${info.stamp}` : ""}`}
+      className="mrr-fresh-chip"
+      data-tone={label.tone}
+      data-stale={label.stale ? "true" : undefined}
+      title={chipTitle(noun, label)}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -76,10 +88,13 @@ export function FreshnessChip({ noun, info }: FreshnessTag) {
       }}
     >
       <span aria-hidden="true" style={{ color, fontSize: 9 }}>
-        {freshGlyph(info.state)}
+        {toneGlyph(label.tone)}
       </span>
-      <span style={{ color, fontWeight: 600 }}>{info.word}</span>
-      <span style={{ color: "var(--text-muted)" }}>{text}</span>
+      <span style={{ color: "var(--text-muted)" }}>{noun}</span>
+      <span className="mrr-fresh-word" style={{ color, fontWeight: 600 }}>
+        {label.word}
+      </span>
+      {label.muted ? <span style={{ color: "var(--text-muted)" }}>{label.muted}</span> : null}
     </span>
   );
 }
@@ -241,7 +256,7 @@ export default function DeskRead({
             {freshness?.length ? (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {freshness.map((f) => (
-                  <FreshnessChip key={f.noun} noun={f.noun} info={f.info} />
+                  <FreshnessChip key={f.noun} noun={f.noun} label={f.label} />
                 ))}
               </div>
             ) : null}
@@ -278,17 +293,31 @@ export default function DeskRead({
   );
 }
 
-/** Convenience for the common four-chip set built from /api/freshness. */
-export function shellFreshness(f: {
-  regimes_date?: string | null;
-  signals_date?: string | null;
-  market_daily_date?: string | null;
-  market_intraday_ts?: string | null;
-} | undefined): FreshnessTag[] {
+/**
+ * The common three-chip set, read from /api/freshness `series[]` (A3): the
+ * macro chip is the regime's monthly inputs (INDPRO, CPIAUCSL, UNRATE, the
+ * weakest one's word), the signals chip the signals payload's own block when
+ * served, and the market chip `live_quotes` during the session or the stored
+ * daily close otherwise. A seeded report reads "Snapshot · as of …" on all
+ * three; a series the report does not carry reads "As of unknown".
+ */
+export function shellFreshness(
+  f: Freshness | undefined,
+  opts: { seeded?: boolean; signalsBlock?: Record<string, SeriesState> | null } = {},
+): FreshnessTag[] {
   if (!f) return [];
+  if (opts.seeded) {
+    const snap = seededLabel(f.generated_at);
+    return [
+      { noun: "Macro", label: snap },
+      { noun: "Signals", label: snap },
+      { noun: "Market", label: snap },
+    ];
+  }
+  const inputs = f.regime?.inputs?.length ? f.regime.inputs.map((i) => i.series) : REGIME_INPUT_IDS;
   return [
-    { noun: "Macro", info: assessFreshness(f.regimes_date, "monthly") },
-    { noun: "Signals", info: assessFreshness(f.signals_date, "monthly") },
-    { noun: "Market", info: assessFreshness(f.market_daily_date, "daily") },
+    { noun: "Macro", label: groupLabel(lookupFrom(f), inputs) },
+    { noun: "Signals", label: groupLabel(lookupFrom(f, opts.signalsBlock), SIGNAL_INPUT_IDS) },
+    { noun: "Market", label: freshLabel(marketSeries(f)) },
   ];
 }

@@ -342,9 +342,12 @@ describe("AppShell without the transitional regime pill (checklist 10 B.8)", () 
     await screen.findByTestId("dashboard-screen");
     const strip2 = screen.getByRole("region", { name: "Market strip and data freshness" });
     await waitFor(() => expect(strip2.textContent).toContain("Freshness unavailable · retrying"));
-    expect(strip2.textContent).toContain("Markets delayed");
+    // Iteration 1 step 6 (A3): with no freshness report the market line says its as-of is unknown
+    // (never a healthy word), and the footer names market data without a judgement.
+    expect(strip2.textContent).toContain("Markets · As of unknown");
     expect(strip2.textContent).not.toContain("Data service unavailable");
-    expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toContain("Delayed market data");
+    expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toContain("Stored market data");
+    expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toContain("As of unknown");
     await waitFor(() => expect(lastContext()?.key_metrics?.regime).toBe("Goldilocks"));
   });
 });

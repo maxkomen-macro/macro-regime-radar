@@ -13,7 +13,6 @@ import { ApiError } from "../../api/client";
 import { componentAsOf, isStatedDefault, lboHero, lboStrip } from "./lbo-copy";
 import type { LboDeal } from "./lbo-deal";
 import { HERO_GLOW_DEFAULT } from "../shared/TabHero";
-import { assessFreshness } from "../shared/freshness";
 import { fmtDate } from "../../lib/format";
 import { BASE_REQ, LBO_DEFAULTS, LBO_DEFAULTS_B3, LBO_DEFAULTS_B3_UNKNOWN, LBO_DEFAULTS_FALLBACK, LBO_DEFAULTS_STATED, LIVE_RATE, NOW, lboModel } from "./__fixtures__/lbo";
 
@@ -209,11 +208,11 @@ describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
     });
   });
 
-  it("current: mint, Rate synced from FRED, the stored-through detail", () => {
-    expect(assessFreshness(LBO_DEFAULTS.data_as_of, "monthly").state).toBe("current");
-    expect(lboStrip(q({ data: LBO_DEFAULTS }))).toMatchObject({
-      tone: "mint",
-      title: "Rate synced from FRED",
+  it("A3: a payload without a freshness block reads gray FRED rate · as of unknown with the stored-through detail (never a browser-judged age)", () => {
+    expect(LBO_DEFAULTS.freshness).toBeUndefined();
+    expect(lboStrip(q({ data: LBO_DEFAULTS }))).toEqual({
+      tone: "gray",
+      title: "FRED rate · as of unknown",
       detail: `Stored through ${fmtDate(LBO_DEFAULTS.data_as_of)}`,
     });
     expect(lboStrip(q({ data: LBO_DEFAULTS })).detail).toBe("Stored through Sep 01, 2026");
@@ -234,18 +233,11 @@ describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
     expect(componentAsOf(LBO_DEFAULTS).hy.word).toBe("As of unknown");
   });
 
-  it("delayed: amber, FRED rate delayed, the age detail", () => {
-    const data = { ...LBO_DEFAULTS, data_as_of: "2026-07-10" };
-    const info = assessFreshness(data.data_as_of, "monthly");
-    expect(info.state).toBe("delayed");
-    expect(lboStrip(q({ data }))).toMatchObject({ tone: "amber", title: "FRED rate delayed", detail: "Stored through Jul 10, 2026" });
-  });
-
-  it("stale: amber, FRED rate stale, the same detail form", () => {
-    const data = { ...LBO_DEFAULTS, data_as_of: "2026-05-01" };
-    const info = assessFreshness(data.data_as_of, "monthly");
-    expect(info.state).toBe("stale");
-    expect(lboStrip(q({ data }))).toMatchObject({ tone: "amber", title: "FRED rate stale", detail: "Stored through May 01, 2026" });
+  it("A3: an older stored stamp without a block reads the same gray words; the age is never judged in the browser", () => {
+    for (const stamp of ["2026-07-10", "2026-05-01"]) {
+      const data = { ...LBO_DEFAULTS, data_as_of: stamp };
+      expect(lboStrip(q({ data }))).toMatchObject({ tone: "gray", title: "FRED rate · as of unknown", detail: `Stored through ${fmtDate(stamp)}` });
+    }
   });
 });
 

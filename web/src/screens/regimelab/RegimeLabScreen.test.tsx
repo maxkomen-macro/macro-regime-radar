@@ -347,7 +347,9 @@ describe("RegimeLabScreen (checklist 04 E.1)", () => {
     expect(text(h2)).toBe("Goldilocks is young by its own history.");
     expect(text(h2)).not.toMatch(/\d/);
     await waitFor(() => expect(text(hero())).toContain("2 years of monthly regime history"));
-    expect(text(hero())).toMatch(/Classifier month Sep 2026 \([^)]+ old\)/);
+    // Iteration 1 step 6 (A3): no browser-counted age; the Regime chip carries the served state.
+    expect(text(hero())).toContain("Classifier month Sep 2026");
+    expect(text(hero())).not.toMatch(/Classifier month Sep 2026 \(/);
     expect(hero().querySelectorAll("[title^='Regime:']")).toHaveLength(1);
     expect(hero().querySelectorAll("[title^='Playbook:']")).toHaveLength(1);
     const viz = hero().querySelector(".mrr-hero-viz") as HTMLElement;

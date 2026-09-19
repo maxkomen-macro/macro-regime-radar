@@ -9,6 +9,7 @@
  * motion. The number itself is the h1 beside it; the gauge never prints it.
  */
 
+import { fmtProb } from "../../lib/format";
 import { BANDS, toneColor, type LabelTone } from "./recession-copy";
 
 export interface ProbabilityGaugeProps {
@@ -60,7 +61,7 @@ export default function ProbabilityGauge({ prob, label, tone, maxWidth = 360 }: 
       viewBox="0 0 360 210"
       width="100%"
       role="img"
-      aria-label={`Recession probability gauge at ${p.toFixed(1)}% · ${label}`}
+      aria-label={`Recession probability gauge at ${fmtProb(prob, "percent", 1)} · ${label}`}
       className="mrr-rec-gauge"
       style={{ display: "block", maxWidth, margin: "0 auto" }}
     >

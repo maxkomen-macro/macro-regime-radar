@@ -28,15 +28,17 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useRecessionProbability, useRegimeLatest } from "../../api/queries";
 import type { RecessionMetrics, RecessionScenarioRequest, Regime } from "../../api/types";
-import { fmtBps, fmtMonYr, fmtSigned, fmtWholePct, ordinal } from "../../lib/format";
+import { fmtBps, fmtMonYr, fmtProb, fmtSigned, fmtWholePct, ordinal } from "../../lib/format";
 import { DASH } from "../dashboard/hero-copy";
-import { assessFreshness } from "../shared/freshness";
+import { RECESSION_INPUT_IDS } from "../shared/fresh-state";
+import { useFreshReport } from "../shared/useFreshReport";
+import { Metric, ODDS_METRIC, SRC, Stamp, type OddsKey } from "../shared/Stamp";
 import { HeroChartFrame } from "../shared/HeroChart";
 import { MISSING, MISSING_ROW, StateNote, missingNote, useHashScroll, useSnapshotMode } from "../shared/screen-ui";
 import { DisclosureLine } from "../shared/Disclosure";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
-import { RECESSION_GLOW, deltaPoints, featureLabel, headlineIndex, heroCopy, labelTone, stripSummary, toneColor } from "./recession-copy";
+import { RECESSION_GLOW, deltaPoints, featureLabel, headlineIndex, heroCopy, inputsThrough, labelTone, stripSummary, toneColor } from "./recession-copy";
 import type { CurveWindow, RecessionPanelProps } from "./panel-props";
 import ProbabilityGauge, { GAUGE_ASPECT } from "./ProbabilityGauge";
 import ProbabilityHistory from "./ProbabilityHistory";
@@ -94,6 +96,13 @@ const REGIME_PROB: Record<string, keyof Regime> = {
   Stagflation: "prob_stagflation",
   "Recession Risk": "prob_recession",
 };
+/** The classifier's label to its odds key (A2 marker ids). */
+const ODDS_KEY: Record<string, OddsKey> = {
+  Goldilocks: "goldilocks",
+  Overheating: "overheating",
+  Stagflation: "stagflation",
+  "Recession Risk": "recession",
+};
 function labelOdds(r: Regime): number | null {
   const key = REGIME_PROB[r.label];
   const v = key ? r[key] : null;
@@ -120,7 +129,14 @@ export default function RecessionScreen() {
   const hashReady = useMemo(() => [m, curveRange] as const, [m, curveRange]);
   useHashScroll(hashReady);
 
-  const fresh = assessFreshness(m?.data_as_of, "monthly");
+  // E3 (Iteration 1 step 6): the model's freshness is its seven FRED inputs
+  // (DGS10, DGS2, BAMLH0A0HYM2, T10YIE, T5YIE, UNRATE, INDPRO) as
+  // /api/freshness series[] states them. Not the payload's own freshness
+  // block: that one lists USSLIND, which the model does not read, and omits
+  // UNRATE and INDPRO (a backend follow-up, B8).
+  const report = useFreshReport();
+  const fresh = report.group(RECESSION_INPUT_IDS);
+  const through = inputsThrough(report.group);
   const copy = m ? heroCopy(m) : null;
   const prob = m?.recession_prob ?? 0;
 
@@ -128,18 +144,23 @@ export default function RecessionScreen() {
   const heroShared = {
     id: "recession-hero",
     eyebrow: "Recession model",
-    live: m != null && fresh.state === "current",
+    // In cycle is the server's word: every input "close"; a stale or unknown input never pulses.
+    live: m != null && !report.seeded && (fresh.tone === "neutral" || fresh.tone === "live"),
     actions: HERO_ACTIONS,
     // No absence before an answer: the chip waits for the payload (or its
     // error) instead of printing "Unavailable" while the request is pending.
-    freshness: m || q.isError ? [{ noun: "Model inputs", info: fresh }] : undefined,
+    freshness: m || q.isError ? [{ noun: "Model inputs", label: fresh }] : undefined,
   };
   let hero: ReactNode;
   if (m && copy) {
     hero = (
       <TabHero
         {...heroShared}
-        headline={copy.headline}
+        headline={
+          <Metric id="recession-prob" value={m.recession_prob}>
+            {copy.headline}
+          </Metric>
+        }
         pill={<span title={PILL_TITLE}>{copy.pill}</span>}
         pillTone={copy.pillTone}
         glow={copy.glow}
@@ -166,6 +187,7 @@ export default function RecessionScreen() {
             <ProbabilityHistory m={m} />
           </>
         }
+        stamp={<Stamp source={SRC.recession} asOf={fmtMonYr(m.data_as_of)} />}
       />
     );
   } else if (q.isError) {
@@ -201,7 +223,17 @@ export default function RecessionScreen() {
     {
       id: "probability",
       label: "12-month probability",
-      value: val((x) => `${prob.toFixed(1)}% · ${x.recession_label}`, true),
+      value: val(
+        (x) => (
+          <>
+            <Metric id="recession-prob" value={x.recession_prob}>
+              {fmtProb(prob, "percent", 1)}
+            </Metric>
+            {` · ${x.recession_label}`}
+          </>
+        ),
+        true,
+      ),
       tone: toneColor(tone),
     },
     {
@@ -210,7 +242,7 @@ export default function RecessionScreen() {
       value: val(() =>
         change ? (
           <>
-            {change.prior.value.toFixed(1)}%{" "}
+            {fmtProb(change.prior.value, "percent", 1)}{" "}
             <span style={{ color: change.delta > 0 ? "var(--amber)" : "var(--text-2)" }}>{fmtSigned(change.delta, 1)} pts</span>
             {" · "}
             {fmtMonYr(change.prior.date)}
@@ -253,9 +285,22 @@ export default function RecessionScreen() {
       value: regime.data ? (
         <span title={REGIME_ROW_TITLE}>
           <Link to="/app/regime-lab" style={kvLinkStyle}>
-            {regime.data.label}
+            <Metric id="regime" value={regime.data.label}>
+              {regime.data.label}
+            </Metric>
           </Link>{" "}
-          {labelOdds(regime.data) != null ? fmtWholePct(labelOdds(regime.data) as number) : DASH} · classifier
+          {labelOdds(regime.data) != null ? (
+            ODDS_KEY[regime.data.label] ? (
+              <Metric id={ODDS_METRIC[ODDS_KEY[regime.data.label]]} value={labelOdds(regime.data)}>
+                {fmtWholePct(labelOdds(regime.data) as number)}
+              </Metric>
+            ) : (
+              fmtWholePct(labelOdds(regime.data) as number)
+            )
+          ) : (
+            DASH
+          )}{" "}
+          · classifier
         </span>
       ) : regime.isError ? (
         <StateNote error />
@@ -273,7 +318,12 @@ export default function RecessionScreen() {
     {
       id: "inputs-through",
       label: "Inputs through",
-      value: val((x) => fmtMonYr(x.data_as_of)),
+      // E3: the weakest daily and monthly input, each a §5 word from series[].
+      value: val(() => (
+        <span title={through.title || undefined} data-stale={through.stale ? "true" : undefined} className={through.stale ? "mrr-stale-num" : undefined}>
+          {through.text}
+        </span>
+      )),
     },
     {
       id: "thresholds",
@@ -300,7 +350,19 @@ export default function RecessionScreen() {
       {/* ── Hero row ────────────────────────────────────────────────── */}
       <div className="mrr-hero-row">
         {hero}
-        <SummaryCard id="recession-summary" as="h2" title="Model summary" rows={rows} status={strip} />
+        <SummaryCard
+          id="recession-summary"
+          as="h2"
+          title="Model summary"
+          rows={rows}
+          status={strip}
+          stamp={
+            <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+              <Stamp source={SRC.recession} asOf={m ? fmtMonYr(m.data_as_of) : null} />
+              <Stamp source={SRC.classifier} asOf={regime.data ? fmtMonYr(regime.data.date) : null} />
+            </span>
+          }
+        />
       </div>
 
       {/* ── Model inputs, full width ─────────────────────────────────── */}

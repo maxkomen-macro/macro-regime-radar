@@ -16,9 +16,12 @@ import { useLocation } from "react-router-dom";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { Card, SectionHeader } from "../../components";
 import type { CreditOAS, RecessionMetrics } from "../../api/types";
-import { fmtDate, fmtPct } from "../../lib/format";
+import { fmtBpsLevel, fmtMonYr, fmtPct, fmtProb, pctToBps } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { Caption, mono } from "../shared/screen-ui";
+import { CREDIT_OAS_IDS } from "../shared/fresh-state";
+import { Metric, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 import LineChart from "./LineChart";
 
 export const MACRO_CHARTS_HASH = "#macro-charts";
@@ -134,6 +137,8 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
   const requested = chartFromHash(location.hash);
   const hy = credit.data?.series.find((s) => s.label === "HY");
   const ig = credit.data?.series.find((s) => s.label === "IG");
+  // A1: each chart names its source and as-of under its caption.
+  const report = useFreshReport();
 
   return (
     <Card as="section" id="macro-charts" variant="panel" style={{ minWidth: 0 }}>
@@ -169,6 +174,7 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                   <Caption>
                     Dips below the dashed zero line are inversions: the shape that has preceded most US recessions.
                   </Caption>
+                  <Stamp block source={SRC.fred} label={report.group(["DGS10", "DGS2"], recession.data?.freshness)} />
                 </>
               ),
           },
@@ -197,16 +203,21 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                   />
                   <Caption>
                     Monthly stored series. Elevated starts at 20%, High at 40%. The model&apos;s current call is{" "}
-                    {recession.data?.recession_prob?.toFixed(1) ?? "—"}% (the evidence card above); the plotted tail can
-                    differ while a month is partial.
+                    <Metric id="recession-prob" value={recession.data?.recession_prob}>
+                      {fmtProb(recession.data?.recession_prob, "percent", 1)}
+                    </Metric>{" "}
+                    (the evidence card above); the plotted tail can differ while a month is partial.
                   </Caption>
+                  <Stamp block source={SRC.recession} asOf={recession.data ? fmtMonYr(recession.data.data_as_of) : null} />
                 </>
               ),
           },
           {
             id: "chart-credit",
             title: "Credit spreads · 90 days",
-            right: credit.data?.as_of ? `latest ${fmtDate(credit.data.as_of)}` : "—",
+            // The stored rows are month-stamped (FRED daily, B6): the panel's
+            // as-of is the stamp under the chart, never "latest <row date>".
+            right: credit.data ? "ICE BofA via FRED" : "—",
             body: () =>
               credit.isLoading ? (
                 <Caption>Reading credit spreads…</Caption>
@@ -217,23 +228,30 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                       {
                         label: "IG",
                         color: "var(--link)",
-                        points: (ig?.history ?? []).map((p) => ({ x: p.date, y: p.value * 100 })),
+                        points: (ig?.history ?? []).map((p) => ({ x: p.date, y: pctToBps(p.value) })),
                       },
                       {
                         label: "HY",
                         color: "var(--warn-hot)",
-                        points: (hy?.history ?? []).map((p) => ({ x: p.date, y: p.value * 100 })),
+                        points: (hy?.history ?? []).map((p) => ({ x: p.date, y: pctToBps(p.value) })),
                       },
                     ]}
-                    yFmt={(v) => `${Math.round(v)} bps`}
+                    yFmt={(v) => fmtBpsLevel(v)}
                     caption="IG and HY option-adjusted spreads"
                   />
                   <Caption>
                     <Jargon term="OAS">Option-adjusted spreads</Jargon>: <Jargon term="high-yield">high-yield</Jargon> at{" "}
-                    {hy ? `${Math.round(hy.value_bps)} bps` : "—"}, investment-grade at{" "}
-                    {ig ? `${Math.round(ig.value_bps)} bps` : "—"}; spreads widen when credit stress builds. FRED BAML series,
+                    {hy ? (
+                      <Metric id="hy-oas" value={hy.value_pct}>
+                        {fmtBpsLevel(hy.value_bps)}
+                      </Metric>
+                    ) : (
+                      "—"
+                    )}
+                    , investment-grade at {ig ? fmtBpsLevel(ig.value_bps) : "—"}; spreads widen when credit stress builds. FRED BAML series,
                     monthly observations.
                   </Caption>
+                  <Stamp block source={SRC.baml} label={report.group(CREDIT_OAS_IDS, credit.data?.freshness)} />
                 </>
               ),
           },

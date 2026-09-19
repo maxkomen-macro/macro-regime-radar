@@ -20,7 +20,6 @@
 
 import type { Regime } from "../../api/types";
 import { fmtMonYr, fmtSigned, fmtWholePct } from "../../lib/format";
-import { assessFreshness } from "../shared/freshness";
 
 /** The dash placeholder for a value that is not on file. */
 export const DASH = "—";
@@ -100,7 +99,9 @@ export interface HeroCopy {
   lede: string;
   /** The rule-4 clause when the runner-up is Recession Risk, else null. */
   ledeClause: string | null;
-  /** ["Macro regime for {Mon YYYY} ({age} old)", "Model confidence: {word} ({pct}%)"] */
+  /** ["Macro regime for {Mon YYYY}", "Model confidence: {word} ({pct}%)"]. The
+   * month's freshness is the hero's Macro chip (A3: a §5 word from the
+   * server, never an age counted here). */
   footnote: [string, string];
 }
 
@@ -128,7 +129,7 @@ export function heroCopy(r: Regime): HeroCopy {
     lede: ledeBase,
     ledeClause,
     footnote: [
-      `Macro regime for ${fmtMonYr(r.date)} (${assessFreshness(r.date, "monthly").age} old)`,
+      `Macro regime for ${fmtMonYr(r.date)}`,
       `Model confidence: ${convictionWord(r.confidence)} (${fmtWholePct(r.confidence)})`,
     ],
   };

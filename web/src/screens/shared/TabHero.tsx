@@ -73,10 +73,14 @@ export interface TabHeroProps {
   actionsAfter?: ReactNode;
   /** Footnote items, joined by an aria-hidden bullet. */
   footnote?: ReactNode[];
-  /** Freshness chips rendered in the footnote row. */
+  /** Freshness chips rendered in the footnote row: §5 words from
+   * fresh-state.ts (Iteration 1 step 6, A3), never a browser-judged age. */
   freshness?: FreshnessTag[];
   /** Extra line under the footnote (the impact sentence). */
   note?: ReactNode;
+  /** The hero's source and as-of stamp (Iteration 1, A1): a `<Stamp>`
+   * (./Stamp.tsx) on its own line under the footnote. */
+  stamp?: ReactNode;
   /** The tab's signature chart (Lightweight Charts or inline SVG). */
   chart?: ReactNode;
   /** Gradient block in the chart slot when no chart is given. */
@@ -185,6 +189,7 @@ export function TabHero({
   footnote,
   freshness,
   note,
+  stamp,
   chart,
   placeholder = false,
   glow = HERO_GLOW_DEFAULT,
@@ -395,7 +400,7 @@ export function TabHero({
                 style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, verticalAlign: "middle", marginLeft: items.length ? 8 : 0 }}
               >
                 {freshness.map((f) => (
-                  <FreshnessChip key={f.noun} noun={f.noun} info={f.info} />
+                  <FreshnessChip key={f.noun} noun={f.noun} label={f.label} />
                 ))}
               </span>
             ) : null}
@@ -404,6 +409,11 @@ export function TabHero({
                 {note}
               </div>
             ) : null}
+          </div>
+        ) : null}
+        {stamp != null ? (
+          <div className="mrr-hero-stamp" style={{ marginTop: hasFoot ? 6 : 16, maxWidth: "var(--maxw-prose)" }}>
+            {stamp}
           </div>
         ) : null}
       </div>

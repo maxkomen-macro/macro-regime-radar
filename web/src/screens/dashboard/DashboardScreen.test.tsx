@@ -325,7 +325,9 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(within(hero()).getByRole("button", { name: "model confidence" })).toHaveClass("jargon");
     expect(within(hero()).getByRole("link", { name: /Explore the regime/ })).toHaveAttribute("href", "/app/regime-lab");
     expect(within(hero()).getByRole("link", { name: /View model details/ })).toHaveAttribute("href", "/app/methodology#models");
-    expect(heroText).toMatch(/Macro regime for Sep 2026 \([^)]+ old\)/);
+    // Iteration 1 step 6 (A3): the month without a browser-counted age; the Macro chip carries the served state.
+    expect(heroText).toContain("Macro regime for Sep 2026");
+    expect(heroText).not.toMatch(/Macro regime for Sep 2026 \(/);
     expect(heroText).toContain("Model confidence: Medium (47%)");
     // The pill is the only place the dominant figure prints inside the hero.
     expect(heroText.split("58%")).toHaveLength(2);
@@ -554,7 +556,10 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     await waitFor(() => {
       for (const label of KEY_LABELS) expect(within(kl).getAllByText(label).length, label).toBeGreaterThan(0);
     });
-    await waitFor(() => expect(text(kl)).toContain("FRED · latest Sep 14, 2026"));
+    // Iteration 1 step 6 (A1): the header drops the month-stamped row date;
+    // each tile carries its own source and as-of stamp.
+    await waitFor(() => expect(text(kl)).toContain("FRED"));
+    expect(kl.querySelectorAll("[data-stamp]").length).toBe(7);
     await waitFor(() => expect(text(kl)).toContain("4.21%"));
     const t = text(kl);
     expect(t).toContain("+5 bps 1w");
@@ -562,7 +567,9 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(t).toContain("4.33%");
     expect(t).toContain("Overnight policy rate · monthly average · Aug 2026.");
     expect(t).toContain("16.42");
-    expect(t).toContain("VIX · daily close · Sep 14, 2026.");
+    // Iteration 1 step 6 (A1): the month-stamped row date left the caption;
+    // the tile's stamp carries VIXCLS's own as-of word.
+    expect(t).toContain("VIX · Cboe volatility index · daily close.");
     expect(t).toContain("+0.31");
     expect(t).toContain("-0.42");
     expect(t).toContain("3-month slope of the industrial-production z-score; feeds the regime call.");
@@ -579,7 +586,11 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(text(ten)).toContain("US 10 Year Yield");
     expect(text(ten)).toContain("4.21%");
     expect(text(ten)).toContain("+5 bps");
-    expect(text(ten)).toContain("10-year Treasury yield · FRED DGS10 · daily close · Sep 14, 2026");
+    // Iteration 1 step 6 (A1): the provenance line ends in the card's stamp,
+    // DGS10's own as-of word (the fixture's report carries no series: unknown),
+    // never the month-stamped row date.
+    expect(text(ten)).toContain("10-year Treasury yield · daily close · FRED DGS10 · As of unknown");
+    expect(ten.querySelector("[data-stamp]")?.textContent).toBe("FRED DGS10 · As of unknown");
     expect(ten.querySelector("svg path")).not.toBeNull();
     expect(within(ten).getByRole("link", { name: /View rates/ })).toHaveAttribute("href", "/app/credit#financing");
     // And the summary NBER row prints the same recession figure as the tile.

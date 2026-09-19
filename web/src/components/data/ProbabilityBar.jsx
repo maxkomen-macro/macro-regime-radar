@@ -1,12 +1,14 @@
 import React from "react";
+import { fmtProb } from "../../lib/format";
 
 // Fixed classifier order (src/regime.py): the bar's shape stays comparable
 // across screens. Legend abbreviations: two-letter (default) or single-letter.
+// The last column is the A2 metric id (Iteration 1 step 6).
 const ORDER = [
-  ["goldilocks", "Goldilocks", "GL", "G", "var(--r-goldilocks)"],
-  ["overheating", "Overheating", "OV", "O", "var(--r-overheating)"],
-  ["stagflation", "Stagflation", "ST", "S", "var(--r-stagflation)"],
-  ["recession", "Recession Risk", "RR", "R", "var(--r-recession)"],
+  ["goldilocks", "Goldilocks", "GL", "G", "var(--r-goldilocks)", "odds-goldilocks"],
+  ["overheating", "Overheating", "OV", "O", "var(--r-overheating)", "odds-overheating"],
+  ["stagflation", "Stagflation", "ST", "S", "var(--r-stagflation)", "odds-stagflation"],
+  ["recession", "Recession Risk", "RR", "R", "var(--r-recession)", "odds-recession-risk"],
 ];
 
 /**
@@ -22,16 +24,22 @@ export function ProbabilityBar({
   gap = 2,
   legend = "abbr",
   order = "fixed",
+  metrics,
   style,
   ...rest
 }) {
   // A regime at 0.4% must not print "0%": rounding to zero would assert a
   // certainty the model does not hold, so sub-1% shares read "<1%" and only
   // an exact zero prints 0% (executive pass, 2026-09-05).
-  const rows = ORDER.map(([key, name, abbr, letter, color]) => {
+  // A4 (Iteration 1 step 6): a probability outside 0–1 is a data fault; its
+  // legend prints the dash (fmtProb warns) and its segment draws nothing,
+  // never a clamped share that looks real.
+  const rows = ORDER.map(([key, name, abbr, letter, color, metric]) => {
     const raw = Number(probs[key]) || 0;
-    const share = Math.max(0, raw) * 100;
+    const bad = raw < 0 || raw > 1;
+    const share = bad ? 0 : raw * 100;
     const pct = Math.round(share);
+    const served = metrics ? metrics[key] : undefined;
     return {
       key,
       name,
@@ -40,8 +48,9 @@ export function ProbabilityBar({
       pct,
       // Flex share: the printed percent, or the true sliver for a sub-1% regime.
       grow: pct > 0 ? pct : Math.round(share * 10) / 10,
-      text: raw > 0 && pct === 0 ? "<1%" : `${pct}%`,
-      zero: raw <= 0,
+      text: bad ? fmtProb(raw) : raw > 0 && pct === 0 ? "<1%" : fmtProb(raw),
+      zero: bad || raw <= 0,
+      marks: typeof served === "number" && Number.isFinite(served) ? { "data-metric": metric, "data-metric-value": String(served) } : null,
     };
   });
   const ordered = order === "desc" ? [...rows].sort((a, b) => b.grow - a.grow) : rows;
@@ -89,7 +98,7 @@ export function ProbabilityBar({
             <React.Fragment key={r.key}>
               {i ? <span aria-hidden="true"> · </span> : null}
               {/* A zero regime's entry stays, faint, so the set is always complete. */}
-              <span style={r.zero ? { color: "var(--text-4)" } : undefined}>
+              <span {...r.marks} style={r.zero ? { color: "var(--text-4)" } : undefined}>
                 {r.abbr} {r.text}
               </span>
             </React.Fragment>

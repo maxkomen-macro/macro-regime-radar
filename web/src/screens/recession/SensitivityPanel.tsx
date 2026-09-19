@@ -20,12 +20,13 @@ import { useMemo, type ReactNode } from "react";
 import { Card, SectionHeader, Tag } from "../../components";
 import { useRecessionScenario } from "../../api/queries";
 import type { RecessionScenarioRequest } from "../../api/types";
-import { fmtSigned } from "../../lib/format";
+import { fmtMonYr, fmtProb, fmtSigned } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import { Caption, MISSING, SliderRow, StateNote, capStyle, eyebrowStyle, mono, useDebounced } from "../shared/screen-ui";
 import { BREAKEVEN_LABEL, labelTone, toneColor } from "./recession-copy";
 import type { SensitivityPanelProps } from "./panel-props";
+import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
 
 /** The null-value glyph the result line prints (U+2014), never an em-dash aside. */
 const DASH = "—";
@@ -83,7 +84,7 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
   } else {
     // The lead line (the pre-Iteration-1 disclosure title, kept as prose).
     const lead =
-      prob != null ? `Move the model's five inputs and watch ${prob.toFixed(1)}% respond.` : "Move the model's five inputs and watch the model respond.";
+      prob != null ? `Move the model's five inputs and watch ${fmtProb(prob, "percent", 1)} respond.` : "Move the model's five inputs and watch the model respond.";
     body = (
       <>
         <p
@@ -208,7 +209,13 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
                     color: toneColor(labelTone(m.recession_label)) ?? "var(--text)",
                   }}
                 >
-                  {prob != null ? `${prob.toFixed(1)}%` : DASH}
+                  {prob != null ? (
+                    <Metric id="recession-prob" value={prob}>
+                      {fmtProb(prob, "percent", 1)}
+                    </Metric>
+                  ) : (
+                    DASH
+                  )}
                 </span>
                 <Tag tone={labelTone(m.recession_label)} size="sm">
                   {m.recession_label}
@@ -247,7 +254,7 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
                         color: toneColor(labelTone(scenario.data.label)) ?? "var(--text)",
                       }}
                     >
-                      {scenario.data.probability.toFixed(1)}%
+                      {fmtProb(scenario.data.probability, "percent", 1)}
                     </span>
                     <Tag tone={labelTone(scenario.data.label)} size="sm">
                       {scenario.data.label}
@@ -263,7 +270,7 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
                       }}
                     >
                       {fmtSigned(scenario.data.delta_pp, 1)}pp vs the model&apos;s headline{" "}
-                      {scenario.data.baseline_prob != null ? scenario.data.baseline_prob.toFixed(1) : DASH}%
+                      {scenario.data.baseline_prob != null ? fmtProb(scenario.data.baseline_prob, "percent", 1) : `${DASH}%`}
                     </div>
                   )}
                   {/* X19 caption (RecessionScreen.tsx:573-578 before Phase 7), verbatim. */}
@@ -292,7 +299,12 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
         layout="panel"
         title="Sensitivity"
         description="Move an input and the fitted model rescores live"
-        right="five inputs · the fitted model rescored live"
+        right={
+          <MetaWithStamp
+            meta="five inputs · the fitted model rescored live"
+            stamp={<Stamp source={SRC.recession} asOf={m ? fmtMonYr(m.data_as_of) : null} />}
+          />
+        }
       />
       {body}
     </Card>

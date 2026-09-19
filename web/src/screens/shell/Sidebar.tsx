@@ -15,16 +15,17 @@
  * collapses the sidebar to `SidebarRail` (S3; state in sidebar-state.ts,
  * Ctrl/⌘+\ in AppShell); and the footer's status line is a button that opens
  * the freshness drawer, the entry point on the routes without the strip (S4).
+ * Step 6 (A3): the footer's stamp and dot read the market chip's §5 word
+ * from /api/freshness, never a stamp aged in the browser.
  */
 
 import type { MouseEvent, RefObject } from "react";
 import { Link } from "react-router-dom";
 import { useQuotes } from "../../live/quotes";
-import { freshLabel, seriesById } from "../shared/fresh-state";
 import { METHODOLOGY_SLUG, TABS } from "./sections";
 import { MethodologyIcon, MountainMark, NavIcon } from "./nav-icons";
 import Watchlist from "./watchlist/Watchlist";
-import { footerWords, marketStampLines, newestTickMs, type ShellStatus } from "./shell-status";
+import { etClock, footerWords, newestTickMs, type ShellStatus } from "./shell-status";
 import { sidebarShortcutLabel } from "./sidebar-state";
 
 /** Injected by vite.config.ts `define` from package.json; guarded for any
@@ -89,20 +90,21 @@ export function SidebarToggle({
   );
 }
 
-/** The two-line stamp under the footer word: newest websocket tick, else the
- * stored intraday bar, else the stored close. Its own component so the 2 Hz
- * quote store repaints only this leaf. Spans, not divs: it sits in a button. */
+/** The stamp under the footer word (Iteration 1 step 6, A3): the market
+ * chip's §5 word from /api/freshness (live_quotes during the session, else
+ * the stored daily close), its muted tail on the next line, and the newest
+ * tick's ET clock only while live_quotes reads live. A seeded snapshot reads
+ * "Snapshot · as of …". Its own component so the 2 Hz quote store repaints
+ * only this leaf. Spans, not divs: it sits in a button. */
 function FooterStamp({ status }: { status: ShellStatus }) {
   const quotes = useQuotes();
-  const [line1, line2] = marketStampLines({
-    tickMs: newestTickMs(quotes),
-    intradayTs: status.f?.market_intraday_ts,
-    dailyDate: status.f?.market_daily_date,
-  });
+  const l = status.seededLabel ?? status.marketLabel;
+  const tick = l.tone === "live" ? newestTickMs(quotes) : null;
+  const line2 = l.muted ?? (tick != null ? etClock(tick) : null);
   return (
-    <span className="mrr-side-stamp">
-      {line1}
-      {line2 ? (
+    <span className="mrr-side-stamp" data-tone={l.tone} data-stale={l.stale ? "true" : undefined}>
+      {status.f || status.seededLabel ? l.word : status.freshnessError ? "As of unknown" : "Reading freshness…"}
+      {line2 && (status.f || status.seededLabel) ? (
         <>
           <br />
           {line2}
@@ -113,29 +115,24 @@ function FooterStamp({ status }: { status: ShellStatus }) {
 }
 
 /**
- * The footer dot. When the report carries per-series states, the colour is
- * the live_quotes state's tone (fresh-state.ts: only "live" glows and
- * pulses); otherwise the 2026-09 rule: it pulses only when the stream ticks or
- * a fresh intraday bar is stored.
+ * The footer dot, coloured by the market chip's §5 tone (fresh-state.ts):
+ * only a live `live_quotes` state glows and pulses; unknown is grey, never a
+ * health dot; a seeded snapshot has no health dot at all.
  */
 function StatusDot({ status }: { status: ShellStatus }) {
-  const series = seriesById(status.f, "live_quotes");
-  if (series) {
-    const l = freshLabel(series);
-    return (
-      <span
-        className={l.tone === "live" ? "mrr-dot mrr-live-dot" : "mrr-dot"}
-        data-tone={l.tone}
-        title={l.reason ? `Live quotes: ${l.word} · ${l.reason}` : `Live quotes: ${l.word}`}
-      />
-    );
-  }
-  const dotTitle = status.streamLive
-    ? "Live: EODHD stream is ticking"
-    : status.intradayFresh
-      ? "Intraday feed is current"
-      : "Feeds idle: outside market hours or awaiting refresh";
-  return <span className={status.dotLive ? "mrr-dot mrr-live-dot" : "mrr-dot mrr-dot-idle"} title={dotTitle} />;
+  // A seeded snapshot has no health dot at all (§5); the rail keeps a
+  // neutral mark so its button is never empty.
+  if (status.seededLabel) return <span className="mrr-side-snapmark" aria-hidden="true">◇</span>;
+  const l = status.f ? status.marketLabel : null;
+  const tone = l?.tone ?? "unknown";
+  const word = l?.word ?? (status.freshnessError ? "As of unknown" : "reading the freshness report");
+  return (
+    <span
+      className={tone === "live" && !status.seeded ? "mrr-dot mrr-live-dot" : "mrr-dot"}
+      data-tone={tone}
+      title={l?.reason ? `Market data: ${word} · ${l.reason}` : `Market data: ${word}`}
+    />
+  );
 }
 
 interface FreshnessEntryProps {
@@ -168,7 +165,7 @@ function SidebarFreshness({ status, open, onOpen }: FreshnessEntryProps) {
       <span className="sr-only">Data freshness: </span>
       <span className="mrr-side-status">
         <StatusDot status={status} />
-        {footerWords(status.statusWord, status.liveFeeds)}
+        {footerWords(status.statusWord, status.liveFeeds, status.seededLabel ?? status.marketLabel)}
       </span>
       <FooterStamp status={status} />
     </button>
@@ -243,8 +240,8 @@ export function SidebarRail({
         aria-haspopup="dialog"
         aria-expanded={freshnessOpen}
         aria-controls="freshness-drawer"
-        aria-label={`Data freshness: ${footerWords(status.statusWord, status.liveFeeds)}`}
-        title={`Data freshness: ${footerWords(status.statusWord, status.liveFeeds)}`}
+        aria-label={`Data freshness: ${footerWords(status.statusWord, status.liveFeeds, status.seededLabel ?? status.marketLabel)}`}
+        title={`Data freshness: ${footerWords(status.statusWord, status.liveFeeds, status.seededLabel ?? status.marketLabel)}`}
       >
         <StatusDot status={status} />
       </button>

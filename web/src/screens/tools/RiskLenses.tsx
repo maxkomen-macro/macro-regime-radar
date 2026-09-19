@@ -22,6 +22,8 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote, eyebrowStyle, metaStyle, monoNoteStyle } from "../shared/screen-ui";
+import { fmtMonYr } from "../../lib/format";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
 import {
   DASH,
   METHODS,
@@ -90,7 +92,16 @@ export default function RiskLenses({ a }: { a: AllocationData }) {
 
   return (
     <Card as="section" id="allocation-risk" variant="panel" style={{ minWidth: 0 }}>
-      <SectionHeader layout="panel" title="Risk analysis" right="one lens at a time · four primary, four more on request" />
+      <SectionHeader
+        layout="panel"
+        title="Risk analysis"
+        right={
+          <MetaWithStamp
+            meta="one lens at a time · four primary, four more on request"
+            stamp={<Stamp source={SRC.allocation} asOf={`returns through ${fmtMonYr(`${a.data_end}-01`)}`} />}
+          />
+        }
+      />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <Segmented
           mono

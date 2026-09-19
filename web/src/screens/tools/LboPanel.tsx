@@ -31,6 +31,8 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, MISSING, SliderRow, StateNote, capStyle, eyebrowStyle, fmtMillions, useSnapshotMode } from "../shared/screen-ui";
 import { FALLBACK_RATE, SLIDERS, useLboDeal, type LboDeal, type SliderGroup } from "./lbo-deal";
 import { componentAsOf, isStatedDefault, runErrorSentence } from "./lbo-copy";
+import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 
 /** One component's as-of word (FRESHNESS_CONTRACT §5), the server's reason
  * as its tooltip; a stale value is marked on the word itself. */
@@ -144,6 +146,12 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
   const d = deal ?? own;
   const { isNarrow } = useBreakpoint();
   const { defaults, liveRate, clampedLive, inputs, modified, manualRate, run, res, baseRes, sens, warnings } = d;
+  // A1: the rate is Fed funds plus the HY spread (the derived series' own
+  // state from /api/lbo/defaults); the model's outputs are dated by it.
+  const report = useFreshReport();
+  const rateLabel = report.series("lbo_all_in_rate", defaults.data?.freshness);
+  const rateStamp = <Stamp source={SRC.fred} label={rateLabel} />;
+  const modelStamp = <Stamp source={SRC.lbo} label={rateLabel} />;
 
   if (defaults.isLoading || inputs == null) {
     return (
@@ -232,7 +240,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
     <div className="mrr-tools-lbo">
       {/* ── Assumptions ─────────────────────────────────────────────────── */}
       <Card as="section" id="lbo-assumptions" variant="panel" style={{ minWidth: 0 }}>
-        <SectionHeader layout="panel" title="Assumptions" actions={resetButton} />
+        <SectionHeader layout="panel" title="Assumptions" right={rateStamp} actions={resetButton} />
 
         <Card
           variant="tile"
@@ -256,12 +264,25 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
               ) : null}
             </div>
             <div className="num" style={{ fontFamily: "var(--font-ui)", fontSize: 22, fontWeight: 500, fontVariantNumeric: "tabular-nums", lineHeight: 1.15, marginTop: 2 }}>
-              {defaults.data ? `${defaults.data.lbo_all_in_rate.toFixed(2)}%` : DASH}
+              {defaults.data ? (
+                <Metric id="lbo-all-in" value={defaults.data.lbo_all_in_rate}>
+                  {`${defaults.data.lbo_all_in_rate.toFixed(2)}%`}
+                </Metric>
+              ) : (
+                DASH
+              )}
             </div>
           </div>
           <div style={{ ...capStyle, marginTop: 0, maxWidth: "none", marginLeft: "auto", textAlign: "right", whiteSpace: "nowrap" }}>
             Fed funds {defaults.data ? `${defaults.data.fedfunds.toFixed(2)}%` : DASH}
-            <br />+ HY OAS {defaults.data ? `${defaults.data.hy_oas_pct.toFixed(2)}%` : DASH}
+            <br />+ HY OAS{" "}
+            {defaults.data ? (
+              <Metric id="hy-oas" value={defaults.data.hy_oas_pct}>
+                {`${defaults.data.hy_oas_pct.toFixed(2)}%`}
+              </Metric>
+            ) : (
+              DASH
+            )}
           </div>
           {/* Checked = the deal's rate equals the clamped live rate (G9): a rate
               moved away reads unchecked, and the click is the T11 "back to
@@ -416,6 +437,9 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
           ) : (
             <LboRunState pending={run.isPending} fetching={run.isFetching} error={run.error} />
           )}
+          {/* A1: the outputs are the model run at the financing rate, dated by
+              the rate's own state (the header meta is the base-case line). */}
+          {res ? <Stamp block source={SRC.lbo} label={rateLabel} /> : null}
         </Card>
 
         {lastYear || sens ? (
@@ -425,7 +449,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
                  by this card's min-content (the wide table) — the card has to
                  be allowed to shrink too, or the scroll well never engages. */
               <Card as="section" id="lbo-schedule" variant="panel" style={{ minWidth: 0 }}>
-                <SectionHeader layout="panel" title="Annual debt schedule" description="$ millions" />
+                <SectionHeader layout="panel" title="Annual debt schedule" description="$ millions" right={modelStamp} />
                 {/* Eight nowrap numeric columns can't compress into a half-width
                     panel — the schedule scrolls inside its own well rather than
                     dragging the page sideways. */}
@@ -481,7 +505,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
 
             {sens && (
               <Card as="section" id="lbo-sensitivity" variant="panel" style={{ minWidth: 0 }}>
-                <SectionHeader layout="panel" title="IRR sensitivity" right="entry × exit multiple" />
+                <SectionHeader layout="panel" title="IRR sensitivity" right={<MetaWithStamp meta="entry × exit multiple" stamp={modelStamp} />} />
                 {/* A 6-track numeric grid can't compress to a phone card; it
                     scrolls in its own well. */}
                 <ScrollTable stickyFirst={false} label="IRR sensitivity grid">

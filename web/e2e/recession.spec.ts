@@ -37,6 +37,8 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** The served band words (recession.py) and the summary row labels in C.2 order. */
 const LABELS = ["Low Risk", "Elevated", "High Risk"];
 // Iteration 1 X2 adds two served rows (Training sample, Inputs through).
+/** E3: the series behind each card, in CARD_NAMES order (fresh-state.ts RECESSION_FEATURE_SERIES). */
+const CARD_SERIES = ["DGS10, DGS2", "UNRATE", "BAMLH0A0HYM2", "INDPRO", "T10YIE, T5YIE"];
 const SUMMARY_LABELS = ["12-month probability", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Inputs through", "Reference thresholds"];
 // Iteration 1 E2: the fifth input is named for what recession.py computes (T10YIE − T5YIE).
 const CARD_NAMES = ["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", "10Y − 5Y breakeven spread"];
@@ -382,7 +384,12 @@ test.describe("recession (checklist 07 E.3)", () => {
       // Tag text is uppercase by CSS: compare the source word case-insensitively.
       expect(lower(badge), `${CARD_NAMES[i]} badge`).toBe(lower(expectedBadge));
       const text = await visibleText(card);
-      expect(text).toContain("Inputs through");
+      // Iteration 1 step 6 (E3): each card's first line is its own input stamp from /api/freshness
+      // series[] ("FRED UNRATE · Aug 2026 print", "FRED T10YIE, T5YIE · Sep 18"), never USSLIND.
+      const stamp = card.locator("[data-stamp]").first();
+      await expect(stamp).toBeVisible();
+      expect(await visibleText(stamp)).toMatch(new RegExp(`^FRED ${CARD_SERIES[i]} · \\S`));
+      expect(text).not.toContain("USSLIND");
       expect(text).toMatch(/log-odds per σ · (?:raises|lowers) odds as it rises|Not stored/);
       note(`card-${i + 1}`, `${CARD_NAMES[i]} · ${badge}`);
     }

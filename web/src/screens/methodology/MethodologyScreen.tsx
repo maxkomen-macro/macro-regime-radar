@@ -35,6 +35,16 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote, eyebrowStyle, mono, useHashScroll } from "../shared/screen-ui";
+import { SIGNAL_INPUT_IDS, referenceLabel } from "../shared/fresh-state";
+import { Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
+
+/** A1: the methodology's figures are fixed model rules and thresholds, not
+ * data; their stamp says so ("Model rules · Reference"). */
+/** The stamp sits on its own line under a section header (outside the
+ * header's meta, whose text the label-parity baseline keys on). */
+const STAMP_UNDER_HEAD = { marginTop: -8, marginBottom: 10 } as const;
+const RULES_LABEL = referenceLabel("Fixed model rules and thresholds from the model configuration; reference content with no publication cadence.");
 
 const REGIME_DEFS: { name: string; color: string; def: string }[] = [
   { name: "Goldilocks", color: "var(--r-goldilocks)", def: "Growth trending up while inflation stays calm: the equity-friendly quadrant." },
@@ -120,6 +130,7 @@ function ModuleLink({ to, children }: { to: string; children: React.ReactNode })
 
 export default function MethodologyScreen() {
   const signals = useSignalsLatest();
+  const report = useFreshReport();
   const { isNarrow, bp, shellCompact } = useBreakpoint();
   const twoUp = isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))";
   const rail = bp === "wide";
@@ -269,6 +280,7 @@ export default function MethodologyScreen() {
               </span>
             }
           />
+          <Stamp block source="FRED" label={report.group(SIGNAL_INPUT_IDS, signals.data?.freshness)} style={STAMP_UNDER_HEAD} />
           <Card style={{ padding: 0 }}>
             <ScrollTable stickyFirst={false} label="Monitored signals">
               <div role="table" aria-label="Monitored signals" style={{ minWidth: 560 }}>
@@ -343,6 +355,7 @@ export default function MethodologyScreen() {
               </span>
             }
           />
+          <Stamp block source="Model rules" label={RULES_LABEL} style={STAMP_UNDER_HEAD} />
           <div className="mrr-meth-cols">
             <Card>
               <div style={eyebrowStyle}>Recession model</div>
@@ -403,6 +416,7 @@ export default function MethodologyScreen() {
               </span>
             }
           />
+          <Stamp block source="Model rules" label={RULES_LABEL} style={STAMP_UNDER_HEAD} />
           <Card>
             <p style={prose}>
               Backtests measure SPY forward returns over trading-day horizons (1M = 21 days … 12M = 252 days) after
@@ -430,6 +444,7 @@ export default function MethodologyScreen() {
               </span>
             }
           />
+          <Stamp block source="Model rules" label={RULES_LABEL} style={STAMP_UNDER_HEAD} />
           <div className="mrr-meth-cols">
             <Card>
               <div style={eyebrowStyle}>Threshold-proximity gauge</div>

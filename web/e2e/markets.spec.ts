@@ -29,8 +29,10 @@ const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 /** Summary row labels in C.2 order; Dollar and VIX render only with a UUP quote or bar and a VIX quote.
  * Iteration 1 (the summary's G2 fill): Single names · 1d renders once two single names carry a day
  * change, ETFs · 1w once two stored ETFs carry a one-week return. */
-const SUMMARY_LABELS = ["US 10Y", "Sectors · 1d", "Single names · 1d", "ETFs · 1w", "Dollar", "VIX", "Priced", "Top surprise"];
-const OPTIONAL_LABELS = new Set(["Single names · 1d", "ETFs · 1w", "Dollar", "VIX"]);
+// Iteration 1 step 6 (A2): the summary's VIX row is the relay's delayed poll,
+// labelled "VIX · delayed" (the Dashboard's "VIX" is the stored FRED close).
+const SUMMARY_LABELS = ["US 10Y", "Sectors · 1d", "Single names · 1d", "ETFs · 1w", "Dollar", "VIX · delayed", "Priced", "Top surprise"];
+const OPTIONAL_LABELS = new Set(["Single names · 1d", "ETFs · 1w", "Dollar", "VIX · delayed"]);
 /** The tape headers (C.2) at desk width and the phone set (B.7). */
 const TAPE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "1W %", "1M %", "30 Sess", "As of"];
 const TAPE_HEADERS_NARROW = ["Symbol · name", "Last", "Day %", "1M %", "As of"];
@@ -40,13 +42,17 @@ const MACRO_ROWS = 19;
 const SECTOR_SYMBOLS = ["XLF", "XLE", "XLI", "XLK"];
 const FUNDAMENTALS = ["Market cap", "P/E · TTM", "Fwd P/E", "Beta", "Div yield", "52W range", "Avg vol · 3M", "Net margin"];
 const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
-/** Strip title (B.2) → the freshness card's first line it must agree with (FreshnessCard.tsx). */
+/** Strip title (B.2) → the freshness card's first line (FreshnessCard.tsx). Iteration 1 step 6
+ * (A3): the card prints the server's §5 word for the market series, whatever the relay's
+ * connection word, so every title pairs with "Markets · <§5 word>" or the shell's
+ * service-down and snapshot words. */
+const MARKET_WORD = /^(?:Markets · (?:Live|Delayed \d+ min|Close · [A-Z][a-z]{2} \d{2}|[A-Z][a-z]{2} \d{2} · \d+ sessions? behind|As of unknown|Snapshot · as of \S+|reading…)|Data service unavailable|Validated snapshot)/;
 const CARD_LINE: Record<string, RegExp> = {
-  "Stream connected": /^Markets live/,
-  "Quotes delayed": /^Markets delayed/,
-  "Live feeds off": /^Markets delayed/,
-  "Stream reconnecting": /^Markets reconnecting/,
-  "Stream unavailable": /^(?:Markets delayed|Data service unavailable|Validated snapshot)/,
+  "Stream connected": MARKET_WORD,
+  "Quotes delayed": MARKET_WORD,
+  "Live feeds off": MARKET_WORD,
+  "Stream reconnecting": MARKET_WORD,
+  "Stream unavailable": MARKET_WORD,
 };
 const UNAVAILABLE_OPTIONS = "Options data is not included in the EODHD plan configured on this server";
 
@@ -236,8 +242,8 @@ test.describe("markets (checklist 05 E.3)", () => {
     expect(labels).toEqual(expected);
     note("summary-rows", labels.join(" · "));
     note("dollar-row", labels.includes("Dollar") ? "rendered" : "absent (no UUP quote and no stored UUP bar)");
-    note("vix-row", labels.includes("VIX") ? "rendered" : "absent (no VIX quote)");
-    if (labels.includes("VIX")) await expect(summary(page)).toContainText("delayed");
+    note("vix-row", labels.includes("VIX · delayed") ? "rendered" : "absent (no VIX quote)");
+    if (labels.includes("VIX · delayed")) await expect(summary(page)).toContainText("delayed");
     for (const dd of await summary(page).locator("dd").all()) expect(clean(await dd.innerText())).not.toBe("");
 
     const strip = summary(page).locator('button[aria-haspopup="dialog"]');

@@ -46,7 +46,19 @@ export interface QuoteCardProps {
   /** Oldest to newest; fewer than two points renders the placeholder. */
   series?: number[];
   title?: string;
+  /** Which rung of the quote ladder priced the card (quote-ladder.ts): the
+   * relay's stream quote, a stored intraday bar, or the stored daily close.
+   * The card's source stamp (A1) names it. */
+  via?: QuoteVia;
+  /** The card's source and as-of stamp (Iteration 1, A1): a `<Stamp>` on a
+   * line of its own under the slots. Not a slot: the five stay five. */
+  stamp?: ReactNode;
+  /** Marker attributes for the value slot (A2 `metricAttrs`, Stamp.tsx). */
+  valueAttrs?: Record<string, string>;
 }
+
+/** The ladder rung a price came from. */
+export type QuoteVia = "stream" | "intraday" | "close";
 
 /** The five slots of the fixed-slot quote tile, in DOM order. */
 export const QUOTE_SLOTS = ["symbol", "value", "change", "tag", "spark"] as const;
@@ -70,7 +82,7 @@ export function quoteToneColor(tone: QuoteCardProps["changeTone"]): string {
   return tone ? TONE_COLOR[tone] : TONE_COLOR.flat;
 }
 
-export interface QuoteSlotsProps extends Omit<QuoteCardProps, "raw" | "title"> {
+export interface QuoteSlotsProps extends Omit<QuoteCardProps, "raw" | "title" | "via"> {
   sparkWidth?: number;
   sparkHeight?: number;
   /** A second line in the symbol slot (the glance tile's instrument name). */
@@ -127,6 +139,8 @@ export function QuoteSlots({
   sparkFill = false,
   sparkGradient = false,
   sparkNote,
+  stamp,
+  valueAttrs,
 }: QuoteSlotsProps) {
   const color = quoteToneColor(changeTone);
   // An empty string is a missing change too: the slot never reads blank.
@@ -142,7 +156,7 @@ export function QuoteSlots({
         <span>{symbol}</span>
         {name != null ? <span className="n">{name}</span> : null}
       </b>
-      <span className="v" data-slot="value">
+      <span className="v" data-slot="value" {...valueAttrs}>
         {price}
       </span>
       <span
@@ -176,11 +190,14 @@ export function QuoteSlots({
           <span className="mrr-spark-ph" aria-hidden="true" style={{ width: sparkFill ? "100%" : sparkWidth, height: sparkHeight }} />
         )}
       </span>
+      {/* A1: the source and as-of stamp rides under the slots (its own grid
+          row in app.css), after the five so their order never changes. */}
+      {stamp != null ? <span className="s">{stamp}</span> : null}
     </>
   );
 }
 
-export default function QuoteCard({ symbol, price, raw, change, changeTone, tag, series, title }: QuoteCardProps) {
+export default function QuoteCard({ symbol, price, raw, change, changeTone, tag, series, title, stamp, valueAttrs }: QuoteCardProps) {
   const prev = useRef<number | undefined>(undefined);
   const [flash, setFlash] = useState<"up" | "down" | null>(null);
 
@@ -197,10 +214,11 @@ export default function QuoteCard({ symbol, price, raw, change, changeTone, tag,
     <div
       className="mrr-quote mrr-qslots"
       data-symbol={symbol}
+      data-stamped={stamp != null ? "" : undefined}
       title={title}
       style={flash ? { animation: `mrr-flash-${flash} var(--tick-flash) var(--ease-out)` } : undefined}
     >
-      <QuoteSlots symbol={symbol} price={price} change={change} changeTone={changeTone} tag={tag} series={series} />
+      <QuoteSlots symbol={symbol} price={price} change={change} changeTone={changeTone} tag={tag} series={series} stamp={stamp} valueAttrs={valueAttrs} />
     </div>
   );
 }

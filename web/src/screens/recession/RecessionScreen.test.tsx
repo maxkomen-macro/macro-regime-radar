@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { QueryClient } from "@tanstack/react-query";
 import RecessionScreen from "./RecessionScreen";
-import type { DatedValue, RecessionMetrics, RecessionScenarioRequest, RecessionScenarioResult, Regime } from "../../api/types";
+import type { DatedValue, Freshness, RecessionMetrics, RecessionScenarioRequest, RecessionScenarioResult, Regime, SeriesState } from "../../api/types";
 import { makeClient, renderWithProviders, stubFetch } from "../../test/utils";
 
 /* ── fixtures (Sep 2026) ─────────────────────────────────────────────────── */
@@ -149,7 +149,6 @@ const CARD_COEF_LINES = [
   "+0.05 log-odds per σ · raises odds as it rises",
   "-0.49 log-odds per σ · lowers odds as it rises",
 ];
-const INPUTS_THROUGH = "Inputs through Sep 2026";
 const CURVE_CARD_CAPTION = "The 10Y–2Y spread holds at +33 bps (0.33%), the 33rd percentile of 30 years. An inverted curve has preceded most US recessions.";
 const CURVE_CAPTION = "Below the dashed zero line the curve is inverted: short money costs more than long money, which only happens when markets expect cuts ahead. Every shaded recession was preceded by a dip below zero.";
 const NOT_STORED = "Not stored: 1M · 3M · 6M · 1Y · 5Y · 30Y. The model reads the daily FRED 2Y and 10Y series only; other tenors are outside its inputs by design.";
@@ -179,7 +178,7 @@ const MODEL_CARD_VALUES = [
   "281 months",
   "Yield curve (2s10s) · Unemployment rate · HY credit spread · Industrial production YoY · 10Y − 5Y breakeven spread",
   "All features lagged 3 months",
-  "Sep 2026",
+  "Daily Sep 17 · monthly Aug 2026 print",
 ];
 const DISCLOSURE_LINE =
   "A statistical estimate, not a forecast of any specific date · model trained in-process from stored FRED series each session (no saved artifact) · inputs are lagged three months before scoring and sensitivity rescoring uses the same fitted coefficients · the probability is the recession model's own, a different number from the regime classifier's Recession Risk odds in the header.";
@@ -187,6 +186,49 @@ const IDS_IN_ORDER = ["recession-hero", "recession-summary", "model", "curve", "
 const BANNED_CARD_WORDS = ["Push on odds", "Threshold proximity", "Last alert", "Trips"];
 
 /* ── routes ──────────────────────────────────────────────────────────────── */
+
+/* ── E3 (Iteration 1 step 6): the model's seven inputs in /api/freshness series[] ── */
+
+const st = (id: string, cadence: "daily" | "monthly", as_of: string, over: Partial<SeriesState> = {}): SeriesState => ({
+  id,
+  label: id,
+  kind: "fred",
+  cadence,
+  as_of,
+  state: "close",
+  delay_min: null,
+  cycles_behind: 0,
+  stale: false,
+  discontinued: false,
+  reason: `${id} reason.`,
+  ...over,
+});
+const SERIES: SeriesState[] = [
+  st("DGS10", "daily", "2026-09-17"),
+  st("DGS2", "daily", "2026-09-17"),
+  st("BAMLH0A0HYM2", "daily", "2026-09-17"),
+  st("T10YIE", "daily", "2026-09-17"),
+  st("T5YIE", "daily", "2026-09-17"),
+  st("UNRATE", "monthly", "2026-08-01"),
+  st("INDPRO", "monthly", "2026-08-01"),
+  st("USSLIND", "monthly", "2020-02-01", { discontinued: true }),
+];
+function freshnessFixture(series: SeriesState[] = SERIES): Freshness {
+  return {
+    regimes_date: "2026-08-01",
+    signals_date: "2026-09-01",
+    market_daily_date: "2026-09-18",
+    market_intraday_ts: null,
+    news_published_at: null,
+    raw_series_date: "2026-09-01",
+    generated_at: "2026-09-19T15:00:00Z",
+    series,
+  };
+}
+/** The per-card stamps (E3): each input's series, its §5 word. */
+const CARD_STAMPS = ["FRED DGS10, DGS2 · Sep 17", "FRED UNRATE · Aug 2026 print", "FRED BAMLH0A0HYM2 · Sep 17", "FRED INDPRO · Aug 2026 print", "FRED T10YIE, T5YIE · Sep 17"];
+/** The "Inputs through" words: the weakest daily and monthly input. */
+const INPUTS_WORDS = "Daily Sep 17 · monthly Aug 2026 print";
 
 type Routes = Record<string, (url: URL, init?: RequestInit) => unknown>;
 /** Every scenario body the screen posts, in order. */
@@ -197,7 +239,7 @@ function scenario(_url: URL, init?: RequestInit): RecessionScenarioResult {
   return body.unemployment <= 4.5 ? LOW : HIGH;
 }
 function routes(over: Routes = {}, m: () => RecessionMetrics = recessionFixture): Routes {
-  return { "/api/recession/probability": () => m(), "/api/recession/scenario": scenario, "/api/regime/latest": () => REGIME, ...over };
+  return { "/api/recession/probability": () => m(), "/api/recession/scenario": scenario, "/api/regime/latest": () => REGIME, "/api/freshness": () => freshnessFixture(), ...over };
 }
 function without(...paths: string[]): Routes {
   const r = routes();
@@ -335,7 +377,8 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(h1)).toBe("11.6%");
     expect(text(h1)).toMatch(/^\d+\.\d%$/);
     expect(within(hero()).getByText("Recession model")).toBeInTheDocument();
-    expect(hero().querySelector(".mrr-hero-dot")).not.toBeNull(); // Sep 01 stamp is current on Sep 19
+    // E3: the dot follows the seven inputs' served states (all "close"), never the payload month's age.
+    await waitFor(() => expect(hero().querySelector(".mrr-hero-dot")).not.toBeNull());
     const pill = hero().querySelector(".mrr-pill") as HTMLElement;
     expect(pill).not.toBeNull();
     expect(text(pill)).toBe("Low Risk");
@@ -345,7 +388,8 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(css(hero().querySelector(".mrr-hero-glow"))).toMatch(/rgba\(38, ?220, ?160, ?0?\.07\)/);
     expect(text(hero())).toContain("Logistic model on 5 FRED inputs, lagged 3 months");
     expect(text(hero())).toContain("Scored for Aug 2026");
-    expect(hero().querySelector("[title='Model inputs: Current · Sep 2026']")).not.toBeNull();
+    // E3: the chip is the weakest of the seven inputs' §5 words (a monthly print ranks with a daily close; the older stamp wins).
+    expect(hero().querySelector("[title^='Model inputs: Aug 2026 print.']")).not.toBeNull();
     expect(text(hero().querySelector(".mrr-hero-note"))).toBe(NOTE);
     expect(screen.queryByText(LOADING_HEADLINE)).toBeNull();
     expect(text(hero())).not.toContain(ERROR_HEADLINE);
@@ -474,7 +518,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(ddFor("Regime context")).endsWith("classifier")).toBe(true);
     expect(titleOf(ddFor("Regime context"))).toBe(REGIME_ROW_TITLE);
     expect(text(ddFor("Training sample"))).toBe("281 months · NBER-dated");
-    expect(text(ddFor("Inputs through"))).toBe("Sep 2026");
+    await waitFor(() => expect(text(ddFor("Inputs through"))).toBe(INPUTS_WORDS));
     expect(text(ddFor("Reference thresholds"))).toBe(`${THRESHOLDS} · desk reference`);
     expect(titleOf(ddFor("Reference thresholds"))).toBe(THRESHOLDS_TITLE);
     for (const dd of summary().querySelectorAll("dl dd")) expect(text(dd)).not.toBe("");
@@ -550,7 +594,9 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(section.tagName).toBe("SECTION");
     expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent(/^Model inputs$/);
     expect(text(section)).toContain("The five series the model scores each month");
-    expect(text(section)).toContain("5 inputs · latest Sep 2026");
+    // E3: the header stamp is the weakest of the seven inputs' §5 words.
+    expect(text(section)).toContain("5 inputs");
+    await waitFor(() => expect(text(section)).toContain("FRED · Aug 2026 print"));
     expect(within(section).getByRole("link", { name: /Series notes/ })).toHaveAttribute("href", "/app/methodology#models");
     await waitFor(() => expect(cards()).toHaveLength(5));
     expect(cards().map((a) => text(a.querySelector("h3")))).toEqual(CARD_NAMES);
@@ -558,7 +604,8 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(cards().map((a) => badgeOf(a).getAttribute("data-tone"))).toEqual(["reference", "reference", "reference", "reference", "reference"]);
     cards().forEach((c, i) => {
       expect(text(c), CARD_NAMES[i]).toContain(CARD_VALUES[i]);
-      expect(text(c), CARD_NAMES[i]).toContain(INPUTS_THROUGH);
+      expect(text(c), CARD_NAMES[i]).toContain(CARD_STAMPS[i]);
+      expect(c.querySelector("[data-stamp]"), CARD_NAMES[i]).not.toBeNull();
       expect(text(c), CARD_NAMES[i]).toContain(CARD_COEF_LINES[i]);
       expect(c.querySelectorAll("svg"), CARD_NAMES[i]).toHaveLength(0);
       expect(c.querySelector(".mrr-meter"), CARD_NAMES[i]).toBeNull();
@@ -587,10 +634,50 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(lei)).toContain("Not stored");
     expect(text(badgeOf(lei))).toBe("Unavailable");
     expect(badgeOf(lei)).toHaveAttribute("data-tone", "reference");
-    expect(text(lei)).toContain(INPUTS_THROUGH);
+    await waitFor(() => expect(text(lei)).toContain(CARD_STAMPS[4]));
     expect(text(lei)).not.toContain("null");
     expect(text(cardNamed("Unemployment rate"))).toContain("4.1%");
     expect(text(badgeOf(cardNamed("Unemployment rate")))).toBe("Model input");
+  });
+
+  it("E3: the input freshness reads /api/freshness series[] for the seven inputs, never the payload's block (USSLIND); a stale input marks its number and the chip; unknown never pulses", async () => {
+    // The payload's own block lists USSLIND and says every input is stale: it must be ignored.
+    const wrongBlock = Object.fromEntries(
+      ["DGS10", "DGS2", "BAMLH0A0HYM2", "T10YIE", "T5YIE", "USSLIND"].map((id) => [id, st(id, "daily", "2026-01-02", { state: "stale", stale: true, cycles_behind: 180 })]),
+    );
+    const staleIndpro = SERIES.map((x) => (x.id === "INDPRO" ? st("INDPRO", "monthly", "2026-07-01", { state: "stale", stale: true, cycles_behind: 1 }) : x));
+    stubFetch(routes({ "/api/freshness": () => freshnessFixture(staleIndpro) }, () => recessionFixture({ freshness: wrongBlock })));
+    const first = renderRecession();
+    await awaitHero();
+    await awaitSection("model");
+    await waitFor(() => expect(text(cardNamed("Industrial production YoY"))).toContain("FRED INDPRO · Jul 2026 · 1 release behind"));
+    expect(cardNamed("Industrial production YoY").querySelector(".mrr-stale-num[data-stale='true']")).not.toBeNull();
+    expect(cardNamed("Unemployment rate").querySelector("[data-stale='true']")).toBeNull();
+    expect(text(cardNamed("Yield curve (2s10s)"))).toContain("FRED DGS10, DGS2 · Sep 17");
+    const chip = hero().querySelector("[title^='Model inputs:']") as HTMLElement;
+    expect(chip).toHaveAttribute("data-stale", "true");
+    expect(text(chip)).toContain("Jul 2026 · 1 release behind");
+    expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
+    expect(text(ddFor("Inputs through"))).toBe("Daily Sep 17 · monthly Jul 2026 · 1 release behind");
+    // USSLIND is never an input: not on a card, the chip or the Inputs through row (the E2
+    // caption may still name it as the series the fifth input replaced).
+    for (const el of [...cards(), chip, ddFor("Inputs through")]) {
+      expect(text(el)).not.toContain("USSLIND");
+      expect(el.getAttribute("title") ?? "").not.toContain("USSLIND");
+    }
+    expect(chip.getAttribute("title") ?? "").not.toContain("USSLIND");
+    expect(text(main())).not.toContain("Jan 02");
+    first.unmount();
+
+    // No series[] at all: every word reads As of unknown, grey, and the hero never pulses.
+    stubFetch(routes({ "/api/freshness": () => ({ status: 404, body: { detail: "down" } }) }));
+    renderRecession();
+    await awaitHero();
+    await awaitSection("model");
+    await waitFor(() => expect(text(ddFor("Inputs through"))).toBe("As of unknown"));
+    expect(hero().querySelector("[title^='Model inputs:']")).toHaveAttribute("data-tone", "unknown");
+    expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
+    expect(text(cardNamed("HY credit spread"))).toContain("FRED BAMLH0A0HYM2 · As of unknown");
   });
 
   it("#curve: the header with the Curve window control at 30Y, the 2s10s chart with the Inversion below 0 label and the X14 caption, the Current curve shape tile with 2Y and 10Y, the Not stored note and no year-ago comparison", async () => {
@@ -600,7 +687,9 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(section.tagName).toBe("SECTION");
     expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent(/^Curve monitor$/);
     expect(text(section)).toContain("2s10s daily, 30 years stored, recessions shaded");
-    expect(text(section)).toContain("FRED · daily");
+    // E3: the curve's as-of is DGS10 and DGS2 in series[], beside the cadence.
+    expect(text(section)).toContain("daily");
+    await waitFor(() => expect(text(section)).toContain("FRED · Sep 17"));
     const group = curveGroup();
     expect(within(group).getAllByRole("button").map((b) => text(b))).toEqual(["5Y", "10Y", "30Y"]);
     expect(within(group).getByRole("button", { name: "30Y" })).toHaveAttribute("aria-pressed", "true");
@@ -872,7 +961,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     const dl = tile.querySelector("dl") as HTMLElement;
     expect(dl).not.toBeNull();
     expect([...dl.querySelectorAll("dt")].map((d) => text(d))).toEqual(MODEL_CARD_ROWS);
-    expect([...dl.querySelectorAll("dd")].map((d) => text(d))).toEqual(MODEL_CARD_VALUES);
+    await waitFor(() => expect([...dl.querySelectorAll("dd")].map((d) => text(d))).toEqual(MODEL_CARD_VALUES));
     expect(text(section)).not.toContain("Last refit");
     // E2: the caption names the input for what it is and the series it stands in for.
     expect(within(tile).getByRole("button", { name: BREAKEVEN })).toHaveClass("jargon");

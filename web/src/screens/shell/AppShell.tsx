@@ -17,6 +17,10 @@
  * Reconnecting / Backend unavailable / Validated snapshot) is composed once
  * in shell-status.ts and shared by the strip card, the drawer and the footer.
  *
+ * Iteration 1 step 6 (A3): under the top bar, on every route, a one-line
+ * notice states when the newest stored close is behind the bell
+ * (StoredCloseNotice); the words come from /api/freshness series[].
+ *
  * Iteration 1: at 860 px and up the sidebar collapses to a 56 px rail (S3):
  * the toggle beside the wordmark, Ctrl+\ or ⌘+\ (wired beside ⌘K below) and
  * a palette action all flip one stored preference (sidebar-state.ts), and
@@ -29,6 +33,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Navigate, useLocation, useParams } from "react-router-dom";
 import { useFreshness, useRegimeLatest } from "../../api/queries";
 import { useSnapshotMeta } from "../../api/snapshot";
+import { isSeededReport } from "../shared/useFreshReport";
 import { useLiveFeeds, useStreamLive, useStreamStatus, useStreamWord } from "../../live/quotes";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import ErrorBoundary from "../shared/ErrorBoundary";
@@ -38,6 +43,7 @@ import AssistantPanel, { type AssistantTabContext } from "./AssistantPanel";
 import CommandPalette from "./CommandPalette";
 import FreshnessDrawer from "./FreshnessDrawer";
 import MobileNav from "./MobileNav";
+import StoredCloseNotice from "./StoredCloseNotice";
 import Sidebar, { SidebarRail } from "./Sidebar";
 import TickerLive from "./TickerLive";
 import TopBar from "./TopBar";
@@ -185,6 +191,9 @@ export default function AppShell() {
   // One status composition for the strip card, the freshness drawer and the
   // sidebar footer, so the three never disagree.
   const f = freshness.data;
+  // A3: a report the snapshot seeded reads "Snapshot · as of …" everywhere
+  // until a live report replaces it.
+  const seeded = isSeededReport(f, freshness.dataUpdatedAt, snapshot);
   const status = useMemo(
     () =>
       composeShellStatus({
@@ -198,8 +207,9 @@ export default function AppShell() {
         degraded: stream.degraded,
         degradedReasons: stream.degradedReasons,
         snapshot,
+        seeded,
       }),
-    [f, freshness.isError, freshness.isLoading, regime.isError, streamWord, streamLive, liveFeeds, stream.degraded, stream.degradedReasons, snapshot],
+    [f, freshness.isError, freshness.isLoading, regime.isError, streamWord, streamLive, liveFeeds, stream.degraded, stream.degradedReasons, snapshot, seeded],
   );
 
   // The assistant context carries the model's stored dominant probability
@@ -290,6 +300,10 @@ export default function AppShell() {
               drawerOpen={drawerOpen}
               onOpenDrawer={openDrawer}
             />
+            {/* A3: when the newest stored close is behind the bell, every
+                route says so in plain words, once, here (Recession and
+                Methodology included, which carry no strip). */}
+            <StoredCloseNotice status={status} />
             {showStrip ? <TickerLive status={status} freshnessOpen={freshnessOpen} onOpenFreshness={openFreshness} /> : null}
 
             <main id="main-content" tabIndex={-1} style={{ outline: "none" }}>

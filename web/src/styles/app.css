@@ -1208,6 +1208,33 @@ main .mrr-scroll {
   white-space: normal;
   min-width: 0;
 }
+/* A1 (Iteration 1 step 6): a quote tile's source and as-of stamp is a
+   sixth child after the five slots (never a slot), on a row of its own. On a
+   strip card it runs under the slots, across the card; the spark keeps
+   row one, so the 54 px card holds two short rows. On a glance tile it is
+   the last row, across the tile. */
+.mrr-quote.mrr-qslots[data-stamped] {
+  grid-template-rows: auto auto;
+  row-gap: 1px;
+  align-content: center;
+}
+.mrr-qslots > .s {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+.mrr-quote.mrr-qslots > .s .mrr-stamp {
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.mrr-glance-tile.mrr-qslots > .s {
+  margin-top: 6px;
+  white-space: normal;
+}
 .mrr-glance-tile .mrr-spark-note {
   display: block;
   font-family: var(--font-mono);
@@ -1244,6 +1271,91 @@ main .mrr-scroll {
   border-radius: 50%;
   margin-right: 8px;
   vertical-align: 1px;
+}
+/* A3 (Iteration 1 step 6): every freshness line is the server's §5 word, so
+   a line can run longer than the old stamp; each card line stays one
+   rendered line (G4) and the full words sit in its title and the drawer. */
+.mrr-upd small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The footer stamp of a stale stored close, and a stale number (the §5
+   "mark on the number itself"): warm ink and a dotted rule under it. */
+/* A seeded snapshot's footer mark (Sidebar.tsx StatusDot): no health dot. */
+.mrr-side-snapmark {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 9px;
+  color: var(--text-4);
+}
+.mrr-rail-fresh .mrr-side-snapmark {
+  margin-right: 0;
+}
+.mrr-side-stamp[data-stale="true"] {
+  color: var(--warn-hot, #e67e22);
+}
+.mrr-qslots .v[data-stale="true"],
+.mrr-stale-num {
+  color: var(--warn-hot, #e67e22);
+  text-decoration: underline dotted;
+  text-decoration-color: var(--warn-hot, #e67e22);
+  text-underline-offset: 3px;
+}
+/* The stored-close notice (StoredCloseNotice.tsx): one slim status line
+   under the top bar on every route when the newest stored close is behind
+   the bell. One rendered line at every width: the phone form replaces the
+   sentence below 768 and the sentence stays for screen readers. */
+.mrr-close-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 var(--gap-panel, 14px);
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--strip-grad, linear-gradient(180deg, #111c26, #0d1720));
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mrr-close-glyph {
+  flex: none;
+  color: var(--warn-hot, #e67e22);
+  font-size: 10px;
+}
+.mrr-close-full,
+.mrr-close-short {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mrr-close-short {
+  display: none;
+}
+@media (max-width: 767.98px) {
+  .mrr-close-full {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .mrr-close-short {
+    display: block;
+  }
 }
 .mrr-fresh-link {
   appearance: none;

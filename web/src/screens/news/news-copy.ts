@@ -15,9 +15,9 @@
  */
 
 import type { CalendarEvent, NewsItem, SlaRow } from "../../api/types";
-import { fmtDate, tidyProse } from "../../lib/format";
+import { fmtDate, fmtUtcStampEt, tidyProse } from "../../lib/format";
 import { dayDeltaEt, dayKeyEt, impactOf, splitStamp, weekdayEt } from "../shared/calendar-impact";
-import type { FreshInfo } from "../shared/freshness";
+import type { FreshLabel } from "../shared/fresh-state";
 import type { StatusTone } from "../shared/SummaryCard";
 import type { TabHeroPillTone } from "../shared/TabHero";
 import { DASH } from "../dashboard/hero-copy";
@@ -237,9 +237,10 @@ export function whySentence(item: NewsItem | undefined, usingFallback: boolean):
 
 /** Row 4: "{n} stories in {window}", or the N4 stale string verbatim
  * (NewsScreen.tsx:460) on the fallback. */
-export function coverageValue(feed: NewsItem[], windowLabel: string, usingFallback: boolean, newestFallback: string | null, age: string | null): string {
+export function coverageValue(feed: NewsItem[], windowLabel: string, usingFallback: boolean, newestFallback: string | null): string {
+  // Iteration 1 step 6 (A3): the stored date, never an age counted in the browser.
   if (usingFallback) {
-    return `Stale: no headlines in ${windowLabel}; newest stored ${newestFallback ? fmtDate(newestFallback) : DASH} (${age || DASH} old)`;
+    return `Stale: no headlines in ${windowLabel}; newest stored ${newestFallback ? fmtDate(newestFallback) : DASH}`;
   }
   return `${feed.length} stories in ${windowLabel}`;
 }
@@ -327,20 +328,52 @@ export function sourceCount(feed: NewsItem[]): number {
   return new Set(feed.map((i) => i.source).filter(Boolean)).size;
 }
 
-/** One feed clock for the strip, the chip and the live dot (G13): the served
- * SLA verdict wins when `/api/freshness` carries the `news` row; the client
- * `hourly` assessment covers snapshot mode and older payloads. */
-export function mergeFeedVerdict(feedFresh: FreshInfo, sla: SlaRow | null | undefined): FreshInfo {
-  if (!sla) return feedFresh;
-  const state = sla.verdict;
-  return { ...feedFresh, state, word: state.charAt(0).toUpperCase() + state.slice(1) };
+/**
+ * One feed clock for the strip, the chip and the live dot (G13; Iteration 1
+ * step 6, A3): the newest stored headline's ET stamp and the server's SLA
+ * verdict for the `news` feed in /api/freshness. No age is counted in the
+ * browser: without a served verdict (snapshot mode, an older payload) the
+ * state is "unknown" and the stamp prints as a date and nothing more.
+ */
+export interface FeedClock {
+  state: "current" | "delayed" | "stale" | "unavailable" | "unknown";
+  /** "Sep 16, 16:40 ET"; "" with no headline stored. */
+  stamp: string;
+  /** The server's sentence for the verdict ("" without one). */
+  reason: string;
+}
+
+const VERDICTS = ["current", "delayed", "stale", "unavailable"] as const;
+
+export function feedClock(newestPublished: string | null | undefined, sla: SlaRow | null | undefined): FeedClock {
+  const stamp = newestPublished ? fmtUtcStampEt(newestPublished) : "";
+  if (!sla) return { state: stamp ? "unknown" : "unavailable", stamp, reason: "" };
+  const v = (VERDICTS as readonly string[]).includes(sla.verdict) ? (sla.verdict as FeedClock["state"]) : "unknown";
+  return { state: v, stamp, reason: sla.reason ?? "" };
+}
+
+/** The hero chip's label: the newest stamp, the server's verdict word after
+ * it when the feed is behind, the stale mark on it, never a healthy word the
+ * server did not say. */
+export function feedChipLabel(c: FeedClock): FreshLabel {
+  if (!c.stamp) return { word: "As of unknown", muted: null, tone: "unknown", reason: c.reason, stale: false };
+  const reason = c.reason || "The freshness report carries no verdict for the news feed; this is the newest stored headline.";
+  switch (c.state) {
+    case "current":
+      return { word: c.stamp, muted: null, tone: "neutral", reason, stale: false };
+    case "delayed":
+    case "stale":
+      return { word: c.stamp, muted: `· ${c.state}`, tone: "stale", reason, stale: true };
+    default:
+      return { word: c.stamp, muted: null, tone: "unknown", reason, stale: false };
+  }
 }
 
 /** The status strip words (B.2 table): fallback first, then the reading
- * state, then the feed clock. Iteration 1 step 5 (G4): the detail is one line
- * at 390 px; the outlet count is the Outlets row's and the fallback's age the
- * Coverage row's. */
-export function feedHealth(args: { usingFallback: boolean; loading: boolean; feedInfo: FreshInfo; feed: NewsItem[]; newestFallback: string | null }): FeedHealth {
+ * state, then the served verdict. Iteration 1 step 5 (G4): the detail is one
+ * line at 390 px; the outlet count is the Outlets row's. Step 6 (A3): no age
+ * words; a feed the server has not judged says so. */
+export function feedHealth(args: { usingFallback: boolean; loading: boolean; feedInfo: FeedClock; feed: NewsItem[]; newestFallback: string | null }): FeedHealth {
   const { usingFallback, loading, feedInfo, feed, newestFallback } = args;
   if (usingFallback) {
     return {
@@ -350,15 +383,19 @@ export function feedHealth(args: { usingFallback: boolean; loading: boolean; fee
     };
   }
   if (loading) return { tone: "gray", title: "Reading feed health…", detail: "Opens the data freshness breakdown" };
+  const newest = feedInfo.stamp ? `Newest ${feedInfo.stamp}` : "No headline stamp on file";
   switch (feedInfo.state) {
     case "current":
-      return { tone: "mint", title: "Feed current", detail: `Newest headline ${feedInfo.stamp}` };
+      // A3: the server's "current" verdict reads "on time" on screen; "current" is not a §5 word.
+      return { tone: "mint", title: "Feed on time", detail: `Newest headline ${feedInfo.stamp}` };
     case "delayed":
-      return { tone: "amber", title: "Feed delayed", detail: `Newest ${feedInfo.stamp} · ${feedInfo.age} old` };
+      return { tone: "amber", title: "Feed delayed", detail: newest };
     case "stale":
-      return { tone: "amber", title: "Feed stale", detail: `Newest ${feedInfo.stamp} · ${feedInfo.age} old` };
+      return { tone: "amber", title: "Feed stale", detail: newest };
+    case "unknown":
+      return { tone: "gray", title: "Feed as of unknown", detail: `Newest headline ${feedInfo.stamp}` };
     default:
-      return { tone: "gray", title: "Feed unavailable", detail: "No headline stamp on file" };
+      return { tone: "gray", title: "Feed unavailable", detail: newest };
   }
 }
 

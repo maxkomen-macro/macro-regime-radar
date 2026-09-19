@@ -17,6 +17,8 @@ import { fmtMonYr } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
 import { Caption, MISSING, StateNote, eyebrowStyle, mono, monoNoteStyle } from "../shared/screen-ui";
+import { referenceLabel } from "../shared/fresh-state";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
 import RegimeRibbon from "./RegimeRibbon";
 import { switchesInLast12 } from "./regime-history";
 
@@ -45,7 +47,16 @@ function AnaloguesSection() {
   const { isNarrow } = useBreakpoint();
   return (
     <Card as="section" variant="panel" id="analogues" style={{ minWidth: 0 }}>
-      <SectionHeader layout="panel" title="Historical analogues" right="Historical analogy · 7-period reference corpus" />
+      <SectionHeader
+        layout="panel"
+        title="Historical analogues"
+        right={
+          <MetaWithStamp
+            meta="Historical analogy · 7-period reference corpus"
+            stamp={<Stamp source="Analogue corpus" label={referenceLabel("A fixed reference corpus of past periods; it has no publication cadence.")} />}
+          />
+        }
+      />
       {q.data?.length ? (
         <>
           <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: "var(--gap-tile)" }}>
@@ -109,7 +120,12 @@ function RegimeHistorySection() {
       <SectionHeader
         layout="panel"
         title="Regime history"
-        right={`${rows.length} monthly calls · ${fmtMonYr(rows[0].date)} → ${fmtMonYr(last.date)} · ${switches} in the last 12mo`}
+        right={
+          <MetaWithStamp
+            meta={`${rows.length} monthly calls · ${fmtMonYr(rows[0].date)} → ${fmtMonYr(last.date)} · ${switches} in the last 12mo`}
+            stamp={<Stamp source={SRC.classifier} asOf={fmtMonYr(last.date)} />}
+          />
+        }
       />
       <Card variant="tile" style={{ minWidth: 0 }}>
         <RegimeRibbon

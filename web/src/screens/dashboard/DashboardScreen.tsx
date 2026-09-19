@@ -31,16 +31,18 @@ import {
   useTransitions,
 } from "../../api/queries";
 import type { Signal } from "../../api/types";
-import { daysSince, fmtBps, fmtDate, fmtMonYr, fmtPct, fmtSigned, fmtWholePct, tidyProse } from "../../lib/format";
+import { bpsToPct, fmtBps, fmtBpsLevel, fmtDate, fmtMonYr, fmtPct, fmtProb, fmtSigned, fmtWholePct, tidyProse } from "../../lib/format";
 import { takeSentences } from "../../lib/sentences";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import { Caption, MISSING, MISSING_ROW, StateNote, useHashScroll } from "../shared/screen-ui";
-import { assessFreshness } from "../shared/freshness";
+import { REGIME_INPUT_IDS, SIGNAL_INPUT_IDS, marketSeries } from "../shared/fresh-state";
+import { useFreshReport } from "../shared/useFreshReport";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
 import TabHero from "../shared/TabHero";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
 import { parseStrong } from "../shared/narrative";
+import { Metric, ODDS_METRIC, SRC, Stamp, servedOdds } from "../shared/Stamp";
 import { useShellActions } from "../shell/shell-actions";
 import { alertSummary, type AlertSummary } from "../shell/shell-status";
 import { SIGNALS_META, SIGNAL_ORDER } from "./signals-meta";
@@ -199,7 +201,10 @@ export default function DashboardScreen() {
 
   // Desk-read pulse gate (owner ruling 2026-08-06): the dot pulses only when
   // this regime read is new to this browser since its last visit, or when the
-  // macro month is inside one monthly print cycle (≤35 days). Otherwise static.
+  // macro month is inside one monthly print cycle. Otherwise static.
+  // Iteration 1 step 6 (A3): "inside the cycle" is the server's word, the
+  // regime inputs reading "close" in /api/freshness series[] (never an age
+  // the browser counts), and a stale or unknown input never pulses (G5).
   const bannerStamp = regime.data ? `${regime.data.date}|${regime.data.label}` : null;
   const [stampSeenAtLoad] = useState<string | null>(() => {
     try {
@@ -216,9 +221,12 @@ export default function DashboardScreen() {
       /* storage unavailable (private mode) — the age gate still works */
     }
   }, [bannerStamp]);
-  const bannerLive =
-    bannerStamp != null &&
-    (stampSeenAtLoad !== bannerStamp || (regime.data != null && daysSince(regime.data.date) <= 35));
+  const report = useFreshReport();
+  const regimeInputs = report.f?.regime?.inputs?.length ? report.f.regime.inputs.map((i) => i.series) : REGIME_INPUT_IDS;
+  const macroFresh = report.group(regimeInputs);
+  const inCycle = !report.seeded && (macroFresh.tone === "neutral" || macroFresh.tone === "live");
+  const honest = !report.seeded && macroFresh.tone !== "stale" && macroFresh.tone !== "unknown";
+  const bannerLive = bannerStamp != null && honest && (stampSeenAtLoad !== bannerStamp || inCycle);
 
   const hy = credit.data?.series.find((s) => s.label === "HY");
 
@@ -259,7 +267,7 @@ export default function DashboardScreen() {
     id: "next-3m",
     label: "Next 3 months",
     value: tr
-      ? `Stays ${tr.current_regime} ${Math.round(tr.stay_probability_3m)}% · highest-risk path → ${tr.highest_risk_transition} ${Math.round(tr.highest_risk_prob)}%`
+      ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")}`
       : transitions.isError
         ? <StateNote error missing={MISSING.transitions} />
         : <StateNote loading />,
@@ -277,6 +285,8 @@ export default function DashboardScreen() {
   if (regime.data) {
     const r = regime.data;
     const { probs, lead } = regimeOdds(r);
+    const served = servedOdds(r);
+    const leadKey = lead[0] as keyof typeof ODDS_METRIC;
     const copy = heroCopy(r);
     const conviction = convictionWord(r.confidence);
 
@@ -290,11 +300,11 @@ export default function DashboardScreen() {
     readThrough = [
       `The drivers on file: the 10Y–2Y spread holds at ${
         recession.data?.yield_curve_spread != null
-          ? `${fmtBps(recession.data.yield_curve_spread)} (${fmtPct(recession.data.yield_curve_spread / 100)})`
+          ? `${fmtBps(recession.data.yield_curve_spread)} (${fmtPct(bpsToPct(recession.data.yield_curve_spread))})`
           : "—"
       }, the VIX sits at ${vixV != null ? vixV.toFixed(2) : "—"}${
         vixV != null ? (vixV < 15 ? " (calm)" : vixV < 25 ? " (subdued)" : " (stressed)") : ""
-      }, and high-yield spreads run ${hy ? `${Math.round(hy.value_bps)} bps` : "—"}${
+      }, and high-yield spreads run ${hy ? fmtBpsLevel(hy.value_bps) : "—"}${
         hy?.change_1w_bps != null ? ` (${fmtBps(hy.change_1w_bps)} on the week)` : ""
       }. Growth trend reads ${r.growth_trend != null ? fmtSigned(r.growth_trend) : "—"} and inflation trend ${
         r.inflation_trend != null ? fmtSigned(r.inflation_trend) : "—"
@@ -330,21 +340,27 @@ export default function DashboardScreen() {
         label: "Model regime",
         value: (
           <Link to="/app/regime-lab" style={kvLinkStyle}>
-            {r.label}
+            <Metric id="regime" value={r.label}>
+              {r.label}
+            </Metric>
           </Link>
         ),
       },
       {
         id: "model-probability",
         label: "Model probability",
-        value: <span title="Dominant stored probability of the four-way classifier">{fmtWholePct(lead[1])}</span>,
+        value: (
+          <Metric id={ODDS_METRIC[leadKey]} value={served[leadKey]} title="Dominant stored probability of the four-way classifier">
+            {fmtWholePct(lead[1])}
+          </Metric>
+        ),
       },
       {
         id: "odds",
         label: "Odds",
         value: (
           <div style={{ minWidth: 0, paddingTop: 2 }}>
-            <ProbabilityBar probs={probs} height={6} />
+            <ProbabilityBar probs={probs} metrics={served} height={6} />
           </div>
         ),
       },
@@ -366,7 +382,18 @@ export default function DashboardScreen() {
             {
               id: "nber",
               label: "NBER recession model",
-              value: `${recession.data.recession_prob.toFixed(1)}% over 12m · ${recession.data.recession_label} (a separate model from the ${fmtWholePct(probs.recession)} Recession Risk regime odds)`,
+              value: (
+                <>
+                  <Metric id="recession-prob" value={recession.data.recession_prob}>
+                    {fmtProb(recession.data.recession_prob, "percent", 1)}
+                  </Metric>{" "}
+                  over 12m · {recession.data.recession_label} (a separate model from the{" "}
+                  <Metric id="odds-recession-risk" value={served.recession}>
+                    {fmtWholePct(probs.recession)}
+                  </Metric>{" "}
+                  Recession Risk regime odds)
+                </>
+              ),
               prose: true,
               tone:
                 recession.data.recession_label === "High Risk"
@@ -397,8 +424,16 @@ export default function DashboardScreen() {
         id="regime-hero"
         eyebrow="Current regime"
         live={bannerLive}
-        headline={copy.headline}
-        pill={<span title={`Classifier odds: ${copy.headline} ${fmtWholePct(lead[1])} of the four-regime split`}>{copy.pill}</span>}
+        headline={
+          <Metric id="regime" value={r.label}>
+            {copy.headline}
+          </Metric>
+        }
+        pill={
+          <Metric id={ODDS_METRIC[leadKey]} value={served[leadKey]} title={`Classifier odds: ${copy.headline} ${fmtWholePct(lead[1])} of the four-regime split`}>
+            {copy.pill}
+          </Metric>
+        }
         pillTone={copy.pillTone}
         glow={copy.glow}
         subhead={copy.subhead}
@@ -412,13 +447,17 @@ export default function DashboardScreen() {
           isMobile
             ? undefined
             : [
-                { noun: "Macro", info: assessFreshness(r.date, "monthly") },
-                { noun: "Signals", info: assessFreshness(signals.data?.date ?? f?.signals_date, "monthly") },
-                { noun: "Market", info: assessFreshness(f?.market_daily_date, "daily") },
+                // A3: §5 words from the server's per-series states: the
+                // regime's monthly inputs, the signals payload's own block,
+                // and live_quotes in session or the stored close otherwise.
+                { noun: "Macro", label: macroFresh },
+                { noun: "Signals", label: report.group(SIGNAL_INPUT_IDS, signals.data?.freshness) },
+                { noun: "Market", label: report.seeded ? report.series("market_daily") : report.series(marketSeries(f)?.id ?? "market_daily") },
               ]
         }
         chart={oddsChart}
         placeholder
+        stamp={<Stamp source={SRC.classifier} asOf={fmtMonYr(r.date)} />}
       />
     );
   } else {
@@ -464,7 +503,19 @@ export default function DashboardScreen() {
       {/* ── Hero row ────────────────────────────────────────────────── */}
       <div className="mrr-hero-row">
         {hero}
-        <SummaryCard id="regime-summary" as="h2" title="Model & market summary" rows={rows} status={strip}>
+        <SummaryCard
+          id="regime-summary"
+          as="h2"
+          title="Model & market summary"
+          rows={rows}
+          status={strip}
+          stamp={
+            <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+              <Stamp source={SRC.classifier} asOf={regime.data ? fmtMonYr(regime.data.date) : null} />
+              <Stamp source={SRC.recession} asOf={recession.data ? fmtMonYr(recession.data.data_as_of) : null} />
+            </span>
+          }
+        >
           <Disclosure variant="quiet" title="About model vs market">
             <Caption style={{ marginTop: 0 }}>
               <Jargon term="divergence">Divergence check</Jargon>: whether the recession model and market risk pricing tell one
@@ -511,16 +562,25 @@ export default function DashboardScreen() {
               // with-its-date rule, now server-enforced.
               const carried = row.date !== signals.data?.date;
               const printLine = `Signal print ${fmtMonYr(row.date)}${carried ? " · next monthly print pending" : ""}`;
+              const value = meta.format(row.value);
               return (
                 <SignalCard
                   key={name}
                   heading="h3"
                   name={meta.display}
-                  value={meta.format(row.value)}
+                  value={
+                    name === "vix_spike" ? (
+                      <Metric id="vix" value={row.value}>
+                        {value}
+                      </Metric>
+                    ) : (
+                      value
+                    )
+                  }
                   fillPct={row.distance_pct ?? 0}
                   status={row.status ?? undefined}
                   lastTriggered={lastAlertBySignal.get(name) ? fmtDate(lastAlertBySignal.get(name) as string) : "none on file"}
-                  lines={[meta.trigger(row.threshold), printLine]}
+                  lines={[meta.trigger(row.threshold), printLine, <Stamp key="stamp" source={SRC.fred} label={report.group(meta.series, signals.data?.freshness)} />]}
                 />
               );
             }

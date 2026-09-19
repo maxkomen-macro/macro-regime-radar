@@ -149,19 +149,19 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     expect(dts()).not.toContain("Vs base case");
   });
 
-  it("the strip is a button with aria-haspopup=dialog reading Rate synced from FRED with the stored-through detail; clicking it calls the shell's openFreshness", async () => {
+  it("the strip is a button with aria-haspopup=dialog; a payload without a freshness block reads FRED rate · as of unknown (A3) with the stored-through detail; clicking it calls the shell's openFreshness", async () => {
     const openFreshness = vi.fn();
     const openAlerts = vi.fn();
     renderHero({ actions: { openFreshness, openAlerts } });
     await awaitHero();
-    const button = await awaitStrip("Rate synced from FRED");
+    const button = await awaitStrip("FRED rate · as of unknown");
     expect(button.tagName).toBe("BUTTON");
     expect(button).toHaveAttribute("aria-haspopup", "dialog");
-    expect(button).toHaveAttribute("data-tone", "mint");
-    expect(stripTitle(button)).toBe("Rate synced from FRED");
+    expect(button).toHaveAttribute("data-tone", "gray");
+    expect(stripTitle(button)).toBe("FRED rate · as of unknown");
     // Iteration 1 step 5 (G4): one status line.
     expect(stripDetail(button)).toBe("Stored through Sep 01, 2026");
-    expect(button.getAttribute("aria-label")).toMatch(/^Rate synced from FRED\. Stored through Sep 01, 2026\. Open the data freshness breakdown\.$/);
+    expect(button.getAttribute("aria-label")).toMatch(/^FRED rate · as of unknown\. Stored through Sep 01, 2026\. Open the data freshness breakdown\.$/);
     fireEvent.click(button);
     expect(openFreshness).toHaveBeenCalledTimes(1);
     expect(openAlerts).not.toHaveBeenCalled();

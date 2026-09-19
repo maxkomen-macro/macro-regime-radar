@@ -22,15 +22,17 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ProbabilityBar } from "../../components";
 import SubTabs from "../shared/SubTabs";
-import { assessFreshness } from "../shared/freshness";
+import { REGIME_INPUT_IDS, referenceLabel } from "../shared/fresh-state";
+import { useFreshReport } from "../shared/useFreshReport";
 import { useRegimeDuration, useRegimeHistory, useRegimeLatest, useRecessionProbability, useTakeaway, useTransitions } from "../../api/queries";
-import { fmtMonYr, fmtSigned, fmtWholePct, tidyProse } from "../../lib/format";
+import { fmtMonYr, fmtProb, fmtSigned, fmtWholePct, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { Caption, MISSING, MISSING_ROW, StateNote, missingNote, useHashScroll, useSnapshotMode, type MissingSource } from "../shared/screen-ui";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
 import TabHero from "../shared/TabHero";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
 import { parseStrong, takeMarkedSentences } from "../shared/narrative";
+import { Metric, SRC, Stamp, servedOdds } from "../shared/Stamp";
 import { DASH, convictionWord } from "../dashboard/hero-copy";
 import { CYCLE_GLOW, cycleHero, monthsText, stripSummary } from "./hero-copy";
 import { stay6m, trailPoints, yearsOfHistory } from "./regime-history";
@@ -122,10 +124,14 @@ export default function RegimeLabScreen() {
   const rows = regimeHistory.data;
 
   /* ── hero ────────────────────────────────────────────────────────────── */
+  const report = useFreshReport();
+  const regimeFresh = report.group(report.f?.regime?.inputs?.length ? report.f.regime.inputs.map((i) => i.series) : REGIME_INPUT_IDS);
   const copy = cycleHero(d, r);
   const years = yearsOfHistory(rows);
   const footnote: ReactNode[] = [];
-  if (r) footnote.push(`Classifier month ${fmtMonYr(r.date)} (${assessFreshness(r.date, "monthly").age} old)`);
+  // A3 (Iteration 1 step 6): the month without a browser-counted age; the
+  // Regime chip carries the server's state for the classifier's inputs.
+  if (r) footnote.push(`Classifier month ${fmtMonYr(r.date)}`);
   if (years != null) footnote.push(`${years} year${years === 1 ? "" : "s"} of monthly regime history`);
 
   // G4 (Iteration 1 step 5): the served narrative is model-composed, so the
@@ -143,7 +149,9 @@ export default function RegimeLabScreen() {
   const heroShared = {
     id: "takeaway",
     eyebrow: "Cycle position",
-    live: r != null && assessFreshness(r.date, "monthly").state === "current",
+    // In cycle is the server's word: every regime input reads "close" in
+    // /api/freshness series[]; a stale or unknown input never pulses.
+    live: r != null && !report.seeded && (regimeFresh.tone === "neutral" || regimeFresh.tone === "live"),
     lede,
     ledeMore: narrative?.rest ? parseStrong(narrative.rest) : undefined,
     actions: HERO_ACTIONS,
@@ -151,13 +159,16 @@ export default function RegimeLabScreen() {
     // No absence before an answer: the Regime chip waits for the stored row
     // (or its error) instead of printing "Unavailable" while the request is pending.
     freshness: [
-      ...(r?.date || regime.isError ? [{ noun: "Regime", info: assessFreshness(r?.date, "monthly") }] : []),
-      { noun: "Playbook", info: assessFreshness(null, "reference") },
+      ...(r?.date || regime.isError ? [{ noun: "Regime", label: regimeFresh }] : []),
+      { noun: "Playbook", label: referenceLabel("The playbooks are reference content with no publication cadence.") },
     ],
     // No history yet: the gradient placeholder; with history (even empty) the
     // quadrant renders its own fallbacks.
     chart: rows ? <QuadrantChart points={trailPoints(rows)} current={r} /> : undefined,
     placeholder: true,
+    // A1: the cycle read is the classifier's stored history, dated by the
+    // regime month its payload serves.
+    stamp: <Stamp source={SRC.classifierHistory} asOf={r ? fmtMonYr(r.date) : null} />,
   };
   const hero = copy ? (
     <TabHero {...heroShared} headline={copy.headline} pill={copy.pill} pillTone={copy.pillTone} glow={copy.glow} subhead={copy.subhead} />
@@ -186,7 +197,9 @@ export default function RegimeLabScreen() {
       label: "Current regime",
       value: r ? (
         <Link to="/app/regime-lab#playbook" style={kvLinkStyle}>
-          {r.label}
+          <Metric id="regime" value={r.label}>
+            {r.label}
+          </Metric>
         </Link>
       ) : (
         regimeNote
@@ -204,6 +217,7 @@ export default function RegimeLabScreen() {
               stagflation: r.prob_stagflation ?? 0,
               recession: r.prob_recession ?? 0,
             }}
+            metrics={servedOdds(r)}
             height={8}
           />
         </div>
@@ -216,14 +230,14 @@ export default function RegimeLabScreen() {
       id: "next-3m",
       label: "Next 3 months",
       value: tr
-        ? `Stays ${tr.current_regime} ${Math.round(tr.stay_probability_3m)}% · highest-risk path → ${tr.highest_risk_transition} ${Math.round(tr.highest_risk_prob)}%`
+        ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")}`
         : pending(transitions, MISSING.transitions),
     },
     {
       id: "next-6m",
       label: "Next 6 months",
       value: tr
-        ? `Stays ${tr.current_regime} ${stay6m(tr)}%${six ? ` · highest-risk path → ${six.to} ${Math.round(six.probability)}%` : ""}`
+        ? `Stays ${tr.current_regime} ${fmtProb(stay6m(tr), "percent")}${six ? ` · highest-risk path → ${six.to} ${fmtProb(six.probability, "percent")}` : ""}`
         : pending(transitions),
     },
     {
@@ -280,7 +294,19 @@ export default function RegimeLabScreen() {
       {/* ── Hero row ────────────────────────────────────────────────── */}
       <div className="mrr-hero-row">
         {hero}
-        <SummaryCard id="regime-outlook" as="h2" title="Regime odds & outlook" rows={summaryRows} status={strip}>
+        <SummaryCard
+          id="regime-outlook"
+          as="h2"
+          title="Regime odds & outlook"
+          rows={summaryRows}
+          status={strip}
+          stamp={
+            <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+              <Stamp source={SRC.classifier} asOf={r ? fmtMonYr(r.date) : null} />
+              <Stamp source={SRC.recession} asOf={rec ? fmtMonYr(rec.data_as_of) : null} />
+            </span>
+          }
+        >
           {t ? (
             <Disclosure variant="quiet" title="How this takeaway is composed" right={`stamped ${t.updated_ago}`}>
               <Caption style={{ marginTop: 0 }}>

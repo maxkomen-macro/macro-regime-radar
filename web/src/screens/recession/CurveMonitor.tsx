@@ -12,14 +12,17 @@
  * Every number is served; the only client work is the date slice.
  */
 
+import type { ReactNode } from "react";
 import { Card, SectionHeader, Segmented } from "../../components";
 import type { RecessionMetrics } from "../../api/types";
-import { ordinal } from "../../lib/format";
+import { fmtBps, ordinal } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import LineChart from "../dashboard/LineChart";
 import { HeroChartFrame } from "../shared/HeroChart";
 import Jargon from "../shared/Jargon";
 import { Caption, MISSING, StateNote, capStyle, eyebrowStyle, mono } from "../shared/screen-ui";
+import { useFreshReport } from "../shared/useFreshReport";
+import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
 import { TENOR_ORDER, lastYears, usrecBands } from "./recession-copy";
 import type { CurveMonitorProps, CurveWindow } from "./panel-props";
 
@@ -95,7 +98,7 @@ function ChartTile({ m, range }: { m: RecessionMetrics; range: CurveWindow }): J
   );
 }
 
-function ShapeRow({ k, v }: { k: string; v: string }): JSX.Element {
+function ShapeRow({ k, v }: { k: string; v: ReactNode }): JSX.Element {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, borderBottom: "0.5px solid var(--line-hair)", paddingBottom: 4 }}>
       <span style={{ ...mono, fontSize: "var(--fs-body-s)", color: "var(--text-2)" }}>{k}</span>
@@ -118,12 +121,13 @@ function ShapeTile({ m }: { m: RecessionMetrics }): JSX.Element {
       <div style={eyebrowStyle}>Current curve shape</div>
       <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
         {stored.map(([t, v]) => (
-          <ShapeRow key={t} k={t} v={`${v.toFixed(2)}%`} />
+          // A2: the 10Y tenor is the same DGS10 reading the strip prints.
+          <ShapeRow key={t} k={t} v={t === "10Y" ? <Metric id="ust10y" value={v}>{`${v.toFixed(2)}%`}</Metric> : `${v.toFixed(2)}%`} />
         ))}
         {/* The served 2s10s reading beside the tenors (Iteration 1 G2): the
             spread, its 30-year percentile and the inversion state, the
             fields the summary's Curve row prints. */}
-        {spreadBps != null ? <ShapeRow k="2s10s" v={`${spreadBps >= 0 ? "+" : ""}${Math.round(spreadBps)} bps`} /> : null}
+        {spreadBps != null ? <ShapeRow k="2s10s" v={fmtBps(spreadBps)} /> : null}
         {m.yield_curve_pct_rank != null ? <ShapeRow k="Percentile · 30y" v={ordinal(m.yield_curve_pct_rank)} /> : null}
         {m.is_inverted != null ? (
           <ShapeRow k="Inverted" v={m.is_inverted ? (m.inversion_duration_months != null ? `${m.inversion_duration_months} months` : "Yes") : "No"} />
@@ -140,7 +144,7 @@ function ShapeTile({ m }: { m: RecessionMetrics }): JSX.Element {
         {stored.length === 2 && twoY != null && tenY != null ? (
           <>
             Two stored <Jargon term="tenor">tenors</Jargon>: 2Y at {twoY.toFixed(2)}% and 10Y at {tenY.toFixed(2)}%, a{" "}
-            {spreadBps != null ? `${spreadBps >= 0 ? "+" : ""}${Math.round(spreadBps)} bps` : DASH}{" "}
+            {spreadBps != null ? fmtBps(spreadBps) : DASH}{" "}
             {spreadBps != null && spreadBps >= 0 ? "upward" : "inverted"} slope.
           </>
         ) : (
@@ -155,13 +159,16 @@ function ShapeTile({ m }: { m: RecessionMetrics }): JSX.Element {
 
 export default function CurveMonitor({ m, status, range, onRangeChange }: CurveMonitorProps): JSX.Element {
   const ready = status === "ready" && m != null;
+  // E3 (Iteration 1 step 6): the curve's as-of is the weaker of DGS10 and
+  // DGS2 in /api/freshness series[], a §5 word, beside the cadence.
+  const curveFresh = useFreshReport().group(["DGS10", "DGS2"]);
   return (
     <Card as="section" variant="panel" id="curve" style={{ minWidth: 0 }}>
       <SectionHeader
         layout="panel"
         title="Curve monitor"
         description="2s10s daily, 30 years stored, recessions shaded"
-        right="FRED · daily"
+        right={<MetaWithStamp meta="FRED · daily" stamp={<Stamp source={SRC.fred} label={curveFresh} />} />}
         actions={
           <Segmented
             mono

@@ -7,14 +7,14 @@
  * the rate that run carried and never moves with the slider; the lede prints
  * `BASE_INPUTS`, never a run. The strip reads the rate's served state and
  * each component's as-of from the payload's freshness block (Iteration 1
- * E1), and the legacy stamp through `assessFreshness` for an older payload.
+ * E1); an older payload without the block reads "as of unknown" with its
+ * stored stamp (Iteration 1 step 6: no browser-judged age).
  */
 
 import { ApiError } from "../../api/client";
 import type { LboDefaults, LboRequest, LboResult, SeriesState } from "../../api/types";
 import { fmtDate } from "../../lib/format";
 import { freshLabel, normalizeState, type FreshLabel } from "../shared/fresh-state";
-import { assessFreshness } from "../shared/freshness";
 import { MISSING, missingNote } from "../shared/screen-ui";
 import type { StatusTone } from "../shared/SummaryCard";
 import type { TabHeroPillTone } from "../shared/TabHero";
@@ -292,9 +292,8 @@ export function lboStrip(defaults: DefaultsLike, snapshot = false): StripWords {
         return { tone: "gray", title: "FRED rate · as of unknown", detail };
     }
   }
-  const info = assessFreshness(stamp, "monthly");
-  const through = `Stored through ${fmtDate(stamp)}`;
-  if (info.state === "current") return { tone: "mint", title: "Rate synced from FRED", detail: through };
-  if (info.state === "delayed") return { tone: "amber", title: "FRED rate delayed", detail: through };
-  return { tone: "amber", title: "FRED rate stale", detail: through };
+  // A pre-B3 payload carries no per-series state: its stored stamp prints as
+  // a date and the rate reads "as of unknown" (Iteration 1 step 6, A3: the
+  // browser never judges an age, and unknown is never a healthy tone).
+  return { tone: "gray", title: "FRED rate · as of unknown", detail: `Stored through ${fmtDate(stamp)}` };
 }

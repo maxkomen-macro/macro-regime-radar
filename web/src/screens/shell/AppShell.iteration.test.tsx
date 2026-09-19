@@ -433,3 +433,77 @@ describe("S4 sidebar freshness entry opens the freshness drawer", () => {
     }
   });
 });
+
+/* ── Step 6 · A3: the stored close behind the bell, on every route ──────── */
+
+describe("A3 stored-close notice (FRESHNESS_CONTRACT §5)", () => {
+  const behind = {
+    ...freshness,
+    session: { ...freshness.session, last_completed_session: "2026-09-18" },
+    series: [
+      { id: "market_daily", label: "Daily closes (stored)", kind: "market", cadence: "daily", as_of: "2026-09-14", state: "stale", delay_min: null, cycles_behind: 4, stale: true, discontinued: false, reason: "Newest stored close 2026-09-14 is 4 session(s) older than the last completed session (2026-09-18)." },
+      { id: "INDPRO", label: "Industrial production", kind: "fred", cadence: "monthly", as_of: "2026-07-01", state: "stale", delay_min: null, cycles_behind: 1, stale: true, discontinued: false, reason: "Industrial production: 1 release(s) behind; Aug 2026 is due." },
+    ],
+  };
+  const LINE = "The newest stored close is Sep 14; the Sep 18 close is not stored yet.";
+
+  for (const slug of ROUTES) {
+    it(`/app/${slug}: one status line states it once, with the server's reason as its title`, async () => {
+      stubFetch({
+        "/api/regime/latest": () => regime,
+        "/api/freshness": () => behind,
+        "/api/alerts": () => [],
+        "/api/signals/latest": () => ({ date: MONTH, signals: [] }),
+        "/api/market/daily": () => [],
+        "/api/market/intraday": () => [],
+        "/api/credit/oas": () => creditOas,
+      });
+      renderShell(`/app/${slug}`);
+      await screen.findByTestId("screen");
+      const notice = await screen.findByTestId("stored-close-notice");
+      expect(notice).toHaveAttribute("role", "status");
+      expect(notice).toHaveAttribute("data-copy", "status");
+      expect(notice.textContent).toContain(LINE);
+      expect(notice.textContent).toContain("Stored close Sep 14; Sep 18 not stored yet.");
+      expect(notice.getAttribute("title")).toContain("4 session(s)");
+      expect(screen.getAllByTestId("stored-close-notice")).toHaveLength(1);
+      expect((document.querySelector("main") as HTMLElement).contains(notice)).toBe(false);
+      // The footer's stamp carries the stale mark and the §5 word; no health dot.
+      const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+      expect(sidebar.textContent).toContain("Sep 14 · 4 sessions behind");
+      expect(sidebar.querySelector(".mrr-side-stamp")).toHaveAttribute("data-stale", "true");
+      expect(sidebar.querySelector(".mrr-dot")).toHaveAttribute("data-tone", "stale");
+      expect(sidebar.querySelector(".mrr-live-dot")).toBeNull();
+    });
+  }
+
+  it("no line when the stored close is the last completed session's", async () => {
+    renderShell("/app/recession");
+    await screen.findByTestId("screen");
+    await waitFor(() => expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toMatch(/Close · /));
+    expect(screen.queryByTestId("stored-close-notice")).toBeNull();
+  });
+
+  it("a seeded report reads Snapshot · as of on the card and the footer, with no line and no health dot", async () => {
+    stubFetch({
+      "/api/regime/latest": () => regime,
+      "/api/freshness": () => ({ ...behind, seeded: true, generated_at: "2026-09-10T06:06:01Z" }),
+      "/api/alerts": () => [],
+      "/api/signals/latest": () => ({ date: MONTH, signals: [] }),
+      "/api/market/daily": () => [],
+      "/api/market/intraday": () => [],
+      "/api/credit/oas": () => creditOas,
+    });
+    renderShell("/app/dashboard");
+    await screen.findByTestId("screen");
+    const strip = await screen.findByRole("region", { name: "Market strip and data freshness" });
+    await waitFor(() => expect(strip.querySelector(".mrr-upd-lines")?.textContent).toContain("Snapshot · as of Sep 10"));
+    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(sidebar.textContent).toContain("Snapshot · as of Sep 10");
+    // No health dot at all on a seeded snapshot (§5): not in the footer, not on the card lines.
+    expect(sidebar.querySelector(".mrr-dot")).toBeNull();
+    expect(strip.querySelector(".mrr-upd-dot")).toBeNull();
+    expect(document.querySelector(".mrr-live-dot")).toBeNull();
+    expect(screen.queryByTestId("stored-close-notice")).toBeNull();
+  });
+});

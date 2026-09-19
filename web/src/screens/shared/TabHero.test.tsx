@@ -10,15 +10,22 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, within } from "@testing-library/react";
 import TabHero from "./TabHero";
-import { assessFreshness } from "./freshness";
+import { freshLabel } from "./fresh-state";
 import { renderWithProviders } from "../../test/utils";
 
 const css = (el: Element | null) => el?.getAttribute("style") ?? "";
 const section = () => document.querySelector("section.mrr-hero") as HTMLElement;
 
+// Iteration 1 step 6 (A3): chips carry the §5 label of a served series state.
 const FRESHNESS = [
-  { noun: "Macro", info: assessFreshness("2026-07-01", "monthly") },
-  { noun: "Market", info: assessFreshness("2026-09-08", "daily") },
+  {
+    noun: "Macro",
+    label: freshLabel({ id: "INDPRO", label: "Industrial production", kind: "fred", cadence: "monthly", as_of: "2026-07-01", state: "stale", delay_min: null, cycles_behind: 1, stale: true, discontinued: false, reason: "Industrial production: 1 release(s) behind; Aug 2026 is due." }),
+  },
+  {
+    noun: "Market",
+    label: freshLabel({ id: "market_daily", label: "Daily closes (stored)", kind: "market", cadence: "daily", as_of: "2026-09-08", state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "Official close of 2026-09-08, the last completed session." }),
+  },
 ];
 
 describe("TabHero (checklist 02 B.1)", () => {
@@ -130,10 +137,12 @@ describe("TabHero (checklist 02 B.1)", () => {
     const separators = [...hero.querySelectorAll("[aria-hidden='true']")].filter((s) => s.textContent?.trim() === "•");
     expect(separators).toHaveLength(2);
     // Freshness chips follow (DeskRead's FreshnessChip carries a "Noun: Word" title), then the note.
+    // Iteration 1 step 6 (A3): the words are FRESHNESS_CONTRACT §5's, never a browser-judged age.
     expect(hero.querySelectorAll("[title^='Macro:']")).toHaveLength(1);
     expect(hero.querySelectorAll("[title^='Market:']")).toHaveLength(1);
-    const words = within(hero).getAllByText(/^(?:Stale|Current|Delayed)$/);
-    expect(words.length).toBeGreaterThanOrEqual(2);
+    expect(hero.querySelector("[title^='Macro:']")).toHaveAttribute("data-stale", "true");
+    expect(within(hero).getByText("Jul 2026 · 1 release behind")).toBeInTheDocument();
+    expect(within(hero).getByText("Close · Sep 08")).toBeInTheDocument();
     expect(within(hero).getByText("Prices are context, not the tape.")).toBeInTheDocument();
   });
 

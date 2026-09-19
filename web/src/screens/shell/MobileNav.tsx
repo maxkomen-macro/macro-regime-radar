@@ -169,7 +169,7 @@ export default function MobileNav({
               {status ? (
                 <>
                   {" "}
-                  <span className="mrr-mnav-hint">{footerWords(status.statusWord, status.liveFeeds)}</span>
+                  <span className="mrr-mnav-hint">{footerWords(status.statusWord, status.liveFeeds, status.seededLabel ?? status.marketLabel)}</span>
                 </>
               ) : null}
             </button>

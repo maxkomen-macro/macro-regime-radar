@@ -26,10 +26,12 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Segmented } from "../../components";
 import { useCreditMetrics } from "../../api/queries";
 import type { CreditMetrics } from "../../api/types";
-import { fmtBps, fmtMonYr, ordinal } from "../../lib/format";
+import { bpsToPct, fmtBps, fmtMonYr, fmtProb, ordinal } from "../../lib/format";
 import { DASH } from "../dashboard/hero-copy";
 import Jargon from "../shared/Jargon";
-import { assessFreshness } from "../shared/freshness";
+import { CREDIT_OAS_IDS } from "../shared/fresh-state";
+import { useFreshReport } from "../shared/useFreshReport";
+import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { Caption, StateNote, capStyle, monoNoteStyle, useHashScroll } from "../shared/screen-ui";
 import { DisclosureLine } from "../shared/Disclosure";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
@@ -179,19 +181,23 @@ export default function CreditScreen() {
   const [win, setWin] = useState<OasWindow>("10y");
   useHashScroll(m);
 
-  const asOfIso = m?.hy_series.length ? m.hy_series[m.hy_series.length - 1].date : null;
-  const fresh = assessFreshness(asOfIso, "monthly");
+  // A3 (Iteration 1 step 6): the chip is the five ICE BofA series' state as
+  // the server judged it (the payload's own freshness block, else
+  // /api/freshness series[]): the weakest one's §5 word, every series in the
+  // tooltip. Never the stored month counted in the browser.
+  const report = useFreshReport();
+  const fresh = report.group(CREDIT_OAS_IDS, m?.freshness);
   const copy = m ? creditHero(m) : null;
 
   /* ── hero ────────────────────────────────────────────────────────────── */
   const heroShared = {
     id: "credit-hero",
     eyebrow: "Credit conditions",
-    live: m != null && fresh.state === "current",
+    live: m != null && !report.seeded && (fresh.tone === "neutral" || fresh.tone === "live"),
     actions: HERO_ACTIONS,
     // No absence before an answer: the chip waits for the payload (or its
     // error) instead of printing "Unavailable" while the request is pending.
-    freshness: m || q.isError ? [{ noun: "ICE BofA via FRED", info: fresh }] : undefined,
+    freshness: m || q.isError ? [{ noun: "ICE BofA via FRED", label: fresh }] : undefined,
   };
   let hero: ReactNode;
   if (m && copy) {
@@ -199,7 +205,14 @@ export default function CreditScreen() {
       <TabHero
         {...heroShared}
         headline={copy.headline}
-        pill={copy.pill ? <span title={`ICE BofA US High Yield OAS, ${m.data_as_of ?? "latest stored month"}`}>{copy.pill}</span> : undefined}
+        pill={
+          copy.pill ? (
+            // A2: the pill prints bps; the marker carries the served figure in percent.
+            <Metric id="hy-oas" value={m.hy_oas != null ? bpsToPct(m.hy_oas) : null} title={`ICE BofA US High Yield OAS, ${m.data_as_of ?? "latest stored month"}`}>
+              {copy.pill}
+            </Metric>
+          ) : undefined
+        }
         pillTone={copy.pillTone}
         glow={copy.glow}
         subhead={copy.subhead}
@@ -207,6 +220,7 @@ export default function CreditScreen() {
         footnote={copy.footnote}
         chart={<HeroOasChart m={m} win={win} onWindow={setWin} />}
         placeholder
+        stamp={<Stamp source={SRC.baml} label={fresh} />}
       />
     );
   } else if (q.isError) {
@@ -234,7 +248,15 @@ export default function CreditScreen() {
       label: "HY OAS",
       value: val((x) =>
         x.hy_oas != null
-          ? join([`${n(x.hy_oas)} bps`, x.hy_1w_change != null ? `${fmtBps(x.hy_1w_change)} MoM` : null, x.hy_pct_rank != null ? `${ordinal(x.hy_pct_rank)} percentile since 1996` : null])
+          ? (
+              <>
+                <Metric id="hy-oas" value={bpsToPct(x.hy_oas)}>{`${n(x.hy_oas)} bps`}</Metric>
+                {[x.hy_1w_change != null ? `${fmtBps(x.hy_1w_change)} MoM` : null, x.hy_pct_rank != null ? `${ordinal(x.hy_pct_rank)} percentile since 1996` : null]
+                  .filter(Boolean)
+                  .map((part) => ` · ${part}`)
+                  .join("")}
+              </>
+            )
           : DASH,
       ),
     },
@@ -266,13 +288,24 @@ export default function CreditScreen() {
       id: "stay3",
       label: m ? `Stays ${m.credit_label} · 3m` : "Stay odds · 3m",
       value: val((x) =>
-        stay3 != null ? `${Math.round(stay3 * 100)}% of past months` : Object.keys(x.transition_3m ?? {}).length ? DASH : "not enough monthly history (needs 60 months)",
+        stay3 != null ? `${fmtProb(stay3)} of past months` : Object.keys(x.transition_3m ?? {}).length ? DASH : "not enough monthly history (needs 60 months)",
       ),
     },
     {
       id: "lbo",
       label: "LBO all-in",
-      value: val((x) => (x.lbo_all_in_cost ? `${x.lbo_all_in_cost} · Fed Funds + HY spread` : DASH)),
+      value: val((x) =>
+        x.lbo_all_in_cost ? (
+          <>
+            <Metric id="lbo-all-in" value={Number.parseFloat(x.lbo_all_in_cost)}>
+              {x.lbo_all_in_cost}
+            </Metric>
+            {" · Fed Funds + HY spread"}
+          </>
+        ) : (
+          DASH
+        ),
+      ),
     },
   ];
 
@@ -290,7 +323,14 @@ export default function CreditScreen() {
       {/* ── Hero row ────────────────────────────────────────────────── */}
       <div className="mrr-hero-row">
         {hero}
-        <SummaryCard id="credit-summary" as="h2" title="Credit summary" rows={rows} status={strip} />
+        <SummaryCard
+          id="credit-summary"
+          as="h2"
+          title="Credit summary"
+          rows={rows}
+          status={strip}
+          stamp={<Stamp source={SRC.baml} label={m || q.isError ? fresh : null} />}
+        />
       </div>
 
       {/* ── Spread monitor, full width ───────────────────────────────── */}

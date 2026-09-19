@@ -17,13 +17,64 @@ export function fmtSigned(v: number, dp = 2): string {
   return `${v > 0 ? "+" : ""}${v.toFixed(dp)}`;
 }
 
+/* ── Units (Iteration 1, A4) ────────────────────────────────────────────────
+ * The one place a percent becomes basis points and back. The API serves
+ * spreads both ways (`value_pct` 2.65 and `value_bps` 265 on /api/credit/oas;
+ * bps only on /api/credit/metrics; the recession model's 2s10s in bps), and a
+ * screen converts only through these two, never with a bare `* 100` or `/ 100`
+ * at the call site. */
+
+/** Percent points to basis points: 2.65 (%) → 265 (bps). */
+export function pctToBps(pct: number): number {
+  return pct * 100;
+}
+
+/** Basis points to percent points: 265 (bps) → 2.65 (%). */
+export function bpsToPct(bps: number): number {
+  return bps / 100;
+}
+
+/** A change in basis points, signed: "+21 bps", "-2 bps", "0 bps". */
 export function fmtBps(bps: number): string {
   const r = Math.round(bps);
   return `${r > 0 ? "+" : ""}${r} bps`;
 }
 
+/** A level in basis points, unsigned: "265 bps" (a spread, not a change). */
+export function fmtBpsLevel(bps: number): string {
+  return `${Math.round(bps)} bps`;
+}
+
+/* ── Probabilities and shares (Iteration 1, A4) ─────────────────────────────
+ * Anything labelled a probability or a share prints through `fmtProb`, which
+ * never shows a figure above 100% or below 0%: a served value outside its
+ * scale is a data fault, so it renders the dash and warns in the console,
+ * never a clamped number that looks real. Not for figures that may pass 100
+ * by construction (CCC as a percent of the distress line, a spell as a
+ * percent of the average spell): those are ratios, not shares. */
+
+/** The scale a probability arrives on: 0–1 ("unit", the classifier's odds,
+ * confidence, credit transition odds) or 0–100 ("percent", the recession
+ * model, transition outlook odds, scenario odds). */
+export type ProbScale = "unit" | "percent";
+
+/** "64%" from 0.6423 ("unit") or "11.6%" from 11.63 ("percent", dp 1). Out
+ * of range or not a finite number: "—" plus a console warning. */
+export function fmtProb(v: number | null | undefined, scale: ProbScale = "unit", dp = 0): string {
+  if (v == null) return "—";
+  const max = scale === "unit" ? 1 : 100;
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > max) {
+    console.warn(`fmtProb: ${String(v)} is outside the 0–${max} ${scale} scale of a probability or share; rendering the dash.`);
+    return "—";
+  }
+  const pct = scale === "unit" ? v * 100 : v;
+  return dp === 0 ? `${Math.round(pct)}%` : `${pct.toFixed(dp)}%`;
+}
+
+/** A 0–1 probability or share as a whole percent ("64%"); `fmtProb` with its
+ * bounds, so an out-of-range value renders "—". */
 export function fmtWholePct(v01: number): string {
-  return `${Math.round(v01 * 100)}%`;
+  return fmtProb(v01, "unit", 0);
 }
 
 export function fmtUsd(v: number): string {

@@ -16,10 +16,11 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import { useAllocation } from "../../api/queries";
 import { fmtMonYr } from "../../lib/format";
 import type { AllocationData } from "../../api/types";
-import { assessFreshness } from "../shared/freshness";
+import { monYYYY, referenceLabel, stampLabel } from "../shared/fresh-state";
 import { HeroChartFrame } from "../shared/HeroChart";
 import { MISSING, MISSING_ROW, StateNote, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import SummaryCard, { type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
+import { SRC, Stamp } from "../shared/Stamp";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import {
   ALLOCATION_EYEBROW,
@@ -196,12 +197,16 @@ export default function AllocationHeroRow() {
         glow={copy.glow}
         subhead={copy.subhead}
         lede={copy.lede || undefined}
+        // A3 (Iteration 1 step 6): the return histories are not in the
+        // freshness report, so their chip is the payload's own month as a
+        // date, grey, never judged here; the regime labels are reference.
         freshness={isMobile ? undefined : [
-          { noun: "Returns", info: assessFreshness(`${a.data_end}-01`, "monthly") },
-          { noun: "Regime labels", info: assessFreshness(null, "reference") },
+          { noun: "Returns", label: stampLabel(a.data_end ? `Through ${monYYYY(`${a.data_end}-01`) ?? a.data_end}` : null, "Monthly return histories downloaded by the allocation engine; the freshness report does not judge this feed.") },
+          { noun: "Regime labels", label: referenceLabel("The classifier's stored monthly labels, used here as reference.") },
         ]}
         chart={summary.ranked.length ? <RegimeReturnBars rows={summary.ranked} regime={summary.curRegime} /> : undefined}
         placeholder
+        stamp={<Stamp source={SRC.allocation} asOf={`returns through ${fmtMonYr(`${a.data_end}-01`)}`} />}
       />
     );
   } else if (error) {
@@ -264,7 +269,14 @@ export default function AllocationHeroRow() {
   return (
     <div className="mrr-hero-row">
       {hero}
-      <SummaryCard id="allocation-summary" as="h2" title="Allocation summary" rows={rows} status={strip} />
+      <SummaryCard
+        id="allocation-summary"
+        as="h2"
+        title="Allocation summary"
+        rows={rows}
+        status={strip}
+        stamp={<Stamp source={SRC.allocation} asOf={a ? `returns through ${fmtMonYr(`${a.data_end}-01`)}` : null} />}
+      />
     </div>
   );
 }

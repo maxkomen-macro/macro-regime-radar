@@ -21,7 +21,9 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
 import { Caption, MISSING, StateNote, capStyle, eyebrowStyle, mono } from "../shared/screen-ui";
-import { BREAKEVEN_LABEL, featureCurrent, featureLabel } from "./recession-copy";
+import { useFreshReport } from "../shared/useFreshReport";
+import { BREAKEVEN_LABEL, featureCurrent, featureLabel, inputsThrough } from "./recession-copy";
+import { SRC, Stamp } from "../shared/Stamp";
 import type { RecessionPanelProps } from "./panel-props";
 
 /** The null-value glyph the tile prints (U+2014), never an em-dash aside. */
@@ -152,6 +154,7 @@ function DivergenceTile({ m }: { m: RecessionMetrics }): JSX.Element {
 }
 
 function ModelCardTile({ m }: { m: RecessionMetrics }): JSX.Element {
+  const through = inputsThrough(useFreshReport().group).text;
   // The six rows (RecessionScreen.tsx:660-679 before Phase 7), verbatim; no "Last refit" (F4).
   const rows: [string, string][] = [
     ["Estimator", "Logistic regression, class-balanced"],
@@ -159,7 +162,9 @@ function ModelCardTile({ m }: { m: RecessionMetrics }): JSX.Element {
     ["Training samples", `${m.n_training_samples} months`],
     ["Features", m.model_features.map((f) => featureLabel(f)).join(" · ")],
     ["Look-ahead guard", "All features lagged 3 months"],
-    ["Inputs through", fmtMonYr(m.data_as_of)],
+    // E3 (Iteration 1 step 6): the inputs' §5 words from series[], the same
+    // words the summary's "Inputs through" row prints.
+    ["Inputs through", through],
   ];
   return (
     <Card variant="tile" padding="12px 18px" style={{ minWidth: 0 }}>
@@ -203,6 +208,10 @@ export default function TransparencyPanel({ m, status }: RecessionPanelProps): J
           <CoefficientsTile m={m} />
           <DivergenceTile m={m} />
           <ModelCardTile m={m} />
+          {/* A1: the panel's figures are the fitted model's, dated by its
+              input month (a line under the tiles, where the row's stretch
+              would otherwise leave blank space, G2). */}
+          <Stamp block source={SRC.recession} asOf={fmtMonYr(m.data_as_of)} style={{ marginTop: 0 }} />
         </div>
       ) : (
         <Card variant="tile">

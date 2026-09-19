@@ -24,6 +24,10 @@ import Jargon from "../shared/Jargon";
 import ScrollTable from "../shared/ScrollTable";
 import Disclosure from "../shared/Disclosure";
 import { Caption, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
+import { fmtProb } from "../../lib/format";
+import { CREDIT_OAS_IDS } from "../shared/fresh-state";
+import { SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 import type { CreditPanelProps } from "./panel-props";
 
 /** The four served credit states in matrix order (CreditScreen.tsx:33 before Phase 6, kept). */
@@ -46,12 +50,14 @@ function cellPct(matrix: Matrix | null | undefined, from: string, to: string): n
   return p != null ? Math.round(p * 100) : null;
 }
 
-const pctText = (v: number | null) => (v != null ? `${v}%` : DASH);
+/** A4: a transition odd is a probability; outside 0–100 it prints the dash. */
+const pctText = (v: number | null) => (v != null ? fmtProb(v, "percent") : DASH);
 
 export default function CreditStateOdds({ m, status }: CreditPanelProps): JSX.Element {
   const [horizon, setHorizon] = useState<Horizon>("3m");
   const { isNarrow } = useBreakpoint();
   const ready = status === "ready" && m != null;
+  const report = useFreshReport();
 
   let body: React.ReactNode;
   if (ready && m) {
@@ -73,7 +79,7 @@ export default function CreditStateOdds({ m, status }: CreditPanelProps): JSX.El
       CREDIT_STATES.map((col) => {
         if (noHistory(from)) return { value: null, text: <span style={{ fontSize: 11, color: "var(--text-3)" }}>No history</span> };
         const p = matrix?.[from]?.[col] ?? 0;
-        return { value: p, text: `${Math.round(p * 100)}%` };
+        return { value: p, text: fmtProb(p) };
       }),
     );
     const counted = obs ? CREDIT_STATES.filter((st) => obs[st] != null) : [];
@@ -124,14 +130,14 @@ export default function CreditStateOdds({ m, status }: CreditPanelProps): JSX.El
               {stay3 != null && (
                 <>
                   {" "}
-                  From today&apos;s {label} state, spreads stayed {label} three months later {stay3}% of the time.
+                  From today&apos;s {label} state, spreads stayed {label} three months later {pctText(stay3)} of the time.
                 </>
               )}
             </Caption>
             <Disclosure variant="quiet" title="Details">
               <Caption style={{ marginTop: 0 }}>
                 {empty ? null : "The outlined row is today's state."}
-                {!empty && otherStay != null ? ` ${horizon === "3m" ? "6-month" : "3-month"} view: ${label} stays ${otherStay}%.` : null}
+                {!empty && otherStay != null ? ` ${horizon === "3m" ? "6-month" : "3-month"} view: ${label} stays ${pctText(otherStay)}.` : null}
                 {m.tight_count < 5 && (
                   <>
                     {" "}
@@ -160,6 +166,7 @@ export default function CreditStateOdds({ m, status }: CreditPanelProps): JSX.El
         layout="panel"
         title="Credit state odds"
         description="Past monthly moves between states"
+        right={<Stamp source={SRC.baml} label={report.group(CREDIT_OAS_IDS, m?.freshness)} />}
         actions={<Segmented label="Transition horizon" value={horizon} onChange={(id) => setHorizon(id as Horizon)} options={HORIZONS} />}
       />
       {body}

@@ -15,12 +15,15 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Card, GaugeBar, SectionHeader } from "../../components";
 import type { CreditMetrics, DatedValue } from "../../api/types";
-import { fmtMonYr } from "../../lib/format";
+import { fmtBpsLevel, fmtMonYr } from "../../lib/format";
 import Disclosure from "../shared/Disclosure";
 import { HeroChartFrame } from "../shared/HeroChart";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, capStyle, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
 import { ladderFlags } from "./credit-rules";
+import { CREDIT_OAS_IDS } from "../shared/fresh-state";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 import type { CreditPanelProps } from "./panel-props";
 import SpreadLinesChart from "./SpreadLinesChart";
 
@@ -146,10 +149,10 @@ function DistressTile({ m }: { m: CreditMetrics }) {
       <Caption>
         {m.ccc_oas != null && (
           <>
-            CCC spreads sit at {Math.round(m.ccc_oas)} bps, {distressPct?.toFixed(0)}% of the
+            CCC spreads sit at {fmtBpsLevel(m.ccc_oas)}, {distressPct?.toFixed(0)}% of the
             1,000 bps <Jargon term="distress">distress</Jargon> line. The weakest credits run
             hot even while the broad market reads {m.credit_label} at{" "}
-            {m.hy_oas != null ? Math.round(m.hy_oas) : DASH} bps; the two statements are about
+            {m.hy_oas != null ? fmtBpsLevel(m.hy_oas) : `${DASH} bps`}; the two statements are about
             different rungs of the ladder, not a contradiction.
           </>
         )}
@@ -170,9 +173,9 @@ function TensionCallout({ m }: { m: CreditMetrics }): ReactNode {
     <Card accentBar tone="watch" style={{ marginTop: 12 }}>
       <div style={{ ...eyebrowStyle, color: "var(--amber)" }}>Analytical callout · quality ladder tension</div>
       <p className="mrr-prose" style={prose}>
-        The index says {m.credit_label}; the weakest rung says stress. CCC spreads sit at {Math.round(m.ccc_oas)} bps,{" "}
+        The index says {m.credit_label}; the weakest rung says stress. CCC spreads sit at {fmtBpsLevel(m.ccc_oas)},{" "}
         {distressPct.toFixed(0)}% of the 1,000 bps <Jargon term="distress">distress</Jargon> line, while the broad
-        high-yield index holds {m.hy_oas != null ? Math.round(m.hy_oas) : DASH} bps.
+        high-yield index holds {m.hy_oas != null ? fmtBpsLevel(m.hy_oas) : `${DASH} bps`}.
       </p>
       <Disclosure variant="quiet" title="Details" style={{ marginTop: 4 }}>
         <p className="mrr-prose" style={{ ...small, marginTop: 0 }}>
@@ -180,7 +183,7 @@ function TensionCallout({ m }: { m: CreditMetrics }): ReactNode {
         </p>
         <p className="mrr-prose" style={small}>
           What it means: the market is charging default risk only for the marginal borrower. Watch single-B
-          {m.b_oas != null ? ` (${Math.round(m.b_oas)} bps today)` : ""}: stress migrating from CCC into B is how a{" "}
+          {m.b_oas != null ? ` (${fmtBpsLevel(m.b_oas)} today)` : ""}: stress migrating from CCC into B is how a{" "}
           {m.credit_label} state turns Stressed (HY above 400 bps).
         </p>
       </Disclosure>
@@ -190,9 +193,15 @@ function TensionCallout({ m }: { m: CreditMetrics }): ReactNode {
 
 export default function QualityLadder({ m, status }: CreditPanelProps): JSX.Element {
   const ready = status === "ready" && m != null;
+  const report = useFreshReport();
   return (
     <Card as="section" variant="panel" id="quality-ladder" style={{ minWidth: 0 }}>
-      <SectionHeader layout="panel" title="Quality ladder" description="BB, B and CCC spreads" right="BB · B · CCC detail · monthly" />
+      <SectionHeader
+        layout="panel"
+        title="Quality ladder"
+        description="BB, B and CCC spreads"
+        right={<MetaWithStamp meta="BB · B · CCC detail · monthly" stamp={<Stamp source={SRC.baml} label={report.group(CREDIT_OAS_IDS, m?.freshness)} />} />}
+      />
       {ready && m ? (
         <>
           <div className="mrr-credit-ladder-body">

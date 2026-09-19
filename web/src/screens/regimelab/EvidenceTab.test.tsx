@@ -126,7 +126,9 @@ describe("EvidenceTab (checklist 04 B.10)", () => {
     await renderEvidence();
     expect(section().tagName).toBe("SECTION");
     expect(within(section()).getByRole("heading", { level: 2 })).toHaveTextContent(/^Backtests & factor attribution$/);
-    expect(text(section())).toContain("Stored empirical analysis · SPY forward returns · computed Sep 12, 2026");
+    // Iteration 1 step 6 (A1): the computed date is the section's stamp.
+    expect(text(section())).toContain("Stored empirical analysis · SPY forward returns");
+    expect(section().querySelector("[data-stamp]")?.textContent).toBe("Backtests · computed Sep 12, 2026");
     expect(within(cohorts()).getAllByRole("button").map((b) => text(b))).toEqual(["By regime", "By signal"]);
     expect(option("By regime")).toHaveAttribute("aria-pressed", "true");
     expect(option("By signal")).toHaveAttribute("aria-pressed", "false");

@@ -31,10 +31,11 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { Card, GaugeBar, MeterRow, SectionHeader, Tag } from "../../components";
 import { useRegimeDuration, useRegimeHistory, useRegimeLatest, useTransitions } from "../../api/queries";
 import type { Regime, RegimeDuration, TransitionOutlook } from "../../api/types";
-import { fmtMonYr, ordinal, tidyProse } from "../../lib/format";
+import { fmtMonYr, fmtProb, ordinal, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { Caption, MISSING, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
 import Disclosure from "../shared/Disclosure";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
 import { STATUS_DEFINITION, cycleStatusTone, monthsText } from "./hero-copy";
 import { REGIMES, REGIME_HUE, completedSpells, exitCounts, regimeHue, spellStart, stay6m } from "./regime-history";
 import RegimeRibbon from "./RegimeRibbon";
@@ -86,12 +87,18 @@ const statValue: React.CSSProperties = {
 
 export function CycleSection({ duration, history }: { duration: UseQueryResult<RegimeDuration>; history: UseQueryResult<Regime[]> }) {
   const d = duration.data;
+  const lastRow = history.data?.[history.data.length - 1];
   const start = spellStart(history.data);
   const months = d ? monthsText(d.months_in_regime) : "0";
   const statusTone = d ? cycleStatusTone(d.status) : "clear";
   return (
     <Card as="section" id="cycle" variant="panel" style={{ minWidth: 0 }}>
-      <SectionHeader layout="panel" title="Cycle position" description="Spell length vs 30 years of stored history" right="Live model output" />
+      <SectionHeader
+        layout="panel"
+        title="Cycle position"
+        description="Spell length vs 30 years of stored history"
+        right={<MetaWithStamp meta="Live model output" stamp={<Stamp source={SRC.classifierHistory} asOf={lastRow ? fmtMonYr(lastRow.date) : null} />} />}
+      />
       {d ? (
         <div className="mrr-lab-tiles-2">
           <Card variant="tile" padding={TILE_PAD}>
@@ -129,7 +136,7 @@ export function CycleSection({ duration, history }: { duration: UseQueryResult<R
               </div>
               <div style={statCell}>
                 <dt style={statLabel}>Past spells outlasted</dt>
-                <dd style={statValue}>{d.percentile_duration.toFixed(0)}%</dd>
+                <dd style={statValue}>{fmtProb(d.percentile_duration, "percent")}</dd>
               </div>
             </dl>
             <Caption style={{ marginTop: 12 }}>
@@ -185,7 +192,7 @@ function OddsRows({ current, stay, rows, labelWidth = 112 }: { current: string; 
       <MeterRow
         label={`stays ${current}`}
         pct={stay}
-        value={`${Math.round(stay)}%`}
+        value={fmtProb(stay, "percent")}
         swatch={regimeHue(current)}
         color={regimeHue(current)}
         labelWidth={labelWidth}
@@ -196,7 +203,7 @@ function OddsRows({ current, stay, rows, labelWidth = 112 }: { current: string; 
           key={tr.to}
           label={`→ ${tr.to}`}
           pct={tr.probability}
-          value={`${Math.round(tr.probability)}%`}
+          value={fmtProb(tr.probability, "percent")}
           swatch={regimeHue(tr.to)}
           color={regimeHue(tr.to)}
           labelWidth={labelWidth}
@@ -222,7 +229,12 @@ export function TransitionsSection({
   const completed = completedSpells(exits);
   return (
     <Card as="section" id="transitions" variant="panel" style={{ minWidth: 0 }}>
-      <SectionHeader layout="panel" title="Transition outlook" description="30 years of monthly regime history" right="Stored empirical analysis" />
+      <SectionHeader
+        layout="panel"
+        title="Transition outlook"
+        description="30 years of monthly regime history"
+        right={<MetaWithStamp meta="Stored empirical analysis" stamp={<Stamp source={SRC.classifierHistory} asOf={rows?.length ? fmtMonYr(rows[rows.length - 1].date) : null} />} />}
+      />
       <div className="mrr-lab-tiles-3">
         {t ? (
           <>
@@ -232,7 +244,7 @@ export function TransitionsSection({
               {/* The highest-risk path is the 3-month figure (the summary's
                   "Next 3 months" row prints it with the 3-month stay). */}
               <Caption style={{ marginTop: 8 }}>
-                {tidyProse(t.narrative_3m)} Highest-risk path: → {t.highest_risk_transition} at {Math.round(t.highest_risk_prob)}%.
+                {tidyProse(t.narrative_3m)} Highest-risk path: → {t.highest_risk_transition} at {fmtProb(t.highest_risk_prob, "percent")}.
               </Caption>
             </Card>
             <Card variant="tile" padding="14px 18px 12px">

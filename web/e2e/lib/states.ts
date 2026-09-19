@@ -16,8 +16,14 @@
  *   emptyEndpoint  one endpoint answers its own empty shape (or a rewrite of the
  *                  served body), so the empty copy replaces the seeded value
  *   staleFeeds     /api/freshness, /api/regime/latest and /api/signals/latest are
- *                  rewritten to March 2026 (monthly) and Aug 20 2026 (daily),
- *                  which assessFreshness (freshness.ts) reads as "stale"
+ *                  rewritten to March 2026 (monthly) and Aug 20 2026 (daily);
+ *                  since Iteration 1 step 6 (A3) the screen judges nothing
+ *                  itself, so the recipe also serves the stale per-series
+ *                  states (FRESHNESS_CONTRACT §1) the words are read from:
+ *                  the regime inputs and the signals block 5 releases
+ *                  behind, market_daily 20 sessions behind, live_quotes at
+ *                  the close (so the market chip reads the stored close
+ *                  whatever the hour), and with `credit` the ICE BofA series
  *
  * Route patterns are anchored on the pathname: a bare "/api/" substring would
  * also match Vite's own /src/api/queries.ts module and blank the page (U6).
@@ -45,6 +51,46 @@ export const SNAPSHOT_STORAGE_KEY = "mrr:snapshot:v1";
 /** The stale recipe's dates (B.0): a March month and an August close on a September verify day. */
 export const STALE_MONTH = "2026-03-01";
 export const STALE_DAILY = "2026-08-20";
+/** The recipe's served lags (A3): what the server would say for the dates above. */
+export const STALE_RELEASES = 5;
+export const STALE_SESSIONS = 20;
+export const STALE_CREDIT_DAY = "2026-03-02";
+export const STALE_CREDIT_DAYS = 140;
+/** The §5 words the stale states read (fresh-state.ts freshLabel). */
+export const STALE_MONTH_WORD = `Mar 2026 · ${STALE_RELEASES} releases behind`;
+export const STALE_DAILY_WORD = `Aug 20 · ${STALE_SESSIONS} sessions behind`;
+export const STALE_CREDIT_WORD = `Mar 02 · ${STALE_CREDIT_DAYS} days behind`;
+
+interface SeriesLike {
+  id: string;
+  label?: string;
+  kind?: string;
+  cadence?: string;
+  as_of?: string | null;
+  state?: string;
+  delay_min?: number | null;
+  cycles_behind?: number | null;
+  stale?: boolean;
+  discontinued?: boolean;
+  reason?: string;
+}
+
+const REGIME_INPUTS = ["INDPRO", "CPIAUCSL", "UNRATE"];
+const BAML = ["BAMLH0A0HYM2", "BAMLC0A0CM", "BAMLH0A1HYBB", "BAMLH0A2HYB", "BAMLH0A3HYC"];
+
+function staleState(id: string, cadence: string, kind: string, as_of: string, behind: number, unit: string): SeriesLike {
+  return { id, label: id, kind, cadence, as_of, state: "stale", delay_min: null, cycles_behind: behind, stale: true, discontinued: false, reason: `${id}: ${behind} ${unit} behind (stale recipe).` };
+}
+const staleMonthly = (id: string) => staleState(id, "monthly", "fred", STALE_MONTH, STALE_RELEASES, "release(s)");
+const staleCredit = (id: string) => staleState(id, "daily", "fred", STALE_CREDIT_DAY, STALE_CREDIT_DAYS, "business day(s)");
+
+/** Replace (or add) states by id in a served series[] list. */
+function withStates(list: SeriesLike[] | null | undefined, states: SeriesLike[]): SeriesLike[] {
+  const byId = new Map(states.map((x) => [x.id, x]));
+  const out = (list ?? []).map((x) => byId.get(x.id) ?? x);
+  for (const x of states) if (!out.some((y) => y.id === x.id)) out.push(x);
+  return out;
+}
 
 export function toMatcher(pattern: PathPattern): (url: URL) => boolean {
   if (typeof pattern === "string") return (url) => url.pathname === pattern;
@@ -140,6 +186,7 @@ interface FreshnessLike {
   market_daily_date?: string | null;
   news_published_at?: string | null;
   sla?: { feed: string; verdict: string; latest?: string | null }[] | null;
+  series?: SeriesLike[] | null;
 }
 
 /** B.0 "stale": the served freshness report, regime row and signal print re-dated to the stale dates. */
@@ -154,10 +201,24 @@ export async function staleFeeds(page: Page, opts: StaleOptions = {}): Promise<v
     j.market_daily_date = STALE_DAILY;
     if (opts.news) j.news_published_at = `${STALE_MONTH}T12:00:00`;
     j.sla = (j.sla ?? []).map((row) => (feeds.has(row.feed) ? { ...row, verdict: "stale" } : row));
+    // A3: the per-series states the words are read from.
+    const live = (j.series ?? []).find((x) => x.id === "live_quotes");
+    j.series = withStates(j.series, [
+      ...REGIME_INPUTS.map(staleMonthly),
+      staleState("market_daily", "daily", "market", STALE_DAILY, STALE_SESSIONS, "session(s)"),
+      ...(live ? [{ ...live, state: "close", delay_min: null, stale: false }] : []),
+      ...(opts.credit ? BAML.map(staleCredit) : []),
+    ]);
     return j;
   });
   await rewriteEndpoint(page, "/api/regime/latest", (served) => ({ ...((served ?? {}) as object), date: STALE_MONTH }));
-  await rewriteEndpoint(page, "/api/signals/latest", (served) => ({ ...((served ?? { signals: [] }) as object), date: STALE_MONTH }));
+  await rewriteEndpoint(page, "/api/signals/latest", (served) => {
+    const j = { ...((served ?? { signals: [] }) as Record<string, unknown>), date: STALE_MONTH };
+    const block = { ...((j.freshness ?? {}) as Record<string, SeriesLike>) };
+    for (const id of REGIME_INPUTS) block[id] = staleMonthly(id);
+    j.freshness = block;
+    return j;
+  });
   if (opts.market) {
     await rewriteEndpoint(page, "/api/market/daily", (served) => (Array.isArray(served) ? served.filter((b) => String((b as { date?: string }).date ?? "") <= STALE_DAILY) : []));
   }
@@ -167,6 +228,8 @@ export async function staleFeeds(page: Page, opts: StaleOptions = {}): Promise<v
       const cut = (rows: unknown) => (Array.isArray(rows) ? rows.filter((p) => String((p as { date?: string }).date ?? "") <= STALE_MONTH) : rows);
       for (const key of ["hy_series", "ig_series", "hy_sparkline", "ig_sparkline", "ccc_sparkline", "bb_sparkline", "b_sparkline"]) m[key] = cut(m[key]);
       m.data_as_of = STALE_MONTH.slice(0, 7);
+      // A3: the payload's own block, which the Credit chip reads first.
+      m.freshness = Object.fromEntries(BAML.map((id) => [id, staleCredit(id)]));
       return m;
     });
   }

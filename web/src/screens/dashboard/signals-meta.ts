@@ -23,6 +23,9 @@ export interface SignalMeta {
    * suffix is now cadence-neutral. Kept as reference metadata.
    */
   cadence: "monthly print" | "daily";
+  /** The FRED series the signal reads (Iteration 1, A1): its card stamp is
+   * their state from the signals payload's `freshness` block. */
+  series: readonly string[];
 }
 
 const num = (t: number | null, dp = 2) => (t != null ? t.toFixed(dp) : null);
@@ -34,6 +37,7 @@ export const SIGNALS_META: Record<string, SignalMeta> = {
     format: (v) => `${v.toFixed(2)}%`,
     trigger: (t) => (num(t) ? `Trips when the 10Y–2Y spread closes below ${num(t)}%.` : "Trips when the 10Y–2Y spread closes below its stored trigger."),
     cadence: "daily",
+    series: ["DGS10", "DGS2"],
   },
   unemployment_spike: {
     name: "unemployment_spike",
@@ -41,6 +45,7 @@ export const SIGNALS_META: Record<string, SignalMeta> = {
     format: (v) => `${v.toFixed(2)} pp / 3m`,
     trigger: (t) => (num(t) ? `Trips when unemployment rises ${num(t)} pp or more over 3 months.` : "Trips when the 3-month rise in unemployment reaches its stored trigger."),
     cadence: "monthly print",
+    series: ["UNRATE"],
   },
   cpi_hot: {
     name: "cpi_hot",
@@ -48,6 +53,7 @@ export const SIGNALS_META: Record<string, SignalMeta> = {
     format: (v) => `${v.toFixed(2)}% YoY`,
     trigger: (t) => (num(t) ? `Trips when CPI runs above ${num(t)}% YoY.` : "Trips when CPI runs above its stored trigger."),
     cadence: "monthly print",
+    series: ["CPIAUCSL"],
   },
   cpi_cold: {
     name: "cpi_cold",
@@ -55,6 +61,7 @@ export const SIGNALS_META: Record<string, SignalMeta> = {
     format: (v) => `${v.toFixed(2)}% YoY`,
     trigger: (t) => (num(t) ? `Trips when CPI falls below ${num(t)}% YoY.` : "Trips when CPI falls below its stored trigger."),
     cadence: "monthly print",
+    series: ["CPIAUCSL"],
   },
   vix_spike: {
     name: "vix_spike",
@@ -62,6 +69,7 @@ export const SIGNALS_META: Record<string, SignalMeta> = {
     format: (v) => v.toFixed(2),
     trigger: (t) => (num(t) ? `Trips when the VIX closes above ${num(t)}.` : "Trips when the VIX closes above its stored trigger."),
     cadence: "daily",
+    series: ["VIXCLS"],
   },
 };
 

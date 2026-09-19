@@ -14,6 +14,7 @@ import type { Surprise } from "../../api/types";
 import { fmtDate, fmtSigned, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote } from "../shared/screen-ui";
+import { MetaWithStamp, Stamp } from "../shared/Stamp";
 
 interface Props {
   surprises: { data: Surprise[] | undefined; isLoading: boolean; isError: boolean };
@@ -91,7 +92,12 @@ export default function TopSurprises({ surprises, surpriseWeek }: Props) {
         layout="panel"
         title="Top surprises this week"
         description="Weekly moves ranked by z-score"
-        right={surpriseWeek ? `weekly derived series · week ending ${fmtDate(surpriseWeek)}` : "weekly derived series"}
+        right={
+          <MetaWithStamp
+            meta="weekly derived series"
+            stamp={<Stamp source="Derived pipeline" asOf={surpriseWeek ? `week ending ${fmtDate(surpriseWeek)}` : null} />}
+          />
+        }
         actions={
           <Link className="mrr-link" to="/app/news#calendar">
             Calendar →

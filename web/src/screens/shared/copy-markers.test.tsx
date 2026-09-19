@@ -72,9 +72,9 @@ describe("TabHero lede cap", () => {
 
 describe("StatusStrip status markers", () => {
   it("the title and the detail are each one status line", () => {
-    render(<StatusStrip tone="mint" title="Feed current" detail="Newest headline Sep 16, 16:40 ET" />);
+    render(<StatusStrip tone="mint" title="Feed on time" detail="Newest headline Sep 16, 16:40 ET" />);
     const marked = [...document.querySelectorAll("[data-copy='status']")].map((el) => el.textContent);
-    expect(marked).toEqual(["Feed current", "Newest headline Sep 16, 16:40 ET"]);
+    expect(marked).toEqual(["Feed on time", "Newest headline Sep 16, 16:40 ET"]);
   });
 });
 

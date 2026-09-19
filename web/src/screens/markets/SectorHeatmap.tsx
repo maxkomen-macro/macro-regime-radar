@@ -10,8 +10,10 @@
 import type { CSSProperties } from "react";
 import { Card, SectionHeader } from "../../components";
 import type { DailyBar } from "../../api/types";
-import { fmtDate, fmtSignedPct } from "../../lib/format";
+import { fmtSignedPct } from "../../lib/format";
 import { Caption, MISSING, StateNote, monoNoteStyle } from "../shared/screen-ui";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 import { SECTORS } from "./tape";
 
 interface Props {
@@ -36,15 +38,18 @@ function tint(ret: number | null): CSSProperties | undefined {
     : { background: `linear-gradient(180deg, rgba(${base},.10), rgba(${base},.055))`, borderColor: `rgba(${base},.22)` };
 }
 
-export default function SectorHeatmap({ barsBySymbol, marketDailyDate, status = "ready" }: Props) {
+// `marketDailyDate` stays on Props for callers; the header's as-of is the
+// stamp's market_daily state (A1), not the newest stored row date.
+export default function SectorHeatmap({ barsBySymbol, status = "ready" }: Props) {
   const anyClose = SECTORS.some(({ symbol }) => (barsBySymbol.get(symbol)?.length ?? 0) > 0);
+  const report = useFreshReport();
   return (
     <Card as="section" variant="panel" id="sector-heatmap" style={{ minWidth: 0 }}>
       <SectionHeader
         layout="panel"
         title="Sector heatmap"
         description="One-day moves from stored closes"
-        right={marketDailyDate ? `daily closes · ${fmtDate(marketDailyDate)}` : "daily closes"}
+        right={<MetaWithStamp meta="daily closes" stamp={<Stamp source={SRC.closes} label={report.series("market_daily")} />} />}
       />
       {/* Four homogeneous tiles: auto-fit reflows them (2-up at 375) with no
           width conditional at all. */}

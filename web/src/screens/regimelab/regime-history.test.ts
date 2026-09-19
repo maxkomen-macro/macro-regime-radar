@@ -169,11 +169,12 @@ describe("regime-history helpers (checklist 04 A.2)", () => {
     expect(overheatingDelta3m(undefined)).toBeNull();
   });
 
-  it("stay6m is the rounded residual of the served 6-month rows, floored at 0", () => {
+  it("stay6m is the rounded residual of the served 6-month rows, unfloored (A4: the display dashes a negative)", () => {
     expect(stay6m(transitions([19, 9, 4]))).toBe(68);
     expect(stay6m(transitions([19.4, 9, 4]))).toBe(68); // 67.6 rounds up
     expect(stay6m(transitions([19.6, 9, 4]))).toBe(67);
-    expect(stay6m(transitions([60, 30, 14]))).toBe(0); // never negative
+    // Iteration 1 step 6 (A4): no floor; fmtProb renders a negative residual as "—".
+    expect(stay6m(transitions([60, 30, 14]))).toBe(-4);
     expect(stay6m(transitions([]))).toBe(100);
   });
 

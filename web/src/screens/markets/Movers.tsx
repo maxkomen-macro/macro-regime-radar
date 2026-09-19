@@ -26,6 +26,8 @@ import { fmtSignedPct } from "../../lib/format";
 import { monDD } from "../shared/fresh-state";
 import { dayKeyEt } from "../shared/calendar-impact";
 import { Caption, MISSING, StateNote, eyebrowStyle } from "../shared/screen-ui";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 import { readCandles } from "../shell/watchlist/useWatchlistQuote";
 import { SINGLE_NAMES, asOfCell, nyseSessionOpen, type TapeDef } from "./tape";
 
@@ -178,6 +180,7 @@ function Group({ label, items, emptyWord, onOpen }: { label: string; items: Move
 
 export default function Movers({ read, onOpen }: { read: MoversRead; onOpen: (symbol: string) => void }) {
   const hasAny = read.ranked.length > 0;
+  const report = useFreshReport();
   let body;
   if (hasAny) {
     body = (
@@ -204,7 +207,17 @@ export default function Movers({ read, onOpen }: { read: MoversRead; onOpen: (sy
         layout="panel"
         title="Single-name movers"
         description="Day moves of the twelve stored names; each opens its research panel"
-        right="stream change, else last close"
+        right={
+          <MetaWithStamp
+            meta="stream change, else last close"
+            stamp={
+              <>
+                <Stamp source={SRC.eodhd} label={report.series("live_quotes")} />
+                <Stamp source={SRC.closes} label={report.series("market_daily")} />
+              </>
+            }
+          />
+        }
       />
       {body}
       {hasAny && read.missing.length ? (

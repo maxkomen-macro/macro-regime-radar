@@ -27,13 +27,14 @@ import { Link } from "react-router-dom";
 import { Card, NewsCard, SectionHeader, Segmented, StatTile } from "../../components";
 import { useCalendar, useCalendarEarnings, useCalendarRecent, useFreshness, useNews, useNewsLatest } from "../../api/queries";
 import type { NewsItem } from "../../api/types";
-import { fmtDate, fmtUtcStampEt, tidyProse } from "../../lib/format";
+import { fmtDate, tidyProse } from "../../lib/format";
 import { takeSentences } from "../../lib/sentences";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { DASH } from "../dashboard/hero-copy";
 import { DisclosureLine } from "../shared/Disclosure";
 import { impactOf } from "../shared/calendar-impact";
-import { assessFreshness } from "../shared/freshness";
+import { referenceLabel } from "../shared/fresh-state";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, useHashScroll } from "../shared/screen-ui";
 import SummaryCard, { type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
@@ -61,7 +62,8 @@ import {
   highImpactCount,
   highImpactValue,
   leadSentence,
-  mergeFeedVerdict,
+  feedChipLabel,
+  feedClock,
   nextFocusEvent,
   researchBody,
   sourcesFromResearch,
@@ -282,16 +284,21 @@ export default function NewsScreen() {
     (acc, r) => (r.published_at && (!acc || r.published_at > acc) ? r.published_at : acc),
     null,
   );
-  const feedClock = assessFreshness(newestPublished, "hourly");
   // The stored stamp is UTC: it renders as ET wall time, never "ET" appended
   // to the UTC digits (format.ts, 2026-09-05), so the chip, the strip and the
-  // row clocks read one clock.
-  const feedFresh = newestPublished ? { ...feedClock, stamp: fmtUtcStampEt(newestPublished) } : feedClock;
-  // The served SLA verdict wins when /api/freshness carries the news row, so
-  // the strip agrees with the drawer's "News feed" line (G13); the client
-  // clock covers snapshot mode and older payloads.
+  // row clocks read one clock. The served SLA verdict is the only judgement
+  // (G13, and Iteration 1 step 6 A3: no age is counted in the browser), so
+  // the strip agrees with the drawer's "News feed" line; without it the feed
+  // reads unknown.
   const slaNews = freshness.data?.sla?.find((r) => r.feed === "news");
-  const feedInfo = mergeFeedVerdict(feedFresh, slaNews);
+  const feedInfo = feedClock(newestPublished, slaNews);
+  // A1: the feed's numbers (significance scores, counts) carry the news
+  // pipeline's source and its newest-headline word; the calendar's rows the
+  // hand-maintained schedule's reference word.
+  const newsStamp = <Stamp source={SRC.news} label={feedChipLabel(feedInfo)} />;
+  const calendarStamp = (
+    <Stamp source={SRC.calendar} label={referenceLabel("The calendar is a hand-maintained schedule refreshed with the daily run; it has no publication cadence of its own.")} />
+  );
   const ranked = useMemo(
     () => [...feed].sort((x, y) => (y.overall_significance ?? 0) - (x.overall_significance ?? 0)),
     [feed],
@@ -334,7 +341,7 @@ export default function NewsScreen() {
   const why = whySentence(priority[0], usingFallback);
   const ledeParts = takeSentences(why ? `${lead} ${why}` : lead, 3);
   const footnote: ReactNode[] = [
-    usingFallback ? coverageValue(feed, windowLabel, usingFallback, newestFallback, feedFresh.age) : `${feed.length} headlines in ${windowLabel}`,
+    usingFallback ? coverageValue(feed, windowLabel, usingFallback, newestFallback) : `${feed.length} headlines in ${windowLabel}`,
     ...(calendar.data ? [usingCalFallback ? "stored schedule" : `${events.length} events in the next 30 days`] : []),
     ...(checked ? [`Feed checked ${checked} ET`] : []),
   ];
@@ -351,10 +358,16 @@ export default function NewsScreen() {
     freshness: isMobile
       ? undefined
       : [
-          { noun: "Newest headline", info: feedInfo },
-          { noun: "Calendar", info: assessFreshness(null, "reference") },
+          { noun: "Newest headline", label: feedChipLabel(feedInfo) },
+          { noun: "Calendar", label: referenceLabel("The calendar is a hand-maintained schedule refreshed with the daily run; it has no publication cadence of its own.") },
         ],
     note: "Feed rechecks every 60s; the pipeline scores and stores new headlines hourly.",
+    stamp: (
+      <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+        {calendarStamp}
+        {newsStamp}
+      </span>
+    ),
   };
   let hero: ReactNode;
   if (focus) {
@@ -449,7 +462,7 @@ export default function NewsScreen() {
     {
       id: "coverage",
       label: "Coverage",
-      value: feedState === "loading" || feedState === "error" ? feedNote : coverageValue(feed, windowLabel, usingFallback, newestFallback, feedFresh.age),
+      value: feedState === "loading" || feedState === "error" ? feedNote : coverageValue(feed, windowLabel, usingFallback, newestFallback),
       tone: usingFallback ? "var(--warn-hot)" : undefined,
     },
     ...(categoryMix ? [{ id: "by-category", label: "By category", value: categoryMix }] : []),
@@ -473,7 +486,19 @@ export default function NewsScreen() {
       {/* ── Hero row ────────────────────────────────────────────────── */}
       <div className="mrr-hero-row">
         {hero}
-        <SummaryCard id="news-summary" as="h2" title="Desk summary" rows={rows} status={strip} />
+        <SummaryCard
+          id="news-summary"
+          as="h2"
+          title="Desk summary"
+          rows={rows}
+          status={strip}
+          stamp={
+            <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+              {calendarStamp}
+              {newsStamp}
+            </span>
+          }
+        />
       </div>
 
       <div className="mrr-news-body">
@@ -487,7 +512,9 @@ export default function NewsScreen() {
                  window is empty the section says what it is showing (2026-09-06). */
               title={usingFallback ? "Latest stored headlines" : "Priority headlines"}
               description={usingFallback ? "Most recent stored stories, significance filter not applied" : `Ranked by significance, last ${windowLabel}`}
-              right={`${priority.length} of ${feed.length} · by significance${usingFallback ? " · outside the selected window" : ""}`}
+              right={
+                <MetaWithStamp meta={`${priority.length} of ${feed.length} · by significance${usingFallback ? " · outside the selected window" : ""}`} stamp={newsStamp} />
+              }
               actions={
                 <Link className="mrr-link" to="/app/methodology#ramps">
                   How scoring works →
@@ -538,9 +565,14 @@ export default function NewsScreen() {
               title="More headlines"
               description={usingFallback ? `${feed.length} most recent stored` : `${feed.length}${capped ? "+" : ""} in the last ${windowLabel}`}
               right={
-                `Finnhub · NewsAPI · RSS · sorted by ${usingFallback ? "recency (fallback)" : "significance"}` +
-                (checked ? ` · checked ${checked} ET` : "") +
-                (newThisSession > 0 ? ` · ${newThisSession} new this session` : "")
+                <MetaWithStamp
+                  meta={
+                    `Finnhub · NewsAPI · RSS · sorted by ${usingFallback ? "recency (fallback)" : "significance"}` +
+                    (checked ? ` · checked ${checked} ET` : "") +
+                    (newThisSession > 0 ? ` · ${newThisSession} new this session` : "")
+                  }
+                  stamp={newsStamp}
+                />
               }
             />
             <fieldset className="mrr-news-filters">

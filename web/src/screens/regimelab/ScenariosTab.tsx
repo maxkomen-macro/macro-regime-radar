@@ -18,10 +18,11 @@ import { useState, type CSSProperties } from "react";
 import { Card, ProbabilityBar, SectionHeader, Segmented, Tag } from "../../components";
 import { useRegimeLatest, useScenarioDefs, useScenarioRun } from "../../api/queries";
 import type { ScenarioShocks } from "../../api/types";
-import { tidyProse } from "../../lib/format";
+import { fmtMonYr, fmtProb, tidyProse } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, MISSING, SliderRow, StateNote, eyebrowStyle, mono, monoNoteStyle, useDebounced } from "../shared/screen-ui";
 import { REGIME_HUE } from "./regime-history";
+import { MetaWithStamp, Stamp, servedOdds } from "../shared/Stamp";
 
 export const SHOCK_DEFAULTS: ScenarioShocks = {
   hy_spread_delta_bps: 0,
@@ -120,7 +121,12 @@ export default function ScenariosTab() {
       <SectionHeader
         layout="panel"
         title="Scenario builder"
-        right="Scenario analysis · stress rule over stored odds, not a classifier rerun"
+        right={
+          <MetaWithStamp
+            meta="Scenario analysis · stress rule over stored odds, not a classifier rerun"
+            stamp={<Stamp source="Stress rule on stored odds" asOf={regimeNow.data ? fmtMonYr(regimeNow.data.date) : null} />}
+          />
+        }
         actions={
           <Segmented
             mono
@@ -234,6 +240,7 @@ export default function ScenariosTab() {
                         }
                       : toBar(r.current_regime_probs)
                   }
+                  metrics={regimeNow.data ? servedOdds(regimeNow.data) : undefined}
                   height={6}
                 />
               </div>
@@ -253,7 +260,7 @@ export default function ScenariosTab() {
               ))}
               <span style={{ ...monoNoteStyle, color: "var(--text)", marginLeft: "auto" }}>
                 most likely: <b style={{ color: REGIME_HUE[r.most_likely_regime] ?? "var(--text)" }}>{r.most_likely_regime}</b> at{" "}
-                {Math.round(r.most_likely_prob)}%
+                {fmtProb(r.most_likely_prob, "percent")}
               </span>
             </div>
 

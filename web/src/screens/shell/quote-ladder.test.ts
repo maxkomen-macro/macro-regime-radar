@@ -12,7 +12,9 @@
  * CLOSE, and the dash with NO PRICE once the daily query has answered.
  */
 import { describe, expect, it } from "vitest";
-import { quoteFor } from "./quote-ladder";
+import { quoteFor, withFreshTags } from "./quote-ladder";
+import type { FreshLabel } from "../shared/fresh-state";
+import type { QuoteCardProps } from "./QuoteCard";
 import type { DailyBar, IntradayPoint } from "../../api/types";
 import type { LiveQuote } from "../../live/quotes";
 
@@ -67,6 +69,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       change: "+0.79%",
       changeTone: "pos",
       series: [644, 645.2],
+      via: "stream",
     });
     expect(quoteFor(SPY, quotes(quote("SPY", 645.2, 0.79, true)), SESSION, DAILY)).toEqual({
       symbol: "SPY",
@@ -76,6 +79,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       changeTone: "pos",
       tag: TAG_15M,
       series: [644, 645.2],
+      via: "stream",
     });
     expect(quoteFor(SPY, quotes(quote("SPY", 641.37, -0.42)), SESSION, DAILY)).toMatchObject({
       price: "641.37",
@@ -98,6 +102,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       raw: 645.2,
       tag: TAG_LAST,
       series: [644, 645.2],
+      via: "stream",
     });
     expect(quoteFor(SPY, quotes(quote("SPY", 645.2, null, true)), SESSION, DAILY)).toEqual({
       symbol: "SPY",
@@ -105,6 +110,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       raw: 645.2,
       tag: TAG_15M,
       series: [644, 645.2],
+      via: "stream",
     });
     const stepTwo = quoteFor(SPY, quotes(quote("SPY", 645.2, null)), SESSION, DAILY);
     expect(stepTwo.change).toBeUndefined();
@@ -121,6 +127,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       changeTone: "pos",
       series: [644, 645.2],
       title: "Stored intraday bar Sep 14, 15:55 ET against the prior daily close",
+      via: "intraday",
     });
     // A bar newer than the newest stored close compares with that close.
     expect(quoteFor(SPY, quotes(), SESSION, [bar("SPY", PRIOR, 640.1)])).toMatchObject({
@@ -147,6 +154,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       raw: 645.2,
       tag: TAG_CLOSE,
       series: [640.1, 645.2],
+      via: "close",
     });
     expect(quoteFor(SPY, quotes(), [], DAILY)).toEqual(quoteFor(SPY, quotes(), undefined, DAILY));
     // Intraday rows without a close are ignored, so the stored close still wins.
@@ -158,6 +166,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       raw: 572.9,
       tag: TAG_CLOSE,
       series: [570.4, 572.9],
+      via: "close",
     });
     // The sparkline keeps the last 20 stored closes, oldest to newest.
     const many = Array.from({ length: 25 }, (_, i) => bar("SPY", `2026-08-${String(i + 1).padStart(2, "0")}`, 600 + i));
@@ -193,5 +202,35 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
     expect(quoteFor({ symbol: "USDJPY", dp: 3 }, quotes(quote("USDJPY", 147.2, -0.3)), undefined, [])).toMatchObject({ price: "147.200", change: "-0.30%" });
     // The default stays two places, as the strip always printed.
     expect(quoteFor({ symbol: "EURUSD" }, quotes(quote("EURUSD", 1.0832, 0.12)), undefined, []).price).toBe("1.08");
+  });
+});
+
+/* ── Iteration 1 step 6 (A3): the stored-read tags in the server's words ── */
+
+
+describe("withFreshTags", () => {
+  const closeL: FreshLabel = { word: "Close · Sep 18", muted: null, tone: "neutral", reason: "Official close of 2026-09-18.", stale: false };
+  const staleL: FreshLabel = { word: "Sep 14 · 4 sessions behind", muted: null, tone: "stale", reason: "Newest stored close is 4 sessions old.", stale: true };
+  const card: QuoteCardProps = { symbol: "SPY", price: "645.20", tag: { text: "CLOSE", title: "Stored close, Sep 14, 2026", tone: "amber" }, via: "close" };
+
+  it("a current stored close reads a muted CLOSE tag titled with the §5 word, the price unmarked", () => {
+    const out = withFreshTags(card, { daily: closeL, intraday: closeL });
+    expect(out.tag).toEqual({ text: "CLOSE", title: "Stored close · Close · Sep 18. Official close of 2026-09-18.", tone: "muted" });
+    expect(out.valueAttrs?.["data-stale"]).toBeUndefined();
+  });
+
+  it("a stale stored close reads an amber tag and marks the price itself", () => {
+    const out = withFreshTags({ ...card, valueAttrs: { "data-metric": "x" } }, { daily: staleL, intraday: closeL });
+    expect(out.tag?.tone).toBe("amber");
+    expect(out.tag?.title).toContain("Sep 14 · 4 sessions behind");
+    expect(out.valueAttrs).toEqual({ "data-metric": "x", "data-stale": "true" });
+  });
+
+  it("stream rungs keep their relay tags; a stale intraday bar marks the price", () => {
+    const stream: QuoteCardProps = { symbol: "SPY", price: "645.20", tag: { text: "15M" }, via: "stream" };
+    expect(withFreshTags(stream, { daily: staleL, intraday: staleL })).toBe(stream);
+    const bar: QuoteCardProps = { symbol: "SPY", price: "645.20", via: "intraday" };
+    expect(withFreshTags(bar, { daily: closeL, intraday: staleL }).valueAttrs).toEqual({ "data-stale": "true" });
+    expect(withFreshTags(bar, { daily: closeL, intraday: closeL }).valueAttrs).toBeUndefined();
   });
 });

@@ -17,6 +17,11 @@ export interface ProbabilityBarProps extends React.HTMLAttributes<HTMLDivElement
   legend?: "abbr" | "letter";
   /** "fixed" keeps the classifier order (default); "desc" sorts by share. */
   order?: "fixed" | "desc";
+  /** Iteration 1 (A2): the served probabilities (null when not served),
+   * keyed like `probs`. Each legend entry then carries
+   * `data-metric="odds-<regime>"` and `data-metric-value` (the served
+   * number, unformatted). */
+  metrics?: { goldilocks?: number | null; overheating?: number | null; stagflation?: number | null; recession?: number | null };
   style?: React.CSSProperties;
 }
 

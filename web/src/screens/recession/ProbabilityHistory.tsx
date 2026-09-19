@@ -12,7 +12,8 @@
 import { useState } from "react";
 import { Segmented } from "../../components";
 import type { RecessionMetrics } from "../../api/types";
-import { fmtMonYr } from "../../lib/format";
+import { fmtMonYr, fmtProb } from "../../lib/format";
+import { Metric } from "../shared/Stamp";
 import LineChart from "../dashboard/LineChart";
 import { DASH } from "../dashboard/hero-copy";
 import Disclosure from "../shared/Disclosure";
@@ -72,8 +73,12 @@ export default function ProbabilityHistory({ m }: { m: RecessionMetrics }): JSX.
           disagreement without the third. The lag sentence sits behind Details. */}
       <Caption mono copyMax={3}>
         The model&apos;s 12-month odds, monthly since {plotted[0] ? fmtMonYr(plotted[0].date) : DASH}. Shaded bands are actual{" "}
-        <Jargon term="NBER">NBER</Jargon> recessions, dashed rules the 20/40 band edges. The plotted tail ({tail ? `${tail.value.toFixed(0)}%` : DASH})
-        is a partial-month fit; the headline {prob.toFixed(1)}% is the newest complete monthly read.
+        <Jargon term="NBER">NBER</Jargon> recessions, dashed rules the 20/40 band edges. The plotted tail ({tail ? fmtProb(tail.value, "percent") : DASH})
+        is a partial-month fit; the headline{" "}
+        <Metric id="recession-prob" value={m.recession_prob}>
+          {fmtProb(prob, "percent", 1)}
+        </Metric>{" "}
+        is the newest complete monthly read.
       </Caption>
       <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
         <Caption mono style={{ marginTop: 0 }}>

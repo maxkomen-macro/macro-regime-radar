@@ -15,8 +15,10 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Card, SectionHeader, Sparkline } from "../../components";
 import type { CreditOAS } from "../../api/types";
-import { fmtBps, fmtDate, fmtPct } from "../../lib/format";
-import { Caption, StateNote } from "../shared/screen-ui";
+import { fmtBps, fmtPct } from "../../lib/format";
+import { StateNote, monoNoteStyle } from "../shared/screen-ui";
+import { Metric, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 import { DASH } from "./hero-copy";
 
 export interface TenYearCardProps {
@@ -69,6 +71,7 @@ export default function TenYearCard({ credit }: TenYearCardProps) {
   const ten = credit.data?.series.find((s) => s.label === "UST10Y");
   const dir = ten?.change_1w_bps != null ? (ten.change_1w_bps >= 0 ? "pos" : "neg") : null;
   const color = dir === "pos" ? "var(--pos)" : dir === "neg" ? "var(--neg)" : "var(--text-3)";
+  const report = useFreshReport();
 
   return (
     <Card as="section" id="us10y" variant="panel" style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
@@ -95,7 +98,13 @@ export default function TenYearCard({ credit }: TenYearCardProps) {
             color: "var(--text)",
           }}
         >
-          {ten ? fmtPct(ten.value_pct) : DASH}
+          {ten ? (
+            <Metric id="ust10y" value={ten.value_pct}>
+              {fmtPct(ten.value_pct)}
+            </Metric>
+          ) : (
+            DASH
+          )}
         </span>
         {ten?.change_1w_bps != null ? (
           <span style={{ fontFamily: "var(--font-ui)", fontSize: 15, fontWeight: 500, fontVariantNumeric: "tabular-nums", color }}>
@@ -113,9 +122,13 @@ export default function TenYearCard({ credit }: TenYearCardProps) {
           <StateNote loading={credit.isLoading} error={credit.isError} />
         </div>
       )}
-      <Caption mono style={{ marginTop: 8 }}>
-        {ten ? `10-year Treasury yield · FRED ${ten.series_id} · daily close · ${fmtDate(ten.date)}` : "10-year Treasury yield · FRED DGS10 · daily close"}
-      </Caption>
+      {/* A1: the provenance line is the card's stamp (not a caption): the
+          as-of word is the server's DGS10 state from the credit payload's own
+          block, never the month-stamped row date (FRESHNESS_CONTRACT §3). */}
+      <div style={{ ...monoNoteStyle, marginTop: 8 }}>
+        10-year Treasury yield · daily close ·{" "}
+        <Stamp source={`${SRC.fred} ${ten?.series_id ?? "DGS10"}`} label={report.series(ten?.series_id ?? "DGS10", credit.data?.freshness)} style={{ fontSize: 12 }} />
+      </div>
     </Card>
   );
 }

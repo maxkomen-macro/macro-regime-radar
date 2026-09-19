@@ -31,6 +31,8 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, MISSING, StateNote, metaStyle } from "../shared/screen-ui";
+import { SRC, Stamp, metricAttrs } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 import { CHART_PANEL_ID } from "./chart-panel-id";
 import {
   MACRO_TAPE,
@@ -243,7 +245,10 @@ function storedClose(r: TapeRowData): DailyBar | undefined {
 const num = (v: number | null | undefined, f: (x: number) => string): string => (v == null ? DASH : f(v));
 
 const lastCell = (r: TapeRowData): ReactNode => {
-  if (r.quote) return fmtPrice(r.def, r.quote.p);
+  // A2: the VIX row is the relay's delayed CBOE poll (vix_delayed), not the
+  // FRED VIXCLS close the Dashboard reads ("vix"): it is "vix-live", and its
+  // As of cell and the tape header's stamp say it is delayed.
+  if (r.quote) return r.def.symbol === "VIX" ? <span {...metricAttrs("vix-live", r.quote.p)}>{fmtPrice(r.def, r.quote.p)}</span> : fmtPrice(r.def, r.quote.p);
   const stored = storedClose(r);
   if (stored) return <span style={{ color: "var(--text-2)" }}>{fmtPrice(r.def, stored.close as number)}</span>;
   return <span style={{ color: "var(--text-3)", fontWeight: 400 }}>no quote</span>;
@@ -335,6 +340,7 @@ export default function MacroTape({
   const { isNarrow } = useBreakpoint();
   const flash = useTickFlash(quotes);
   const status = useStreamStatus();
+  const report = useFreshReport();
   const statusLine = tapeStatus({ socketOpen: status.socket === "open", usLive: live, quotes, storedThrough });
   // CP4: with the stored closes unanswered the tape names what is missing
   // (closes alone while the stream is up, every price when it is not); the
@@ -417,7 +423,19 @@ export default function MacroTape({
 
   return (
     <Card as="section" variant="panel" id="watchlist" style={{ minWidth: 0 }}>
-      <SectionHeader layout="panel" title="Macro tape" />
+      <SectionHeader
+        layout="panel"
+        title="Macro tape"
+        right={
+          // A1: the tape's two sources and their §5 words (the per-row "As of"
+          // column carries each row's own stamp).
+          <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+            <Stamp source={SRC.eodhd} label={report.series("live_quotes")} />
+            <Stamp source="EODHD VIX" label={report.series("vix_delayed")} />
+            <Stamp source={SRC.closes} label={report.series("market_daily")} />
+          </span>
+        }
+      />
       {/* The per-feed honesty line (M29) sits under the header on its own line. */}
       <div style={{ ...metaStyle, margin: "-6px 0 10px" }}>
         <FeedStatusLine />

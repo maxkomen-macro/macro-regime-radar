@@ -18,6 +18,8 @@ import { useRegimeLatest, useRegimePlaybooks } from "../../api/queries";
 import type { AssetPerf, RegimePlaybook } from "../../api/types";
 import { tidyProse } from "../../lib/format";
 import { Caption, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
+import { referenceLabel } from "../shared/fresh-state";
+import { MetaWithStamp, Stamp } from "../shared/Stamp";
 import { REGIMES } from "./regime-history";
 
 /** Playbook prose: 13px Plex Sans in --text-2 (the tile body voice). */
@@ -91,7 +93,12 @@ export default function PlaybookTab() {
       <SectionHeader
         layout="panel"
         title="Playbook"
-        right="Static reference · regime literature, not live data"
+        right={
+          <MetaWithStamp
+            meta="Static reference · regime literature, not live data"
+            stamp={<Stamp source="Regime literature" label={referenceLabel("The playbooks are reference content with no publication cadence.")} />}
+          />
+        }
         actions={
           <Segmented
             mono

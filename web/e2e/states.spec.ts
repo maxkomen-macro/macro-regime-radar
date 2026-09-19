@@ -24,7 +24,7 @@ import path from "node:path";
 import { test, expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { METHODOLOGY_SLUG, TABS } from "../src/screens/shell/sections";
 import { baselineConsoleTexts, captureDir, collect, mergeJsonFile, settle, type ConsoleRec, type FailedReq } from "./lib/drive";
-import { consoleVerdict, delayApi, emptyEndpoint, rewriteEndpoint, staleFeeds, stopApi, unseed, type StateName } from "./lib/states";
+import { STALE_CREDIT_WORD, STALE_DAILY_WORD, STALE_MONTH_WORD, consoleVerdict, delayApi, emptyEndpoint, rewriteEndpoint, staleFeeds, stopApi, unseed, type StateName } from "./lib/states";
 
 const OUT = captureDir();
 const CONSOLE_PATH = path.join(OUT, "console.json");
@@ -583,30 +583,34 @@ interface StaleCell {
   check: (page: Page) => Promise<void>;
 }
 
-/** A hero freshness chip by its noun (DeskRead.tsx FreshnessChip: title "{noun}: {word} · {stamp}"). */
+/** A hero freshness chip by its noun (DeskRead.tsx FreshnessChip: title "{noun}: {§5 word}. {reason}", Iteration 1 step 6). */
 const chip = (page: Page, heroId: string, noun: string): Locator => page.locator(`#${heroId} .mrr-hero-chips span[title^="${noun}:"]`);
+const startsWith = (prefix: string) => new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
 
 const STALE_CELLS: StaleCell[] = [
   {
     def: byTab("dashboard"),
     prepare: (page) => staleFeeds(page),
     check: async (page) => {
-      // The Macro chip reads the re-dated regime row; the summary values are kept, not blanked (G17).
-      await expect(chip(page, "regime-hero", "Macro")).toHaveAttribute("title", "Macro: Stale · Mar 2026", { timeout: 20_000 });
-      await expect(chip(page, "regime-hero", "Signals")).toHaveAttribute("title", "Signals: Stale · Mar 2026");
-      await expect(chip(page, "regime-hero", "Market")).toHaveAttribute("title", "Market: Stale · Aug 20, 2026");
+      // Iteration 1 step 6 (A3): the chips print the served per-series states' §5 words (the regime
+      // inputs, the signals block, the stored close), marked stale; the summary values are kept, not blanked (G17).
+      await expect(chip(page, "regime-hero", "Macro")).toHaveAttribute("title", startsWith(`Macro: ${STALE_MONTH_WORD}.`), { timeout: 20_000 });
+      await expect(chip(page, "regime-hero", "Signals")).toHaveAttribute("title", startsWith(`Signals: ${STALE_MONTH_WORD}.`));
+      await expect(chip(page, "regime-hero", "Market")).toHaveAttribute("title", startsWith(`Market: ${STALE_DAILY_WORD}.`));
+      for (const noun of ["Macro", "Signals", "Market"]) await expect(chip(page, "regime-hero", noun)).toHaveAttribute("data-stale", "true");
       await expect(page.locator("main h1")).toHaveText(new RegExp(`^(?:${REGIMES.join("|")})$`));
       await expect(section(page, "regime-summary").locator("dt")).toHaveCount(11, { timeout: 30_000 });
       await expect(section(page, "regime-summary")).not.toContainText(NOTE_ERROR);
-      await expect(card(page)).toContainText("Macro monthly · latest Mar 2026"); // FreshnessCard.tsx:81
+      await expect(card(page)).toContainText(`Macro monthly · ${STALE_MONTH_WORD}`); // FreshnessCard.tsx (A3)
     },
   },
   {
     def: byTab("markets"),
     prepare: (page) => staleFeeds(page, { market: true }),
     check: async (page) => {
-      // MarketsScreen.tsx:363: the Stored candles chip reads the newest served bar, cut at Aug 20 2026.
-      await expect(chip(page, "markets-hero", "Stored candles")).toHaveAttribute("title", "Stored candles: Stale · Aug 20, 2026", { timeout: 20_000 });
+      // A3: the Stored candles chip reads the served market_daily state (20 sessions behind Aug 20).
+      await expect(chip(page, "markets-hero", "Stored candles")).toHaveAttribute("title", startsWith(`Stored candles: ${STALE_DAILY_WORD}.`), { timeout: 20_000 });
+      await expect(chip(page, "markets-hero", "Stored candles")).toHaveAttribute("data-stale", "true");
       await expect(section(page, "markets-hero")).not.toContainText("Stored closes unavailable");
     },
   },
@@ -617,22 +621,25 @@ const STALE_CELLS: StaleCell[] = [
       // news-copy.ts mergeFeedVerdict: the served sla verdict wins (G13); on a
       // window empty on the local DB the strip reads Fallback coverage instead.
       await expect(stripTitle(page, "news-summary")).toHaveText(/^(?:Feed stale|Fallback coverage)$/, { timeout: 20_000 });
-      await expect(chip(page, "news-hero", "Newest headline")).toHaveAttribute("title", /^Newest headline: Stale/);
+      // A3: the newest stamp with the served verdict word after it, marked stale (no browser age).
+      await expect(chip(page, "news-hero", "Newest headline")).toHaveAttribute("title", /^Newest headline: .+ · stale\./);
+      await expect(chip(page, "news-hero", "Newest headline")).toHaveAttribute("data-stale", "true");
     },
   },
   {
     def: byTab("credit"),
     prepare: (page) => staleFeeds(page, { credit: true }),
     check: async (page) => {
-      // CreditScreen.tsx:182-183: the chip reads the last hy_series date, cut at Mar 2026 (06 B.2).
-      await expect(chip(page, "credit-hero", "ICE BofA via FRED")).toHaveAttribute("title", "ICE BofA via FRED: Stale · Mar 2026", { timeout: 20_000 });
+      // A3: the chip reads the ICE BofA series' served states (the weakest one's §5 word), marked stale.
+      await expect(chip(page, "credit-hero", "ICE BofA via FRED")).toHaveAttribute("title", startsWith(`ICE BofA via FRED: ${STALE_CREDIT_WORD}.`), { timeout: 20_000 });
+      await expect(chip(page, "credit-hero", "ICE BofA via FRED")).toHaveAttribute("data-stale", "true");
       await expect(page.locator("main h1")).toHaveText(/^(?:Normal|Tight|Stressed|Crisis)$/);
       await expect(section(page, "credit-summary")).not.toContainText(NOTE_ERROR);
     },
   },
 ];
 
-test("stale cells at 1672: re-dated feeds read Stale on the chips, the card and the strip; values are kept", async ({ browser }) => {
+test("stale cells at 1672: stale served states read their §5 words on the chips, the card and the strip; values are kept", async ({ browser }) => {
   for (const c of STALE_CELLS) {
     await test.step(`${c.def.slug}--1672--stale`, async () => {
       const cell = await openCell(browser, DESK, c.prepare);
@@ -640,12 +647,16 @@ test("stale cells at 1672: re-dated feeds read Stale on the chips, the card and 
       await page.goto(c.def.route, { waitUntil: "domcontentloaded" });
       await page.locator("main").waitFor();
       await c.check(page);
-      // The freshness card's macro line and the drawer rows follow the served verdicts (B.7 row 1).
-      await expect(card(page)).toContainText("Macro monthly · latest Mar 2026");
+      // The freshness card's macro line and the drawer rows follow the served states and verdicts (B.7 row 1; A3).
+      await expect(card(page)).toContainText(`Macro monthly · ${STALE_MONTH_WORD}`);
+      // A3: the stored close behind the bell is stated once, in plain words, under the top bar.
+      await expect(page.getByTestId("stored-close-notice").locator(".mrr-close-full")).toHaveText(/^The newest stored close is Aug 20; the [A-Z][a-z]{2} \d{2} close is not stored yet\.$/);
       await strip(page).getByRole("button", { name: /^Freshness/ }).click();
       const drawer = page.locator("#freshness-drawer");
       await expect(drawer).toBeVisible();
-      await expect(drawer.locator("table")).toContainText("stale");
+      // Two tables since step 6: the feeds (the SLA verdict columns) first, then one row per series.
+      await expect(drawer.locator("table").first()).toContainText("stale");
+      await expect(drawer.getByTestId("fresh-series-table")).toContainText(STALE_MONTH_WORD);
       await page.keyboard.press("Escape");
       await expect(drawer).toBeHidden();
       await settle(page, 300);

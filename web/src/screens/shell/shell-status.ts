@@ -8,13 +8,30 @@
  * answering is the primary signal, the relay socket refines it, and when the
  * API is silent while the page runs on the validated snapshot it says exactly
  * that. "Live" is never claimed for the US tape when only crypto or FX tick.
+ *
+ * Iteration 1 step 6 (A3): every freshness word the card, the drawer and
+ * the footer print is a §5 word from /api/freshness `series[]` through
+ * fresh-state.ts. The status word above (Live / Delayed / Reconnecting /
+ * Backend unavailable / Validated snapshot) is the connection state and
+ * stays; no stamp is aged in the browser any more.
  */
 
-import type { Alert, Freshness, Regime, RegimeFreshness } from "../../api/types";
+import type { Alert, Freshness, Regime, RegimeFreshness, SeriesState } from "../../api/types";
 import type { SnapshotMeta } from "../../api/snapshot";
 import type { LiveFeeds, LiveQuote, StreamWord } from "../../live/quotes";
 import { daysSince, fmtDate, fmtIntradayTs, fmtMonYr, fmtUtcStampEt } from "../../lib/format";
-import { assessFreshness, type FreshInfo, type FreshState } from "../shared/freshness";
+import {
+  REGIME_INPUT_IDS,
+  freshLabel,
+  groupLabel,
+  lookupFrom,
+  marketSeries,
+  seededLabel,
+  seriesById,
+  storedCloseLine,
+  storedCloseShort,
+  type FreshLabel,
+} from "../shared/fresh-state";
 
 export type ShellStatusWord = StreamWord | "Validated snapshot";
 
@@ -149,14 +166,15 @@ export function blockerNote(regime: RegimeFreshness | null | undefined): string 
   )}.`;
 }
 
-/** Sidebar footer word under the live dot. */
-export function footerWords(statusWord: ShellStatusWord, liveFeeds: LiveFeeds): string {
+/**
+ * Sidebar footer word under the dot. The connection states keep their words;
+ * otherwise "Live market data" only when `live_quotes` reads live (§5), else
+ * "Delayed market data" when it reads delayed, else "Stored market data"
+ * with the §5 word as the stamp beneath it (the relay's ticking crypto and
+ * FX feeds are named in the drawer, never as the US tape).
+ */
+export function footerWords(statusWord: ShellStatusWord, liveFeeds: LiveFeeds, market?: FreshLabel | null): string {
   switch (statusWord) {
-    case "Live":
-      return liveFeeds.us ? "Live market data" : `Live market data · ${liveFeedsWord(liveFeeds)} only`;
-    case "Delayed":
-    case "Off":
-      return "Delayed market data";
     case "Reconnecting":
       return "Reconnecting to feeds";
     case "Backend unavailable":
@@ -164,14 +182,11 @@ export function footerWords(statusWord: ShellStatusWord, liveFeeds: LiveFeeds): 
     case "Validated snapshot":
       return "Validated snapshot";
     default:
-      return statusWord;
+      break;
   }
-}
-
-/** A fresh DB intraday write: under 20 minutes old (existing dot rule). */
-export function intradayIsFresh(ts: string | null | undefined): boolean {
-  if (!ts) return false;
-  return daysSince(ts) * 24 * 60 < 20;
+  if (market?.tone === "live") return liveFeeds.us ? "Live market data" : `Live market data · ${liveFeedsWord(liveFeeds)} only`;
+  if (market?.tone === "delayed") return "Delayed market data";
+  return "Stored market data";
 }
 
 /** Epoch ms of the newest websocket tick on the board, null when none. */
@@ -200,50 +215,27 @@ export function etClock(ms: number): string {
   return etStampLines(ms)[1];
 }
 
-/**
- * The stamp the footer prints under the status word, two lines: the newest
- * websocket tick, else the stored intraday bar, else the stored close (dated
- * so nobody reads it as live), else a dash.
- */
-export function marketStampLines(args: {
-  tickMs: number | null;
-  intradayTs: string | null | undefined;
-  dailyDate: string | null | undefined;
-}): [string, string] {
-  const { tickMs, intradayTs, dailyDate } = args;
-  if (tickMs != null) return etStampLines(tickMs);
-  if (intradayTs) {
-    const stamp = fmtIntradayTs(intradayTs); // "Sep 05, 15:55 ET"
-    const comma = stamp.indexOf(", ");
-    return [fmtDate(intradayTs), comma >= 0 ? stamp.slice(comma + 2) : ""];
-  }
-  if (dailyDate) return [fmtDate(dailyDate), "close"];
-  return ["—", ""];
-}
-
-/** One-line market stamp for the freshness card: the stored intraday bar,
- * else the stored close. */
-export function marketStamp(f: Freshness | undefined): string {
-  if (f?.market_intraday_ts) return fmtIntradayTs(f.market_intraday_ts);
-  if (f?.market_daily_date) return `${fmtDate(f.market_daily_date)} close`;
-  return "—";
-}
-
-/** Dot colour for a freshness state on the card: current mint, delayed amber,
- * stale hot, unavailable red. */
-export function freshDotColor(state: FreshState): string {
-  switch (state) {
-    case "current":
+/** Dot colour for a §5 tone (the strip card's two lines): only live is
+ * mint, only delayed amber; unknown is grey, never a health colour. */
+export function toneDotColor(label: FreshLabel): string {
+  switch (label.tone) {
+    case "live":
       return STATUS_COLOR.mint;
     case "delayed":
       return STATUS_COLOR.amber;
     case "stale":
       return STATUS_COLOR.hot;
-    case "unavailable":
-      return STATUS_COLOR.neg;
-    default:
+    case "neutral":
       return STATUS_COLOR.text3;
+    default:
+      return STATUS_COLOR.text4;
   }
+}
+
+/** "Sep 14 · 4 sessions behind", "Sep 17 · 1 day behind": the word and its
+ * muted tail as one string, for titles and one-line slots. */
+export function labelText(l: FreshLabel): string {
+  return l.muted ? `${l.word} ${l.muted}` : l.word;
 }
 
 /* ── Freshness drawer vocabulary ─────────────────────────────────────────── */
@@ -267,6 +259,14 @@ export function feedLabel(feed: string, regime?: RegimeFreshness | null): string
     return input ? `FRED ${id} · ${input.label}` : `FRED ${id}`;
   }
   return feed;
+}
+
+/** The series[] id an `sla` feed key describes, or null (regime, signals
+ * and news have no per-series state). */
+export function feedSeriesId(feed: string): string | null {
+  if (feed.startsWith("fred:")) return feed.slice(5);
+  if (feed === "market_daily" || feed === "market_intraday" || feed === "live_quotes" || feed === "vix_delayed") return feed;
+  return null;
 }
 
 function isMonthlyFeed(feed: string, regime?: RegimeFreshness | null): boolean {
@@ -369,6 +369,8 @@ export interface ShellStatusInput {
   degraded: boolean;
   degradedReasons: string[];
   snapshot: SnapshotMeta | null;
+  /** The report on hand is the seeded snapshot (useFreshReport.ts). */
+  seeded?: boolean;
 }
 
 export interface ShellStatus {
@@ -385,15 +387,24 @@ export interface ShellStatus {
   snapshotDate: string;
   snapshotNote: string | null;
   snapshotGeneratedAt: string | null;
-  macroFresh: FreshInfo;
-  signalsFresh: FreshInfo;
-  marketFresh: FreshInfo;
-  intradayFreshInfo: FreshInfo;
-  /** Signals ride the same monthly stamp as the regime; print them only when they differ. */
-  signalsDiffer: boolean;
+  /** The report is a seeded snapshot: every word reads "Snapshot · as of". */
+  seeded: boolean;
+  /** "Snapshot · as of Sep 10" when seeded, else null. */
+  seededLabel: FreshLabel | null;
+  /** The market chip (§5): live_quotes during the session, else the stored close. */
+  marketLabel: FreshLabel;
+  dailyLabel: FreshLabel;
+  intradayLabel: FreshLabel;
+  liveLabel: FreshLabel;
+  /** The regime's monthly inputs, the weakest one's word. */
+  macroLabel: FreshLabel;
+  /** Per-series states in served order (the drawer's table). */
+  series: SeriesState[];
+  /** The A3 plain line when the stored close is behind the bell, else null. */
+  storedCloseLine: string | null;
+  storedCloseShort: string | null;
   blockerNote: string | null;
-  intradayFresh: boolean;
-  /** The dot pulses only when data is genuinely live. */
+  /** The footer dot glows only when live_quotes reads live. */
   dotLive: boolean;
   streamLive: boolean;
   liveFeeds: LiveFeeds;
@@ -402,17 +413,16 @@ export interface ShellStatus {
 /** Everything the card, the drawer and the footer print, from one place. */
 export function composeShellStatus(input: ShellStatusInput): ShellStatus {
   const { freshness: f, freshnessError, freshnessLoading, regimeError, streamWord, streamLive, liveFeeds, degraded, degradedReasons, snapshot } = input;
+  const seeded = Boolean(input.seeded || f?.seeded);
   const backendDown = freshnessError && regimeError;
   const statusWord = resolveStatusWord({ backendDown, snapshot: Boolean(snapshot), streamWord, hasFreshness: Boolean(f) });
   const degradedWord = degraded ? degradedReason(degradedReasons) : null;
   const suffix = liveSuffix({ statusWord, liveFeeds, degradedWord, sessionOpen: f?.session ? f.session.is_open : null });
-  const macroFresh = assessFreshness(f?.regimes_date, "monthly");
-  const signalsFresh = assessFreshness(f?.signals_date, "monthly");
-  const marketFresh = assessFreshness(f?.market_daily_date, "daily");
-  const intradayFreshInfo = assessFreshness(f?.market_intraday_ts, "intraday");
-  const signalsDiffer = Boolean(f?.signals_date && f?.regimes_date && f.signals_date.slice(0, 7) !== f.regimes_date.slice(0, 7));
-  const intradayFresh = intradayIsFresh(f?.market_intraday_ts);
   const snapshotGeneratedAt = snapshot?.generated_at ?? null;
+  const snap = seeded ? seededLabel(f?.generated_at ?? snapshotGeneratedAt) : null;
+  const pick = (l: FreshLabel): FreshLabel => snap ?? l;
+  const inputs = f?.regime?.inputs?.length ? f.regime.inputs.map((i) => i.series) : REGIME_INPUT_IDS;
+  const marketLabel = pick(freshLabel(marketSeries(f)));
   return {
     f,
     freshnessError,
@@ -426,14 +436,19 @@ export function composeShellStatus(input: ShellStatusInput): ShellStatus {
     snapshotDate: statusWord === "Validated snapshot" && snapshotGeneratedAt ? ` · ${fmtDate(snapshotGeneratedAt)}` : "",
     snapshotNote: statusWord === "Validated snapshot" ? SNAPSHOT_NOTE : null,
     snapshotGeneratedAt,
-    macroFresh,
-    signalsFresh,
-    marketFresh,
-    intradayFreshInfo,
-    signalsDiffer,
+    seeded,
+    seededLabel: snap,
+    marketLabel,
+    dailyLabel: pick(freshLabel(seriesById(f, "market_daily"))),
+    intradayLabel: pick(freshLabel(seriesById(f, "market_intraday"))),
+    liveLabel: pick(freshLabel(seriesById(f, "live_quotes"))),
+    macroLabel: snap ?? (f ? groupLabel(lookupFrom(f), inputs) : freshLabel(null)),
+    series: f?.series ?? [],
+    // A seeded report's states are all unknown: no line until the live one.
+    storedCloseLine: seeded ? null : storedCloseLine(f),
+    storedCloseShort: seeded ? null : storedCloseShort(f),
     blockerNote: blockerNote(f?.regime),
-    intradayFresh,
-    dotLive: streamLive || intradayFresh,
+    dotLive: !seeded && marketLabel.tone === "live",
     streamLive,
     liveFeeds,
   };

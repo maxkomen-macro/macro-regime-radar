@@ -20,10 +20,11 @@
 
 import { Fragment, createElement, type ReactNode } from "react";
 import type { DatedValue, RecessionMetrics } from "../../api/types";
-import { fmtMonYr, fmtSigned } from "../../lib/format";
+import { fmtBps, fmtBpsLevel, fmtMonYr, fmtProb, fmtSigned } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import type { StatusTone } from "../shared/SummaryCard";
 import type { TabHeroPillTone } from "../shared/TabHero";
+import type { FreshLabel } from "../shared/fresh-state";
 import type { ChartBand } from "../dashboard/LineChart";
 import { DASH } from "../dashboard/hero-copy";
 
@@ -234,12 +235,12 @@ export function featureCurrent(name: string, m: RecessionMetrics): string {
   switch (name) {
     case "yield_curve": {
       const s = m.yield_curve_spread;
-      return s != null ? `${s >= 0 ? "+" : ""}${Math.round(s)} bps` : DASH;
+      return s != null ? fmtBps(s) : DASH;
     }
     case "unemployment":
       return c.unrate != null ? `${c.unrate.toFixed(1)}%` : DASH;
     case "hy_spread":
-      return c.hy_oas != null ? `${Math.round(c.hy_oas)} bps` : DASH;
+      return c.hy_oas != null ? fmtBpsLevel(c.hy_oas) : DASH;
     case "indpro_yoy":
       return c.indpro_yoy != null ? `${c.indpro_yoy.toFixed(1)}%` : DASH;
     case "lei_proxy":
@@ -277,7 +278,8 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
   const tone = labelTone(label);
 
   // Rule 1: the headline is the served probability, the pill the served word.
-  const headline = `${prob.toFixed(1)}%`;
+  // A4: a probability prints through fmtProb (outside 0–100: the dash).
+  const headline = fmtProb(prob, "percent", 1);
 
   // Rule 2: the three-month change at 0.1 resolution, or the NBER sentence.
   const change = i >= 0 ? deltaPoints(series, i, 3) : null;
@@ -320,6 +322,42 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
   return { headline, pill: label, pillTone, glow, subhead, lede, ledeMore, ledeText, note, footnote };
 }
 
+/* ── input freshness (Iteration 1 step 6, E3) ─────────────────────────── */
+
+/** The model's daily inputs (the curve, the HY spread, the two breakevens)
+ * and its monthly ones, as /api/freshness `series[]` ids. Together they are
+ * fresh-state.ts RECESSION_INPUT_IDS; USSLIND is not among them. */
+export const RECESSION_DAILY_IDS: readonly string[] = ["DGS10", "DGS2", "BAMLH0A0HYM2", "T10YIE", "T5YIE"];
+export const RECESSION_MONTHLY_IDS: readonly string[] = ["UNRATE", "INDPRO"];
+
+export interface InputsThrough {
+  /** "Daily Sep 17 · monthly Aug 2026 print", or one word when both agree. */
+  text: string;
+  daily: FreshLabel;
+  monthly: FreshLabel;
+  stale: boolean;
+  /** Every input's word, for the title. */
+  title: string;
+}
+
+const wordOf = (l: FreshLabel): string => (l.muted ? `${l.word} ${l.muted}` : l.word);
+
+/** The "Inputs through" words from the server's per-series states (E3): the
+ * weakest daily input and the weakest monthly input, each a §5 word. */
+export function inputsThrough(group: (ids: readonly string[]) => FreshLabel): InputsThrough {
+  const daily = group(RECESSION_DAILY_IDS);
+  const monthly = group(RECESSION_MONTHLY_IDS);
+  const a = wordOf(daily);
+  const b = wordOf(monthly);
+  return {
+    text: a === b ? a : `Daily ${a} · monthly ${b}`,
+    daily,
+    monthly,
+    stale: daily.stale || monthly.stale,
+    title: [daily.reason, monthly.reason].filter(Boolean).join(" "),
+  };
+}
+
 /* ── the summary strip (B.2 table, rule 8) ────────────────────────────── */
 
 /** Amber at this many consecutive rises at 0.1 resolution (G3: the mockup's
@@ -345,7 +383,7 @@ export function stripSummary(m: RecessionMetrics | undefined, q: { isLoading: bo
       title: `Watch · ${streak} straight rises`,
       // G4 (Iteration 1 step 5): one line at 390 px; the title says the
       // probability rose each month.
-      detail: `Since ${fmtMonYr(base.date)} · ${base.value.toFixed(1)}% → ${series[i].value.toFixed(1)}%`,
+      detail: `Since ${fmtMonYr(base.date)} · ${fmtProb(base.value, "percent", 1)} → ${fmtProb(series[i].value, "percent", 1)}`,
     };
   }
   const change = deltaPoints(series, i, 3);

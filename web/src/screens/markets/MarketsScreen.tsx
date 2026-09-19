@@ -38,9 +38,11 @@ import { ApiError } from "../../api/client";
 import { useCreditOas, useFreshness, useMarketDaily, usePriced, useSurprises, useSymbolProfile } from "../../api/queries";
 import type { CandleRange, DailyBar, SearchHit } from "../../api/types";
 import { LIVE_WINDOW_MS, streamWord, useQuotes, useStreamStatus, type LiveQuote, type StreamStatus } from "../../live/quotes";
-import { fmtDate, fmtPct, fmtSignedPct, tidyProse } from "../../lib/format";
+import { fmtBps, fmtDate, fmtPct, fmtSignedPct, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
-import { assessFreshness, type FreshInfo } from "../shared/freshness";
+import { monDD, stampLabel } from "../shared/fresh-state";
+import { useFreshReport } from "../shared/useFreshReport";
+import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { Caption, MISSING, StateNote, metaStyle, missingNote, useHashScroll, useSnapshotMode } from "../shared/screen-ui";
 import { DisclosureLine } from "../shared/Disclosure";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
@@ -176,6 +178,7 @@ export default function MarketsScreen() {
   const surprises = useSurprises(10);
   const credit = useCreditOas(90);
   const freshness = useFreshness();
+  const freshReport = useFreshReport();
   const { openFreshness } = useShellActions();
   // The movers row and its summary line (Iteration 1, M3a): the stream's day
   // change, else the last completed session's close from the 5D candles.
@@ -457,6 +460,10 @@ export default function MarketsScreen() {
   const spy = quotes.get("SPY");
   const qqq = quotes.get("QQQ");
   const vixQ = quotes.get("VIX");
+  // A2: the tape's VIX is the relay's delayed CBOE poll, never the FRED
+  // VIXCLS close the Dashboard prints as "VIX": every place it shows says so.
+  const vixWord = freshReport.series("vix_delayed").word;
+  const vixText = vixQ ? `VIX ${vixQ.p.toFixed(2)} (delayed quote)` : "";
   const ten = credit.data?.series.find((x) => x.label === "UST10Y");
   const usOpen = nyseSessionOpen();
   // "Live" means a US symbol actually ticked over the socket inside the live
@@ -470,11 +477,6 @@ export default function MarketsScreen() {
       const q = quotes.get(d.symbol);
       return q?.src === "ws" && q.t != null && now - q.t < LIVE_WINDOW_MS;
     });
-  const newestTick = [...quotes.values()].reduce<number | null>((m, q) => (q.t != null && (m == null || q.t > m) ? q.t : m), null);
-  const tapeInfo: FreshInfo = newestTick
-    ? assessFreshness(new Date(newestTick).toISOString(), "intraday")
-    : assessFreshness(null, "intraday");
-  const storedInfo = assessFreshness(marketDailyDate ?? freshness.data?.market_daily_date, "daily");
   const pricedDate = priced.data?.length ? priced.data.map((p) => p.date).reduce((a, b) => (a > b ? a : b)) : null;
 
   const sectorReads: SectorRead[] = SECTORS.map(({ symbol, name }) => {
@@ -504,21 +506,32 @@ export default function MarketsScreen() {
           ? `, QQQ $${qqqBar.close.toFixed(2)}`
           : "";
   const conclusion = usLive
-    ? `US session live: ${spyWord}${qqq?.dc != null ? `, QQQ ${fmtSignedPct(qqq.dc)}` : ""}${vixQ ? `, VIX ${vixQ.p.toFixed(2)}` : ""}.`
+    ? `US session live: ${spyWord}${qqq?.dc != null ? `, QQQ ${fmtSignedPct(qqq.dc)}` : ""}${vixQ ? `, ${vixText}` : ""}.`
     : usOpen
-      ? `US session open but the stream is not ticking: ${spyWord}${vixQ ? `, VIX ${vixQ.p.toFixed(2)}` : ""}.`
+      ? `US session open but the stream is not ticking: ${spyWord}${vixQ ? `, ${vixText}` : ""}.`
       : status.socket !== "open" && !spy
         ? `Stream unavailable, stored closes shown: ${spyWord}${qqqWord}.`
-        : `US session closed: ${spyWord}${qqqWord}${vixQ ? `, VIX ${vixQ.p.toFixed(2)}` : ""}${
+        : // With the closing "(15-minute delayed quotes)" the VIX needs no note of its own.
+          `US session closed: ${spyWord}${qqqWord}${vixQ ? `, ${spy?.delayed ? `VIX ${vixQ.p.toFixed(2)}` : vixText}` : ""}${
             spy?.delayed ? " (15-minute delayed quotes)" : ""
           }.`;
   const why = usLive
     ? "Day moves are the exchange feed's own figures. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence."
     : "Off-hours the board holds the last quote with its timestamp. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence.";
+  // A3 (Iteration 1 step 6): the tape reads the server's live_quotes state
+  // and the candles its market_daily state (§5 words: "Live", "Delayed 15
+  // min", "Close · Sep 18", "Sep 14 · 4 sessions behind"). The weekly pricing
+  // block has no series in the report: its newest stamp prints as a date,
+  // grey, never judged here.
   const chips: FreshnessTag[] = [
-    { noun: "Tape", info: tapeInfo },
-    { noun: "Stored candles", info: storedInfo },
-    { noun: "Priced", info: assessFreshness(pricedDate, "weekly") },
+    { noun: "Tape", label: freshReport.series("live_quotes") },
+    { noun: "Stored candles", label: freshReport.series("market_daily") },
+    {
+      noun: "Priced",
+      label: freshReport.seeded
+        ? freshReport.series("market_daily")
+        : stampLabel(pricedDate ? `Week ending ${monDD(pricedDate)}` : null, "The weekly pricing block's newest stamp; the freshness report does not judge this feed."),
+    },
   ];
 
   /* ── summary rows (the desk-read ledger, re-homed) ───────────────────── */
@@ -529,14 +542,13 @@ export default function MarketsScreen() {
     label: "US 10Y",
     value: ten ? (
       <>
-        {fmtPct(ten.value_pct)}
+        <Metric id="ust10y" value={ten.value_pct}>
+          {fmtPct(ten.value_pct)}
+        </Metric>
         {ten.change_1w_bps != null ? (
           <>
             {" · "}
-            <span style={{ color: dirColor(ten.change_1w_bps) }}>
-              {ten.change_1w_bps >= 0 ? "+" : ""}
-              {Math.round(ten.change_1w_bps)} bps
-            </span>
+            <span style={{ color: dirColor(ten.change_1w_bps) }}>{fmtBps(ten.change_1w_bps)}</span>
             {" 1w"}
           </>
         ) : null}
@@ -644,12 +656,16 @@ export default function MarketsScreen() {
     });
   }
   if (vixQ) {
+    // A2: this is the relay's delayed CBOE poll, not the FRED VIXCLS close
+    // the Dashboard prints under "VIX": the label and the value say delayed.
     rows.push({
       id: "vix",
-      label: "VIX",
+      label: "VIX · delayed",
       value: (
         <>
-          {vixQ.p.toFixed(2)}
+          <Metric id="vix-live" value={vixQ.p} title={`VIX, the relay's delayed quote (${vixWord})`}>
+            {vixQ.p.toFixed(2)}
+          </Metric>
           {vixQ.dc != null ? (
             <>
               {" · "}
@@ -657,7 +673,7 @@ export default function MarketsScreen() {
               {" 1d"}
             </>
           ) : null}
-          {" · 15m delayed"}
+          {` · ${vixWord}`}
         </>
       ),
     });
@@ -731,6 +747,7 @@ export default function MarketsScreen() {
         actionsAfter={heroSearch}
         style={HERO_STYLE}
         freshness={chips}
+        stamp={<Stamp source={SRC.closes} label={freshReport.series("market_daily")} />}
         note={copy.basis}
         chart={weekRows.length ? <WeekBars rows={weekRows} /> : undefined}
         placeholder
@@ -760,6 +777,7 @@ export default function MarketsScreen() {
         actionsAfter={heroSearch}
         style={HERO_STYLE}
         freshness={chips}
+        stamp={<Stamp source={SRC.closes} label={freshReport.series("market_daily")} />}
         placeholder
       />
     );
@@ -777,6 +795,7 @@ export default function MarketsScreen() {
         actionsAfter={heroSearch}
         style={HERO_STYLE}
         freshness={chips}
+        stamp={<Stamp source={SRC.closes} label={freshReport.series("market_daily")} />}
         placeholder
       />
     );
@@ -787,7 +806,21 @@ export default function MarketsScreen() {
       {/* ── Hero row ────────────────────────────────────────────────── */}
       <div className="mrr-hero-row">
         {hero}
-        <SummaryCard id="markets-summary" as="h2" title="Cross-asset summary" rows={rows} status={strip} />
+        <SummaryCard
+          id="markets-summary"
+          as="h2"
+          title="Cross-asset summary"
+          rows={rows}
+          status={strip}
+          stamp={
+            // A1: the rows read three sources; each carries its §5 word.
+            <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+              <Stamp source={SRC.closes} label={freshReport.series("market_daily")} />
+              <Stamp source={SRC.eodhd} label={freshReport.series("live_quotes")} />
+              <Stamp source={SRC.fred} label={freshReport.series("DGS10", credit.data?.freshness)} />
+            </span>
+          }
+        />
       </div>
 
       {/* ── Chart panel region (row click), full width while open ───── */}

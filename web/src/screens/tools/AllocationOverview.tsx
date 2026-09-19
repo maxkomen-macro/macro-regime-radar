@@ -11,11 +11,12 @@
 import { Card, HeatMatrix, SectionHeader, Tag } from "../../components";
 import type { HeatCell } from "../../components/data/HeatMatrix";
 import type { AllocationData } from "../../api/types";
-import { fmtMonYr } from "../../lib/format";
+import { fmtMonYr, fmtProb } from "../../lib/format";
 import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, monoNoteStyle } from "../shared/screen-ui";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
 import { DASH, REGIME_HUE, assetNames, pct, regimesOf, retTint, spct } from "./AllocationPanel";
 
 export default function AllocationOverview({ a }: { a: AllocationData }) {
@@ -46,7 +47,12 @@ export default function AllocationOverview({ a }: { a: AllocationData }) {
       <SectionHeader
         layout="panel"
         title="Regime-conditional performance"
-        right={`${a.n_months} months · ${fmtMonYr(`${a.data_start}-01`)} → ${fmtMonYr(`${a.data_end}-01`)} · risk-free ${pct(a.rf_rate, 2)} (Fed Funds)`}
+        right={
+          <MetaWithStamp
+            meta={`${a.n_months} months · ${fmtMonYr(`${a.data_start}-01`)} → ${fmtMonYr(`${a.data_end}-01`)} · risk-free ${pct(a.rf_rate, 2)} (Fed Funds)`}
+            stamp={<Stamp source={SRC.allocation} asOf={`returns through ${fmtMonYr(`${a.data_end}-01`)}`} />}
+          />
+        }
       />
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         {/* The regime chip wears the regime's own 12%/25% treatment, matching
@@ -63,9 +69,9 @@ export default function AllocationOverview({ a }: { a: AllocationData }) {
           {cur}
         </Tag>
         <span style={monoNoteStyle}>
-          {a.dominant_prob != null ? `${Math.round(a.dominant_prob * 100)}% model odds` : ""}
+          {a.dominant_prob != null ? `${fmtProb(a.dominant_prob)} model odds` : ""}
           {" · "}
-          <Jargon term="conviction">conviction</Jargon> {Math.round(a.confidence * 100)}% (a
+          <Jargon term="conviction">conviction</Jargon> {fmtProb(a.confidence)} (a
           separate heuristic, not odds); read the current column first
         </span>
       </div>

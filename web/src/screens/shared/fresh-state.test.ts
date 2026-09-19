@@ -14,7 +14,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Freshness, SeriesState } from "../../api/types";
-import { freshLabel, normalizeState, seededLabel, seriesById, storedCloseLine } from "./fresh-state";
+import { REGIME_INPUT_IDS, RECESSION_FEATURE_SERIES, RECESSION_INPUT_IDS, freshLabel, groupLabel, lookupFrom, marketSeries, normalizeState, referenceLabel, seededLabel, seriesById, stampLabel, storedCloseLine, storedCloseShort, weakest } from "./fresh-state";
+import { freshReport, isSeededReport } from "./useFreshReport";
 
 /** A full §1 object with the invariant `stale === (state === "stale")` kept. */
 function s(p: Partial<SeriesState> & { id: string }): SeriesState {
@@ -321,5 +322,122 @@ describe("seriesById", () => {
     expect(seriesById(freshnessWith([dgs10]), "DGS2")).toBeUndefined();
     expect(seriesById(freshnessWith(undefined), "DGS10")).toBeUndefined();
     expect(seriesById(undefined, "DGS10")).toBeUndefined();
+  });
+});
+
+/* ── Iteration 1 step 6: groups, the market chip, the phone line, the seeded report ── */
+
+
+describe("weakest and groupLabel", () => {
+  const close = s({ id: "DGS10", state: "close", as_of: "2026-09-17", cycles_behind: 0 });
+  const closeOlder = s({ id: "DGS2", state: "close", as_of: "2026-09-16", cycles_behind: 1 });
+  const unknown = s({ id: "T10YIE", state: "unknown" });
+  const stale = s({ id: "INDPRO", cadence: "monthly", state: "stale", as_of: "2026-07-01", cycles_behind: 1 });
+
+  it("orders stale over unknown over close (FRESHNESS_CONTRACT §3), a missing entry counting as unknown", () => {
+    expect(weakest([close, stale, unknown])).toBe(stale);
+    expect(weakest([close, unknown])).toBe(unknown);
+    expect(weakest([close, undefined])).toBeNull();
+    expect(weakest([stale, undefined])).toBe(stale);
+    expect(weakest([])).toBeNull();
+  });
+
+  it("breaks a tie by cycles behind, then by the older stamp", () => {
+    expect(weakest([close, closeOlder])).toBe(closeOlder);
+    const a = s({ id: "A", state: "close", as_of: "2026-09-15", cycles_behind: 0 });
+    expect(weakest([close, a])).toBe(a);
+  });
+
+  it("an unrecognised state word ranks as unknown, never healthy", () => {
+    const odd = s({ id: "X", state: "fresh" as unknown as SeriesState["state"], as_of: "2026-09-17" });
+    expect(weakest([close, odd])).toBe(odd);
+    expect(groupLabel((id) => (id === "X" ? odd : close), ["DGS10", "X"]).word).toBe("As of unknown");
+  });
+
+  it("groupLabel prints the weakest word and lists every member's word in the reason", () => {
+    const f = freshnessWith([close, closeOlder, stale]);
+    const l = groupLabel(lookupFrom(f), ["DGS10", "DGS2", "INDPRO"]);
+    expect(l.word).toBe("Jul 2026 · 1 release behind");
+    expect(l.stale).toBe(true);
+    expect(l.tone).toBe("stale");
+    expect(l.reason).toBe("DGS10: Sep 17; DGS2: Sep 16 · 1 day behind; INDPRO: Jul 2026 · 1 release behind.");
+    // A missing id reads As of unknown and is named in the reason.
+    const m = groupLabel(lookupFrom(f), ["DGS10", "T5YIE"]);
+    expect(m.word).toBe("As of unknown");
+    expect(m.reason).toContain("T5YIE: As of unknown");
+  });
+
+  it("series[] is the one source: a disagreeing payload block never outranks it and only fills an id the report lacks", () => {
+    const f = freshnessWith([close]);
+    const blockStale = s({ id: "DGS10", state: "stale", as_of: "2026-09-04", cycles_behind: 8 });
+    expect(groupLabel(lookupFrom(f, { DGS10: blockStale }), ["DGS10"]).word).toBe("Sep 17");
+    expect(groupLabel(lookupFrom(f, null), ["DGS10"]).word).toBe("Sep 17");
+    const rate = s({ id: "lbo_all_in_rate", kind: "derived", state: "fallback" });
+    expect(groupLabel(lookupFrom(f, { lbo_all_in_rate: rate }), ["lbo_all_in_rate"]).word).toBe("Stated default");
+    expect(groupLabel(lookupFrom(undefined, { DGS10: blockStale }), ["DGS10"]).word).toBe("Sep 04 · 8 days behind");
+    expect(freshReport(f, false, null).series("DGS10", { DGS10: blockStale }).word).toBe("Sep 17");
+  });
+});
+
+describe("the input id lists (A3, E3)", () => {
+  it("the regime reads its three monthly inputs; the recession model its seven, never USSLIND", () => {
+    expect(REGIME_INPUT_IDS).toEqual(["INDPRO", "CPIAUCSL", "UNRATE"]);
+    expect([...RECESSION_INPUT_IDS].sort()).toEqual(["BAMLH0A0HYM2", "DGS10", "DGS2", "INDPRO", "T10YIE", "T5YIE", "UNRATE"]);
+    expect(RECESSION_INPUT_IDS).not.toContain("USSLIND");
+    expect(RECESSION_FEATURE_SERIES.lei_proxy).toEqual(["T10YIE", "T5YIE"]);
+    expect(RECESSION_FEATURE_SERIES.yield_curve).toEqual(["DGS10", "DGS2"]);
+    const all = Object.values(RECESSION_FEATURE_SERIES).flat();
+    expect([...new Set(all)].sort()).toEqual([...RECESSION_INPUT_IDS].sort());
+  });
+});
+
+describe("marketSeries (§5: live_quotes in session, the stored close otherwise)", () => {
+  const daily = s({ id: "market_daily", kind: "market", cadence: "daily", state: "close", as_of: "2026-09-18", cycles_behind: 0 });
+  it("takes live_quotes when it reads live or delayed", () => {
+    const live = s({ id: "live_quotes", kind: "live", cadence: "tick", state: "live", delay_min: 0, as_of: "2026-09-18T17:00:00Z" });
+    expect(marketSeries(freshnessWith([daily, live]))).toBe(live);
+    const delayed = s({ id: "live_quotes", kind: "live", cadence: "tick", state: "delayed", delay_min: 15, as_of: "2026-09-18T17:00:00Z" });
+    expect(freshLabel(marketSeries(freshnessWith([daily, delayed]))).word).toBe("Delayed 15 min");
+  });
+  it("after the bell (live_quotes close or unknown) reads the stored daily close", () => {
+    const after = s({ id: "live_quotes", kind: "live", cadence: "tick", state: "close", as_of: "2026-09-19T01:30:00Z" });
+    expect(freshLabel(marketSeries(freshnessWith([daily, after]))).word).toBe("Close · Sep 18");
+    expect(marketSeries(freshnessWith([daily]))).toBe(daily);
+    expect(freshLabel(marketSeries(freshnessWith(undefined))).word).toBe("As of unknown");
+  });
+});
+
+describe("storedCloseShort, referenceLabel, stampLabel", () => {
+  it("the phone line carries both dates, and is null exactly when the full line is", () => {
+    const f = freshnessWith([s({ id: "market_daily", kind: "market", cadence: "daily", state: "stale", as_of: "2026-09-14", cycles_behind: 4 })]);
+    expect(storedCloseShort(f)).toBe("Stored close Sep 14; Sep 18 not stored yet.");
+    expect(storedCloseShort(freshnessWith([s({ id: "market_daily", kind: "market", cadence: "daily", state: "close", as_of: "2026-09-18" })]))).toBeNull();
+    expect(storedCloseShort(undefined)).toBeNull();
+  });
+  it("reference content is neutral with no stale mark; a stamp-only feed is grey and never healthy", () => {
+    expect(referenceLabel()).toMatchObject({ word: "Reference", tone: "neutral", stale: false });
+    expect(stampLabel("Week ending Sep 11", "r")).toMatchObject({ word: "Week ending Sep 11", tone: "unknown", stale: false, reason: "r" });
+    expect(stampLabel(null, "r").word).toBe("As of unknown");
+  });
+});
+
+describe("the seeded report (§5: Snapshot · as of, no health)", () => {
+  const f = freshnessWith([s({ id: "market_daily", kind: "market", cadence: "daily", state: "close", as_of: "2026-09-18" })]);
+  it("is seeded when the report says so, or when it is the snapshot's own cached copy", () => {
+    expect(isSeededReport({ ...f, seeded: true }, 0, null)).toBe(true);
+    const snap = { generated_at: "2026-09-10T06:06:01Z", db_mtime: null, source: "static", entries: 12 };
+    expect(isSeededReport(f, Date.parse(snap.generated_at), snap)).toBe(true);
+    expect(isSeededReport(f, Date.parse(snap.generated_at) + 60_000, snap)).toBe(false);
+    expect(isSeededReport(f, 123, null)).toBe(false);
+    expect(isSeededReport(undefined, 0, snap)).toBe(false);
+  });
+  it("a seeded report reads Snapshot · as of on every series and group; a live one reads the §5 words", () => {
+    const seeded = freshReport({ ...f, generated_at: "2026-09-10T06:06:01Z" }, true, null);
+    expect(seeded.series("market_daily").word).toBe("Snapshot · as of Sep 10");
+    expect(seeded.group(["DGS10", "DGS2"]).word).toBe("Snapshot · as of Sep 10");
+    expect(seeded.series("market_daily").tone).toBe("unknown");
+    const live = freshReport(f, false, null);
+    expect(live.series("market_daily").word).toBe("Close · Sep 18");
+    expect(live.series("DGS10").word).toBe("As of unknown");
   });
 });

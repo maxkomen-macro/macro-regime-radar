@@ -24,6 +24,7 @@ import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
 import FrontierChart, { type FrontierMarker } from "./FrontierChart";
 import { optimizerStatus } from "./allocation-copy";
 import {
@@ -52,7 +53,12 @@ export default function AllocationOptimization({ a }: { a: AllocationData }) {
       <SectionHeader
         layout="panel"
         title="Optimization"
-        right={opt ? "max 40% per asset · long-only" : "optional enhancement · unavailable this session"}
+        right={
+          <MetaWithStamp
+            meta={opt ? "max 40% per asset · long-only" : "optional enhancement · unavailable this session"}
+            stamp={<Stamp source={SRC.allocation} asOf={`returns through ${fmtMonYr(`${a.data_end}-01`)}`} />}
+          />
+        }
       />
       {!opt ? (
         <>

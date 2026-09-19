@@ -34,6 +34,8 @@ import { quoteFor } from "../shell/quote-ladder";
 import { QuoteSlots, SPARK_H, SPARK_W, type QuoteCardProps } from "../shell/QuoteCard";
 import Jargon from "../shared/Jargon";
 import { Caption, MISSING, StateNote, metaStyle, missingNote, useSnapshotMode } from "../shared/screen-ui";
+import { SRC, Stamp, quoteStamp } from "../shared/Stamp";
+import { useFreshReport, type FreshReport } from "../shared/useFreshReport";
 import { GLANCE_DAILY_SYMBOLS, GLANCE_TABS, glanceTabFromHash, type GlanceSymbol, type GlanceTabId } from "./glance-symbols";
 
 export interface MarketsGlanceProps {
@@ -88,7 +90,7 @@ export function tileRead(
 /** The spark slot's words for a symbol the relay serves but the DB never stored. */
 const LIVE_ONLY = "live only · no stored history";
 
-function GlanceTile({ def, read }: { def: GlanceSymbol; read: QuoteCardProps }) {
+function GlanceTile({ def, read, report }: { def: GlanceSymbol; read: QuoteCardProps; report: FreshReport }) {
   return (
     <Card variant="tile" className="mrr-glance-tile mrr-qslots" data-symbol={def.symbol} title={read.title} style={{ minWidth: 0 }}>
       <QuoteSlots
@@ -104,6 +106,7 @@ function GlanceTile({ def, read }: { def: GlanceSymbol; read: QuoteCardProps }) 
         sparkWidth={SPARK_W}
         sparkHeight={SPARK_H}
         sparkNote={def.stored ? undefined : LIVE_ONLY}
+        stamp={quoteStamp(read.via, report)}
       />
     </Card>
   );
@@ -111,7 +114,7 @@ function GlanceTile({ def, read }: { def: GlanceSymbol; read: QuoteCardProps }) 
 
 /** The What's priced teaser (D28, D29): SOFR stands in for policy because
  * Fed funds already sits in the key-levels row. */
-function PricedPanel({ priced }: { priced: UseQueryResult<PricedMetric[]> }) {
+function PricedPanel({ priced, report }: { priced: UseQueryResult<PricedMetric[]>; report: FreshReport }) {
   const { isMobile } = useBreakpoint();
   const rows = ["SOFR", "T10YIE", "DFII10"]
     .map((m) => priced.data?.find((p) => p.metric === m))
@@ -140,6 +143,7 @@ function PricedPanel({ priced }: { priced: UseQueryResult<PricedMetric[]> }) {
                 <Caption>
                   {p.group.toLowerCase()} · weekly pipeline · {fmtDate(p.date)}
                 </Caption>
+                <Stamp block source={SRC.fred} label={report.series(p.metric)} style={{ marginTop: 4 }} />
               </div>
             ))}
           </div>
@@ -171,6 +175,7 @@ export default function MarketsGlance({ onTabChange }: MarketsGlanceProps = {}) 
   const quotes = useQuotes();
   const daily = useMarketDaily(GLANCE_DAILY_SYMBOLS, 45);
   const priced = usePriced();
+  const report = useFreshReport();
   const [tab, setTab] = useState<GlanceTabId>(() => glanceTabFromHash(location.hash) ?? "equities");
   const snapshot = useSnapshotMode();
   // CP4: with the stored closes unanswered a priceless tile says why, and
@@ -217,7 +222,7 @@ export default function MarketsGlance({ onTabChange }: MarketsGlanceProps = {}) 
           <div key={t.id} id={`glance-${t.id}`} data-glance-tab={t.id} hidden={tab !== t.id}>
             <div className="mrr-dash-glance">
               {t.symbols.map((def, i) => (
-                <GlanceTile key={def.symbol} def={def} read={reads[i]} />
+                <GlanceTile key={def.symbol} def={def} read={reads[i]} report={report} />
               ))}
             </div>
             {storedError ? (
@@ -229,7 +234,7 @@ export default function MarketsGlance({ onTabChange }: MarketsGlanceProps = {}) 
         );
       })}
       <div id="whats-priced" data-glance-tab="priced" hidden={tab !== "priced"}>
-        <PricedPanel priced={priced} />
+        <PricedPanel priced={priced} report={report} />
       </div>
     </Card>
   );

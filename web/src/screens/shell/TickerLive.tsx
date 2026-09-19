@@ -23,9 +23,11 @@ import { useCreditOas, useMarketDaily, useMarketIntraday } from "../../api/queri
 import { useQuotes } from "../../live/quotes";
 import { fmtBps, fmtDate, fmtPct } from "../../lib/format";
 import { MISSING, missingNote, useSnapshotMode } from "../shared/screen-ui";
+import { SRC, Stamp, metricAttrs, quoteStamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 import FreshnessCard from "./FreshnessCard";
 import QuoteCard, { type QuoteCardProps } from "./QuoteCard";
-import { quoteFor } from "./quote-ladder";
+import { quoteFor, withFreshTags } from "./quote-ladder";
 import type { ShellStatus } from "./shell-status";
 
 function lastBySymbol<T extends { symbol: string }>(rows: T[] | undefined): Map<string, T> {
@@ -48,13 +50,18 @@ export default function TickerLive({ status, freshnessOpen, onOpenFreshness }: P
   const snapshot = useSnapshotMode();
   // CP4: a card with no price says why when the stored closes did not load.
   const unavailable = daily.isError && !daily.data ? missingNote(MISSING.market, snapshot) : undefined;
+  // A1: every card names its source and as-of (the ladder rung's series,
+  // the credit payload's own DGS10 state for the 10Y).
+  const report = useFreshReport();
 
   const cards = useMemo<QuoteCardProps[]>(() => {
     // SPY and QQQ walk the shared ladder; the US 10Y stays on the credit
     // endpoint below because yields are not on the stream.
-    const out: QuoteCardProps[] = ["SPY", "QQQ"].map((symbol) =>
-      quoteFor({ symbol }, quotes, intraday.data, daily.data, { dailyLoading: daily.isLoading, unavailable }),
-    );
+    const out: QuoteCardProps[] = ["SPY", "QQQ"].map((symbol) => {
+      const q = quoteFor({ symbol }, quotes, intraday.data, daily.data, { dailyLoading: daily.isLoading, unavailable });
+      // A3: the CLOSE tag and the stale mark read the server's words.
+      return withFreshTags({ ...q, stamp: quoteStamp(q.via, report) }, { daily: report.series("market_daily"), intraday: report.series("market_intraday") });
+    });
 
     const ten = credit.data?.series.find((s) => s.label === "UST10Y");
     if (ten) {
@@ -68,6 +75,8 @@ export default function TickerLive({ status, freshnessOpen, onOpenFreshness }: P
         tag: ten.change_1w_bps != null ? { text: "1W", title: "Change over one week", tone: "muted" } : undefined,
         series: ten.history.map((h) => h.value),
         title: `10-year Treasury yield · FRED ${ten.series_id} · ${fmtDate(ten.date)}`,
+        stamp: <Stamp source={SRC.fred} label={report.series(ten.series_id, credit.data?.freshness)} />,
+        valueAttrs: metricAttrs("ust10y", ten.value_pct),
       });
     } else {
       // CP4: the dash says why when the yield did not load.
@@ -75,7 +84,7 @@ export default function TickerLive({ status, freshnessOpen, onOpenFreshness }: P
     }
 
     return out;
-  }, [quotes, intraday.data, daily.data, daily.isLoading, credit.data, credit.isError, unavailable]);
+  }, [quotes, intraday.data, daily.data, daily.isLoading, credit.data, credit.isError, unavailable, report]);
 
   return (
     <div className="mrr-strip" role="region" aria-label="Market strip and data freshness">

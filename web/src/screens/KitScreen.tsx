@@ -56,7 +56,7 @@ import {
   type SummaryRow,
 } from "./shared/SummaryCard";
 import { TabHero } from "./shared/TabHero";
-import type { FreshInfo } from "./shared/freshness";
+import type { FreshLabel } from "./shared/fresh-state";
 import {
   Caption,
   SliderRow,
@@ -221,30 +221,10 @@ const HY_24 = [
 const SPX_8 = [598.2, 601.4, 604.9, 603.1, 607.8, 610.2, 609.4, 612.4];
 const TLT_8 = [90.4, 90.1, 89.6, 89.9, 89.2, 88.7, 88.9, 88.12];
 
-const FRESH_MACRO: FreshInfo = {
-  state: "current",
-  word: "Current",
-  stamp: "Jul 2026",
-  ageDays: 39,
-  age: "6 weeks",
-  cadence: "monthly",
-};
-const FRESH_MARKET: FreshInfo = {
-  state: "current",
-  word: "Current",
-  stamp: "Sep 08, 2026",
-  ageDays: 1,
-  age: "1 day",
-  cadence: "daily",
-};
-const FRESH_MACRO_DELAYED: FreshInfo = {
-  state: "delayed",
-  word: "Delayed",
-  stamp: "Jul 2026",
-  ageDays: 70,
-  age: "10 weeks",
-  cadence: "monthly",
-};
+// Fixture labels in FRESHNESS_CONTRACT §5 words (Iteration 1 step 6, A3).
+const FRESH_MACRO: FreshLabel = { word: "Jul 2026 print", muted: null, tone: "neutral", reason: "Fixture: the July print is the newest due.", stale: false };
+const FRESH_MARKET: FreshLabel = { word: "Close · Sep 08", muted: null, tone: "neutral", reason: "Fixture: official close of the last completed session.", stale: false };
+const FRESH_MACRO_DELAYED: FreshLabel = { word: "Jul 2026 · 1 release behind", muted: null, tone: "stale", reason: "Fixture: the August print is due.", stale: true };
 
 const ODDS = {
   goldilocks: 0.64,
@@ -1128,13 +1108,13 @@ export default function KitScreen() {
                   { label: "View model details", to: "/app/methodology" },
                 ]}
                 footnote={[
-                  "Macro regime for Jul 2026 (2 months old)",
+                  "Macro regime for Jul 2026",
                   "Model confidence: Medium (50%)",
                   "Read Sep 09, 2026",
                 ]}
                 freshness={[
-                  { noun: "Macro", info: FRESH_MACRO },
-                  { noun: "Market", info: FRESH_MARKET },
+                  { noun: "Macro", label: FRESH_MACRO },
+                  { noun: "Market", label: FRESH_MARKET },
                 ]}
                 note="Market data runs through Sep 08, 2026; the regime read is inside its monthly cycle."
                 chart={<QuadrantChart />}
@@ -1151,7 +1131,7 @@ export default function KitScreen() {
                 lede="The curve is flat, high-yield spreads are 40 bps wider than in June and the leading-indicator proxy has rolled over. Odds this high have preceded four of the last six downturns within a year."
                 actions={[{ label: "Open the model", to: "/app/recession" }]}
                 footnote={["Model inputs through Aug 2026", "Threshold 30%"]}
-                freshness={[{ noun: "Macro", info: FRESH_MACRO_DELAYED }]}
+                freshness={[{ noun: "Macro", label: FRESH_MACRO_DELAYED }]}
                 glow="rgba(245,181,46,.06)"
                 chart={<OddsGauge />}
               />

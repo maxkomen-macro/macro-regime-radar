@@ -43,7 +43,7 @@ import {
 import { ApiError } from "../../api/client";
 import { LIVE_WINDOW_MS, useQuotes, useWatch } from "../../live/quotes";
 import type { CandleRange, NewsItem, OptionContract } from "../../api/types";
-import { fmtDate, fmtSignedPct, fmtUtcStampEt } from "../../lib/format";
+import { fmtDate, fmtProb, fmtSignedPct, fmtUtcStampEt } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
 import { Caption, eyebrowStyle, metaStyle, mono, monoNoteStyle, useSnapshotMode } from "../shared/screen-ui";
@@ -317,7 +317,14 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
                 {AVERAGE_DAYS}-day average
               </span>
             ) : null}
-            <div role="status" style={{ ...monoNoteStyle, color: liveFresh ? "var(--pos)" : monoNoteStyle.color, maxWidth: 420 }}>
+            {/* A1: with a quote on hand this line is the tile's stamp: the
+                provider and the quote's own as-of, as the provider layer
+                serves them. */}
+            <div
+              role="status"
+              data-stamp={liveFresh || p ? "" : undefined}
+              style={{ ...monoNoteStyle, color: liveFresh ? "var(--pos)" : monoNoteStyle.color, maxWidth: 420 }}
+            >
               {quoteLine}
             </div>
             <button
@@ -431,7 +438,7 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
                       {avg != null ? `${avg >= 0 ? "+" : ""}${avg.toFixed(1)}%` : "—"}
                     </div>
                     <div style={{ ...monoNoteStyle, fontSize: 11, lineHeight: 1.4, marginTop: 2 }}>
-                      {cell ? `${Math.round((cell.up / cell.n) * 100)}% up · n=${cell.n}` : "no overlap"}
+                      {cell ? `${fmtProb(cell.up / cell.n)} up · n=${cell.n}` : "no overlap"}
                     </div>
                   </div>
                 );

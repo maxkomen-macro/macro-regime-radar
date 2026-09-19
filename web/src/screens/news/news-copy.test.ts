@@ -10,7 +10,6 @@
  */
 import { describe, expect, it } from "vitest";
 import type { CalendarEvent, NewsItem } from "../../api/types";
-import type { FreshInfo } from "../shared/freshness";
 import {
   aiReadValue,
   categoryMixValue,
@@ -18,8 +17,11 @@ import {
   countdownHeadline,
   coverageValue,
   dayGroups,
+  feedChipLabel,
+  feedClock,
   feedHealth,
   filledDots,
+  type FeedClock,
   heroPill,
   heroSubhead,
   highImpactValue,
@@ -65,13 +67,11 @@ const item = (over: Partial<NewsItem> = {}): NewsItem => ({
   ...over,
 });
 
-const fresh = (over: Partial<FreshInfo> = {}): FreshInfo => ({
+// Iteration 1 step 6 (A3): the feed clock is the newest stamp plus the served SLA verdict; no age.
+const fresh = (over: Partial<FeedClock> = {}): FeedClock => ({
   state: "current",
-  word: "Current",
   stamp: "Sep 16, 16:40 ET",
-  ageDays: 0,
-  age: "under 1 hour",
-  cadence: "hourly",
+  reason: "Newest stored headline is inside 90 minutes (US business hours).",
   ...over,
 });
 
@@ -193,9 +193,10 @@ describe("news-copy: summary and strip helpers (checklist 08 B.2)", () => {
   const FEED = [item({ id: 1, source: "CNBC" }), item({ id: 2, source: "MarketWatch", overall_significance: 3.5 }), item({ id: 3, source: "CNBC", overall_significance: 3.49 }), item({ id: 4, source: null, overall_significance: null })];
 
   it("coverageValue counts the stories in the window, and on the fallback prints the N4 stale string verbatim", () => {
-    expect(coverageValue(FEED, "7D", false, null, null)).toBe("4 stories in 7D");
-    expect(coverageValue([], "24H", false, null, null)).toBe("0 stories in 24H");
-    expect(coverageValue(FEED, "24H", true, "2026-09-14T13:00:00Z", "2 days")).toBe("Stale: no headlines in 24H; newest stored Sep 14, 2026 (2 days old)");
+    expect(coverageValue(FEED, "7D", false, null)).toBe("4 stories in 7D");
+    expect(coverageValue([], "24H", false, null)).toBe("0 stories in 24H");
+    // A3: the stored date without a browser-counted age.
+    expect(coverageValue(FEED, "24H", true, "2026-09-14T13:00:00Z")).toBe("Stale: no headlines in 24H; newest stored Sep 14, 2026");
   });
 
   it("highImpactValue counts scores at or above 3.5 only", () => {
@@ -235,41 +236,49 @@ describe("news-copy: summary and strip helpers (checklist 08 B.2)", () => {
     expect(sourceCount([])).toBe(0);
   });
 
-  it("feedHealth: the fallback wins whatever the feed clock says (amber, Fallback coverage, the stored date, age and count)", () => {
-    const stale = fresh({ state: "stale", word: "Stale", stamp: "Sep 14, 13:00 ET", ageDays: 2, age: "2 days" });
+  it("feedHealth: the fallback wins whatever the feed clock says (amber, Fallback coverage, the stored date and count)", () => {
+    const stale = fresh({ state: "stale", stamp: "Sep 14, 13:00 ET" });
     expect(feedHealth({ usingFallback: true, loading: false, feedInfo: stale, feed: FEED, newestFallback: "2026-09-14T13:00:00Z" })).toEqual({
       tone: "amber",
       title: "Fallback coverage",
       detail: "4 stories · newest Sep 14, 2026",
     });
-    expect(feedHealth({ usingFallback: true, loading: false, feedInfo: fresh({ age: "2 days" }), feed: FEED, newestFallback: "2026-09-14T13:00:00Z" }).title).toBe("Fallback coverage");
+    expect(feedHealth({ usingFallback: true, loading: false, feedInfo: fresh(), feed: FEED, newestFallback: "2026-09-14T13:00:00Z" }).title).toBe("Fallback coverage");
   });
 
   it("feedHealth: a current feed is mint with the newest stamp and the source count", () => {
     expect(feedHealth({ usingFallback: false, loading: false, feedInfo: fresh(), feed: FEED, newestFallback: null })).toEqual({
       tone: "mint",
-      title: "Feed current",
+      title: "Feed on time",
       detail: "Newest headline Sep 16, 16:40 ET",
     });
   });
 
-  it("feedHealth: delayed and stale read amber with the age; the state word is whatever the merged feed clock says (server verdict first, client clock otherwise)", () => {
-    const delayed = fresh({ state: "delayed", word: "Delayed", age: "3 hours" });
+  it("feedHealth: delayed and stale read amber with the newest stamp and no age (A3); the state word is the served verdict", () => {
+    const delayed = fresh({ state: "delayed" });
     expect(feedHealth({ usingFallback: false, loading: false, feedInfo: delayed, feed: FEED, newestFallback: null })).toEqual({
       tone: "amber",
       title: "Feed delayed",
-      detail: "Newest Sep 16, 16:40 ET · 3 hours old",
+      detail: "Newest Sep 16, 16:40 ET",
     });
-    const stale = fresh({ state: "stale", word: "Stale", stamp: "Sep 12, 09:05 ET", ageDays: 4, age: "4 days" });
+    const stale = fresh({ state: "stale", stamp: "Sep 12, 09:05 ET" });
     expect(feedHealth({ usingFallback: false, loading: false, feedInfo: stale, feed: FEED, newestFallback: null })).toEqual({
       tone: "amber",
       title: "Feed stale",
-      detail: "Newest Sep 12, 09:05 ET · 4 days old",
+      detail: "Newest Sep 12, 09:05 ET",
+    });
+  });
+
+  it("feedHealth: without a served verdict the feed reads gray Feed as of unknown with its newest stamp (A3: never a client clock)", () => {
+    expect(feedHealth({ usingFallback: false, loading: false, feedInfo: fresh({ state: "unknown", reason: "" }), feed: FEED, newestFallback: null })).toEqual({
+      tone: "gray",
+      title: "Feed as of unknown",
+      detail: "Newest headline Sep 16, 16:40 ET",
     });
   });
 
   it("feedHealth: no stamp reads gray Feed unavailable", () => {
-    const none = fresh({ state: "unavailable", word: "Unavailable", stamp: "", ageDays: 0, age: "" });
+    const none = fresh({ state: "unavailable", stamp: "", reason: "" });
     expect(feedHealth({ usingFallback: false, loading: false, feedInfo: none, feed: [], newestFallback: null })).toEqual({
       tone: "gray",
       title: "Feed unavailable",
@@ -277,8 +286,20 @@ describe("news-copy: summary and strip helpers (checklist 08 B.2)", () => {
     });
   });
 
+  it("feedClock and feedChipLabel: the served verdict or unknown, the stamp as the word, the stale mark when behind (A3)", () => {
+    const row = (verdict: string) => ({ feed: "news", latest: "2026-09-16T20:40:00Z", expected: null, verdict, reason: `${verdict} reason.` }) as never;
+    expect(feedClock("2026-09-16T20:40:00Z", row("current"))).toEqual({ state: "current", stamp: "Sep 16, 16:40 ET", reason: "current reason." });
+    expect(feedClock("2026-09-16T20:40:00Z", null).state).toBe("unknown");
+    expect(feedClock(null, null)).toEqual({ state: "unavailable", stamp: "", reason: "" });
+    expect(feedClock("2026-09-16T20:40:00Z", row("fresh")).state).toBe("unknown");
+    expect(feedChipLabel(fresh())).toMatchObject({ word: "Sep 16, 16:40 ET", muted: null, tone: "neutral", stale: false });
+    expect(feedChipLabel(fresh({ state: "stale" }))).toMatchObject({ word: "Sep 16, 16:40 ET", muted: "· stale", tone: "stale", stale: true });
+    expect(feedChipLabel(fresh({ state: "unknown" }))).toMatchObject({ tone: "unknown", stale: false });
+    expect(feedChipLabel(fresh({ stamp: "" })).word).toBe("As of unknown");
+  });
+
   it("feedHealth: loading before the first payload reads gray Reading feed health…", () => {
-    const none = fresh({ state: "unavailable", word: "Unavailable", stamp: "", ageDays: 0, age: "" });
+    const none = fresh({ state: "unavailable", stamp: "", reason: "" });
     expect(feedHealth({ usingFallback: false, loading: true, feedInfo: none, feed: [], newestFallback: null })).toEqual({
       tone: "gray",
       title: "Reading feed health…",

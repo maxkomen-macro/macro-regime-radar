@@ -10,7 +10,7 @@
  */
 
 import type { AllocationData, OptimizationResult, OptimizationSample, RegimeStats } from "../../api/types";
-import { fmtMonYr } from "../../lib/format";
+import { fmtMonYr, fmtProb } from "../../lib/format";
 import type { StatusTone } from "../shared/SummaryCard";
 import type { TabHeroPillTone } from "../shared/TabHero";
 
@@ -124,9 +124,10 @@ export function allocationSummary(a: AllocationData): AllocationSummary {
 export function whySentence(a: AllocationData): string {
   const curStats = currentStats(a);
   if (!curStats) return "";
-  const odds = a.dominant_prob != null ? Math.round(a.dominant_prob * 100) : "—";
+  // A4: the classifier's odds print through fmtProb (outside 0–1: the dash).
+  const odds = fmtProb(a.dominant_prob);
   const sample = curStats.n_months < 36 ? "a thin sample, so treat the column as evidence, not law" : "a workable sample";
-  return `Read the ${a.current_regime} column first: it is the weather the classifier calls today at ${odds}% odds. A positive return with a negative Sharpe means the asset did not cover cash plus its risk; ${curStats.n_months} months is ${sample}.`;
+  return `Read the ${a.current_regime} column first: it is the weather the classifier calls today at ${odds} odds. A positive return with a negative Sharpe means the asset did not cover cash plus its risk; ${curStats.n_months} months is ${sample}.`;
 }
 
 export function allocationHero(a: AllocationData): AllocationHeroCopy {

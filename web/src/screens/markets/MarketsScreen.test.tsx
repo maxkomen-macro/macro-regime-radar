@@ -291,7 +291,9 @@ const headerIndex = (table: HTMLTableElement, label: string) => [...table.queryS
 /* Iteration 1 (the summary's G2 fill): "ETFs · 1w" reads the week bars' served
    ret_1w extremes; "Single names · 1d" appears once the movers read has two
    names (none in the default fixtures: no single-name quote, candles 404). */
-const ALL_LABELS = ["US 10Y", "Sectors · 1d", "ETFs · 1w", "Dollar", "VIX", "Priced", "Top surprise"];
+// Iteration 1 step 6 (A2): the summary's VIX is the relay's delayed poll,
+// labelled as such (the Dashboard's "VIX" is the stored FRED close).
+const ALL_LABELS = ["US 10Y", "Sectors · 1d", "ETFs · 1w", "Dollar", "VIX · delayed", "Priced", "Top surprise"];
 const IDS_IN_ORDER = ["markets-hero", "markets-summary", "single-name-research", "sector-heatmap", "single-name-movers", "top-surprises", "watchlist", "single-names", "whats-priced-full"];
 const EMPTY_PROMPT =
   "Search a ticker or company name in the market read above, or open a mover below, for a full profile: delayed quote, candles across seven ranges, fundamentals, regime fit since 1996, and the stored news window.";
@@ -401,7 +403,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     live.quotes = LIVE_QUOTES;
     renderMarkets();
     await awaitHero();
-    await waitFor(() => expect(text(h2())).toBe("US session live: SPY +0.42%, QQQ +1.01%, VIX 15.72."));
+    await waitFor(() => expect(text(h2())).toBe("US session live: SPY +0.42%, QQQ +1.01%, VIX 15.72 (delayed quote)."));
     expect(text(hero())).toContain(LIVE_LEDE);
     expect(hero().querySelector(".mrr-hero-dot")).not.toBeNull();
     // The SPY figure in the sentence equals the tape's SPY Day % cell.
@@ -518,7 +520,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(text(ddFor("Priced"))).toBe("10Y breakeven 2.19% · 10Y real 1.91%");
     expect(text(ddFor("Top surprise"))).toBe("SPY rose 2.3% on the week; the largest weekly gain since June.");
     expect(text(ddFor("Top surprise"))).not.toContain("\u2014");
-    expect(dts()).not.toContain("VIX");
+    expect(dts()).not.toContain("VIX · delayed");
     // Never an empty dd.
     for (const dd of summary().querySelectorAll("dl dd")) expect(text(dd)).not.toBe("");
   });
@@ -530,8 +532,10 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     await awaitHero();
     await waitFor(() => expect(dts()).toEqual(ALL_LABELS));
     expect(text(ddFor("Dollar"))).toBe("UUP +0.31% 1d · -0.9% 1w");
-    expect(text(ddFor("VIX"))).toBe("15.72 · -0.63% 1d · 15m delayed");
-    expect(text(ddFor("VIX"))).toContain("delayed");
+    // The as-of word is vix_delayed's §5 word (absent from this fixture's
+    // report: "As of unknown"); the row label carries "delayed".
+    expect(text(ddFor("VIX · delayed"))).toBe("15.72 · -0.63% 1d · As of unknown");
+    expect(ddFor("VIX · delayed").querySelector("[data-metric]")).toHaveAttribute("data-metric", "vix-live");
   });
 
   it("a VIX quote without a day change omits that half; without a UUP quote and a UUP bar the Dollar row is omitted", async () => {
@@ -540,8 +544,8 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     stubFetch(routes({ "/api/market/daily": () => dailyBars({}, ["UUP"]) }));
     renderMarkets();
     await awaitHero();
-    await waitFor(() => expect(dts()).toEqual(["US 10Y", "Sectors · 1d", "ETFs · 1w", "VIX", "Priced", "Top surprise"]));
-    expect(text(ddFor("VIX"))).toBe("16.04 · 15m delayed");
+    await waitFor(() => expect(dts()).toEqual(["US 10Y", "Sectors · 1d", "ETFs · 1w", "VIX · delayed", "Priced", "Top surprise"]));
+    expect(text(ddFor("VIX · delayed"))).toBe("16.04 · As of unknown");
   });
 
   it("summary rows read the loading note while their hooks are pending and the error note when they fail", async () => {
@@ -624,13 +628,18 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(heat.tagName).toBe("SECTION");
     expect(within(heat).getByRole("heading", { level: 2 })).toHaveTextContent(/^Sector heatmap$/);
     expect(text(heat)).toContain("One-day moves from stored closes");
-    await waitFor(() => expect(text(heat)).toContain("daily closes · Sep 18, 2026"));
+    // Iteration 1 step 6 (A1): the header's as-of is the stored-close stamp
+    // (market_daily's §5 word), not the newest row date.
+    await waitFor(() => expect(text(heat)).toContain("daily closes"));
+    expect(heat.querySelector("[data-stamp]")?.textContent).toMatch(/^Stored closes · /);
 
     const surprises = await awaitSection("top-surprises");
     expect(surprises.tagName).toBe("SECTION");
     expect(within(surprises).getByRole("heading", { level: 2 })).toHaveTextContent(/^Top surprises this week$/);
     expect(text(surprises)).toContain("Weekly moves ranked by z-score");
-    await waitFor(() => expect(text(surprises)).toContain("weekly derived series · week ending Sep 18, 2026"));
+    // Iteration 1 step 6 (A1): the week is the section's stamp.
+    await waitFor(() => expect(text(surprises)).toContain("weekly derived series"));
+    expect(surprises.querySelector("[data-stamp]")?.textContent).toBe("Derived pipeline · week ending Sep 18, 2026");
 
     const tape = await awaitSection("watchlist");
     expect(tape.tagName).toBe("SECTION");
@@ -646,7 +655,9 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(priced.tagName).toBe("SECTION");
     expect(within(priced).getByRole("heading", { level: 2 })).toHaveTextContent(/^What's priced$/);
     expect(text(priced)).toContain("Market-implied path for policy, inflation and real rates");
-    await waitFor(() => expect(text(priced)).toContain("FRED via weekly pipeline · latest Sep 18, 2026"));
+    // Iteration 1 step 6 (A1): the latest date is the section's stamp.
+    await waitFor(() => expect(text(priced)).toContain("FRED via weekly pipeline"));
+    expect(priced.querySelector("[data-stamp]")?.textContent).toBe("Weekly pipeline · latest Sep 18, 2026");
   });
 
   it("#single-name-research shows the empty prompt and no range picker until a symbol is chosen", async () => {

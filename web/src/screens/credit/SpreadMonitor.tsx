@@ -18,10 +18,13 @@ import { Link } from "react-router-dom";
 import { Card, SectionHeader, SignalCard } from "../../components";
 import type { SignalTone } from "../../components/signals/SignalCard";
 import type { CreditMetrics, DatedValue } from "../../api/types";
-import { fmtBps, ordinal } from "../../lib/format";
+import { bpsToPct, fmtBps, fmtBpsLevel, ordinal } from "../../lib/format";
 import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote } from "../shared/screen-ui";
+import { CREDIT_OAS_IDS } from "../shared/fresh-state";
+import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport, type FreshReport } from "../shared/useFreshReport";
 import type { CreditPanelProps } from "./panel-props";
 
 /** The null-value glyph the ledger prints (U+2014), never an em-dash aside. */
@@ -31,6 +34,8 @@ type Read = (m: CreditMetrics) => number | null;
 
 interface Tier {
   key: "hy" | "ig" | "bb" | "b" | "ccc";
+  /** The ICE BofA series on FRED: the card's stamp reads its state (A1). */
+  series: string;
   /** The h3 (mockup card names, C.4 #5). */
   name: string;
   oas: Read;
@@ -54,6 +59,7 @@ const rankMeter = (rank: number | null) =>
 const TIERS: Tier[] = [
   {
     key: "hy",
+    series: "BAMLH0A0HYM2",
     name: "High yield",
     oas: (m) => m.hy_oas,
     chg: (m) => m.hy_1w_change,
@@ -64,6 +70,7 @@ const TIERS: Tier[] = [
   },
   {
     key: "ig",
+    series: "BAMLC0A0CM",
     name: "Investment grade",
     oas: (m) => m.ig_oas,
     chg: (m) => m.ig_1w_change,
@@ -75,6 +82,7 @@ const TIERS: Tier[] = [
   },
   {
     key: "bb",
+    series: "BAMLH0A1HYBB",
     name: "BB",
     oas: (m) => m.bb_oas,
     chg: (m) => m.bb_1w_change,
@@ -85,6 +93,7 @@ const TIERS: Tier[] = [
   },
   {
     key: "b",
+    series: "BAMLH0A2HYB",
     name: "Single-B",
     oas: (m) => m.b_oas,
     chg: (m) => m.b_1w_change,
@@ -95,6 +104,7 @@ const TIERS: Tier[] = [
   },
   {
     key: "ccc",
+    series: "BAMLH0A3HYC",
     name: "CCC",
     oas: (m) => m.ccc_oas,
     chg: (m) => m.ccc_1w_change,
@@ -127,10 +137,10 @@ function momLine(c: number | null): ReactNode {
   );
 }
 
-function TierCard({ m, tier }: { m: CreditMetrics; tier: Tier }) {
+function TierCard({ m, tier, report }: { m: CreditMetrics; tier: Tier; report: FreshReport }) {
   const v = tier.oas(m);
   const values = tier.spark(m).map((p) => p.value);
-  const lines = [momLine(tier.chg(m)), tier.second(m)];
+  const lines = [momLine(tier.chg(m)), tier.second(m), <Stamp key="stamp" source={SRC.baml} label={report.series(tier.series, m.freshness)} />];
   if (v == null) {
     // The 02 B.3 unavailable state: dash value, reference tint, no meter (B.10).
     return (
@@ -148,7 +158,16 @@ function TierCard({ m, tier }: { m: CreditMetrics; tier: Tier }) {
       name={tier.name}
       badge={badge}
       tone={tone}
-      value={`${Math.round(v)} bps`}
+      value={
+        // A2: the served figure is bps here; the marker carries it in percent.
+        tier.key === "hy" ? (
+          <Metric id="hy-oas" value={bpsToPct(v)}>
+            {fmtBpsLevel(v)}
+          </Metric>
+        ) : (
+          fmtBpsLevel(v)
+        )
+      }
       sparkline={values}
       // One slot layout for the five cards (Iteration 1 G3): every card carries
       // the meter slot. HY and IG fill it with the served rank over the full
@@ -167,14 +186,14 @@ function TierCard({ m, tier }: { m: CreditMetrics; tier: Tier }) {
 
 export default function SpreadMonitor({ m, status }: CreditPanelProps): JSX.Element {
   const ready = status === "ready" && m != null;
-  const latest = m?.data_as_of ?? (status === "loading" ? "loading" : "unavailable");
+  const report = useFreshReport();
   return (
     <Card as="section" variant="panel" id="oas" style={{ minWidth: 0 }}>
       <SectionHeader
         layout="panel"
         title="Spread monitor"
         description="Option-adjusted spreads by rating"
-        right={`5 series · latest ${latest}`}
+        right={<MetaWithStamp meta="5 series" stamp={<Stamp source={SRC.baml} label={report.group(CREDIT_OAS_IDS, m?.freshness)} />} />}
         actions={
           <Link className="mrr-link" to="/app/methodology#models">
             Series notes →
@@ -185,7 +204,7 @@ export default function SpreadMonitor({ m, status }: CreditPanelProps): JSX.Elem
         <>
           <div className="mrr-credit-monitor">
             {TIERS.map((t) => (
-              <TierCard key={t.key} m={m} tier={t} />
+              <TierCard key={t.key} m={m} tier={t} report={report} />
             ))}
           </div>
           {/* C10 caption, verbatim (U-CAP): the percent stated once beside the bps figure.
@@ -196,7 +215,7 @@ export default function SpreadMonitor({ m, status }: CreditPanelProps): JSX.Elem
             over Treasuries.{" "}
             {m.hy_oas != null && m.hy_pct_rank != null && (
               <>
-                High yield sits at {Math.round(m.hy_oas)} bps ({(m.hy_oas / 100).toFixed(2)}pp), the{" "}
+                High yield sits at {fmtBpsLevel(m.hy_oas)} ({bpsToPct(m.hy_oas).toFixed(2)}pp), the{" "}
                 {ordinal(m.hy_pct_rank)} <Jargon term="percentile">percentile</Jargon> of history since
                 1996, tighter than {100 - Math.round(m.hy_pct_rank)}% of it.
               </>
@@ -205,7 +224,7 @@ export default function SpreadMonitor({ m, status }: CreditPanelProps): JSX.Elem
           {m.ig_oas != null && m.ig_pct_rank != null ? (
             <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
               <Caption style={{ marginTop: 0 }}>
-                Investment grade holds {Math.round(m.ig_oas)} bps, its {ordinal(m.ig_pct_rank)} percentile.
+                Investment grade holds {fmtBpsLevel(m.ig_oas)}, its {ordinal(m.ig_pct_rank)} percentile.
               </Caption>
             </Disclosure>
           ) : null}

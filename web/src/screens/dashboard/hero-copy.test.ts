@@ -13,7 +13,6 @@
 import { describe, expect, it } from "vitest";
 import { heroCopy } from "./hero-copy";
 import type { Regime, RegimeLabel } from "../../api/types";
-import { assessFreshness } from "../shared/freshness";
 
 const MONTH = "2026-09-01";
 const DASH = "\u2014";
@@ -132,12 +131,11 @@ describe("heroCopy (checklist 03 C.1, decision 4)", () => {
     expect(noTrends.lede).not.toMatch(/null|undefined|NaN/);
   });
 
-  it("footnote carries the regime month with the monthly age words and the model-confidence word", () => {
+  it("footnote carries the regime month and the model-confidence word (Iteration 1 step 6: no browser-counted age; the Macro chip carries the served state)", () => {
     const copy = heroCopy(regime());
-    const age = assessFreshness(MONTH, "monthly").age;
-    expect(age).toMatch(/^(?:\d+ days?|\d+ weeks|\d+ months|\d+ hours|under 1 hour)$/);
-    expect(copy.footnote).toEqual([`Macro regime for Sep 2026 (${age} old)`, "Model confidence: Medium (47%)"]);
-    expect(heroCopy(regime({ date: "2026-07-01" })).footnote[0]).toBe(`Macro regime for Jul 2026 (${assessFreshness("2026-07-01", "monthly").age} old)`);
+    expect(copy.footnote).toEqual(["Macro regime for Sep 2026", "Model confidence: Medium (47%)"]);
+    expect(heroCopy(regime({ date: "2026-07-01" })).footnote[0]).toBe("Macro regime for Jul 2026");
+    expect(copy.footnote.join(" ")).not.toMatch(/\bold\)/);
     // convictionWord thresholds: High at 0.6, Medium at 0.4, Low below.
     expect(heroCopy(regime({ confidence: 0.61 })).footnote[1]).toBe("Model confidence: High (61%)");
     expect(heroCopy(regime({ confidence: 0.4 })).footnote[1]).toBe("Model confidence: Medium (40%)");

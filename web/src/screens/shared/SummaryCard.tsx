@@ -54,6 +54,9 @@ export interface SummaryCardProps {
   /** Extra content between the rows and the strip (a "Reference thresholds"
    * Disclosure). A nested odds bar goes through rows[].value instead. */
   children?: ReactNode;
+  /** The card's source and as-of stamp (Iteration 1, A1): a `<Stamp>`
+   * (./Stamp.tsx) on its own line under the title. */
+  stamp?: ReactNode;
   id?: string;
   style?: CSSProperties;
 }
@@ -196,7 +199,7 @@ function rowKey(row: SummaryRow, i: number): string {
   return `row-${i}`;
 }
 
-export function SummaryCard({ title, as = "h3", rows, status, children, id, style }: SummaryCardProps) {
+export function SummaryCard({ title, as = "h3", rows, status, children, stamp, id, style }: SummaryCardProps) {
   const uid = useId();
   const titleId = `${uid}-title`;
   const Heading = as;
@@ -217,9 +220,14 @@ export function SummaryCard({ title, as = "h3", rows, status, children, id, styl
         ...style,
       }}
     >
-      <Heading id={titleId} className="mrr-summary-title" style={EYEBROW}>
+      <Heading id={titleId} className="mrr-summary-title" style={stamp != null ? { ...EYEBROW, marginBottom: 4 } : EYEBROW}>
         {title}
       </Heading>
+      {stamp != null ? (
+        <div className="mrr-summary-stamp" style={{ margin: "0 0 8px" }}>
+          {stamp}
+        </div>
+      ) : null}
       <dl className="mrr-kv" style={{ margin: 0 }}>
         {rows.map((r, i) => (
           <div

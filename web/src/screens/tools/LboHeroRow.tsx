@@ -23,6 +23,8 @@ import { useShellActions } from "../shell/shell-actions";
 import EquityBridge from "./EquityBridge";
 import { STRIP_SUFFIX, componentAsOf, isStatedDefault, lboHero, lboStrip, signedPp } from "./lbo-copy";
 import { bridgeSteps, type LboDeal } from "./lbo-deal";
+import { Metric, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 
 /** Loading and unavailable headlines ride in the UI face at the hero-sub
  * size: the serif display face is for answers only (02 B.1 states). */
@@ -48,6 +50,10 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   const credit = useCreditMetrics();
   const { openFreshness } = useShellActions();
   const snapshot = useSnapshotMode();
+  // A1: the rate rows are Fed funds plus the HY spread; the hero's outputs
+  // are the model run at that rate, dated by the derived rate's own state.
+  const report = useFreshReport();
+  const rateLabel = report.series("lbo_all_in_rate", defaults.data?.freshness);
 
   /* ── hero (B.1) ──────────────────────────────────────────────────────── */
   const stated = isStatedDefault(defaults.data);
@@ -119,6 +125,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
         note={copy.note}
         chart={steps ? <EquityBridge steps={steps} /> : undefined}
         placeholder
+        stamp={<Stamp source={SRC.lbo} label={rateLabel} />}
       />
     ) : (
       <TabHero
@@ -142,8 +149,29 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   const rows: SummaryRow[] = [
     // E1: each component with its own as-of word; the stated default says so.
     { id: "fed-funds", label: "Fed funds", value: d ? (stated ? `${d.fedfunds.toFixed(2)}% · Stated default` : `${d.fedfunds.toFixed(2)}% · monthly average, ${fedAsOf.word}`) : dLead },
-    { id: "hy-oas", label: "HY OAS", value: d ? (stated ? `${d.hy_oas_pct.toFixed(2)}% · Stated default` : `${d.hy_oas_pct.toFixed(2)}% · daily, ${hyAsOf.word}`) : dNote },
-    { id: "all-in", label: "All-in rate", value: d ? <b style={{ fontWeight: 500 }}>{d.lbo_all_in_rate.toFixed(2)}%</b> : dNote },
+    {
+      id: "hy-oas",
+      label: "HY OAS",
+      value: d ? (
+        <>
+          <Metric id="hy-oas" value={d.hy_oas_pct}>{`${d.hy_oas_pct.toFixed(2)}%`}</Metric>
+          {stated ? " · Stated default" : ` · daily, ${hyAsOf.word}`}
+        </>
+      ) : (
+        dNote
+      ),
+    },
+    {
+      id: "all-in",
+      label: "All-in rate",
+      value: d ? (
+        <b style={{ fontWeight: 500 }}>
+          <Metric id="lbo-all-in" value={d.lbo_all_in_rate}>{`${d.lbo_all_in_rate.toFixed(2)}%`}</Metric>
+        </b>
+      ) : (
+        dNote
+      ),
+    },
     {
       id: "financing",
       label: "Financing",
@@ -197,7 +225,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
     // so assistive tech and the layout sweeps wait for the answer.
     <div className="mrr-hero-row" aria-busy={copy.state === "loading" ? true : undefined}>
       {hero}
-      <SummaryCard id="lbo-summary" as="h2" title="Deal financing" rows={rows} status={strip} />
+      <SummaryCard id="lbo-summary" as="h2" title="Deal financing" rows={rows} status={strip} stamp={<Stamp source={SRC.fred} label={rateLabel} />} />
     </div>
   );
 }

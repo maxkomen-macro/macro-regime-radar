@@ -24,6 +24,8 @@ import type { FreshLabel } from "../shared/fresh-state";
 import { componentAsOf, isStatedDefault } from "../tools/lbo-copy";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, capStyle, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
+import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 import type { CreditPanelProps } from "./panel-props";
 
 /** The null-value glyph the ledger prints (U+2014), never an em-dash aside. */
@@ -84,7 +86,12 @@ function AllInTile({ m }: { m: CreditMetrics }) {
           </div>
           <div style={{ ...capStyle, marginTop: 0, maxWidth: "none", display: "flex", justifyContent: "space-between", gap: 12 }}>
             <span>Fed funds {d.fedfunds.toFixed(2)}%</span>
-            <span style={{ color: "var(--amber)" }}>HY OAS {d.hy_oas_pct.toFixed(2)}%</span>
+            <span style={{ color: "var(--amber)" }}>
+              HY OAS{" "}
+              <Metric id="hy-oas" value={d.hy_oas_pct}>
+                {d.hy_oas_pct.toFixed(2)}%
+              </Metric>
+            </span>
           </div>
           {/* E1: each component's own as-of, from the freshness block. */}
           <div data-role="component-as-of" style={{ ...monoNoteStyle, marginTop: 2, display: "flex", justifyContent: "space-between", gap: 12 }}>
@@ -95,7 +102,12 @@ function AllInTile({ m }: { m: CreditMetrics }) {
               Daily · <AsOf f={hyAsOf} />
             </span>
           </div>
-          <div style={{ ...monoNoteStyle, marginTop: 6 }}>Fed funds + HY OAS = {d.lbo_all_in_rate.toFixed(2)}%</div>
+          <div style={{ ...monoNoteStyle, marginTop: 6 }}>
+            Fed funds + HY OAS ={" "}
+            <Metric id="lbo-all-in" value={d.lbo_all_in_rate}>
+              {d.lbo_all_in_rate.toFixed(2)}%
+            </Metric>
+          </div>
         </>
       );
     }
@@ -108,7 +120,21 @@ function AllInTile({ m }: { m: CreditMetrics }) {
   }
   return (
     <Card variant="tile" padding="14px 18px 10px" style={{ minWidth: 0 }}>
-      <StatTile label="LBO all-in cost" value={m.lbo_all_in_cost ?? DASH} size="xl" />
+      {/* A2: /api/credit/metrics serves this figure as a string ("6.28%");
+          the marker carries its number, unconverted. */}
+      <StatTile
+        label="LBO all-in cost"
+        value={
+          m.lbo_all_in_cost ? (
+            <Metric id="lbo-all-in" value={Number.parseFloat(m.lbo_all_in_cost)}>
+              {m.lbo_all_in_cost}
+            </Metric>
+          ) : (
+            DASH
+          )
+        }
+        size="xl"
+      />
       {bar}
       <Caption>
         Fed Funds plus the high-yield spread: the rough rate a leveraged buyout pays on its debt. Pre-GFC deals borrowed near ~7.2%; the
@@ -156,13 +182,23 @@ function LadderTile({ m }: { m: CreditMetrics }) {
 
 export default function FinancingConditions({ m, status }: CreditPanelProps): JSX.Element {
   const ready = status === "ready" && m != null;
+  // A1: the section's figures are Fed funds plus the HY spread; the stamp is
+  // the derived rate's own state from /api/lbo/defaults (FRESHNESS_CONTRACT
+  // §3: the weaker component's), never a stored month counted here.
+  const defaults = useLboDefaults();
+  const report = useFreshReport();
   return (
     <Card as="section" variant="panel" id="financing" style={{ minWidth: 0 }}>
       <SectionHeader
         layout="panel"
         title="Financing conditions"
         description="What a leveraged borrower pays: Fed funds plus the HY spread"
-        right="Fed funds (monthly) + HY OAS (daily)"
+        right={
+          <MetaWithStamp
+            meta="Fed funds (monthly) + HY OAS (daily)"
+            stamp={<Stamp source={SRC.fred} label={report.series("lbo_all_in_rate", defaults.data?.freshness)} />}
+          />
+        }
         actions={
           <Link className="mrr-link" to="/app/tools#lbo">
             Open LBO calculator →

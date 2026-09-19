@@ -4,25 +4,30 @@
  * (focus trap, Escape, inert page, focus return), the same contract as the
  * alert drawer, so it is keyboard-reachable and readable at 390 px.
  *
- * The first block is the old header freshness sentence, verbatim: the status
- * chip, the impact sentence (or the blocker / snapshot variants) and the
- * dated Macro / Signals / Market / Intraday words. Below it: the overall
- * verdict, one row per feed from /api/freshness, the regime month and its
- * inputs, the NYSE session, the live relay and the data-service bootstrap.
- * The bootstrap's `last_error` is never printed (it could carry a URL).
+ * The first block is the status chip, one sentence (the blocker, snapshot
+ * or stored-close variants) and the §5 words for the macro inputs, the
+ * market, the intraday bars and the live quotes (Iteration 1 step 6, A3:
+ * every word from /api/freshness `series[]` through fresh-state.ts, never a
+ * stamp aged in the browser). Below it: the overall verdict, one row per
+ * feed (the SLA verdict columns it always had, its §5 state after the
+ * verdict), one row
+ * per series, the regime month and its inputs, the NYSE session, the live
+ * relay and the data-service bootstrap. The bootstrap's `last_error` is
+ * never printed (it could carry a URL).
  */
 
 import { useRef, type ReactNode } from "react";
 import type { SlaRow } from "../../api/types";
 import { fmtDate, fmtMonYr, fmtUtcStampEt } from "../../lib/format";
+import { freshLabel, toneColor, toneGlyph, type FreshLabel } from "../shared/fresh-state";
 import ScrollTable from "../shared/ScrollTable";
-import { freshColor, freshGlyph, impactSentence, type FreshInfo, type FreshState } from "../shared/freshness";
 import { useModal } from "../shared/useModal";
 import {
   blockerCause,
   dbSizeMb,
   degradedReason,
   feedLabel,
+  feedSeriesId,
   feedStateWord,
   fmtFeedStamp,
   sessionPhaseWord,
@@ -32,25 +37,46 @@ import {
   type ShellStatus,
 } from "./shell-status";
 
-/** Coloured "Macro Jul 2026 current" word, unchanged from the old header. */
-export function FreshWord({ info, noun }: { info: FreshInfo; noun: string }) {
-  const color = freshColor(info.state);
+/** "Macro inputs Aug 2026 print": the noun, then the §5 word in its tone
+ * (the muted tail after it), the reason as the title. */
+export function FreshWord({ label, noun }: { label: FreshLabel; noun: string }) {
   return (
-    <span style={{ whiteSpace: "nowrap" }}>
+    <span style={{ whiteSpace: "nowrap" }} title={label.reason || undefined} data-tone={label.tone} data-stale={label.stale ? "true" : undefined}>
       <span style={{ color: STATUS_COLOR.text3 }}>{noun} </span>
-      <span style={{ color: "var(--text-2)" }}>{info.stamp || "—"}</span>{" "}
-      <span style={{ color }}>
-        {info.state === "current" ? "current" : info.state === "unavailable" ? "unavailable" : `${info.age} old`}
+      <span style={{ color: toneColor(label.tone) }}>
+        <span aria-hidden="true">{toneGlyph(label.tone)}</span> {label.word}
       </span>
+      {label.muted ? <span style={{ color: STATUS_COLOR.text3 }}> {label.muted}</span> : null}
     </span>
   );
 }
 
-function Verdict({ state }: { state: FreshState | string }) {
-  const s = (["current", "delayed", "stale", "unavailable", "reference"].includes(state) ? state : "unavailable") as FreshState;
+/** The SLA verdict words (FRESHNESS_CONTRACT §7, unchanged): a feed judged
+ * against its SLA. A word outside the four reads "unavailable". */
+const VERDICT_GLYPH: Record<string, string> = { current: "●", delayed: "▪", stale: "▾", unavailable: "×" };
+const VERDICT_COLOR: Record<string, string> = {
+  current: "var(--pos)",
+  delayed: "var(--amber)",
+  stale: "var(--warn-hot)",
+  unavailable: "var(--neg-text)",
+};
+
+function Verdict({ state }: { state: string }) {
+  const s = state in VERDICT_GLYPH ? state : "unavailable";
   return (
-    <span style={{ color: freshColor(s), whiteSpace: "nowrap" }}>
-      <span aria-hidden="true">{freshGlyph(s)}</span> {s}
+    <span style={{ color: VERDICT_COLOR[s], whiteSpace: "nowrap" }}>
+      <span aria-hidden="true">{VERDICT_GLYPH[s]}</span> {s}
+    </span>
+  );
+}
+
+/** One §5 word in a table cell: the word in its tone, the muted tail, the
+ * stale mark on the cell itself. */
+function StateCell({ label }: { label: FreshLabel }) {
+  return (
+    <span style={{ color: toneColor(label.tone), whiteSpace: "nowrap" }} data-tone={label.tone} data-stale={label.stale ? "true" : undefined}>
+      <span aria-hidden="true">{toneGlyph(label.tone)}</span> {label.word}
+      {label.muted ? <span style={{ color: STATUS_COLOR.text3 }}> {label.muted}</span> : null}
     </span>
   );
 }
@@ -100,7 +126,7 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
 
   if (!open) return null;
 
-  const { f, statusWord, macroFresh, marketFresh, signalsFresh, intradayFreshInfo, signalsDiffer, streamLive } = status;
+  const { f, statusWord, macroLabel, marketLabel, dailyLabel, intradayLabel, liveLabel, seededLabel } = status;
 
   // G4 (Iteration 1 step 5): the summary line is one rendered line at 390 px.
   // It keeps the status word and the ticking feeds ("crypto/FX only"); the
@@ -117,11 +143,19 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
     </span>
   );
 
-  const baseSentence =
-    statusWord === "Validated snapshot"
-      ? `${SNAPSHOT_NOTE} ${impactSentence(macroFresh, marketFresh, false)}`
-      : (status.blockerNote ?? impactSentence(macroFresh, marketFresh, streamLive));
+  // One sentence under the chip, in the §5 words (A3): the snapshot note, the
+  // server's blocker note, and the stored-close line when the close is
+  // behind the bell; otherwise the macro inputs and the market words.
+  const words = `The regime's monthly inputs read ${macroLabel.word}${macroLabel.muted ? ` ${macroLabel.muted}` : ""}; market data reads ${marketLabel.word}${marketLabel.muted ? ` ${marketLabel.muted}` : ""}.`;
+  const parts = [
+    statusWord === "Validated snapshot" ? SNAPSHOT_NOTE : null,
+    seededLabel ? `${seededLabel.word}: every state is unknown until the live freshness report replaces it.` : null,
+    status.storedCloseLine,
+    status.blockerNote ?? (seededLabel ? null : words),
+  ].filter((x): x is string => Boolean(x));
+  const baseSentence = parts.join(" ");
   const sentence = suffixRest ? `${suffixRest.charAt(0).toUpperCase()}${suffixRest.slice(1)}. ${baseSentence}` : baseSentence;
+  const seriesRows = status.series;
 
   const sla: SlaRow[] = f?.sla ?? [];
   const relay = f?.relay ?? null;
@@ -169,10 +203,10 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
                   {sentence}
                 </p>
                 <div className="mrr-fresh-words">
-                  <FreshWord noun="Macro" info={macroFresh} />
-                  {signalsDiffer ? <FreshWord noun="Signals" info={signalsFresh} /> : null}
-                  <FreshWord noun="Market" info={marketFresh} />
-                  {f.market_intraday_ts ? <FreshWord noun="Intraday" info={intradayFreshInfo} /> : null}
+                  <FreshWord noun="Macro inputs" label={macroLabel} />
+                  <FreshWord noun="Stored close" label={dailyLabel} />
+                  <FreshWord noun="Intraday" label={intradayLabel} />
+                  <FreshWord noun="Live quotes" label={liveLabel} />
                 </div>
               </>
             ) : (
@@ -204,20 +238,60 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
                     <tr>
                       <th scope="col">Feed</th>
                       <th scope="col">Verdict</th>
+                      <th scope="col">State</th>
                       <th scope="col">Latest</th>
                       <th scope="col">Expected</th>
                       <th scope="col">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sla.map((row) => (
+                    {sla.map((row) => {
+                      // The §5 word for the series this feed describes;
+                      // regime, signals and news carry no per-series state.
+                      const id = feedSeriesId(row.feed);
+                      const series = id ? seriesRows.find((x) => x.id === id) : undefined;
+                      return (
                       <tr key={row.feed}>
                         <td className="feed">{feedLabel(row.feed, regime)}</td>
                         <td>
                           <Verdict state={row.verdict} />
                         </td>
+                        <td>{seededLabel ? <StateCell label={seededLabel} /> : id ? <StateCell label={freshLabel(series)} /> : "—"}</td>
                         <td>{fmtFeedStamp(row.feed, row.latest, regime)}</td>
                         <td>{fmtFeedStamp(row.feed, row.expected, regime)}</td>
+                        <td className="reason">{row.reason}</td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </ScrollTable>
+            </Block>
+          ) : null}
+
+          {seriesRows.length ? (
+            <Block title="Series" wide>
+              {/* One row per source in /api/freshness series[], the §5 word
+                  as the headline and the server's reason beside it. */}
+              <ScrollTable label="Series freshness">
+                <table className="mrr-fresh-table" data-testid="fresh-series-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Series</th>
+                      <th scope="col">State</th>
+                      <th scope="col">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {seriesRows.map((row) => (
+                      <tr key={row.id} data-series={row.id}>
+                        <td className="feed">
+                          {row.label}
+                          {row.label !== row.id ? <span style={{ color: STATUS_COLOR.text3 }}> · {row.id}</span> : null}
+                        </td>
+                        <td>
+                          <StateCell label={seededLabel ?? freshLabel(row)} />
+                        </td>
                         <td className="reason">{row.reason}</td>
                       </tr>
                     ))}

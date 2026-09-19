@@ -17,11 +17,12 @@ import { Card, DataTable, HeatMatrix, SectionHeader, Segmented } from "../../com
 import type { HeatCell } from "../../components/data/HeatMatrix";
 import { useAllocation, useBacktests } from "../../api/queries";
 import type { BacktestRow } from "../../api/types";
-import { fmtDate } from "../../lib/format";
+import { fmtDate, fmtMonYr, fmtProb } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote } from "../shared/screen-ui";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
 import { REGIMES, regimeOrder } from "./regime-history";
 
 export const COHORT_NAMES: Record<string, string> = {
@@ -84,7 +85,8 @@ const BACKTEST_COLUMNS = [
       const small = isSmall(r);
       return (
         <span style={{ color: small ? "var(--amber)" : "var(--text)" }}>
-          {(r.hit_rate * 100).toFixed(0)}%{small ? " ▪" : ""}
+          {fmtProb(r.hit_rate)}
+          {small ? " ▪" : ""}
         </span>
       );
     },
@@ -147,7 +149,12 @@ export default function EvidenceTab() {
       <SectionHeader
         layout="panel"
         title="Backtests & factor attribution"
-        right={computedAt ? `Stored empirical analysis · SPY forward returns · computed ${fmtDate(computedAt)}` : "Stored empirical analysis · SPY forward returns"}
+        right={
+          <MetaWithStamp
+            meta="Stored empirical analysis · SPY forward returns"
+            stamp={<Stamp source={SRC.backtests} asOf={computedAt ? `computed ${fmtDate(computedAt)}` : null} />}
+          />
+        }
         actions={<Segmented mono label="Backtest cohorts" value={kind} onChange={(id) => setKind(id as "regime" | "signal")} options={KIND_OPTIONS} />}
       />
       {groups.length ? (
@@ -193,6 +200,7 @@ export default function EvidenceTab() {
             styles actually paid in each weather. Full portfolio-level attribution lives in{" "}
             <Link to="/app/tools#allocation">Tools → Allocation → Risk</Link>.
           </Caption>
+          <Stamp block source={SRC.allocation} asOf={alloc.data.data_end ? `returns through ${fmtMonYr(`${alloc.data.data_end}-01`)}` : null} />
         </Card>
       ) : (
         <Card variant="tile">

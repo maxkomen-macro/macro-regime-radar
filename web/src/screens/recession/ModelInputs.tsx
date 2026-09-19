@@ -9,7 +9,11 @@
  * strings are `featureCurrent` (the pre-Phase-7 FEATURE_LABELS.current
  * strings), the curve badge is the served `is_inverted`, the second mono
  * line is the served coefficient (X21, the same number the transparency
- * rows print) and the one served `data_as_of` prints on every card (F6).
+ * rows print). Iteration 1 step 6 (E3): the first line is each input's own
+ * source and as-of stamp, the §5 word of its series in /api/freshness
+ * `series[]` (the curve reads DGS10 and DGS2, the breakeven spread T10YIE
+ * and T5YIE, the others UNRATE, BAMLH0A0HYM2 and INDPRO; never USSLIND),
+ * and a stale series marks the card's number itself.
  * The 2s10s caption (X10) sits under the row (Iteration 1 G2), so the five
  * cards carry the same slots and the same height.
  */
@@ -18,9 +22,13 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Card, SectionHeader, SignalCard } from "../../components";
 import type { RecessionMetrics } from "../../api/types";
-import { fmtMonYr, fmtSigned, ordinal } from "../../lib/format";
+import { bpsToPct, fmtBps, fmtSigned, ordinal } from "../../lib/format";
+import { RECESSION_FEATURE_SERIES, RECESSION_INPUT_IDS, type FreshLabel } from "../shared/fresh-state";
+import { StaleNumber } from "../shared/FreshText";
 import Jargon from "../shared/Jargon";
 import { Caption, MISSING, StateNote } from "../shared/screen-ui";
+import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport, type FreshReport } from "../shared/useFreshReport";
 import { featureCurrent, featureLabel } from "./recession-copy";
 import type { RecessionPanelProps } from "./panel-props";
 
@@ -46,7 +54,7 @@ function CurveCaption({ m }: { m: RecessionMetrics }): JSX.Element {
   return (
     <>
       The <Jargon term="2s10s">10Y–2Y spread</Jargon> holds at{" "}
-      {spreadBps != null ? `${spreadBps >= 0 ? "+" : ""}${Math.round(spreadBps)} bps (${(spreadBps / 100).toFixed(2)}%)` : DASH}
+      {spreadBps != null ? `${fmtBps(spreadBps)} (${bpsToPct(spreadBps).toFixed(2)}%)` : DASH}
       {m.is_inverted && m.inversion_duration_months
         ? `; inverted for ${m.inversion_duration_months} months.`
         : m.yield_curve_pct_rank != null
@@ -57,11 +65,19 @@ function CurveCaption({ m }: { m: RecessionMetrics }): JSX.Element {
   );
 }
 
-function InputCard({ m, feature }: { m: RecessionMetrics; feature: string }): JSX.Element {
+/** The input's series, its stamp and its §5 label (E3). An unknown feature
+ * has no series and reads "As of unknown". */
+function inputFresh(feature: string, report: FreshReport): { ids: readonly string[]; label: FreshLabel } {
+  const ids = RECESSION_FEATURE_SERIES[feature] ?? [];
+  return { ids, label: report.group(ids) };
+}
+
+function InputCard({ m, feature, report }: { m: RecessionMetrics; feature: string; report: FreshReport }): JSX.Element {
   const read = INPUT_READ[feature];
   const missing = read == null || read(m) == null;
   const isCurve = feature === "yield_curve";
-  const through = `Inputs through ${fmtMonYr(m.data_as_of)}`;
+  const fresh = inputFresh(feature, report);
+  const through = <Stamp source={fresh.ids.length ? `${SRC.fred} ${fresh.ids.join(", ")}` : SRC.fred} label={fresh.label} />;
   if (missing) {
     // The 02 B.3 unavailable state: no value to print, reference tint, one line.
     return (
@@ -89,7 +105,18 @@ function InputCard({ m, feature }: { m: RecessionMetrics; feature: string }): JS
       heading="h3"
       data-feature={feature}
       name={featureLabel(feature)}
-      value={featureCurrent(feature, m)}
+      value={
+        <StaleNumber label={fresh.label}>
+          {/* A2: the HY input is served in bps; the marker carries it in percent. */}
+          {feature === "hy_spread" && m.current_inputs.hy_oas != null ? (
+            <Metric id="hy-oas" value={bpsToPct(m.current_inputs.hy_oas)}>
+              {featureCurrent(feature, m)}
+            </Metric>
+          ) : (
+            featureCurrent(feature, m)
+          )}
+        </StaleNumber>
+      }
       // Badge and tone are both passed: without them the component derives a
       // false "Clear" from a zero fill (SignalCard.jsx:69-72). The curve's
       // state is the served is_inverted; no served field carries a state for
@@ -105,13 +132,15 @@ function InputCard({ m, feature }: { m: RecessionMetrics; feature: string }): JS
 
 export default function ModelInputs({ m, status }: RecessionPanelProps): JSX.Element {
   const ready = status === "ready" && m != null;
+  const report = useFreshReport();
+  const all = report.group(RECESSION_INPUT_IDS);
   return (
     <Card as="section" variant="panel" id="model" style={{ minWidth: 0 }}>
       <SectionHeader
         layout="panel"
         title="Model inputs"
         description="The five series the model scores each month"
-        right={ready && m ? `${m.model_features.length} inputs · latest ${fmtMonYr(m.data_as_of)}` : undefined}
+        right={ready && m ? <MetaWithStamp meta={`${m.model_features.length} inputs`} stamp={<Stamp source={SRC.fred} label={all} />} /> : undefined}
         actions={
           <Link className="mrr-link" to="/app/methodology#models">
             Series notes →
@@ -122,7 +151,7 @@ export default function ModelInputs({ m, status }: RecessionPanelProps): JSX.Ele
         <>
           <div className="mrr-rec-inputs">
             {m.model_features.map((f) => (
-              <InputCard key={f} m={m} feature={f} />
+              <InputCard key={f} m={m} feature={f} report={report} />
             ))}
           </div>
           {/* The X10 curve caption sits under the row, not inside the curve

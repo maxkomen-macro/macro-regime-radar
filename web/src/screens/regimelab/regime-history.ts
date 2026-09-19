@@ -159,10 +159,12 @@ export function overheatingDelta3m(rows: Regime[] | undefined): OverheatingDelta
 }
 
 /** The 6-month "stays" residual: the served rows exclude the self-transition,
- * so 100 minus their sum completes the distribution (rounded, floored at 0;
- * RegimeLabScreen.tsx:415-418). One helper feeds the tile and the summary row. */
+ * so 100 minus their sum completes the distribution (rounded). One helper
+ * feeds the tile and the summary row. Iteration 1 (A4): no floor. Rows that
+ * sum past 100 leave a negative residual, which the display prints as "—"
+ * through fmtProb (never a clamped 0% that looks like data). */
 export function stay6m(t: TransitionOutlook): number {
-  return Math.max(0, Math.round(100 - t.transitions_6m.reduce((a, tr) => a + tr.probability, 0)));
+  return Math.round(100 - t.transitions_6m.reduce((a, tr) => a + tr.probability, 0));
 }
 
 function yearMonth(iso: string): [number, number] {

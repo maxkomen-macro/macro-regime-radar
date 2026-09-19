@@ -24,6 +24,7 @@ import type { DailyBar, IntradayPoint } from "../../api/types";
 import type { LiveQuote } from "../../live/quotes";
 import { fmtDate, fmtIntradayTs, fmtSignedPct } from "../../lib/format";
 import type { QuoteCardProps, QuoteTag } from "./QuoteCard";
+import type { FreshLabel } from "../shared/fresh-state";
 
 export interface QuoteDef {
   symbol: string;
@@ -89,6 +90,7 @@ export function quoteFor(
       changeTone: live.dc >= 0 ? "pos" : "neg",
       tag: live.delayed ? DELAYED_TAG : undefined,
       series,
+      via: "stream",
     };
   }
   if (live?.p != null) {
@@ -99,6 +101,7 @@ export function quoteFor(
       raw: live.p,
       tag: live.delayed ? DELAYED_TAG : LAST_TAG,
       series,
+      via: "stream",
     };
   }
 
@@ -124,6 +127,7 @@ export function quoteFor(
       changeTone: chg >= 0 ? "pos" : "neg",
       series,
       title: `Stored intraday bar ${fmtIntradayTs(last.ts)} against the prior daily close`,
+      via: "intraday",
     };
   }
   if (bars?.length) {
@@ -135,6 +139,7 @@ export function quoteFor(
       raw: lastBar.close ?? undefined,
       tag: { text: "CLOSE", title: `Stored close, ${fmtDate(lastBar.date)}`, tone: "amber" },
       series,
+      via: "close",
     };
   }
   return {
@@ -143,4 +148,38 @@ export function quoteFor(
     tag: opts.dailyLoading ? undefined : opts.unavailable ? { ...NO_PRICE_TAG, title: opts.unavailable } : NO_PRICE_TAG,
     ...(opts.unavailable && !opts.dailyLoading ? { title: opts.unavailable } : null),
   };
+}
+
+
+/** The stored reads' freshness for the strip tags (Iteration 1 step 6, A3). */
+export interface LadderFresh {
+  /** `market_daily` (the CLOSE rung). */
+  daily: FreshLabel;
+  /** `market_intraday` (the stored-bar rung). */
+  intraday: FreshLabel;
+}
+
+const wordOf = (l: FreshLabel): string => (l.muted ? `${l.word} ${l.muted}` : l.word);
+
+/**
+ * The ladder's stored-read tags in the server's words (A3, FRESHNESS_CONTRACT
+ * §5): the CLOSE tag's title is the `market_daily` word ("Close · Sep 18",
+ * or "Sep 14 · 4 sessions behind" with its reason), amber only when that
+ * state is stale, muted otherwise; a stale stored read marks the price
+ * itself (`data-stale` on the value slot). The stream rungs keep their
+ * relay tags (15M, LAST). Pure; the card keeps every other field.
+ */
+export function withFreshTags<T extends QuoteCardProps>(card: T, fresh: LadderFresh): T {
+  const l = card.via === "close" ? fresh.daily : card.via === "intraday" ? fresh.intraday : null;
+  if (!l) return card;
+  const out: T = { ...card };
+  if (card.via === "close") {
+    out.tag = {
+      text: "CLOSE",
+      title: `Stored close · ${wordOf(l)}${l.reason ? `. ${l.reason}` : ""}`,
+      tone: l.stale ? "amber" : "muted",
+    };
+  }
+  if (l.stale) out.valueAttrs = { ...card.valueAttrs, "data-stale": "true" };
+  return out;
 }

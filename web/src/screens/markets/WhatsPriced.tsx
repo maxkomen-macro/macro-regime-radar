@@ -15,6 +15,8 @@ import type { PricedMetric } from "../../api/types";
 import { fmtDate, fmtSigned } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, StateNote } from "../shared/screen-ui";
+import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
+import { useFreshReport } from "../shared/useFreshReport";
 
 interface Props {
   priced: { data: PricedMetric[] | undefined; isLoading: boolean; isError: boolean };
@@ -56,13 +58,16 @@ function direction(mom: number | null): "up" | "down" | "flat" {
 export default function WhatsPriced({ priced, pricedGroups, groupCaptions, beTermNote }: Props) {
   const { isNarrow } = useBreakpoint();
   const latest = priced.data?.length ? priced.data.map((p) => p.date).reduce((a, b) => (a > b ? a : b)) : null;
+  const report = useFreshReport();
   return (
     <Card as="section" variant="panel" id="whats-priced-full" style={{ minWidth: 0 }}>
       <SectionHeader
         layout="panel"
         title="What's priced"
         description="Market-implied path for policy, inflation and real rates"
-        right={latest ? `FRED via weekly pipeline · latest ${fmtDate(latest)}` : "FRED via weekly pipeline"}
+        right={
+          <MetaWithStamp meta="FRED via weekly pipeline" stamp={<Stamp source="Weekly pipeline" asOf={latest ? `latest ${fmtDate(latest)}` : null} />} />
+        }
         actions={
           <Link className="mrr-link" to="/app/methodology#data">
             Methodology →
@@ -131,6 +136,8 @@ export default function WhatsPriced({ priced, pricedGroups, groupCaptions, beTer
                 </tbody>
               </table>
               <Caption>{groupCaptions[group] ?? null}</Caption>
+              {/* A1: the group's FRED series, their weakest state (§5). */}
+              <Stamp block source={SRC.fred} label={report.group(metrics.map((m) => m.metric))} style={{ marginTop: 4, marginBottom: 6 }} />
             </Card>
           ))}
         </div>
