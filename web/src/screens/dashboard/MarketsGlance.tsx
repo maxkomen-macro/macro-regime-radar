@@ -12,21 +12,28 @@
  * The panel owns its data hooks (one `useMarketDaily` request for the 13
  * stored symbols, `usePriced`, the live-quote store); the query keys are
  * shared with every other consumer, so each endpoint is still requested once.
+ *
+ * Iteration 1 (D2): a tile is the strip's fixed-slot quote tile (QuoteSlots,
+ * shell/QuoteCard.tsx) on the stacked glance grid in app.css: symbol and name,
+ * price, the day change beside its tag, then the sparkline on its own row
+ * across the tile, so it can never run under the price. All five slots render
+ * on every tile of every view: no day change prints the marked dash, a
+ * live-only symbol prints its note in the spark slot.
  */
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { Card, SectionHeader, Segmented, Sparkline, StatTile } from "../../components";
+import { Card, SectionHeader, Segmented, StatTile } from "../../components";
 import { useMarketDaily, usePriced } from "../../api/queries";
 import type { DailyBar, PricedMetric } from "../../api/types";
 import { useQuotes, type LiveQuote } from "../../live/quotes";
 import { fmtDate, fmtSigned, fmtSignedPct } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { quoteFor } from "../shell/quote-ladder";
-import type { QuoteCardProps } from "../shell/QuoteCard";
+import { QuoteSlots, SPARK_H, SPARK_W, type QuoteCardProps } from "../shell/QuoteCard";
 import Jargon from "../shared/Jargon";
-import { Caption, eyebrowStyle, metaStyle, monoNoteStyle } from "../shared/screen-ui";
+import { Caption, metaStyle } from "../shared/screen-ui";
 import { GLANCE_DAILY_SYMBOLS, GLANCE_TABS, glanceTabFromHash, type GlanceSymbol, type GlanceTabId } from "./glance-symbols";
 
 export interface MarketsGlanceProps {
@@ -77,46 +84,26 @@ export function tileRead(
   return { ...q, change, changeTone, series: def.stored ? q.series : undefined };
 }
 
-const PRICE: CSSProperties = {
-  fontFamily: "var(--font-ui)",
-  fontSize: 21,
-  fontWeight: 500,
-  lineHeight: 1.2,
-  letterSpacing: "-.01em",
-  fontVariantNumeric: "tabular-nums",
-  color: "var(--text)",
-  whiteSpace: "nowrap",
-};
-
-const CHANGE: CSSProperties = {
-  fontFamily: "var(--font-ui)",
-  fontSize: 13,
-  fontWeight: 500,
-  fontVariantNumeric: "tabular-nums",
-  whiteSpace: "nowrap",
-};
+/** The spark slot's words for a symbol the relay serves but the DB never stored. */
+const LIVE_ONLY = "live only · no stored history";
 
 function GlanceTile({ def, read }: { def: GlanceSymbol; read: QuoteCardProps }) {
-  const color = read.changeTone === "pos" ? "var(--pos)" : read.changeTone === "neg" ? "var(--neg)" : "var(--text-3)";
   return (
-    <Card variant="tile" className="mrr-glance-tile" data-symbol={def.symbol} title={read.title} style={{ minWidth: 0 }}>
-      <div style={eyebrowStyle}>{def.symbol}</div>
-      <div style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--text-2)", marginTop: 2 }}>{def.name}</div>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 10, marginTop: 10, minWidth: 0 }}>
-        <div style={{ minWidth: 0, display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 8px" }}>
-          <span className="num" style={PRICE}>
-            {read.price}
-          </span>
-          {read.change ? <span style={{ ...CHANGE, color }}>{read.change}</span> : null}
-          {read.tag ? (
-            <span className="mrr-tag" data-tone={read.tag.tone ?? "amber"} title={read.tag.title}>
-              {read.tag.text}
-            </span>
-          ) : null}
-        </div>
-        {def.stored ? <Sparkline values={read.series ?? []} width={80} height={26} color={color} gradient style={{ flexShrink: 0 }} /> : null}
-      </div>
-      {!def.stored ? <div style={{ ...monoNoteStyle, fontSize: 11, marginTop: 6 }}>live only · no stored history</div> : null}
+    <Card variant="tile" className="mrr-glance-tile mrr-qslots" data-symbol={def.symbol} title={read.title} style={{ minWidth: 0 }}>
+      <QuoteSlots
+        symbol={def.symbol}
+        name={def.name}
+        price={read.price}
+        change={read.change}
+        changeTone={read.changeTone}
+        tag={read.tag}
+        series={def.stored ? read.series : undefined}
+        sparkFill
+        sparkGradient
+        sparkWidth={SPARK_W}
+        sparkHeight={SPARK_H}
+        sparkNote={def.stored ? undefined : LIVE_ONLY}
+      />
     </Card>
   );
 }

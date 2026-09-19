@@ -16,6 +16,7 @@ import { useBreakpoint } from "../../lib/useBreakpoint";
 import { useAllocation } from "../../api/queries";
 import type { AllocationData } from "../../api/types";
 import { assessFreshness } from "../shared/freshness";
+import { HeroChartFrame } from "../shared/HeroChart";
 import { StateNote } from "../shared/screen-ui";
 import SummaryCard, { type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
@@ -59,69 +60,107 @@ const STRIP_TARGET = "#allocation-optimization";
 /* ── RegimeReturnBars (B.9.1) ────────────────────────────────────────────── */
 
 const TOP = 26;
-const ZERO_X = 232;
-const MAX_BAR = 96;
+const BOTTOM = 6;
+/** Row pitch cap (mockup); rows may open to ROW_OPEN in a taller hero. */
 const MAX_ROW_H = 26;
+const ROW_OPEN = 30;
+/** Advance estimates (rounded up) for the column widths: Plex Sans 10.5px
+ * names, 10.5px mono value labels (0.6em). */
+const NAME_CH = 5.8;
+const VALUE_CH = 6.3;
+const NAME_GAP = 12;
+const VALUE_GAP = 10;
+const FALLBACK_H = 270;
 const VALUE_FILL = "#dfe6ec";
 const CAPTION_FILL = "#7d8b98";
 const f1 = (v: number): string => v.toFixed(1);
 
 /** Horizontal bars, one per asset in the caller's order (the current
- * regime's served means, descending); a bar from the centre zero rule,
- * `--pos` right for a gain and `--neg` left for a loss, the label left and
- * the served figure right. Sorting and drawing only. */
+ * regime's served means, descending); a bar from the zero rule, `--pos`
+ * right for a gain and `--neg` left for a loss, the label left and the
+ * served figure right. Sorting and drawing only.
+ *
+ * Iteration 1 (the hero chart-slot root cause, T3): drawn through
+ * HeroChartFrame at the hero column's own size, 1:1 (400×270 before the
+ * first measurement). The names and the values keep their columns; the bars
+ * share the width between them on one scale, the zero rule where the widest
+ * loss ends. */
 export function RegimeReturnBars({ rows, regime }: { rows: RankedAsset[]; regime: string }) {
   const n = rows.length;
-  const rowH = n ? Math.min(MAX_ROW_H, (270 - TOP - 6) / n) : MAX_ROW_H;
-  const barH = Math.max(6, Math.min(14, rowH - 8));
-  const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(r.m)), 0);
-  const scale = maxAbs > 0 ? MAX_BAR / maxAbs : 0;
+  const labels = rows.map((r) => spct(r.m));
+  const nameEnd = Math.max(0, ...rows.map((r) => r.n.length)) * NAME_CH + NAME_GAP;
+  const valueW = Math.max(0, ...labels.map((l) => l.length)) * VALUE_CH + VALUE_GAP;
+  const maxPos = rows.reduce((m, r) => Math.max(m, r.m), 0);
+  const maxNeg = rows.reduce((m, r) => Math.max(m, -r.m), 0);
+  const floor = n ? Math.min(FALLBACK_H, TOP + n * MAX_ROW_H + BOTTOM) : FALLBACK_H;
+
+  const draw = (w: number, h: number) => {
+    // The frame keeps h between the floor and TOP + n × ROW_OPEN + BOTTOM.
+    const rowH = n ? (h - TOP - BOTTOM) / n : MAX_ROW_H;
+    const barH = Math.max(6, Math.min(14, rowH - 8));
+    const span = Math.max(0, w - valueW - nameEnd);
+    const total = maxPos + maxNeg;
+    const scale = total > 0 ? span / total : 0;
+    const zeroX = total > 0 ? nameEnd + maxNeg * scale : nameEnd + span / 2;
+    return (
+      <svg
+        data-chart=""
+        viewBox={`0 0 ${w} ${h}`}
+        width={w}
+        height={h}
+        role="img"
+        aria-label={`Annualized return by asset in ${regime} months`}
+        style={{ display: "block", maxWidth: "100%" }}
+      >
+        <text data-role="caption" x="0" y="12" fontSize="9.5" letterSpacing=".1em" fill={CAPTION_FILL} style={{ fontFamily: "var(--font-mono)" }}>
+          RETURN BY ASSET · {regime.toUpperCase()} · ANNUALIZED
+        </text>
+        <line data-role="zero" x1={f1(zeroX)} x2={f1(zeroX)} y1={TOP - 4} y2={f1(TOP + n * rowH + 2)} stroke="rgba(255,255,255,.18)" />
+        {rows.map((r, i) => {
+          const cy = TOP + i * rowH + rowH / 2;
+          const width = Math.abs(r.m) * scale;
+          const gain = r.m >= 0;
+          return (
+            <g key={r.n} data-role="row">
+              <text x="0" y={f1(cy + 3.5)} fontSize="10.5" fill="var(--text-3)" style={{ fontFamily: "var(--font-ui)" }}>
+                {r.n}
+              </text>
+              <rect
+                data-role="bar"
+                x={f1(gain ? zeroX : zeroX - width)}
+                y={f1(cy - barH / 2)}
+                width={f1(width)}
+                height={f1(barH)}
+                rx="2"
+                fill={gain ? "var(--pos)" : "var(--neg)"}
+                fillOpacity=".75"
+              />
+              <text
+                data-role="value"
+                x={f1(w - 2)}
+                y={f1(cy + 3.5)}
+                textAnchor="end"
+                fontSize="10.5"
+                fill={VALUE_FILL}
+                style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" }}
+              >
+                {labels[i]}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    );
+  };
+
   return (
-    <svg
-      viewBox="0 0 400 270"
-      width="100%"
-      role="img"
-      aria-label={`Annualized return by asset in ${regime} months`}
-      style={{ display: "block", maxWidth: 400, marginLeft: "auto" }}
+    <HeroChartFrame
+      fallback={{ w: 400, h: FALLBACK_H }}
+      minHeight={() => floor}
+      maxHeight={() => Math.max(floor, TOP + n * ROW_OPEN + BOTTOM)}
     >
-      <text data-role="caption" x="0" y="12" fontSize="9.5" letterSpacing=".1em" fill={CAPTION_FILL} style={{ fontFamily: "var(--font-mono)" }}>
-        RETURN BY ASSET · {regime.toUpperCase()} · ANNUALIZED
-      </text>
-      <line data-role="zero" x1={ZERO_X} x2={ZERO_X} y1={TOP - 4} y2={f1(TOP + n * rowH + 2)} stroke="rgba(255,255,255,.18)" />
-      {rows.map((r, i) => {
-        const cy = TOP + i * rowH + rowH / 2;
-        const width = Math.abs(r.m) * scale;
-        const gain = r.m >= 0;
-        return (
-          <g key={r.n} data-role="row">
-            <text x="0" y={f1(cy + 3.5)} fontSize="10.5" fill="var(--text-3)" style={{ fontFamily: "var(--font-ui)" }}>
-              {r.n}
-            </text>
-            <rect
-              data-role="bar"
-              x={f1(gain ? ZERO_X : ZERO_X - width)}
-              y={f1(cy - barH / 2)}
-              width={f1(width)}
-              height={f1(barH)}
-              rx="2"
-              fill={gain ? "var(--pos)" : "var(--neg)"}
-              fillOpacity=".75"
-            />
-            <text
-              data-role="value"
-              x="398"
-              y={f1(cy + 3.5)}
-              textAnchor="end"
-              fontSize="10.5"
-              fill={VALUE_FILL}
-              style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" }}
-            >
-              {spct(r.m)}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
+      {({ w, h }) => draw(w, h)}
+    </HeroChartFrame>
   );
 }
 

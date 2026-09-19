@@ -22,6 +22,16 @@
  * accessible name of "label, hint" (or the label alone) while its visible text
  * is unchanged; the unselected hint reads at --text-3 so the 10.5px words clear
  * AA (--text-4 stays for dots, dashes and disabled options only).
+ *
+ * Iteration 1 (R2): selecting a view never moves the page. A click or a key
+ * focuses the new tab without scrolling, and after the new panel commits the
+ * strip is put back where it was on screen: the scroll position is unchanged
+ * when nothing above the strip changed (Regime Lab), and follows the strip
+ * when something did (Tools swaps its hero row). A panel shorter than the
+ * viewport would let the browser clamp the scroll position, so the panel keeps
+ * a minimum height just large enough to hold it, released on the next switch.
+ * A switch the screen makes itself (a hash, the palette) is left to its hash
+ * scroll.
  */
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
@@ -53,6 +63,9 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
   const wrap = bp !== "wide"; // <1024: wrap rather than clip
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  /** The strip's viewport top when the reader picked a view (R2). */
+  const pending = useRef<number | null>(null);
   const [overflow, setOverflow] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
   const [hover, setHover] = useState<string | null>(null);
   const idx = Math.max(0, tabs.findIndex((t) => t.id === active));
@@ -92,6 +105,36 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
     measure();
   }, [idx]);
 
+  /** The reader picks a view: remember where the strip sits on screen, switch,
+   * and focus the new tab without scrolling to it (R2). */
+  const select = (next: number) => {
+    const list = listRef.current;
+    // The selected tab re-selected still reports (a screen may rewrite its
+    // hash); only a real switch arms the restore, which runs on `active`.
+    pending.current = next !== idx && list ? list.getBoundingClientRect().top : null;
+    onChange(tabs[next].id);
+    refs.current[next]?.focus({ preventScroll: true });
+  };
+
+  // After the new panel commits (before paint): release the last hold, then
+  // put the strip back where it was on screen, holding the panel open when it
+  // is too short for that scroll position.
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const list = listRef.current;
+    const was = pending.current;
+    pending.current = null;
+    if (!panel || !list) return;
+    panel.style.minHeight = "";
+    if (was == null) return;
+    const doc = document.documentElement;
+    const target = Math.round(window.scrollY + list.getBoundingClientRect().top - was);
+    if (target <= 0) return;
+    const short = target + window.innerHeight - doc.scrollHeight;
+    if (short > 0) panel.style.minHeight = `${Math.ceil(panel.getBoundingClientRect().height + short)}px`;
+    if (Math.abs(window.scrollY - target) > 0.5) window.scrollTo({ top: target, behavior: "instant" as ScrollBehavior });
+  }, [active]);
+
   const onKey = (e: KeyboardEvent) => {
     let next = -1;
     if (e.key === "ArrowRight") next = (idx + 1) % tabs.length;
@@ -100,8 +143,7 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
     else if (e.key === "End") next = tabs.length - 1;
     if (next < 0) return;
     e.preventDefault();
-    onChange(tabs[next].id);
-    refs.current[next]?.focus();
+    select(next);
   };
 
   const nudge = (dir: 1 | -1) => {
@@ -149,7 +191,7 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
                 aria-controls={`${uid}-panel-${t.id}`}
                 aria-label={t.hint ? `${t.label}, ${t.hint}` : t.label}
                 tabIndex={on ? 0 : -1}
-                onClick={() => onChange(t.id)}
+                onClick={() => select(i)}
                 onMouseEnter={() => setHover(t.id)}
                 onMouseLeave={() => setHover((h) => (h === t.id ? null : h))}
                 className="mrr-subtab"
@@ -250,6 +292,7 @@ export default function SubTabs({ tabs, active, onChange, label, children, style
         ) : null}
       </div>
       <div
+        ref={panelRef}
         role="tabpanel"
         id={`${uid}-panel-${active}`}
         aria-labelledby={`${uid}-tab-${active}`}

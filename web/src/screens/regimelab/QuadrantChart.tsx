@@ -7,14 +7,21 @@
  * The dot is the input, the tint is the output: the trail plots the served
  * `growth_trend` / `inflation_trend` of each month, while the tinted quadrant
  * follows the served current label, never the sign of the trends (G18).
- * Geometry is the mockup's (line 178): viewBox 400×330, plot 34..366 × 20..298,
- * origin at (200, 159). Scale is symmetric over the points so the origin stays
- * centred and a quiet month does not zoom the chart.
+ * Geometry is the mockup's (line 178) at its 400×330 fallback: plot 34..366 ×
+ * 20..298, origin at (200, 159). Scale is symmetric over the points so the
+ * origin stays centred and a quiet month does not zoom the chart.
+ *
+ * Iteration 1 (R1): drawn through HeroChartFrame at the hero column's own
+ * size, 1:1, so it fills the column at every width (the plot keeps the
+ * mockup's margins and grows between them) and its words keep their set size;
+ * the height follows the width (0.825 of it, 250 to 400 px) and may grow to
+ * 1.3× the width, 520 px at most, when the hero row is taller.
  */
 
 import type { CSSProperties } from "react";
 import type { Regime } from "../../api/types";
 import { fmtMonYr } from "../../lib/format";
+import { HeroChartFrame, clampPx } from "../shared/HeroChart";
 import { monoNoteStyle } from "../shared/screen-ui";
 import { REGIME_HUE, regimeHue, type RegimeName, type TrailPoint } from "./regime-history";
 
@@ -26,36 +33,54 @@ export interface QuadrantChartProps {
   current?: Regime | null;
 }
 
-const ORIGIN_X = 200;
-const ORIGIN_Y = 159;
-const HALF_W = 166;
-const HALF_H = 139;
-
-interface Quadrant {
-  label: RegimeName;
-  x: number;
-  y: number;
-  tx: number;
-  ty: number;
-  anchor: "start" | "end";
-}
+/** Plot margins: the rotated axis word on the left, the axis words below. */
+const PAD_L = 34;
+const PAD_R = 34;
+const PAD_T = 20;
+const PAD_B = 32;
+/** The mockup frame: the unit tests pin this geometry. */
+const FALLBACK = { w: 400, h: 330 };
+const minHeight = (w: number) => clampPx(w * 0.825, 250, 400);
+const maxHeight = (w: number) => clampPx(w * 1.3, 250, 520);
+/** The "Trend inputs not stored" line under the plane. */
+const NOTE_H = 24;
 
 /** Top-right Overheating, top-left Stagflation, bottom-left Recession Risk,
  * bottom-right Goldilocks (names at the outer corners). */
-const QUADRANTS: Quadrant[] = [
-  { label: "Overheating", x: ORIGIN_X, y: 20, tx: 356, ty: 36, anchor: "end" },
-  { label: "Stagflation", x: 34, y: 20, tx: 44, ty: 36, anchor: "start" },
-  { label: "Recession Risk", x: 34, y: ORIGIN_Y, tx: 44, ty: 289, anchor: "start" },
-  { label: "Goldilocks", x: ORIGIN_X, y: ORIGIN_Y, tx: 356, ty: 289, anchor: "end" },
+const QUADRANTS: { label: RegimeName; right: boolean; top: boolean }[] = [
+  { label: "Overheating", right: true, top: true },
+  { label: "Stagflation", right: false, top: true },
+  { label: "Recession Risk", right: false, top: false },
+  { label: "Goldilocks", right: true, top: false },
 ];
 
-const NAME: CSSProperties = { fontFamily: "var(--font-ui)", fontSize: 11.5, fontWeight: 500 };
-const AXIS: CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 9.5, letterSpacing: ".08em" };
+const NAME: CSSProperties = { fontFamily: "var(--font-ui)", fontSize: 12, fontWeight: 500 };
+const AXIS: CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: ".08em" };
+/** #7d8b98 clears 4.5:1 on the hero card; the oldest-month stamp shares it. */
 const AXIS_FILL = "#7d8b98";
-const STAMP: CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 10.5 };
-const OLDEST: CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 9.5 };
+const STAMP: CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 11 };
+const OLDEST: CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 10 };
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
+
+interface Plane {
+  l: number;
+  r: number;
+  t: number;
+  b: number;
+  ox: number;
+  oy: number;
+  hw: number;
+  hh: number;
+}
+
+function plane(w: number, h: number): Plane {
+  const l = PAD_L;
+  const r = w - PAD_R;
+  const t = PAD_T;
+  const b = h - PAD_B;
+  return { l, r, t, b, ox: (l + r) / 2, oy: (t + b) / 2, hw: Math.max(0, (r - l) / 2), hh: Math.max(0, (b - t) / 2) };
+}
 
 export function QuadrantChart({ points, current }: QuadrantChartProps) {
   const usable = current != null && current.growth_trend != null && current.inflation_trend != null;
@@ -73,10 +98,7 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
   const label = current?.label ?? last?.label ?? null;
   const hue = regimeHue(label);
   const n = plotted.length;
-
   const s = Math.max(1, ...plotted.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y))));
-  const px = (p: TrailPoint) => round1(ORIGIN_X + (HALF_W * p.x) / s);
-  const py = (p: TrailPoint) => round1(ORIGIN_Y - (HALF_H * p.y) / s);
   const faded = plotted.slice(0, -1);
 
   const ariaLabel =
@@ -88,14 +110,23 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
           ? `Growth and inflation quadrant: trend inputs not stored for ${fmtMonYr(current.date)}${label ? `, called ${label}` : ""}`
           : "Growth and inflation quadrant: no stored trend inputs";
 
-  return (
-    <div className="mrr-quadrant" style={{ minWidth: 0 }}>
+  const draw = (w: number, h: number) => {
+    const g = plane(w, h);
+    const px = (p: TrailPoint) => round1(g.ox + (g.hw * p.x) / s);
+    const py = (p: TrailPoint) => round1(g.oy - (g.hh * p.y) / s);
+    // The current month's stamp sits below-right of the dot, flipped to the
+    // left or above it where it would leave the plot.
+    const stampLeft = last ? px(last) > g.r - 70 : false;
+    const stampUp = last ? py(last) + 22 > g.b - 2 : false;
+    return (
       <svg
-        viewBox="0 0 400 330"
-        width="100%"
+        data-chart=""
+        viewBox={`0 0 ${w} ${h}`}
+        width={w}
+        height={h}
         role="img"
         aria-label={ariaLabel}
-        style={{ display: "block", maxWidth: 400, marginLeft: "auto" }}
+        style={{ display: "block", maxWidth: "100%" }}
       >
         {QUADRANTS.map((q) => {
           const on = q.label === label;
@@ -104,29 +135,35 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
               <rect
                 data-quadrant={q.label}
                 data-current={on ? "true" : "false"}
-                x={q.x}
-                y={q.y}
-                width={HALF_W}
-                height={HALF_H}
+                x={q.right ? g.ox : g.l}
+                y={q.top ? g.t : g.oy}
+                width={g.hw}
+                height={g.hh}
                 style={{ fill: REGIME_HUE[q.label], stroke: REGIME_HUE[q.label] }}
                 fillOpacity={on ? 0.16 : 0.06}
                 strokeOpacity={0.18}
               />
-              <text x={q.tx} y={q.ty} textAnchor={q.anchor} style={{ ...NAME, fill: REGIME_HUE[q.label] }} fillOpacity={on ? 1 : 0.75}>
+              <text
+                x={q.right ? g.r - 10 : g.l + 10}
+                y={q.top ? g.t + 16 : g.b - 9}
+                textAnchor={q.right ? "end" : "start"}
+                style={{ ...NAME, fill: REGIME_HUE[q.label] }}
+                fillOpacity={on ? 1 : 0.75}
+              >
                 {q.label}
               </text>
             </g>
           );
         })}
-        <line x1={34} x2={366} y1={ORIGIN_Y} y2={ORIGIN_Y} stroke="rgba(255,255,255,.22)" />
-        <line x1={ORIGIN_X} x2={ORIGIN_X} y1={20} y2={298} stroke="rgba(255,255,255,.22)" />
-        <text x={366} y={314} textAnchor="end" fill={AXIS_FILL} style={AXIS}>
+        <line x1={g.l} x2={g.r} y1={g.oy} y2={g.oy} stroke="rgba(255,255,255,.22)" />
+        <line x1={g.ox} x2={g.ox} y1={g.t} y2={g.b} stroke="rgba(255,255,255,.22)" />
+        <text x={g.r} y={h - 16} textAnchor="end" fill={AXIS_FILL} style={AXIS}>
           GROWTH ACCELERATING →
         </text>
-        <text x={34} y={314} fill={AXIS_FILL} style={AXIS}>
+        <text x={g.l} y={h - 16} fill={AXIS_FILL} style={AXIS}>
           ← SLOWING
         </text>
-        <text transform={`translate(24,${ORIGIN_Y}) rotate(-90)`} textAnchor="middle" fill={AXIS_FILL} style={AXIS}>
+        <text transform={`translate(${g.l - 10},${round1(g.oy)}) rotate(-90)`} textAnchor="middle" fill={AXIS_FILL} style={AXIS}>
           INFLATION RISING →
         </text>
 
@@ -166,23 +203,43 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
                 {fmtMonYr(last.date)} · {last.label}
               </title>
             </circle>
-            <text x={px(last) + 12} y={py(last) + 22} fill="#dff7ee" style={STAMP}>
+            <text
+              x={stampLeft ? px(last) - 12 : px(last) + 12}
+              y={stampUp ? py(last) - 16 : py(last) + 22}
+              textAnchor={stampLeft ? "end" : "start"}
+              fill="#dff7ee"
+              style={STAMP}
+            >
               {fmtMonYr(last.date)}
             </text>
           </g>
         ) : null}
         {n >= 2 ? (
-          <text x={px(plotted[0]) - 8} y={py(plotted[0]) + 16} fill="#6f7d8a" style={OLDEST}>
+          <text x={px(plotted[0]) - 8} y={py(plotted[0]) + 16} fill={AXIS_FILL} style={OLDEST}>
             {fmtMonYr(plotted[0].date)}
           </text>
         ) : null}
       </svg>
-      {missing && current ? (
-        <div className="mrr-quadrant-note" style={{ ...monoNoteStyle, marginTop: 6, textAlign: "right" }}>
-          Trend inputs not stored for {fmtMonYr(current.date)}.
+    );
+  };
+
+  return (
+    <HeroChartFrame
+      fallback={FALLBACK}
+      minHeight={(w) => minHeight(w) + (missing ? NOTE_H : 0)}
+      maxHeight={(w) => maxHeight(w) + (missing ? NOTE_H : 0)}
+    >
+      {({ w, h }) => (
+        <div className="mrr-quadrant" style={{ width: w, maxWidth: "100%", minWidth: 0 }}>
+          {draw(w, missing ? h - NOTE_H : h)}
+          {missing && current ? (
+            <div className="mrr-quadrant-note" style={{ ...monoNoteStyle, marginTop: 6, textAlign: "right" }}>
+              Trend inputs not stored for {fmtMonYr(current.date)}.
+            </div>
+          ) : null}
         </div>
-      ) : null}
-    </div>
+      )}
+    </HeroChartFrame>
   );
 }
 

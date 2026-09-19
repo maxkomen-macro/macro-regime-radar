@@ -70,7 +70,7 @@ export default function ToolsScreen() {
   // Keyed on the active tool as well: a hash that swaps the sub-tab mounts its
   // section one commit after the hash changes, so the landing must re-run
   // then (Phase 10; SubTabs no longer scrolls the page on selection).
-  useHashScroll(`${active}:${ready}`);
+  const releaseHashScroll = useHashScroll(`${active}:${ready}`);
 
   const stamp = stampOf(deal.defaults.data);
 
@@ -83,6 +83,8 @@ export default function ToolsScreen() {
         active={active}
         label="Tools"
         onChange={(id) => {
+          // R2: as on Regime Lab, a picked view never scrolls to the arrival hash.
+          releaseHashScroll();
           setActive(id);
           history.replaceState(null, "", `#${id}`);
         }}

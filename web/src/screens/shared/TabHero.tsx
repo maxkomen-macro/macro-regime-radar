@@ -14,6 +14,11 @@
  * (risk G3). Responsive rules live in app.css as token overrides on .mrr-hero
  * (--hero-cols below 1200, --fs-display below 860, --hero-pad below 768) so the
  * inline styles stay authoritative and still stack.
+ *
+ * Iteration 1 (R1 / M1 / T1): the right column is a chart slot
+ * (`data-chart-slot`) that centres its child on both axes; the signature
+ * charts draw through HeroChartFrame (./HeroChart.tsx), which fills the slot
+ * at every width instead of a fixed 400 px drawing parked at its right edge.
  */
 
 import { Fragment, useId, type CSSProperties, type ReactNode } from "react";
@@ -351,15 +356,28 @@ export function TabHero({
       </div>
 
       {hasViz ? (
+        // The chart slot (Iteration 1, R1 / M1 / T1): a flex column that
+        // centres its child on both axes and stretches with the hero's row.
+        // A chart drawn through HeroChartFrame fills it; anything else is
+        // centred instead of parked at the right edge.
         <div
           className="mrr-hero-viz"
-          style={{ position: "relative", alignSelf: "stretch", display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0 }}
+          data-chart-slot=""
+          style={{
+            position: "relative",
+            alignSelf: "stretch",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minWidth: 0,
+          }}
         >
           {chart ?? (
             <div
               aria-hidden="true"
               className="mrr-hero-placeholder"
-              style={{ flex: "1 1 auto", minHeight: 200, borderRadius: "var(--r-tile)", background: HERO_PLACEHOLDER_GRADIENT }}
+              style={{ flex: "1 1 auto", alignSelf: "stretch", minHeight: 200, borderRadius: "var(--r-tile)", background: HERO_PLACEHOLDER_GRADIENT }}
             />
           )}
         </div>

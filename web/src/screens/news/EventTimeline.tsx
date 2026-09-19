@@ -12,24 +12,36 @@
  * Three states share the axis: an empty 18 days with rows later in the
  * window names the next event; the stored-schedule fallback prints where the
  * snapshot ends; nothing on file says so. No animation.
+ *
+ * Iteration 1 (the hero chart-slot root cause, N1's geometry): drawn through
+ * HeroChartFrame at the hero column's own size, 1:1, instead of a 400 px
+ * drawing parked at the column's right edge. The day columns spread across
+ * the width (8 px in from each edge); the stems scale with the plot height
+ * (the 290 px mockup frame is the fallback and the floor, 420 px the cap);
+ * every word keeps its set size.
  */
 
 import { fmtDate } from "../../lib/format";
+import { HeroChartFrame, clampPx } from "../shared/HeroChart";
 import { dayDeltaEt, dayKeyEt, splitStamp } from "../shared/calendar-impact";
 import type { CalendarEvent } from "../../api/types";
 import type { EventTimelineProps } from "./news-types";
 
 export const DAYS = 18;
+/** Mockup frame (the fallback): 18 ticks from x 8 to 392 (384 / 17 per
+ * column, news.html rounds to one decimal), plot from y 30 to the baseline at
+ * 246, day labels at 264. Wider, the ticks keep 8 px from each edge; taller,
+ * the baseline and labels keep their distance from the bottom. */
+const W0 = 400;
+const H0 = 290;
 const X0 = 8;
-const X1 = 392;
-/** 384 / 17: the last tick lands on x 392 (news.html rounds to one decimal). */
-const STEP = (X1 - X0) / (DAYS - 1);
 const TOP = 30;
-const BASE = 246;
-const LABEL_Y = 264;
-/** Labels anchor start left of centre and end right of it (B.1). */
-const MID = 200;
+const BASE0 = 246;
+const LABEL_UP = H0 - 264;
+const BASE_UP = H0 - BASE0;
 const STACK = 14;
+const minHeight = () => H0;
+const maxHeight = (w: number) => clampPx(w * 0.85, H0, 420);
 
 const WEEKEND = "rgba(255,255,255,.025)";
 const AXIS = "rgba(255,255,255,.2)";
@@ -50,7 +62,6 @@ const DOT_UNRATED = { y: 190, r: 4, color: "var(--text-4)" };
 const RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
 
 const f1 = (n: number) => n.toFixed(1);
-const x = (day: number) => X0 + day * STEP;
 
 interface Placed {
   event: CalendarEvent;
@@ -115,7 +126,25 @@ export function placeEvents(events: CalendarEvent[], now: number): Placed[] {
   return out;
 }
 
-export default function EventTimeline({ events, now, fallbackEnd }: EventTimelineProps): JSX.Element {
+export default function EventTimeline(props: EventTimelineProps): JSX.Element {
+  return (
+    <HeroChartFrame fallback={{ w: W0, h: H0 }} minHeight={minHeight} maxHeight={maxHeight}>
+      {({ w, h }) => <Timeline {...props} w={w} h={h} />}
+    </HeroChartFrame>
+  );
+}
+
+function Timeline({ events, now, fallbackEnd, w, h }: EventTimelineProps & { w: number; h: number }): JSX.Element {
+  const X1 = w - X0;
+  const STEP = (X1 - X0) / (DAYS - 1);
+  /** Labels anchor start left of centre and end right of it (B.1). */
+  const MID = w / 2;
+  const BASE = h - BASE_UP;
+  const LABEL_Y = h - LABEL_UP;
+  const x = (day: number) => X0 + day * STEP;
+  /** placeEvents works on the mockup's plot (30 to 246); the drawing maps it
+   * onto this plot, so a taller hero lengthens the stems in proportion. */
+  const sy = (y: number) => TOP + ((y - TOP) * (BASE - TOP)) / (BASE0 - TOP);
   const placed = placeEvents(events, now);
   const high = placed.filter((p) => (p.event.importance ?? "").toLowerCase() === "high").length;
   const days = Array.from({ length: DAYS }, (_, i) => ({ i, key: dayKeyAfter(now, i) }));
@@ -135,11 +164,13 @@ export default function EventTimeline({ events, now, fallbackEnd }: EventTimelin
   return (
     <svg
       className="mrr-news-timeline"
-      viewBox="0 0 400 290"
-      width="100%"
+      data-chart=""
+      viewBox={`0 0 ${w} ${h}`}
+      width={w}
+      height={h}
       role="img"
       aria-label={`Macro events over the next ${DAYS} days: ${placed.length} events, ${high} high impact`}
-      style={{ display: "block", maxWidth: 400, marginLeft: "auto", overflow: "visible" }}
+      style={{ display: "block", maxWidth: "100%", overflow: "visible" }}
     >
       <text x="0" y="12" fontSize="9.5" letterSpacing=".1em" fill={LABEL_N} style={{ fontFamily: "var(--font-mono)" }}>
         NEXT {DAYS} DAYS · STEM HEIGHT = IMPACT
@@ -180,11 +211,11 @@ export default function EventTimeline({ events, now, fallbackEnd }: EventTimelin
         const right = cx > MID;
         return (
           <g key={p.event.id} data-event={p.event.id} data-importance={p.event.importance ?? "none"}>
-            <line x1={f1(cx)} x2={f1(cx)} y1={f1(p.y)} y2={BASE} stroke={p.color} strokeOpacity=".55" />
-            <circle cx={f1(cx)} cy={f1(p.y)} r={p.r} fill={p.color} />
+            <line x1={f1(cx)} x2={f1(cx)} y1={f1(sy(p.y))} y2={BASE} stroke={p.color} strokeOpacity=".55" />
+            <circle cx={f1(cx)} cy={f1(sy(p.y))} r={p.r} fill={p.color} />
             <text
               x={f1(right ? cx - 9 : cx + 9)}
-              y={f1(p.y + 4)}
+              y={f1(sy(p.y) + 4)}
               textAnchor={right ? "end" : "start"}
               fontSize="11.5"
               fontWeight="500"
@@ -198,7 +229,7 @@ export default function EventTimeline({ events, now, fallbackEnd }: EventTimelin
       })}
 
       {state ? (
-        <text data-state="true" x={MID} y="140" textAnchor="middle" fontSize="12.5" fill={STATE_TEXT} style={{ fontFamily: "var(--font-ui)" }}>
+        <text data-state="true" x={MID} y={f1(sy(140))} textAnchor="middle" fontSize="12.5" fill={STATE_TEXT} style={{ fontFamily: "var(--font-ui)" }}>
           {state}
         </text>
       ) : null}

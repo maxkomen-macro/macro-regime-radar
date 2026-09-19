@@ -11,7 +11,7 @@
  * export keeps its name and shape.
  */
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import type React from "react";
 
@@ -113,14 +113,55 @@ export function StateNote({
 }
 
 /** Scroll to the URL hash once the screen's data is on the page (palette
- * section jumps land mid-screen) — the Dashboard's pattern, shared. */
-export function useHashScroll(ready?: unknown) {
+ * section jumps land mid-screen) — the Dashboard's pattern, shared.
+ *
+ * Returns `release`: a screen whose local view switch (SubTabs) re-keys
+ * `ready` calls it when the reader picks a view, so the hash the reader
+ * arrived with is not scrolled to again on that switch (Iteration 1, R2: the
+ * router keeps the arrival hash while SubTabs rewrites the address bar with
+ * replaceState). The next navigation (a link, the palette, Back) scrolls as
+ * before. The landing holds while late content grows the page (a few
+ * seconds, until the reader scrolls, clicks or types). */
+export function useHashScroll(ready?: unknown): () => void {
   const location = useLocation();
+  // The router's location object identifies one navigation: a fragment
+  // navigation (a same-page goto, Back) can reuse the "default" key of the
+  // first load, but always brings a new object.
+  const released = useRef<object | null>(null);
+  const current = useRef<object>(location);
+  current.current = location;
   useEffect(() => {
-    if (!location.hash) return;
-    const el = document.getElementById(location.hash.slice(1));
-    if (el) el.scrollIntoView({ block: "start" });
+    if (!location.hash || released.current === current.current) return;
+    const id = location.hash.slice(1);
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+    // Content that lands after the jump (a panel's data above the target, or
+    // a page still too short to scroll that far, which clamps the jump) would
+    // leave the target off its mark: keep it landed while the page grows, for
+    // a few seconds and only until the reader scrolls, clicks or types
+    // (Iteration 1, R2: a hash on a sub-tab's lower section).
+    if (typeof ResizeObserver === "undefined") return;
+    const INPUT = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    let done = false;
+    const ro = new ResizeObserver(() => {
+      if (!done) document.getElementById(id)?.scrollIntoView({ block: "start" });
+    });
+    const stop = () => {
+      if (done) return;
+      done = true;
+      ro.disconnect();
+      window.clearTimeout(timer);
+      INPUT.forEach((type) => window.removeEventListener(type, stop));
+    };
+    const timer = window.setTimeout(stop, 4000);
+    INPUT.forEach((type) => window.addEventListener(type, stop, { passive: true }));
+    ro.observe(document.body);
+    return stop;
   }, [location.hash, ready]);
+  return useCallback(() => {
+    released.current = current.current;
+  }, []);
 }
 
 /** Debounce a fast-changing value (slider drags) before it reaches a query key. */

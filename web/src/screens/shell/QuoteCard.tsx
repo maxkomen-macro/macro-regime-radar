@@ -13,9 +13,16 @@
  * prints "—" in the change slot and keeps its tag (LAST, 15M) in the tag
  * slot, and a missing sparkline leaves an aria-hidden placeholder of the
  * same box. `QuoteSlots` is exported for the Dashboard's glance tiles.
+ *
+ * Iteration 1 (D2): the glance tiles use the same five slots with three
+ * options: `name` rides in the symbol slot under the symbol, `sparkFill`
+ * draws the sparkline across its slot's measured width (the tile gives the
+ * spark its own row), and `sparkNote` replaces the placeholder with a note
+ * (a live-only symbol has no stored history to draw). Every sparkline carries
+ * `data-sparkline`, so the G3 chart sweep never mistakes one for a chart.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Sparkline } from "../../components";
 
 export interface QuoteTag {
@@ -66,6 +73,40 @@ export function quoteToneColor(tone: QuoteCardProps["changeTone"]): string {
 export interface QuoteSlotsProps extends Omit<QuoteCardProps, "raw" | "title"> {
   sparkWidth?: number;
   sparkHeight?: number;
+  /** A second line in the symbol slot (the glance tile's instrument name). */
+  name?: ReactNode;
+  /** Draw the sparkline across the spark slot's measured width; `sparkWidth`
+   * is then the width before the first measurement (and jsdom's). */
+  sparkFill?: boolean;
+  /** The mockup's fading area under the line (glance tiles). */
+  sparkGradient?: boolean;
+  /** Printed in the spark slot, in place of the placeholder, when there is
+   * no series to draw. */
+  sparkNote?: ReactNode;
+}
+
+/** A sparkline as wide as its slot, re-measured on resize (glance tiles). */
+function FillSparkline({ values, fallback, height, color, gradient }: { values: number[]; fallback: number; height: number; color: string; gradient?: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => {
+      const w = Math.floor(el.getBoundingClientRect().width);
+      if (w > 0) setWidth((prev) => (prev === w ? prev : w));
+    };
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <span ref={ref} className="mrr-spark-fill" style={{ display: "block", width: "100%", height }}>
+      <Sparkline data-sparkline="" values={values} width={width || fallback} height={height} color={color} gradient={gradient} />
+    </span>
+  );
 }
 
 /**
@@ -73,7 +114,20 @@ export interface QuoteSlotsProps extends Omit<QuoteCardProps, "raw" | "title"> {
  * that places them). Every slot renders whatever the read lacks, so tiles in
  * a row never differ in shape.
  */
-export function QuoteSlots({ symbol, price, change, changeTone, tag, series, sparkWidth = SPARK_W, sparkHeight = SPARK_H }: QuoteSlotsProps) {
+export function QuoteSlots({
+  symbol,
+  price,
+  change,
+  changeTone,
+  tag,
+  series,
+  sparkWidth = SPARK_W,
+  sparkHeight = SPARK_H,
+  name,
+  sparkFill = false,
+  sparkGradient = false,
+  sparkNote,
+}: QuoteSlotsProps) {
   const color = quoteToneColor(changeTone);
   // An empty string is a missing change too: the slot never reads blank.
   const hasChange = typeof change === "string" && change.trim() !== "";
@@ -86,6 +140,7 @@ export function QuoteSlots({ symbol, price, change, changeTone, tag, series, spa
           in the baseline set. */}
       <b data-slot="symbol">
         <span>{symbol}</span>
+        {name != null ? <span className="n">{name}</span> : null}
       </b>
       <span className="v" data-slot="value">
         {price}
@@ -106,12 +161,19 @@ export function QuoteSlots({ symbol, price, change, changeTone, tag, series, spa
           </span>
         ) : null}
       </span>
-      {/* Decorative: the numbers sit in the slots beside it. */}
-      <span className="k" data-slot="spark" aria-hidden="true">
+      {/* Decorative: the numbers sit in the slots beside it. A note is words,
+          so a slot carrying one is read out. */}
+      <span className="k" data-slot="spark" aria-hidden={hasSpark || sparkNote == null ? "true" : undefined}>
         {hasSpark ? (
-          <Sparkline values={series ?? []} width={sparkWidth} height={sparkHeight} color={color} />
+          sparkFill ? (
+            <FillSparkline values={series ?? []} fallback={sparkWidth} height={sparkHeight} color={color} gradient={sparkGradient} />
+          ) : (
+            <Sparkline data-sparkline="" values={series ?? []} width={sparkWidth} height={sparkHeight} color={color} gradient={sparkGradient} />
+          )
+        ) : sparkNote != null ? (
+          <span className="mrr-spark-note">{sparkNote}</span>
         ) : (
-          <span className="mrr-spark-ph" aria-hidden="true" style={{ width: sparkWidth, height: sparkHeight }} />
+          <span className="mrr-spark-ph" aria-hidden="true" style={{ width: sparkFill ? "100%" : sparkWidth, height: sparkHeight }} />
         )}
       </span>
     </>

@@ -9,7 +9,8 @@
  * has nothing to report: an empty strip never renders.
  *
  * Phase 2 mounts it only on /kit; the screens adopt it with TabHero in Phases
- * 3 to 9. Below 1200 the .mrr-hero-row grid (app.css) stacks it under the hero.
+ * 3 to 9. Below 1620 the .mrr-hero-row grid (app.css) stacks it under the hero
+ * (Iteration 1; 1200 before), where it sizes to its rows.
  */
 
 import { useId, type CSSProperties, type ReactNode } from "react";
@@ -243,10 +244,13 @@ export function SummaryCard({ title, as = "h3", rows, status, children, id, styl
       </dl>
       {children}
       {status ? (
-        <>
-          <div style={{ height: 12 }} aria-hidden="true" />
+        // The strip anchors to the card's bottom (the auto top margin) with at
+        // least 12px above it; the rows keep their natural height at the top.
+        // A card stretched by its row shows the difference between the rows
+        // and the strip, never as padding inside the rows (Iteration 1, G2).
+        <div className="mrr-summary-foot" style={{ marginTop: "auto", paddingTop: 12 }}>
           <StatusStrip {...status} />
-        </>
+        </div>
       ) : null}
     </section>
   );

@@ -1101,6 +1101,84 @@ main .mrr-scroll {
 .mrr-tag[data-tone="muted"] {
   color: var(--text-3, var(--text-muted));
 }
+/* Glance tile (Iteration 1, D2): the same five slots on a stacked grid, one
+   layout for every tile of every glance view. The symbol slot carries the
+   symbol eyebrow and the instrument name; the price has its own row; the day
+   change sits beside its tag (a missing change is the marked dash above);
+   the spark slot is the last row, across the tile, so the line can never run
+   under the price at any width. A live-only symbol prints its note there. */
+.mrr-glance-tile.mrr-qslots {
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-areas:
+    "symbol symbol"
+    "value value"
+    "change tag"
+    "spark spark";
+  column-gap: 8px;
+  row-gap: 0;
+  align-items: baseline;
+  align-content: start;
+}
+.mrr-glance-tile > [data-slot="symbol"] {
+  grid-area: symbol;
+  font-weight: 400;
+  white-space: normal;
+  min-width: 0;
+}
+.mrr-glance-tile > [data-slot="symbol"] > span:first-child {
+  display: block;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: var(--fs-eyebrow-sm);
+  letter-spacing: var(--ls-eyebrow-sm);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.mrr-glance-tile > [data-slot="symbol"] > .n {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
+.mrr-glance-tile > [data-slot="value"] {
+  grid-area: value;
+  margin-top: 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-glance-price, 21px);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.mrr-glance-tile > [data-slot="change"] {
+  grid-area: change;
+  margin-top: 2px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+}
+.mrr-glance-tile > [data-slot="tag"] {
+  grid-area: tag;
+  justify-self: start;
+  min-width: 0;
+}
+.mrr-glance-tile > [data-slot="spark"] {
+  grid-area: spark;
+  display: block;
+  margin-top: 8px;
+  min-height: 26px;
+  white-space: normal;
+  min-width: 0;
+}
+.mrr-glance-tile .mrr-spark-note {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
 .mrr-upd {
   justify-content: space-between;
   padding: 0 28px 0 24px;
@@ -1522,7 +1600,9 @@ main .mrr-scroll {
 }
 
 /* Hero row (spec section 4): TabHero beside the 432px SummaryCard; one
-   column below 1200 (media rule in the responsive block). */
+   column below 1620 (Iteration 1; media rule in the responsive block). The
+   two cards stretch to one height (G3); the summary's status strip anchors
+   to its bottom (StatusStrip's auto top margin). */
 .mrr-hero-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--summary-w);
@@ -1951,27 +2031,39 @@ main .mrr-scroll {
   }
 }
 
-/* Below 1520 the hero's inner grid stacks the copy over the chart. The hero
-   row stays two columns down to 1200, and the chart column is the viewport
-   minus 1321px (sidebar 196, main padding 40, scrollbar 11, summary card
-   432, row gap 16, hero padding 62, copy column 540, inner gap 24): 0px at
-   1280 and 119px at 1440, under the 200px floor until 1520 (checklist 10
-   G1; Phase 10 verifier, QUESTIONS 117). TabHero reads --hero-cols inline
-   (var with the two-column fallback), so overriding the token here beats
-   its inline style without !important. */
-@media (max-width: 1519.98px) {
-  .mrr-hero {
-    --hero-cols: 1fr;
+/* Between 1200 and 1520 the glance grid is four tiles in 2.8 of 4.94 of the
+   bottom row: 112 to 150px tiles, under a nine-figure crypto price at 21px
+   (Iteration 1, D2). The price steps down to 17px there; two-up below 1200
+   and the wide tiles above keep 21. */
+@media (min-width: 1200px) and (max-width: 1519.98px) {
+  .mrr-glance-tile {
+    --fs-glance-price: 17px;
   }
 }
 
-/* Below 1200 the hero row stacks the summary card under the hero, and the
-   hero itself stays single-column (the 1520 step above already set it; the
-   line is kept so the cascade below 1200 reads on its own). */
-@media (max-width: 1199.98px) {
+/* Below 1620 the hero row stacks the summary card under the hero (Iteration
+   1, hero-row root cause). Beside the 432px summary the hero's chart column
+   is the viewport minus 1321px (sidebar 196, main padding 40, scrollbar 11,
+   summary card 432, row gap 16, hero padding 62, copy column 540, inner gap
+   24): 299px at 1620, 119px at 1440, 0px at 1280. The old answer stacked the
+   chart under the copy there, which made the hero 700 to 1000px tall beside
+   a summary card of 350 to 550px: every tab's summary carried 300 to 620px
+   of blank no served row could honestly fill (G2), and the row could not be
+   level (G3). Stacked, the summary sizes to its rows and the hero keeps its
+   copy | chart grid at full width (a 327 to 750px chart column from 1200 to
+   1619), the same shape as at 1672. 1620 is also where the strip goes
+   two-up. Replaces the 1520 inner-grid step (checklist 10 G1, QUESTIONS 117). */
+@media (max-width: 1619.98px) {
   .mrr-hero-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* Below 1200 the hero's inner grid stacks the copy over the chart: the full-
+   width hero's chart column (viewport minus 873px) passes under 327px here.
+   TabHero reads --hero-cols inline (var with the two-column fallback), so
+   overriding the token here beats its inline style without !important. */
+@media (max-width: 1199.98px) {
   .mrr-hero {
     --hero-cols: 1fr;
   }

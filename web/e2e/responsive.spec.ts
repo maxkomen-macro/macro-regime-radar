@@ -5,7 +5,9 @@
  * One test per width (1672, 1280, 1024, 768, 390) walks the 18 pages of B.2
  * with the route slugs given there and, per cell, asserts the B.1 layout the
  * verifier measured (strip columns 4 / 2 / 2 / 2 / 1, the hero row two
- * columns down to 1200, the hero's inner grid two columns down to 1520, the
+ * columns down to 1620 and the hero's inner grid two columns down to 1200
+ * since Iteration 1 (1200 and 1520 before: the stacked hero beside the
+ * summary left the summary 300 to 620 px of blank), the
  * dashboard glance two columns from 859.98 down) and the B.3 rules #1 to #4
  * and #7: no horizontal page scroll and no element past the viewport that no
  * ancestor clips or scrolls; exactly one h1, inside main on /app/* routes; a
@@ -88,8 +90,10 @@ function expectedLayout(width: number) {
   return {
     sidebar: width >= 860,
     stripCols: width >= 1620 ? 4 : width >= 768 ? 2 : 1,
-    heroRowCols: width >= 1200 ? 2 : 1,
-    heroInnerCols: width >= 1520 ? 2 : 1,
+    // Iteration 1 (hero-row root cause): the summary stacks under the hero
+    // below 1620, and the full-width hero keeps copy | chart down to 1200.
+    heroRowCols: width >= 1620 ? 2 : 1,
+    heroInnerCols: width >= 1200 ? 2 : 1,
     h1Px: width < 860 ? 44 : null,
   };
 }

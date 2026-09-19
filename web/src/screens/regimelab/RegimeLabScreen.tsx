@@ -111,7 +111,7 @@ export default function RegimeLabScreen() {
     // links, and the SubTabs replaceState leaves the router's hash behind, so
     // a second click on the same target must still select its sub-tab.
   }, [location.hash, location.key]);
-  useHashScroll(active === "overview" ? regime.data : active);
+  const releaseHashScroll = useHashScroll(active === "overview" ? regime.data : active);
 
   const r = regime.data;
   const t = takeaway.data;
@@ -291,9 +291,12 @@ export default function RegimeLabScreen() {
         active={active}
         label="Regime Lab views"
         onChange={(id) => {
+          // R2: the page stays put (SubTabs keeps the strip where it was on
+          // screen and focuses the new tab); the hash still names the view,
+          // and the arrival hash is not scrolled to again.
+          releaseHashScroll();
           setActive(id as LabTab);
           history.replaceState(null, "", `#${TAB_ANCHOR[id as LabTab]}`);
-          window.scrollTo({ top: Math.min(window.scrollY, 0) });
         }}
       >
         {active === "overview" ? (

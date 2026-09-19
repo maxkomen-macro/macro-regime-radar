@@ -203,7 +203,8 @@ describe("MarketsGlance (checklist 03 B.5)", () => {
     const { container } = await renderGlance();
     fireEvent.click(option("FX"));
     const eur = tileFor(container, "EURUSD");
-    expect(within(eur).getByText(DASH)).toBeInTheDocument();
+    // Iteration 1 D2: the price slot and the change slot each print the dash.
+    expect(eur.querySelector("[data-slot='value']")).toHaveTextContent(DASH);
     expect(within(eur).getByText("NO PRICE")).toBeInTheDocument();
     expect(text(eur)).toContain("live only · no stored history");
     expect(eur.querySelector("svg path")).toBeNull();
@@ -275,5 +276,69 @@ describe("MarketsGlance (checklist 03 B.5)", () => {
     expect(option("Equities")).toHaveAttribute("aria-pressed", "false");
     expect(document.getElementById("whats-priced")).not.toHaveAttribute("hidden");
     expect(screen.getByRole("link", { name: "\u2192 See all in Markets" })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Iteration 1 D2 (docs/redesign-v2/ITERATION_1.md): one tile layout across
+ * every glance view. Each tile carries the five fixed slots of the strip's
+ * quote tile (shell/QuoteCard.tsx QUOTE_SLOTS: data-slot symbol, value,
+ * change, tag, spark), once each and in that order, and a tile without a day
+ * change prints the marked "—" in its change slot instead of leaving a gap.
+ */
+describe("MarketsGlance fixed-slot tiles (Iteration 1 D2)", () => {
+  const SLOTS = ["symbol", "value", "change", "tag", "spark"];
+  const slotOf = (tile: HTMLElement, slot: string) => tile.querySelector<HTMLElement>(`[data-slot="${slot}"]`);
+
+  it("every tile in every glance view renders the five fixed slots, once each, in order", async () => {
+    const { container } = await renderGlance();
+    // The views the component offers, from its own tab list; the What's
+    // priced teaser is the one view without tiles.
+    expect(GLANCE_TABS.filter((t) => t.symbols.length > 0).map((t) => t.id)).toEqual(["equities", "rates", "fx", "commodities", "crypto"]);
+    for (const view of GLANCE_TABS) {
+      fireEvent.click(option(view.label));
+      expect(option(view.label)).toHaveAttribute("aria-pressed", "true");
+      for (const def of view.symbols) {
+        const tile = tileFor(container, def.symbol);
+        const slots = Array.from(tile.querySelectorAll("[data-slot]"))
+          .map((el) => el.getAttribute("data-slot") ?? "")
+          .filter((s) => SLOTS.includes(s));
+        expect(slots, `${view.id} · ${def.symbol}: data-slot order`).toEqual(SLOTS);
+        expect(text(slotOf(tile, "symbol")), `${view.id} · ${def.symbol}: symbol slot`).toContain(def.symbol);
+        expect(text(slotOf(tile, "value")), `${view.id} · ${def.symbol}: value slot`).not.toBe("");
+        expect(text(slotOf(tile, "change")), `${view.id} · ${def.symbol}: change slot never blank`).not.toBe("");
+      }
+    }
+  });
+
+  it("a tile without a day change prints — in its change slot and keeps its tag; a tile with one prints the change", async () => {
+    // QQQ's newest stored bar carries no ret_1d (CLOSE, no change); IWM ticks
+    // on the stream without a day change (LAST); EURUSD is live-only with no
+    // quote (NO PRICE).
+    const daily = DAILY.map((b) => (b.symbol === "QQQ" && b.date === LATEST ? { ...b, ret_1d: null } : b));
+    stubFetch({ "/api/market/daily": () => daily, "/api/priced": () => PRICED });
+    liveQuotes.set("IWM", wsQuote("IWM", 230.5, null));
+    const { container } = await renderGlance();
+
+    const spy = tileFor(container, "SPY");
+    expect(slotOf(spy, "change"), "SPY has a [data-slot=change]").not.toBeNull();
+    expect(text(slotOf(spy, "change")), "SPY change slot").toBe("+0.80%");
+    expect(slotOf(spy, "change")?.getAttribute("data-empty")).not.toBe("true");
+
+    const qqq = tileFor(container, "QQQ");
+    expect(slotOf(qqq, "change"), "QQQ has a [data-slot=change]").not.toBeNull();
+    expect(text(slotOf(qqq, "change")), "QQQ change slot").toBe(DASH);
+    expect(text(slotOf(qqq, "tag")), "QQQ tag slot").toBe("CLOSE");
+
+    const iwm = tileFor(container, "IWM");
+    expect(slotOf(iwm, "change"), "IWM has a [data-slot=change]").not.toBeNull();
+    expect(text(slotOf(iwm, "change")), "IWM change slot").toBe(DASH);
+    expect(text(slotOf(iwm, "tag")), "IWM tag slot").toMatch(/^(?:LAST|15M)$/);
+
+    fireEvent.click(option("FX"));
+    const eur = tileFor(container, "EURUSD");
+    expect(slotOf(eur, "change"), "EURUSD has a [data-slot=change]").not.toBeNull();
+    expect(text(slotOf(eur, "change")), "EURUSD change slot").toBe(DASH);
+    expect(text(slotOf(eur, "tag")), "EURUSD tag slot").toBe("NO PRICE");
   });
 });

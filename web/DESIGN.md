@@ -368,7 +368,8 @@ screens stretch on wider monitors (`.mrr-frame` survives only on the Landing pag
 until Phase 10).
 
 **Every tab has the same top** (spec section 4): the hero-row (`TabHero` on the left,
-`SummaryCard` 432px on the right, gap 16px), then the tab body, then a mono
+`SummaryCard` 432px on the right, gap 16px, from 1620; below it the summary stacks
+under the hero), then the tab body, then a mono
 disclosure line (11px, `--text-4`, max-width 1100px) at the end of the tab.
 
 **Dashboard composition (Phase 3, 2026-09-15).** Inside `<div class="mrr-dash">` (a
@@ -602,8 +603,9 @@ columns and the debt-at-exit ratio on served rows.
 (`--sp-*`) remains for screens not yet restyled.
 
 **Responsive.** Two thresholds, expressed in CSS media queries with `.98` upper
-bounds: below 1200px (`max-width: 1199.98px`) the hero and summary stack and the strip
-becomes two columns; below 860px (`max-width: 859.98px`) the sidebar hides, the top
+bounds: below 1200px (`max-width: 1199.98px`) the hero stacks its chart under its copy
+and the strip becomes two columns (the summary card stacks under the hero from 1620
+down, Iteration 1); below 860px (`max-width: 859.98px`) the sidebar hides, the top
 bar becomes `1fr auto`, and `MobileNav` takes over. Anything that changes the DOM (the
 sidebar ↔ `MobileNav` swap) reads `useBreakpoint().shellCompact` (< 860); the four
 existing tiers (mobile < 480, tablet < 768, desktop < 1024, wide) are untouched and
@@ -749,7 +751,7 @@ change the look of their current call sites. Values are the checklist
 
 | Mockup element | Build from | Notes | Status |
 |---|---|---|---|
-| **TabHero** (58px serif headline, pill, subhead, lede, two buttons, footnote, signature chart on the right) | `screens/shared/TabHero.tsx`, built from `DeskRead.tsx` (its `FreshnessChip` and types) | Card gradient on a 12px radius and 1px `--line`, 26/30/22 padding, `minmax(0,540px) minmax(0,1fr)` grid with a per-hero radial glow (`glow`, default `rgba(38,220,160,.07)`). Eyebrow 11.5px Plex Sans 500 .24em `--text-eyebrow` with the 6px pulsing mint dot (`live`) or the ◆ glyph; h1 Source Serif 4 700 58px/1.02 -.012em opsz 30 in `#fff` beside the `Pill`; h2 23px/1.3 500 (a paragraph when `as="h2"`); lede 15.5px/1.6 `--text-2` on a 540px measure; 44px 9px-radius buttons, white primary with the 16px arrow, ghost on `--line-white-30` (`to`, `href` or `onClick`); footnote 12.5px `--text-3` joined by aria-hidden bullets, then the freshness chips and the note; the chart slot or the `linear-gradient(135deg,#0f1a24,#0a131b)` placeholder. Below 1200 one column (`--hero-cols`), below 860 a 44px headline (`--fs-display` override on `.mrr-hero`), below 768 18/16/16 padding. `.mrr-hero-row` (app.css) pairs it with the 432px summary column. The headline is the tab's answer, never the tab name. | Built (Phase 2); Dashboard (Phase 3) |
+| **TabHero** (58px serif headline, pill, subhead, lede, two buttons, footnote, signature chart on the right) | `screens/shared/TabHero.tsx`, built from `DeskRead.tsx` (its `FreshnessChip` and types) | Card gradient on a 12px radius and 1px `--line`, 26/30/22 padding, `minmax(0,540px) minmax(0,1fr)` grid with a per-hero radial glow (`glow`, default `rgba(38,220,160,.07)`). Eyebrow 11.5px Plex Sans 500 .24em `--text-eyebrow` with the 6px pulsing mint dot (`live`) or the ◆ glyph; h1 Source Serif 4 700 58px/1.02 -.012em opsz 30 in `#fff` beside the `Pill`; h2 23px/1.3 500 (a paragraph when `as="h2"`); lede 15.5px/1.6 `--text-2` on a 540px measure; 44px 9px-radius buttons, white primary with the 16px arrow, ghost on `--line-white-30` (`to`, `href` or `onClick`); footnote 12.5px `--text-3` joined by aria-hidden bullets, then the freshness chips and the note; the chart slot (`data-chart-slot`, a flex column centring its child on both axes; the signature charts draw through `HeroChartFrame`, `screens/shared/HeroChart.tsx`, at the column's own size, 1:1, their height between a per-chart floor and aspect cap, each svg marked `data-chart`) or the `linear-gradient(135deg,#0f1a24,#0a131b)` placeholder. Below 1200 one column (`--hero-cols`), below 860 a 44px headline (`--fs-display` override on `.mrr-hero`), below 768 18/16/16 padding. `.mrr-hero-row` (app.css) pairs it with the 432px summary column at 1620 and up and stacks the summary under it below (Iteration 1). The headline is the tab's answer, never the tab name. | Built (Phase 2); Dashboard (Phase 3) |
 | **SummaryCard** (key/value rows plus status strip) | `screens/shared/SummaryCard.tsx`, from DeskRead's `Ledger` (`StatusStrip` exported too) | Card gradient, 12px radius, 18/20/16 padding; eyebrow title (h3, or h2 via `as`); real `dl` rows on a `150px minmax(0,1fr)` grid, 7px vertical padding, 1px `--line-2` dividers, 13.5px: sentence-case `--text-2` labels, `--text` tabular values in the UI face (`tone` recolours a value; `kvLinkStyle` for the mint underlined link). The strip is a router `Link`, `<a>` or `<button>` (never a div with onClick), 10px radius, 28px bars glyph, 18px chevron: mint `linear-gradient(90deg, rgba(18,190,130,.12), rgba(18,190,130,.05))` on `rgba(38,220,160,.34)`; amber `rgba(245,181,46,.12) → .04` on `--amber-a36`; gray (loading / unavailable) `rgba(200,210,220,.08) → .03` on `rgba(200,210,220,.25)`. Title 14px 500 in the tone colour, detail 12px `--text-2`. Absent when there is nothing to report. | Built (Phase 2); Dashboard (Phase 3) |
 | **SignalCard** | `components/signals/SignalCard` | Tile radius, 14/16/14 padding: name, `Tag` badge (Clear / Watch / Triggered), 21px value, 118×30 sparkline, meter label, 5px meter in the status colour, "Last alert:" and the mono `lines`; `sparkline`, `meterLabel`, `lines`, `badge`, `heading`, `as` props. Reused by Dashboard signals, Credit spread monitor and Recession model inputs. | Built (Phase 2) |
 | **Panel + SectionHeader** | `components/core/Card`, `SectionHeader` | `Card` variants: `panel` (12px, 1px `--line`, `--panel`, 16/18/18), `tile` (9px, `rgba(150,175,200,.10)`, `--tile`, 14px), `card` (gradient); tone borders at the badge alphas; `accentBar` is the callout (3px rail, `0 8px 8px 0`, 10/14 padding, tinted gradient). `SectionHeader`: eyebrow 12px Plex Sans 500 .24em `--text-eyebrow`, no rule; `layout="panel"` adds the 13px `--text-2` description and the right slot (mono 11px .1em meta, actions, `.mrr-link` arrow link, wrapping under 768); `level="sub"` is the 11px .2em sub-eyebrow. The default inline layout keeps `right` inside the heading (label parity). | Built (Phase 2) |
@@ -1037,6 +1039,20 @@ Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-19 Iteration 1, root causes: the hero row pairs the hero with the summary
+  card only from 1620 (below, the summary stacks under the hero and sizes to its rows,
+  and the full-width hero keeps copy | chart down to 1200, replacing the 1520 inner-grid
+  step); the hero chart slot centres its child and the signature charts (quadrant,
+  1-week bars, equity bridge, event timeline, regime return bars) draw through
+  `HeroChartFrame` at the slot's width, 1:1, instead of a 400px drawing parked at the
+  right edge; the summary card's status strip sits on the card's bottom with its rows
+  at natural height (no spacer element); the glance tiles are the strip's fixed-slot
+  tile (symbol and name, price, change beside tag, sparkline on its own row across the
+  tile, `data-sparkline`; the price steps to 17px where the tiles are 4-up and under
+  160px, 1200 to 1519); SubTabs keeps the strip where it was on screen when a view is
+  picked, focuses the new tab without scrolling, and holds a short panel open so the
+  browser cannot clamp the scroll position; `useHashScroll` keeps a hash landing while
+  late content grows the page and returns a `release` for sub-tab switches
 - 2026-09-19 Iteration 1, shell: the sidebar footer is pinned under a watchlist that
   scrolls inside its own block (short viewports tighten the fixed blocks in three
   steps); the sidebar collapses to a 56px rail (control, Ctrl/⌘+\, palette action,
