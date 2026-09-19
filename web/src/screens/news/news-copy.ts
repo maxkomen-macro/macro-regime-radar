@@ -256,6 +256,50 @@ export function highImpactValue(feed: NewsItem[]): string {
   return `${n} headline${n === 1 ? "" : "s"} scored 3.5 or higher`;
 }
 
+/** Iteration 1 (N2) "By category": the rendered stories counted by their
+ * served category, largest first, in the card's category words ("Macro / Fed
+ * 98 · M&A 20 · Geopolitical 6"); uncategorised rows count as "Other". Null
+ * with no story on file. */
+export function categoryMixValue(feed: NewsItem[]): string | null {
+  if (!feed.length) return null;
+  const counts = new Map<string, number>();
+  for (const r of feed) {
+    const word = r.category ? (CATEGORY_WORD[r.category] ?? r.category) : "Other";
+    counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([word, n]) => `${word} ${n}`)
+    .join(" · ");
+}
+
+/** Iteration 1 (N2) "Outlets": the distinct served sources and the three
+ * with the most stories ("33 outlets · CNBC 41 · MarketWatch 22 · …"); null
+ * when no story carries a source. */
+export function outletsValue(feed: NewsItem[]): string | null {
+  const counts = new Map<string, number>();
+  for (const r of feed) if (r.source) counts.set(r.source, (counts.get(r.source) ?? 0) + 1);
+  if (!counts.size) return null;
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 3);
+  return `${counts.size} outlet${counts.size === 1 ? "" : "s"} · ${top.map(([s, n]) => `${s} ${n}`).join(" · ")}`;
+}
+
+/** A story carries a stored AI read: Claude's interpretation, Perplexity's
+ * research, or both (N4). */
+export function hasAiRead(r: NewsItem): boolean {
+  return Boolean(r.regime_interpretation?.trim() || r.perplexity_research?.trim());
+}
+
+/** Iteration 1 (N2) "AI reads": how many rendered stories carry a stored AI
+ * read against the wire summaries; null with no story on file. */
+export function aiReadValue(feed: NewsItem[]): string | null {
+  if (!feed.length) return null;
+  const n = feed.filter(hasAiRead).length;
+  if (n === 0) return `None of the ${feed.length} carries an AI read`;
+  if (n === feed.length) return `All ${n} carry an AI read`;
+  return `${n} of ${feed.length} carry an AI read`;
+}
+
 /** Row 5 verbatim (NewsScreen.tsx:466); null while no story is on file, so
  * the row is omitted. `cat` is the top story's own category. */
 export function topSignificanceValue(topSig: number | null, cat: string | null): string | null {

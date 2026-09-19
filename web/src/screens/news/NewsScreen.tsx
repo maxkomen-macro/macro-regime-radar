@@ -25,12 +25,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Card, NewsCard, SectionHeader, Segmented, StatTile } from "../../components";
-import { useCalendar, useCalendarRecent, useFreshness, useNews, useNewsLatest } from "../../api/queries";
+import { useCalendar, useCalendarEarnings, useCalendarRecent, useFreshness, useNews, useNewsLatest } from "../../api/queries";
 import type { NewsItem } from "../../api/types";
 import { fmtDate, fmtUtcStampEt, tidyProse } from "../../lib/format";
+import { takeSentences } from "../../lib/sentences";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { DASH } from "../dashboard/hero-copy";
 import { DisclosureLine } from "../shared/Disclosure";
+import { impactOf } from "../shared/calendar-impact";
 import { assessFreshness } from "../shared/freshness";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, useHashScroll } from "../shared/screen-ui";
@@ -38,10 +40,13 @@ import SummaryCard, { type StatusStripProps, type SummaryRow } from "../shared/S
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import { useShellActions } from "../shell/shell-actions";
 import CalendarPanel from "./CalendarPanel";
-import EventTimeline from "./EventTimeline";
+import EventTimeline, { isEarnings } from "./EventTimeline";
 import {
   DEAL_LABELS,
   CATEGORY_WORD,
+  aiReadValue,
+  categoryMixValue,
+  outletsValue,
   NEWS_GLOW,
   categoryToneOf,
   clockEt,
@@ -259,6 +264,12 @@ export default function NewsScreen() {
   // Recent view and the calendar panel's "Recent releases" block all use it).
   const recent = useCalendarRecent(10, calendarEmpty || view === "recent" || calendar.isSuccess);
   const usingCalFallback = calendarEmpty && (recent.data?.length ?? 0) > 0;
+  // Large-cap earnings for the hero timeline only (Iteration 1, N1): the
+  // `kind === "earnings"` rows of the same 30-day window, drawn beside the
+  // macro rows `useCalendar` serves (and the snapshot carries). Until the
+  // pipeline stores any, the timeline is simply the macro one.
+  const earnings = useCalendarEarnings(30);
+  const earningsRows = useMemo(() => (earnings.data ?? []).filter(isEarnings), [earnings.data]);
   const freshness = useFreshness();
   const { openFreshness } = useShellActions();
   // One identity per settled state, so a palette jump or the hero's hash
@@ -293,6 +304,11 @@ export default function NewsScreen() {
 
   const now = Date.now();
   const events = calendar.data ?? [];
+  const timelineEvents = useMemo(() => {
+    if (!earningsRows.length) return events;
+    const ids = new Set(events.map((e) => e.id));
+    return [...events, ...earningsRows.filter((e) => !ids.has(e.id))];
+  }, [events, earningsRows]);
   const recentRows = recent.data ?? [];
   const focus = nextFocusEvent(calendar.data);
   const calError = calendar.isError && !calendar.data;
@@ -310,7 +326,9 @@ export default function NewsScreen() {
 
   /* ── hero (B.1) ──────────────────────────────────────────────────────── */
   const lead = leadSentence(priority[0], usingFallback, feedLoading);
-  const why = whySentence(priority[0], usingFallback);
+  // G4: the lede stays at three sentences or fewer; a stored interpretation
+  // longer than two sentences reads in full on the lead card's AI read.
+  const why = takeSentences(whySentence(priority[0], usingFallback), 2).shown;
   const footnote: ReactNode[] = [
     usingFallback ? coverageValue(feed, windowLabel, usingFallback, newestFallback, feedFresh.age) : `${feed.length} headlines in ${windowLabel}`,
     ...(calendar.data ? [usingCalFallback ? "stored schedule" : `${events.length} events in the next 30 days`] : []),
@@ -344,7 +362,7 @@ export default function NewsScreen() {
         pillTone={pill.tone}
         glow={pill.glow}
         subhead={heroSubhead(events, now)}
-        chart={<EventTimeline events={events} now={now} />}
+        chart={<EventTimeline events={timelineEvents} now={now} />}
       />
     );
   } else if (calError) {
@@ -372,7 +390,7 @@ export default function NewsScreen() {
         pillTone={pill.tone}
         glow={pill.glow}
         subhead={`The calendar snapshot ends ${fmtDate(end)}; the most recent ${recentRows.length} scheduled events are listed below.`}
-        chart={<EventTimeline events={[]} now={now} fallbackEnd={end} />}
+        chart={<EventTimeline events={earningsRows} now={now} fallbackEnd={end} />}
       />
     );
   } else {
@@ -381,7 +399,7 @@ export default function NewsScreen() {
         {...heroShared}
         headline={<span style={stateHeadline}>No events on file</span>}
         glow={NEWS_GLOW.gray}
-        chart={<EventTimeline events={[]} now={now} />}
+        chart={<EventTimeline events={earningsRows} now={now} />}
       />
     );
   }
@@ -404,10 +422,24 @@ export default function NewsScreen() {
   );
   const afterThat: ReactNode = events[1] ? eventLine(events[1]) : calPending ? calNote : "No second event in the window";
   const topValue = topSignificanceValue(topSig, priority[0]?.category ?? null);
+  // Iteration 1 (N2): the desk summary fills its height with served rows
+  // only. The hero's countdown event with its date when it is not already one
+  // of the first two rows; the newest past release; the stories counted by
+  // category, by outlet and by whether they carry a stored AI read. Each is omitted when
+  // there is nothing to count, never blank.
+  const focusIsHigh = focus != null && impactOf(focus.importance).word === "high impact";
+  const nextHigh = focusIsHigh && focus !== events[0] && focus !== events[1] ? eventLine(focus) : null;
+  const lastRelease = !usingCalFallback && recentRows[0] ? eventLine(recentRows[0]) : null;
+  const feedReady = feedState === "ready";
+  const categoryMix = feedReady ? categoryMixValue(feed) : null;
+  const aiReads = feedReady ? aiReadValue(feed) : null;
+  const outlets = feedReady ? outletsValue(feed) : null;
 
   const rows: SummaryRow[] = [
     { id: "next-event", label: "Next event", value: nextEvent },
     { id: "after-that", label: "After that", value: afterThat },
+    ...(nextHigh ? [{ id: "next-high", label: "Next high impact", value: nextHigh }] : []),
+    ...(lastRelease ? [{ id: "last-release", label: "Last release", value: lastRelease }] : []),
     // Row 3, Consensus / prior, is never rendered: nothing serves consensus (F1).
     {
       id: "coverage",
@@ -415,6 +447,9 @@ export default function NewsScreen() {
       value: feedState === "loading" || feedState === "error" ? feedNote : coverageValue(feed, windowLabel, usingFallback, newestFallback, feedFresh.age),
       tone: usingFallback ? "var(--warn-hot)" : undefined,
     },
+    ...(categoryMix ? [{ id: "by-category", label: "By category", value: categoryMix }] : []),
+    ...(outlets ? [{ id: "outlets", label: "Outlets", value: outlets }] : []),
+    ...(aiReads ? [{ id: "ai-reads", label: "AI reads", value: aiReads }] : []),
     ...(topValue != null ? [{ id: "top-significance", label: "Top significance", value: topValue }] : []),
     { id: "high-impact", label: "High impact", value: feedState === "loading" || feedState === "error" ? feedNote : highImpactValue(feed) },
   ];
@@ -597,8 +632,9 @@ export default function NewsScreen() {
       <DisclosureLine>
         Headlines ingest hourly from Finnhub, NewsAPI and RSS wires, dedupe, then score across five dimensions · the store keeps a
         rolling window, so the feed ages out by design · calendar is maintained by hand · headlines link to the original article ·
-        each pipeline run sends the top 5 by score to Claude for a regime interpretation and to Perplexity for cited research;
-        other items show the wire summary · scores are model estimates.
+        each hourly run sends up to 10 newly stored headlines scoring 2.5 or more to Claude for a regime interpretation and to
+        Perplexity for cited research, under a $50 monthly spend cap; other headlines, and every headline once the cap is
+        reached, show the wire summary · scores are model estimates.
       </DisclosureLine>
     </div>
   );

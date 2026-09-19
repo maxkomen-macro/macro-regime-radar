@@ -4,6 +4,11 @@
  * behind a 3 months / 6 months Segmented (both matrices stay in the payload
  * and swap on the toggle, UI_SPEC 0.5), three stat tiles that are direct
  * reads of one cell each, and the C19 caption with the Tight caveat.
+ * Iteration 1: the panel spans the page beside nothing (the ladder row is
+ * one column), the matrix tile sits beside the stat tiles and the caption,
+ * a from-state with no served months reads "No history" in every cell, the
+ * served month counts print under the matrix, and the caption keeps two
+ * sentences visible with the rest behind "Details".
  *
  * The client does not rank credit states or sum a "deterioration"
  * probability; that ordinality belongs to src/analytics/credit.py (audit).
@@ -17,7 +22,8 @@ import type { HeatCell } from "../../components/data/HeatMatrix";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
 import ScrollTable from "../shared/ScrollTable";
-import { Caption, StateNote, eyebrowStyle } from "../shared/screen-ui";
+import Disclosure from "../shared/Disclosure";
+import { Caption, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
 import type { CreditPanelProps } from "./panel-props";
 
 /** The four served credit states in matrix order (CreditScreen.tsx:33 before Phase 6, kept). */
@@ -51,6 +57,7 @@ export default function CreditStateOdds({ m, status }: CreditPanelProps): JSX.El
   if (ready && m) {
     const label = m.credit_label;
     const matrix = horizon === "3m" ? m.transition_3m : m.transition_6m;
+    const obs = (horizon === "3m" ? m.transition_obs_3m : m.transition_obs_6m) ?? null;
     const empty = !matrix || Object.keys(matrix).length === 0;
     const ariaLabel = `Credit-state transition matrix ${horizon === "3m" ? "3M" : "6M"}`;
     // Stay odds are a direct read of the diagonal (CreditScreen.tsx:253-256, kept).
@@ -59,14 +66,19 @@ export default function CreditStateOdds({ m, status }: CreditPanelProps): JSX.El
     // A fixed column choice, not a ranking: the next rung down, or Crisis from Stressed.
     const to = label === "Stressed" ? "Crisis" : "Stressed";
     const otherStay = horizon === "3m" ? stay6 : stay3;
+    // Iteration 1: a row with no months behind it reads "No history", never a
+    // measured 0% (the served month counts; the Tight count when they are absent).
+    const noHistory = (state: string): boolean => (obs ? obs[state] === 0 : state === "Tight" && m.tight_count === 0);
     const cells: HeatCell[][] = CREDIT_STATES.map((from) =>
       CREDIT_STATES.map((col) => {
+        if (noHistory(from)) return { value: null, text: <span style={{ fontSize: 11, color: "var(--text-3)" }}>No history</span> };
         const p = matrix?.[from]?.[col] ?? 0;
         return { value: p, text: `${Math.round(p * 100)}%` };
       }),
     );
+    const counted = obs ? CREDIT_STATES.filter((st) => obs[st] != null) : [];
     body = (
-      <>
+      <div className="mrr-credit-odds-body">
         <Card variant="tile" padding="16px 18px" style={{ minWidth: 0 }}>
           <div style={{ ...eyebrowStyle, marginBottom: 10 }}>{horizon === "3m" ? "3-month transition odds" : "6-month transition odds"}</div>
           {empty ? (
@@ -80,47 +92,59 @@ export default function CreditStateOdds({ m, status }: CreditPanelProps): JSX.El
                 preset="transition"
                 corner="From ↓ to →"
                 ariaLabel={ariaLabel}
-                rows={CREDIT_STATES.map((s) => ({
-                  key: s,
-                  label: s === "Tight" ? <Jargon term="Tight">Tight</Jargon> : s,
-                  current: s === label,
-                  // C18: a state with zero historical months renders as dashes, not as measured 0% cells.
-                  empty: s === "Tight" && m.tight_count === 0,
+                rows={CREDIT_STATES.map((st) => ({
+                  key: st,
+                  label: st === "Tight" ? <Jargon term="Tight">Tight</Jargon> : st,
+                  current: st === label,
                 }))}
-                cols={CREDIT_STATES.map((s) => ({ key: s, label: `→ ${s}` }))}
+                cols={CREDIT_STATES.map((st) => ({ key: st, label: `→ ${st}` }))}
                 cells={cells}
                 style={{ minWidth: isNarrow ? 360 : undefined }}
               />
             </ScrollTable>
           )}
+          {!empty && counted.length ? (
+            <div data-role="months-counted" style={{ ...monoNoteStyle, marginTop: 10 }}>
+              Months counted · {counted.map((st) => `${st} ${obs?.[st]}`).join(" · ")}
+            </div>
+          ) : null}
         </Card>
-        {empty ? null : (
-          <Card variant="tile" padding="12px 18px" style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
-            <StatTile size="sm" label={`Stays ${label} · 3m`} value={pctText(stay3)} />
-            <StatTile size="sm" label={`To ${to} · 3m`} value={pctText(cellPct(m.transition_3m, label, to))} />
-            <StatTile size="sm" label={`To ${to} · 6m`} value={pctText(cellPct(m.transition_6m, label, to))} />
-          </Card>
-        )}
-        <Caption>
-          A <Jargon term="transition matrix">transition matrix</Jargon> counted from monthly credit states since 1996.
-          {stay3 != null && (
-            <>
-              {" "}
-              From today&apos;s {label} state, spreads stayed {label} three months later {stay3}% of the time.
-            </>
+        <div style={{ display: "grid", gap: "var(--gap-tile)", alignContent: "start", minWidth: 0 }}>
+          {empty ? null : (
+            <Card variant="tile" padding="12px 18px" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
+              <StatTile size="sm" label={`Stays ${label} · 3m`} value={pctText(stay3)} />
+              <StatTile size="sm" label={`To ${to} · 3m`} value={pctText(cellPct(m.transition_3m, label, to))} />
+              <StatTile size="sm" label={`To ${to} · 6m`} value={pctText(cellPct(m.transition_6m, label, to))} />
+            </Card>
           )}
-          {empty ? null : " The outlined row is today's state."}
-          {!empty && otherStay != null ? ` ${horizon === "3m" ? "6-month" : "3-month"} view: ${label} stays ${otherStay}%.` : null}
-          {m.tight_count < 5 && (
-            <>
-              {" "}
-              {m.tight_count === 0
-                ? "The Tight state has never occurred since 1996; its row renders empty, not zero-risk."
-                : `Tight-state rows rest on only ${m.tight_count} historical months; treat those odds as anecdote.`}
-            </>
-          )}
-        </Caption>
-      </>
+          {/* G4: two sentences visible, the rest behind Details on the same panel. */}
+          <div>
+            <Caption style={{ marginTop: 0 }}>
+              A <Jargon term="transition matrix">transition matrix</Jargon> counted from monthly credit states since 1996.
+              {stay3 != null && (
+                <>
+                  {" "}
+                  From today&apos;s {label} state, spreads stayed {label} three months later {stay3}% of the time.
+                </>
+              )}
+            </Caption>
+            <Disclosure variant="quiet" title="Details">
+              <Caption style={{ marginTop: 0 }}>
+                {empty ? null : "The outlined row is today's state."}
+                {!empty && otherStay != null ? ` ${horizon === "3m" ? "6-month" : "3-month"} view: ${label} stays ${otherStay}%.` : null}
+                {m.tight_count < 5 && (
+                  <>
+                    {" "}
+                    {m.tight_count === 0
+                      ? "The Tight state has never occurred since 1996; its row reads No history, not zero risk."
+                      : `Tight-state rows rest on only ${m.tight_count} historical months; treat those odds as anecdote.`}
+                  </>
+                )}
+              </Caption>
+            </Disclosure>
+          </div>
+        </div>
+      </div>
     );
   } else {
     body = (

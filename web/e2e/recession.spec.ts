@@ -36,8 +36,10 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The served band words (recession.py) and the summary row labels in C.2 order. */
 const LABELS = ["Low Risk", "Elevated", "High Risk"];
-const SUMMARY_LABELS = ["12-month probability", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Reference thresholds"];
-const CARD_NAMES = ["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", "Leading-indicator proxy"];
+// Iteration 1 X2 adds two served rows (Training sample, Inputs through).
+const SUMMARY_LABELS = ["12-month probability", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Inputs through", "Reference thresholds"];
+// Iteration 1 E2: the fifth input is named for what recession.py computes (T10YIE − T5YIE).
+const CARD_NAMES = ["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", "10Y − 5Y breakeven spread"];
 const TENOR_ORDER = ["1M", "3M", "6M", "1Y", "2Y", "5Y", "10Y", "30Y"];
 const STRIP_TITLE = /^(?:Watch · \d+ straight rises|No consecutive rises|Reading the recession model…|Recession model unavailable)$/;
 const LEGEND_RANGE = /^[A-Z][a-z]{2} \d\d, \d{4} → [A-Z][a-z]{2} \d\d, \d{4}$/;
@@ -161,7 +163,8 @@ const legendRange = (root: Locator) => root.locator("span").filter({ hasText: LE
 /** A LineChart reference-rule label ("20% Elevated", "Inversion below 0"). */
 const ruleLabel = (root: Locator, label: string) => root.locator("span").filter({ hasText: new RegExp(`^${escapeRe(label)}$`) });
 /** The scenario result in the display face inside #sensitivity. */
-const displayNumber = (page: Page) => sensitivity(page).locator("span").filter({ hasText: DISPLAY_NUMBER }).first();
+// X3: the scenario figure sits in [data-figure="scenario"], after the model's own reading.
+const displayNumber = (page: Page) => sensitivity(page).locator("[data-figure='scenario'] span").filter({ hasText: DISPLAY_NUMBER }).first();
 /** A slider row by its label. */
 const sliderRow = (page: Page, label: string) => page.locator(".mrr-slider-row").filter({ has: page.locator("label", { hasText: new RegExp(`^${escapeRe(label)}$`) }) }).first();
 const resetButton = (page: Page) => sensitivity(page).getByRole("button", { name: /Reset to current readings/ });
@@ -318,7 +321,7 @@ test.describe("recession (checklist 07 E.3)", () => {
     }
   });
 
-  test("6. summary: the seven dt labels in C.2 order, the strip is a link to #model whose title agrees with the recomputed streak, and clicking it scrolls #model into view", async ({ page }) => {
+  test("6. summary: the nine dt labels in C.2 order (X2 adds two), the strip is a link to #model whose title agrees with the recomputed streak, and clicking it scrolls #model into view", async ({ page }) => {
     await open(page);
     await awaitHero(page);
     const m = await served(page);
@@ -450,31 +453,30 @@ test.describe("recession (checklist 07 E.3)", () => {
     expect(curveText).not.toContain("Bear steepener");
   });
 
-  test("9. sensitivity starts collapsed, expands, a slider rescores and Reset restores it (P7 check 3); #sensitivity loads open on the hash route", async ({ page }) => {
+  // Iteration 1 X3 (decision D2): the five sliders render on load with no
+  // disclosure to open, and the panel names the model's own reading beside the scenario.
+  test("9. sensitivity is open on load, a slider rescores and Reset restores it (P7 check 3, Iteration 1 X3); #sensitivity lands on the hash route", async ({ page }) => {
+    const firstPost = page.waitForResponse((r) => r.request().method() === "POST" && /\/api\/recession\/scenario$/.test(new URL(r.url()).pathname), { timeout: 30_000 });
     await open(page);
     await awaitHero(page);
     await expect(sensitivity(page)).toHaveCount(1, { timeout: 30_000 });
-    await expect(sensButton(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator("main input[type='range']")).toHaveCount(0);
-    await sensButton(page).scrollIntoViewIfNeeded();
-
-    const firstPost = page.waitForResponse((r) => r.request().method() === "POST" && /\/api\/recession\/scenario$/.test(new URL(r.url()).pathname), { timeout: 30_000 });
-    await sensButton(page).click();
-    await expect(sensButton(page)).toHaveAttribute("aria-expanded", "true");
+    await expect(sensButton(page)).toHaveCount(0);
     const ranges = page.locator("main input[type='range']");
-    await expect(ranges).toHaveCount(5);
+    await expect(ranges).toHaveCount(5, { timeout: 30_000 });
     await expect(page.locator("main .mrr-slider-tick")).toHaveCount(5);
     await expect(page.locator("main .mrr-slider-row")).toHaveCount(5);
     for (const row of await page.locator("main .mrr-slider-row").all()) expect(await row.getAttribute("data-changed")).toBe("false");
     expect((await firstPost).status(), "POST /api/recession/scenario").toBe(200);
+    await sensitivity(page).scrollIntoViewIfNeeded();
     await expect(displayNumber(page)).toBeVisible({ timeout: 30_000 });
+    await expect(sensitivity(page).locator("[data-figure='model']")).toContainText(/model's own reading · headline/i);
     const family = await displayNumber(page).evaluate((el) => getComputedStyle(el).fontFamily);
     expect(family).toMatch(/^"?Source Serif 4"?/);
     const first = await visibleText(displayNumber(page));
     expect(first).toMatch(DISPLAY_NUMBER);
-    const badge = await contentText(sensitivity(page).locator("span[data-tone]").first());
+    const badge = await contentText(sensitivity(page).locator("[data-figure='scenario'] span[data-tone]").first());
     expect(LABELS, `scenario badge ${badge}`).toContain(badge);
-    await expect(sensitivity(page)).toContainText(/live model estimate · inputs unchanged/i);
+    await expect(sensitivity(page)).toContainText(/scenario at current readings · inputs unchanged/i);
     await expect(resetButton(page)).toBeDisabled();
     note("scenario-seeded", `${first} · ${badge}`);
     await settle(page, 400);
@@ -504,7 +506,7 @@ test.describe("recession (checklist 07 E.3)", () => {
 
     await resetButton(page).click();
     for (const r of await page.locator("main .mrr-slider-row").all()) await expect(r).toHaveAttribute("data-changed", "false");
-    await expect(sensitivity(page)).toContainText(/live model estimate · inputs unchanged/i);
+    await expect(sensitivity(page)).toContainText(/scenario at current readings · inputs unchanged/i);
     await expect(sensitivity(page)).not.toContainText(/your adjusted probability/i);
     await expect.poll(() => visibleText(displayNumber(page)), { timeout: 30_000 }).toBe(first);
     await expect(resetButton(page)).toBeDisabled();
@@ -513,8 +515,7 @@ test.describe("recession (checklist 07 E.3)", () => {
     await page.goto(`${ROUTE}#sensitivity`, { waitUntil: "domcontentloaded" });
     await settle(page, 900);
     await awaitHero(page);
-    await expect(sensButton(page)).toHaveAttribute("aria-expanded", "true", { timeout: 30_000 });
-    await expect(page.locator("main input[type='range']")).toHaveCount(5);
+    await expect(page.locator("main input[type='range']")).toHaveCount(5, { timeout: 30_000 });
     await expect.poll(() => inView(page, "sensitivity"), { timeout: 15_000 }).toBe(true);
   });
 
@@ -563,7 +564,7 @@ test.describe("recession (checklist 07 E.3)", () => {
     await expect.poll(() => inView(page, "models"), { timeout: 15_000 }).toBe(true);
   });
 
-  test("11. hero buttons: Stress the inputs scrolls the collapsed #sensitivity row into view (G2); back; Read the model card scrolls #transparency into view", async ({ page }) => {
+  test("11. hero buttons: Stress the inputs scrolls the open #sensitivity panel into view (G2, X3); back; Read the model card scrolls #transparency into view", async ({ page }) => {
     await open(page);
     await awaitHero(page);
     const stress = hero(page).getByRole("link", { name: /Stress the inputs/ });
@@ -573,8 +574,8 @@ test.describe("recession (checklist 07 E.3)", () => {
     await stress.click();
     await expect(page).toHaveURL(/\/app\/recession#sensitivity$/);
     await expect.poll(() => inView(page, "sensitivity"), { timeout: 15_000 }).toBe(true);
-    await expect(sensButton(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator("main input[type='range']")).toHaveCount(0);
+    await expect(sensButton(page)).toHaveCount(0);
+    await expect(page.locator("main input[type='range']")).toHaveCount(5);
     note("sensitivity-top", `${Math.round(await topOf(page, "sensitivity"))} px from the viewport top after the primary click`);
 
     await page.goBack();
@@ -608,7 +609,7 @@ test.describe("recession (checklist 07 E.3)", () => {
     await expect(line).toContainText("Recession Risk odds in the header.");
   });
 
-  test("16. at 390 px the hero stacks over the summary, the gauge fills the column, the five cards go one per row, the opened sensitivity grid stacks and nothing scrolls sideways", async ({ page }) => {
+  test("16. at 390 px the hero stacks over the summary, the gauge fills the column, the five cards go one per row, the sensitivity grid stacks and nothing scrolls sideways", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page);
     await awaitHero(page);
@@ -642,13 +643,12 @@ test.describe("recession (checklist 07 E.3)", () => {
     // The bottom row stacks: Model transparency under the Sensitivity panel.
     expect((boxes.transparency as DOMRect).top).toBeGreaterThanOrEqual((boxes.sensitivity as DOMRect).bottom - 1);
 
-    await sensButton(page).scrollIntoViewIfNeeded();
-    await sensButton(page).click();
+    await sensitivity(page).scrollIntoViewIfNeeded();
     await expect(page.locator("main input[type='range']")).toHaveCount(5);
-    await expect(sensitivity(page)).toContainText(/live model estimate · inputs unchanged/i);
+    await expect(sensitivity(page)).toContainText(/scenario at current readings · inputs unchanged/i);
     const stacked = await page.evaluate(() => {
       const reset = [...document.querySelectorAll("#sensitivity button")].find((b) => /Reset to current readings/.test(b.textContent ?? ""));
-      const eyebrow = [...document.querySelectorAll("#sensitivity div")].find((d) => /live model estimate/i.test(d.textContent ?? "") && !d.querySelector("div"));
+      const eyebrow = [...document.querySelectorAll("#sensitivity div")].find((d) => /scenario at current readings/i.test(d.textContent ?? "") && !d.querySelector("div"));
       if (!reset || !eyebrow) return null;
       return { resetBottom: reset.getBoundingClientRect().bottom, eyebrowTop: eyebrow.getBoundingClientRect().top };
     });
@@ -667,7 +667,7 @@ test.describe("recession (checklist 07 E.3)", () => {
     await expect(model(page).locator("article")).toHaveCount(5, { timeout: 30_000 });
     await expect(curve(page).locator("svg[role='img']")).toHaveCount(1, { timeout: 30_000 });
     await expect(transparency(page)).toContainText(/model card/i, { timeout: 30_000 });
-    await expect(sensButton(page)).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("main input[type='range']")).toHaveCount(5);
     await settle(page, 1200);
     await capture(page, "recession.png");
     expect(fs.existsSync(path.join(DOCS, "recession.png")), "the approved mockup the verifier compares against").toBe(true);

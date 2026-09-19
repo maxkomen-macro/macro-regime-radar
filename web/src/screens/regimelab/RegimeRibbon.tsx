@@ -9,6 +9,10 @@
  * Every label is SVG-native, so below 768 the SVG keeps its intrinsic pixel
  * size inside an `overflow-x: auto` well with the "scroll → 30 years" caption
  * (the R43 rule); at 768 and up the fluid `width: 100%` applies.
+ *
+ * Iteration 1 (G3 at 390): the well is the chart's box (`data-chart`): below
+ * 768 the drawing scrolls inside a well that spans its tile, so the chart a
+ * reader sees fills and centres in its container at every width.
  */
 
 import { useMemo, type CSSProperties } from "react";
@@ -80,7 +84,7 @@ export function RegimeRibbon({ rows, variant = "teaser", ariaLabel, style }: Reg
 
   return (
     <div style={style}>
-      <div className="mrr-ribbon-well" style={isNarrow ? { overflowX: "auto" } : undefined}>
+      <div className="mrr-ribbon-well" data-chart="" style={isNarrow ? { overflowX: "auto" } : undefined}>
         <svg
           viewBox={`0 0 ${g.w} ${g.h}`}
           style={isNarrow ? { display: "block", width: g.w, height: g.h } : { display: "block", width: "100%", height: "auto" }}

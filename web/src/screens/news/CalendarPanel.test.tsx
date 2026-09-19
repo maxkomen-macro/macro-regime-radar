@@ -46,7 +46,7 @@ const RECENT = [
   ev(13, "PCE (Jul)", "2026-08-28T12:30:00Z", "low"),
   ev(14, "Trade balance (Jul)", "2026-08-27T12:30:00Z", "medium"),
 ];
-/** Thirteen rows on thirteen days (Sep 17 to Sep 29) for the 12-row cap. */
+/** Thirteen rows on thirteen days (Sep 17 to Sep 29): more than the retired 12-row cap. */
 const THIRTEEN = Array.from({ length: 13 }, (_, i) => ev(100 + i, `Print ${i + 1}`, `2026-09-${String(17 + i).padStart(2, "0")}T12:30:00Z`, i % 3 === 0 ? "high" : i % 3 === 1 ? "medium" : "low"));
 
 type Routes = Record<string, () => unknown>;
@@ -293,19 +293,13 @@ describe("CalendarPanel (checklist 08 B.5)", () => {
     expect(dots()).toHaveLength(0);
   });
 
-  it("caps the upcoming view at 12 rows behind Show all {n} events, and reveals the rest on click", async () => {
+  it("renders the whole 30-day window without a click (Iteration 1, N3: the 12-row cap and its Show all button are gone)", async () => {
     stub(routes({ "/api/calendar": () => THIRTEEN }));
     mount();
     await screen.findByText("Print 1");
-    expect(dataRows()).toHaveLength(12);
-    expect(screen.queryByText("Print 13")).toBeNull();
-    const button = within(panel()).getByRole("button", { name: "Show all 13 events" });
-    expect(button).toHaveClass("mrr-btn");
-    fireEvent.click(button);
     expect(dataRows()).toHaveLength(13);
     expect(screen.getByText("Print 13")).toBeInTheDocument();
     expect(within(panel()).queryByRole("button", { name: /Show all/ })).toBeNull();
-    // Twelve or fewer rows never show the button.
     expect(groups()).toHaveLength(13);
   });
 

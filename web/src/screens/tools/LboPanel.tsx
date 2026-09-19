@@ -1,18 +1,20 @@
 /**
  * LBO Calculator body (redesign Phase 9, checklist 09 B.4 to B.8): the
- * `400px | 1fr` grid under the hero row. Left, `#lbo-assumptions`: the live
+ * `400px | 1fr` grid under the hero row. Left, `#lbo-assumptions`: the
  * financing-rate tile with its switch, the nine sliders in three groups and
  * the assumption warnings. Right, the results stack: `#lbo-outputs` (four
- * tiles), `#lbo-schedule` | `#lbo-sensitivity` side by side, then the
- * market-check caption. The hero, summary and disclosure line above and
+ * tiles), `#lbo-schedule` over `#lbo-sensitivity` (Iteration 1 T2 / T3: side
+ * by side they left a 300 to 400px band under the results column and differed
+ * by up to 29px), then the market-check caption. The hero, summary and disclosure line above and
  * below this body are the screen's (LboHeroRow, ToolsScreen).
  *
  * All deal math runs server-side in src/analytics/lbo.py via POST /api/lbo/run
  * (300 ms debounce, in `useLboDeal`). Every number here is served or the
  * display arithmetic the checklist names on served rows (the schedule's
  * Paydown and Leverage columns, the debt-at-exit ratio); IRR is never
- * re-derived. The financing rate defaults to the live all-in cost (Fed Funds +
- * HY OAS) whose sole owner is Credit → Financing conditions.
+ * re-derived. The financing rate defaults to the all-in rate (Fed funds, a
+ * monthly average, plus the daily HY OAS; Iteration 1 E1: never "today's" or
+ * "live") whose sole owner is Credit → Financing conditions.
  */
 
 import { Link } from "react-router-dom";
@@ -23,10 +25,23 @@ import ScrollTable from "../shared/ScrollTable";
 import type { LboRequest, LboSensitivity } from "../../api/types";
 import { ApiError } from "../../api/client";
 import Jargon from "../shared/Jargon";
-import { fmtDate, tidyProse } from "../../lib/format";
+import { tidyProse } from "../../lib/format";
+import type { FreshLabel } from "../shared/fresh-state";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, SliderRow, StateNote, capStyle, eyebrowStyle, fmtMillions } from "../shared/screen-ui";
 import { FALLBACK_RATE, SLIDERS, useLboDeal, type LboDeal, type SliderGroup } from "./lbo-deal";
+import { componentAsOf, isStatedDefault } from "./lbo-copy";
+
+/** One component's as-of word (FRESHNESS_CONTRACT §5), the server's reason
+ * as its tooltip; a stale value is marked on the word itself. */
+function FreshWord({ f }: { f: FreshLabel }) {
+  return (
+    <span data-fresh={f.tone} title={f.reason || undefined} style={f.stale ? { color: "var(--warn-hot)" } : undefined}>
+      {f.word}
+      {f.muted ? ` ${f.muted}` : ""}
+    </span>
+  );
+}
 
 /** The null-value glyph the tiles and the schedule print (U+2014), never an em-dash aside. */
 const DASH = "—";
@@ -143,13 +158,16 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
     );
   }
 
-  // The default deal at the live rate: every row's baseline (its tick and its
-  // changed state) reads from here; the rate row's is the clamped live rate,
-  // or the stated 8.50% fallback when no live rate is on file.
+  // The default deal at the all-in rate: every row's baseline (its tick and
+  // its changed state) reads from here; the rate row's is the clamped all-in
+  // rate, or the stated 8.50% fallback when no rate is on file.
   const baseInputs: LboRequest = d.baseInputs;
   const backToLive = () => d.set({ interest_rate: clampedLive ?? FALLBACK_RATE });
-  const storedThrough =
-    defaults.data?.data_as_of && defaults.data.data_as_of !== "unavailable" ? fmtDate(defaults.data.data_as_of) : DASH;
+  // Iteration 1 E1: Fed funds is a monthly average and the HY spread a daily
+  // series; each carries its own as-of word, and the engine's stated default
+  // is named as such, never "live" or "tracking".
+  const stated = isStatedDefault(defaults.data);
+  const { fed: fedAsOf, hy: hyAsOf } = componentAsOf(defaults.data);
 
   const rateNote = manualRate ? (
     <>
@@ -170,16 +188,16 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
           gap: 4,
         }}
       >
-        ↻ back to live {clampedLive?.toFixed(2)}%
+        ↻ back to the {clampedLive?.toFixed(2)}% {stated ? "stated default" : "all-in rate"}
         {liveRate != null && clampedLive != null && Math.abs(liveRate - clampedLive) > 0.01
           ? ` (true rate ${liveRate.toFixed(2)}% exceeds the model range)`
           : ""}
       </button>
     </>
   ) : clampedLive != null ? (
-    "tracking the live all-in cost"
+    stated ? "stated default rate in use: Fed funds and HY rows missing" : "tracking the all-in rate: Fed funds plus the HY spread"
   ) : (
-    "live rate unavailable: stated 8.50% default in use"
+    "rate unavailable: stated 8.50% default in use"
   );
 
   const resetButton = (
@@ -189,7 +207,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
       data-touch={isNarrow ? "true" : "false"}
       onClick={d.reset}
       disabled={!modified}
-      title={modified ? "Return every assumption to the default deal at the live rate" : "Assumptions already match the defaults"}
+      title={modified ? "Return every assumption to the default deal at the all-in rate" : "Assumptions already match the defaults"}
     >
       Reset to defaults
     </button>
@@ -234,7 +252,14 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <div style={eyebrowStyle}>Live financing rate</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={eyebrowStyle}>Financing rate</span>
+              {stated ? (
+                <Tag tone="reference" size="sm">
+                  Stated default
+                </Tag>
+              ) : null}
+            </div>
             <div className="num" style={{ fontFamily: "var(--font-ui)", fontSize: 22, fontWeight: 500, fontVariantNumeric: "tabular-nums", lineHeight: 1.15, marginTop: 2 }}>
               {defaults.data ? `${defaults.data.lbo_all_in_rate.toFixed(2)}%` : DASH}
             </div>
@@ -251,7 +276,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
             role="switch"
             className="mrr-switch"
             aria-checked={clampedLive != null && !manualRate}
-            aria-label="Track the live financing rate"
+            aria-label="Track the all-in financing rate"
             disabled={clampedLive == null}
             onClick={() => {
               if (manualRate && clampedLive != null) backToLive();
@@ -261,8 +286,15 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
           </button>
         </Card>
         <Caption>
-          Fed Funds {defaults.data ? defaults.data.fedfunds.toFixed(2) : DASH}% + HY spread{" "}
-          {defaults.data ? defaults.data.hy_oas_pct.toFixed(2) : DASH}pp, stored through {storedThrough} ·{" "}
+          {stated ? (
+            <>The engine&apos;s stated default: no stored Fed funds or HY rows are on file ·{" "}</>
+          ) : (
+            <>
+              Fed funds {defaults.data ? defaults.data.fedfunds.toFixed(2) : DASH}% (monthly average,{" "}
+              <FreshWord f={fedAsOf} />) + HY spread {defaults.data ? defaults.data.hy_oas_pct.toFixed(2) : DASH}pp (daily,{" "}
+              <FreshWord f={hyAsOf} />) ·{" "}
+            </>
+          )}
           <Link to="/app/credit#financing" className="mrr-link">
             full financing picture lives in Credit
           </Link>
@@ -312,7 +344,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
           <SectionHeader
             layout="panel"
             title="Outputs"
-            description={modified ? "Modified deal" : "Default deal at the live rate"}
+            description={modified ? "Modified deal" : stated ? "Default deal at the stated default rate" : "Default deal at the all-in rate"}
             right={baseMeta}
             actions={
               <Tag tone={modified ? "watch" : "clear"} size="sm">
@@ -475,7 +507,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
         {res?.viable && (
           <Caption>
             One check on the market: this deal borrows at {inputs.interest_rate.toFixed(2)}%
-            {defaults.data && !manualRate ? ", today's live all-in cost" : ""}. Pre-GFC deals
+            {defaults.data && !manualRate ? (stated ? ", the engine's stated default" : ", the all-in rate of Fed funds plus the HY spread") : ""}. Pre-GFC deals
             financed near ~7%; if the rate slider has to fall below reality to make the returns
             work, the market is telling you the price is wrong.
           </Caption>

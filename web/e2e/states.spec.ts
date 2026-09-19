@@ -532,7 +532,11 @@ const EMPTY_CELLS: EmptyCell[] = [
     def: byTab("credit"),
     prepare: (page) => rewriteEndpoint(page, "/api/credit/metrics", (served) => ({ ...((served ?? {}) as object), tight_count: 0 })),
     check: async (page) => {
-      await expect(section(page, "credit-state-odds")).toContainText("The Tight state has never occurred since 1996; its row renders empty, not zero-risk.", { timeout: 20_000 }); // CreditStateOdds.tsx:118
+      // Iteration 1 (G4): the caption's longer sentences sit behind the panel's Details disclosure; the
+      // matrix row itself now reads "No history" (transition_obs_3m/_6m are 0).
+      await expect(section(page, "credit-state-odds")).toContainText("No history", { timeout: 20_000 });
+      await section(page, "credit-state-odds").getByRole("button", { name: /Details/ }).click();
+      await expect(section(page, "credit-state-odds")).toContainText("The Tight state has never occurred since 1996; its row reads No history, not zero risk.", { timeout: 20_000 }); // CreditStateOdds.tsx (the row now prints "No history")
     },
   },
   {

@@ -3,7 +3,10 @@
  * checklist 06 B.5): the BB / B / CCC chart on the six served sparkline
  * points (F2: no longer series is served for the three rungs), the HY / IG
  * ratio tile, the CCC-vs-distress-line tile, and the quality-ladder tension callout
- * (C7) that renders only while `ladderFlags(m).tension` holds.
+ * (C7) that renders only while `ladderFlags(m).tension` holds. Iteration 1
+ * C2 / C3: the panel spans the page (the ladder row is one column), the chart
+ * fills the height of the tile stack beside it, and each visible explanation
+ * is at most two sentences, the rest behind "Details".
  *
  * Every number is a served field; the only client work is display math on
  * the served points (the plotted window's first and last month).
@@ -13,6 +16,8 @@ import type { CSSProperties, ReactNode } from "react";
 import { Card, GaugeBar, SectionHeader } from "../../components";
 import type { CreditMetrics, DatedValue } from "../../api/types";
 import { fmtMonYr } from "../../lib/format";
+import Disclosure from "../shared/Disclosure";
+import { HeroChartFrame } from "../shared/HeroChart";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, capStyle, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
 import { ladderFlags } from "./credit-rules";
@@ -48,6 +53,10 @@ export function ratioWord(r: number): "right on" | "near" | "above" | "below" {
   return r > 3.5 ? "above" : "below";
 }
 
+/** The plot's floor for a tile width (its preferred height) and its cap. */
+const plotFloor = (w: number) => Math.max(180, Math.min(240, Math.round(w * 0.32)));
+const PLOT_MAX = 420;
+
 function ChartTile({ m }: { m: CreditMetrics }) {
   const series = RUNGS.map((r) => ({ label: r.label, color: r.color, points: r.points(m) ?? [], lineWidth: 2 as const }));
   const plotted = series.filter((s) => s.points.length > 0);
@@ -57,7 +66,7 @@ function ChartTile({ m }: { m: CreditMetrics }) {
   const last = plotted.map((s) => s.points[s.points.length - 1].date).sort().reverse()[0];
   const months = plotted.reduce((n, s) => Math.max(n, s.points.length), 0);
   return (
-    <Card variant="tile" padding="12px 16px 8px" style={{ minWidth: 0 }}>
+    <Card variant="tile" padding="12px 16px 8px" style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
       <div style={{ ...capStyle, marginTop: 0, maxWidth: "none", display: "flex", flexWrap: "wrap", gap: 18, marginBottom: 6 }}>
         {RUNGS.map((r) => (
           <span key={r.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -68,7 +77,19 @@ function ChartTile({ m }: { m: CreditMetrics }) {
       </div>
       {plotted.length ? (
         <>
-          <SpreadLinesChart series={series} height={210} ariaLabel="BB, B and CCC option-adjusted spreads, last six months" />
+          {/* Iteration 1 C2: the plot takes the height the tile stack beside
+              it sets (HeroChartFrame), so no blank band opens under the chart. */}
+          <HeroChartFrame
+            fallback={{ w: 400, h: 210 }}
+            minHeight={(w) => plotFloor(w)}
+            maxHeight={() => PLOT_MAX}
+          >
+            {(box) => (
+              <div style={{ width: "100%" }}>
+                <SpreadLinesChart series={series} height={box.h} ariaLabel="BB, B and CCC option-adjusted spreads, last six months" />
+              </div>
+            )}
+          </HeroChartFrame>
           <div style={{ ...monoNoteStyle, marginTop: 6 }}>
             {months} months · monthly · {fmtMonYr(first)} to {fmtMonYr(last)}
           </div>
@@ -137,30 +158,32 @@ function DistressTile({ m }: { m: CreditMetrics }) {
   );
 }
 
-/** The C7 callout (CreditScreen.tsx:334-355 before Phase 6), verbatim. */
+/** The C7 callout (CreditScreen.tsx:334-355 before Phase 6). Iteration 1
+ * C3 / G4: the first two sentences stay visible; the rest, verbatim, sits
+ * behind "Details" on the same card. */
 function TensionCallout({ m }: { m: CreditMetrics }): ReactNode {
   const distressPct = m.ccc_pct_of_distress_line;
   if (!ladderFlags(m).tension || m.ccc_oas == null || distressPct == null) return null;
+  const prose: CSSProperties = { fontFamily: "var(--font-ui)", fontSize: "var(--fs-body)", lineHeight: "var(--lh-body)", color: "var(--text)", margin: "8px 0 0", textWrap: "pretty" };
+  const small: CSSProperties = { fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", lineHeight: 1.6, color: "var(--text-2)", margin: "6px 0 0", textWrap: "pretty" };
   return (
     <Card accentBar tone="watch" style={{ marginTop: 12 }}>
       <div style={{ ...eyebrowStyle, color: "var(--amber)" }}>Analytical callout · quality ladder tension</div>
-      <p
-        className="mrr-prose"
-        style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body)", lineHeight: "var(--lh-body)", color: "var(--text)", margin: "8px 0 0", textWrap: "pretty" }}
-      >
+      <p className="mrr-prose" style={prose}>
         The index says {m.credit_label}; the weakest rung says stress. CCC spreads sit at {Math.round(m.ccc_oas)} bps,{" "}
         {distressPct.toFixed(0)}% of the 1,000 bps <Jargon term="distress">distress</Jargon> line, while the broad
-        high-yield index holds {m.hy_oas != null ? Math.round(m.hy_oas) : DASH} bps. Both are true: the two readings
-        describe different rungs of the ladder.
+        high-yield index holds {m.hy_oas != null ? Math.round(m.hy_oas) : DASH} bps.
       </p>
-      <p
-        className="mrr-prose"
-        style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", lineHeight: 1.6, color: "var(--text-2)", margin: "6px 0 0", textWrap: "pretty" }}
-      >
-        What it means: the market is charging default risk only for the marginal borrower. Watch single-B
-        {m.b_oas != null ? ` (${Math.round(m.b_oas)} bps today)` : ""}: stress migrating from CCC into B is how a{" "}
-        {m.credit_label} state turns Stressed (HY above 400 bps).
-      </p>
+      <Disclosure variant="quiet" title="Details" style={{ marginTop: 4 }}>
+        <p className="mrr-prose" style={{ ...small, marginTop: 0 }}>
+          Both are true: the two readings describe different rungs of the ladder.
+        </p>
+        <p className="mrr-prose" style={small}>
+          What it means: the market is charging default risk only for the marginal borrower. Watch single-B
+          {m.b_oas != null ? ` (${Math.round(m.b_oas)} bps today)` : ""}: stress migrating from CCC into B is how a{" "}
+          {m.credit_label} state turns Stressed (HY above 400 bps).
+        </p>
+      </Disclosure>
     </Card>
   );
 }
@@ -174,7 +197,9 @@ export default function QualityLadder({ m, status }: CreditPanelProps): JSX.Elem
         <>
           <div className="mrr-credit-ladder-body">
             <ChartTile m={m} />
-            {/* The mockup .stack: the two tiles under each other in the 190px column. */}
+            {/* The mockup .stack: the two tiles under each other, beside the
+                chart (a 340px column since Iteration 1: at 190px the two
+                captions ran 631px tall and left 351px blank under the chart). */}
             <div style={{ display: "grid", gap: "var(--gap-tile)", alignContent: "start", minWidth: 0 }}>
               <RatioTile m={m} />
               <DistressTile m={m} />

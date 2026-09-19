@@ -29,8 +29,12 @@ const BRANCH = git("rev-parse --abbrev-ref HEAD"); // the branch under test, nev
 const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Summary row labels in B.2 order; Top significance is omitted while no story is on file. */
-const SUMMARY_LABELS = ["Next event", "After that", "Coverage", "Top significance", "High impact"];
+/** Summary row labels in B.2 order; Top significance is omitted while no story is on file. Iteration 1
+ * (N2) adds served rows that render only when there is something to count: Next high impact (the
+ * countdown event when it is not one of the first two rows), Last release, By category, Outlets and
+ * AI reads. */
+const SUMMARY_LABELS = ["Next event", "After that", "Next high impact", "Last release", "Coverage", "By category", "Outlets", "AI reads", "Top significance", "High impact"];
+const OPTIONAL_LABELS = new Set(["Next high impact", "Last release", "By category", "Outlets", "AI reads", "Top significance"]);
 const TILE_LABELS = ["HEADLINES", "HIGH IMPACT · ≥3.5", "M&A", "MACRO / FED", "GEOPOLITICAL"];
 const COUNTDOWN = /(?:today|tomorrow|in \d+ days)$/;
 const HERO_H1 = /(?:today|tomorrow|in \d+ days)$|^No events in the next 30 days$|^No events on file$|^Calendar unavailable/;
@@ -274,7 +278,8 @@ test.describe("news (checklist 08 E.3)", () => {
     await awaitHero(page);
     const svg = hero(page).locator("svg[role='img']");
     await expect(svg).toHaveCount(1);
-    await expect(svg).toHaveAttribute("aria-label", /^Macro events over the next 18 days: \d+ events, \d+ high impact$/);
+    // Iteration 1 (N1): the name counts large-cap earnings only when the window holds any.
+    await expect(svg).toHaveAttribute("aria-label", /^Macro events over the next 18 days: \d+ events, \d+ high impact(?:, \d+ large-cap earnings)?$/);
     const served = await servedCalendar(page);
     const shown = inside18(served, Date.now());
     await expect(svg.locator("circle")).toHaveCount(shown.length);
@@ -295,7 +300,7 @@ test.describe("news (checklist 08 E.3)", () => {
     await settle(page, 600);
     const dts = summary(page).locator("dt");
     const labels = (await dts.allTextContents()).map(clean);
-    const expected = SUMMARY_LABELS.filter((l) => l !== "Top significance" || labels.includes("Top significance"));
+    const expected = SUMMARY_LABELS.filter((l) => !OPTIONAL_LABELS.has(l) || labels.includes(l));
     expect(labels).toEqual(expected);
     note("summary-rows", labels.join(" · "));
     if (!labels.includes("Top significance")) note("top-significance", "absent: no story on file on verify day");
@@ -521,7 +526,7 @@ test.describe("news (checklist 08 E.3)", () => {
     }
   });
 
-  test("10. calendar: Upcoming pressed on load, day-group rows, the dot colour rule, hand-maintained sources, Recent flips every group to elapsed on the quiet rung, Upcoming restores, the legend, Show all N events reported", async ({ page }) => {
+  test("10. calendar: Upcoming pressed on load, day-group rows, the dot colour rule, hand-maintained sources, Recent flips every group to elapsed on the quiet rung, Upcoming restores, the legend, every upcoming row rendered", async ({ page }) => {
     const recentResponses: string[] = [];
     page.on("response", (r) => {
       if (r.url().includes("/api/calendar/recent")) recentResponses.push(r.url());
@@ -556,17 +561,10 @@ test.describe("news (checklist 08 E.3)", () => {
       if (served.some((e) => e.source === "manual_csv") || fallback) expect(sources).toContain("hand-maintained");
       note("sources", [...new Set(sources)].join(" · "));
       if (!fallback) {
-        expect(await dataRows.count()).toBe(Math.min(served.length, 12));
-        const showAll = calendar(page).getByRole("button", { name: /^Show all \d+ events$/ });
-        if (served.length > 12) {
-          await expect(showAll).toHaveText(`Show all ${served.length} events`);
-          await showAll.click();
-          await expect(dataRows).toHaveCount(served.length);
-          note("show-all", `Show all ${served.length} events revealed the rest`);
-        } else {
-          await expect(showAll).toHaveCount(0);
-          note("show-all", `${served.length} upcoming rows, no cap button`);
-        }
+        // Iteration 1 (N3): the whole 30-day window renders; the 12-row cap and Show all are gone.
+        expect(await dataRows.count()).toBe(served.length);
+        await expect(calendar(page).getByRole("button", { name: /^Show all \d+ events$/ })).toHaveCount(0);
+        note("show-all", `${served.length} upcoming rows, all rendered, no cap button`);
       }
     }
 

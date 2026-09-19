@@ -11,6 +11,15 @@
  * the Gantt's own merge). The "vs 3 mo ago" deltas the mockup draws are not
  * served (`TransitionOutlook` carries no prior snapshot, F1) and are hidden.
  *
+ * Iteration 1 (G2 / G3): tiles of one row carry the same amount of content.
+ * The spell tile adds a strip of three served duration fields under its
+ * gauge (it ran 60 to 115 px short of the late-cycle tile); the
+ * highest-risk path (a 3-month figure) sits in the 3-month caption; the
+ * counting method moves behind "Details" at the foot of the panel; exit rows
+ * share the meter rows' pitch. The tile rows read the Regime Lab's width
+ * (`.mrr-lab` container, app.css): below 1000 px the cycle tiles stack and
+ * the exits tile takes its own row under the two odds tiles.
+ *
  * The screen calls the hooks once and passes the query results down (B.0);
  * rendered bare (tests, /kit) the tab reads the same React Query keys itself,
  * which dedupes to the one request either way.
@@ -24,7 +33,8 @@ import { useRegimeDuration, useRegimeHistory, useRegimeLatest, useTransitions } 
 import type { Regime, RegimeDuration, TransitionOutlook } from "../../api/types";
 import { fmtMonYr, ordinal, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
-import { Caption, StateNote, monoNoteStyle } from "../shared/screen-ui";
+import { Caption, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
+import Disclosure from "../shared/Disclosure";
 import { STATUS_DEFINITION, cycleStatusTone, monthsText } from "./hero-copy";
 import { REGIMES, REGIME_HUE, completedSpells, exitCounts, regimeHue, spellStart, stay6m } from "./regime-history";
 import RegimeRibbon from "./RegimeRibbon";
@@ -44,6 +54,30 @@ const bigNumber: React.CSSProperties = {
   fontSize: 32,
   lineHeight: 1.1,
   letterSpacing: "-.01em",
+  fontVariantNumeric: "tabular-nums",
+  color: "var(--text)",
+};
+
+/* The spell tile's served duration fields (Iteration 1, G2): three cells
+   under the gauge, sub-eyebrow labels over UI-face figures. */
+const spellStats: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: "0 16px",
+  margin: "14px 0 0",
+  paddingTop: 12,
+  borderTop: "1px solid var(--line-2)",
+};
+/* A label that wraps keeps its figure on the row the others sit on. */
+const statCell: React.CSSProperties = { display: "flex", flexDirection: "column", minWidth: 0 };
+const statLabel: React.CSSProperties = { ...eyebrowStyle, fontSize: 11, letterSpacing: ".14em", lineHeight: 1.35, margin: 0 };
+const statValue: React.CSSProperties = {
+  margin: "auto 0 0",
+  paddingTop: 4,
+  fontFamily: "var(--font-ui)",
+  fontWeight: 500,
+  fontSize: 17,
+  lineHeight: 1.2,
   fontVariantNumeric: "tabular-nums",
   color: "var(--text)",
 };
@@ -84,6 +118,20 @@ export function CycleSection({ duration, history }: { duration: UseQueryResult<R
               ariaLabel={`Spell length ${months} months against twice the historical average`}
               style={{ marginTop: 18 }}
             />
+            <dl className="mrr-lab-spell-stats" style={spellStats}>
+              <div style={statCell}>
+                <dt style={statLabel}>Days in regime</dt>
+                <dd style={statValue}>{d.days_in_regime}</dd>
+              </div>
+              <div style={statCell}>
+                <dt style={statLabel}>Of the average spell</dt>
+                <dd style={statValue}>{Math.round(d.progress_pct)}%</dd>
+              </div>
+              <div style={statCell}>
+                <dt style={statLabel}>Past spells outlasted</dt>
+                <dd style={statValue}>{d.percentile_duration.toFixed(0)}%</dd>
+              </div>
+            </dl>
             <Caption style={{ marginTop: 12 }}>
               {d.current_regime} has run {months} month{months === "1" ? "" : "s"}, longer than {d.percentile_duration.toFixed(0)}% of past{" "}
               {d.current_regime} spells, which average {d.historical_avg_months.toFixed(1)} months. {d.status} means{" "}
@@ -181,20 +229,22 @@ export function TransitionsSection({
             <Card variant="tile" padding="14px 18px 12px">
               <SectionHeader level="sub" as="h3" title="Next 3 months" style={{ marginTop: 0, marginBottom: 6 }} />
               <OddsRows current={t.current_regime} stay={t.stay_probability_3m} rows={t.transitions_3m.slice(0, 3)} />
-              <Caption style={{ marginTop: 8 }}>{tidyProse(t.narrative_3m)}</Caption>
+              {/* The highest-risk path is the 3-month figure (the summary's
+                  "Next 3 months" row prints it with the 3-month stay). */}
+              <Caption style={{ marginTop: 8 }}>
+                {tidyProse(t.narrative_3m)} Highest-risk path: → {t.highest_risk_transition} at {Math.round(t.highest_risk_prob)}%.
+              </Caption>
             </Card>
             <Card variant="tile" padding="14px 18px 12px">
               <SectionHeader level="sub" as="h3" title="Next 6 months" style={{ marginTop: 0, marginBottom: 6 }} />
               <OddsRows current={t.current_regime} stay={stay6m(t)} rows={t.transitions_6m.slice(0, 4)} />
-              <Caption style={{ marginTop: 8 }}>
-                {tidyProse(t.narrative_6m)} Highest-risk path: → {t.highest_risk_transition} at {Math.round(t.highest_risk_prob)}%. Odds are counted
-                month-over-month from the stored classifier history: a <Jargon term="transition matrix">transition matrix</Jargon>, not a
-                forecast model.
-              </Caption>
+              <Caption style={{ marginTop: 8 }}>{tidyProse(t.narrative_6m)}</Caption>
             </Card>
           </>
         ) : (
-          <Card variant="tile">
+          // The pending tile takes its own row, so it never stretches to the
+          // exits tile's height as a blank band (G2).
+          <Card variant="tile" style={{ gridColumn: "1 / -1" }}>
             <StateNote loading={transitions.isLoading} error={transitions.isError} />
           </Card>
         )}
@@ -203,9 +253,9 @@ export function TransitionsSection({
           {rows && label ? (
             exits.length ? (
               <>
-                <div style={{ display: "grid", gap: 2 }}>
+                <div style={{ display: "grid", gap: 0 }}>
                   {exits.map((e) => (
-                    <div key={e.to} className="mrr-lab-exit" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div key={e.to} className="mrr-lab-exit" style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 40 }}>
                       <span className="num" style={{ ...bigNumber, fontSize: 24, lineHeight: 1.35, width: 34, flex: "none" }}>
                         {e.count}
                       </span>
@@ -229,6 +279,14 @@ export function TransitionsSection({
           )}
         </Card>
       </div>
+      {t ? (
+        <Disclosure variant="quiet" title="Details" style={{ marginTop: 6 }}>
+          <Caption style={{ marginTop: 0 }}>
+            Odds are counted month-over-month from the stored classifier history: a <Jargon term="transition matrix">transition matrix</Jargon>,
+            not a forecast model.
+          </Caption>
+        </Disclosure>
+      ) : null}
     </Card>
   );
 }

@@ -1,9 +1,15 @@
 /**
- * Key levels (redesign Phase 3, checklist 03 B.4): the slim seven-tile row
- * under Monitored signals. Every tile is a StatTile with its desk-note caption
+ * Key levels (redesign Phase 3, checklist 03 B.4): the seven tiles under
+ * Monitored signals. Every tile is a StatTile with its desk-note caption
  * kept verbatim (U-CAP); the 2s10s and recession tiles keep their band tone as
  * a tile border tint, with the number and the band word carrying the meaning.
- * Columns come from `.mrr-dash-levels` in app.css (7 / 4 / 2 / 1).
+ *
+ * Iteration 1 (G2): columns come from `.mrr-dash-levels` in app.css, read
+ * from the dashboard's width. The five level tiles (one-line captions) share
+ * a row and the two model-reading tiles (`.mrr-level-wide`, three-line
+ * captions) share the next at half width each, so tiles of one row carry
+ * captions of one length; the old single row of seven stretched the short
+ * tiles to the long captions' height (60 to 99 px tails).
  */
 
 import type { UseQueryResult } from "@tanstack/react-query";
@@ -97,7 +103,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
           </Caption>
         </Card>
 
-        <Card variant="tile" tone={rec ? (rec.is_inverted ? "risk" : "clear") : "default"}>
+        <Card variant="tile" className="mrr-level-wide" tone={rec ? (rec.is_inverted ? "risk" : "clear") : "default"}>
           <StatTile label="Yield curve 2s10s" value={rec?.yield_curve_spread != null ? fmtBps(rec.yield_curve_spread) : DASH} size="sm" />
           <Caption>
             {rec?.yield_curve_spread != null ? (
@@ -112,7 +118,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
           </Caption>
         </Card>
 
-        <Card variant="tile" tone={recessionTone(rec?.recession_label)}>
+        <Card variant="tile" className="mrr-level-wide" tone={recessionTone(rec?.recession_label)}>
           <StatTile
             label="Recession model · 12m"
             value={rec?.recession_prob != null ? `${rec.recession_prob.toFixed(1)}%` : recession.isError ? DASH : "…"}

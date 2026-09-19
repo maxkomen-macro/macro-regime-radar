@@ -413,6 +413,10 @@ export interface CreditMetrics {
   data_as_of: string | null;
   transition_3m: Record<string, Record<string, number>>;
   transition_6m: Record<string, Record<string, number>>;
+  /** Months counted behind each from-state row of the matrices (a row with 0
+   * has no history). Optional so older snapshots still type-check. */
+  transition_obs_3m?: Record<string, number> | null;
+  transition_obs_6m?: Record<string, number> | null;
   tight_count: number;
   hy_sparkline: DatedValue[];
   ig_sparkline: DatedValue[];

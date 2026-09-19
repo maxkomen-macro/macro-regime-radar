@@ -1,12 +1,18 @@
 /**
  * Macro tape panel (redesign Phase 5, checklist 05 B.7): the `#watchlist`
  * section as a panel Card. The panel header carries the feed status line
- * (moved verbatim from MarketsScreen) and the Macro / Single names
- * `Segmented`; both views are a compact `DataTable` inside a `ScrollTable`
- * well (nine columns at desk width with the symbol column pinned, five on a
- * phone). Row click, the selected rail and the 600 ms tick flash ride
- * `rowProps`; the ticker button is the keyboard and assistive path and its
- * click bubbles to the row handler, so nothing fires twice.
+ * (moved verbatim from MarketsScreen); the macro tape and the single names
+ * are compact `DataTable`s inside `ScrollTable` wells (nine columns at desk
+ * width with the symbol column pinned, five on a phone). Row click, the
+ * selected rail and the 600 ms tick flash ride `rowProps`; the ticker button
+ * is the keyboard and assistive path and its click bubbles to the row
+ * handler, so nothing fires twice.
+ *
+ * Iteration 1: the single names render under the macro tape as their own
+ * block (`#single-names`), no longer behind a Macro / Single names toggle
+ * (M3b); the two provenance paragraphs moved behind "Details" and the visible
+ * line says whether the tape is live or holding the last close, with its
+ * as-of stamp (M2, `tapeStatusLine`).
  *
  * Every figure is served or a formatted served value: `dc` / `dd` are the
  * feed's own day-change fields (never arithmetic; a quote with a price but no
@@ -17,11 +23,12 @@
  */
 
 import { useCallback, useMemo, type ReactNode } from "react";
-import { Card, DataTable, SectionHeader, Segmented, Sparkline } from "../../components";
+import { Card, DataTable, SectionHeader, Sparkline } from "../../components";
 import type { DailyBar } from "../../api/types";
 import { LIVE_WINDOW_MS, useQuotes, useStreamStatus, type LiveQuote } from "../../live/quotes";
 import { fmtDate, fmtSignedPct } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
+import Disclosure from "../shared/Disclosure";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, metaStyle } from "../shared/screen-ui";
 import { CHART_PANEL_ID } from "./chart-panel-id";
@@ -32,14 +39,14 @@ import {
   asOfCell,
   feedWord,
   fmtDayDollar,
+  fmtEtStamp,
   fmtPrice,
   mono,
+  nyseSessionOpen,
   toneColor,
   type TapeDef,
 } from "./tape";
 import { useTickFlash } from "./useTickFlash";
-
-export type TapeView = "macro" | "single-names";
 
 export interface MacroTapeProps {
   /** The screen's `useQuotes()` snapshot. */
@@ -52,14 +59,66 @@ export interface MacroTapeProps {
   selected: string | null;
   /** Row click and ticker-button click (the screen's `toggleSelect`). */
   onSelect: (symbol: string) => void;
-  view: TapeView;
-  onViewChange: (view: TapeView) => void;
   /** Ref callback for each ticker button so the screen can return focus after Esc. */
   registerRow: (symbol: string, el: HTMLButtonElement | null) => void;
   /** `usLive`: the sort meta reads "re-sorts live" vs "as data updates". */
   live: boolean;
   /** `marketDailyDate` for the caption's "through {date}". */
   storedThrough: string | null;
+}
+
+/* ── the visible provenance line (M2) ──────────────────────────────────── */
+
+const US_DEFS = [...MACRO_TAPE, ...SINGLE_NAMES].filter((d) => d.feed === "us");
+const TICKING_DEFS = MACRO_TAPE.filter((d) => d.feed === "crypto" || d.feed === "forex");
+
+/**
+ * At most two sentences under the tape (Iteration 1, M2): whether the US rows
+ * are live, delayed or holding the last close, stamped with the newest US
+ * quote's own time (`fmtEtStamp`, the stamp the As of column prints), then
+ * the stored-close date the 1W / 1M columns read. The session word is the
+ * tape's own NYSE-hours check; nothing here is a new figure.
+ */
+export function tapeStatusLine(args: {
+  socketOpen: boolean;
+  usLive: boolean;
+  quotes: ReadonlyMap<string, LiveQuote>;
+  storedThrough: string | null;
+  sessionOpen?: boolean;
+}): string {
+  const { socketOpen, usLive, quotes, storedThrough } = args;
+  const sessionOpen = args.sessionOpen ?? nyseSessionOpen();
+  const now = Date.now();
+  let usT: number | null = null;
+  let usDelayed = false;
+  for (const d of US_DEFS) {
+    const q = quotes.get(d.symbol);
+    if (q?.t != null && (usT == null || q.t > usT)) {
+      usT = q.t;
+      usDelayed = q.delayed;
+    }
+  }
+  const othersLive = TICKING_DEFS.some((d) => {
+    const q = quotes.get(d.symbol);
+    return q?.src === "ws" && q.t != null && now - q.t < LIVE_WINDOW_MS;
+  });
+  const stored = storedThrough ? ` 1W, 1M and the sparklines read stored closes through ${fmtDate(storedThrough)}.` : "";
+
+  if (usLive && usT != null) return `Live: US rows tick from the exchange feed, newest at ${fmtEtStamp(usT)}.${stored}`;
+  if (!socketOpen) {
+    return storedThrough
+      ? `Showing the last close: the stream is not connected, so rows print stored closes through ${fmtDate(storedThrough)}.`
+      : "Showing the last close: the stream is not connected and no stored close is on file yet.";
+  }
+  if (usT == null) {
+    return storedThrough
+      ? `Showing the last close: no US quote has arrived, so US rows print stored closes through ${fmtDate(storedThrough)}.`
+      : "No US quote or stored close on file yet.";
+  }
+  if (sessionOpen) {
+    return `Delayed: the US feed is not ticking, so US rows print their newest quote, ${fmtEtStamp(usT)}${usDelayed ? " (15 minutes delayed)" : ""}.${stored}`;
+  }
+  return `Showing the last close: US rows hold their final quote from ${fmtEtStamp(usT)}${othersLive ? ", while crypto and FX tick live" : ""}.${stored}`;
 }
 
 /* ── feed status line (moved verbatim from MarketsScreen, M29) ─────────── */
@@ -222,11 +281,6 @@ const MONTH: TapeColumn = { key: "m1", label: "1M %", align: "right", mono: true
 const SPARK: TapeColumn = { key: "spark", label: "30 Sess", align: "right", mono: true, width: "52px", render: sparkCell };
 const AS_OF: TapeColumn = { key: "asof", label: "As of", align: "right", mono: true, render: asOfNode };
 
-const TAPE_VIEW_OPTIONS = [
-  { id: "macro", label: "Macro" },
-  { id: "single-names", label: "Single names" },
-];
-
 // Counted from the registry, never typed: the tape holds 19 symbols in eight
 // groups (checklist 05 says 18; the caption must not claim a number the table
 // does not show).
@@ -241,14 +295,14 @@ export default function MacroTape({
   singles,
   selected,
   onSelect,
-  view,
-  onViewChange,
   registerRow,
   live,
   storedThrough,
 }: MacroTapeProps): JSX.Element {
   const { isNarrow } = useBreakpoint();
   const flash = useTickFlash(quotes);
+  const status = useStreamStatus();
+  const statusLine = tapeStatusLine({ socketOpen: status.socket === "open", usLive: live, quotes, storedThrough });
 
   // One stable ref callback per symbol: React re-invokes a ref only when the
   // callback identity changes, so the 2 Hz snapshots never churn the screen's
@@ -323,83 +377,77 @@ export default function MacroTape({
 
   return (
     <Card as="section" variant="panel" id="watchlist" style={{ minWidth: 0 }}>
-      <SectionHeader
-        layout="panel"
-        title="Macro tape"
-        actions={
-          <Segmented
-            label="Tape view"
-            options={TAPE_VIEW_OPTIONS}
-            value={view}
-            onChange={(id) => onViewChange(id as TapeView)}
-          />
-        }
-      />
-      {/* The per-feed honesty line (M29) sits under the header on its own line:
-          beside the toggle it squeezed the 432px header (verify 2026-09-15). */}
+      <SectionHeader layout="panel" title="Macro tape" />
+      {/* The per-feed honesty line (M29) sits under the header on its own line. */}
       <div style={{ ...metaStyle, margin: "-6px 0 10px" }}>
         <FeedStatusLine />
       </div>
 
-      {view === "macro" ? (
-        /* The well scrolls the nine columns inside the card instead of
-           widening the page; the symbol column pins and a swipe affordance
-           appears when it overflows (ScrollTable). */
+      {/* The well scrolls the nine columns inside the card instead of
+          widening the page; the symbol column pins and a swipe affordance
+          appears when it overflows (ScrollTable). */}
+      <Card padding="0">
+        <ScrollTable label="Macro tape" style={{ padding: "8px 12px 2px" }}>
+          <DataTable
+            compact
+            zebra={false}
+            className="mrr-tape"
+            caption={MACRO_CAPTION}
+            columns={macroColumns}
+            groups={macroGroups}
+            rowProps={rowPropsFor}
+          />
+        </ScrollTable>
+      </Card>
+
+      {/* The single names sit under the macro tape, always on screen (M3b);
+          `#single-names` is the palette and hash target. */}
+      <div id="single-names" style={{ marginTop: 18 }}>
+        <SectionHeader level="sub" as="h3" title="Single names" style={{ margin: "0 0 4px" }} />
+        <div style={{ ...metaStyle, marginBottom: 8 }}>sorted by day move · re-sorts {live ? "live" : "as data updates"}</div>
         <Card padding="0">
-          <ScrollTable label="Macro tape" style={{ padding: "8px 12px 2px" }}>
+          <ScrollTable label="Single names" style={{ padding: "8px 12px 2px" }}>
             <DataTable
               compact
               zebra={false}
               className="mrr-tape"
-              caption={MACRO_CAPTION}
-              columns={macroColumns}
-              groups={macroGroups}
+              caption={SINGLES_CAPTION}
+              columns={singlesColumns}
+              rows={singleRows}
               rowProps={rowPropsFor}
             />
           </ScrollTable>
         </Card>
-      ) : (
-        <div id="single-names">
-          <div style={{ ...metaStyle, marginBottom: 8 }}>sorted by day move · re-sorts {live ? "live" : "as data updates"}</div>
-          <Card padding="0">
-            <ScrollTable label="Single names" style={{ padding: "8px 12px 2px" }}>
-              <DataTable
-                compact
-                zebra={false}
-                className="mrr-tape"
-                caption={SINGLES_CAPTION}
-                columns={singlesColumns}
-                rows={singleRows}
-                rowProps={rowPropsFor}
-              />
-            </ScrollTable>
-          </Card>
-          <Caption>
-            Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers;
-            biggest day move on top. Off-hours the board holds at the last close until the next
-            session opens.
-          </Caption>
-        </div>
-      )}
+        <Caption>
+          Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers;
+          biggest day move on top. Off-hours the board holds at the last close until the next
+          session opens.
+        </Caption>
+      </div>
 
-      <Caption>
-        Day moves come straight from the exchange feed&apos;s own day-change figures; never
-        recomputed here. 1W / 1M and sparklines come from the stored daily candles
-        {storedThrough ? ` through ${fmtDate(storedThrough)}` : ""}; crypto, FX, VIX and
-        single names have no stored history yet, so those columns print a dash. A dash under
-        Day % means the feed sent a price without a day change (off-hours REST fill); the as-of
-        stamp says when.
-        {isNarrow ? " Δ$, 1W and the sparkline return above 768px." : ""}
-        {/* Cadence + cross-surface reconciliation: the VIX row is a quote off
-            this feed, while the Dashboard's VIX spike card reads the monthly
-            signals snapshot — two honest levels, two cadences. */}
-        <div style={{ marginTop: 2 }}>
-          Every row states its own as-of stamp: ● marks a live tick, the rest print the quote time
-          with the 15-minute delay noted where it applies, and a dated close means the stream had no
-          quote. The dashboard&apos;s VIX spike signal reads the monthly signal print, so it carries a
-          different level than the VIX row here.
-        </div>
-      </Caption>
+      {/* M2: one visible line saying live or last close, with its stamp; the
+          full provenance sits one click down on the same panel. */}
+      <Caption style={{ marginTop: 14, color: "var(--text-2)" }}>{statusLine}</Caption>
+      <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+        <Caption style={{ marginTop: 0 }}>
+          Day moves come straight from the exchange feed&apos;s own day-change figures; never
+          recomputed here. 1W / 1M and sparklines come from the stored daily candles
+          {storedThrough ? ` through ${fmtDate(storedThrough)}` : ""}; crypto, FX, VIX and
+          single names have no stored history yet, so those columns print a dash. A dash under
+          Day % means the feed sent a price without a day change (off-hours REST fill); the as-of
+          stamp says when.
+          {isNarrow ? " Δ$, 1W and the sparkline return above 768px." : ""}
+          {/* Cadence + cross-surface reconciliation: the VIX row is a quote off
+              this feed, while the Dashboard's VIX spike card reads the monthly
+              signals snapshot: two honest levels, two cadences. */}
+          <div style={{ marginTop: 2 }}>
+            Every row states its own as-of stamp: ● marks a live tick, the rest print the quote time
+            with the 15-minute delay noted where it applies, and a dated close means the stream had no
+            quote. The dashboard&apos;s VIX spike signal reads the monthly signal print, so it carries a
+            different level than the VIX row here.
+          </div>
+        </Caption>
+      </Disclosure>
     </Card>
   );
 }

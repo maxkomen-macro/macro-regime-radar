@@ -1,5 +1,11 @@
 import React from "react";
 import { Tag } from "../core/Tag";
+import { splitSentences } from "../../lib/sentences";
+
+/* Iteration 1 (N4): at most four sentences of a stored AI read show once it is
+   opened (interpretation first, then research); the rest, and a wire summary
+   the card also carries, sit behind a nested "Details" toggle. */
+const MAX_SENTENCES = 4;
 
 /* Significance bands. The pipeline scores 1–5 (score_significance; ≥4.5
    critical / ≥3.5 high / ≥2.5 notable). sigScale=5 aligns the colour bands to
@@ -207,6 +213,83 @@ function SourceLinks({ sources }) {
   );
 }
 
+/* Sentences of a prose prop; a non-string node (a caller's own markup) is
+   kept whole as one piece. */
+function piecesOf(node) {
+  if (node == null || node === false || node === "") return [];
+  return typeof node === "string" ? splitSentences(node) : [node];
+}
+const joinPieces = (pieces) => (pieces.every((p) => typeof p === "string") ? pieces.join(" ") : pieces);
+
+/* The opened AI read (N4), shared by the row block and the lead card:
+   up to four sentences with their attribution lines, the cited sources, then
+   "Details" for the remaining sentences and the wire summary. */
+function AiRead({ interpretation, research, sources, summary, showLabel }) {
+  const [moreOpen, setMoreOpen] = React.useState(false);
+  const moreId = React.useId();
+  const interp = piecesOf(interpretation);
+  const res = piecesOf(research);
+  const shownI = interp.slice(0, MAX_SENTENCES);
+  const shownR = res.slice(0, Math.max(0, MAX_SENTENCES - shownI.length));
+  const restI = interp.slice(shownI.length);
+  const restR = res.slice(shownR.length);
+  const hasMore = restI.length > 0 || restR.length > 0 || Boolean(summary);
+  return (
+    <>
+      {showLabel ? <span style={AI_LABEL}>◆ Why it matters · AI</span> : null}
+      {shownI.length ? (
+        <>
+          <p style={PARA}>{joinPieces(shownI)}</p>
+          <div style={ATTR_CLAUDE}>◆ CLAUDE · REGIME INTERPRETATION</div>
+        </>
+      ) : null}
+      {shownR.length ? (
+        <>
+          <p style={PARA}>{joinPieces(shownR)}</p>
+          <div style={ATTR_PPLX}>◆ PERPLEXITY RESEARCH</div>
+        </>
+      ) : null}
+      {sources.length ? (
+        <>
+          <div style={ATTR_PPLX}>◆ PERPLEXITY SOURCES</div>
+          <SourceLinks sources={sources} />
+        </>
+      ) : null}
+      {hasMore ? (
+        <div style={{ marginTop: 6 }}>
+          <Toggle open={moreOpen} onClick={() => setMoreOpen((v) => !v)} controls={moreId} style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+            Details
+          </Toggle>
+          <div id={moreId} hidden={!moreOpen}>
+            {moreOpen ? (
+              <>
+                {restI.length ? (
+                  <>
+                    <p style={PARA}>{joinPieces(restI)}</p>
+                    <div style={ATTR_CLAUDE}>◆ CLAUDE · REGIME INTERPRETATION</div>
+                  </>
+                ) : null}
+                {restR.length ? (
+                  <>
+                    <p style={PARA}>{joinPieces(restR)}</p>
+                    <div style={ATTR_PPLX}>◆ PERPLEXITY RESEARCH</div>
+                  </>
+                ) : null}
+                {summary ? (
+                  <div style={{ marginTop: 8 }}>
+                    <span style={WIRE_LABEL}>Wire summary</span>
+                    <p style={PARA}>{summary}</p>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function ReadAt({ href, source }) {
   return href ? (
     <a
@@ -273,9 +356,6 @@ function RowCard({
   const hasSummary = Boolean(summary);
   const canOpen = enriched || hasSummary;
   const showBlock = canOpen && (open || !expandable);
-  const paragraph = interpretation || research || null;
-  // A research body that is not already the paragraph prints under its own line.
-  const extraResearch = interpretation && research ? research : null;
   const readLabel = `Regime read${sources.length ? ` · ${sources.length} sources` : ""}`;
 
   let detail;
@@ -363,35 +443,7 @@ function RowCard({
         <div id={panelId} hidden={!showBlock} style={{ gridColumn: "3 / 6", padding: "2px 0 12px", minWidth: 0 }}>
           {showBlock ? (
             enriched ? (
-              <>
-                {paragraph ? (
-                  <>
-                    <span style={AI_LABEL}>◆ Why it matters · AI</span>
-                    <p style={PARA}>{paragraph}</p>
-                    <div style={interpretation ? ATTR_CLAUDE : ATTR_PPLX}>
-                      {interpretation ? "◆ CLAUDE · REGIME INTERPRETATION" : "◆ PERPLEXITY RESEARCH"}
-                    </div>
-                  </>
-                ) : null}
-                {extraResearch ? (
-                  <>
-                    <div style={ATTR_PPLX}>◆ PERPLEXITY RESEARCH</div>
-                    <p style={PARA}>{extraResearch}</p>
-                  </>
-                ) : null}
-                {sources.length ? (
-                  <>
-                    <div style={ATTR_PPLX}>◆ PERPLEXITY SOURCES</div>
-                    <SourceLinks sources={sources} />
-                  </>
-                ) : null}
-                {summary ? (
-                  <div style={{ marginTop: 8 }}>
-                    <span style={WIRE_LABEL}>Wire summary</span>
-                    <p style={PARA}>{summary}</p>
-                  </div>
-                ) : null}
-              </>
+              <AiRead interpretation={interpretation} research={research} sources={sources} summary={summary} showLabel={Boolean(interpretation || research)} />
             ) : (
               <p style={{ ...PARA, margin: 0 }}>{summary}</p>
             )
@@ -429,21 +481,26 @@ function LeadCard({
   const readId = React.useId();
   const dimsId = React.useId();
 
-  // Row 3: the AI read when one exists, else the wire summary, else nothing.
-  const paragraph = interpretation
-    ? { ai: true, body: interpretation, title: "Claude regime interpretation" }
-    : research
-      ? { ai: true, body: research, title: "Perplexity research" }
-      : summary
-        ? { ai: false, body: summary, title: undefined }
-        : null;
-  // A research body that row 3 did not already print goes into the regime read.
-  const extraResearch = interpretation && research ? research : null;
-  const hasRead = sources.length > 0 || Boolean(extraResearch);
-  const showRead = hasRead && (readOpen || !expandable);
+  // Row 3, one slot on every lead card (G3): the stored AI read behind one
+  // click (N4), else the wire summary behind one click, labelled so the two
+  // read differently, else the marked "Headline only" slot.
+  const enriched = Boolean(interpretation || research || sources.length);
+  const body = enriched ? "ai" : summary ? "wire" : "none";
+  const showRead = body !== "none" && (readOpen || !expandable);
   const hasDims = Array.isArray(dims) && dims.length > 0;
   const showDims = hasDims && (dimsOpen || !expandable);
   const readLabel = `Regime read${sources.length ? ` · ${sources.length} sources` : ""}`;
+  const readTrigger =
+    body === "ai" ? (
+      <>
+        <span style={AI_LABEL} title={interpretation ? "Claude regime interpretation" : "Perplexity research"}>
+          ◆ Why it matters · AI
+        </span>
+        <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>· {readLabel}</span>
+      </>
+    ) : (
+      <span style={WIRE_LABEL}>Wire summary</span>
+    );
 
   return (
     <article
@@ -495,14 +552,33 @@ function LeadCard({
           headline
         )}
       </h3>
-      {paragraph ? (
-        <div>
-          <span style={paragraph.ai ? AI_LABEL : WIRE_LABEL} title={paragraph.title}>
-            {paragraph.ai ? "◆ Why it matters · AI" : "Wire summary"}
-          </span>
-          <p style={PARA}>{paragraph.body}</p>
-        </div>
-      ) : null}
+      <div data-slot="read">
+        {body === "none" ? (
+          <span style={{ ...MONO_NOTE, fontSize: 10.5 }}>Headline only</span>
+        ) : expandable ? (
+          <Toggle
+            open={readOpen}
+            onClick={() => setReadOpen((v) => !v)}
+            controls={readId}
+            style={{ whiteSpace: "normal", flexWrap: "wrap", textAlign: "left", color: body === "ai" ? "var(--mint)" : "var(--text-3)" }}
+          >
+            {readTrigger}
+          </Toggle>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>{readTrigger}</div>
+        )}
+        {body !== "none" ? (
+          <div id={readId} hidden={!showRead}>
+            {showRead ? (
+              body === "ai" ? (
+                <AiRead interpretation={interpretation} research={research} sources={sources} summary={summary} showLabel={false} />
+              ) : (
+                <p style={PARA}>{summary}</p>
+              )
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       {hasDims ? (
         <div>
           {expandable ? (
@@ -532,35 +608,6 @@ function LeadCard({
                   </span>
                 ))}
               </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      {hasRead ? (
-        <div style={{ borderTop: "1px solid var(--line-2)", paddingTop: 8 }}>
-          {expandable ? (
-            <Toggle open={readOpen} onClick={() => setReadOpen((v) => !v)} controls={readId} style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-              {readLabel}
-            </Toggle>
-          ) : (
-            <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>{readLabel}</span>
-          )}
-          <div id={readId} hidden={!showRead}>
-            {showRead ? (
-              <>
-                {extraResearch ? (
-                  <>
-                    <div style={ATTR_PPLX}>◆ PERPLEXITY RESEARCH</div>
-                    <p style={PARA}>{extraResearch}</p>
-                  </>
-                ) : null}
-                {sources.length ? (
-                  <>
-                    <div style={ATTR_PPLX}>◆ PERPLEXITY SOURCES</div>
-                    <SourceLinks sources={sources} />
-                  </>
-                ) : null}
-              </>
             ) : null}
           </div>
         </div>

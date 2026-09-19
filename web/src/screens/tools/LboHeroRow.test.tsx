@@ -16,7 +16,7 @@ import { irrTone, useLboDeal, type LboDeal } from "./lbo-deal";
 import { NO_SHELL_ACTIONS, ShellActionsContext, type ShellActions } from "../shell/shell-actions";
 import { fmtMillions } from "../shared/screen-ui";
 import { renderWithProviders, stubFetch } from "../../test/utils";
-import { BASE_REQ, CREDIT_METRICS, LBO_DEFAULTS_FALLBACK, LIVE_RATE, NOW, lboModel, lboRoutes, lboRun, lboRunFixed } from "./__fixtures__/lbo";
+import { BASE_REQ, CREDIT_METRICS, LBO_DEFAULTS_B3, LBO_DEFAULTS_FALLBACK, LBO_DEFAULTS_STATED, LIVE_RATE, NOW, lboModel, lboRoutes, lboRun, lboRunFixed } from "./__fixtures__/lbo";
 
 const ROUTE = "/app/tools";
 const BASE_RES = lboModel(BASE_REQ);
@@ -93,7 +93,7 @@ afterEach(() => {
 /* ── cases ───────────────────────────────────────────────────────────────── */
 
 describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
-  it("renders exactly one h1 equal to the fixture IRR inside #lbo-hero, the MOIC pill in its band, the eyebrow, the subhead with the live rate, the lede, the two actions, the badge footnote and one Financing rate chip; no note at rest", async () => {
+  it("renders exactly one h1 equal to the fixture IRR inside #lbo-hero, the MOIC pill in its band, the eyebrow, the subhead with the all-in rate, the lede, the two actions, the badge footnote and the two component as-of items (E1: no month-stamp chip); no note at rest", async () => {
     renderHero();
     const h1 = await awaitHero();
     expect(document.querySelectorAll("h1")).toHaveLength(1);
@@ -107,7 +107,7 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     expect(pill).toHaveAttribute("data-tone", irrTone(BASE_RES.irr));
 
     expect(text(hero().querySelector(".mrr-hero-eyebrow"))).toMatch(/LBO calculator/i);
-    expect(text(hero().querySelector("h2"))).toBe(`The default deal at today's ${LIVE_RATE.toFixed(2)}% all-in rate.`);
+    expect(text(hero().querySelector("h2"))).toBe(`The default deal at a ${LIVE_RATE.toFixed(2)}% all-in rate: Fed funds plus the HY spread.`);
     const lede = text(hero().querySelector(".mrr-hero-lede"));
     expect(lede.startsWith("A $100M EBITDA business bought at 8.00× with 4.50× leverage, growing 5.0% a year and exiting at 9.00× after 5 years.")).toBe(true);
     expect(lede).toContain("20% IRR");
@@ -120,23 +120,26 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     expect(financing).toHaveClass("mrr-hero-btn-ghost");
 
     expect(text(hero().querySelector(".mrr-hero-foot"))).toContain(BADGE[irrTone(BASE_RES.irr)]);
-    const chips = hero().querySelectorAll('.mrr-hero-chips span[title^="Financing rate"]');
-    expect(chips).toHaveLength(1);
-    // The monthly cadence stamps the chip at month precision (freshness.ts stampFor).
-    expect(chips[0]).toHaveAttribute("title", "Financing rate: Current · Sep 2026");
+    // Iteration 1 E1: no "Current · Sep 2026" month-stamp chip on the rate; each
+    // component's as-of word from the freshness block (a pre-B3 payload has none: unknown).
+    expect(hero().querySelectorAll('.mrr-hero-chips span[title^="Financing rate"]')).toHaveLength(0);
+    const asOf = [...hero().querySelectorAll<HTMLElement>("[data-role='rate-as-of']")].map((el) => text(el));
+    expect(asOf).toEqual(["Fed funds · As of unknown", "HY spread · As of unknown"]);
+    expect(text(hero())).not.toMatch(/today|\blive\b|current/i);
     expect(note()).toBeNull();
     expect(text(hero())).not.toContain("—");
   });
 
-  it("#lbo-summary: Live financing as an h2, the seven dt labels in order at rest (no Vs base case), the values from the defaults and the base run, and Credit state as a link to /app/credit#financing printing the credit label", async () => {
+  it("#lbo-summary: Deal financing as an h2, the seven dt labels in order at rest (no Vs base case), the values from the defaults with each component's as-of and the base run, and Credit state as a link to /app/credit#financing printing the credit label", async () => {
     renderHero();
     await awaitHero();
     await waitFor(() => expect(dts()).toEqual(SUMMARY_LABELS));
-    expect(within(summary()).getByRole("heading", { level: 2, name: "Live financing" })).toBeInTheDocument();
-    expect(text(ddFor("Fed funds"))).toBe("4.33%");
-    expect(text(ddFor("HY OAS"))).toBe("2.65%");
+    // Iteration 1 E1: the card is no longer titled "Live financing".
+    expect(within(summary()).getByRole("heading", { level: 2, name: "Deal financing" })).toBeInTheDocument();
+    expect(text(ddFor("Fed funds"))).toBe("4.33% · monthly average, As of unknown");
+    expect(text(ddFor("HY OAS"))).toBe("2.65% · daily, As of unknown");
     expect(text(ddFor("All-in rate"))).toBe("6.98%");
-    expect(text(ddFor("Financing"))).toBe("6.98% all-in (live: Fed Funds + HY spread)");
+    expect(text(ddFor("Financing"))).toBe("6.98% all-in (Fed funds + HY spread)");
     expect(text(ddFor("Structure"))).toMatch(/^8(?:\.0{1,2})?× entry · 9(?:\.0{1,2})?× exit · 4\.50?× debt · 5 yr hold$/);
     expect(text(ddFor("Equity check"))).toBe(`${fmtMillions(BASE_RES.entry_equity)} in · ${fmtMillions(BASE_RES.exit_equity as number)} out`);
     const credit = ddFor("Credit state").querySelector("a") as HTMLAnchorElement;
@@ -163,6 +166,33 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     expect(openAlerts).not.toHaveBeenCalled();
     fireEvent.click(button);
     expect(openFreshness).toHaveBeenCalledTimes(2);
+  });
+
+  it("E1: a B3 payload prints each component's as-of word in the hero footnote, the summary and the strip (Fed funds the Aug 2026 print, the HY spread Sep 17)", async () => {
+    stubFetch(lboRoutes({ "/api/lbo/defaults": () => LBO_DEFAULTS_B3 }));
+    renderHero();
+    await awaitHero();
+    await waitFor(() => expect(text(ddFor("Fed funds"))).toBe("4.33% · monthly average, Aug 2026 print"));
+    expect(text(ddFor("HY OAS"))).toBe("2.65% · daily, Sep 17");
+    const asOf = [...hero().querySelectorAll<HTMLElement>("[data-role='rate-as-of']")].map((el) => text(el));
+    expect(asOf).toEqual(["Fed funds · Aug 2026 print", "HY spread · Sep 17"]);
+    const button = await awaitStrip("Rate synced from FRED");
+    expect(stripDetail(button)).toBe("Fed funds: Aug 2026 print · HY spread: Sep 17");
+    expect(text(document.body)).not.toMatch(/today|\blive\b|current/i);
+  });
+
+  it("E1: the B3 stated-default payload (is_fallback) reads Stated default in the subhead, the summary and the hero footnote, never live", async () => {
+    stubFetch(lboRoutes({ "/api/lbo/defaults": () => LBO_DEFAULTS_STATED }));
+    renderHero();
+    await screen.findByRole("heading", { level: 1, name: /IRR$/ });
+    await waitFor(() => expect(text(hero().querySelector("h2"))).toBe("The default deal at the stated 8.60% default rate."));
+    expect(text(ddFor("Fed funds"))).toBe("5.33% · Stated default");
+    expect(text(ddFor("HY OAS"))).toBe("3.27% · Stated default");
+    expect(text(ddFor("Financing"))).toBe("8.60% all-in (stated default)");
+    expect([...hero().querySelectorAll<HTMLElement>("[data-role='rate-as-of']")].map((el) => text(el))).toEqual(["Financing rate · Stated default"]);
+    const button = await awaitStrip("Rate feed unavailable");
+    expect(button).toHaveAttribute("data-tone", "gray");
+    expect(text(document.body)).not.toMatch(/today|\blive\b|current/i);
   });
 
   it("the unavailable payload renders the gray Rate feed unavailable strip with the FRED-rows detail", async () => {
@@ -238,7 +268,7 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
       `Your modified deal: ${(mod.irr as number).toFixed(1)}% IRR · ${(mod.moic as number).toFixed(2)}× MOIC · ${signed} pp vs the default, in Outputs below.`,
     );
     expect(text(screen.getByRole("heading", { level: 1 }))).toBe(`${(BASE_RES.irr as number).toFixed(1)}% IRR`);
-    expect(text(hero().querySelector("h2"))).toBe(`The default deal at today's ${LIVE_RATE.toFixed(2)}% all-in rate.`);
+    expect(text(hero().querySelector("h2"))).toBe(`The default deal at a ${LIVE_RATE.toFixed(2)}% all-in rate: Fed funds plus the HY spread.`);
 
     act(() => (latest as LboDeal).set({ interest_rate: 7.5 }));
     await waitFor(() => expect(text(ddFor("Financing"))).toBe("7.50% all-in (manual)"));
@@ -246,7 +276,7 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
 
     act(() => (latest as LboDeal).reset());
     await waitFor(() => expect(dts()).toEqual(SUMMARY_LABELS));
-    expect(text(ddFor("Financing"))).toBe("6.98% all-in (live: Fed Funds + HY spread)");
+    expect(text(ddFor("Financing"))).toBe("6.98% all-in (Fed funds + HY spread)");
     await waitFor(() => expect(note()).toBeNull());
   });
 });

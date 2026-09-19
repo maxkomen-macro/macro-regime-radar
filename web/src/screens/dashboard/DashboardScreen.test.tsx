@@ -329,9 +329,19 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(heroText).toContain("Model confidence: Medium (47%)");
     // The pill is the only place the dominant figure prints inside the hero.
     expect(heroText.split("58%")).toHaveLength(2);
-    // Decision 8: the gradient placeholder, never an image.
+    // Decision 8: never an image. Iteration 1 D1: the chart slot holds the
+    // stacked regime-odds chart (one figure, four bands, the current month
+    // marked, one caption), not the gradient placeholder.
     expect(document.querySelector("img")).toBeNull();
-    expect(hero().querySelector("[style*='135deg']")).not.toBeNull();
+    const chart = hero().querySelector("figure[data-chart]") as HTMLElement;
+    expect(chart).not.toBeNull();
+    expect(chart.querySelector("svg[role='img']")).not.toBeNull();
+    expect(chart.querySelectorAll(".mrr-odds-band")).toHaveLength(4);
+    expect(chart.querySelector("[data-current-month]")).toHaveAttribute("data-current-month", MONTH);
+    expect(chart.querySelectorAll("figcaption")).toHaveLength(1);
+    expect(text(chart.querySelector("figcaption"))).toBe("Regime odds · 4 months · widest band is the call");
+    expect(hero().querySelector("[style*='135deg']")).toBeNull();
+    expect(document.querySelectorAll("figure[data-chart]")).toHaveLength(1);
     expect(screen.queryByText("Reading the latest regime…")).toBeNull();
   });
 
@@ -574,35 +584,34 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     await waitFor(() => expect(text(ddFor("NBER recession model"))).toMatch(/^13\.7% over 12m/));
   });
 
-  it("macro charts: four accordion buttons closed on load; clicking the first opens its chart", async () => {
+  it("macro charts: three accordion buttons closed on load (the regime odds moved to the hero, D1); clicking the first opens its chart", async () => {
     renderDashboard();
     const mc = await awaitSection("macro-charts");
     expect(within(mc).getByRole("heading", { level: 2 })).toHaveTextContent(/^Macro charts$/i);
-    expect(text(mc)).toContain("4 series · in-place accordion");
-    await waitFor(() => expect(mc.querySelectorAll("button[aria-expanded]")).toHaveLength(4));
+    expect(text(mc)).toContain("3 series · in-place accordion");
+    await waitFor(() => expect(mc.querySelectorAll("button[aria-expanded]")).toHaveLength(3));
     const buttons = [...mc.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")];
-    expect(buttons.map((b) => b.getAttribute("aria-expanded"))).toEqual(["false", "false", "false", "false"]);
-    expect(buttons.map((b) => b.getAttribute("aria-controls"))).toEqual(["chart-regime-panel", "chart-curve-panel", "chart-recession-panel", "chart-credit-panel"]);
+    expect(buttons.map((b) => b.getAttribute("aria-expanded"))).toEqual(["false", "false", "false"]);
+    expect(buttons.map((b) => b.getAttribute("aria-controls"))).toEqual(["chart-curve-panel", "chart-recession-panel", "chart-credit-panel"]);
     // The decorative glyph (aria-hidden) leads each button; the title follows.
     expect(buttons.map((b) => text(b))).toEqual([
-      expect.stringMatching(/^\u25b8\s*Regime odds · 24 months/),
       expect.stringMatching(/^\u25b8\s*Yield curve 2s10s · model history/),
       expect.stringMatching(/^\u25b8\s*Recession model probability · history/),
       expect.stringMatching(/^\u25b8\s*Credit spreads · 90 days/),
     ]);
+    expect(byId("chart-regime-panel")).toBeNull();
     expect(mc.querySelector("svg[role='img']")).toBeNull();
-    for (const id of ["chart-regime-panel", "chart-curve-panel", "chart-recession-panel", "chart-credit-panel"]) expect(byId(id)).toHaveAttribute("hidden");
-    await waitFor(() => expect(text(buttons[0])).toContain("4 monthly reads"));
+    for (const id of ["chart-curve-panel", "chart-recession-panel", "chart-credit-panel"]) expect(byId(id)).toHaveAttribute("hidden");
     fireEvent.click(buttons[0]);
     expect(buttons[0]).toHaveAttribute("aria-expanded", "true");
-    const panel = byId("chart-regime-panel") as HTMLElement;
+    const panel = byId("chart-curve-panel") as HTMLElement;
     expect(panel).not.toHaveAttribute("hidden");
     expect(panel.querySelector("svg[role='img']")).not.toBeNull();
-    expect(text(panel)).toContain("The classifier's monthly odds per regime. The call is whichever line is on top; crossovers are regime changes.");
+    expect(text(panel)).toContain("Dips below the dashed zero line are inversions: the shape that has preceded most US recessions.");
     // One panel open at a time (the in-place accordion).
-    fireEvent.click(buttons[3]);
+    fireEvent.click(buttons[2]);
     expect(buttons[0]).toHaveAttribute("aria-expanded", "false");
-    expect(buttons[3]).toHaveAttribute("aria-expanded", "true");
+    expect(buttons[2]).toHaveAttribute("aria-expanded", "true");
     expect(text(byId("chart-credit-panel"))).toContain("high-yield at 294 bps, investment-grade at 83 bps; spreads widen when credit stress builds. FRED BAML series, monthly observations.");
   });
 
@@ -677,7 +686,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(within(byId("markets-glance") as HTMLElement).getByRole("group", { name: "Asset class" })).toBeInTheDocument();
     await waitFor(() => expect(text(byId("macro-calendar"))).toContain("CPI (Aug)"));
     expect(within(byId("macro-calendar") as HTMLElement).getByRole("link", { name: /View calendar/ })).toHaveAttribute("href", "/app/news#calendar");
-    expect(byId("chart-regime-panel")).not.toBeNull();
+    expect(byId("chart-curve-panel")).not.toBeNull();
   });
 
   it("regime 404 without data renders the error headline and the Unavailable pill", async () => {
@@ -723,12 +732,12 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
   it("route #macro-charts opens the first chart panel", async () => {
     renderDashboard({ route: "/app/dashboard#macro-charts" });
     const mc = await awaitSection("macro-charts");
-    await waitFor(() => expect(mc.querySelectorAll("button[aria-expanded]")).toHaveLength(4));
+    await waitFor(() => expect(mc.querySelectorAll("button[aria-expanded]")).toHaveLength(3));
     const [first, ...rest] = [...mc.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")];
     await waitFor(() => expect(first).toHaveAttribute("aria-expanded", "true"));
     for (const b of rest) expect(b).toHaveAttribute("aria-expanded", "false");
-    expect(byId("chart-regime-panel")).not.toHaveAttribute("hidden");
-    await waitFor(() => expect(byId("chart-regime-panel")?.querySelector("svg[role='img']")).not.toBeNull());
+    expect(byId("chart-curve-panel")).not.toHaveAttribute("hidden");
+    await waitFor(() => expect(byId("chart-curve-panel")?.querySelector("svg[role='img']")).not.toBeNull());
   });
 });
 

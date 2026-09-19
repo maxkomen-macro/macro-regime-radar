@@ -431,6 +431,22 @@ with `th[scope="row"]` metric names, Level and MoM only); (5) the `DisclosureLin
 Nothing on the page is re-derived in the browser: the risk word counts served
 `ret_1d` signs, and every figure is a served field or its formatted value.
 
+**Markets, Iteration 1 (M1 to M3, 2026-09-19).** The symbol search rides in the
+hero's action row (`TabHero actionsAfter`, the hero set to `overflow: visible` so the
+result list can hang below it), on screen without scrolling at 1280 px and up; a pick
+fills `#single-name-research`, which scrolls into view and takes focus, and the panel
+header keeps only the `Chart range` picker. `<section id="single-name-movers">` sits
+under the heatmap: the three biggest gainers and losers among the twelve stored single
+names in fixed slots (a missing mover is a marked slot), each tile opening
+`?name={symbol}#single-name-research`; the day change is the stream's own `dc` with the
+quote's as-of, else the last completed session's close against the one before from the
+5D candles (the watchlist's `readCandles`), stamped `Close · {Mon DD}`, and names with
+neither are listed plainly. The Macro / Single names toggle is gone: `#single-names`
+renders under the macro table inside `#watchlist`. Under the tape one line says live,
+delayed or last close with the newest US quote's stamp (`tapeStatusLine`); the two
+provenance paragraphs sit behind "Details". The summary adds "Single names · 1d" and
+"ETFs · 1w" (served extremes) when there is something to read.
+
 **Credit composition (Phase 6, 2026-09-15).** Inside `<div class="mrr-credit">` (the
 same one-column panel stack, hero-row margin zeroed), top to bottom: (1)
 `.mrr-hero-row`: `TabHero id="credit-hero"` (h1 = the served `credit_label`, "Normal" /
@@ -462,6 +478,23 @@ served field or its formatted value; the only client math is the ten-year window
 (measured from the last served point, never the wall clock), the plotted window's
 extremes and the band list.
 
+**Credit, Iteration 1 (C1 to C4, E1, 2026-09-19).** `.mrr-credit-ladder-row` is one
+column at every width: paired, the quality ladder ran 300 to 440 px taller than the
+credit state odds. The ladder body sets the chart beside a 340 px tile stack (one
+column below 768), and the BB / B / CCC plot fills the stack's height through
+`HeroChartFrame`; the tension callout keeps its first two sentences, the rest behind
+"Details". The state odds put the matrix beside the stat tiles and caption (one column
+below 1024); a from-state with no served months (`transition_obs_3m` / `_6m`, else the
+Tight count) reads "No history" in every cell, never a measured 0%, the month counts
+print under the matrix, and the caption keeps two sentences with the rest behind
+"Details". Every spread-monitor card carries the meter slot: HY and IG the served
+percentile, CCC the distress-line share (capped bar), BB and Single-B the marked "No
+percentile served" slot; five across, the sparkline sits under the number. The financing
+grid stacks below 1200. The LBO all-in rate is Fed funds (a monthly average) plus the
+daily HY OAS: the panel never says "today's" or "live", each component prints its own
+as-of word from the `/api/lbo/defaults` freshness block (`freshLabel`), and the stated
+default is read from `is_fallback` / `status`.
+
 **Recession composition (Phase 7, 2026-09-15).** Inside `<div class="mrr-rec">` (the
 same one-column panel stack, hero-row margin zeroed), top to bottom: (1)
 `.mrr-hero-row`: `TabHero id="recession-hero"` (eyebrow "Recession model"; h1 = the
@@ -486,15 +519,30 @@ served feature, no meter, no sparkline, no threshold lines); (3) `<section id="c
 Curve monitor (`.mrr-rec-curve`: the 2s10s `LineChart` behind the `Curve window` 5Y /
 10Y / 30Y Segmented beside the 340px "Current curve shape" tile, one column below
 1200); (4) `.mrr-rec-bottom` (`minmax(0,1.25fr) minmax(0,1fr)` at 1200 and up,
-`align-items: start`, one column below): the Sensitivity panel whose body is the
-`#sensitivity` Disclosure, collapsed by default (`.mrr-rec-sens`: five `SliderRow`s
-with baseline ticks beside the scenario result, the second display-face number on the
-app, one column below 768) | `<section id="transparency">` Model transparency
+stretched to one height since Iteration 1, one column below): `<section
+id="sensitivity">` Sensitivity, its five sliders on screen on load (Iteration 1 X3,
+decision D2; `.mrr-rec-sens`: five `SliderRow`s with baseline ticks over the result
+tile, which states the model's own reading beside the scenario, the second
+display-face number on the app) | `<section id="transparency">` Model transparency
 (`DivergingBar` coefficients, the macro-vs-markets tile, the model card); (5) the
 `DisclosureLine`. Nothing on the page is re-derived in the browser: every probability,
 band word, coefficient and divergence figure is a served field or its formatted value;
 the only client math is the three-month delta in points, the count of consecutive
 rises and the 24-month / 5-year / 10-year slices of served series.
+
+**Recession, Iteration 1 (X1 to X3, E2, 2026-09-19).** The gauge draws in a
+`HeroChartFrame` at 88% of the hero's chart slot, capped at 740 px wide (432 px tall),
+so it fills the column at every width. The 20% / 40% and "Inversion below 0" rule words
+sit in a key row outside the plot, never over the svg (G1). The five input cards carry
+the same slots (the X10 curve caption sits under the row; names wrap above the badge).
+The curve plot fills its tile's height beside the curve-shape tile, which adds the
+served 2s10s spread, its 30-year percentile and the inversion state. The summary adds
+Training sample and Inputs through. Sensitivity renders open: the result tile always
+shows "Model's own reading · headline" (the served probability, which the sliders never
+move) above the scenario ("Scenario at current readings · inputs unchanged", or "Your
+adjusted probability"), and Reset returns every input to the model's current reading.
+The fifth input is named "10Y − 5Y breakeven spread" (T10YIE − T5YIE), standing in for
+the Conference Board leading index (USSLIND), which stopped publishing in February 2020.
 
 **News & Calendar composition (Phase 8, 2026-09-15).** Inside `<div class="mrr-news">`
 (the same one-column panel stack, hero-row margin zeroed), top to bottom: (1)
@@ -543,6 +591,25 @@ every figure is a served field or a count of served rows, and the only client
 arithmetic is the ET calendar-day delta the countdown, the day markers and the timeline
 columns share.
 
+**News, Iteration 1 (N1 to N4, E4, 2026-09-19).** The timeline sets each label beside
+its dot, then on the other side, then up to three 16 px lanes up or down, taking the
+first spot that meets no other label, dot, the NOW mark or the plot edge; a label with
+no free spot is left off (its dot and the calendar still carry the event). Large-cap
+earnings (`/api/calendar?include=earnings`, `kind === "earnings"`, read only by the
+timeline beside the macro rows of `useCalendar(30)`) draw as violet diamonds on a
+dashed stem below the low band, one per day, labelled with their symbols; the ◆
+EARNINGS legend and the earnings count in the chart's name appear only when the window
+holds any. The desk summary adds Next high impact, Last release, By category, Outlets
+and AI reads, each only with something to count. `.mrr-news-body` aligns to the start,
+so the calendar card sizes to its content, and the whole 30-day window renders (the
+12-row cap and its "Show all" button are gone). Every lead card keeps one read slot: the AI
+read ("◆ Why it matters · AI · Regime read · {n} sources") or the wire summary behind one
+click, else "Headline only"; an opened AI read shows at most four sentences,
+interpretation first, then research, with the cited sources, and the rest (and the
+wire summary) behind a nested "Details". List rows stack by the width of their own list
+(a container query below 760 px). The hero lede keeps at most two sentences of a
+stored interpretation.
+
 **Tools composition (Phase 9, 2026-09-15).** Inside `<div class="mrr-tools">` (the
 same one-column panel stack, hero-row margin zeroed), top to bottom: (1) the
 `.mrr-hero-row` of the active tool, swapped with the sub-tab and sitting above the
@@ -585,10 +652,10 @@ Optimizer, the solved count read from the served `converged` flags; the strip, m
 `#lbo` / `#allocation`, and any `#lbo-*` / `#allocation-*` section id selects its tool
 by prefix) whose panel is `<section id="lbo">` with the `LboPanel` body
 (`.mrr-tools-lbo`, `400px | minmax(0,1fr)`, one column below 1200: `#lbo-assumptions`
-with the live-rate tile and its `.mrr-switch`, the nine sliders in three groups and the
+with the financing-rate tile and its `.mrr-switch`, the nine sliders in three groups and the
 warnings block, beside the results stack: `#lbo-outputs` on `.mrr-tools-outputs`, four
 tiles across, auto-fit below 768, one column below 480; `.mrr-tools-pair`,
-`#lbo-schedule` | `#lbo-sensitivity`, one column below 1200; the market-check caption)
+`#lbo-schedule` over `#lbo-sensitivity` since Iteration 1; the market-check caption)
 or `<section id="allocation">` with the `AllocationPanel` sections
 (`#allocation-overview`, `#allocation-optimization`, `#allocation-risk`). (3) the tool's
 `DisclosureLine`. Nothing on the page is re-derived in the browser: IRR, MOIC, the
@@ -596,6 +663,20 @@ schedule and the sensitivity grid are served by `POST /api/lbo/run` (one request
 rest, two once the deal is modified; the base run shares the deal run's key until then),
 and the only client arithmetic is the bridge bars, the schedule's paydown and leverage
 columns and the debt-at-exit ratio on served rows.
+
+**Tools, Iteration 1 (T1 to T3, E1, 2026-09-19).** `.mrr-tools-pair` is one column at
+every width (`#lbo-schedule` over `#lbo-sensitivity`): side by side, the results column
+ended 300 to 400 px above the assumptions panel and the two cards differed by up to
+29 px; stacked, the schedule reads without its scroll well. The all-in rate is Fed funds
+(a monthly average) plus the daily HY OAS and is never called "today's", "live" or
+"current": the rate tile's eyebrow reads "Financing rate", the switch "Track the
+all-in financing rate", the summary card "Deal financing", and the hero footnote, the
+summary rows, the tile caption, the strip and the disclosure line print each
+component's as-of word from the freshness block (`componentAsOf`, `freshLabel`). The
+engine's stated default is read from `is_fallback` / `status` (`isStatedDefault`) and
+marked "Stated default". The hero row is `aria-busy` while the default deal runs. The
+Allocation summary adds the regime's leader and laggard, the asset count and the last
+month of returns.
 
 **Gaps.** 16px between top-level columns (`--gap-col`), 14px between stacked panels
 (`--gap-panel`), 12px between tiles inside a panel (`--gap-tile`). Panel padding
@@ -1039,6 +1120,12 @@ Phase 2 components).
 
 ## 13. Change log
 
+- 2026-09-19 Iteration 1, Credit / Recession / Tools: the credit ladder row and the LBO
+  schedule / sensitivity pair go one column; charts fill their tiles' height through
+  `HeroChartFrame`; the recession gauge scales with its slot; Recession sensitivity opens
+  on load (D2) and names the model's own reading; the LBO all-in rate is never "live",
+  each component carrying its own as-of word; the fifth recession input is the
+  "10Y − 5Y breakeven spread"
 - 2026-09-19 Iteration 1, root causes: the hero row pairs the hero with the summary
   card only from 1620 (below, the summary stacks under the hero and sizes to its rows,
   and the full-width hero keeps copy | chart down to 1200, replacing the 1520 inner-grid

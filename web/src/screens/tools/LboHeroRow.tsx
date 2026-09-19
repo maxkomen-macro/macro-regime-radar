@@ -1,26 +1,27 @@
 /**
  * LboHeroRow: the LBO calculator's hero row (redesign Phase 9, checklist 09
  * B.1 and B.2): `TabHero id="lbo-hero"` beside `SummaryCard id="lbo-summary"`
- * inside `.mrr-hero-row`. The hero is the default deal at the live rate, read
+ * inside `.mrr-hero-row`. The hero is the default deal at the all-in rate, read
  * from the base run of the `LboDeal` the screen owns and never from the
  * modified run; the modified deal appears only in the hero note, the
  * "Vs base case" row and the Outputs panel below. The signature visual is the
  * equity value bridge on the base run's served fields. The strip is the FRED
  * sync of the defaults payload and opens the freshness drawer through the
- * shell seam; the Credit state row reads the served credit label.
+ * shell seam; the Credit state row reads the served credit label. Iteration
+ * 1 E1: the rate is Fed funds (a monthly average) plus the daily HY spread,
+ * each printed with its own as-of word, never "live" or "current".
  */
 
 import type { CSSProperties, ReactNode } from "react";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Link } from "react-router-dom";
 import { useCreditMetrics } from "../../api/queries";
-import { assessFreshness } from "../shared/freshness";
 import { StateNote, fmtMillions } from "../shared/screen-ui";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import { useShellActions } from "../shell/shell-actions";
 import EquityBridge from "./EquityBridge";
-import { STRIP_SUFFIX, lboHero, lboStrip, signedPp, stampOf } from "./lbo-copy";
+import { STRIP_SUFFIX, componentAsOf, isStatedDefault, lboHero, lboStrip, signedPp } from "./lbo-copy";
 import { bridgeSteps, type LboDeal } from "./lbo-deal";
 
 /** Loading and unavailable headlines ride in the UI face at the hero-sub
@@ -48,9 +49,11 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   const { openFreshness } = useShellActions();
 
   /* ── hero (B.1) ──────────────────────────────────────────────────────── */
+  const stated = isStatedDefault(defaults.data);
   const copy = lboHero({
     defaults,
     clampedLive,
+    statedDefault: stated,
     baseInputs,
     baseRes,
     res,
@@ -58,11 +61,30 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
     runPending,
     baseError: base.error,
   });
-  const stamp = stampOf(defaults.data);
-  // No absence before an answer: the chip waits for the payload (or its error).
-  // Freshness chips are hidden on a phone (the checklist 03 B.1 convention every tab follows).
+  // Iteration 1 E1: no month-stamp freshness chip ("Current · Sep 2026") on
+  // the rate. The footnote states each component's own as-of word from the
+  // payload's freshness block instead (Fed funds is a monthly average, the
+  // HY spread daily); a stated default says so. Hidden on a phone, as the
+  // freshness chips are on every tab (checklist 03 B.1).
   const { isMobile } = useBreakpoint();
-  const freshness = !isMobile && (defaults.data || defaults.isError) ? [{ noun: "Financing rate", info: assessFreshness(stamp, "monthly") }] : undefined;
+  const { fed: fedAsOf, hy: hyAsOf } = componentAsOf(defaults.data);
+  const asOfItems: ReactNode[] =
+    !isMobile && defaults.data
+      ? stated
+        ? [
+            <span key="stated" data-role="rate-as-of">
+              Financing rate · Stated default
+            </span>,
+          ]
+        : [
+            <span key="fed" data-role="rate-as-of" title={fedAsOf.reason || undefined}>
+              Fed funds · {fedAsOf.word}
+            </span>,
+            <span key="hy" data-role="rate-as-of" title={hyAsOf.reason || undefined}>
+              HY spread · {hyAsOf.word}
+            </span>,
+          ]
+      : [];
   const steps = copy.state === "ready" ? bridgeSteps(baseRes, baseInputs) : null;
   const heroShared = {
     id: "lbo-hero",
@@ -70,7 +92,6 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
     live: false,
     lede: copy.lede,
     actions: HERO_ACTIONS,
-    freshness,
     glow: copy.glow,
     minHeight: 300,
   };
@@ -79,8 +100,11 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
         <span key="badge" data-role="irr-badge" style={{ color: copy.footnoteColor ?? undefined }}>
           {copy.footnote}
         </span>,
+        ...asOfItems,
       ]
-    : undefined;
+    : asOfItems.length
+      ? asOfItems
+      : undefined;
   const hero =
     copy.state === "ready" ? (
       <TabHero
@@ -101,6 +125,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
         pill={copy.pill}
         pillTone={copy.pillTone}
         subhead={copy.subhead}
+        footnote={footnote}
         note={copy.note}
         placeholder
       />
@@ -111,15 +136,16 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   const dNote = <StateNote loading={defaults.isLoading} error={defaults.isError} />;
   const creditLabel = credit.data?.credit_label;
   const rows: SummaryRow[] = [
-    { id: "fed-funds", label: "Fed funds", value: d ? `${d.fedfunds.toFixed(2)}%` : dNote },
-    { id: "hy-oas", label: "HY OAS", value: d ? `${d.hy_oas_pct.toFixed(2)}%` : dNote },
+    // E1: each component with its own as-of word; the stated default says so.
+    { id: "fed-funds", label: "Fed funds", value: d ? (stated ? `${d.fedfunds.toFixed(2)}% · Stated default` : `${d.fedfunds.toFixed(2)}% · monthly average, ${fedAsOf.word}`) : dNote },
+    { id: "hy-oas", label: "HY OAS", value: d ? (stated ? `${d.hy_oas_pct.toFixed(2)}% · Stated default` : `${d.hy_oas_pct.toFixed(2)}% · daily, ${hyAsOf.word}`) : dNote },
     { id: "all-in", label: "All-in rate", value: d ? <b style={{ fontWeight: 500 }}>{d.lbo_all_in_rate.toFixed(2)}%</b> : dNote },
     {
       id: "financing",
       label: "Financing",
       value: defaults.isLoading
         ? dNote
-        : `${inputs.interest_rate.toFixed(2)}% all-in${manualRate ? " (manual)" : clampedLive != null ? " (live: Fed Funds + HY spread)" : " (stated default)"}`,
+        : `${inputs.interest_rate.toFixed(2)}% all-in${manualRate ? " (manual)" : clampedLive != null && !stated ? " (Fed funds + HY spread)" : " (stated default)"}`,
     },
     {
       id: "structure",
@@ -163,9 +189,11 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   };
 
   return (
-    <div className="mrr-hero-row">
+    // Busy while the default deal runs (the hero shows its placeholder then),
+    // so assistive tech and the layout sweeps wait for the answer.
+    <div className="mrr-hero-row" aria-busy={copy.state === "loading" ? true : undefined}>
       {hero}
-      <SummaryCard id="lbo-summary" as="h2" title="Live financing" rows={rows} status={strip} />
+      <SummaryCard id="lbo-summary" as="h2" title="Deal financing" rows={rows} status={strip} />
     </div>
   );
 }

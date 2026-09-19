@@ -1,23 +1,28 @@
 /**
  * Macro charts (redesign Phase 3, checklist 03 B.8): the in-place accordion
- * and its four LineChart panels, moved from DashboardScreen. All four panels
- * are closed by default (section 0.5 "collapsed section below the calendar
- * row"); `#macro-charts` in the URL opens the first so a palette jump shows a
- * chart. Panel ids, titles, meta, bodies and captions are unchanged.
+ * and its LineChart panels, moved from DashboardScreen. All panels are closed
+ * by default (section 0.5 "collapsed section below the calendar row");
+ * `#macro-charts` in the URL opens the first so a palette jump shows a chart.
+ * Panel ids, titles, meta, bodies and captions are unchanged.
+ *
+ * Iteration 1 (D1): the "Regime odds · 24 months" panel left the accordion
+ * for the hero's chart slot (RegimeOddsChart, a stacked view of the same
+ * stored odds), so the chart appears once on the page; three panels remain
+ * and the first is now the 2s10s curve.
  */
 
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { Card, SectionHeader } from "../../components";
-import type { CreditOAS, RecessionMetrics, Regime } from "../../api/types";
+import type { CreditOAS, RecessionMetrics } from "../../api/types";
 import { fmtDate, fmtPct } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { Caption, mono } from "../shared/screen-ui";
-import LineChart, { type ChartSeries } from "./LineChart";
+import LineChart from "./LineChart";
 
 export const MACRO_CHARTS_HASH = "#macro-charts";
-export const FIRST_CHART_ID = "chart-regime";
+export const FIRST_CHART_ID = "chart-curve";
 
 /** The panel a hash asks for: `#macro-charts` opens the first chart. */
 export function chartFromHash(hash: string): string | null {
@@ -25,8 +30,6 @@ export function chartFromHash(hash: string): string | null {
 }
 
 export interface MacroChartsProps {
-  /** `useRegimeHistory(36)` from the screen (sliced to 24 here). */
-  history: UseQueryResult<Regime[]>;
   recession: UseQueryResult<RecessionMetrics>;
   credit: UseQueryResult<CreditOAS>;
   /** Reports the open panel so the screen can re-run its hash scroll once a chart is on the page. */
@@ -126,7 +129,7 @@ function Accordion({
 
 /* ── section ───────────────────────────────────────────────────────────── */
 
-export default function MacroCharts({ history, recession, credit, onOpenChange }: MacroChartsProps) {
+export default function MacroCharts({ recession, credit, onOpenChange }: MacroChartsProps) {
   const location = useLocation();
   const requested = chartFromHash(location.hash);
   const hy = credit.data?.series.find((s) => s.label === "HY");
@@ -134,45 +137,12 @@ export default function MacroCharts({ history, recession, credit, onOpenChange }
 
   return (
     <Card as="section" id="macro-charts" variant="panel" style={{ minWidth: 0 }}>
-      <SectionHeader layout="panel" title="Macro charts" right="4 series · in-place accordion" />
+      <SectionHeader layout="panel" title="Macro charts" right="3 series · in-place accordion" />
       <Accordion
         defaultOpenId={requested ?? undefined}
         requestedOpenId={requested}
         onOpenChange={onOpenChange}
         panels={[
-          {
-            id: "chart-regime",
-            title: "Regime odds · 24 months",
-            right: history.data ? `${Math.min(history.data.length, 24)} monthly reads` : "—",
-            body: () => {
-              if (history.isLoading) return <Caption>Reading the stored classifier history…</Caption>;
-              if (history.isError) return <Caption>Regime history unavailable: the data service did not answer.</Caption>;
-              const rows = (history.data ?? []).slice(-24);
-              const mk = (key: keyof Regime, label: string, color: string): ChartSeries => ({
-                label,
-                color,
-                points: rows.map((r) => ({ x: r.date, y: ((r[key] as number | null) ?? 0) * 100 })),
-              });
-              return (
-                <>
-                  <LineChart
-                    series={[
-                      mk("prob_goldilocks", "GL", "var(--regime-goldilocks)"),
-                      mk("prob_overheating", "OV", "var(--regime-overheating)"),
-                      mk("prob_stagflation", "ST", "var(--regime-stagflation)"),
-                      mk("prob_recession", "RR", "var(--regime-recession)"),
-                    ]}
-                    yFmt={(v) => (v > 0 && v < 1 ? "<1%" : `${Math.round(v)}%`)}
-                    caption="Monthly regime odds"
-                  />
-                  <Caption>
-                    The classifier&apos;s monthly odds per regime. The call is whichever line is on top; crossovers are
-                    regime changes.
-                  </Caption>
-                </>
-              );
-            },
-          },
           {
             id: "chart-curve",
             title: "Yield curve 2s10s · model history",

@@ -11,7 +11,7 @@
  * Fixtures are dated Sep 2026 with invented numbers.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { waitFor, within } from "@testing-library/react";
+import { fireEvent, waitFor, within } from "@testing-library/react";
 import OverviewTab from "./OverviewTab";
 import type { Regime, RegimeDuration, RegimeLabel, TransitionOutlook } from "../../api/types";
 import { renderWithProviders, stubFetch } from "../../test/utils";
@@ -208,12 +208,21 @@ describe("OverviewTab (checklist 04 B.4 to B.6)", () => {
     expect(rows3[1].querySelector("i[style*='--r-recession']")).not.toBeNull();
     expect(css(fillOf(rows3[0]))).toMatch(/var\(--r-goldilocks\)/);
     expect(css(fillOf(rows3[1]))).toMatch(/var\(--r-recession\)/);
-    expect(text(three)).toContain("Goldilocks has held for three months in 81% of past cases.");
+    // Iteration 1 (G2): the highest-risk path (a 3-month figure) reads in the
+    // 3-month caption; the counting method sits behind the panel's Details.
+    expect(text(three)).toContain("Goldilocks has held for three months in 81% of past cases. Highest-risk path: → Recession Risk at 12%.");
     const rows6 = meterRows(six);
     expect(rows6.map(rowLabel)).toEqual(["stays Goldilocks", "→ Recession Risk", "→ Overheating", "→ Stagflation"]);
     expect(rows6.map(rowValue)).toEqual(["68%", "19%", "9%", "4%"]); // 100 - (19 + 9 + 4)
-    expect(text(six)).toContain("Over six months the hold rate falls as spells age. Highest-risk path: → Recession Risk at 12%. Odds are counted month-over-month from the stored classifier history: a transition matrix, not a forecast model.");
-    expect(within(six).getByRole("button", { name: "transition matrix" })).toHaveClass("jargon");
+    expect(text(six)).toContain("Over six months the hold rate falls as spells age.");
+    expect(text(six)).not.toContain("Highest-risk path");
+    expect(text(section)).not.toContain("Odds are counted month-over-month");
+    const details = within(section).getByRole("button", { name: /Details/ });
+    expect(details).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(details);
+    expect(details).toHaveAttribute("aria-expanded", "true");
+    expect(text(section)).toContain("Odds are counted month-over-month from the stored classifier history: a transition matrix, not a forecast model.");
+    expect(within(section).getByRole("button", { name: "transition matrix" })).toHaveClass("jargon");
     expect(text(section)).not.toMatch(/vs 3 mo ago/i);
     expect(section.querySelectorAll(".mrr-meter-row [style*='58px']")).toHaveLength(0);
     // Served colours never paint the rows.

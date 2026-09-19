@@ -69,13 +69,20 @@ export const RECESSION_GLOW = {
 
 export const TENOR_ORDER = ["1M", "3M", "6M", "1Y", "2Y", "5Y", "10Y", "30Y"];
 
+/** The fifth input's name (Iteration 1 E2): recession.py computes it as the
+ * 10-year minus the 5-year inflation breakeven (T10YIE − T5YIE) because the
+ * Conference Board leading index (USSLIND) stopped publishing in February
+ * 2020; the old name "Leading-indicator proxy" described the series it
+ * replaced, not the one it reads. */
+export const BREAKEVEN_LABEL = "10Y − 5Y breakeven spread";
+
 /** Feature key → display label, in the served `model_features` vocabulary. */
 export const FEATURE_LABELS: Record<string, string> = {
   yield_curve: "Yield curve (2s10s)",
   unemployment: "Unemployment rate",
   hy_spread: "HY credit spread",
   indpro_yoy: "Industrial production YoY",
-  lei_proxy: "Leading-indicator proxy",
+  lei_proxy: BREAKEVEN_LABEL,
 };
 
 /** Contiguous USREC==1 runs → shaded chart bands. */

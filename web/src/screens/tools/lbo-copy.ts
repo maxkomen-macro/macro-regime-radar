@@ -2,16 +2,18 @@
  * Hero copy and the summary strip for the LBO TabHero (redesign Phase 9,
  * checklist 09 C.1 rules 1 to 7 and the B.2 strip table). Pure: no hooks, no
  * React. One number, one truth: the headline and the pill are the served
- * `irr` / `moic` of the base run (the default deal at the live rate); the
+ * `irr` / `moic` of the base run (the default deal at the all-in rate); the
  * note is the only place the modified deal's figures appear; the subhead is
  * the rate that run carried and never moves with the slider; the lede prints
- * `BASE_INPUTS`, never a run. The strip reads the defaults payload's stamp
- * through `assessFreshness` at the monthly cadence (the T7 chip's).
+ * `BASE_INPUTS`, never a run. The strip reads the rate's served state and
+ * each component's as-of from the payload's freshness block (Iteration 1
+ * E1), and the legacy stamp through `assessFreshness` for an older payload.
  */
 
 import { ApiError } from "../../api/client";
 import type { LboDefaults, LboRequest, LboResult } from "../../api/types";
 import { fmtDate } from "../../lib/format";
+import { freshLabel, normalizeState, type FreshLabel } from "../shared/fresh-state";
 import { assessFreshness } from "../shared/freshness";
 import type { StatusTone } from "../shared/SummaryCard";
 import type { TabHeroPillTone } from "../shared/TabHero";
@@ -78,6 +80,9 @@ export interface LboHeroCopy {
 export interface LboHeroArgs {
   defaults: DefaultsLike;
   clampedLive: number | null;
+  /** The served rate is lbo.py's stated default (`is_fallback`), not stored
+   * rates: the subhead says so and never calls it the all-in rate. */
+  statedDefault?: boolean;
   /** The default deal at the live rate (the base run's request). */
   baseInputs: LboRequest;
   /** The base run's result: the hero's one source of figures. */
@@ -108,11 +113,15 @@ export function badgeSentence(irr: number): string {
 }
 
 /** Rule 3: the rate the default deal ran at; the fallback sentence when no
- * live rate is on file. Never changes when the slider moves. */
-export function subheadFor(clampedLive: number | null): string {
-  return clampedLive != null
-    ? `The default deal at today's ${clampedLive.toFixed(2)}% all-in rate.`
-    : `The default deal at the stated ${FALLBACK_RATE.toFixed(2)}% fallback rate.`;
+ * rate is on file. Never changes when the slider moves. Iteration 1 E1: the
+ * all-in rate is Fed funds (a monthly average) plus the daily HY spread, so
+ * the sentence names its parts and never calls it "today's" or "live"; the
+ * engine's stated default reads as a stated default. */
+export function subheadFor(clampedLive: number | null, statedDefault = false): string {
+  if (clampedLive == null) return `The default deal at the stated ${FALLBACK_RATE.toFixed(2)}% fallback rate.`;
+  return statedDefault
+    ? `The default deal at the stated ${clampedLive.toFixed(2)}% default rate.`
+    : `The default deal at a ${clampedLive.toFixed(2)}% all-in rate: Fed funds plus the HY spread.`;
 }
 
 /** "+1.3" / "-0.4" (the LboPanel.tsx:157 form). */
@@ -157,7 +166,7 @@ export function lboHero(args: LboHeroArgs): LboHeroCopy {
   }
 
   const r = args.baseRes;
-  const subhead = subheadFor(args.clampedLive);
+  const subhead = subheadFor(args.clampedLive, args.statedDefault === true);
   const note = modifiedNote(args);
   if (!r.viable || r.irr == null || r.moic == null) {
     return { ...shared, ...quiet, state: "not-viable", headline: NOT_VIABLE_HEADLINE, pill: "Not viable", subhead, note };
@@ -188,10 +197,29 @@ export interface StripWords {
   detail: string;
 }
 
-/** The stored-through stamp, or null for the module fallback payload
- * (`data_as_of === "unavailable"`, lbo.py:32-37) and an absent payload. */
+/** True when `/api/lbo/defaults` served lbo.py's stated defaults (5.33 /
+ * 3.27 / 8.60, lbo.py:32-37) instead of stored rates. B3 serves `is_fallback`
+ * and `status`; the old `data_as_of === "unavailable"` word is read only for
+ * a payload that carries neither (Iteration 1 E1). */
+export function isStatedDefault(d: LboDefaults | undefined | null): boolean {
+  if (!d) return false;
+  if (typeof d.is_fallback === "boolean") return d.is_fallback;
+  if (d.status != null) return d.status === "fallback";
+  return d.data_as_of === "unavailable";
+}
+
+/** The stored-through stamp, or null for the stated-default payload and an
+ * absent payload. */
 export function stampOf(d: LboDefaults | undefined | null): string | null {
-  return d?.data_as_of && d.data_as_of !== "unavailable" ? d.data_as_of : null;
+  return d?.data_as_of && !isStatedDefault(d) && d.data_as_of !== "unavailable" ? d.data_as_of : null;
+}
+
+/** Each component's as-of word from the payload's freshness block (A3 words,
+ * FRESHNESS_CONTRACT §5): Fed funds is a monthly average ("Aug 2026 print"),
+ * the HY spread a daily series ("Sep 17", or "As of unknown" while its
+ * watermark is missing). Never the row month stamps (`*_as_of`). */
+export function componentAsOf(d: LboDefaults | undefined | null): { fed: FreshLabel; hy: FreshLabel } {
+  return { fed: freshLabel(d?.freshness?.FEDFUNDS), hy: freshLabel(d?.freshness?.BAMLH0A0HYM2) };
 }
 
 export function lboStrip(defaults: DefaultsLike): StripWords {
@@ -204,6 +232,27 @@ export function lboStrip(defaults: DefaultsLike): StripWords {
   const stamp = stampOf(defaults.data);
   if (!stamp) {
     return { tone: "gray", title: "Rate feed unavailable", detail: "FRED rows missing; the engine's fallback rate is in use" };
+  }
+  // B3 payloads: the rate's own state (judged by its weaker component) and
+  // each component's as-of word; a state the UI does not know reads unknown
+  // and never a healthy tone.
+  const block = defaults.data.freshness;
+  if (block) {
+    const { fed, hy } = componentAsOf(defaults.data);
+    const detail = `Fed funds: ${fed.word} · HY spread: ${hy.word}`;
+    switch (normalizeState(block.lbo_all_in_rate?.state)) {
+      case "live":
+      case "close":
+        return { tone: "mint", title: "Rate synced from FRED", detail };
+      case "delayed":
+        return { tone: "amber", title: "FRED rate delayed", detail };
+      case "stale":
+        return { tone: "amber", title: "FRED rate stale", detail };
+      case "fallback":
+        return { tone: "gray", title: "Rate feed unavailable", detail: "FRED rows missing; the engine's fallback rate is in use" };
+      default:
+        return { tone: "gray", title: "FRED rate · as of unknown", detail };
+    }
   }
   const info = assessFreshness(stamp, "monthly");
   const through = `Stored through ${fmtDate(stamp)}`;

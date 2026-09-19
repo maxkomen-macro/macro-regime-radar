@@ -226,8 +226,10 @@ function tileValue(label: string): string {
 const feedDescription = () => text(feed().querySelector(".mrr-sec-desc"));
 const feedMeta = () => text(feed().querySelector(".mrr-sec-head"));
 const IDS_IN_ORDER = ["news-hero", "news-summary", "headlines", "feed", "calendar"];
+/* Iteration 1 (E4): the enrichment clause states today's pipeline: up to 10
+   newly stored headlines an hour at 2.5 or more, under the $50 monthly cap. */
 const DISCLOSURE =
-  "Headlines ingest hourly from Finnhub, NewsAPI and RSS wires, dedupe, then score across five dimensions · the store keeps a rolling window, so the feed ages out by design · calendar is maintained by hand · headlines link to the original article · each pipeline run sends the top 5 by score to Claude for a regime interpretation and to Perplexity for cited research; other items show the wire summary · scores are model estimates.";
+  "Headlines ingest hourly from Finnhub, NewsAPI and RSS wires, dedupe, then score across five dimensions · the store keeps a rolling window, so the feed ages out by design · calendar is maintained by hand · headlines link to the original article · each hourly run sends up to 10 newly stored headlines scoring 2.5 or more to Claude for a regime interpretation and to Perplexity for cited research, under a $50 monthly spend cap; other headlines, and every headline once the cap is reached, show the wire summary · scores are model estimates.";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -309,10 +311,19 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(svg.querySelectorAll("circle[fill='var(--amber)']")).toHaveLength(2);
   });
 
-  it("the summary dl has the five dt labels in order with the served values, and the page never says Consensus", async () => {
+  it("the summary dl has the dt labels in order with the served values (Iteration 1, N2: last release, category mix, outlets and AI reads fill the card), and the page never says Consensus", async () => {
     renderNews();
     await awaitHero();
-    await waitFor(() => expect(dts()).toEqual(["Next event", "After that", "Coverage", "Top significance", "High impact"]));
+    await waitFor(() =>
+      expect(dts()).toEqual(["Next event", "After that", "Last release", "Coverage", "By category", "Outlets", "AI reads", "Top significance", "High impact"]),
+    );
+    // The countdown event (CPI, high) is already the After that row: no Next high impact row.
+    expect(dts()).not.toContain("Next high impact");
+    expect(text(ddFor("Last release"))).toBe("Jobs report (Aug) · Fri Sep 04, 08:30 ET");
+    // Counts of the fourteen rendered stories (the duplicate is deduped away).
+    expect(text(ddFor("By category"))).toBe("Macro / Fed 4 · Earnings 3 · Geopolitical 2 · M&A 2 · Sector 2 · Other 1");
+    expect(text(ddFor("Outlets"))).toBe("5 outlets · NewsAPI 10 · CNBC 1 · Finnhub 1");
+    expect(text(ddFor("AI reads"))).toBe("1 of 14 carry an AI read");
     expect(within(summary()).getByRole("heading", { level: 2, name: "Desk summary" })).toBeInTheDocument();
     expect(text(ddFor("Next event"))).toBe("Retail sales (Aug) · Thu Sep 17, 08:30 ET");
     expect(text(ddFor("After that"))).toBe("CPI (Aug) · Fri Sep 18, 08:30 ET");
@@ -422,7 +433,7 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(stripDetail(button)).toBe("No headline stamp on file");
     expect(text(hero().querySelector(".mrr-hero-lede"))).toBe("No headlines on file.");
     expect(text(headlines())).toContain("Nothing on file; the news pipeline runs hourly (minute 41 UTC) and has not stored headlines yet.");
-    expect(dts()).toEqual(["Next event", "After that", "Coverage", "High impact"]);
+    await waitFor(() => expect(dts()).toEqual(["Next event", "After that", "Last release", "Coverage", "High impact"]));
     expect(text(ddFor("Coverage"))).toBe("0 stories in 7D");
     expect(articles()).toHaveLength(0);
   });
@@ -462,8 +473,14 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     const [lead, deal, geo, earn] = articles();
     expect(within(lead).getByText("MACRO")).toHaveAttribute("data-tone", "info");
     expect(text(lead)).toContain("◆ Why it matters · AI");
+    // Iteration 1 (N4): the stored AI read opens in one click.
+    expect(text(lead)).not.toContain(INTERP);
+    const read = within(lead).getByRole("button", { name: /Regime read · 2 sources/ });
+    expect(read).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(read);
     expect(text(lead)).toContain(INTERP);
-    expect(within(lead).getByRole("button", { name: /Regime read · 2 sources/ })).toHaveAttribute("aria-expanded", "false");
+    expect(within(lead).getByRole("link", { name: SRC_FED })).toHaveAttribute("target", "_blank");
+    fireEvent.click(read);
     expect(within(lead).getByRole("button", { name: /Score breakdown/ })).toHaveAttribute("aria-expanded", "false");
     expect(within(lead).getByRole("link", { name: "Read at CNBC →" })).toHaveAttribute("href", LEAD.url as string);
     expect(within(deal).getByText("M&A")).toHaveAttribute("data-tone", "reference");
@@ -735,5 +752,41 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(hero().querySelector("svg[role='img']")).toBeNull();
     expect(hero().querySelector(".mrr-hero-placeholder")).not.toBeNull();
     expect(text(ddFor("Next event"))).toBe("Reading stored data…");
+  });
+
+  /* ── Iteration 1 (N1, N2, G4) ───────────────────────────────────────── */
+
+  it("the hero timeline adds the served large-cap earnings rows from ?include=earnings beside the macro rows; the calendar panel stays macro only", async () => {
+    const earnings: CalendarEvent = { ...ev(501, "NVDA earnings (Q3 2027)", "2026-09-22T20:30:00Z", "medium", "finnhub_earnings"), symbol: "NVDA", kind: "earnings" };
+    stub(routes({ "/api/calendar": (url) => (url.searchParams.get("include") === "earnings" ? [...CALENDAR, earnings] : CALENDAR) }));
+    renderNews();
+    await awaitHero();
+    const svg = hero().querySelector("svg[role='img']") as SVGSVGElement;
+    await waitFor(() => expect(svg).toHaveAttribute("aria-label", "Macro events over the next 18 days: 5 events, 2 high impact, 1 large-cap earnings"));
+    expect(svg.querySelectorAll("circle")).toHaveLength(5);
+    expect(svg.querySelector("g[data-earnings='NVDA']")).not.toBeNull();
+    expect(calls.some((c) => c.includes("include=earnings"))).toBe(true);
+    await waitFor(() => expect(text(calendar())).toContain("Retail sales (Aug)"));
+    expect(text(calendar())).not.toContain("NVDA earnings");
+  });
+
+  it("the desk summary names the next high-impact event with its date when it is not one of the first two rows", async () => {
+    const quiet = [CALENDAR[0], CALENDAR[3], CALENDAR[2]]; // medium, low, then the FOMC (high)
+    stub(routes({ "/api/calendar": () => quiet }));
+    renderNews();
+    await awaitHero("FOMC decision in 7 days");
+    await waitFor(() => expect(text(ddFor("Next high impact"))).toBe("FOMC decision · Wed Sep 23, 14:00 ET"));
+    expect(dts().slice(0, 3)).toEqual(["Next event", "After that", "Next high impact"]);
+  });
+
+  it("G4: the lede keeps the lead sentence and at most two sentences of a long stored interpretation", async () => {
+    const long = "Holds the Goldilocks read. Watch inflation pressure. The dots lean hawkish. Duration suffers.";
+    stub(routes({ "/api/news": () => [{ ...LEAD, regime_interpretation: long }, ...WINDOWED.slice(1)] }));
+    renderNews();
+    await awaitHero();
+    await waitFor(() => expect(text(hero().querySelector(".mrr-hero-lede"))).toContain("leads the file"));
+    expect(text(hero().querySelector(".mrr-hero-lede"))).toBe(
+      "Macro / Fed leads the file: Fed holds rates, signals one more cut at 4.4 / 5, the window's highest score. Holds the Goldilocks read. Watch inflation pressure.",
+    );
   });
 });

@@ -24,7 +24,8 @@ const H1_ALLOCATION = "SPY"; // the fixture's leading Goldilocks asset
 const LBO_IDS = ["lbo-hero", "lbo-summary", "lbo", "lbo-assumptions", "lbo-outputs"];
 const ALLOCATION_IDS = ["allocation-hero", "allocation-summary", "allocation", "allocation-overview", "allocation-optimization", "allocation-risk"];
 const LBO_DISCLOSURE =
-  "An illustrative model for teaching and screening, not a transaction model. Taxes, capex and working capital are simplified into one assumption: cash for debt service is 60% of EBITDA. It pays interest first, scheduled amortization is a floor and the remainder sweeps to debt, so a higher rate lowers the IRR. The live rate is Fed funds plus the ICE BofA HY OAS (BAMLH0A0HYM2) from FRED, stored through Sep 01, 2026.";
+  // B1's cash-sweep sentences verbatim; Iteration 1 E1 names the rate's parts (never "live") and each one's as-of word (a pre-B3 payload: unknown).
+  "An illustrative model for teaching and screening, not a transaction model. Taxes, capex and working capital are simplified into one assumption: cash for debt service is 60% of EBITDA. It pays interest first, scheduled amortization is a floor and the remainder sweeps to debt, so a higher rate lowers the IRR. The all-in rate is Fed funds (FEDFUNDS, a monthly average) plus the ICE BofA HY OAS (BAMLH0A0HYM2, daily) from FRED; Fed funds: As of unknown, HY spread: As of unknown.";
 const ALLOCATION_DISCLOSURE =
   "Monthly total returns for 10 asset classes, index-spliced before ETF inceptions · computed by the same allocation engine each session · regimes from the stored classifier history.";
 
@@ -189,7 +190,7 @@ describe("ToolsScreen (checklist 09 E.1 row 5)", () => {
     const pill = byId("allocation-hero")!.querySelector(".mrr-pill") as HTMLElement;
     expect(text(pill)).toMatch(/^[+-]\d+\.\d% a year$/);
     expect(within(byId("allocation-summary") as HTMLElement).getByRole("heading", { level: 2, name: "Allocation summary" })).toBeInTheDocument();
-    expect([...byId("allocation-summary")!.querySelectorAll("dl dt")].map((d) => text(d))).toEqual(["Sample", "Risk-free", "Optimizer"]);
+    expect([...byId("allocation-summary")!.querySelectorAll("dl dt")].map((d) => text(d))).toEqual(["Sample", "Leader", "Laggard", "Asset classes", "Returns through", "Risk-free", "Optimizer"]);
     const lines = disclosureLines();
     expect(lines).toHaveLength(1);
     expect(text(lines[0])).toBe(ALLOCATION_DISCLOSURE);

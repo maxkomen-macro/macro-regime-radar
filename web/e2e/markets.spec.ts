@@ -26,9 +26,11 @@ const git = (a: string) => execSync(`git ${a}`, { encoding: "utf8" }).trim();
 const BRANCH = git("rev-parse --abbrev-ref HEAD"); // the branch under test, never a fixed name: the spec runs on every later branch
 const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 
-/** Summary row labels in C.2 order; Dollar and VIX render only with a UUP quote or bar and a VIX quote. */
-const SUMMARY_LABELS = ["US 10Y", "Sectors · 1d", "Dollar", "VIX", "Priced", "Top surprise"];
-const OPTIONAL_LABELS = new Set(["Dollar", "VIX"]);
+/** Summary row labels in C.2 order; Dollar and VIX render only with a UUP quote or bar and a VIX quote.
+ * Iteration 1 (the summary's G2 fill): Single names · 1d renders once two single names carry a day
+ * change, ETFs · 1w once two stored ETFs carry a one-week return. */
+const SUMMARY_LABELS = ["US 10Y", "Sectors · 1d", "Single names · 1d", "ETFs · 1w", "Dollar", "VIX", "Priced", "Top surprise"];
+const OPTIONAL_LABELS = new Set(["Single names · 1d", "ETFs · 1w", "Dollar", "VIX"]);
 /** The tape headers (C.2) at desk width and the phone set (B.7). */
 const TAPE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "1W %", "1M %", "30 Sess", "As of"];
 const TAPE_HEADERS_NARROW = ["Symbol · name", "Last", "Day %", "1M %", "As of"];
@@ -67,6 +69,8 @@ const hero = (page: Page) => page.locator("#markets-hero");
 const summary = (page: Page) => page.locator("#markets-summary");
 const research = (page: Page) => page.locator("#single-name-research");
 const tape = (page: Page) => page.locator("#watchlist");
+/** The macro tape's own table: since Iteration 1 (M3b) the single names table sits in the same panel, under it. */
+const macroTable = (page: Page) => page.locator("#watchlist table").first();
 const freshnessCard = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
 const heatTiles = (page: Page) => page.locator("#sector-heatmap [style*='var(--r-tile)']");
 const note = (type: string, description: string) => test.info().annotations.push({ type, description });
@@ -98,7 +102,7 @@ function tapeRow(page: Page, symbol: string): { row: Locator; button: Locator } 
 }
 /** Index of a header label among the tape's th, by textContent. */
 async function tapeHeaderIndex(page: Page, label: string): Promise<number> {
-  const ths = await tape(page).locator("thead th").allTextContents();
+  const ths = await macroTable(page).locator("thead th").allTextContents();
   return ths.map(clean).indexOf(label);
 }
 /** The one-day value line of a sector tile: "+0.42%" / "-1.20%" / the dash. */
@@ -264,7 +268,8 @@ test.describe("markets (checklist 05 E.3)", () => {
     await page.evaluate(() => {
       (window as unknown as { __mrrE2E?: number }).__mrrE2E = 1;
     });
-    const box = research(page).locator('[role="combobox"][aria-label="Search any listed symbol"]');
+    // Iteration 1 (M3c): the one symbol search rides in the hero's action row and drives the same panel.
+    const box = hero(page).locator('[role="combobox"][aria-label="Search any listed symbol"]');
     await expect(box).toBeVisible();
     await box.click();
     await box.pressSequentially("NVDA", { delay: 40 });
@@ -364,20 +369,21 @@ test.describe("markets (checklist 05 E.3)", () => {
     else await expect(panel.getByText(/20-day average/)).toBeVisible();
   });
 
-  test("9. tape: the C.2 headers, eight groups, a QQQ row click opens the focused panel and Esc returns focus, the Single names toggle, the hash route, the scrolling well with the pinned symbol column", async ({ page }) => {
+  test("9. tape: the C.2 headers, eight groups, a QQQ row click opens the focused panel and Esc returns focus, the single names under the tape, the hash route, the scrolling well with the pinned symbol column", async ({ page }) => {
     await open(page);
     await test.step("headers, groups and the well", async () => {
-      await expect(tape(page).locator("thead th")).toHaveCount(TAPE_HEADERS.length);
-      expect(lower(await tape(page).locator("thead th").allTextContents())).toEqual(lower(TAPE_HEADERS));
+      await expect(macroTable(page).locator("thead th")).toHaveCount(TAPE_HEADERS.length);
+      expect(lower(await macroTable(page).locator("thead th").allTextContents())).toEqual(lower(TAPE_HEADERS));
       await expect(tape(page).locator("tr.mrr-grp")).toHaveCount(8);
       expect((await tape(page).locator("tr.mrr-grp").allTextContents()).map(clean)).toEqual(GROUP_LABELS);
-      await expect(tape(page).locator("tbody tr:not(.mrr-grp)")).toHaveCount(MACRO_ROWS);
+      await expect(macroTable(page).locator("tbody tr:not(.mrr-grp)")).toHaveCount(MACRO_ROWS);
       // Every row's last cell is an as-of stamp or the dash.
-      for (const row of await tape(page).locator("tbody tr:not(.mrr-grp)").all()) {
+      for (const row of await macroTable(page).locator("tbody tr:not(.mrr-grp)").all()) {
         const last = clean(await row.locator("td").last().innerText());
         expect(last).toMatch(/(?:\d\d:\d\d(?::\d\d)? ET|close|15m delayed|^\u2014$)/);
       }
-      await expect(tape(page).locator(".mrr-scroll[data-scrollable='true']")).toHaveCount(1);
+      await expect(tape(page).locator(".mrr-scroll[data-scrollable='true']").first()).toBeVisible();
+      await expect(macroTable(page).locator("xpath=ancestor::*[contains(@class,'mrr-scroll')][1]")).toHaveAttribute("data-scrollable", "true");
       const first = tapeRow(page, "QQQ").row.locator("td").first();
       expect(await first.evaluate((el) => getComputedStyle(el).position)).toBe("sticky");
     });
@@ -398,29 +404,20 @@ test.describe("markets (checklist 05 E.3)", () => {
       await expect(button).toBeFocused();
     });
 
-    await test.step("Single names toggle", async () => {
-      const group = tape(page).getByRole("group", { name: "Tape view" });
-      const singles = group.getByRole("button", { name: "Single names" });
-      const macro = group.getByRole("button", { name: "Macro" });
-      await expect(macro).toHaveAttribute("aria-pressed", "true");
-      await singles.click();
-      await expect(singles).toHaveAttribute("aria-pressed", "true");
-      await expect(macro).toHaveAttribute("aria-pressed", "false");
+    // Iteration 1 (M3b): the single names render under the macro tape, no view toggle hides either list.
+    await test.step("Single names under the tape, no toggle", async () => {
+      await expect(tape(page).getByRole("group", { name: "Tape view" })).toHaveCount(0);
       await expect(page.locator("#single-names")).toHaveCount(1);
       await expect(page.locator("#single-names tbody tr:not(.mrr-grp)")).toHaveCount(12);
-      await expect(tape(page).locator("tr.mrr-grp")).toHaveCount(0);
-      expect(await contentText(page.locator("#single-names"))).toMatch(/sorted by day move · re-sorts (?:live|as data updates)/);
-      await capture(page, "markets--single-names.png");
-      await macro.click();
-      await expect(macro).toHaveAttribute("aria-pressed", "true");
       await expect(tape(page).locator("tr.mrr-grp")).toHaveCount(8);
-      await expect(page.locator("#single-names")).toHaveCount(0);
+      expect(await contentText(page.locator("#single-names"))).toMatch(/sorted by day move · re-sorts (?:live|as data updates)/);
+      await page.locator("#single-names").scrollIntoViewIfNeeded();
+      await capture(page, "markets--single-names.png");
     });
 
     await test.step("the #single-names hash route", async () => {
       await page.goto(`${ROUTE}#single-names`, { waitUntil: "domcontentloaded" });
       await settle(page, 900);
-      await expect(tape(page).getByRole("group", { name: "Tape view" }).getByRole("button", { name: "Single names" })).toHaveAttribute("aria-pressed", "true", { timeout: 15_000 });
       await expect(page.locator("#single-names")).toHaveCount(1);
       await expect.poll(() => inView(page, "single-names"), { timeout: 15_000 }).toBe(true);
     });
@@ -507,8 +504,8 @@ test.describe("markets (checklist 05 E.3)", () => {
     // One column: the tape follows the stack instead of sitting beside it.
     expect(Math.abs((boxes.tape as DOMRect).left - (boxes.research as DOMRect).left)).toBeLessThan(2);
     expect((boxes.tape as DOMRect).top).toBeGreaterThanOrEqual((boxes.surprises as DOMRect).bottom - 1);
-    await expect(tape(page).locator("thead th")).toHaveCount(TAPE_HEADERS_NARROW.length);
-    expect(lower(await tape(page).locator("thead th").allTextContents())).toEqual(lower(TAPE_HEADERS_NARROW));
+    await expect(macroTable(page).locator("thead th")).toHaveCount(TAPE_HEADERS_NARROW.length);
+    expect(lower(await macroTable(page).locator("thead th").allTextContents())).toEqual(lower(TAPE_HEADERS_NARROW));
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, "overflow at 390 px").toBeLessThanOrEqual(0);
     await capture(page, "markets--390.png");

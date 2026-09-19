@@ -18,9 +18,10 @@ import { Card, DivergingBar, SectionHeader } from "../../components";
 import type { RecessionMetrics } from "../../api/types";
 import { fmtMonYr, fmtSigned } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
+import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, capStyle, eyebrowStyle, mono } from "../shared/screen-ui";
-import { featureCurrent, featureLabel } from "./recession-copy";
+import { BREAKEVEN_LABEL, featureCurrent, featureLabel } from "./recession-copy";
 import type { RecessionPanelProps } from "./panel-props";
 
 /** The null-value glyph the tile prints (U+2014), never an em-dash aside. */
@@ -68,18 +69,23 @@ function CoefficientsTile({ m }: { m: RecessionMetrics }): JSX.Element {
       </div>
       {/* RecessionScreen.tsx:642-655 before Phase 7, verbatim except the colour
           words, which follow the DivergingBar tokens (G14). */}
-      <Caption>
-        {coefs.length > 0 && (
-          <>
+      {/* G4: two sentences visible, the third behind Details on the same tile. */}
+      {coefs.length > 0 && (
+        <>
+          <Caption>
             A one-σ rise in {featureLabel(coefs[0][0])} {coefs[0][1] >= 0 ? "adds" : "subtracts"}{" "}
             {Math.abs(coefs[0][1]).toFixed(2)} {coefs[0][1] >= 0 ? "to" : "from"} the{" "}
             <Jargon term="log-odds">log-odds</Jargon> of recession: the model&apos;s strongest
-            input. Red bars raise recession odds as they rise; mint bars lower them. Unemployment
-            enters negative because it co-moves with the credit and curve terms; the fit assigns
-            it the offsetting sign, so read the five together, not one at a time.
-          </>
-        )}
-      </Caption>
+            input. Red bars raise recession odds as they rise; mint bars lower them.
+          </Caption>
+          <Disclosure variant="quiet" title="Details">
+            <Caption style={{ marginTop: 0 }}>
+              Unemployment enters negative because it co-moves with the credit and curve terms; the
+              fit assigns it the offsetting sign, so read the five together, not one at a time.
+            </Caption>
+          </Disclosure>
+        </>
+      )}
     </Card>
   );
 }
@@ -135,9 +141,11 @@ function DivergenceTile({ m }: { m: RecessionMetrics }): JSX.Element {
         <Caption>
           <Jargon term="divergence">{m.divergence_label}</Jargon>: credit-market pricing (HY
           percentile) minus the regime model&apos;s recession odds, on a −100 to +100 scale.
-          Beyond ±20 the divergence is material and requires judgment. The number stays
-          neutral; the word carries the verdict.
+          Beyond ±20 the divergence is material and requires judgment.
         </Caption>
+        <Disclosure variant="quiet" title="Details">
+          <Caption style={{ marginTop: 0 }}>The number stays neutral; the word carries the verdict.</Caption>
+        </Disclosure>
       </div>
     </Card>
   );
@@ -164,11 +172,12 @@ function ModelCardTile({ m }: { m: RecessionMetrics }): JSX.Element {
           </div>
         ))}
       </dl>
-      {/* RecessionScreen.tsx:681-685 before Phase 7, verbatim. */}
+      {/* Iteration 1 E2: the fifth input is named for what recession.py
+          computes (T10YIE − T5YIE), and the series it stands in for. */}
       <Caption>
-        The <Jargon term="LEI">leading-indicator proxy</Jargon> is the 10Y-minus-5Y inflation
-        breakeven; the original USSLIND series froze in Feb 2020 and survives only as
-        training history.
+        The fifth input is the <Jargon term="LEI">{BREAKEVEN_LABEL}</Jargon> (T10YIE − T5YIE),
+        standing in for the Conference Board leading index (USSLIND), which stopped publishing in
+        February 2020.
       </Caption>
     </Card>
   );

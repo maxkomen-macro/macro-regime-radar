@@ -35,7 +35,8 @@ const ci = (s: string) => new RegExp(`^${escapeRe(s)}$`, "i"); // Segmented and 
 const BASE_INPUTS = { ebitda: 100, ebitda_growth_rate: 5, entry_multiple: 8, exit_multiple: 9, hold_period: 5, leverage_ratio: 4.5, amortization_rate: 5, mgmt_fee_pct: 1.5 };
 const clampRate = (v: number) => Math.min(20, Math.max(3, v));
 const SUMMARY_LABELS = ["Fed funds", "HY OAS", "All-in rate", "Financing", "Structure", "Equity check", "Credit state"];
-const ALLOCATION_LABELS = ["Sample", "Risk-free", "Optimizer"];
+// Iteration 1 G2 (T3): four served rows fill the Allocation summary beside the desk hero.
+const ALLOCATION_LABELS = ["Sample", "Leader", "Laggard", "Asset classes", "Returns through", "Risk-free", "Optimizer"];
 const SCHEDULE_TH = ["Year", "EBITDA", "Implied EV", "Debt start", "Interest", "Paydown", "Debt end", "Leverage"];
 const METHOD_LABELS = ["Mean-Variance", "Min Variance", "Risk Parity", "Black-Litterman", "HRP", "Min CVaR", "HERC"];
 const METHOD_KEYS = ["mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"];
@@ -101,7 +102,8 @@ const rangeOf = (page: Page, label: string) => page.getByRole("slider", { name: 
 const rowOf = (page: Page, label: string) => page.locator("main .mrr-slider-row").filter({ has: rangeOf(page, label) });
 const typedOf = (page: Page, label: string) => page.getByRole("spinbutton", { name: `${label} (typed)`, exact: true });
 const resetButton = (page: Page) => assumptions(page).getByRole("button", { name: "Reset to defaults" });
-const rateSwitch = (page: Page) => assumptions(page).getByRole("switch", { name: "Track the live financing rate" });
+// Iteration 1 E1: the all-in rate is never "live".
+const rateSwitch = (page: Page) => assumptions(page).getByRole("switch", { name: "Track the all-in financing rate" });
 const seg = (page: Page, root: Locator, label: string) => root.locator(`.mrr-seg[aria-label="${label}"]`);
 const segOption = (page: Page, root: Locator, group: string, name: string) => seg(page, root, group).getByRole("button", { name: ci(name) });
 const note = (type: string, description: string) => test.info().annotations.push({ type, description });
@@ -179,7 +181,7 @@ async function awaitAllocation(page: Page): Promise<void> {
   await expect(allocHero(page)).toHaveCount(1, { timeout: 30_000 });
   await expect(page.locator("#allocation-overview [role='table']")).toHaveCount(1, { timeout: ALLOCATION_TIMEOUT });
   await expect(page.locator("main h1")).not.toHaveText(/Building the return history|IRR$/, { timeout: ALLOCATION_TIMEOUT });
-  await expect.poll(() => allocSummary(page).locator("dt").count(), { timeout: 30_000 }).toBe(3);
+  await expect.poll(() => allocSummary(page).locator("dt").count(), { timeout: 30_000 }).toBe(ALLOCATION_LABELS.length);
 }
 /** A POST /api/lbo/run whose body satisfies `match` (the debounce may coalesce several key presses into one). */
 const awaitRun = (page: Page, match: (body: Record<string, number>) => boolean) =>
@@ -284,7 +286,12 @@ test.describe("tools (checklist 09 E.3)", () => {
     await expect(pill).toHaveAttribute("data-tone", irr >= 20 ? "mint" : irr >= 15 ? "amber" : "gray");
     await expect(hero(page).locator(".mrr-hero-eyebrow")).toContainText(/LBO calculator/i);
     const h2 = await contentText(hero(page).locator("h2"));
-    expect(h2).toBe(`The default deal at today's ${clampRate(defaults.lbo_all_in_rate).toFixed(2)}% all-in rate.`);
+    // E1: the rate's parts, never "today's"; the engine's stated default reads as one.
+    expect(h2).toBe(
+      defaults.is_fallback === true
+        ? `The default deal at the stated ${clampRate(defaults.lbo_all_in_rate).toFixed(2)}% default rate.`
+        : `The default deal at a ${clampRate(defaults.lbo_all_in_rate).toFixed(2)}% all-in rate: Fed funds plus the HY spread.`,
+    );
     expect(await contentText(page.locator("main h2").first())).toContain(clampRate(defaults.lbo_all_in_rate).toFixed(2));
     const lede = await contentText(hero(page).locator(".mrr-hero-lede"));
     expect(lede.startsWith("A $100M EBITDA business bought at 8.00× with 4.50× leverage, growing 5.0% a year and exiting at 9.00× after 5 years.")).toBe(true);
@@ -292,7 +299,10 @@ test.describe("tools (checklist 09 E.3)", () => {
     expect(lede).not.toContain("50 bp");
     const foot = await contentText(hero(page).locator(".mrr-hero-foot"));
     expect(foot).toContain(irr >= 20 ? "Clears the 20% PE bar" : irr >= 15 ? "Below the 20% bar · above 15%" : "Below 15%");
-    await expect(hero(page).locator('.mrr-hero-chips span[title^="Financing rate"]')).toHaveCount(1);
+    // E1: no month-stamp "Current" chip on the rate; each component's as-of word instead.
+    await expect(hero(page).locator('.mrr-hero-chips span[title^="Financing rate"]')).toHaveCount(0);
+    expect(await hero(page).locator("[data-role='rate-as-of']").count()).toBeGreaterThanOrEqual(1);
+    expect(await contentText(hero(page))).not.toMatch(/today|\blive\b|current/i);
     await expect(hero(page).locator(".mrr-hero-note")).toHaveCount(0);
     const svg = hero(page).locator('svg[role="img"]');
     await expect(svg).toHaveCount(1);
@@ -334,21 +344,23 @@ test.describe("tools (checklist 09 E.3)", () => {
     await expect.poll(() => summary(page).locator("dt").count(), { timeout: 30_000 }).toBeGreaterThanOrEqual(SUMMARY_LABELS.length);
     const labels = (await summary(page).locator("dt").allTextContents()).map(clean);
     expect(labels).toEqual(SUMMARY_LABELS);
-    await expect(summary(page).locator("h2")).toHaveText(/^Live financing$/i);
+    await expect(summary(page).locator("h2")).toHaveText(/^Deal financing$/i);
     for (const dd of await summary(page).locator("dd").all()) expect(clean(await dd.innerText())).not.toBe("");
     const defaults = await servedDefaults(page);
     const dd = async (label: string) => contentText(summary(page).locator("dl dt", { hasText: ci(label) }).locator("xpath=following-sibling::dd[1]"));
-    expect(await dd("Fed funds")).toBe(`${defaults.fedfunds.toFixed(2)}%`);
-    expect(await dd("HY OAS")).toBe(`${defaults.hy_oas_pct.toFixed(2)}%`);
+    // E1: each component with its cadence and as-of word (or the stated default).
+    expect(await dd("Fed funds")).toMatch(new RegExp(`^${escapeRe(defaults.fedfunds.toFixed(2))}% · (?:monthly average, .+|Stated default)$`));
+    expect(await dd("HY OAS")).toMatch(new RegExp(`^${escapeRe(defaults.hy_oas_pct.toFixed(2))}% · (?:daily, .+|Stated default)$`));
     expect(await dd("All-in rate")).toBe(`${defaults.lbo_all_in_rate.toFixed(2)}%`);
-    expect(await dd("Financing")).toMatch(/all-in \((?:live: Fed Funds \+ HY spread|stated default)\)$/);
+    expect(await dd("Financing")).toMatch(/all-in \((?:Fed funds \+ HY spread|stated default)\)$/);
+    expect(await contentText(summary(page))).not.toMatch(/today|\blive\b|current/i);
     expect(await dd("Equity check")).toMatch(/^\$[\d,]+M in · \$[\d,]+M out$/);
     note("summary-rows", labels.join(" · "));
 
     await expect(strip(page)).toHaveCount(1);
     await expect(strip(page)).toHaveClass(/mrr-status/);
     const title = await contentText(strip(page).locator(".mrr-status-title"));
-    expect(title).toMatch(/^(?:Rate synced from FRED|FRED rate delayed|FRED rate stale|Rate feed unavailable|Reading the FRED rate…)$/);
+    expect(title).toMatch(/^(?:Rate synced from FRED|FRED rate delayed|FRED rate stale|FRED rate · as of unknown|Rate feed unavailable|Reading the FRED rate…)$/);
     const detail = await contentText(strip(page).locator("small"));
     const tone = (await strip(page).getAttribute("data-tone")) ?? "";
     expect(await strip(page).getAttribute("aria-label")).toMatch(new RegExp(`^${escapeRe(title)}\\. .*Open the data freshness breakdown\\.$`));
@@ -356,14 +368,19 @@ test.describe("tools (checklist 09 E.3)", () => {
     if (title === "Rate synced from FRED") expect(tone).toBe("mint");
     else if (/^FRED rate (?:delayed|stale)$/.test(title)) expect(tone).toBe("amber");
     else expect(tone).toBe("gray");
-    if (defaults.data_as_of !== "unavailable") {
-      const stripDate = storedThrough(detail);
-      const captionDate = storedThrough(await contentText(assumptions(page)));
-      expect(stripDate, "the strip prints the stored-through date").not.toBe("");
-      expect(stripDate).toBe(captionDate);
-      note("stored-through", stripDate);
+    // E1: the strip and the rate tile's caption print the same as-of word per component.
+    const words = /^Fed funds: (.+) · HY spread: (.+)$/.exec(detail);
+    if (defaults.is_fallback !== true && defaults.data_as_of !== "unavailable" && words) {
+      const caption = await contentText(assumptions(page));
+      expect(caption).toContain(`(monthly average, ${words[1]})`);
+      expect(caption).toContain(`(daily, ${words[2]})`);
+      note("as-of", `Fed funds ${words[1]} · HY spread ${words[2]}`);
+    } else if (defaults.is_fallback !== true && defaults.data_as_of !== "unavailable") {
+      // A pre-B3 payload (no freshness block): the legacy stored-through strip.
+      expect(storedThrough(detail), "the strip prints the stored-through date").not.toBe("");
+      note("as-of", detail);
     } else {
-      note("stored-through", "the engine's fallback payload is on file (data_as_of unavailable): no date to compare");
+      note("as-of", "the engine's stated default is on file: no component dates to compare");
     }
 
     await strip(page).click();
@@ -425,7 +442,7 @@ test.describe("tools (checklist 09 E.3)", () => {
     const irrBefore = await tileValue(page, "IRR");
     expect(irrBefore).toMatch(/^\d+\.\d%$/);
     expect(irrBefore).toBe(h1Before.replace(/ IRR$/, ""));
-    await expect(outputs(page).locator(".mrr-sec-desc")).toHaveText("Default deal at the live rate");
+    await expect(outputs(page).locator(".mrr-sec-desc")).toHaveText("Default deal at the all-in rate");
     await expect(outputs(page).locator(".mrr-sec-head span[data-tone]")).toHaveText(/^Default$/i);
     await expect(resetButton(page)).toBeDisabled();
     const centreBefore = await outlinedCell(page);
@@ -460,7 +477,7 @@ test.describe("tools (checklist 09 E.3)", () => {
 
     await resetButton(page).click();
     for (const r of await page.locator("main .mrr-slider-row").all()) await expect(r).toHaveAttribute("data-changed", "false");
-    await expect(outputs(page).locator(".mrr-sec-desc")).toHaveText("Default deal at the live rate");
+    await expect(outputs(page).locator(".mrr-sec-desc")).toHaveText("Default deal at the all-in rate");
     await expect(outputs(page).locator(".mrr-sec-head span[data-tone]")).toHaveText(/^Default$/i);
     await expect.poll(() => tileValue(page, "IRR"), { timeout: 30_000 }).toBe(irrBefore);
     await expect(hero(page).locator(".mrr-hero-note")).toHaveCount(0);
@@ -469,13 +486,13 @@ test.describe("tools (checklist 09 E.3)", () => {
     expect(await visibleText(page.locator("main"))).not.toContain("│ current reading");
   });
 
-  test("8. rate switch: ArrowRight on Interest rate (all-in) unchecks the switch and reads manual rate; the IRR tile falls as the rate rises (B1 cash sweep); clicking the switch tracks the live rate again and restores the IRR", async ({ page }) => {
+  test("8. rate switch: ArrowRight on Interest rate (all-in) unchecks the switch and reads manual rate; the IRR tile falls as the rate rises (B1 cash sweep); clicking the switch tracks the all-in rate again and restores the IRR", async ({ page }) => {
     await open(page);
     await awaitLbo(page);
     const irrBefore = await tileValue(page, "IRR");
     await expect(rateSwitch(page)).toHaveAttribute("aria-checked", "true");
     const row = rowOf(page, "Interest rate (all-in)");
-    await expect(row).toContainText("tracking the live all-in cost");
+    await expect(row).toContainText("tracking the all-in rate");
     const rateBefore = await rangeOf(page, "Interest rate (all-in)").inputValue();
     const run = awaitRun(page, (b) => b.interest_rate !== Number(rateBefore));
     await pressArrowRight(page, "Interest rate (all-in)", 1);
@@ -492,7 +509,7 @@ test.describe("tools (checklist 09 E.3)", () => {
     // checklist 09 B.0), so no second POST is expected here.
     await rateSwitch(page).click();
     await expect(rateSwitch(page)).toHaveAttribute("aria-checked", "true");
-    await expect(row).toContainText("tracking the live all-in cost");
+    await expect(row).toContainText("tracking the all-in rate");
     await expect(row).toHaveAttribute("data-changed", "false");
     expect(await rangeOf(page, "Interest rate (all-in)").inputValue()).toBe(rateBefore);
     await settle(page, 600);

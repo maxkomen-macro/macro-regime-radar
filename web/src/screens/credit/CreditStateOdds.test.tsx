@@ -145,6 +145,8 @@ function tileValue(label: string): string {
 }
 const eyebrowText = () => (text(section()).includes("6-month transition odds") ? "6-month transition odds" : text(section()).includes("3-month transition odds") ? "3-month transition odds" : "");
 
+const openDetails = () => fireEvent.click(within(section()).getByRole("button", { name: /Details/ }));
+
 /* ── cases ───────────────────────────────────────────────────────────────── */
 
 describe("CreditStateOdds (checklist 06 B.6 / E.1)", () => {
@@ -213,19 +215,33 @@ describe("CreditStateOdds (checklist 06 B.6 / E.1)", () => {
     expect(outlined("Normal")).toHaveLength(0);
   });
 
-  it("tight_count 0 renders the Tight row as four dashes with no tint and the never-occurred sentence", () => {
+  // Iteration 1: a from-state with no months behind it reads "No history" in
+  // every cell (never a measured 0%), untinted; the caveats sit behind Details (G4).
+  it("tight_count 0 renders the Tight row as No history in every cell with no tint and the never-occurred sentence behind Details", () => {
     renderPanel();
-    expect(cellTexts("Tight")).toEqual([DASH, DASH, DASH, DASH]);
+    expect(cellTexts("Tight")).toEqual(["No history", "No history", "No history", "No history"]);
     for (const c of gridRow("Tight").querySelectorAll("[role='cell']")) expect(css(c)).toMatch(/background:\s*transparent/);
-    expect(text(section())).toContain("The Tight state has never occurred since 1996; its row renders empty, not zero-risk.");
+    expect(text(section())).not.toContain("never occurred");
+    openDetails();
+    expect(text(section())).toContain("The Tight state has never occurred since 1996; its row reads No history, not zero risk.");
     expect(text(section())).not.toContain("historical months");
     fireEvent.click(option("6 months"));
-    expect(cellTexts("Tight")).toEqual([DASH, DASH, DASH, DASH]);
+    expect(cellTexts("Tight")).toEqual(["No history", "No history", "No history", "No history"]);
   });
 
-  it("tight_count 3 renders numbers in the Tight row on both horizons and the only-3-historical-months sentence", () => {
+  it("the served month counts drive No history on either horizon and print under the matrix", () => {
+    renderPanel(metrics({ ...TIGHT_3, transition_obs_3m: { Normal: 137, Tight: 0, Stressed: 158, Crisis: 60 }, transition_obs_6m: { Normal: 134, Tight: 3, Stressed: 158, Crisis: 60 } }));
+    expect(cellTexts("Tight")).toEqual(["No history", "No history", "No history", "No history"]);
+    expect(text(section())).toContain("Months counted · Normal 137 · Tight 0 · Stressed 158 · Crisis 60");
+    fireEvent.click(option("6 months"));
+    expect(cellTexts("Tight")).toEqual(["100%", "0%", "0%", "0%"]);
+    expect(text(section())).toContain("Months counted · Normal 134 · Tight 3 · Stressed 158 · Crisis 60");
+  });
+
+  it("tight_count 3 renders numbers in the Tight row on both horizons and the only-3-historical-months sentence behind Details", () => {
     renderPanel(metrics(TIGHT_3));
     expect(cellTexts("Tight")).toEqual(["67%", "33%", "0%", "0%"]);
+    openDetails();
     expect(text(section())).toContain("Tight-state rows rest on only 3 historical months; treat those odds as anecdote.");
     expect(text(section())).not.toContain("never occurred");
     fireEvent.click(option("6 months"));
@@ -234,6 +250,7 @@ describe("CreditStateOdds (checklist 06 B.6 / E.1)", () => {
 
   it("five or more Tight months drop the caveat altogether", () => {
     renderPanel(metrics({ ...TIGHT_3, tight_count: 5 }));
+    openDetails();
     expect(text(section())).not.toContain("historical months");
     expect(text(section())).not.toContain("never occurred");
   });
@@ -291,6 +308,9 @@ describe("CreditStateOdds (checklist 06 B.6 / E.1)", () => {
     const t = () => text(section());
     expect(t()).toContain("A transition matrix counted from monthly credit states since 1996.");
     expect(t()).toContain("From today's Normal state, spreads stayed Normal three months later 81% of the time.");
+    // G4: the sentences after the first two sit behind Details on the same panel.
+    expect(t()).not.toContain("The outlined row is today's state.");
+    openDetails();
     expect(t()).toContain("The outlined row is today's state.");
     expect(t()).toContain("6-month view: Normal stays 72%.");
     expect(t()).not.toContain("3-month view:");

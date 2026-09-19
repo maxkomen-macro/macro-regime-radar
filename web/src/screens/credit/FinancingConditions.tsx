@@ -7,9 +7,11 @@
  *
  * Two all-in figures exist (G11): the tile's big number is the credit-metrics
  * string (the resampled monthly read, C20); the bar prints its own components
- * and stamp in the mono line so a difference is visible, never averaged away.
- * The module's hard-coded fallback payload (`data_as_of === "unavailable"`)
- * is not data: it renders no bar.
+ * so a difference is visible, never averaged away. Iteration 1 E1: the rate
+ * is Fed funds (a monthly average) plus the daily HY spread, never "today's"
+ * or "live"; each component carries its own as-of word from the payload's
+ * freshness block (fresh-state.ts). The module's stated defaults
+ * (`is_fallback` / `status: "fallback"`) are not data: they render no bar.
  */
 
 import type { ReactNode } from "react";
@@ -18,7 +20,8 @@ import { Card, SectionHeader, StatTile, Tag } from "../../components";
 import type { TagTone } from "../../components/core/Tag";
 import { useLboDefaults } from "../../api/queries";
 import type { CreditMetrics } from "../../api/types";
-import { fmtDate } from "../../lib/format";
+import type { FreshLabel } from "../shared/fresh-state";
+import { componentAsOf, isStatedDefault } from "../tools/lbo-copy";
 import Jargon from "../shared/Jargon";
 import { Caption, StateNote, capStyle, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
 import type { CreditPanelProps } from "./panel-props";
@@ -44,17 +47,35 @@ const LADDER: { state: string; tone: TagTone; rgb: string; rule: (m: CreditMetri
   },
 ];
 
+function AsOf({ f }: { f: FreshLabel }) {
+  return (
+    <span data-fresh={f.tone} title={f.reason || undefined} style={{ color: f.stale ? "var(--warn-hot)" : "var(--text-3)" }}>
+      {f.word}
+      {f.muted ? <span> {f.muted}</span> : null}
+    </span>
+  );
+}
+
 function AllInTile({ m }: { m: CreditMetrics }) {
   const defaults = useLboDefaults();
   const d = defaults.data;
   let bar: ReactNode;
   if (d) {
-    if (d.data_as_of === "unavailable") {
-      // lbo.py's hard-coded fallback (5.33 / 3.27 / 8.60), not data (G11).
-      bar = <div style={{ ...monoNoteStyle, marginTop: 14 }}>Rate components unavailable; the all-in figure above is the stored monthly read.</div>;
+    if (isStatedDefault(d)) {
+      // lbo.py's stated defaults (5.33 / 3.27 / 8.60), not data (G11): the
+      // grey "Stated default" badge (FRESHNESS_CONTRACT §5) and no bar.
+      bar = (
+        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Tag tone="reference" size="sm">
+            Stated default
+          </Tag>
+          <span style={{ ...monoNoteStyle, marginTop: 0 }}>Rate components unavailable; the all-in figure above is the stored monthly read.</span>
+        </div>
+      );
     } else {
       const fed = Math.max(0, d.fedfunds);
       const hy = Math.max(0, d.hy_oas_pct);
+      const { fed: fedAsOf, hy: hyAsOf } = componentAsOf(d);
       bar = (
         <>
           <div aria-hidden="true" style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", gap: 2, margin: "14px 0 8px" }}>
@@ -65,9 +86,16 @@ function AllInTile({ m }: { m: CreditMetrics }) {
             <span>Fed funds {d.fedfunds.toFixed(2)}%</span>
             <span style={{ color: "var(--amber)" }}>HY OAS {d.hy_oas_pct.toFixed(2)}%</span>
           </div>
-          <div style={{ ...monoNoteStyle, marginTop: 6 }}>
-            Fed funds + HY OAS = {d.lbo_all_in_rate.toFixed(2)}% · stored through {fmtDate(d.data_as_of)}
+          {/* E1: each component's own as-of, from the freshness block. */}
+          <div data-role="component-as-of" style={{ ...monoNoteStyle, marginTop: 2, display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <span>
+              Monthly average · <AsOf f={fedAsOf} />
+            </span>
+            <span style={{ textAlign: "right" }}>
+              Daily · <AsOf f={hyAsOf} />
+            </span>
           </div>
+          <div style={{ ...monoNoteStyle, marginTop: 6 }}>Fed funds + HY OAS = {d.lbo_all_in_rate.toFixed(2)}%</div>
         </>
       );
     }
@@ -133,8 +161,8 @@ export default function FinancingConditions({ m, status }: CreditPanelProps): JS
       <SectionHeader
         layout="panel"
         title="Financing conditions"
-        description="What a leveraged borrower pays today"
-        right="Fed Funds + HY OAS · monthly"
+        description="What a leveraged borrower pays: Fed funds plus the HY spread"
+        right="Fed funds (monthly) + HY OAS (daily)"
         actions={
           <Link className="mrr-link" to="/app/tools#lbo">
             Open LBO calculator →

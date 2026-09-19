@@ -8,8 +8,8 @@
  * subhead, the semicircle gauge over the 24M / Full history probability line
  * as the signature visual, beside SummaryCard `#recession-summary` with the
  * consecutive-rises strip linking to `#model`) → Model inputs (`#model`) →
- * Curve monitor (`#curve`) → the bottom row (Sensitivity, whose body is the
- * `#sensitivity` disclosure, collapsed by default | Model transparency
+ * Curve monitor (`#curve`) → the bottom row (Sensitivity `#sensitivity`,
+ * whose five sliders render on load, Iteration 1 X3 | Model transparency
  * `#transparency`) → the mono disclosure line.
  *
  * One data source: /api/recession/probability (src/analytics/recession.py:
@@ -25,19 +25,20 @@
  */
 
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useRecessionProbability, useRegimeLatest } from "../../api/queries";
 import type { RecessionMetrics, RecessionScenarioRequest, Regime } from "../../api/types";
 import { fmtBps, fmtMonYr, fmtSigned, fmtWholePct, ordinal } from "../../lib/format";
 import { DASH } from "../dashboard/hero-copy";
 import { assessFreshness } from "../shared/freshness";
+import { HeroChartFrame } from "../shared/HeroChart";
 import { StateNote, useHashScroll } from "../shared/screen-ui";
 import { DisclosureLine } from "../shared/Disclosure";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
 import { RECESSION_GLOW, deltaPoints, featureLabel, headlineIndex, heroCopy, labelTone, stripSummary, toneColor } from "./recession-copy";
 import type { CurveWindow, RecessionPanelProps } from "./panel-props";
-import ProbabilityGauge from "./ProbabilityGauge";
+import ProbabilityGauge, { GAUGE_ASPECT } from "./ProbabilityGauge";
 import ProbabilityHistory from "./ProbabilityHistory";
 import ModelInputs from "./ModelInputs";
 import CurveMonitor from "./CurveMonitor";
@@ -72,6 +73,17 @@ const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds;
 const THRESHOLDS = "2s10s < 0 · HY > 400 bps · unemployment +0.3 pp in 3m";
 const THRESHOLDS_TITLE = "Reference levels used in the desk read. Not model thresholds and not alert rules; none are served by the API.";
 
+/** The gauge's width cap in the hero slot (Iteration 1 G3): wide enough to
+ * fill 85% of the widest slot (866 px, the stacked hero at 1024 with the
+ * sidebar collapsed); the drawing's height follows the 360 × 210 aspect,
+ * 432 px at the cap. */
+const GAUGE_MAX_W = 740;
+/** The gauge's share of the slot width: clear of the 85% floor, with room
+ * either side of the tick labels. */
+const GAUGE_SHARE = 0.88;
+const gaugeWidth = (w: number): number => Math.floor(Math.min(w * GAUGE_SHARE, GAUGE_MAX_W));
+const gaugeHeight = (w: number): number => Math.round(gaugeWidth(w) * GAUGE_ASPECT);
+
 const LOADING_HEADLINE = "Training the recession model on stored NBER history…";
 const ERROR_HEADLINE = "Recession model unavailable: its endpoint trains in-process and may need a warm start.";
 const LOADING_ROW = "Training the recession model; the first call takes about a second.";
@@ -94,20 +106,18 @@ function labelOdds(r: Regime): number | null {
 export default function RecessionScreen() {
   const q = useRecessionProbability();
   const regime = useRegimeLatest();
-  const location = useLocation();
   const m: RecessionMetrics | null = q.data ?? null;
   // The snapshot rule (03 B.1): no error copy while cached data is on screen.
   const status: RecessionStatus = m ? "ready" : q.isError ? "error" : "loading";
 
   // Sensitivity state lives here (B.0): the analyst's inputs (null = seeded
-  // from the live readings) and the disclosure's open state, seeded from the
-  // mount-time hash so /app/recession#sensitivity loads open.
+  // from the current readings). The sliders render on load (X3), so
+  // /app/recession#sensitivity needs no open flag to land.
   const [inputs, setInputs] = useState<RecessionScenarioRequest | null>(null);
-  const [open, setOpen] = useState<boolean>(() => location.hash === "#sensitivity");
   const [curveRange, setCurveRange] = useState<CurveWindow>("30y");
   // One identity per settled state, so the hash lands after the data and the
-  // two local states settle without re-scrolling on every slider step.
-  const hashReady = useMemo(() => [m, curveRange, open] as const, [m, curveRange, open]);
+  // local state settles without re-scrolling on every slider step.
+  const hashReady = useMemo(() => [m, curveRange] as const, [m, curveRange]);
   useHashScroll(hashReady);
 
   const fresh = assessFreshness(m?.data_as_of, "monthly");
@@ -139,7 +149,19 @@ export default function RecessionScreen() {
         note={copy.note}
         chart={
           <>
-            <ProbabilityGauge prob={prob} label={m.recession_label} tone={labelTone(m.recession_label)} />
+            {/* Iteration 1 G3: the gauge scales with the chart slot (to the
+                slot's full width, up to GAUGE_MAX_W), so it fills the column
+                instead of sitting at 360 px in a 500 to 870 px slot. */}
+            <HeroChartFrame fallback={{ w: 410, h: 210 }} minHeight={gaugeHeight} maxHeight={gaugeHeight}>
+              {(box) => (
+                <ProbabilityGauge
+                  prob={prob}
+                  label={m.recession_label}
+                  tone={labelTone(m.recession_label)}
+                  maxWidth={Math.min(gaugeWidth(box.w), Math.floor(box.h / GAUGE_ASPECT))}
+                />
+              )}
+            </HeroChartFrame>
             <ProbabilityHistory m={m} />
           </>
         }
@@ -227,6 +249,18 @@ export default function RecessionScreen() {
         <StateNote loading />
       ),
     },
+    // X2: two served model facts (the model card's training count and input
+    // stamp) fill the card beside the taller desk hero instead of blank.
+    {
+      id: "training",
+      label: "Training sample",
+      value: val((x) => `${x.n_training_samples} months · NBER-dated`),
+    },
+    {
+      id: "inputs-through",
+      label: "Inputs through",
+      value: val((x) => fmtMonYr(x.data_as_of)),
+    },
     {
       id: "thresholds",
       label: "Reference thresholds",
@@ -263,7 +297,7 @@ export default function RecessionScreen() {
 
       {/* ── Bottom row: sensitivity | model transparency ─────────────── */}
       <div className="mrr-rec-bottom">
-        <SensitivityPanel m={m} status={status} open={open} onToggle={setOpen} inputs={inputs} onInputsChange={setInputs} />
+        <SensitivityPanel m={m} status={status} inputs={inputs} onInputsChange={setInputs} />
         <TransparencyPanel m={m} status={status} />
       </div>
 

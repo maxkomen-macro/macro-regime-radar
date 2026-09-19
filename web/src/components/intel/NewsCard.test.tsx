@@ -253,23 +253,37 @@ describe("NewsCard lead variant (checklist 08 B.3)", () => {
     expect(within(plain.container).queryAllByRole("link")).toHaveLength(0);
   });
 
-  it("labels a stored interpretation Why it matters · AI, a research body the same, a wire summary Wire summary, and prints no row when nothing is passed", () => {
+  it("row 3 is one slot (Iteration 1, N4): a stored AI read is the Why it matters · AI toggle that opens it in one click, a wire summary the Wire summary toggle, nothing the marked Headline only slot", () => {
     const ai = lead({ interpretation: INTERP });
     expect(text(ai.container)).toContain("◆ Why it matters · AI");
+    expect(text(ai.container)).not.toContain(INTERP);
+    const aiButton = within(ai.container).getByRole("button", { name: /Why it matters · AI/ });
+    expect(aiButton).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(aiButton);
+    expect(aiButton).toHaveAttribute("aria-expanded", "true");
     expect(text(ai.container)).toContain(INTERP);
+    expect(text(ai.container)).toContain("◆ CLAUDE · REGIME INTERPRETATION");
     expect(text(ai.container)).not.toContain("Wire summary");
     ai.unmount();
     const research = lead({ research: RESEARCH });
     expect(text(research.container)).toContain("◆ Why it matters · AI");
+    fireEvent.click(within(research.container).getByRole("button", { name: /Why it matters · AI/ }));
     expect(text(research.container)).toContain(RESEARCH);
+    expect(text(research.container)).toContain("◆ PERPLEXITY RESEARCH");
     research.unmount();
     const wire = lead({ summary: SUMMARY });
     expect(text(wire.container)).toContain("Wire summary");
-    expect(text(wire.container)).toContain(SUMMARY);
     expect(text(wire.container)).not.toContain("Why it matters");
+    expect(text(wire.container)).not.toContain(SUMMARY);
+    const wireButton = within(wire.container).getByRole("button", { name: /Wire summary/ });
+    fireEvent.click(wireButton);
+    expect(wireButton).toHaveAttribute("aria-expanded", "true");
+    expect(text(wire.container)).toContain(SUMMARY);
     wire.unmount();
     const none = lead();
     expect(text(none.container)).not.toMatch(/Why it matters|Wire summary/);
+    expect(text(none.container)).toContain("Headline only");
+    expect(within(none.container).queryAllByRole("button")).toHaveLength(0);
   });
 
   it("Score breakdown is closed by default and opens to four readouts, amber at 4 and above, a dash for null", () => {
@@ -342,5 +356,60 @@ describe("NewsCard lead variant (checklist 08 B.3)", () => {
     for (const s of SOURCES) expect(link(s)).toHaveAttribute("href", s);
     expect(text(container)).toContain("◆ Why it matters · AI");
     expect(text(container)).toContain(INTERP);
+  });
+});
+
+/* ── Iteration 1 (N4): at most four sentences, the rest behind Details ───── */
+
+describe("NewsCard AI read (Iteration 1, N4)", () => {
+  const LONG_INTERP = "Growth holds up. Inflation stays sticky. The Fed leans hawkish. Real yields rise. Duration suffers.";
+  const LONG_RESEARCH = "Futures price one hike. Dealers cut duration.";
+  const shownSentences = (el: HTMLElement) => [...el.querySelectorAll("p")].map((p) => text(p)).join(" ");
+
+  it("a row opens to the first four sentences, interpretation first, then research; the rest and the wire summary sit behind a nested Details", () => {
+    const { container } = render(
+      <NewsCard source="NEWSAPI" time={TIME} headline={HEADLINE} href={ARTICLE} interpretation={LONG_INTERP} research={LONG_RESEARCH} sources={SOURCES} summary={SUMMARY} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Regime read · 2 sources/ }));
+    const shown = shownSentences(container);
+    expect(shown).toBe("Growth holds up. Inflation stays sticky. The Fed leans hawkish. Real yields rise.");
+    expect(text(container)).not.toContain("Duration suffers.");
+    expect(text(container)).not.toContain("Futures price one hike.");
+    expect(text(container)).not.toContain(SUMMARY);
+    // The cited sources are one click away, not two.
+    for (const s of SOURCES) expect(link(s)).toHaveAttribute("target", "_blank");
+    const details = screen.getByRole("button", { name: /Details/ });
+    expect(details).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(details);
+    expect(details).toHaveAttribute("aria-expanded", "true");
+    expect(text(container)).toContain("Duration suffers.");
+    expect(text(container)).toContain("Futures price one hike. Dealers cut duration.");
+    expect(text(container)).toContain("◆ PERPLEXITY RESEARCH");
+    expect(text(container)).toContain(SUMMARY);
+  });
+
+  it("a short read shows whole with no Details; research fills the four sentences after a short interpretation", () => {
+    const { container } = render(<NewsCard source="NEWSAPI" time={TIME} headline={HEADLINE} href={ARTICLE} interpretation="One. Two." research="Three. Four. Five." />);
+    fireEvent.click(screen.getByRole("button", { name: /Regime read/ }));
+    expect(shownSentences(container)).toBe("One. Two. Three. Four.");
+    expect(text(container)).toContain("◆ CLAUDE · REGIME INTERPRETATION");
+    expect(text(container)).toContain("◆ PERPLEXITY RESEARCH");
+    fireEvent.click(screen.getByRole("button", { name: /Details/ }));
+    expect(text(container)).toContain("Five.");
+    const short = render(<NewsCard source="NEWSAPI" time={TIME} headline={HEADLINE} href={ARTICLE} interpretation={INTERP} />);
+    fireEvent.click(within(short.container).getByRole("button", { name: /Regime read/ }));
+    expect(within(short.container).queryByRole("button", { name: /Details/ })).toBeNull();
+  });
+
+  it("the lead card's one click opens the same four-sentence read with its sources, and keeps the article link", () => {
+    const { container } = render(
+      <NewsCard variant="lead" source="CNBC" time={TIME} headline={HEADLINE} href={ARTICLE} interpretation={LONG_INTERP} sources={SOURCES} significance={4.1} sigScale={5} />,
+    );
+    const button = within(container).getByRole("button", { name: /Why it matters · AI · Regime read · 2 sources/ });
+    fireEvent.click(button);
+    expect(shownSentences(container)).toBe("Growth holds up. Inflation stays sticky. The Fed leans hawkish. Real yields rise.");
+    for (const s of SOURCES) expect(link(s)).toHaveAttribute("rel", "noreferrer");
+    expect(link("Read at CNBC →")).toHaveAttribute("href", ARTICLE);
+    expect(within(container).getByRole("button", { name: /Details/ })).toHaveAttribute("aria-expanded", "false");
   });
 });

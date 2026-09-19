@@ -24,7 +24,7 @@ const DEFS: Record<string, string> = {
     "Whether the recession model and market risk pricing agree. Aligned = they tell one story; a material divergence requires judgment about which read to weight.",
   NBER: "The National Bureau of Economic Research — the committee that dates official US recessions; the model trains on its dates.",
   "recession model":
-    "A logistic regression on yield-curve, credit and leading-indicator inputs, trained on NBER recession dates, reading the odds of recession within 12 months.",
+    "A logistic regression on the yield curve, unemployment, the high-yield spread, industrial production and the 10Y − 5Y breakeven spread, trained on NBER recession dates, reading the odds of recession within 12 months.",
   breakeven:
     "The inflation rate at which nominal Treasuries and inflation-protected TIPS pay the same — the market's own inflation forecast for that horizon.",
   TIPS: "Treasury Inflation-Protected Securities — their yield is the real (after-inflation) interest rate the market charges.",
@@ -46,7 +46,7 @@ const DEFS: Record<string, string> = {
     "Share of samples that finished positive. With small sample counts, treat it as anecdote, not law.",
   "log-odds":
     "The regression's native unit: each coefficient shifts the log of the odds of recession per one standard deviation of that input.",
-  LEI: "Leading-indicator proxy. The original series (USSLIND) froze in 2020; the live input is the 10Y-minus-5Y inflation-breakeven curve.",
+  LEI: "10Y − 5Y breakeven spread: the 10-year minus the 5-year inflation breakeven (T10YIE − T5YIE). The recession model reads it in place of the Conference Board leading index (USSLIND), which stopped publishing in February 2020.",
   significance:
     "Editorial 1–5 score blending market impact, deal size, sector reach, timeliness and regime fit. 4+ is high impact.",
   cohort:

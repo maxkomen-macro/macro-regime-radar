@@ -129,7 +129,9 @@ const CHART_TERCILE_TIGHT = "Today's readings sit in the tight third of history:
 const CAPTION_C10 = "Option-adjusted spreads: the extra yield corporate bonds pay over Treasuries. High yield sits at 312 bps (3.12pp), the 12th percentile of history since 1996, tighter than 88% of it. Investment grade holds 94 bps, its 18th percentile.";
 const CAPTION_C16 = "High-yield trades at 3.32× the investment-grade spread, near the ~3.5× long-run norm (2008 peaked at 8.2×). A rising ratio means the market is punishing weak credits faster than strong ones.";
 const CAPTION_C17 = "CCC spreads sit at 1042 bps, 104% of the 1,000 bps distress line. The weakest credits run hot even while the broad market reads Normal at 312 bps; the two statements are about different rungs of the ladder, not a contradiction.";
-const CALLOUT_P1 = "The index says Normal; the weakest rung says stress. CCC spreads sit at 1042 bps, 104% of the 1,000 bps distress line, while the broad high-yield index holds 312 bps. Both are true: the two readings describe different rungs of the ladder.";
+// Iteration 1 C3 / G4: two sentences visible; the third and the second paragraph sit behind Details.
+const CALLOUT_P1 = "The index says Normal; the weakest rung says stress. CCC spreads sit at 1042 bps, 104% of the 1,000 bps distress line, while the broad high-yield index holds 312 bps.";
+const CALLOUT_P1_DETAILS = "Both are true: the two readings describe different rungs of the ladder.";
 const CALLOUT_P2 = "What it means: the market is charging default risk only for the marginal borrower. Watch single-B (297 bps today): stress migrating from CCC into B is how a Normal state turns Stressed (HY above 400 bps).";
 const DISCLOSURE_LINE =
   "ICE BofA option-adjusted spread indices via FRED, monthly observations · classification checks rules top-down (Crisis, then Stressed, then Tight, else Normal) · transition odds are empirical frequencies from stored monthly states · classification and transition odds computed by the same analytics module the memo reads.";
@@ -443,21 +445,29 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     expect(text(oas)).not.toContain("Trips when");
   });
 
-  it("#oas: HY and IG carry a meter and Percentile since 1996; BB, Single-B and CCC carry neither; the mono lines and the MoM colour rule", async () => {
+  it("#oas: every card carries the meter slot (Iteration 1 G3): HY and IG the served percentile, CCC the distress line, BB and Single-B the marked no-percentile slot; the mono lines and the MoM colour rule", async () => {
     renderCredit();
     await awaitHero();
     await awaitSection("oas");
     for (const name of ["High yield", "Investment grade"]) {
       const c = cardNamed(name);
       expect(c.querySelector(".mrr-meter"), name).not.toBeNull();
+      expect(c).toHaveAttribute("data-meter", "rank");
       expect(text(c)).toContain("Percentile since 1996");
       expect(text(c)).not.toContain("Threshold proximity");
     }
-    for (const name of ["BB", "Single-B", "CCC"]) {
+    // F1: no rank is served for BB or B; the slot is marked, never a stand-in number.
+    for (const name of ["BB", "Single-B"]) {
       const c = cardNamed(name);
-      expect(c.querySelector(".mrr-meter"), name).toBeNull();
-      expect(text(c)).not.toContain("Percentile");
+      expect(c.querySelector(".mrr-meter"), name).not.toBeNull();
+      expect(c).toHaveAttribute("data-meter", "none");
+      expect(text(c)).toContain("No percentile served");
+      expect(text(c)).not.toContain("Percentile since 1996");
     }
+    const ccc = cardNamed("CCC");
+    expect(ccc).toHaveAttribute("data-meter", "distress");
+    expect(text(ccc)).toContain("Vs the 1,000 bps distress line");
+    expect(text(ccc)).not.toContain("Percentile since 1996");
     const moms = ["+6 bps MoM", "+1 bps MoM", "-3 bps MoM", "+2 bps MoM", "+29 bps MoM"];
     cards().forEach((c, i) => {
       expect(text(c), CARD_NAMES[i]).toContain(moms[i]);
@@ -567,8 +577,12 @@ describe("CreditScreen (checklist 06 E.1)", () => {
     const ladder = await awaitSection("quality-ladder");
     expect(text(ladder)).toContain("Analytical callout · quality ladder tension");
     expect(text(ladder)).toContain(CALLOUT_P1);
+    expect(text(ladder)).not.toContain(CALLOUT_P2);
+    expect(ladder.querySelectorAll(".mrr-prose")).toHaveLength(1);
+    fireEvent.click(within(ladder).getByRole("button", { name: /Details/ }));
+    expect(text(ladder)).toContain(CALLOUT_P1_DETAILS);
     expect(text(ladder)).toContain(CALLOUT_P2);
-    expect(ladder.querySelectorAll(".mrr-prose")).toHaveLength(2);
+    expect(ladder.querySelectorAll(".mrr-prose")).toHaveLength(3);
     // The callout lives inside the ladder section, not above #oas.
     expect((byId("oas") as HTMLElement).compareDocumentPosition(ladder.querySelector(".mrr-prose") as Element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     first.unmount();

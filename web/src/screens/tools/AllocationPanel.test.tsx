@@ -223,7 +223,10 @@ describe("AllocationPanel optimization and overview (checklist 09 E.1 row 8)", (
     await screen.findByRole("heading", { level: 1, name: "SPY" });
     const summary = p9ById("allocation-summary") as HTMLElement;
     const dts = [...summary.querySelectorAll("dl dt")].map((d) => p9Text(d));
-    expect(dts).toEqual(["Sample", "Risk-free", "Optimizer"]);
+    // Iteration 1 G2 (T3): four served rows fill the card beside the desk hero.
+    expect(dts).toEqual(["Sample", "Leader", "Laggard", "Asset classes", "Returns through", "Risk-free", "Optimizer"]);
+    const leader = [...summary.querySelectorAll("dl dt")].find((d) => p9Text(d) === "Leader")?.nextElementSibling as HTMLElement;
+    expect(p9Text(leader)).toMatch(/^SPY · \+\d+\.\d% a year/);
     const optimizerDd = [...summary.querySelectorAll("dl dt")].find((d) => p9Text(d) === "Optimizer")?.nextElementSibling as HTMLElement;
     expect(p9Text(optimizerDd)).toBe(`Unavailable: ${payload.optimizations_skipped.sentence}`);
     expect(p9Text([...summary.querySelectorAll("dl dt")].find((d) => p9Text(d) === "Sample")?.nextElementSibling)).toBe("28 Goldilocks months · 284 total since Jan 2003");

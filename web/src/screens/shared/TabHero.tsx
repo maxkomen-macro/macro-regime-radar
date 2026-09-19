@@ -61,6 +61,10 @@ export interface TabHeroProps {
   lede?: ReactNode;
   /** Primary first; the mockup shows two. */
   actions?: TabHeroAction[];
+  /** A control that rides in the action row after the buttons (the Markets
+   * symbol search, Iteration 1 M3); it wraps onto its own line when the
+   * copy column is too narrow for it. */
+  actionsAfter?: ReactNode;
   /** Footnote items, joined by an aria-hidden bullet. */
   footnote?: ReactNode[];
   /** Freshness chips rendered in the footnote row. */
@@ -167,6 +171,7 @@ export function TabHero({
   subhead,
   lede,
   actions,
+  actionsAfter,
   footnote,
   freshness,
   note,
@@ -303,11 +308,12 @@ export function TabHero({
           </p>
         ) : null}
 
-        {ordered.length ? (
+        {ordered.length || actionsAfter != null ? (
           <div className="mrr-hero-actions" style={{ display: "flex", gap: 16, marginTop: 20, flexWrap: "wrap" }}>
             {ordered.map((a, i) => (
               <Action key={i} action={a} primary={i === 0} />
             ))}
+            {actionsAfter}
           </div>
         ) : null}
 

@@ -14,6 +14,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { useAllocation } from "../../api/queries";
+import { fmtMonYr } from "../../lib/format";
 import type { AllocationData } from "../../api/types";
 import { assessFreshness } from "../shared/freshness";
 import { HeroChartFrame } from "../shared/HeroChart";
@@ -231,12 +232,21 @@ export default function AllocationHeroRow() {
   const note = <StateNote loading={loading} error={error} />;
   const curStats = a ? currentStats(a) : undefined;
   const optimizer = a ? optimizerRow(a) : null;
+  const ranked = a ? allocationSummary(a) : null;
+  const rankRow = (r: RankedAsset | null | undefined): string => (r ? `${r.n} · ${spct(r.m)} a year${r.sr != null ? ` · Sharpe ${r.sr.toFixed(2)}` : ""}` : "—");
   const rows: SummaryRow[] = [
     {
       id: "sample",
       label: "Sample",
       value: a ? `${curStats?.n_months ?? 0} ${a.current_regime} months · ${a.n_months} total since ${startMonYr(a)}` : note,
     },
+    // Iteration 1 G2 (T3): served figures fill the card beside the taller
+    // desk hero: the regime's leader and laggard (the ranked served means the
+    // hero bars draw), the asset count and the last month of returns.
+    { id: "leader", label: "Leader", value: a ? rankRow(ranked?.best) : note },
+    { id: "laggard", label: "Laggard", value: a ? rankRow(ranked?.worst) : note },
+    { id: "assets", label: "Asset classes", value: a ? `${ranked?.names.length ?? 0} · index-spliced before ETF inception` : note },
+    { id: "returns-through", label: "Returns through", value: a ? fmtMonYr(`${a.data_end}-01`) : note },
     { id: "risk-free", label: "Risk-free", value: a ? `${pct(a.rf_rate, 2)} Fed Funds` : note },
     { id: "optimizer", label: "Optimizer", value: optimizer ? optimizer.value : note, tone: optimizer?.tone },
   ];

@@ -2,16 +2,21 @@
  * Macro calendar panel (redesign Phase 8, checklist 08 B.5): the News screen's
  * right column. Upcoming / Recent toggle, the impact legend, a day-grouped
  * DataTable (time, impact dot, event, source), the stored-schedule callout
- * when the 30-day window is empty, the 12-row cap with "Show all", the
- * "Recent releases" block and the hand-maintained caption. The screen owns
- * the two calendar queries and the view state; this panel only renders them.
+ * when the 30-day window is empty, the "Recent releases" block and the
+ * hand-maintained caption. The screen owns the two calendar queries and the
+ * view state; this panel only renders them.
+ *
+ * Iteration 1 (N3): the card sizes to its content (the News body grid aligns
+ * to the start) and the whole 30-day window renders; the 12-row cap and its
+ * "Show all {n} events" button are gone, so the next 30 days and the recent
+ * releases read without a click and without a scroll inside the card.
  *
  * Impact colours come from shared/calendar-impact.ts, the table the Dashboard
  * card paints from, so the legend can never drift from the rows. Times are the
  * hand-maintained UTC stamps rendered as ET wall time (`splitStamp`).
  */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Card, DataTable, SectionHeader, Segmented } from "../../components";
 import type { CalendarEvent } from "../../api/types";
 import { fmtDate } from "../../lib/format";
@@ -21,9 +26,6 @@ import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote, metaStyle, mono } from "../shared/screen-ui";
 import { dayGroups } from "./news-copy";
 import type { CalendarPanelProps, CalendarView } from "./news-types";
-
-/** The upcoming view prints this many rows before "Show all {n} events". */
-const UPCOMING_CAP = 12;
 
 const VIEW_OPTIONS = [
   { id: "upcoming", label: "Upcoming" },
@@ -105,7 +107,6 @@ function columnsFor(elapsed: boolean, narrow: boolean) {
 
 export default function CalendarPanel({ calendar, recent, usingCalFallback, view, onViewChange, now }: CalendarPanelProps): JSX.Element {
   const { isNarrow } = useBreakpoint();
-  const [showAll, setShowAll] = useState(false);
 
   const upcomingRows = calendar.data ?? [];
   const recentRows = recent.data ?? [];
@@ -125,8 +126,7 @@ export default function CalendarPanel({ calendar, recent, usingCalFallback, view
     elapsed = true;
   }
 
-  const capped = view === "upcoming" && !elapsed && !showAll && rows.length > UPCOMING_CAP;
-  const visible = capped ? rows.slice(0, UPCOMING_CAP) : rows;
+  const visible = rows;
   const label = elapsed ? "Recent macro events" : "Upcoming macro events";
 
   const columns = useMemo(() => columnsFor(elapsed, isNarrow), [elapsed, isNarrow]);
@@ -157,13 +157,6 @@ export default function CalendarPanel({ calendar, recent, usingCalFallback, view
         <ScrollTable stickyFirst={false} label={label}>
           <DataTable compact zebra={false} caption={label} columns={columns} groups={groups} />
         </ScrollTable>
-        {capped ? (
-          <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
-            <button type="button" className="mrr-btn" data-touch={isNarrow ? "true" : "false"} onClick={() => setShowAll(true)}>
-              Show all {rows.length} events
-            </button>
-          </div>
-        ) : null}
       </>
     );
   } else if (loading) {

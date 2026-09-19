@@ -300,11 +300,11 @@ test.describe("dashboard (checklist 03 E.3)", () => {
     await expect.poll(() => inView(page, "calendar"), { timeout: 15_000 }).toBe(true);
   });
 
-  test("11. macro charts: all four closed on load, the first click shows a chart, the hash opens the first panel", async ({ page }) => {
+  test("11. macro charts: all three closed on load (Iteration 1 D1 moved the regime odds to the hero), the first click shows a chart, the hash opens the first panel", async ({ page }) => {
     await open(page);
     const buttons = page.locator("#macro-charts button[aria-expanded]");
-    await expect(buttons).toHaveCount(4);
-    for (let i = 0; i < 4; i++) await expect(buttons.nth(i)).toHaveAttribute("aria-expanded", "false");
+    await expect(buttons).toHaveCount(3);
+    for (let i = 0; i < 3; i++) await expect(buttons.nth(i)).toHaveAttribute("aria-expanded", "false");
     expect(await page.locator("#macro-charts svg[role='img']").count()).toBe(0);
     await buttons.first().click();
     await expect(buttons.first()).toHaveAttribute("aria-expanded", "true");

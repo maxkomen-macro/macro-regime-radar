@@ -21,6 +21,33 @@ export const LIVE_RATE = 6.98;
 export const LBO_DEFAULTS: LboDefaults = { fedfunds: 4.33, hy_oas_pct: 2.65, lbo_all_in_rate: LIVE_RATE, data_as_of: "2026-09-01" };
 /** The engine's module fallback payload (lbo.py:32-37): FRED rows missing, stamped "unavailable". */
 export const LBO_DEFAULTS_FALLBACK: LboDefaults = { fedfunds: 5.33, hy_oas_pct: 3.27, lbo_all_in_rate: 8.6, data_as_of: "unavailable" };
+/** The B3 payload (Iteration 1 E1): status, is_fallback, the row stamps and
+ * the freshness block. Fed funds is the Aug 2026 monthly print; the HY
+ * spread's true date is Sep 17 (its row stamp, 2026-09-01, is a month stamp
+ * the screen must never print as a date). */
+export const LBO_DEFAULTS_B3: LboDefaults = {
+  ...LBO_DEFAULTS,
+  status: "live",
+  is_fallback: false,
+  fedfunds_as_of: "2026-08-01",
+  hy_oas_as_of: "2026-09-01",
+  freshness: {
+    FEDFUNDS: { id: "FEDFUNDS", label: "Fed funds (effective, monthly)", kind: "fred", cadence: "monthly", as_of: "2026-08-01", state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "Fed funds (effective, monthly) for Aug 2026 is the newest print due." },
+    BAMLH0A0HYM2: { id: "BAMLH0A0HYM2", label: "High-yield OAS", kind: "fred", cadence: "daily", as_of: "2026-09-17", state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "High-yield OAS observed 2026-09-17, the newest print due." },
+    lbo_all_in_rate: { id: "lbo_all_in_rate", label: "LBO all-in rate", kind: "derived", cadence: "daily", as_of: "2026-08-01", state: "close", delay_min: null, cycles_behind: null, stale: false, discontinued: false, reason: "Fed funds (monthly average) plus the high-yield spread; judged by its weaker component." },
+  },
+};
+/** The B3 payload before the HY watermark exists: the HY state and the rate's are unknown. */
+export const LBO_DEFAULTS_B3_UNKNOWN: LboDefaults = {
+  ...LBO_DEFAULTS_B3,
+  freshness: {
+    ...LBO_DEFAULTS_B3.freshness,
+    BAMLH0A0HYM2: { id: "BAMLH0A0HYM2", label: "High-yield OAS", kind: "fred", cadence: "daily", as_of: null, state: "unknown", delay_min: null, cycles_behind: null, stale: false, discontinued: false, reason: "High-yield OAS: the true observation date is not recorded yet (stored rows are month-stamped)." },
+    lbo_all_in_rate: { id: "lbo_all_in_rate", label: "LBO all-in rate", kind: "derived", cadence: "daily", as_of: "2026-08-01", state: "unknown", delay_min: null, cycles_behind: null, stale: false, discontinued: false, reason: "Fed funds (monthly average) plus the high-yield spread; judged by its weaker component." },
+  },
+};
+/** The B3 stated-default payload: detected from is_fallback / status, whatever data_as_of reads. */
+export const LBO_DEFAULTS_STATED: LboDefaults = { ...LBO_DEFAULTS_FALLBACK, data_as_of: "2026-09-01", status: "fallback", is_fallback: true };
 /** The stated fallback rate the calculator runs at with no live rate on file. */
 export const STATED_RATE = 8.5;
 

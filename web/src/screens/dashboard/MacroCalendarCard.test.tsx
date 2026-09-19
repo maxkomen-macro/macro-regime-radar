@@ -1,7 +1,8 @@
 /**
  * Phase 3 checklist (docs/redesign-v2/checklists/03-dashboard.md) B.7 and
  * E.1, `screens/dashboard/MacroCalendarCard.test.tsx`: the macro calendar
- * card. The first three rows of `/api/calendar` (30-day window) with the date
+ * card. The first five rows of `/api/calendar` (30-day window; three before
+ * Iteration 1, which fills the card with the rows it already reads) with the date
  * and time cells from `fmtUtcStampEt` (a Z stamp renders the ET wall time,
  * never the UTC digits), the amber / cyan / gray importance dot with its
  * sr-only word, the stored-schedule fallback to `/api/calendar/recent` when
@@ -23,12 +24,14 @@ const ev = (id: number, event_name: string, event_datetime: string, importance: 
   source: "hand-maintained",
 });
 
-/** Four upcoming rows (the card shows three); Z stamps are UTC. 12:30 UTC is 08:30 ET in September. */
+/** Six upcoming rows (the card shows five); Z stamps are UTC. 12:30 UTC is 08:30 ET in September. */
 const UPCOMING = [
   ev(1, "CPI (Aug)", "2026-09-16T12:30:00Z", "high"),
   ev(2, "FOMC decision", "2026-09-17T18:00:00Z", "medium"),
   ev(3, "Jobless claims", "2026-09-18T12:30:00Z", "low"),
   ev(4, "GDP (Q2, third estimate)", "2026-09-25T12:30:00Z", "high"),
+  ev(5, "PCE (Aug)", "2026-09-26T12:30:00Z", "medium"),
+  ev(6, "Jobs report (Sep)", "2026-10-02T12:30:00Z", "high"),
 ];
 const RECENT = [
   ev(11, "Jobs report (Aug)", "2026-09-04T12:30:00Z", "high"),
@@ -76,12 +79,14 @@ afterEach(() => {
 });
 
 describe("MacroCalendarCard (checklist 03 B.7)", () => {
-  it("renders the first three upcoming rows with the header, provenance line and the News link", async () => {
+  it("renders the first five upcoming rows with the header, provenance line and the News link", async () => {
     renderWithProviders(<MacroCalendarCard />);
     expect(await screen.findByText("CPI (Aug)")).toBeInTheDocument();
     expect(screen.getByText("FOMC decision")).toBeInTheDocument();
     expect(screen.getByText("Jobless claims")).toBeInTheDocument();
-    expect(screen.queryByText("GDP (Q2, third estimate)")).toBeNull();
+    expect(screen.getByText("GDP (Q2, third estimate)")).toBeInTheDocument();
+    expect(screen.getByText("PCE (Aug)")).toBeInTheDocument();
+    expect(screen.queryByText("Jobs report (Sep)")).toBeNull();
     expect(screen.getByRole("heading", { name: /^Macro calendar$/i })).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /View calendar/ });
     expect(link).toHaveAttribute("href", "/app/news#calendar");
@@ -114,7 +119,7 @@ describe("MacroCalendarCard (checklist 03 B.7)", () => {
     const { unmount } = renderWithProviders(<MacroCalendarCard />);
     await screen.findByText("CPI (Aug)");
     const dots = [...card().querySelectorAll<HTMLElement>("[data-importance]")];
-    expect(dots).toHaveLength(3);
+    expect(dots).toHaveLength(5);
     const style = (el: HTMLElement) => el.getAttribute("style") ?? "";
     const [high, medium, low] = dots;
     expect(high).toHaveAttribute("data-importance", "high");

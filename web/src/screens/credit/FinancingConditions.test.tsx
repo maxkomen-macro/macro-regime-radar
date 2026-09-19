@@ -77,6 +77,21 @@ const TIGHT: Partial<CreditMetrics> = { credit_label: "Tight", hy_oas: 372, ig_o
 const DEFAULTS: LboDefaults = { fedfunds: 4.33, hy_oas_pct: 2.65, lbo_all_in_rate: 6.98, data_as_of: "2026-09-01" };
 /** lbo.py:32-37 hard-coded fallback: the guard renders no bar. */
 const FALLBACK: LboDefaults = { fedfunds: 5.33, hy_oas_pct: 3.27, lbo_all_in_rate: 8.6, data_as_of: "unavailable" };
+/** The B3 stated-default payload: detected from is_fallback / status, whatever data_as_of says (Iteration 1 E1). */
+const FALLBACK_B3: LboDefaults = { ...FALLBACK, data_as_of: "2026-09-01", status: "fallback", is_fallback: true };
+/** A B3 payload with the freshness block: Fed funds is a monthly print, the HY spread a daily close. */
+const DEFAULTS_B3: LboDefaults = {
+  ...DEFAULTS,
+  status: "live",
+  is_fallback: false,
+  fedfunds_as_of: "2026-08-01",
+  hy_oas_as_of: "2026-09-01",
+  freshness: {
+    FEDFUNDS: { id: "FEDFUNDS", label: "Fed funds (effective, monthly)", kind: "fred", cadence: "monthly", as_of: "2026-08-01", state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "Fed funds for Aug 2026 is the newest print due." },
+    BAMLH0A0HYM2: { id: "BAMLH0A0HYM2", label: "High-yield OAS", kind: "fred", cadence: "daily", as_of: "2026-09-17", state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "High-yield OAS observed 2026-09-17, the newest print due." },
+    lbo_all_in_rate: { id: "lbo_all_in_rate", label: "LBO all-in rate", kind: "derived", cadence: "daily", as_of: "2026-08-01", state: "close", delay_min: null, cycles_behind: null, stale: false, discontinued: false, reason: "Fed funds (monthly average) plus the high-yield spread; judged by its weaker component." },
+  },
+};
 const PENDING = () => new Promise<never>(() => {});
 
 const RULES = ["HY spread above 700 bps", "HY spread above 400 bps", "IG spread above 150 bps", "None of the above · HY 312, IG 94"];
@@ -150,8 +165,10 @@ describe("FinancingConditions (checklist 06 B.7 / E.1)", () => {
     renderPanel();
     expect(section().tagName).toBe("SECTION");
     expect(within(section()).getByRole("heading", { level: 2 })).toHaveTextContent(/^Financing conditions$/);
-    expect(text(section())).toContain("What a leveraged borrower pays today");
-    expect(text(section())).toContain("Fed Funds + HY OAS · monthly");
+    // Iteration 1 E1: never "today's" or "live"; the two components' cadences named.
+    expect(text(section())).toContain("What a leveraged borrower pays: Fed funds plus the HY spread");
+    expect(text(section())).toContain("Fed funds (monthly) + HY OAS (daily)");
+    expect(text(section())).not.toMatch(/\btoday\b|\blive\b|\bcurrent\b/i);
     const link = within(section()).getByRole("link", { name: /Open LBO calculator/ });
     expect(link).toHaveAttribute("href", "/app/tools#lbo");
     expect(link).toHaveClass("mrr-link");
@@ -165,7 +182,11 @@ describe("FinancingConditions (checklist 06 B.7 / E.1)", () => {
     expect(allInValue()).toBe("7.04%");
     await waitFor(() => expect(text(section())).toContain("Fed funds 4.33%"));
     expect(text(section())).toContain("HY OAS 2.65%");
-    expect(text(section())).toMatch(/Fed funds \+ HY OAS = 6\.98% · stored through (?:2026-09-01|Sep 01, 2026)/);
+    expect(text(section())).toContain("Fed funds + HY OAS = 6.98%");
+    // A payload without the B3 freshness block states each as-of as unknown, never a month stamp.
+    expect(text(section())).toContain("Monthly average · As of unknown");
+    expect(text(section())).toContain("Daily · As of unknown");
+    expect(text(section())).not.toContain("stored through");
     // The tile's number is the stored monthly read, never the defaults sum (G11).
     expect(allInValue()).not.toBe("6.98%");
     expect(bar()).not.toBeNull();
@@ -184,6 +205,28 @@ describe("FinancingConditions (checklist 06 B.7 / E.1)", () => {
     expect(text(section())).not.toContain("8.60%");
     expect(allInValue()).toBe("7.04%");
     expect(text(allIn())).toContain(CAPTION_C20);
+  });
+
+  it("E1: each component carries its own as-of word from the freshness block (Fed funds the Aug 2026 print, the HY spread Sep 17), never today's, live or current", async () => {
+    stubFetch({ "/api/lbo/defaults": () => DEFAULTS_B3 });
+    renderPanel();
+    await waitFor(() => expect(text(section())).toContain("Monthly average · Aug 2026 print"));
+    expect(text(section())).toContain("Daily · Sep 17");
+    const asOf = section().querySelector("[data-role='component-as-of']") as HTMLElement;
+    expect(asOf).not.toBeNull();
+    expect(asOf.querySelector("[title='Fed funds for Aug 2026 is the newest print due.']")).not.toBeNull();
+    expect(text(section())).not.toMatch(/\btoday\b|\blive\b|\bcurrent\b/i);
+    expect(bar()).not.toBeNull();
+  });
+
+  it("E1: the B3 stated-default payload (is_fallback) renders no bar and the guard sentence even with a dated data_as_of", async () => {
+    stubFetch({ "/api/lbo/defaults": () => FALLBACK_B3 });
+    renderPanel();
+    await waitFor(() => expect(text(section())).toContain(GUARD));
+    expect(text(allIn())).toContain("Stated default");
+    expect(bar()).toBeNull();
+    expect(text(section())).not.toContain("Fed funds 5.33%");
+    expect(allInValue()).toBe("7.04%");
   });
 
   it("while the defaults load the bar's place reads the loading note; a failed defaults request leaves the tile without a bar", async () => {

@@ -48,7 +48,7 @@ import { afterEach, beforeEach, vi } from "vitest";
 import { fireEvent, within } from "@testing-library/react";
 import type { LboRequest } from "../../api/types";
 import { fmtMillions } from "../shared/screen-ui";
-import { BASE_REQ, LIVE_RATE, NOT_VIABLE_LEGACY, NOW, lboModel, lboRoutes, lboRunFixed, posted } from "./__fixtures__/lbo";
+import { BASE_REQ, LBO_DEFAULTS_B3, LBO_DEFAULTS_STATED, LIVE_RATE, NOT_VIABLE_LEGACY, NOW, lboModel, lboRoutes, lboRunFixed, posted } from "./__fixtures__/lbo";
 
 const P9_ROUTE = "/app/tools";
 const P9_BASE = lboModel(BASE_REQ);
@@ -90,7 +90,8 @@ function p9SliderRow(label: string): HTMLElement {
 }
 const p9RangeOf = (label: string) => p9SliderRow(label).querySelector("input[type='range']") as HTMLInputElement;
 const p9Reset = () => within(p9Assumptions()).getByRole("button", { name: "Reset to defaults" });
-const p9Switch = () => within(p9Assumptions()).getByRole("switch", { name: "Track the live financing rate" });
+// Iteration 1 E1: the switch tracks the all-in rate, never a "live" one.
+const p9Switch = () => within(p9Assumptions()).getByRole("switch", { name: "Track the all-in financing rate" });
 const p9Status = () => p9Assumptions().querySelector<HTMLElement>('[role="status"]');
 const p9Description = () => p9Text(p9Outputs().querySelector(".mrr-sec-desc"));
 /** The header's mono meta (`right`); the Tag beside it carries data-tone and is excluded. */
@@ -125,20 +126,22 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     window.history.replaceState(null, "", "/");
   });
 
-  it("#lbo-assumptions: the Assumptions header with Reset to defaults disabled, the live tile with its switch checked, the caption link into Credit, three group eyebrows, nine ranges each with a tick, data-changed=false, the labels in order and the typed fields", async () => {
+  it("#lbo-assumptions: the Assumptions header with Reset to defaults disabled, the financing-rate tile with its switch checked, the caption link into Credit, three group eyebrows, nine ranges each with a tick, data-changed=false, the labels in order and the typed fields", async () => {
     renderWithProviders(<LboPanel />, { route: P9_ROUTE });
     await p9AwaitOutputs();
     expect(within(p9Assumptions()).getByRole("heading", { level: 2, name: "Assumptions" })).toBeInTheDocument();
     expect(p9Reset()).toBeDisabled();
     expect(p9Reset()).toHaveAttribute("title", "Assumptions already match the defaults");
     const tileText = p9Text(p9Assumptions());
-    expect(tileText).toContain("Live financing rate");
+    expect(tileText).toContain("Financing rate");
+    expect(tileText).not.toMatch(/\blive\b|today|current/i);
     expect(tileText).toContain(`${LIVE_RATE.toFixed(2)}%`);
     expect(tileText).toContain("Fed funds 4.33%");
     expect(tileText).toContain("+ HY OAS 2.65%");
     expect(p9Switch()).toHaveAttribute("aria-checked", "true");
     expect(p9Switch()).toBeEnabled();
-    expect(tileText).toContain("Fed Funds 4.33% + HY spread 2.65pp, stored through Sep 01, 2026 ·");
+    // E1: each component with its cadence and as-of word (a pre-B3 payload carries none: unknown).
+    expect(tileText).toContain("Fed funds 4.33% (monthly average, As of unknown) + HY spread 2.65pp (daily, As of unknown) ·");
     expect(within(p9Assumptions()).getByRole("link", { name: "full financing picture lives in Credit" })).toHaveAttribute("href", "/app/credit#financing");
     for (const group of ["Business", "Entry & exit", "Financing"]) expect(tileText, group).toContain(group);
     expect(p9Ranges()).toHaveLength(9);
@@ -149,7 +152,7 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     for (const label of P9_SLIDER_LABELS) expect(document.querySelector(`input[aria-label="${label} (typed)"]`), `${label} typed field`).not.toBeNull();
     expect(p9RangeOf("Entry multiple")).toHaveAttribute("aria-label", "Entry multiple");
     expect(p9RangeOf("Leverage · Debt/EBITDA")).toHaveAttribute("aria-label", "Leverage · Debt/EBITDA");
-    expect(tileText).toContain("tracking the live all-in cost");
+    expect(tileText).toContain("tracking the all-in rate: Fed funds plus the HY spread");
     expect(p9Status()).toBeNull();
     expect(p9Text(p9Assumptions())).not.toContain("│ current reading");
   });
@@ -158,7 +161,7 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     renderWithProviders(<LboPanel />, { route: P9_ROUTE });
     await p9AwaitOutputs();
     expect(p9Runs(calls)).toHaveLength(1);
-    expect(p9Description()).toBe("Default deal at the live rate");
+    expect(p9Description()).toBe("Default deal at the all-in rate");
     expect(p9Text(p9Badge())).toBe("Default");
     expect(p9Badge()).toHaveAttribute("data-tone", "clear");
     expect(p9Meta()).toBe("");
@@ -170,7 +173,7 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     expect(row.querySelector<HTMLInputElement>("input[type='number']")?.style.color).toBe("var(--amber)");
     for (const label of P9_SLIDER_LABELS.filter((l) => l !== "Entry multiple")) expect(p9SliderRow(label), label).toHaveAttribute("data-changed", "false");
     expect(p9Reset()).toBeEnabled();
-    expect(p9Reset()).toHaveAttribute("title", "Return every assumption to the default deal at the live rate");
+    expect(p9Reset()).toHaveAttribute("title", "Return every assumption to the default deal at the all-in rate");
     expect(p9Description()).toBe("Modified deal");
     expect(p9Text(p9Badge())).toBe("Modified");
     expect(p9Badge()).toHaveAttribute("data-tone", "watch");
@@ -192,7 +195,7 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     fireEvent.click(p9Reset());
     for (const r of p9SliderRows()) expect(r).toHaveAttribute("data-changed", "false");
     expect(p9Text(p9Assumptions())).not.toContain("│ current reading");
-    expect(p9Description()).toBe("Default deal at the live rate");
+    expect(p9Description()).toBe("Default deal at the all-in rate");
     expect(p9Text(p9Badge())).toBe("Default");
     expect(p9Badge()).toHaveAttribute("data-tone", "clear");
     await waitFor(() => expect(p9Tile("IRR")).toBe(p9IrrText(P9_BASE.irr)));
@@ -202,7 +205,7 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     expect(p9Runs(calls)).toHaveLength(2);
   });
 
-  it("the live-rate switch: checked at rest, unchecked after the rate range moves with the manual-rate note and its back-to-live button, and clicking the switch returns the slider to the live rate and the tracking note", async () => {
+  it("the all-in-rate switch: checked at rest, unchecked after the rate range moves with the manual-rate note and its back button, and clicking the switch returns the slider to the all-in rate and the tracking note", async () => {
     renderWithProviders(<LboPanel />, { route: P9_ROUTE });
     await p9AwaitOutputs();
     expect(p9Switch()).toHaveAttribute("aria-checked", "true");
@@ -211,28 +214,48 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     expect(row).toHaveAttribute("data-changed", "true");
     expect(p9Switch()).toHaveAttribute("aria-checked", "false");
     expect(p9Text(row)).toContain("manual rate ·");
-    expect(within(row).getByRole("button", { name: /back to live 6\.98%/ })).toBeInTheDocument();
-    expect(p9Text(row)).not.toContain("tracking the live all-in cost");
+    expect(within(row).getByRole("button", { name: /back to the 6\.98% all-in rate/ })).toBeInTheDocument();
+    expect(p9Text(row)).not.toContain("tracking the all-in rate");
     fireEvent.click(p9Switch());
     expect(p9Switch()).toHaveAttribute("aria-checked", "true");
     expect(p9RangeOf("Interest rate (all-in)").value).toBe(String(LIVE_RATE));
     expect(row).toHaveAttribute("data-changed", "false");
-    expect(p9Text(row)).toContain("tracking the live all-in cost");
+    expect(p9Text(row)).toContain("tracking the all-in rate");
     expect(p9Text(row)).not.toContain("manual rate");
   });
 
-  it("the market-check caption (U17) is the last child of the results column, names today's live all-in cost at rest and drops the clause after a manual rate", async () => {
+  it("E1: a B3 payload prints each component's as-of word under the rate tile (Fed funds the Aug 2026 print, the HY spread Sep 17)", async () => {
+    stubFetch(lboRoutes({ "/api/lbo/defaults": () => LBO_DEFAULTS_B3 }));
+    renderWithProviders(<LboPanel />, { route: P9_ROUTE });
+    await p9AwaitOutputs();
+    expect(p9Text(p9Assumptions())).toContain("Fed funds 4.33% (monthly average, Aug 2026 print) + HY spread 2.65pp (daily, Sep 17) ·");
+    expect(p9Text(p9Assumptions())).not.toMatch(/\blive\b|today|current|stored through/i);
+  });
+
+  it("E1: the B3 stated-default payload (is_fallback) marks the rate tile Stated default and never says tracking", async () => {
+    stubFetch(lboRoutes({ "/api/lbo/defaults": () => LBO_DEFAULTS_STATED }));
+    renderWithProviders(<LboPanel />, { route: P9_ROUTE });
+    await waitFor(() => expect(p9Ranges()).toHaveLength(9));
+    const tile = p9Text(p9Assumptions());
+    expect(tile).toContain("Stated default");
+    expect(tile).toContain("stated default rate in use");
+    expect(tile).not.toContain("tracking");
+    expect(tile).not.toMatch(/\blive\b/i);
+    await waitFor(() => expect(p9Description()).toBe("Default deal at the stated default rate"));
+  });
+
+  it("the market-check caption (U17) is the last child of the results column, names the all-in rate at rest (E1: never today's or live) and drops the clause after a manual rate", async () => {
     renderWithProviders(<LboPanel />, { route: P9_ROUTE });
     await p9AwaitOutputs();
     await waitFor(() => expect(p9ById("lbo-schedule")).not.toBeNull());
     const last = () => p9Results().lastElementChild as HTMLElement;
     expect(p9Text(last())).toBe(
-      `One check on the market: this deal borrows at ${LIVE_RATE.toFixed(2)}%, today's live all-in cost. Pre-GFC deals financed near ~7%; if the rate slider has to fall below reality to make the returns work, the market is telling you the price is wrong.`,
+      `One check on the market: this deal borrows at ${LIVE_RATE.toFixed(2)}%, the all-in rate of Fed funds plus the HY spread. Pre-GFC deals financed near ~7%; if the rate slider has to fall below reality to make the returns work, the market is telling you the price is wrong.`,
     );
     fireEvent.change(p9RangeOf("Interest rate (all-in)"), { target: { value: "7.5" } });
     await waitFor(() => expect(posted.some((b) => b.interest_rate === 7.5)).toBe(true));
     await waitFor(() => expect(p9Text(last())).toContain("borrows at 7.50%."));
-    expect(p9Text(last())).not.toContain("today's live all-in cost");
+    expect(p9Text(last())).not.toContain("the all-in rate of Fed funds");
     expect(p9Text(last())).toContain("Pre-GFC deals financed near ~7%");
   });
 

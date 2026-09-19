@@ -5,15 +5,17 @@
  * against). The header list, the eight groups and their 19 rows (counted from
  * the registry, never typed: checklist 05 says 18), the as-of ladder,
  * the feed's own day figures, the sparkline rule, the row click seam (one call
- * per click, never two), the selected rail, the Single names view behind the
- * Tape view toggle, the phone column set (useBreakpoint mocked) and the
+ * per click, never two), the selected rail, the Single names block under the
+ * macro tape (Iteration 1 M3b: always rendered, no Tape view toggle), the
+ * visible live-or-last-close line with the provenance behind Details
+ * (Iteration 1 M2), the phone column set (useBreakpoint mocked) and the
  * 600 ms tick flash (fake timers). The clock is frozen to a Saturday so the
  * live window and the NYSE words are deterministic. Fixtures dated Sep 2026.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
-import MacroTape, { FeedStatusLine, type MacroTapeProps, type TapeView } from "./MacroTape";
+import MacroTape, { FeedStatusLine, tapeStatusLine, type MacroTapeProps } from "./MacroTape";
 import { useTickFlash } from "./useTickFlash";
 import { SINGLE_NAMES, TAPE_GROUPS, fmtEtClock, fmtEtStamp, type TapeDef } from "./tape";
 import type { LiveQuote, StreamStatus } from "../../live/quotes";
@@ -114,11 +116,10 @@ const singlesOf = (...first: string[]): TapeDef[] => [
 
 /* ── harness ─────────────────────────────────────────────────────────────── */
 
-type HarnessProps = Partial<Omit<MacroTapeProps, "view" | "onViewChange">> & { initialView?: TapeView };
+type HarnessProps = Partial<MacroTapeProps>;
 
-/** Holds the controlled `view` and `selected` seams like the screen does. */
-function Harness({ initialView = "macro", selected: initialSelected = null, onSelect, ...rest }: HarnessProps) {
-  const [view, setView] = useState<TapeView>(initialView);
+/** Holds the controlled `selected` seam like the screen does. */
+function Harness({ selected: initialSelected = null, onSelect, ...rest }: HarnessProps) {
   const [selected, setSelected] = useState<string | null>(initialSelected);
   const select = onSelect ?? ((s: string) => setSelected((cur) => (cur === s ? null : s)));
   return (
@@ -128,8 +129,6 @@ function Harness({ initialView = "macro", selected: initialSelected = null, onSe
       singles={rest.singles ?? singlesOf()}
       selected={selected}
       onSelect={select}
-      view={view}
-      onViewChange={setView}
       registerRow={rest.registerRow ?? noop}
       live={rest.live ?? false}
       storedThrough={rest.storedThrough === undefined ? STORED_THROUGH : rest.storedThrough}
@@ -166,6 +165,17 @@ function colorOf(el: Element): string {
   return (els[els.length - 1] ?? (el as HTMLElement)).style.color;
 }
 const symbolOrder = () => dataRows().map((r) => text(r.querySelector("button")));
+/* The single names table (always rendered under the macro tape, Iteration 1 M3b). */
+const singlesWrap = () => byId("single-names") as HTMLElement;
+const singlesTable = () => singlesWrap().querySelector("table") as HTMLTableElement;
+const singlesHeaders = () => [...singlesTable().querySelectorAll("thead th")].map((th) => text(th));
+const singlesRows = () => [...singlesTable().querySelectorAll<HTMLTableRowElement>("tbody tr:not(.mrr-grp)")];
+const singlesCell = (symbol: string, label: string) => {
+  const row = within(singlesWrap()).getByRole("button", { name: symbol }).closest("tr") as HTMLTableRowElement;
+  return [...row.querySelectorAll("td")][singlesHeaders().indexOf(label)];
+};
+/** Opens the tape's Details disclosure (the M2 provenance paragraphs). */
+const openDetails = () => fireEvent.click(within(panel()).getByRole("button", { name: /Details/ }));
 
 const WIDE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "1W %", "1M %", "30 Sess", "As of"];
 const NARROW_HEADERS = ["Symbol · name", "Last", "Day %", "1M %", "As of"];
@@ -192,19 +202,19 @@ afterEach(() => {
 /* ── cases ───────────────────────────────────────────────────────────────── */
 
 describe("MacroTape (checklist 05 B.7)", () => {
-  it("renders the panel section with its heading, the Tape view toggle, the eight headers at wide width and the five on a phone", () => {
+  it("renders the panel section with its heading, no view toggle, the eight headers at wide width and the five on a phone, and the single names under the tape", () => {
     const wide = renderTape();
     expect(panel().tagName).toBe("SECTION");
     expect(within(panel()).getByRole("heading", { level: 2 })).toHaveTextContent(/^Macro tape$/);
-    const group = within(panel()).getByRole("group", { name: "Tape view" });
-    expect(within(group).getAllByRole("button").map((b) => text(b))).toEqual(["Macro", "Single names"]);
-    expect(within(group).getByRole("button", { name: "Macro" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(group).getByRole("button", { name: "Single names" })).toHaveAttribute("aria-pressed", "false");
+    // Iteration 1 M3b: no Macro / Single names toggle hides either list.
+    expect(within(panel()).queryByRole("group", { name: "Tape view" })).toBeNull();
     expect(table()).toHaveClass("mrr-tape");
     expect(screen.getByRole("table", { name: MACRO_TABLE_NAME })).toBe(table());
     expect(headers()).toEqual(WIDE_HEADERS);
     for (const th of table().querySelectorAll("thead th")) expect(th).toHaveAttribute("scope", "col");
-    expect(byId("single-names")).toBeNull();
+    expect(byId("single-names")).not.toBeNull();
+    expect(panel().contains(byId("single-names"))).toBe(true);
+    expect(within(singlesWrap()).getByRole("heading", { level: 3 })).toHaveTextContent(/^Single names$/);
     wide.unmount();
 
     bp.narrow = true;
@@ -234,9 +244,24 @@ describe("MacroTape (checklist 05 B.7)", () => {
       expect(g.hasAttribute("data-selected")).toBe(false);
     }
     expect(text(panel())).toContain("through Sep 18, 2026");
+    // M2: the provenance paragraphs sit behind Details on the same panel.
+    expect(text(panel())).not.toContain("Day moves come straight from the exchange feed");
+    openDetails();
     expect(text(panel())).toContain("Day moves come straight from the exchange feed");
     expect(text(panel())).toContain("Every row states its own as-of stamp");
     expect(text(panel())).not.toContain("return above 768px");
+  });
+
+  it("M2: one visible line says live or last close with the as-of stamp, at most two sentences, and the provenance opens behind Details", () => {
+    // Socket closed (the harness default): the stored-close line with its date.
+    renderTape();
+    const details = within(panel()).getByRole("button", { name: /Details/ });
+    expect(details).toHaveAttribute("aria-expanded", "false");
+    expect(text(panel())).toContain("Showing the last close: the stream is not connected, so rows print stored closes through Sep 18, 2026.");
+    fireEvent.click(details);
+    expect(details).toHaveAttribute("aria-expanded", "true");
+    expect(text(panel())).toContain("A dash under Day % means the feed sent a price without a day change");
+    expect(text(panel())).toContain("The dashboard's VIX spike signal reads the monthly signal print");
   });
 
   it("the ticker button is the assistive path: type button, aria-expanded, aria-controls the chart panel, a title, and it registers its ref", () => {
@@ -350,59 +375,76 @@ describe("MacroTape (checklist 05 B.7)", () => {
     expect(table().querySelectorAll("tr[data-selected='true']")).toHaveLength(0);
   });
 
-  it("Single names: the option renders #single-names with 12 rows in the given order, the five columns, the sort meta and the caption, and hides the groups", () => {
+  it("Single names: #single-names renders under the macro tape with 12 rows in the given order, the five columns, the sort meta and the caption, the macro groups still on screen", () => {
     const singles = singlesOf("NVDA", "AAPL");
     const quotes = new Map(QUOTES);
     quotes.set("NVDA", quote("NVDA", 184.2, { dc: 2.1, dd: 3.79 }));
     quotes.set("AAPL", quote("AAPL", 231.5, { dc: -0.5, dd: -1.16 }));
     renderTape({ singles, quotes, live: false });
-    const option = within(panel()).getByRole("button", { name: "Single names" });
-    fireEvent.click(option);
-    expect(option).toHaveAttribute("aria-pressed", "true");
-    expect(within(panel()).getByRole("button", { name: "Macro" })).toHaveAttribute("aria-pressed", "false");
-    const wrap = byId("single-names") as HTMLElement;
+    const wrap = singlesWrap();
     expect(wrap).not.toBeNull();
     expect(panel().contains(wrap)).toBe(true);
-    expect(groupRows()).toHaveLength(0);
-    expect(dataRows()).toHaveLength(12);
-    expect(symbolOrder()).toEqual(singles.map((d) => d.symbol));
-    expect(headers()).toEqual(SINGLES_HEADERS);
-    expect(screen.getByRole("table", { name: "Single names: twelve large-cap names sorted by day move" })).toBe(table());
-    expect(text(wrap)).toContain("sorted by day move · re-sorts as data updates");
-    expect(text(wrap)).toContain(SINGLES_CAPTION);
-    expect(text(cell("NVDA", "Day %"))).toBe("+2.10%");
-    expect(text(cell("NVDA", "Day Δ$"))).toBe("+3.79");
-    expect(text(cell("MSFT", "Last"))).toBe("no quote");
-    expect(text(cell("MSFT", "As of"))).toBe(DASH);
-    expect(text(cell("NVDA", "Symbol · name"))).toContain("Nvidia");
-    // Back to the macro view: the groups return and the wrapper goes.
-    fireEvent.click(within(panel()).getByRole("button", { name: "Macro" }));
-    expect(byId("single-names")).toBeNull();
+    // Both lists at once: the macro groups stay, the singles follow.
     expect(groupRows()).toHaveLength(8);
     expect(dataRows()).toHaveLength(MACRO_ROWS);
+    expect(singlesRows()).toHaveLength(12);
+    expect(singlesRows().map((r) => text(r.querySelector("button")))).toEqual(singles.map((d) => d.symbol));
+    expect(singlesHeaders()).toEqual(SINGLES_HEADERS);
+    expect(screen.getByRole("table", { name: "Single names: twelve large-cap names sorted by day move" })).toBe(singlesTable());
+    expect(text(wrap)).toContain("sorted by day move · re-sorts as data updates");
+    expect(text(wrap)).toContain(SINGLES_CAPTION);
+    expect(text(singlesCell("NVDA", "Day %"))).toBe("+2.10%");
+    expect(text(singlesCell("NVDA", "Day Δ$"))).toBe("+3.79");
+    expect(text(singlesCell("MSFT", "Last"))).toBe("no quote");
+    expect(text(singlesCell("MSFT", "As of"))).toBe(DASH);
+    expect(text(singlesCell("NVDA", "Symbol · name"))).toContain("Nvidia");
   });
 
   it("Single names: the sort meta reads live with US ticks, and the phone set drops Day Δ$", () => {
-    const first = renderTape({ initialView: "single-names", live: true });
+    const first = renderTape({ live: true });
     expect(byId("single-names")).not.toBeNull();
     expect(text(byId("single-names"))).toContain("sorted by day move · re-sorts live");
     expect(text(byId("single-names"))).not.toContain("as data updates");
     first.unmount();
 
     bp.narrow = true;
-    renderTape({ initialView: "single-names" });
-    expect(headers()).toEqual(SINGLES_NARROW_HEADERS);
+    renderTape();
+    expect(singlesHeaders()).toEqual(SINGLES_NARROW_HEADERS);
+    openDetails();
     expect(text(panel())).toContain("Δ$, 1W and the sparkline return above 768px.");
     expect(text(panel())).not.toContain("Name, Δ$");
   });
 
   it("the caption states the stored-candle window, and drops the through-date without one", () => {
     const dated = renderTape();
+    openDetails();
     expect(text(panel())).toContain("1W / 1M and sparklines come from the stored daily candles through Sep 18, 2026;");
     dated.unmount();
     renderTape({ storedThrough: null });
+    openDetails();
     expect(text(panel())).toContain("1W / 1M and sparklines come from the stored daily candles;");
     expect(text(panel())).not.toContain("through ");
+  });
+
+  it("tapeStatusLine: live, delayed in session, the last close off-hours with crypto ticking, and the stream down; never more than two sentences", () => {
+    const usLiveQuotes = new Map<string, LiveQuote>([["SPY", quote("SPY", 646.31, { dc: 0.42, t: LIVE_T, delayed: false, src: "ws" })]]);
+    const liveLine = tapeStatusLine({ socketOpen: true, usLive: true, quotes: usLiveQuotes, storedThrough: STORED_THROUGH, sessionOpen: true });
+    expect(liveLine).toBe(`Live: US rows tick from the exchange feed, newest at ${fmtEtStamp(LIVE_T)}. 1W, 1M and the sparklines read stored closes through Sep 18, 2026.`);
+    const delayedQuotes = new Map<string, LiveQuote>([["QQQ", quote("QQQ", 571.9, { t: DELAYED_T })]]);
+    expect(tapeStatusLine({ socketOpen: true, usLive: false, quotes: delayedQuotes, storedThrough: STORED_THROUGH, sessionOpen: true })).toBe(
+      `Delayed: the US feed is not ticking, so US rows print their newest quote, ${fmtEtStamp(DELAYED_T)} (15 minutes delayed). 1W, 1M and the sparklines read stored closes through Sep 18, 2026.`,
+    );
+    const closed = new Map<string, LiveQuote>([
+      ["QQQ", quote("QQQ", 571.9, { t: DELAYED_T })],
+      ["BTC-USD", quote("BTC-USD", 61_250, { dc: 0.8, t: LIVE_T, delayed: false, src: "ws" })],
+    ]);
+    expect(tapeStatusLine({ socketOpen: true, usLive: false, quotes: closed, storedThrough: null, sessionOpen: false })).toBe(
+      `Showing the last close: US rows hold their final quote from ${fmtEtStamp(DELAYED_T)}, while crypto and FX tick live.`,
+    );
+    expect(tapeStatusLine({ socketOpen: false, usLive: false, quotes: new Map(), storedThrough: null })).toBe(
+      "Showing the last close: the stream is not connected and no stored close is on file yet.",
+    );
+    for (const line of [liveLine]) expect(line.split(/(?<=\.)\s+(?=[A-Z0-9])/).length).toBeLessThanOrEqual(2);
   });
 
   it("FeedStatusLine: the stream-down sentence with the socket closed, the four feed words with it open", async () => {

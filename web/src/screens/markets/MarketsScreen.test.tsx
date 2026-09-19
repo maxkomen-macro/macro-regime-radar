@@ -286,9 +286,13 @@ const tapeRow = (symbol: string): HTMLTableRowElement => {
 };
 const headerIndex = (table: HTMLTableElement, label: string) => [...table.querySelectorAll("thead th")].findIndex((th) => text(th) === label);
 
-const ALL_LABELS = ["US 10Y", "Sectors · 1d", "Dollar", "VIX", "Priced", "Top surprise"];
-const IDS_IN_ORDER = ["markets-hero", "markets-summary", "single-name-research", "sector-heatmap", "top-surprises", "watchlist", "whats-priced-full"];
-const EMPTY_PROMPT = "Type a ticker or company name for a full profile: delayed quote, candles across seven ranges, fundamentals, regime fit since 1996, and the stored news window.";
+/* Iteration 1 (the summary's G2 fill): "ETFs · 1w" reads the week bars' served
+   ret_1w extremes; "Single names · 1d" appears once the movers read has two
+   names (none in the default fixtures: no single-name quote, candles 404). */
+const ALL_LABELS = ["US 10Y", "Sectors · 1d", "ETFs · 1w", "Dollar", "VIX", "Priced", "Top surprise"];
+const IDS_IN_ORDER = ["markets-hero", "markets-summary", "single-name-research", "sector-heatmap", "single-name-movers", "top-surprises", "watchlist", "single-names", "whats-priced-full"];
+const EMPTY_PROMPT =
+  "Search a ticker or company name in the market read above, or open a mover below, for a full profile: delayed quote, candles across seven ranges, fundamentals, regime fit since 1996, and the stored news window.";
 const ERROR_HEADLINE = "Stored closes unavailable: the data service did not answer. The tape keeps its live quotes.";
 const DISCLOSURE_LINE =
   "Live prices via EODHD WebSocket (crypto & FX stream around the clock, US equities during NYSE hours, 15-min-delayed quotes fill the gaps) · stored candles and returns via the yfinance pipeline · macro metrics via FRED.";
@@ -491,7 +495,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     await awaitHero();
     expect(within(summary()).getByRole("heading", { level: 2 })).toHaveTextContent("Cross-asset summary");
     expect(summary()).toHaveClass("mrr-summary");
-    await waitFor(() => expect(dts()).toEqual(["US 10Y", "Sectors · 1d", "Dollar", "Priced", "Top surprise"]));
+    await waitFor(() => expect(dts()).toEqual(["US 10Y", "Sectors · 1d", "ETFs · 1w", "Dollar", "Priced", "Top surprise"]));
     expect(text(ddFor("US 10Y"))).toBe("4.27% · +6 bps 1w");
     const bps = [...ddFor("US 10Y").querySelectorAll<HTMLElement>("span")].find((s) => text(s).startsWith("+6 bps"));
     expect(bps, "the bps span").toBeDefined();
@@ -505,6 +509,9 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(lead?.style.color).toBe("var(--pos)");
     expect(lag?.style.color).toBe("var(--neg)");
     expect(text(ddFor("Dollar"))).toBe("UUP -0.24% 1d · -0.9% 1w");
+    // The stored ETFs' one-week leader and laggard, the served ret_1w as the week bars print it.
+    expect(text(ddFor("ETFs · 1w"))).toBe("Silver +3.1% leads · Oil (WTI) -2.4% lags");
+    expect(dts()).not.toContain("Single names · 1d");
     expect(text(ddFor("Priced"))).toBe("10Y breakeven 2.19% · 10Y real 1.91%");
     expect(text(ddFor("Top surprise"))).toBe("SPY rose 2.3% on the week; the largest weekly gain since June.");
     expect(text(ddFor("Top surprise"))).not.toContain("\u2014");
@@ -530,7 +537,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     stubFetch(routes({ "/api/market/daily": () => dailyBars({}, ["UUP"]) }));
     renderMarkets();
     await awaitHero();
-    await waitFor(() => expect(dts()).toEqual(["US 10Y", "Sectors · 1d", "VIX", "Priced", "Top surprise"]));
+    await waitFor(() => expect(dts()).toEqual(["US 10Y", "Sectors · 1d", "ETFs · 1w", "VIX", "Priced", "Top surprise"]));
     expect(text(ddFor("VIX"))).toBe("16.04 · 15m delayed");
   });
 
@@ -604,7 +611,10 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(within(single).getByRole("heading", { level: 2 })).toHaveTextContent(/^Single-name research$/);
     expect(text(single)).toContain("Daily candles with volume");
     expect(text(single)).toContain("any listed symbol · EODHD first, yfinance only as a disclosed fallback · delayed quotes");
-    expect(within(single).getByRole("combobox", { name: "Search any listed symbol" })).toBeInTheDocument();
+    // Iteration 1 M3c: the one symbol search rides in the hero's action row.
+    expect(within(single).queryByRole("combobox", { name: "Search any listed symbol" })).toBeNull();
+    expect(within(hero()).getByRole("combobox", { name: "Search any listed symbol" })).toBeInTheDocument();
+    expect(screen.getAllByRole("combobox", { name: "Search any listed symbol" })).toHaveLength(1);
 
     const heat = await awaitSection("sector-heatmap");
     expect(heat.tagName).toBe("SECTION");
@@ -621,9 +631,9 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     const tape = await awaitSection("watchlist");
     expect(tape.tagName).toBe("SECTION");
     expect(within(tape).getByRole("heading", { level: 2 })).toHaveTextContent(/^Macro tape$/);
-    expect(within(tape).getByRole("group", { name: "Tape view" })).toBeInTheDocument();
-    expect(within(tape).getByRole("button", { name: "Macro" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(tape).getByRole("button", { name: "Single names" })).toHaveAttribute("aria-pressed", "false");
+    // Iteration 1 M3b: no view toggle; the single names sit under the macro tape.
+    expect(within(tape).queryByRole("group", { name: "Tape view" })).toBeNull();
+    expect(tape.contains(byId("single-names"))).toBe(true);
     expect(tape.querySelector("table.mrr-tape")).not.toBeNull();
     expect(tape.querySelectorAll("tr.mrr-grp")).toHaveLength(8);
     expect(text(tape)).toContain("stream unavailable · showing stored closes");
@@ -801,14 +811,14 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     const rest = SINGLE_NAMES.map((d) => d.symbol).filter((s) => s !== "NVDA" && s !== "AAPL");
     expect(order).toEqual(["NVDA", "AAPL", ...rest]);
     expect(text(singles)).toContain("sorted by day move · re-sorts as data updates");
-    expect(within(byId("watchlist") as HTMLElement).getByRole("button", { name: "Single names" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("route #single-names renders #single-names inside #watchlist, and the plain route does not", async () => {
+  it("#single-names renders inside #watchlist on the plain route and on the #single-names route, with the macro groups beside it", async () => {
     const plain = renderMarkets();
     await awaitHero();
-    await awaitSection("watchlist");
-    expect(byId("single-names")).toBeNull();
+    const first = await awaitSection("single-names");
+    expect((byId("watchlist") as HTMLElement).contains(first)).toBe(true);
+    expect(first.querySelectorAll("tbody tr:not(.mrr-grp)")).toHaveLength(12);
     plain.unmount();
 
     window.history.replaceState(null, "", "/app/markets#single-names");
@@ -817,7 +827,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     const singles = await awaitSection("single-names");
     expect((byId("watchlist") as HTMLElement).contains(singles)).toBe(true);
     expect(singles.querySelectorAll("tbody tr:not(.mrr-grp)")).toHaveLength(12);
-    expect((byId("watchlist") as HTMLElement).querySelectorAll("tr.mrr-grp")).toHaveLength(0);
+    expect((byId("watchlist") as HTMLElement).querySelectorAll("tr.mrr-grp")).toHaveLength(8);
   });
 
   it("renders the section ids in document order inside main, the ids the palette expects, and the DisclosureLine last", async () => {
@@ -832,7 +842,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     for (let i = 1; i < els.length; i++) {
       expect((els[i - 1] as HTMLElement).compareDocumentPosition(els[i] as HTMLElement) & Node.DOCUMENT_POSITION_FOLLOWING, `${IDS_IN_ORDER[i - 1]} before ${IDS_IN_ORDER[i]}`).toBeTruthy();
     }
-    for (const id of ["single-name-research", "watchlist", "sector-heatmap", "whats-priced-full", "top-surprises"]) expect((byId(id) as HTMLElement).tagName, id).toBe("SECTION");
+    for (const id of ["single-name-research", "watchlist", "sector-heatmap", "single-name-movers", "whats-priced-full", "top-surprises"]) expect((byId(id) as HTMLElement).tagName, id).toBe("SECTION");
     const line = main.querySelector("p.mrr-disclosure-line") as HTMLElement;
     expect(line).not.toBeNull();
     expect(text(line)).toBe(DISCLOSURE_LINE);
@@ -884,5 +894,140 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Mixed");
     expect(text(hero().querySelector(".mrr-pill"))).toBe("2 of 4 sectors up");
     expect(hero().querySelectorAll("svg[role='img'] rect")).toHaveLength(14);
+  });
+});
+
+/* ── Iteration 1 (M3): movers, the always-on single names, the hero search ── */
+
+/** Two NYSE sessions of 5-minute bars (13:30Z to 20:00Z), closing at `prev` then `last`. */
+function fiveDay(prev: number, last: number) {
+  const session = (day: string, close: number) => [
+    { ts: `${day}T13:30:00Z`, open: close, high: close, low: close, close: close - 1, volume: 10 },
+    { ts: `${day}T20:00:00Z`, open: close, high: close, low: close, close, volume: null },
+  ];
+  return {
+    symbol: "X",
+    provider: "eodhd",
+    fallback_used: false,
+    fallback_reason: null,
+    fetched_at: "2026-09-19T15:00:00Z",
+    market_ts: "2026-09-18T20:00:00Z",
+    delayed: true,
+    interval: "5m",
+    range: "5D",
+    exchange: "US",
+    timezone: "America/New_York",
+    adjustment: "split_dividend_adjusted",
+    count: 4,
+    bars: [...session("2026-09-17", prev), ...session("2026-09-18", last)],
+  };
+}
+const searchEnvelope = (hits: { symbol: string; name: string }[]) => ({
+  provider: "eodhd",
+  fallback_used: false,
+  fallback_reason: null,
+  fetched_at: "x",
+  hits: hits.map((h) => ({ ...h, exchange: "US", type: "Common Stock", sector: null })),
+});
+const movers = () => byId("single-name-movers") as HTMLElement;
+const moverGroup = (label: string) => within(movers()).getByRole("group", { name: label });
+const tileSymbols = (group: HTMLElement) => [...group.querySelectorAll<HTMLElement>("button.mrr-mover")].map((b) => b.getAttribute("data-symbol"));
+
+describe("MarketsScreen, Iteration 1 (M3)", () => {
+  it("movers: the stream's own day change ranks first with its quote stamp; a name without one reads its last two closes from the 5D candles, stamped Close · Sep 18; names with neither are named plainly", async () => {
+    live.status = OPEN;
+    live.quotes = quotesOf(quote("NVDA", 184.2, { dc: 2.1 }), quote("TSLA", 402.1, { dc: -1.84 }), quote("AAPL", 231.5, { dc: -0.5 }));
+    stubFetch(
+      routes({
+        "/api/market/candles/MU": () => fiveDay(100, 103),
+        "/api/market/candles/AMD": () => fiveDay(200, 198),
+      }),
+    );
+    renderMarkets();
+    await awaitHero();
+    const gainers = await waitFor(() => {
+      const g = moverGroup("Top gainers");
+      expect(tileSymbols(g)).toEqual(["MU", "NVDA"]);
+      return g;
+    });
+    expect(tileSymbols(moverGroup("Top losers"))).toEqual(["TSLA", "AMD", "AAPL"]);
+    // MU from the candles: 103 against 100, the last completed close stamped.
+    const mu = within(gainers).getByRole("button", { name: /MU/ });
+    expect(mu).toHaveAttribute("data-source", "close");
+    expect(text(mu)).toContain("+3.00%");
+    expect(text(mu)).toContain("Close · Sep 18");
+    // NVDA from the stream, stamped with the quote's own as-of.
+    const nvda = within(gainers).getByRole("button", { name: /NVDA/ });
+    expect(nvda).toHaveAttribute("data-source", "quote");
+    expect(text(nvda)).toContain("+2.10%");
+    expect(text(nvda)).toMatch(/Sep 19, 10:40 ET · 15m/);
+    // One gainer slot has no name to fill: a marked slot, never a gap.
+    expect(gainers.querySelectorAll("[data-empty='true']")).toHaveLength(1);
+    expect(text(gainers)).toContain("No other name up");
+    // The seven names with neither a stream change nor two closes are listed.
+    await waitFor(() => expect(text(movers())).toContain("No day change on file for MSFT, GOOGL, AMZN, META, AVGO, TSM, COIN"));
+    // The summary row reads the same leader and laggard.
+    await waitFor(() => expect(text(ddFor("Single names · 1d"))).toBe("MU +3.00% leads · TSLA -1.84% lags"));
+    expect(dts().slice(0, 4)).toEqual(["US 10Y", "Sectors · 1d", "Single names · 1d", "ETFs · 1w"]);
+  });
+
+  it("movers: while a session trades, today's bars are left out, so the figure is still the last completed close", async () => {
+    live.status = OPEN;
+    stubFetch(
+      routes({
+        "/api/freshness": () => ({ ...FRESHNESS, session: { ...FRESHNESS.session, phase: "open", is_open: true } }),
+        "/api/market/candles/MU": () => {
+          const series = fiveDay(100, 103);
+          // A partial Saturday session (today in the fixture clock) at 90.
+          return { ...series, bars: [...series.bars, { ts: "2026-09-19T14:00:00Z", open: 90, high: 90, low: 90, close: 90, volume: 5 }] };
+        },
+      }),
+    );
+    renderMarkets();
+    await awaitHero();
+    await waitFor(() => expect(within(movers()).getByRole("button", { name: /MU/ })).toBeInTheDocument());
+    const mu = within(movers()).getByRole("button", { name: /MU/ });
+    expect(text(mu)).toContain("+3.00%");
+    expect(text(mu)).toContain("Close · Sep 18");
+  });
+
+  it("movers: with no stream change and no candles the row says so plainly", async () => {
+    renderMarkets();
+    await awaitHero();
+    await waitFor(() => expect(text(movers())).toContain("No day change on file for the twelve single names"));
+    expect(movers().querySelectorAll("button.mrr-mover")).toHaveLength(0);
+  });
+
+  it("a mover opens that ticker's single-name research panel through ?name=, and the panel takes focus", async () => {
+    live.status = OPEN;
+    live.quotes = quotesOf(quote("NVDA", 184.2, { dc: 2.1 }), quote("TSLA", 402.1, { dc: -1.84 }));
+    const scrolled: Element[] = [];
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+      scrolled.push(this);
+    });
+    renderMarkets();
+    await awaitHero();
+    const tsla = await within(movers()).findByRole("button", { name: /TSLA/ });
+    fireEvent.click(tsla);
+    const single = await awaitSection("single-name-research");
+    await waitFor(() => expect(within(single).getByTestId("single-name")).toHaveTextContent("TSLA"));
+    await waitFor(() => expect(scrolled).toContain(single));
+    expect(document.activeElement).toBe(single);
+    expect(within(single).getByRole("group", { name: "Chart range" })).toBeInTheDocument();
+  });
+
+  it("the hero's action row carries the one symbol search, and a pick fills single-name research and moves focus there", async () => {
+    stubFetch(routes({ "/api/market/search": () => searchEnvelope([{ symbol: "AMD", name: "Advanced Micro Devices" }]) }));
+    renderMarkets();
+    await awaitHero();
+    const actions = hero().querySelector(".mrr-hero-actions") as HTMLElement;
+    const box = within(actions).getByRole("combobox", { name: "Search any listed symbol" });
+    fireEvent.change(box, { target: { value: "AMD" } });
+    const option = await screen.findByRole("option", undefined, { timeout: 3000 });
+    fireEvent.mouseDown(option);
+    const single = await awaitSection("single-name-research");
+    await waitFor(() => expect(within(single).getByTestId("single-name")).toHaveTextContent("AMD"));
+    expect(document.activeElement).toBe(single);
+    expect(single).toHaveAttribute("tabindex", "-1");
   });
 });

@@ -7,9 +7,14 @@
  * ETFs' one-day moves and whose subhead is the live session sentence, beside
  * SummaryCard `#markets-summary` with the stream status strip) → the
  * ChartPanel region (`#markets-chart-panel`, only while a tape row is
- * selected) → the body grid (single-name research, sector heatmap, top
- * surprises | the macro tape) → What's priced, full width → the mono
- * disclosure line.
+ * selected) → the body grid (single-name research, sector heatmap, single-
+ * name movers, top surprises | the macro tape with the single names under
+ * it) → What's priced, full width → the mono disclosure line.
+ *
+ * Iteration 1 (M3): the symbol search rides in the hero's action row, so it
+ * is on screen without scrolling at desk widths, and still drives the
+ * single-name research panel; the movers row under the heatmap opens a
+ * ticker's panel through `?name=` (the watchlist's path).
  *
  * The tape is fed by the EODHD relay (web/src/live/quotes.ts → api/stream.py):
  * crypto and FX stream around the clock, US equities during NYSE hours,
@@ -22,10 +27,10 @@
  */
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Card, SectionHeader, Segmented } from "../../components";
 import { useCreditOas, useFreshness, useMarketDaily, usePriced, useSurprises } from "../../api/queries";
-import type { CandleRange, DailyBar } from "../../api/types";
+import type { CandleRange, DailyBar, SearchHit } from "../../api/types";
 import { LIVE_WINDOW_MS, streamWord, useQuotes, useStreamStatus, type LiveQuote, type StreamStatus } from "../../live/quotes";
 import { fmtDate, fmtPct, fmtSignedPct, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
@@ -41,7 +46,8 @@ import { CHART_PANEL_ID } from "./chart-panel-id";
 import { DAILY_FETCH, DB_SYMBOLS, MACRO_TAPE, SECTORS, SINGLE_NAMES, feedWord, nyseSessionOpen } from "./tape";
 import { MARKETS_GLOW, marketsHero, type SectorRead } from "./hero-copy";
 import WeekBars, { type WeekBarRow } from "./WeekBars";
-import MacroTape, { type TapeView } from "./MacroTape";
+import MacroTape from "./MacroTape";
+import Movers, { moversSummary, useMoversRead } from "./Movers";
 import SectorHeatmap from "./SectorHeatmap";
 import TopSurprises from "./TopSurprises";
 import WhatsPriced from "./WhatsPriced";
@@ -70,6 +76,9 @@ const stateHeadline: CSSProperties = {
 const dirColor = (v: number) => (v >= 0 ? "var(--pos)" : "var(--neg)");
 
 const SYMBOL_RE = /^[A-Z0-9.^=\-]{1,15}$/;
+
+/** The hero lets the symbol search's result list hang below its box. */
+const HERO_STYLE: CSSProperties = { overflow: "visible" };
 
 interface LiveByFeed {
   us: boolean;
@@ -149,6 +158,9 @@ export default function MarketsScreen() {
   const credit = useCreditOas(90);
   const freshness = useFreshness();
   const { openFreshness } = useShellActions();
+  // The movers row and its summary line (Iteration 1, M3a): the stream's day
+  // change, else the last completed session's close from the 5D candles.
+  const movers = useMoversRead(quotes, freshness.data?.session?.is_open ?? null);
 
   // ?chart=SPY deep-links an open panel (evidence captures, palette jumps).
   // The router's location equals window.location under BrowserRouter and is
@@ -181,24 +193,39 @@ export default function MarketsScreen() {
     setRange("6M");
   }, [lookupSym]);
 
-  // Tape view: `#single-names` selects the single-names view on mount and on
-  // every hash change (checklist 05 D); a ?chart= deep link naming a single
-  // name selects it too, so the selected row is visible.
-  const [tapeView, setTapeView] = useState<TapeView>(() => {
-    if (location.hash === "#single-names") return "single-names";
-    const c = new URLSearchParams(location.search).get("chart")?.toUpperCase();
-    return c && SINGLE_NAMES.some((d) => d.symbol === c) ? "single-names" : "macro";
-  });
-  useEffect(() => {
-    if (location.hash === "#single-names") setTapeView("single-names");
-  }, [location.hash]);
   // Hash deep links land once their target exists: #single-name-research once
-  // the panel holds its symbol (Phase 1 F.8), #single-names after the tape
-  // view switches, #markets-chart-panel once the region mounts. The view and
-  // the selection only re-arm the scroll for their own hashes, so opening a
-  // chart or toggling the tape never jumps the page back to a stale hash.
-  useHashScroll(
-    `${lookupSym ?? ""}|${location.hash === "#single-names" ? tapeView : ""}|${location.hash === `#${CHART_PANEL_ID}` ? (selected ?? "") : ""}`,
+  // the panel holds its symbol (Phase 1 F.8), #markets-chart-panel once the
+  // region mounts. The selection only re-arms the scroll for its own hash, so
+  // opening a chart never jumps the page back to a stale hash. #single-names
+  // is always on the page now (Iteration 1, M3b: no view toggle hides it).
+  useHashScroll(`${lookupSym ?? ""}|${location.hash === `#${CHART_PANEL_ID}` ? (selected ?? "") : ""}`);
+
+  // The hero's symbol search (Iteration 1, M3c) drives the same panel as the
+  // old in-panel search: the pick lands in single-name research, which then
+  // scrolls into view and takes focus (it sits below the fold at every width).
+  const [jump, setJump] = useState(0);
+  const pickSymbol = useCallback((hit: SearchHit) => {
+    setLookupSym(hit.symbol);
+    setJump((n) => n + 1);
+  }, []);
+  useEffect(() => {
+    if (!jump) return;
+    const el = document.getElementById("single-name-research");
+    el?.scrollIntoView({ block: "start" });
+    el?.focus({ preventScroll: true });
+  }, [jump]);
+
+  // A mover opens its ticker the way a watchlist row does: through ?name=,
+  // landing on the research panel. The symbol and the jump are also set
+  // directly, so a second click on a name already in the address still lands.
+  const navigate = useNavigate();
+  const openName = useCallback(
+    (symbol: string) => {
+      navigate(`/app/markets?name=${encodeURIComponent(symbol)}#single-name-research`);
+      setLookupSym(symbol);
+      setJump((n) => n + 1);
+    },
+    [navigate],
   );
 
   const barsBySymbol = useMemo(() => {
@@ -455,6 +482,50 @@ export default function MarketsScreen() {
       ),
     prose: true,
   });
+  // The single names' leader and laggard (the movers read) and the stored
+  // ETFs' one-week extremes (the week bars' served ret_1w); omitted with
+  // nothing to read, never blank (Iteration 1, the summary's G2 fill).
+  const singlesPair = moversSummary(movers);
+  if (singlesPair) {
+    rows.push({
+      id: "singles-1d",
+      label: "Single names · 1d",
+      value: (
+        <>
+          <span style={{ color: dirColor(singlesPair.lead.change) }}>
+            {singlesPair.lead.def.symbol} {fmtSignedPct(singlesPair.lead.change)}
+          </span>
+          {" leads · "}
+          <span style={{ color: dirColor(singlesPair.lag.change) }}>
+            {singlesPair.lag.def.symbol} {fmtSignedPct(singlesPair.lag.change)}
+          </span>
+          {" lags"}
+        </>
+      ),
+      prose: true,
+    });
+  }
+  if (weekRows.length >= 2) {
+    const top = weekRows[0];
+    const bottom = weekRows[weekRows.length - 1];
+    rows.push({
+      id: "etfs-1w",
+      label: "ETFs · 1w",
+      value: (
+        <>
+          <span style={{ color: dirColor(top.ret) }}>
+            {top.name} {fmtSignedPct(top.ret, 1)}
+          </span>
+          {" leads · "}
+          <span style={{ color: dirColor(bottom.ret) }}>
+            {bottom.name} {fmtSignedPct(bottom.ret, 1)}
+          </span>
+          {" lags"}
+        </>
+      ),
+      prose: true,
+    });
+  }
   // Dollar and VIX come off the tape (the spec's two added rows); with
   // nothing served they are omitted, never blank.
   const uupQ = quotes.get("UUP");
@@ -543,6 +614,15 @@ export default function MarketsScreen() {
     { label: "Open a chart", onClick: openSpyChart, primary: true },
     { label: "See what's priced", to: "/app/markets#whats-priced-full" },
   ];
+  // The symbol search in the action row (M3c): visible without scrolling at
+  // 1280 px and up. The hero lets its result list overflow its box (the list
+  // is absolutely placed under the field); the glow still clips at the
+  // rounded corners, where it is already transparent.
+  const heroSearch = (
+    <div className="mrr-mkt-hero-search">
+      <SymbolSearch onSelect={pickSymbol} />
+    </div>
+  );
   let hero: ReactNode;
   if (copy.headline) {
     hero = (
@@ -561,6 +641,8 @@ export default function MarketsScreen() {
         subhead={conclusion}
         lede={why}
         actions={heroActions}
+        actionsAfter={heroSearch}
+        style={HERO_STYLE}
         freshness={chips}
         note={copy.basis}
         chart={weekRows.length ? <WeekBars rows={weekRows} /> : undefined}
@@ -586,6 +668,8 @@ export default function MarketsScreen() {
         subhead={conclusion}
         lede={why}
         actions={heroActions}
+        actionsAfter={heroSearch}
+        style={HERO_STYLE}
         freshness={chips}
         placeholder
       />
@@ -601,6 +685,8 @@ export default function MarketsScreen() {
         subhead={conclusion}
         lede={why}
         actions={heroActions}
+        actionsAfter={heroSearch}
+        style={HERO_STYLE}
         freshness={chips}
         placeholder
       />
@@ -636,32 +722,26 @@ export default function MarketsScreen() {
       {/* ── Body: the left panel stack | the macro tape ─────────────── */}
       <div className="mrr-mkt-body">
         <div className="mrr-mkt-stack">
-          {/* Single-name research: search any listed symbol */}
-          <Card as="section" variant="panel" id="single-name-research" style={{ minWidth: 0 }}>
+          {/* Single-name research: the hero's search, a mover, a watchlist row
+              or ?name= fills it. tabIndex -1: a search pick moves focus here. */}
+          <Card as="section" variant="panel" id="single-name-research" tabIndex={-1} style={{ minWidth: 0 }}>
             <SectionHeader
               layout="panel"
               title="Single-name research"
               description="Daily candles with volume"
               actions={
-                <>
-                  <div style={{ width: 320, maxWidth: "100%" }}>
-                    <SymbolSearch onSelect={(hit) => setLookupSym(hit.symbol)} />
-                  </div>
-                  {lookupSym ? (
-                    <Segmented
-                      mono
-                      label="Chart range"
-                      options={RANGES.map((r) => ({ id: r, label: r }))}
-                      value={range}
-                      onChange={(id) => setRange(id as CandleRange)}
-                    />
-                  ) : null}
-                </>
+                lookupSym ? (
+                  <Segmented
+                    mono
+                    label="Chart range"
+                    options={RANGES.map((r) => ({ id: r, label: r }))}
+                    value={range}
+                    onChange={(id) => setRange(id as CandleRange)}
+                  />
+                ) : undefined
               }
             />
-            {/* The provider meta (M6) sits under the header on its own line: in the
-                header's meta slot it squeezed the search and the range picker into
-                two rows at 1672 (verify 2026-09-15). */}
+            {/* The provider meta (M6) sits under the header on its own line. */}
             <div style={{ ...metaStyle, margin: "-6px 0 12px" }}>
               any listed symbol · EODHD first, yfinance only as a disclosed fallback · delayed quotes
             </div>
@@ -669,13 +749,15 @@ export default function MarketsScreen() {
               <SingleName symbol={lookupSym} range={range} onRangeChange={setRange} onClose={() => setLookupSym(null)} />
             ) : (
               <Caption style={{ marginTop: 0 }}>
-                Type a ticker or company name for a full profile: delayed quote, candles across seven ranges, fundamentals,
-                regime fit since 1996, and the stored news window.
+                Search a ticker or company name in the market read above, or open a mover below, for a full profile: delayed
+                quote, candles across seven ranges, fundamentals, regime fit since 1996, and the stored news window.
               </Caption>
             )}
           </Card>
 
           <SectorHeatmap barsBySymbol={barsBySymbol} marketDailyDate={marketDailyDate} />
+
+          <Movers read={movers} onOpen={openName} />
 
           <TopSurprises surprises={surprises} surpriseWeek={surpriseWeek} />
         </div>
@@ -686,8 +768,6 @@ export default function MarketsScreen() {
           singles={singlesSorted}
           selected={selected}
           onSelect={toggleSelect}
-          view={tapeView}
-          onViewChange={setTapeView}
           registerRow={registerRow}
           live={usLive}
           storedThrough={marketDailyDate}

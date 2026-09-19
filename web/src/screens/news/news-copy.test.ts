@@ -12,6 +12,8 @@ import { describe, expect, it } from "vitest";
 import type { CalendarEvent, NewsItem } from "../../api/types";
 import type { FreshInfo } from "../shared/freshness";
 import {
+  aiReadValue,
+  categoryMixValue,
   clockEt,
   countdownHeadline,
   coverageValue,
@@ -23,6 +25,7 @@ import {
   highImpactValue,
   leadSentence,
   nextFocusEvent,
+  outletsValue,
   sourceCount,
   topSignificanceValue,
   whySentence,
@@ -322,5 +325,48 @@ describe("news-copy: dayGroups (checklist 08 B.5)", () => {
 
   it("an empty window yields no groups", () => {
     expect(dayGroups([], NOW, false)).toEqual([]);
+  });
+});
+
+/* ── Iteration 1 (N2): the desk summary's served fill ──────────────────── */
+
+describe("news-copy: desk summary fill (Iteration 1, N2)", () => {
+  const row = (id: number, over: Partial<NewsItem> = {}): NewsItem => ({
+    id,
+    headline: `h${id}`,
+    summary: null,
+    url: null,
+    source: "CNBC",
+    category: "MACRO",
+    published_at: "2026-09-16T15:00:00Z",
+    fetched_at: null,
+    market_impact: null,
+    deal_size: null,
+    sector_relevance: null,
+    time_sensitivity: null,
+    regime_relevance: null,
+    overall_significance: 2,
+    regime_interpretation: null,
+    perplexity_research: null,
+    ticker: null,
+    ...over,
+  });
+  const feed = [row(1), row(2, { category: "M&A", source: "MarketWatch" }), row(3), row(4, { category: null, source: null, regime_interpretation: "Read." }), row(5, { perplexity_research: "Body.\n\nSources:\n1. https://a.example" })];
+
+  it("categoryMixValue counts by the card's category word, largest first, uncategorised as Other; null with nothing on file", () => {
+    expect(categoryMixValue(feed)).toBe("Macro / Fed 3 · M&A 1 · Other 1");
+    expect(categoryMixValue([])).toBeNull();
+  });
+
+  it("outletsValue counts distinct sources and names the three largest", () => {
+    expect(outletsValue(feed)).toBe("2 outlets · CNBC 3 · MarketWatch 1");
+    expect(outletsValue([row(9, { source: null })])).toBeNull();
+  });
+
+  it("aiReadValue counts stories carrying a stored interpretation or research", () => {
+    expect(aiReadValue(feed)).toBe("2 of 5 carry an AI read");
+    expect(aiReadValue([row(1)])).toBe("None of the 1 carries an AI read");
+    expect(aiReadValue([row(4, { regime_interpretation: "x" })])).toBe("All 1 carry an AI read");
+    expect(aiReadValue([])).toBeNull();
   });
 });

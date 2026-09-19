@@ -10,12 +10,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LboDefaults, LboResult } from "../../api/types";
 import { ApiError } from "../../api/client";
-import { lboHero, lboStrip } from "./lbo-copy";
+import { componentAsOf, isStatedDefault, lboHero, lboStrip } from "./lbo-copy";
 import type { LboDeal } from "./lbo-deal";
 import { HERO_GLOW_DEFAULT } from "../shared/TabHero";
 import { assessFreshness } from "../shared/freshness";
 import { fmtDate } from "../../lib/format";
-import { BASE_REQ, LBO_DEFAULTS, LBO_DEFAULTS_FALLBACK, LIVE_RATE, NOW, lboModel } from "./__fixtures__/lbo";
+import { BASE_REQ, LBO_DEFAULTS, LBO_DEFAULTS_B3, LBO_DEFAULTS_B3_UNKNOWN, LBO_DEFAULTS_FALLBACK, LBO_DEFAULTS_STATED, LIVE_RATE, NOW, lboModel } from "./__fixtures__/lbo";
 
 type Defaults = LboDeal["defaults"];
 
@@ -103,12 +103,17 @@ describe("lboHero (checklist 09 C.1)", () => {
     expect(lboHero(args({ baseRes: withIrr(20) })).pillTone).toBe("mint");
   });
 
-  it("rule 3: the subhead states the clamped live rate, the stated 8.50% fallback when it is absent, and never moves with the slider", () => {
-    expect(lboHero(args()).subhead).toBe("The default deal at today's 6.98% all-in rate.");
-    expect(lboHero(args({ clampedLive: 20 })).subhead).toBe("The default deal at today's 20.00% all-in rate.");
+  // Iteration 1 E1: the all-in rate is Fed funds (a monthly average) plus the
+  // daily HY spread; the subhead names its parts and never says "today's" or
+  // "live", and the engine's stated default reads as a stated default.
+  it("rule 3: the subhead states the clamped all-in rate and its parts, the stated default when the payload is one, the stated 8.50% fallback when no rate is on file, and never moves with the slider", () => {
+    expect(lboHero(args()).subhead).toBe("The default deal at a 6.98% all-in rate: Fed funds plus the HY spread.");
+    expect(lboHero(args({ clampedLive: 20 })).subhead).toBe("The default deal at a 20.00% all-in rate: Fed funds plus the HY spread.");
+    expect(lboHero(args({ clampedLive: 8.6, statedDefault: true })).subhead).toBe("The default deal at the stated 8.60% default rate.");
     expect(lboHero(args({ clampedLive: null })).subhead).toBe("The default deal at the stated 8.50% fallback rate.");
     const moved = lboHero(args({ res: LOWER_RES, modified: true }));
-    expect(moved.subhead).toBe("The default deal at today's 6.98% all-in rate.");
+    expect(moved.subhead).toBe("The default deal at a 6.98% all-in rate: Fed funds plus the HY spread.");
+    for (const a of [args(), args({ clampedLive: 20 }), args({ clampedLive: 8.6, statedDefault: true })]) expect(lboHero(a).subhead).not.toMatch(/today|live|current/i);
   });
 
   it("rule 4: the lede is the BASE_INPUTS sentence followed by T5 verbatim, with no figure from a run", () => {
@@ -211,6 +216,21 @@ describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
       detail: `Stored through ${fmtDate(LBO_DEFAULTS.data_as_of)} · refreshes with the daily pipeline`,
     });
     expect(lboStrip(q({ data: LBO_DEFAULTS })).detail).toBe("Stored through Sep 01, 2026 · refreshes with the daily pipeline");
+  });
+
+  it("E1: a B3 stated-default payload (is_fallback) reads Rate feed unavailable even with a dated data_as_of", () => {
+    expect(isStatedDefault(LBO_DEFAULTS_STATED)).toBe(true);
+    expect(isStatedDefault(LBO_DEFAULTS_FALLBACK)).toBe(true);
+    expect(isStatedDefault(LBO_DEFAULTS)).toBe(false);
+    expect(isStatedDefault(LBO_DEFAULTS_B3)).toBe(false);
+    expect(lboStrip(q({ data: LBO_DEFAULTS_STATED }))).toMatchObject({ tone: "gray", title: "Rate feed unavailable", detail: "FRED rows missing; the engine's fallback rate is in use" });
+  });
+
+  it("E1: a B3 payload reads the rate's served state and each component's as-of word (never the month stamp)", () => {
+    expect(lboStrip(q({ data: LBO_DEFAULTS_B3 }))).toEqual({ tone: "mint", title: "Rate synced from FRED", detail: "Fed funds: Aug 2026 print · HY spread: Sep 17" });
+    expect(lboStrip(q({ data: LBO_DEFAULTS_B3_UNKNOWN }))).toEqual({ tone: "gray", title: "FRED rate · as of unknown", detail: "Fed funds: Aug 2026 print · HY spread: As of unknown" });
+    expect(componentAsOf(LBO_DEFAULTS_B3).hy.word).toBe("Sep 17");
+    expect(componentAsOf(LBO_DEFAULTS).hy.word).toBe("As of unknown");
   });
 
   it("delayed: amber, FRED rate delayed, the age detail", () => {

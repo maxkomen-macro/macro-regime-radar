@@ -16,6 +16,15 @@
  * "Methodology" (matching document.title) opens the page above the contents
  * nav in both layouts, so the route has one h1 like every tab; every
  * SectionHeader keeps its level. The regime swatches read the --r-* tokens.
+ *
+ * Iteration 1 (Y2, Y3, G1, G2): each Contents entry is a card (`.mrr-meth-toc`
+ * in app.css: border, hover and focus states, pointer), same links, same
+ * order; "How to read this product" spans its row like every section below
+ * it, the prose and the reading order side by side where the row is wide
+ * enough; the section headers wrap their meta under the title instead of
+ * running into it (1024 px); the Models and Ramps cards flow in two balanced
+ * columns (`.mrr-meth-cols`), each card sized to its own content, where a
+ * two-by-two grid stretched a short card to its row partner's height.
  */
 
 import { Link } from "react-router-dom";
@@ -86,6 +95,10 @@ function LegendRow({ swatch, label, detail }: { swatch: string; label: string; d
   );
 }
 
+/* The meta wraps under the title when the two do not fit one line (G1 at
+   1024 px, where the rail leaves the sections a 536px column). */
+const headWrap: React.CSSProperties = { flexWrap: "wrap", rowGap: 4 };
+
 const prose: React.CSSProperties = {
   fontFamily: "var(--font-ui)",
   fontSize: "var(--fs-body)",
@@ -111,29 +124,19 @@ export default function MethodologyScreen() {
   const rail = bp === "wide";
   useHashScroll(signals.data);
 
+  // Y3: every entry is a card link (`.mrr-meth-toc` in app.css carries the
+  // surface, the hover and focus states and the pointer); a column of cards
+  // on the rail, a wrapping row of them above the sections otherwise.
   const contents = (
-    <nav aria-label="Methodology contents" style={rail ? { position: "sticky", top: 16 } : undefined}>
-      <div style={{ ...eyebrowStyle, marginBottom: 6 }}>Contents</div>
-      <ol style={{ listStyle: "none", margin: 0, padding: 0, display: rail ? "grid" : "flex", flexWrap: "wrap", gap: rail ? 2 : "4px 12px" }}>
+    <nav aria-label="Methodology contents" className="mrr-meth-toc" data-rail={rail ? "true" : "false"} style={rail ? { position: "sticky", top: 16 } : undefined}>
+      <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Contents</div>
+      <ol>
         {CONTENTS.map((c) => (
           <li key={c.id}>
-            <a
-              href={`#${c.id}`}
-              style={{
-                display: "inline-flex",
-                alignItems: "baseline",
-                gap: 8,
-                minHeight: rail ? 30 : 36,
-                fontFamily: "var(--font-ui)",
-                fontSize: "var(--fs-body-s)",
-                color: "var(--text-2)",
-                textDecoration: "none",
-                padding: rail ? "4px 0" : "6px 0",
-              }}
-            >
-              {c.label}
+            <a href={`#${c.id}`}>
+              <span className="mrr-meth-toc-label">{c.label}</span>
               {rail ? (
-                <span style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase" }}>
+                <span className="mrr-meth-toc-kind" style={{ ...mono, fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase" }}>
                   {KIND_WORD[c.kind]}
                 </span>
               ) : null}
@@ -175,30 +178,35 @@ export default function MethodologyScreen() {
       <div style={{ display: "grid", gap: 20, minWidth: 0 }}>
         {/* ── How to read ─────────────────────────────────────────────── */}
         <section id="how-to-read">
-          <SectionHeader title="How to read this product" right="Orientation · the reading order every screen follows" />
-          {/* The card hugs the prose measure instead of spanning a 1,500px
-              frame around a 74ch paragraph (review P3-9). */}
-          <Card style={{ maxWidth: "calc(var(--maxw-prose) + 48px)" }}>
-            <p style={prose}>
-              Every screen opens with a desk read: the conclusion, why it matters, what changed, what to watch, and what
-              would invalidate the call, with the freshness of the evidence stated in words. Under it sit the five
-              monitored signals and the supporting evidence; methodology, formulas and provenance are one click down.
-              Read top to bottom: the first line is the claim, everything below is the audit trail.
-            </p>
-            <ol style={{ ...prose, paddingLeft: 20, marginTop: 10, display: "grid", gap: 4 }}>
-              <li>
-                <b style={{ color: "var(--text)" }}>Regime</b>: which of four macro quadrants the classifier calls, with its odds. Header badge, Dashboard, Regime Lab.
-              </li>
-              <li>
-                <b style={{ color: "var(--text)" }}>Signals</b>: five thresholds watched monthly; Clear, Watch or Triggered. Dashboard.
-              </li>
-              <li>
-                <b style={{ color: "var(--text)" }}>Evidence</b>: credit spreads, the recession model, the curve, the tape. Credit, Recession, Markets.
-              </li>
-              <li>
-                <b style={{ color: "var(--text)" }}>Scenarios and history</b>: stress rules, analogues, backtests. Regime Lab, Tools.
-              </li>
-            </ol>
+          <SectionHeader style={headWrap} title="How to read this product" right="Orientation · the reading order every screen follows" />
+          {/* Y2: the card spans its row like every section card below it; the
+              paragraph keeps its 74ch measure and the reading order sits beside
+              it where the row is wide enough (`.mrr-meth-read`, app.css), so
+              the row is filled with the card's own content (review P3-9's
+              measure is kept inside the card). */}
+          <Card>
+            <div className="mrr-meth-read">
+              <p style={prose}>
+                Every screen opens with a desk read: the conclusion, why it matters, what changed, what to watch, and what
+                would invalidate the call, with the freshness of the evidence stated in words. Under it sit the five
+                monitored signals and the supporting evidence; methodology, formulas and provenance are one click down.
+                Read top to bottom: the first line is the claim, everything below is the audit trail.
+              </p>
+              <ol style={{ ...prose, paddingLeft: 20, margin: 0, display: "grid", gap: 4, alignContent: "start" }}>
+                <li>
+                  <b style={{ color: "var(--text)" }}>Regime</b>: which of four macro quadrants the classifier calls, with its odds. Header badge, Dashboard, Regime Lab.
+                </li>
+                <li>
+                  <b style={{ color: "var(--text)" }}>Signals</b>: five thresholds watched monthly; Clear, Watch or Triggered. Dashboard.
+                </li>
+                <li>
+                  <b style={{ color: "var(--text)" }}>Evidence</b>: credit spreads, the recession model, the curve, the tape. Credit, Recession, Markets.
+                </li>
+                <li>
+                  <b style={{ color: "var(--text)" }}>Scenarios and history</b>: stress rules, analogues, backtests. Regime Lab, Tools.
+                </li>
+              </ol>
+            </div>
             <Caption>
               Freshness words are a closed set: Current (inside its publication cycle), Delayed (one cycle late), Stale
               (older), Unavailable, Reference (no cadence). Every stamp prints its date.
@@ -209,6 +217,7 @@ export default function MethodologyScreen() {
         {/* ── Regimes ─────────────────────────────────────────────────── */}
         <section id="regimes">
           <SectionHeader
+            style={headWrap}
             title="The four regimes"
             right={
               <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
@@ -239,6 +248,7 @@ export default function MethodologyScreen() {
         {/* ── Signals ─────────────────────────────────────────────────── */}
         <section id="signals" style={{ minWidth: 0 }}>
           <SectionHeader
+            style={headWrap}
             title="Monitored signals"
             right={
               <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
@@ -306,6 +316,7 @@ export default function MethodologyScreen() {
         {/* ── Models ──────────────────────────────────────────────────── */}
         <section id="models">
           <SectionHeader
+            style={headWrap}
             title="Models and scenarios"
             right={
               <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
@@ -314,14 +325,14 @@ export default function MethodologyScreen() {
               </span>
             }
           />
-          <div style={{ display: "grid", gridTemplateColumns: twoUp, gap: 12 }}>
+          <div className="mrr-meth-cols">
             <Card>
               <div style={eyebrowStyle}>Recession model</div>
               <p style={{ ...prose, fontSize: "var(--fs-body-s)", marginTop: 6 }}>
                 A class-balanced logistic regression trained on NBER recession months. Inputs: the 2s10s curve,
-                unemployment, the high-yield spread, industrial-production growth and a leading-indicator proxy (the
-                10Y-minus-5Y inflation breakeven; the original USSLIND series froze in February 2020 and survives only
-                as training history). Features enter with a 3-month lag so the fit never peeks. The model retrains
+                unemployment, the high-yield spread, industrial-production growth and the 10Y − 5Y breakeven spread
+                (T10YIE − T5YIE), standing in for the Conference Board leading index (USSLIND), which stopped
+                publishing in February 2020. Features enter with a 3-month lag so the fit never peeks. The model retrains
                 in-process from stored FRED series; there is no saved artifact. Its probability is the model&apos;s own,
                 distinct from the classifier&apos;s Recession Risk odds.{" "}
                 <ModuleLink to="/app/recession">Recession →</ModuleLink>
@@ -365,6 +376,7 @@ export default function MethodologyScreen() {
         {/* ── Backtests ───────────────────────────────────────────────── */}
         <section id="backtests">
           <SectionHeader
+            style={headWrap}
             title="Backtests and evidence"
             right={
               <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
@@ -391,6 +403,7 @@ export default function MethodologyScreen() {
         {/* ── Ramps ───────────────────────────────────────────────────── */}
         <section id="ramps">
           <SectionHeader
+            style={headWrap}
             title="Meaning ramps and vocabularies"
             right={
               <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
@@ -399,13 +412,7 @@ export default function MethodologyScreen() {
               </span>
             }
           />
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isNarrow ? "repeat(auto-fit,minmax(260px,1fr))" : "repeat(2,minmax(0,1fr))",
-              gap: 12,
-            }}
-          >
+          <div className="mrr-meth-cols">
             <Card>
               <div style={eyebrowStyle}>Threshold-proximity gauge</div>
               <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
@@ -451,6 +458,7 @@ export default function MethodologyScreen() {
         {/* ── Data ────────────────────────────────────────────────────── */}
         <section id="data">
           <SectionHeader
+            style={headWrap}
             title="Data and sources"
             right={
               <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
@@ -497,7 +505,7 @@ export default function MethodologyScreen() {
 
         {/* ── Limits ──────────────────────────────────────────────────── */}
         <section id="limits">
-          <SectionHeader title="What the model can and cannot claim" right="Limits · read before acting on any number" />
+          <SectionHeader style={headWrap} title="What the model can and cannot claim" right="Limits · read before acting on any number" />
           <Card accentBar>
             <p style={prose}>
               <b style={{ color: "var(--text)" }}>It can claim</b> that, on the stored monthly data, the economy sits in

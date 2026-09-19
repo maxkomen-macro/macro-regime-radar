@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
-import EventTimeline from "./EventTimeline";
+import EventTimeline, { LANE, labelWidth, layoutLabels } from "./EventTimeline";
 import type { CalendarEvent } from "../../api/types";
 import { weekdayEt } from "../shared/calendar-impact";
 
@@ -191,19 +191,20 @@ describe("EventTimeline (checklist 08 B.1)", () => {
     expect(textNamed(svg, "Retail sales (Aug)")).toBeDefined();
   });
 
-  it("two same-day events at the same height stack their dots and labels 14 px apart", () => {
+  it("two same-day events at the same height stack their dots and labels one 16 px lane apart (Iteration 1, N1: was 14, which let 11.5 px labels touch)", () => {
     const first = onDay(23, "CPI (Aug)", 3, "high");
     const second = onDay(24, "Retail sales (Aug)", 3, "high");
     const svg = mount([first, second]);
     const sameDay = circles(svg).filter((c) => Math.abs(num(c, "cx") - xOf(3)) < 0.25);
     expect(sameDay).toHaveLength(2);
-    expect(Math.abs(num(sameDay[0], "cy") - num(sameDay[1], "cy"))).toBeCloseTo(14, 1);
-    expect(Math.min(num(sameDay[0], "cy"), num(sameDay[1], "cy"))).toBeCloseTo(96 - 14, 1);
+    expect(LANE).toBe(16);
+    expect(Math.abs(num(sameDay[0], "cy") - num(sameDay[1], "cy"))).toBeCloseTo(LANE, 1);
+    expect(Math.min(num(sameDay[0], "cy"), num(sameDay[1], "cy"))).toBeCloseTo(96 - LANE, 1);
     const a = textNamed(svg, "CPI (Aug)");
     const b = textNamed(svg, "Retail sales (Aug)");
     expect(a).toBeDefined();
     expect(b).toBeDefined();
-    expect(Math.abs(num(a as Element, "y") - num(b as Element, "y"))).toBeCloseTo(14, 1);
+    expect(Math.abs(num(a as Element, "y") - num(b as Element, "y"))).toBeGreaterThanOrEqual(LANE - 0.1);
   });
 
   it("is an image named by its counts", () => {
@@ -232,5 +233,81 @@ describe("EventTimeline (checklist 08 B.1)", () => {
     expect(circles(svg)).toHaveLength(0);
     expect(content(svg)).toContain("No events on file.");
     expect(content(svg)).not.toContain("Stored schedule ends");
+  });
+
+  /* ── Iteration 1 (N1): labels never overlap; large-cap earnings ───────── */
+
+  it("labels never overlap: the served GDP and PCE pair on one day, a neighbour two days on and a crowded week all land in separate boxes", () => {
+    const events = [
+      onDay(31, "GDP Third Estimate Q2 2026", 11, "medium"),
+      onDay(32, "PCE Inflation", 11, "medium"),
+      onDay(33, "Jobs Report (NFP)", 13, "high"),
+      onDay(34, "Retail Sales", 12, "medium"),
+      onDay(35, "Jobless claims", 12, "low"),
+      onDay(36, "ISM services (Aug)", 10, "medium"),
+    ];
+    const svg = mount(events);
+    const labels = texts(svg).filter((t) => t.hasAttribute("data-label-for"));
+    expect(labels.length).toBeGreaterThanOrEqual(5);
+    // The placement boxes the renderer used, rebuilt from the attributes.
+    const boxes = labels.map((t) => {
+      const px = num(t, "font-size");
+      const w = labelWidth(content(t), px, false);
+      const x = num(t, "x");
+      const y = num(t, "y");
+      const l = anchorOf(t) === "end" ? x - w : x;
+      return { name: content(t), l, r: l + w, t: y - px * 0.8, b: y + px * 0.26 };
+    });
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        const overlap = a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+        expect(overlap, `${a.name} × ${b.name}`).toBe(false);
+      }
+    // Every label stays inside the drawing.
+    for (const b of boxes) {
+      expect(b.l, b.name).toBeGreaterThanOrEqual(0);
+      expect(b.r, b.name).toBeLessThanOrEqual(400);
+    }
+  });
+
+  it("layoutLabels takes the first free spot and leaves a label off when none is free", () => {
+    const items = [
+      { key: "a", x: 100, y: 100, r: 4, text: "First label", px: 11.5, mono: false, prefer: "right" as const },
+      { key: "b", x: 100, y: 100, r: 4, text: "Second label", px: 11.5, mono: false, prefer: "right" as const },
+    ];
+    const spots = layoutLabels(items, { l: 0, t: 0, r: 400, b: 300 });
+    const a = spots.get("a");
+    const b = spots.get("b");
+    expect(a?.anchor).toBe("start");
+    expect(a?.y).toBeCloseTo(100 + 11.5 * 0.35, 1);
+    // Same dot: the second takes the other side at the same height.
+    expect(b?.anchor).toBe("end");
+    // A drawing too small for any spot leaves the label off.
+    const none = layoutLabels([{ ...items[0], key: "c" }], { l: 95, t: 95, r: 105, b: 105 });
+    expect(none.get("c")).toBeNull();
+  });
+
+  it("large-cap earnings draw as violet diamonds with their symbols, one per day, never as circles; the legend and the name count them", () => {
+    const earn = (id: number, symbol: string, day: number): CalendarEvent => ({ ...onDay(id, `${symbol} earnings (Q3 2027)`, day, "medium"), source: "finnhub_earnings", symbol, kind: "earnings" });
+    const svg = mount([HIGH_D2, MEDIUM_D5, earn(41, "NVDA", 4), earn(42, "MSFT", 9), earn(43, "META", 9)]);
+    // Circles are the macro events only.
+    expect(circles(svg)).toHaveLength(2);
+    const diamonds = [...svg.querySelectorAll("g[data-earnings] path")];
+    expect(diamonds).toHaveLength(2);
+    for (const d of diamonds) expect(d.getAttribute("fill")).toBe("#a78bfa");
+    expect(svg.querySelector("g[data-earnings='MSFT,META']")).not.toBeNull();
+    expect(textNamed(svg, "NVDA")).toBeDefined();
+    expect(textNamed(svg, "MSFT · META")).toBeDefined();
+    expect(textNamed(svg, "◆ EARNINGS")).toBeDefined();
+    expect(svg).toHaveAttribute("aria-label", "Macro events over the next 18 days: 2 events, 1 high impact, 3 large-cap earnings");
+  });
+
+  it("without earnings rows nothing on the chart mentions earnings", () => {
+    const svg = mount([HIGH_D2, MEDIUM_D5]);
+    expect(content(svg)).not.toMatch(/earnings/i);
+    expect(svg.getAttribute("aria-label")).not.toMatch(/earnings/i);
+    expect(svg.querySelectorAll("g[data-earnings]")).toHaveLength(0);
   });
 });

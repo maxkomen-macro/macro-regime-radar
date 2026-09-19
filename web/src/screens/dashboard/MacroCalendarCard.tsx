@@ -1,6 +1,8 @@
 /**
- * Macro calendar card (redesign Phase 3, checklist 03 B.7): the next three
- * scheduled prints with the impact dot rule (amber = high, cyan = medium,
+ * Macro calendar card (redesign Phase 3, checklist 03 B.7): the next five
+ * scheduled prints (three before Iteration 1; the 30-day window the card
+ * already reads carries more, and they fill the card beside the 10Y and the
+ * glance panel instead of a blank band, G2) with the impact dot rule (amber = high, cyan = medium,
  * gray = low or unrated) and the stored-schedule fallback the News tab uses
  * when the 30-day window is empty. Times are the hand-maintained UTC stamps
  * rendered as ET wall time (`fmtUtcStampEt`), never "ET" appended to UTC
@@ -72,10 +74,13 @@ function Rows({ events, elapsed = false }: { events: CalendarEvent[]; elapsed?: 
   );
 }
 
+/** Upcoming rows the card lists (Iteration 1, G2). */
+export const CALENDAR_ROWS = 5;
+
 export default function MacroCalendarCard() {
   const calendar = useCalendar(30);
   const recent = useCalendarRecent(3, calendar.isSuccess && calendar.data.length === 0);
-  const upcoming = calendar.data?.slice(0, 3) ?? [];
+  const upcoming = calendar.data?.slice(0, CALENDAR_ROWS) ?? [];
   const windowEmpty = calendar.isSuccess && upcoming.length === 0;
   const fallback = windowEmpty ? (recent.data?.slice(0, 3) ?? []) : [];
 

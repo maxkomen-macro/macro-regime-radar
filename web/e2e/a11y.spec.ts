@@ -408,14 +408,12 @@ test("sliders by real keys: Regime Lab Scenarios (4 + reset)", async ({ page }) 
   expect(findings, "the typed field reverts on Escape (B.4 #4)").toEqual([]);
 });
 
-test("sliders by real keys: Recession Sensitivity (5 + reset, after opening the row)", async ({ page }) => {
+// Iteration 1 X3 (decision D2): the five sliders render on load; no row to open.
+test("sliders by real keys: Recession Sensitivity (5 + reset, open on load)", async ({ page }) => {
   await open(page, "/app/recession");
   await expect(page.locator("main h1")).toHaveText(/^\d+\.\d%$/, { timeout: 60_000 });
-  const button = page.locator("#sensitivity button[aria-expanded]").first();
-  await expect(button).toHaveAttribute("aria-expanded", "false");
-  await focus(button);
-  await page.keyboard.press("Enter");
-  await expect(button).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#sensitivity button[aria-expanded]")).toHaveCount(0);
+  await expect(page.locator("#sensitivity input[type='range']")).toHaveCount(5, { timeout: 60_000 });
   const findings = await driveSliders(page, 5);
   await resetByKeyboard(page, page.locator("#sensitivity").getByRole("button", { name: /Reset to current readings/ }));
   expect(findings, "the typed field reverts on Escape (B.4 #4)").toEqual([]);

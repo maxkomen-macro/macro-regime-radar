@@ -20,7 +20,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useAllocation } from "../../api/queries";
-import { fmtDate } from "../../lib/format";
 import { DisclosureLine } from "../shared/Disclosure";
 import { useHashScroll } from "../shared/screen-ui";
 import SubTabs from "../shared/SubTabs";
@@ -28,11 +27,11 @@ import AllocationHeroRow from "./AllocationHeroRow";
 import AllocationPanel from "./AllocationPanel";
 import LboHeroRow from "./LboHeroRow";
 import LboPanel from "./LboPanel";
-import { stampOf } from "./lbo-copy";
+import { componentAsOf, stampOf } from "./lbo-copy";
 import { useLboDeal } from "./lbo-deal";
 
 export const SUBTABS = [
-  { id: "lbo", label: "LBO calculator", hint: "live financing rate" },
+  { id: "lbo", label: "LBO calculator", hint: "all-in financing rate" },
   { id: "allocation", label: "Asset allocation", hint: "regime matrix" },
 ];
 
@@ -44,8 +43,11 @@ export function subtabFromHash(hash: string): string {
   return SUBTABS.find((t) => h === t.id || h.startsWith(`${t.id}-`))?.id ?? "lbo";
 }
 
+/** The B1 cash-sweep sentences stay verbatim; Iteration 1 E1 names the rate
+ * for what it is (Fed funds, a monthly average, plus the daily HY spread),
+ * never "live", and closes with each component's as-of word. */
 const LBO_DISCLOSURE =
-  "An illustrative model for teaching and screening, not a transaction model. Taxes, capex and working capital are simplified into one assumption: cash for debt service is 60% of EBITDA. It pays interest first, scheduled amortization is a floor and the remainder sweeps to debt, so a higher rate lowers the IRR. The live rate is Fed funds plus the ICE BofA HY OAS (BAMLH0A0HYM2) from FRED";
+  "An illustrative model for teaching and screening, not a transaction model. Taxes, capex and working capital are simplified into one assumption: cash for debt service is 60% of EBITDA. It pays interest first, scheduled amortization is a floor and the remainder sweeps to debt, so a higher rate lowers the IRR. The all-in rate is Fed funds (FEDFUNDS, a monthly average) plus the ICE BofA HY OAS (BAMLH0A0HYM2, daily) from FRED";
 
 const ALLOCATION_DISCLOSURE =
   "Monthly total returns for 10 asset classes, index-spliced before ETF inceptions · computed by the same allocation engine each session · regimes from the stored classifier history.";
@@ -73,6 +75,7 @@ export default function ToolsScreen() {
   const releaseHashScroll = useHashScroll(`${active}:${ready}`);
 
   const stamp = stampOf(deal.defaults.data);
+  const { fed, hy } = componentAsOf(deal.defaults.data);
 
   return (
     <div className="mrr-tools">
@@ -103,7 +106,7 @@ export default function ToolsScreen() {
       {active === "lbo" ? (
         <DisclosureLine>
           {LBO_DISCLOSURE}
-          {stamp ? `, stored through ${fmtDate(stamp)}.` : "; no stored date is on file."}
+          {stamp ? `; Fed funds: ${fed.word}, HY spread: ${hy.word}.` : "; no stored date is on file."}
         </DisclosureLine>
       ) : (
         <DisclosureLine>{ALLOCATION_DISCLOSURE}</DisclosureLine>

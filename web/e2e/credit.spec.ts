@@ -330,7 +330,7 @@ test.describe("credit (checklist 06 E.3)", () => {
     await expect.poll(() => inView(page, "quality-ladder"), { timeout: 15_000 }).toBe(true);
   });
 
-  test("7. spread monitor: five article cards with the h3 names in order, badges from the closed set, meters and Percentile since 1996 on HY and IG only, Series notes → lands on Methodology #models", async ({ page }) => {
+  test("7. spread monitor: five article cards with the h3 names in order, badges from the closed set, one meter slot on every card (Iteration 1 G3: Percentile since 1996 on HY and IG only, the marked no-percentile slot on BB and B, the distress line on CCC), Series notes → lands on Methodology #models", async ({ page }) => {
     await open(page);
     await awaitHero(page);
     const cards = oas(page).locator("article");
@@ -344,13 +344,11 @@ test.describe("credit (checklist 06 E.3)", () => {
       expect(await visibleText(card)).toMatch(/\d+ bps|—/);
       const meters = await card.locator(".mrr-meter").count();
       const text = await visibleText(card);
-      if (i < 2) {
-        expect(meters, `${CARD_NAMES[i]} meter`).toBe(1);
-        expect(text).toContain("Percentile since 1996");
-      } else {
-        expect(meters, `${CARD_NAMES[i]} meter`).toBe(0);
-        expect(text).not.toContain("Percentile");
-      }
+      expect(meters, `${CARD_NAMES[i]} meter`).toBe(1);
+      if (i < 2) expect(text).toContain("Percentile since 1996");
+      else if (i < 4) expect(text).toContain("No percentile served");
+      else expect(text).toMatch(/Vs the 1,000 bps distress line|No percentile served/);
+      if (i >= 2) expect(text).not.toContain("Percentile since 1996");
       expect(text).not.toContain("Last alert");
       note(`card-${i + 1}`, `${CARD_NAMES[i]} · ${badge}`);
     }
@@ -389,12 +387,17 @@ test.describe("credit (checklist 06 E.3)", () => {
     expect(clean((await current.textContent()) ?? "").replace(/\s*●$/, "")).toBe(m.credit_label);
     const currentRow = current.locator("xpath=..");
     for (const cell of await currentRow.locator("[role='cell']").all()) expect(await cell.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("solid");
-    // The Tight row prints dashes only while no Tight month is on file.
+    // Iteration 1: a row with no months behind it (served transition_obs_3m, else
+    // the Tight count) reads "No history" in every cell, never a measured 0%.
+    const obs3 = (m as { transition_obs_3m?: Record<string, number> | null }).transition_obs_3m ?? null;
+    const tightEmpty = obs3 ? obs3.Tight === 0 : m.tight_count === 0;
     const tightRow = table.locator("[role='rowheader']").filter({ hasText: /^Tight/ }).locator("xpath=..");
     const tightCells = (await tightRow.locator("[role='cell']").allTextContents()).map(clean);
-    if (m.tight_count === 0) expect(tightCells).toEqual(["—", "—", "—", "—"]);
+    if (tightEmpty) expect(tightCells).toEqual(["No history", "No history", "No history", "No history"]);
     else for (const c of tightCells) expect(c).toMatch(/^\d+%$/);
-    note("tight-row", `tight_count ${m.tight_count}: ${tightCells.join(" ")}`);
+    note("tight-row", `tight_count ${m.tight_count}, 3m months ${obs3?.Tight ?? "n/a"}: ${tightCells.join(" ")}`);
+    // G4: the sentences after the first two sit behind Details.
+    await odds(page).getByRole("button", { name: /Details/ }).click();
 
     await six.click();
     await expect(six).toHaveAttribute("aria-pressed", "true");

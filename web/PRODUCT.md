@@ -102,6 +102,11 @@ auditable data pipeline. The design language states this rather than sells it.
   drawer (7-day badge count; green "✓ all clear — last alert [date]" when silent; full
   history in drawer), Methodology as a small persistent link. Cmd+K palette v1: tabs +
   sections only. No TradingView embeds.
+- **Recession sensitivity is open by default (Iteration 1, decision D2, 2026-09-19):**
+  the five model inputs render as sliders on load with no disclosure to open, overriding
+  the locked-IA rule that kept them collapsed. The panel always states which figure is the
+  model's own reading (the served headline probability) and which is the adjusted
+  scenario, and Reset returns every input to the model's reading.
 
 ## Capabilities and Constraints
 

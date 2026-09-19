@@ -10,7 +10,8 @@
  * strings), the curve badge is the served `is_inverted`, the second mono
  * line is the served coefficient (X21, the same number the transparency
  * rows print) and the one served `data_as_of` prints on every card (F6).
- * The 2s10s caption (X10) survives on the curve card.
+ * The 2s10s caption (X10) sits under the row (Iteration 1 G2), so the five
+ * cards carry the same slots and the same height.
  */
 
 import type { ReactNode } from "react";
@@ -19,7 +20,7 @@ import { Card, SectionHeader, SignalCard } from "../../components";
 import type { RecessionMetrics } from "../../api/types";
 import { fmtMonYr, fmtSigned, ordinal } from "../../lib/format";
 import Jargon from "../shared/Jargon";
-import { StateNote } from "../shared/screen-ui";
+import { Caption, StateNote } from "../shared/screen-ui";
 import { featureCurrent, featureLabel } from "./recession-copy";
 import type { RecessionPanelProps } from "./panel-props";
 
@@ -61,8 +62,6 @@ function InputCard({ m, feature }: { m: RecessionMetrics; feature: string }): JS
   const missing = read == null || read(m) == null;
   const isCurve = feature === "yield_curve";
   const through = `Inputs through ${fmtMonYr(m.data_as_of)}`;
-  // The caption slot belongs to the curve card only (B.3); it is null-safe.
-  const caption = isCurve ? <CurveCaption m={m} /> : undefined;
   if (missing) {
     // The 02 B.3 unavailable state: no value to print, reference tint, one line.
     return (
@@ -77,7 +76,6 @@ function InputCard({ m, feature }: { m: RecessionMetrics; feature: string }): JS
         showGauge={false}
         lastTriggered={null}
         lines={[through]}
-        caption={caption}
       />
     );
   }
@@ -101,7 +99,6 @@ function InputCard({ m, feature }: { m: RecessionMetrics; feature: string }): JS
       showGauge={false}
       lastTriggered={null}
       lines={lines}
-      caption={caption}
     />
   );
 }
@@ -122,11 +119,21 @@ export default function ModelInputs({ m, status }: RecessionPanelProps): JSX.Ele
         }
       />
       {ready && m ? (
-        <div className="mrr-rec-inputs">
-          {m.model_features.map((f) => (
-            <InputCard key={f} m={m} feature={f} />
-          ))}
-        </div>
+        <>
+          <div className="mrr-rec-inputs">
+            {m.model_features.map((f) => (
+              <InputCard key={f} m={m} feature={f} />
+            ))}
+          </div>
+          {/* The X10 curve caption sits under the row, not inside the curve
+              card (Iteration 1 G2): inside it, the card grew 88 px taller than
+              its four siblings and each of them carried that height as blank. */}
+          {m.model_features.includes("yield_curve") ? (
+            <Caption style={{ marginTop: 10 }}>
+              <CurveCaption m={m} />
+            </Caption>
+          ) : null}
+        </>
       ) : (
         <Card variant="tile">
           <StateNote loading={status === "loading"} error={status === "error"} />

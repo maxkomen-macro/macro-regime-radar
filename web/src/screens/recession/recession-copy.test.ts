@@ -415,7 +415,8 @@ describe("lastMonths and lastYears (checklist 07 C.1)", () => {
 
 describe("featureLabel and featureCurrent (checklist 07 C.1)", () => {
   it("maps the five served feature keys to their labels and an unknown key to its words", () => {
-    expect(BASE.model_features.map(featureLabel)).toEqual(["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", "Leading-indicator proxy"]);
+    // Iteration 1 E2: the fifth input is named for what it computes (T10YIE − T5YIE).
+    expect(BASE.model_features.map(featureLabel)).toEqual(["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", "10Y − 5Y breakeven spread"]);
     expect(featureLabel("some_new_input")).toBe("some new input");
   });
 

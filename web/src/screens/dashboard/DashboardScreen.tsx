@@ -2,8 +2,9 @@
  * Dashboard — the flagship executive screen, rebuilt on TabHero + SummaryCard
  * (redesign Phase 3, docs/redesign-v2/checklists/03-dashboard.md B.0).
  *
- * Order of <main> children, all inside `.mrr-dash`: the hero row (TabHero |
- * SummaryCard with the alert status strip) → Monitored signals → the slim
+ * Order of <main> children, all inside `.mrr-dash`: the hero row (TabHero
+ * with the 24-month stacked regime-odds chart | SummaryCard with the alert
+ * status strip) → Monitored signals → the slim
  * Key levels row → the bottom row (Markets at a glance with the What's priced
  * tab | US 10Y Treasury | Macro calendar) → Macro charts (collapsed accordion)
  * → How this read is composed (two disclosures) → the mono disclosure line.
@@ -49,6 +50,7 @@ import KeyLevels from "./KeyLevels";
 import TenYearCard from "./TenYearCard";
 import MacroCalendarCard from "./MacroCalendarCard";
 import MacroCharts, { MACRO_CHARTS_HASH, chartFromHash } from "./MacroCharts";
+import RegimeOddsChart from "./RegimeOddsChart";
 
 /* ── small shared bits ─────────────────────────────────────────────────── */
 
@@ -155,7 +157,7 @@ function alertStrip(s: AlertSummary, openAlerts: () => void): StatusStripProps {
 
 export default function DashboardScreen() {
   const location = useLocation();
-  const { isMobile, bp } = useBreakpoint();
+  const { isMobile } = useBreakpoint();
   const regime = useRegimeLatest();
   const history = useRegimeHistory(36);
   const signals = useSignalsLatest();
@@ -377,6 +379,10 @@ export default function DashboardScreen() {
     );
 
     const f = freshness.data;
+    // D1: the hero's right column is the 24-month stacked odds chart (moved
+    // out of the Macro charts accordion); the gradient block holds the slot
+    // until the stored history arrives.
+    const oddsChart = history.data && history.data.length >= 2 ? <RegimeOddsChart rows={history.data} /> : undefined;
     hero = (
       <TabHero
         id="regime-hero"
@@ -401,6 +407,7 @@ export default function DashboardScreen() {
                 { noun: "Market", info: assessFreshness(f?.market_daily_date, "daily") },
               ]
         }
+        chart={oddsChart}
         placeholder
       />
     );
@@ -437,18 +444,6 @@ export default function DashboardScreen() {
   }
 
   const strip = alertStrip(alertSummary(alerts), openAlerts);
-
-  /* signals grid — five tracks only at wide width; three on a small laptop or
-     tablet landscape (768–1023), self-fitting pairs between 480 and 767, one
-     per row on a phone. The cards never clip their names. */
-  const signalCols =
-    bp === "wide"
-      ? "repeat(5,minmax(0,1fr))"
-      : bp === "desktop"
-        ? "repeat(3,minmax(0,1fr))"
-        : isMobile
-          ? "minmax(0,1fr)"
-          : "repeat(auto-fit,minmax(200px,1fr))";
 
   return (
     <div className="mrr-dash">
@@ -487,7 +482,12 @@ export default function DashboardScreen() {
             </Link>
           }
         />
-        <div style={{ display: "grid", gridTemplateColumns: signalCols, gap: "var(--gap-tile)" }}>
+        {/* Columns from `.mrr-dash-signals` (app.css, Iteration 1): five
+            across when the dashboard is wide enough for ~250px cards, else
+            three over two, else one per row, read from the dashboard's own
+            width (a container query) so the collapsed sidebar counts. Cards
+            of one row wrap their mono lines alike, so no tail opens (G2). */}
+        <div className="mrr-dash-signals">
           {SIGNAL_ORDER.map((name) => {
             const meta = SIGNALS_META[name];
             const row = bySignal.get(name);
@@ -551,7 +551,7 @@ export default function DashboardScreen() {
       </div>
 
       {/* ── Macro charts, collapsed ─────────────────────────────────── */}
-      <MacroCharts history={history} recession={recession} credit={credit} onOpenChange={setChartOpenId} />
+      <MacroCharts recession={recession} credit={credit} onOpenChange={setChartOpenId} />
 
       {/* ── Composed read-through and method, one click down ─────────── */}
       {readThrough.length ? (

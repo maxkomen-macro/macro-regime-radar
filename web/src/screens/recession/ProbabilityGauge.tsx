@@ -15,7 +15,13 @@ export interface ProbabilityGaugeProps {
   prob: number;
   label: string;
   tone: LabelTone;
+  /** The widest the drawing may render, px (default 360, the mockup size).
+   * The hero passes the width its chart frame measured (Iteration 1 G3). */
+  maxWidth?: number;
 }
+
+/** The drawing's aspect: viewBox 360 × 210. */
+export const GAUGE_ASPECT = 210 / 360;
 
 const CX = 180;
 const CY = 180;
@@ -43,7 +49,7 @@ export function arcPath(p0: number, p1: number, r: number, cx = CX, cy = CY): st
 
 const f1 = (v: number) => Number(v.toFixed(1));
 
-export default function ProbabilityGauge({ prob, label, tone }: ProbabilityGaugeProps): JSX.Element {
+export default function ProbabilityGauge({ prob, label, tone, maxWidth = 360 }: ProbabilityGaugeProps): JSX.Element {
   const p = Math.max(0, Math.min(100, Number.isFinite(prob) ? prob : 0));
   const [nx, ny] = arcPoint(p, R_NEEDLE);
   const color = toneColor(tone) ?? "var(--text-3)";
@@ -56,7 +62,7 @@ export default function ProbabilityGauge({ prob, label, tone }: ProbabilityGauge
       role="img"
       aria-label={`Recession probability gauge at ${p.toFixed(1)}% · ${label}`}
       className="mrr-rec-gauge"
-      style={{ display: "block", maxWidth: 360, margin: "0 auto" }}
+      style={{ display: "block", maxWidth, margin: "0 auto" }}
     >
       {BANDS.map((b, bi) => {
         const from = bi === 0 ? 0 : start + BAND_GAP;

@@ -8,7 +8,7 @@
  * long stale time (regimes/signals are monthly-cadence data).
  */
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import { ApiError, getJson, postJson } from "./client";
 import type {
   Alert,
@@ -180,6 +180,20 @@ export function useCalendar(days = 30) {
     queryKey: ["calendar", days],
     queryFn: () => getJson<CalendarEvent[]>("/api/calendar", { days }),
     staleTime: 30 * MINUTE,
+  });
+}
+
+/** The same window with the large-cap earnings rows included (B5,
+ * `?include=earnings`). Only the News hero timeline reads it, and only its
+ * `kind === "earnings"` rows: the macro rows keep coming from `useCalendar`,
+ * which the validated snapshot carries. No retry: the timeline simply draws
+ * without earnings when this answers late or not at all. */
+export function useCalendarEarnings(days = 30) {
+  return useQuery({
+    queryKey: ["calendar", "earnings", days],
+    queryFn: () => getJson<CalendarEvent[]>("/api/calendar", { days, include: "earnings" }),
+    staleTime: 30 * MINUTE,
+    retry: false,
   });
 }
 
@@ -421,14 +435,31 @@ export function useSymbolProfile(symbol: string | null) {
  * symbol's history while its own request is in flight. */
 export function useSymbolCandles(symbol: string | null, range: CandleRange) {
   return useQuery({
-    queryKey: ["symbol", "candles", symbol, range],
+    ...candlesQuery(symbol, range),
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[2] === symbol ? prev : undefined),
+  });
+}
+
+/** One candle query's key, fetch and cadence: shared by `useSymbolCandles`
+ * and `useSymbolCandlesList`, so a panel, a watchlist row and the Markets
+ * movers row asking for the same symbol and range share one cache entry. */
+function candlesQuery(symbol: string | null, range: CandleRange) {
+  return {
+    queryKey: ["symbol", "candles", symbol, range] as const,
     queryFn: () => getJson<CandleSeries>(`/api/market/candles/${symbol}`, { range }),
     enabled: symbol != null,
     refetchInterval: range === "1D" ? 60_000 : undefined,
     staleTime: range === "1D" ? 30_000 : 15 * MINUTE,
-    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[2] === symbol ? prev : undefined),
     retry: providerRetry,
-  });
+  };
+}
+
+/** The candles of several symbols at one range (Iteration 1, M3: the Markets
+ * movers row reads the 5D candles of the stored single names that have no
+ * day change on the stream). The results line up with `symbols`; pass each
+ * symbol once (duplicate keys in one useQueries call are an error). */
+export function useSymbolCandlesList(symbols: ReadonlyArray<string>, range: CandleRange) {
+  return useQueries({ queries: symbols.map((symbol) => candlesQuery(symbol, range)) });
 }
 
 export function useCorporateActions(symbol: string | null, enabled = true) {

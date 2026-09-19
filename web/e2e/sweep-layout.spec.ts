@@ -80,6 +80,18 @@ async function measure(page: Page, c: Cell): Promise<CellScans> {
   await seedSidebar(page, c.sidebar === "collapsed");
   await page.goto(c.route, { waitUntil: "domcontentloaded" });
   await waitForScreenData(page);
+  // A hero chart slot that is still empty under load reads as dead space; wait (bounded) until every
+  // slot on the page holds a drawn chart with a real width before measuring.
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll("[data-chart-slot]")].every((slot) =>
+          [...slot.querySelectorAll("[data-chart], svg, canvas")].some((el) => el.getBoundingClientRect().width > 120),
+        ),
+      undefined,
+      { timeout: 10_000 },
+    )
+    .catch(() => undefined);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(100);
   const deadSpace = await page.evaluate(auditDeadSpace, { minPx: 48, ratio: 0.15 });

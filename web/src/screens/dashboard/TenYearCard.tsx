@@ -3,8 +3,14 @@
  * rate history (`UST10Y.history`, 90 daily closes) as a gradient sparkline
  * under the same value and 1W change the strip prints. Direction, not
  * valence: green is up, red is down, for yields too.
+ *
+ * Iteration 1 (G2): the sparkline takes the height the card has, not a fixed
+ * 260 × 80 drawing parked at the bottom of a card its row stretched: it is
+ * measured and drawn 1:1 (80 px at the least), so no blank band opens
+ * between the value and the chart.
  */
 
+import { useLayoutEffect, useRef, useState } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Card, SectionHeader, Sparkline } from "../../components";
@@ -16,6 +22,47 @@ import { DASH } from "./hero-copy";
 export interface TenYearCardProps {
   /** `useCreditOas(90)` from the screen. */
   credit: UseQueryResult<CreditOAS>;
+}
+
+/** Narrower than this is a layout in flight (HeroChartFrame's rule). */
+const MIN_MEASURED_W = 60;
+
+/** The served history drawn at the box its flex slot gives it. */
+function FillSparkline({ values, color }: { values: number[]; color: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => {
+      const r = el.getBoundingClientRect();
+      const w = Math.floor(r.width);
+      const h = Math.floor(r.height);
+      if (w < MIN_MEASURED_W || h < 20) return; // jsdom: keep the fallback drawing
+      setBox((b) => (b && b.w === w && b.h === h ? b : { w, h }));
+    };
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="mrr-ten-spark" style={{ position: "relative", flex: "1 1 auto", minHeight: 80, minWidth: 0, marginTop: 12 }}>
+      <div style={{ position: "absolute", inset: 0 }}>
+        <Sparkline
+          values={values}
+          width={box?.w ?? 260}
+          height={box?.h ?? 80}
+          color={color}
+          gradient
+          gradientOpacity={0.22}
+          strokeWidth={1.5}
+          style={box ? undefined : { width: "100%", height: "auto" }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export default function TenYearCard({ credit }: TenYearCardProps) {
@@ -59,22 +106,13 @@ export default function TenYearCard({ credit }: TenYearCardProps) {
           </span>
         ) : null}
       </div>
-      <div style={{ marginTop: 12, flex: "1 1 auto", display: "flex", flexDirection: "column", justifyContent: "flex-end", minWidth: 0 }}>
-        {ten ? (
-          <Sparkline
-            values={ten.history.map((h) => h.value)}
-            width={260}
-            height={80}
-            color={color}
-            gradient
-            gradientOpacity={0.22}
-            strokeWidth={1.5}
-            style={{ width: "100%", height: "auto" }}
-          />
-        ) : (
+      {ten ? (
+        <FillSparkline values={ten.history.map((h) => h.value)} color={color} />
+      ) : (
+        <div style={{ marginTop: 12, flex: "1 1 auto", minWidth: 0 }}>
           <StateNote loading={credit.isLoading} error={credit.isError} />
-        )}
-      </div>
+        </div>
+      )}
       <Caption mono style={{ marginTop: 8 }}>
         {ten ? `10-year Treasury yield · FRED ${ten.series_id} · daily close · ${fmtDate(ten.date)}` : "10-year Treasury yield · FRED DGS10 · daily close"}
       </Caption>

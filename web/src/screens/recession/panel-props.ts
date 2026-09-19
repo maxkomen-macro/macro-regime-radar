@@ -14,11 +14,10 @@ export interface CurveMonitorProps extends RecessionPanelProps {
   onRangeChange: (range: CurveWindow) => void;
 }
 
-/** The sensitivity disclosure's open state and the analyst's inputs live in the screen (B.0);
- * the panel owns liveDefaults / effective / debounce / useRecessionScenario. */
+/** The analyst's inputs live in the screen (B.0); the panel owns liveDefaults /
+ * effective / debounce / useRecessionScenario. The sliders render on load
+ * (Iteration 1 X3), so there is no open state. */
 export interface SensitivityPanelProps extends RecessionPanelProps {
-  open: boolean;
-  onToggle: (open: boolean) => void;
   inputs: RecessionScenarioRequest | null;
   onInputsChange: (inputs: RecessionScenarioRequest | null) => void;
 }

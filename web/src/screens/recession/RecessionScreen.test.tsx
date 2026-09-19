@@ -126,11 +126,14 @@ const NOTE = "Sits in the Low Risk band (under 20%); the historical base rate ru
 const PILL_TITLE = "The recession model's own band: Low Risk under 20%, Elevated 20 to 40%, High Risk 40% and above";
 const CHART_CAPTION_24M =
   "The model's 12-month odds, monthly since Oct 2024. Shaded bands are actual NBER recessions, dashed rules the 20/40 band edges. The plotted tail (10%) is a partial-month fit; the headline 11.6% is the newest complete monthly read. Features enter with a 3-month lag so the line never peeks at data it wouldn't have had.";
-const SUMMARY_LABELS = ["12-month probability", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Reference thresholds"];
+// Iteration 1 X2 adds two served rows (Training sample, Inputs through) before the reference thresholds.
+const SUMMARY_LABELS = ["12-month probability", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Inputs through", "Reference thresholds"];
 const THRESHOLDS = "2s10s < 0 · HY > 400 bps · unemployment +0.3 pp in 3m";
 const THRESHOLDS_TITLE = "Reference levels used in the desk read. Not model thresholds and not alert rules; none are served by the API.";
 const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a different model from the recession probability above";
-const CARD_NAMES = ["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", "Leading-indicator proxy"];
+/** Iteration 1 E2: the fifth input is named for what recession.py computes. */
+const BREAKEVEN = "10Y − 5Y breakeven spread";
+const CARD_NAMES = ["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", BREAKEVEN];
 const CARD_VALUES = ["+33 bps", "4.1%", "270 bps", "1.0%", "-0.03pp"];
 const CARD_COEF_LINES = [
   "+0.65 log-odds per σ · raises odds as it rises",
@@ -144,26 +147,30 @@ const CURVE_CARD_CAPTION = "The 10Y–2Y spread holds at +33 bps (0.33%), the 33
 const CURVE_CAPTION = "Below the dashed zero line the curve is inverted: short money costs more than long money, which only happens when markets expect cuts ahead. Every shaded recession was preceded by a dip below zero.";
 const NOT_STORED = "Not stored: 1M · 3M · 6M · 1Y · 5Y · 30Y. The model reads the daily FRED 2Y and 10Y series only; other tenors are outside its inputs by design.";
 const SHAPE_CAPTION = "Two stored tenors: 2Y at 4.63% and 10Y at 4.96%, a +33 bps upward slope.";
-const SENS_TITLE = "Move the model's five inputs and watch 11.6% respond";
-const SENS_SUMMARY = "2s10s +35 bps · U-3 4.1% · HY 270 bps · IP 1.0% · LEI 0.0pp";
+/** The pre-X3 disclosure title, kept as the panel's lead line. */
+const SENS_LEAD = "Move the model's five inputs and watch 11.6% respond.";
+/** X3: the unchanged scenario is named as a scenario, beside the model's own reading. */
+const SCENARIO_EYEBROW = "Scenario at current readings · inputs unchanged";
 const INCOMPLETE = "The model's current inputs are incomplete in this snapshot; nothing honest to seed the sliders with.";
 const SCENARIO_CAPTION =
   "The headline scores 3-month-lagged inputs (the model never peeks); these sliders score the readings as if they were today's features, so the starting position sits near, not on, the headline. Same fitted coefficients, same scaler.";
-const SLIDER_LABELS = ["Yield curve 2s10s", "Unemployment rate", "HY credit spread", "Industrial production YoY", "Leading-indicator proxy"];
+const SLIDER_LABELS = ["Yield curve 2s10s", "Unemployment rate", "HY credit spread", "Industrial production YoY", BREAKEVEN];
 const SEEDED_VALUETEXT = ["+35 bps", "4.1%", "270 bps", "1.0%", "0.0pp"];
-const COEF_ORDER = ["HY credit spread", "Unemployment rate", "Yield curve (2s10s)", "Leading-indicator proxy", "Industrial production YoY"];
+const COEF_ORDER = ["HY credit spread", "Unemployment rate", "Yield curve (2s10s)", BREAKEVEN, "Industrial production YoY"];
 const COEF_SIGNED = ["+2.58", "-2.54", "+0.65", "-0.49", "+0.05"];
 const COEF_CURRENT = ["270 bps", "4.1%", "+33 bps", "-0.03pp", "1.0%"];
-const COEF_NEGATIVE = new Set(["Unemployment rate", "Leading-indicator proxy"]);
+const COEF_NEGATIVE = new Set(["Unemployment rate", BREAKEVEN]);
 const COEF_CAPTION_TAIL = "Red bars raise recession odds as they rise; mint bars lower them.";
+// G4: two sentences visible; the third sits behind Details on the same tile.
 const DIVERGENCE_CAPTION =
-  /^Macro ahead of markets: credit-market pricing \(HY percentile\) minus the regime model's recession odds, on a [−-]100 to \+100 scale\. Beyond ±20 the divergence is material and requires judgment\. The number stays neutral; the word carries the verdict\.$/;
+  /^Macro ahead of markets: credit-market pricing \(HY percentile\) minus the regime model's recession odds, on a [−-]100 to \+100 scale\. Beyond ±20 the divergence is material and requires judgment\.$/;
+const DIVERGENCE_DETAILS = "The number stays neutral; the word carries the verdict.";
 const MODEL_CARD_ROWS = ["Estimator", "Training target", "Training samples", "Features", "Look-ahead guard", "Inputs through"];
 const MODEL_CARD_VALUES = [
   "Logistic regression, class-balanced",
   "NBER USREC months",
   "281 months",
-  "Yield curve (2s10s) · Unemployment rate · HY credit spread · Industrial production YoY · Leading-indicator proxy",
+  "Yield curve (2s10s) · Unemployment rate · HY credit spread · Industrial production YoY · 10Y − 5Y breakeven spread",
   "All features lagged 3 months",
   "Sep 2026",
 ];
@@ -269,7 +276,8 @@ function legendRange(root: HTMLElement): string {
   const span = [...root.querySelectorAll<HTMLElement>("span")].find((s) => /^[A-Z][a-z]{2} \d\d, \d{4} → [A-Z][a-z]{2} \d\d, \d{4}$/.test(text(s)));
   return span ? text(span) : "";
 }
-const sensButton = () => sensitivity().querySelector("button[aria-expanded]") as HTMLButtonElement;
+/** X3: #sensitivity carries no disclosure button; the sliders render on load. */
+const sensButton = () => sensitivity().querySelector("button[aria-expanded]") as HTMLButtonElement | null;
 const ranges = () => [...document.querySelectorAll<HTMLInputElement>("input[type='range']")];
 const sliderRows = () => [...document.querySelectorAll<HTMLElement>(".mrr-slider-row")];
 function sliderRow(label: string): HTMLElement {
@@ -281,7 +289,8 @@ const rangeOf = (label: string) => sliderRow(label).querySelector("input[type='r
 const resetButton = () => within(sensitivity()).getByRole("button", { name: /Reset to current readings/ });
 /** The scenario result in the display face. */
 const displaySpan = () => [...sensitivity().querySelectorAll<HTMLElement>("span")].find((el) => css(el).includes("var(--font-display)") && /^\d+\.\d%$/.test(text(el))) ?? null;
-const scenarioBadge = () => sensitivity().querySelector<HTMLElement>("span[data-tone]");
+const scenarioBadge = () => sensitivity().querySelector<HTMLElement>("[data-figure='scenario'] span[data-tone]");
+const modelFigure = () => sensitivity().querySelector<HTMLElement>("[data-figure='model']");
 /** The DivergingBar fills (the tick has no radius) and the grid row each belongs to. */
 const bars = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>("i")].filter((i) => i.style.borderRadius !== "");
 function rowOfBar(bar: HTMLElement): HTMLElement {
@@ -450,6 +459,8 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(link).toHaveAttribute("href", "/app/regime-lab");
     expect(text(ddFor("Regime context")).endsWith("classifier")).toBe(true);
     expect(titleOf(ddFor("Regime context"))).toBe(REGIME_ROW_TITLE);
+    expect(text(ddFor("Training sample"))).toBe("281 months · NBER-dated");
+    expect(text(ddFor("Inputs through"))).toBe("Sep 2026");
     expect(text(ddFor("Reference thresholds"))).toBe(`${THRESHOLDS} · desk reference`);
     expect(titleOf(ddFor("Reference thresholds"))).toBe(THRESHOLDS_TITLE);
     for (const dd of summary().querySelectorAll("dl dd")) expect(text(dd)).not.toBe("");
@@ -469,10 +480,11 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(badgeOf(card))).toBe("Inverted");
     expect(badgeOf(card)).toHaveAttribute("data-tone", "watch");
     expect(text(card)).toContain("-35 bps");
-    expect(text(card)).toContain("holds at -35 bps (-0.35%); inverted for 4 months. An inverted curve has preceded most US recessions.");
+    // G2: the X10 caption sits under the five cards, not inside the curve card.
+    expect(text(model())).toContain("holds at -35 bps (-0.35%); inverted for 4 months. An inverted curve has preceded most US recessions.");
     const shape = await awaitSection("curve");
     expect(text(shape)).toContain("a -35 bps inverted slope.");
-    expect(text(sensButton())).toContain("2s10s -35 bps");
+    await waitFor(() => expect(rangeOf("Yield curve 2s10s")).toHaveAttribute("aria-valuetext", "-35 bps"));
   });
 
   it("a null yield_curve_spread omits the Curve 2s10s row (today's guard)", async () => {
@@ -538,9 +550,11 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
       expect(c.querySelectorAll("p"), `${CARD_NAMES[i]} mono lines`).toHaveLength(2);
     });
     expect(section.querySelectorAll("article svg")).toHaveLength(0);
-    expect(text(cardNamed("Yield curve (2s10s)"))).toContain(CURVE_CARD_CAPTION);
-    expect(within(cardNamed("Yield curve (2s10s)")).getByRole("button", { name: "10Y–2Y spread" })).toHaveClass("jargon");
-    for (const name of CARD_NAMES.slice(1)) expect(text(cardNamed(name)), name).not.toContain("An inverted curve");
+    // Iteration 1 G2: the X10 caption moved from the curve card to under the
+    // row, so the five cards carry the same slots and height.
+    expect(text(section)).toContain(CURVE_CARD_CAPTION);
+    expect(within(section).getByRole("button", { name: "10Y–2Y spread" })).toHaveClass("jargon");
+    for (const name of CARD_NAMES) expect(text(cardNamed(name)), name).not.toContain("An inverted curve");
     for (const w of BANNED_CARD_WORDS) expect(text(main()), w).not.toContain(w);
     // The card coefficient equals the transparency row's coefficient.
     const t = await awaitSection("transparency");
@@ -554,7 +568,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     await awaitHero();
     await awaitSection("model");
     await waitFor(() => expect(cards()).toHaveLength(5));
-    const lei = cardNamed("Leading-indicator proxy");
+    const lei = cardNamed(BREAKEVEN);
     expect(text(lei)).toContain("Not stored");
     expect(text(badgeOf(lei))).toBe("Unavailable");
     expect(badgeOf(lei)).toHaveAttribute("data-tone", "reference");
@@ -610,36 +624,27 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(within(curveGroup()).getByRole("button", { name: "30Y" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("#sensitivity exists on the plain route inside the Sensitivity panel, collapsed: aria-expanded false, the title with the input summary, no range input and no scenario POST", async () => {
+  it("#sensitivity is the Sensitivity panel itself, open on load (X3): the header, the lead line, no disclosure button, five sliders and one scenario POST", async () => {
     const { calls } = stubFetch(routes());
     renderRecession();
     await awaitHero();
-    const disc = await awaitSection("sensitivity");
-    const panel = disc.closest("section") as HTMLElement;
-    expect(panel).not.toBeNull();
+    const panel = await awaitSection("sensitivity");
+    expect(panel.tagName).toBe("SECTION");
     expect(within(panel).getByRole("heading", { level: 2 })).toHaveTextContent(/^Sensitivity$/);
     expect(text(panel)).toContain("Move an input and the fitted model rescores live");
     expect(text(panel)).toContain("five inputs · the fitted model rescored live");
-    const button = sensButton();
-    expect(button).not.toBeNull();
-    expect(button).toHaveAttribute("aria-expanded", "false");
-    expect(button).toHaveClass("mrr-disclosure-row");
-    expect(text(button)).toContain(SENS_TITLE);
-    expect(text(button)).toContain(SENS_SUMMARY);
-    expect(text(button)).toContain("expand");
-    expect(ranges()).toHaveLength(0);
-    expect(calls.filter((c) => c.startsWith("/api/recession/scenario"))).toHaveLength(0);
+    expect(text(panel)).toContain(SENS_LEAD);
+    expect(sensButton()).toBeNull();
+    expect(panel.querySelector(".mrr-disclosure-row")).toBeNull();
+    await waitFor(() => expect(ranges()).toHaveLength(5));
+    await waitFor(() => expect(calls.filter((c) => c.startsWith("/api/recession/scenario"))).toHaveLength(1));
     expect(text(main())).not.toContain("Where the change came from");
   });
 
-  it("opening the row mounts five baseline-ticked sliders at the seeded readings, the seeded eyebrows, the disabled reset and, after the POST, 10.4% in the display face with the Low Risk badge and the delta line", async () => {
+  it("on load the panel mounts five baseline-ticked sliders at the seeded readings, the seeded eyebrows, the disabled reset, the model's own reading and, after the POST, the 10.4% scenario in the display face with the Low Risk badge and the delta line", async () => {
     renderRecession();
     await awaitHero();
     await awaitSection("sensitivity");
-    fireEvent.click(sensButton());
-    expect(sensButton()).toHaveAttribute("aria-expanded", "true");
-    expect(text(sensButton())).not.toContain(SENS_SUMMARY);
-    expect(text(sensButton())).toContain("collapse");
     await waitFor(() => expect(ranges()).toHaveLength(5));
     expect(ranges().map((r) => r.getAttribute("aria-valuetext"))).toEqual(SEEDED_VALUETEXT);
     expect(sliderRows().map((r) => text(r.querySelector("label")))).toEqual(SLIDER_LABELS);
@@ -647,13 +652,17 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(sliderRows()).toHaveLength(5);
     for (const row of sliderRows()) expect(row).toHaveAttribute("data-changed", "false");
     for (const label of SLIDER_LABELS) expect(document.querySelector(`input[aria-label="${label} (typed)"]`), `${label} typed field`).not.toBeNull();
-    expect(rangeOf("Leading-indicator proxy")).toHaveAttribute("aria-label", "Leading-indicator proxy");
+    expect(rangeOf(BREAKEVEN)).toHaveAttribute("aria-label", BREAKEVEN);
     // The scale row's mid span is empty on an unchanged row, so its ends concatenate in textContent.
     expect(text(sliderRow("Yield curve 2s10s").querySelector(".mrr-slider-scale"))).toMatch(/^-200 bps.*300 bps$/);
     expect(text(sliderRow("Unemployment rate").querySelector(".mrr-slider-scale"))).toMatch(/^2%.*15%$/);
     expect(text(sensitivity())).not.toContain("│ current reading");
     expect(within(sensitivity()).getByText("Model inputs · seeded from current readings")).toBeInTheDocument();
-    expect(within(sensitivity()).getByText("Live model estimate · inputs unchanged")).toBeInTheDocument();
+    expect(within(sensitivity()).getByText(SCENARIO_EYEBROW)).toBeInTheDocument();
+    // X3: the model's own reading is always stated beside the scenario.
+    expect(text(modelFigure())).toContain("Model's own reading · headline");
+    expect(text(modelFigure())).toContain("11.6%");
+    expect(text(modelFigure()?.querySelector("span[data-tone]"))).toBe("Low Risk");
     expect(resetButton()).toBeDisabled();
     expect(text(resetButton())).toBe("↻ Reset to current readings");
     await waitFor(() => expect(displaySpan()).not.toBeNull());
@@ -668,11 +677,10 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(main())).not.toContain("Where the change came from");
   });
 
-  it("moving the Unemployment rate slider to 4.8 flags the row, flips the eyebrows, posts the new input and renders 49.0% High Risk; Reset restores the seeded state", async () => {
+  it("moving the Unemployment rate slider to 4.8 flags the row, flips the eyebrows, posts the new input and renders 49.0% High Risk while the model's reading stays 11.6%; Reset restores the seeded state", async () => {
     renderRecession();
     await awaitHero();
     await awaitSection("sensitivity");
-    fireEvent.click(sensButton());
     await waitFor(() => expect(text(displaySpan())).toBe("10.4%"));
     fireEvent.change(rangeOf("Unemployment rate"), { target: { value: "4.8" } });
     const row = sliderRow("Unemployment rate");
@@ -682,7 +690,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     for (const label of SLIDER_LABELS.filter((l) => l !== "Unemployment rate")) expect(sliderRow(label), label).toHaveAttribute("data-changed", "false");
     expect(within(sensitivity()).getByText("Model inputs · modified by you")).toBeInTheDocument();
     expect(within(sensitivity()).getByText("Your adjusted probability")).toBeInTheDocument();
-    expect(within(sensitivity()).queryByText("Live model estimate · inputs unchanged")).toBeNull();
+    expect(within(sensitivity()).queryByText(SCENARIO_EYEBROW)).toBeNull();
     expect(resetButton()).toBeEnabled();
     await waitFor(() => expect(posted.some((b) => b.unemployment === 4.8)).toBe(true));
     const changed = posted.find((b) => b.unemployment === 4.8) as RecessionScenarioRequest;
@@ -692,26 +700,25 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(scenarioBadge()).toHaveAttribute("data-tone", "alert");
     expect(text(sensitivity())).toContain("+37.4pp vs the model's headline 11.6%");
     expect(text(sensitivity())).not.toContain("-1.2pp");
+    expect(text(modelFigure())).toContain("11.6%");
 
     fireEvent.click(resetButton());
     for (const r of sliderRows()) expect(r).toHaveAttribute("data-changed", "false");
     expect(rangeOf("Unemployment rate")).toHaveAttribute("aria-valuetext", "4.1%");
     expect(text(sensitivity())).not.toContain("│ current reading");
     expect(within(sensitivity()).getByText("Model inputs · seeded from current readings")).toBeInTheDocument();
-    expect(within(sensitivity()).getByText("Live model estimate · inputs unchanged")).toBeInTheDocument();
+    expect(within(sensitivity()).getByText(SCENARIO_EYEBROW)).toBeInTheDocument();
     await waitFor(() => expect(text(displaySpan())).toBe("10.4%"));
     expect(text(scenarioBadge())).toBe("Low Risk");
     expect(resetButton()).toBeDisabled();
     expect(posted.every((b) => b.unemployment === 4.1 || b.unemployment === 4.8)).toBe(true);
   });
 
-  it("a null lei input opens the row to the incomplete-inputs note with no slider and no POST", async () => {
+  it("a null lei input shows the incomplete-inputs note with no slider and no POST", async () => {
     const { calls } = stubFetch(withMetrics(NULL_INPUT));
     renderRecession();
     await awaitHero();
     await awaitSection("sensitivity");
-    fireEvent.click(sensButton());
-    expect(sensButton()).toHaveAttribute("aria-expanded", "true");
     await waitFor(() => expect(text(sensitivity())).toContain(INCOMPLETE));
     expect(ranges()).toHaveLength(0);
     expect(displaySpan()).toBeNull();
@@ -720,7 +727,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(posted).toHaveLength(0);
   });
 
-  it("route /app/recession#sensitivity mounts the row open with the sliders and lands the hash on #sensitivity", async () => {
+  it("route /app/recession#sensitivity shows the sliders and lands the hash on #sensitivity", async () => {
     const targets: Element[] = [];
     vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
       targets.push(this);
@@ -729,7 +736,6 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     renderRecession({ route: `${ROUTE}#sensitivity` });
     await awaitHero();
     await awaitSection("sensitivity");
-    await waitFor(() => expect(sensButton()).toHaveAttribute("aria-expanded", "true"));
     await waitFor(() => expect(ranges()).toHaveLength(5));
     await waitFor(() => expect(targets).toContain(byId("sensitivity") as HTMLElement));
     await waitFor(() => expect(text(displaySpan())).toBe("10.4%"));
@@ -744,7 +750,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     renderRecession({ route: `${ROUTE}#transparency` });
     await awaitHero();
     await waitFor(() => expect(targets).toContain(byId("transparency") as HTMLElement));
-    expect(sensButton()).toHaveAttribute("aria-expanded", "false");
+    expect(sensButton()).toBeNull();
   });
 
   it("#transparency: the header, five coefficient rows sorted by magnitude with diverging bars on the right side of the sign, the legend and the caption", async () => {
@@ -780,6 +786,10 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(parseFloat(fills[1].style.width)).toBeGreaterThan(45);
     expect(text(tile)).toContain("A one-σ rise in HY credit spread adds 2.58 to the");
     expect(text(tile)).toContain(COEF_CAPTION_TAIL);
+    // G4: the third sentence sits behind Details on the same tile.
+    expect(text(tile)).not.toContain("Unemployment enters negative");
+    fireEvent.click(within(tile).getByRole("button", { name: /Details/ }));
+    expect(text(tile)).toContain("Unemployment enters negative because it co-moves with the credit and curve terms");
     expect(text(tile)).not.toContain("Orange bars");
     expect(within(tile).getByRole("button", { name: "log-odds" })).toHaveClass("jargon");
   });
@@ -804,6 +814,9 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     const caption = [...tile.querySelectorAll<HTMLElement>("div, p")].find((el) => text(el).includes("credit-market pricing (HY percentile)") && !el.querySelector("div, p"));
     expect(caption, "the X11 caption").toBeDefined();
     expect(text(caption)).toMatch(DIVERGENCE_CAPTION);
+    expect(text(tile)).not.toContain(DIVERGENCE_DETAILS);
+    fireEvent.click(within(tile).getByRole("button", { name: /Details/ }));
+    expect(text(tile)).toContain(DIVERGENCE_DETAILS);
     expect(within(tile).getByRole("button", { name: "Macro ahead of markets" })).toHaveClass("jargon");
     // The summary row and the tile agree.
     await waitFor(() => expect(text(ddFor("Model vs market"))).toBe("Macro ahead of markets · -34 on ±100"));
@@ -846,8 +859,11 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect([...dl.querySelectorAll("dt")].map((d) => text(d))).toEqual(MODEL_CARD_ROWS);
     expect([...dl.querySelectorAll("dd")].map((d) => text(d))).toEqual(MODEL_CARD_VALUES);
     expect(text(section)).not.toContain("Last refit");
-    expect(within(tile).getByRole("button", { name: "leading-indicator proxy" })).toHaveClass("jargon");
-    expect(text(tile)).toContain("the original USSLIND series froze in Feb 2020");
+    // E2: the caption names the input for what it is and the series it stands in for.
+    expect(within(tile).getByRole("button", { name: BREAKEVEN })).toHaveClass("jargon");
+    expect(text(tile)).toContain(
+      "The fifth input is the 10Y − 5Y breakeven spread (T10YIE − T5YIE), standing in for the Conference Board leading index (USSLIND), which stopped publishing in February 2020.",
+    );
   });
 
   it("renders the section ids in document order inside main, the four sections as section elements, and the DisclosureLine last with the B.7 sentence", async () => {
