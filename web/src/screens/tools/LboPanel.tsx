@@ -30,7 +30,7 @@ import type { FreshLabel } from "../shared/fresh-state";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, MISSING, SliderRow, StateNote, capStyle, eyebrowStyle, fmtMillions, useSnapshotMode } from "../shared/screen-ui";
 import { FALLBACK_RATE, SLIDERS, useLboDeal, type LboDeal, type SliderGroup } from "./lbo-deal";
-import { componentAsOf, isStatedDefault, runErrorSentence } from "./lbo-copy";
+import { MODEL_RATE_WORDS, componentAsOf, isStatedDefault, runErrorSentence } from "./lbo-copy";
 import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
 
@@ -146,12 +146,15 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
   const d = deal ?? own;
   const { isNarrow } = useBreakpoint();
   const { defaults, liveRate, clampedLive, inputs, modified, manualRate, run, res, baseRes, sens, warnings } = d;
-  // A1: the rate is Fed funds plus the HY spread (the derived series' own
-  // state from /api/lbo/defaults); the model's outputs are dated by it.
+  // A1: the rate is Fed funds plus the HY spread (the derived series from
+  // /api/lbo/defaults); the model's outputs are dated by it. F2: its own
+  // as_of is the older component's month stamp, so the stamps print each
+  // component's word instead.
   const report = useFreshReport();
-  const rateLabel = report.series("lbo_all_in_rate", defaults.data?.freshness);
+  const rateLabel = report.derived("lbo_all_in_rate", defaults.data?.freshness);
+  const modelLabel = report.derived("lbo_all_in_rate", defaults.data?.freshness, MODEL_RATE_WORDS);
   const rateStamp = <Stamp source={SRC.fred} label={rateLabel} />;
-  const modelStamp = <Stamp source={SRC.lbo} label={rateLabel} />;
+  const modelStamp = <Stamp source={SRC.lbo} label={modelLabel} />;
 
   if (defaults.isLoading || inputs == null) {
     return (
@@ -170,7 +173,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
   // series; each carries its own as-of word, and the engine's stated default
   // is named as such, never "live" or "tracking".
   const stated = isStatedDefault(defaults.data);
-  const { fed: fedAsOf, hy: hyAsOf } = componentAsOf(defaults.data);
+  const { fed: fedAsOf, hy: hyAsOf } = componentAsOf(defaults.data, report.seeded ? undefined : report.f);
 
   const rateNote = manualRate ? (
     <>
@@ -439,7 +442,7 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
           )}
           {/* A1: the outputs are the model run at the financing rate, dated by
               the rate's own state (the header meta is the base-case line). */}
-          {res ? <Stamp block source={SRC.lbo} label={rateLabel} /> : null}
+          {res ? <Stamp block source={SRC.lbo} label={modelLabel} /> : null}
         </Card>
 
         {lastYear || sens ? (

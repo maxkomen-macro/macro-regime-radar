@@ -28,6 +28,8 @@ import AllocationPanel from "./AllocationPanel";
 import LboHeroRow from "./LboHeroRow";
 import LboPanel from "./LboPanel";
 import { componentAsOf, stampOf } from "./lbo-copy";
+import { labelText } from "../shared/fresh-state";
+import { useFreshReport } from "../shared/useFreshReport";
 import { useLboDeal } from "./lbo-deal";
 
 export const SUBTABS = [
@@ -75,7 +77,9 @@ export default function ToolsScreen() {
   const releaseHashScroll = useHashScroll(`${active}:${ready}`);
 
   const stamp = stampOf(deal.defaults.data);
-  const { fed, hy } = componentAsOf(deal.defaults.data);
+  // F2: the component words carry their "behind" tails, series[] first.
+  const report = useFreshReport();
+  const { fed, hy } = componentAsOf(deal.defaults.data, report.seeded ? undefined : report.f);
 
   return (
     <div className="mrr-tools">
@@ -106,7 +110,7 @@ export default function ToolsScreen() {
       {active === "lbo" ? (
         <DisclosureLine>
           {LBO_DISCLOSURE}
-          {stamp ? `; Fed funds: ${fed.word}, HY spread: ${hy.word}.` : "; no stored date is on file."}
+          {stamp ? `; Fed funds: ${labelText(fed)}, HY spread: ${labelText(hy)}.` : "; no stored date is on file."}
         </DisclosureLine>
       ) : (
         <DisclosureLine>{ALLOCATION_DISCLOSURE}</DisclosureLine>

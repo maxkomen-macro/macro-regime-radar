@@ -761,6 +761,36 @@ async function mockFreshness(page: Page, world: World, opts: { blocks?: boolean 
   });
 }
 
+/** Pass the EODHD relay through, with every tick time capped at `capIso`:
+ * the relay as it stood at that instant, so a world set before the open
+ * (series[] mocked) and the per-quote stamps, which are dated by each quote's
+ * own tick (Acceptance F1), describe the same moment. Prices and day changes
+ * pass through untouched; page-to-server messages (watch / unwatch) are
+ * forwarded as sent. */
+async function capRelayTicks(page: Page, capIso: string): Promise<void> {
+  const cap = Date.parse(capIso);
+  await page.routeWebSocket(/\/api\/stream\/ws/, (ws) => {
+    const server = ws.connectToServer();
+    server.onMessage((message) => {
+      let out = message;
+      try {
+        const msg = JSON.parse(String(message)) as { items?: { t?: number | null }[] };
+        if (Array.isArray(msg.items)) {
+          msg.items = msg.items.map((q) => (q && typeof q.t === "number" && q.t > cap ? { ...q, t: cap } : q));
+          out = JSON.stringify(msg);
+        }
+      } catch {
+        /* not JSON: pass through */
+      }
+      try {
+        ws.send(out);
+      } catch {
+        /* the page closed the socket */
+      }
+    });
+  });
+}
+
 /* ── A3 · in-page freshness reader (self-contained) ─────────────────────── */
 
 interface DotRec {
@@ -1045,6 +1075,10 @@ test.describe("A3 · as of the bell (series[] mocked)", () => {
   test("A3c before the open: the prior session's Close · Sep 17", async ({ page }) => {
     test.setTimeout(240_000);
     await mockFreshness(page, beforeOpen());
+    // Acceptance F1: a quote's stamp is dated by its own tick, so the live
+    // relay (never mocked) must stand where it stood before the open, or the
+    // world is incoherent (series[] says Sep 17, the ticks say Sep 18).
+    await capRelayTicks(page, "2026-09-17T20:00:00Z");
     const problems: string[] = [];
     for (const route of ["/app/markets", "/app/dashboard"]) {
       const s = await freshAt(page, route);

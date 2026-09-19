@@ -106,7 +106,7 @@ function GlanceTile({ def, read, report }: { def: GlanceSymbol; read: QuoteCardP
         sparkWidth={SPARK_W}
         sparkHeight={SPARK_H}
         sparkNote={def.stored ? undefined : LIVE_ONLY}
-        stamp={quoteStamp(read.via, report)}
+        stamp={quoteStamp(read, report)}
       />
     </Card>
   );

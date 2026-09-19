@@ -19,12 +19,16 @@
  *
  * Pure: no React, no hooks. The sparkline is the latest session's intraday
  * closes when two or more exist, else the last 20 stored closes.
+ *
+ * Acceptance F1: every priced rung carries `servedAt`, the value's own
+ * served stamp (the tick's time, the bar's wall time, the close's date), so
+ * the card's stamp is dated by its own quote and not by the feed-wide as_of.
  */
 import type { DailyBar, IntradayPoint } from "../../api/types";
 import type { LiveQuote } from "../../live/quotes";
 import { fmtDate, fmtIntradayTs, fmtSignedPct } from "../../lib/format";
 import type { QuoteCardProps, QuoteTag } from "./QuoteCard";
-import type { FreshLabel } from "../shared/fresh-state";
+import { tickStamp, type FreshLabel } from "../shared/fresh-state";
 
 export interface QuoteDef {
   symbol: string;
@@ -91,6 +95,7 @@ export function quoteFor(
       tag: live.delayed ? DELAYED_TAG : undefined,
       series,
       via: "stream",
+      servedAt: tickStamp(live.t),
     };
   }
   if (live?.p != null) {
@@ -102,6 +107,7 @@ export function quoteFor(
       tag: live.delayed ? DELAYED_TAG : LAST_TAG,
       series,
       via: "stream",
+      servedAt: tickStamp(live.t),
     };
   }
 
@@ -128,6 +134,7 @@ export function quoteFor(
       series,
       title: `Stored intraday bar ${fmtIntradayTs(last.ts)} against the prior daily close`,
       via: "intraday",
+      servedAt: last.ts,
     };
   }
   if (bars?.length) {
@@ -140,6 +147,7 @@ export function quoteFor(
       tag: { text: "CLOSE", title: `Stored close, ${fmtDate(lastBar.date)}`, tone: "amber" },
       series,
       via: "close",
+      servedAt: lastBar.date,
     };
   }
   return {

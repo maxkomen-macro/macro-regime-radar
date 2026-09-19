@@ -172,6 +172,85 @@ export function freshLabel(s: SeriesState | null | undefined): FreshLabel {
   }
 }
 
+/** A label's words as one plain string: the word and its muted tail. */
+export function labelText(l: FreshLabel): string {
+  return l.muted ? `${l.word} ${l.muted}` : l.word;
+}
+
+/* ── One value's own date (Acceptance F1: A1 / A3) ──────────────────────── */
+
+/**
+ * The series' state, dated by one value's own served stamp. A feed's `as_of`
+ * is the newest observation of ANY of its members: the relay's `live_quotes`
+ * is the newest tick of any symbol (on a weekend a crypto tick), and the
+ * stored closes' is the newest bar of any symbol. A single quote therefore
+ * prints its own tick time or bar date under the feed's state word: the
+ * state stays the server's (nothing is judged here), only the date is the
+ * value's. A value with no stamp of its own reads "As of unknown" for a dated
+ * state rather than borrowing the feed's date.
+ */
+export function datedBy(s: SeriesState | null | undefined, asOf: string | null | undefined): SeriesState | undefined {
+  return s ? { ...s, as_of: asOf ?? null } : undefined;
+}
+
+/** A relay tick time (ms epoch, as the socket serves it) as the ISO UTC
+ * instant the §1 `as_of` of a relay value takes; null without a tick time. */
+export function tickStamp(t: number | null | undefined): string | null {
+  return typeof t === "number" && Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+
+/* ── Derived series (Acceptance F2: A1 / E1) ─────────────────────────────── */
+
+/**
+ * The components of each derived series, in print order, with the short name
+ * a stamp gives each. FRESHNESS_CONTRACT §3: a derived value's `as_of` is its
+ * older component's date and its state the weaker component's, so its own
+ * date is no reading a person can use: the LBO rate's is the 1st of Fed funds'
+ * monthly print, which printed as a day ("Aug 01") says something false.
+ */
+export const DERIVED_COMPONENTS: Readonly<Record<string, readonly { id: string; name: string }[]>> = {
+  lbo_all_in_rate: [
+    { id: "FEDFUNDS", name: "Fed funds" },
+    { id: "BAMLH0A0HYM2", name: "HY" },
+  ],
+};
+
+export interface DerivedLabelOptions {
+  /** Between two component words (" · " by default; " + " reads as a sum). */
+  join?: string;
+  /** Before the words ("rate: " where the stamp dates a figure computed from
+   * the derived value). Not added to "Stated default" or "As of unknown". */
+  lead?: string;
+}
+
+/**
+ * A derived series' label: its components' own §5 words ("Fed funds Aug 2026
+ * print · HY Sep 17" with the muted "· 1 day behind" the HY word carries),
+ * the tone and stale mark of the derived state the server judged. The forms
+ * that describe no reading keep their words: `fallback` reads "Stated
+ * default" and `unknown` (or no state) "As of unknown", each component's word
+ * then in the reason for the tooltip. An id with no components reads as
+ * freshLabel would.
+ */
+export function derivedLabel(lookup: SeriesLookup, id: string, opts: DerivedLabelOptions = {}): FreshLabel {
+  const s = lookup(id);
+  const comps = DERIVED_COMPONENTS[id];
+  if (!comps?.length) return freshLabel(s);
+  const join = opts.join ?? " · ";
+  const parts = comps.map((c) => ({ name: c.name, l: freshLabel(lookup(c.id)) }));
+  const listing = parts.map((p) => `${p.name} ${labelText(p.l)}`).join("; ");
+  const reason = [s?.reason, `${listing}.`].filter(Boolean).join(" ");
+  const state = s ? normalizeState(s.state) : "unknown";
+  if (state === "fallback") return label("Stated default", "fallback", reason);
+  if (state === "unknown") return label(UNKNOWN_WORD, "unknown", reason);
+  // Every component but the last prints its muted tail inline; the last
+  // one's stays muted at the end of the stamp.
+  const last = parts[parts.length - 1];
+  const words = [...parts.slice(0, -1).map((p) => `${p.name} ${labelText(p.l)}`), `${last.name} ${last.l.word}`];
+  const base = freshLabel(s);
+  return { word: `${opts.lead ?? ""}${words.join(join)}`, muted: last.l.muted, tone: base.tone, reason, stale: base.stale };
+}
+
 /** A seeded snapshot (`seeded: true`): every state is unknown, so the shell
  * shows the snapshot's own stamp and no health dot. */
 export function seededLabel(generatedAt: string | null | undefined): FreshLabel {

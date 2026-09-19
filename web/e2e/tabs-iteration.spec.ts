@@ -1349,6 +1349,15 @@ test.describe("E1 all-in rate copy follows the freshness block", () => {
           }
           return lboPayload(state.variant, state.served);
         });
+        // series[] is the source of truth for component words (A3: an endpoint's block only fills ids
+        // series[] lacks), so the scenario serves the same FEDFUNDS / HY states there as in the block.
+        await emptyEndpoint(page, "/api/freshness", (served: unknown) => {
+          const f = (served ?? {}) as { series?: { id: string }[] };
+          const block = (lboPayload(state.variant, state.served).freshness ?? {}) as Record<string, { id: string }>;
+          const ids = new Set(Object.keys(block));
+          const kept = (f.series ?? []).filter((x) => !ids.has(x.id));
+          return { ...f, series: [...kept, ...Object.values(block)] };
+        });
         page.on("response", async (r: Response) => {
           if (new URL(r.url()).pathname !== "/api/credit/metrics") return;
           try {

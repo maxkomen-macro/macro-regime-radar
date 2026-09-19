@@ -17,8 +17,14 @@
  *
  * Drawn through HeroChartFrame at the hero column's own size, 1:1, so the
  * words keep their set size at every width. The frame's floor follows the
- * width (0.4 of it, 220 to 280 px) and the drawing may grow to 1.7 times the
- * width, 660 px at most, when a two-column hero is stretched by its row.
+ * width (0.4 of it, 220 to 280 px). Acceptance F4: a 24-month series reads
+ * across, so the plot is never taller than 0.8 of its width (the floor still
+ * wins on a narrow column, so the words stay legible); a slot stretched
+ * taller than that centres the chart in it. At 1620 px and wider, where the
+ * Dashboard's hero sits beside the summary card and the row's height is the
+ * summary's, the hero stacks the chart under its copy (app.css), so the chart
+ * takes the hero's full width and the row's height lands on a landscape
+ * plot instead of an interior blank.
  */
 
 import type { CSSProperties } from "react";
@@ -52,8 +58,11 @@ const LABEL_W = NAME_X + SWATCH + 5 + Math.ceil(Math.max(...REGIMES.map((r) => r
 /** Minimum distance between two end-label baselines. */
 const LABEL_GAP = 15;
 const FALLBACK = { w: 400, h: 300 };
-const minHeight = (w: number) => clampPx(w * 0.4, 220, 280) + CAP_H;
-const maxHeight = (w: number) => clampPx(w * 1.7, 260, 660) + CAP_H;
+/** The plot's height at most this share of its width (F4: landscape). */
+const MAX_ASPECT = 0.8;
+const floorPlot = (w: number) => clampPx(w * 0.4, 220, 280);
+const minHeight = (w: number) => floorPlot(w) + CAP_H;
+const maxHeight = (w: number) => Math.max(floorPlot(w), Math.round(w * MAX_ASPECT)) + CAP_H;
 
 const AXIS: CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: ".04em" };
 /** #7d8b98 clears 4.5:1 on the hero card (the quadrant's axis ink). */

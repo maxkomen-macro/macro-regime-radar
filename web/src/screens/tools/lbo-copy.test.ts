@@ -8,7 +8,7 @@
  * Never the mockup's numbers: every figure is computed from the fixture deal.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { LboDefaults, LboResult } from "../../api/types";
+import type { Freshness, LboDefaults, LboResult } from "../../api/types";
 import { ApiError } from "../../api/client";
 import { componentAsOf, isStatedDefault, lboHero, lboStrip } from "./lbo-copy";
 import type { LboDeal } from "./lbo-deal";
@@ -231,6 +231,29 @@ describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
     expect(lboStrip(q({ data: LBO_DEFAULTS_B3_UNKNOWN }))).toEqual({ tone: "gray", title: "FRED rate · as of unknown", detail: "HY spread As of unknown" });
     expect(componentAsOf(LBO_DEFAULTS_B3).hy.word).toBe("Sep 17");
     expect(componentAsOf(LBO_DEFAULTS).hy.word).toBe("As of unknown");
+  });
+
+  it("F2: a component word keeps its muted behind tail; too long for one line, the strip names the one further behind", () => {
+    const hyBehind = { ...LBO_DEFAULTS_B3.freshness!.BAMLH0A0HYM2, cycles_behind: 1, reason: "High-yield OAS observed 2026-09-17; 1 business day(s) behind the 2026-09-18 print." };
+    const data: LboDefaults = { ...LBO_DEFAULTS_B3, freshness: { ...LBO_DEFAULTS_B3.freshness!, BAMLH0A0HYM2: hyBehind } };
+    expect(componentAsOf(data).hy).toMatchObject({ word: "Sep 17", muted: "· 1 day behind" });
+    // "Fed Aug 2026 print · HY Sep 17 · 1 day behind" passes the one-line
+    // budget; both are close, so the tie goes to HY, one print behind.
+    expect(lboStrip(q({ data }))).toEqual({ tone: "mint", title: "Rate synced from FRED", detail: "HY spread Sep 17 · 1 day behind" });
+    // With the /api/freshness report, series[] outranks the payload's block.
+    const report = {
+      regimes_date: "2026-08-01",
+      signals_date: "2026-09-01",
+      market_daily_date: "2026-09-18",
+      market_intraday_ts: null,
+      news_published_at: null,
+      raw_series_date: "2026-09-01",
+      generated_at: "2026-09-19T14:13:48Z",
+      overall: "current",
+      series: [{ ...hyBehind, as_of: "2026-09-18", cycles_behind: 0 }],
+    } as unknown as Freshness;
+    expect(componentAsOf(data, report).hy.word).toBe("Sep 18");
+    expect(lboStrip(q({ data }), false, report).detail).toBe("Fed Aug 2026 print · HY Sep 18");
   });
 
   it("A3: an older stored stamp without a block reads the same gray words; the age is never judged in the browser", () => {

@@ -12,9 +12,9 @@
  */
 
 import { ApiError } from "../../api/client";
-import type { LboDefaults, LboRequest, LboResult, SeriesState } from "../../api/types";
+import type { Freshness, LboDefaults, LboRequest, LboResult, SeriesState } from "../../api/types";
 import { fmtDate } from "../../lib/format";
-import { freshLabel, normalizeState, type FreshLabel } from "../shared/fresh-state";
+import { freshLabel, labelText, lookupFrom, normalizeState, type FreshLabel } from "../shared/fresh-state";
 import { MISSING, missingNote } from "../shared/screen-ui";
 import type { StatusTone } from "../shared/SummaryCard";
 import type { TabHeroPillTone } from "../shared/TabHero";
@@ -227,34 +227,49 @@ export function stampOf(d: LboDefaults | undefined | null): string | null {
   return d?.data_as_of && !isStatedDefault(d) && d.data_as_of !== "unavailable" ? d.data_as_of : null;
 }
 
-/** Each component's as-of word from the payload's freshness block (A3 words,
- * FRESHNESS_CONTRACT §5): Fed funds is a monthly average ("Aug 2026 print"),
- * the HY spread a daily series ("Sep 17", or "As of unknown" while its
- * watermark is missing). Never the row month stamps (`*_as_of`). */
-export function componentAsOf(d: LboDefaults | undefined | null): { fed: FreshLabel; hy: FreshLabel } {
-  return { fed: freshLabel(d?.freshness?.FEDFUNDS), hy: freshLabel(d?.freshness?.BAMLH0A0HYM2) };
+/** Each component's as-of word (A3 words, FRESHNESS_CONTRACT §5): Fed funds
+ * is a monthly average ("Aug 2026 print"), the HY spread a daily series
+ * ("Sep 17" with its muted "· 1 day behind", or "As of unknown" while its
+ * watermark is missing). Never the row month stamps (`*_as_of`). With the
+ * `/api/freshness` report, series[] is the one source and the payload's
+ * block only fills an id it lacks (fresh-state.ts lookupFrom); without it,
+ * the payload's block. Print a label with `labelText` (or its muted tail
+ * beside it) so the "behind" part is never dropped (Acceptance F2). */
+export function componentAsOf(d: LboDefaults | undefined | null, f?: Freshness | null): { fed: FreshLabel; hy: FreshLabel } {
+  const look = lookupFrom(f, d?.freshness);
+  return { fed: freshLabel(look("FEDFUNDS")), hy: freshLabel(look("BAMLH0A0HYM2")) };
 }
 
 /** A status line's character budget: about 200 px of 12 px text, one line in
  * the narrowest strip (390 px). */
 const STRIP_LINE_CHARS = 36;
 
+/** The words a model stamp dates its run by (Acceptance F2): the rate it
+ * used, as its components' own words, "LBO model · rate: Fed funds Aug 2026
+ * print + HY Sep 17" (fresh-state.ts derivedLabel). */
+export const MODEL_RATE_WORDS = { lead: "rate: ", join: " + " } as const;
+
 /** State rank for "the weaker component" (higher is weaker). */
 const STATE_RANK: Record<string, number> = { live: 0, close: 0, delayed: 1, stale: 2, fallback: 3 };
 
-/** The B3 detail: both components' as-of words when they fit one line
- * ("Fed Aug 2026 print · HY Sep 17"), else the weaker component's alone
- * (the summary rows print both). */
-export function componentDetail(d: LboDefaults): string {
-  const { fed, hy } = componentAsOf(d);
-  const both = `Fed ${fed.word} · HY ${hy.word}`;
+/** The B3 detail: both components' as-of words, each with its "behind"
+ * tail, when they fit one line ("Fed Aug 2026 print · HY Sep 17"), else the
+ * weaker component's alone, a tie going to the one further behind (the
+ * summary rows print both). */
+export function componentDetail(d: LboDefaults, f?: Freshness | null): string {
+  const { fed, hy } = componentAsOf(d, f);
+  const both = `Fed ${labelText(fed)} · HY ${labelText(hy)}`;
   if (both.length <= STRIP_LINE_CHARS) return both;
+  const look = lookupFrom(f, d.freshness);
+  const fs = look("FEDFUNDS");
+  const hs = look("BAMLH0A0HYM2");
   const rank = (s: SeriesState | null | undefined) => STATE_RANK[normalizeState(s?.state)] ?? 4;
-  const fedWeaker = rank(d.freshness?.FEDFUNDS) >= rank(d.freshness?.BAMLH0A0HYM2);
-  return fedWeaker ? `Fed funds ${fed.word}` : `HY spread ${hy.word}`;
+  const behind = (s: SeriesState | null | undefined) => s?.cycles_behind ?? 0;
+  const fedWeaker = rank(fs) > rank(hs) || (rank(fs) === rank(hs) && behind(fs) >= behind(hs));
+  return fedWeaker ? `Fed funds ${labelText(fed)}` : `HY spread ${labelText(hy)}`;
 }
 
-export function lboStrip(defaults: DefaultsLike, snapshot = false): StripWords {
+export function lboStrip(defaults: DefaultsLike, snapshot = false, f?: Freshness | null): StripWords {
   // Iteration 1 step 5 (G4): every detail is one line at 390 px. The
   // components' words are the summary rows' (Fed funds, HY OAS) and the
   // fallback rate is the Financing row's.
@@ -277,7 +292,7 @@ export function lboStrip(defaults: DefaultsLike, snapshot = false): StripWords {
   // and never a healthy tone.
   const block = defaults.data.freshness;
   if (block) {
-    const detail = componentDetail(defaults.data);
+    const detail = componentDetail(defaults.data, f);
     switch (normalizeState(block.lbo_all_in_rate?.state)) {
       case "live":
       case "close":

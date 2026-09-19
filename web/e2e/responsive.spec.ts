@@ -239,7 +239,12 @@ for (const vp of WIDTHS) {
         }
         if (def.hero) {
           expect.soft(layout.heroRowCols, `${def.slug}: .mrr-hero-row columns at ${vp.width}`).toBe(want.heroRowCols);
-          if (layout.hasViz) expect.soft(layout.heroCols, `${def.slug}: .mrr-hero inner columns at ${vp.width}`).toBe(want.heroInnerCols);
+          // Iteration 1 acceptance (F4, QUESTIONS I18): from 1620 px the Dashboard hero sits beside the
+          // summary card and stacks its copy over a full-width 24-month odds chart (a portrait chart
+          // beside the copy read poorly), so its inner grid is one column there; every other hero keeps
+          // the width rule.
+          const heroInner = def.slug === "dashboard" && vp.width >= 1620 ? 1 : want.heroInnerCols;
+          if (layout.hasViz) expect.soft(layout.heroCols, `${def.slug}: .mrr-hero inner columns at ${vp.width}`).toBe(heroInner);
           if (want.h1Px != null) expect.soft(layout.h1Px, `${def.slug}: --fs-display 44 below 860`).toBe(want.h1Px);
         }
         if (def.slug === "methodology" && want.h1Px != null) expect.soft(layout.h1Px, "methodology h1 at 44 below 860").toBe(want.h1Px);

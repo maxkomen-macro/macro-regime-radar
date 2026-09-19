@@ -96,15 +96,19 @@ function ProvenanceTag({ kind }: { kind: "statistical" | "reference" | "data" })
   );
 }
 
-function LegendRow({ swatch, label, detail }: { swatch: string; label: string; detail: string }) {
+function LegendRow({ swatch, label, detail, labelW = 96 }: { swatch: string; label: string; detail: string; labelW?: number }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "14px 96px minmax(0,1fr)", gap: 10, alignItems: "baseline" }}>
+    <div style={{ display: "grid", gridTemplateColumns: `14px ${labelW}px minmax(0,1fr)`, gap: 10, alignItems: "baseline" }}>
       <span style={{ width: 10, height: 10, borderRadius: "var(--r-xs)", background: swatch, display: "inline-block", alignSelf: "center" }} />
       <span style={{ ...mono, fontSize: "var(--fs-meta)", color: "var(--text-2)" }}>{label}</span>
       <span style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)", lineHeight: 1.5 }}>{detail}</span>
     </div>
   );
 }
+
+/** The freshness legend's label column: its words are stamps ("Close · Sep
+ * 18", "Snapshot · as of"), wider than the ramps' thresholds. */
+const FRESH_LABEL_W = 124;
 
 /* The meta wraps under the title when the two do not fit one line (G1 at
    1024 px, where the rail leaves the sections a 536px column). */
@@ -222,10 +226,24 @@ export default function MethodologyScreen() {
                 </li>
               </ol>
             </div>
+            {/* Acceptance F3: the FRESHNESS_CONTRACT §5 words the screens print,
+                two visible sentences (G4); the per-quote and derived dating
+                rules sit behind Details on the same card. */}
             <Caption>
-              Freshness words are a closed set: Current (inside its publication cycle), Delayed (one cycle late), Stale
-              (older), Unavailable, Reference (no cadence). Every stamp prints its date.
+              Freshness words state what the server judged for each series, never an age worked out in the browser:
+              Live; Delayed 7 min; Close · Sep 18 for a market close; Sep 17 for a daily FRED print, adding · 1 day
+              behind when it is late; Aug 2026 print for a monthly one; Final value for a discontinued series. A stale
+              value is marked on the number itself with its date and lag (Sep 04 · 8 days behind), and Stated default,
+              As of unknown and Snapshot · as of mark a stated default, a date that cannot be established and a saved
+              snapshot.
             </Caption>
+            <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
+              <Caption style={{ marginTop: 0 }}>
+                A quote&apos;s stamp carries the date of its own tick or stored bar, while a feed&apos;s chip carries the
+                feed&apos;s word. A figure built from two series, such as the LBO all-in rate, prints each input&apos;s
+                word (Fed funds Aug 2026 print · HY Sep 17), because a single date would be the older input&apos;s month.
+              </Caption>
+            </Disclosure>
           </Card>
         </section>
 
@@ -466,11 +484,18 @@ export default function MethodologyScreen() {
             <Card>
               <div style={eyebrowStyle}>Freshness states</div>
               <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-                <LegendRow swatch="var(--pos)" label="Current" detail="inside one publication cycle of its cadence (monthly: 45 days; daily: 4 days; intraday: 20 minutes)" />
-                <LegendRow swatch="var(--amber)" label="Delayed" detail="one cycle late, still usable with its date stated" />
-                <LegendRow swatch="var(--warn-hot)" label="Stale" detail="older than that: context, not a live read" />
-                <LegendRow swatch="var(--neg-text)" label="Unavailable" detail="no stamp on file" />
-                <LegendRow swatch="var(--text-muted)" label="Reference" detail="static content without a cadence" />
+                {/* Acceptance F3: the §5 words (fresh-state.ts), each in its tone's ink. */}
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--mint, var(--pos))" label="Live" detail="streaming now, in the NYSE session" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--amber)" label="Delayed 7 min" detail="a quote or stored bar that many minutes old" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Close · Sep 18" detail="the newest official market close due" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Sep 17" detail="a daily FRED print, with · 1 day behind in muted ink when it is late" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Aug 2026 print" detail="the newest monthly print due" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Final value" detail="a series the source no longer publishes, never marked stale" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--warn-hot)" label="Sep 04 · 8 days behind" detail="stale: behind the newest publication due, marked on the number itself" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-muted)" label="Stated default" detail="a stated default, not data" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-muted)" label="As of unknown" detail="the as-of cannot be established; never shown as healthy" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-muted)" label="Snapshot · as of" detail="a saved snapshot, until the live report replaces it" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-muted)" label="Reference" detail="static content without a cadence" />
               </div>
             </Card>
             <Card>

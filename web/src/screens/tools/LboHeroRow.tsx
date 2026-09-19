@@ -21,10 +21,11 @@ import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import { useShellActions } from "../shell/shell-actions";
 import EquityBridge from "./EquityBridge";
-import { STRIP_SUFFIX, componentAsOf, isStatedDefault, lboHero, lboStrip, signedPp } from "./lbo-copy";
+import { MODEL_RATE_WORDS, STRIP_SUFFIX, componentAsOf, isStatedDefault, lboHero, lboStrip, signedPp } from "./lbo-copy";
 import { bridgeSteps, type LboDeal } from "./lbo-deal";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
+import type { FreshLabel } from "../shared/fresh-state";
 
 /** Loading and unavailable headlines ride in the UI face at the hero-sub
  * size: the serif display face is for answers only (02 B.1 states). */
@@ -44,6 +45,11 @@ const HERO_ACTIONS: TabHeroAction[] = [
 
 const CREDIT_TARGET = "/app/credit#financing";
 
+/** A component word's muted "· N day(s) behind" tail (F2), never dropped. */
+function Behind({ l }: { l: FreshLabel }) {
+  return l.muted ? <span style={{ color: "var(--text-4, var(--text-3))" }}> {l.muted}</span> : null;
+}
+
 export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   const { defaults, clampedLive, inputs, baseInputs, modified, manualRate, run, base, res, baseRes } = deal;
   const runPending = run.isFetching || run.isPending || deal.settling === true;
@@ -51,9 +57,14 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   const { openFreshness } = useShellActions();
   const snapshot = useSnapshotMode();
   // A1: the rate rows are Fed funds plus the HY spread; the hero's outputs
-  // are the model run at that rate, dated by the derived rate's own state.
+  // are the model run at that rate. F2: the derived rate's own as_of is its
+  // older component's month stamp, so both stamps print each component's
+  // word instead ("Fed funds Aug 2026 print · HY Sep 17 · 1 day behind").
   const report = useFreshReport();
-  const rateLabel = report.series("lbo_all_in_rate", defaults.data?.freshness);
+  const rateLabel = report.derived("lbo_all_in_rate", defaults.data?.freshness);
+  const modelLabel = report.derived("lbo_all_in_rate", defaults.data?.freshness, MODEL_RATE_WORDS);
+  // series[] first for the component words; a seeded report has none to give.
+  const liveReport = report.seeded ? undefined : report.f;
 
   /* ── hero (B.1) ──────────────────────────────────────────────────────── */
   const stated = isStatedDefault(defaults.data);
@@ -75,7 +86,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   // HY spread daily); a stated default says so. Hidden on a phone, as the
   // freshness chips are on every tab (checklist 03 B.1).
   const { isMobile } = useBreakpoint();
-  const { fed: fedAsOf, hy: hyAsOf } = componentAsOf(defaults.data);
+  const { fed: fedAsOf, hy: hyAsOf } = componentAsOf(defaults.data, liveReport);
   const asOfItems: ReactNode[] =
     !isMobile && defaults.data
       ? stated
@@ -87,9 +98,11 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
         : [
             <span key="fed" data-role="rate-as-of" title={fedAsOf.reason || undefined}>
               Fed funds · {fedAsOf.word}
+              <Behind l={fedAsOf} />
             </span>,
             <span key="hy" data-role="rate-as-of" title={hyAsOf.reason || undefined}>
               HY spread · {hyAsOf.word}
+              <Behind l={hyAsOf} />
             </span>,
           ]
       : [];
@@ -125,7 +138,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
         note={copy.note}
         chart={steps ? <EquityBridge steps={steps} /> : undefined}
         placeholder
-        stamp={<Stamp source={SRC.lbo} label={rateLabel} />}
+        stamp={<Stamp source={SRC.lbo} label={modelLabel} />}
       />
     ) : (
       <TabHero
@@ -148,7 +161,22 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   const creditLabel = credit.data?.credit_label;
   const rows: SummaryRow[] = [
     // E1: each component with its own as-of word; the stated default says so.
-    { id: "fed-funds", label: "Fed funds", value: d ? (stated ? `${d.fedfunds.toFixed(2)}% · Stated default` : `${d.fedfunds.toFixed(2)}% · monthly average, ${fedAsOf.word}`) : dLead },
+    {
+      id: "fed-funds",
+      label: "Fed funds",
+      value: d ? (
+        stated ? (
+          `${d.fedfunds.toFixed(2)}% · Stated default`
+        ) : (
+          <>
+            {`${d.fedfunds.toFixed(2)}% · monthly average, ${fedAsOf.word}`}
+            <Behind l={fedAsOf} />
+          </>
+        )
+      ) : (
+        dLead
+      ),
+    },
     {
       id: "hy-oas",
       label: "HY OAS",
@@ -156,6 +184,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
         <>
           <Metric id="hy-oas" value={d.hy_oas_pct}>{`${d.hy_oas_pct.toFixed(2)}%`}</Metric>
           {stated ? " · Stated default" : ` · daily, ${hyAsOf.word}`}
+          {stated ? null : <Behind l={hyAsOf} />}
         </>
       ) : (
         dNote
@@ -212,7 +241,7 @@ export default function LboHeroRow({ deal }: { deal: LboDeal }) {
   ];
 
   /* ── status strip: the FRED sync, opening the freshness drawer ───────── */
-  const words = lboStrip(defaults, snapshot);
+  const words = lboStrip(defaults, snapshot, liveReport);
   const strip: StatusStripProps = {
     ...words,
     onClick: openFreshness,

@@ -60,6 +60,7 @@ function AsOf({ f }: { f: FreshLabel }) {
 
 function AllInTile({ m }: { m: CreditMetrics }) {
   const defaults = useLboDefaults();
+  const report = useFreshReport();
   const d = defaults.data;
   let bar: ReactNode;
   if (d) {
@@ -77,7 +78,7 @@ function AllInTile({ m }: { m: CreditMetrics }) {
     } else {
       const fed = Math.max(0, d.fedfunds);
       const hy = Math.max(0, d.hy_oas_pct);
-      const { fed: fedAsOf, hy: hyAsOf } = componentAsOf(d);
+      const { fed: fedAsOf, hy: hyAsOf } = componentAsOf(d, report.seeded ? undefined : report.f);
       bar = (
         <>
           <div aria-hidden="true" style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", gap: 2, margin: "14px 0 8px" }}>
@@ -182,9 +183,10 @@ function LadderTile({ m }: { m: CreditMetrics }) {
 
 export default function FinancingConditions({ m, status }: CreditPanelProps): JSX.Element {
   const ready = status === "ready" && m != null;
-  // A1: the section's figures are Fed funds plus the HY spread; the stamp is
-  // the derived rate's own state from /api/lbo/defaults (FRESHNESS_CONTRACT
-  // §3: the weaker component's), never a stored month counted here.
+  // A1: the section's figures are Fed funds plus the HY spread. F2: the
+  // derived rate's own as_of is its older component's month stamp
+  // (FRESHNESS_CONTRACT §3), never a day, so the stamp prints each
+  // component's word ("FRED · Fed funds Aug 2026 print · HY Sep 17").
   const defaults = useLboDefaults();
   const report = useFreshReport();
   return (
@@ -196,7 +198,7 @@ export default function FinancingConditions({ m, status }: CreditPanelProps): JS
         right={
           <MetaWithStamp
             meta="Fed funds (monthly) + HY OAS (daily)"
-            stamp={<Stamp source={SRC.fred} label={report.series("lbo_all_in_rate", defaults.data?.freshness)} />}
+            stamp={<Stamp source={SRC.fred} label={report.derived("lbo_all_in_rate", defaults.data?.freshness)} />}
           />
         }
         actions={

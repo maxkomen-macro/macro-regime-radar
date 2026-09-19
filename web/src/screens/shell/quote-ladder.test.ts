@@ -46,6 +46,9 @@ const quote = (s: string, p: number, dc: number | null, delayed = false): LiveQu
   src: delayed ? "rest" : "ws",
 });
 const quotes = (...items: LiveQuote[]) => new Map(items.map((q) => [q.s, q]));
+/** The fixture tick as the ISO UTC instant a stream rung's `servedAt` carries
+ * (Acceptance F1: the card's stamp is dated by its own tick). */
+const TICK_ISO = new Date(1_789_400_000_000).toISOString();
 
 const SPY = { symbol: "SPY", name: "S&P 500" };
 const QQQ = { symbol: "QQQ", name: "Nasdaq 100" };
@@ -70,6 +73,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       changeTone: "pos",
       series: [644, 645.2],
       via: "stream",
+      servedAt: TICK_ISO,
     });
     expect(quoteFor(SPY, quotes(quote("SPY", 645.2, 0.79, true)), SESSION, DAILY)).toEqual({
       symbol: "SPY",
@@ -80,6 +84,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       tag: TAG_15M,
       series: [644, 645.2],
       via: "stream",
+      servedAt: TICK_ISO,
     });
     expect(quoteFor(SPY, quotes(quote("SPY", 641.37, -0.42)), SESSION, DAILY)).toMatchObject({
       price: "641.37",
@@ -103,6 +108,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       tag: TAG_LAST,
       series: [644, 645.2],
       via: "stream",
+      servedAt: TICK_ISO,
     });
     expect(quoteFor(SPY, quotes(quote("SPY", 645.2, null, true)), SESSION, DAILY)).toEqual({
       symbol: "SPY",
@@ -111,6 +117,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       tag: TAG_15M,
       series: [644, 645.2],
       via: "stream",
+      servedAt: TICK_ISO,
     });
     const stepTwo = quoteFor(SPY, quotes(quote("SPY", 645.2, null)), SESSION, DAILY);
     expect(stepTwo.change).toBeUndefined();
@@ -128,6 +135,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       series: [644, 645.2],
       title: "Stored intraday bar Sep 14, 15:55 ET against the prior daily close",
       via: "intraday",
+      servedAt: `${LATEST} 15:55:00`,
     });
     // A bar newer than the newest stored close compares with that close.
     expect(quoteFor(SPY, quotes(), SESSION, [bar("SPY", PRIOR, 640.1)])).toMatchObject({
@@ -155,6 +163,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       tag: TAG_CLOSE,
       series: [640.1, 645.2],
       via: "close",
+      servedAt: LATEST,
     });
     expect(quoteFor(SPY, quotes(), [], DAILY)).toEqual(quoteFor(SPY, quotes(), undefined, DAILY));
     // Intraday rows without a close are ignored, so the stored close still wins.
@@ -167,6 +176,7 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
       tag: TAG_CLOSE,
       series: [570.4, 572.9],
       via: "close",
+      servedAt: LATEST,
     });
     // The sparkline keeps the last 20 stored closes, oldest to newest.
     const many = Array.from({ length: 25 }, (_, i) => bar("SPY", `2026-08-${String(i + 1).padStart(2, "0")}`, 600 + i));

@@ -50,6 +50,11 @@ export interface QuoteCardProps {
    * relay's stream quote, a stored intraday bar, or the stored daily close.
    * The card's source stamp (A1) names it. */
   via?: QuoteVia;
+  /** The priced value's own served stamp (Acceptance F1): the relay tick's
+   * time as an ISO UTC instant, the stored intraday bar's New York wall time,
+   * or the stored close's date. The card's stamp dates itself by it, never
+   * by the feed-wide `as_of` (the newest tick of any symbol). */
+  servedAt?: string | null;
   /** The card's source and as-of stamp (Iteration 1, A1): a `<Stamp>` on a
    * line of its own under the slots. Not a slot: the five stay five. */
   stamp?: ReactNode;

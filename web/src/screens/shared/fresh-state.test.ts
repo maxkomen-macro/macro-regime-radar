@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Freshness, SeriesState } from "../../api/types";
-import { REGIME_INPUT_IDS, RECESSION_FEATURE_SERIES, RECESSION_INPUT_IDS, freshLabel, groupLabel, lookupFrom, marketSeries, normalizeState, referenceLabel, seededLabel, seriesById, stampLabel, storedCloseLine, storedCloseShort, weakest } from "./fresh-state";
+import { REGIME_INPUT_IDS, RECESSION_FEATURE_SERIES, RECESSION_INPUT_IDS, datedBy, derivedLabel, freshLabel, groupLabel, labelText, lookupFrom, marketSeries, normalizeState, referenceLabel, seededLabel, seriesById, stampLabel, storedCloseLine, storedCloseShort, tickStamp, weakest } from "./fresh-state";
 import { freshReport, isSeededReport } from "./useFreshReport";
 
 /** A full §1 object with the invariant `stale === (state === "stale")` kept. */
@@ -439,5 +439,101 @@ describe("the seeded report (§5: Snapshot · as of, no health)", () => {
     const live = freshReport(f, false, null);
     expect(live.series("market_daily").word).toBe("Close · Sep 18");
     expect(live.series("DGS10").word).toBe("As of unknown");
+  });
+});
+
+describe("one value's own date (Acceptance F1: datedBy, tickStamp, report.at)", () => {
+  // The scratch-DB weekend: the relay's newest tick of ANY symbol is a
+  // Saturday crypto tick, while SPY's own tick is Friday's 16:29 ET close.
+  const live = s({ id: "live_quotes", kind: "live", cadence: "tick", state: "close", as_of: "2026-09-19T14:04:34Z", reason: "US session is closed; the last tick stands as the closing print." });
+  const daily = s({ id: "market_daily", kind: "market", cadence: "daily", state: "close", as_of: "2026-09-18", cycles_behind: 0 });
+  const spyTick = Date.parse("2026-09-18T20:29:00Z");
+
+  it("the feed-wide word carries the newest tick of any symbol; a quote's own tick dates its stamp", () => {
+    expect(freshLabel(live).word).toBe("Close · Sep 19");
+    expect(tickStamp(spyTick)).toBe("2026-09-18T20:29:00.000Z");
+    expect(freshLabel(datedBy(live, tickStamp(spyTick))).word).toBe("Close · Sep 18");
+    // The state and reason stay the server's; only the date moves.
+    expect(freshLabel(datedBy(live, tickStamp(spyTick))).reason).toBe(live.reason);
+    expect(freshLabel(datedBy(daily, "2026-09-17")).word).toBe("Close · Sep 17");
+  });
+
+  it("a value with no stamp of its own reads As of unknown, never the feed's date; live and delayed need none", () => {
+    expect(tickStamp(null)).toBeNull();
+    expect(tickStamp(Number.NaN)).toBeNull();
+    expect(freshLabel(datedBy(live, null)).word).toBe("As of unknown");
+    expect(freshLabel(datedBy(s({ id: "live_quotes", kind: "live", cadence: "tick", state: "live", delay_min: 0 }), null)).word).toBe("Live");
+    expect(freshLabel(datedBy(undefined, "2026-09-18")).word).toBe("As of unknown");
+  });
+
+  it("a stale feed keeps its stale form and mark on the value's own date", () => {
+    const stale = s({ id: "market_daily", kind: "market", cadence: "daily", state: "stale", as_of: "2026-09-14", cycles_behind: 4 });
+    const l = freshLabel(datedBy(stale, "2026-09-14"));
+    expect(l.word).toBe("Sep 14 · 4 sessions behind");
+    expect(l.stale).toBe(true);
+  });
+
+  it("the report's at() reader dates one series by the value's stamp, series[] first; seeded reads Snapshot", () => {
+    const report = freshReport(freshnessWith([live, daily]), false, null);
+    expect(report.series("live_quotes").word).toBe("Close · Sep 19");
+    expect(report.at("live_quotes", tickStamp(spyTick)).word).toBe("Close · Sep 18");
+    expect(report.at("market_daily", "2026-09-18").word).toBe("Close · Sep 18");
+    const seeded = freshReport({ ...freshnessWith([live]), generated_at: "2026-09-10T06:06:01Z" }, true, null);
+    expect(seeded.at("live_quotes", tickStamp(spyTick)).word).toBe("Snapshot · as of Sep 10");
+  });
+});
+
+describe("derived series (Acceptance F2: derivedLabel)", () => {
+  const FED = s({ id: "FEDFUNDS", cadence: "monthly", state: "close", as_of: "2026-08-01", cycles_behind: 0, reason: "Fed funds for Aug 2026 is the newest print due." });
+  const HY = s({ id: "BAMLH0A0HYM2", state: "close", as_of: "2026-09-17", cycles_behind: 1, reason: "High-yield OAS observed 2026-09-17; 1 business day(s) behind." });
+  const RATE = s({ id: "lbo_all_in_rate", kind: "derived", cadence: "daily", state: "close", as_of: "2026-08-01", reason: "Fed funds plus the HY spread; judged by its weaker component." });
+  const block = { FEDFUNDS: FED, BAMLH0A0HYM2: HY, lbo_all_in_rate: RATE };
+
+  it("prints each component's own word, never the older component's month stamp as a day", () => {
+    const l = derivedLabel(lookupFrom(undefined, block), "lbo_all_in_rate");
+    expect(freshLabel(RATE).word).toBe("Aug 01");
+    expect(l.word).toBe("Fed funds Aug 2026 print · HY Sep 17");
+    expect(l.muted).toBe("· 1 day behind");
+    expect(labelText(l)).toBe("Fed funds Aug 2026 print · HY Sep 17 · 1 day behind");
+    expect(l.tone).toBe("neutral");
+    expect(l.stale).toBe(false);
+    expect(l.reason).toContain("Fed funds Aug 2026 print; HY Sep 17 · 1 day behind.");
+  });
+
+  it("takes a lead and a join for a model stamp dated by the rate it used", () => {
+    const l = derivedLabel(lookupFrom(undefined, block), "lbo_all_in_rate", { lead: "rate: ", join: " + " });
+    expect(labelText(l)).toBe("rate: Fed funds Aug 2026 print + HY Sep 17 · 1 day behind");
+  });
+
+  it("reads series[] first for the components; the block fills the derived id the report lacks", () => {
+    const hyReport = s({ id: "BAMLH0A0HYM2", state: "close", as_of: "2026-09-18", cycles_behind: 0 });
+    const l = derivedLabel(lookupFrom(freshnessWith([hyReport]), block), "lbo_all_in_rate");
+    expect(labelText(l)).toBe("Fed funds Aug 2026 print · HY Sep 18");
+  });
+
+  it("a stale component keeps its behind word inline and the stale mark", () => {
+    const fedStale = s({ id: "FEDFUNDS", cadence: "monthly", state: "stale", as_of: "2026-07-01", cycles_behind: 1 });
+    const rateStale = { ...RATE, state: "stale" as const, stale: true };
+    const l = derivedLabel(lookupFrom(undefined, { ...block, FEDFUNDS: fedStale, lbo_all_in_rate: rateStale }), "lbo_all_in_rate");
+    expect(labelText(l)).toBe("Fed funds Jul 2026 · 1 release behind · HY Sep 17 · 1 day behind");
+    expect(l.stale).toBe(true);
+    expect(l.tone).toBe("stale");
+  });
+
+  it("keeps Stated default and As of unknown, with the component words in the reason", () => {
+    const fb = derivedLabel(lookupFrom(undefined, { ...block, lbo_all_in_rate: { ...RATE, state: "fallback" } }), "lbo_all_in_rate", { lead: "rate: " });
+    expect(fb.word).toBe("Stated default");
+    expect(fb.tone).toBe("fallback");
+    const unk = derivedLabel(lookupFrom(undefined, { ...block, lbo_all_in_rate: { ...RATE, state: "unknown" } }), "lbo_all_in_rate");
+    expect(unk.word).toBe("As of unknown");
+    expect(unk.reason).toContain("HY Sep 17 · 1 day behind");
+    expect(derivedLabel(lookupFrom(undefined, null), "lbo_all_in_rate").word).toBe("As of unknown");
+  });
+
+  it("an id with no components reads as freshLabel would; the report's derived() reads Snapshot when seeded", () => {
+    expect(derivedLabel(lookupFrom(undefined, block), "FEDFUNDS").word).toBe("Aug 2026 print");
+    const seeded = freshReport({ ...freshnessWith([]), generated_at: "2026-09-10T06:06:01Z" }, true, null);
+    expect(seeded.derived("lbo_all_in_rate", block).word).toBe("Snapshot · as of Sep 10");
+    expect(labelText(freshReport(freshnessWith([]), false, null).derived("lbo_all_in_rate", block))).toBe("Fed funds Aug 2026 print · HY Sep 17 · 1 day behind");
   });
 });

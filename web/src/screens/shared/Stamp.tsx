@@ -34,7 +34,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import type { Regime } from "../../api/types";
-import type { QuoteVia } from "../shell/QuoteCard";
+import type { QuoteCardProps, QuoteVia } from "../shell/QuoteCard";
 import { freshLabel, type FreshLabel, type FreshTone } from "./fresh-state";
 import type { FreshReport } from "./useFreshReport";
 
@@ -133,16 +133,26 @@ export function Stamp({ source, label, asOf, block = false, style, className }: 
   );
 }
 
-/** The stamp for a price from the quote ladder (shell/quote-ladder.ts): the
- * rung names the source and the series whose state dates it. A stream quote
- * reads `live_quotes` (the VIX REST poll `vix_delayed`), a stored intraday
- * bar `market_intraday`, a stored close `market_daily`. No rung (no price):
- * no stamp. */
-export function quoteStamp(via: QuoteVia | undefined, report: FreshReport, liveId = "live_quotes"): ReactNode {
-  if (via === "stream") return <Stamp source={SRC.eodhd} label={report.series(liveId)} />;
-  if (via === "intraday") return <Stamp source={SRC.intraday} label={report.series("market_intraday")} />;
-  if (via === "close") return <Stamp source={SRC.closes} label={report.series("market_daily")} />;
+/** The series whose state words a ladder rung's price reads (§5): a stream
+ * quote `live_quotes` (the VIX REST poll `vix_delayed`), a stored intraday
+ * bar `market_intraday`, a stored close `market_daily`. */
+export function rungSeries(via: QuoteVia | undefined, liveId = "live_quotes"): string | null {
+  if (via === "stream") return liveId;
+  if (via === "intraday") return "market_intraday";
+  if (via === "close") return "market_daily";
   return null;
+}
+
+/** The stamp for a price from the quote ladder (shell/quote-ladder.ts): the
+ * rung names the source and the series whose state word it prints; the date
+ * is the quote's own (`servedAt`: its tick, its bar), never the feed-wide
+ * as_of, which is the newest observation of any symbol (Acceptance F1). No
+ * rung (no price): no stamp. */
+export function quoteStamp(card: Pick<QuoteCardProps, "via" | "servedAt">, report: FreshReport, liveId = "live_quotes"): ReactNode {
+  const id = rungSeries(card.via, liveId);
+  if (!id) return null;
+  const source = card.via === "stream" ? SRC.eodhd : card.via === "intraday" ? SRC.intraday : SRC.closes;
+  return <Stamp source={source} label={report.at(id, card.servedAt)} />;
 }
 
 /** A section header's meta slot with a stamp after it. The existing meta

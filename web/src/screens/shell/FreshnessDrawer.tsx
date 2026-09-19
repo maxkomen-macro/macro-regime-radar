@@ -256,9 +256,9 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
                         <td>
                           <Verdict state={row.verdict} />
                         </td>
-                        <td>{seededLabel ? <StateCell label={seededLabel} /> : id ? <StateCell label={freshLabel(series)} /> : "—"}</td>
-                        <td>{fmtFeedStamp(row.feed, row.latest, regime)}</td>
-                        <td>{fmtFeedStamp(row.feed, row.expected, regime)}</td>
+                        <td className="wrap">{seededLabel ? <StateCell label={seededLabel} /> : id ? <StateCell label={freshLabel(series)} /> : "—"}</td>
+                        <td className="wrap">{fmtFeedStamp(row.feed, row.latest, regime)}</td>
+                        <td className="wrap">{fmtFeedStamp(row.feed, row.expected, regime)}</td>
                         <td className="reason">{row.reason}</td>
                       </tr>
                       );

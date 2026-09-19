@@ -15,7 +15,7 @@ import { useMemo } from "react";
 import { useFreshness } from "../../api/queries";
 import { useSnapshotMeta, type SnapshotMeta } from "../../api/snapshot";
 import type { Freshness, SeriesState } from "../../api/types";
-import { freshLabel, groupLabel, lookupFrom, seededLabel, seriesById, type FreshLabel } from "./fresh-state";
+import { datedBy, derivedLabel, freshLabel, groupLabel, lookupFrom, seededLabel, seriesById, type DerivedLabelOptions, type FreshLabel } from "./fresh-state";
 
 export interface FreshReport {
   f: Freshness | undefined;
@@ -30,6 +30,13 @@ export interface FreshReport {
   series: (id: string, block?: Record<string, SeriesState> | null) => FreshLabel;
   /** A group's weakest member, with every member's word in the reason. */
   group: (ids: readonly string[], block?: Record<string, SeriesState> | null) => FreshLabel;
+  /** One value's label: the series' state dated by that value's own served
+   * stamp (a quote's tick, a stored bar's date), never the feed-wide as_of
+   * (fresh-state.ts datedBy). */
+  at: (id: string, asOf: string | null | undefined, block?: Record<string, SeriesState> | null) => FreshLabel;
+  /** A derived series (the LBO all-in rate): its components' own words
+   * (fresh-state.ts derivedLabel), series[] first, the block filling. */
+  derived: (id: string, block?: Record<string, SeriesState> | null, opts?: DerivedLabelOptions) => FreshLabel;
 }
 
 /** Pure: whether a report on hand is the seeded one. */
@@ -52,6 +59,8 @@ export function freshReport(f: Freshness | undefined, seeded: boolean, snapshot:
     isError: Boolean(extra.isError),
     series: (id, block) => (seeded ? seededLabel(generatedAt) : freshLabel(seriesById(f, id) ?? block?.[id])),
     group: (ids, block) => (seeded ? seededLabel(generatedAt) : groupLabel(lookupFrom(f, block), ids)),
+    at: (id, asOf, block) => (seeded ? seededLabel(generatedAt) : freshLabel(datedBy(seriesById(f, id) ?? block?.[id], asOf))),
+    derived: (id, block, opts) => (seeded ? seededLabel(generatedAt) : derivedLabel(lookupFrom(f, block), id, opts)),
   };
 }
 

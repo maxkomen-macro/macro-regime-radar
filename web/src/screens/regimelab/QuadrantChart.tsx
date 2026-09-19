@@ -118,6 +118,32 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
     // left or above it where it would leave the plot.
     const stampLeft = last ? px(last) > g.r - 70 : false;
     const stampUp = last ? py(last) + 22 > g.b - 2 : false;
+    // The oldest-month label must never sit on the current-month stamp (G1). Mono label boxes, estimated
+    // from the font size (11 px stamp ≈ 6.7 px a glyph, 10 px label ≈ 6.1 px): try below-right of the first
+    // point, then above-right, below-left and above-left, and keep the first box that clears the stamp.
+    type Box = { x0: number; x1: number; y0: number; y1: number };
+    const clear = (a: Box, b: Box) => a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0;
+    let oldest: { x: number; y: number; anchor: "start" | "end" } | null = null;
+    if (n >= 2) {
+      const ox = px(plotted[0]);
+      const oy = py(plotted[0]);
+      const ow = fmtMonYr(plotted[0].date).length * 6.1;
+      const sw = last ? fmtMonYr(last.date).length * 6.7 : 0;
+      const sx = last ? (stampLeft ? px(last) - 12 - sw : px(last) + 12) : 0;
+      const sy = last ? (stampUp ? py(last) - 16 : py(last) + 22) : 0;
+      const stampBox: Box = { x0: sx - 2, x1: sx + sw + 2, y0: sy - 12, y1: sy + 4 };
+      const options: { x: number; y: number; anchor: "start" | "end" }[] = [
+        { x: ox - 8, y: oy + 16, anchor: "start" },
+        { x: ox - 8, y: oy - 10, anchor: "start" },
+        { x: ox + 8, y: oy + 16, anchor: "end" },
+        { x: ox + 8, y: oy - 10, anchor: "end" },
+      ];
+      const boxOf = (o: (typeof options)[number]): Box => {
+        const x0 = o.anchor === "start" ? o.x : o.x - ow;
+        return { x0, x1: x0 + ow, y0: o.y - 11, y1: o.y + 3 };
+      };
+      oldest = (last ? options.find((o) => clear(boxOf(o), stampBox)) : undefined) ?? options[0];
+    }
     return (
       <svg
         data-chart=""
@@ -214,8 +240,8 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
             </text>
           </g>
         ) : null}
-        {n >= 2 ? (
-          <text x={px(plotted[0]) - 8} y={py(plotted[0]) + 16} fill={AXIS_FILL} style={OLDEST}>
+        {oldest ? (
+          <text x={oldest.x} y={oldest.y} textAnchor={oldest.anchor} fill={AXIS_FILL} style={OLDEST}>
             {fmtMonYr(plotted[0].date)}
           </text>
         ) : null}

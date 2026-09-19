@@ -296,9 +296,18 @@ main .mrr-scroll {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* Acceptance (M4 after A3): the State column added in step 6 pushed the
+   Reason column past the 720px drawer at 1672. State, Latest and Expected
+   may wrap onto two lines and the Reason column keeps a 180px floor, so the
+   whole table fits the drawer at desk widths again; below that the table
+   still scrolls in its own keyboard-reachable well. */
+.mrr-fresh-table td.wrap {
+  white-space: normal;
+  min-width: 6.5em;
+}
 .mrr-fresh-table td.reason {
   white-space: normal;
-  min-width: 220px;
+  min-width: 180px;
   color: var(--text-3, var(--text-muted));
 }
 /* Feed names wrap (M4): "Intraday bars (SPY, QQQ)" on one line cost the
@@ -1897,6 +1906,21 @@ main .mrr-scroll {
 }
 .mrr-dash > .mrr-hero-row {
   margin-bottom: 0;
+}
+/* Acceptance F4 (D1): from 1620 the hero sits beside the summary card and the
+   row takes the summary's height (G3), about 770 px. Beside the 540 px copy
+   the regime-odds chart had a 370 px column and drew portrait (359 × 632),
+   and a landscape cap on that column would leave a blank above and below it.
+   So here the hero stacks: the copy on top, the 24-month chart under it at the
+   hero's full width, its row taking whatever height the summary gives
+   (`auto 1fr`), so the chart reads across and fills the card. Below 1620 the
+   row stacks and the hero keeps its copy | chart grid (1200 to 1619) or
+   stacks already (below 1200). */
+@media (min-width: 1620px) {
+  .mrr-dash > .mrr-hero-row > .mrr-hero {
+    --hero-cols: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
 }
 /* Key levels (Iteration 1, G2): the five level tiles over the two
    model-reading tiles (`.mrr-level-wide`, half the row each) on a ten-track

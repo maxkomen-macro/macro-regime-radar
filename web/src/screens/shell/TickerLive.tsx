@@ -59,8 +59,12 @@ export default function TickerLive({ status, freshnessOpen, onOpenFreshness }: P
     // endpoint below because yields are not on the stream.
     const out: QuoteCardProps[] = ["SPY", "QQQ"].map((symbol) => {
       const q = quoteFor({ symbol }, quotes, intraday.data, daily.data, { dailyLoading: daily.isLoading, unavailable });
-      // A3: the CLOSE tag and the stale mark read the server's words.
-      return withFreshTags({ ...q, stamp: quoteStamp(q.via, report) }, { daily: report.series("market_daily"), intraday: report.series("market_intraday") });
+      // A3: the CLOSE tag and the stale mark read the server's words; F1:
+      // dated by the card's own tick or bar, never the feed-wide as_of.
+      return withFreshTags(
+        { ...q, stamp: quoteStamp(q, report) },
+        { daily: report.at("market_daily", q.servedAt), intraday: report.at("market_intraday", q.servedAt) },
+      );
     });
 
     const ten = credit.data?.series.find((s) => s.label === "UST10Y");

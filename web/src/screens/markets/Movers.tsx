@@ -23,7 +23,7 @@ import { useSymbolCandlesList } from "../../api/queries";
 import type { CandleBar } from "../../api/types";
 import type { LiveQuote } from "../../live/quotes";
 import { fmtSignedPct } from "../../lib/format";
-import { monDD } from "../shared/fresh-state";
+import { monDD, tickStamp } from "../shared/fresh-state";
 import { dayKeyEt } from "../shared/calendar-impact";
 import { Caption, MISSING, StateNote, eyebrowStyle } from "../shared/screen-ui";
 import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
@@ -57,6 +57,10 @@ export interface MoversRead {
   /** A candle request for a missing name failed (CP4: the empty state then
    * says the prices did not load, never that none exist). */
   error?: boolean;
+  /** The newest relay tick among the names the stream priced (ISO UTC), the
+   * date the header's EODHD stamp prints (Acceptance F1: the feed-wide
+   * live_quotes as_of is the newest tick of any symbol, crypto included). */
+  quoteAt?: string | null;
 }
 
 const SLOTS = 3;
@@ -87,9 +91,11 @@ export function useMoversRead(quotes: ReadonlyMap<string, LiveQuote>, sessionOpe
   const missing: TapeDef[] = [];
   let loading = false;
   let error = false;
+  let newestTick: number | null = null;
   for (const def of SINGLE_NAMES) {
     const q = quotes.get(def.symbol);
     if (q?.dc != null) {
+      if (q.t != null && (newestTick == null || q.t > newestTick)) newestTick = q.t;
       const asOf = asOfCell(q);
       reads.push({ def, change: q.dc, source: "quote", stamp: asOf.text, live: asOf.live });
       continue;
@@ -115,6 +121,7 @@ export function useMoversRead(quotes: ReadonlyMap<string, LiveQuote>, sessionOpe
     losers: [...ranked].reverse().filter((m) => m.change < 0).slice(0, SLOTS),
     missing,
     error,
+    quoteAt: tickStamp(newestTick),
   };
 }
 
@@ -212,7 +219,9 @@ export default function Movers({ read, onOpen }: { read: MoversRead; onOpen: (sy
             meta="stream change, else last close"
             stamp={
               <>
-                <Stamp source={SRC.eodhd} label={report.series("live_quotes")} />
+                {/* F1: the stream stamp dates the twelve names' own newest
+                    tick, not the feed's newest tick of any symbol. */}
+                <Stamp source={SRC.eodhd} label={report.at("live_quotes", read.quoteAt)} />
                 <Stamp source={SRC.closes} label={report.series("market_daily")} />
               </>
             }
