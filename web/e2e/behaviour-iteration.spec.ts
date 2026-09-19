@@ -767,6 +767,14 @@ test.describe("R2 keyboard: ArrowRight between sub-tabs keeps the scroll positio
       await open(page, "/app/regime-lab", width, height);
       const list = page.getByRole("tablist", { name: LAB_LIST });
       await expect(list.getByRole("tab")).toHaveCount(5);
+      // The shell's freshness report can land late under load and mount the one-line stored-close
+      // notice above the page (≈46 px); scroll anchoring then moves scrollY by that height with the
+      // page visually still. That shift is late shell data, not the sub-tab switch, so the shell must
+      // have its freshness report before the first measurement.
+      await page
+        .waitForFunction(() => performance.getEntriesByType("resource").some((e) => e.name.includes("/api/freshness")), undefined, { timeout: 15_000 })
+        .catch(() => undefined);
+      await page.waitForTimeout(400);
       const problems: string[] = [];
       // From the default view, ArrowRight five times: every view once, the last wraps to the first.
       for (let i = 0; i < LAB_TABS.length; i++) {
