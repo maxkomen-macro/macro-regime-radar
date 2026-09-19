@@ -595,6 +595,17 @@ def credit_oas(days: int) -> dict:
     return {"as_of": as_of, "series": series_out}
 
 
+def watermarks() -> dict | None:
+    """source_watermarks rows keyed by source (B6, 2026-09-18), or None when the
+    table does not exist yet (an older database): freshness then keeps its
+    legacy verdicts instead of failing."""
+    with closing(_connect()) as conn:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_watermarks'").fetchone():
+            return None
+        rows = conn.execute("SELECT source, last_obs, last_value, advanced_at, checked_at, status, detail FROM source_watermarks").fetchall()
+    return {r["source"]: dict(r) for r in rows}
+
+
 def freshness() -> dict:
     """Latest data timestamps per feed — for the shell's data-freshness line."""
     queries = {

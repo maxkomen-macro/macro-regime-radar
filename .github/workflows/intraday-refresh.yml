@@ -69,7 +69,7 @@ jobs:
           set +e
           ARGS=()
           [ -f data/previous.db ] && ARGS+=(--previous data/previous.db)
-          python scripts/validate_db.py data/macro_radar.db "${ARGS[@]}" --mode market-only --json validation.json
+          python scripts/validate_db.py data/macro_radar.db "${ARGS[@]}" --mode intraday --json validation.json
           RC=$?
           set -e
           if [ "$RC" -ne 0 ]; then

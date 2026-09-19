@@ -1177,7 +1177,8 @@ def api_freshness() -> Freshness:
     and relay health (api/freshness.py)."""
     base = _guarded(db.freshness)
     series = _guarded(db.latest_series_all)
-    report = freshness_mod.assess(db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status())
+    marks = _guarded(db.watermarks)
+    report = freshness_mod.assess(db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status(), watermarks=marks)
     return Freshness(**report)
 
 

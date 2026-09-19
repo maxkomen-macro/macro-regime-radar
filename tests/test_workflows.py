@@ -191,6 +191,8 @@ def test_lean_requirement_sets_cover_their_modules():
     third_party = {m for m in news_mods if m not in STDLIB and m != "src"}
     assert third_party <= _requirement_modules(ROOT / "requirements-news.txt") | {"feedparser"}, third_party
     market_mods = _module_imports(ROOT / "src/market_data/fetch_market.py") | _module_imports(ROOT / "src/market_data/yfinance_client.py")
+    # B6: the session rule and the watermark writer run on the lean market set too
+    market_mods |= _module_imports(ROOT / "src/market_data/session.py") | _module_imports(ROOT / "src/watermarks.py")
     third_party = {m for m in market_mods if m not in STDLIB and m != "src"}
     assert third_party <= _requirement_modules(ROOT / "requirements-market.txt"), third_party
     # validate_db.py must stay stdlib + api/ (it runs on the lean sets)
@@ -199,3 +201,13 @@ def test_lean_requirement_sets_cover_their_modules():
     for mod in ("api/freshness.py", "api/calendar.py"):
         deps = {m for m in _module_imports(ROOT / mod) if m not in STDLIB}
         assert deps <= {"api"}, (mod, deps)
+
+
+def test_intraday_validates_its_own_feeds():
+    """B6 (2026-09-18): intraday runs validate with --mode intraday, which judges
+    market_intraday and treats a stale daily close as a warning, so one missed
+    post-close run cannot freeze intraday publishing."""
+    doc = _load("intraday-refresh.yml")
+    job = next(iter(doc["jobs"].values()))
+    step = next(s for s in job["steps"] if s["name"] == "Validate the refreshed database")
+    assert "--mode intraday " in step["run"] and "--mode market-only" not in step["run"]

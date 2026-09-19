@@ -24,6 +24,7 @@ case the reason is printed in the summary. Nothing here prints a token.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -58,17 +59,45 @@ TRIMMED_TABLES = {"market_intraday", "news_feed"}
 # so a future max date there is the table doing its job, not a fault.
 FORWARD_TABLES = {"event_calendar"}
 MODE_TABLES = {
-    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed"],
+    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks"],
     "news-only": ["news_feed"],
-    "market-only": ["market_daily", "market_intraday"],
+    "market-only": ["market_daily", "market_intraday", "source_watermarks"],
+    # B6 (2026-09-18): intraday runs also capture the official close after the
+    # session ends, so a daily close can be their change too.
+    "intraday": ["market_intraday", "market_daily", "source_watermarks"],
     "verify-only": [],
 }
 MODE_FEEDS = {
     "full": {"regime", "signals", "market_daily", "news", "fred:INDPRO", "fred:CPIAUCSL", "fred:UNRATE", "fred:DGS10", "fred:DGS2", "fred:VIXCLS"},
     "news-only": {"news"},
     "market-only": {"market_daily", "market_intraday"},
+    "intraday": {"market_intraday"},
     "verify-only": {"regime", "market_daily", "news"},
 }
+# Reported but never blocking in that mode: one missed post-close full run must
+# not freeze intraday publishing (the full run owns the daily close).
+WARN_FEEDS = {"intraday": {"market_daily"}}
+# Content fingerprints (B6): row counts and max dates miss value-only updates
+# (FRED rewrites the month-stamped row of the current month; a restatement
+# rewrites closes in place). 16 hex chars; never served by the API.
+FINGERPRINT_SQL = {
+    "raw_series": "SELECT series_id, date, value FROM raw_series ORDER BY series_id, date",
+    "market_daily": "SELECT symbol, date, close FROM market_daily ORDER BY symbol, date",
+    "source_watermarks": "SELECT source, last_obs, last_value FROM source_watermarks ORDER BY source",
+}
+# A FRED series fetched within this window but not advancing is a source
+# outage (a warning); one not checked at all means the refresh missed cycles.
+OUTAGE_WINDOW = timedelta(hours=3)
+
+
+def _fingerprint(conn: sqlite3.Connection, sql: str) -> str | None:
+    try:
+        h = hashlib.sha256()
+        for row in conn.execute(sql):
+            h.update(repr(tuple(row)).encode())
+        return h.hexdigest()[:16]
+    except sqlite3.Error:
+        return None
 
 
 def _open(path: Path) -> sqlite3.Connection:
@@ -118,6 +147,14 @@ def inspect(path: Path) -> dict:
             )]
         except sqlite3.Error:
             out["series_latest"] = []
+        out["fingerprints"] = {t: _fingerprint(conn, sql) for t, sql in FINGERPRINT_SQL.items() if t in out["tables"]}
+        out["watermarks"] = None
+        if "source_watermarks" in out["tables"]:
+            try:
+                out["watermarks"] = {r["source"]: dict(r) for r in conn.execute(
+                    "SELECT source, last_obs, last_value, advanced_at, checked_at, status, detail FROM source_watermarks")}
+            except sqlite3.Error:
+                out["watermarks"] = None
         out["fresh"] = {
             "regimes_date": out["tables"].get("regimes", {}).get("max"),
             "signals_date": out["tables"].get("signals", {}).get("max"),
@@ -182,12 +219,16 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
         for t, info in cur["tables"].items():
             p = prev["tables"].get(t)
             if not p:
+                if info["rows"] > 0:
+                    changed_tables.append(t)  # a new, populated table is new content
                 continue
             if info["max"] and p["max"] and str(info["max"]) < str(p["max"]):
                 failures.append(f"{t}: max date regressed {p['max']} → {info['max']}")
             if t not in TRIMMED_TABLES and p["rows"] > 20 and info["rows"] < 0.8 * p["rows"]:
                 failures.append(f"{t}: rows fell {p['rows']} → {info['rows']} (more than a fifth)")
-            if info["rows"] != p["rows"] or str(info["max"]) != str(p["max"]):
+            fp_cur = (cur.get("fingerprints") or {}).get(t)
+            fp_prev = (prev.get("fingerprints") or {}).get(t)
+            if info["rows"] != p["rows"] or str(info["max"]) != str(p["max"]) or (fp_cur and fp_prev and fp_cur != fp_prev):
                 changed_tables.append(t)
         expected = MODE_TABLES.get(mode, [])
         touched = [t for t in expected if t in changed_tables]
@@ -198,11 +239,33 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
         changed = True  # no baseline: treat as new
 
     # Freshness verdicts, scoped to what the mode is responsible for.
-    report = freshness_mod.assess(db_fresh=cur["fresh"], series_latest=cur.get("series_latest", []), relay=None, bootstrap=None, now=now)
+    marks = cur.get("watermarks")
+    report = freshness_mod.assess(db_fresh=cur["fresh"], series_latest=cur.get("series_latest", []), relay=None, bootstrap=None, now=now, watermarks=marks)
     feeds = MODE_FEEDS.get(mode, set())
-    rows = [r for r in report["sla"] if r["feed"] in feeds]
-    stale = [r for r in rows if r["verdict"] in ("stale", "unavailable")]
-    delayed = [r for r in rows if r["verdict"] == "delayed"]
+    warn_feeds = WARN_FEEDS.get(mode, set())
+    rows = [r for r in report["sla"] if r["feed"] in feeds or r["feed"] in warn_feeds]
+    for r in rows:
+        if r["feed"] in warn_feeds and r["verdict"] != "current":
+            warnings.append(f"{r['feed']} {r['verdict']} (reported, not judged in {mode} mode): {r['reason']}")
+    rows_judged = [r for r in rows if r["feed"] not in warn_feeds]
+    stale = [r for r in rows_judged if r["verdict"] in ("stale", "unavailable")]
+    delayed = [r for r in rows_judged if r["verdict"] == "delayed"]
+
+    def _checked_this_run(feed: str) -> bool:
+        ts = freshness_mod._parse_dt(((marks or {}).get(feed) or {}).get("checked_at"))
+        return ts is not None and now - ts <= OUTAGE_WINDOW
+
+    # B6 outage policy: fetched this run but the source published nothing new
+    # is a warning (a FRED pause must not block market and news publishing);
+    # not checked at all stays a failure (the refresh missed its cycles).
+    outages = [r for r in stale if r["feed"].startswith("fred:") and r["verdict"] == "stale" and _checked_this_run(r["feed"])]
+    stale = [r for r in stale if r not in outages]
+    for r in outages:
+        warnings.append(f"{r['feed']} source outage (checked this run, not advancing): {r['reason']}")
+    if mode == "full":
+        for sid in freshness_mod.DAILY_INPUTS:
+            if not (((marks or {}).get(f"fred:{sid}") or {}).get("last_obs")):
+                failures.append(f"fred:{sid}: no watermark (true observation date) recorded by this refresh")
     if stale:
         msg = "; ".join(f"{r['feed']}: {r['reason']}" for r in stale)
         if allow_stale:
@@ -253,6 +316,15 @@ def summary_markdown(rep: dict) -> str:
     lines += ["", "| Feed | Verdict | Latest | Expected | Reason |", "|---|---|---|---|---|"]
     for r in rep.get("sla", []):
         lines.append(f"| {r['feed']} | {r['verdict']} | {r['latest']} | {r['expected']} | {r['reason']} |")
+    marks = cur.get("watermarks")
+    if marks:
+        lines += ["", "**Source watermarks** · newest observation per source and when it last advanced", "",
+                  "| Source | Last observation | Advanced | Checked | Status |", "|---|---|---|---|---|"]
+        for src, w in sorted(marks.items()):
+            status = w.get("status") or ""
+            if w.get("detail"):
+                status += f" · {w['detail']}"
+            lines.append(f"| {src} | {w.get('last_obs')} | {w.get('advanced_at')} | {w.get('checked_at')} | {status} |")
     reg = rep.get("regime") or {}
     if reg:
         lines += ["", f"- Regime month {reg.get('latest_month')} · expected {reg.get('expected_month')}"]

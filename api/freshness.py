@@ -80,7 +80,14 @@ def assess(
     relay: dict | None,
     bootstrap: dict | None,
     now: datetime | None = None,
+    watermarks: dict | None = None,
 ) -> dict:
+    """`watermarks` (B6, 2026-09-18) maps source → the source_watermarks row
+    (true last observation, advanced_at, checked_at). raw_series stores daily
+    FRED series month-stamped, so without watermarks the FRED daily verdicts
+    measure lag from the 1st of the month (the legacy path, kept for older
+    databases); with them, from the real observation date, and a series that
+    is checked but stops advancing is reported stale with the reason."""
     now = now or datetime.now(timezone.utc)
     today_ny = now.astimezone(cal.NY).date()
     session = cal.session_state(now)
@@ -129,15 +136,39 @@ def assess(
     rows.append(_verdict("news", db_fresh.get("news_published_at"), (now - timedelta(minutes=sla)).strftime("%Y-%m-%dT%H:%M:%SZ"), ok, delayed_ok, f"Newest stored headline is within the {sla}-minute window." if ok else (f"Newest stored headline is older than {sla} minutes ({'US business hours' if business_hours else 'off-hours window'})." if delayed_ok else "No headline stored in the last 24 hours; the news pipeline is not running.")))
 
     # ── FRED daily series: within 2 business days of the last business day ──
+    # Treasury yields (DGS*) follow the bond-market calendar: no print exists
+    # for Columbus Day or Veterans Day, so those days never count as missed.
     daily_rows = []
     for sid in DAILY_INPUTS:
-        r = by_series.get(sid)
-        d = _parse_date(r.get("date")) if r else None
-        exp = cal.previous_trading_day(today_ny + timedelta(days=1)) if not cal.is_trading_day(today_ny) else cal.previous_trading_day(today_ny)
-        lag = cal.business_days_between(d, exp) if d else None
-        ok = d is not None and lag is not None and lag <= 2
-        delayed_ok = d is not None and lag is not None and lag <= 5
-        daily_rows.append(_verdict(f"fred:{sid}", r.get("date") if r else None, exp.isoformat(), ok, delayed_ok, f"{sid} is {lag} business day(s) behind the last business day (FRED posts next day)." if d else f"{sid} has no stored observations."))
+        rates = sid.startswith("DGS")
+        is_td = cal.is_bond_trading_day if rates else cal.is_trading_day
+        prev_td = cal.previous_bond_trading_day if rates else cal.previous_trading_day
+        between = cal.bond_business_days_between if rates else cal.business_days_between
+        exp = prev_td(today_ny + timedelta(days=1)) if not is_td(today_ny) else prev_td(today_ny)
+        if watermarks is None:
+            r = by_series.get(sid)
+            d = _parse_date(r.get("date")) if r else None
+            lag = between(d, exp) if d else None
+            ok = d is not None and lag is not None and lag <= 2
+            delayed_ok = d is not None and lag is not None and lag <= 5
+            daily_rows.append(_verdict(f"fred:{sid}", r.get("date") if r else None, exp.isoformat(), ok, delayed_ok, f"{sid} is {lag} business day(s) behind the last business day (FRED posts next day)." if d else f"{sid} has no stored observations."))
+            continue
+        wm = watermarks.get(f"fred:{sid}") or {}
+        d = _parse_date(wm.get("last_obs"))
+        if d is None:
+            daily_rows.append(_verdict(f"fred:{sid}", None, exp.isoformat(), False, False, f"{sid}: observation date not recorded yet; the refresh that writes source watermarks has not run."))
+            continue
+        lag = between(d, exp)
+        ok, delayed_ok = lag <= 2, lag <= 5
+        checked = _parse_dt(wm.get("checked_at"))
+        if ok:
+            reason = f"{sid} observed {d.isoformat()}; {lag} business day(s) behind {exp.isoformat()} (FRED posts next day)."
+        elif checked is not None and now - checked <= timedelta(hours=36):
+            reason = f"{sid}: fetched {checked.strftime('%Y-%m-%d %H:%M')}Z, no new observation since {d.isoformat()} ({lag} business day(s) behind {exp.isoformat()})."
+        else:
+            seen = checked.strftime('%Y-%m-%d') if checked else "never"
+            reason = f"{sid}: not checked since {seen}; the refresh has missed cycles (newest observation {d.isoformat()}, {lag} business day(s) behind)."
+        daily_rows.append(_verdict(f"fred:{sid}", d.isoformat(), exp.isoformat(), ok, delayed_ok, reason))
     rows.extend(daily_rows)
 
     # ── monthly regime inputs: publication calendar ─────────────────────────
@@ -160,7 +191,10 @@ def assess(
     available_months = [date.fromisoformat(i["latest_month"]) for i in inputs if i["latest_month"]]
     for sid in DAILY_INPUTS:
         r = by_series.get(sid)
-        d = _parse_date(r.get("date")) if r else None
+        if watermarks is not None:
+            d = _parse_date((watermarks.get(f"fred:{sid}") or {}).get("last_obs"))
+        else:
+            d = _parse_date(r.get("date")) if r else None
         if d:
             # A daily series counts for a month once its last trading day is in
             # (FRED daily series end on business days, not calendar days).

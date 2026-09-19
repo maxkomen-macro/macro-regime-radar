@@ -106,6 +106,45 @@ def session_state(now: datetime) -> dict:
     }
 
 
+def bond_extra_closures(year: int) -> set[date]:
+    """Bond-market (SIFMA) full closes on days the NYSE trades (B6, 2026-09-18):
+    Columbus Day (second Monday of October) and Veterans Day (11 Nov; a Sunday
+    date closes the Monday). FRED publishes no Treasury yield for these days,
+    so the rates series must not count them as missed prints."""
+    oct1 = date(year, 10, 1)
+    columbus = oct1 + timedelta(days=(7 - oct1.weekday()) % 7 + 7)
+    out = {columbus}
+    vet = date(year, 11, 11)
+    if vet.weekday() == 6:
+        vet += timedelta(days=1)
+    if vet.weekday() < 5:
+        out.add(vet)
+    return out
+
+
+def is_bond_trading_day(d: date) -> bool:
+    return is_trading_day(d) and d not in bond_extra_closures(d.year)
+
+
+def previous_bond_trading_day(d: date) -> date:
+    d = d - timedelta(days=1)
+    while not is_bond_trading_day(d):
+        d -= timedelta(days=1)
+    return d
+
+
+def bond_business_days_between(a: date, b: date) -> int:
+    """Bond-market trading days strictly after a up to and including b (b ≥ a)."""
+    if b <= a:
+        return 0
+    n, d = 0, a
+    while d < b:
+        d += timedelta(days=1)
+        if is_bond_trading_day(d):
+            n += 1
+    return n
+
+
 def business_days_between(a: date, b: date) -> int:
     """Trading days strictly after a up to and including b (b ≥ a)."""
     if b <= a:

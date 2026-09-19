@@ -205,3 +205,68 @@ def test_daily_series_month_completeness_uses_business_days():
     rep = freshness.assess(db_fresh={**_BASE, "regimes_date": "2026-05-01"}, series_latest=series, relay=None, bootstrap=None, now=_utc(2026, 6, 20, 15))
     assert rep["regime"]["common_feature_month"] == "2026-05-01"
 
+
+
+# ── B6 (2026-09-18): FRED daily verdicts read the true observation date ─────
+# raw_series stores daily series as one row per month dated the 1st (the
+# newest in-month value). Counting lag from that stamp produced the reported
+# "nine business days behind" on current values. The fetch now records each
+# series' true last observation in source_watermarks; verdicts read it.
+
+_MONTH_STAMPED = [
+    {**r, "date": "2026-09-01"} if r["series_id"] in ("DGS10", "DGS2", "VIXCLS") else dict(r) for r in _SERIES
+]
+_DAILY = ("DGS10", "DGS2", "VIXCLS")
+
+
+def _wm(obs, checked="2026-09-16T04:18:00Z", advanced=None):
+    return {"last_obs": obs, "last_value": 1.0, "advanced_at": advanced or checked, "checked_at": checked, "status": "ok", "detail": None}
+
+
+def _assess(series, now, wms):
+    return freshness.assess(db_fresh=_BASE, series_latest=series, relay=None, bootstrap=None, now=now, watermarks=wms)
+
+
+def test_month_stamped_rows_alone_reproduce_the_false_nine_day_lag():
+    rep = freshness.assess(db_fresh=_BASE, series_latest=_MONTH_STAMPED, relay=None, bootstrap=None, now=_utc(2026, 9, 16, 12))
+    row = _by_feed(rep)["fred:DGS10"]
+    assert row["verdict"] == "stale" and "9 business day" in row["reason"]  # the legacy path, unchanged
+
+
+def test_watermark_true_date_reads_current():
+    rep = _assess(_MONTH_STAMPED, _utc(2026, 9, 16, 12), {f"fred:{s}": _wm("2026-09-15") for s in _DAILY})
+    rows = _by_feed(rep)
+    for s in _DAILY:
+        assert rows[f"fred:{s}"]["verdict"] == "current", rows[f"fred:{s}"]
+        assert rows[f"fred:{s}"]["latest"] == "2026-09-15"
+
+
+def test_series_that_stops_advancing_is_stale_not_silent():
+    wms = {f"fred:{s}": _wm("2026-09-04", checked="2026-09-16T04:18:00Z", advanced="2026-09-05T04:00:00Z") for s in _DAILY}
+    rep = _assess(_MONTH_STAMPED, _utc(2026, 9, 16, 12), wms)
+    row = _by_feed(rep)["fred:DGS10"]
+    assert row["verdict"] == "stale"
+    assert "no new observation since 2026-09-04" in row["reason"]
+    assert rep["overall"] == "stale"
+
+
+def test_missed_refresh_cycles_are_named():
+    wms = {f"fred:{s}": _wm("2026-09-04", checked="2026-09-05T04:18:00Z") for s in _DAILY}
+    row = _by_feed(_assess(_MONTH_STAMPED, _utc(2026, 9, 16, 12), wms))["fred:DGS10"]
+    assert row["verdict"] == "stale" and "not checked since 2026-09-05" in row["reason"]
+
+
+def test_missing_watermark_is_unavailable_not_a_false_stale():
+    row = _by_feed(_assess(_MONTH_STAMPED, _utc(2026, 9, 16, 12), {}))["fred:DGS10"]
+    assert row["verdict"] == "unavailable" and "observation date" in row["reason"]
+
+
+def test_bond_market_holiday_counts_for_treasury_yields_only():
+    # Columbus Day 2026-10-12: NYSE open, bond market closed (no DGS10 print).
+    assert cal.is_trading_day(date(2026, 10, 12)) is True
+    assert cal.is_bond_trading_day(date(2026, 10, 12)) is False
+    assert cal.is_bond_trading_day(date(2026, 11, 11)) is False  # Veterans Day
+    wms = {f"fred:{s}": _wm("2026-10-09", checked="2026-10-13T04:18:00Z") for s in _DAILY}
+    rows = _by_feed(_assess(_MONTH_STAMPED, _utc(2026, 10, 13, 12), wms))
+    assert rows["fred:DGS10"]["expected"] == "2026-10-09" and rows["fred:DGS2"]["expected"] == "2026-10-09"
+    assert rows["fred:VIXCLS"]["expected"] == "2026-10-12"

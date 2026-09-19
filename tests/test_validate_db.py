@@ -14,7 +14,7 @@ from scripts import validate_db as v
 NOW = datetime(2026, 9, 5, 22, 0, tzinfo=timezone.utc)
 
 
-def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime="2026-07-01", rows_news=50, monthly=("2026-07-01", "2026-07-01", "2026-08-01")):
+def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime="2026-07-01", rows_news=50, monthly=("2026-07-01", "2026-07-01", "2026-08-01"), watermarks=True):
     conn = sqlite3.connect(path)
     conn.executescript(
         """
@@ -33,6 +33,17 @@ def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime=
     conn.executemany("INSERT INTO market_daily VALUES (?,?,?,?)", [("SPY", daily, 500.0, "yfinance")] * 40)
     conn.executemany("INSERT INTO market_intraday VALUES (?,?,?)", [("SPY", f"{daily} 15:55:00", 500.0)] * 40)
     conn.executemany("INSERT INTO news_feed(published_at, headline) VALUES (?,?)", [(news, f"h{i}") for i in range(rows_news)])
+    if watermarks:
+        # B6: a full refresh records each FRED daily series' true last observation
+        # (raw_series keeps month-stamped rows); checked within this run's window.
+        conn.execute(
+            "CREATE TABLE source_watermarks (source TEXT PRIMARY KEY, last_obs TEXT, last_value REAL,"
+            " advanced_at TEXT, checked_at TEXT NOT NULL, status TEXT NOT NULL, detail TEXT)"
+        )
+        conn.executemany(
+            "INSERT INTO source_watermarks VALUES (?,?,?,?,?,?,?)",
+            [(f"fred:{s}", daily, 1.0, "2026-09-05T21:00:00Z", "2026-09-05T21:00:00Z", "ok", None) for s in ("DGS10", "DGS2", "VIXCLS")],
+        )
     conn.commit()
     conn.close()
 
@@ -174,3 +185,99 @@ def test_value_sanity(tmp_path):
     assert any("probabilities outside" in f for f in rep["failures"])
     assert any("non-positive close" in f for f in rep["failures"])
 
+
+
+# ── B6 (2026-09-18): watermarks, value fingerprints, intraday mode ──────────
+
+def _add_watermarks(path, obs="2026-09-04", checked="2026-09-05T21:00:00Z", sources=("DGS10", "DGS2", "VIXCLS")):
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS source_watermarks (source TEXT PRIMARY KEY, last_obs TEXT, last_value REAL,"
+        " advanced_at TEXT, checked_at TEXT NOT NULL, status TEXT NOT NULL, detail TEXT)"
+    )
+    conn.executemany(
+        "INSERT OR REPLACE INTO source_watermarks VALUES (?,?,?,?,?,?,?)",
+        [(f"fred:{s}", obs, 1.0, checked, checked, "ok", None) for s in sources],
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_value_only_fred_update_is_a_change_that_publishes(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev)
+    _make(cur)
+    for p in (prev, cur):
+        _add_watermarks(p)
+    conn = sqlite3.connect(cur)
+    conn.execute("UPDATE raw_series SET value = 4.25 WHERE series_id='DGS10'")
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass"
+    assert "raw_series" in rep["changed_tables"] and rep["changed"] is True and rep["upload"] is True
+
+
+def test_checked_at_alone_is_not_a_change_but_an_advance_is(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev)
+    _make(cur)
+    _add_watermarks(prev, checked="2026-09-05T04:00:00Z")
+    _add_watermarks(cur, checked="2026-09-05T21:00:00Z")
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert "source_watermarks" not in rep["changed_tables"] and rep["upload"] is False
+    _add_watermarks(prev, obs="2026-09-03")
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert "source_watermarks" in rep["changed_tables"] and rep["upload"] is True
+
+
+def test_full_mode_fails_when_fred_watermarks_are_missing(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev)
+    _make(cur, watermarks=False)
+    _add_watermarks(cur, sources=("DGS10", "DGS2"))  # VIXCLS recorded no observation date
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "fail"
+    assert any("fred:VIXCLS" in f and "watermark" in f for f in rep["failures"])
+
+
+def test_fred_outage_checked_this_run_warns_instead_of_blocking(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev)
+    _make(cur)
+    _add_watermarks(cur, obs="2026-08-25", checked="2026-09-05T21:30:00Z")  # fetched this run, source not advancing
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert not any("fred:DGS10" in f for f in rep["failures"]), rep["failures"]
+    assert any("fred:DGS10" in w and "outage" in w for w in rep["warnings"]), rep["warnings"]
+
+
+def test_fred_not_checked_is_a_failure(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev)
+    _make(cur)
+    _add_watermarks(cur, obs="2026-08-25", checked="2026-08-26T04:00:00Z")  # the refresh missed its cycles
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "fail" and any("fred:DGS10" in f for f in rep["failures"])
+
+
+def test_intraday_mode_is_not_blocked_by_a_stale_daily_close(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-01")
+    _make(cur, daily="2026-09-01")
+    conn = sqlite3.connect(cur)
+    conn.executemany("INSERT INTO market_intraday VALUES (?,?,?)", [("SPY", "2026-09-04 15:55:00", 501.0)] * 5)
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, prev, "intraday", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert any("market_daily" in w for w in rep["warnings"])
+    assert rep["upload"] is True
+
+
+def test_summary_shows_the_watermark_table(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev)
+    _make(cur)
+    _add_watermarks(cur)
+    md = v.summary_markdown(v.validate(cur, prev, "full", now=NOW))
+    assert "Source watermarks" in md and "| fred:DGS10 | 2026-09-04 |" in md
