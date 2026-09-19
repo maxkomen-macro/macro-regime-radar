@@ -133,7 +133,7 @@ def _classify_hy_only(hy_oas: float, ig_oas: float | None = None) -> str:
     return label
 
 
-def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None) -> tuple[dict, dict]:
+def _transition_tables(hy_series: pd.Series, ig_series: pd.Series | None = None) -> tuple[dict, dict, dict, dict]:
     """
     Compute credit state transition matrices for 3-month and 6-month horizons.
 
@@ -147,11 +147,11 @@ def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None)
     Returns ({}, {}) if fewer than 60 monthly observations exist.
     """
     if hy_series.empty:
-        return {}, {}
+        return {}, {}, {}, {}
 
     monthly = hy_series.resample("ME").last().dropna()
     if len(monthly) < 60:
-        return {}, {}
+        return {}, {}, {}, {}
 
     # Align IG series if available
     if ig_series is not None and not ig_series.empty:
@@ -168,6 +168,7 @@ def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None)
     n = len(states)
 
     results = {}
+    observed: dict[int, dict[str, int]] = {}
     for horizon in (3, 6):
         # Count transitions: from_state → to_state
         counts: dict[str, dict[str, int]] = {s: {t: 0 for t in CREDIT_STATES} for s in CREDIT_STATES}
@@ -187,8 +188,16 @@ def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None)
                 except ZeroDivisionError:
                     probs[from_s][to_s] = 0.0
         results[horizon] = probs
+        observed[horizon] = {s: sum(counts[s].values()) for s in CREDIT_STATES}
 
-    return results.get(3, {}), results.get(6, {})
+    # B7 (2026-09-18): observed transitions per from-state; a row with 0 has no history.
+    return results.get(3, {}), results.get(6, {}), observed.get(3, {}), observed.get(6, {})
+
+
+def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None) -> tuple[dict, dict]:
+    """Transition probabilities only (3m, 6m); see _transition_tables for the counts."""
+    t3, t6, _, _ = _transition_tables(hy_series, ig_series)
+    return t3, t6
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -220,6 +229,8 @@ def _empty_metrics() -> dict:
         "ig_series":        pd.Series(dtype=float),
         "data_as_of":       None,
         "transition_3m":    {},
+        "transition_obs_3m": {},
+        "transition_obs_6m": {},
         "transition_6m":    {},
         "tight_count":      0,
         "hy_sparkline":     pd.Series(dtype=float),
@@ -313,7 +324,7 @@ def get_credit_metrics() -> dict:
     )
 
     # Transition matrices (pass IG series so Tight state can be detected)
-    transition_3m, transition_6m = _transition_matrix(hy_s, ig_s)
+    transition_3m, transition_6m, obs_3m, obs_6m = _transition_tables(hy_s, ig_s)
 
     return {
         "hy_oas":             hy_oas,
@@ -338,6 +349,10 @@ def get_credit_metrics() -> dict:
         "ig_series":          ig_s,
         "data_as_of":         data_as_of,
         "transition_3m":      transition_3m,
+        # B7 (2026-09-18): observed transitions per from-state. A row with 0
+        # observations has no history (its 0.0 cells are not probabilities).
+        "transition_obs_3m":  obs_3m,
+        "transition_obs_6m":  obs_6m,
         "transition_6m":      transition_6m,
         "tight_count":        tight_count,
         "hy_sparkline":       _sparkline(hy_s),

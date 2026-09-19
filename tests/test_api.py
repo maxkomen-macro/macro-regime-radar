@@ -571,6 +571,7 @@ CREDIT_METRICS_KEYS = {
     "hy_pct_rank", "hy_series", "hy_sparkline", "ig_1w_change", "ig_oas", "ig_pct_rank", "ig_series",
     "ig_sparkline", "lbo_all_in_cost", "tight_count", "transition_3m", "transition_6m",
     "freshness",  # B3 (2026-09-18): per-series state block
+    "transition_obs_3m", "transition_obs_6m",  # B7 (2026-09-18): observations behind each transition row
 }
 
 

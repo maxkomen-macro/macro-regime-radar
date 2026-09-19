@@ -349,7 +349,11 @@ def get_recession_metrics() -> dict:
         "divergence_score":         divergence_score,
         "divergence_label":         divergence_label,
         "divergence_color":         divergence_color,
-        "recession_prob_series":    prob_series,
+        # B7 (2026-09-18): same rule as the headline (points dated on or before
+        # today). The month-end index put a future-dated point (e.g. 2026-09-30
+        # on 2026-09-18) at the end of the chart, so the chart and the headline
+        # disagreed on the same screen.
+        "recession_prob_series":    valid_prob,
         "yield_curve_series":       yield_curve_daily,
         "usrec_series":             usrec_series,
         "n_training_samples":       len(combined),

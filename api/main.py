@@ -793,6 +793,9 @@ class CreditMetrics(BaseModel):
     # vs a threshold that may exceed 100, never a share of issuers.
     ccc_pct_of_distress_line: float | None
     ccc_bps_vs_distress_line: float | None
+    # B7 (2026-09-18): observed transitions per from-state; 0 = no history for that row.
+    transition_obs_3m: dict[str, int] | None = None
+    transition_obs_6m: dict[str, int] | None = None
     lbo_all_in_cost: str | None
     credit_label: str
     credit_label_color: str

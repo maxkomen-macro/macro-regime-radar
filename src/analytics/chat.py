@@ -194,23 +194,65 @@ def _tool_get_signal_status(signal_name: str | None = None) -> dict[str, Any]:
     return {"signals": _rows_to_dicts(rows)}
 
 
+_RECESSION_MODEL_CACHE: dict[str, Any] = {}
+_RECESSION_MODEL_TTL_S = 15 * 60
+
+
+def _recession_model_view() -> dict[str, Any]:
+    """The recession model's 12-month probability (percent) and its 1/3/6-month
+    priors; the model trains in-process, so the result is cached for 15 min."""
+    import time
+
+    hit = _RECESSION_MODEL_CACHE.get("view")
+    if hit and time.monotonic() - hit[0] < _RECESSION_MODEL_TTL_S:
+        return hit[1]
+    from src.analytics.recession import get_recession_metrics
+
+    m = get_recession_metrics()
+    series = m.get("recession_prob_series")
+    prob = m.get("recession_prob")
+    view: dict[str, Any] = {"source": "NBER recession model, 12-month probability (the app's recession probability)",
+                            "probability_pct": prob, "label": m.get("recession_label")}
+    if series is not None and len(series):
+        vals = [float(v) for v in series.values]
+        view["as_of"] = str(series.index[-1])[:10]
+        for n, key in ((1, "prob_1m_ago_pct"), (3, "prob_3m_ago_pct"), (6, "prob_6m_ago_pct")):
+            view[key] = vals[-1 - n] if len(vals) > n else None
+    _RECESSION_MODEL_CACHE["view"] = (time.monotonic(), view)
+    return view
+
+
 def _tool_get_recession_probability() -> dict[str, Any]:
+    """B7 (2026-09-18): two different numbers, each under its own name. The
+    recession model's probability is the app's recession probability (the
+    Recession tab and the Dashboard key level); the classifier's Recession Risk
+    odds are one of the four regime odds. This tool used to return the
+    classifier's odds under the model's name."""
+    out: dict[str, Any] = {
+        "note": "recession_model is the app's recession probability (percent); regime_recession_risk_odds is the "
+                "regime classifier's separate Recession Risk odds (0-1). Never present one as the other.",
+    }
+    try:
+        out["recession_model"] = _recession_model_view()
+    except Exception as exc:  # the model needs pandas/scikit-learn and enough history
+        out["recession_model"] = {"error": f"recession model unavailable ({type(exc).__name__})"}
     with _ro_conn() as conn:
         rows = conn.execute(
             "SELECT date, prob_recession FROM regimes "
             "WHERE prob_recession IS NOT NULL ORDER BY date DESC LIMIT 7"
         ).fetchall()
-    if not rows:
-        return {"error": "No recession probability data."}
-    rec = _rows_to_dicts(rows)
-    latest = rec[0]
-    return {
-        "latest_date":     latest["date"],
-        "prob_now":        latest["prob_recession"],
-        "prob_1m_ago":     rec[1]["prob_recession"] if len(rec) > 1 else None,
-        "prob_3m_ago":     rec[3]["prob_recession"] if len(rec) > 3 else None,
-        "prob_6m_ago":     rec[6]["prob_recession"] if len(rec) > 6 else None,
-    }
+    if rows:
+        rec = _rows_to_dicts(rows)
+        out["regime_recession_risk_odds"] = {
+            "latest_date": rec[0]["date"],
+            "odds_now":    rec[0]["prob_recession"],
+            "odds_1m_ago": rec[1]["prob_recession"] if len(rec) > 1 else None,
+            "odds_3m_ago": rec[3]["prob_recession"] if len(rec) > 3 else None,
+            "odds_6m_ago": rec[6]["prob_recession"] if len(rec) > 6 else None,
+        }
+    else:
+        out["regime_recession_risk_odds"] = {"error": "No regime rows."}
+    return out
 
 
 def _latest_series(conn: sqlite3.Connection, series_id: str) -> tuple[str | None, float | None]:
@@ -360,7 +402,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_recession_probability",
-        "description": "Latest recession probability and 1m / 3m / 6m prior values for trend.",
+        "description": "The recession model's 12-month recession probability in percent (the app's recession probability) with 1m / 3m / 6m priors, and separately the regime classifier's Recession Risk odds (0-1). Two different numbers, each labelled.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -443,8 +485,12 @@ def _build_state_snapshot() -> str:
         pass
     try:
         rec = _tool_get_recession_probability()
-        if "error" not in rec and rec.get("prob_now") is not None:
-            parts.append(f"Recession prob: {rec['prob_now']:.0%}")
+        model = rec.get("recession_model") or {}
+        if model.get("probability_pct") is not None:
+            parts.append(f"Recession model (12m): {model['probability_pct']:.0f}%")
+        odds = rec.get("regime_recession_risk_odds") or {}
+        if odds.get("odds_now") is not None:
+            parts.append(f"Regime Recession Risk odds: {odds['odds_now']:.0%}")
     except Exception:
         pass
     try:
