@@ -338,8 +338,12 @@ def test_the_hourly_count_includes_the_other_pass_of_a_full_run(db, http):
 # ── (c) stored rows are never re-enriched ─────────────────────────────────────
 
 
-def test_items_already_stored_are_not_re_enriched(db, http, monkeypatch):
-    # a row stored by an earlier run (for instance while the cap held) keeps its wire text
+def test_a_stored_row_is_topped_up_but_its_wire_text_is_never_rewritten(db, http, monkeypatch):
+    """Changed by N-B1. A row stored by an earlier run (while the cap or the
+    hourly limit held) used to keep its wire summary forever, which is exactly
+    why the page showed wire summaries: it is one of the ten cards on screen,
+    so it is now topped up. What must not change is the row's stored text — a
+    re-fetch of the same headline never rewrites summary, url or source."""
     earlier = NOW - timedelta(hours=2)
     conn = sqlite3.connect(db)
     conn.execute(
@@ -353,18 +357,17 @@ def test_items_already_stored_are_not_re_enriched(db, http, monkeypatch):
     items = [item(HOT[0], earlier, summary="new wire summary"), item(HOT[1], NOW - timedelta(minutes=10))]
     feed(monkeypatch, items)
     assert news.fetch_and_store_news(str(db), KEYS, now=NOW) == 1
-    assert http.count("api.anthropic.com") == 1 and http.count("api.perplexity.ai") == 1
+    assert http.count("api.anthropic.com") == 2 and http.count("api.perplexity.ai") == 2
     rows = stored(db)
-    assert rows[HOT[0]]["summary"] == "old wire summary"
-    assert rows[HOT[0]]["regime_interpretation"] == "" and rows[HOT[0]]["perplexity_research"] == ""
-    assert rows[HOT[1]]["regime_interpretation"] != ""
-    assert {r["news_id"] for r in ledger(db)} == {rows[HOT[1]]["id"]}
+    assert rows[HOT[0]]["summary"] == "old wire summary" and rows[HOT[0]]["url"] == "https://example.com/old"
+    assert rows[HOT[0]]["regime_interpretation"] != "" and rows[HOT[1]]["regime_interpretation"] != ""
+    assert {r["news_id"] for r in ledger(db)} == {rows[HOT[0]]["id"], rows[HOT[1]]["id"]}
 
     # the same fetch again: nothing new, nothing called, nothing rewritten
     before = stored(db)
     feed(monkeypatch, items)
     assert news.fetch_and_store_news(str(db), KEYS, now=NOW + timedelta(minutes=5)) == 0
-    assert len(http.requests) == 2
+    assert len(http.requests) == 4
     assert stored(db) == before
 
 
@@ -782,3 +785,116 @@ def test_unknown_ledger_values_are_refused(db):
     finally:
         conn.close()
     assert ledger(db) == []
+
+
+# ── (i) N-B1: the window the page shows is the window that gets enriched ──────
+#
+# Enrichment used to see only the ids a run inserted, ranked by rule score,
+# while the News tab ranks the whole 7-day window by significance — so the
+# cards a reader saw were almost never the enriched ones. Each run now also
+# tops up the displayed top ten, inside the same ledger, floor and cap.
+
+
+def topups(path: Path, **kwargs) -> list[int]:
+    conn = sqlite3.connect(path)
+    try:
+        return news.select_display_topups(conn, **kwargs)
+    finally:
+        conn.close()
+
+
+def test_the_display_window_matches_the_api_window_and_ordering(db):
+    ids = insert_rows(db, [
+        ("Treasury auction draws record demand", 4.0, NOW - timedelta(days=2)),
+        ("Payrolls miss and the curve steepens", 3.0, NOW - timedelta(days=6, hours=23)),
+        ("Local bakery opens a second shop", 1.0, NOW - timedelta(hours=1)),
+        ("Nine days ago and still the loudest headline", 9.0, NOW - timedelta(days=9)),
+    ])
+    assert news.DISPLAY_WINDOW_HOURS == 168 and news.DISPLAY_TOP_N == 10
+    # significance DESC, then newest; below the floor and outside the window are out
+    assert topups(db, now=NOW) == [ids[0], ids[1]]
+
+
+def test_a_card_that_already_has_a_read_is_not_re_enriched_and_keeps_its_place(db):
+    ids = insert_rows(db, [(f"Fed speaker {i} moves the front end", 5.0 - i / 10, NOW - timedelta(days=1, minutes=i)) for i in range(12)])
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE news_feed SET regime_interpretation = 'read', perplexity_research = 'cited' WHERE id IN (?,?)", (ids[0], ids[1]))
+    conn.commit()
+    conn.close()
+    # the top ten is still the top ten: the two enriched cards hold their slots,
+    # so the top-up covers the other eight and never reaches #11 or #12.
+    assert topups(db, now=NOW) == ids[2:10]
+
+
+def test_a_run_tops_up_the_displayed_ten_even_when_nothing_new_clears_the_floor(db, http, monkeypatch, capsys):
+    displayed = insert_rows(db, [(h, 3.0, NOW - timedelta(days=2, minutes=i)) for i, h in enumerate(HOT[:12])])
+    feed(monkeypatch, [item(h, NOW - timedelta(minutes=20)) for h in QUIET])  # nothing new above the floor
+    assert news.fetch_and_store_news(str(db), KEYS, now=NOW) == 3
+    assert http.count("api.anthropic.com") == 10 and http.count("api.perplexity.ai") == 10
+    rows = {r["id"]: r for r in stored(db).values()}
+    enriched = [i for i in displayed if rows[i]["regime_interpretation"]]
+    assert enriched == displayed[:10]  # the ten the page would show, not the last two
+    assert all(rows[i]["perplexity_research"].startswith(RESEARCH_4[:40]) for i in enriched)
+    assert summary_lines(capsys.readouterr().out)[0] == (
+        "AI enrichment: 10 enriched, 0 above the floor held for the hourly limit, 0 skipped at the cap,"
+        " 10 topped up from the displayed window · $0.0719 this run · $0.07 month-to-date of $50.00 · errors: none"
+    )
+
+
+def test_a_second_run_with_no_new_rows_makes_no_calls_at_all(db, http, monkeypatch):
+    insert_rows(db, [(h, 3.0, NOW - timedelta(days=2, minutes=i)) for i, h in enumerate(HOT[:10])])
+    feed(monkeypatch, [])
+    assert news.fetch_and_store_news(str(db), KEYS, now=NOW) == 0
+    assert http.count("api.anthropic.com") == 10
+    # an hour later the limit has rolled, the feed is quiet and the window is
+    # already read: nothing is re-examined, so the budget is not touched again.
+    assert news.fetch_and_store_news(str(db), KEYS, now=NOW + timedelta(minutes=61)) == 0
+    assert http.count("api.anthropic.com") == 10 and http.count("api.perplexity.ai") == 10
+
+
+def test_the_displayed_window_wins_the_hourly_room_ahead_of_new_arrivals(db, http, monkeypatch):
+    displayed = insert_rows(db, [(f"Auction tail widens, round {i}", 5.0, NOW - timedelta(days=1, minutes=i)) for i in range(12)])
+    feed(monkeypatch, [item(h, NOW - timedelta(minutes=20)) for h in HOT[:12]])
+    stats_out: list[dict] = []
+    monkeypatch.setattr(news, "enrich_new_rows", _recording(news.enrich_new_rows, stats_out))
+    assert news.fetch_and_store_news(str(db), KEYS, now=NOW) == 12
+    rows = {r["id"]: r for r in stored(db).values()}
+    assert [i for i in displayed if rows[i]["regime_interpretation"]] == displayed[:10]
+    assert http.count("api.anthropic.com") == 10
+    stats = stats_out[0]
+    assert stats["eligible"] == 22 and stats["enriched"] == 10 and stats["held_hourly"] == 12
+
+
+def _recording(fn, sink):
+    def wrapper(*a, **k):
+        stats = fn(*a, **k)
+        sink.append(stats)
+        return stats
+
+    return wrapper
+
+
+def test_the_backfill_script_is_a_dry_run_until_apply(db, http, monkeypatch, capsys):
+    """The one-off for a database that is already behind. Same selection, same
+    ledger, same cap; read-only and silent until --apply."""
+    from scripts import backfill_enrichment as backfill
+
+    # anchored to the real clock: the script reads the live display window
+    recent = datetime.now(timezone.utc) - timedelta(hours=1)
+    ids = insert_rows(db, [(h, 3.0, recent - timedelta(minutes=i)) for i, h in enumerate(HOT[:12])])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", ANTHROPIC_KEY)
+    monkeypatch.setenv("PERPLEXITY_API_KEY", PPLX_KEY)
+
+    assert backfill.main(["--db", str(db)]) == 0
+    assert not http.requests
+    assert all(r["regime_interpretation"] == "" for r in stored(db).values())
+    out = capsys.readouterr().out
+    assert "10 of the top 10 displayed cards carry no AI read" in out and "dry run" in out
+    assert ANTHROPIC_KEY not in out and PPLX_KEY not in out
+
+    assert backfill.main(["--db", str(db), "--apply"]) == 0
+    assert http.count("api.anthropic.com") == 10 and http.count("api.perplexity.ai") == 10
+    rows = {r["id"]: r for r in stored(db).values()}
+    assert [i for i in ids if rows[i]["regime_interpretation"]] == ids[:10]
+    assert {r["news_id"] for r in ledger(db)} == set(ids[:10])
+    assert ANTHROPIC_KEY not in capsys.readouterr().out

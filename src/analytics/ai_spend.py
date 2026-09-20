@@ -231,6 +231,8 @@ def summary_line(stats: dict) -> str:
     ]
     if stats.get("held_time"):
         parts.append(f"{stats['held_time']} held for the time budget")
+    if stats.get("topped_up"):
+        parts.append(f"{stats['topped_up']} topped up from the displayed window")
     errors = ", ".join(f"{label}×{n}" for label, n in sorted((stats.get("errors") or {}).items())) or "none"
     line = (
         f"AI enrichment: {', '.join(parts)} · ${stats.get('run_cost_usd', 0.0):.4f} this run"

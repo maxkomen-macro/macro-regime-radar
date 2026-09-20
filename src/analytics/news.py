@@ -178,6 +178,12 @@ NEWS_RESEARCH_SYSTEM_PROMPT = (
 
 SIGNIFICANCE_FLOOR = 2.5
 ENRICH_PER_HOUR = 10
+# The window and depth the News tab shows by default (web NewsScreen asks
+# /api/news for hours=168 ordered by significance). Each run tops these cards
+# up, so the ten the reader sees carry the AI read rather than whichever rows
+# happened to arrive in the last hour (N-B1).
+DISPLAY_WINDOW_HOURS = 168
+DISPLAY_TOP_N = 10
 ENRICH_WALL_SECONDS = 150
 FUTURE_TOLERANCE = timedelta(minutes=5)   # later-dated candidates are dropped
 INTERPRETATION_MAX_SENTENCES = 2
@@ -991,10 +997,45 @@ def _eligible(row: dict, floor: float) -> bool:
     )
 
 
-def _priority(row: dict) -> tuple:
-    """Highest rule score first, then newest, then insertion order."""
+def _priority(row: dict, displayed=frozenset()) -> tuple:
+    """Cards the page is showing first, then highest score, newest, insertion
+    order. The tier matters only when the hourly room runs out: what a reader
+    can see wins over what merely arrived."""
     pub = _parse_published(row["published_at"])
-    return (-float(row["overall_significance"] or 0.0), -(pub.timestamp() if pub else 0.0), row["id"])
+    return (0 if row["id"] in displayed else 1,
+            -float(row["overall_significance"] or 0.0), -(pub.timestamp() if pub else 0.0), row["id"])
+
+
+def select_display_topups(
+    conn: sqlite3.Connection,
+    *,
+    now: datetime | None = None,
+    window_hours: int = DISPLAY_WINDOW_HOURS,
+    top_n: int = DISPLAY_TOP_N,
+    floor: float = SIGNIFICANCE_FLOOR,
+) -> list[int]:
+    """The ids of the top `top_n` cards in the display window that carry no AI
+    read yet, highest significance first.
+
+    The window and the ordering mirror /api/news (api/db.py) — same normalised
+    published_at comparison, same ORDER BY — so the set is the one the page
+    ranks, not a second opinion about it. Rows already enriched keep their slot
+    in the ten and are simply not returned, so a run never reaches past the
+    cards a reader can see. The SQL is written here rather than imported from
+    api/db.py: the hourly workflow installs only requirements-news.txt.
+    """
+    at = ai_spend.as_utc(now)
+    cutoff = (at - timedelta(hours=window_hours)).strftime("%Y-%m-%d %H:%M:%S")
+    rows = [
+        dict(zip(_ROW_COLUMNS, r))
+        for r in conn.execute(
+            f"SELECT {', '.join(_ROW_COLUMNS)} FROM news_feed "
+            "WHERE replace(substr(published_at, 1, 19), 'T', ' ') >= ? "
+            "ORDER BY overall_significance DESC, published_at DESC LIMIT ?",
+            (cutoff, int(top_n)),
+        )
+    ]
+    return [r["id"] for r in rows if _eligible(r, floor)]
 
 
 def _research_query(current_regime: str, headline: str) -> str:
@@ -1016,7 +1057,7 @@ class _Run:
         self.run_id = run_id
         self.cap = cap
         self.stats = {
-            "new": 0, "eligible": 0, "enriched": 0, "held_hourly": 0, "skipped_cap": 0,
+            "new": 0, "topped_up": 0, "eligible": 0, "enriched": 0, "held_hourly": 0, "skipped_cap": 0,
             "held_time": 0, "calls": 0, "run_cost_usd": 0.0, "month_to_date_usd": 0.0,
             "cap_usd": cap, "errors": {}, "cap_reached": False, "ledger_error": None,
             "keys": bool(self.anthropic_key or self.perplexity_key),
@@ -1133,23 +1174,27 @@ def enrich_new_rows(
     wall_seconds: float = ENRICH_WALL_SECONDS,
     clock=time.monotonic,
     run_id: str | None = None,
+    display_ids=(),
     emit=print,
 ) -> dict:
-    """Enrich the given news_feed rows (the rows this run inserted) with Claude
-    and Perplexity, inside the budget, and print one summary line.
+    """Enrich the given news_feed rows (the rows this run inserted, plus the
+    cards the page is currently showing) with Claude and Perplexity, inside the
+    budget, and print one summary line.
 
     Selection: rows whose rule overall_significance >= `floor` and which carry
-    no enrichment yet, highest first, at most `per_hour` per rolling 60 minutes
-    counted from ai_spend_ledger. Enrichment stops when `wall_seconds` have
+    no enrichment yet, the displayed cards first and then highest first, at
+    most `per_hour` per rolling 60 minutes counted from ai_spend_ledger. Enrichment stops when `wall_seconds` have
     passed, and no call is made unless month-to-date spend plus its worst case
     fits within `monthly_cap` (one cap_reached ledger row per run otherwise).
     Every call is recorded in the ledger with its cost from usage. A quiet run
     (nothing above the floor) makes no HTTP call.
 
-    `keys` uses the fetch_and_store_news config names (anthropic_key,
-    perplexity_key). `now` fixes the clock (default: real time, per row).
-    `run_id` defaults to $GITHUB_RUN_ID. Returns the run's counts, including
-    the printed "line".
+    `display_ids` are the cards the News tab would show (select_display_topups):
+    they share this run's room and cap, and they take it first, so a busy hour
+    cannot leave the page showing wire summaries. `keys` uses the
+    fetch_and_store_news config names (anthropic_key, perplexity_key). `now`
+    fixes the clock (default: real time, per row). `run_id` defaults to
+    $GITHUB_RUN_ID. Returns the run's counts, including the printed "line".
     """
     run = _Run(conn, keys or {}, now, run_id if run_id is not None else ai_spend.current_run_id(), monthly_cap)
     stats = run.stats
@@ -1159,7 +1204,11 @@ def enrich_new_rows(
         conn.commit()
         rows = _load_rows(conn, row_ids)
         stats["new"] = len(rows)
-        eligible = sorted((r for r in rows if _eligible(r, floor)), key=_priority)
+        displayed = {int(i) for i in (display_ids or [])}
+        extra = displayed - {r["id"] for r in rows}
+        rows += _load_rows(conn, extra)
+        stats["topped_up"] = len(extra)
+        eligible = sorted((r for r in rows if _eligible(r, floor)), key=lambda r: _priority(r, displayed))
         stats["eligible"] = len(eligible)
         if eligible and stats["keys"]:
             room = max(0, per_hour - ai_spend.enrichments_in_last_hour(conn, run.now()))
@@ -1189,8 +1238,9 @@ def enrich_new_rows(
 def fetch_and_store_news(db_path: str, config: dict, *, now: datetime | None = None) -> int:
     """
     Full pipeline: fetch → deduplicate → drop future-dated → classify → score →
-    store (insert first) → AI-enrich the rows new in this run, inside the
-    budget → prune headlines older than 7 days. Prints one AI summary line.
+    store (insert first) → AI-enrich the rows new in this run and the cards the
+    News tab is showing, inside the budget → prune headlines older than 7 days.
+    Prints one AI summary line.
 
     Args:
         db_path: path to macro_radar.db
@@ -1220,7 +1270,9 @@ def fetch_and_store_news(db_path: str, config: dict, *, now: datetime | None = N
         if all_items:
             current_regime, _ = _current_regime(conn)
             new_ids = store_new_items(conn, all_items, current_regime, now=at)
-        enrich_new_rows(conn, new_ids, config, now=now)
+        # After storing, so a headline that just arrived can already be one of
+        # the ten the page is about to show.
+        enrich_new_rows(conn, new_ids, config, now=now, display_ids=select_display_topups(conn, now=at))
         if all_items:
             _prune_news(conn, at)
             conn.commit()
