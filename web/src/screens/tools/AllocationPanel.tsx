@@ -130,10 +130,12 @@ export function optimizationsOf(a: AllocationData): AllocationData["optimization
 /** asset_names lives inside the optimizer block; without it the row order
  * falls back to the regime-stats keys — same source columns, same order. */
 export function assetNames(a: AllocationData): string[] {
-  return (
-    optimizationsOf(a)?.asset_names ??
-    [...new Set(Object.values(a.regime_stats).flatMap((s) => Object.keys(s?.mean ?? {})))]
-  );
+  // Every asset with regime history. NOT the optimizer's universe: since N-B2
+  // the optimizer may run on fewer (it drops the assets whose gaps block a
+  // rectangular sample), and the regime matrix, the hero chart and the risk
+  // lenses never depended on it. The weights table reads opt.asset_names,
+  // whose order the weight arrays are in.
+  return [...new Set(Object.values(a.regime_stats).flatMap((s) => Object.keys(s?.mean ?? {})))];
 }
 
 export default function AllocationPanel() {

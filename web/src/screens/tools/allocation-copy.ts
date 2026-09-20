@@ -85,10 +85,14 @@ export interface AllocationStrip {
   detail: string;
 }
 
-/** The asset order: the optimizer's `asset_names` when served, else the
- * regime-stats keys (same source columns, same order). */
+/** The asset order: every asset with regime history, from the regime-stats
+ * keys. It used to prefer the optimizer's `asset_names`, which was the same
+ * list until N-B2 gave the optimizer an adaptive universe — it can now run on
+ * eight of ten, and the hero chart, the regime matrix and the risk lenses
+ * never depended on it. The weights table reads `opt.asset_names` directly,
+ * because that is the order the weight arrays are in. */
 export function assetNames(a: AllocationData): string[] {
-  return a.optimizations?.asset_names ?? [...new Set(Object.values(a.regime_stats).flatMap((s) => Object.keys(s?.mean ?? {})))];
+  return [...new Set(Object.values(a.regime_stats).flatMap((s) => Object.keys(s?.mean ?? {})))];
 }
 
 export function currentStats(a: AllocationData): RegimeStats | undefined {

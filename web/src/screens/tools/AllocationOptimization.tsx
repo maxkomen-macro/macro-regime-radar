@@ -112,7 +112,7 @@ export default function AllocationOptimization({ a }: { a: AllocationData }) {
         {sample?.sentence ? <Caption>{sample.sentence}</Caption> : null}
         </>
       ) : (
-        <Solved a={a} opt={opt} names={names} method={method} onMethod={setMethod} isNarrow={isNarrow} />
+        <Solved a={a} opt={opt} names={opt.asset_names ?? names} method={method} onMethod={setMethod} isNarrow={isNarrow} />
       )}
     </Card>
   );

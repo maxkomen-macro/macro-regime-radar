@@ -258,3 +258,15 @@ def test_a_rest_seeded_us_close_dates_the_feed_from_the_close():
     h = _hub()
     h._store_rest_quote({"code": "SPY.US", "close": 660.0, "timestamp": _ms(2026, 9, 18) / 1000.0}, delayed=True)
     assert h.debug()["feed_last_tick_at"]["us"] == "2026-09-18T20:00:00Z"
+
+
+def test_a_future_dated_upstream_timestamp_never_pins_the_feed_forward():
+    """The stamp only moves forward, so one bad upstream tick would otherwise
+    date the feed into the future for the life of the process. Anything beyond
+    two days ahead is a clock or parse fault, the same rule api/freshness.py
+    applies to a stamp it is handed."""
+    h = _hub()
+    h._handle_tick("us", {"s": "SPY", "p": 660.0, "t": (time.time() + 9 * 86400) * 1000.0})
+    assert h.debug()["feed_last_tick_at"]["us"] is None
+    h._handle_tick("us", {"s": "SPY", "p": 660.0, "t": _ms(2026, 9, 18)})
+    assert h.debug()["feed_last_tick_at"]["us"] == "2026-09-18T20:00:00Z"

@@ -898,3 +898,16 @@ def test_the_backfill_script_is_a_dry_run_until_apply(db, http, monkeypatch, cap
     assert [i for i in ids if rows[i]["regime_interpretation"]] == ids[:10]
     assert {r["news_id"] for r in ledger(db)} == set(ids[:10])
     assert ANTHROPIC_KEY not in capsys.readouterr().out
+
+
+def test_the_summary_counts_the_top_ups_it_enriched_not_the_ones_it_looked_at(db, http, monkeypatch, capsys):
+    """"10 topped up from the displayed window" has to mean ten were read, not
+    ten were considered and then held for the hourly limit."""
+    earlier = insert_rows(db, [(h, 3.0, NOW - timedelta(minutes=10)) for h in HOT[:8]])
+    assert enrich(db, earlier, now=NOW)["enriched"] == 8  # this hour has room for two more
+    displayed = insert_rows(db, [(f"Auction tail widens, round {i}", 5.0, NOW - timedelta(days=1, minutes=i)) for i in range(10)])
+    stats = enrich(db, [], now=NOW + timedelta(minutes=1), display_ids=displayed)
+    assert stats["enriched"] == 2 and stats["held_hourly"] == 8
+    assert stats["topped_up"] == 2
+    assert "2 topped up from the displayed window" in stats["line"]
+    capsys.readouterr()

@@ -48,6 +48,9 @@ ASSET_CLASSES: Dict[str, Dict] = {
 # is not one, and below twelve months a covariance is noise (N-B2).
 MIN_OPTIMIZER_ASSETS = 4
 MIN_OPTIMIZER_MONTHS = 12
+# The rectangular months the optimizers want. One constant, so get_allocation_data
+# reports the universe with the same bar get_regime_conditional_covariance used.
+COV_MIN_MONTHS = 24
 
 REGIME_LABELS: List[str] = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"]
 
@@ -359,7 +362,7 @@ def _join(names: List[str]) -> str:
 def adaptive_regime_block(
     sub: pd.DataFrame,
     *,
-    required_months: int = 24,
+    required_months: int = COV_MIN_MONTHS,
     min_assets: int = MIN_OPTIMIZER_ASSETS,
     floor_months: int = MIN_OPTIMIZER_MONTHS,
 ) -> Dict:
@@ -372,12 +375,14 @@ def adaptive_regime_block(
     had never produced weights (N-B2).
 
     Two levers, in this order. Drop the assets whose gaps cost the most months,
-    one at a time, but only while dropping still buys the bar: an exclusion is
-    justified by clearing the bar, not by tidiness. If no set of drops gets
-    there, keep every asset and state the shorter sample instead, never below
-    floor_months. The excluded assets, the months used and the bar actually
-    applied travel in the payload: weights that leave two asset classes out
-    have to say so on screen.
+    one at a time, but only while dropping still buys the bar, then put back
+    anything a later drop made unnecessary: an exclusion is a claim the screen
+    makes about an asset, so it has to earn itself. If no set of drops reaches
+    the bar, keep every asset and state the shorter sample instead, never below
+    `floor_months`. `min_assets` stops the drop loop; a regime universe already
+    smaller than it is used as it is, never blocked for being small. The
+    excluded assets, the months used and the bar actually applied travel in the
+    payload: weights that leave two asset classes out have to say so on screen.
     """
     total = int(len(sub))
     universe = list(sub.columns)
@@ -400,6 +405,16 @@ def adaptive_regime_block(
     if len(block) < required_months:
         # The drops bought nothing, so take none of them and lower the bar.
         kept, excluded, block = list(universe), [], full_block
+    elif excluded:
+        # Greedy takes the costliest gap first, which on interior holes can drop
+        # an asset a later drop made unnecessary. Put those back, cheapest
+        # first, while the block still clears the bar.
+        for e in sorted(excluded, key=lambda x: x["missing_months"]):
+            trial = [c for c in universe if c in set(kept) | {e["asset"]}]
+            if len(sub[trial].dropna()) >= required_months:
+                kept = trial
+        excluded = [e for e in excluded if e["asset"] not in set(kept)]
+        block = sub[kept].dropna()
 
     months = int(len(block))
     lowered = months < required_months
@@ -442,7 +457,7 @@ def adaptive_regime_block(
 def get_regime_conditional_covariance(
     returns: pd.DataFrame,
     regimes: pd.DataFrame,
-    min_months: int = 24,
+    min_months: int = COV_MIN_MONTHS,
 ) -> Dict[str, pd.DataFrame]:
     """Annualized covariance matrix per regime, over the adaptive universe
     (N-B2): the assets that block the rectangular sample are dropped, and the

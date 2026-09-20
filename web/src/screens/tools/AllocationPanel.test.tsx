@@ -278,7 +278,8 @@ describe("AllocationPanel optimization and overview (checklist 09 E.1 row 8)", (
  * The optimizer now solves by dropping the asset classes whose missing months
  * block a rectangular sample, so the panel has to say which ones are not in
  * the weights. Reuses the p9 helpers above. */
-import { FULL_UNIVERSE, REDUCED_UNIVERSE, withUniverse } from "./__fixtures__/allocation";
+import { FULL_UNIVERSE, NULL_OPT, REDUCED_UNIVERSE, withUniverse } from "./__fixtures__/allocation";
+import type { AllocationData } from "../../api/types";
 
 describe("AllocationPanel adaptive universe (N-B2)", () => {
   beforeEach(() => {
@@ -319,5 +320,19 @@ describe("AllocationPanel adaptive universe (N-B2)", () => {
     await p9AwaitOptimization();
     expect(within(p9Optimization()).queryByTestId("optimizer-universe")).toBeNull();
     expect(p9Text(p9Optimization().querySelector(".mrr-sec-sp"))).toContain("max 40% per asset · long-only");
+  });
+});
+
+/* N-B2 regression guard: the regime matrix, the hero chart and the risk lenses
+ * are every asset with history. They never depended on the optimizer, so a
+ * reduced optimizer universe must not shrink them. */
+describe("assetNames is the full universe, not the optimizer's (N-B2)", () => {
+  it("keeps every asset with regime history when the optimizer ran on fewer", async () => {
+    const { assetNames } = await import("./AllocationPanel");
+    const reduced = withUniverse(REDUCED_UNIVERSE);
+    const opt = reduced.optimizations as NonNullable<AllocationData["optimizations"]>;
+    const trimmed = { ...reduced, optimizations: { ...opt, asset_names: NAMES.slice(0, 2) } } as AllocationData;
+    expect(assetNames(trimmed)).toEqual(NAMES);
+    expect(assetNames(NULL_OPT)).toEqual(NAMES);
   });
 });

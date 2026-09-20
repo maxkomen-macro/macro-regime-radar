@@ -1207,7 +1207,6 @@ def enrich_new_rows(
         displayed = {int(i) for i in (display_ids or [])}
         extra = displayed - {r["id"] for r in rows}
         rows += _load_rows(conn, extra)
-        stats["topped_up"] = len(extra)
         eligible = sorted((r for r in rows if _eligible(r, floor)), key=lambda r: _priority(r, displayed))
         stats["eligible"] = len(eligible)
         if eligible and stats["keys"]:
@@ -1219,7 +1218,12 @@ def enrich_new_rows(
                 if clock() - started > wall_seconds:
                     stats["held_time"] = len(batch) - i
                     break
+                enriched_before = stats["enriched"]
                 started_item = _enrich_one(run, row, regime, probs)
+                # Count a top-up only once it has been read, so the summary line
+                # cannot claim ten while eight were held for the hourly limit.
+                if stats["enriched"] > enriched_before and row["id"] in extra:
+                    stats["topped_up"] += 1
                 if stats["cap_reached"]:
                     stats["skipped_cap"] = len(batch) - i - (1 if started_item else 0)
                     break

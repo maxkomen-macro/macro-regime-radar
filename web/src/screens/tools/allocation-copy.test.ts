@@ -166,4 +166,12 @@ describe("adaptive universe (N-B2)", () => {
     expect(optimizerRow(a).value).toContain("long-only · 40% cap");
     expect(allocationStrip(withUniverse(FULL_UNIVERSE, ALL_CONVERGED), false).detail).toBe("max 40% per asset · long-only");
   });
+
+  it("the hero ranking keeps every asset when the optimizer ran on fewer", () => {
+    const reduced = withUniverse(REDUCED_UNIVERSE);
+    const opt = reduced.optimizations as NonNullable<AllocationData["optimizations"]>;
+    const trimmed = { ...reduced, optimizations: { ...opt, asset_names: NAMES.slice(0, 1) } } as AllocationData;
+    expect(allocationSummary(trimmed).names).toEqual(NAMES);
+    expect(allocationSummary(trimmed).ranked.length).toBe(NAMES.length);
+  });
 });

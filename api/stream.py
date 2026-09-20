@@ -385,6 +385,12 @@ class QuoteHub:
         feed = self._feed_of(sym)
         if feed is None or t_ms is None:
             return
+        # A stamp beyond the horizon is a clock or parse fault, not freshness
+        # (the same rule api/freshness.py applies): since the stamp only moves
+        # forward, one bad tick would otherwise date the feed into the future
+        # for the life of the process.
+        if t_ms / 1000.0 > time.time() + 2 * 86400:
+            return
         stamp = _iso(t_ms / 1000.0)
         prev = self.stats["feed_last_tick_at"].get(feed)
         if stamp and (prev is None or stamp > prev):

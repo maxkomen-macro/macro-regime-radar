@@ -115,3 +115,58 @@ def test_the_covariance_matrix_is_the_adaptive_universe():
     assert "Goldilocks" in covs  # it never was before
     assert list(covs["Goldilocks"].index) == [f"Asset {i}" for i in range(8)]
     assert "High Yield" not in covs["Goldilocks"].index
+
+
+def test_no_asset_is_excluded_that_the_block_did_not_need_dropped():
+    """An exclusion is a claim on screen ("High Yield is excluded"), so it has
+    to be true. The greedy pass takes the costliest gap first, which on
+    interior holes can drop an asset that a later drop made unnecessary; the
+    re-add pass puts those back. Swept over seeded random gap patterns, since
+    the case is rare and the invariant is what matters."""
+    rng = np.random.default_rng(11)
+    checked = 0
+    for _ in range(400):
+        n_months, n_assets = int(rng.integers(26, 60)), int(rng.integers(5, 9))
+        idx = pd.date_range("2015-01-31", periods=n_months, freq="ME")
+        cols = [f"A{i}" for i in range(n_assets)]
+        df = pd.DataFrame(rng.normal(0.004, 0.02, size=(n_months, n_assets)), index=idx, columns=cols)
+        for c in cols:
+            if rng.random() < 0.5:
+                holes = rng.choice(n_months, size=int(rng.integers(1, n_months // 2)), replace=False)
+                df.iloc[holes, cols.index(c)] = np.nan
+        regimes = pd.DataFrame({"regime": ["Goldilocks"] * n_months}, index=idx)
+        sub = regime_frame(df, regimes, "Goldilocks")
+        u = adaptive_regime_block(sub)
+        if not u["excluded"]:
+            continue
+        checked += 1
+        kept = list(u["included"])
+        for e in u["excluded"]:
+            back = [c for c in sub.columns if c in set(kept) | {e["asset"]}]
+            assert len(sub[back].dropna()) < u["required_months"], (
+                f"{e['asset']} was excluded for nothing: the block clears the bar with it back"
+            )
+    assert checked > 20, f"the sweep only exercised {checked} exclusion cases"
+
+
+def test_a_universe_smaller_than_the_asset_floor_is_used_as_it_is():
+    """MIN_OPTIMIZER_ASSETS stops the drop loop; it is not a bar a small
+    regime universe has to clear."""
+    idx = pd.date_range("2020-01-31", periods=30, freq="ME")
+    rng = np.random.default_rng(5)
+    df = pd.DataFrame(rng.normal(0.004, 0.02, size=(30, 2)), index=idx, columns=["SPY", "TLT"])
+    regimes = pd.DataFrame({"regime": ["Goldilocks"] * 30}, index=idx)
+    u = adaptive_regime_block(regime_frame(df, regimes, "Goldilocks"))
+    assert u["ok"] is True and u["assets_used"] == 2 and u["excluded"] == []
+
+
+def test_the_payload_and_the_matrix_use_the_same_bar():
+    """get_allocation_data reports the universe from adaptive_regime_block's
+    default while the covariance comes from get_regime_conditional_covariance's:
+    one constant, so the sentence on screen cannot describe a different block."""
+    import inspect
+
+    from src.analytics.allocation import COV_MIN_MONTHS, get_regime_conditional_covariance
+
+    assert inspect.signature(adaptive_regime_block).parameters["required_months"].default == COV_MIN_MONTHS
+    assert inspect.signature(get_regime_conditional_covariance).parameters["min_months"].default == COV_MIN_MONTHS
