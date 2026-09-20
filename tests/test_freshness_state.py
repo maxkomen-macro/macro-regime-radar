@@ -188,3 +188,71 @@ def test_series_registry_matches_the_fetched_fred_series():
                 fetched |= {v for v in val.values() if isinstance(v, str)}
     assert fetched, "no *SERIES dicts found in src/config.py"
     assert fetched == set(freshness.SERIES_REGISTRY), fetched ^ set(freshness.SERIES_REGISTRY)
+
+
+# ── BH1/BH2 (carried over from ITERATION_1_REPORT.md) ────────────────────────
+
+
+def test_recession_block_names_the_series_the_model_reads():
+    """BH1: the block listed USSLIND, which the model only probes for staleness,
+    and omitted UNRATE and INDPRO, which are features. Read the loads straight
+    out of src/analytics/recession.py so the list cannot drift again."""
+    import ast
+    from pathlib import Path
+
+    from api.main import RECESSION_INPUTS
+
+    tree = ast.parse((Path(__file__).resolve().parent.parent / "src" / "analytics" / "recession.py").read_text())
+    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_build_feature_frame")
+    loaded = {
+        n.args[0].value for n in ast.walk(fn)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_load_raw"
+        and n.args and isinstance(n.args[0], ast.Constant)
+    }
+    assert loaded == {"DGS10", "DGS2", "UNRATE", "BAMLH0A0HYM2", "INDPRO", "USSLIND", "T10YIE", "T5YIE", "USREC"}
+    # USREC is the NBER training target, USSLIND only the staleness probe; the
+    # rest are the inputs whose dates the screen has to be able to state.
+    assert set(RECESSION_INPUTS) == loaded - {"USSLIND", "USREC"}
+    assert RECESSION_INPUTS == ["DGS10", "DGS2", "BAMLH0A0HYM2", "T10YIE", "T5YIE", "UNRATE", "INDPRO"]
+
+
+def test_recession_payload_block_carries_those_series_and_not_usslind():
+    from fastapi.testclient import TestClient
+
+    from api import db
+    from api.main import RECESSION_INPUTS, app
+
+    if not db.DB_PATH.exists():
+        pytest.skip("local DB snapshot absent")
+    block = TestClient(app).get("/api/recession/probability").json()["freshness"]
+    assert set(block) == set(RECESSION_INPUTS)
+    assert "USSLIND" not in block
+
+
+def test_live_quotes_dates_itself_from_the_last_us_tick_not_a_weekend_frame():
+    """BH2: the US socket carries frames on a Sunday; the feed's as_of must be
+    the last US quote's own timestamp (Friday's close), not that arrival."""
+    relay = {
+        "token_configured": True, "feeds": {"us": "open", "vix": "rest"}, "feed_stale": {"us": False},
+        "degraded": False, "degraded_reasons": [],
+        "feed_last_frame_at": {"us": "2026-09-20T21:23:13Z", "vix": "2026-09-20T22:40:07Z"},
+        "feed_last_tick_at": {"us": "2026-09-18T20:00:00Z", "crypto": "2026-09-20T21:23:00Z", "vix": "2026-09-20T22:40:00Z"},
+    }
+    sunday = datetime(2026, 9, 20, 21, 30, tzinfo=timezone.utc)
+    report = _assess({}, relay=relay, now=sunday)
+    s = _series(report)["live_quotes"]
+    assert s["as_of"] == "2026-09-18T20:00:00Z" and s["state"] == "close"
+    sla = {r["feed"]: r for r in report["sla"]}["live_quotes"]
+    assert sla["latest"] == "2026-09-18T20:00:00Z"
+
+
+def test_live_quotes_falls_back_to_frame_arrival_when_no_tick_stamp_exists():
+    """An older relay payload (or a feed that has not printed yet) has no tick
+    stamp; the report stays populated rather than reading 'As of unknown'."""
+    relay = {
+        "token_configured": True, "feeds": {"us": "open", "vix": "rest"}, "feed_stale": {"us": False},
+        "degraded": False, "degraded_reasons": [],
+        "feed_last_frame_at": {"us": "2026-09-18T17:00:00Z"},
+    }
+    s = _series(_assess({}, relay=relay))["live_quotes"]
+    assert s["as_of"] == "2026-09-18T17:00:00Z" and s["state"] == "live"

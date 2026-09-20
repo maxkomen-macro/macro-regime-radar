@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -218,3 +219,42 @@ def test_accepted_subscription_resets_backoff(monkeypatch):
     _, delays = _run_feed_with_upstream(monkeypatch, [[refused], [refused], [accepted], [refused]], max_sleeps=4)
     assert delays == [1.0, 2.0, 1.0, 2.0]
 
+
+
+# ── BH2: live_quotes.as_of is a US quote's own timestamp ─────────────────────
+# The US socket keeps delivering frames outside the session (acks, heartbeats,
+# after-hours prints), and _mark_frame stamps arrival wall-clock, so on a Sunday
+# the feed dated itself Sunday while the last US print was Friday's close.
+
+
+def _ms(y, m, d, hh=20, mm=0):
+    return datetime(y, m, d, hh, mm, tzinfo=timezone.utc).timestamp() * 1000.0
+
+
+def test_us_tick_stamp_reads_the_quote_not_the_frame_arrival():
+    h = _hub()
+    h._handle_tick("us", {"s": "SPY", "p": 660.0, "t": _ms(2026, 9, 18)})
+    h._handle_tick("crypto", {"s": "BTC-USD", "p": 64000.0, "t": _ms(2026, 9, 20, 21, 23)})
+    h._mark_frame("us")  # an ack or heartbeat on the US socket, no quote in it
+    d = h.debug()
+    assert d["feed_last_tick_at"]["us"] == "2026-09-18T20:00:00Z"
+    assert d["feed_last_tick_at"]["crypto"] == "2026-09-20T21:23:00Z"
+    # Arrival time is still tracked — stale_flags and the reconnect logic need it.
+    assert d["feed_last_frame_at"]["us"] is not None
+
+
+def test_the_us_tick_stamp_never_goes_backwards_and_vix_stays_its_own_feed():
+    h = _hub()
+    h._handle_tick("us", {"s": "SPY", "p": 660.0, "t": _ms(2026, 9, 18)})
+    h._handle_tick("us", {"s": "AAPL", "p": 240.0, "t": _ms(2026, 9, 17)})  # a late frame
+    assert h.debug()["feed_last_tick_at"]["us"] == "2026-09-18T20:00:00Z"
+    # A delayed VIX poll is not a US print.
+    h._store_rest_quote({"code": "VIX.INDX", "close": 15.4, "timestamp": _ms(2026, 9, 20, 22, 40) / 1000.0}, delayed=True)
+    assert h.debug()["feed_last_tick_at"]["us"] == "2026-09-18T20:00:00Z"
+    assert h.debug()["feed_last_tick_at"]["vix"] == "2026-09-20T22:40:00Z"
+
+
+def test_a_rest_seeded_us_close_dates_the_feed_from_the_close():
+    h = _hub()
+    h._store_rest_quote({"code": "SPY.US", "close": 660.0, "timestamp": _ms(2026, 9, 18) / 1000.0}, delayed=True)
+    assert h.debug()["feed_last_tick_at"]["us"] == "2026-09-18T20:00:00Z"

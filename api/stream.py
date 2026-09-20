@@ -173,6 +173,9 @@ class QuoteHub:
             "feed_connects": {"us": 0, "crypto": 0, "forex": 0},
             "feed_last_error": {"us": None, "crypto": None, "forex": None, "vix": None},
             "feed_last_frame_at": {"us": None, "crypto": None, "forex": None, "vix": None},
+            # BH2: when a QUOTE last printed on each feed, from the quote's own
+            # timestamp — freshness states this on screen, frame arrival cannot.
+            "feed_last_tick_at": {"us": None, "crypto": None, "forex": None, "vix": None},
             "feed_last_change_at": {"us": None, "crypto": None, "forex": None, "vix": None},
             "ticks_stored": 0,
             "flushes_sent": 0,
@@ -358,13 +361,40 @@ class QuoteHub:
             await self._send_all(self._status_payload())
 
     def _mark_frame(self, feed: str) -> None:
+        """When a frame last ARRIVED on this socket — connection liveness. Acks,
+        heartbeats and crypto prints all count, so this is not a data date."""
         self._last_frame_mono[feed] = time.monotonic()
         self.stats["feed_last_frame_at"][feed] = _iso(time.time())
+
+    def _feed_of(self, sym: str) -> str | None:
+        """Which feed a stored quote belongs to. VIX is its own delayed poll, not
+        a US print, so it can never date the US feed (BH2)."""
+        if sym == VIX_SYMBOL:
+            return "vix"
+        if sym in US_SYMBOLS:
+            return "us"
+        if sym in CRYPTO_SYMBOLS:
+            return "crypto"
+        if sym in FOREX_SYMBOLS:
+            return "forex"
+        return (self._dynamic.get(sym) or {}).get("feed") or feed_for_symbol(sym)
+
+    def _mark_tick(self, sym: str, t_ms: float | None) -> None:
+        """When a QUOTE last printed on this feed, from the quote's own timestamp.
+        Never moves backwards, so a late frame cannot rewind the feed's date."""
+        feed = self._feed_of(sym)
+        if feed is None or t_ms is None:
+            return
+        stamp = _iso(t_ms / 1000.0)
+        prev = self.stats["feed_last_tick_at"].get(feed)
+        if stamp and (prev is None or stamp > prev):
+            self.stats["feed_last_tick_at"][feed] = stamp
 
     def _update(self, sym: str, quote: dict) -> None:
         self.quotes[sym] = quote
         self._dirty.add(sym)
         self.stats["ticks_stored"] += 1
+        self._mark_tick(sym, quote.get("t"))
 
     async def _flush_loop(self) -> None:
         """Coalesced fanout — at most one batch every 250ms."""
@@ -623,8 +653,8 @@ class QuoteHub:
     def _rest_tickers(self, symbols: list[str]) -> list[str]:
         out = []
         for s in symbols:
-            feed = "us" if s in US_SYMBOLS else "crypto" if s in CRYPTO_SYMBOLS else "forex" if s in FOREX_SYMBOLS else (self._dynamic.get(s) or {}).get("feed") or feed_for_symbol(s)
-            if feed is None:
+            feed = self._feed_of(s)
+            if feed not in _REST_SUFFIX:  # None, or VIX, which has its own poll
                 continue
             base = s if "." in s and feed != "us" else s.partition(".")[0]
             out.append(base + _REST_SUFFIX[feed])

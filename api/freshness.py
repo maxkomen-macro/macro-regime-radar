@@ -330,7 +330,10 @@ def assess(
         else:
             live_ok = us_state == "open" and not stale.get("us") and session["is_open"]
             delayed_ok = us_state in ("open", "connecting", "closed") and not session["is_open"]
-            last = (relay.get("feed_last_frame_at") or {}).get("us")
+            # BH2: the US feed dates itself from the last US quote, not from the
+            # arrival of any frame on that socket (acks and heartbeats land at
+            # the weekend too). Older payloads without tick stamps fall back.
+            last = (relay.get("feed_last_tick_at") or {}).get("us") or (relay.get("feed_last_frame_at") or {}).get("us")
             rows.append(_verdict("live_quotes", last, None, live_ok, delayed_ok or (us_state == "open" and not session["is_open"]), "EODHD US feed is open and ticking." if live_ok else ("US session is closed; the last tick stands as the closing print." if not session["is_open"] else f"US feed state is {us_state}; ticks are not arriving." )))
         vix_state = feeds.get("vix")
         rows.append(_verdict("vix_delayed", (relay.get("feed_last_frame_at") or {}).get("vix"), None, vix_state == "rest", vix_state in ("closed",), "VIX polls the delayed REST quote every 60 s (15–20 min delay by source)." if vix_state == "rest" else "VIX poll is not running."))
@@ -373,7 +376,7 @@ def assess(
     if relay:
         feeds = relay.get("feeds", {})
         us, vix = feeds.get("us"), feeds.get("vix")
-        last_us = (relay.get("feed_last_frame_at") or {}).get("us")
+        last_us = (relay.get("feed_last_tick_at") or {}).get("us") or (relay.get("feed_last_frame_at") or {}).get("us")
         if not relay.get("token_configured") or us is None:
             st, why = "unknown", "The live relay is not configured on this server; quotes are stored closes."
         elif us == "connecting":

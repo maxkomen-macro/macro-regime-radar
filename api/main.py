@@ -1342,7 +1342,9 @@ def api_lbo_defaults() -> LboDefaults:
 # values keep their own dates; the state is judged against now).
 SIGNAL_INPUTS = ["DGS10", "DGS2", "VIXCLS", "BAMLH0A0HYM2", "CPIAUCSL", "UNRATE", "INDPRO"]
 CREDIT_INPUTS = ["BAMLH0A0HYM2", "BAMLC0A0CM", "BAMLH0A1HYBB", "BAMLH0A2HYB", "BAMLH0A3HYC"]
-RECESSION_INPUTS = ["DGS10", "DGS2", "BAMLH0A0HYM2", "T10YIE", "T5YIE", "USSLIND"]
+# BH1: the model reads UNRATE and INDPRO; USSLIND is only probed for staleness
+# (discontinued Feb 2020), so the fifth feature is the T10YIE-T5YIE breakeven.
+RECESSION_INPUTS = ["DGS10", "DGS2", "BAMLH0A0HYM2", "T10YIE", "T5YIE", "UNRATE", "INDPRO"]
 
 
 def _series_states() -> dict[str, dict]:
