@@ -571,6 +571,24 @@ export interface OptimizationSample {
   window?: string;
 }
 
+/** What the adaptive universe had to leave out to build a rectangular sample
+ * (N-B2). Served whenever the optimizer ran; `reduced` is true when the panel
+ * has to state it, because weights that leave asset classes out must say so. */
+export interface OptimizerUniverse {
+  included: string[];
+  excluded: { asset: string; missing_months: number; reason: string }[];
+  assets_total: number;
+  assets_used: number;
+  regime_months: number;
+  months_used: number;
+  required_months: number;
+  standard_months: number;
+  lowered: boolean;
+  reduced: boolean;
+  ok: boolean;
+  sentence: string;
+}
+
 export interface AllocationData {
   current_regime: RegimeLabel;
   confidence: number;
@@ -581,6 +599,7 @@ export interface AllocationData {
   optimizations: (Record<string, OptimizationResult> & {
     frontier: FrameData;
     asset_names: string[];
+    universe?: OptimizerUniverse;
   }) | null;
   optimizations_skipped?: (OptimizationSample & { window: string }) | null;
   optimization_sample?: OptimizationSample | null;

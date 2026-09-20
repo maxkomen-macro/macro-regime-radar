@@ -8,8 +8,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AllocationData } from "../../api/types";
-import { allocationHero, allocationStrip, allocationSummary, optimizerStatus } from "./allocation-copy";
-import { ALL_CONVERGED, FULL, NAMES, NO_RANKED, NULL_OPT, SAMPLE, withMethod } from "./__fixtures__/allocation";
+import { allocationHero, allocationStrip, allocationSummary, optimizerRow, optimizerStatus, universeOf } from "./allocation-copy";
+import { ALL_CONVERGED, FULL, FULL_UNIVERSE, NAMES, NO_RANKED, NULL_OPT, REDUCED_UNIVERSE, SAMPLE, withMethod, withUniverse } from "./__fixtures__/allocation";
 
 const LEDE =
   "Read the Goldilocks column first: it is the weather the classifier calls today at 64% odds. A positive return with a negative Sharpe means the asset did not cover cash plus its risk; 28 months is a thin sample, so treat the column as evidence, not law.";
@@ -144,5 +144,26 @@ describe("allocationStrip (the four B.9 states)", () => {
     for (const s of [allocationStrip(undefined, true), allocationStrip(FULL, false), allocationStrip(ALL_CONVERGED, false), allocationStrip(NULL_OPT, false)]) {
       expect(`${s.title} ${s.detail}`).not.toContain("—");
     }
+  });
+});
+
+// ── N-B2: the reduced universe reaches the summary row and the strip ────────
+describe("adaptive universe (N-B2)", () => {
+  it("the Optimizer row and the mint strip name the reduced universe", () => {
+    const a = withUniverse(REDUCED_UNIVERSE);
+    expect(universeOf(a)).not.toBeNull();
+    expect(optimizerRow(a).value).toContain("8 of 10 asset classes");
+    // the mint strip is the every-method-converged one; FULL carries a fallback
+    const strip = allocationStrip(withUniverse(REDUCED_UNIVERSE, ALL_CONVERGED), false);
+    expect(strip.tone).toBe("mint");
+    expect(strip.detail).toBe("8 of 10 asset classes · 27 months");
+    expect(strip.detail.length).toBeLessThanOrEqual(36);
+  });
+
+  it("a full universe reads null and the old strings stand", () => {
+    const a = withUniverse(FULL_UNIVERSE);
+    expect(universeOf(a)).toBeNull();
+    expect(optimizerRow(a).value).toContain("long-only · 40% cap");
+    expect(allocationStrip(withUniverse(FULL_UNIVERSE, ALL_CONVERGED), false).detail).toBe("max 40% per asset · long-only");
   });
 });

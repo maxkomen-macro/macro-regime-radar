@@ -9,7 +9,7 @@
  * which method fell back. Nothing is re-derived: sorting and formatting only.
  */
 
-import type { AllocationData, OptimizationResult, OptimizationSample, RegimeStats } from "../../api/types";
+import type { AllocationData, OptimizationResult, OptimizationSample, OptimizerUniverse, RegimeStats } from "../../api/types";
 import { fmtMonYr, fmtProb } from "../../lib/format";
 import type { StatusTone } from "../shared/SummaryCard";
 import type { TabHeroPillTone } from "../shared/TabHero";
@@ -176,11 +176,28 @@ export function optimizerStatus(a: AllocationData): OptimizerStatus {
   return { solved, fallbacks, total };
 }
 
+/** The served universe, only when the optimizer had to reduce it (N-B2): the
+ * adaptive pass drops the assets whose gaps block a rectangular sample, so a
+ * reader looking at weights has to be told which asset classes are not in
+ * them. Absent or full universe reads null and nothing changes on screen. */
+export function universeOf(a: AllocationData): OptimizerUniverse | null {
+  const u = a.optimizations?.universe;
+  return u && u.reduced ? u : null;
+}
+
 /** The summary card's Optimizer row (AllocationPanel.tsx:209-217, with the
  * solved count now read from the served flags). */
 export function optimizerRow(a: AllocationData): { value: string; tone: string } {
   const { solved, total } = optimizerStatus(a);
-  if (a.optimizations) return { value: `${solved} of ${total} methods solved · long-only · 40% cap`, tone: "var(--pos)" };
+  if (a.optimizations) {
+    const u = universeOf(a);
+    return {
+      value: u
+        ? `${solved} of ${total} methods solved · ${u.assets_used} of ${u.assets_total} asset classes`
+        : `${solved} of ${total} methods solved · long-only · 40% cap`,
+      tone: "var(--pos)",
+    };
+  }
   const sample = sampleOf(a);
   return {
     value: sample?.sentence ? `Unavailable: ${sample.sentence}` : `Unavailable: needs 24 complete ${a.current_regime} months`,
@@ -208,7 +225,13 @@ export function allocationStrip(a: AllocationData | undefined, loading: boolean,
   // Sample row's.
   const { solved, fallbacks } = optimizerStatus(a);
   if (a.optimizations) {
-    if (!fallbacks.length) return { tone: "mint", title: `Optimizer solved · ${solved} methods`, detail: "max 40% per asset · long-only" };
+    const u = universeOf(a);
+    if (!fallbacks.length)
+      return {
+        tone: "mint",
+        title: `Optimizer solved · ${solved} methods`,
+        detail: u ? `${u.assets_used} of ${u.assets_total} asset classes · ${u.months_used} months` : "max 40% per asset · long-only",
+      };
     const named = `${fallbacks.join(" and ")} at equal weight`;
     return {
       tone: "amber",

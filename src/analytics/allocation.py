@@ -44,6 +44,11 @@ ASSET_CLASSES: Dict[str, Dict] = {
     "Gold":             {"etf": "GLD",  "index": "GC=F",  "etf_start": "2004-11-18"},
 }
 
+# The optimizer never fits on less than this: below four assets a "portfolio"
+# is not one, and below twelve months a covariance is noise (N-B2).
+MIN_OPTIMIZER_ASSETS = 4
+MIN_OPTIMIZER_MONTHS = 12
+
 REGIME_LABELS: List[str] = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"]
 
 FACTOR_PROXIES: Dict[str, Dict[str, str]] = {
@@ -336,24 +341,119 @@ def get_regime_conditional_stats(
     return stats
 
 
+def regime_frame(returns: pd.DataFrame, regimes: pd.DataFrame, regime: str) -> pd.DataFrame:
+    """One regime's monthly returns, with assets that have no observation at
+    all in the regime dropped. Still ragged: an asset that launched mid-regime
+    keeps its NaNs, which is what the adaptive pass reads."""
+    combined = returns.copy()
+    combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
+    combined = combined.dropna(subset=["regime"])
+    sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+    return sub.dropna(axis=1, how="all")
+
+
+def _join(names: List[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}"
+
+
+def adaptive_regime_block(
+    sub: pd.DataFrame,
+    *,
+    required_months: int = 24,
+    min_assets: int = MIN_OPTIMIZER_ASSETS,
+    floor_months: int = MIN_OPTIMIZER_MONTHS,
+) -> Dict:
+    """The largest usable rectangular block for one regime, and what it cost.
+
+    The optimizers fit on months where every asset in the universe has a
+    return. Across all ten that block only starts in Feb 2010, because High
+    Yield and Commodities have no returns before 2007, so Goldilocks, whose
+    months reach back to 2002, never cleared the 24-month bar and the optimizer
+    had never produced weights (N-B2).
+
+    Two levers, in this order. Drop the assets whose gaps cost the most months,
+    one at a time, but only while dropping still buys the bar: an exclusion is
+    justified by clearing the bar, not by tidiness. If no set of drops gets
+    there, keep every asset and state the shorter sample instead, never below
+    floor_months. The excluded assets, the months used and the bar actually
+    applied travel in the payload: weights that leave two asset classes out
+    have to say so on screen.
+    """
+    total = int(len(sub))
+    universe = list(sub.columns)
+    full_block = sub.dropna() if universe else sub
+
+    kept, excluded, block = list(universe), [], full_block
+    while len(block) < required_months and len(kept) > min_assets:
+        missing = sub[kept].isna().sum().sort_values(ascending=False)
+        worst, cost = str(missing.index[0]), int(missing.iloc[0])
+        if cost == 0:
+            break                      # every remaining asset is complete; the months are not there
+        kept.remove(worst)
+        excluded.append({
+            "asset": worst,
+            "missing_months": cost,
+            "reason": f"no return in {cost} of the {total} regime months",
+        })
+        block = sub[kept].dropna()
+
+    if len(block) < required_months:
+        # The drops bought nothing, so take none of them and lower the bar.
+        kept, excluded, block = list(universe), [], full_block
+
+    months = int(len(block))
+    lowered = months < required_months
+    applied = months if lowered else required_months
+    ok = months >= floor_months and len(kept) >= min(min_assets, len(universe))
+
+    if excluded:
+        names = _join([e["asset"] for e in excluded])
+        counts = {e["missing_months"] for e in excluded}
+        if len(counts) == 1:
+            tail = f"{names} are excluded: no return in {counts.pop()} of the {total} regime months."
+        else:
+            tail = "Excluded: " + _join([f"{e['asset']} for {e['missing_months']} of the {total} regime months" for e in excluded]) + "."
+        sentence = f"Optimized over {len(kept)} of {len(universe)} asset classes on {months} complete months. {tail}"
+    elif lowered:
+        sentence = (
+            f"Optimized over all {len(universe)} asset classes on {months} complete months, "
+            f"fewer than the {required_months} usually required."
+        )
+    else:
+        sentence = f"Optimized over all {len(universe)} asset classes on {months} complete months."
+
+    return {
+        "included": kept,
+        "excluded": excluded,
+        "assets_total": len(universe),
+        "assets_used": len(kept),
+        "regime_months": total,
+        "months_used": months,
+        "required_months": applied,
+        "standard_months": required_months,
+        "lowered": lowered,
+        "reduced": bool(excluded) or lowered,
+        "ok": bool(ok),
+        "sentence": sentence,
+        "block": block,
+    }
+
+
 def get_regime_conditional_covariance(
     returns: pd.DataFrame,
     regimes: pd.DataFrame,
     min_months: int = 24,
 ) -> Dict[str, pd.DataFrame]:
-    """Annualized covariance matrix per regime (only regimes with ≥ min_months)."""
-    combined = returns.copy()
-    combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
-    combined = combined.dropna(subset=["regime"])
-
+    """Annualized covariance matrix per regime, over the adaptive universe
+    (N-B2): the assets that block the rectangular sample are dropped, and the
+    bar falls to the months the rest support rather than the regime producing
+    nothing at all. get_allocation_data reports what was dropped."""
     covs: Dict[str, pd.DataFrame] = {}
     for regime in REGIME_LABELS:
-        sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
-        sub = sub.dropna(axis=1, how="all")   # drop assets absent for this regime
-        sub_clean = sub.dropna()              # rectangular block: rows with all remaining assets
-        if len(sub_clean) < min_months:
+        universe = adaptive_regime_block(regime_frame(returns, regimes, regime), required_months=min_months)
+        if not universe["ok"]:
             continue
-        covs[regime] = sub_clean.cov() * 12
+        covs[regime] = universe["block"].cov() * 12
     return covs
 
 
@@ -1419,6 +1519,10 @@ def get_allocation_data() -> Dict:
         ]
         cov_df      = regime_cov[current_regime]
         asset_names = [a for a in stats_assets if a in cov_df.index]
+        # What the adaptive pass had to leave out to get a rectangular sample
+        # (N-B2). The screen states this beside the weights: nobody should read
+        # an allocation without knowing which asset classes are not in it.
+        universe = adaptive_regime_block(regime_frame(returns, regimes, current_regime))
 
         mu  = regime_stats[current_regime]["mean"][asset_names].values
         cov = cov_df.loc[asset_names, asset_names].values
@@ -1534,7 +1638,9 @@ def get_allocation_data() -> Dict:
             "herc":             herc_result,
             "frontier":         frontier,
             "asset_names":      asset_names,
+            "universe":         {k: v for k, v in universe.items() if k != "block"},
         }
+        print(f"  universe: {universe['sentence']}")
     else:
         stats_months, cov_months = _regime_month_counts(returns, regimes, current_regime)
         optimizations_skipped = {

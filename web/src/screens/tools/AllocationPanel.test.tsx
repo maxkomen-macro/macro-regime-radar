@@ -273,3 +273,50 @@ describe("AllocationPanel optimization and overview (checklist 09 E.1 row 8)", (
     expect(t).not.toContain("—");
   });
 });
+
+/* ── N-B2: the adaptive universe is stated beside the weights ───────────────
+ * The optimizer now solves by dropping the asset classes whose missing months
+ * block a rectangular sample, so the panel has to say which ones are not in
+ * the weights. Reuses the p9 helpers above. */
+import { FULL_UNIVERSE, REDUCED_UNIVERSE, withUniverse } from "./__fixtures__/allocation";
+
+describe("AllocationPanel adaptive universe (N-B2)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    window.history.replaceState(null, "", "/app/tools");
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("names the excluded assets, the months used and 8 of 10, in the open", async () => {
+    p9Stub(withUniverse(REDUCED_UNIVERSE));
+    renderWithProviders(<AllocationPanel />);
+    await p9AwaitOptimization();
+    const note = within(p9Optimization()).getByTestId("optimizer-universe");
+    expect(p9Text(note)).toContain("8 of 10");
+    expect(p9Text(note)).toContain(
+      "Optimized over 8 of 10 asset classes on 27 complete months. High Yield and Commodities are excluded: no return in 7 of the 28 regime months.",
+    );
+    // stated on the panel itself, not behind the disclosure that means "no output"
+    expect(screen.queryByRole("button", { name: /Optimizer status: no output this session/ })).toBeNull();
+    expect(p9Text(p9Optimization().querySelector(".mrr-sec-sp"))).toContain("8 of 10 asset classes · long-only");
+  });
+
+  it("says nothing when the optimizer used every asset class", async () => {
+    p9Stub(withUniverse(FULL_UNIVERSE));
+    renderWithProviders(<AllocationPanel />);
+    await p9AwaitOptimization();
+    expect(within(p9Optimization()).queryByTestId("optimizer-universe")).toBeNull();
+    expect(p9Text(p9Optimization().querySelector(".mrr-sec-sp"))).toContain("max 40% per asset · long-only");
+  });
+
+  it("a payload with no universe block behaves exactly as before", async () => {
+    p9Stub(FULL);
+    renderWithProviders(<AllocationPanel />);
+    await p9AwaitOptimization();
+    expect(within(p9Optimization()).queryByTestId("optimizer-universe")).toBeNull();
+    expect(p9Text(p9Optimization().querySelector(".mrr-sec-sp"))).toContain("max 40% per asset · long-only");
+  });
+});

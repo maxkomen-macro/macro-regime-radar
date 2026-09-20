@@ -208,3 +208,49 @@ export const NO_RANKED: AllocationData = {
 
 export const spct = (v: number, dp = 1) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(dp)}%`;
 export const pct = (v: number, dp = 1) => `${(v * 100).toFixed(dp)}%`;
+
+/** The adaptive universe (N-B2): the optimizer solved, but over eight of the
+ * ten asset classes, because High Yield and Commodities have no returns for
+ * the regime's early months. `reduced` is what the panel keys on. */
+export const REDUCED_UNIVERSE: NonNullable<AllocationData["optimizations"]>["universe"] = {
+  included: NAMES,
+  excluded: [
+    { asset: "High Yield", missing_months: 7, reason: "no return in 7 of the 28 regime months" },
+    { asset: "Commodities", missing_months: 7, reason: "no return in 7 of the 28 regime months" },
+  ],
+  assets_total: 10,
+  assets_used: 8,
+  regime_months: 28,
+  months_used: 27,
+  required_months: 24,
+  standard_months: 24,
+  lowered: false,
+  reduced: true,
+  ok: true,
+  sentence:
+    "Optimized over 8 of 10 asset classes on 27 complete months. High Yield and Commodities are excluded: no return in 7 of the 28 regime months.",
+};
+
+/** Solved over the full ten: `reduced` false, so nothing is stated. */
+export const FULL_UNIVERSE: NonNullable<AllocationData["optimizations"]>["universe"] = {
+  ...REDUCED_UNIVERSE,
+  included: NAMES,
+  excluded: [],
+  assets_used: 10,
+  months_used: 28,
+  reduced: false,
+  sentence: "Optimized over all 10 asset classes on 28 complete months.",
+};
+
+/** A payload with a served universe block (FULL unless another base is given;
+ * FULL carries one equal-weight fallback, so strip cases pass ALL_CONVERGED). */
+export function withUniverse(
+  universe: NonNullable<AllocationData["optimizations"]>["universe"],
+  from: AllocationData = FULL,
+): AllocationData {
+  const base = from.optimizations as NonNullable<AllocationData["optimizations"]>;
+  // the same cast withMethod uses: an index-signature type does not take a
+  // named member of another shape in an object literal.
+  const next = { ...base, universe } as unknown as NonNullable<AllocationData["optimizations"]>;
+  return { ...from, optimizations: next };
+}

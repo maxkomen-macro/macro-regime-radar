@@ -26,7 +26,7 @@ import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
 import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
 import FrontierChart, { type FrontierMarker } from "./FrontierChart";
-import { optimizerStatus } from "./allocation-copy";
+import { optimizerStatus, universeOf } from "./allocation-copy";
 import {
   DASH,
   METHODS,
@@ -55,7 +55,13 @@ export default function AllocationOptimization({ a }: { a: AllocationData }) {
         title="Optimization"
         right={
           <MetaWithStamp
-            meta={opt ? "max 40% per asset · long-only" : "optional enhancement · unavailable this session"}
+            meta={
+              opt
+                ? universeOf(a)
+                  ? `${universeOf(a)!.assets_used} of ${universeOf(a)!.assets_total} asset classes · long-only`
+                  : "max 40% per asset · long-only"
+                : "optional enhancement · unavailable this session"
+            }
             stamp={<Stamp source={SRC.allocation} asOf={`returns through ${fmtMonYr(`${a.data_end}-01`)}`} />}
           />
         }
@@ -143,6 +149,11 @@ function Solved({
 
   const status = optimizerStatus(a);
   const fallbacks = status.fallbacks;
+  // N-B2: when the adaptive pass had to drop asset classes to get a
+  // rectangular sample, the weights below are over fewer than ten. That is
+  // stated here, in the open, not behind a disclosure: nobody should read an
+  // allocation without knowing which asset classes are missing from it.
+  const universe = universeOf(a);
 
   // Plain derivation, deliberately NOT a hook (the old panel's rule): the
   // non-fallback methods with both coordinates, coloured by the token map.
@@ -176,6 +187,23 @@ function Solved({
 
   return (
     <>
+      {universe ? (
+        <div
+          data-testid="optimizer-universe"
+          style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 12 }}
+        >
+          <Tag tone="watch" size="sm">
+            {universe.assets_used} of {universe.assets_total}
+          </Tag>
+          <p
+            className="mrr-prose"
+            style={{ fontFamily: "var(--font-ui)", fontSize: "var(--fs-body-s)", lineHeight: 1.6, color: "var(--text-2)", margin: 0, minWidth: 0 }}
+          >
+            {universe.sentence}
+          </p>
+        </div>
+      ) : null}
+
       {served.length ? (
         <div style={{ marginBottom: 12 }}>
           <Segmented
