@@ -55,13 +55,7 @@ export default function AllocationOptimization({ a }: { a: AllocationData }) {
         title="Optimization"
         right={
           <MetaWithStamp
-            meta={
-              opt
-                ? universeOf(a)
-                  ? `${universeOf(a)!.assets_used} of ${universeOf(a)!.assets_total} asset classes · long-only`
-                  : "max 40% per asset · long-only"
-                : "optional enhancement · unavailable this session"
-            }
+            meta={opt ? "max 40% per asset · long-only" : "optional enhancement · unavailable this session"}
             stamp={<Stamp source={SRC.allocation} asOf={`returns through ${fmtMonYr(`${a.data_end}-01`)}`} />}
           />
         }

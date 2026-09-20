@@ -301,7 +301,8 @@ describe("AllocationPanel adaptive universe (N-B2)", () => {
     );
     // stated on the panel itself, not behind the disclosure that means "no output"
     expect(screen.queryByRole("button", { name: /Optimizer status: no output this session/ })).toBeNull();
-    expect(p9Text(p9Optimization().querySelector(".mrr-sec-sp"))).toContain("8 of 10 asset classes · long-only");
+    // the section meta is unchanged: e2e/tools.spec.ts pins it in the solved branch
+    expect(p9Text(p9Optimization().querySelector(".mrr-sec-sp"))).toContain("max 40% per asset · long-only");
   });
 
   it("says nothing when the optimizer used every asset class", async () => {
