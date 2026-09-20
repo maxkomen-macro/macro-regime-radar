@@ -10,7 +10,7 @@ Single source of truth for Claude Code sessions on this repo. Keep tight; verify
 - **Repo:** github.com/maxkomen-macro/macro-regime-radar
 - **Local path:** `/Users/maxkomen/Python Macro/macro-regime-radar` (note the space — escape in shell)
 - **Stack:** Python 3.12, Streamlit, SQLite (`data/macro_radar.db`), FRED + yfinance + Finnhub + NewsAPI + RSS (feedparser), Anthropic API, Perplexity Sonar API, scikit-learn, plotly/altair, openbb, arch, riskfolio-lib, quantstats, prophet. Hosted on Streamlit Community Cloud, automated via GitHub Actions.
-- **Tabs:** 11 total. Names live in `dashboard/app.py` (around line 893).
+- **Navigation:** 4 sections (Overview, Markets, Risk, Models) via `st.segmented_control`, each with `st.pills` panels. `SECTIONS` / `SUBVIEWS` dicts in `dashboard/app.py`. All 11 original views are still rendered, one panel each; only the picked panel executes (faster reruns than the old 11-tab layout where every tab ran).
 
 ---
 
@@ -20,22 +20,28 @@ Phases 0–12 are complete. For per-phase scope, read `git log` and recent commi
 
 ---
 
-## Bloomberg Design System
+## Macro RR Design System (Canva brand kit)
 
-Dark theme only. No alternative palettes.
+Off-white content sheet with navy margins; navy is the single accent (gold appears only in the logo crown and the header hairline). Tokens live in `dashboard/components/shared_styles.py` (`BRAND` dict) and `.streamlit/config.toml`.
 
 | Token | Value |
 |---|---|
-| Background | `#0d1117` |
-| Card background | `#161b22` |
-| Borders | `#30363d` |
-| Accent blue | `#4a9eff` |
+| App shell / margins / header band | `#000b3d` (navy) |
+| Page (content sheet) | `#f3f4f6` |
+| Card | `#ffffff` |
+| Divider / border | `#e3e6ec` / `#d3d7e0` |
+| Text / secondary / muted / dim | `#0b1540` / `#2c3556` / `#5b6480` / `#8a92a8` |
+| Accent | `#000b3d` (navy); gold `#c69842` reserved for logo + header hairline |
+| Semantic | green `#1e9e5a`, orange `#d9772a`, amber `#b8860b`, red `#d23f3f`, grey `#7a829a`, blue line `#3b6fc4` |
 
-- Use `streamlit.components.v1.html()` for all styled cards (see Streamlit Constraints for why).
-- Sparklines on numeric metric cards where time series supports it.
-- Monospace for numeric values; small uppercase labels above large values.
-
----
+- Fonts: system Helvetica stack (`'Helvetica Neue', Helvetica, Arial`) for UI, `'SF Mono', Menlo, Consolas` for numbers. No web-font imports.
+- Layout: `.block-container` is the off-white sheet (max 1360px) on a navy `stMain`; the header bar bleeds to the sheet edges with negative margins and keeps light-on-navy colours (it is the one place light text tokens are used).
+- Streamlit's HTML sanitizer strips `!important` from inline styles in `st.markdown`; never rely on it for colour.
+- Plotly: every figure uses `template="macro_rr"` (registered in `shared_styles.py`, transparent paper, brand colorway). Do not reintroduce `plotly_white` / `plotly_dark`.
+- Logo lockups + crown favicon in `dashboard/assets/` (cropped from the Canva kit). Header embeds `logo_white.png` as base64.
+- No glows, no gradients, no pure black. Cards: 1px `#d3d7e0` border, 8px radius.
+- Use `streamlit.components.v1.html()` for styled cards (see Streamlit Constraints for why).
+- Sparklines on numeric metric cards where time series supports it. Monospace for numeric values; small uppercase labels above large values.
 
 ## Streamlit Constraints (Hard-Won)
 
@@ -240,7 +246,7 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 - Do not commit `data/macro_radar.db`.
 - Do not commit `.streamlit/secrets.toml`.
 - Do not use `st.markdown()` for styled HTML cards — use `streamlit.components.v1.html()`.
-- Do not change the Bloomberg dark aesthetic.
+- Do not change the Macro RR off-white/navy aesthetic or add a second accent colour.
 - Do not use chained pandas indexing (`df[col][mask] = value`) — use `df.loc[mask, col] = value`.
 - Do not use `@st.cache_data` on scikit-learn model objects — use `@st.cache_resource`.
 - Do not reintroduce `numpy.irr` — use binary search on NPV.

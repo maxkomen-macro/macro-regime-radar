@@ -15,7 +15,7 @@ import streamlit as st
 from components.db_helpers import load_alert_feed
 from components.shared_styles import section_header
 
-LEVEL_COLORS = {"risk": "#da3633", "watch": "#d29922", "info": "#4a9eff"}
+LEVEL_COLORS = {"risk": "#d23f3f", "watch": "#b8860b", "info": "#000b3d"}
 LEVEL_ICONS  = {"risk": "🔴", "watch": "🟡", "info": "🔵"}
 
 # Finance-friendly display for known signal/alert names
@@ -69,7 +69,7 @@ def render_alerts_tab() -> None:
             color = LEVEL_COLORS[lvl]
             badge_parts.append(
                 f'<span style="background:{color};color:#fff;padding:4px 12px;'
-                f'border-radius:12px;font-size:13px;margin-right:6px">'
+                f'border-radius:3px;font-size:13px;margin-right:6px">'
                 f'{LEVEL_ICONS[lvl]} {lvl.capitalize()}: {cnt}</span>'
             )
     if badge_parts:
@@ -101,7 +101,7 @@ def render_alerts_tab() -> None:
     # ── Card-style feed ────────────────────────────────────────────────────────
     for _, row in filtered.head(50).iterrows():
         lvl    = row.get("level", "info")
-        color  = LEVEL_COLORS.get(lvl, "#8899aa")
+        color  = LEVEL_COLORS.get(lvl, "#5b6480")
         icon   = LEVEL_ICONS.get(lvl, "")
         name   = str(row.get("name", ""))
         atype  = str(row.get("alert_type", ""))
@@ -143,13 +143,13 @@ def render_alerts_tab() -> None:
         dt_str         = html.escape(dt_str)
 
         val_html = (
-            f'<div style="font-size:11px;color:#484f58;margin-top:3px">{val_line}</div>'
+            f'<div style="font-size:11px;color:#8a92a8;margin-top:3px">{val_line}</div>'
             if val_line else ""
         )
 
         st.markdown(
-            f'<div style="border-left:3px solid {color};background:#161b22;'
-            f'border:0.5px solid #21262d;border-left:3px solid {color};'
+            f'<div style="border-left:3px solid {color};background:#ffffff;'
+            f'border:0.5px solid #e3e6ec;border-left:3px solid {color};'
             f'border-radius:6px;padding:10px 14px;margin-bottom:10px">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
             f'<div>'
@@ -157,11 +157,11 @@ def render_alerts_tab() -> None:
             f'letter-spacing:.5px">{category}</span> '
             f'<span style="margin-left:4px;font-size:11px;background:{color};color:#fff;'
             f'padding:1px 7px;border-radius:8px">{lvl.upper()}</span>'
-            f'<br><span style="font-weight:700;font-size:14px;color:#e6edf3">{display_name}</span>'
+            f'<br><span style="font-weight:700;font-size:14px;color:#0b1540">{display_name}</span>'
             f'</div>'
-            f'<span style="font-size:11px;color:#8899aa;white-space:nowrap;padding-left:8px">{dt_str}</span>'
+            f'<span style="font-size:11px;color:#5b6480;white-space:nowrap;padding-left:8px">{dt_str}</span>'
             f'</div>'
-            f'<div style="font-size:13px;margin-top:5px;color:#c9d1d9">{why_it_matters}</div>'
+            f'<div style="font-size:13px;margin-top:5px;color:#2c3556">{why_it_matters}</div>'
             f'{val_html}'
             f'</div>',
             unsafe_allow_html=True,
