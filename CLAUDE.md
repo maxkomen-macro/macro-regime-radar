@@ -371,6 +371,8 @@ When in doubt: delete more than you add. Stale documentation is worse than missi
 
 ---
 
+*Sep 21 2026 — `desk/frame` (worktree `macro-regime-radar-frame`): the Desk analyst workspace at `/desk` (`web/src/screens/desk/`, `web/src/styles/desk.css`, content in `web/src/content/desk/`), the one read-only endpoint `/api/desk/pipeline/inventory` (`api/desk.py`), spec `docs/desk/DESK_FRAME_SPEC.md`, report `docs/desk/FRAME_REPORT.md`. Unpushed; gate `PUSH OK desk/frame`.*
+
 *Sep 10 2026 — committed the Sep 6 release-readiness pass as five commits and pushed `react-rebuild` to origin (force-with-lease over the Aug WIP commit that had `web/node_modules` and `web/dist` committed; that commit is kept locally as tag `backup/origin-react-rebuild-20260910`). Fixed the relay reconnect loop, the validator's event-calendar false positive, and added a graceful-shutdown timeout to the Dockerfile CMD. Review screenshots under `proposals/` are gitignored. Nothing merged or deployed.*
 
 *Last meaningful update: Sep 6 2026 — release-readiness pass on `react-rebuild` (uncommitted): EODHD-first provider layer (`api/providers/`), security gates (`api/security.py`, `api/logsafe.py`), source-aware freshness (`api/freshness.py`, `api/calendar.py`), relay hardening, health endpoints, snapshot mode (`scripts/build_snapshot.py` + `web/src/api/snapshot.ts`), workflow modes with validation gates (`scripts/validate_db.py`), `make sync-data`, vitest suite, docs (`docs/RUNBOOK.md`, `docs/redesign/DEPLOY.md`, `proposals/FINAL_RELEASE_READINESS.md`). Nothing committed, pushed, dispatched or deployed.*
