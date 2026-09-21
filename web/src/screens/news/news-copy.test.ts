@@ -507,6 +507,11 @@ describe("the page and the backend mean the same ten stories (fix/prelaunch-1, B
     }
   });
 
+  it("zero stories means none, on both sides (Item 2 verify loop 1)", () => {
+    expect(displayStories(window7d, 0)).toEqual([]);
+    expect(pendingReadIds(window7d, 0).size).toBe(0);
+  });
+
   it("the floor and the depth are the backend's", () => {
     expect(ENRICH_FLOOR).toBe(storyKeys.floor);
     expect(ENRICH_TOP_N).toBe(storyKeys.top_n);

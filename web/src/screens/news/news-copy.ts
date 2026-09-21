@@ -315,6 +315,7 @@ export const ENRICH_FLOOR = 2.5;
 export function displayStories(window7d: NewsItem[], topN = ENRICH_TOP_N): NewsItem[] {
   const seen = new Set<string>();
   const out: NewsItem[] = [];
+  if (topN <= 0) return out;
   for (const r of window7d) {
     const key = headlineKey(r.headline);
     if (seen.has(key)) continue;

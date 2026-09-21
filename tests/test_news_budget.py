@@ -981,3 +981,93 @@ def test_the_selection_reads_the_rows_the_page_loads():
     assert news.DISPLAY_LIMIT == STORY_FIXTURE["page_limit"]
     page = (Path(__file__).resolve().parent.parent / "web/src/screens/news/NewsScreen.tsx").read_text()
     assert f"useNews({news.DISPLAY_WINDOW_HOURS}, undefined, {news.DISPLAY_LIMIT}" in page, "the page's enrichment window query"
+
+
+# ── (k) Item 2 verify loop 1: a read that rescores its story ───────────────────
+#
+# A read replaces the rule score with Claude's (Phase 11). A lower score can move
+# the story out of the displayed ten (an unread story takes its place) or behind
+# its own unread duplicate (which then became the card, and was paid for again).
+# The run now settles: it re-reads the ten after its top-ups and tops up any
+# newcomer inside the same room and cap, and a read reaches every copy of its
+# story.
+
+def _page_ten(path: Path, now: datetime) -> list[dict]:
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    cutoff = (now - timedelta(hours=news.DISPLAY_WINDOW_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        rows = [dict(r) for r in conn.execute(
+            f"SELECT {', '.join(news._ROW_COLUMNS)} FROM news_feed WHERE replace(substr(published_at, 1, 19), 'T', ' ') >= ? "
+            "ORDER BY overall_significance DESC, published_at DESC LIMIT ?", (cutoff, news.DISPLAY_LIMIT))]
+    finally:
+        conn.close()
+    return news.display_stories(rows)
+
+
+def test_a_read_that_rescores_a_story_out_of_the_ten_is_settled_in_the_same_run(db, http, monkeypatch):
+    ids = insert_rows(db, [(h, 3.0, NOW - timedelta(days=2, minutes=i)) for i, h in enumerate(HOT[:10])])
+    eleventh = insert_rows(db, [(HOT[10], 2.95, NOW - timedelta(days=3))])[0]
+    conn = sqlite3.connect(db)
+    conn.execute(f"UPDATE news_feed SET regime_interpretation = 'read', perplexity_research = 'cited' WHERE id IN ({','.join('?' * 8)})", ids[:8])
+    conn.commit()
+    conn.close()
+    calls = {"n": 0}
+
+    def claude(body):
+        calls["n"] += 1
+        return FakeResponse(200, anthropic_ok(overall=2.9 if calls["n"] == 1 else 4.2))
+
+    http.anthropic = claude
+    feed(monkeypatch, [])
+    news.fetch_and_store_news(str(db), KEYS, now=NOW)
+    ten = _page_ten(db, NOW)
+    assert eleventh in [r["id"] for r in ten], "the rescored story left the ten and the eleventh took its place"
+    assert all(r["regime_interpretation"] for r in ten), "every story the page shows carries a read after one run"
+    assert http.count("api.anthropic.com") == 3 and topups(db, now=NOW) == []
+    news.fetch_and_store_news(str(db), KEYS, now=NOW + timedelta(minutes=61))
+    assert http.count("api.anthropic.com") == 3 and http.count("api.perplexity.ai") == 3, "a second run makes no call"
+
+
+def test_a_read_reaches_every_copy_of_its_story_so_no_story_is_paid_for_twice(db, http, monkeypatch):
+    first, second = insert_rows(db, [("Fed holds rates steady", 3.5, NOW - timedelta(hours=5)),
+                                     ("  FED holds   rates steady ", 3.5, NOW - timedelta(hours=6))])
+    http.anthropic = lambda body: FakeResponse(200, anthropic_ok(overall=2.9))
+    feed(monkeypatch, [])
+    news.fetch_and_store_news(str(db), KEYS, now=NOW)
+    rows = {r["id"]: r for r in stored(db).values()}
+    assert rows[first]["regime_interpretation"] and rows[second]["regime_interpretation"] == rows[first]["regime_interpretation"]
+    assert rows[second]["perplexity_research"] == rows[first]["perplexity_research"]
+    assert rows[second]["overall_significance"] == rows[first]["overall_significance"] == 2.9
+    assert http.count("api.anthropic.com") == 1
+    news.fetch_and_store_news(str(db), KEYS, now=NOW + timedelta(minutes=61))
+    assert http.count("api.anthropic.com") == 1 and http.count("api.perplexity.ai") == 1, "the story is never paid for twice"
+    assert ledger(db)[-1]["news_id"] == first, "the ledger records the call against the row it was made for"
+
+
+def test_a_copy_with_a_read_lends_it_to_the_card_and_keeps_its_own(db, http, monkeypatch):
+    """A story whose card (its first copy) has no read while a merged-away copy
+    has one is not paid for again: the card takes that read, and a copy that
+    has its own read keeps it."""
+    card, lender, own = insert_rows(db, [("Fed holds rates steady", 3.6, NOW - timedelta(hours=4)),
+                                         ("fed holds rates  steady", 3.5, NOW - timedelta(hours=5)),
+                                         ("FED HOLDS RATES STEADY", 3.4, NOW - timedelta(hours=6))])
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE news_feed SET regime_interpretation = 'the lent read', perplexity_research = 'lent research', overall_significance = 3.0 WHERE id = ?", (lender,))
+    conn.execute("UPDATE news_feed SET regime_interpretation = 'its own read', perplexity_research = 'its own research' WHERE id = ?", (own,))
+    conn.commit()
+    conn.close()
+    assert topups(db, now=NOW) == [card], "the selection alone does not know about the lender"
+    feed(monkeypatch, [])
+    news.fetch_and_store_news(str(db), KEYS, now=NOW)
+    assert http.count("api.anthropic.com") == 0 and http.count("api.perplexity.ai") == 0
+    rows = {r["id"]: r for r in stored(db).values()}
+    assert rows[card]["regime_interpretation"] in ("the lent read", "its own read")
+    assert rows[own]["regime_interpretation"] == "its own read" and rows[own]["perplexity_research"] == "its own research"
+    assert all(r["regime_interpretation"] for r in _page_ten(db, NOW))
+
+
+def test_zero_stories_means_none(db):
+    insert_rows(db, [(h, 3.0, NOW - timedelta(days=2, minutes=i)) for i, h in enumerate(HOT[:3])])
+    assert news.display_stories([{"headline": "x"}], 0) == []
+    assert topups(db, now=NOW, top_n=0) == []

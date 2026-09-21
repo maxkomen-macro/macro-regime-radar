@@ -89,7 +89,8 @@ def main(argv: list[str] | None = None) -> int:
         if not pending:
             return 0
         ensure_ai_spend_ledger(conn)
-        stats = news.enrich_new_rows(conn, [], _keys(), display_ids=[r["id"] for r in pending])
+        stats = news.enrich_new_rows(conn, [], _keys(), display_ids=[r["id"] for r in pending],
+                                     settle=lambda: news.select_display_topups(conn, top_n=a.top_n))
         conn.commit()
         print(f"enriched {stats['enriched']} · ${stats['run_cost_usd']:.4f} this run · ${stats['month_to_date_usd']:.2f} month-to-date")
     finally:

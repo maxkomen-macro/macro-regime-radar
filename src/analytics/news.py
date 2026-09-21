@@ -189,6 +189,9 @@ DISPLAY_TOP_N = 10
 # merges near-identical headlines before it ranks; the top-up reads the same
 # rows and collapses on the same key, so its ten are the page's ten cards.
 DISPLAY_LIMIT = 150
+# A read replaces the rule score with Claude's, which can move a story out of
+# the displayed ten; a run re-reads the ten this many times after its top-ups.
+SETTLE_PASSES = 3
 
 # The page's story key, web/src/screens/news/news-copy.ts headlineKey:
 # headline.trim().toLowerCase().replace(/\s+/g, " "). JavaScript's \s and
@@ -1035,6 +1038,8 @@ def display_stories(rows: list[dict], top_n: int = DISPLAY_TOP_N) -> list[dict]:
     per headline_key, the first one, which is the copy the page renders."""
     seen: set[str] = set()
     out: list[dict] = []
+    if top_n <= 0:
+        return out
     for r in rows:
         key = headline_key(r["headline"])
         if key in seen:
@@ -1044,6 +1049,40 @@ def display_stories(rows: list[dict], top_n: int = DISPLAY_TOP_N) -> list[dict]:
         if len(out) == top_n:
             break
     return out
+
+
+def _read_text(value) -> bool:
+    return bool((value or "").strip(_JS_SPACE))
+
+
+def share_story_reads(conn: sqlite3.Connection) -> int:
+    """Give every copy of a story that carries no read the read, and the score,
+    of the copy of it the page would rank first among those that have one.
+    Costs no call. The page shows one card per story (headline_key) and a read
+    on a merged-away copy never reaches it; left alone, a lower Claude score on
+    the read copy made the unread one the card, and the next run paid for the
+    same story again (Item 2 verify loop 1). Returns the rows it filled."""
+    stories: dict[str, list] = {}
+    for r in conn.execute(
+        "SELECT id, headline, published_at, overall_significance, regime_interpretation, perplexity_research FROM news_feed"
+    ):
+        stories.setdefault(headline_key(r[1]), []).append(r)
+    fills = []
+    for copies in stories.values():
+        if len(copies) < 2:
+            continue
+        read = [c for c in copies if _read_text(c[4]) or _read_text(c[5])]
+        if not read or len(read) == len(copies):
+            continue
+        donor = max(read, key=lambda c: (float(c[3] or 0.0), str(c[2] or "")[:19].replace("T", " ")))
+        fills += [(donor[4], donor[5], donor[3], c[0]) for c in copies if c not in read]
+    if fills:
+        conn.executemany(
+            "UPDATE news_feed SET regime_interpretation = ?, perplexity_research = ?, overall_significance = ? WHERE id = ?",
+            fills,
+        )
+        conn.commit()
+    return len(fills)
 
 
 def select_display_topups(
@@ -1206,6 +1245,27 @@ def _enrich_one(run: _Run, row: dict, regime: str, probs: dict) -> bool:
     return True
 
 
+def _enrich_batch(run: _Run, batch: list[dict], display: set, regime: str, probs: dict,
+                  started: float, clock, wall_seconds: float) -> bool:
+    """Enrich `batch` in order inside the wall-clock budget and the cap. False
+    when either stopped it."""
+    stats = run.stats
+    for i, row in enumerate(batch):
+        if clock() - started > wall_seconds:
+            stats["held_time"] += len(batch) - i
+            return False
+        enriched_before = stats["enriched"]
+        started_item = _enrich_one(run, row, regime, probs)
+        # Count a top-up only once it has been read, so the summary line
+        # cannot claim ten while eight were held for the hourly limit.
+        if stats["enriched"] > enriched_before and row["id"] in display:
+            stats["topped_up"] += 1
+        if stats["cap_reached"]:
+            stats["skipped_cap"] += len(batch) - i - (1 if started_item else 0)
+            return False
+    return True
+
+
 def enrich_new_rows(
     conn: sqlite3.Connection,
     row_ids,
@@ -1219,6 +1279,7 @@ def enrich_new_rows(
     clock=time.monotonic,
     run_id: str | None = None,
     display_ids=(),
+    settle=None,
     emit=print,
 ) -> dict:
     """Enrich the given news_feed rows (the rows this run inserted, plus the
@@ -1235,7 +1296,12 @@ def enrich_new_rows(
 
     `display_ids` are the cards the News tab would show (select_display_topups):
     they share this run's room and cap, and they take it first, so a busy hour
-    cannot leave the page showing wire summaries. `keys` uses the
+    cannot leave the page showing wire summaries. `settle` (the same selection,
+    as a callable) is re-read after the run's reads, up to SETTLE_PASSES times:
+    a read replaces the rule score with Claude's, and a lower one can move an
+    unread story into the ten, which is topped up in the same run, inside the
+    same room and cap. Every copy of a story shares its read
+    (share_story_reads), so no story is paid for twice. `keys` uses the
     fetch_and_store_news config names (anthropic_key, perplexity_key). `now`
     fixes the clock (default: real time, per row). `run_id` defaults to
     $GITHUB_RUN_ID. Returns the run's counts, including the printed "line".
@@ -1246,6 +1312,7 @@ def enrich_new_rows(
     try:
         ensure_ai_spend_ledger(conn)
         conn.commit()
+        share_story_reads(conn)
         rows = _load_rows(conn, row_ids)
         stats["new"] = len(rows)
         displayed = {int(i) for i in (display_ids or [])}
@@ -1258,19 +1325,20 @@ def enrich_new_rows(
             batch = eligible[:room]
             stats["held_hourly"] = len(eligible) - len(batch)
             regime, probs = _current_regime(conn)
-            for i, row in enumerate(batch):
-                if clock() - started > wall_seconds:
-                    stats["held_time"] = len(batch) - i
+            finished = _enrich_batch(run, batch, extra, regime, probs, started, clock, wall_seconds)
+            tried = {r["id"] for r in eligible}
+            for _ in range(SETTLE_PASSES if settle is not None and finished else 0):
+                share_story_reads(conn)
+                ids = [i for i in settle() if i not in tried]
+                room = max(0, per_hour - ai_spend.enrichments_in_last_hour(conn, run.now()))
+                loaded = {r["id"]: r for r in _load_rows(conn, ids)}
+                newcomers = [loaded[i] for i in ids if i in loaded and _eligible(loaded[i], floor)][:room]
+                if not newcomers:
                     break
-                enriched_before = stats["enriched"]
-                started_item = _enrich_one(run, row, regime, probs)
-                # Count a top-up only once it has been read, so the summary line
-                # cannot claim ten while eight were held for the hourly limit.
-                if stats["enriched"] > enriched_before and row["id"] in extra:
-                    stats["topped_up"] += 1
-                if stats["cap_reached"]:
-                    stats["skipped_cap"] = len(batch) - i - (1 if started_item else 0)
+                tried |= {r["id"] for r in newcomers}
+                if not _enrich_batch(run, newcomers, {r["id"] for r in newcomers}, regime, probs, started, clock, wall_seconds):
                     break
+        share_story_reads(conn)
         stats["month_to_date_usd"] = ai_spend.month_to_date(conn, run.now())
     except sqlite3.Error as exc:
         # fail closed: without a readable, writable ledger no further call is made
@@ -1320,7 +1388,8 @@ def fetch_and_store_news(db_path: str, config: dict, *, now: datetime | None = N
             new_ids = store_new_items(conn, all_items, current_regime, now=at)
         # After storing, so a headline that just arrived can already be one of
         # the ten the page is about to show.
-        enrich_new_rows(conn, new_ids, config, now=now, display_ids=select_display_topups(conn, now=at))
+        enrich_new_rows(conn, new_ids, config, now=now, display_ids=select_display_topups(conn, now=at),
+                        settle=lambda: select_display_topups(conn, now=at))
         if all_items:
             _prune_news(conn, at)
             conn.commit()
