@@ -1194,3 +1194,55 @@ def test_the_backfill_dry_run_lists_what_apply_will_pay_for(db, http, monkeypatc
     finally:
         conn.close()
     assert planned == [unread], "the card that borrows a read costs nothing and is not listed"
+
+
+# ── (m) Item 2 verify loop 3: one definition of a story ────────────────────────
+#
+# Paying once per story, settling and lending now share one rule: two copies
+# are one story when their headlines match and they were published less than
+# SHARE_SPAN apart. A recurring title (a daily filing) is a new story each time.
+
+def test_a_copy_too_far_from_the_paid_one_is_its_own_story_and_is_settled(db, http, monkeypatch):
+    """Loop 3, gap A: the old card was paid for and rescored low, its copy 30
+    hours later became the card, and it waited a run because payment treated
+    them as one story while lending did not."""
+    title = "Treasury auction sees record demand"
+    old = insert_rows(db, [(title, 4.0, NOW - timedelta(hours=40))])[0]
+    new = insert_rows(db, [(title, 3.3, NOW - timedelta(hours=10))])[0]
+    http.anthropic = lambda body: FakeResponse(200, anthropic_ok(overall=2.0))
+    feed(monkeypatch, [])
+    news.fetch_and_store_news(str(db), KEYS, now=NOW)
+    rows = by_id(db)
+    assert rows[old]["regime_interpretation"] and rows[new]["regime_interpretation"], "both articles were read in one run"
+    assert all(r["regime_interpretation"] for r in _page_ten(db, NOW))
+    calls = http.count("api.anthropic.com")
+    assert calls == 2
+    news.fetch_and_store_news(str(db), KEYS, now=NOW + timedelta(minutes=61))
+    assert http.count("api.anthropic.com") == calls
+
+
+def test_a_daily_title_never_inherits_an_earlier_days_read(db):
+    """Loop 3, gap B: lending was inclusive and a lent read could lend again, so
+    a title posted every 24 hours carried day 0's read forward."""
+    title = "Form 8.3 - Gamma Communications plc"
+    ids = insert_rows(db, [(title, 3.0, NOW - timedelta(hours=72 - 24 * d)) for d in range(4)])
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE news_feed SET regime_interpretation = 'day 0', perplexity_research = 'day 0' WHERE id = ?", (ids[0],))
+    conn.commit()
+    for _ in range(3):  # a run lends before, during and after its top-ups
+        news.share_story_reads(conn)
+    conn.close()
+    rows = by_id(db)
+    assert [rows[i]["regime_interpretation"] for i in ids] == ["day 0", "", "", ""]
+    assert news.SHARE_SPAN == timedelta(hours=12)
+
+
+def test_rewrites_within_the_span_still_share_one_read(db):
+    title = "Oil jumps as supply talks stall"
+    ids = insert_rows(db, [(title, 3.0, NOW - timedelta(hours=h)) for h in (1, 6, 11)])
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE news_feed SET regime_interpretation = 'the read', perplexity_research = 'cited' WHERE id = ?", (ids[2],))
+    conn.commit()
+    news.share_story_reads(conn)
+    conn.close()
+    assert all(by_id(db)[i]["regime_interpretation"] == "the read" for i in ids)

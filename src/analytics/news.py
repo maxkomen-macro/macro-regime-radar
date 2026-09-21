@@ -192,10 +192,12 @@ DISPLAY_LIMIT = 150
 # A read replaces the rule score with Claude's, which can move a story out of
 # the displayed ten; a run re-reads the ten this many times after its top-ups.
 SETTLE_PASSES = 3
-# Copies of one headline published further apart than this are different
-# articles under a recurring title (a daily filing), not rewrites of one story:
-# they never lend each other a read.
-SHARE_SPAN = timedelta(hours=24)
+# One story, for paying once, settling and lending alike: copies of one
+# headline (headline_key) published less than this apart. Further apart they
+# are different articles under a recurring title (a daily filing), each paid
+# for and read on its own; strictly less, so a title posted every 12 or 24
+# hours never hands one day's read to the next.
+SHARE_SPAN = timedelta(hours=12)
 
 # The page's story key, web/src/screens/news/news-copy.ts headlineKey:
 # headline.trim().toLowerCase().replace(/\s+/g, " "). JavaScript's \s and
@@ -1059,10 +1061,24 @@ def _read_text(value) -> bool:
     return bool((value or "").strip(_JS_SPACE))
 
 
+def _story(row: dict) -> tuple[str, datetime | None]:
+    return headline_key(row["headline"]), _parse_published(row["published_at"])
+
+
+def _same_story(a: tuple[str, datetime | None], b: tuple[str, datetime | None]) -> bool:
+    """One story: the same headline_key, published less than SHARE_SPAN apart.
+    An unreadable date counts as the same story, so it is paid for once."""
+    if a[0] != b[0]:
+        return False
+    if a[1] is None or b[1] is None:
+        return True
+    return abs(a[1] - b[1]) < SHARE_SPAN
+
+
 def share_story_reads(conn: sqlite3.Connection) -> int:
     """Give every copy of a story that carries no read the read, and the score,
-    of a copy of it published within SHARE_SPAN that has one (a full read
-    first, then the higher score, then the newer copy). Costs no call. The page
+    of a copy of the same story (_same_story) that has one (a full read first,
+    then the higher score, then the newer copy). Costs no call. The page
     shows one card per story (headline_key) and a read on a merged-away copy
     never reaches it; left alone, a lower Claude score on the read copy made
     the unread one the card, and the next run paid for the same story again
@@ -1084,7 +1100,7 @@ def share_story_reads(conn: sqlite3.Connection) -> int:
             at = _parse_published(c[2])
             if c[0] in lenders or at is None:
                 continue
-            near = [(d, t) for d, t in read if t is not None and abs(t - at) <= SHARE_SPAN]
+            near = [(d, t) for d, t in read if t is not None and abs(t - at) < SHARE_SPAN]
             if not near:
                 continue
             donor = max(near, key=lambda dt: (_read_text(dt[0][4]) and _read_text(dt[0][5]), float(dt[0][3] or 0.0), dt[1]))[0]
@@ -1259,13 +1275,13 @@ def _enrich_one(run: _Run, row: dict, regime: str, probs: dict) -> bool:
 
 
 def _one_per_story(rows: list[dict]) -> list[dict]:
-    """The first row of each story (headline_key), in the given order."""
-    seen: set[str] = set()
+    """The first row of each story (_same_story), in the given order."""
+    kept: list[tuple[str, datetime | None]] = []
     out = []
     for r in rows:
-        key = headline_key(r["headline"])
-        if key not in seen:
-            seen.add(key)
+        story = _story(r)
+        if not any(_same_story(story, k) for k in kept):
+            kept.append(story)
             out.append(r)
     return out
 
@@ -1354,16 +1370,16 @@ def enrich_new_rows(
             stats["held_hourly"] = len(eligible) - len(batch)
             regime, probs = _current_regime(conn)
             finished = _enrich_batch(run, batch, extra, regime, probs, started, clock, wall_seconds)
-            tried = {headline_key(r["headline"]) for r in eligible}
+            tried = [_story(r) for r in eligible]
             for _ in range(SETTLE_PASSES if settle is not None and finished else 0):
                 share_story_reads(conn)
                 ids = settle()
                 loaded = {r["id"]: r for r in _load_rows(conn, ids)}
                 newcomers = [loaded[i] for i in ids if i in loaded and _eligible(loaded[i], floor)
-                             and headline_key(loaded[i]["headline"]) not in tried]
+                             and not any(_same_story(_story(loaded[i]), t) for t in tried)]
                 if not newcomers:
                     break
-                tried |= {headline_key(r["headline"]) for r in newcomers}
+                tried += [_story(r) for r in newcomers]
                 room = max(0, per_hour - ai_spend.enrichments_in_last_hour(conn, run.now()))
                 stats["held_hourly"] += max(0, len(newcomers) - room)
                 if not room or not _enrich_batch(run, newcomers[:room], {r["id"] for r in newcomers}, regime, probs,
