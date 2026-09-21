@@ -48,6 +48,15 @@ describe("StatusBadge", () => {
     expect(badge.textContent).toMatch(/Live·FRED·as of Sep 18/);
     expect(badge.getAttribute("title")).toMatch(/DGS10 reason\./);
   });
+  it("a dated feed takes its own verdict's tone, grey without one", () => {
+    stubFetch({ "/api/freshness": () => ({ regimes_date: null, signals_date: null, market_daily_date: null, market_intraday_ts: null, news_published_at: null, raw_series_date: null, series: [] }) });
+    const { unmount } = renderWithProviders(<StatusBadge source={{ label: "pipeline", asOf: "Sep 21, 18:31 ET", verdict: "stale" }} />);
+    expect(screen.getByTestId("desk-badge")).toHaveAttribute("data-tone", "stale");
+    expect(screen.getByTestId("desk-badge").textContent).toMatch(/as of Sep 21, 18:31 ET/);
+    unmount();
+    renderWithProviders(<StatusBadge source={{ label: "pipeline", asOf: "Sep 21, 18:31 ET" }} />);
+    expect(screen.getByTestId("desk-badge")).toHaveAttribute("data-tone", "unknown");
+  });
   it("declares Designed for a panel with no source", () => {
     renderWithProviders(<StatusBadge designed />);
     const badge = screen.getByTestId("desk-badge");

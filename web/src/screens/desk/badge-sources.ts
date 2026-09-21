@@ -17,6 +17,9 @@ export interface BadgeSource {
   block?: Record<string, SeriesState> | null;
   /** For a feed the report does not judge: the payload's own stamp. */
   asOf?: string | null;
+  /** With `asOf`: the payload's own four-word verdict, which sets the tone
+   * (current → mint, delayed → amber, stale → warn-hot); absent → grey. */
+  verdict?: "current" | "delayed" | "stale" | "unavailable" | null;
   reason?: string;
 }
 

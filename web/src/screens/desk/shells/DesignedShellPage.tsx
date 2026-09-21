@@ -459,7 +459,7 @@ export default function DesignedShellPage({ page }: { page: DeskPage }) {
     <div className="mrr-desk-page">
       <DeskPageHead page={page} description={page.blurb} badge={<StatusBadge designed note={page.reads} />} />
       {body}
-      {!isClient ? <Caption mono>Designed shell: layout, controls and empty states are real; no number on this page is data.</Caption> : null}
+      {!isClient ? <Caption as="p">Designed shell: layout, controls and empty states are real; no number on this page is data.</Caption> : null}
     </div>
   );
 }

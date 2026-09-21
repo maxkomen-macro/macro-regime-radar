@@ -62,10 +62,11 @@ export function EmptyState({ title, children, live = true, style }: { title: Rea
   );
 }
 
-/** "Reads once live" (§6): one line under a designed shell's head. */
+/** "Reads once live" (§6): one line under a designed shell's panels, in the
+ * UI face (an explainer, never mono). */
 export function ReadsNote({ children }: { children: ReactNode }) {
   return (
-    <Caption mono style={{ marginTop: 0 }}>
+    <Caption as="p" style={{ marginTop: 0 }}>
       {children}
     </Caption>
   );

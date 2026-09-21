@@ -19,7 +19,7 @@ import { isEngineAbsent, useEventStudy, useEventStudyAssets, type EventStudyAsse
 import { fmtDate, fmtWholePct } from "../../../lib/format";
 import Jargon from "../../shared/Jargon";
 import ScrollTable from "../../shared/ScrollTable";
-import { Caption } from "../../shared/screen-ui";
+import { Caption, StateNote } from "../../shared/screen-ui";
 import DeskPageHead from "../DeskPageHead";
 import StatusBadge from "../StatusBadge";
 import type { DeskPage } from "../desk-sections";
@@ -173,7 +173,7 @@ function RegimeSplit({ study, unit, isClient }: { study: EventStudyResponse; uni
   const rows: Row[] = study.regime_split.map((r) => ({ ...r, id: r.regime }));
   const cell = (r: Row, h: number) => {
     const v = r.by_horizon[String(h)];
-    if (r.suppressed || !v || v.hit_rate == null || v.median == null) return <span style={{ color: "var(--text-3)" }}>n&lt;10</span>;
+    if (r.suppressed || !v || v.hit_rate == null || v.median == null) return <span style={{ color: "var(--text-3)" }}>{isClient ? "too few events to read" : "n<10"}</span>;
     return isClient ? `${timesInTen(v.hit_rate)}, ${moveInWords(v.median, unit)}` : `${fmtWholePct(v.hit_rate)} · ${fmtMove(v.median, unit)}`;
   };
   const columns = [
@@ -208,7 +208,10 @@ function RecentEvents({ study, unit, isClient }: { study: EventStudyResponse; un
 export default function EventStudyPage({ page }: { page: DeskPage }) {
   const { isClient } = useDeskView();
   const [searchParams, setSearchParams] = useSearchParams();
-  const params = useMemo(() => paramsFor(searchParams.get("study")) ?? PRESET, [searchParams]);
+  const slugParam = searchParams.get("study");
+  const params = useMemo(() => paramsFor(slugParam) ?? PRESET, [slugParam]);
+  // A slug the address carries but nothing recognises: the preset shows, and the page says so.
+  const unknownSlug = slugParam != null && paramsFor(slugParam) == null ? slugParam : null;
   const assetsQ = useEventStudyAssets();
   const studyQ = useEventStudy(params);
 
@@ -243,11 +246,21 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     <div className="mrr-desk-page">
       <DeskPageHead
         page={page}
-        title={study ? `${study.shock.label} ${params.sign === "+" ? "≥ +" : "≤ −"}${params.z.toFixed(1)}σ (${params.w}d)${study.condition ? ` while ${study.condition.label}` : ""}` : page.label}
+        title={
+          study
+            ? isClient
+              ? `${study.shock.label} after an unusually large ${params.w}-session ${params.sign === "+" ? "rise" : "fall"}${study.condition ? `, while ${study.condition.label}` : ""}`
+              : `${study.shock.label} ${params.sign === "+" ? "≥ +" : "≤ −"}${params.z.toFixed(1)}σ (${params.w}d)${study.condition ? ` while ${study.condition.label}` : ""}`
+            : page.label
+        }
         description={study ? `What the ${study.target.label} did over the next ${study.horizons.map((h) => h.h).join(", ")} sessions, against every session as the baseline, split by the regime at the event date.` : page.blurb}
         badge={badge}
         actions={fixture ? <Tag tone="watch" title="Illustrative numbers; the engine has not landed">Fixture</Tag> : null}
       />
+
+      {unknownSlug ? (
+        <StateNote live>{`The study "${unknownSlug}" in the address is not one this page knows; the preset is shown. Run a query to write a slug the page can read back.`}</StateNote>
+      ) : null}
 
       {!isClient && assets ? (
         <Panel id="query" title="Query" description="Shock, window, threshold and sign define the event; the co-condition and regime filter narrow it; Run rewrites ?study=." badge={assetsQ.data ? badge : <StatusBadge designed note="Fixture asset lists until the engine lands; history_from per series follows EVENT_STUDY_SPEC §3." />}>
@@ -295,11 +308,11 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
               meta={study.distribution ? `${study.distribution.h}d bins` : undefined}
             >
               {study.distribution ? (
-                <DistributionChart d={study.distribution} unit={unit} nEvents={study.provenance.n_events} />
+                <DistributionChart d={study.distribution} unit={unit} nEvents={isClient ? null : study.provenance.n_events} />
               ) : (
                 <EmptyState title="Distribution bins are not served for this study.">The engine's response carries the horizon statistics; the histogram needs its bins.</EmptyState>
               )}
-              <Caption>{`Shares, not counts: ${study.provenance.n_events} conditional events against every session in the sample. The dashed line is zero.`}</Caption>
+              <Caption>{isClient ? "Shares of events against shares of sessions; the dashed line is zero." : `Shares, not counts: ${study.provenance.n_events} conditional events against every session in the sample. The dashed line is zero.`}</Caption>
             </Panel>
           </div>
 
@@ -311,7 +324,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
           <div className="mrr-desk-2">
             <Panel id="regimes" title="By regime" description="The classifier's stored label at each event date." badge={badge} actions={fixture ? <Tag tone="watch">Fixture</Tag> : null}>
               <RegimeSplit study={study} unit={unit} isClient={isClient} />
-              <Caption>Reads with fewer than ten events are suppressed and print n&lt;10.</Caption>
+              <Caption>{isClient ? "A regime with too few events to read is left blank rather than guessed." : "Reads with fewer than ten events are suppressed and print n<10."}</Caption>
             </Panel>
             <Panel id="events" title="Recent events" description={`The last ten triggers${study.condition ? ` while ${conditionLabel}` : ""}.`} badge={badge} actions={fixture ? <Tag tone="watch">Fixture</Tag> : null}>
               <RecentEvents study={study} unit={unit} isClient={isClient} />

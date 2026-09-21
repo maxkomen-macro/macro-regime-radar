@@ -38,11 +38,16 @@ function dominant(r: Regime): number | null {
   return probs.length ? Math.max(...probs) : null;
 }
 
-/** Five sessions read as seven calendar days back from the last completed session. */
-function firedWindow(lastSession: string | null | undefined): { from: string; to: string } {
+/** Five sessions: the last completed session and the four weekdays before it
+ * (exchange holidays are not known here; the panel prints the exact dates). */
+export function firedWindow(lastSession: string | null | undefined): { from: string; to: string } {
   const to = lastSession ?? new Date().toISOString().slice(0, 10);
   const d = new Date(`${to}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 7);
+  let sessions = d.getUTCDay() === 0 || d.getUTCDay() === 6 ? 0 : 1;
+  while (sessions < 5) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) sessions++;
+  }
   return { from: d.toISOString().slice(0, 10), to };
 }
 
@@ -96,7 +101,7 @@ export default function TodayPage({ page }: { page: DeskPage }) {
         title={
           <span style={{ display: "inline-flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
             {title}
-            {r && dom != null ? (
+            {r && dom != null && !isClient ? (
               <Pill tone={PILL_TONE[r.label] ?? "gray"} size="sm" title={`Dominant regime odds, ${fmtMonYr(r.date)}`}>
                 {fmtWholePct(dom)}
               </Pill>
@@ -125,7 +130,7 @@ export default function TodayPage({ page }: { page: DeskPage }) {
           )}
         </Panel>
 
-        <Panel id="fired" title="Signals fired" description={`Last five sessions (${fmtDate(window.from)} to ${fmtDate(window.to)})`} badge={<StatusBadge source={{ ...SOURCES.signals, block: signals.data?.freshness ?? null }} />} meta={alerts.data ? `${fired.length} fired` : undefined}>
+        <Panel id="fired" title="Signals fired" description={`Last five sessions (${fmtDate(window.from)} to ${fmtDate(window.to)}, weekdays)`} badge={<StatusBadge source={{ ...SOURCES.signals, block: signals.data?.freshness ?? null }} />} meta={alerts.data ? `${fired.length} fired` : undefined}>
           {alerts.isLoading ? (
             <StateNote loading live>
               Reading the alert feed…

@@ -49,7 +49,7 @@ export default function DataPipelinePage({ page }: { page: DeskPage }) {
   }, [inv.data]);
 
   const stamp = inv.data?.generated_at ? fmtUtcStampEt(inv.data.generated_at) : null;
-  const badge = <StatusBadge source={{ label: "pipeline", asOf: stamp, reason: inv.data ? `Inventory generated from the freshness report; overall verdict ${inv.data.overall ?? "unknown"}.` : "The inventory has not answered yet." }} />;
+  const badge = <StatusBadge source={{ label: "pipeline", asOf: stamp, verdict: inv.data?.overall ?? null, reason: inv.data ? `Inventory generated from the freshness report; overall verdict ${inv.data.overall ?? "unknown"}.` : "The inventory has not answered yet." }} />;
 
   const columns = [
     { key: "label", label: "Series", render: (r: InventoryRow) => r.label, sub: (r: InventoryRow) => (r.kind === "fred" ? undefined : r.id), subBlock: true },

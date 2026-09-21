@@ -19,7 +19,8 @@ function shares(xs: number[]): number[] {
   return total > 0 ? xs.map((x) => (x / total) * 100) : xs.map(() => 0);
 }
 
-export default function DistributionChart({ d, unit, nEvents }: { d: EventStudyDistribution; unit: string; nEvents: number }) {
+/** `nEvents` null hides the count (client view prints no N). */
+export default function DistributionChart({ d, unit, nEvents }: { d: EventStudyDistribution; unit: string; nEvents: number | null }) {
   const cond = shares(d.conditional);
   const base = shares(d.baseline);
   const bins = Math.min(cond.length, base.length, d.edges.length - 1);
@@ -32,7 +33,7 @@ export default function DistributionChart({ d, unit, nEvents }: { d: EventStudyD
   const sy = (v: number) => PAD.top + plotH - (v / max) * plotH;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => t * max);
   const peakCond = cond.indexOf(Math.max(...cond.slice(0, bins)));
-  const label = `Distribution of ${d.h}-session forward moves in ${unit}: ${nEvents} conditional events against every session. The conditional peak sits between ${d.edges[peakCond]} and ${d.edges[peakCond + 1]} ${unit}.`;
+  const label = `Distribution of ${d.h}-session forward moves in ${unit}: ${nEvents != null ? `${nEvents} conditional events` : "the conditional events"} against every session. The conditional peak sits between ${d.edges[peakCond]} and ${d.edges[peakCond + 1]} ${unit}.`;
   return (
     <div className="mrr-desk-svg">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label} data-chart="distribution">
@@ -70,7 +71,7 @@ export default function DistributionChart({ d, unit, nEvents }: { d: EventStudyD
       </svg>
       <ul className="mrr-desk-legend" aria-hidden="true">
         <li>
-          <i style={{ background: "var(--mint)" }} /> Conditional · {nEvents} events · share of events
+          <i style={{ background: "var(--mint)" }} /> Conditional · {nEvents != null ? `${nEvents} events · ` : ""}share of events
         </li>
         <li>
           <i style={{ background: "rgba(88,184,230,.35)", border: "1px solid var(--link)" }} /> Baseline · every session · share of sessions

@@ -47,7 +47,7 @@ export default function DeskShell() {
   }, [page?.label]);
 
   useEffect(() => {
-    if (!location.hash) window.scrollTo({ top: 0, left: 0 });
+    if (!location.hash && (window.scrollY > 0 || window.scrollX > 0)) window.scrollTo({ top: 0, left: 0 });
   }, [location.pathname, location.hash]);
 
   if (!page) return <Navigate to={withView(`/desk/${DESK_HOME}`, view)} replace />;

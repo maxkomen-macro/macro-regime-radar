@@ -3,13 +3,15 @@
  * `● Live · {source} · as of {timestamp}` in mint, or `Designed` in the muted
  * style. Nothing here is hand-typed: the stamp, the tone and the tooltip
  * sentence come from /api/freshness through useFreshReport (fresh-state.ts,
- * the app's one freshness vocabulary), or from the Data Pipeline inventory's
- * own stamp for a feed the report does not judge. "Live" is the panel's
- * wiring word (it reads the API); the freshness truth rides beside it in the
- * glyph, the stamp and the muted tail, so a stale source reads
- * `▾ Live · FRED · as of Sep 04 · 8 days behind` and never a clean mint dot,
- * and a seeded snapshot reads `◇ Snapshot · …` with no health mark (§5 of
- * the freshness contract). A panel with no data source declares Designed.
+ * the app's one freshness vocabulary), or, for a feed the report does not
+ * judge, from the payload's own stamp and four-word verdict. "Live" is the
+ * panel's wiring word (it reads the API); the freshness truth rides beside it
+ * in the glyph, the stamp and the muted tail. Colour follows the server's
+ * judgement: mint only while the source is current (a live tick or the newest
+ * close or print due), amber when delayed, warn-hot when stale
+ * (`▾ Live · FRED · as of Sep 04 · 8 days behind`), grey when unknown, a
+ * stated default, or a seeded snapshot (`◇ Snapshot · …`, no health mark). A
+ * panel with no data source declares Designed.
  */
 
 import type { BadgeSource } from "./badge-sources";
@@ -71,7 +73,8 @@ export function StatusBadge({ designed, source, note, id }: Props) {
   const liveAsOf = source.ids?.length === 1 ? (report.f?.series?.find((s) => s.id === source.ids?.[0])?.as_of ?? null) : null;
   const { word, stamp, muted } = badgeWords(label, report.seeded, liveAsOf, dated);
   const title = [`${source.label}: ${labelText(label)}`, label.reason].filter(Boolean).join(". ");
-  const tone = report.seeded ? "unknown" : dated ? (source.asOf ? "neutral" : "unknown") : label.tone;
+  const verdictTone: FreshTone = source.verdict === "current" ? "neutral" : source.verdict === "delayed" ? "delayed" : source.verdict === "stale" ? "stale" : "unknown";
+  const tone: FreshTone = report.seeded ? "unknown" : dated ? (source.asOf ? verdictTone : "unknown") : label.tone;
   return (
     <span id={id} className="mrr-desk-badge" data-state="live" data-tone={tone} data-stale={label.stale ? "true" : undefined} data-testid="desk-badge" title={title}>
       <span className="glyph" aria-hidden="true">
