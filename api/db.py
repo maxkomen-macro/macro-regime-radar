@@ -22,6 +22,7 @@ shows through here before the results built from it are ready.
 from __future__ import annotations
 
 import os
+import logging
 import sqlite3
 import threading
 from contextlib import closing
@@ -30,6 +31,9 @@ from pathlib import Path
 from src.analytics import dbpath
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "macro_radar.db"
+
+
+log = logging.getLogger("mrr.db")
 
 
 class DBUnavailable(RuntimeError):
@@ -92,7 +96,8 @@ def _connect() -> sqlite3.Connection:
             _local.conn, _local.gen, _local.key, _local.path = conn, gen.uri, None, None  # the uri is unique per worker and generation
             return conn
     if not DB_PATH.exists():
-        raise DBUnavailable(f"Database not found at {DB_PATH}")
+        log.warning("database not found at %s", DB_PATH)
+        raise DBUnavailable("The database is not available on this server.")
     key = _file_key(DB_PATH)
     conn = getattr(_local, "conn", None)
     if conn is not None and getattr(_local, "gen", None) is None and getattr(_local, "key", None) == key and getattr(_local, "path", None) == str(DB_PATH):
@@ -102,7 +107,8 @@ def _connect() -> sqlite3.Connection:
     try:
         conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, factory=_ReusedConnection)
     except sqlite3.Error as exc:
-        raise DBUnavailable(f"Database at {DB_PATH} cannot be opened read-only: {exc}") from exc
+        log.warning("database at %s cannot be opened read-only: %s", DB_PATH, exc)
+        raise DBUnavailable("The database could not be opened on this server.") from exc
     conn.row_factory = sqlite3.Row
     _local.conn, _local.key, _local.path = conn, key, str(DB_PATH)
     return conn

@@ -236,3 +236,129 @@ def test_websocket_connection_caps():
 
     asyncio.run(run())
 
+
+
+# ── launch-1: the gates at their production values ──────────────────────────
+# The tests above use small limits so the assertions can be exact. These pin
+# the numbers a public deploy actually runs with: a default-constructed
+# middleware, no environment overrides.
+
+
+@pytest.fixture()
+def production_env(monkeypatch):
+    """No overrides: what the container gets when the host sets none of them."""
+    for var in ("RATE_LIMIT_PER_CLIENT_PER_MIN", "RATE_LIMIT_PER_CLIENT_BURST",
+                "RATE_LIMIT_GLOBAL_PER_MIN", "RATE_LIMIT_GLOBAL_BURST",
+                "DB_MAX_CONCURRENCY", "WS_MAX_PER_CLIENT", "WS_MAX_TOTAL", "MAX_BODY_BYTES"):
+        monkeypatch.delenv(var, raising=False)
+    yield
+
+
+def test_production_defaults_are_the_documented_numbers(production_env):
+    mw = security.SecurityMiddleware(lambda *a: None)
+    assert (mw.client_limiter.rate * 60, mw.client_limiter.burst) == (pytest.approx(600.0), 120.0)
+    assert (mw.global_limiter.rate * 60, mw.global_limiter.burst) == (pytest.approx(4000.0), 600.0)
+    assert (mw.assistant_limiter.rate * 60, mw.assistant_limiter.burst) == (pytest.approx(10.0), 10.0)
+    assert (mw.assistant_global.rate * 60, mw.assistant_global.burst) == (pytest.approx(60.0), 60.0)
+    assert mw.expensive._initial_value == 4
+    assert mw.provider._initial_value == 12
+    assert mw.db._initial_value == 24
+    assert (mw.ws_per_client, mw.ws_total) == (20, 200)
+    assert mw.max_body == 64 * 1024
+    assert security.ASSISTANT_MAX_BODY_BYTES == 16 * 1024
+    assert mw.client_limiter.max_clients == 4096
+    assert mw.hops == 0
+
+
+def test_body_caps_at_production_size(production_env):
+    client = TestClient(_app())
+    assert client.post("/api/echo", content=b"x" * (64 * 1024 + 1), headers={"content-type": "application/json"}).status_code == 413
+    assert client.post("/api/assistant/ask", content=b"x" * (16 * 1024 + 1), headers={"content-type": "application/json"}).status_code == 413
+
+
+def test_per_client_burst_at_production_size(production_env):
+    """121 requests in a burst: the production bucket admits 120 plus what a
+    tenth of a second refills, then sheds with 429 and a Retry-After."""
+    client = TestClient(_app())
+    codes = [client.get("/api/thing").status_code for _ in range(160)]
+    assert codes[0] == 200 and codes.count(200) >= 120
+    assert 429 in codes, "the production burst must shed beyond its size"
+    first_429 = codes.index(429)
+    assert first_429 >= 120
+    r = client.get("/api/thing")
+    if r.status_code == 429:
+        assert int(r.headers["retry-after"]) >= 1
+
+
+def test_assistant_rate_limit_at_production_size(production_env, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ACCESS", "open")
+    client = TestClient(_app())
+    codes = [client.post("/api/assistant/ask", json={"m": 1}).status_code for _ in range(12)]
+    assert codes[:10] == [200] * 10
+    assert codes[10] == 429 or codes[11] == 429
+
+
+# ── launch-1: the relay socket's Origin allowlist ───────────────────────────
+
+
+def _ws_scope(origin: str | None, host: str = "api.example.com"):
+    headers = [(b"host", host.encode())]
+    if origin is not None:
+        headers.append((b"origin", origin.encode()))
+    return {"type": "websocket", "path": "/api/stream/ws", "headers": headers, "client": ("1.2.3.4", 1)}
+
+
+def _ws_attempt(mw, scope) -> list:
+    sent: list = []
+
+    async def receive():
+        return {"type": "websocket.disconnect"}
+
+    async def send(msg):
+        sent.append(msg)
+
+    asyncio.run(mw(scope, receive, send))
+    return sent
+
+
+def _accepting_app():
+    async def inner(scope, receive, send):
+        await send({"type": "websocket.accept"})
+        await receive()
+
+    return inner
+
+
+def test_relay_socket_refuses_a_foreign_origin(monkeypatch):
+    monkeypatch.setenv("CORS_ORIGINS", "https://radar.example.com")
+    mw = security.SecurityMiddleware(_accepting_app())
+    assert _ws_attempt(mw, _ws_scope("https://radar.example.com"))[0]["type"] == "websocket.accept"
+    for hostile in ("https://evil.example", "http://radar.example.com", "null"):
+        sent = _ws_attempt(mw, _ws_scope(hostile))
+        assert sent == [{"type": "websocket.close", "code": 1008}], hostile
+    assert mw.stats["ws_origin_refused"] == 3
+
+
+def test_relay_socket_allows_a_client_that_sends_no_origin(monkeypatch):
+    """Browsers always send Origin; curl and the smoke script do not, and they
+    are not the cross-site risk the allowlist exists for."""
+    monkeypatch.setenv("CORS_ORIGINS", "https://radar.example.com")
+    mw = security.SecurityMiddleware(_accepting_app())
+    assert _ws_attempt(mw, _ws_scope(None))[0]["type"] == "websocket.accept"
+
+
+def test_relay_socket_in_development_allows_localhost_only(monkeypatch):
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    mw = security.SecurityMiddleware(_accepting_app())
+    for dev in ("http://localhost:5173", "http://127.0.0.1:5180", "http://localhost:4173"):
+        assert _ws_attempt(mw, _ws_scope(dev))[0]["type"] == "websocket.accept", dev
+    assert _ws_attempt(mw, _ws_scope("https://evil.example")) == [{"type": "websocket.close", "code": 1008}]
+
+
+def test_relay_socket_allows_the_same_origin_it_is_served_from(monkeypatch):
+    """The single-service deploy serves the bundle and the socket from one
+    origin, and sets no CORS_ORIGINS."""
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    mw = security.SecurityMiddleware(_accepting_app())
+    scope = _ws_scope("https://radar.example.com", host="radar.example.com")
+    assert _ws_attempt(mw, scope)[0]["type"] == "websocket.accept"

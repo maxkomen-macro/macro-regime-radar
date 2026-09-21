@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import hmac
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -137,11 +138,22 @@ async def _lifespan(_: FastAPI):
     await stream.hub.stop()
 
 
+def docs_enabled() -> bool:
+    """Interactive docs and the OpenAPI schema are a development convenience.
+    A public deploy serves neither (launch-1, re-audit F7): they map every
+    route and its bounds for anyone, and they sit outside the rate limits."""
+    return not security.is_public_deploy()
+
+
+_DOCS = docs_enabled()
 app = FastAPI(
     title="Macro Regime Radar API",
-    version="1.4.0",
+    version="1.5.0",
     description="Read-only access to macro regime, signals, markets, news, and model outputs.",
     lifespan=_lifespan,
+    docs_url="/docs" if _DOCS else None,
+    redoc_url="/redoc" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
 )
 
 # Vite dev-server origins by default; CORS_ORIGINS (comma-separated env)
@@ -205,12 +217,20 @@ async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
 T = TypeVar("T")
 
 
+def _sanitized(exc: Exception) -> str:
+    """An error a visitor may read: the message only when it carries no path
+    (launch-1, re-audit F6), else a fixed sentence. The server log has the
+    detail."""
+    text = str(exc)
+    return text if ("/" not in text and "\\" not in text) else "The database is not available on this server."
+
+
 def _guarded(fn: Callable[[], T]) -> T:
     """Translate a missing/unopenable DB into a 503 instead of a 500."""
     try:
         return fn()
     except db.DBUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=_sanitized(exc)) from exc
 
 
 # ── Response models ───────────────────────────────────────────────────────────
@@ -667,6 +687,10 @@ class Freshness(BaseModel):
     bootstrap: dict | None = None
     relay: dict | None = None
     series: list[dict] | None = None  # B3: per-series state for every source
+    # launch-1: which generation of derived results answered this request, so
+    # an open tab can drop caches that predate a database swap. The file's
+    # name only, never its path.
+    generation: dict | None = None
 
 
 # ── Response models: Regime Lab (2026-08-06, night-2 build) ──────────────────
@@ -1028,14 +1052,27 @@ def api_news(
     return [NewsItem(**r) for r in rows]
 
 
+MAX_SYMBOLS = 50  # launch-1, re-audit F8: a bounded CSV, well above any screen
+
+
+def _symbol_list(symbols: str) -> list[str]:
+    """The CSV a stored-market route accepts: non-empty and bounded. Values
+    are still bound as parameters; the cap keeps one request from building a
+    query with thousands of placeholders."""
+    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    if not syms:
+        raise HTTPException(status_code=422, detail="No symbols given.")
+    if len(syms) > MAX_SYMBOLS:
+        raise HTTPException(status_code=422, detail=f"Too many symbols: {len(syms)} given, at most {MAX_SYMBOLS} per request.")
+    return syms
+
+
 @api.get("/market/daily", response_model=list[DailyBar])
 def api_market_daily(
     symbols: str = Query(",".join(db.WATCHLIST_SYMBOLS), description="CSV of tickers"),
     days: int = Query(120, ge=1, le=3650, description="Calendar-day lookback"),
 ) -> list[DailyBar]:
-    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-    if not syms:
-        raise HTTPException(status_code=422, detail="No symbols given.")
+    syms = _symbol_list(symbols)
     rows = _guarded(lambda: db.market_daily(syms, days))
     return [DailyBar(**r) for r in rows]
 
@@ -1045,9 +1082,7 @@ def api_market_intraday(
     symbols: str = Query(",".join(db.INTRADAY_SYMBOLS), description="CSV of tickers"),
     since: str | None = Query(None, description="ISO UTC ts lower bound, e.g. 2026-08-04T00:00:00Z"),
 ) -> list[IntradayPoint]:
-    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-    if not syms:
-        raise HTTPException(status_code=422, detail="No symbols given.")
+    syms = _symbol_list(symbols)
     rows = _guarded(lambda: db.market_intraday(syms, since))
     return [IntradayPoint(**r) for r in rows]
 
@@ -1157,10 +1192,22 @@ def api_market_ticks(
 
 
 def _ops_gate(request: Request) -> None:
-    """Diagnostics stay open in development; setting OPS_ACCESS_KEY on a
-    public host requires `X-Ops-Key` (review P3-10)."""
+    """Diagnostics stay open in development; on a deploy they are closed.
+
+    `OPS_ACCESS_KEY` set requires `X-Ops-Key` (review P3-10), compared in
+    constant time. A deploy that sets `CORS_ORIGINS` but no key fails closed
+    (launch-1): the relay's symbols, the plan's entitlements and the gate
+    counters are not for the internet, and an unset key is a mistake rather
+    than a decision to publish them."""
     expected = os.environ.get("OPS_ACCESS_KEY", "").strip()
-    if expected and request.headers.get("x-ops-key", "") != expected:
+    if not expected:
+        if security.is_public_deploy():
+            raise HTTPException(
+                status_code=503,
+                detail="Diagnostics are closed on this deployment: no ops key is configured. Set OPS_ACCESS_KEY to open them.",
+            )
+        return
+    if not hmac.compare_digest(request.headers.get("x-ops-key", ""), expected):
         raise HTTPException(status_code=401, detail="Diagnostics require an ops key on this deployment.")
 
 
@@ -1239,6 +1286,12 @@ def api_freshness() -> Freshness:
     series = _guarded(db.latest_series_all)
     marks = _guarded(db.watermarks)
     report = freshness_mod.assess(db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status(), watermarks=marks)
+    gen = worker_mod.get_worker().generation()
+    report["generation"] = {
+        "id": gen.id if gen else None,
+        "built_at": gen.built_at if gen else None,
+        "source": gen.source.name if gen else None,
+    }
     return Freshness(**report)
 
 
@@ -1550,7 +1603,7 @@ def health_ready() -> JSONResponse:
     try:
         row = db.latest_regime()
     except db.DBUnavailable as exc:
-        return JSONResponse(status_code=503, content={"status": "not_ready", "reason": "database unavailable", "detail": str(exc)[:200]})
+        return JSONResponse(status_code=503, content={"status": "not_ready", "reason": "database unavailable", "detail": _sanitized(exc)})
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=503, content={"status": "not_ready", "reason": type(exc).__name__})
     if not row:

@@ -115,12 +115,47 @@ def generation_for(path: Path | str) -> Optional[GenerationRef]:
     return None
 
 
+# Everything a read needs, and nothing that writes or reconfigures. SQLite
+# asks the authorizer for every action it compiles; anything not on these
+# lists is denied, ATTACH and every DDL/DML verb included.
+_READ_ACTIONS = frozenset({
+    sqlite3.SQLITE_READ, sqlite3.SQLITE_SELECT, sqlite3.SQLITE_FUNCTION,
+    sqlite3.SQLITE_RECURSIVE, sqlite3.SQLITE_TRANSACTION, sqlite3.SQLITE_SAVEPOINT,
+})
+
+# Pragmas that only describe the database. Callers use these to check whether a
+# column exists before reading it, so denying every pragma would break ordinary
+# reads; what must stay denied is anything that changes how the connection
+# behaves — `query_only` above all, since turning it off is what would make the
+# shared generation copy writable.
+_READ_PRAGMAS = frozenset({
+    "table_info", "table_xinfo", "table_list", "index_list", "index_info", "index_xinfo",
+    "database_list", "foreign_key_list", "collation_list", "function_list", "module_list",
+    "pragma_list", "compile_options", "data_version", "freelist_count", "page_count",
+    "page_size", "encoding", "user_version", "application_id", "integrity_check", "quick_check",
+})
+
+
+def _read_only_authorizer(action: int, arg1, arg2, db_name, trigger) -> int:
+    if action in _READ_ACTIONS:
+        return sqlite3.SQLITE_OK
+    if action == sqlite3.SQLITE_PRAGMA:
+        return sqlite3.SQLITE_OK if str(arg1 or "").lower() in _READ_PRAGMAS else sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_DENY
+
+
 def open_generation(gen: GenerationRef, factory: type = sqlite3.Connection) -> Optional[sqlite3.Connection]:
     """A read-only connection to `gen`'s in-memory copy, or None when the copy
     has been released (its name would open a new, empty database)."""
     conn = sqlite3.connect(gen.uri, uri=True, factory=factory)
     try:
         conn.execute("PRAGMA query_only = 1")
+        # query_only is a pragma, and a pragma can be turned off again by
+        # whoever runs the next statement. The generation is a shared-cache
+        # copy every reader and every screen sees, so the connection also
+        # carries an authorizer that denies anything but reading: a flip
+        # cannot make it writable (launch-1, re-audit NG-2).
+        conn.set_authorizer(_read_only_authorizer)
         if conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone() is not None:
             return conn
     except sqlite3.Error:

@@ -18,12 +18,14 @@ Nothing here logs a request body, a header value, or a token.
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import threading
 import time
 from collections import OrderedDict
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlsplit
 
 MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", str(64 * 1024)))
 ASSISTANT_MAX_BODY_BYTES = 16 * 1024
@@ -47,11 +49,76 @@ SECURITY_HEADERS = {
 }
 
 
+# Concurrency ceiling for the assistant (launch-1, re-audit NG-3): the route
+# is sync, so each in-flight answer holds a threadpool worker for seconds. The
+# rate limits alone let a burst of 60 hold every worker and stall the stored
+# reads; four at a time is more than a public page ever needs.
+ASSISTANT_MAX_CONCURRENCY = int(os.environ.get("ASSISTANT_MAX_CONCURRENCY", "4"))
+
+
+def is_public_deploy() -> bool:
+    """Whether this process is serving the internet (launch-1, re-audit NG-1).
+
+    The posture used to hang on CORS_ORIGINS alone, which the documented
+    same-origin deploy never sets: that shape shipped an open assistant and
+    open ops views. DEPLOY_PUBLIC states it outright; CORS_ORIGINS still
+    implies it, so a split deploy keeps working unchanged."""
+    if os.environ.get("DEPLOY_PUBLIC", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return bool(os.environ.get("CORS_ORIGINS", "").strip())
+
+
 def assistant_mode() -> str:
     raw = os.environ.get("ASSISTANT_ACCESS", "").strip().lower()
     if raw in ("open", "key", "off"):
         return raw
-    return "off" if os.environ.get("CORS_ORIGINS", "").strip() else "open"
+    return "off" if is_public_deploy() else "open"
+
+
+def cors_origins() -> list[str]:
+    """The deploy's allowed browser origins, or [] in development. Read per
+    call so a host can change it without a code path caching the old value."""
+    return [o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+
+
+def _host_of(scope: dict) -> str:
+    for k, v in scope.get("headers", []):
+        if k == b"host":
+            return v.decode("latin-1").strip().lower()
+    return ""
+
+
+def ws_origin_allowed(scope: dict) -> bool:
+    """Whether this socket's Origin may reach the relay (launch-1).
+
+    CORS keeps a cross-site page from *reading* an XHR; it does nothing for a
+    WebSocket, so any page on the internet could otherwise open one against
+    the relay and sit on a connection slot. The allowlist is CORS_ORIGINS on a
+    public deploy; in development it is localhost on any port. An absent
+    Origin is allowed: browsers always send one, and curl, the smoke script
+    and the tests are not the cross-site risk this exists for.
+    """
+    origin = None
+    for k, v in scope.get("headers", []):
+        if k == b"origin":
+            origin = v.decode("latin-1").strip()
+            break
+    if origin is None:
+        return True
+    origin = origin.rstrip("/")
+    allowed = cors_origins()
+    if allowed:
+        return origin.lower() in {a.lower() for a in allowed}
+    # Development, or the single-service deploy that sets no CORS_ORIGINS: the
+    # page it serves (same host) and localhost on any port.
+    try:
+        parts = urlsplit(origin)
+    except ValueError:
+        return False
+    if parts.hostname in ("localhost", "127.0.0.1", "::1"):
+        return True
+    host = _host_of(scope)
+    return bool(host) and parts.netloc.lower() == host
 
 
 def trusted_proxy_hops() -> int:
@@ -130,6 +197,7 @@ class SecurityMiddleware:
         expensive_slots: int = 4,
         provider_slots: int = 12,
         db_slots: int | None = None,
+        assistant_slots: int | None = None,
         ws_per_client: int | None = None,
         ws_total: int | None = None,
         max_body: int = MAX_BODY_BYTES,
@@ -147,6 +215,7 @@ class SecurityMiddleware:
         self.expensive = threading.BoundedSemaphore(expensive_slots)
         self.provider = threading.BoundedSemaphore(provider_slots)
         self.db = threading.BoundedSemaphore(db_slots if db_slots is not None else int(os.environ.get("DB_MAX_CONCURRENCY", "24")))
+        self.assistant = threading.BoundedSemaphore(assistant_slots if assistant_slots is not None else ASSISTANT_MAX_CONCURRENCY)
         # Per-client socket cap keyed on the rate-limit client id: generous
         # enough for an office behind one NAT address, tight enough that one
         # script cannot hold hundreds of relay fanouts.
@@ -156,7 +225,7 @@ class SecurityMiddleware:
         self._ws_lock = threading.Lock()
         self.max_body = max_body
         self.hops = trusted_proxy_hops()
-        self.stats: dict[str, int] = {"rate_limited": 0, "too_large": 0, "busy": 0, "assistant_blocked": 0, "ws_refused": 0}
+        self.stats: dict[str, int] = {"rate_limited": 0, "too_large": 0, "busy": 0, "assistant_blocked": 0, "ws_refused": 0, "ws_origin_refused": 0}
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -168,8 +237,12 @@ class SecurityMiddleware:
             return sum(self._ws_active.values())
 
     async def _websocket(self, scope: dict, receive: Callable, send: Callable) -> None:
-        """Connection caps for the relay socket (review P1-3): per client and
-        in total. A refused socket is closed before accept (HTTP 403)."""
+        """Origin allowlist (launch-1) and connection caps (review P1-3): per
+        client and in total. A refused socket is closed before accept."""
+        if not ws_origin_allowed(scope):
+            self.stats["ws_origin_refused"] += 1
+            await send({"type": "websocket.close", "code": 1008})  # policy violation
+            return
         cid = self._client_id(scope)
         with self._ws_lock:
             mine = self._ws_active.get(cid, 0)
@@ -246,7 +319,7 @@ class SecurityMiddleware:
             if mode == "key":
                 expected = os.environ.get("ASSISTANT_ACCESS_KEY", "")
                 given = headers.get(b"x-assistant-key", b"").decode("latin-1")
-                if not expected or given != expected:
+                if not expected or not hmac.compare_digest(given, expected):
                     self.stats["assistant_blocked"] += 1
                     return await self._reply(send, 401, "The AI analyst requires an access key on this deployment.")
             cid = self._client_id(scope)
@@ -263,7 +336,9 @@ class SecurityMiddleware:
             sem = self.expensive
         elif path.startswith(PROVIDER_PREFIX):
             sem = self.provider
-        elif is_api and path not in LIVE_PATHS and not is_assistant:
+        elif is_assistant:
+            sem = self.assistant  # launch-1: a sync route needs its own ceiling
+        elif is_api and path not in LIVE_PATHS:
             sem = self.db
         if sem is not None and not sem.acquire(blocking=False):
             self.stats["busy"] += 1

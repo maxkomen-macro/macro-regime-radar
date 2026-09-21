@@ -814,3 +814,61 @@ def test_static_asset_served_with_correct_content_type():
     r = client.get(f"/assets/{js.name}")
     assert r.status_code == 200
     assert "javascript" in r.headers["content-type"]
+
+
+# ── launch-1: diagnostics fail closed on a public deploy ─────────────────────
+# /api/providers/status and /api/stream/debug describe the relay, the plan and
+# the gate counters. They stay open in development; on a deploy (CORS_ORIGINS
+# set) they need OPS_ACCESS_KEY, and without one configured they answer 503
+# rather than serving ops internals to the internet.
+
+_OPS_PATHS = ("/api/providers/status", "/api/stream/debug")
+
+
+def test_diagnostics_are_open_in_development(monkeypatch):
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    monkeypatch.delenv("OPS_ACCESS_KEY", raising=False)
+    for path in _OPS_PATHS:
+        assert client.get(path).status_code == 200, path
+
+
+def test_diagnostics_fail_closed_when_a_deploy_configures_no_key(monkeypatch):
+    monkeypatch.setenv("CORS_ORIGINS", "https://radar.example.com")
+    monkeypatch.delenv("OPS_ACCESS_KEY", raising=False)
+    for path in _OPS_PATHS:
+        r = client.get(path)
+        assert r.status_code == 503, path
+        assert "ops key" in r.json()["detail"].lower(), path
+
+
+def test_diagnostics_need_the_key_when_one_is_configured(monkeypatch):
+    monkeypatch.setenv("CORS_ORIGINS", "https://radar.example.com")
+    monkeypatch.setenv("OPS_ACCESS_KEY", "launch-1-ops")
+    for path in _OPS_PATHS:
+        assert client.get(path).status_code == 401, path
+        assert client.get(path, headers={"X-Ops-Key": "wrong"}).status_code == 401, path
+        assert client.get(path, headers={"X-Ops-Key": "launch-1-ops"}).status_code == 200, path
+
+
+# ── launch-1: the served generation is visible to the browser ────────────────
+# A tab open across a database swap used to keep pre-swap values until each
+# query's stale time expired (credit and LBO for 30 minutes). The freshness
+# payload now names the generation that answered, and the client drops its
+# caches when that changes.
+
+
+def test_freshness_names_the_generation_that_answered():
+    # Production never serves traffic before the first pass: /health/ready is
+    # 503 `warming` until it completes. Wait for it, as a host's probe does.
+    from api import worker as worker_mod
+
+    worker_mod.get_worker().ensure_started()
+    assert worker_mod.get_worker().wait_published(1, timeout=120), "no generation was published"
+    body = client.get("/api/freshness").json()
+    gen = body.get("generation")
+    assert gen and isinstance(gen["id"], int) and gen["id"] >= 1
+    assert gen["built_at"].endswith("Z")
+    assert gen["source"] == "macro_radar.db"  # a name, never a path
+    assert "/" not in gen["source"]
+    ready = client.get("/health/ready").json()
+    assert gen["id"] == ready["worker"]["generation"]
