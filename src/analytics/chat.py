@@ -84,6 +84,24 @@ TAB_CONTEXT: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "macro_radar_tab_context", default=None
 )
 
+# ── Spend bridge (agent → API, launch-1) ─────────────────────────────────────
+# On the public deploy the assistant answers strangers, so its spend is counted
+# and capped per day (api/assistant_budget.py). USAGE_SINK receives the usage
+# block of every model call the loop makes; BUDGET_GATE is asked before each
+# further call, so an answer that keeps reaching for tools stops rather than
+# carrying the day past the ceiling. Streamlit sets neither: unset means no
+# accounting and no gate, exactly the old behaviour.
+USAGE_SINK: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "macro_radar_usage_sink", default=None
+)
+BUDGET_GATE: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "macro_radar_budget_gate", default=None
+)
+BUDGET_STOP_NOTE = (
+    "\n\n_Stopping here: today's AI budget is spent. "
+    "The analyst wakes up at midnight UTC; every other screen works as usual._"
+)
+
 
 # ── SQL guard ─────────────────────────────────────────────────────────────────
 
@@ -618,6 +636,19 @@ class MacroRadarAgent:
             if final.stop_reason != "tool_use":
                 return
 
+            # The day's ceiling is asked before every further paid call, so an
+            # answer that keeps reaching for tools stops here instead of
+            # carrying the day past it (launch-1, api/assistant_budget.py).
+            gate = BUDGET_GATE.get()
+            if gate is not None:
+                try:
+                    more = bool(gate())
+                except Exception:  # noqa: BLE001 — a broken gate must not spend
+                    more = False
+                if not more:
+                    yield BUDGET_STOP_NOTE
+                    return
+
             tool_results = []
             for block in final.content:
                 if block.type != "tool_use":
@@ -658,9 +689,23 @@ class MacroRadarAgent:
             pass
 
     def _record_usage(self, message: Any) -> None:
+        usage = getattr(message, "usage", None)
+        # The API's ledger first (launch-1): it pays for this call whether or
+        # not Streamlit is in the process.
+        sink = USAGE_SINK.get()
+        if sink is not None and usage is not None:
+            try:
+                sink({
+                    "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+                    "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+                    "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                    "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+                    "model": getattr(message, "model", None) or self.model,
+                })
+            except Exception:  # noqa: BLE001 — accounting must never break an answer
+                pass
         try:
             import streamlit as st
-            usage = getattr(message, "usage", None)
             if usage is None:
                 return
             log = st.session_state.setdefault("chat_token_log", {"input": 0, "output": 0})

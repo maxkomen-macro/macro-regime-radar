@@ -17,6 +17,8 @@ output/tearsheets/
 # Committing this ~10 MB binary hourly bloated the repo and broke Streamlit Cloud's
 # deploy clone (283 MB / ~140 s). Workflows download it at start and upload it at end.
 data/macro_radar.db
+# The assistant's daily spend ledger, written by the API at runtime (launch-1).
+data/assistant_spend.db
 # The release-asset identity bootstrap records beside the database (fix/prelaunch-1).
 data/*.asset.json
 

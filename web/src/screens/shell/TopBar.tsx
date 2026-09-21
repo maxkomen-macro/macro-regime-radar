@@ -10,7 +10,7 @@
  */
 
 import type { RefObject } from "react";
-import { useAlerts } from "../../api/queries";
+import { useAlerts, useAssistantStatus } from "../../api/queries";
 import { BellIcon, SearchIcon } from "./nav-icons";
 import { alertSummary, STATUS_COLOR } from "./shell-status";
 
@@ -71,6 +71,11 @@ export default function TopBar({
   drawerOpen,
   onOpenDrawer,
 }: TopBarProps) {
+  // launch-1: the assistant is open to the public under a hard daily budget.
+  // When it is spent the chip says so in plain words rather than failing on
+  // click; a status request that does not answer leaves the chip as it was.
+  const resting = useAssistantStatus().data?.resting === true;
+
   return (
     <header className="mrr-top">
       <button
@@ -96,9 +101,13 @@ export default function TopBar({
           className="mrr-ask"
           aria-expanded={assistantOpen}
           aria-controls="assistant-panel"
-          title="Ask the analyst about the data on this screen"
+          title={
+            resting
+              ? "The analyst has used today's budget. It wakes up at midnight UTC; every other screen works as usual."
+              : "Ask the analyst about the data on this screen"
+          }
         >
-          <span aria-hidden="true" className="mrr-ask-glyph">◆</span> Ask the analyst
+          <span aria-hidden="true" className="mrr-ask-glyph">◆</span> {resting ? "Analyst resting" : "Ask the analyst"}
         </button>
         <AlertsTrigger onOpen={onOpenDrawer} open={drawerOpen} />
       </div>

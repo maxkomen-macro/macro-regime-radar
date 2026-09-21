@@ -18,6 +18,7 @@ Frame contract (error strings mirror dashboard/components/chat_widget.py):
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from collections.abc import Iterator
 from typing import Any, Literal
@@ -26,6 +27,9 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from api import assistant_budget as budget
+
+log = logging.getLogger("mrr.assistant")
 router = APIRouter(prefix="/api/assistant")
 
 
@@ -72,6 +76,13 @@ def _sse(payload: dict, event: str | None = None) -> str:
     return frame
 
 
+def _resting_stream(state: dict) -> Iterator[str]:
+    """The day's ceiling is reached: a plain resting state, never an error
+    frame (launch-1). No agent is constructed and no model call is made."""
+    yield _sse({"message": state.get("reason") or budget.RESTING_MESSAGE, "resets_at": state["resets_at"]}, event="resting")
+    yield _sse({}, event="done")
+
+
 def _event_stream(req: ChatRequest) -> Iterator[str]:
     """Synchronous SSE generator over MacroRadarAgent.ask_streaming.
 
@@ -79,9 +90,13 @@ def _event_stream(req: ChatRequest) -> Iterator[str]:
     generator rather than once up front: Starlette resumes a sync body
     iterator via the threadpool, and each resume runs in a fresh copy of the
     request context — a single set() during the first resume would not be
-    visible to the tool calls that execute during later resumes.
+    visible to the tool calls that execute during later resumes. The spend
+    sink and the budget gate (launch-1) ride the same resets.
     """
     from src.analytics import chat  # lazy — pulls the anthropic SDK
+
+    def _spend(usage: dict) -> None:
+        budget.record(usage, model=usage.get("model"))
 
     try:
         agent = _get_agent()
@@ -89,19 +104,27 @@ def _event_stream(req: ChatRequest) -> Iterator[str]:
         pull = agent.ask_streaming(req.message, history=history)
         while True:
             token = chat.TAB_CONTEXT.set(req.tab_context)
+            sink = chat.USAGE_SINK.set(_spend)
+            gate = chat.BUDGET_GATE.set(budget.allow_more)
             try:
                 chunk = next(pull)
             except StopIteration:
                 break
             finally:
                 chat.TAB_CONTEXT.reset(token)
+                chat.USAGE_SINK.reset(sink)
+                chat.BUDGET_GATE.reset(gate)
             yield _sse({"delta": chunk})
     except chat.RateLimited:
         yield _sse({"message": "_Hit a rate limit — try again in a moment._"}, event="error")
     except chat.NetworkError:
         yield _sse({"message": "_AI service unreachable. Please retry._"}, event="error")
     except chat.AgentError as exc:
-        yield _sse({"message": f"_AI assistant error: {exc}_"}, event="error")
+        # The upstream text can carry a model id, a request id and the
+        # provider's body; the visitor gets a sentence and the server keeps
+        # the detail (launch-1, re-audit SR-2d).
+        log.warning("assistant failed: %s", type(exc).__name__)
+        yield _sse({"message": "_The AI analyst could not answer that just now. Please try again._"}, event="error")
     except Exception:  # noqa: BLE001 — last-resort guard, mirrors chat_widget.py
         yield _sse({"message": "_AI service temporarily unavailable. Please try again._"}, event="error")
     yield _sse({}, event="done")
@@ -116,9 +139,26 @@ def assistant_ask(req: ChatRequest) -> StreamingResponse:
     Deliberately `def`, not `async def`: FastAPI runs sync routes and sync
     body iterators on the threadpool, so the event loop — and with it the
     EODHD WS relay — stays unblocked while the agent waits on Anthropic.
+
+    The day's spend ceiling is checked first (launch-1): while it is reached
+    the answer is a resting frame, and nothing reaches Anthropic.
     """
+    state = budget.state()
+    if state["resting"]:
+        budget.note_cap_reached()
+        body = _resting_stream(state)
+    else:
+        body = _event_stream(req)
     return StreamingResponse(
-        _event_stream(req),
+        body,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/status")
+def assistant_status() -> dict:
+    """What the assistant chip shows before a visitor asks anything: whether
+    the analyst is awake, what today's budget has been spent on, and when it
+    turns over. Costs and counts only, never a key or a conversation."""
+    return budget.state()

@@ -65,6 +65,9 @@ interface Turn {
   content: string;
   /** Error turns render in red-on-dark and are never sent back as history. */
   error?: boolean;
+  /** The day's AI budget is spent (launch-1): a plain state, not a failure.
+   * Rendered muted, never red, and never sent back as history. */
+  resting?: boolean;
 }
 
 interface AskPayload {
@@ -114,14 +117,20 @@ function errorFrameMessage(data: string): string {
   return "The assistant stopped on an error it did not describe.";
 }
 
-/** Returns true when the frame ends the turn (done or error). */
+/** Returns true when the frame ends the turn (done, error or resting). */
 function dispatchFrame(
   raw: string,
   onDelta: (text: string) => void,
   onError: (message: string) => void,
+  onResting?: (message: string) => void,
 ): boolean {
   const { event, data } = parseFrame(raw);
   if (event === "done") return true;
+  if (event === "resting") {
+    // launch-1: today's AI budget is spent. Plain words, not an error.
+    onResting?.(errorFrameMessage(data));
+    return true;
+  }
   if (event === "error") {
     onError(errorFrameMessage(data));
     return true;
@@ -153,6 +162,7 @@ async function streamAsk(
   onDelta: (text: string) => void,
   onError: (message: string) => void,
   signal: AbortSignal,
+  onResting?: (message: string) => void,
 ): Promise<void> {
   let res: Response;
   try {
@@ -185,7 +195,7 @@ async function streamAsk(
       while (brk) {
         const frame = buffer.slice(0, brk.index);
         buffer = buffer.slice(brk.index + brk.length);
-        if (dispatchFrame(frame, onDelta, onError)) {
+        if (dispatchFrame(frame, onDelta, onError, onResting)) {
           finished = true;
           break;
         }
@@ -194,7 +204,7 @@ async function streamAsk(
       if (finished) break;
       if (chunk.done) {
         // A final frame that arrived without its blank-line terminator still counts.
-        if (buffer.trim()) dispatchFrame(buffer, onDelta, onError);
+        if (buffer.trim()) dispatchFrame(buffer, onDelta, onError, onResting);
         break;
       }
     }
@@ -212,6 +222,19 @@ function appendToLast(prev: Turn[], chunk: string): Turn[] {
   if (!last || last.role !== "assistant" || last.error) return prev;
   const next = prev.slice();
   next[next.length - 1] = { ...last, content: last.content + chunk };
+  return next;
+}
+
+/** The resting state lands where an answer would have: the same placement
+ * rule as failLast, without the error styling (launch-1). */
+function restLast(prev: Turn[], message: string): Turn[] {
+  const last = prev[prev.length - 1];
+  const next = prev.slice();
+  if (last && last.role === "assistant" && !last.error && last.content === "") {
+    next[next.length - 1] = { role: "assistant", content: message, resting: true };
+    return next;
+  }
+  next.push({ role: "assistant", content: message, resting: true });
   return next;
 }
 
@@ -305,7 +328,7 @@ export default function AssistantPanel({
       if (!question || streaming) return;
 
       const history = messages
-        .filter((m) => !m.error)
+        .filter((m) => !m.error && !m.resting)
         .slice(-MAX_HISTORY_ENTRIES)
         .map((m) => ({ role: m.role, content: m.content }));
 
@@ -325,6 +348,7 @@ export default function AssistantPanel({
           (chunk) => setMessages((prev) => appendToLast(prev, chunk)),
           (msg) => setMessages((prev) => failLast(prev, msg)),
           controller.signal,
+          (msg) => setMessages((prev) => restLast(prev, msg)),
         );
       } catch {
         setMessages((prev) => failLast(prev, UNREACHABLE));
@@ -334,7 +358,7 @@ export default function AssistantPanel({
         // A turn that ended with no text at all says so rather than showing a blank.
         setMessages((prev) => {
           const last = prev[prev.length - 1];
-          if (!last || last.role !== "assistant" || last.error || last.content !== "") return prev;
+          if (!last || last.role !== "assistant" || last.error || last.resting || last.content !== "") return prev;
           return failLast(prev, "No answer came back: the assistant returned an empty response.");
         });
       }
@@ -429,7 +453,7 @@ export default function AssistantPanel({
             ) : (
               messages.map((m, i) => {
                 const isAssistant = m.role === "assistant";
-                const rail = m.error ? "var(--neg)" : "var(--link)";
+                const rail = m.error ? "var(--neg)" : m.resting ? "var(--line-hair)" : "var(--link)";
                 return (
                   <div key={i} style={{ marginBottom: 12 }}>
                     <div
@@ -437,12 +461,14 @@ export default function AssistantPanel({
                         ...labelStyle,
                         color: m.error
                           ? "var(--neg-text)"
-                          : isAssistant
-                            ? "var(--link)"
-                            : "var(--text-muted)",
+                          : m.resting
+                            ? "var(--text-muted)"
+                            : isAssistant
+                              ? "var(--link)"
+                              : "var(--text-muted)",
                       }}
                     >
-                      {isAssistant ? (m.error ? "◆ Analyst · error" : "◆ Analyst") : "▸ You"}
+                      {isAssistant ? (m.error ? "◆ Analyst · error" : m.resting ? "◆ Analyst · resting" : "◆ Analyst") : "▸ You"}
                     </div>
                     <div
                       style={{
@@ -451,9 +477,11 @@ export default function AssistantPanel({
                         lineHeight: "var(--lh-body)",
                         color: m.error
                           ? "var(--neg-text)"
-                          : isAssistant
-                            ? "var(--text)"
-                            : "var(--text-2)",
+                          : m.resting
+                            ? "var(--text-muted)"
+                            : isAssistant
+                              ? "var(--text)"
+                              : "var(--text-2)",
                         whiteSpace: isAssistant && !m.error ? "normal" : "pre-wrap",
                         // 3px left rail = generated content (blue for model
                         // output, red when the turn is an error).

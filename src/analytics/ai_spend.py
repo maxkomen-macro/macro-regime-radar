@@ -32,8 +32,16 @@ SONAR_INPUT_USD_PER_MTOK = 1.00  # assumption
 SONAR_OUTPUT_USD_PER_MTOK = 1.00  # assumption
 SONAR_REQUEST_FEE_USD = 0.005  # assumption: $5 per 1,000 requests at search context "low"
 
+# Claude API pricing, Sonnet 4.5 (the assistant's model, src/analytics/chat.py
+# MODEL), from the published pricing page as read on 2026-09-21 (USD per
+# million tokens). The assistant's daily ceiling is priced with these.
+SONNET_INPUT_USD_PER_MTOK = 3.00
+SONNET_OUTPUT_USD_PER_MTOK = 15.00
+SONNET_CACHE_WRITE_USD_PER_MTOK = 3.75  # 5-minute cache write, 1.25× base input
+SONNET_CACHE_READ_USD_PER_MTOK = 0.30  # cache hit, 0.1× base input
+
 PROVIDERS = ("anthropic", "perplexity", "budget")
-PURPOSES = ("news_interpretation", "news_research", "cap_reached")
+PURPOSES = ("news_interpretation", "news_research", "cap_reached", "assistant_ask")
 STATUSES = ("ok", "error", "cap_reached")
 COST_SOURCES = ("usage", "usage.cost", "price_table", "none")
 
@@ -119,6 +127,27 @@ def anthropic_cost(usage: dict | None) -> dict:
     }
 
 
+def sonnet_cost(usage: dict | None) -> dict:
+    """Ledger columns for one assistant call on Sonnet 4.5, priced from its
+    `usage` block (the same field names the SDK reports)."""
+    if not isinstance(usage, dict):
+        return unpriced()
+    inp = _tokens(usage.get("input_tokens"))
+    out = _tokens(usage.get("output_tokens"))
+    cw = _tokens(usage.get("cache_creation_input_tokens"))
+    cr = _tokens(usage.get("cache_read_input_tokens"))
+    cost = (
+        inp * SONNET_INPUT_USD_PER_MTOK
+        + out * SONNET_OUTPUT_USD_PER_MTOK
+        + cw * SONNET_CACHE_WRITE_USD_PER_MTOK
+        + cr * SONNET_CACHE_READ_USD_PER_MTOK
+    ) / 1_000_000
+    return {
+        "input_tokens": inp, "output_tokens": out, "cache_write_tokens": cw, "cache_read_tokens": cr,
+        "request_fee_usd": None, "cost_usd": round(cost, 8), "cost_source": "usage",
+    }
+
+
 def perplexity_cost(usage: dict | None) -> dict:
     """Ledger columns for one Sonar call: the provider's own usage.cost.total_cost
     when present, else tokens at the assumed price table plus the request fee."""
@@ -195,6 +224,15 @@ def month_to_date(conn: sqlite3.Connection, now: datetime | None = None) -> floa
 def within_cap(conn: sqlite3.Connection, worst_case: float, *, now: datetime | None = None, cap: float = MONTHLY_CAP_USD) -> bool:
     """True when month-to-date spend plus `worst_case` stays within the cap."""
     return month_to_date(conn, now) + worst_case <= cap + 1e-9
+
+
+def day_to_date(conn: sqlite3.Connection, now: datetime | None = None) -> float:
+    """Sum of recorded cost in the current UTC day (the assistant's ceiling,
+    launch-1). The ledger stamps every row `YYYY-MM-DDTHH:MM:SSZ`, so the day
+    is a prefix match."""
+    day = as_utc(now).strftime("%Y-%m-%d")
+    row = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM ai_spend_ledger WHERE ts LIKE ?", (f"{day}%",)).fetchone()
+    return float(row[0] or 0.0)
 
 
 def enrichments_in_last_hour(conn: sqlite3.Connection, now: datetime | None = None) -> int:
