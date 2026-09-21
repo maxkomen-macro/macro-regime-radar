@@ -37,6 +37,7 @@ from api import worker as worker_mod
 from api.db import NotStored
 from api import freshness as freshness_mod
 from api.chat import router as assistant_router
+from api.desk import router as desk_router
 from api.providers import entitlements
 from api.providers import market as market_layer
 from api.providers.errors import ProviderError
@@ -1516,6 +1517,7 @@ def api_calendar_recent(
 
 app.include_router(api)
 app.include_router(assistant_router)
+app.include_router(desk_router)  # Desk read-only endpoints (desk/frame §7)
 
 
 @app.websocket("/api/stream/ws")
