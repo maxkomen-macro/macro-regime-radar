@@ -56,7 +56,7 @@ python scripts/validate_db.py /tmp/validated/macro_radar.db --mode verify-only -
 gh release upload data-latest /tmp/validated/macro_radar.db --clobber
 ```
 
-The API re-downloads on its next bootstrap refresh (`BOOTSTRAP_DB_REFRESH_MIN`) or restart.
+The API swaps it in at its next bootstrap check (`BOOTSTRAP_DB_REFRESH_MIN`) or restart: the upload gives the asset a new id, and a new asset identity is what makes the API download (fix/prelaunch-1). It builds the new generation in the background and switches every screen to it at once; no restart is needed for consistency.
 
 ## 6. API host
 
@@ -64,9 +64,10 @@ Environment (host secret store only; never in git, never in the image):
 
 | Var | Purpose |
 |---|---|
-| `GH_DB_TOKEN` | read-only Contents PAT; `api/bootstrap.py` downloads the DB at start and every `BOOTSTRAP_DB_REFRESH_MIN` minutes, validating the download (header, quick_check, regime rows) before an atomic swap |
-| `BOOTSTRAP_DB_MAX_AGE_MIN` | re-download at start when the on-disk DB is older than this (set 60 in production) |
-| `BOOTSTRAP_DB_REFRESH_MIN` | periodic refresh (set 30–60) |
+| `GH_DB_TOKEN` | read-only Contents PAT; `api/bootstrap.py` checks the `data-latest` asset at start and every `BOOTSTRAP_DB_REFRESH_MIN` minutes and downloads only when the asset's identity (id, updated_at, size, digest, recorded in `data/macro_radar.db.asset.json`) has changed, validating the download (header, quick_check, regime rows) before an atomic swap |
+| `BOOTSTRAP_DB_REFRESH_MIN` | periodic identity check (set 30–60). Safe to arm since fix/prelaunch-1: an unchanged asset is no download, no swap and no rebuild; a changed one is rebuilt in the background and published whole |
+| `BOOTSTRAP_DB_MAX_AGE_MIN` | legacy: still reported in `/api/freshness`, decides nothing (the asset identity does) |
+| `PREFETCH_MARKET` | `1` (default) keeps the strip's and the default watchlist's 5D candles warm when `EODHD_API_TOKEN` is set; `0` turns it off |
 | `EODHD_API_TOKEN` | provider layer + live relay. **Owner action: add it on the host.** GitHub Actions does not need it (no workflow step calls EODHD) |
 | `EODHD_PROBE_ON_START` | `1` (default) runs one bounded entitlement probe per API family at startup |
 | `CORS_ORIGINS` | the frontend origin(s) for a split deploy; setting it also flips the assistant default to `off` |
@@ -81,9 +82,11 @@ Environment (host secret store only; never in git, never in the image):
 | `CSP_CONNECT_SRC` | extra `connect-src` origins for the served shell (split API/WS host) |
 | `PROVIDER_MAX_CONCURRENCY` | upstream provider calls in flight (default 8) |
 
-Health: `/health/live` (event loop only — it keeps answering even if the worker pool is wedged, so point the host's liveness/health probe at **`/health/ready`**, which touches the database), `/health/ready` (DB opens, regime rows present; 503 otherwise), `/api/freshness`, `/api/stream/debug`, `/api/providers/status` (both diagnostics gated by `OPS_ACCESS_KEY` when set).
+Health: `/health/live` (event loop only — it keeps answering even if the worker pool is wedged, so point the host's liveness/health probe at **`/health/ready`**, which touches the database), `/health/ready` (DB opens, regime rows present, and the background worker's first pass complete: 503 `warming` until then, about 4 s after start on a laptop; its body carries the worker's generation and build time), `/api/freshness`, `/api/stream/debug`, `/api/providers/status` (both diagnostics gated by `OPS_ACCESS_KEY` when set).
 
-Database connections (2026-09-06): one read-only SQLite connection per worker thread, reused across requests and reopened when the file changes underneath (bootstrap swap, `make sync-data`). The Docker image runs uvicorn with `--limit-concurrency 64`.
+Derived results (fix/prelaunch-1): a background worker (`api/worker.py`) builds every database-derived result (credit, recession model, Regime Lab, LBO defaults, allocation) into a generation, an in-memory copy of the database plus those results. When the database file changes (bootstrap swap, `make sync-data`, a file copied into place) it builds the next generation in the background and switches reads and results together when it is complete; until then the previous generation answers. Handlers never compute; a request arriving before the first pass waits up to 5 s, then gets 503 with `Retry-After`. Allocation builds in a child process, from the price histories the full refresh stores in `asset_prices`; the API never calls Yahoo.
+
+Database connections (2026-09-06): one read-only SQLite connection per worker thread, reused across requests, reading the published generation. The Docker image runs uvicorn with `--limit-concurrency 64`.
 
 Logs: `api/logsafe.py` holds httpx at WARNING and redacts `api_token=`/Bearer values on every handler — read the startup block after each deploy (dist mounted, DB mtime, token presence yes/no, CORS, entitlement probe verdicts).
 
@@ -94,8 +97,21 @@ Logs: `api/logsafe.py` holds httpx at WARNING and redacts `api_token=`/Bearer va
 | `/api/stream/debug` feed `auth_failed` | EODHD rejected the token | rotate `EODHD_API_TOKEN` on the host; the relay retries every 5 min |
 | `degraded_reasons` says a feed is silent during its session | upstream stall or network | wait one reconnect cycle (backoff ≤30 s); if persistent, restart the instance |
 | Provider errors `kind=rate_limited` | EODHD or the app's own bucket (5 calls/s, burst 20) | nothing; they retry; sustained → check `/api/providers/status` counters |
-| `kind=unauthorized` on candles/search | plan changed | probe with `curl /api/providers/status`; yfinance fallback is automatic and labeled |
+| `kind=unauthorized` on candles/search | plan changed | probe with `curl /api/providers/status`. There is no Yahoo fallback on the API (fix/prelaunch-1): the visitor sees the typed error until the plan covers the family again |
+| `/api/allocation` answers 503 `not_stored` | the database predates the stored price histories | dispatch Refresh Data → `full`; its "Store allocation price histories" step writes `asset_prices` |
+| `/health/ready` stays `warming` | the worker's first pass has not completed | read `worker.state` and `worker.last_error` in the `/health/ready` body and the `mrr.worker` log lines |
 | Shell shows **Validated snapshot** | the API host is asleep or down | wait for wake-up (free hosts: ~1 min) or check the host; stored screens stay readable |
 | Regime month did not advance after a print | run a `full` refresh; check `regime.blockers` | if a print is "published, not yet stored", the FRED fetch missed it — inspect the run log |
 | Validation failed in Actions | step summary lists the failure | fix the cause and rerun; never `allow_stale_reason` a regression |
 | A burst of 429s under normal use | `DB_MAX_CONCURRENCY` or the per-client burst is too low for the host's proxy layout | check `TRUSTED_PROXY_HOPS` first (all visitors sharing the proxy's IP look like one client), then raise the burst |
+
+## 8. After the merge (fix/prelaunch-1)
+
+The API computes allocation only from the `asset_prices` table, which the `full` refresh writes ("Store allocation price histories"). A database published before the merge does not have it, and on such a database `/api/allocation` answers 503 `not_stored` in plain words and never downloads. So:
+
+1. Merge, then dispatch Refresh Data → `full` (or wait for the next scheduled full run: 11:17 UTC daily, 00:23 UTC Tue–Sat).
+2. Confirm the published database carries the table: the run's validation summary lists `asset_prices` with rows and a max date equal to the last completed session, and the `asset_prices` watermark names its providers.
+3. Only then point the deployed API at the new database (deploy it, or let `BOOTSTRAP_DB_REFRESH_MIN` pick the new asset up).
+
+No restart is needed after a refresh: the new database is rebuilt in the background and published to every screen at once.
+

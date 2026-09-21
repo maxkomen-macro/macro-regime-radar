@@ -85,17 +85,27 @@ the API wakes. `VITE_SNAPSHOT_URL` can point at a snapshot hosted elsewhere.
 
 Docker image from the repo `Dockerfile` (one process: API + relay; serves
 `web/dist` same-origin too when present). Environment per
-`docs/RUNBOOK.md` §6; minimum: `GH_DB_TOKEN`, `BOOTSTRAP_DB_MAX_AGE_MIN=60`,
+`docs/RUNBOOK.md` §6; minimum: `GH_DB_TOKEN`,
 `BOOTSTRAP_DB_REFRESH_MIN=45`, `CORS_ORIGINS=https://<static-host>`,
 `EODHD_API_TOKEN` (owner adds it on the host; **not** present in GitHub
 Actions and not needed there), `ASSISTANT_ACCESS=off` (default once
 `CORS_ORIGINS` is set), `TRUSTED_PROXY_HOPS=1` behind the host proxy.
-Health check path for the host: `/health/ready` (it touches the database; `/health/live` only proves the event loop is alive). Behind the host's proxy set `TRUSTED_PROXY_HOPS=1` so rate limits key on real clients.
+Health check path for the host: `/health/ready` (it touches the database and answers 503 `warming` until the background worker's first pass has built every derived result, about 4 s after start on a laptop; `/health/live` only proves the event loop is alive). Behind the host's proxy set `TRUSTED_PROXY_HOPS=1` so rate limits key on real clients.
 
-On wake the bootstrap downloads a fresh DB when the on-disk one is older than
-`BOOTSTRAP_DB_MAX_AGE_MIN`, validates it (header, `quick_check`, regime rows)
-and swaps it atomically; `/api/freshness.bootstrap` exposes the last attempt,
-result, asset `updated_at`, DB mtime and any sanitized error.
+On wake, and every `BOOTSTRAP_DB_REFRESH_MIN` minutes, the bootstrap compares
+the `data-latest` asset's identity with the one it last swapped in and
+downloads only when it changed (fix/prelaunch-1; the local mtime never
+decides), validates it (header, `quick_check`, regime rows) and swaps it
+atomically. The background worker then builds the new generation of derived
+results and switches every screen to it at once, so a refresh never needs a
+restart. `/api/freshness.bootstrap` exposes the last attempt, result
+(`downloaded` / `unchanged` / …), asset `updated_at`, DB mtime and any
+sanitized error.
+
+Before the first deploy after the fix/prelaunch-1 merge, a `full` refresh
+must have published a database with the `asset_prices` table (allocation's
+stored price histories; `docs/RUNBOOK.md` §8). The API never downloads them,
+so on an older database the Tools allocation panel says they are not stored.
 
 ## 2. Full live mode (paid, always-on)
 
