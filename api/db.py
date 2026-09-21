@@ -80,11 +80,17 @@ def _connect() -> sqlite3.Connection:
         if conn is not None and getattr(_local, "gen", None) == gen.uri:
             return conn
         _drop_local()
-        conn = sqlite3.connect(gen.uri, uri=True, factory=_ReusedConnection)
-        conn.execute("PRAGMA query_only = 1")
-        conn.row_factory = sqlite3.Row
-        _local.conn, _local.gen, _local.key, _local.path = conn, gen.uri, None, None  # the uri is unique per worker and generation
-        return conn
+        conn = dbpath.open_generation(gen, factory=_ReusedConnection)
+        if conn is None:
+            # gen's copy was released (a request pinned to it outlived two
+            # publishes): read the generation being served now instead.
+            served = dbpath.served_for(DB_PATH)
+            if served is not None and served is not gen:
+                gen, conn = served, dbpath.open_generation(served, factory=_ReusedConnection)
+        if conn is not None:
+            conn.row_factory = sqlite3.Row
+            _local.conn, _local.gen, _local.key, _local.path = conn, gen.uri, None, None  # the uri is unique per worker and generation
+            return conn
     if not DB_PATH.exists():
         raise DBUnavailable(f"Database not found at {DB_PATH}")
     key = _file_key(DB_PATH)
@@ -648,20 +654,25 @@ def watermarks() -> dict | None:
 # Per generation (fix/prelaunch-1): a published generation is an immutable
 # in-memory copy, so its stored maxima cannot change until the next one; the
 # memo is keyed on the generation's uri (unique per worker and generation),
-# which moves with the database file key.
-_freshness_memo: dict = {}
+# which moves with the database file key. The worker fills it while it builds
+# a generation, so no request computes it; the newest few are kept, because a
+# request pinned to the previous generation still reads that one's.
+_freshness_memo: dict[str, dict] = {}
+_FRESHNESS_MEMO_SLOTS = 3
 
 
 def freshness() -> dict:
     """Latest data timestamps per feed — for the shell's data-freshness line."""
     gen = dbpath.generation_for(DB_PATH)
     if gen is not None:
-        hit = _freshness_memo.get("value")
-        if hit is not None and hit[0] == gen.uri:
-            return dict(hit[1])
+        hit = _freshness_memo.get(gen.uri)
+        if hit is not None:
+            return dict(hit)
     out = _freshness_uncached()
     if gen is not None:
-        _freshness_memo["value"] = (gen.uri, dict(out))
+        _freshness_memo[gen.uri] = dict(out)
+        while len(_freshness_memo) > _FRESHNESS_MEMO_SLOTS:
+            _freshness_memo.pop(next(iter(_freshness_memo)), None)
     return out
 
 

@@ -232,3 +232,22 @@ def test_intraday_validates_its_own_feeds():
     job = next(iter(doc["jobs"].values()))
     step = next(s for s in job["steps"] if s["name"] == "Validate the refreshed database")
     assert "--mode intraday " in step["run"] and "--mode market-only" not in step["run"]
+
+
+def test_the_stored_histories_step_runs_on_the_full_mode_install():
+    """fix/prelaunch-1: `python -m src.market_data.asset_history` runs in full
+    mode, which installs requirements.txt and requirements-snapshot.txt only,
+    and it reaches the API's provider layer (EODHD first, Yahoo the disclosed
+    fallback). Every third-party module that path imports must be installed
+    there, or the morning run fails at import."""
+    files = ["src/market_data/asset_history.py", "src/watermarks.py", "api/calendar.py"]
+    files += [str(p.relative_to(ROOT)) for p in sorted((ROOT / "api/providers").glob("*.py"))]
+    mods: set[str] = set()
+    for f in files:
+        mods |= _module_imports(ROOT / f)
+    third_party = {m for m in mods if m not in STDLIB and m not in {"src", "api"}}
+    full = _requirement_modules(ROOT / "requirements.txt") | _requirement_modules(ROOT / "requirements-snapshot.txt")
+    assert third_party <= full, third_party - full
+    wf = (WF / "refresh-data.yml").read_text()
+    assert "python -m src.market_data.asset_history" in wf
+    assert "pip install -r requirements.txt -r requirements-snapshot.txt" in wf

@@ -13,7 +13,14 @@ The new generation is published whole. Until it is, the previous one keeps
 answering, reads and results alike (api/db.py and every analytics module read
 the published copy through dbpath), so a swap can never leave one screen on
 the old file and another on the new one, and no request waits for, or runs,
-a computation. Handlers only look results up.
+a computation. Handlers only look results up. Each HTTP request is pinned to
+the generation published when it arrived (PinGeneration), so one response
+never mixes two; a replaced generation stays readable until the next publish.
+
+An item that fails on a new file keeps serving its last good result, and the
+status names it (`carried`); an answer that is a fact about the file (NotStored)
+is not a failure. A file that cannot be staged at all leaves the last good
+generation serving, is retried with a backoff, and is reported in last_error.
 
 Before the first generation exists, a request waits up to WAIT_S seconds for
 it, then gets 503 with Retry-After and a "warming" body; /health/ready reports
@@ -26,6 +33,7 @@ warm (prefetch_tick), so a first visitor does not wait on EODHD for them.
 from __future__ import annotations
 
 import collections
+import gc
 import itertools
 import logging
 import os
@@ -53,6 +61,14 @@ PREFETCH_SYMBOLS = ("SPY", "QQQ", "IWM", "EEM")
 PREFETCH_RANGES = ("5D",)
 PREFETCH_MARGIN_S = 20.0  # refresh this long before the cache entry expires
 PREFETCH_EVERY_S = 10.0
+STAGE_RETRY_MAX_S = 60.0  # an unreadable file is retried after 2, 4, 8 … s, at most this far apart
+
+# A full garbage collection walks every tracked object; after the libraries
+# load and the first generation builds that is ~180k of them, ~30 ms idle and
+# more on a busy host, and it holds the GIL (/health/live spiked past 100 ms
+# under visitor load, verify loop 1). The serving process freezes that heap
+# once (gc.freeze): later collections walk only what came after it.
+_HEAP_FROZEN = False
 
 Item = tuple[str, Callable[[dict], Any]]
 # A shared-cache in-memory database is found by name: two generations sharing
@@ -78,8 +94,10 @@ class Generation:
     source: Path
     uri: str
     anchor: sqlite3.Connection | None
+    owner: Any = None
     results: dict[str, Any] = field(default_factory=dict)
     errors: dict[str, BaseException] = field(default_factory=dict)
+    carried: dict[str, int] = field(default_factory=dict)  # item -> generation its result was computed in
     item_ms: dict[str, float] = field(default_factory=dict)
     staged_at: str = ""
     built_at: str | None = None
@@ -119,6 +137,16 @@ def _preload_libraries() -> None:
     import src.analytics.lbo  # noqa: F401
     import src.analytics.recession  # noqa: F401
     import src.analytics.regimes  # noqa: F401
+
+
+def _freeze_heap_once() -> None:
+    global _HEAP_FROZEN
+    if _HEAP_FROZEN:
+        return
+    _HEAP_FROZEN = True
+    gc.collect()
+    gc.freeze()
+    log.info("heap frozen after the first build: %d objects out of the collector's reach", gc.get_freeze_count())
 
 
 def _default_items() -> list[Item]:
@@ -163,6 +191,8 @@ class AnalyticsWorker:
         self.prefetch = prefetch
         self._cond = threading.Condition()
         self._current: Generation | None = None
+        self._retired: Generation | None = None  # the one before, readable until the next publish
+        self._failed: tuple[tuple, int, float] | None = None  # (file key, attempts, retry at): an unstageable file
         self._ids = itertools.count(1)
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -176,6 +206,7 @@ class AnalyticsWorker:
         self.last_error: str | None = None
         self._next_prefetch = 0.0
         self._preloaded = False
+        self.freeze_gc = False  # the API's lifespan turns it on (GC_FREEZE); tests keep a normal heap
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -209,9 +240,11 @@ class AnalyticsWorker:
             self.serving = False
         with self._cond:
             gen, self._current = self._current, None
+            retired, self._retired = self._retired, None
             self._cond.notify_all()
-        if gen is not None:
-            gen.close()
+        for g in (gen, retired):
+            if g is not None:
+                g.close()
 
     def poke(self) -> None:
         self._poke.set()
@@ -251,7 +284,10 @@ class AnalyticsWorker:
                 self.state = "no_database"
             return
         if cur is not None and cur.key == key and _same_path(cur.source, src):
+            self._failed = None
             return
+        if self._failed is not None and self._failed[0] == key and time.monotonic() < self._failed[2]:
+            return  # this file could not be staged; wait out its backoff
         self._build(src, key)
 
     def _stage(self, src: Path, key: tuple) -> Generation | None:
@@ -266,10 +302,15 @@ class AnalyticsWorker:
                 source.close()
         except sqlite3.Error as exc:
             anchor.close()
-            self.last_error = f"staging {src.name}: {exc}"
-            log.warning("could not stage %s: %s", src, exc)
+            attempts = self._failed[1] + 1 if self._failed is not None and self._failed[0] == key else 1
+            self._failed = (key, attempts, time.monotonic() + min(STAGE_RETRY_MAX_S, 2.0 ** attempts))
+            self.last_error = f"staging {src.name}: {exc} (attempt {attempts}; the last good generation keeps serving)"
+            if attempts == 1 or attempts % 10 == 0:
+                log.warning("could not stage %s (attempt %d): %s", src, attempts, exc)
+            self.state = "ready" if self._current is not None else "error"
             return None
-        return Generation(id=gid, key=key, source=src, uri=uri, anchor=anchor, staged_at=_now_iso())
+        self._failed = None
+        return Generation(id=gid, key=key, source=src, uri=uri, anchor=anchor, owner=self, staged_at=_now_iso())
 
     def _build(self, src: Path, key: tuple) -> None:
         self.state = "building"
@@ -336,18 +377,46 @@ class AnalyticsWorker:
                     gen.results[name] = value
                 self.compute_counts[name] += 1
                 gen.item_ms[name] = round((time.perf_counter() - t) * 1000, 1)
+            # The stored maxima every freshness block reads, once per
+            # generation and off the request path (db.freshness memo).
+            try:
+                db.freshness()
+            except Exception as exc:  # noqa: BLE001 — a request will compute them instead
+                log.warning("generation %d: stored maxima not precomputed: %s", gen.id, exc)
+        if self.freeze_gc:
+            _freeze_heap_once()
         gen.build_ms = round((time.perf_counter() - t0) * 1000, 1)
         gen.built_at = _now_iso()
+        self._carry_forward(gen, self._current)
         self._publish(gen)
+
+    @staticmethod
+    def _carry_forward(gen: Generation, prev: Generation | None) -> None:
+        """Serve the last good result for an item that failed on the new file.
+        NotStored is the new file's own answer (it predates a stored input),
+        not a failure, so it is never covered over."""
+        if prev is None:
+            return
+        for name, exc in gen.errors.items():
+            if isinstance(exc, db.NotStored) or name in gen.results or name not in prev.results:
+                continue
+            gen.results[name] = prev.results[name]
+            gen.carried[name] = prev.carried.get(name, prev.id)
+            log.warning("generation %d: %s failed (%s); serving the result from generation %d", gen.id, name, exc, gen.carried[name])
 
     def _publish(self, gen: Generation) -> None:
         with self._cond:
             old, self._current = self._current, gen
+            released, self._retired = self._retired, old
             self.builds += 1
             self.state = "ready"
+            self.last_error = None
             self._cond.notify_all()
-        if old is not None:
-            old.close()
+        # The replaced generation stays readable until the next publish: a
+        # request pinned to it (or one that looked it up an instant ago) must
+        # never open its name after the copy is gone.
+        if released is not None:
+            released.close()
         log.info("generation %d published in %.0f ms: %d results, %d errors (%s)", gen.id, gen.build_ms or 0,
                  len(gen.results), len(gen.errors), ", ".join(sorted(gen.errors)) or "none")
 
@@ -365,27 +434,37 @@ class AnalyticsWorker:
         gen = self._current
         return gen is not None and self._usable(gen)
 
+    def generation(self) -> Generation | None:
+        """The generation this context reads: the request's pin (or the
+        build's), else the published one."""
+        pinned = dbpath.pinned_generation()
+        if isinstance(pinned, Generation) and pinned.owner is self:
+            return pinned
+        return self._current
+
     def result(self, name: str) -> Any:
-        """The current generation's result for `name` (or its stored error).
-        Never computes. Without a usable generation, waits up to wait_s for
-        one, then raises Warming."""
+        """This request's generation's result for `name` (a carried last good
+        result, or its stored error). Never computes. Without a usable
+        generation, waits up to wait_s for one, then raises Warming."""
         self.ensure_started()
-        deadline = time.monotonic() + self.wait_s
-        with self._cond:
-            while True:
-                gen = self._current
-                if gen is not None and self._usable(gen):
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise Warming()
-                self._poke.set()
-                self._cond.wait(min(remaining, 0.25))
+        gen = self.generation()
+        if gen is None or not self._usable(gen):
+            deadline = time.monotonic() + self.wait_s
+            with self._cond:
+                while True:
+                    gen = self._current
+                    if gen is not None and self._usable(gen):
+                        break
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise Warming()
+                    self._poke.set()
+                    self._cond.wait(min(remaining, 0.25))
+        if name in gen.results:
+            return gen.results[name]
         if name in gen.errors:
             raise gen.errors[name]
-        if name not in gen.results:
-            raise KeyError(f"no result named {name!r}")
-        return gen.results[name]
+        raise KeyError(f"no result named {name!r}")
 
     def wait_published(self, min_id: int = 1, timeout: float = 30.0) -> bool:
         deadline = time.monotonic() + timeout
@@ -412,10 +491,32 @@ class AnalyticsWorker:
             "build_ms": gen.build_ms if gen else None,
             "results": len(gen.results) if gen else 0,
             "errors": sorted(gen.errors) if gen else [],
+            "carried": dict(gen.carried) if gen else {},
             "current_with_file": bool(gen and gen.key == dbpath.file_key(src) and _same_path(gen.source, src)),
             "builds": self.builds,
             "last_error": self.last_error,
         }
+
+
+class PinGeneration:
+    """Pure-ASGI middleware: each HTTP request reads the generation published
+    when it arrived, from its first lookup to its last, so one response never
+    mixes two (a recession sensitivity scored on one generation's model with
+    the next one's baseline, a payload with the next one's freshness block).
+    Only while the worker serves; WebSockets are not pinned (the relay never
+    reads the database, and a socket would hold a generation for hours)."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        w = _worker
+        gen = w.current if scope["type"] == "http" and w is not None and w.serving else None
+        if gen is None:
+            await self.app(scope, receive, send)
+            return
+        with dbpath.pinned(gen):
+            await self.app(scope, receive, send)
 
 
 _worker: AnalyticsWorker | None = None

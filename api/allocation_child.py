@@ -37,10 +37,13 @@ def compute(snapshot_path: str) -> dict:
 
 
 def run(snapshot_path: str, conn) -> None:
-    """Process target: send compute()'s answer (or the error) up the pipe."""
+    """Process target: send compute()'s answer (or the error) up the pipe. The
+    error keeps its type and, for a missing package, the package's name, so
+    the server can still answer "dependency missing: <name>"."""
     try:
         conn.send(compute(snapshot_path))
     except BaseException as exc:  # noqa: BLE001 — the parent turns it into the item's error
-        conn.send({"error": f"{type(exc).__name__}: {exc}"})
+        conn.send({"error": f"{type(exc).__name__}: {exc}", "type": type(exc).__name__,
+                   "module": getattr(exc, "name", None) if isinstance(exc, ImportError) else None})
     finally:
         conn.close()

@@ -68,6 +68,7 @@ Environment (host secret store only; never in git, never in the image):
 | `BOOTSTRAP_DB_REFRESH_MIN` | periodic identity check (set 30–60). Safe to arm since fix/prelaunch-1: an unchanged asset is no download, no swap and no rebuild; a changed one is rebuilt in the background and published whole |
 | `BOOTSTRAP_DB_MAX_AGE_MIN` | legacy: still reported in `/api/freshness`, decides nothing (the asset identity does) |
 | `PREFETCH_MARKET` | `1` (default) keeps the strip's and the default watchlist's 5D candles warm when `EODHD_API_TOKEN` is set; `0` turns it off |
+| `GC_FREEZE` | `1` (default) freezes the server's heap after its first build, so a full garbage collection walks only newer objects (it walked ~180k, ~30 ms and more on a busy host, and held the GIL); `0` turns it off |
 | `EODHD_API_TOKEN` | provider layer + live relay. **Owner action: add it on the host.** GitHub Actions does not need it (no workflow step calls EODHD) |
 | `EODHD_PROBE_ON_START` | `1` (default) runs one bounded entitlement probe per API family at startup |
 | `CORS_ORIGINS` | the frontend origin(s) for a split deploy; setting it also flips the assistant default to `off` |

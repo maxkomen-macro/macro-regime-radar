@@ -104,7 +104,19 @@ def _recession(ctx: dict) -> dict:
     from api.recession_cache import _to_jsonable
     from src.analytics.recession import get_recession_metrics
 
-    return _to_jsonable(get_recession_metrics())
+    raw = get_recession_metrics()
+    ctx["recession_raw"] = raw  # the assistant's view reads the same fit
+    return _to_jsonable(raw)
+
+
+def _assistant_recession(ctx: dict) -> dict:
+    """The assistant's recession-model view (src/analytics/chat.py), from the
+    metrics this generation already computed: its tool only looks it up."""
+    from src.analytics.chat import recession_view_from_metrics
+
+    if "recession_raw" not in ctx:
+        raise RuntimeError("the recession model has no result in this generation")
+    return recession_view_from_metrics(ctx["recession_raw"])
 
 
 def _recession_model(ctx: dict):
@@ -249,6 +261,9 @@ class _AllocationInChild:
         if "not_stored" in out:
             raise NotStored(out["not_stored"])
         if "error" in out:
+            if out.get("type") in ("ModuleNotFoundError", "ImportError") and out.get("module"):
+                # /api/allocation answers 503 "dependency missing: <name>"
+                raise ModuleNotFoundError(out["error"], name=out["module"])
             raise RuntimeError(f"allocation failed in its child process: {out['error']}")
         return out["payload"]
 
@@ -274,6 +289,7 @@ _allocation = _AllocationInChild()
 ITEMS = [
     ("credit", _credit),
     ("recession", _recession),
+    ("assistant_recession", _assistant_recession),
     ("recession_model", _recession_model),
     ("lbo_defaults", _lbo_defaults),
     ("duration", _duration),

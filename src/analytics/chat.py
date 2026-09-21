@@ -206,7 +206,17 @@ _RECESSION_MODEL_CACHE: dict[str, Any] = {}
 
 def _recession_model_view() -> dict[str, Any]:
     """The recession model's 12-month probability (percent) and its 1/3/6-month
-    priors; the model trains in-process, so the result is kept per database."""
+    priors. Under the API the worker derives it once per generation
+    (api/analytics_cache "assistant_recession") and this only looks it up, so
+    no request fits the model (fix/prelaunch-1); elsewhere the model trains
+    in-process and the view is kept per database."""
+    gen = dbpath.generation_for(DB_PATH)
+    results = getattr(gen, "results", None)
+    if results is not None and "assistant_recession" in results:
+        return results["assistant_recession"]
+    errors = getattr(gen, "errors", None)
+    if errors and "assistant_recession" in errors:
+        raise errors["assistant_recession"]
     key = dbpath.current_key(DB_PATH)
     hit = _RECESSION_MODEL_CACHE.get("view")
     if hit and key is not None and hit[0] == key:
@@ -219,7 +229,11 @@ def _recession_model_view() -> dict[str, Any]:
 def _compute_recession_view() -> dict[str, Any]:
     from src.analytics.recession import get_recession_metrics
 
-    m = get_recession_metrics()
+    return recession_view_from_metrics(get_recession_metrics())
+
+
+def recession_view_from_metrics(m: dict) -> dict[str, Any]:
+    """The assistant's view of one get_recession_metrics() result."""
     series = m.get("recession_prob_series")
     prob = m.get("recession_prob")
     view: dict[str, Any] = {"source": "NBER recession model, 12-month probability (the app's recession probability)",

@@ -156,13 +156,20 @@ def refresh_db(force: bool = False) -> bool:
     }
     with httpx.Client(follow_redirects=True, timeout=30.0, transport=_transport) as client:
         # 1) resolve the current asset on data-latest (its id changes per upload)
-        meta = client.get(
-            f"{_GH_API_REPO}/releases/tags/data-latest",
-            headers={**auth, "Accept": "application/vnd.github+json"},
-        )
-        meta.raise_for_status()
+        try:
+            meta = client.get(
+                f"{_GH_API_REPO}/releases/tags/data-latest",
+                headers={**auth, "Accept": "application/vnd.github+json"},
+            )
+            meta.raise_for_status()
+            assets = meta.json().get("assets", [])
+        except Exception as exc:
+            # a failed check is this attempt's result, never the last one's
+            _state["last_result"] = "error"
+            _state["last_error"] = _redact(repr(exc), token)
+            raise
         asset = next(
-            (a for a in meta.json().get("assets", []) if a["name"] == _DB_ASSET_NAME),
+            (a for a in assets if a["name"] == _DB_ASSET_NAME),
             None,
         )
         if asset is None:
@@ -174,6 +181,7 @@ def refresh_db(force: bool = False) -> bool:
         remote = asset_identity(asset)
         if not force and DB_PATH.exists() and _read_identity() == remote:
             _state["last_result"] = "unchanged"
+            _state["last_error"] = None
             log.info("data-latest asset unchanged (id %s, updated %s): no download, no swap", remote.get("id"), remote.get("updated_at"))
             return False
         # 2) stream the bytes to a temp file beside DB_PATH, then swap atomically.

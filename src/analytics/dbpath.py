@@ -20,10 +20,17 @@ module holds) go to that copy, so stored reads and derived results always come
 from the same file, even in the seconds after the file on disk is replaced.
 A path a caller moved on purpose (a test, a script's --db) reads that file.
 
-`pinned(generation)` routes this thread's reads to one generation: the worker
+`pinned(generation)` routes this context's reads to one generation: the worker
 builds the next generation against its copy while request threads keep reading
-the published one. ContextVars do not cross into new threads, so a pin never
-leaks out of the worker.
+the published one, and the API pins each request to the generation published
+when it arrived (api/worker.PinGeneration), so one response never mixes two.
+ContextVars do not cross into new threads, so a pin never leaks out of the
+worker.
+
+A generation's copy lives only while something holds it open: the worker
+releases one two publishes after it stopped serving. `open_generation` checks
+that the copy is still there, because opening a released copy's name creates a
+new, empty database; a reader then falls back to the copy being served.
 """
 
 from __future__ import annotations
@@ -108,14 +115,41 @@ def generation_for(path: Path | str) -> Optional[GenerationRef]:
     return None
 
 
+def open_generation(gen: GenerationRef, factory: type = sqlite3.Connection) -> Optional[sqlite3.Connection]:
+    """A read-only connection to `gen`'s in-memory copy, or None when the copy
+    has been released (its name would open a new, empty database)."""
+    conn = sqlite3.connect(gen.uri, uri=True, factory=factory)
+    try:
+        conn.execute("PRAGMA query_only = 1")
+        if conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone() is not None:
+            return conn
+    except sqlite3.Error:
+        pass
+    sqlite3.Connection.close(conn)  # the base close: a factory may make close() a no-op
+    return None
+
+
+def served_for(path: Path | str) -> Optional[GenerationRef]:
+    """The generation being served for `path`, whatever this context is pinned
+    to: the fallback for a pinned read whose copy has been released."""
+    cur = _provider() if _provider is not None else None
+    if cur is not None and (_same(path, cur.source) or _same(path, DEFAULT_DB_PATH)):
+        return cur
+    return None
+
+
 def connect_ro(path: Path | str) -> sqlite3.Connection:
     """A read-only connection for `path`: the published (or pinned) generation
     when one applies, the file itself otherwise. Callers set row_factory."""
     gen = generation_for(path)
     if gen is not None:
-        conn = sqlite3.connect(gen.uri, uri=True)
-        conn.execute("PRAGMA query_only = 1")
-        return conn
+        conn = open_generation(gen)
+        if conn is None:
+            served = served_for(path)
+            if served is not None and served is not gen:
+                conn = open_generation(served)
+        if conn is not None:
+            return conn
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
 
 

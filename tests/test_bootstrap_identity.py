@@ -184,3 +184,26 @@ def test_the_periodic_refresh_is_judged_by_identity_not_forced(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(bootstrap.periodic_refresh(0.0001))
     assert seen == [False]
+
+
+def test_a_failed_release_check_is_recorded_as_an_error(env, monkeypatch):
+    """A metadata call that fails must not leave the previous result standing
+    (the verifier saw last_result "unchanged" and no error after a 500)."""
+    bootstrap._state["last_result"] = "unchanged"
+    bootstrap._state["last_error"] = None
+    monkeypatch.setattr(bootstrap, "_transport", httpx.MockTransport(lambda request: httpx.Response(500)))
+    with pytest.raises(httpx.HTTPStatusError):
+        bootstrap.refresh_db()
+    st = bootstrap.status()
+    assert st["last_result"] == "error" and "500" in (st["last_error"] or "")
+
+    def refused(request):
+        raise httpx.ConnectError("connection refused")
+
+    bootstrap._state["last_result"] = "unchanged"
+    monkeypatch.setattr(bootstrap, "_transport", httpx.MockTransport(refused))
+    with pytest.raises(httpx.ConnectError):
+        bootstrap.refresh_db()
+    st = bootstrap.status()
+    assert st["last_result"] == "error" and "ConnectError" in (st["last_error"] or "")
+    assert "test-token-not-real" not in (st["last_error"] or "")

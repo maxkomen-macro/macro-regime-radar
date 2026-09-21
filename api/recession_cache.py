@@ -53,12 +53,13 @@ def get_cached_recession_metrics() -> dict:
 
 
 def peek_baseline_prob() -> float | None:
-    """The published generation's headline probability, for the sensitivity
-    POST's delta readout: the same generation the model came from, never a
-    retrain. None before the first generation or when the model has no data."""
+    """This request's generation's headline probability, for the sensitivity
+    POST's delta readout: the same generation the model came from (the request
+    is pinned to one), never a retrain. None before the first generation or
+    when the model has no data."""
     from api.worker import get_worker
 
-    gen = get_worker().current
+    gen = get_worker().generation()
     data = gen.results.get("recession") if gen is not None else None
     return data.get("recession_prob") if isinstance(data, dict) else None
 

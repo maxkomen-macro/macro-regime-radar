@@ -208,9 +208,11 @@ def _counting(monkeypatch, module, name: str) -> list:
 
 def test_every_derived_result_is_rebuilt_after_a_swap(serving_worker, scratch, monkeypatch):
     """The spec's "a test proves each cache misses after a swap": every item in
-    the worker's registry (the former TTL caches and the recession model) and
-    the assistant's recession view are recomputed from the new file, and the HY
-    OAS that moved in B reaches every result that carries it."""
+    the worker's registry (the former TTL caches, the recession model and the
+    assistant's recession view) is recomputed from the new file, and the HY
+    OAS that moved in B reaches every result that carries it. Under the API the
+    assistant reads its view from the generation, never fitting the model on a
+    request (verify loop 1)."""
     from api import analytics_cache
     from src.analytics import chat as chat_mod
 
@@ -221,16 +223,16 @@ def test_every_derived_result_is_rebuilt_after_a_swap(serving_worker, scratch, m
     w.start(serving=True)
     assert w.wait_published(timeout=120)
     names = [n for n, _ in analytics_cache.ITEMS]
-    assert set(names) >= {"credit", "recession", "recession_model", "takeaway", "duration", "transitions",
-                          "analogues", "playbooks", "scenario_defs", "lbo_defaults", "allocation"}
+    assert set(names) >= {"credit", "recession", "assistant_recession", "recession_model", "takeaway", "duration",
+                          "transitions", "analogues", "playbooks", "scenario_defs", "lbo_defaults", "allocation"}
     counts_a = dict(w.compute_counts)
     hy_a = _hy_oas_latest(a)
     credit_a = w.result("credit")
     rec_a = w.result("recession")
     lbo_a = w.result("lbo_defaults")
-    chat_mod._recession_model_view()
-    chat_mod._recession_model_view()
-    assert len(assistant_calls) == 1  # warm within one generation
+    view_a = chat_mod._recession_model_view()
+    assert view_a is w.result("assistant_recession") and chat_mod._recession_model_view() is view_a
+    assert assistant_calls == [], "the assistant computed its view on the request path"
 
     first_id = w.current.id
     os.replace(b, a)
@@ -243,9 +245,10 @@ def test_every_derived_result_is_rebuilt_after_a_swap(serving_worker, scratch, m
     assert w.result("credit") != credit_a
     assert w.result("recession")["current_inputs"]["hy_oas"] != rec_a["current_inputs"]["hy_oas"]
     assert abs(w.result("lbo_defaults")["hy_oas_pct"] - lbo_a["hy_oas_pct"] - 0.5) < 1e-6
-    # the assistant's own cache (src/, its own file check) misses too
-    chat_mod._recession_model_view()
-    assert len(assistant_calls) == 2
+    # the assistant's view moved with the new generation, still without a request computing it
+    view_b = chat_mod._recession_model_view()
+    assert view_b is w.result("assistant_recession") and view_b is not view_a
+    assert assistant_calls == []
 
 
 def test_the_assistant_recession_cache_misses_after_a_file_swap_without_the_api(tmp_path, monkeypatch):
@@ -382,16 +385,19 @@ def test_a_failed_item_is_served_as_its_own_error_and_does_not_block_the_rest(se
 
 def test_stored_maxima_are_computed_once_per_generation_and_move_with_it(serving_worker, scratch, monkeypatch):
     """db.freshness() is read by every payload that carries a freshness block;
-    within a generation its answer cannot change, across a swap it must."""
+    within a generation its answer cannot change, across a swap it must. The
+    worker computes it while it builds the generation (verify loop 1: the first
+    request of a generation used to pay about 8 ms for it)."""
     a, b = scratch
+    calls: list = []
+    real = db._freshness_uncached
+    monkeypatch.setattr(db, "_freshness_uncached", lambda: calls.append(threading.current_thread().name) or real())
     w = serving_worker(items=[("probe", lambda ctx: 1)])
     w.start(serving=True)
     assert w.wait_published(timeout=30)
-    calls: list = []
-    real = db._freshness_uncached
-    monkeypatch.setattr(db, "_freshness_uncached", lambda: calls.append(1) or real())
+    assert calls == [w.thread_name], "computed once, by the worker, before the generation published"
     first = db.freshness()
-    assert db.freshness() == first and len(calls) == 1
+    assert db.freshness() == first and first == real() and len(calls) == 1
     c = sqlite3.connect(b)
     c.execute("UPDATE asset_prices SET date = '2026-09-19' WHERE symbol = 'SPY' AND interval = '1d' AND date = '2026-09-18'")
     c.execute("DELETE FROM asset_prices WHERE interval = '1d' AND date = '2026-09-18' AND symbol <> 'SPY'")
@@ -402,7 +408,7 @@ def test_stored_maxima_are_computed_once_per_generation_and_move_with_it(serving
     w.poke()
     assert w.wait_published(min_id=first_id + 1, timeout=30)
     moved = db.freshness()
-    assert len(calls) == 2 and moved["asset_prices_date"] != first["asset_prices_date"]
+    assert calls == [w.thread_name] * 2 and moved["asset_prices_date"] != first["asset_prices_date"]
 
 
 def test_the_frontier_yields_the_gil_in_every_solver_callback_and_changes_nothing(monkeypatch):
@@ -467,3 +473,280 @@ def test_an_overrunning_allocation_child_is_terminated_and_the_rest_still_publis
     import multiprocessing
 
     assert not [p for p in multiprocessing.active_children() if p.name == "mrr-allocation"], "the child was reaped"
+
+
+# ── verify loop 1 (Item 1 verifier): publish instants, one request one ────────
+# generation, files that cannot be staged, last good results, the assistant
+
+def _regime_rows_via(connect) -> int:
+    conn = connect()
+    try:
+        return int(conn.execute("SELECT COUNT(*) FROM regimes").fetchone()[0])
+    finally:
+        conn.close()
+
+
+def _swap_in_changed_copy(a: Path, delta_pct: float) -> None:
+    nxt = _copy(a, a.parent / f"next-{time.monotonic_ns()}.db")
+    _bump_hy_oas(nxt, delta_pct)
+    os.replace(nxt, a)
+
+
+def test_a_reader_that_resolved_a_generation_just_before_the_next_published_still_reads_it(serving_worker, scratch):
+    """The worker used to release a generation's in-memory copy the moment the
+    next one published; a reader that had looked it up an instant earlier then
+    opened the name and got a new, empty database ("no such table")."""
+    a, b = scratch
+    w = serving_worker(items=[("probe", lambda ctx: 1)])
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current
+    expected = _regime_rows_via(lambda: dbpath.connect_ro(dbpath.DEFAULT_DB_PATH))
+    db.reset_connections_for_tests()  # no per-thread connection keeps the copy open
+    os.replace(b, a)
+    w.poke()
+    assert w.wait_published(min_id=first.id + 1, timeout=30)
+    with dbpath.pinned(first):
+        assert _regime_rows_via(lambda: dbpath.connect_ro(dbpath.DEFAULT_DB_PATH)) == expected
+        assert len(db.regime_history(None, None, 100000)) == expected
+    db.reset_connections_for_tests()
+
+
+def test_a_reader_of_a_released_generation_falls_back_to_the_served_copy_never_an_empty_one(serving_worker, scratch):
+    a, b = scratch
+    w = serving_worker(items=[("probe", lambda ctx: 1)])
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current
+    db.reset_connections_for_tests()
+    for i in range(2):  # two more generations: the first one's copy is released
+        _swap_in_changed_copy(a, 0.1 * (i + 1))
+        w.poke()
+        assert w.wait_published(min_id=first.id + 1 + i, timeout=30)
+    current_hy = _hy_oas_latest(a)
+    with dbpath.pinned(first):
+        conn = dbpath.connect_ro(dbpath.DEFAULT_DB_PATH)
+        try:
+            hy = conn.execute("SELECT value FROM raw_series WHERE series_id='BAMLH0A0HYM2' ORDER BY date DESC LIMIT 1").fetchone()[0]
+        finally:
+            conn.close()
+        assert hy == pytest.approx(current_hy)
+        assert db.regime_history(None, None, 5), "api/db falls back the same way"
+    db.reset_connections_for_tests()
+
+
+def test_one_request_reads_one_generation_from_start_to_finish(serving_worker, scratch):
+    """A response must not mix two generations (the verifier's straddle: a
+    recession sensitivity scored on one generation's model with the next one's
+    baseline). The API pins each request to the generation published when it
+    arrived; results, stored reads and freshness all honour the pin."""
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    from api import worker as worker_mod
+
+    a, b = scratch
+    w = serving_worker(items=[("hy", lambda ctx: _hy_oas_latest_ro())])
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current.id
+    old_hy = w.result("hy")
+
+    def probe(request):
+        before = w.result("hy")
+        os.replace(b, a)
+        w.poke()
+        assert w.wait_published(min_id=first + 1, timeout=30)
+        return JSONResponse({"before": before, "after": w.result("hy"), "stored": _hy_oas_latest_ro(),
+                             "generation": w.generation().id})
+
+    app = Starlette(routes=[Route("/probe", probe)], middleware=[Middleware(worker_mod.PinGeneration)])
+    body = TestClient(app).get("/probe").json()
+    assert body == {"before": old_hy, "after": old_hy, "stored": old_hy, "generation": first}
+    assert w.result("hy") != old_hy, "outside the request, the new generation serves"
+
+
+def _hy_oas_latest_ro() -> float:
+    conn = dbpath.connect_ro(dbpath.DEFAULT_DB_PATH)
+    try:
+        return float(conn.execute("SELECT value FROM raw_series WHERE series_id='BAMLH0A0HYM2' ORDER BY date DESC LIMIT 1").fetchone()[0])
+    finally:
+        conn.close()
+
+
+def test_the_api_pins_every_http_request_to_one_generation():
+    from api import worker as worker_mod
+    from api.main import app
+
+    assert any(m.cls is worker_mod.PinGeneration for m in app.user_middleware)
+
+
+def test_a_file_that_cannot_be_staged_keeps_the_last_generation_serving_and_says_so(serving_worker, scratch, monkeypatch):
+    a, b = scratch
+    w = serving_worker(items=[("probe", lambda ctx: 1)])
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current
+    staged: list = []
+    real_stage = w._stage
+    monkeypatch.setattr(w, "_stage", lambda src, key: (staged.append(key), real_stage(src, key))[1])
+    bad = a.parent / "bad.db"
+    bad.write_bytes(b"this is not a database " * 400)
+    os.replace(bad, a)
+    w.poke()
+    time.sleep(1.0)  # twenty polls at 0.05 s
+    assert w.current is first, "the last good generation keeps serving"
+    st = w.status()
+    assert st["state"] == "ready" and st["current_with_file"] is False
+    assert "stag" in (st["last_error"] or "")
+    assert len(staged) <= 2, f"the unreadable file was staged {len(staged)} times in one second"
+    # a readable file is picked up at once, without waiting out the backoff
+    os.replace(_copy(REPO_DB, a.parent / "good.db"), a)
+    w.poke()
+    assert w.wait_published(min_id=first.id + 1, timeout=30)
+    assert w.status()["last_error"] is None
+
+
+def test_an_item_that_fails_on_a_new_file_serves_its_last_good_result(serving_worker, scratch):
+    """Item 4(b): handlers serve the last good result. A failure on the new
+    file carries the previous generation's answer forward, and the status says
+    so; an answer that is a fact about the new file (NotStored) is not a
+    failure and is never carried."""
+    a, b = scratch
+    builds = {"n": 0}
+
+    def flaky(ctx):
+        builds["n"] += 1
+        if builds["n"] > 1:
+            raise RuntimeError("probe: this item failed on the new file")
+        return "good"
+
+    def histories(ctx):
+        if builds["n"] > 1:
+            raise db.NotStored("probe: not stored in this file")
+        return "stored"
+
+    w = serving_worker(items=[("flaky", flaky), ("histories", histories)])
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current.id
+    os.replace(b, a)
+    w.poke()
+    assert w.wait_published(min_id=first + 1, timeout=30)
+    assert w.result("flaky") == "good"
+    with pytest.raises(db.NotStored):
+        w.result("histories")
+    st = w.status()
+    assert "flaky" in st["errors"] and st["carried"] == {"flaky": first}
+
+
+def test_the_assistant_reads_the_recession_model_from_the_generation(serving_worker, scratch, monkeypatch):
+    """The assistant's recession tool used to fit the model on the request path
+    once per generation; the worker now derives its view from the recession
+    item it already computes, and the tool only looks it up."""
+    from api import analytics_cache
+    from src.analytics import chat, recession
+
+    calls: list = []
+    real = recession.get_recession_metrics
+
+    def counted(*a, **k):
+        calls.append(threading.current_thread().name)
+        return real(*a, **k)
+
+    monkeypatch.setattr(recession, "get_recession_metrics", counted)
+    chat._RECESSION_MODEL_CACHE.clear()
+    items = [i for i in analytics_cache.ITEMS if i[0] in ("recession", "assistant_recession")]
+    assert [n for n, _ in items] == ["recession", "assistant_recession"]
+    w = serving_worker(items=items)
+    w.start(serving=True)
+    assert w.wait_published(timeout=120)
+    assert set(calls) == {w.thread_name}
+    during_build = len(calls)
+    out = chat._tool_get_recession_probability()
+    assert len(calls) == during_build, "the assistant fitted the recession model on the request path"
+    assert out["recession_model"]["probability_pct"] == pytest.approx(w.result("recession")["recession_prob"])
+
+
+def test_the_serving_process_freezes_its_heap_once_so_full_collections_stay_short(serving_worker, scratch, monkeypatch):
+    """Verify loop 1: /health/live spiked past 100 ms under visitor load, outside
+    rebuilds as well as inside them. A full collection walked the ~180k objects
+    the libraries and a generation leave on the heap (about 30 ms idle, more on
+    a busy host). The serving process freezes that heap once, after its first
+    build: later collections walk only what came after."""
+    import gc
+
+    from api import worker as worker_mod
+
+    a, b = scratch
+    monkeypatch.setattr(worker_mod, "_HEAP_FROZEN", False)
+    assert gc.get_freeze_count() == 0
+    w = serving_worker(items=[("probe", lambda ctx: 1)])
+    w.freeze_gc = True
+    try:
+        w.start(serving=True)
+        assert w.wait_published(timeout=30)
+        frozen = gc.get_freeze_count()
+        assert frozen > 10_000, frozen
+        os.replace(b, a)
+        w.poke()
+        assert w.wait_published(min_id=2, timeout=30)
+        # never a second freeze (released frozen objects are still freed by
+        # reference counting, so the count can only fall)
+        assert gc.get_freeze_count() <= frozen, "once per process, never per generation"
+    finally:
+        gc.unfreeze()
+
+
+def test_the_api_freezes_the_heap_and_the_kill_switch_is_documented():
+    import inspect
+
+    from api import main
+
+    src = inspect.getsource(main._lifespan)
+    assert 'analytics.freeze_gc = os.environ.get("GC_FREEZE", "1") != "0"' in src
+    assert "GC_FREEZE" in (Path(__file__).resolve().parents[1] / "docs/RUNBOOK.md").read_text()
+
+
+def test_a_dependency_missing_in_the_allocation_child_keeps_its_plain_answer(monkeypatch):
+    """Verify loop 1 (Item 4, point 10): the child used to flatten every
+    failure into a RuntimeError, so a missing optimizer package reached the
+    visitor as a 502 instead of the handler's 503 naming the package."""
+    import types
+
+    from api import allocation_child, analytics_cache
+
+    class Pipe:
+        def __init__(self):
+            self.sent = None
+
+        def send(self, value):
+            self.sent = value
+
+        def close(self):
+            pass
+
+    def missing(_snapshot):
+        raise ModuleNotFoundError("No module named 'riskfolio'", name="riskfolio")
+
+    monkeypatch.setattr(allocation_child, "compute", missing)
+    pipe = Pipe()
+    allocation_child.run("unused.db", pipe)
+    assert pipe.sent["type"] == "ModuleNotFoundError" and pipe.sent["module"] == "riskfolio"
+
+    class Conn:
+        def poll(self, timeout):
+            return True
+
+        def recv(self):
+            return pipe.sent
+
+        def close(self):
+            pass
+
+    proc = types.SimpleNamespace(join=lambda t=None: None, is_alive=lambda: False, kill=lambda: None, terminate=lambda: None)
+    with pytest.raises(ModuleNotFoundError) as exc:
+        analytics_cache._AllocationInChild().finish((proc, Conn(), "/nonexistent-snapshot.db"))
+    assert exc.value.name == "riskfolio"

@@ -110,6 +110,7 @@ async def _lifespan(_: FastAPI):
     # EODHD token is configured.
     analytics = worker_mod.get_worker()
     analytics.prefetch = os.environ.get("PREFETCH_MARKET", "1") != "0"
+    analytics.freeze_gc = os.environ.get("GC_FREEZE", "1") != "0"
     analytics.start(serving=True)
     refresh_task: asyncio.Task | None = None
     interval_min = bootstrap.refresh_interval_min()
@@ -153,6 +154,9 @@ app = FastAPI(
 # limits, calculator/provider concurrency ceilings, the assistant access gate
 # and security headers. Added before CORS so CORS wraps it — a 429 still
 # carries the CORS headers a browser needs to read the message.
+# Innermost, closest to the handlers: each HTTP request reads the one
+# generation published when it arrived (fix/prelaunch-1, api/worker.py).
+app.add_middleware(worker_mod.PinGeneration)
 app.add_middleware(security.SecurityMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -1049,9 +1053,10 @@ def api_market_intraday(
 
 
 # ── On-demand symbol layer (Phase-2 Markets expansion, api/lookup.py) ────────
-# Reaches past the stored 23-ETF universe to any listed symbol via yfinance.
-# Delayed data, honestly stamped; cached per key so bursts cost one upstream
-# call. These three routes are additive — nothing existing changed shape.
+# Reaches past the stored 23-ETF universe to any listed symbol through EODHD
+# (never Yahoo on the request path, fix/prelaunch-1). Delayed data, honestly
+# stamped; cached per key so bursts cost one upstream call. These routes are
+# additive — nothing existing changed shape.
 
 
 _QUERY_BAD = set("/\\?#%") | {chr(i) for i in range(32)} | {chr(127)}
@@ -1097,8 +1102,8 @@ def api_market_candles(
     symbol: str,
     range_key: str = Query("6M", alias="range", pattern="^(1D|5D|1M|6M|1Y|5Y|MAX)$"),
 ) -> CandleSeries:
-    """Candle envelope: EODHD first, yfinance as a disclosed fallback, one
-    provider per series, provenance stamped (api/providers/market.py)."""
+    """Candle envelope from EODHD, provenance stamped; an EODHD failure is a
+    typed error, never a Yahoo fallback (api/providers/market.py)."""
     from api import lookup
 
     return CandleSeries(**lookup.candles(_symbol_arg(symbol), range_key))
@@ -1215,8 +1220,8 @@ def api_credit_oas(
 
 @api.get("/recession/probability", response_model=RecessionMetrics)
 def api_recession_probability() -> RecessionMetrics:
-    # Lazy import: pulls pandas + scikit-learn (requirements-api.txt), and the
-    # module trains the model on first call — cached for 15 min thereafter.
+    # The worker fits the model once per generation (api/worker.py); this only
+    # looks the generation's result up.
     from api.recession_cache import get_cached_recession_metrics
 
     metrics = _guarded(get_cached_recession_metrics)
@@ -1238,15 +1243,15 @@ def api_freshness() -> Freshness:
 
 
 # ── Regime Lab endpoints (night-2) ───────────────────────────────────────────
-# All computation lives in src/analytics/intelligence.py; api/analytics_cache
-# only TTL-caches and JSON-converts (recession-cache precedent). Lazy imports
-# keep module import light, matching /api/recession/probability.
+# All computation lives in src/analytics/intelligence.py; the worker runs it
+# once per generation (api/analytics_cache.ITEMS) and these handlers only look
+# the results up. Lazy imports keep module import light.
 
 @api.get("/regime/intelligence", response_model=Takeaway)
 def api_regime_intelligence() -> Takeaway:
     """Market takeaway narrative + conviction, assembled from the same inputs
-    the Streamlit Intelligence tab feeds it (cold call trains the recession
-    model once; ~1 s, then cached)."""
+    the Streamlit Intelligence tab feeds it; built by the worker once per
+    generation."""
     from api import analytics_cache
 
     return Takeaway(**_guarded(analytics_cache.get_cached_takeaway))
@@ -1330,8 +1335,9 @@ def api_credit_metrics() -> CreditMetrics:
 @api.post("/recession/scenario", response_model=RecessionScenarioResult)
 def api_recession_scenario(req: RecessionScenarioRequest) -> RecessionScenarioResult:
     """Score user-set inputs against the fitted logistic model — the exact
-    Streamlit sensitivity-panel computation. Read-only; the model is the same
-    TTL-cached artifact behind /api/recession/probability."""
+    Streamlit sensitivity-panel computation. Read-only; the model is the one
+    this request's generation fitted, the same one behind
+    /api/recession/probability."""
     from api.recession_cache import peek_baseline_prob, score_recession_scenario
 
     prob = _guarded(
@@ -1343,8 +1349,8 @@ def api_recession_scenario(req: RecessionScenarioRequest) -> RecessionScenarioRe
         raise HTTPException(status_code=404, detail="Recession model has no data.")
     from src.analytics.recession import _classify_prob  # loaded by the worker's preload
     label, color = _classify_prob(prob)
-    # Peek, never retrain: a TTL lapse mid-slider-drag must not pause the UI
-    # for a model fit just to refresh the delta's reference number.
+    # Peek, never retrain: the baseline comes from the same generation as the
+    # model (the request is pinned to one), so the delta never straddles two.
     baseline = peek_baseline_prob()
     return RecessionScenarioResult(
         probability=round(prob, 1),
