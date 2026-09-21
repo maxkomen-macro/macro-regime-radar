@@ -46,6 +46,7 @@ import {
   DEAL_LABELS,
   CATEGORY_WORD,
   aiReadValue,
+  pendingReadIds,
   categoryMixValue,
   outletsValue,
   NEWS_GLOW,
@@ -138,7 +139,7 @@ function chipOf(item: NewsItem): string | undefined {
 /** The card props both variants share: the decoded headline, the AI
  * interpretation and the Perplexity body as tidied prose, the cited sources
  * and the wire summary when it adds to the headline. */
-function cardProps(item: NewsItem) {
+function cardProps(item: NewsItem, pendingIds?: ReadonlySet<number>) {
   const body = researchBody(item.perplexity_research);
   const chip = chipOf(item);
   return {
@@ -155,6 +156,7 @@ function cardProps(item: NewsItem) {
     interpretation: item.regime_interpretation?.trim() ? tidyProse(decodeEntities(item.regime_interpretation)) : undefined,
     research: body ? tidyProse(decodeEntities(body)) : undefined,
     sources: sourcesFromResearch(item.perplexity_research),
+    pending: pendingIds?.has(item.id) ?? false,
   };
 }
 
@@ -174,6 +176,12 @@ export default function NewsScreen() {
   // is open lands without a manual refresh. The ingest itself runs hourly, so
   // most checks return the same rows; the header states both cadences.
   const windowed = useNews(hours, minSig, 150, cat ?? undefined, 60_000);
+  // F3: which cards should carry an AI read is decided on the default
+  // seven-day window, never on the filtered view - the backend picks its ten
+  // from that window, so narrowing to 24H must not promote or demote a card.
+  // On the default view this is the same query key as `windowed`, so React
+  // Query serves it from cache and no second request is made.
+  const enrichWindow = useNews(168, undefined, 150, undefined, 60_000);
   // Empty window OR a window that could not load at all (the API asleep,
   // nothing seeded for this filter) both fall back to the latest stored
   // headlines — dated beats empty, and dated beats blank (2026-09-06).
@@ -450,7 +458,9 @@ export default function NewsScreen() {
   const lastRelease = !usingCalFallback && recentRows[0] ? eventLine(recentRows[0]) : null;
   const feedReady = feedState === "ready";
   const categoryMix = feedReady ? categoryMixValue(feed) : null;
-  const aiReads = feedReady ? aiReadValue(feed) : null;
+  const rawFeed = usingFallback ? (fallback.data ?? []) : (windowed.data ?? []);
+  const pendingIds = useMemo(() => pendingReadIds(enrichWindow.data ?? []), [enrichWindow.data]);
+  const aiReads = feedReady ? aiReadValue(feed, rawFeed) : null;
   const outlets = feedReady ? outletsValue(feed) : null;
 
   const rows: SummaryRow[] = [
@@ -536,7 +546,7 @@ export default function NewsScreen() {
                   <NewsCard
                     key={item.id}
                     variant="lead"
-                    {...cardProps(item)}
+                    {...cardProps(item, pendingIds)}
                     time={timeLabel(item.published_at)}
                     dims={[
                       ["Market impact", item.market_impact],
@@ -631,7 +641,7 @@ export default function NewsScreen() {
                 <div key={item.id} className={justArrived.has(item.id) ? "mrr-news-new" : undefined}>
                   <NewsCard
                     variant="row"
-                    {...cardProps(item)}
+                    {...cardProps(item, pendingIds)}
                     clock={clockEt(item.published_at)}
                     time={`${timeLabel(item.published_at)}${usingFallback ? " · stored" : ""}`}
                   />

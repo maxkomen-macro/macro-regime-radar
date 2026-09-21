@@ -484,7 +484,11 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(within(lead).getByRole("link", { name: "Read at CNBC →" })).toHaveAttribute("href", LEAD.url as string);
     expect(within(deal).getByText("M&A")).toHaveAttribute("data-tone", "reference");
     expect(within(deal).getByText("$10–50B")).toHaveAttribute("title", "M&A deal size");
-    expect(text(deal)).toContain("Wire summary");
+    // Iteration 2 (F3): the deal card carries no stored read and is inside the
+    // ten the hourly run tops up, so it says a read is expected rather than
+    // implying the wire blurb is the final word.
+    expect(text(deal)).toContain("AI read pending");
+    expect(text(deal)).not.toContain("Wire summary");
     expect(within(geo).getByText("GEO")).toHaveAttribute("data-tone", "watch");
     expect(within(earn).getByText("EARN")).toHaveAttribute("data-tone", "reference");
     expect(within(earn).getByText("NVDA")).toHaveAttribute("title", "Ticker");
@@ -646,8 +650,10 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(within(section).getByText("ADBE")).toHaveAttribute("title", "Ticker");
     expect(within(section).getByText("$1–10B")).toHaveAttribute("title", "M&A deal size");
     expect(within(section).getAllByRole("link", { name: /^Read at NewsAPI →$/ })).toHaveLength(9);
-    expect(within(section).getByRole("button", { name: /Wire summary/ })).toHaveAttribute("aria-expanded", "false");
-    expect(text(section)).toContain("Headline only");
+    // F3: rows inside the enrichment set say "AI read pending"; the honest
+    // toggle is still a real button with aria-expanded.
+    expect(within(section).getByRole("button", { name: /AI read pending/ })).toHaveAttribute("aria-expanded", "false");
+    expect(text(section)).toContain("AI read pending");
     expect(text(section)).toContain("No source link stored");
     expect(text(section)).toContain("Sep 16, 2026 · 1h ago");
     for (const r of rows()) expect(text(r)).toMatch(/^sig \d\.\d \/ 5$/i);

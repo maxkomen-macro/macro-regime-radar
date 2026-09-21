@@ -117,6 +117,28 @@ describe("NewsCard row variant (checklist 08 B.4)", () => {
     expect(text(button)).not.toMatch(/sources/);
   });
 
+  // Iteration 2 (F3): the third honest state. "Wire summary" promises nothing
+  // more; "AI read pending" says a read is expected because the article is in
+  // the set the hourly run tops up. Saying the same for both would hide the
+  // difference the item exists to show.
+  it("reads AI read pending, not Wire summary, when a read is expected", () => {
+    render(<NewsCard headline="CPI cools to 2.9%" summary="Wire blurb." pending />);
+    expect(screen.getByRole("button", { name: /AI read pending/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Wire summary/ })).toBeNull();
+  });
+
+  it("a pending card with no summary still says pending rather than Headline only", () => {
+    const { container } = render(<NewsCard headline="CPI cools to 2.9%" pending />);
+    expect(container.textContent).toContain("AI read pending");
+    expect(container.textContent).not.toContain("Headline only");
+  });
+
+  it("pending never overrides a stored read: an enriched card reads Regime read", () => {
+    render(<NewsCard headline="CPI cools to 2.9%" summary="Wire blurb." interpretation="The read." pending />);
+    expect(screen.getByRole("button", { name: /Regime read/ })).toBeInTheDocument();
+    expect(screen.queryByText(/AI read pending/)).toBeNull();
+  });
+
   it("the toggle reads Wire summary with a summary only, and is a real button with aria-expanded", () => {
     render(<NewsCard source="RSS" time={TIME} headline={HEADLINE} href={ARTICLE} summary={SUMMARY} />);
     const button = screen.getByRole("button", { name: /Wire summary/ });

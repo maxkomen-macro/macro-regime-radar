@@ -290,6 +290,13 @@ function AiRead({ interpretation, research, sources, summary, showLabel }) {
   );
 }
 
+/** Iteration 2 (F3): the honest third state. "Wire summary" means no AI read
+ * is coming for this card; "AI read pending" means one is expected, because
+ * the article is among the ten highest-significance in the default seven-day
+ * window that the hourly run tops up. Saying the same thing for both would
+ * hide exactly the difference F3 asks the page to show. */
+const PENDING_LABEL = "AI read pending";
+
 function ReadAt({ href, source }) {
   return href ? (
     <a
@@ -348,6 +355,7 @@ function RowCard({
   chipTitle,
   clock,
   stale,
+  pending,
   ...rest
 }) {
   const [open, setOpen] = React.useState(false);
@@ -368,6 +376,9 @@ function RowCard({
       <span style={{ fontFamily: "var(--font-ui)", fontSize: 11.5, color: "var(--mint)", whiteSpace: "nowrap" }}>{readLabel}</span>
     );
   } else if (hasSummary) {
+    // Iteration 2 (F3): a card the backend has queued for enrichment says so
+    // rather than implying the wire blurb is all there will ever be.
+    const wireLabel = pending ? PENDING_LABEL : "Wire summary";
     detail = expandable ? (
       <Toggle
         open={open}
@@ -375,13 +386,15 @@ function RowCard({
         controls={panelId}
         style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--text-3)" }}
       >
-        Wire summary
+        {wireLabel}
       </Toggle>
     ) : (
-      <span style={{ ...MONO_NOTE, fontSize: 10.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>Wire summary</span>
+      <span style={{ ...MONO_NOTE, fontSize: 10.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>{wireLabel}</span>
     );
   } else {
-    detail = <span style={{ ...MONO_NOTE, fontSize: 10.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>Headline only</span>;
+    detail = (
+      <span style={{ ...MONO_NOTE, fontSize: 10.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>{pending ? PENDING_LABEL : "Headline only"}</span>
+    );
   }
 
   return (
@@ -473,6 +486,7 @@ function LeadCard({
   chip,
   chipTitle,
   dims,
+  pending,
   stale,
   ...rest
 }) {
@@ -499,7 +513,7 @@ function LeadCard({
         <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>· {readLabel}</span>
       </>
     ) : (
-      <span style={WIRE_LABEL}>Wire summary</span>
+      <span style={WIRE_LABEL}>{pending ? PENDING_LABEL : "Wire summary"}</span>
     );
 
   return (

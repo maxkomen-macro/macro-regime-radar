@@ -38,6 +38,14 @@ export interface NewsCardProps {
   dims?: Array<[string, number | null]>;
   /** Fallback coverage: prints "stored · stale" in the footer. */
   stale?: boolean;
+  /**
+   * Iteration 2 (F3): an AI read is expected for this article but has not
+   * arrived, so the read slot says "AI read pending" instead of implying the
+   * wire summary is the final word. True only for the ten highest-significance
+   * articles in the default seven-day window, which is the set the hourly run
+   * tops up; every other card without a read is a plain "Wire summary".
+   */
+  pending?: boolean;
 }
 
 /**

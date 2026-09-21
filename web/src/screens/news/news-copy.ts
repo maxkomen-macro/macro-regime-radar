@@ -291,11 +291,50 @@ export function hasAiRead(r: NewsItem): boolean {
   return Boolean(r.regime_interpretation?.trim() || r.perplexity_research?.trim());
 }
 
-/** Iteration 1 (N2) "AI reads": how many rendered stories carry a stored AI
- * read against the wire summaries; null with no story on file. */
-export function aiReadValue(feed: NewsItem[]): string | null {
+/**
+ * How many articles each hourly run tops up: `ENRICH_PER_HOUR` in
+ * `src/analytics/news.py`. The backend enriches the highest-significance rows
+ * of the display window that carry no read yet, so these are the cards a
+ * reader should expect a read on.
+ */
+export const ENRICH_TOP_N = 10;
+
+/**
+ * Iteration 2 (F3): the ids that should carry an AI read but do not yet.
+ *
+ * `window7d` is always the **default seven-day window**, never the filtered
+ * view: the backend picks its ten from that window, so narrowing to 24H must
+ * not promote a card into the set or demote one out of it. Rows arrive sorted
+ * by significance, which is the same order the backend ranks on.
+ *
+ * A card outside the set is not pending - no read is coming for it - and says
+ * "Wire summary" instead. That is the difference F3 asks the page to show
+ * rather than hide.
+ */
+export function pendingReadIds(window7d: NewsItem[], topN = ENRICH_TOP_N): ReadonlySet<number> {
+  return new Set(
+    window7d
+      .slice(0, topN)
+      .filter((r) => !hasAiRead(r))
+      .map((r) => r.id),
+  );
+}
+
+/**
+ * Iteration 1 (N2) "AI reads", amended by Iteration 2 (F3): how many rendered
+ * stories carry a stored AI read; null with no story on file.
+ *
+ * The page de-duplicates near-identical headlines before rendering, so a run
+ * that enriched ten articles can render as eight distinct cards. When that
+ * happens the line states both numbers instead of quietly printing the
+ * smaller one: "8 of 10 enriched articles, merged from duplicates". `raw` is
+ * the payload before the dedupe; without it the line keeps its old form.
+ */
+export function aiReadValue(feed: NewsItem[], raw?: NewsItem[]): string | null {
   if (!feed.length) return null;
   const n = feed.filter(hasAiRead).length;
+  const rawEnriched = raw ? raw.filter(hasAiRead).length : n;
+  if (rawEnriched > n) return `${n} of ${rawEnriched} enriched articles, merged from duplicates`;
   if (n === 0) return `None of the ${feed.length} carries an AI read`;
   if (n === feed.length) return `All ${n} carry an AI read`;
   return `${n} of ${feed.length} carry an AI read`;

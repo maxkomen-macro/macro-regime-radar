@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import type { CalendarEvent, NewsItem } from "../../api/types";
 import {
   aiReadValue,
+  pendingReadIds,
   categoryMixValue,
   clockEt,
   countdownHeadline,
@@ -389,5 +390,61 @@ describe("news-copy: desk summary fill (Iteration 1, N2)", () => {
     expect(aiReadValue([row(1)])).toBe("None of the 1 carries an AI read");
     expect(aiReadValue([row(4, { regime_interpretation: "x" })])).toBe("All 1 carry an AI read");
     expect(aiReadValue([])).toBeNull();
+  });
+
+  // Iteration 2 (F3): the page merges near-identical headlines before it
+  // renders, so ten enriched articles can become eight cards. The line says
+  // both numbers rather than printing the smaller one on its own.
+  it("aiReadValue states both numbers when duplicates merged", () => {
+    const rendered = [row(1, { regime_interpretation: "x" }), row(2, { regime_interpretation: "y" })];
+    const raw = [...rendered, row(3, { regime_interpretation: "z" }), row(4, { perplexity_research: "w" })];
+    expect(aiReadValue(rendered, raw)).toBe("2 of 4 enriched articles, merged from duplicates");
+  });
+
+  it("aiReadValue keeps its plain form when nothing merged", () => {
+    const rendered = [row(1, { regime_interpretation: "x" }), row(2)];
+    expect(aiReadValue(rendered, rendered)).toBe("1 of 2 carry an AI read");
+  });
+});
+
+/**
+ * F3: which cards may honestly say a read is coming. The backend tops up the
+ * ten highest-significance rows of the default seven-day window that carry no
+ * read, so those are pending and everything else is a plain wire summary.
+ */
+describe("pendingReadIds (Iteration 2, F3)", () => {
+  const row = (id: number, over: Partial<NewsItem> = {}): NewsItem =>
+    ({ id, headline: `h${id}`, source: "CNBC", url: `https://x/${id}`, summary: "s", published_at: "2026-09-18T12:00:00Z", overall_significance: 4, regime_interpretation: null, perplexity_research: null, ...over }) as NewsItem;
+
+  it("marks the unenriched rows inside the top ten and nothing else", () => {
+    // Rows arrive sorted by significance, the order the backend ranks on.
+    const window7d = [
+      row(1, { regime_interpretation: "read" }),
+      row(2),
+      row(3, { perplexity_research: "read" }),
+      row(4),
+      ...[5, 6, 7, 8, 9, 10].map((i) => row(i, { regime_interpretation: "read" })),
+      row(11),
+      row(12),
+    ];
+    const pending = pendingReadIds(window7d);
+    expect([...pending].sort((a, b) => a - b)).toEqual([2, 4]);
+    // Rank 11 and 12 are outside the set: no read is coming, so they are not
+    // pending and the card says "Wire summary" instead.
+    expect(pending.has(11)).toBe(false);
+    expect(pending.has(12)).toBe(false);
+  });
+
+  it("is empty when every card in the set already carries a read", () => {
+    expect(pendingReadIds([row(1, { regime_interpretation: "read" })]).size).toBe(0);
+  });
+
+  it("is empty with nothing on file", () => {
+    expect(pendingReadIds([]).size).toBe(0);
+  });
+
+  it("honours a different top-N", () => {
+    const window7d = [row(1), row(2), row(3)];
+    expect([...pendingReadIds(window7d, 2)]).toEqual([1, 2]);
   });
 });
