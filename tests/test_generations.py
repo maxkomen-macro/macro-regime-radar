@@ -386,3 +386,28 @@ def test_a_failed_item_is_served_as_its_own_error_and_does_not_block_the_rest(se
     assert w.result("ok") == 42
     with pytest.raises(db.DBUnavailable):
         w.result("broken")
+
+
+def test_stored_maxima_are_computed_once_per_generation_and_move_with_it(serving_worker, scratch, monkeypatch):
+    """db.freshness() is read by every payload that carries a freshness block;
+    within a generation its answer cannot change, across a swap it must."""
+    a, b = scratch
+    w = serving_worker(items=[("probe", lambda ctx: 1)])
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    calls: list = []
+    real = db._freshness_uncached
+    monkeypatch.setattr(db, "_freshness_uncached", lambda: calls.append(1) or real())
+    first = db.freshness()
+    assert db.freshness() == first and len(calls) == 1
+    c = sqlite3.connect(b)
+    c.execute("UPDATE asset_prices SET date = '2026-09-19' WHERE symbol = 'SPY' AND interval = '1d' AND date = '2026-09-18'")
+    c.execute("DELETE FROM asset_prices WHERE interval = '1d' AND date = '2026-09-18' AND symbol <> 'SPY'")
+    c.commit()
+    c.close()
+    first_id = w.current.id
+    os.replace(b, a)
+    w.poke()
+    assert w.wait_published(min_id=first_id + 1, timeout=30)
+    moved = db.freshness()
+    assert len(calls) == 2 and moved["asset_prices_date"] != first["asset_prices_date"]

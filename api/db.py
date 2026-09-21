@@ -77,13 +77,13 @@ def _connect() -> sqlite3.Connection:
     gen = dbpath.generation_for(DB_PATH)
     if gen is not None:
         conn = getattr(_local, "conn", None)
-        if conn is not None and getattr(_local, "gen", None) == gen.id:
+        if conn is not None and getattr(_local, "gen", None) == gen.uri:
             return conn
         _drop_local()
         conn = sqlite3.connect(gen.uri, uri=True, factory=_ReusedConnection)
         conn.execute("PRAGMA query_only = 1")
         conn.row_factory = sqlite3.Row
-        _local.conn, _local.gen, _local.key, _local.path = conn, gen.id, None, None
+        _local.conn, _local.gen, _local.key, _local.path = conn, gen.uri, None, None  # the uri is unique per worker and generation
         return conn
     if not DB_PATH.exists():
         raise DBUnavailable(f"Database not found at {DB_PATH}")
@@ -645,8 +645,27 @@ def watermarks() -> dict | None:
     return {r["source"]: dict(r) for r in rows}
 
 
+# Per generation (fix/prelaunch-1): a published generation is an immutable
+# in-memory copy, so its stored maxima cannot change until the next one; the
+# memo is keyed on the generation's uri (unique per worker and generation),
+# which moves with the database file key.
+_freshness_memo: dict = {}
+
+
 def freshness() -> dict:
     """Latest data timestamps per feed — for the shell's data-freshness line."""
+    gen = dbpath.generation_for(DB_PATH)
+    if gen is not None:
+        hit = _freshness_memo.get("value")
+        if hit is not None and hit[0] == gen.uri:
+            return dict(hit[1])
+    out = _freshness_uncached()
+    if gen is not None:
+        _freshness_memo["value"] = (gen.uri, dict(out))
+    return out
+
+
+def _freshness_uncached() -> dict:
     queries = {
         "regimes_date": "SELECT MAX(date) FROM regimes",
         "signals_date": "SELECT MAX(date) FROM signals",
