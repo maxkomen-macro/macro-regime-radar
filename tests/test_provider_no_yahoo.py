@@ -204,3 +204,67 @@ def test_the_status_matrix_declares_no_yahoo_for_on_demand_lookups():
         if entry is None:
             continue
         assert entry["fallback"] is None and "yfinance" not in entry["primary"], (family, entry)
+
+
+# ── launch-1: fundamentals come from Finnhub, and still never from Yahoo ────
+
+
+def test_the_profile_fills_fundamentals_from_finnhub_without_touching_yahoo(blocked, monkeypatch):
+    """The fifteen fields EODHD's plan cannot answer are Finnhub's now. The
+    point of this file stands: no path in the API process reaches Yahoo."""
+    import httpx
+
+    from api.providers import finnhub as fh
+
+    def eodhd(request: httpx.Request) -> httpx.Response:
+        if "/real-time/" in request.url.path:
+            return httpx.Response(200, json={"code": "NVDA.US", "close": 180.5, "previousClose": 178.0,
+                                             "timestamp": 1790000000}, request=request)
+        if "/search/" in request.url.path:
+            return httpx.Response(200, json=[{"Code": "NVDA", "Exchange": "US", "Name": "NVIDIA Corp",
+                                              "Type": "Common Stock", "Currency": "USD"}], request=request)
+        return httpx.Response(404, json={}, request=request)
+
+    def finnhub(request: httpx.Request) -> httpx.Response:
+        if "profile2" in request.url.path:
+            return httpx.Response(200, json={"marketCapitalization": 3_000_000.0, "finnhubIndustry": "Semiconductors"}, request=request)
+        return httpx.Response(200, json={"metric": {"peTTM": 51.2, "beta": 2.1, "52WeekHigh": 200.0, "52WeekLow": 90.0}}, request=request)
+
+    market.set_client_for_tests(eod.EodhdClient("tok", transport=httpx.MockTransport(eodhd)))
+    fh.set_client_for_tests(fh.FinnhubClient("fh-tok", transport=httpx.MockTransport(finnhub)))
+    try:
+        p = market.profile("NVDA")
+        assert p["fundamentals_provider"] == "finnhub"
+        assert p["market_cap"] == 3_000_000.0 * 1e6
+        assert p["industry"] == "Semiconductors"
+        assert p["last"] == 180.5
+        assert blocked == [], "the fundamentals path must not reach Yahoo"
+    finally:
+        fh.set_client_for_tests(None)
+
+
+def test_finnhub_is_never_asked_about_an_instrument_it_does_not_cover(blocked):
+    """Crypto, FX and indices skip the call entirely, so no quota is spent and
+    the panel can say plainly that fundamentals are not available."""
+    import httpx
+
+    from api.providers import finnhub as fh
+
+    calls: list[str] = []
+
+    def finnhub(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json={}, request=request)
+
+    def eodhd(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": "BTC-USD.CC", "close": 64000.0, "timestamp": 1790000000}, request=request)
+
+    market.set_client_for_tests(eod.EodhdClient("tok", transport=httpx.MockTransport(eodhd)))
+    fh.set_client_for_tests(fh.FinnhubClient("fh-tok", transport=httpx.MockTransport(finnhub)))
+    try:
+        p = market.profile("BTC-USD")
+        assert p["fundamentals_provider"] is None
+        assert calls == []
+        assert blocked == []
+    finally:
+        fh.set_client_for_tests(None)

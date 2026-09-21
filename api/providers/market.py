@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from api.providers import eodhd as eod
+from api.providers import finnhub as fh
+from api.providers import quota
 from api.providers import entitlements
 from api.providers import yf
 from api.providers.cache import KeyedTTLCache
@@ -102,6 +104,12 @@ _actions_cache = KeyedTTLCache(6 * 3600.0, 256)
 _exp_cache = KeyedTTLCache(3600.0, 128)
 _chain_cache = KeyedTTLCache(900.0, 256)
 _ticks_cache = KeyedTTLCache(30.0, 64)
+# Fundamentals change at most once a day; the quote beside them refreshes
+# every 45 s, so they get their own long-lived cache (launch-1). A failure is
+# remembered only briefly, so an outage does not blank the panel for half a day.
+FUNDAMENTALS_TTL = 12 * 3600.0
+FUNDAMENTALS_RETRY_TTL = 300.0
+_fundamentals_cache = KeyedTTLCache(FUNDAMENTALS_TTL, 512)
 RANGE_TTL = {"1D": 60.0, "5D": 120.0, "1M": 300.0}
 _RANGE_TTL = RANGE_TTL
 # The profile's two EODHD calls (delayed quote, identity from the search
@@ -119,7 +127,7 @@ def _executor() -> ThreadPoolExecutor:
 
 
 def clear_caches() -> None:
-    for c in (_search_cache, _identity_cache, _profile_cache, _candles_cache, _actions_cache, _exp_cache, _chain_cache, _ticks_cache):
+    for c in (_search_cache, _identity_cache, _profile_cache, _candles_cache, _actions_cache, _exp_cache, _chain_cache, _ticks_cache, _fundamentals_cache):
         c.clear()
 
 
@@ -383,6 +391,34 @@ def _identity(inst: Instrument) -> dict:
     return _identity_cache.get(inst.canonical, compute)
 
 
+# ── fundamentals (Finnhub; EODHD's plan has none) ─────────────────────────────
+
+
+def _fundamentals(inst: Instrument) -> dict:
+    """The panel's fundamentals for one listing, or {} when nobody publishes
+    them for it. Never raises: a fundamentals outage must not take the quote
+    down with it (launch-1)."""
+    if inst.kind != "equity" or inst.exchange != "US":
+        return {}  # crypto, FX, indices and foreign lines: not Finnhub's free tier
+
+    def compute() -> dict:
+        try:
+            return {"ok": True, "fields": fh.fundamentals(inst.eodhd.split(".")[0])}
+        except ProviderError as exc:
+            log.info("finnhub fundamentals %s: %s", inst.canonical, exc.kind)
+            return {"ok": False, "fields": {}}
+        except Exception as exc:  # noqa: BLE001 — never break a quote
+            log.warning("finnhub fundamentals %s failed: %s", inst.canonical, type(exc).__name__)
+            return {"ok": False, "fields": {}}
+
+    entry = _fundamentals_cache.get(inst.canonical, compute)
+    if not entry["ok"]:
+        # Re-read the same entry against the short window: a failure older
+        # than FUNDAMENTALS_RETRY_TTL is recomputed, a fresh one is not.
+        entry = _fundamentals_cache.get(inst.canonical, compute, ttl=FUNDAMENTALS_RETRY_TTL)
+    return entry["fields"]
+
+
 # ── profile (quote + fundamentals) ────────────────────────────────────────────
 
 
@@ -420,7 +456,7 @@ def profile(symbol: str) -> dict:
             ident = ident_future.result(timeout=c.timeout * (c.max_retries + 1) + 2.0)
         except Exception:  # noqa: BLE001 — identity is decoration; the quote stands without it
             ident = {}
-        return {
+        out = {
             "symbol": inst.canonical,
             "name": ident.get("name") or inst.canonical,
             "exchange": inst.exchange,
@@ -456,6 +492,14 @@ def profile(symbol: str) -> dict:
             "fallback_reason": None,
             "fundamentals_provider": None,
         }
+        # Fundamentals come from Finnhub (launch-1): EODHD's plan has none, and
+        # the API never calls Yahoo. Only fields it actually publishes are
+        # filled, and the payload names the source on screen.
+        fundamentals = _fundamentals(inst)
+        filled = {k: v for k, v in fundamentals.items() if v is not None}
+        out.update(filled)
+        out["fundamentals_provider"] = fh.PROVIDER if filled else None
+        return out
 
     return _profile_cache.get(inst.canonical, compute)
 
@@ -713,7 +757,9 @@ PRIMARY_MATRIX = {
     "symbol_search": ("eodhd search", None),
     "splits_dividends": ("eodhd", None),
     "exchange_hours": ("eodhd exchange-details", "built-in NYSE calendar"),
-    "fundamentals": ("eodhd (only if entitled)", None),
+    # EODHD's plan here has no fundamentals (403 at the probe); Finnhub's
+    # free tier publishes them for US listings (launch-1).
+    "fundamentals": ("finnhub (free tier, US listings)", None),
     # The refresh pipeline's stored histories: the one place Yahoo remains.
     "allocation_histories": ("eodhd eod (refresh pipeline, stored)", "yfinance (refresh pipeline only, disclosed)"),
     "options": ("eodhd marketplace (end-of-day)", "explicit unavailable state"),
@@ -731,4 +777,7 @@ def status() -> dict:
         "primary": {k: {"primary": v[0], "fallback": v[1]} for k, v in PRIMARY_MATRIX.items()},
         "entitlements": ents,
         "cache": {"candles": _candles_cache.size, "search": _search_cache.size, "profile": _profile_cache.size, "options": _chain_cache.size},
+        # What this process has spent at EODHD since it started, in the
+        # plan's own units (launch-1): the runbook's daily figure.
+        "quota": quota.snapshot(),
     }

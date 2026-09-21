@@ -356,11 +356,15 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
               />
               <StatTile label="Avg vol · 3M" value={compactNum(p.avg_volume_3m)} size="xs" />
               <StatTile label="Net margin" value={p.profit_margin != null ? `${(p.profit_margin * 100).toFixed(1)}%` : "—"} size="xs" />
+              <StatTile label="EPS · TTM" value={n2(p.eps_ttm)} size="xs" />
+              <StatTile label="P/B" value={n2(p.price_to_book, 1)} size="xs" />
+              <StatTile label="Revenue growth" value={p.revenue_growth != null ? `${(p.revenue_growth * 100).toFixed(1)}%` : "—"} size="xs" />
+              <StatTile label="52W change" value={p.fifty_two_wk_change != null ? `${p.fifty_two_wk_change.toFixed(1)}%` : "—"} size="xs" />
             </div>
             <Caption mono>
               {p.fundamentals_provider
-                ? `Fundamentals via ${providerName(p.fundamentals_provider)}${p.fundamentals_provider === "yfinance" ? " (EODHD fundamentals are not in the plan on this server)" : ""}, refreshed every few minutes; a dash is a field the source does not publish for this security.`
-                : "Fundamentals unavailable for this instrument from either provider."}
+                ? `Fundamentals via ${providerName(p.fundamentals_provider)}, refreshed twice a day; a dash is a field it does not publish for this security.`
+                : "Fundamentals are not available for this instrument: the data covers US-listed companies, so funds, indices, currencies and crypto show price and history only."}
             </Caption>
           </>
         )}
@@ -408,7 +412,7 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
         <Caption mono>
           {candles.data
             ? candleCaption(candles.data)
-            : "History comes from EODHD first; yfinance stands in only when EODHD cannot answer, and the caption says so."}{" "}
+            : "History comes from EODHD. When EODHD cannot answer, the chart says so rather than quietly filling in from somewhere else."}{" "}
           The tape above owns the live quote; this chart owns the history.
         </Caption>
 
