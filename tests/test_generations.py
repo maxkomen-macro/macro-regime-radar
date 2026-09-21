@@ -609,11 +609,15 @@ def test_a_file_that_cannot_be_staged_keeps_the_last_generation_serving_and_says
     assert w.status()["last_error"] is None
 
 
-def test_an_item_that_fails_on_a_new_file_serves_its_last_good_result(serving_worker, scratch):
-    """Item 4(b): handlers serve the last good result. A failure on the new
-    file carries the previous generation's answer forward, and the status says
-    so; an answer that is a fact about the new file (NotStored) is not a
-    failure and is never carried."""
+def test_an_item_that_fails_on_a_new_file_holds_the_whole_generation_back_then_publishes_it_with_the_error(serving_worker, scratch):
+    """Item 4(b)'s last good result is the last good generation, whole: an item
+    that fails on a new file holds the new generation back, so every result and
+    every stored read keeps coming from the previous file (verify loop 2: a
+    carried item beside fresh ones was the B-H1 symptom again). The worker
+    retries; after HOLD_ATTEMPTS failures it publishes, and the failed item
+    answers with its error, never with a result from another file."""
+    from api import worker as worker_mod
+
     a, b = scratch
     builds = {"n": 0}
 
@@ -623,23 +627,132 @@ def test_an_item_that_fails_on_a_new_file_serves_its_last_good_result(serving_wo
             raise RuntimeError("probe: this item failed on the new file")
         return "good"
 
-    def histories(ctx):
-        if builds["n"] > 1:
-            raise db.NotStored("probe: not stored in this file")
-        return "stored"
+    w = serving_worker(items=[("flaky", flaky), ("hy", lambda ctx: _hy_oas_latest_ro())])
+    w.hold_retry_s = 0.4
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current.id
+    old_hy = w.result("hy")
+    os.replace(b, a)
+    w.poke()
+    deadline = time.monotonic() + 10
+    while builds["n"] < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.05)
+    assert w.current.id == first, "held back: the previous generation serves whole"
+    assert w.result("flaky") == "good" and w.result("hy") == old_hy == _hy_oas_latest_ro()
+    st = w.status()
+    assert st["held"] == {"file": a.name, "attempts": 1, "items": ["flaky"]} and st["state"] == "ready"
+    assert "flaky" in (st["last_error"] or "")
+    assert w.wait_published(min_id=first + 1, timeout=30)
+    assert builds["n"] == 1 + worker_mod.HOLD_ATTEMPTS
+    assert w.result("hy") != old_hy and w.result("hy") == _hy_oas_latest_ro()
+    with pytest.raises(RuntimeError):
+        w.result("flaky")
+    assert w.status()["held"] is None and "carried" not in w.status()
 
-    w = serving_worker(items=[("flaky", flaky), ("histories", histories)])
+
+def test_a_failure_that_clears_on_retry_publishes_the_new_generation_whole(serving_worker, scratch):
+    a, b = scratch
+    builds = {"n": 0}
+
+    def once(ctx):
+        builds["n"] += 1
+        if builds["n"] == 2:
+            raise RuntimeError("probe: a transient failure")
+        return builds["n"]
+
+    w = serving_worker(items=[("once", once)])
+    w.hold_retry_s = 0.05
     w.start(serving=True)
     assert w.wait_published(timeout=30)
     first = w.current.id
     os.replace(b, a)
     w.poke()
     assert w.wait_published(min_id=first + 1, timeout=30)
-    assert w.result("flaky") == "good"
+    assert w.result("once") == 3 and w.current.errors == {}
+
+
+def test_not_stored_on_a_new_file_is_its_answer_and_publishes_at_once(serving_worker, scratch):
+    a, b = scratch
+    builds = {"n": 0}
+
+    def histories(ctx):
+        builds["n"] += 1
+        if builds["n"] > 1:
+            raise db.NotStored("probe: not stored in this file")
+        return "stored"
+
+    w = serving_worker(items=[("histories", histories)])
+    w.hold_retry_s = 60.0
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current.id
+    os.replace(b, a)
+    w.poke()
+    assert w.wait_published(min_id=first + 1, timeout=10)
+    assert builds["n"] == 2
     with pytest.raises(db.NotStored):
         w.result("histories")
-    st = w.status()
-    assert "flaky" in st["errors"] and st["carried"] == {"flaky": first}
+
+
+def test_a_stored_error_is_raised_as_a_fresh_copy_so_tracebacks_never_pile_up(serving_worker, scratch):
+    """Verify loop 2 (Item 4, P1): raising the stored exception itself chained
+    every request's frames onto its traceback, ~53 KB a request, unbounded."""
+    def boom(ctx):
+        raise db.NotStored("probe: histories not stored")
+
+    w = serving_worker(items=[("histories", boom)])
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    stored = w.current.errors["histories"]
+    assert stored.__traceback__ is None, "stored without the build's frames"
+    for _ in range(50):
+        with pytest.raises(db.NotStored) as exc:
+            w.result("histories")
+        assert exc.value is not stored and str(exc.value) == str(stored)
+    assert stored.__traceback__ is None
+
+
+def test_a_released_generation_with_a_failed_item_is_freed_with_the_heap_frozen(serving_worker, scratch, monkeypatch):
+    """Verify loop 2 (Item 1, N2): a stored error's traceback tied the first
+    generation into a reference cycle, and a frozen heap never freed it."""
+    import gc
+    import weakref
+
+    from api import worker as worker_mod
+
+    a, b = scratch
+    builds = {"n": 0}
+
+    def first_only(ctx):
+        builds["n"] += 1
+        if builds["n"] == 1:
+            raise RuntimeError("probe: failed on the first file only")
+        return builds["n"]
+
+    monkeypatch.setattr(worker_mod, "_HEAP_FROZEN", False)
+    w = serving_worker(items=[("first_only", first_only)])
+    w.freeze_gc = True
+    try:
+        w.start(serving=True)
+        assert w.wait_published(timeout=30)
+        with pytest.raises(RuntimeError):
+            w.result("first_only")
+        ref = weakref.ref(w.current)
+        for i in range(2):  # released two publishes later
+            _swap_in_changed_copy(a, 0.1 * (i + 1))
+            w.poke()
+            assert w.wait_published(min_id=2 + i, timeout=30)
+        # wait_published returns when the new generation is current, a moment
+        # before the worker's publish drops its own reference to the released one
+        deadline = time.monotonic() + 5
+        while ref() is not None and time.monotonic() < deadline:
+            gc.collect()
+            time.sleep(0.05)
+        assert ref() is None, "the released generation is freed"
+    finally:
+        gc.unfreeze()
 
 
 def test_the_assistant_reads_the_recession_model_from_the_generation(serving_worker, scratch, monkeypatch):

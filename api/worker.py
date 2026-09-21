@@ -17,8 +17,12 @@ a computation. Handlers only look results up. Each HTTP request is pinned to
 the generation published when it arrived (PinGeneration), so one response
 never mixes two; a replaced generation stays readable until the next publish.
 
-An item that fails on a new file keeps serving its last good result, and the
-status names it (`carried`); an answer that is a fact about the file (NotStored)
+The last good result is the last good generation, whole. If an item fails on
+a new file, the new generation is held back and the previous one keeps
+serving everything, so no screen shows a result from one file beside another
+from the next; the worker retries, and after HOLD_ATTEMPTS failures publishes
+anyway, the failed item answering with its error (never with a result carried
+over from another file). An answer that is a fact about the file (NotStored)
 is not a failure. A file that cannot be staged at all leaves the last good
 generation serving, is retried with a backoff, and is reported in last_error.
 
@@ -33,6 +37,7 @@ warm (prefetch_tick), so a first visitor does not wait on EODHD for them.
 from __future__ import annotations
 
 import collections
+import copy
 import gc
 import itertools
 import logging
@@ -62,6 +67,8 @@ PREFETCH_RANGES = ("5D",)
 PREFETCH_MARGIN_S = 20.0  # refresh this long before the cache entry expires
 PREFETCH_EVERY_S = 10.0
 STAGE_RETRY_MAX_S = 60.0  # an unreadable file is retried after 2, 4, 8 … s, at most this far apart
+HOLD_ATTEMPTS = 3  # builds of a new file whose items fail before it publishes with the failures as errors
+HOLD_RETRY_S = 30.0  # the first retry of a held file comes after this long, then doubles
 
 # A full garbage collection walks every tracked object; after the libraries
 # load and the first generation builds that is ~180k of them, ~30 ms idle and
@@ -97,7 +104,6 @@ class Generation:
     owner: Any = None
     results: dict[str, Any] = field(default_factory=dict)
     errors: dict[str, BaseException] = field(default_factory=dict)
-    carried: dict[str, int] = field(default_factory=dict)  # item -> generation its result was computed in
     item_ms: dict[str, float] = field(default_factory=dict)
     staged_at: str = ""
     built_at: str | None = None
@@ -112,6 +118,29 @@ class Generation:
             except sqlite3.Error:
                 pass
             self.anchor = None
+
+
+def _detached(exc: BaseException) -> BaseException:
+    """A build error as stored: without its traceback (or its chain's), which
+    held the build's frames and, through them, the generation itself in a
+    reference cycle that a frozen heap never frees."""
+    seen: set[int] = set()
+    e: BaseException | None = exc
+    while e is not None and id(e) not in seen:
+        seen.add(id(e))
+        e.__traceback__ = None
+        e = e.__cause__ or e.__context__
+    return exc
+
+
+def _fresh(exc: BaseException) -> BaseException:
+    """A copy of a stored error to raise. Raising the stored object itself
+    chained every request's frames onto its traceback (~53 KB a request, with
+    no bound: verify loop 2)."""
+    try:
+        return copy.copy(exc)
+    except Exception:  # noqa: BLE001 — an exception type copy cannot rebuild
+        return exc.with_traceback(None)
 
 
 def _now_iso() -> str:
@@ -193,6 +222,7 @@ class AnalyticsWorker:
         self._current: Generation | None = None
         self._retired: Generation | None = None  # the one before, readable until the next publish
         self._failed: tuple[tuple, int, float] | None = None  # (file key, attempts, retry at): an unstageable file
+        self._hold: tuple[tuple, int, float] | None = None  # (file key, attempts, retry at): a file whose items failed
         self._ids = itertools.count(1)
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -207,6 +237,8 @@ class AnalyticsWorker:
         self._next_prefetch = 0.0
         self._preloaded = False
         self.freeze_gc = False  # the API's lifespan turns it on (GC_FREEZE); tests keep a normal heap
+        self.hold_retry_s = HOLD_RETRY_S
+        self._held: dict | None = None  # a new file held back: its name, the attempts, the items that failed
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -284,10 +316,11 @@ class AnalyticsWorker:
                 self.state = "no_database"
             return
         if cur is not None and cur.key == key and _same_path(cur.source, src):
-            self._failed = None
+            self._failed = self._hold = None
             return
-        if self._failed is not None and self._failed[0] == key and time.monotonic() < self._failed[2]:
-            return  # this file could not be staged; wait out its backoff
+        for blocked in (self._failed, self._hold):
+            if blocked is not None and blocked[0] == key and time.monotonic() < blocked[2]:
+                return  # this file could not be staged, or its items failed: wait out the backoff
         self._build(src, key)
 
     def _stage(self, src: Path, key: tuple) -> Generation | None:
@@ -336,7 +369,7 @@ class AnalyticsWorker:
                     try:
                         pending.append((name, fn, fn.start(ctx), t))
                     except Exception as exc:  # noqa: BLE001
-                        gen.errors[name] = exc
+                        gen.errors[name] = _detached(exc)
                         self.compute_counts[name] += 1
             if self._preload and not self._preloaded:
                 self.state = "preloading"
@@ -359,7 +392,7 @@ class AnalyticsWorker:
                 try:
                     value = fn(ctx)
                 except Exception as exc:  # noqa: BLE001 — stored as this item's answer
-                    gen.errors[name] = exc
+                    gen.errors[name] = _detached(exc)
                     log.warning("generation %d: %s failed: %s", gen.id, name, exc)
                 else:
                     ctx[name] = value
@@ -370,7 +403,7 @@ class AnalyticsWorker:
                 try:
                     value = fn.finish(handle)
                 except Exception as exc:  # noqa: BLE001
-                    gen.errors[name] = exc
+                    gen.errors[name] = _detached(exc)
                     log.warning("generation %d: %s failed: %s", gen.id, name, exc)
                 else:
                     ctx[name] = value
@@ -383,26 +416,25 @@ class AnalyticsWorker:
                 db.freshness()
             except Exception as exc:  # noqa: BLE001 — a request will compute them instead
                 log.warning("generation %d: stored maxima not precomputed: %s", gen.id, exc)
+        failed = sorted(n for n, e in gen.errors.items() if not isinstance(e, db.NotStored))
+        if failed and self._current is not None:
+            attempts = self._hold[1] + 1 if self._hold is not None and self._hold[0] == key else 1
+            if attempts < HOLD_ATTEMPTS:
+                # Hold it back: the previous generation keeps serving whole.
+                self._hold = (key, attempts, time.monotonic() + self.hold_retry_s * 2 ** (attempts - 1))
+                self._held = {"file": src.name, "attempts": attempts, "items": failed}
+                self.last_error = (f"generation from {src.name} held back: {', '.join(failed)} failed "
+                                   f"(attempt {attempts} of {HOLD_ATTEMPTS}); the previous generation keeps serving whole")
+                log.warning("%s", self.last_error)
+                self.state = "ready"
+                gen.close()
+                return
+            log.warning("generation %d publishes after %d attempts with %s answering as errors", gen.id, attempts, ", ".join(failed))
         if self.freeze_gc:
             _freeze_heap_once()
         gen.build_ms = round((time.perf_counter() - t0) * 1000, 1)
         gen.built_at = _now_iso()
-        self._carry_forward(gen, self._current)
         self._publish(gen)
-
-    @staticmethod
-    def _carry_forward(gen: Generation, prev: Generation | None) -> None:
-        """Serve the last good result for an item that failed on the new file.
-        NotStored is the new file's own answer (it predates a stored input),
-        not a failure, so it is never covered over."""
-        if prev is None:
-            return
-        for name, exc in gen.errors.items():
-            if isinstance(exc, db.NotStored) or name in gen.results or name not in prev.results:
-                continue
-            gen.results[name] = prev.results[name]
-            gen.carried[name] = prev.carried.get(name, prev.id)
-            log.warning("generation %d: %s failed (%s); serving the result from generation %d", gen.id, name, exc, gen.carried[name])
 
     def _publish(self, gen: Generation) -> None:
         with self._cond:
@@ -411,6 +443,8 @@ class AnalyticsWorker:
             self.builds += 1
             self.state = "ready"
             self.last_error = None
+            self._held = None
+            self._hold = None
             self._cond.notify_all()
         # The replaced generation stays readable until the next publish: a
         # request pinned to it (or one that looked it up an instant ago) must
@@ -443,9 +477,9 @@ class AnalyticsWorker:
         return self._current
 
     def result(self, name: str) -> Any:
-        """This request's generation's result for `name` (a carried last good
-        result, or its stored error). Never computes. Without a usable
-        generation, waits up to wait_s for one, then raises Warming."""
+        """This request's generation's result for `name` (or a fresh copy of
+        its stored error). Never computes. Without a usable generation, waits
+        up to wait_s for one, then raises Warming."""
         self.ensure_started()
         gen = self.generation()
         if gen is None or not self._usable(gen):
@@ -463,7 +497,7 @@ class AnalyticsWorker:
         if name in gen.results:
             return gen.results[name]
         if name in gen.errors:
-            raise gen.errors[name]
+            raise _fresh(gen.errors[name])
         raise KeyError(f"no result named {name!r}")
 
     def wait_published(self, min_id: int = 1, timeout: float = 30.0) -> bool:
@@ -491,7 +525,7 @@ class AnalyticsWorker:
             "build_ms": gen.build_ms if gen else None,
             "results": len(gen.results) if gen else 0,
             "errors": sorted(gen.errors) if gen else [],
-            "carried": dict(gen.carried) if gen else {},
+            "held": dict(self._held) if self._held else None,
             "current_with_file": bool(gen and gen.key == dbpath.file_key(src) and _same_path(gen.source, src)),
             "builds": self.builds,
             "last_error": self.last_error,

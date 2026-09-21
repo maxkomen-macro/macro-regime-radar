@@ -8,6 +8,7 @@ without Streamlit (tools that need session_state degrade gracefully).
 
 from __future__ import annotations
 
+import copy
 import contextvars
 import os
 import re
@@ -216,7 +217,8 @@ def _recession_model_view() -> dict[str, Any]:
         return results["assistant_recession"]
     errors = getattr(gen, "errors", None)
     if errors and "assistant_recession" in errors:
-        raise errors["assistant_recession"]
+        # a copy: raising the stored object would chain every request's frames onto it
+        raise copy.copy(errors["assistant_recession"])
     key = dbpath.current_key(DB_PATH)
     hit = _RECESSION_MODEL_CACHE.get("view")
     if hit and key is not None and hit[0] == key:
