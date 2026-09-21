@@ -394,41 +394,58 @@ def _identity(inst: Instrument) -> dict:
 # ── fundamentals (Finnhub; EODHD's plan has none) ─────────────────────────────
 
 
-def _fundamentals(inst: Instrument) -> dict:
-    """The panel's fundamentals for one listing, or {} when nobody publishes
-    them for it. Never raises: a fundamentals outage must not take the quote
-    down with it (launch-1)."""
-    if inst.kind != "equity" or inst.exchange != "US":
-        return {}  # crypto, FX, indices and foreign lines: not Finnhub's free tier
+# Types the EODHD identity names that have no company behind them.
+_NOT_A_COMPANY = {"ETF", "Fund", "Index", "FX", "Crypto", "Mutual Fund"}
+
+
+class _NotCached(Exception):
+    """Raised through the cache so a local refusal is never stored."""
+
+
+def _fundamentals(inst: Instrument, type_word: str | None = None) -> tuple[dict, str]:
+    """The panel's fundamentals for one listing and what they are:
+    ("ok") filled from Finnhub, ("not_covered") nobody publishes company
+    fundamentals for it, or ("unavailable") the source did not answer this
+    time. Never raises: a fundamentals outage must not take the quote down,
+    and it must not tell a visitor that NVDA is not a company (loop 1)."""
+    if inst.kind != "equity" or inst.exchange != "US" or (type_word or "") in _NOT_A_COMPANY:
+        return {}, "not_covered"  # crypto, FX, indices, funds and foreign lines
 
     def compute() -> dict:
         try:
-            return {"ok": True, "fields": fh.fundamentals(inst.eodhd.split(".")[0])}
+            fields = fh.fundamentals(inst.eodhd.split(".")[0])
+        except fh.LocalThrottle as exc:
+            # Nothing was sent, so nothing was learned: do not remember it.
+            raise _NotCached() from exc
         except ProviderError as exc:
             log.info("finnhub fundamentals %s: %s", inst.canonical, exc.kind)
             return {"ok": False, "fields": {}}
         except Exception as exc:  # noqa: BLE001 — never break a quote
             log.warning("finnhub fundamentals %s failed: %s", inst.canonical, type(exc).__name__)
             return {"ok": False, "fields": {}}
+        return {"ok": True, "fields": fields}
 
-    entry = _fundamentals_cache.get(inst.canonical, compute)
+    try:
+        entry = _fundamentals_cache.get(inst.canonical, compute)
+        if not entry["ok"]:
+            # Re-read the same entry against the short window: a failure older
+            # than FUNDAMENTALS_RETRY_TTL is recomputed, a fresh one is not.
+            entry = _fundamentals_cache.get(inst.canonical, compute, ttl=FUNDAMENTALS_RETRY_TTL)
+    except _NotCached:
+        return {}, "unavailable"
     if not entry["ok"]:
-        # Re-read the same entry against the short window: a failure older
-        # than FUNDAMENTALS_RETRY_TTL is recomputed, a fresh one is not.
-        entry = _fundamentals_cache.get(inst.canonical, compute, ttl=FUNDAMENTALS_RETRY_TTL)
-    return entry["fields"]
+        return {}, "unavailable"
+    return (entry["fields"], "ok") if entry["fields"] else ({}, "not_covered")
 
 
 # ── profile (quote + fundamentals) ────────────────────────────────────────────
 
 
 def profile(symbol: str) -> dict:
-    """Delayed quote plus identity for one listing, from EODHD only. Its two
-    EODHD calls (the real-time quote and the search-index identity) run
-    concurrently (fix/prelaunch-1, 4d). Fundamentals come only from EODHD and
-    only when the plan includes them (the probe says it does not today), so
-    those fields are null and fundamentals_provider says so; the API never
-    fills them from Yahoo."""
+    """Delayed quote plus identity for one listing from EODHD, with company
+    fundamentals from Finnhub (launch-1). The two EODHD calls (the real-time
+    quote and the search-index identity) run concurrently (fix/prelaunch-1,
+    4d). The API never fills anything from Yahoo."""
     try:
         inst = parse(symbol)
     except SymbolError as exc:
@@ -495,10 +512,13 @@ def profile(symbol: str) -> dict:
         # Fundamentals come from Finnhub (launch-1): EODHD's plan has none, and
         # the API never calls Yahoo. Only fields it actually publishes are
         # filled, and the payload names the source on screen.
-        fundamentals = _fundamentals(inst)
+        fundamentals, status = _fundamentals(inst, ident.get("type"))
         filled = {k: v for k, v in fundamentals.items() if v is not None}
         out.update(filled)
         out["fundamentals_provider"] = fh.PROVIDER if filled else None
+        # What the caption says: named source, not published for this kind of
+        # instrument, or not answering right now (launch-1, loop 1).
+        out["fundamentals_status"] = status if (filled or status != "ok") else "not_covered"
         return out
 
     return _profile_cache.get(inst.canonical, compute)
@@ -774,6 +794,7 @@ def status() -> dict:
     return {
         "generated_at": _now_iso(),
         "eodhd_configured": bool(client().token),
+        "finnhub_configured": bool(fh.client().token),
         "primary": {k: {"primary": v[0], "fallback": v[1]} for k, v in PRIMARY_MATRIX.items()},
         "entitlements": ents,
         "cache": {"candles": _candles_cache.size, "search": _search_cache.size, "profile": _profile_cache.size, "options": _chain_cache.size},

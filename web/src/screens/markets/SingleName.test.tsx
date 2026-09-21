@@ -14,7 +14,7 @@ const profile = {
   symbol: "AMZN", name: "Amazon.com Inc", exchange: "US", currency: "USD", quote_type: "Equity", sector: "Consumer Cyclical", industry: "Internet Retail",
   last: 203.5, prev_close: 201, day_change_pct: 1.24, day_low: 198, day_high: 205, year_low: 150, year_high: 240, market_cap: 2.1e12, last_volume: 1e7,
   avg_volume_3m: 4e7, trailing_pe: 40, forward_pe: 30, eps_ttm: 5, beta: 1.1, dividend_yield: null, price_to_book: 8, profit_margin: 0.09, revenue_growth: 0.1,
-  fifty_two_wk_change: 0.2, fetched_at: "2026-09-06T00:00:00Z", market_ts: "2026-09-04T20:00:00Z", quote_provider: "eodhd", fundamentals_provider: "yfinance",
+  fifty_two_wk_change: 0.2, fetched_at: "2026-09-06T00:00:00Z", market_ts: "2026-09-04T20:00:00Z", quote_provider: "eodhd", fundamentals_provider: "finnhub", fundamentals_status: "ok",
   delayed: true, delay_note: "EODHD delayed quote", fallback_used: false, fallback_reason: null,
 };
 const series = (range: string, provider = "eodhd", fallback = false) => ({
@@ -36,8 +36,8 @@ describe("SingleName", () => {
     expect(document.body.textContent).toMatch(/EODHD · delayed · as of/);
     expect(document.body.textContent).toMatch(/session closed · last close stands/);
     expect(document.body.textContent).toMatch(/6M · daily bars · EODHD · through/);
-    expect(document.body.textContent).toMatch(/Fundamentals via yfinance/);
-    expect(document.body.textContent).not.toMatch(/via yfinance, split/);
+    expect(document.body.textContent).toMatch(/Fundamentals via Finnhub/);
+    expect(document.body.textContent).not.toMatch(/via Finnhub, split/);
   });
 
   it("discloses a yfinance fallback for history", async () => {
@@ -344,3 +344,37 @@ describe("SingleName, Iteration 1 (M5)", () => {
   });
 });
 
+
+
+describe("SingleName fundamentals (launch-1)", () => {
+  it("renders all twelve tiles, the four newest included, and names Finnhub", async () => {
+    stubFetch({ ...common, "/api/market/profile/AMZN": () => profile, "/api/market/candles/AMZN": (url) => series(url.searchParams.get("range") ?? "6M") });
+    renderWithProviders(<SingleName symbol="AMZN" onClose={() => {}} />);
+    await waitFor(() => expect(document.body.textContent).toMatch(/Fundamentals via Finnhub/));
+    const text = document.body.textContent ?? "";
+    for (const label of ["Market cap", "P/E · TTM", "Fwd P/E", "Beta", "Div yield", "52W range", "Avg vol · 3M", "Net margin", "EPS · TTM", "P/B", "Revenue growth", "52W change"]) {
+      expect(text, label).toContain(label);
+    }
+    expect(text).toContain("5.00"); // EPS · TTM
+    expect(text).toContain("10.0%"); // revenue growth 0.1 → 10.0%
+    expect(text).not.toMatch(/either provider|second provider|yfinance/i);
+  });
+
+  it("says plainly when a fund has no company fundamentals", async () => {
+    const fund = { ...profile, symbol: "SPY", name: "SPDR S&P 500", quote_type: "ETF", fundamentals_provider: null, fundamentals_status: "not_covered",
+      market_cap: null, trailing_pe: null, forward_pe: null, eps_ttm: null, beta: null, price_to_book: null, profit_margin: null, revenue_growth: null,
+      fifty_two_wk_change: null, year_low: null, year_high: null, avg_volume_3m: null };
+    stubFetch({ ...common, "/api/market/profile/SPY": () => fund, "/api/market/candles/SPY": (url) => series(url.searchParams.get("range") ?? "6M") });
+    renderWithProviders(<SingleName symbol="SPY" onClose={() => {}} />);
+    await waitFor(() => expect(document.body.textContent).toMatch(/Fundamentals are not available for this instrument/));
+    expect(document.body.textContent).not.toMatch(/temporarily unavailable/);
+  });
+
+  it("tells an outage apart from an instrument that is not covered", async () => {
+    const outage = { ...profile, fundamentals_provider: null, fundamentals_status: "unavailable", market_cap: null, trailing_pe: null };
+    stubFetch({ ...common, "/api/market/profile/AMZN": () => outage, "/api/market/candles/AMZN": (url) => series(url.searchParams.get("range") ?? "6M") });
+    renderWithProviders(<SingleName symbol="AMZN" onClose={() => {}} />);
+    await waitFor(() => expect(document.body.textContent).toMatch(/Fundamentals are temporarily unavailable/));
+    expect(document.body.textContent).not.toMatch(/not available for this instrument/);
+  });
+});

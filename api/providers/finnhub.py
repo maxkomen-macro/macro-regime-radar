@@ -53,9 +53,15 @@ log = logging.getLogger("mrr.providers.finnhub")
 BASE = "https://finnhub.io/api/v1"
 PROVIDER = "finnhub"
 
-# Free tier: 60 requests a minute. One a second with a small burst keeps every
-# visitor's panel inside it without a queue.
-_bucket = TokenBucket(rate=1.0, burst=10)
+# Free tier: 60 requests a minute. The limit is on any minute, so the burst
+# counts: 10 up front plus 50 a minute of refill is 60 at most (loop 1 found
+# the earlier 10 + 60 could reach 70).
+_bucket = TokenBucket(rate=50 / 60, burst=10)
+
+
+class LocalThrottle(RateLimited):
+    """Our own bucket refused the pair: nothing was sent to Finnhub, so nothing
+    about the symbol is learned, and the refusal must not be cached."""
 
 
 def _load_token() -> str | None:
@@ -81,11 +87,11 @@ class FinnhubClient:
         self.timeout = timeout
         self._transport = transport
 
-    def _get(self, path: str, params: dict[str, Any], *, what: str) -> Any:
+    def _get(self, path: str, params: dict[str, Any], *, what: str, reserved: bool = False) -> Any:
         if not self.token:
             raise MissingToken(PROVIDER, "Fundamentals are not configured on this server.")
-        if not _bucket.take():
-            raise RateLimited(PROVIDER, "Fundamentals are being throttled; retry in a moment.")
+        if not reserved and not _bucket.take():
+            raise LocalThrottle(PROVIDER, "Fundamentals are being throttled; retry in a moment.")
         try:
             with httpx.Client(timeout=self.timeout, transport=self._transport, follow_redirects=False) as c:
                 r = c.get(f"{BASE}{path}", params=params, headers={"X-Finnhub-Token": self.token})
@@ -106,14 +112,14 @@ class FinnhubClient:
             raise RateLimited(PROVIDER, "Finnhub rate limit reached; retry shortly.", status=429)
         raise ProviderUnavailable(PROVIDER, f"Finnhub returned an unexpected status ({what}).", status=r.status_code)
 
-    def profile2(self, symbol: str) -> dict:
-        data = self._get("/stock/profile2", {"symbol": symbol}, what="company profile")
+    def profile2(self, symbol: str, *, reserved: bool = False) -> dict:
+        data = self._get("/stock/profile2", {"symbol": symbol}, what="company profile", reserved=reserved)
         if not isinstance(data, dict):
             raise MalformedResponse(PROVIDER, "Finnhub's company profile came back in an unexpected shape.")
         return data
 
-    def metrics(self, symbol: str) -> dict:
-        data = self._get("/stock/metric", {"symbol": symbol, "metric": "all"}, what="company metrics")
+    def metrics(self, symbol: str, *, reserved: bool = False) -> dict:
+        data = self._get("/stock/metric", {"symbol": symbol, "metric": "all"}, what="company metrics", reserved=reserved)
         if not isinstance(data, dict):
             raise MalformedResponse(PROVIDER, "Finnhub's metrics came back in an unexpected shape.")
         metric = data.get("metric")
@@ -165,32 +171,51 @@ def _first(metric: dict, *names: str) -> float | None:
 
 
 def fundamentals(symbol: str) -> dict:
-    """The panel's fifteen fundamentals fields for one US listing, or {} when
-    Finnhub publishes none of them for it (an ETF, an index, a foreign line).
-    Raises ProviderError on a transport or plan failure; callers keep the
-    quote and say fundamentals are unavailable."""
+    """The panel's fifteen fundamentals fields for one US-listed company, or {}
+    when Finnhub has no company behind the symbol (an ETF, an index, a fund).
+    Raises ProviderError on a transport or plan failure, and LocalThrottle when
+    this server's own bucket refused; callers keep the quote either way."""
     c = client()
-    profile = c.profile2(symbol)
-    metric = c.metrics(symbol)
+    if not c.token:
+        raise MissingToken(PROVIDER, "Fundamentals are not configured on this server.")
+    # One panel is two calls. Take both tokens or neither, so an empty bucket
+    # never spends half a pair on a profile it then cannot finish (loop 1).
+    if not _bucket.take(2):
+        raise LocalThrottle(PROVIDER, "Fundamentals are being throttled; retry in a moment.")
+    profile = c.profile2(symbol, reserved=True)
+    # Finnhub answers a fund with an empty company profile and a few price
+    # statistics. Company fundamentals do not apply to it, and four tiles
+    # beside eight dashes would say otherwise, so it is "not covered".
+    if not (profile.get("marketCapitalization") or profile.get("finnhubIndustry") or profile.get("name")):
+        return {}
+    metric = c.metrics(symbol, reserved=True)
     industry = (profile.get("finnhubIndustry") or "").strip() or None
+    # An ADR can report per-share figures in its home currency; beside a USD
+    # price they would read as nonsense. Ratios are unitless and stay.
+    reports_in_usd = str(profile.get("estimateCurrency") or profile.get("currency") or "USD").upper() == "USD"
+    pct = lambda x: None if x is None else x / 100.0  # noqa: E731 — percent → fraction
     fields = {
-        # Finnhub's free tier has one industry label, not the sector/industry
-        # pair Yahoo used to give: it is shown once, as the industry.
+        # The free tier has one industry label, not the sector/industry pair
+        # Yahoo used to give: it is shown once, as the industry.
         "sector": None,
         "industry": industry,
         "market_cap": _scaled(profile.get("marketCapitalization") or metric.get("marketCapitalization"), 1e6),
         "year_low": _first(metric, "52WeekLow"),
         "year_high": _first(metric, "52WeekHigh"),
-        "avg_volume_3m": _scaled(_first(metric, "3MonthAverageTradingVolume", "10DayAverageTradingVolume"), 1e6),
-        "trailing_pe": _first(metric, "peTTM", "peBasicExclExtraTTM", "peExclExtraTTM"),
+        # Exact metrics only: a 10-day average is not a three-month one, and a
+        # neighbour standing in would change what the tile means (loop 1).
+        "avg_volume_3m": _scaled(_first(metric, "3MonthAverageTradingVolume"), 1e6),
+        "trailing_pe": _first(metric, "peTTM", "peBasicExclExtraTTM"),
         "forward_pe": _first(metric, "forwardPE"),
-        "eps_ttm": _first(metric, "epsTTM", "epsBasicExclExtraItemsTTM"),
+        "eps_ttm": _first(metric, "epsTTM", "epsBasicExclExtraItemsTTM") if reports_in_usd else None,
         "beta": _first(metric, "beta"),
-        "dividend_yield": _first(metric, "dividendYieldIndicatedAnnual", "currentDividendYieldTTM"),
-        "price_to_book": _first(metric, "pbQuarterly", "pb", "pbAnnual"),
-        # percent → fraction: the panel renders profit_margin × 100.
-        "profit_margin": (lambda x: None if x is None else x / 100.0)(_first(metric, "netProfitMarginTTM", "netProfitMarginAnnual")),
-        "revenue_growth": (lambda x: None if x is None else x / 100.0)(_first(metric, "revenueGrowthTTMYoy", "revenueGrowthQuarterlyYoy")),
+        # Indicated annual yield, the forward figure; a trailing yield that
+        # includes a special dividend is a different number.
+        "dividend_yield": _first(metric, "dividendYieldIndicatedAnnual"),
+        "price_to_book": _first(metric, "pbQuarterly", "pb"),
+        # percent → fraction: the panel renders these × 100.
+        "profit_margin": pct(_first(metric, "netProfitMarginTTM")),
+        "revenue_growth": pct(_first(metric, "revenueGrowthTTMYoy")),
         "fifty_two_wk_change": _first(metric, "52WeekPriceReturnDaily"),
     }
     return fields if any(v is not None for v in fields.values()) else {}

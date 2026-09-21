@@ -110,6 +110,19 @@ interface Props {
   onRangeChange?: (range: CandleRange) => void;
 }
 
+/** What the fundamentals row's caption says, by what the API knows (launch-1,
+ * loop 1): a source named when it answered, a plain reason when nothing
+ * applies, and a temporary one when the source did not answer this time. */
+export function fundamentalsCaption(p: { fundamentals_provider: string | null; fundamentals_status?: string | null }): string {
+  if (p.fundamentals_provider) {
+    return `Fundamentals via ${providerName(p.fundamentals_provider as never)}, refreshed twice a day; a dash is a field it does not publish for this security.`;
+  }
+  if (p.fundamentals_status === "unavailable") {
+    return "Fundamentals are temporarily unavailable: the source did not answer just now. The price and chart are unaffected, and they come back on their own.";
+  }
+  return "Fundamentals are not available for this instrument: the data covers US-listed companies, so funds, indices, currencies and crypto show price and history only.";
+}
+
 export default function SingleName({ symbol, onClose, range: rangeProp, onRangeChange }: Props) {
   const { isNarrow } = useBreakpoint();
   const snapshot = useSnapshotMode();
@@ -362,9 +375,7 @@ export default function SingleName({ symbol, onClose, range: rangeProp, onRangeC
               <StatTile label="52W change" value={p.fifty_two_wk_change != null ? `${p.fifty_two_wk_change.toFixed(1)}%` : "—"} size="xs" />
             </div>
             <Caption mono>
-              {p.fundamentals_provider
-                ? `Fundamentals via ${providerName(p.fundamentals_provider)}, refreshed twice a day; a dash is a field it does not publish for this security.`
-                : "Fundamentals are not available for this instrument: the data covers US-listed companies, so funds, indices, currencies and crypto show price and history only."}
+              {fundamentalsCaption(p)}
             </Caption>
           </>
         )}

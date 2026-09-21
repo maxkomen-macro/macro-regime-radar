@@ -12,6 +12,7 @@ import { fmtDate, fmtUtcStampEt } from "../../lib/format";
 export function providerName(p: Provider | null | undefined): string {
   if (p === "eodhd") return "EODHD";
   if (p === "yfinance") return "yfinance";
+  if (p === "finnhub") return "Finnhub";
   return p ? String(p) : "source";
 }
 

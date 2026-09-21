@@ -108,7 +108,9 @@ def test_upstream_failures_are_typed(monkeypatch, status, kind):
 
 
 def test_the_bucket_keeps_the_free_tier_under_sixty_a_minute():
-    assert fh._bucket.rate * 60 <= 60
+    """Burst included: a full bucket plus a minute of refill must stay inside
+    Finnhub's 60 a minute (loop 1 found 10 + 60 = 70)."""
+    assert fh._bucket.burst + fh._bucket.rate * 60 <= 60
 
 
 # ── the fields the panel renders ─────────────────────────────────────────────
@@ -127,10 +129,50 @@ def test_units_are_converted_to_what_the_panel_expects(upstream):
     assert (f["beta"], f["eps_ttm"], f["price_to_book"]) == (pytest.approx(1.0876318), pytest.approx(8.7233), pytest.approx(38.486))
 
 
+def test_no_tile_silently_changes_meaning(upstream):
+    """A 10-day average is not a three-month one, and quarterly growth is not
+    trailing-twelve-month growth: when the exact metric is missing the tile
+    shows a dash rather than a neighbour (loop 1)."""
+    upstream.script = {
+        "/api/v1/stock/profile2": [(200, PROFILE2)],
+        "/api/v1/stock/metric": [(200, {"metric": {"10DayAverageTradingVolume": 49.1, "revenueGrowthQuarterlyYoy": 16.4,
+                                                   "netProfitMarginAnnual": 26.9, "currentDividendYieldTTM": 0.31}})],
+    }
+    f = fh.fundamentals("AAPL")
+    assert f["avg_volume_3m"] is None
+    assert f["revenue_growth"] is None
+    assert f["profit_margin"] is None
+    assert f["dividend_yield"] is None
+
+
+def test_per_share_figures_in_another_currency_are_dropped(upstream):
+    """An ADR can report in its home currency: an EPS in TWD beside a USD
+    price would read as nonsense, so it is left out (ratios are unitless)."""
+    upstream.script = {
+        "/api/v1/stock/profile2": [(200, {**PROFILE2, "currency": "USD", "estimateCurrency": "TWD"})],
+        "/api/v1/stock/metric": [(200, METRICS)],
+    }
+    f = fh.fundamentals("TSM")
+    assert f["eps_ttm"] is None
+    assert f["trailing_pe"] is not None
+
+
 def test_industry_is_one_label_and_sector_stays_empty(upstream):
     f = fh.fundamentals("AAPL")
     assert f["industry"] == "Technology"
     assert f["sector"] is None, "the free tier has one label, and the panel must not invent the pair"
+
+
+def test_an_etf_is_not_covered_even_when_price_metrics_come_back(upstream):
+    """Finnhub answers SPY with an empty company profile and a handful of
+    price metrics. Company fundamentals do not apply to a fund, so the panel
+    must say they are not available rather than show four tiles and eight
+    dashes (loop 1)."""
+    upstream.script = {
+        "/api/v1/stock/profile2": [(200, {})],
+        "/api/v1/stock/metric": [(200, {"metric": {"52WeekHigh": 779.37, "52WeekLow": 629.28, "beta": 1.02}})],
+    }
+    assert fh.fundamentals("SPY") == {}
 
 
 def test_a_symbol_finnhub_knows_nothing_about_returns_nothing(upstream):
@@ -175,6 +217,46 @@ def test_a_finnhub_failure_leaves_the_quote_standing(upstream, monkeypatch):
     assert p["fundamentals_provider"] is None
     assert p["market_cap"] is None
     market.set_client_for_tests(None)
+
+
+def test_a_failure_is_unavailable_not_uncovered(upstream, monkeypatch):
+    """An outage must not tell a visitor that NVDA is not a covered company
+    (loop 1): the payload says which of the three it is."""
+    _eodhd_quote(monkeypatch)
+    upstream.script = {"/api/v1/stock/profile2": [(500, {"error": "down"})]}
+    p = market.profile("AAPL")
+    assert p["fundamentals_status"] == "unavailable"
+    assert p["fundamentals_provider"] is None
+    market.set_client_for_tests(None)
+
+
+def test_statuses_for_covered_and_uncovered(upstream, monkeypatch):
+    _eodhd_quote(monkeypatch)
+    assert market.profile("AAPL")["fundamentals_status"] == "ok"
+    market.set_client_for_tests(None)
+
+
+def test_our_own_throttle_is_not_remembered_as_a_failure(upstream, monkeypatch):
+    """When the local bucket is empty the fundamentals are unavailable for
+    this request only; the next request after it refills gets them, instead of
+    a five-minute blank (loop 1)."""
+    _eodhd_quote(monkeypatch)
+    monkeypatch.setattr(fh, "_bucket", cache_mod.TokenBucket(rate=0.0, burst=0))
+    p = market.profile("AAPL")
+    assert p["fundamentals_status"] == "unavailable"
+    assert upstream.calls == [], "an empty bucket must not spend half a pair"
+    monkeypatch.setattr(fh, "_bucket", cache_mod.TokenBucket(rate=1.0, burst=100))
+    market._profile_cache.clear()
+    p = market.profile("AAPL")
+    assert p["fundamentals_status"] == "ok"
+    market.set_client_for_tests(None)
+
+
+def test_a_pair_takes_both_tokens_or_none(upstream, monkeypatch):
+    monkeypatch.setattr(fh, "_bucket", cache_mod.TokenBucket(rate=0.0, burst=1))
+    with pytest.raises(RateLimited):
+        fh.fundamentals("AAPL")
+    assert upstream.calls == []
 
 
 def test_fundamentals_are_cached_for_twelve_hours(upstream, monkeypatch):

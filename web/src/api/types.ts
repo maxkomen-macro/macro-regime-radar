@@ -686,7 +686,7 @@ export interface SearchResponse {
   hits: SearchHit[];
 }
 
-export type Provider = "eodhd" | "yfinance" | "api" | string;
+export type Provider = "eodhd" | "yfinance" | "api" | string | "finnhub";
 
 export interface SymbolProfile {
   symbol: string;
@@ -720,6 +720,10 @@ export interface SymbolProfile {
   market_ts: string | null;
   quote_provider: Provider | null;
   fundamentals_provider: Provider | null;
+  /** launch-1: ok (Finnhub filled it) · not_covered (no company behind the
+   * symbol: a fund, an index, a currency) · unavailable (the source did not
+   * answer this time). */
+  fundamentals_status?: "ok" | "not_covered" | "unavailable" | null;
   delayed: boolean;
   delay_note: string | null;
   fallback_used: boolean;

@@ -427,6 +427,9 @@ class SymbolProfile(BaseModel):
     market_ts: str | None = None
     quote_provider: str | None = None
     fundamentals_provider: str | None = None
+    # launch-1: ok (filled from Finnhub) · not_covered (no company behind the
+    # symbol) · unavailable (the source did not answer this time).
+    fundamentals_status: str | None = None
     delayed: bool = True
     delay_note: str | None = None
     fallback_used: bool = False
