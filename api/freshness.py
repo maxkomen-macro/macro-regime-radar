@@ -360,7 +360,7 @@ def assess(
             last = (relay.get("feed_last_tick_at") or {}).get("us") or (relay.get("feed_last_frame_at") or {}).get("us")
             rows.append(_verdict("live_quotes", last, None, live_ok, delayed_ok or (us_state == "open" and not session["is_open"]), "EODHD US feed is open and ticking." if live_ok else ("US session is closed; the last tick stands as the closing print." if not session["is_open"] else f"US feed state is {us_state}; ticks are not arriving." )))
         vix_state = feeds.get("vix")
-        rows.append(_verdict("vix_delayed", (relay.get("feed_last_frame_at") or {}).get("vix"), None, vix_state == "rest", vix_state in ("closed",), "VIX polls the delayed REST quote every 60 s (15–20 min delay by source)." if vix_state == "rest" else "VIX poll is not running."))
+        rows.append(_verdict("vix_delayed", (relay.get("feed_last_frame_at") or {}).get("vix"), None, vix_state == "rest", vix_state in ("closed",), "VIX polls the delayed REST quote every 60 s in the US session and every 30 minutes outside it (15–20 min delay by source)." if vix_state == "rest" else "VIX poll is not running."))
 
     # A stamp ahead of the clock is a fault (runner clock, parser), not freshness.
     horizon = now + timedelta(days=2)
@@ -425,7 +425,7 @@ def assess(
         series.append(_state("live_quotes", "Live quotes (EODHD relay)", "live", "tick", last_us, st, delay_min=0 if st == "live" else None, reason=why))
         if vix == "rest":
             series.append(_state("vix_delayed", "VIX (delayed poll)", "live", "60s", (relay.get("feed_last_frame_at") or {}).get("vix"),
-                                 "delayed", delay_min=15, reason="VIX polls the delayed REST quote every 60 s (15-20 min delay by source)."))
+                                 "delayed", delay_min=15, reason="VIX polls the delayed REST quote every 60 s in the US session and every 30 minutes outside it (15-20 min delay by source)."))
         else:
             series.append(_state("vix_delayed", "VIX (delayed poll)", "live", "60s", None, "unknown",
                                  reason="The VIX poll is connecting." if vix == "connecting" else "The VIX poll is not running."))

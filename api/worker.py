@@ -68,6 +68,19 @@ PREFETCH_SYMBOLS = ("SPY", "QQQ", "IWM", "EEM")
 PREFETCH_RANGES = ("5D",)
 PREFETCH_MARGIN_S = 20.0  # refresh this long before the cache entry expires
 PREFETCH_EVERY_S = 10.0
+# A series whose fetch fails is not retried every tick (launch-1 verify loop 1,
+# D4): a failure or an empty answer is never cached, so a dead provider used to
+# be asked every 10 s, up to three billed attempts each, which is about 85,000
+# units in one session day. It now waits 2, 4, 8, 16 then 30 minutes.
+PREFETCH_BACKOFF_BASE_S = 120.0
+PREFETCH_BACKOFF_MAX_S = 1800.0
+_prefetch_backoff: dict[tuple[str, str], tuple[float, int]] = {}
+_prefetch_backoff_lock = threading.Lock()
+
+
+def reset_prefetch_backoff() -> None:
+    with _prefetch_backoff_lock:
+        _prefetch_backoff.clear()
 STAGE_RETRY_MAX_S = 60.0  # an unreadable file is retried after 2, 4, 8 … s, at most this far apart
 HOLD_ATTEMPTS = 3  # builds of a new file whose items fail before it publishes with the failures as errors
 HOLD_RETRY_S = 30.0  # the first retry of a held file comes after this long, then doubles
@@ -213,11 +226,25 @@ def prefetch_tick() -> int:
     fetched = 0
     for sym in PREFETCH_SYMBOLS:
         for rk in PREFETCH_RANGES:
+            key = (sym, rk)
+            now = time.monotonic()
+            with _prefetch_backoff_lock:
+                retry_at, failures = _prefetch_backoff.get(key, (0.0, 0))
+            if now < retry_at:
+                continue
             try:
                 if market.refresh_candles(sym, rk, PREFETCH_MARGIN_S):
                     fetched += 1
             except ProviderError as exc:
-                log.info("prefetch %s %s: %s", sym, rk, exc.kind)
+                failures += 1
+                wait = min(PREFETCH_BACKOFF_BASE_S * 2 ** (failures - 1), PREFETCH_BACKOFF_MAX_S)
+                with _prefetch_backoff_lock:
+                    _prefetch_backoff[key] = (now + wait, failures)
+                log.info("prefetch %s %s: %s; next try in %d s", sym, rk, exc.kind, wait)
+                continue
+            if failures:
+                with _prefetch_backoff_lock:
+                    _prefetch_backoff.pop(key, None)
     return fetched
 
 

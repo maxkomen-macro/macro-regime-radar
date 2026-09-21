@@ -69,9 +69,12 @@ def record(path: str, *, family: str = "other", tickers: int = 1) -> int:
     units = weight_for(path, tickers)
     with _lock:
         _requests += 1
-        _units += units
+        # The marketplace bills its own allowance: counted apart, so the main
+        # quota's figure and its projection are not overstated (loop 1, D6).
         if MARKETPLACE_PREFIX in path:
             _marketplace_units += units
+        else:
+            _units += units
         slot = _by_family.setdefault(family, {"requests": 0, "units": 0})
         slot["requests"] += 1
         slot["units"] += units
@@ -89,8 +92,8 @@ def snapshot(elapsed_override_s: float | None = None) -> dict:
             "since": _since_iso,
             "elapsed_s": round(elapsed, 1),
             "requests": _requests,
-            "units": _units,
-            "marketplace_units": _marketplace_units,
+            "units": _units,  # the main daily quota
+            "marketplace_units": _marketplace_units,  # the separate marketplace allowance
             "by_family": {k: dict(v) for k, v in sorted(_by_family.items())},
             "units_per_hour": round(_units / hours, 1) if hours > 0 else 0.0,
             "units_per_day_projected": round(_units / hours * 24, 1) if hours > 0 else 0.0,

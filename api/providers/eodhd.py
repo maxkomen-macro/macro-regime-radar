@@ -182,6 +182,15 @@ class EodhdClient:
         data = self._get(f"/div/{_seg(sym)}", {"fmt": "json", "from": from_}, what="dividends")
         return data if isinstance(data, list) else []
 
+    def user(self) -> dict:
+        """The account's plan (launch-1): EODHD's /api/user. The answer also
+        carries the account holder's name and email; callers keep only the
+        plan's figures (api/providers/entitlements.py plan())."""
+        data = self._get("/user", {}, what="plan", family="plan")
+        if not isinstance(data, dict):
+            raise MalformedResponse(PROVIDER, "EODHD's account answer came back in an unexpected shape.")
+        return data
+
     def exchange_details(self, code: str) -> dict:
         data = self._get(f"/exchange-details/{_seg(code)}", {"fmt": "json"}, what="exchange details")
         if not isinstance(data, dict):

@@ -1,9 +1,10 @@
 """api/stream.py — process-level EODHD market-data relay.
 
 One upstream EODHD WebSocket client per feed (us / crypto / forex) plus a
-60-second delayed-quote REST poll for the VIX index and a 5-minute REST seed
-sweep for every symbol (so the tape is populated off-hours and survives a
-downed socket). Everything rebroadcasts to browsers over a single FastAPI
+delayed-quote REST poll for the VIX index (every 60 s in the US session) and a
+REST seed sweep for every symbol (every 5 minutes in session), so the tape is
+populated off-hours and survives a downed socket. Outside the session both
+REST loops slow to every 30 minutes (launch-1); the sockets never slow. Everything rebroadcasts to browsers over a single FastAPI
 WebSocket endpoint — the EODHD token stays server-side, never reaching the
 client.
 
@@ -36,7 +37,7 @@ import logging
 import os
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +65,7 @@ SINGLE_NAMES_US = [
 US_SYMBOLS = MACRO_TAPE_US + SINGLE_NAMES_US
 CRYPTO_SYMBOLS = ["BTC-USD", "ETH-USD"]
 FOREX_SYMBOLS = ["EURUSD", "USDJPY"]
-VIX_SYMBOL = "VIX"  # index — not streamable; 60s delayed REST poll
+VIX_SYMBOL = "VIX"  # index — not streamable; delayed REST poll (60 s in session, 30 min outside)
 
 FEED_SYMBOLS = {"us": US_SYMBOLS, "crypto": CRYPTO_SYMBOLS, "forex": FOREX_SYMBOLS}
 
@@ -239,20 +240,35 @@ class QuoteHub:
             return not (wd == 5 or (wd == 6 and hr < 17) or (wd == 4 and hr >= 17))
         return cal.session_state(now)["is_open"]
 
-    def stale_flags(self) -> dict[str, bool]:
+    def stale_flags(self, now: datetime | None = None, mono: float | None = None) -> dict[str, bool]:
         """A feed is stale when it claims to be open, its market is trading,
-        and no frame has arrived within the feed's allowance."""
+        and no frame has arrived within the feed's allowance. The VIX poll is
+        stale after three missed polls at the cadence it is actually on: every
+        60 s in session, half-hourly outside it (launch-1 verify loop 1: at the
+        closed cadence it read as silent on most nights and weekends)."""
         out: dict[str, bool] = {}
-        mono = time.monotonic()
+        now = now or datetime.now(timezone.utc)
+        mono = time.monotonic() if mono is None else mono
         for feed in ("us", "crypto", "forex"):
             state = self.feeds.get(feed)
             last = self._last_frame_mono.get(feed)
             stale = False
-            if state == "open" and self._session_open(feed):
+            if state == "open" and self._session_open(feed, now):
                 stale = last is None or (mono - last) > STALE_AFTER_SECONDS[feed]
             out[feed] = stale
         vix_last = self._last_frame_mono.get("vix")
-        out["vix"] = self.feeds.get("vix") == "rest" and (vix_last is None or (mono - vix_last) > 3 * _VIX_POLL_SECONDS)
+        if self.feeds.get("vix") != "rest":
+            out["vix"] = False
+        elif vix_last is None:
+            out["vix"] = True
+        else:
+            age = mono - vix_last
+            # The longer of the cadence now and the cadence when it last
+            # polled: just after the bell, a poll from the closed hours is due
+            # within half a minute, not overdue.
+            polled_at = now - timedelta(seconds=age)
+            cadence = max(rest_interval(_VIX_POLL_SECONDS, now), rest_interval(_VIX_POLL_SECONDS, polled_at))
+            out["vix"] = age > 3 * cadence
         return out
 
     def degraded(self) -> tuple[bool, list[str]]:
@@ -707,10 +723,10 @@ class QuoteHub:
             log.warning("REST seed for %s failed: %s", symbols[:3], self._redact(str(exc)))
 
     async def _seed_loop(self) -> None:
-        """Populate every symbol from the delayed REST endpoint at startup and
-        every 5 minutes — the tape shows last-close rows off-hours and keeps
-        moving (delayed) if a WS feed is down. WS ticks always win (see
-        _store_rest_quote)."""
+        """Populate every symbol from the delayed REST endpoint at startup,
+        then every 5 minutes in the US session and every 30 minutes outside it
+        — the tape shows last-close rows off-hours and keeps moving (delayed)
+        if a WS feed is down. WS ticks always win (see _store_rest_quote)."""
         while True:
             await self._seed_symbols(US_SYMBOLS + CRYPTO_SYMBOLS + FOREX_SYMBOLS + list(self._dynamic))
             await self._pace(_SEED_POLL_SECONDS)

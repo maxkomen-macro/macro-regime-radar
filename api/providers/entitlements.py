@@ -166,12 +166,49 @@ def probe_all(client: eod.EodhdClient, *, force: bool = False, families: list[st
         return snapshot()
     for fam in families or FAMILIES:
         _probe_one(client, fam)
+    _probe_plan(client)
     log.info("entitlement probe complete: %s", {k: v.available for k, v in _state.items()})
     return snapshot()
 
 
+# The plan's daily limit, read from EODHD's /api/user with each probe
+# (launch-1): the quota the idle figures are measured against. Only these
+# fields are kept; the same answer carries the account holder's name, email,
+# payment method and invite token, which never leave _probe_plan.
+_PLAN_FIELDS = {
+    "subscriptionType": "subscription",
+    "dailyRateLimit": "daily_limit",
+    "apiRequests": "requests_on_last_day",
+    "apiRequestsDate": "requests_date",
+    "extraLimit": "extra_limit",
+}
+_plan: dict = {"daily_limit": None, "reason": "not_probed"}
+
+
+def _probe_plan(client: eod.EodhdClient) -> None:
+    global _plan
+    try:
+        answer = client.user()
+        kept = {out: answer.get(src) for src, out in _PLAN_FIELDS.items()}
+        kept["checked_at"] = _now()
+        new = kept
+    except ProviderError as exc:
+        new = {"daily_limit": None, "reason": exc.kind}
+    except Exception as exc:  # noqa: BLE001 — a probe must never take the app down
+        new = {"daily_limit": None, "reason": f"error: {type(exc).__name__}"}
+    with _lock:
+        _plan = new
+    log.info("EODHD plan: daily limit %s calls", new.get("daily_limit"))
+
+
+def plan() -> dict:
+    with _lock:
+        return dict(_plan)
+
+
 def reset_for_tests() -> None:
-    global _last_full_probe
+    global _last_full_probe, _plan
     with _lock:
         _state.clear()
         _last_full_probe = 0.0
+        _plan = {"daily_limit": None, "reason": "not_probed"}

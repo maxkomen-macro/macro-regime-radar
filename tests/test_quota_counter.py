@@ -69,3 +69,71 @@ def test_the_client_counts_every_call_it_makes(monkeypatch):
     snap = quota.snapshot()
     assert snap["requests"] == 2
     assert snap["units"] == 5 + 3  # intraday 5, three tickers 3
+
+
+def test_marketplace_units_are_kept_out_of_the_daily_figure():
+    """Verify loop 1, D6: the options chain bills a separate allowance, so it
+    must not inflate the main quota's projection."""
+    quota.reset()
+    quota.record("/api/real-time/SPY.US", family="relay_rest", tickers=15)
+    quota.record("/api/mp/unicornbay/options/contracts", family="options")
+    snap = quota.snapshot(elapsed_override_s=3600)
+    assert snap["units"] == 15
+    assert snap["marketplace_units"] == 10
+    assert snap["units_per_day_projected"] == pytest.approx(15 * 24)
+    assert snap["requests"] == 2
+    quota.reset()
+
+
+# ── the plan's daily limit, from EODHD's own /api/user (verify loop 1, D7) ──
+
+
+def test_the_probe_reads_the_plans_daily_limit_and_nothing_personal(caplog):
+    """The user endpoint also returns the account's name, email and payment
+    method. Only the plan's figures are kept, and nothing personal reaches the
+    status payload or a log line."""
+    import json
+    import logging
+
+    import httpx
+
+    from api.providers import eodhd as eod
+    from api.providers import entitlements
+
+    answer = {
+        "name": "Owner Name", "email": "owner@example.com", "subscriptionType": "monthly",
+        "paymentMethod": "PayPal", "apiRequests": 1234, "apiRequestsDate": "2026-09-21",
+        "dailyRateLimit": 100000, "extraLimit": 0, "inviteToken": "inv-secret", "inviteTokenClicked": 0,
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/user":
+            return httpx.Response(200, json=answer, request=request)
+        return httpx.Response(200, json=[], request=request)
+
+    entitlements.reset_for_tests()
+    client = eod.EodhdClient("tok", transport=httpx.MockTransport(handler))
+    with caplog.at_level(logging.DEBUG):
+        entitlements.probe_all(client, force=True, families=["search"])
+    plan = entitlements.plan()
+    assert plan == {"subscription": "monthly", "daily_limit": 100000, "requests_on_last_day": 1234,
+                    "requests_date": "2026-09-21", "extra_limit": 0, "checked_at": plan["checked_at"]}
+    dumped = json.dumps(plan) + caplog.text
+    for personal in ("Owner Name", "owner@example.com", "PayPal", "inv-secret"):
+        assert personal not in dumped, personal
+    entitlements.reset_for_tests()
+
+
+def test_a_plan_probe_failure_is_a_plain_unknown():
+    import httpx
+
+    from api.providers import eodhd as eod
+    from api.providers import entitlements
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={}, request=request)
+
+    entitlements.reset_for_tests()
+    entitlements.probe_all(eod.EodhdClient("tok", transport=httpx.MockTransport(handler)), force=True, families=["search"])
+    assert entitlements.plan() == {"daily_limit": None, "reason": "unauthorized"}
+    entitlements.reset_for_tests()

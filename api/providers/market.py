@@ -805,4 +805,6 @@ def status() -> dict:
         # What this process has spent at EODHD since it started, in the
         # plan's own units (launch-1): the runbook's daily figure.
         "quota": quota.snapshot(),
+        # The plan's daily limit, from EODHD's own /api/user at the probe.
+        "plan": entitlements.plan(),
     }
