@@ -294,7 +294,10 @@ const headerIndex = (table: HTMLTableElement, label: string) => [...table.queryS
 // Iteration 1 step 6 (A2): the summary's VIX is the relay's delayed poll,
 // labelled as such (the Dashboard's "VIX" is the stored FRED close).
 const ALL_LABELS = ["US 10Y", "Sectors · 1d", "ETFs · 1w", "Dollar", "VIX · delayed", "Priced", "Top surprise"];
-const IDS_IN_ORDER = ["markets-hero", "markets-summary", "single-name-research", "sector-heatmap", "single-name-movers", "top-surprises", "watchlist", "single-names", "whats-priced-full"];
+/** Iteration 2 (F2): the macro tape (#watchlist, #single-names) moved out of
+ * the 432px summary rail to the page's full width, directly under the hero,
+ * so it now precedes the panel stack instead of sitting beside it. */
+const IDS_IN_ORDER = ["markets-hero", "markets-summary", "watchlist", "single-names", "single-name-research", "sector-heatmap", "single-name-movers", "top-surprises", "whats-priced-full"];
 const EMPTY_PROMPT =
   "Search a ticker or company name in the market read above, or open a mover below, for a full profile: delayed quote, candles across seven ranges, fundamentals, regime fit since 1996, and the stored news window.";
 // CP4: the hero names the missing closes; "The tape keeps its live quotes." follows only while the stream is up.

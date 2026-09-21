@@ -343,6 +343,163 @@ export function auditOverlaps(opts: OverlapOptions = {}): OverlapScan {
 }
 
 /** One line per pair for an assertion message. */
+export interface ClipOffender {
+  /** Short CSS path to the element whose text is cut. */
+  selector: string;
+  text: string;
+  /** Short CSS path to the clipping ancestor. */
+  container: string;
+  /** How far the text runs past the container, in CSS pixels, per axis. */
+  cutPx: { x: number; y: number };
+  /** True when the container can be scrolled to reveal the rest. */
+  scrollable: boolean;
+}
+
+export interface ClipScan {
+  items: number;
+  offenders: ClipOffender[];
+  truncated: boolean;
+}
+
+export interface ClipOptions {
+  /** A cut smaller than this is rounding, not clipping. Default 2: SVG axis
+   * labels sit 1px proud of their viewBox at some widths, which is
+   * antialiasing, not a truncated value. */
+  minPx?: number;
+  maxOffenders?: number;
+  /** Allow a container the reader can actually scroll to reveal the rest.
+   * Default true: the general rule is "no text cut with no way to see it".
+   * F2's stricter "no horizontal scroll inside the panel at 1280px and up"
+   * is asserted on the macro tape by name, where the item asks for it,
+   * rather than retroactively on every pre-existing wide table. */
+  allowScroll?: boolean;
+}
+
+/**
+ * Iteration 2 (F2), added to the permanent overlap sweep: no text node may be
+ * cut by its container's bounds.
+ *
+ * The defect it exists to catch: the macro tape rendered 764px of columns into
+ * a 368px well, so "Day Δ$" printed as "+4" and "-0.0" and four more columns
+ * sat outside the well entirely. A reader cannot tell a truncated number from
+ * a small one, which is the whole problem.
+ *
+ * Each visible text run is compared against the padding box of every ancestor
+ * that clips (`overflow` hidden / auto / scroll / clip, per axis). Two things
+ * are deliberately not offences:
+ *   - a single-line `text-overflow: ellipsis`, which signs its own truncation
+ *     with the ellipsis glyph and is the house treatment for one-line captions;
+ *   - a container the reader can actually scroll (its scroll size exceeds its
+ *     client size on that axis), because the text is reachable. F2's stricter
+ *     "and no horizontal scroll inside the panel at 1280px and up" is asserted
+ *     on the macro tape by name in the sweep, where the item asks for it.
+ *
+ * A visually-hidden element (the sr-only 1px clip) is not cut text.
+ */
+export function auditClipping(opts: ClipOptions = {}): ClipScan {
+  const MIN = opts.minPx ?? 2;
+  const MAX = opts.maxOffenders ?? 100;
+  const ALLOW_SCROLL = opts.allowScroll ?? true;
+  const EXCLUDE =
+    "[role='dialog'], [role='alertdialog'], [role='tooltip'], [role='menu'], [role='listbox'], [aria-modal='true'], [popover], #freshness-drawer";
+
+  const path = (el: Element): string => {
+    const out: string[] = [];
+    let cur: Element | null = el;
+    for (let i = 0; i < 4 && cur && cur !== document.body; i++) {
+      if (cur.id) {
+        out.unshift(`#${cur.id}`);
+        break;
+      }
+      const cls = typeof cur.className === "string" && cur.className ? `.${cur.className.trim().split(/\s+/)[0]}` : "";
+      out.unshift(`${cur.tagName.toLowerCase()}${cls}`);
+      cur = cur.parentElement;
+    }
+    return out.join(" > ");
+  };
+
+  /** Visible to a sighted reader. Mirrors auditOverlaps, including the
+   * sr-only 1px clip: a visually-hidden live region is not "cut text", it is
+   * text deliberately kept off screen for a screen reader. */
+  const visible = (el: Element): boolean => {
+    let cur: Element | null = el;
+    while (cur) {
+      const cs = getComputedStyle(cur);
+      if (cs.display === "none" || cs.visibility !== "visible" || cs.opacity === "0") return false;
+      const r = cur.getBoundingClientRect();
+      const clipRect = cs.clip && cs.clip !== "auto" && /rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)/.test(cs.clip);
+      const clipPath = cs.clipPath && /inset\(\s*50%/.test(cs.clipPath);
+      if (r.width <= 1 && r.height <= 1 && (clipRect || clipPath || cs.overflow === "hidden")) return false;
+      cur = cur.parentElement;
+    }
+    return true;
+  };
+
+  const offenders: ClipOffender[] = [];
+  let items = 0;
+  let truncated = false;
+
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const raw = node.textContent ?? "";
+    if (!raw.trim()) continue;
+    const owner = node.parentElement;
+    if (!owner || owner.closest(EXCLUDE) || !visible(owner)) continue;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const r = range.getBoundingClientRect();
+    range.detach?.();
+    if (r.width < 1 || r.height < 1) continue;
+    items += 1;
+
+    const ownerCs = getComputedStyle(owner);
+    const ellipsis = ownerCs.textOverflow === "ellipsis";
+
+    for (let anc = owner.parentElement; anc && anc !== document.body; anc = anc.parentElement) {
+      const cs = getComputedStyle(anc);
+      const clipX = cs.overflowX !== "visible";
+      const clipY = cs.overflowY !== "visible";
+      if (!clipX && !clipY) continue;
+      const ar = anc.getBoundingClientRect();
+      // Padding box: borders clip too, and the scrollbar gutter is not usable.
+      const bl = parseFloat(cs.borderLeftWidth) || 0;
+      const bt = parseFloat(cs.borderTopWidth) || 0;
+      const box = { l: ar.left + bl, t: ar.top + bt, r: ar.left + bl + anc.clientWidth, b: ar.top + bt + anc.clientHeight };
+      const cutX = clipX ? Math.max(box.l - r.left, r.right - box.r) : 0;
+      const cutY = clipY ? Math.max(box.t - r.top, r.bottom - box.b) : 0;
+      if (cutX <= MIN && cutY <= MIN) continue;
+      const scrollable =
+        (clipX && anc.scrollWidth > anc.clientWidth + 1 && /auto|scroll/.test(cs.overflowX)) ||
+        (clipY && anc.scrollHeight > anc.clientHeight + 1 && /auto|scroll/.test(cs.overflowY));
+      if (ellipsis && cutY <= MIN) break; // a signed one-line truncation
+      if (ALLOW_SCROLL && scrollable) break;
+      if (offenders.length >= MAX) {
+        truncated = true;
+        break;
+      }
+      offenders.push({
+        selector: path(owner),
+        text: raw.trim().slice(0, 40),
+        container: path(anc),
+        cutPx: { x: Math.round(Math.max(0, cutX)), y: Math.round(Math.max(0, cutY)) },
+        scrollable,
+      });
+      break;
+    }
+    if (truncated) break;
+  }
+
+  offenders.sort((a, b) => b.cutPx.x + b.cutPx.y - (a.cutPx.x + a.cutPx.y));
+  return { items, offenders, truncated };
+}
+
+export function describeClipping(offenders: ClipOffender[], max = 25): string {
+  return offenders
+    .slice(0, max)
+    .map((o) => `  "${o.text}" cut ${o.cutPx.x}x${o.cutPx.y}px by ${o.container}${o.scrollable ? " (scrollable)" : ""} — ${o.selector}`)
+    .join("\n");
+}
+
 export function describeOverlaps(pairs: OverlapPair[], max = 25): string {
   const lines = pairs
     .slice(0, max)

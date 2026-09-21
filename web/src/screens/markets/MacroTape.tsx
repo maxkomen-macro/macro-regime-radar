@@ -22,12 +22,23 @@
  * snapshots allocate nothing new per row (G17).
  */
 
-import { useCallback, useMemo, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Card, DataTable, SectionHeader, Sparkline } from "../../components";
 import type { DailyBar } from "../../api/types";
-import { LIVE_WINDOW_MS, useQuotes, useStreamStatus, type LiveQuote } from "../../live/quotes";
+import {
+  LIVE_WINDOW_MS,
+  useQuotes,
+  useStreamStatus,
+  type LiveQuote,
+} from "../../live/quotes";
 import { fmtDate, fmtSignedPct } from "../../lib/format";
-import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
 import ScrollTable from "../shared/ScrollTable";
 import { Caption, MISSING, StateNote, metaStyle } from "../shared/screen-ui";
@@ -75,7 +86,9 @@ export interface MacroTapeProps {
 /* ── the visible provenance line (M2) ──────────────────────────────────── */
 
 const US_DEFS = [...MACRO_TAPE, ...SINGLE_NAMES].filter((d) => d.feed === "us");
-const TICKING_DEFS = MACRO_TAPE.filter((d) => d.feed === "crypto" || d.feed === "forex");
+const TICKING_DEFS = MACRO_TAPE.filter(
+  (d) => d.feed === "crypto" || d.feed === "forex",
+);
 
 /**
  * At most two sentences under the tape (Iteration 1, M2): whether the US rows
@@ -107,9 +120,12 @@ export function tapeStatusLine(args: {
     const q = quotes.get(d.symbol);
     return q?.src === "ws" && q.t != null && now - q.t < LIVE_WINDOW_MS;
   });
-  const stored = storedThrough ? ` 1W, 1M and the sparklines read stored closes through ${fmtDate(storedThrough)}.` : "";
+  const stored = storedThrough
+    ? ` 1W, 1M and the sparklines read stored closes through ${fmtDate(storedThrough)}.`
+    : "";
 
-  if (usLive && usT != null) return `Live: US rows tick from the exchange feed, newest at ${fmtEtStamp(usT)}.${stored}`;
+  if (usLive && usT != null)
+    return `Live: US rows tick from the exchange feed, newest at ${fmtEtStamp(usT)}.${stored}`;
   if (!socketOpen) {
     return storedThrough
       ? `Showing the last close: the stream is not connected, so rows print stored closes through ${fmtDate(storedThrough)}.`
@@ -132,7 +148,10 @@ export function tapeStatusLine(args: {
  * stamp. `full` is `tapeStatusLine`'s sentence, verbatim, which moves behind
  * the panel's Details disclosure; nothing is dropped.
  */
-export function tapeStatus(args: Parameters<typeof tapeStatusLine>[0]): { line: string; full: string } {
+export function tapeStatus(args: Parameters<typeof tapeStatusLine>[0]): {
+  line: string;
+  full: string;
+} {
   const full = tapeStatusLine(args);
   const { socketOpen, usLive, quotes, storedThrough } = args;
   const sessionOpen = args.sessionOpen ?? nyseSessionOpen();
@@ -145,12 +164,17 @@ export function tapeStatus(args: Parameters<typeof tapeStatusLine>[0]): { line: 
       usDelayed = q.delayed;
     }
   }
-  const through = storedThrough ? `Last close · stored through ${fmtDate(storedThrough)}` : null;
+  const through = storedThrough
+    ? `Last close · stored through ${fmtDate(storedThrough)}`
+    : null;
   let line: string;
   if (usLive && usT != null) line = `Live · newest US tick ${fmtEtStamp(usT)}`;
-  else if (!socketOpen) line = through ?? "Stream not connected · no close stored yet";
-  else if (usT == null) line = through ?? "No US quote or stored close on file yet.";
-  else if (sessionOpen) line = `Delayed${usDelayed ? " 15 min" : ""} · US quote ${fmtEtStamp(usT)}`;
+  else if (!socketOpen)
+    line = through ?? "Stream not connected · no close stored yet";
+  else if (usT == null)
+    line = through ?? "No US quote or stored close on file yet.";
+  else if (sessionOpen)
+    line = `Delayed${usDelayed ? " 15 min" : ""} · US quote ${fmtEtStamp(usT)}`;
   else line = `Last close · US final quote ${fmtEtStamp(usT)}`;
   return { line, full };
 }
@@ -165,7 +189,12 @@ export function FeedStatusLine(): JSX.Element {
     const live = { us: false, crypto: false, forex: false };
     for (const def of [...MACRO_TAPE, ...SINGLE_NAMES]) {
       const q = quotes.get(def.symbol);
-      if (q?.src === "ws" && q.t != null && now - q.t < LIVE_WINDOW_MS && def.feed !== "vix") {
+      if (
+        q?.src === "ws" &&
+        q.t != null &&
+        now - q.t < LIVE_WINDOW_MS &&
+        def.feed !== "vix"
+      ) {
         live[def.feed as "us" | "crypto" | "forex"] = true;
       }
     }
@@ -185,7 +214,14 @@ export function FeedStatusLine(): JSX.Element {
     // One honest phrase whether the socket is mid-retry or down: the rows
     // print stored closes with their dates either way.
     return (
-      <span style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--warn-hot)" }}>
+      <span
+        style={{
+          ...mono,
+          fontSize: "var(--fs-meta)",
+          letterSpacing: "var(--ls-micro)",
+          color: "var(--warn-hot)",
+        }}
+      >
         stream unavailable · showing stored closes
       </span>
     );
@@ -194,9 +230,21 @@ export function FeedStatusLine(): JSX.Element {
   // feed words share the panel header with the view toggle, so they wrap
   // instead of running past the panel edge.
   return (
-    <span style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", display: "inline-flex", gap: 14, flexWrap: "wrap" }}>
+    <span
+      style={{
+        ...mono,
+        fontSize: "var(--fs-meta)",
+        letterSpacing: "var(--ls-micro)",
+        display: "inline-flex",
+        gap: 14,
+        flexWrap: "wrap",
+      }}
+    >
       {seg("US", feedWord("us", status.feeds.us, liveByFeed.us))}
-      {seg("CRYPTO", feedWord("crypto", status.feeds.crypto, liveByFeed.crypto))}
+      {seg(
+        "CRYPTO",
+        feedWord("crypto", status.feeds.crypto, liveByFeed.crypto),
+      )}
       {seg("FX", feedWord("forex", status.feeds.forex, liveByFeed.forex))}
       {seg("VIX", feedWord("vix", status.feeds.vix, false))}
     </span>
@@ -225,8 +273,17 @@ interface TapeColumn {
 
 const DASH = "—";
 
-function rowOf(def: TapeDef, quotes: ReadonlyMap<string, LiveQuote>, barsBySymbol: ReadonlyMap<string, DailyBar[]>): TapeRowData {
-  return { id: def.symbol, def, quote: quotes.get(def.symbol), bars: barsBySymbol.get(def.symbol) };
+function rowOf(
+  def: TapeDef,
+  quotes: ReadonlyMap<string, LiveQuote>,
+  barsBySymbol: ReadonlyMap<string, DailyBar[]>,
+): TapeRowData {
+  return {
+    id: def.symbol,
+    def,
+    quote: quotes.get(def.symbol),
+    bars: barsBySymbol.get(def.symbol),
+  };
 }
 
 /** Newest stored bar (bars arrive ascending by date). */
@@ -242,38 +299,69 @@ function storedClose(r: TapeRowData): DailyBar | undefined {
   return last?.close != null ? last : undefined;
 }
 
-const num = (v: number | null | undefined, f: (x: number) => string): string => (v == null ? DASH : f(v));
+const num = (v: number | null | undefined, f: (x: number) => string): string =>
+  v == null ? DASH : f(v);
 
 const lastCell = (r: TapeRowData): ReactNode => {
   // A2: the VIX row is the relay's delayed CBOE poll (vix_delayed), not the
   // FRED VIXCLS close the Dashboard reads ("vix"): it is "vix-live", and its
   // As of cell and the tape header's stamp say it is delayed.
-  if (r.quote) return r.def.symbol === "VIX" ? <span {...metricAttrs("vix-live", r.quote.p)}>{fmtPrice(r.def, r.quote.p)}</span> : fmtPrice(r.def, r.quote.p);
+  if (r.quote)
+    return r.def.symbol === "VIX" ? (
+      <span {...metricAttrs("vix-live", r.quote.p)}>
+        {fmtPrice(r.def, r.quote.p)}
+      </span>
+    ) : (
+      fmtPrice(r.def, r.quote.p)
+    );
   const stored = storedClose(r);
-  if (stored) return <span style={{ color: "var(--text-2)" }}>{fmtPrice(r.def, stored.close as number)}</span>;
-  return <span style={{ color: "var(--text-3)", fontWeight: 400 }}>no quote</span>;
+  if (stored)
+    return (
+      <span style={{ color: "var(--text-2)" }}>
+        {fmtPrice(r.def, stored.close as number)}
+      </span>
+    );
+  return (
+    <span style={{ color: "var(--text-3)", fontWeight: 400 }}>no quote</span>
+  );
 };
 
 // The feed's own day change, never arithmetic: a quote with a price but a
 // null `dc` prints the dash rather than falling back to the stored return.
 const dayPctCell = (r: TapeRowData): ReactNode => {
   const v = r.quote ? r.quote.dc : storedClose(r)?.ret_1d;
-  return <span style={{ color: toneColor(v) }}>{num(v, (x) => fmtSignedPct(x))}</span>;
+  return (
+    <span style={{ color: toneColor(v) }}>
+      {num(v, (x) => fmtSignedPct(x))}
+    </span>
+  );
 };
 
 const dayDollarCell = (r: TapeRowData): ReactNode => {
   const v = r.quote?.dd;
-  return <span style={{ color: toneColor(v) }}>{v != null ? fmtDayDollar(r.def, v) : DASH}</span>;
+  return (
+    <span style={{ color: toneColor(v) }}>
+      {v != null ? fmtDayDollar(r.def, v) : DASH}
+    </span>
+  );
 };
 
 const weekCell = (r: TapeRowData): ReactNode => {
   const v = newestBar(r)?.ret_1w;
-  return <span style={{ color: toneColor(v) }}>{num(v, (x) => fmtSignedPct(x, 1))}</span>;
+  return (
+    <span style={{ color: toneColor(v) }}>
+      {num(v, (x) => fmtSignedPct(x, 1))}
+    </span>
+  );
 };
 
 const monthCell = (r: TapeRowData): ReactNode => {
   const v = newestBar(r)?.ret_1m;
-  return <span style={{ color: toneColor(v) }}>{num(v, (x) => fmtSignedPct(x, 1))}</span>;
+  return (
+    <span style={{ color: toneColor(v) }}>
+      {num(v, (x) => fmtSignedPct(x, 1))}
+    </span>
+  );
 };
 
 const sparkCell = (r: TapeRowData): ReactNode => {
@@ -281,8 +369,10 @@ const sparkCell = (r: TapeRowData): ReactNode => {
     .slice(-30)
     .map((b) => b.close)
     .filter((c): c is number => c != null);
-  if (closes.length < 2) return <span style={{ color: "var(--text-3)" }}>{DASH}</span>;
-  const color = closes[closes.length - 1] >= closes[0] ? "var(--pos)" : "var(--neg)";
+  if (closes.length < 2)
+    return <span style={{ color: "var(--text-3)" }}>{DASH}</span>;
+  const color =
+    closes[closes.length - 1] >= closes[0] ? "var(--pos)" : "var(--neg)";
   return (
     <Sparkline
       values={closes}
@@ -301,22 +391,75 @@ const sparkCell = (r: TapeRowData): ReactNode => {
 const asOfNode = (r: TapeRowData): ReactNode => {
   const asOf = asOfCell(r.quote);
   const stored = storedClose(r);
-  const text = r.quote ? asOf.text : stored ? `${fmtDate(stored.date)} close` : asOf.text;
+  const text = r.quote
+    ? asOf.text
+    : stored
+      ? `${fmtDate(stored.date)} close`
+      : asOf.text;
   return (
-    <span style={{ fontSize: "var(--fs-meta)", color: asOf.live ? "var(--pos)" : "var(--text-3)", whiteSpace: "nowrap" }}>
+    <span
+      style={{
+        fontSize: "var(--fs-meta)",
+        color: asOf.live ? "var(--pos)" : "var(--text-3)",
+        whiteSpace: "nowrap",
+      }}
+    >
       {asOf.live ? "● " : ""}
       {text}
     </span>
   );
 };
 
-const LAST: TapeColumn = { key: "last", label: "Last", align: "right", mono: true, render: lastCell };
-const DAY_PCT: TapeColumn = { key: "dc", label: "Day %", align: "right", mono: true, render: dayPctCell };
-const DAY_DOLLAR: TapeColumn = { key: "dd", label: "Day Δ$", align: "right", mono: true, render: dayDollarCell };
-const WEEK: TapeColumn = { key: "w1", label: "1W %", align: "right", mono: true, render: weekCell };
-const MONTH: TapeColumn = { key: "m1", label: "1M %", align: "right", mono: true, render: monthCell };
-const SPARK: TapeColumn = { key: "spark", label: "30 Sess", align: "right", mono: true, width: "52px", render: sparkCell };
-const AS_OF: TapeColumn = { key: "asof", label: "As of", align: "right", mono: true, render: asOfNode };
+const LAST: TapeColumn = {
+  key: "last",
+  label: "Last",
+  align: "right",
+  mono: true,
+  render: lastCell,
+};
+const DAY_PCT: TapeColumn = {
+  key: "dc",
+  label: "Day %",
+  align: "right",
+  mono: true,
+  render: dayPctCell,
+};
+const DAY_DOLLAR: TapeColumn = {
+  key: "dd",
+  label: "Day Δ$",
+  align: "right",
+  mono: true,
+  render: dayDollarCell,
+};
+const WEEK: TapeColumn = {
+  key: "w1",
+  label: "1W %",
+  align: "right",
+  mono: true,
+  render: weekCell,
+};
+const MONTH: TapeColumn = {
+  key: "m1",
+  label: "1M %",
+  align: "right",
+  mono: true,
+  render: monthCell,
+};
+const SPARK: TapeColumn = {
+  key: "spark",
+  label: "30 Sess",
+  align: "right",
+  mono: true,
+  width: "52px",
+  render: sparkCell,
+};
+const AS_OF: TapeColumn = {
+  key: "asof",
+  label: "As of",
+  align: "right",
+  mono: true,
+  render: asOfNode,
+};
 
 // Counted from the registry, never typed: the tape holds 19 symbols in eight
 // groups (checklist 05 says 18; the caption must not claim a number the table
@@ -325,6 +468,77 @@ const MACRO_CAPTION = `Macro tape: ${MACRO_TAPE.length} symbols in ${TAPE_GROUPS
 const SINGLES_CAPTION = `Single names: ${SINGLE_NAMES.length === 12 ? "twelve" : SINGLE_NAMES.length} large-cap names sorted by day move`;
 
 /* ── panel ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Iteration 2, F2: how many columns the tape may show at a measured width.
+ *
+ * The tape used to live in the 432px summary rail, so its eight desk columns
+ * were laid into a 368px well: five of them sat outside it and the reader saw
+ * "+4" where a day change belonged. It now takes the page's full width, which
+ * fits all eight from 1280px up. Narrower than that it drops columns from the
+ * least important end rather than half-rendering a number, and says which
+ * ones it dropped.
+ *
+ * `MIN_W` is each column's settled width once the table is compressed as far
+ * as its content allows (measured on the acceptance database at 1024px). The
+ * ladder uses fixed minima instead of re-measuring after each drop so the
+ * choice cannot oscillate under a ResizeObserver.
+ */
+const MIN_W: Record<string, number> = {
+  symbol: 173,
+  last: 94,
+  dc: 63,
+  dd: 71,
+  w1: 55,
+  m1: 63,
+  spark: 71,
+  asof: 174,
+};
+/** ScrollTable's own gutters (8px 12px 2px), which the table cannot use. */
+const WELL_PAD = 24;
+/** Least important first: the sparkline is decorative, then the week, then
+ * the dollar change (the percent beside it carries the same move). */
+const DROP_ORDER = ["spark", "w1", "dd"];
+
+export function fitTapeColumns(
+  cols: TapeColumn[],
+  width: number,
+): { cols: TapeColumn[]; dropped: TapeColumn[] } {
+  const total = (cs: TapeColumn[]) =>
+    cs.reduce((n, c) => n + (MIN_W[c.key] ?? 80), 0);
+  let kept = cols;
+  const dropped: TapeColumn[] = [];
+  // width 0 is "not measured yet": keep everything and let the first
+  // measurement decide, rather than flashing a reduced table.
+  for (const key of DROP_ORDER) {
+    if (!width || total(kept) <= width) break;
+    const hit = kept.find((c) => c.key === key);
+    if (!hit) continue;
+    kept = kept.filter((c) => c !== hit);
+    dropped.push(hit);
+  }
+  return { cols: kept, dropped };
+}
+
+/** The content width of an element, in CSS pixels; 0 until first measured. */
+function useMeasuredWidth<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () =>
+      setW((prev) =>
+        Math.abs(prev - el.clientWidth) < 1 ? prev : el.clientWidth,
+      );
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
 
 export default function MacroTape({
   quotes,
@@ -337,26 +551,35 @@ export default function MacroTape({
   storedThrough,
   storedError = false,
 }: MacroTapeProps): JSX.Element {
-  const { isNarrow } = useBreakpoint();
   const flash = useTickFlash(quotes);
   const status = useStreamStatus();
   const report = useFreshReport();
-  const statusLine = tapeStatus({ socketOpen: status.socket === "open", usLive: live, quotes, storedThrough });
+  const statusLine = tapeStatus({
+    socketOpen: status.socket === "open",
+    usLive: live,
+    quotes,
+    storedThrough,
+  });
   // CP4: with the stored closes unanswered the tape names what is missing
   // (closes alone while the stream is up, every price when it is not); the
   // single names read the stream alone, so they name the live quotes.
   const socketOpen = status.socket === "open";
   const storedGone = storedError && storedThrough == null;
-  const singlesUnquoted = !socketOpen && singles.every((d) => quotes.get(d.symbol)?.p == null);
-  const statusText = storedGone && !socketOpen ? "Stream not connected" : statusLine.line;
+  const singlesUnquoted =
+    !socketOpen && singles.every((d) => quotes.get(d.symbol)?.p == null);
+  const statusText =
+    storedGone && !socketOpen ? "Stream not connected" : statusLine.line;
 
   // One stable ref callback per symbol: React re-invokes a ref only when the
   // callback identity changes, so the 2 Hz snapshots never churn the screen's
   // row map.
   const refFor = useMemo(() => {
     const cache = new Map<string, (el: HTMLButtonElement | null) => void>();
-    for (const def of [...MACRO_TAPE, ...SINGLE_NAMES]) cache.set(def.symbol, (el) => registerRow(def.symbol, el));
-    return (symbol: string) => cache.get(symbol) ?? ((el: HTMLButtonElement | null) => registerRow(symbol, el));
+    for (const def of [...MACRO_TAPE, ...SINGLE_NAMES])
+      cache.set(def.symbol, (el) => registerRow(def.symbol, el));
+    return (symbol: string) =>
+      cache.get(symbol) ??
+      ((el: HTMLButtonElement | null) => registerRow(symbol, el));
   }, [registerRow]);
 
   // The ticker button: keyboard and assistive path. No onClick of its own;
@@ -384,16 +607,43 @@ export default function MacroTape({
     [selected, refFor],
   );
 
-  // Nine columns at desk width; the phone set keeps Symbol · name, Last,
-  // Day %, 1M % and As of (Δ$, 1W and the sparkline return above 768px).
-  const macroColumns = useMemo<TapeColumn[]>(
-    () => (isNarrow ? [symbolColumn, LAST, DAY_PCT, MONTH, AS_OF] : [symbolColumn, LAST, DAY_PCT, DAY_DOLLAR, WEEK, MONTH, SPARK, AS_OF]),
-    [symbolColumn, isNarrow],
+  // Eight desk columns, reduced to what the measured panel can show whole
+  // (F2). At 1280px and up every one fits; below that the ladder drops the
+  // sparkline, then the week, then the dollar change, and the panel names
+  // what it dropped. The phone lands on the same five columns it always had
+  // (Symbol · name, Last, Day %, 1M %, As of), now by measurement rather
+  // than by a hardcoded 768px branch.
+  const [tapeRef, tapeBoxW] = useMeasuredWidth<HTMLDivElement>();
+  const tapeW = tapeBoxW ? Math.max(0, tapeBoxW - WELL_PAD) : 0;
+  const macroFit = useMemo(
+    () =>
+      fitTapeColumns(
+        [symbolColumn, LAST, DAY_PCT, DAY_DOLLAR, WEEK, MONTH, SPARK, AS_OF],
+        tapeW,
+      ),
+    [symbolColumn, tapeW],
   );
-  const singlesColumns = useMemo<TapeColumn[]>(
-    () => (isNarrow ? [symbolColumn, LAST, DAY_PCT, AS_OF] : [symbolColumn, LAST, DAY_PCT, DAY_DOLLAR, AS_OF]),
-    [symbolColumn, isNarrow],
+  const singlesFit = useMemo(
+    () =>
+      fitTapeColumns([symbolColumn, LAST, DAY_PCT, DAY_DOLLAR, AS_OF], tapeW),
+    [symbolColumn, tapeW],
   );
+  const macroColumns = macroFit.cols;
+  const singlesColumns = singlesFit.cols;
+  /** The visible affordance F2 asks for: which columns this width cannot show. */
+  const droppedLabel = useMemo(() => {
+    const names = [
+      ...new Set(
+        [...macroFit.dropped, ...singlesFit.dropped].map((c) => c.label),
+      ),
+    ];
+    if (!names.length) return null;
+    const list =
+      names.length === 1
+        ? names[0]
+        : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    return `${list} ${names.length === 1 ? "is" : "are"} hidden at this width · widen the window to read ${names.length === 1 ? "it" : "them"}`;
+  }, [macroFit.dropped, singlesFit.dropped]);
 
   const macroGroups = useMemo(
     () =>
@@ -404,7 +654,10 @@ export default function MacroTape({
       })),
     [quotes, barsBySymbol],
   );
-  const singleRows = useMemo(() => singles.map((def) => rowOf(def, quotes, barsBySymbol)), [singles, quotes, barsBySymbol]);
+  const singleRows = useMemo(
+    () => singles.map((def) => rowOf(def, quotes, barsBySymbol)),
+    [singles, quotes, barsBySymbol],
+  );
 
   // The whole row is the pointer target; the selected rail and the tick flash
   // are attributes on the same <tr> (app.css .mrr-tape rules, A.13).
@@ -415,7 +668,9 @@ export default function MacroTape({
         "data-clickable": "",
         "data-selected": selected === r.id ? "true" : "false",
         onClick: () => onSelect(r.id),
-        style: dir ? { animation: `mrr-flash-${dir} var(--tick-flash) var(--ease-out)` } : undefined,
+        style: dir
+          ? { animation: `mrr-flash-${dir} var(--tick-flash) var(--ease-out)` }
+          : undefined,
       };
     },
     [flash, selected, onSelect],
@@ -429,7 +684,9 @@ export default function MacroTape({
         right={
           // A1: the tape's two sources and their §5 words (the per-row "As of"
           // column carries each row's own stamp).
-          <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+          <span
+            style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}
+          >
             <Stamp source={SRC.eodhd} label={report.series("live_quotes")} />
             <Stamp source="EODHD VIX" label={report.series("vix_delayed")} />
             <Stamp source={SRC.closes} label={report.series("market_daily")} />
@@ -441,33 +698,57 @@ export default function MacroTape({
         <FeedStatusLine />
       </div>
 
-      {/* The well scrolls the nine columns inside the card instead of
-          widening the page; the symbol column pins and a swipe affordance
-          appears when it overflows (ScrollTable). */}
-      <Card padding="0">
-        <ScrollTable label="Macro tape" style={{ padding: "8px 12px 2px" }}>
-          <DataTable
-            compact
-            zebra={false}
-            className="mrr-tape"
-            caption={MACRO_CAPTION}
-            columns={macroColumns}
-            groups={macroGroups}
-            rowProps={rowPropsFor}
-          />
-        </ScrollTable>
-      </Card>
+      {/* Iteration 2 (F2) supersedes the old note here ("the well scrolls the
+          nine columns inside the card"): at the page's full width the eight
+          desk columns render whole from 1280px up with no scroll inside the
+          panel. Narrower, the column ladder drops the least important ones
+          and `droppedLabel` says so; the symbol column still pins and
+          ScrollTable's swipe affordance still catches the phone, where even
+          the reduced set is wider than the well. */}
+      {droppedLabel ? (
+        <div
+          data-testid="tape-dropped-columns"
+          style={{ ...metaStyle, margin: "0 0 8px" }}
+        >
+          {droppedLabel}
+        </div>
+      ) : null}
+      <div ref={tapeRef}>
+        <Card padding="0">
+          <ScrollTable label="Macro tape" style={{ padding: "8px 12px 2px" }}>
+            <DataTable
+              compact
+              zebra={false}
+              className="mrr-tape"
+              caption={MACRO_CAPTION}
+              columns={macroColumns}
+              groups={macroGroups}
+              rowProps={rowPropsFor}
+            />
+          </ScrollTable>
+        </Card>
+      </div>
       {storedGone ? (
         <div style={{ marginTop: 8 }}>
-          <StateNote error missing={socketOpen ? MISSING.closes : MISSING.market} />
+          <StateNote
+            error
+            missing={socketOpen ? MISSING.closes : MISSING.market}
+          />
         </div>
       ) : null}
 
       {/* The single names sit under the macro tape, always on screen (M3b);
           `#single-names` is the palette and hash target. */}
       <div id="single-names" style={{ marginTop: 18 }}>
-        <SectionHeader level="sub" as="h3" title="Single names" style={{ margin: "0 0 4px" }} />
-        <div style={{ ...metaStyle, marginBottom: 8 }}>sorted by day move · re-sorts {live ? "live" : "as data updates"}</div>
+        <SectionHeader
+          level="sub"
+          as="h3"
+          title="Single names"
+          style={{ margin: "0 0 4px" }}
+        />
+        <div style={{ ...metaStyle, marginBottom: 8 }}>
+          sorted by day move · re-sorts {live ? "live" : "as data updates"}
+        </div>
         <Card padding="0">
           <ScrollTable label="Single names" style={{ padding: "8px 12px 2px" }}>
             <DataTable
@@ -487,9 +768,9 @@ export default function MacroTape({
           </div>
         ) : null}
         <Caption>
-          Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers;
-          biggest day move on top. Off-hours the board holds at the last close until the next
-          session opens.
+          Twelve large-cap tech, semis, and crypto-adjacent names as market
+          thermometers; biggest day move on top. Off-hours the board holds at
+          the last close until the next session opens.
         </Caption>
       </div>
 
@@ -497,25 +778,33 @@ export default function MacroTape({
           full provenance sits one click down on the same panel. G4 (step 5):
           the line is one rendered line at every width; its full sentence
           leads the Details panel. */}
-      <Caption copy="status" style={{ marginTop: 14, color: "var(--text-2)" }}>{statusText}</Caption>
+      <Caption copy="status" style={{ marginTop: 14, color: "var(--text-2)" }}>
+        {statusText}
+      </Caption>
       <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
-        <Caption style={{ marginTop: 0, marginBottom: 4, color: "var(--text-2)" }}>{statusLine.full}</Caption>
+        <Caption
+          style={{ marginTop: 0, marginBottom: 4, color: "var(--text-2)" }}
+        >
+          {statusLine.full}
+        </Caption>
         <Caption style={{ marginTop: 0 }}>
-          Day moves come straight from the exchange feed&apos;s own day-change figures; never
-          recomputed here. 1W / 1M and sparklines come from the stored daily candles
-          {storedThrough ? ` through ${fmtDate(storedThrough)}` : ""}; crypto, FX, VIX and
-          single names have no stored history yet, so those columns print a dash. A dash under
-          Day % means the feed sent a price without a day change (off-hours REST fill); the as-of
-          stamp says when.
-          {isNarrow ? " Δ$, 1W and the sparkline return above 768px." : ""}
+          Day moves come straight from the exchange feed&apos;s own day-change
+          figures; never recomputed here. 1W / 1M and sparklines come from the
+          stored daily candles
+          {storedThrough ? ` through ${fmtDate(storedThrough)}` : ""}; crypto,
+          FX, VIX and single names have no stored history yet, so those columns
+          print a dash. A dash under Day % means the feed sent a price without a
+          day change (off-hours REST fill); the as-of stamp says when.
+          {droppedLabel ? " Columns this width cannot show whole are named above the board; they return as the window widens." : ""}
           {/* Cadence + cross-surface reconciliation: the VIX row is a quote off
               this feed, while the Dashboard's VIX spike card reads the monthly
               signals snapshot: two honest levels, two cadences. */}
           <div style={{ marginTop: 2 }}>
-            Every row states its own as-of stamp: ● marks a live tick, the rest print the quote time
-            with the 15-minute delay noted where it applies, and a dated close means the stream had no
-            quote. The dashboard&apos;s VIX spike signal reads the monthly signal print, so it carries a
-            different level than the VIX row here.
+            Every row states its own as-of stamp: ● marks a live tick, the rest
+            print the quote time with the 15-minute delay noted where it
+            applies, and a dated close means the stream had no quote. The
+            dashboard&apos;s VIX spike signal reads the monthly signal print, so
+            it carries a different level than the VIX row here.
           </div>
         </Caption>
       </Disclosure>

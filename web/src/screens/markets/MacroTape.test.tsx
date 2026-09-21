@@ -53,12 +53,29 @@ vi.mock("../../live/quotes", async (importOriginal) => {
   };
 });
 
+/**
+ * Iteration 2 (F2): the tape chooses its columns from the panel's measured
+ * width, not from a breakpoint, so the tests drive that mechanism directly.
+ * jsdom lays nothing out and reports clientWidth 0, which the component reads
+ * as "not measured yet" and answers with the full desk set; the stub supplies
+ * a width so the ladder can be exercised for real.
+ */
+const widthStub = vi.hoisted(() => ({ px: 0 }));
 const bp = vi.hoisted(() => ({ narrow: false }));
 vi.mock("../../lib/useBreakpoint", () => {
   const WIDE = Object.freeze({ bp: "wide", isMobile: false, isTablet: false, isNarrow: false, shellCompact: false });
   const NARROW = Object.freeze({ bp: "mobile", isMobile: true, isTablet: false, isNarrow: true, shellCompact: true });
   return { SHELL_COMPACT_QUERY: "(max-width: 859.98px)", useBreakpoint: () => (bp.narrow ? NARROW : WIDE) };
 });
+
+Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+  configurable: true,
+  get(): number {
+    return widthStub.px;
+  },
+});
+/** The panel width at a viewport, as measured on the acceptance database. */
+const PANEL_AT = { desk: 0, w1024: 748, phone: 310 };
 
 /* ── fixtures (Sep 2026) ─────────────────────────────────────────────────── */
 
@@ -179,6 +196,8 @@ const openDetails = () => fireEvent.click(within(panel()).getByRole("button", { 
 
 const WIDE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "1W %", "1M %", "30 Sess", "As of"];
 const NARROW_HEADERS = ["Symbol · name", "Last", "Day %", "1M %", "As of"];
+/** 1024px: the ladder's first step drops the sparkline only. */
+const W1024_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "1W %", "1M %", "As of"];
 const SINGLES_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "As of"];
 const SINGLES_NARROW_HEADERS = ["Symbol · name", "Last", "Day %", "As of"];
 const GROUP_LABELS = ["Equities", "Rates", "Credit", "Dollar & FX", "Metals", "Energy & Industrial", "Crypto", "Volatility"];
@@ -191,6 +210,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   bp.narrow = false;
+  widthStub.px = PANEL_AT.desk;
   live.status = { socket: "closed", feeds: {}, stale: {}, degraded: false, degradedReasons: [], lastBatchAt: null, attempts: 0, everOpened: false };
   live.quotes = new Map();
 });
@@ -217,10 +237,20 @@ describe("MacroTape (checklist 05 B.7)", () => {
     expect(within(singlesWrap()).getByRole("heading", { level: 3 })).toHaveTextContent(/^Single names$/);
     wide.unmount();
 
-    bp.narrow = true;
+    // F2: one step down the ladder, the sparkline goes and the panel says so.
+    widthStub.px = PANEL_AT.w1024;
+    const mid = renderTape();
+    expect(headers()).toEqual(W1024_HEADERS);
+    expect(text(screen.getByTestId("tape-dropped-columns"))).toBe("30 Sess is hidden at this width · widen the window to read it");
+    mid.unmount();
+
+    widthStub.px = PANEL_AT.phone;
     renderTape();
     expect(headers()).toEqual(NARROW_HEADERS);
     expect(cellsOf("SPY")).toHaveLength(NARROW_HEADERS.length);
+    expect(text(screen.getByTestId("tape-dropped-columns"))).toBe(
+      "30 Sess, 1W % and Day Δ$ are hidden at this width · widen the window to read them",
+    );
     // The name stays inline under the symbol on the phone set.
     expect(text(cell("SPY", "Symbol · name"))).toContain("S&P 500");
   });
@@ -410,11 +440,14 @@ describe("MacroTape (checklist 05 B.7)", () => {
     expect(text(byId("single-names"))).not.toContain("as data updates");
     first.unmount();
 
-    bp.narrow = true;
+    widthStub.px = PANEL_AT.phone;
     renderTape();
     expect(singlesHeaders()).toEqual(SINGLES_NARROW_HEADERS);
     openDetails();
-    expect(text(panel())).toContain("Δ$, 1W and the sparkline return above 768px.");
+    // F2 replaced the hardcoded 768px sentence with the measured one, which
+    // points at the named list above the board rather than naming a width.
+    expect(text(panel())).toContain("Columns this width cannot show whole are named above the board");
+    expect(text(panel())).not.toContain("return above 768px");
     expect(text(panel())).not.toContain("Name, Δ$");
   });
 

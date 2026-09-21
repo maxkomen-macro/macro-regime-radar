@@ -12,6 +12,11 @@
  * Below 860 px the MobileNav replaces the sidebar; "expanded" is just the
  * stored state there.
  *
+ * Iteration 2 (F2) adds a clipping check to the same cells: no text node may
+ * be cut by its container's bounds with no way to reveal it. F2's stricter
+ * "no horizontal scroll inside the panel at 1280 px and up" is asserted on
+ * the macro tape by name, where the item asks for it.
+ *
  * Each cell waits for the screen's data (main h1, no aria-busy, no
  * "Loading" status; max ≈ 8 s, then a 500 ms settle), scrolls to the top, runs
  * `auditOverlaps` (e2e/lib/geometry.ts) and writes the offenders to
@@ -19,7 +24,7 @@
  * to the test). Runs against the running Vite dev server; never starts one.
  */
 import { test, expect } from "@playwright/test";
-import { auditOverlaps, describeOverlaps, routeSlug, seedSidebar, waitForScreenData, writeSweepReport } from "./lib/geometry";
+import { auditClipping, auditOverlaps, describeClipping, describeOverlaps, routeSlug, seedSidebar, waitForScreenData, writeSweepReport } from "./lib/geometry";
 
 const ROUTES = [
   "/app/dashboard",
@@ -70,11 +75,40 @@ test.describe("G1 overlap sweep", () => {
         offenders,
       });
 
+      // F2: at 1280 and up nothing may be cut and no panel may hide text
+      // behind a horizontal scroll; below 1280 a scrollable well is allowed.
+      const clip = await page.evaluate(auditClipping, {});
+      await writeSweepReport(testInfo, "sweep-clipping", `${routeSlug(route)}-${width}x${height}-${sidebar}`, {
+        route,
+        width,
+        height,
+        sidebar,
+        items: clip.items,
+        truncated: clip.truncated,
+        offenders: clip.offenders,
+      });
+
       expect(scan.items, "the sweep measured nothing: the screen did not render").toBeGreaterThan(20);
       expect(
         offenders,
         `${offenders.length}${scan.truncated ? "+" : ""} overlapping pair(s) on ${route} at ${width}x${height} (${sidebar}):\n${describeOverlaps(scan.pairs)}`,
       ).toHaveLength(0);
+      expect(
+        clip.offenders,
+        `${clip.offenders.length}${clip.truncated ? "+" : ""} clipped text node(s) on ${route} at ${width}x${height} (${sidebar}):\n${describeClipping(clip.offenders)}`,
+      ).toHaveLength(0);
+
+      // F2's own Done-when, asserted where the item asks for it: at 1280px
+      // and up the macro tape shows every column whole, with no horizontal
+      // scroll inside the panel. It read nine columns into a 368px rail.
+      if (route === "/app/markets" && width >= 1280) {
+        const scrollers = await page.evaluate(() =>
+          [...document.querySelectorAll("#watchlist .mrr-scroll, #single-names .mrr-scroll")]
+            .filter((el) => el.scrollWidth > el.clientWidth + 1)
+            .map((el) => `${el.className}: ${el.scrollWidth} into ${el.clientWidth}`),
+        );
+        expect(scrollers, `the macro tape scrolls horizontally at ${width}px:\n${scrollers.join("\n")}`).toHaveLength(0);
+      }
     });
   }
 });

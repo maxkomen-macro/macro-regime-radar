@@ -841,7 +841,28 @@ export default function MarketsScreen() {
         </Suspense>
       ) : null}
 
-      {/* ── Body: the left panel stack | the macro tape ─────────────── */}
+      {/* ── Macro tape, full row width (Iteration 2, F2) ─────────────
+          It read nine columns into the 432px summary rail, so the well was
+          368px against 764px of table and the Day, week, month, sparkline
+          and as-of columns all sat outside it - Max saw "+4" and "-0.0"
+          where a day change belonged. Full width, the eight desk columns
+          fit whole from 1280px up with no scroll inside the panel; the
+          narrower bands drop the least important column deliberately and
+          say so. This supersedes the "the well scrolls the nine columns
+          inside the card" note the panel used to carry. ───────────────── */}
+      <MacroTape
+        quotes={quotes}
+        barsBySymbol={barsBySymbol}
+        singles={singlesSorted}
+        selected={selected}
+        onSelect={toggleSelect}
+        registerRow={registerRow}
+        live={usLive}
+        storedThrough={marketDailyDate}
+        storedError={storedError}
+      />
+
+      {/* ── Body: the panel stack, full width under the tape ─────────── */}
       <div className="mrr-mkt-body">
         <div className="mrr-mkt-stack">
           {/* Single-name research: the hero's search, a mover, a watchlist row
@@ -891,18 +912,6 @@ export default function MarketsScreen() {
 
           <TopSurprises surprises={surprises} surpriseWeek={surpriseWeek} />
         </div>
-
-        <MacroTape
-          quotes={quotes}
-          barsBySymbol={barsBySymbol}
-          singles={singlesSorted}
-          selected={selected}
-          onSelect={toggleSelect}
-          registerRow={registerRow}
-          live={usLive}
-          storedThrough={marketDailyDate}
-          storedError={storedError}
-        />
       </div>
 
       {/* ── What's priced (single home; the Dashboard links here) ───── */}

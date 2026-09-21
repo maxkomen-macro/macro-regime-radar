@@ -2043,9 +2043,12 @@ main .mrr-scroll {
 .mrr-mkt > .mrr-mkt-body {
   margin-bottom: 0;
 }
+/* Iteration 2 (F2): the macro tape left this row for the page's full width,
+   so the body is one column. It was `minmax(0,1fr) var(--summary-w)`, which
+   handed the tape's eight columns a 368px well and clipped five of them. */
 .mrr-mkt-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--summary-w);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--gap-col);
   align-items: start;
   margin-bottom: var(--gap-panel);
@@ -2572,9 +2575,6 @@ button.mrr-mover:hover {
      786px main, so the rule sits with the other sub-1200 stacks. */
   .mrr-dash-glance {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .mrr-mkt-body {
-    grid-template-columns: 1fr;
   }
   /* 256px, not 200: a SignalCard's value row is the number beside a fixed
      118px sparkline and an 8px gap, so a 200px tile (three 234px columns
