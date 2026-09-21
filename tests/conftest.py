@@ -19,6 +19,12 @@ os.environ.setdefault("DB_MAX_CONCURRENCY", "16")
 # tests/test_generations.py) to import the libraries, so the harness waits longer.
 os.environ.setdefault("WORKER_WAIT_S", "90")
 os.environ.setdefault("PREFETCH_MARKET", "0")
+# launch-1: the assistant's spend ledger. Set unconditionally, before any api
+# import, so no test can read or write a developer's real ledger; the autouse
+# fixture below gives each test its own empty one.
+import tempfile  # noqa: E402
+
+os.environ["ASSISTANT_LEDGER_PATH"] = os.path.join(tempfile.mkdtemp(prefix="mrr-ledger-"), "assistant_spend.db")
 
 
 import pytest  # noqa: E402
@@ -48,3 +54,19 @@ def install_worker(monkeypatch):
     for w in made:
         w.stop()
     dbpath.clear_provider()
+
+
+@pytest.fixture(autouse=True)
+def _own_assistant_ledger(request, monkeypatch):
+    """Each test that has the budget module loaded gets a fresh, empty spend
+    ledger (launch-1, verify loop 1: two API tests used to read the
+    developer's own ledger and rested on a day it held spend)."""
+    import sys
+
+    budget = sys.modules.get("api.assistant_budget")
+    if budget is not None:
+        monkeypatch.setattr(budget, "LEDGER_PATH", request.getfixturevalue("tmp_path") / "assistant_spend.db")
+        budget.reset_for_tests()
+    yield
+    if budget is not None:
+        budget.reset_for_tests()

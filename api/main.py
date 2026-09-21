@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import hmac
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -1210,7 +1209,7 @@ def _ops_gate(request: Request) -> None:
                 detail="Diagnostics are closed on this deployment: no ops key is configured. Set OPS_ACCESS_KEY to open them.",
             )
         return
-    if not hmac.compare_digest(request.headers.get("x-ops-key", ""), expected):
+    if not security.keys_match(request.headers.get("x-ops-key", ""), expected):
         raise HTTPException(status_code=401, detail="Diagnostics require an ops key on this deployment.")
 
 

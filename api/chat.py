@@ -83,6 +83,24 @@ def _resting_stream(state: dict) -> Iterator[str]:
     yield _sse({}, event="done")
 
 
+class _LedgerGuard:
+    """The agent's spend guard on the API (launch-1): every model call is held
+    in the ledger at its worst case before it is made, then settled at its real
+    cost or released (api/assistant_budget.py)."""
+
+    def reserve(self, *, prompt_tokens: int, max_tokens: int):
+        return budget.reserve(budget.call_worst_case_usd(prompt_tokens, max_tokens))
+
+    def settle(self, hold, usage: dict) -> None:
+        budget.settle(hold, usage, model=usage.get("model"))
+
+    def release(self, hold) -> None:
+        budget.release(hold)
+
+
+_GUARD = _LedgerGuard()
+
+
 def _event_stream(req: ChatRequest) -> Iterator[str]:
     """Synchronous SSE generator over MacroRadarAgent.ask_streaming.
 
@@ -91,12 +109,9 @@ def _event_stream(req: ChatRequest) -> Iterator[str]:
     iterator via the threadpool, and each resume runs in a fresh copy of the
     request context — a single set() during the first resume would not be
     visible to the tool calls that execute during later resumes. The spend
-    sink and the budget gate (launch-1) ride the same resets.
+    guard (launch-1) rides the same resets.
     """
     from src.analytics import chat  # lazy — pulls the anthropic SDK
-
-    def _spend(usage: dict) -> None:
-        budget.record(usage, model=usage.get("model"))
 
     try:
         agent = _get_agent()
@@ -104,17 +119,21 @@ def _event_stream(req: ChatRequest) -> Iterator[str]:
         pull = agent.ask_streaming(req.message, history=history)
         while True:
             token = chat.TAB_CONTEXT.set(req.tab_context)
-            sink = chat.USAGE_SINK.set(_spend)
-            gate = chat.BUDGET_GATE.set(budget.allow_more)
+            guard = chat.SPEND_GUARD.set(_GUARD)
             try:
                 chunk = next(pull)
             except StopIteration:
                 break
             finally:
                 chat.TAB_CONTEXT.reset(token)
-                chat.USAGE_SINK.reset(sink)
-                chat.BUDGET_GATE.reset(gate)
+                chat.SPEND_GUARD.reset(guard)
             yield _sse({"delta": chunk})
+    except chat.BudgetExhausted:
+        # The chip had room, but this answer's first call does not fit what
+        # is left of the day, or another question took it first: the same
+        # plain resting state, never an error.
+        budget.note_cap_reached()
+        yield _sse({"message": budget.RESTING_MESSAGE, "resets_at": budget.state()["resets_at"]}, event="resting")
     except chat.RateLimited:
         yield _sse({"message": "_Hit a rate limit — try again in a moment._"}, event="error")
     except chat.NetworkError:

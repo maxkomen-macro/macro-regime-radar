@@ -102,7 +102,16 @@ headroom over the measured peak.
 5. **Health Check Path:** `/health/ready`. Not `/health/live`: readiness waits
    for the first background pass, so Render will not route traffic to a server
    that would answer "warming".
-6. **Environment variables:** copy them from `deploy/api.env.example`, which
+6. **Disk:** Advanced → **Add Disk**, mount path `/var/data`, size **1 GB**.
+   Storage is **$0.25 per GB per month**, prorated by the second (Render,
+   read 2026-09-21). It holds the assistant's spend ledger, so the $1 ceiling
+   is per day rather than per process: without it every restart or deploy
+   starts a fresh ledger, and the day can spend $1 again after each one.
+   Render's documented trade-offs are that a service with a disk has no
+   zero-downtime deploys (a deploy is a short outage, during which the site
+   paints its snapshot) and cannot scale past one instance, which this
+   service must never do anyway.
+7. **Environment variables:** copy them from `deploy/api.env.example`, which
    lists every variable this process reads and the production value for each.
    The ones that must be set:
 
@@ -119,13 +128,14 @@ headroom over the measured peak.
    | `BOOTSTRAP_DB_REFRESH_MIN` | `10` |
    | `TRUSTED_PROXY_HOPS` | `1` |
    | `ASSISTANT_DAILY_CAP_USD` | `1.0` |
+   | `ASSISTANT_LEDGER_PATH` | `/var/data/assistant_spend.db` (on the disk from step 6) |
 
    Render's UI puts these under **Environment → Environment Variables**; each
    value is stored encrypted and is not shown again after saving.
-7. Deploy. Watch the log for the startup block: it states whether each secret
+8. Deploy. Watch the log for the startup block: it states whether each secret
    resolved (yes/no, never the value), the effective CORS origins and the
    entitlement probe's verdicts.
-8. Copy the service's URL into Vercel's `VITE_API_BASE` / `VITE_WS_BASE` and
+9. Copy the service's URL into Vercel's `VITE_API_BASE` / `VITE_WS_BASE` and
    into the CSP in `web/vercel.json`, then redeploy the site.
 
 ### 3b. Fly.io (cheaper, more setup)
@@ -137,10 +147,29 @@ prorated. A payment method is required; there is no general free allowance.
 
 It suits this workload if you are comfortable with `flyctl`: deploy the same
 Dockerfile, set `[http_service] min_machines_running = 1` so the machine never
-stops, and keep `auto_stop_machines` off. Set the same environment variables
-with `fly secrets set`. Everything else in this runbook applies unchanged.
+stops, and keep `auto_stop_machines` off. Create a 1 GB volume for the spend
+ledger (`fly volumes create data --size 1`, **$0.15 per GB per month** of
+provisioned capacity, read 2026-09-21), mount it at `/var/data` with a
+`[mounts]` section, and set `ASSISTANT_LEDGER_PATH=/var/data/assistant_spend.db`.
+Set the same environment variables with `fly secrets set`. Everything else in
+this runbook applies unchanged.
 
 Choose Render for the shortest path, Fly to spend a quarter as much.
+
+### 3c. A backstop for the assistant's bill
+
+The server holds the assistant to `ASSISTANT_DAILY_CAP_USD` itself: every model
+call is reserved in the ledger at its worst case before it is made, so neither
+a visitor who hangs up nor questions that arrive together can carry the day
+past $1. Put a second limit where no bug in this repo can reach it:
+
+1. In the Claude Console, **Settings → Workspaces → Create workspace**, for
+   example `radar-site`.
+2. Create the site's API key **inside that workspace** and use it as the
+   host's `ANTHROPIC_API_KEY`. Keep the news pipeline's key separate.
+3. Open the workspace → **Limits** → **Change Limit**, and set the monthly spend
+   limit to **$35**: 31 days at $1 with a little room. Anthropic enforces it on
+   every request, so even a ledger lost with its disk cannot cost more.
 
 ---
 

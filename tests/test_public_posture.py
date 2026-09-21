@@ -224,3 +224,12 @@ def test_the_generation_still_answers_the_pragmas_a_read_needs(tmp_path):
         conn.close()
     finally:
         anchor.close()
+
+
+
+def test_a_non_ascii_ops_key_is_refused_not_a_crash(monkeypatch):
+    """Verify loop 1, defect 6, on the diagnostics gate."""
+    monkeypatch.setenv("OPS_ACCESS_KEY", "ops-s3cret")
+    r = client.get("/api/stream/debug", headers={"x-ops-key": b"caf\xe9"})
+    assert r.status_code == 401
+    assert client.get("/api/stream/debug", headers={"x-ops-key": "wrong"}).status_code == 401

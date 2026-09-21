@@ -362,3 +362,117 @@ def test_relay_socket_allows_the_same_origin_it_is_served_from(monkeypatch):
     mw = security.SecurityMiddleware(_accepting_app())
     scope = _ws_scope("https://radar.example.com", host="radar.example.com")
     assert _ws_attempt(mw, scope)[0]["type"] == "websocket.accept"
+
+
+
+# ── launch-1 verify loop 1: identity, keys and origins ──────────────────────
+
+
+def test_every_forwarded_for_line_counts(monkeypatch):
+    """Defect 5: RFC 9110 treats repeated header lines as one comma-joined
+    list. Reading only the first line let a client pick its own key by
+    sending a line of its own ahead of the proxy's."""
+    scope = {"client": ("10.0.0.1", 5), "headers": [
+        (b"x-forwarded-for", b"6.6.6.6"),
+        (b"x-forwarded-for", b"198.51.100.7"),
+    ]}
+    assert security.client_id_from(scope, 1) == "198.51.100.7"
+    assert security.client_id_from(scope, 2) == "6.6.6.6"
+
+    monkeypatch.setenv("TRUSTED_PROXY_HOPS", "1")
+    c = TestClient(_app(per_client_per_min=3, per_client_burst=3, global_per_min=1000))
+    codes = [
+        c.get("/api/thing", headers=[("x-forwarded-for", f"10.9.9.{i}"), ("x-forwarded-for", "198.51.100.7")]).status_code
+        for i in range(6)
+    ]
+    assert codes == [200, 200, 200, 429, 429, 429]
+
+
+def test_a_non_ascii_assistant_key_is_refused_not_a_crash(monkeypatch):
+    """Defect 6: a raw header byte such as 0xE9 made hmac.compare_digest
+    raise, which surfaced as a 500 with a logged traceback."""
+    monkeypatch.setenv("ASSISTANT_ACCESS", "key")
+    monkeypatch.setenv("ASSISTANT_ACCESS_KEY", "s3cret")
+    c = TestClient(_app())
+    assert c.post("/api/assistant/ask", json={"m": 1}, headers={"x-assistant-key": b"caf\xe9"}).status_code == 401
+    assert c.post("/api/assistant/ask", json={"m": 1}, headers={"x-assistant-key": "s3cret"}).status_code == 200
+
+
+def test_keys_match_compares_bytes_in_constant_time():
+    assert security.keys_match("s3cret", "s3cret") is True
+    assert security.keys_match(b"s3cret", "s3cret") is True
+    assert security.keys_match("caf\xe9", "s3cret") is False
+    assert security.keys_match(b"caf\xe9", "caf\xe9") is False  # latin-1 bytes are not the UTF-8 key
+    assert security.keys_match("s3cret", "") is False
+    assert security.keys_match("", "") is False
+
+
+def test_a_public_single_service_deploy_allows_only_its_own_origin(monkeypatch):
+    """Defect 7: with DEPLOY_PUBLIC=1 and no CORS_ORIGINS (the documented
+    single-service fallback), localhost is somebody else's machine."""
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    monkeypatch.setenv("DEPLOY_PUBLIC", "1")
+    mw = security.SecurityMiddleware(_accepting_app())
+    own = _ws_scope("https://radar.example.com", host="radar.example.com")
+    assert _ws_attempt(mw, own)[0]["type"] == "websocket.accept"
+    for foreign in ("http://localhost:5173", "http://127.0.0.1:8080", "https://evil.example"):
+        assert _ws_attempt(mw, _ws_scope(foreign, host="radar.example.com")) == [{"type": "websocket.close", "code": 1008}], foreign
+
+
+def test_two_origin_headers_are_refused(monkeypatch):
+    """A browser sends one Origin. Two is a crafted request, and first-wins
+    used to let the second one ride along."""
+    monkeypatch.setenv("CORS_ORIGINS", "https://radar.example.com")
+    mw = security.SecurityMiddleware(_accepting_app())
+    scope = _ws_scope("https://radar.example.com")
+    scope["headers"].append((b"origin", b"https://evil.example"))
+    assert _ws_attempt(mw, scope) == [{"type": "websocket.close", "code": 1008}]
+
+
+def test_the_assistant_ceiling_is_four_at_production(production_env, monkeypatch):
+    monkeypatch.delenv("ASSISTANT_MAX_CONCURRENCY", raising=False)
+    import importlib
+
+    fresh = importlib.reload(security)
+    try:
+        assert fresh.ASSISTANT_MAX_CONCURRENCY == 4
+        assert fresh.SecurityMiddleware(lambda *a: None).assistant._initial_value == 4
+    finally:
+        importlib.reload(security)
+
+
+def test_websocket_total_cap_refuses_beyond_the_ceiling():
+    """The per-client cap is exercised above; this is the process-wide one."""
+
+    async def run():
+        mw = security.SecurityMiddleware(_accepting_app(), ws_per_client=10, ws_total=2)
+        holds = [asyncio.Event() for _ in range(2)]
+        tasks = []
+        for i, hold in enumerate(holds):
+            async def receive(h=hold):
+                await h.wait()
+                return {"type": "websocket.disconnect"}
+
+            async def send(msg):
+                pass
+
+            scope = {"type": "websocket", "path": "/api/stream/ws", "headers": [], "client": (f"1.2.3.{i}", 1)}
+            tasks.append(asyncio.create_task(mw(scope, receive, send)))
+        await asyncio.sleep(0.05)
+        assert mw.ws_active_total() == 2
+        third: list = []
+
+        async def receive3():
+            return {"type": "websocket.disconnect"}
+
+        async def send3(msg):
+            third.append(msg)
+
+        await mw({"type": "websocket", "path": "/api/stream/ws", "headers": [], "client": ("9.9.9.9", 1)}, receive3, send3)
+        assert third == [{"type": "websocket.close", "code": 1013}]
+        for hold in holds:
+            hold.set()
+        await asyncio.gather(*tasks)
+        assert mw.ws_active_total() == 0
+
+    asyncio.run(run())

@@ -88,37 +88,50 @@ def _host_of(scope: dict) -> str:
     return ""
 
 
+def keys_match(given: str | bytes, expected: str) -> bool:
+    """Constant-time comparison of a presented key with the configured one.
+    Bytes on both sides: hmac.compare_digest refuses a str holding non-ASCII
+    characters, so a raw header byte such as 0xE9 used to raise, a 500 with a
+    logged traceback, instead of simply not matching (launch-1 verify loop 1).
+    Header values arrive latin-1 decoded, which round-trips to the raw bytes."""
+    if not expected:
+        return False
+    if isinstance(given, str):
+        given = given.encode("latin-1", "replace")
+    return hmac.compare_digest(given, expected.encode("utf-8"))
+
+
 def ws_origin_allowed(scope: dict) -> bool:
     """Whether this socket's Origin may reach the relay (launch-1).
 
     CORS keeps a cross-site page from *reading* an XHR; it does nothing for a
     WebSocket, so any page on the internet could otherwise open one against
     the relay and sit on a connection slot. The allowlist is CORS_ORIGINS on a
-    public deploy; in development it is localhost on any port. An absent
-    Origin is allowed: browsers always send one, and curl, the smoke script
-    and the tests are not the cross-site risk this exists for.
+    split deploy; the single-service deploy (DEPLOY_PUBLIC, no CORS_ORIGINS)
+    allows only the origin it serves; development adds localhost on any port.
+    An absent Origin is allowed: browsers always send one, and curl, the smoke
+    script and the tests are not the cross-site risk this exists for. Two
+    Origin headers are refused: no browser sends that.
     """
-    origin = None
-    for k, v in scope.get("headers", []):
-        if k == b"origin":
-            origin = v.decode("latin-1").strip()
-            break
-    if origin is None:
+    origins = [v.decode("latin-1").strip() for k, v in scope.get("headers", []) if k == b"origin"]
+    if not origins:
         return True
-    origin = origin.rstrip("/")
+    if len(origins) > 1:
+        return False
+    origin = origins[0].rstrip("/")
     allowed = cors_origins()
     if allowed:
         return origin.lower() in {a.lower() for a in allowed}
-    # Development, or the single-service deploy that sets no CORS_ORIGINS: the
-    # page it serves (same host) and localhost on any port.
     try:
         parts = urlsplit(origin)
     except ValueError:
         return False
-    if parts.hostname in ("localhost", "127.0.0.1", "::1"):
-        return True
     host = _host_of(scope)
-    return bool(host) and parts.netloc.lower() == host
+    if host and parts.netloc.lower() == host:
+        return True
+    # localhost is the developer's own machine only while nothing says this
+    # process serves the internet (verify loop 1, defect 7).
+    return not is_public_deploy() and parts.hostname in ("localhost", "127.0.0.1", "::1")
 
 
 def trusted_proxy_hops() -> int:
@@ -139,12 +152,15 @@ def client_id_from(scope: dict, hops: int) -> str:
     peer_ip = peer[0] if peer else "unknown"
     if hops <= 0:
         return peer_ip
-    for k, v in scope.get("headers", []):
-        if k == b"x-forwarded-for":
-            parts = [x.strip() for x in v.decode("latin-1").split(",") if x.strip()]
-            if len(parts) >= hops:
-                return parts[-hops]
-            return peer_ip
+    # Every X-Forwarded-For line, in order: RFC 9110 reads repeated lines as
+    # one comma-joined list, and a proxy appends to the end of it. Reading only
+    # the first line let a client choose its own key (verify loop 1, defect 5).
+    lines = [v.decode("latin-1") for k, v in scope.get("headers", []) if k == b"x-forwarded-for"]
+    if not lines:
+        return peer_ip
+    parts = [x.strip() for x in ",".join(lines).split(",") if x.strip()]
+    if len(parts) >= hops:
+        return parts[-hops]
     return peer_ip
 
 
@@ -318,8 +334,7 @@ class SecurityMiddleware:
                 return await self._reply(send, 503, "The AI analyst is disabled on this deployment (ASSISTANT_ACCESS=off). Every other screen works without it.")
             if mode == "key":
                 expected = os.environ.get("ASSISTANT_ACCESS_KEY", "")
-                given = headers.get(b"x-assistant-key", b"").decode("latin-1")
-                if not expected or not hmac.compare_digest(given, expected):
+                if not keys_match(headers.get(b"x-assistant-key", b""), expected):
                     self.stats["assistant_blocked"] += 1
                     return await self._reply(send, 401, "The AI analyst requires an access key on this deployment.")
             cid = self._client_id(scope)

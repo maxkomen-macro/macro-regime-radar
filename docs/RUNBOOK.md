@@ -65,27 +65,34 @@ Environment (host secret store only; never in git, never in the image):
 | Var | Purpose |
 |---|---|
 | `GH_DB_TOKEN` | read-only Contents PAT; `api/bootstrap.py` checks the `data-latest` asset at start and every `BOOTSTRAP_DB_REFRESH_MIN` minutes and downloads only when the asset's identity (id, updated_at, size, digest, recorded in `data/macro_radar.db.asset.json`) has changed, validating the download (header, quick_check, regime rows) before an atomic swap |
-| `BOOTSTRAP_DB_REFRESH_MIN` | periodic identity check (set 30–60). Safe to arm since fix/prelaunch-1: an unchanged asset is no download, no swap and no rebuild; a changed one is rebuilt in the background and published whole |
+| `BOOTSTRAP_DB_REFRESH_MIN` | periodic identity check (production: `10`). Safe to arm since fix/prelaunch-1: an unchanged asset is no download, no swap and no rebuild; a changed one is rebuilt in the background and published whole |
 | `BOOTSTRAP_DB_MAX_AGE_MIN` | legacy: still reported in `/api/freshness`, decides nothing (the asset identity does) |
 | `PREFETCH_MARKET` | `1` (default) keeps the strip's and the default watchlist's 5D candles warm when `EODHD_API_TOKEN` is set; `0` turns it off |
 | `GC_FREEZE` | `1` (default) freezes the server's heap after its first build, so a full garbage collection walks only newer objects (it walked ~180k, ~30 ms and more on a busy host, and held the GIL); `0` turns it off |
 | `EODHD_API_TOKEN` | provider layer + live relay. **Owner action: add it on the host.** GitHub Actions does not need it (no workflow step calls EODHD) |
 | `EODHD_PROBE_ON_START` | `1` (default) runs one bounded entitlement probe per API family at startup |
-| `CORS_ORIGINS` | the frontend origin(s) for a split deploy; setting it also flips the assistant default to `off` |
-| `ASSISTANT_ACCESS` | `off` (default when `CORS_ORIGINS` is set) · `key` (requires `X-Assistant-Key` = `ASSISTANT_ACCESS_KEY`) · `open` (dev only) |
-| `ANTHROPIC_API_KEY` | assistant model; unused when the assistant is off |
+| `DEPLOY_PUBLIC` | `1` on any deploy that serves the internet (launch-1). It closes the diagnostics without an ops key, turns off `/docs`, defaults the assistant to `off` and stops the relay socket from accepting localhost origins. `CORS_ORIGINS` implies it |
+| `CORS_ORIGINS` | the frontend origin(s) for a split deploy, and the relay socket's Origin allowlist; setting it implies `DEPLOY_PUBLIC` |
+| `ASSISTANT_ACCESS` | `off` (default on a public deploy) · `key` (requires `X-Assistant-Key` = `ASSISTANT_ACCESS_KEY`) · `open` (the launch deploy: open to the public under `ASSISTANT_DAILY_CAP_USD`). Set it explicitly |
+| `ANTHROPIC_API_KEY` | assistant model; unused when the assistant is off. Use a key from its own Console workspace with a monthly spend limit (DEPLOY.md §3c) |
+| `ASSISTANT_DAILY_CAP_USD` | the assistant's spend ceiling per UTC day (default `1.0`; anything not a finite number falls back to it, `0` or less rests the analyst) |
+| `ASSISTANT_LEDGER_PATH` | the spend ledger (default `data/assistant_spend.db`). Put it on a persistent disk (`/var/data/assistant_spend.db`): on ephemeral storage a restart starts a fresh ledger and the day can spend its cap again |
+| `ASSISTANT_MAX_CONCURRENCY` | answers in flight before a 429 (default 4) |
+| `FINNHUB_API_KEY` | company fundamentals for the single-name panel (free tier, US listings, 60 requests a minute; the API keeps itself under 60) |
 | `RATE_LIMIT_PER_CLIENT_PER_MIN` / `RATE_LIMIT_PER_CLIENT_BURST` | defaults 600 / 120 (a screen load is ~25 requests); the assistant has its own 10/min per client |
 | `RATE_LIMIT_GLOBAL_PER_MIN` / `RATE_LIMIT_GLOBAL_BURST` | defaults 4000 / 600 |
 | `DB_MAX_CONCURRENCY` | stored-data reads in flight (default 24); beyond it the API answers 429 instead of queueing the worker pool |
 | `WS_MAX_PER_CLIENT` / `WS_MAX_TOTAL` | relay sockets per client id / in total (defaults 20 / 200 — a NAT address counts as one client unless `TRUSTED_PROXY_HOPS` is set); refused sockets close before accept |
 | `TRUSTED_PROXY_HOPS` | number of reverse proxies in front of the API that append `X-Forwarded-For` (typically `1`); the client is read that many entries from the right, never from the spoofable left. `0` (default) keys limits on the socket peer. `TRUST_X_FORWARDED_FOR=1` is an alias for one hop |
-| `OPS_ACCESS_KEY` | when set, `/api/providers/status` and `/api/stream/debug` require the `X-Ops-Key` header |
+| `OPS_ACCESS_KEY` | when set, `/api/providers/status` and `/api/stream/debug` require the `X-Ops-Key` header; on a public deploy with no key they answer 503 |
 | `CSP_CONNECT_SRC` | extra `connect-src` origins for the served shell (split API/WS host) |
 | `PROVIDER_MAX_CONCURRENCY` | upstream provider calls in flight (default 8) |
 
 Health: `/health/live` (event loop only — it keeps answering even if the worker pool is wedged, so point the host's liveness/health probe at **`/health/ready`**, which touches the database), `/health/ready` (DB opens, regime rows present, and the background worker's first pass complete: 503 `warming` until then, about 4 s after start on a laptop; its body carries the worker's generation and build time), `/api/freshness`, `/api/stream/debug`, `/api/providers/status` (both diagnostics gated by `OPS_ACCESS_KEY` when set).
 
 Derived results (fix/prelaunch-1): a background worker (`api/worker.py`) builds every database-derived result (credit, recession model, Regime Lab, LBO defaults, allocation) into a generation, an in-memory copy of the database plus those results. When the database file changes (bootstrap swap, `make sync-data`, a file copied into place) it builds the next generation in the background and switches reads and results together when it is complete; until then the previous generation answers, and each request reads one generation from start to finish. Handlers never compute; a request arriving before the first pass waits up to 5 s, then gets 503 with `Retry-After`. If an item the served generation answers well fails on the new file, the new generation is held back and the previous one keeps serving everything (`/health/ready` shows `worker.held` and `worker.last_error`); the worker retries after 30 s and 60 s, and after three failed builds in a row publishes with that item answering as an error. A failure the served generation already has is no reason to wait: that file publishes at once. A file that cannot be read at all leaves the previous generation serving and is retried with a backoff. Allocation builds in a child process, from the price histories the full refresh stores in `asset_prices`; the API never calls Yahoo.
+
+Assistant spend (launch-1): the ledger (`ASSISTANT_LEDGER_PATH`, the `ai_spend_ledger` schema, append-only) holds every model call at its worst case before the call is made, then records the real cost and releases the hold. A visitor who hangs up leaves the hold charged; a request Anthropic refused before streaming is released. The day's sum decides the chip: `GET /api/assistant/status` answers `resting` once the day cannot pay for another first call, or when the ledger cannot be written (`ledger: read-only` or `unwritable`). To see the day: `sqlite3 "$ASSISTANT_LEDGER_PATH" "SELECT status, ROUND(SUM(cost_usd), 4) FROM ai_spend_ledger WHERE ts LIKE date('now') || '%' GROUP BY status"`. Deleting the file resets the day, so do not.
 
 Database connections (2026-09-06): one read-only SQLite connection per worker thread, reused across requests, reading the published generation. The Docker image runs uvicorn with `--limit-concurrency 64`.
 

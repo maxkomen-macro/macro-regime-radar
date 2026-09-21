@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import contextvars
+import json
 import os
 import re
 import sqlite3
@@ -85,18 +86,36 @@ TAB_CONTEXT: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
 )
 
 # ── Spend bridge (agent → API, launch-1) ─────────────────────────────────────
-# On the public deploy the assistant answers strangers, so its spend is counted
-# and capped per day (api/assistant_budget.py). USAGE_SINK receives the usage
-# block of every model call the loop makes; BUDGET_GATE is asked before each
-# further call, so an answer that keeps reaching for tools stops rather than
-# carrying the day past the ceiling. Streamlit sets neither: unset means no
-# accounting and no gate, exactly the old behaviour.
-USAGE_SINK: contextvars.ContextVar[Any] = contextvars.ContextVar(
-    "macro_radar_usage_sink", default=None
+# On the public deploy the assistant answers strangers, so every model call is
+# paid for before it is made (api/assistant_budget.py). SPEND_GUARD, when set,
+# is asked to reserve each call at its worst case before the request is sent;
+# the call is made only with a hold, which is then settled with the call's real
+# usage, or released when Anthropic refused the request outright. A visitor who
+# hangs up leaves the hold charged. Streamlit sets nothing: unset means no
+# accounting and no gate, the old behaviour.
+SPEND_GUARD: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "macro_radar_spend_guard", default=None
 )
-BUDGET_GATE: contextvars.ContextVar[Any] = contextvars.ContextVar(
-    "macro_radar_budget_gate", default=None
-)
+
+# The request's worst case in tokens. A byte-level BPE token covers at least one
+# byte, so a prompt holds at most one token per UTF-8 byte of its text; the
+# request is measured as JSON, whose quoting only adds bytes. The API wraps the
+# tool definitions in its own tool-use system prompt (a few hundred tokens) and
+# frames every turn and block; these margins cover that with room to spare.
+PROMPT_FRAMING_TOKENS = 2_000
+BLOCK_FRAMING_TOKENS = 64
+
+
+def prompt_token_bound(system: str, tools: list, messages: list) -> int:
+    """An upper bound on the input tokens of one Messages API request."""
+    body = json.dumps({"system": system, "tools": tools, "messages": messages}, ensure_ascii=False, default=str)
+    blocks = 0
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        blocks += len(content) if isinstance(content, list) else 1
+    return len(body.encode("utf-8")) + PROMPT_FRAMING_TOKENS + BLOCK_FRAMING_TOKENS * blocks
+
+
 BUDGET_STOP_NOTE = (
     "\n\n_Stopping here: today's AI budget is spent. "
     "The analyst wakes up at midnight UTC; every other screen works as usual._"
@@ -569,6 +588,11 @@ class NetworkError(AgentError):
     """Raised on connection issues talking to the upstream API."""
 
 
+class BudgetExhausted(AgentError):
+    """The day's spend ceiling cannot pay for the answer's first model call
+    (launch-1). The API shows its resting state; nothing reached Anthropic."""
+
+
 # Cap conversation history sent to the API to avoid runaway costs.
 HISTORY_TURN_LIMIT = 20
 
@@ -608,7 +632,25 @@ class MacroRadarAgent:
         messages: list[dict] = trimmed
         messages.append({"role": "user", "content": user_msg})
 
-        for _iteration in range(MAX_TOOL_ITERATIONS):
+        guard = SPEND_GUARD.get()
+        for iteration in range(MAX_TOOL_ITERATIONS):
+            # Pay before calling (launch-1, api/assistant_budget.py): the call
+            # is held at its worst case, and without a hold it is not made.
+            hold = None
+            if guard is not None:
+                try:
+                    hold = guard.reserve(
+                        prompt_tokens=prompt_token_bound(system_prompt, TOOLS, messages),
+                        max_tokens=MAX_TOKENS,
+                    )
+                except Exception:  # noqa: BLE001 — a broken guard must not spend
+                    hold = None
+                if hold is None:
+                    if iteration == 0:
+                        raise BudgetExhausted("today's AI budget cannot pay for this answer")
+                    yield BUDGET_STOP_NOTE
+                    return
+            started = False
             try:
                 with self.client.messages.stream(
                     model=self.model,
@@ -618,16 +660,24 @@ class MacroRadarAgent:
                     messages=messages,
                 ) as stream:
                     for event in stream:
+                        started = True
                         if getattr(event, "type", None) == "text":
                             yield event.text
                     final = stream.get_final_message()
-            except anthropic.RateLimitError as exc:
-                raise RateLimited("Hit a rate limit — try again in a moment.") from exc
+            except anthropic.APIStatusError as exc:
+                # Refused with an HTTP error before any event: Anthropic bills
+                # nothing, so the hold goes back. An error once the stream has
+                # begun keeps it (an SSE error arrives with status 200).
+                if hold is not None and not started and (getattr(exc, "status_code", 0) or 0) >= 400:
+                    self._release(guard, hold)
+                if isinstance(exc, anthropic.RateLimitError):
+                    raise RateLimited("Hit a rate limit — try again in a moment.") from exc
+                raise AgentError(f"Anthropic API error: {exc}") from exc
             except anthropic.APIConnectionError as exc:
                 raise NetworkError("AI service unreachable. Please retry.") from exc
-            except anthropic.APIStatusError as exc:
-                raise AgentError(f"Anthropic API error: {exc}") from exc
 
+            if hold is not None:
+                self._settle(guard, hold, final)
             self._record_usage(final)
 
             assistant_blocks = [b.model_dump() for b in final.content]
@@ -635,19 +685,6 @@ class MacroRadarAgent:
 
             if final.stop_reason != "tool_use":
                 return
-
-            # The day's ceiling is asked before every further paid call, so an
-            # answer that keeps reaching for tools stops here instead of
-            # carrying the day past it (launch-1, api/assistant_budget.py).
-            gate = BUDGET_GATE.get()
-            if gate is not None:
-                try:
-                    more = bool(gate())
-                except Exception:  # noqa: BLE001 — a broken gate must not spend
-                    more = False
-                if not more:
-                    yield BUDGET_STOP_NOTE
-                    return
 
             tool_results = []
             for block in final.content:
@@ -688,22 +725,29 @@ class MacroRadarAgent:
         except Exception:
             pass
 
-    def _record_usage(self, message: Any) -> None:
+    def _settle(self, guard: Any, hold: Any, message: Any) -> None:
+        """Charge the finished call its real cost; the hold is released beside it."""
         usage = getattr(message, "usage", None)
-        # The API's ledger first (launch-1): it pays for this call whether or
-        # not Streamlit is in the process.
-        sink = USAGE_SINK.get()
-        if sink is not None and usage is not None:
-            try:
-                sink({
-                    "input_tokens": getattr(usage, "input_tokens", 0) or 0,
-                    "output_tokens": getattr(usage, "output_tokens", 0) or 0,
-                    "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
-                    "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
-                    "model": getattr(message, "model", None) or self.model,
-                })
-            except Exception:  # noqa: BLE001 — accounting must never break an answer
-                pass
+        try:
+            guard.settle(hold, {
+                "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+                "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+                "model": getattr(message, "model", None) or self.model,
+            })
+        except Exception:  # noqa: BLE001 — an unsettled hold stays charged, the safe side
+            pass
+
+    def _release(self, guard: Any, hold: Any) -> None:
+        try:
+            guard.release(hold)
+        except Exception:  # noqa: BLE001 — an unreleased hold stays charged, the safe side
+            pass
+
+    def _record_usage(self, message: Any) -> None:
+        """The Streamlit dialog's token counter (session state only)."""
+        usage = getattr(message, "usage", None)
         try:
             import streamlit as st
             if usage is None:

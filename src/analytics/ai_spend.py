@@ -42,8 +42,11 @@ SONNET_CACHE_READ_USD_PER_MTOK = 0.30  # cache hit, 0.1× base input
 
 PROVIDERS = ("anthropic", "perplexity", "budget")
 PURPOSES = ("news_interpretation", "news_research", "cap_reached", "assistant_ask")
-STATUSES = ("ok", "error", "cap_reached")
-COST_SOURCES = ("usage", "usage.cost", "price_table", "none")
+# "reserved" and "released" are the assistant's holds (api/assistant_budget.py):
+# a call is held at its worst case before it is made and released, as a
+# negative row, once its real cost is recorded.
+STATUSES = ("ok", "error", "cap_reached", "reserved", "released")
+COST_SOURCES = ("usage", "usage.cost", "price_table", "none", "reserve")
 
 _COLUMNS = (
     "ts", "month", "provider", "model", "purpose", "news_id", "input_tokens", "output_tokens",
