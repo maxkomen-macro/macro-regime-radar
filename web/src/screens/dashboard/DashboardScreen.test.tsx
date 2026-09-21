@@ -329,19 +329,41 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(heroText).toContain("Macro regime for Sep 2026");
     expect(heroText).not.toMatch(/Macro regime for Sep 2026 \(/);
     expect(heroText).toContain("Model confidence: Medium (47%)");
-    // The pill is the only place the dominant figure prints inside the hero.
-    expect(heroText.split("58%")).toHaveLength(2);
-    // Decision 8: never an image. Iteration 1 D1: the chart slot holds the
-    // stacked regime-odds chart (one figure, four bands, the current month
-    // marked, one caption), not the gradient placeholder.
+    // The pill is the only place the hero's prose prints the dominant figure.
+    // Iteration 2 F1 gives the chart its own numbers by design - the legend
+    // carries each regime's latest value and the marker labels the called
+    // line - so the rule is scoped to the copy it was always about, and the
+    // chart is asserted on its own terms above.
+    const heroProse = hero().cloneNode(true) as HTMLElement;
+    heroProse.querySelectorAll("figure[data-chart]").forEach((f) => f.remove());
+    expect(text(heroProse).split("58%")).toHaveLength(2);
+    // Decision 8: never an image. Iteration 2 F1: the chart slot holds the
+    // four-line regime-odds chart (one figure, one line per regime with the
+    // called one heavy, an inline legend, the current month marked, one
+    // caption), not the gradient placeholder and no longer the stacked bands.
     expect(document.querySelector("img")).toBeNull();
     const chart = hero().querySelector("figure[data-chart]") as HTMLElement;
     expect(chart).not.toBeNull();
     expect(chart.querySelector("svg[role='img']")).not.toBeNull();
-    expect(chart.querySelectorAll(".mrr-odds-band")).toHaveLength(4);
+    // The bands are gone, not kept alongside the lines.
+    expect(chart.querySelectorAll(".mrr-odds-band")).toHaveLength(0);
+    const lines = [...chart.querySelectorAll(".mrr-odds-line")];
+    expect(lines.map((l) => l.getAttribute("data-regime"))).toEqual(["Goldilocks", "Overheating", "Stagflation", "Recession Risk"]);
+    // Exactly one line is heavy, and it is the called regime: the call reads
+    // as dominant without reading the legend.
+    expect(lines.filter((l) => l.getAttribute("data-weight") === "heavy").map((l) => l.getAttribute("data-regime"))).toEqual(["Goldilocks"]);
+    // Legend inline above the plot, sorted by latest value, high to low. Which
+    // entries sit in the legend and which on the footnote line is the measured
+    // split (fitKeys); all four print either way.
+    const printed = [...chart.querySelectorAll(".mrr-odds-legend .mrr-odds-key, .mrr-odds-foot-key")];
+    expect(printed.map((k) => k.getAttribute("data-regime"))).toEqual(["Goldilocks", "Recession Risk", "Overheating", "Stagflation"]);
+    expect(printed.map((k) => text(k).replace(/^·\s*/, ""))).toEqual(["Goldilocks 58%", "Recession Risk 31%", "Overheating 7%", "Stagflation 4%"]);
+    expect(chart.querySelectorAll(".mrr-odds-legend .mrr-odds-key").length).toBeGreaterThan(0);
+    // Nothing is left in the right margin for the old end labels to occupy.
+    expect(chart.querySelectorAll(".mrr-odds-labels")).toHaveLength(0);
     expect(chart.querySelector("[data-current-month]")).toHaveAttribute("data-current-month", MONTH);
     expect(chart.querySelectorAll("figcaption")).toHaveLength(1);
-    expect(text(chart.querySelector("figcaption"))).toBe("Regime odds · 4 months · widest band is the call");
+    expect(text(chart.querySelector("figcaption"))).toBe("Regime odds · 4 months · heaviest line is the call");
     expect(hero().querySelector("[style*='135deg']")).toBeNull();
     expect(document.querySelectorAll("figure[data-chart]")).toHaveLength(1);
     expect(screen.queryByText("Reading the latest regime…")).toBeNull();
