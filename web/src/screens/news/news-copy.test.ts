@@ -16,6 +16,7 @@ import {
   pendingReadIds,
   displayStories,
   headlineKey,
+  hasAiRead,
   ENRICH_FLOOR,
   ENRICH_TOP_N,
   categoryMixValue,
@@ -497,6 +498,13 @@ describe("the page and the backend mean the same ten stories (fix/prelaunch-1, B
     const small = window7d.filter((r) => storyKeys.small_window.rows.includes(r.id));
     expect(displayStories(small).map((r) => r.id)).toEqual(storyKeys.small_window.ten);
     expect([...pendingReadIds(small)]).toEqual(storyKeys.small_window.pending);
+  });
+
+  it("a stored read is a read exactly when the fixture says (the backend's _eligible agrees)", () => {
+    for (const c of storyKeys.reads) {
+      expect(hasAiRead({ regime_interpretation: c.value, perplexity_research: null } as NewsItem)).toBe(c.has_read);
+      expect(hasAiRead({ regime_interpretation: null, perplexity_research: c.value } as NewsItem)).toBe(c.has_read);
+    }
   });
 
   it("the floor and the depth are the backend's", () => {

@@ -964,6 +964,16 @@ def test_a_window_with_fewer_than_ten_stories_tops_up_every_one_it_holds(db):
     assert topups(db, now=datetime.fromisoformat(STORY_FIXTURE["now"])) == STORY_FIXTURE["small_window"]["pending"]
 
 
+def test_a_stored_read_is_a_read_exactly_when_the_page_says_so():
+    # hasAiRead trims with JavaScript's whitespace set; so must the backend,
+    # or a card could say "AI read pending" for a read the backend will never
+    # redo (U+FEFF), or carry no read the backend thinks it has (U+0085)
+    for case in STORY_FIXTURE["reads"]:
+        for column in ("regime_interpretation", "perplexity_research"):
+            row = {"overall_significance": 4.0, "regime_interpretation": "", "perplexity_research": "", column: case["value"]}
+            assert news._eligible(row, news.SIGNIFICANCE_FLOOR) is (not case["has_read"]), (column, case)
+
+
 def test_the_selection_reads_the_rows_the_page_loads():
     assert news.SIGNIFICANCE_FLOOR == STORY_FIXTURE["floor"]
     assert news.DISPLAY_TOP_N == STORY_FIXTURE["top_n"]

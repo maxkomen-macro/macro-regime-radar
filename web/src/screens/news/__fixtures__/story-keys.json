@@ -1,5 +1,5 @@
 {
-  "_note": "One fixture, two suites (fix/prelaunch-1, B-H2): web/src/screens/news/news-copy.test.ts and tests/test_news_budget.py. 'key' values are what the page's own JavaScript computes (generated with Node from headlineKey); the Python port must agree. 'window' rows are in the order /api/news serves them; 'ten' is the ten distinct stories the page shows first, 'pending' the ones the backend tops up.",
+  "_note": "One fixture, two suites (fix/prelaunch-1, B-H2): web/src/screens/news/news-copy.test.ts and tests/test_news_budget.py. 'key' values are what the page's own JavaScript computes (generated with Node from headlineKey); the Python port must agree. 'reads' are stored read values and whether the page's hasAiRead sees a read in them (Node's own trim()); the backend's _eligible must agree. 'window' rows are in the order /api/news serves them; 'ten' is the ten distinct stories the page shows first, 'pending' the ones the backend tops up.",
   "now": "2026-09-21T12:00:00+00:00",
   "floor": 2.5,
   "top_n": 10,
@@ -205,5 +205,43 @@
       103,
       105
     ]
-  }
+  },
+  "reads": [
+    {
+      "value": "a stored read",
+      "has_read": true
+    },
+    {
+      "value": "",
+      "has_read": false
+    },
+    {
+      "value": "   ",
+      "has_read": false
+    },
+    {
+      "value": "﻿",
+      "has_read": false
+    },
+    {
+      "value": "",
+      "has_read": true
+    },
+    {
+      "value": "\u001c",
+      "has_read": true
+    },
+    {
+      "value": "　  ",
+      "has_read": false
+    },
+    {
+      "value": "​",
+      "has_read": true
+    },
+    {
+      "value": " \t\nx",
+      "has_read": true
+    }
+  ]
 }

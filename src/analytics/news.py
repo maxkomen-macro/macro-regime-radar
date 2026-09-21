@@ -1007,10 +1007,12 @@ def _load_rows(conn: sqlite3.Connection, row_ids) -> list[dict]:
 
 
 def _eligible(row: dict, floor: float) -> bool:
+    # "carries no read" is the page's hasAiRead (news-copy.ts), which trims
+    # with JavaScript's whitespace set, not Python's (B-H2, fix/prelaunch-1)
     return (
         float(row["overall_significance"] or 0.0) >= floor
-        and not (row["regime_interpretation"] or "").strip()
-        and not (row["perplexity_research"] or "").strip()
+        and not (row["regime_interpretation"] or "").strip(_JS_SPACE)
+        and not (row["perplexity_research"] or "").strip(_JS_SPACE)
     )
 
 
