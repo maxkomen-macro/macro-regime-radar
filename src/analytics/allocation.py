@@ -22,6 +22,7 @@ the API process never loads it.
 from __future__ import annotations
 
 import sqlite3
+import time
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -1102,6 +1103,19 @@ def herc_optimize(
 
 # ── Efficient frontier ─────────────────────────────────────────────────────────
 
+def _yielding(fn):
+    """Hand the GIL to any waiting thread before each solver callback
+    (fix/prelaunch-1). SciPy's SLSQP holds the GIL through long stretches of a
+    solve, which froze the API's event loop for up to a second while the
+    background worker rebuilt allocation; a zero-length sleep releases it and
+    changes no arithmetic (the frontier is bit-identical, pinned by
+    tests/test_generations.py)."""
+    def call(*args):
+        time.sleep(0)
+        return fn(*args)
+    return call
+
+
 def generate_efficient_frontier(
     expected_returns: np.ndarray,
     cov_matrix: np.ndarray,
@@ -1125,13 +1139,13 @@ def generate_efficient_frontier(
 
     for tgt in target_rets:
         res = minimize(
-            lambda w: np.dot(w, np.dot(cov, w)),
+            _yielding(lambda w: np.dot(w, np.dot(cov, w))),
             np.full(n, 1.0 / n),
             method="SLSQP",
             bounds=[(min_weight, max_weight)] * n,
             constraints=[
-                {"type": "eq", "fun": lambda w: np.sum(w) - 1},
-                {"type": "eq", "fun": lambda w, t=tgt: _port_return(w, expected_returns) - t},
+                {"type": "eq", "fun": _yielding(lambda w: np.sum(w) - 1)},
+                {"type": "eq", "fun": _yielding(lambda w, t=tgt: _port_return(w, expected_returns) - t)},
             ],
             options={"maxiter": 1000, "ftol": 1e-9},
         )

@@ -411,3 +411,23 @@ def test_stored_maxima_are_computed_once_per_generation_and_move_with_it(serving
     assert w.wait_published(min_id=first_id + 1, timeout=30)
     moved = db.freshness()
     assert len(calls) == 2 and moved["asset_prices_date"] != first["asset_prices_date"]
+
+
+def test_the_frontier_yields_the_gil_in_every_solver_callback_and_changes_nothing(monkeypatch):
+    """SciPy's SLSQP held the GIL for up to ~250 ms per solve, freezing the
+    event loop during a rebuild (measured: /health/live stalled ~1 s). Each
+    callback now sleeps(0) first; with the sleep stubbed out the frontier is
+    identical, so the yield is scheduling only."""
+    from src.analytics import allocation as al
+
+    rng = np.random.RandomState(3)
+    a = rng.normal(0, 0.02, size=(120, 6))
+    mu, cov = a.mean(axis=0) * 12, np.cov(a.T) * 12
+    yields: list = []
+    real_sleep = al.time.sleep
+    monkeypatch.setattr(al.time, "sleep", lambda s: yields.append(s) or real_sleep(s))
+    with_yield = al.generate_efficient_frontier(mu, cov, 0.03)
+    assert yields and set(yields) == {0}, "every callback yields with a zero-length sleep"
+    monkeypatch.setattr(al.time, "sleep", lambda s: None)
+    without = al.generate_efficient_frontier(mu, cov, 0.03)
+    assert len(with_yield) > 5 and with_yield.equals(without)
