@@ -1096,14 +1096,16 @@ def share_story_reads(conn: sqlite3.Connection) -> int:
         if not read or len(read) == len(copies):
             continue
         lenders = {c[0] for c, _ in read}
+        key = headline_key(copies[0][1])
         for c in copies:
-            at = _parse_published(c[2])
-            if c[0] in lenders or at is None:
+            if c[0] in lenders:
                 continue
-            near = [(d, t) for d, t in read if t is not None and abs(t - at) < SHARE_SPAN]
+            at = _parse_published(c[2])
+            near = [(d, t) for d, t in read if _same_story((key, at), (key, t))]
             if not near:
                 continue
-            donor = max(near, key=lambda dt: (_read_text(dt[0][4]) and _read_text(dt[0][5]), float(dt[0][3] or 0.0), dt[1]))[0]
+            donor = max(near, key=lambda dt: (_read_text(dt[0][4]) and _read_text(dt[0][5]), float(dt[0][3] or 0.0),
+                                               dt[1] or datetime.min.replace(tzinfo=timezone.utc)))[0]
             fills.append((donor[4], donor[5], donor[3], c[0]))
     if fills:
         conn.executemany(

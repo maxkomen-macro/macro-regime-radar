@@ -1246,3 +1246,17 @@ def test_rewrites_within_the_span_still_share_one_read(db):
     news.share_story_reads(conn)
     conn.close()
     assert all(by_id(db)[i]["regime_interpretation"] == "the read" for i in ids)
+
+
+def test_an_undated_copy_is_lent_its_storys_read_as_it_is_paid_for_once(db):
+    """Loop 4 note: an unreadable date counts as the same story when paying, so
+    it must count as the same story when lending, or the copy waits a run."""
+    title = "Fed holds rates steady as core inflation sticks"
+    read, undated = insert_rows(db, [(title, 3.0, NOW - timedelta(hours=2)), (title, 3.5, NOW - timedelta(hours=1))])
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE news_feed SET regime_interpretation = 'the read', perplexity_research = 'cited' WHERE id = ?", (read,))
+    conn.execute("UPDATE news_feed SET published_at = 'not a date' WHERE id = ?", (undated,))
+    conn.commit()
+    assert news.share_story_reads(conn) == 1
+    conn.close()
+    assert by_id(db)[undated]["regime_interpretation"] == "the read"
