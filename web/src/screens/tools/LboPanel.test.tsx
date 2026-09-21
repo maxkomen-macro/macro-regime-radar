@@ -371,3 +371,73 @@ describe("LboPanel body (checklist 09 E.1 row 6)", () => {
     expect(p9Text(p9Outputs())).not.toContain("Nothing on file");
   });
 });
+
+/* ── J5 (fix/prelaunch-1): the schedule on the shared column ladder ─────────
+ * jsdom lays nothing out and reports clientWidth 0 ("not measured": every
+ * column stays), so these cases stub the measured well width. The widths are
+ * the wells measured on the Tools page (1440: 750, 1280: 590, 600: 522,
+ * 390: 312). */
+import { SCHEDULE_DROP_ORDER, scheduleMinWidths } from "./LboPanel";
+
+describe("#lbo-schedule on the column ladder (J5)", () => {
+  const well = { px: 0 };
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    window.history.replaceState(null, "", P9_ROUTE);
+    posted.length = 0;
+    stubFetch(lboRoutes());
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => well.px });
+  });
+  afterEach(() => {
+    delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    window.history.replaceState(null, "", "/");
+  });
+
+  async function scheduleAt(px: number): Promise<{ headers: string[]; note: string | null }> {
+    well.px = px;
+    renderWithProviders(<LboPanel />, { route: P9_ROUTE });
+    await p9AwaitOutputs();
+    await waitFor(() => expect(p9ById("lbo-schedule")).not.toBeNull());
+    const schedule = p9ById("lbo-schedule") as HTMLElement;
+    const note = schedule.querySelector("[data-testid='lbo-schedule-dropped-columns']");
+    return { headers: [...schedule.querySelectorAll("th")].map((th) => p9Text(th)), note: note ? p9Text(note) : null };
+  }
+
+  it("a well wide enough for all eight shows all eight and no note (1440: 750px)", async () => {
+    const { headers, note } = await scheduleAt(750);
+    expect(headers).toEqual(P9_SCHEDULE_TH);
+    expect(note).toBeNull();
+  });
+
+  it("at 1280 (a 590px well) Implied EV drops first and the panel says so", async () => {
+    const { headers, note } = await scheduleAt(590);
+    expect(headers).toEqual(P9_SCHEDULE_TH.filter((h) => h !== "Implied EV"));
+    expect(note).toBe("Implied EV is hidden at this width · widen the window to read it");
+  });
+
+  it("narrower still, Debt start drops next (600: 522px)", async () => {
+    const { headers, note } = await scheduleAt(522);
+    expect(headers).toEqual(P9_SCHEDULE_TH.filter((h) => h !== "Implied EV" && h !== "Debt start"));
+    expect(note).toBe("Implied EV and Debt start are hidden at this width · widen the window to read them");
+  });
+
+  it("Leverage never drops, even where the rest must still scroll (390: 312px)", async () => {
+    const { headers, note } = await scheduleAt(312);
+    expect(headers).toEqual(["Year", "EBITDA", "Interest", "Paydown", "Debt end", "Leverage"]);
+    expect(note).toBe("Implied EV and Debt start are hidden at this width · widen the window to read them");
+    expect(SCHEDULE_DROP_ORDER).toEqual(["implied_ev", "debt_start"]);
+  });
+
+  it("the minima come from the rows: headers set them at the defaults, a long value widens its column", () => {
+    const base = scheduleMinWidths([{ year: "5 · exit", ebitda: "127.6", implied_ev: "1148.7", debt_start: "450.0", interest: "28.5", paydown: "59.0", debt_end: "450.0", leverage: "4.5×" }]);
+    // measured on the page at the defaults: 70.4, 64.1, 93.5, 93.5, 78.8, 71.5, 78.8, 78.8 (629.4), plus 2px slack each
+    expect(Object.values(base).reduce((a, b) => a + b, 0)).toBeCloseTo(629.4 + 16, 0);
+    const big = scheduleMinWidths([{ year: "10 · exit", ebitda: "13785.8", implied_ev: "275716.0", debt_start: "8000.0", interest: "1200.0", paydown: "-1234.5", debt_end: "12345.6", leverage: "12.3×" }]);
+    expect(big.ebitda).toBeGreaterThan(base.ebitda);
+    expect(big.year).toBeGreaterThan(base.year);
+    expect(big.leverage).toBe(base.leverage); // its header is wider than any leverage it prints
+  });
+});

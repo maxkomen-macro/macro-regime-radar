@@ -22,14 +22,7 @@
  * snapshots allocate nothing new per row (G17).
  */
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import { Card, DataTable, SectionHeader, Sparkline } from "../../components";
 import type { DailyBar } from "../../api/types";
 import {
@@ -41,6 +34,7 @@ import {
 import { fmtDate, fmtSignedPct } from "../../lib/format";
 import Disclosure from "../shared/Disclosure";
 import ScrollTable from "../shared/ScrollTable";
+import { HiddenColumnsNote, fitColumns, hiddenColumnsNote, useMeasuredWidth } from "../shared/column-ladder";
 import { Caption, MISSING, StateNote, metaStyle } from "../shared/screen-ui";
 import { SRC, Stamp, metricAttrs } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
@@ -500,44 +494,12 @@ const WELL_PAD = 24;
  * the dollar change (the percent beside it carries the same move). */
 const DROP_ORDER = ["spark", "w1", "dd"];
 
+/** The tape's rung of the shared column ladder (screens/shared/column-ladder). */
 export function fitTapeColumns(
   cols: TapeColumn[],
   width: number,
 ): { cols: TapeColumn[]; dropped: TapeColumn[] } {
-  const total = (cs: TapeColumn[]) =>
-    cs.reduce((n, c) => n + (MIN_W[c.key] ?? 80), 0);
-  let kept = cols;
-  const dropped: TapeColumn[] = [];
-  // width 0 is "not measured yet": keep everything and let the first
-  // measurement decide, rather than flashing a reduced table.
-  for (const key of DROP_ORDER) {
-    if (!width || total(kept) <= width) break;
-    const hit = kept.find((c) => c.key === key);
-    if (!hit) continue;
-    kept = kept.filter((c) => c !== hit);
-    dropped.push(hit);
-  }
-  return { cols: kept, dropped };
-}
-
-/** The content width of an element, in CSS pixels; 0 until first measured. */
-function useMeasuredWidth<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  const [w, setW] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const read = () =>
-      setW((prev) =>
-        Math.abs(prev - el.clientWidth) < 1 ? prev : el.clientWidth,
-      );
-    read();
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(read);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, w] as const;
+  return fitColumns(cols, width, MIN_W, DROP_ORDER);
 }
 
 export default function MacroTape({
@@ -631,19 +593,11 @@ export default function MacroTape({
   const macroColumns = macroFit.cols;
   const singlesColumns = singlesFit.cols;
   /** The visible affordance F2 asks for: which columns this width cannot show. */
-  const droppedLabel = useMemo(() => {
-    const names = [
-      ...new Set(
-        [...macroFit.dropped, ...singlesFit.dropped].map((c) => c.label),
-      ),
-    ];
-    if (!names.length) return null;
-    const list =
-      names.length === 1
-        ? names[0]
-        : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-    return `${list} ${names.length === 1 ? "is" : "are"} hidden at this width · widen the window to read ${names.length === 1 ? "it" : "them"}`;
-  }, [macroFit.dropped, singlesFit.dropped]);
+  const droppedLabels = useMemo(
+    () => [...macroFit.dropped, ...singlesFit.dropped].map((c) => c.label),
+    [macroFit.dropped, singlesFit.dropped],
+  );
+  const droppedLabel = hiddenColumnsNote(droppedLabels);
 
   const macroGroups = useMemo(
     () =>
@@ -705,14 +659,7 @@ export default function MacroTape({
           and `droppedLabel` says so; the symbol column still pins and
           ScrollTable's swipe affordance still catches the phone, where even
           the reduced set is wider than the well. */}
-      {droppedLabel ? (
-        <div
-          data-testid="tape-dropped-columns"
-          style={{ ...metaStyle, margin: "0 0 8px" }}
-        >
-          {droppedLabel}
-        </div>
-      ) : null}
+      <HiddenColumnsNote labels={droppedLabels} testId="tape-dropped-columns" />
       <div ref={tapeRef}>
         <Card padding="0">
           <ScrollTable label="Macro tape" style={{ padding: "8px 12px 2px" }}>

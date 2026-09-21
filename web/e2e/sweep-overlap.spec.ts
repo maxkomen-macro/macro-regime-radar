@@ -15,7 +15,9 @@
  * Iteration 2 (F2) adds a clipping check to the same cells: no text node may
  * be cut by its container's bounds with no way to reveal it. F2's stricter
  * "no horizontal scroll inside the panel at 1280 px and up" is asserted on
- * the macro tape by name, where the item asks for it.
+ * the macro tape by name, where the item asks for it, and (fix/prelaunch-1,
+ * J5) on the LBO debt schedule, which waits for its model run first so both
+ * audits measure it at every width.
  *
  * Each cell waits for the screen's data (main h1, no aria-busy, no
  * "Loading" status; max ≈ 8 s, then a 500 ms settle), scrolls to the top, runs
@@ -60,6 +62,9 @@ test.describe("G1 overlap sweep", () => {
       await seedSidebar(page, sidebar === "collapsed");
       await page.goto(route, { waitUntil: "domcontentloaded" });
       await waitForScreenData(page);
+      // J5: the schedule renders only once the LBO run answers; the audits
+      // below must see it, not the moment before it arrived.
+      if (route === "/app/tools") await page.locator("#lbo-schedule table").waitFor({ timeout: 60_000 });
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.waitForTimeout(100);
 
@@ -108,6 +113,20 @@ test.describe("G1 overlap sweep", () => {
             .map((el) => `${el.className}: ${el.scrollWidth} into ${el.clientWidth}`),
         );
         expect(scrollers, `the macro tape scrolls horizontally at ${width}px:\n${scrollers.join("\n")}`).toHaveLength(0);
+      }
+
+      // J5 (fix/prelaunch-1), the same rule by name: at 1280px and up the LBO
+      // debt schedule shows its columns whole with no scroll inside its well.
+      // It overflowed by 31 to 39px at 1280 and cut the Leverage column.
+      if (route === "/app/tools" && width >= 1280) {
+        const wells = await page.evaluate(() =>
+          [...document.querySelectorAll("#lbo-schedule .mrr-scroll")].map((el) => ({ scroll: el.scrollWidth, client: el.clientWidth })),
+        );
+        expect(wells, "the LBO schedule's well is on screen").toHaveLength(1);
+        expect(
+          wells.filter((w) => w.scroll > w.client + 1),
+          `the LBO schedule scrolls horizontally at ${width}px: ${wells.map((w) => `${w.scroll} into ${w.client}`).join(", ")}`,
+        ).toHaveLength(0);
       }
     });
   }

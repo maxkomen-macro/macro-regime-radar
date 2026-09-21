@@ -23,7 +23,8 @@ import type { DataTableColumn } from "../../components/data/DataTable";
 import type { HeatCell } from "../../components/data/HeatMatrix";
 import Disclosure from "../shared/Disclosure";
 import ScrollTable from "../shared/ScrollTable";
-import type { LboRequest, LboSensitivity } from "../../api/types";
+import { HiddenColumnsNote, fitColumns, useMeasuredWidth } from "../shared/column-ladder";
+import type { LboRequest, LboResult, LboSensitivity } from "../../api/types";
 import Jargon from "../shared/Jargon";
 import { tidyProse } from "../../lib/format";
 import type { FreshLabel } from "../shared/fresh-state";
@@ -100,6 +101,68 @@ const SCHEDULE_COLUMNS: DataTableColumn[] = [
   { key: "leverage", label: "Leverage", align: "right", mono: true },
 ];
 
+/**
+ * J5 (fix/prelaunch-1): the schedule on the shared column ladder
+ * (screens/shared/column-ladder). At 1280px its eight columns needed 629px of
+ * a 590px well, so it scrolled inside the panel and cut the Leverage column.
+ * Narrower than all eight need, it drops Implied EV first, then Debt start,
+ * and the panel names what it hid; Leverage never drops. Past that (a phone)
+ * the rest scrolls inside the well behind ScrollTable's swipe affordance.
+ */
+export const SCHEDULE_DROP_ORDER = ["implied_ev", "debt_start"] as const;
+/* Measured on this page: headers are mono 10.5px uppercase tracked .1em, 7.35px
+   a character inside 10px side padding; cells are mono 13px, 7.8px a character
+   inside the compact table's 8px. The first column has no left padding. */
+const HEAD_CH = 7.35;
+const CELL_CH = 7.8;
+const COL_SLACK = 2; // sub-pixel rounding
+
+/** Each column's settled width: the wider of its header and its widest value.
+ * The values move with the sliders (a 1,000 EBITDA growing 30% a year, a
+ * ten-year hold widen EBITDA and Year), so the minima come from the rows. */
+export function scheduleMinWidths(rows: Record<string, string>[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  SCHEDULE_COLUMNS.forEach((c, i) => {
+    const head = HEAD_CH * String(c.label).length + (i === 0 ? 10 : 20);
+    const longest = rows.reduce((n, r) => Math.max(n, String(r[c.key] ?? "").length), 0);
+    out[c.key] = Math.max(head, CELL_CH * longest + (i === 0 ? 8 : 16)) + COL_SLACK;
+  });
+  return out;
+}
+
+/** The schedule's rows: the Close row, then one per year. Paydown and
+ * Leverage are display arithmetic on the served rows (B.6). */
+function scheduleRowsOf(res: LboResult, inputs: LboRequest): Array<Record<string, string> & { id: string }> {
+  return [
+    // Year 0 (the mockup's "Close" row): the request's EBITDA, the served
+    // entry debt and the request's leverage; the flow columns have nothing
+    // to print yet.
+    {
+      id: "close",
+      year: "Close",
+      ebitda: inputs.ebitda.toFixed(1),
+      implied_ev: DASH,
+      debt_start: DASH,
+      interest: DASH,
+      paydown: DASH,
+      debt_end: res.entry_debt.toFixed(1),
+      leverage: `${inputs.leverage_ratio.toFixed(1)}×`,
+    },
+    ...res.schedule.map((y) => ({
+      id: String(y.year),
+      year: y.year === res.schedule.length ? `${y.year} · exit` : String(y.year),
+      ebitda: y.ebitda.toFixed(1),
+      implied_ev: y.implied_ev.toFixed(1),
+      debt_start: y.debt_start.toFixed(1),
+      interest: y.interest.toFixed(1),
+      // Principal repaid this year: the amortization floor plus the cash sweep (lbo.py run_lbo_model, B1); negative when unpaid interest is added to the debt.
+      paydown: (y.debt_start - y.debt_end).toFixed(1),
+      debt_end: y.debt_end.toFixed(1),
+      leverage: y.ebitda > 0 ? `${(y.debt_end / y.ebitda).toFixed(1)}×` : DASH,
+    })),
+  ];
+}
+
 const swatchStyle = (background: string): React.CSSProperties => ({
   display: "inline-block",
   width: 10,
@@ -145,6 +208,8 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
   const own = useLboDeal(deal == null);
   const d = deal ?? own;
   const { isNarrow } = useBreakpoint();
+  // J5: the schedule's well, measured (before any early return: a hook).
+  const [scheduleRef, scheduleW] = useMeasuredWidth<HTMLDivElement>();
   const { defaults, liveRate, clampedLive, inputs, modified, manualRate, run, res, baseRes, sens, warnings } = d;
   // A1: the rate is Fed funds plus the HY spread (the derived series from
   // /api/lbo/defaults); the model's outputs are dated by it. F2: its own
@@ -232,6 +297,8 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
     ) : undefined;
 
   const lastYear = res?.viable && res.schedule.length > 0 ? res.schedule[res.schedule.length - 1] : null;
+  const scheduleRows = res?.viable && res.schedule.length > 0 ? scheduleRowsOf(res, inputs) : [];
+  const scheduleFit = fitColumns(SCHEDULE_COLUMNS, scheduleW, scheduleMinWidths(scheduleRows), SCHEDULE_DROP_ORDER);
   const exitDebt = res?.exit_debt ?? null;
   const exitLeverage = exitDebt != null && lastYear != null && lastYear.ebitda > 0 ? exitDebt / lastYear.ebitda : null;
 
@@ -453,45 +520,21 @@ export default function LboPanel({ deal }: { deal?: LboDeal } = {}) {
                  be allowed to shrink too, or the scroll well never engages. */
               <Card as="section" id="lbo-schedule" variant="panel" style={{ minWidth: 0 }}>
                 <SectionHeader layout="panel" title="Annual debt schedule" description="$ millions" right={modelStamp} />
-                {/* Eight nowrap numeric columns can't compress into a half-width
-                    panel — the schedule scrolls inside its own well rather than
-                    dragging the page sideways. */}
-                <ScrollTable label="Annual debt schedule">
-                  <DataTable
-                    compact
-                    zebra={false}
-                    caption="Annual debt schedule in $ millions"
-                    columns={SCHEDULE_COLUMNS}
-                    rows={[
-                      // Year 0 (the mockup's "Close" row): the request's EBITDA,
-                      // the served entry debt and the request's leverage; the
-                      // flow columns have nothing to print yet.
-                      {
-                        id: "close",
-                        year: "Close",
-                        ebitda: inputs.ebitda.toFixed(1),
-                        implied_ev: DASH,
-                        debt_start: DASH,
-                        interest: DASH,
-                        paydown: DASH,
-                        debt_end: res.entry_debt.toFixed(1),
-                        leverage: `${inputs.leverage_ratio.toFixed(1)}×`,
-                      },
-                      ...res.schedule.map((y) => ({
-                        id: String(y.year),
-                        year: y.year === res.schedule.length ? `${y.year} · exit` : String(y.year),
-                        ebitda: y.ebitda.toFixed(1),
-                        implied_ev: y.implied_ev.toFixed(1),
-                        debt_start: y.debt_start.toFixed(1),
-                        interest: y.interest.toFixed(1),
-                        // Principal repaid this year: the amortization floor plus the cash sweep (lbo.py run_lbo_model, B1); negative when unpaid interest is added to the debt.
-                        paydown: (y.debt_start - y.debt_end).toFixed(1),
-                        debt_end: y.debt_end.toFixed(1),
-                        leverage: y.ebitda > 0 ? `${(y.debt_end / y.ebitda).toFixed(1)}×` : DASH,
-                      })),
-                    ]}
-                  />
-                </ScrollTable>
+                {/* J5: the column ladder (above). What this width cannot show
+                    whole is named here; a phone still scrolls the rest inside
+                    the well rather than dragging the page sideways. */}
+                <HiddenColumnsNote labels={scheduleFit.dropped.map((c) => String(c.label))} testId="lbo-schedule-dropped-columns" />
+                <div ref={scheduleRef}>
+                  <ScrollTable label="Annual debt schedule">
+                    <DataTable
+                      compact
+                      zebra={false}
+                      caption="Annual debt schedule in $ millions"
+                      columns={scheduleFit.cols}
+                      rows={scheduleRows}
+                    />
+                  </ScrollTable>
+                </div>
                 <Caption>
                   Cash for debt service is 60% of EBITDA. It pays interest first; scheduled amortization
                   of {inputs.amortization_rate.toFixed(0)}% of the original debt a year is a floor, and the
