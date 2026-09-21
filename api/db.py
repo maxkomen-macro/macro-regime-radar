@@ -12,6 +12,11 @@ deadlocked the worker pool under a burst of concurrent requests (independent
 technical review, P0-1: 39 threads parked in SQLite's unix-VFS mutex). Call
 sites keep their `with closing(_connect())` shape; `close()` on the reused
 connection is a no-op and the real close happens on swap or thread exit.
+
+Generations (fix/prelaunch-1): when the API's worker has published one, reads
+go to its in-memory copy of the file instead (src/analytics/dbpath.py), the
+same copy every derived result was computed from, so a swapped file never
+shows through here before the results built from it are ready.
 """
 
 from __future__ import annotations
@@ -22,11 +27,18 @@ import threading
 from contextlib import closing
 from pathlib import Path
 
+from src.analytics import dbpath
+
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "macro_radar.db"
 
 
 class DBUnavailable(RuntimeError):
     """Raised when the SQLite file is missing or cannot be opened read-only."""
+
+
+class NotStored(LookupError):
+    """A database that predates a stored input (allocation's asset price
+    histories, fix/prelaunch-1): answered in plain words, never downloaded."""
 
 
 def db_present() -> bool:
@@ -51,19 +63,36 @@ def _file_key(path: Path) -> tuple[int, int, int]:
     return (st.st_ino, st.st_mtime_ns, st.st_size)
 
 
-def _connect() -> sqlite3.Connection:
-    if not DB_PATH.exists():
-        raise DBUnavailable(f"Database not found at {DB_PATH}")
-    key = _file_key(DB_PATH)
+def _drop_local() -> None:
     conn = getattr(_local, "conn", None)
-    if conn is not None and getattr(_local, "key", None) == key and getattr(_local, "path", None) == str(DB_PATH):
-        return conn
     if conn is not None:
         try:
             conn.really_close()
         except sqlite3.Error:
             pass
-        _local.conn = None
+    _local.conn = None
+
+
+def _connect() -> sqlite3.Connection:
+    gen = dbpath.generation_for(DB_PATH)
+    if gen is not None:
+        conn = getattr(_local, "conn", None)
+        if conn is not None and getattr(_local, "gen", None) == gen.id:
+            return conn
+        _drop_local()
+        conn = sqlite3.connect(gen.uri, uri=True, factory=_ReusedConnection)
+        conn.execute("PRAGMA query_only = 1")
+        conn.row_factory = sqlite3.Row
+        _local.conn, _local.gen, _local.key, _local.path = conn, gen.id, None, None
+        return conn
+    if not DB_PATH.exists():
+        raise DBUnavailable(f"Database not found at {DB_PATH}")
+    key = _file_key(DB_PATH)
+    conn = getattr(_local, "conn", None)
+    if conn is not None and getattr(_local, "gen", None) is None and getattr(_local, "key", None) == key and getattr(_local, "path", None) == str(DB_PATH):
+        return conn
+    _drop_local()
+    _local.gen = None
     try:
         conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, factory=_ReusedConnection)
     except sqlite3.Error as exc:
@@ -74,14 +103,9 @@ def _connect() -> sqlite3.Connection:
 
 
 def reset_connections_for_tests() -> None:
-    conn = getattr(_local, "conn", None)
-    if conn is not None:
-        try:
-            conn.really_close()
-        except sqlite3.Error:
-            pass
-    _local.conn = None
+    _drop_local()
     _local.key = None
+    _local.gen = None
 
 
 def latest_regime() -> dict | None:
@@ -635,4 +659,10 @@ def freshness() -> dict:
     with closing(_connect()) as conn:
         for key, sql in queries.items():
             out[key] = conn.execute(sql).fetchone()[0]
+        # Allocation's stored price histories (fix/prelaunch-1): every daily
+        # series is at least this current; None on a database without them.
+        has = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='asset_prices'").fetchone()
+        out["asset_prices_date"] = conn.execute(
+            "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM asset_prices WHERE interval = '1d' GROUP BY symbol)"
+        ).fetchone()[0] if has else None
     return out

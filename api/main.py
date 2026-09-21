@@ -33,6 +33,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from api import bootstrap, db, security, stream
+from api import worker as worker_mod
+from api.db import NotStored
 from api import freshness as freshness_mod
 from api.chat import router as assistant_router
 from api.providers import entitlements
@@ -101,6 +103,14 @@ async def _lifespan(_: FastAPI):
         await asyncio.to_thread(bootstrap.refresh_db)
     except Exception:
         log.exception("DB bootstrap failed — continuing with the on-disk DB")
+    # The background worker (api/worker.py, fix/prelaunch-1): preloads the
+    # heavy libraries, builds the first generation of every derived result,
+    # and rebuilds on every database change; handlers only look results up.
+    # It also keeps the strip's and default watchlist's candles warm when an
+    # EODHD token is configured.
+    analytics = worker_mod.get_worker()
+    analytics.prefetch = os.environ.get("PREFETCH_MARKET", "1") != "0"
+    analytics.start(serving=True)
     refresh_task: asyncio.Task | None = None
     interval_min = bootstrap.refresh_interval_min()
     if interval_min > 0:
@@ -122,6 +132,7 @@ async def _lifespan(_: FastAPI):
         refresh_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await refresh_task
+    await asyncio.to_thread(analytics.stop)
     await stream.hub.stop()
 
 
@@ -158,6 +169,27 @@ async def _provider_error(_: Request, exc: ProviderError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.http_status,
         content={"detail": exc.public, "kind": exc.kind, "provider": exc.provider, "retryable": exc.retryable},
+    )
+
+
+@app.exception_handler(worker_mod.Warming)
+async def _warming(_: Request, exc: worker_mod.Warming) -> JSONResponse:
+    """A request that arrived before the first background pass completed and
+    waited WAIT_S for it (fix/prelaunch-1): 503, Retry-After, a warming body."""
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": str(exc.retry_after)},
+        content={"detail": exc.detail, "kind": "warming", "provider": "api", "retryable": True},
+    )
+
+
+@app.exception_handler(NotStored)
+async def _not_stored(_: Request, exc: NotStored) -> JSONResponse:
+    """A database that predates a stored input says so in plain words; the
+    server never falls back to downloading it (fix/prelaunch-1)."""
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc), "kind": "not_stored", "provider": "api", "retryable": False},
     )
 
 
@@ -1301,7 +1333,6 @@ def api_recession_scenario(req: RecessionScenarioRequest) -> RecessionScenarioRe
     Streamlit sensitivity-panel computation. Read-only; the model is the same
     TTL-cached artifact behind /api/recession/probability."""
     from api.recession_cache import peek_baseline_prob, score_recession_scenario
-    from src.analytics.recession import _classify_prob
 
     prob = _guarded(
         lambda: score_recession_scenario(
@@ -1310,6 +1341,7 @@ def api_recession_scenario(req: RecessionScenarioRequest) -> RecessionScenarioRe
     )
     if prob is None:
         raise HTTPException(status_code=404, detail="Recession model has no data.")
+    from src.analytics.recession import _classify_prob  # loaded by the worker's preload
     label, color = _classify_prob(prob)
     # Peek, never retrain: a TTL lapse mid-slider-drag must not pause the UI
     # for a model fit just to refresh the delta's reference number.
@@ -1327,10 +1359,11 @@ def api_recession_scenario(req: RecessionScenarioRequest) -> RecessionScenarioRe
 
 @api.get("/lbo/defaults", response_model=LboDefaults)
 def api_lbo_defaults() -> LboDefaults:
-    """Live financing-rate defaults (Fed Funds + HY OAS) from stored FRED data."""
-    from src.analytics.lbo import get_lbo_defaults
+    """Live financing-rate defaults (Fed Funds + HY OAS) from stored FRED data,
+    computed by the worker for the published generation."""
+    from api import analytics_cache
 
-    defaults = _guarded(get_lbo_defaults)
+    defaults = _guarded(analytics_cache.get_lbo_defaults)
     block = _freshness_block(["FEDFUNDS", "BAMLH0A0HYM2"])
     block["lbo_all_in_rate"] = _all_in_state(defaults, block)
     return LboDefaults(**defaults, freshness=block)
@@ -1422,8 +1455,11 @@ def api_lbo_run(req: LboRequest) -> LboResponse:
 def api_allocation() -> dict:
     """Full allocation payload from src/analytics/allocation.get_allocation_data:
     regime-conditional stats, 7 optimization methods, efficient frontier, tail
-    risk, factor/style/currency attribution. Cold call downloads return
-    histories via yfinance (~30–60 s), then served from a 1-hour cache.
+    risk, factor/style/currency attribution. Computed by the background worker
+    from the price histories the full refresh stores (fix/prelaunch-1): this
+    server never downloads them, and on a database that predates them answers
+    503 not_stored in plain words. `histories` says as of when and from which
+    providers; `freshness.asset_prices` carries the contract's state.
 
     Returns a plain dict (the only /api endpoint without a strict model —
     leaf shapes are asset×regime matrices keyed by data, mirrored as-is;
@@ -1431,21 +1467,21 @@ def api_allocation() -> dict:
     from api import analytics_cache
 
     try:
-        return _guarded(analytics_cache.get_cached_allocation)
+        payload = _guarded(analytics_cache.get_cached_allocation)
     except ModuleNotFoundError as exc:
         raise HTTPException(
             status_code=503,
             detail=f"Allocation engine dependency missing: {exc.name}. "
             "Install requirements-api.txt into the API environment.",
         ) from exc
-    except HTTPException:
+    except (HTTPException, NotStored, worker_mod.Warming):
         raise
-    except Exception as exc:  # network failures reaching the data vendor
+    except Exception as exc:  # a numerical failure over the stored histories
         raise HTTPException(
             status_code=502,
-            detail=f"Allocation data unavailable — {type(exc).__name__} while "
-            "building return histories.",
+            detail=f"Allocation could not be computed from the stored histories ({type(exc).__name__}).",
         ) from exc
+    return {**payload, "freshness": _freshness_block(["asset_prices"])}
 
 
 # ── News & Calendar fallbacks (night-2) ──────────────────────────────────────
@@ -1513,6 +1549,13 @@ def health_ready() -> JSONResponse:
         return JSONResponse(status_code=503, content={"status": "not_ready", "reason": type(exc).__name__})
     if not row:
         return JSONResponse(status_code=503, content={"status": "not_ready", "reason": "no regime rows"})
+    analytics = worker_mod.get_worker()
+    analytics.ensure_started()
+    if not analytics.ready():
+        # fix/prelaunch-1: ready only once the first background pass has built
+        # every derived result, so a host never routes traffic to a server
+        # that would answer "warming".
+        return JSONResponse(status_code=503, content={"status": "warming", "reason": "the first background pass has not completed", "worker": analytics.status()})
     boot = bootstrap.status()
     return JSONResponse(
         content={
@@ -1521,6 +1564,7 @@ def health_ready() -> JSONResponse:
             "db_mtime": boot.get("db_mtime"),
             "snapshot_downloaded_at": boot.get("last_downloaded_at"),
             "relay_degraded": stream.hub.degraded()[0],
+            "worker": analytics.status(),
         }
     )
 

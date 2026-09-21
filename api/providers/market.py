@@ -1,11 +1,18 @@
-"""Market-data orchestration: EODHD first, yfinance as the disclosed fallback,
-FRED never routed here (2026-09-06).
+"""Market-data orchestration, FRED never routed here (2026-09-06).
+
+On-demand symbol lookups (search, profile, candles, corporate actions,
+options, ticks) are EODHD only: the API process never calls Yahoo
+(fix/prelaunch-1). When EODHD cannot answer, the caller gets a typed,
+disclosed error ({detail, kind, provider, retryable}) instead of a silent
+second source. Yahoo survives in exactly one place, daily_history(...,
+allow_yahoo=True), which only the refresh pipeline calls to store
+allocation's price histories, and which says in its envelope which provider
+supplied each series.
 
 Every function returns a normalized envelope carrying provider, fetched_at,
 market timestamp, live/delayed, fallback_used and fallback_reason. A series
-never mixes providers, a fallback never happens silently, retries are bounded
-in the client, caches are keyed single-flight with TTL and size limits, and
-nothing here writes to SQLite.
+never mixes providers, retries are bounded in the client, caches are keyed
+single-flight with TTL and size limits, and nothing here writes to SQLite.
 """
 
 from __future__ import annotations
@@ -13,6 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -94,7 +102,20 @@ _actions_cache = KeyedTTLCache(6 * 3600.0, 256)
 _exp_cache = KeyedTTLCache(3600.0, 128)
 _chain_cache = KeyedTTLCache(900.0, 256)
 _ticks_cache = KeyedTTLCache(30.0, 64)
-_RANGE_TTL = {"1D": 60.0, "5D": 120.0, "1M": 300.0}
+RANGE_TTL = {"1D": 60.0, "5D": 120.0, "1M": 300.0}
+_RANGE_TTL = RANGE_TTL
+# The profile's two EODHD calls (delayed quote, identity from the search
+# index) run side by side (fix/prelaunch-1, 4d); created on first use.
+_pool: ThreadPoolExecutor | None = None
+_pool_lock = threading.Lock()
+
+
+def _executor() -> ThreadPoolExecutor:
+    global _pool
+    with _pool_lock:
+        if _pool is None:
+            _pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mrr-provider")
+        return _pool
 
 
 def clear_caches() -> None:
@@ -192,58 +213,85 @@ def _eodhd_candles(inst: Instrument, range_key: str) -> tuple[list[dict], str]:
     return bars, spec["interval"]
 
 
-def _yf_candles(inst: Instrument, range_key: str) -> tuple[list[dict], str]:
-    period, interval = RANGES[range_key]["yf"]
-    bars = yf.history(inst, period=period, interval=interval)
-    if RANGES[range_key].get("session_only") and bars:
-        last_day = bars[-1]["ts"][:10]
-        bars = [b for b in bars if b["ts"][:10] == last_day]
-    return bars, interval
-
-
-def _fallback_allowed(exc: ProviderError) -> bool:
-    return exc.kind in {"missing_token", "unauthorized", "unsupported", "unknown_symbol", "timeout", "unavailable", "rate_limited", "malformed", "empty"}
+def _candles_compute(inst: Instrument, range_key: str) -> dict:
+    """One EODHD fetch of a candle series. EODHD's failure is the answer,
+    typed: the API never calls Yahoo (fix/prelaunch-1)."""
+    family = "intraday" if RANGES[range_key]["kind"] == "intraday" else "historical"
+    blocked = entitlements.is_blocked(family)
+    if blocked is not None:
+        raise Unauthorized(eod.PROVIDER, blocked.reason, status=blocked.status)
+    try:
+        bars, interval = _with_slot(lambda: _eodhd_candles(inst, range_key))
+    except ProviderError as exc:
+        if exc.kind in ("unauthorized", "missing_token"):
+            entitlements.record_live(family, False, exc.status, f"{exc.kind}: {exc.public}")
+        if exc.kind == "unknown_symbol":
+            raise UnknownSymbol("api", f"No listing found for '{inst.canonical}' on EODHD.", status=exc.status, detail=repr(exc)) from exc
+        raise
+    entitlements.record_live(family, True, 200, "ok")
+    if not bars:
+        raise EmptyResult(eod.PROVIDER, f"EODHD holds no {range_key} bars for {inst.canonical}.")
+    return _series(inst, range_key, bars, interval, eod.PROVIDER, None, None)
 
 
 def candles(symbol: str, range_key: str) -> dict:
-    """OHLCV bars for one symbol over a named range, EODHD first."""
+    """OHLCV bars for one symbol over a named range, from EODHD."""
     if range_key not in RANGES:
         raise KeyError(range_key)
     try:
         inst = parse(symbol)
     except SymbolError as exc:
         raise UnknownSymbol("api", str(exc)) from exc
+    ttl = RANGE_TTL.get(range_key, 900.0)
+    return _candles_cache.get(f"{inst.canonical}:{range_key}", lambda: _candles_compute(inst, range_key), ttl=ttl)
 
-    def compute() -> dict:
-        primary_err: ProviderError | None = None
-        blocked = entitlements.is_blocked("intraday" if RANGES[range_key]["kind"] == "intraday" else "historical")
-        if blocked is None:
-            try:
-                bars, interval = _with_slot(lambda: _eodhd_candles(inst, range_key))
-                entitlements.record_live("intraday" if RANGES[range_key]["kind"] == "intraday" else "historical", True, 200, "ok")
-                if not bars:
-                    raise EmptyResult(eod.PROVIDER, f"EODHD holds no {range_key} bars for {inst.canonical}.")
-                return _series(inst, range_key, bars, interval, eod.PROVIDER, None, None)
-            except ProviderError as exc:
-                primary_err = exc
-                if exc.kind in ("unauthorized", "missing_token"):
-                    entitlements.record_live("intraday" if RANGES[range_key]["kind"] == "intraday" else "historical", False, exc.status, f"{exc.kind}: {exc.public}")
-        else:
-            primary_err = Unauthorized(eod.PROVIDER, blocked.reason, status=blocked.status)
-        if not _fallback_allowed(primary_err) or inst.yfinance is None:
-            raise primary_err
+
+def refresh_candles(symbol: str, range_key: str, margin_s: float) -> bool:
+    """Prefetch (fix/prelaunch-1, 4d): fetch one candle series into the cache
+    when it is missing or within margin_s of expiring, so a visitor's request
+    for a fixed symbol finds it warm. True when it fetched."""
+    inst = parse(symbol)
+    key = f"{inst.canonical}:{range_key}"
+    age = _candles_cache.age(key)
+    if age is not None and age < RANGE_TTL.get(range_key, 900.0) - margin_s:
+        return False
+    _candles_cache.put(key, _candles_compute(inst, range_key))
+    return True
+
+
+def daily_history(eodhd_code: str | None, yahoo_code: str, start: str, end: str | None = None, *, allow_yahoo: bool = False) -> dict:
+    """Full daily adjusted-close history for one series, for the refresh
+    pipeline's stored histories (src/market_data/asset_history.py): EODHD
+    first where it carries the instrument, Yahoo only when the caller allows
+    it, one provider per series, the envelope saying which. The API never
+    calls this."""
+    primary_err: ProviderError
+    if eodhd_code is None:
+        primary_err = UnsupportedInstrument(eod.PROVIDER, f"EODHD does not carry {yahoo_code}.")
+    elif entitlements.is_blocked("historical") is not None:
+        primary_err = Unauthorized(eod.PROVIDER, "Historical prices are not in the EODHD plan on this server.")
+    else:
         try:
-            bars, interval = _with_slot(lambda: _yf_candles(inst, range_key))
-        except ProviderError as fb:
-            if primary_err.kind == "unknown_symbol" or fb.kind == "unknown_symbol":
-                raise UnknownSymbol("api", f"No listing found for '{inst.canonical}' on EODHD or yfinance.", detail=f"{primary_err!r}; {fb!r}") from fb
-            raise type(fb)("api", f"Neither EODHD nor yfinance could supply {range_key} bars for {inst.canonical}.", status=fb.status, detail=f"{primary_err!r}; {fb!r}") from fb
-        if not bars:
-            raise EmptyResult(yf.PROVIDER, f"No {range_key} bars for {inst.canonical}.")
-        return _series(inst, range_key, bars, interval, yf.PROVIDER, True, primary_err.kind)
-
-    ttl = _RANGE_TTL.get(range_key, 900.0)
-    return _candles_cache.get(f"{inst.canonical}:{range_key}", compute, ttl=ttl)
+            raw = client().eod(eodhd_code, from_=start, to=end, period="d")
+            rows = []
+            for r in raw:
+                d = r.get("date")
+                adj = _f(r.get("adjusted_close"))
+                if adj is None:
+                    adj = _f(r.get("close"))
+                if d and adj is not None and adj > 0:
+                    rows.append((str(d)[:10], adj))
+            if not rows:
+                raise EmptyResult(eod.PROVIDER, f"EODHD holds no daily history for {eodhd_code}.")
+            return {"provider": eod.PROVIDER, "fallback_used": False, "fallback_reason": None, "rows": rows}
+        except ProviderError as exc:
+            primary_err = exc
+    if not allow_yahoo:
+        raise primary_err
+    rows = yf.daily_closes(yahoo_code, start, end)
+    if not rows:
+        raise EmptyResult(yf.PROVIDER, f"No daily history for {yahoo_code} from either provider.")
+    return {"provider": yf.PROVIDER, "fallback_used": True, "fallback_reason": primary_err.kind, "rows": rows}
 
 
 def _series(inst: Instrument, range_key: str, bars: list[dict], interval: str, provider: str, fallback_used: bool | None, reason: str | None) -> dict:
@@ -309,16 +357,10 @@ def search(q: str, limit: int = 10) -> dict:
                 if exc.kind in ("unauthorized", "missing_token"):
                     entitlements.record_live("search", False, exc.status, f"{exc.kind}: {exc.public}")
         else:
-            primary_err = Unauthorized(eod.PROVIDER, "search blocked by cached entitlement")
-        rows = _with_slot(lambda: yf.search(query, limit=limit))
-        hits = []
-        for r in rows:
-            try:
-                canon = parse(r["symbol"]).canonical
-            except SymbolError:
-                continue
-            hits.append({**r, "symbol": canon, "primary": True})
-        return {"provider": yf.PROVIDER, "fallback_used": True, "fallback_reason": primary_err.kind if primary_err else None, "fetched_at": _now_iso(), "hits": hits[:limit]}
+            primary_err = Unauthorized(eod.PROVIDER, "Symbol search is not in the EODHD plan on this server.")
+        # The API never calls Yahoo (fix/prelaunch-1): EODHD's error is the answer.
+        assert primary_err is not None
+        raise primary_err
 
     return _search_cache.get(f"{key}:{limit}", compute)
 
@@ -345,96 +387,75 @@ def _identity(inst: Instrument) -> dict:
 
 
 def profile(symbol: str) -> dict:
+    """Delayed quote plus identity for one listing, from EODHD only. Its two
+    EODHD calls (the real-time quote and the search-index identity) run
+    concurrently (fix/prelaunch-1, 4d). Fundamentals come only from EODHD and
+    only when the plan includes them (the probe says it does not today), so
+    those fields are null and fundamentals_provider says so; the API never
+    fills them from Yahoo."""
     try:
         inst = parse(symbol)
     except SymbolError as exc:
         raise UnknownSymbol("api", str(exc)) from exc
 
     def compute() -> dict:
-        quote: dict | None = None
-        quote_err: ProviderError | None = None
-        if entitlements.is_blocked("realtime") is None:
-            try:
-                rows = _with_slot(lambda: client().realtime(inst.eodhd))
-                row = rows[0] if rows else {}
-                last = _f(row.get("close"))
-                if last is None or str(row.get("code", "")).upper() != inst.eodhd.upper():
-                    raise UnknownSymbol(eod.PROVIDER, f"EODHD has no quote for '{inst.canonical}'.")
-                entitlements.record_live("realtime", True, 200, "ok")
-                ident = _identity(inst)
-                prev = _f(row.get("previousClose"))
-                quote = {
-                    "symbol": inst.canonical,
-                    "name": ident.get("name") or inst.canonical,
-                    "exchange": inst.exchange,
-                    "currency": ident.get("currency") or ("USD" if inst.exchange == "US" else None),
-                    "quote_type": ident.get("type"),
-                    "sector": None,
-                    "industry": None,
-                    "last": last,
-                    "prev_close": prev,
-                    "day_change_pct": _f(row.get("change_p")),
-                    "day_low": _f(row.get("low")),
-                    "day_high": _f(row.get("high")),
-                    "year_low": None,
-                    "year_high": None,
-                    "market_cap": None,
-                    "last_volume": _f(row.get("volume")),
-                    "avg_volume_3m": None,
-                    "trailing_pe": None,
-                    "forward_pe": None,
-                    "eps_ttm": None,
-                    "beta": None,
-                    "dividend_yield": None,
-                    "price_to_book": None,
-                    "profit_margin": None,
-                    "revenue_growth": None,
-                    "fifty_two_wk_change": None,
-                    "market_ts": _ts_iso(_f(row.get("timestamp"))),
-                    "fetched_at": _now_iso(),
-                    "quote_provider": eod.PROVIDER,
-                    "delayed": True,
-                    "delay_note": "EODHD delayed quote (15–20 min for stocks, ~1 min for FX)",
-                }
-            except ProviderError as exc:
-                quote_err = exc
-                if exc.kind in ("unauthorized", "missing_token"):
-                    entitlements.record_live("realtime", False, exc.status, f"{exc.kind}: {exc.public}")
-        else:
-            quote_err = Unauthorized(eod.PROVIDER, "quotes blocked by cached entitlement")
-
-        # Fundamentals: EODHD only when the plan includes them (probe says no
-        # today), else yfinance — disclosed as fundamentals_provider.
-        fundamentals: dict = {}
-        fundamentals_provider: str | None = None
-        yf_data: dict | None = None
-        if inst.yfinance is not None:
-            try:
-                yf_data = _with_slot(lambda: yf.quote_and_fundamentals(inst))
-            except ProviderError as exc:
-                yf_data = None
-                if quote is None and quote_err is not None:
-                    if quote_err.kind == "unknown_symbol" or exc.kind == "unknown_symbol":
-                        raise UnknownSymbol("api", f"No listing found for '{inst.canonical}' on EODHD or yfinance.", detail=f"{quote_err!r}; {exc!r}") from exc
-                    raise type(exc)("api", f"Neither EODHD nor yfinance could quote {inst.canonical}.", status=exc.status, detail=f"{quote_err!r}; {exc!r}") from exc
-        if yf_data:
-            fundamentals = {k: yf_data.get(k) for k in ("sector", "industry", "year_low", "year_high", "market_cap", "avg_volume_3m", "trailing_pe", "forward_pe", "eps_ttm", "beta", "dividend_yield", "price_to_book", "profit_margin", "revenue_growth", "fifty_two_wk_change")}
-            fundamentals_provider = yf.PROVIDER
-        if quote is None:
-            if yf_data is None:
-                assert quote_err is not None
-                raise quote_err
-            quote = {**yf_data, "symbol": inst.canonical, "quote_provider": yf.PROVIDER, "delayed": True, "delay_note": "yfinance delayed quote (up to ~15 min)"}
-            out = {**quote, "fallback_used": True, "fallback_reason": quote_err.kind if quote_err else None}
-        else:
-            out = {**quote, "fallback_used": False, "fallback_reason": None}
-            if yf_data and not out.get("name"):
-                out["name"] = yf_data.get("name")
-        for k, v in fundamentals.items():
-            if out.get(k) is None:
-                out[k] = v
-        out["fundamentals_provider"] = fundamentals_provider
-        return out
+        if entitlements.is_blocked("realtime") is not None:
+            raise Unauthorized(eod.PROVIDER, "Delayed quotes are not in the EODHD plan on this server.")
+        c = client()
+        if not c.token:
+            raise MissingToken(eod.PROVIDER, "EODHD is not configured on this server.")
+        ident_future = _executor().submit(_identity, inst)
+        try:
+            rows = _with_slot(lambda: c.realtime(inst.eodhd))
+        except ProviderError as exc:
+            if exc.kind in ("unauthorized", "missing_token"):
+                entitlements.record_live("realtime", False, exc.status, f"{exc.kind}: {exc.public}")
+            raise
+        row = rows[0] if rows else {}
+        last = _f(row.get("close"))
+        if last is None or str(row.get("code", "")).upper() != inst.eodhd.upper():
+            raise UnknownSymbol(eod.PROVIDER, f"EODHD has no quote for '{inst.canonical}'.")
+        entitlements.record_live("realtime", True, 200, "ok")
+        try:
+            ident = ident_future.result(timeout=c.timeout * (c.max_retries + 1) + 2.0)
+        except Exception:  # noqa: BLE001 — identity is decoration; the quote stands without it
+            ident = {}
+        return {
+            "symbol": inst.canonical,
+            "name": ident.get("name") or inst.canonical,
+            "exchange": inst.exchange,
+            "currency": ident.get("currency") or ("USD" if inst.exchange == "US" else None),
+            "quote_type": ident.get("type"),
+            "sector": None,
+            "industry": None,
+            "last": last,
+            "prev_close": _f(row.get("previousClose")),
+            "day_change_pct": _f(row.get("change_p")),
+            "day_low": _f(row.get("low")),
+            "day_high": _f(row.get("high")),
+            "year_low": None,
+            "year_high": None,
+            "market_cap": None,
+            "last_volume": _f(row.get("volume")),
+            "avg_volume_3m": None,
+            "trailing_pe": None,
+            "forward_pe": None,
+            "eps_ttm": None,
+            "beta": None,
+            "dividend_yield": None,
+            "price_to_book": None,
+            "profit_margin": None,
+            "revenue_growth": None,
+            "fifty_two_wk_change": None,
+            "market_ts": _ts_iso(_f(row.get("timestamp"))),
+            "fetched_at": _now_iso(),
+            "quote_provider": eod.PROVIDER,
+            "delayed": True,
+            "delay_note": "EODHD delayed quote (15–20 min for stocks, ~1 min for FX)",
+            "fallback_used": False,
+            "fallback_reason": None,
+            "fundamentals_provider": None,
+        }
 
     return _profile_cache.get(inst.canonical, compute)
 
@@ -484,20 +505,9 @@ def corporate_actions(symbol: str, years: int = 5) -> dict:
                 if exc.kind in ("unauthorized", "missing_token"):
                     entitlements.record_live("splits_dividends", False, exc.status, f"{exc.kind}: {exc.public}")
         else:
-            primary_err = Unauthorized(eod.PROVIDER, "corporate actions blocked by cached entitlement")
-        if inst.yfinance is None:
-            raise primary_err
-        import yfinance as yfin  # lazy, fallback only
-
-        try:
-            t = yfin.Ticker(inst.yfinance)
-            sp = t.splits
-            dv = t.dividends
-        except Exception as exc:  # noqa: BLE001
-            raise type(primary_err)("api", f"Neither EODHD nor yfinance could supply corporate actions for {inst.canonical}.", detail=f"{primary_err!r}; {exc!r}") from exc
-        splits = [{"date": str(idx)[:10], "ratio": float(v), "text": f"{float(v):g}:1"} for idx, v in sp.items() if str(idx)[:10] >= from_]
-        dividends = [{"date": str(idx)[:10], "value": float(v), "unadjusted_value": None, "currency": None, "period": None, "declaration_date": None, "record_date": None, "payment_date": None} for idx, v in dv.items() if str(idx)[:10] >= from_]
-        return {"symbol": inst.canonical, "provider": yf.PROVIDER, "fallback_used": True, "fallback_reason": primary_err.kind, "fetched_at": _now_iso(), "from": from_, "splits": splits, "dividends": dividends}
+            primary_err = Unauthorized(eod.PROVIDER, "Splits and dividends are not in the EODHD plan on this server.")
+        # The API never calls Yahoo (fix/prelaunch-1): EODHD's error is the answer.
+        raise primary_err
 
     return _actions_cache.get(f"{inst.canonical}:{years}", compute)
 
@@ -696,12 +706,16 @@ PRIMARY_MATRIX = {
     "live_us_equity_quotes": ("eodhd websocket", "latest validated stored close"),
     "live_crypto_fx": ("eodhd websocket", "latest validated stored quote"),
     "vix_delayed_quote": ("eodhd rest", "latest validated stored close"),
-    "daily_candles": ("eodhd eod", "yfinance"),
-    "intraday_candles": ("eodhd intraday", "yfinance"),
-    "symbol_search": ("eodhd search", "yfinance"),
-    "splits_dividends": ("eodhd", "yfinance"),
+    # On-demand lookups are EODHD only (fix/prelaunch-1): no second source,
+    # a typed and disclosed error instead.
+    "daily_candles": ("eodhd eod", None),
+    "intraday_candles": ("eodhd intraday", None),
+    "symbol_search": ("eodhd search", None),
+    "splits_dividends": ("eodhd", None),
     "exchange_hours": ("eodhd exchange-details", "built-in NYSE calendar"),
-    "fundamentals": ("eodhd (only if entitled)", "yfinance"),
+    "fundamentals": ("eodhd (only if entitled)", None),
+    # The refresh pipeline's stored histories: the one place Yahoo remains.
+    "allocation_histories": ("eodhd eod (refresh pipeline, stored)", "yfinance (refresh pipeline only, disclosed)"),
     "options": ("eodhd marketplace (end-of-day)", "explicit unavailable state"),
     "ticks": ("eodhd (bounded, only when entitled)", "no fallback"),
     "macro_series": ("FRED", "none"),

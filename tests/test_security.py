@@ -116,7 +116,10 @@ def test_expensive_concurrency_ceiling():
     async def receive():
         return {"type": "http.request", "body": b"", "more_body": False}
 
-    scope = {"type": "http", "path": "/api/allocation", "method": "GET", "headers": [], "client": ("1.2.3.4", 1)}
+    # fix/prelaunch-1: allocation is a lookup of a worker-built result now; the
+    # calculators (the visitor's own inputs) keep the expensive ceiling.
+    assert "/api/allocation" not in security.EXPENSIVE_PATHS and "/api/recession/probability" not in security.EXPENSIVE_PATHS
+    scope = {"type": "http", "path": "/api/lbo/run", "method": "POST", "headers": [], "client": ("1.2.3.4", 1)}
     assert mw.expensive.acquire(blocking=False)  # simulate a calculation in flight
     try:
         asyncio.run(mw(scope, receive, send))

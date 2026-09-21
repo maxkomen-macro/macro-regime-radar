@@ -196,6 +196,30 @@ def assess(
     lag = cal.business_days_between(md, exp_md) if md else None
     rows.append(_verdict("market_daily", db_fresh.get("market_daily_date"), exp_md.isoformat(), ok, within_grace, "Stored closes include the last completed session." if ok else (f"Last completed session {exp_md.isoformat()} not yet stored; the daily refresh has until 06:00 UTC." if within_grace else f"Stored closes end {md.isoformat() if md else 'never'}; {lag} session(s) behind {exp_md.isoformat()}." if md else "No stored closes.")))
 
+    # ── asset_prices: allocation's stored price histories (fix/prelaunch-1) ──
+    # Written by the full refresh, judged like market_daily against the last
+    # completed session. Not a regime input, so never part of `overall`.
+    # Present only when the caller reports the table's date (api/db.freshness,
+    # validate_db); None there means the database predates the table.
+    ap_known = "asset_prices_date" in db_fresh
+    ap = _parse_date(db_fresh.get("asset_prices_date")) if ap_known else None
+    ap_detail = ((watermarks or {}).get("asset_prices") or {}).get("detail")
+    ap_src = f" Providers: {ap_detail}." if ap_detail else ""
+    ap_missing = "Asset price histories are not stored in this database yet; the next full refresh stores them."
+    if ap_known:
+        ap_ok = ap is not None and ap >= exp_md
+        ap_grace = ap is not None and ap >= cal.previous_trading_day(exp_md) and now < grace_until
+        ap_lag = cal.business_days_between(ap, exp_md) if ap else None
+        if ap is None:
+            ap_reason = ap_missing
+        elif ap_ok:
+            ap_reason = f"Stored histories include the last completed session ({exp_md.isoformat()})." + ap_src
+        elif ap_grace:
+            ap_reason = f"Last completed session {exp_md.isoformat()} not yet stored; the full refresh has until 06:00 UTC." + ap_src
+        else:
+            ap_reason = f"Stored histories end {ap.isoformat()}; {ap_lag} session(s) behind {exp_md.isoformat()}." + ap_src
+        rows.append(_verdict("asset_prices", db_fresh.get("asset_prices_date"), exp_md.isoformat(), ap_ok, ap_grace, ap_reason))
+
     # ── market_intraday: 20 min in session, else last session close ─────────
     mi = _parse_dt(db_fresh.get("market_intraday_ts"), naive_tz=cal.NY)  # pipeline stamps ET wall time
     if session["is_open"]:
@@ -373,6 +397,17 @@ def assess(
             series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", mi_et, "close" if closed_ok else "stale",
                                  cycles_behind=0 if closed_ok else 1,
                                  reason="Bars run to the last completed session's close." if closed_ok else "Bars stop before the last completed session's close."))
+    if ap_known:
+        ap_str = ap.isoformat() if ap else None
+        ap_cycles = cal.business_days_between(ap, exp_md) if ap else None
+        if ap is None:
+            series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", None, "unknown", reason=ap_missing))
+        elif ap >= exp_md:
+            series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "close", cycles_behind=0,
+                                 reason=f"Allocation's price histories run to {ap_str}, the last completed session." + ap_src))
+        else:
+            series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "stale", cycles_behind=ap_cycles,
+                                 reason=f"Allocation's price histories end {ap_str}, {ap_cycles} session(s) older than the last completed session ({exp_md.isoformat()})." + ap_src))
     if relay:
         feeds = relay.get("feeds", {})
         us, vix = feeds.get("us"), feeds.get("vix")

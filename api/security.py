@@ -28,7 +28,11 @@ from typing import Any, Awaitable, Callable
 MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", str(64 * 1024)))
 ASSISTANT_MAX_BODY_BYTES = 16 * 1024
 API_PREFIXES = ("/api", "/health", "/regime", "/signals", "/series")
-EXPENSIVE_PATHS = {"/api/allocation", "/api/lbo/run", "/api/regime/scenario", "/api/recession/scenario", "/api/recession/probability"}
+# The POST calculators run the visitor's inputs. Allocation and the recession
+# probability used to compute on a cold call; since fix/prelaunch-1 the
+# background worker computes them and the handlers only look results up, so
+# they sit under the stored-read ceiling like every other lookup.
+EXPENSIVE_PATHS = {"/api/lbo/run", "/api/regime/scenario", "/api/recession/scenario"}
 PROVIDER_PREFIX = "/api/market/"
 # Everything else under the API prefixes is a stored-data read: bounded by
 # the `db` ceiling so a burst sheds load as 429s instead of wedging the

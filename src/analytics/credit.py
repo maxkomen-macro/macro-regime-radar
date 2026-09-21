@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from src.utils.format import ordinal
+from src.analytics import dbpath
 import pandas as pd
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
@@ -58,7 +59,7 @@ def _get_conn() -> sqlite3.Connection:
     # Read-only (B3, 2026-09-18): this module only reads, and a read-write
     # open on a missing path would create an empty database that the API then
     # serves (and bootstrap would skip downloading over).
-    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    conn = dbpath.connect_ro(DB_PATH)  # the published generation in the API (fix/prelaunch-1)
     conn.row_factory = sqlite3.Row
     return conn
 

@@ -22,12 +22,30 @@ def test_health_live(client):
 
 
 @pytest.mark.skipif(not db.DB_PATH.exists(), reason="local DB snapshot absent")
-def test_health_ready_with_db(client):
-    r = client.get("/health/ready")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "ready" and body["regime_date"]
-    assert "db_mtime" in body and "relay_degraded" in body
+def test_health_ready_with_db(client, monkeypatch):
+    """fix/prelaunch-1: ready only once the background worker's first pass has
+    built every derived result; warming (503) before that."""
+    import threading
+
+    from api import worker as worker_mod
+
+    gate = threading.Event()
+    w = worker_mod.AnalyticsWorker(build_gate=gate, poll_s=0.05)
+    monkeypatch.setattr(worker_mod, "_worker", w)
+    try:
+        w.start(serving=False)
+        warming = client.get("/health/ready")
+        assert warming.status_code == 503 and warming.json()["status"] == "warming"
+        gate.set()
+        assert w.wait_published(timeout=120)
+        r = client.get("/health/ready")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["status"] == "ready" and body["regime_date"]
+        assert "db_mtime" in body and "relay_degraded" in body
+        assert body["worker"]["generation"] >= 1 and body["worker"]["current_with_file"] is True
+    finally:
+        w.stop()
 
 
 def test_health_ready_without_db(client, monkeypatch):
@@ -44,7 +62,8 @@ def test_providers_status_shape_and_no_token(client):
     assert r.status_code == 200
     body = r.json()
     assert set(body) >= {"generated_at", "eodhd_configured", "primary", "entitlements", "relay", "security"}
-    assert body["primary"]["daily_candles"] == {"primary": "eodhd eod", "fallback": "yfinance"}
+    # fix/prelaunch-1: on-demand lookups are EODHD only (no Yahoo fallback)
+    assert body["primary"]["daily_candles"] == {"primary": "eodhd eod", "fallback": None}
     assert body["primary"]["macro_series"]["primary"] == "FRED"
     assert body["security"]["assistant_mode"] in ("open", "key", "off")
     tok = market_layer.client().token

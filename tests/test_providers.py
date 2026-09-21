@@ -1,11 +1,14 @@
 """Provider layer (api/providers/*): the EODHD client against a mock
-transport, the EODHD-first / yfinance-fallback orchestration with full
-provenance, entitlement gating, bounded ticks, options pagination, cache
-isolation and token hygiene. No network is touched anywhere in this file."""
+transport, the EODHD-only on-demand orchestration with full provenance
+(fix/prelaunch-1: the API never falls back to Yahoo; an EODHD failure is a
+typed, disclosed error), entitlement gating, bounded ticks, options
+pagination, cache isolation and token hygiene. No network is touched anywhere
+in this file."""
 
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 
 import httpx
@@ -74,10 +77,11 @@ def up(monkeypatch):
     monkeypatch.setattr(eod.time, "sleep", lambda s: None)  # retries without wall-clock waits
     market.set_client_for_tests(eod.EodhdClient(TOKEN, timeout=1.0, max_retries=2, transport=httpx.MockTransport(u.handler)))
     entitlements.reset_for_tests()
-    # yfinance must never be reached unless a test wires it explicitly.
-    monkeypatch.setattr(market.yf, "history", lambda inst, period, interval: pytest.fail("yfinance history reached"))
-    monkeypatch.setattr(market.yf, "search", lambda q, limit=8: pytest.fail("yfinance search reached"))
-    monkeypatch.setattr(market.yf, "quote_and_fundamentals", lambda inst: pytest.fail("yfinance quote reached"))
+    # fix/prelaunch-1: on-demand lookups never reach Yahoo. The one Yahoo
+    # function left (the refresh pipeline's daily_closes) fails the test if
+    # anything here reaches it, and yfinance itself is unimportable.
+    monkeypatch.setattr(market.yf, "daily_closes", lambda *a, **k: pytest.fail("yfinance reached from an on-demand lookup"))
+    monkeypatch.setitem(sys.modules, "yfinance", None)
     yield u
     market.set_client_for_tests(None)
     entitlements.reset_for_tests()
@@ -167,37 +171,34 @@ def test_candles_5y_weekly_and_max_monthly(up):
     assert periods == ["w", "m"]
 
 
-def test_candles_fallback_to_yfinance_is_disclosed(up, monkeypatch):
+def test_candles_eodhd_failure_is_typed_never_a_yahoo_fallback(up):
+    """Was test_candles_fallback_to_yfinance_is_disclosed (fix/prelaunch-1)."""
     up.script["/api/eod/AMZN.US"] = [(500, "down")]
-    monkeypatch.setattr(market.yf, "history", lambda inst, period, interval: [{"ts": "2026-09-04T00:00:00Z", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 5}])
-    s = market.candles("AMZN", "1Y")
-    assert s["provider"] == "yfinance" and s["fallback_used"] is True and s["fallback_reason"] == "unavailable"
-    assert s["count"] == 1 and s["interval"] == "1d"
+    with pytest.raises(ProviderUnavailable) as ei:
+        market.candles("AMZN", "1Y")
+    assert ei.value.provider == "eodhd" and ei.value.retryable and ei.value.kind == "unavailable"
+    assert up.paths().count("/api/eod/AMZN.US") == 3  # 1 + max_retries, then the typed error
 
 
-def test_candles_fallback_when_token_missing(up, monkeypatch):
+def test_candles_without_a_token_say_eodhd_is_not_configured(up):
+    """Was test_candles_fallback_when_token_missing (fix/prelaunch-1)."""
     market.set_client_for_tests(eod.EodhdClient(None))
-    monkeypatch.setattr(market.yf, "history", lambda inst, period, interval: [{"ts": "2026-09-04T00:00:00Z", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 5}])
-    s = market.candles("MSFT", "6M")
-    assert s["provider"] == "yfinance" and s["fallback_reason"] == "missing_token"
+    with pytest.raises(MissingToken):
+        market.candles("MSFT", "6M")
     assert up.calls == []
 
 
-def test_candles_unknown_on_both_is_404(up, monkeypatch):
+def test_candles_unknown_symbol_is_404_naming_eodhd(up):
+    """Was test_candles_unknown_on_both_is_404 (fix/prelaunch-1)."""
     up.script["/api/eod/NOPEX.US"] = [(404, "no")]
-
-    def missing(inst, period, interval):
-        raise UnknownSymbol("yfinance", "nothing")
-
-    monkeypatch.setattr(market.yf, "history", missing)
     with pytest.raises(UnknownSymbol) as ei:
         market.candles("NOPEX", "6M")
-    assert "EODHD or yfinance" in ei.value.public
+    assert "on EODHD" in ei.value.public and "yfinance" not in ei.value.public
+    assert ei.value.http_status == 404
 
 
-def test_candles_empty_range_is_typed(up, monkeypatch):
+def test_candles_empty_range_is_typed(up):
     up.script["/api/eod/AMZN.US"] = [(200, [])]
-    monkeypatch.setattr(market.yf, "history", lambda inst, period, interval: [])
     with pytest.raises(EmptyResult):
         market.candles("AMZN", "6M")
 
@@ -223,11 +224,11 @@ def test_candles_index_and_fx_spellings(up):
     assert set(up.paths()) == {"/api/eod/VIX.INDX", "/api/eod/EURUSD.FOREX", "/api/eod/BRK-B.US"}
 
 
-def test_cached_entitlement_blocks_without_calling(up, monkeypatch):
+def test_cached_entitlement_blocks_without_calling(up):
     entitlements.record_live("historical", False, 403, "unauthorized: plan")
-    monkeypatch.setattr(market.yf, "history", lambda inst, period, interval: [{"ts": "2026-09-04T00:00:00Z", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 5}])
-    s = market.candles("AMZN", "6M")
-    assert s["provider"] == "yfinance" and s["fallback_reason"] == "unauthorized"
+    with pytest.raises(Unauthorized) as ei:
+        market.candles("AMZN", "6M")
+    assert ei.value.provider == "eodhd"
     assert up.calls == []
 
 
@@ -245,31 +246,34 @@ def test_search_maps_and_orders_us_first(up):
     assert r["hits"][1]["symbol"] != "NVD"  # non-US listing keeps its exchange in the canonical spelling
 
 
-def test_search_falls_back_to_yfinance(up, monkeypatch):
+def test_search_eodhd_failure_is_typed_never_a_yahoo_fallback(up):
+    """Was test_search_falls_back_to_yfinance (fix/prelaunch-1)."""
     up.script["/api/search/"] = [(500, "down")]
-    monkeypatch.setattr(market.yf, "search", lambda q, limit=8: [{"symbol": "BRK-B", "name": "Berkshire", "exchange": "NYSE", "type": "Equity", "sector": None}])
-    r = market.search("berkshire", 5)
-    assert r["provider"] == "yfinance" and r["fallback_used"] is True and r["fallback_reason"] == "unavailable"
-    assert r["hits"][0]["symbol"] == "BRK.B"
+    with pytest.raises(ProviderUnavailable) as ei:
+        market.search("berkshire", 5)
+    assert ei.value.provider == "eodhd" and ei.value.retryable
 
 
-def test_profile_eodhd_quote_plus_yfinance_fundamentals(up, monkeypatch):
+def test_profile_eodhd_quote_and_identity_without_yahoo_fundamentals(up):
+    """Was test_profile_eodhd_quote_plus_yfinance_fundamentals (fix/prelaunch-1):
+    the quote and identity are EODHD's; fundamentals are null (not in the plan)
+    and never filled from Yahoo."""
     up.script["/api/real-time/AMZN.US"] = [(200, {"code": "AMZN.US", "timestamp": 1788552000, "open": 200, "high": 205, "low": 198, "close": 203.5, "volume": 12345, "previousClose": 201, "change": 2.5, "change_p": 1.24})]
     up.script["/api/search/AMZN"] = [(200, [{"Code": "AMZN", "Exchange": "US", "Name": "Amazon.com Inc", "Type": "Common Stock", "Country": "USA", "Currency": "USD"}])]
-    monkeypatch.setattr(market.yf, "quote_and_fundamentals", lambda inst: {"name": "Amazon", "last": 203.0, "sector": "Consumer Cyclical", "industry": "Internet Retail", "market_cap": 2.1e12, "trailing_pe": 40.0, "market_ts": None, "fetched_at": "x"})
     p = market.profile("amzn")
-    assert p["quote_provider"] == "eodhd" and p["fundamentals_provider"] == "yfinance" and p["fallback_used"] is False
+    assert p["quote_provider"] == "eodhd" and p["fundamentals_provider"] is None and p["fallback_used"] is False
     assert p["last"] == 203.5 and p["prev_close"] == 201 and p["day_change_pct"] == 1.24
     assert p["market_ts"] == "2026-09-04T20:00:00Z" and p["delayed"] is True
-    assert p["name"] == "Amazon.com Inc" and p["sector"] == "Consumer Cyclical" and p["market_cap"] == 2.1e12
+    assert p["name"] == "Amazon.com Inc" and p["sector"] is None and p["market_cap"] is None
+    assert sorted(up.paths()) == ["/api/real-time/AMZN.US", "/api/search/AMZN"]
 
 
-def test_profile_falls_back_to_yfinance_quote(up, monkeypatch):
+def test_profile_unentitled_quote_is_typed_and_recorded(up):
+    """Was test_profile_falls_back_to_yfinance_quote (fix/prelaunch-1)."""
     up.script["/api/real-time/AMZN.US"] = [(403, "no")]
-    monkeypatch.setattr(market.yf, "quote_and_fundamentals", lambda inst: {"name": "Amazon", "last": 203.0, "prev_close": 200.0, "sector": "x", "market_ts": None, "fetched_at": "x"})
-    p = market.profile("AMZN")
-    assert p["quote_provider"] == "yfinance" and p["fallback_used"] is True and p["fallback_reason"] == "unauthorized"
-    assert p["last"] == 203.0
+    with pytest.raises(Unauthorized) as ei:
+        market.profile("AMZN")
+    assert ei.value.provider == "eodhd"
     assert entitlements.get("realtime").available is False
 
 

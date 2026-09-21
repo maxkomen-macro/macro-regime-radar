@@ -53,6 +53,8 @@ DATE_COLUMNS = {
     "priced_metrics": "date",
     "macro_surprises": "date",
     "backtest_results": "date",
+    # fix/prelaunch-1: allocation's price histories, stored by the full refresh
+    "asset_prices": "date",
 }
 # Rolling-window tables shrink by design (intraday trimmed to 30 days, news
 # aged out); their freshness is judged by max date, never by row count.
@@ -66,7 +68,7 @@ FORWARD_TABLES = {"event_calendar"}
 # publish its rows or the next run (which downloads the published DB) forgets
 # the spend, so new ledger rows count as a change in the modes that enrich.
 MODE_TABLES = {
-    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger"],
+    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger", "asset_prices"],
     "news-only": ["news_feed", "ai_spend_ledger"],
     "market-only": ["market_daily", "market_intraday", "source_watermarks"],
     # B6 (2026-09-18): intraday runs also capture the official close after the
@@ -75,7 +77,7 @@ MODE_TABLES = {
     "verify-only": [],
 }
 MODE_FEEDS = {
-    "full": {"regime", "signals", "market_daily", "news", "fred:INDPRO", "fred:CPIAUCSL", "fred:UNRATE", "fred:DGS10", "fred:DGS2", "fred:VIXCLS"},
+    "full": {"regime", "signals", "market_daily", "news", "fred:INDPRO", "fred:CPIAUCSL", "fred:UNRATE", "fred:DGS10", "fred:DGS2", "fred:VIXCLS", "asset_prices"},
     "news-only": {"news"},
     "market-only": {"market_daily", "market_intraday"},
     "intraday": {"market_intraday"},
@@ -91,7 +93,13 @@ FINGERPRINT_SQL = {
     "raw_series": "SELECT series_id, date, value FROM raw_series ORDER BY series_id, date",
     "market_daily": "SELECT symbol, date, close FROM market_daily ORDER BY symbol, date",
     "source_watermarks": "SELECT source, last_obs, last_value FROM source_watermarks ORDER BY source",
+    # Adjusted closes are restated back through history after every dividend.
+    "asset_prices": "SELECT symbol, interval, date, close FROM asset_prices ORDER BY symbol, interval, date",
 }
+# Feeds whose "checked this run, not advancing" is a source outage (a warning)
+# rather than a missed cycle (a failure): the FRED series and, since
+# fix/prelaunch-1, the stored asset histories.
+OUTAGE_FEEDS = ("fred:", "asset_prices")
 # A FRED series fetched within this window but not advancing is a source
 # outage (a warning); one not checked at all means the refresh missed cycles.
 OUTAGE_WINDOW = timedelta(hours=3)
@@ -190,7 +198,15 @@ def inspect(path: Path) -> dict:
             "market_intraday_ts": out["tables"].get("market_intraday", {}).get("max"),
             "news_published_at": out["tables"].get("news_feed", {}).get("max"),
             "raw_series_date": out["tables"].get("raw_series", {}).get("max"),
+            "asset_prices_date": None,
         }
+        if "asset_prices" in out["tables"]:
+            try:
+                out["fresh"]["asset_prices_date"] = conn.execute(
+                    "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM asset_prices WHERE interval = '1d' GROUP BY symbol)"
+                ).fetchone()[0]
+            except sqlite3.Error:
+                pass
     finally:
         conn.close()
     return out
@@ -214,6 +230,15 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
         elif cur["tables"][t]["rows"] == 0:
             failures.append(f"table {t} is empty")
 
+    # fix/prelaunch-1: a full refresh stores allocation's price histories, so a
+    # full-mode database without them (or with an empty table) is not
+    # publishable; lean modes download the published file as it is.
+    if mode == "full":
+        if "asset_prices" not in cur["tables"]:
+            failures.append("asset_prices: missing; the full refresh stores allocation's price histories (src/market_data/asset_history.py)")
+        elif cur["tables"]["asset_prices"]["rows"] == 0:
+            failures.append("asset_prices: table is empty")
+
     # Stamps ahead of the clock are a fault, never freshness (review P2-3).
     horizon = (now + timedelta(days=1)).strftime("%Y-%m-%d")
     for t, info in cur["tables"].items():
@@ -234,6 +259,10 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             bad_px = conn.execute("SELECT COUNT(*) FROM market_daily WHERE close IS NOT NULL AND close <= 0").fetchone()[0]
             if bad_px:
                 failures.append(f"market_daily: {bad_px} row(s) with a non-positive close")
+            if "asset_prices" in cur["tables"]:
+                bad_ap = conn.execute("SELECT COUNT(*) FROM asset_prices WHERE close IS NULL OR close <= 0").fetchone()[0]
+                if bad_ap:
+                    failures.append(f"asset_prices: {bad_ap} row(s) with a non-positive close")
         finally:
             conn.close()
     except sqlite3.Error as exc:
@@ -289,7 +318,7 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
     # B6 outage policy: fetched this run but the source published nothing new
     # is a warning (a FRED pause must not block market and news publishing);
     # not checked at all stays a failure (the refresh missed its cycles).
-    outages = [r for r in stale if r["feed"].startswith("fred:") and r["verdict"] == "stale" and _checked_this_run(r["feed"])]
+    outages = [r for r in stale if r["feed"].startswith(OUTAGE_FEEDS) and r["verdict"] == "stale" and _checked_this_run(r["feed"])]
     stale = [r for r in stale if r not in outages]
     for r in outages:
         warnings.append(f"{r['feed']} source outage (checked this run, not advancing): {r['reason']}")

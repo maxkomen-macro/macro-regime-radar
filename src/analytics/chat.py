@@ -16,6 +16,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from src.analytics import dbpath
+
 # ── Config (self-contained) ──────────────────────────────────────────────────
 # Deliberately NOT imported from src.config: that module raises at import time
 # without FRED_API_KEY, and the FastAPI service (api/chat.py) must be able to
@@ -119,9 +121,10 @@ def is_safe_select(sql: str) -> bool:
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-def _ro_conn(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    """Open SQLite in read-only mode via URI."""
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+def _ro_conn(db_path: Path | None = None) -> sqlite3.Connection:
+    """Open SQLite read-only. Through dbpath (fix/prelaunch-1): in the API the
+    assistant reads the same published generation every screen reads."""
+    conn = dbpath.connect_ro(db_path or DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -194,18 +197,26 @@ def _tool_get_signal_status(signal_name: str | None = None) -> dict[str, Any]:
     return {"signals": _rows_to_dicts(rows)}
 
 
+# Keyed on the database file key (B-H1, fix/prelaunch-1): a swapped or
+# rewritten database is a miss, so the assistant never quotes the previous
+# file's probability. src/ cannot import api/, so the check is dbpath's own
+# (the published generation's key in the API, the file's key elsewhere).
 _RECESSION_MODEL_CACHE: dict[str, Any] = {}
-_RECESSION_MODEL_TTL_S = 15 * 60
 
 
 def _recession_model_view() -> dict[str, Any]:
     """The recession model's 12-month probability (percent) and its 1/3/6-month
-    priors; the model trains in-process, so the result is cached for 15 min."""
-    import time
-
+    priors; the model trains in-process, so the result is kept per database."""
+    key = dbpath.current_key(DB_PATH)
     hit = _RECESSION_MODEL_CACHE.get("view")
-    if hit and time.monotonic() - hit[0] < _RECESSION_MODEL_TTL_S:
+    if hit and key is not None and hit[0] == key:
         return hit[1]
+    view = _compute_recession_view()
+    _RECESSION_MODEL_CACHE["view"] = (key, view)
+    return view
+
+
+def _compute_recession_view() -> dict[str, Any]:
     from src.analytics.recession import get_recession_metrics
 
     m = get_recession_metrics()
@@ -218,7 +229,6 @@ def _recession_model_view() -> dict[str, Any]:
         view["as_of"] = str(series.index[-1])[:10]
         for n, key in ((1, "prob_1m_ago_pct"), (3, "prob_3m_ago_pct"), (6, "prob_6m_ago_pct")):
             view[key] = vals[-1 - n] if len(vals) > n else None
-    _RECESSION_MODEL_CACHE["view"] = (time.monotonic(), view)
     return view
 
 

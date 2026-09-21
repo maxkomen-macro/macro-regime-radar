@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.format import ordinal
+from src.analytics import dbpath
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "macro_radar.db"
@@ -444,9 +445,11 @@ _FALLBACK_TRANSITIONS_6M: dict[str, dict[str, int]] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # Read-only through src/analytics/dbpath.py (fix/prelaunch-1): this module
+    # only reads, a read-write open on a missing path would create an empty
+    # database, and in the API the read goes to the published generation.
+    conn = dbpath.connect_ro(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 

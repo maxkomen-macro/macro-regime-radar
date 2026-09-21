@@ -119,6 +119,14 @@ jobs:
         if: steps.mode.outputs.mode == 'full' || steps.mode.outputs.mode == 'market-only'
         run: python src/market_data/fetch_market.py --mode incremental
 
+      # fix/prelaunch-1: allocation's price histories, stored so the API never
+      # downloads them. EODHD first where a token is configured (none is here,
+      # deliberately), Yahoo as the disclosed fallback, one provider per
+      # series. The step never fails the refresh; validate_db judges the table.
+      - name: Store allocation price histories
+        if: steps.mode.outputs.mode == 'full'
+        run: python -m src.market_data.asset_history
+
       - name: Fetch intraday bars
         if: steps.mode.outputs.mode == 'market-only'
         run: python src/market_data/fetch_market.py --mode intraday-only

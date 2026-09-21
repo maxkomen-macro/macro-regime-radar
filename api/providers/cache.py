@@ -51,6 +51,19 @@ class KeyedTTLCache:
         hit = self._data.get(key)
         return hit[1] if hit else None
 
+    def age(self, key: str) -> float | None:
+        """Seconds since the entry was stored; None when absent. The worker's
+        prefetch refreshes an entry before its TTL runs out (fix/prelaunch-1)."""
+        hit = self._data.get(key)
+        return None if hit is None else time.monotonic() - hit[0]
+
+    def put(self, key: str, value: Any) -> None:
+        """Store a freshly computed value regardless of the current entry's age,
+        under the key's single-flight lock."""
+        with self._lock_for(key):
+            with self._gate:
+                self._data[key] = (time.monotonic(), value)
+
     def clear(self) -> None:
         with self._gate:
             self._data.clear()
@@ -72,6 +85,13 @@ class TokenBucket:
         self._tokens = float(burst)
         self._last = time.monotonic()
         self._lock = threading.Lock()
+
+    def available(self, n: int = 1) -> bool:
+        """Whether n tokens are there now, without taking them: a batch job
+        (the asset-history refresh) waits on this instead of failing."""
+        with self._lock:
+            now = time.monotonic()
+            return min(self.burst, self._tokens + (now - self._last) * self.rate) >= n
 
     def take(self, n: int = 1) -> bool:
         with self._lock:

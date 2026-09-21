@@ -14,7 +14,7 @@ from scripts import validate_db as v
 NOW = datetime(2026, 9, 5, 22, 0, tzinfo=timezone.utc)
 
 
-def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime="2026-07-01", rows_news=50, monthly=("2026-07-01", "2026-07-01", "2026-08-01"), watermarks=True):
+def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime="2026-07-01", rows_news=50, monthly=("2026-07-01", "2026-07-01", "2026-08-01"), watermarks=True, histories=True):
     conn = sqlite3.connect(path)
     conn.executescript(
         """
@@ -33,6 +33,13 @@ def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime=
     conn.executemany("INSERT INTO market_daily VALUES (?,?,?,?)", [("SPY", daily, 500.0, "yfinance")] * 40)
     conn.executemany("INSERT INTO market_intraday VALUES (?,?,?)", [("SPY", f"{daily} 15:55:00", 500.0)] * 40)
     conn.executemany("INSERT INTO news_feed(published_at, headline) VALUES (?,?)", [(news, f"h{i}") for i in range(rows_news)])
+    if histories:
+        # fix/prelaunch-1: a full refresh also stores allocation's price
+        # histories (src/market_data/asset_history.py), judged in full mode.
+        conn.execute("CREATE TABLE asset_prices (symbol TEXT NOT NULL, interval TEXT NOT NULL, date TEXT NOT NULL,"
+                     " close REAL NOT NULL, provider TEXT NOT NULL, PRIMARY KEY (symbol, interval, date))")
+        conn.executemany("INSERT INTO asset_prices VALUES (?,?,?,?,?)",
+                         [("SPY", "1d", daily, 500.0, "yfinance"), ("SPY", "1mo", daily[:8] + "01", 500.0, "yfinance")])
     if watermarks:
         # B6: a full refresh records each FRED daily series' true last observation
         # (raw_series keeps month-stamped rows); checked within this run's window.
@@ -44,6 +51,9 @@ def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime=
             "INSERT INTO source_watermarks VALUES (?,?,?,?,?,?,?)",
             [(f"fred:{s}", daily, 1.0, "2026-09-05T21:00:00Z", "2026-09-05T21:00:00Z", "ok", None) for s in ("DGS10", "DGS2", "VIXCLS")],
         )
+        if histories:
+            conn.execute("INSERT INTO source_watermarks VALUES (?,?,?,?,?,?,?)",
+                         ("asset_prices", daily, None, "2026-09-05T21:00:00Z", "2026-09-05T21:00:00Z", "ok", "yfinance 1"))
     conn.commit()
     conn.close()
 

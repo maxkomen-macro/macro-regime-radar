@@ -1,14 +1,13 @@
-"""api/recession_cache.py — TTL-cached, JSON-safe wrapper around the recession model.
+"""api/recession_cache.py — the recession model's results, as the API serves them.
 
 src.analytics.recession.get_recession_metrics() trains a LogisticRegression
-in-process on every call (there is no model artifact on disk) — the Streamlit
-tab hides that behind @st.cache_resource. This module gives the FastAPI layer
-the same protection with a simple module-level TTL cache, and converts the
-pandas Series members of the metrics dict into JSON-serializable point lists.
-
-Deliberate deviation from api/db.py's strict read-only contract: recession.py
-opens its own read-write SQLite connection (WAL pragma). Accepted — identical
-to what the Streamlit dashboard has always done. See CLAUDE.md.
+in-process on every call (there is no model artifact on disk). Since
+fix/prelaunch-1 the background worker (api/worker.py) does that once per
+database generation, off the request path: the "recession" item holds the
+metrics converted here to JSON-serializable point lists, and the
+"recession_model" item the fitted model the sensitivity POST scores against.
+Both are rebuilt whenever the database file key moves (B-H1), replacing the
+15-minute TTL caches that outlived a swap.
 
 Note: this returns the *recession model's* probability
 (src/analytics/recession.py), which is a different number from the regime
@@ -17,23 +16,9 @@ classifier's `regimes.prob_recession` column.
 
 from __future__ import annotations
 
-import threading
-import time
-from typing import Any
-
 import pandas as pd
 
-from src.analytics.recession import get_recession_metrics
-
-TTL_SECONDS = 900  # match the dashboard's @st.cache_resource(ttl=900) posture
-
 _SERIES_KEYS = ("recession_prob_series", "yield_curve_series", "usrec_series")
-
-_cache: dict[str, Any] = {"at": 0.0, "data": None}
-# Single-flight locks — a cold /api/recession/probability racing a cold
-# /api/regime/intelligence must not train the model twice.
-_cache_lock = threading.Lock()
-_model_lock = threading.Lock()
 
 
 def _series_to_points(s: pd.Series) -> list[dict]:
@@ -62,42 +47,33 @@ def _to_jsonable(metrics: dict) -> dict:
 
 
 def get_cached_recession_metrics() -> dict:
-    with _cache_lock:
-        now = time.monotonic()
-        if _cache["data"] is None or now - _cache["at"] > TTL_SECONDS:
-            _cache["data"] = _to_jsonable(get_recession_metrics())
-            _cache["at"] = now
-        return _cache["data"]
+    from api.worker import get_worker
+
+    return get_worker().result("recession")
 
 
 def peek_baseline_prob() -> float | None:
-    """The last computed headline probability WITHOUT triggering a (re)train —
-    the sensitivity POST wants a reference number, not a mid-drag training
-    pause. Stale-by-≤TTL is acceptable for a delta readout; None if no
-    metrics have been computed yet this process."""
-    with _cache_lock:
-        data = _cache["data"]
-    return data.get("recession_prob") if data else None
+    """The published generation's headline probability, for the sensitivity
+    POST's delta readout: the same generation the model came from, never a
+    retrain. None before the first generation or when the model has no data."""
+    from api.worker import get_worker
+
+    gen = get_worker().current
+    data = gen.results.get("recession") if gen is not None else None
+    return data.get("recession_prob") if isinstance(data, dict) else None
 
 
-# ── Sensitivity scoring (the trained model itself, cached) ───────────────────
+# ── Sensitivity scoring (against the generation's fitted model) ──────────────
 # The Streamlit sensitivity panel recomputes probability from user-set inputs
 # against the fitted LogisticRegression + StandardScaler
-# (dashboard/components/recession_tab.py:590-601). The model trains in-process
-# (no artifact on disk), so it gets the same TTL treatment as the metrics.
-
-_model_cache: dict[str, Any] = {"at": 0.0, "data": None}
+# (dashboard/components/recession_tab.py:590-601). The worker fits it once per
+# generation; the POST only scores.
 
 
 def _get_cached_model():
-    from src.analytics.recession import train_recession_model
+    from api.worker import get_worker
 
-    with _model_lock:
-        now = time.monotonic()
-        if _model_cache["data"] is None or now - _model_cache["at"] > TTL_SECONDS:
-            _model_cache["data"] = train_recession_model()
-            _model_cache["at"] = now
-        return _model_cache["data"]
+    return get_worker().result("recession_model")
 
 
 def score_recession_scenario(

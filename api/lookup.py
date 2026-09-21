@@ -1,7 +1,8 @@
 """api/lookup.py — compatibility seam for the on-demand symbol layer.
 
-Since 2026-09-06 the implementation lives in api/providers/ (EODHD first,
-yfinance as the disclosed fallback). This module keeps the names the routes
+Since 2026-09-06 the implementation lives in api/providers/ (EODHD only
+since fix/prelaunch-1: an EODHD failure is a typed, disclosed error, never a
+Yahoo fallback). This module keeps the names the routes
 and tests import — search / profile / candles / UnknownSymbol / LookupError_
 — so callers that monkeypatch the seam keep working, and nothing here reaches
 the network on import.

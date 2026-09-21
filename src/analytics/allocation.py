@@ -9,6 +9,15 @@ Implements portfolio optimization methods:
 
 Uses index proxies (^GSPC, ^RUT, GC=F) for longer history pre-ETF-inception.
 NO imports from src.config — avoids FRED_API_KEY requirement.
+
+Price histories (fix/prelaunch-1): every series get_allocation_data reads is
+stored in the `asset_prices` table by the full refresh
+(src/market_data/asset_history.py: EODHD first, Yahoo as the disclosed
+fallback, one provider per series). This module computes from the table and
+never downloads; on a database without it, AssetHistoriesNotStored says so.
+The Yahoo downloader below (_fetch_prices) remains only for two Streamlit
+callers (daily tearsheets, factor backtests) and imports yfinance lazily, so
+the API process never loads it.
 """
 from __future__ import annotations
 
@@ -20,8 +29,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 from scipy.optimize import minimize
+
+from src.analytics import dbpath
 
 warnings.filterwarnings("ignore")
 
@@ -83,9 +93,11 @@ CURRENCY_PAIRS: Dict[str, str] = {
 # ── Database ───────────────────────────────────────────────────────────────────
 
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # Read-only through src/analytics/dbpath.py (fix/prelaunch-1): this module
+    # only reads, a read-write open on a missing path would create an empty
+    # database, and in the API the read goes to the published generation.
+    conn = dbpath.connect_ro(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -97,8 +109,14 @@ def _normalize_month(idx: pd.DatetimeIndex) -> pd.DatetimeIndex:
 # ── Data fetching ──────────────────────────────────────────────────────────────
 
 def _fetch_prices(ticker: str, start: str, end: str) -> pd.Series:
-    """Download adjusted close prices via yfinance. Returns empty Series on failure."""
+    """Download adjusted close prices via yfinance. Returns empty Series on failure.
+
+    Streamlit only (get_daily_asset_returns' tearsheets and the factor
+    backtests in dashboard/components/backtests.py). The API never calls it:
+    allocation reads the stored histories (_stored_series)."""
     try:
+        import yfinance as yf  # lazy: the API process never imports yfinance
+
         raw = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
         if raw is None or raw.empty:
             return pd.Series(dtype=float)
@@ -118,6 +136,89 @@ def _fetch_prices(ticker: str, start: str, end: str) -> pd.Series:
     except Exception as exc:
         print(f"  Warning: could not fetch {ticker}: {exc}")
         return pd.Series(dtype=float)
+
+
+# ── Stored histories (fix/prelaunch-1) ─────────────────────────────────────────
+
+class AssetHistoriesNotStored(LookupError):
+    """The database predates the stored histories (an older snapshot)."""
+
+
+NOT_STORED_MESSAGE = (
+    "Asset price histories are not stored in this database yet: the next full refresh "
+    "stores them, and this server never downloads them."
+)
+
+
+def _histories_table_exists(conn: sqlite3.Connection) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'asset_prices'"
+    ).fetchone() is not None
+
+
+def _stored_series(symbol: str, interval: str, start: Optional[str] = None, end: Optional[str] = None) -> pd.Series:
+    """Stored adjusted closes for one series; start inclusive, end exclusive
+    (the yfinance download convention this replaces). Empty when the series
+    has no rows; AssetHistoriesNotStored when the table does not exist."""
+    conn = _get_conn()
+    try:
+        if not _histories_table_exists(conn):
+            raise AssetHistoriesNotStored(NOT_STORED_MESSAGE)
+        sql = "SELECT date, close FROM asset_prices WHERE symbol = ? AND interval = ?"
+        args: list = [symbol, interval]
+        if start:
+            sql += " AND date >= ?"
+            args.append(start)
+        if end:
+            sql += " AND date < ?"
+            args.append(end)
+        rows = conn.execute(sql + " ORDER BY date", args).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return pd.Series(dtype=float)
+    return pd.Series([float(r[1]) for r in rows], index=pd.to_datetime([r[0] for r in rows]), dtype=float)
+
+
+def _stored_monthly(symbols: List[str]) -> pd.DataFrame:
+    """Month-start-dated closes, one column per stored series: the frame that
+    yf.download(..., interval="1mo")["Close"] used to return."""
+    cols = {s: _stored_series(s, "1mo") for s in symbols}
+    return pd.DataFrame({s: v for s, v in cols.items() if len(v)})
+
+
+def stored_histories_summary() -> Dict:
+    """What the stored histories are and where they came from, for the payload:
+    as_of is the oldest of the daily series' newest closes (allocation is only
+    as current as its stalest spliced input; api/db.freshness() and the
+    pipeline's watermark use the same definition); provider_counts counts
+    series per provider; fallbacks names the series Yahoo supplied."""
+    conn = _get_conn()
+    try:
+        if not _histories_table_exists(conn):
+            raise AssetHistoriesNotStored(NOT_STORED_MESSAGE)
+        rows = conn.execute(
+            "SELECT symbol, interval, provider, MAX(date) FROM asset_prices GROUP BY symbol, interval, provider"
+        ).fetchall()
+    finally:
+        conn.close()
+    etfs = {cfg["etf"] for cfg in ASSET_CLASSES.values()}
+    providers: Dict[str, int] = {}
+    fallbacks: set = set()
+    newest: Dict[str, str] = {}
+    for sym, interval, prov, mx in rows:
+        providers[prov] = providers.get(prov, 0) + 1
+        if prov != "eodhd":
+            fallbacks.add(sym)
+        if interval == "1d" and mx:
+            newest[sym] = max(mx, newest.get(sym, mx))
+    return {
+        "as_of": min(newest.values()) if newest else None,
+        "provider_counts": providers,
+        "fallbacks": sorted(fallbacks),
+        "series": len(rows),
+        "missing_etfs": sorted(etfs - set(newest)),
+    }
 
 
 def get_asset_returns(
@@ -144,8 +245,8 @@ def get_asset_returns(
         idx       = cfg["index"]
         etf_start = cfg["etf_start"]
 
-        # ── Fetch ETF prices ───────────────────────────────────────────────────
-        etf_prices = _fetch_prices(etf, etf_start, end_date)
+        # ── Stored ETF prices ──────────────────────────────────────────────────
+        etf_prices = _stored_series(etf, "1d", etf_start, end_date)
 
         if len(etf_prices) == 0:
             print(f"  Skipping {name}: no ETF data")
@@ -155,7 +256,7 @@ def get_asset_returns(
 
         # ── Splice index proxy for pre-ETF history ─────────────────────────────
         if idx is not None and start_date < etf_start:
-            idx_prices = _fetch_prices(idx, start_date, etf_start)
+            idx_prices = _stored_series(idx, "1d", start_date, etf_start)
 
             if len(idx_prices) > 0:
                 # Find first ETF price and last index price to compute scale factor
@@ -1293,12 +1394,7 @@ def get_factor_returns() -> pd.DataFrame:
         tickers.add(proxy["long"])
         tickers.add(proxy["short"])
 
-    data = yf.download(sorted(tickers), period="max", interval="1mo", progress=False)
-    # Handle both flat and MultiIndex columns from yfinance
-    if isinstance(data.columns, pd.MultiIndex):
-        prices = data["Close"]
-    else:
-        prices = data
+    prices = _stored_monthly(sorted(tickers))
     rets = prices.pct_change().dropna()
 
     factor_rets = pd.DataFrame(index=rets.index)
@@ -1363,13 +1459,9 @@ def calculate_regime_factor_performance(
 # ── Style / manager selection ─────────────────────────────────────────────────
 
 def get_style_returns() -> pd.DataFrame:
-    """Fetch style ETF monthly returns."""
+    """Style ETF monthly returns from the stored histories."""
     tickers = sorted(set(STYLE_ETFS.values()))
-    data = yf.download(tickers, period="max", interval="1mo", progress=False)
-    if isinstance(data.columns, pd.MultiIndex):
-        prices = data["Close"]
-    else:
-        prices = data
+    prices = _stored_monthly(tickers)
     rets = prices.pct_change().dropna()
 
     style_rets = pd.DataFrame(index=rets.index)
@@ -1424,13 +1516,9 @@ def calculate_style_regime_performance(
 # ── Currency overlay ──────────────────────────────────────────────────────────
 
 def get_currency_returns() -> pd.DataFrame:
-    """Fetch currency / FX pair monthly returns."""
+    """Currency / FX pair monthly returns from the stored histories."""
     tickers = sorted(set(CURRENCY_PAIRS.values()))
-    data = yf.download(tickers, period="max", interval="1mo", progress=False)
-    if isinstance(data.columns, pd.MultiIndex):
-        prices = data["Close"]
-    else:
-        prices = data
+    prices = _stored_monthly(tickers)
     rets = prices.pct_change().dropna()
 
     reverse_map = {v: k for k, v in CURRENCY_PAIRS.items()}
@@ -1506,7 +1594,8 @@ def get_allocation_data() -> Dict:
         counts vs the 12/24 thresholds, data window) or None when they ran,
         drawdowns, data_start, data_end, n_months, asset_classes
     """
-    print("Fetching asset returns (this may take ~30s on first run)...")
+    histories = stored_histories_summary()  # AssetHistoriesNotStored on an older database
+    print(f"Reading stored asset histories (as of {histories['as_of']})...")
     returns = get_asset_returns(start_date="1990-01-01")
     n_months   = len(returns)
     data_start = returns.index[0].strftime("%Y-%m") if n_months else "N/A"
@@ -1790,6 +1879,7 @@ def get_allocation_data() -> Dict:
         "portfolio_factors":   portfolio_factors,
         "style_performance":   style_performance,
         "currency_impact":     currency_impact,
+        "histories":           histories,
     }
 
 

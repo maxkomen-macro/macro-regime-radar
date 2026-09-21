@@ -35,37 +35,40 @@ _HIT = {
 }
 _SEARCH = {"provider": "eodhd", "fallback_used": False, "fallback_reason": None, "fetched_at": "2026-09-06T00:00:00Z", "hits": [_HIT]}
 
+# What api/providers/market.profile returns since fix/prelaunch-1: the EODHD
+# delayed quote and search-index identity; fundamentals are null because the
+# EODHD plan does not carry them and the API never fills them from Yahoo.
 _PROFILE = {
     "symbol": "NVDA",
     "name": "NVIDIA Corporation",
     "exchange": "US",
     "currency": "USD",
     "quote_type": "Equity",
-    "sector": "Technology",
-    "industry": "Semiconductors",
+    "sector": None,
+    "industry": None,
     "last": 209.66,
     "prev_close": 213.05,
     "day_change_pct": -1.59,
     "day_low": 209.22,
     "day_high": 213.6,
-    "year_low": 164.07,
-    "year_high": 236.86,
-    "market_cap": 5.078e12,
+    "year_low": None,
+    "year_high": None,
+    "market_cap": None,
     "last_volume": 175233600.0,
-    "avg_volume_3m": 139600000.0,
-    "trailing_pe": 32.56,
-    "forward_pe": 16.0,
-    "eps_ttm": 6.44,
-    "beta": 2.215,
-    "dividend_yield": 0.47,
-    "price_to_book": 38.2,
-    "profit_margin": 0.63,
-    "revenue_growth": 0.62,
-    "fifty_two_wk_change": 0.15,
+    "avg_volume_3m": None,
+    "trailing_pe": None,
+    "forward_pe": None,
+    "eps_ttm": None,
+    "beta": None,
+    "dividend_yield": None,
+    "price_to_book": None,
+    "profit_margin": None,
+    "revenue_growth": None,
+    "fifty_two_wk_change": None,
     "fetched_at": "2026-08-27T06:54:44Z",
     "market_ts": "2026-08-27T06:40:00Z",
     "quote_provider": "eodhd",
-    "fundamentals_provider": "yfinance",
+    "fundamentals_provider": None,
     "delayed": True,
     "delay_note": "EODHD delayed quote",
     "fallback_used": False,
@@ -132,7 +135,7 @@ def test_profile_roundtrip_carries_provenance(client, monkeypatch):
     body = r.json()
     assert body["symbol"] == "NVDA"
     assert body["last"] == pytest.approx(209.66)
-    assert body["quote_provider"] == "eodhd" and body["fundamentals_provider"] == "yfinance"
+    assert body["quote_provider"] == "eodhd" and body["fundamentals_provider"] is None  # fix/prelaunch-1: never Yahoo
     assert body["delayed"] is True and body["fallback_used"] is False
 
 
@@ -170,11 +173,21 @@ def test_candles_envelope_and_range_validation(client, monkeypatch):
     assert client.get("/api/market/candles/NVDA", params={"range": "2Y"}).status_code == 422
 
 
-def test_candles_fallback_is_disclosed(client, monkeypatch):
-    fb = {**_SERIES, "provider": "yfinance", "fallback_used": True, "fallback_reason": "timeout"}
-    monkeypatch.setattr(lookup, "candles", lambda s, r: fb)
-    body = client.get("/api/market/candles/AMZN", params={"range": "1Y"}).json()
-    assert body["provider"] == "yfinance" and body["fallback_used"] is True and body["fallback_reason"] == "timeout"
+def test_candles_eodhd_failure_is_a_typed_error_never_a_fallback(client, monkeypatch):
+    """fix/prelaunch-1: was test_candles_fallback_is_disclosed. The API no
+    longer falls back to Yahoo; an EODHD timeout reaches the client typed,
+    retryable and attributed to EODHD."""
+    from api.providers.errors import ProviderTimeout
+
+    def timeout(s, r):
+        raise ProviderTimeout("eodhd", "EODHD did not answer in time (intraday candles).")
+
+    monkeypatch.setattr(lookup, "candles", timeout)
+    r = client.get("/api/market/candles/AMZN", params={"range": "1Y"})
+    assert r.status_code == 504
+    body = r.json()
+    assert body["provider"] == "eodhd" and body["kind"] == "timeout" and body["retryable"] is True
+    assert "yfinance" not in r.text.lower()
 
 
 @pytest.mark.parametrize(

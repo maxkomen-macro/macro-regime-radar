@@ -20,6 +20,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,6 +28,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 MANIFEST = ROOT / "web" / "src" / "api" / "snapshot-manifest.json"
+# fix/prelaunch-1: the derived results come from the API's background worker,
+# which answers once its first pass has built them (/health/ready).
+READY_TIMEOUT_S = 300.0
 import re  # noqa: E402
 
 # Secret-shaped VALUES (never key names: "token_configured" is a boolean the
@@ -97,6 +101,12 @@ def build(db_path: Path | None = None) -> dict:
     entries: dict = {}
     problems: list[str] = []
     with TestClient(app) as client:
+        deadline = time.monotonic() + READY_TIMEOUT_S
+        while client.get("/health/ready").status_code != 200:
+            if time.monotonic() > deadline:
+                problems.append(f"the API was not ready after {READY_TIMEOUT_S:.0f} s; worker-served entries may be missing")
+                break
+            time.sleep(0.5)
         for item in manifest:
             path = item["path"]
             r = client.get(path)

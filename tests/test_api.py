@@ -634,23 +634,41 @@ def test_api_calendar_recent_past_only():
     assert all(dt < now for dt in dts)
 
 
-# ── Allocation (night-2; heavy — cold call downloads via yfinance) ───────────
+# ── Allocation (fix/prelaunch-1: computed from stored histories) ─────────────
 
-def test_api_allocation_smoke():
-    """Cold call reaches the data vendor (~30–60 s) then caches for an hour.
+def test_api_allocation_smoke(monkeypatch, tmp_path):
+    """The worker computes allocation from the price histories the full refresh
+    stores; the server never downloads them, so there is no offline mode to
+    skip (this test used to skip on 502/503 when Yahoo was unreachable). A
+    database without the histories answers 503 not_stored in plain words; one
+    with them answers 200 with the body below.
 
     Two legitimate 200 outcomes:
     - populated ``optimizations`` (with ``optimizations_skipped: null``), or
     - ``optimizations: null`` plus an ``optimizations_skipped`` reason dict when
       the current regime's cohort lacks the required history (honest degrade;
-      the client renders an empty-state card for it).
+      the client renders an empty-state card for it)."""
+    from tests.test_generations import _copy, _seed_asset_prices
 
-    Offline runs get a 502/503 — skip rather than fail (the endpoint's own
-    honest degraded mode)."""
+    repo = db.DB_PATH
+    bare = _copy(repo, tmp_path / "bare.db")
+    c = sqlite3.connect(bare)
+    c.execute("DROP TABLE IF EXISTS asset_prices")  # an older database, before the table existed
+    c.commit()
+    c.close()
+    seeded = _copy(repo, tmp_path / "macro_radar.db")
+    _seed_asset_prices(seeded)
+
+    monkeypatch.setattr(db, "DB_PATH", bare)
+    db.reset_connections_for_tests()
+    none = client.get("/api/allocation")
+    assert none.status_code == 503
+    assert none.json()["kind"] == "not_stored" and "not stored" in none.json()["detail"]
+
+    monkeypatch.setattr(db, "DB_PATH", seeded)
+    db.reset_connections_for_tests()
     r = client.get("/api/allocation")
-    if r.status_code in (502, 503):
-        pytest.skip(f"allocation engine degraded: {r.json()['detail']}")
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text[:300]
     body = r.json()
     assert body["current_regime"] in {"Goldilocks", "Overheating", "Stagflation", "Recession Risk"}
     assert body["n_months"] > 100

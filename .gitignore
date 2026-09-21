@@ -17,6 +17,8 @@ output/tearsheets/
 # Committing this ~10 MB binary hourly bloated the repo and broke Streamlit Cloud's
 # deploy clone (283 MB / ~140 s). Workflows download it at start and upload it at end.
 data/macro_radar.db
+# The release-asset identity bootstrap records beside the database (fix/prelaunch-1).
+data/*.asset.json
 
 # Vendored/build trees — never commit (node_modules previously bloated this repo's history)
 web/node_modules/
