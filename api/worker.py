@@ -17,12 +17,14 @@ a computation. Handlers only look results up. Each HTTP request is pinned to
 the generation published when it arrived (PinGeneration), so one response
 never mixes two; a replaced generation stays readable until the next publish.
 
-The last good result is the last good generation, whole. If an item fails on
-a new file, the new generation is held back and the previous one keeps
-serving everything, so no screen shows a result from one file beside another
-from the next; the worker retries, and after HOLD_ATTEMPTS failures publishes
+The last good result is the last good generation, whole. If an item the
+served generation answers well fails on a new file, the new generation is held
+back and the previous one keeps serving everything, so no screen shows a
+result from one file beside another from the next; the worker retries, and
+after HOLD_ATTEMPTS consecutive failed builds (whatever the file) publishes
 anyway, the failed item answering with its error (never with a result carried
-over from another file). An answer that is a fact about the file (NotStored)
+over from another file). A failure the served generation already has is no
+reason to wait: that file publishes at once. An answer that is a fact about the file (NotStored)
 is not a failure. A file that cannot be staged at all leaves the last good
 generation serving, is retried with a backoff, and is reported in last_error.
 
@@ -316,6 +318,8 @@ class AnalyticsWorker:
                 self.state = "no_database"
             return
         if cur is not None and cur.key == key and _same_path(cur.source, src):
+            if self._held is not None:  # the file went back to the one being served
+                self._held, self.last_error = None, None
             self._failed = self._hold = None
             return
         for blocked in (self._failed, self._hold):
@@ -416,20 +420,29 @@ class AnalyticsWorker:
                 db.freshness()
             except Exception as exc:  # noqa: BLE001 — a request will compute them instead
                 log.warning("generation %d: stored maxima not precomputed: %s", gen.id, exc)
-        failed = sorted(n for n, e in gen.errors.items() if not isinstance(e, db.NotStored))
-        if failed and self._current is not None:
-            attempts = self._hold[1] + 1 if self._hold is not None and self._hold[0] == key else 1
+        cur = self._current
+        # Hold back only for a regression: an item the served generation
+        # answers well. One it already answers as an error (or as NotStored)
+        # has no good result to keep, and waiting would only make every
+        # refresh late while it stays broken.
+        regressed = sorted(n for n, e in gen.errors.items()
+                           if not isinstance(e, db.NotStored) and cur is not None and n in cur.results)
+        if regressed:
+            # consecutive failed builds since the last publish, whatever the
+            # file, so failing files arriving faster than the retries still publish
+            attempts = self._hold[1] + 1 if self._hold is not None else 1
             if attempts < HOLD_ATTEMPTS:
                 # Hold it back: the previous generation keeps serving whole.
                 self._hold = (key, attempts, time.monotonic() + self.hold_retry_s * 2 ** (attempts - 1))
-                self._held = {"file": src.name, "attempts": attempts, "items": failed}
-                self.last_error = (f"generation from {src.name} held back: {', '.join(failed)} failed "
+                self._held = {"file": src.name, "attempts": attempts, "items": regressed}
+                self.last_error = (f"generation from {src.name} held back: {', '.join(regressed)} failed "
                                    f"(attempt {attempts} of {HOLD_ATTEMPTS}); the previous generation keeps serving whole")
                 log.warning("%s", self.last_error)
                 self.state = "ready"
                 gen.close()
                 return
-            log.warning("generation %d publishes after %d attempts with %s answering as errors", gen.id, attempts, ", ".join(failed))
+            log.warning("generation %d publishes after %d failed builds with %s answering as errors", gen.id, attempts,
+                        ", ".join(regressed))
         if self.freeze_gc:
             _freeze_heap_once()
         gen.build_ms = round((time.perf_counter() - t0) * 1000, 1)

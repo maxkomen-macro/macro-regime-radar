@@ -863,3 +863,91 @@ def test_a_dependency_missing_in_the_allocation_child_keeps_its_plain_answer(mon
     with pytest.raises(ModuleNotFoundError) as exc:
         analytics_cache._AllocationInChild().finish((proc, Conn(), "/nonexistent-snapshot.db"))
     assert exc.value.name == "riskfolio"
+
+
+# ── Items 1 and 4, verify loop 3: when a hold is worth it ─────────────────────
+
+def test_a_failure_the_served_generation_already_has_publishes_at_once(serving_worker, scratch):
+    """A hold keeps a good result serving; when the served generation already
+    answers the item as an error there is nothing to keep, so waiting only made
+    every refresh ~90 s late (up to ~16 min with a hanging child)."""
+    a, b = scratch
+
+    def always_fails(ctx):
+        raise RuntimeError("probe: broken on every file")
+
+    w = serving_worker(items=[("broken", always_fails), ("hy", lambda ctx: _hy_oas_latest_ro())])
+    w.hold_retry_s = 60.0
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current.id
+    old_hy = w.result("hy")
+    os.replace(b, a)
+    w.poke()
+    assert w.wait_published(min_id=first + 1, timeout=10), "published at once, not held"
+    assert w.result("hy") != old_hy and w.status()["held"] is None
+    with pytest.raises(RuntimeError):
+        w.result("broken")
+
+
+def test_failing_files_that_keep_arriving_publish_after_three_failed_builds(serving_worker, scratch):
+    """Consecutive failed builds count across files: new failing files arriving
+    faster than a hold's retries used to reset the count and never publish."""
+    from api import worker as worker_mod
+
+    a, b = scratch
+    builds = {"n": 0}
+
+    def good_then_broken(ctx):
+        builds["n"] += 1
+        if builds["n"] > 1:
+            raise RuntimeError("probe: failed on every new file")
+        return "good"
+
+    w = serving_worker(items=[("item", good_then_broken)])
+    w.hold_retry_s = 600.0  # no retry of the same file inside this test
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current.id
+    for i in range(worker_mod.HOLD_ATTEMPTS):
+        n = builds["n"]
+        _swap_in_changed_copy(a, 0.1 * (i + 1))
+        w.poke()
+        deadline = time.monotonic() + 10
+        while builds["n"] == n and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert w.wait_published(min_id=first + 1, timeout=10), "the third failed build published"
+    assert builds["n"] == 1 + worker_mod.HOLD_ATTEMPTS
+    with pytest.raises(RuntimeError):
+        w.result("item")
+
+
+def test_a_file_that_reverts_to_the_served_one_clears_the_hold(serving_worker, scratch):
+    a, b = scratch
+    builds = {"n": 0}
+
+    def good_then_broken(ctx):
+        builds["n"] += 1
+        if builds["n"] > 1:
+            raise RuntimeError("probe: failed on the new file")
+        return "good"
+
+    w = serving_worker(items=[("item", good_then_broken)])
+    w.hold_retry_s = 600.0
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current
+    original = a.parent / "original.db"
+    os.link(a, original)  # keep the served file's inode to move it back
+    os.replace(b, a)
+    w.poke()
+    deadline = time.monotonic() + 10
+    while builds["n"] < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.1)
+    assert w.status()["held"] is not None
+    os.replace(original, a)  # the served file, byte for byte and inode for inode
+    w.poke()
+    time.sleep(0.3)
+    st = w.status()
+    assert w.current is first and st["held"] is None and st["last_error"] is None and st["current_with_file"] is True
