@@ -192,6 +192,10 @@ DISPLAY_LIMIT = 150
 # A read replaces the rule score with Claude's, which can move a story out of
 # the displayed ten; a run re-reads the ten this many times after its top-ups.
 SETTLE_PASSES = 3
+# Copies of one headline published further apart than this are different
+# articles under a recurring title (a daily filing), not rewrites of one story:
+# they never lend each other a read.
+SHARE_SPAN = timedelta(hours=24)
 
 # The page's story key, web/src/screens/news/news-copy.ts headlineKey:
 # headline.trim().toLowerCase().replace(/\s+/g, " "). JavaScript's \s and
@@ -1057,11 +1061,12 @@ def _read_text(value) -> bool:
 
 def share_story_reads(conn: sqlite3.Connection) -> int:
     """Give every copy of a story that carries no read the read, and the score,
-    of the copy of it the page would rank first among those that have one.
-    Costs no call. The page shows one card per story (headline_key) and a read
-    on a merged-away copy never reaches it; left alone, a lower Claude score on
-    the read copy made the unread one the card, and the next run paid for the
-    same story again (Item 2 verify loop 1). Returns the rows it filled."""
+    of a copy of it published within SHARE_SPAN that has one (a full read
+    first, then the higher score, then the newer copy). Costs no call. The page
+    shows one card per story (headline_key) and a read on a merged-away copy
+    never reaches it; left alone, a lower Claude score on the read copy made
+    the unread one the card, and the next run paid for the same story again
+    (Item 2 verify loop 1). Returns the rows it filled."""
     stories: dict[str, list] = {}
     for r in conn.execute(
         "SELECT id, headline, published_at, overall_significance, regime_interpretation, perplexity_research FROM news_feed"
@@ -1071,11 +1076,19 @@ def share_story_reads(conn: sqlite3.Connection) -> int:
     for copies in stories.values():
         if len(copies) < 2:
             continue
-        read = [c for c in copies if _read_text(c[4]) or _read_text(c[5])]
+        read = [(c, _parse_published(c[2])) for c in copies if _read_text(c[4]) or _read_text(c[5])]
         if not read or len(read) == len(copies):
             continue
-        donor = max(read, key=lambda c: (float(c[3] or 0.0), str(c[2] or "")[:19].replace("T", " ")))
-        fills += [(donor[4], donor[5], donor[3], c[0]) for c in copies if c not in read]
+        lenders = {c[0] for c, _ in read}
+        for c in copies:
+            at = _parse_published(c[2])
+            if c[0] in lenders or at is None:
+                continue
+            near = [(d, t) for d, t in read if t is not None and abs(t - at) <= SHARE_SPAN]
+            if not near:
+                continue
+            donor = max(near, key=lambda dt: (_read_text(dt[0][4]) and _read_text(dt[0][5]), float(dt[0][3] or 0.0), dt[1]))[0]
+            fills.append((donor[4], donor[5], donor[3], c[0]))
     if fills:
         conn.executemany(
             "UPDATE news_feed SET regime_interpretation = ?, perplexity_research = ?, overall_significance = ? WHERE id = ?",
@@ -1245,6 +1258,18 @@ def _enrich_one(run: _Run, row: dict, regime: str, probs: dict) -> bool:
     return True
 
 
+def _one_per_story(rows: list[dict]) -> list[dict]:
+    """The first row of each story (headline_key), in the given order."""
+    seen: set[str] = set()
+    out = []
+    for r in rows:
+        key = headline_key(r["headline"])
+        if key not in seen:
+            seen.add(key)
+            out.append(r)
+    return out
+
+
 def _enrich_batch(run: _Run, batch: list[dict], display: set, regime: str, probs: dict,
                   started: float, clock, wall_seconds: float) -> bool:
     """Enrich `batch` in order inside the wall-clock budget and the cap. False
@@ -1313,30 +1338,36 @@ def enrich_new_rows(
         ensure_ai_spend_ledger(conn)
         conn.commit()
         share_story_reads(conn)
+        if settle is not None:
+            display_ids = settle()  # the ten as they stand after the free fills, not before
         rows = _load_rows(conn, row_ids)
         stats["new"] = len(rows)
         displayed = {int(i) for i in (display_ids or [])}
         extra = displayed - {r["id"] for r in rows}
         rows += _load_rows(conn, extra)
-        eligible = sorted((r for r in rows if _eligible(r, floor)), key=lambda r: _priority(r, displayed))
+        # One call per story: a second copy takes the first one's read for free.
+        eligible = _one_per_story(sorted((r for r in rows if _eligible(r, floor)), key=lambda r: _priority(r, displayed)))
         stats["eligible"] = len(eligible)
-        if eligible and stats["keys"]:
+        if stats["keys"] and (eligible or settle is not None):
             room = max(0, per_hour - ai_spend.enrichments_in_last_hour(conn, run.now()))
             batch = eligible[:room]
             stats["held_hourly"] = len(eligible) - len(batch)
             regime, probs = _current_regime(conn)
             finished = _enrich_batch(run, batch, extra, regime, probs, started, clock, wall_seconds)
-            tried = {r["id"] for r in eligible}
+            tried = {headline_key(r["headline"]) for r in eligible}
             for _ in range(SETTLE_PASSES if settle is not None and finished else 0):
                 share_story_reads(conn)
-                ids = [i for i in settle() if i not in tried]
-                room = max(0, per_hour - ai_spend.enrichments_in_last_hour(conn, run.now()))
+                ids = settle()
                 loaded = {r["id"]: r for r in _load_rows(conn, ids)}
-                newcomers = [loaded[i] for i in ids if i in loaded and _eligible(loaded[i], floor)][:room]
+                newcomers = [loaded[i] for i in ids if i in loaded and _eligible(loaded[i], floor)
+                             and headline_key(loaded[i]["headline"]) not in tried]
                 if not newcomers:
                     break
-                tried |= {r["id"] for r in newcomers}
-                if not _enrich_batch(run, newcomers, {r["id"] for r in newcomers}, regime, probs, started, clock, wall_seconds):
+                tried |= {headline_key(r["headline"]) for r in newcomers}
+                room = max(0, per_hour - ai_spend.enrichments_in_last_hour(conn, run.now()))
+                stats["held_hourly"] += max(0, len(newcomers) - room)
+                if not room or not _enrich_batch(run, newcomers[:room], {r["id"] for r in newcomers}, regime, probs,
+                                                 started, clock, wall_seconds):
                     break
         share_story_reads(conn)
         stats["month_to_date_usd"] = ai_spend.month_to_date(conn, run.now())

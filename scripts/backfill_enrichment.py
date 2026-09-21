@@ -57,13 +57,22 @@ def _keys() -> dict:
     return found
 
 
-def plan(conn: sqlite3.Connection, *, top_n: int = news.DISPLAY_TOP_N) -> list[dict]:
-    """The displayed cards that carry no AI read yet, in the page's own order."""
-    ids = news.select_display_topups(conn, top_n=top_n)
-    if not ids:
-        return []
-    rows = {r["id"]: r for r in news._load_rows(conn, ids)}
-    return [rows[i] for i in ids if i in rows]
+def plan(conn: sqlite3.Connection, *, top_n: int = news.DISPLAY_TOP_N, now=None) -> list[dict]:
+    """The displayed stories --apply pays for first, in the page's own order.
+    A card that borrows a read from another copy of its story costs nothing
+    and is not listed: the plan lends those reads on an in-memory copy, so the
+    database is never written."""
+    mem = sqlite3.connect(":memory:")
+    try:
+        conn.backup(mem)
+        news.share_story_reads(mem)
+        ids = news.select_display_topups(mem, top_n=top_n, now=now)
+        if not ids:
+            return []
+        rows = {r["id"]: r for r in news._load_rows(mem, ids)}
+        return [rows[i] for i in ids if i in rows]
+    finally:
+        mem.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -83,11 +92,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(pending)} of the top {a.top_n} displayed cards carry no AI read:")
         for r in pending:
             print(f"  {r['overall_significance']:>5.2f}  {str(r['published_at'])[:16]}  {r['headline'][:78]}")
+        print("Cards that borrow a read from another copy of their story cost nothing and are not listed. A read "
+              "replaces the rule score with Claude's; if that moves another story into the ten, --apply tops it up "
+              "in the same run, inside the same hourly limit and cap.")
         if not a.apply:
             print("dry run, nothing called and nothing written.")
             return 0
-        if not pending:
-            return 0
+        # Even with nothing to pay for, --apply lends the free reads.
         ensure_ai_spend_ledger(conn)
         stats = news.enrich_new_rows(conn, [], _keys(), display_ids=[r["id"] for r in pending],
                                      settle=lambda: news.select_display_topups(conn, top_n=a.top_n))
