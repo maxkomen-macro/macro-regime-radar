@@ -28,6 +28,7 @@ from typing import Any
 import httpx
 from urllib.parse import quote
 
+from api.providers import quota
 from api.providers.cache import TokenBucket
 from api.providers.errors import (
     MalformedResponse,
@@ -78,7 +79,7 @@ class EodhdClient:
     def _client(self) -> httpx.Client:
         return httpx.Client(timeout=self.timeout, transport=self._transport, follow_redirects=False)
 
-    def _get(self, path: str, params: dict[str, Any], *, what: str) -> Any:
+    def _get(self, path: str, params: dict[str, Any], *, what: str, family: str | None = None, tickers: int = 1) -> Any:
         if not self.token:
             raise MissingToken(PROVIDER, "EODHD is not configured on this server.")
         if not _bucket.take():
@@ -88,6 +89,9 @@ class EodhdClient:
         delay = 0.5
         last: Exception | None = None
         for attempt in range(self.max_retries + 1):
+            # Every attempt is a call the plan is billed for, retries included
+            # (launch-1): the counter must not flatter the deploy.
+            quota.record(path, family=family or what.replace(" ", "_"), tickers=tickers)
             try:
                 with self._client() as c:
                     r = c.get(url, params=q)
@@ -152,7 +156,7 @@ class EodhdClient:
         params: dict[str, Any] = {"fmt": "json"}
         if extra:
             params["s"] = ",".join(extra)
-        data = self._get(f"/real-time/{_seg(sym)}", params, what="delayed quotes")
+        data = self._get(f"/real-time/{_seg(sym)}", params, what="delayed quotes", family="realtime", tickers=1 + len(extra or []))
         if isinstance(data, dict):
             return [data]
         if isinstance(data, list):

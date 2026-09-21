@@ -186,6 +186,24 @@ def _default_items() -> list[Item]:
     return analytics_cache.ITEMS
 
 
+def prefetch_enabled(now: datetime | None = None) -> bool:
+    """Whether the market prefetch should run at all (launch-1).
+
+    The prefetched series are 5-minute intraday bars. Outside the US session
+    no new bar prints, so refreshing them costs EODHD quota for a chart that
+    cannot change: weekends, holidays and every night. It resumes at the
+    opening bell (the loop re-checks every couple of seconds)."""
+    from api import calendar as cal
+
+    return bool(cal.session_state(now or datetime.now(timezone.utc))["is_open"])
+
+
+def _prefetch_has_token() -> bool:
+    from api.providers import market
+
+    return bool(market.client().token)
+
+
 def prefetch_tick() -> int:
     """Warm (or refresh ahead of expiry) the fixed symbols' candles. Returns
     how many series were fetched; provider errors are logged, never raised."""
@@ -297,17 +315,22 @@ class AnalyticsWorker:
             except Exception as exc:  # noqa: BLE001 — the loop must survive
                 self.last_error = repr(exc)
                 log.exception("generation build failed")
-            if self.prefetch and time.monotonic() >= self._next_prefetch:
-                try:
-                    from api.providers import market
-
-                    if market.client().token:
-                        prefetch_tick()
-                except Exception:  # noqa: BLE001
-                    log.exception("prefetch failed")
-                self._next_prefetch = time.monotonic() + PREFETCH_EVERY_S
+            self._prefetch_once()
             self._poke.wait(self.poll_s)
             self._poke.clear()
+
+    def _prefetch_once(self) -> None:
+        """One prefetch tick when it is due, the US session is open and a
+        token is configured. Outside the session the cheapest EODHD call is
+        the one never made (launch-1)."""
+        if not self.prefetch or time.monotonic() < self._next_prefetch:
+            return
+        try:
+            if prefetch_enabled() and _prefetch_has_token():
+                prefetch_tick()
+        except Exception:  # noqa: BLE001
+            log.exception("prefetch failed")
+        self._next_prefetch = time.monotonic() + PREFETCH_EVERY_S
 
     def _maybe_build(self) -> None:
         src = Path(db.DB_PATH)

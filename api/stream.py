@@ -46,6 +46,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from api import calendar as cal
 from api.providers import eodhd as _eod
+from api.providers import quota
 from api.providers.cache import TokenBucket
 
 log = logging.getLogger("mrr.stream")
@@ -77,6 +78,11 @@ _BROADCAST_INTERVAL = 0.25  # coalesce upstream ticks; browsers paint ≤2×/s o
 _VIX_POLL_SECONDS = 60
 _SEED_POLL_SECONDS = 300
 _STATUS_INTERVAL = 30  # periodic status frame (stale flags) to browsers
+# Outside the US session the delayed-quote endpoints have nothing new to say:
+# the tape shows last closes until the opening bell. The REST refreshes drop
+# to half-hourly there (launch-1); the WebSocket feeds, which cost no API
+# calls, keep running so crypto and FX stay live around the clock.
+CLOSED_REST_SECONDS = 1800
 
 MAX_DYNAMIC_SYMBOLS = 20
 DYNAMIC_IDLE_SECONDS = 600
@@ -104,6 +110,13 @@ def _load_token() -> str | None:
     except OSError:
         pass
     return None
+
+
+def rest_interval(open_seconds: float, now: datetime | None = None) -> float:
+    """How long a REST loop waits before its next call: its own cadence while
+    the US session is open, CLOSED_REST_SECONDS outside it (launch-1)."""
+    state = cal.session_state(now or datetime.now(timezone.utc))
+    return open_seconds if state["is_open"] else CLOSED_REST_SECONDS
 
 
 def _f(x: Any) -> float | None:
@@ -610,6 +623,9 @@ class QuoteHub:
         params = {"api_token": self.token, "fmt": "json"}
         if rest:
             params["s"] = ",".join(rest)
+        # The relay calls the delayed-quote endpoint directly, so it records
+        # its own usage: one API call per ticker in the request (launch-1).
+        quota.record(f"/real-time/{first}", family="relay_rest", tickers=len(tickers))
         r = await client.get(_REST_URL.format(ticker=first), params=params, timeout=15)
         r.raise_for_status()
         data = r.json()
@@ -639,6 +655,18 @@ class QuoteHub:
             "src": "rest",
         })
 
+    async def _pace(self, open_seconds: float) -> None:
+        """Wait out one REST cycle, re-checking the session every 30 s so the
+        opening bell is never more than half a minute away (launch-1)."""
+        waited = 0.0
+        while True:
+            target = rest_interval(open_seconds)
+            if waited >= target:
+                return
+            step = min(30.0, target - waited)
+            await asyncio.sleep(step)
+            waited += step
+
     async def _vix_loop(self) -> None:
         async with httpx.AsyncClient() as client:
             while True:
@@ -654,7 +682,7 @@ class QuoteHub:
                     self.stats["feed_last_error"]["vix"] = self._redact(repr(exc))
                     log.warning("VIX poll failed: %s", self._redact(str(exc)))
                     await self._set_feed("vix", "closed")
-                await asyncio.sleep(_VIX_POLL_SECONDS)
+                await self._pace(_VIX_POLL_SECONDS)
 
     def _rest_tickers(self, symbols: list[str]) -> list[str]:
         out = []
@@ -685,7 +713,7 @@ class QuoteHub:
         _store_rest_quote)."""
         while True:
             await self._seed_symbols(US_SYMBOLS + CRYPTO_SYMBOLS + FOREX_SYMBOLS + list(self._dynamic))
-            await asyncio.sleep(_SEED_POLL_SECONDS)
+            await self._pace(_SEED_POLL_SECONDS)
 
 
 hub = QuoteHub()
