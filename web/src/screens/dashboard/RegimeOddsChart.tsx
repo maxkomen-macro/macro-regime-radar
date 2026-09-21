@@ -391,6 +391,10 @@ export function RegimeOddsChart({
             key={l.name}
             className="mrr-odds-line"
             data-regime={l.name}
+            // The D1 sweep groups a chart's series by `data-series` when it is
+            // tagged and falls back to grouping filled paths by colour. A line
+            // has no fill, so tagging is what names the four series now.
+            data-series={l.name}
             data-weight={l.heavy ? "heavy" : "muted"}
             d={l.d}
             fill="none"

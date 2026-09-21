@@ -477,6 +477,13 @@ function collectRegimeLabels(): RegimeLabel[] {
   charts.forEach((c) => {
     if (!visible(c)) return;
     c.querySelectorAll("text").forEach((t) => push("regime chart label", t, t.textContent));
+    // Iteration 2 (F1): the odds chart names its series in an HTML legend
+    // above the plot and a footnote line under it, not in SVG text. They are
+    // the chart's labels wherever they live, so CP3 reads them here.
+    c.querySelectorAll(".mrr-odds-key, .mrr-odds-foot-key").forEach((k) => {
+      const name = k.getAttribute("data-regime");
+      if (name && visible(k)) push("regime chart label", k, name);
+    });
     c.querySelectorAll("[class*='legend'] span, [class*='legend'] li").forEach((s) => {
       if (!s.children.length && visible(s)) push("regime chart legend", s, s.textContent);
     });

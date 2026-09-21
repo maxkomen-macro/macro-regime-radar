@@ -48,7 +48,8 @@
  *       then one wire item): the AI row shows its analysis after one click,
  *       at most four of the twelve AI sentences visible, both source links
  *       and the article link open in a new tab with rel=noreferrer; the wire
- *       row reads "Wire summary". The same holds for a priority card (the AI
+ *       row reads "Wire summary" or, under F3, "AI read pending" when one is
+ *       expected - never "Regime read". The same holds for a priority card (the AI
  *       item on top) within at most one click.
  *   E4  /app/news (disclosures open) never says "top 5"; the enrichment
  *       pipeline sentence names 10 and $50.
@@ -369,7 +370,11 @@ function regimeChartLabels(scope: string): string[] {
 
 test.describe("D1 regime hero chart", () => {
   for (const width of WIDTHS) {
-    test(`D1 ${width}x${H}: one stacked-area chart of the four regime odds in the hero, 24 months, current month marked, one-line caption; none in the macro-charts accordion`, async ({ page }) => {
+    // Iteration 2 (F1) replaced D1's stacked bands with four lines; the
+    // guarantee is unchanged - one chart in the hero, four series, 24 months,
+    // the current month marked, a one-line caption, and nothing regime-odds in
+    // the accordion - so only the shape in the title moved.
+    test(`D1 ${width}x${H}: one four-line chart of the four regime odds in the hero, 24 months, current month marked, one-line caption; none in the macro-charts accordion`, async ({ page }) => {
       await open(page, "/app/dashboard", width);
       const hero = page.locator("#regime-hero");
       await expect(hero).toBeVisible();
@@ -1152,7 +1157,7 @@ async function expectLink(row: Locator, href: string, what: string): Promise<voi
 
 test.describe("N4 AI analysis per article", () => {
   for (const width of WIDTHS) {
-    test(`N4 ${width}x${H}: a list row with AI content shows it after one click (≤ 4 sentences, both sources, the article link); the wire row reads Wire summary`, async ({ page }) => {
+    test(`N4 ${width}x${H}: a list row with AI content shows it after one click (≤ 4 sentences, both sources, the article link); the wire row is labelled honestly`, async ({ page }) => {
       await emptyEndpoint(page, "/api/news", [...FILLERS, AI_ITEM(3.2), WIRE_ITEM(3.0)]);
       await open(page, "/app/news", width);
       const feed = page.locator("#feed");
@@ -1175,10 +1180,17 @@ test.describe("N4 AI analysis per article", () => {
       await expectLink(ai, AI_URL, "the article link");
 
       await expect(wire, "the wire item renders as a row").toHaveCount(1);
-      await expect(wire, "the wire row is labelled Wire summary").toContainText(/wire summary/i);
+      // Iteration 2 (F3) split N4's single honest label into two. A row with
+      // no stored read says "Wire summary" when none is coming and "AI read
+      // pending" when one is expected, because the article is among the ten
+      // highest-significance in the default seven-day window. What N4 is
+      // actually guaranteeing - that a row without a read never dresses as one
+      // - is asserted directly, on both labels.
+      await expect(wire, "the wire row is labelled honestly").toContainText(/wire summary|AI read pending/i);
+      await expect(wire, "the wire row never claims a Regime read").not.toContainText(/regime read/i);
     });
 
-    test(`N4 ${width}x${H}: a priority card with AI content shows it within one click (≤ 4 sentences, both sources, the article link); the wire card reads Wire summary`, async ({ page }) => {
+    test(`N4 ${width}x${H}: a priority card with AI content shows it within one click (≤ 4 sentences, both sources, the article link); the wire card is labelled honestly`, async ({ page }) => {
       await emptyEndpoint(page, "/api/news", [AI_ITEM(4.8), WIRE_ITEM(4.6)]);
       await open(page, "/app/news", width);
       const lead = page.locator("#headlines");
@@ -1203,7 +1215,14 @@ test.describe("N4 AI analysis per article", () => {
       await expectLink(ai, AI_URL, "the article link");
 
       await expect(wire, "the wire item renders as a priority card").toHaveCount(1);
-      await expect(wire, "the wire card is labelled Wire summary").toContainText(/wire summary/i);
+      // Iteration 2 (F3) split N4's single honest label into two. A row with
+      // no stored read says "Wire summary" when none is coming and "AI read
+      // pending" when one is expected, because the article is among the ten
+      // highest-significance in the default seven-day window. What N4 is
+      // actually guaranteeing - that a row without a read never dresses as one
+      // - is asserted directly, on both labels.
+      await expect(wire, "the wire card is labelled honestly").toContainText(/wire summary|AI read pending/i);
+      await expect(wire, "the wire card never claims a Regime read").not.toContainText(/regime read/i);
     });
   }
 });
