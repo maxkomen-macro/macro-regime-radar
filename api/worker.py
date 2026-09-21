@@ -318,7 +318,7 @@ class AnalyticsWorker:
                 self.state = "no_database"
             return
         if cur is not None and cur.key == key and _same_path(cur.source, src):
-            if self._held is not None:  # the file went back to the one being served
+            if self._held is not None or self._failed is not None:  # the file went back to the one being served
                 self._held, self.last_error = None, None
             self._failed = self._hold = None
             return

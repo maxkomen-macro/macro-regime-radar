@@ -951,3 +951,24 @@ def test_a_file_that_reverts_to_the_served_one_clears_the_hold(serving_worker, s
     time.sleep(0.3)
     st = w.status()
     assert w.current is first and st["held"] is None and st["last_error"] is None and st["current_with_file"] is True
+
+
+def test_a_served_file_moved_back_over_an_unreadable_one_clears_the_staging_error(serving_worker, scratch):
+    a, b = scratch
+    w = serving_worker(items=[("probe", lambda ctx: 1)])
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current
+    original = a.parent / "original.db"
+    os.link(a, original)
+    bad = a.parent / "bad.db"
+    bad.write_bytes(b"this is not a database " * 400)
+    os.replace(bad, a)
+    w.poke()
+    time.sleep(0.3)
+    assert "stag" in (w.status()["last_error"] or "")
+    os.replace(original, a)
+    w.poke()
+    time.sleep(0.3)
+    st = w.status()
+    assert w.current is first and st["last_error"] is None and st["current_with_file"] is True
