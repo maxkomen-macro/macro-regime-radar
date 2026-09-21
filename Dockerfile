@@ -22,8 +22,12 @@ FROM python:3.13-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
-COPY requirements-api.txt ./
-RUN pip install --no-cache-dir -r requirements-api.txt
+# Pinned to the set the branch's tests ran against (launch-1): an unpinned
+# build installed whatever resolved that day, and pandas 4 changes a concat
+# default this code relies on. Regenerate with
+# scripts/lock_api_requirements.py after changing requirements-api.txt.
+COPY requirements-api.lock ./
+RUN pip install --no-cache-dir -r requirements-api.lock
 # api/ is the service; src/ carries the analytics modules it imports
 # (recession, credit, lbo, allocation, chat — all deliberately config-free,
 # so no FRED_API_KEY is needed in the container). NOT copied: dashboard/
@@ -32,7 +36,18 @@ RUN pip install --no-cache-dir -r requirements-api.txt
 COPY api/ api/
 COPY src/ src/
 COPY --from=webbuild /build/web/dist web/dist
+# Runs as a non-root user (launch-1). /app/data holds the database the
+# bootstrap downloads and the assistant's spend ledger, so it is created and
+# owned here rather than by the first write.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin app \
+    && mkdir -p /app/data \
+    && chown -R app:app /app
+USER app
 EXPOSE 8000
+# --workers 1 is pinned (launch-1): uvicorn otherwise takes its worker count
+# from $WEB_CONCURRENCY, and a host that sets it would start a second EODHD
+# relay on one token, whose 50 live symbols are shared across every socket.
+# $PORT is honoured for hosts that assign one (Render, Railway, Fly).
 # --limit-concurrency: a burst beyond the worker pool answers 503 instead of
 # queueing without bound (2026-09-06 review).
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--limit-concurrency", "64", "--timeout-graceful-shutdown", "10"]
+CMD ["sh", "-c", "exec uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --limit-concurrency 64 --timeout-graceful-shutdown 10"]

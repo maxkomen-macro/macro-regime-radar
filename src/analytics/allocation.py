@@ -1435,7 +1435,10 @@ def calculate_factor_exposures(
     port.index = _normalize_month(pd.to_datetime(port.index))
     facts = factor_returns.copy()
     facts.index = _normalize_month(pd.to_datetime(facts.index))
-    aligned = pd.concat([port, facts], axis=1).dropna()
+    # sort=True keeps today's date-sorted alignment: pandas 4 flips the
+    # default for an all-DatetimeIndex concat, and an unpinned image would
+    # otherwise change this silently on its next build (launch-1).
+    aligned = pd.concat([port, facts], axis=1, sort=True).dropna()
     if len(aligned) < 12:
         return None
 
