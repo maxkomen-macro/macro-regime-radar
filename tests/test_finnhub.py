@@ -69,8 +69,9 @@ def upstream(monkeypatch):
     up.script = {"/api/v1/stock/profile2": [(200, PROFILE2)], "/api/v1/stock/metric": [(200, METRICS)]}
     fh.set_client_for_tests(fh.FinnhubClient(TOKEN, transport=httpx.MockTransport(up.handler)))
     market.clear_caches()
-    # A full bucket for every test: the limiter is asserted on its own below.
+    # Full buckets for every test: the limiters are asserted on their own.
     monkeypatch.setattr(fh, "_bucket", cache_mod.TokenBucket(rate=1.0, burst=100))
+    monkeypatch.setattr(eod, "_bucket", cache_mod.TokenBucket(rate=1.0, burst=100))
     yield up
     fh.set_client_for_tests(None)
     market.clear_caches()
@@ -149,8 +150,8 @@ def test_per_share_figures_in_another_currency_are_dropped(upstream):
     """An ADR can report in its home currency: an EPS in TWD beside a USD
     price would read as nonsense, so it is left out (ratios are unitless)."""
     upstream.script = {
-        "/api/v1/stock/profile2": [(200, {**PROFILE2, "currency": "USD", "estimateCurrency": "TWD"})],
-        "/api/v1/stock/metric": [(200, METRICS)],
+        "/api/v1/stock/profile2": [(200, {**PROFILE2, "ticker": "TSM", "currency": "USD", "estimateCurrency": "TWD"})],
+        "/api/v1/stock/metric": [(200, {**METRICS, "symbol": "TSM"})],
     }
     f = fh.fundamentals("TSM")
     assert f["eps_ttm"] is None
@@ -282,4 +283,132 @@ def test_instruments_finnhub_does_not_cover_are_not_asked_about(upstream, monkey
     p = market.profile("BTC-USD")
     assert p["fundamentals_provider"] is None and p["market_cap"] is None
     assert upstream.calls == [], "no fundamentals call for an instrument Finnhub does not cover"
+    market.set_client_for_tests(None)
+
+
+# ── loop 2: another listing is never shown under this ticker ─────────────────
+# Finnhub answers some US tickers with a different listing of the company.
+# These are the live answers of 2026-09-21, trimmed to the fields that matter.
+
+TSM_PROFILE2 = {
+    "ticker": "2330.TW", "name": "Taiwan Semiconductor Manufacturing Co Ltd", "country": "TW",
+    "currency": "TWD", "estimateCurrency": "TWD", "exchange": "TAIWAN STOCK EXCHANGE",
+    "marketCapitalization": 63_793_628.085938, "shareOutstanding": 25_932.37, "finnhubIndustry": "Semiconductors",
+}
+TSM_METRICS = {"symbol": "2330.TW", "metricType": "all", "metric": {
+    "52WeekHigh": 2535, "52WeekLow": 1260, "epsTTM": 87.3818, "peTTM": 28.1532,
+    "3MonthAverageTradingVolume": 34.27596, "beta": 0.9666174, "marketCapitalization": 63_793_628,
+}}
+BRK_PROFILE2 = {
+    "ticker": "BRK.A", "name": "Berkshire Hathaway Inc", "country": "US", "currency": "USD",
+    "estimateCurrency": "USD", "exchange": "NEW YORK STOCK EXCHANGE, INC.",
+    "marketCapitalization": 975_831.7362084012, "shareOutstanding": 1.44, "finnhubIndustry": "Financial Services",
+}
+BRK_METRICS = {"symbol": "BRK.A", "metricType": "all", "metric": {
+    "52WeekHigh": 806_102.8, "52WeekLow": 698_000, "epsTTM": 59_668.8094, "peTTM": 11.4242,
+    "3MonthAverageTradingVolume": 0.0002, "beta": 0.16417721, "marketCapitalization": 979_834.94,
+}}
+
+
+def _eodhd_listing(code: str, type_word: str = "Common Stock", close: float = 100.0):
+    """EODHD answers the quote and identity for one listing."""
+    ticker = code.split(".")[0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/real-time/" in request.url.path:
+            return httpx.Response(200, json={"code": code, "close": close, "previousClose": close,
+                                             "timestamp": 1790000000}, request=request)
+        if "/search/" in request.url.path:
+            return httpx.Response(200, json=[{"Code": ticker, "Exchange": "US", "Name": ticker,
+                                              "Type": type_word, "Country": "USA", "Currency": "USD"}], request=request)
+        return httpx.Response(404, json={}, request=request)
+
+    market.set_client_for_tests(eod.EodhdClient("eod-token", transport=httpx.MockTransport(handler)))
+
+
+@pytest.mark.parametrize("symbol, code, profile2, metrics", [
+    ("TSM", "TSM.US", TSM_PROFILE2, TSM_METRICS),
+    ("BRK.B", "BRK-B.US", BRK_PROFILE2, BRK_METRICS),
+])
+def test_another_listing_is_never_shown_under_this_ticker(upstream, symbol, code, profile2, metrics):
+    """Verify loop 2, D7: TSM came back as 2330.TW in TWD (a $63.79T 'market
+    cap') and BRK.B as BRK.A (EPS 59,668.81 beside a $495 quote)."""
+    upstream.script = {"/api/v1/stock/profile2": [(200, profile2)], "/api/v1/stock/metric": [(200, metrics)]}
+    with pytest.raises(fh.OtherListing):
+        fh.fundamentals(code.split(".")[0])
+    _eodhd_listing(code)
+    p = market.profile(symbol)
+    assert p["fundamentals_status"] == "other_listing"
+    assert p["fundamentals_provider"] is None
+    for field in ("market_cap", "trailing_pe", "eps_ttm", "year_low", "year_high", "avg_volume_3m", "beta", "industry"):
+        assert p[field] is None, field
+    market.set_client_for_tests(None)
+
+
+def test_a_metric_answer_for_another_listing_is_refused_too(upstream):
+    upstream.script = {
+        "/api/v1/stock/profile2": [(200, {**PROFILE2, "ticker": "AAPL"})],
+        "/api/v1/stock/metric": [(200, {**METRICS, "symbol": "AAPL.MX"})],
+    }
+    with pytest.raises(fh.OtherListing):
+        fh.fundamentals("AAPL")
+
+
+def test_a_dash_and_a_dot_name_the_same_listing(upstream):
+    upstream.script = {
+        "/api/v1/stock/profile2": [(200, {**PROFILE2, "ticker": "BF.B"})],
+        "/api/v1/stock/metric": [(200, {**METRICS, "symbol": "BF.B"})],
+    }
+    assert fh.fundamentals("BF-B")["trailing_pe"] == pytest.approx(38.3096)
+
+
+def test_a_listing_quoted_in_another_currency_is_another_listing(upstream):
+    upstream.script = {
+        "/api/v1/stock/profile2": [(200, {**PROFILE2, "currency": "EUR"})],
+        "/api/v1/stock/metric": [(200, METRICS)],
+    }
+    with pytest.raises(fh.OtherListing):
+        fh.fundamentals("AAPL")
+
+
+def test_a_server_without_the_key_says_so(monkeypatch):
+    """Verify loop 2, D8: with no FINNHUB_API_KEY the panel promised the
+    figures would 'come back on their own'. They will not."""
+    fh.set_client_for_tests(fh.FinnhubClient(None))
+    monkeypatch.setattr(eod, "_bucket", cache_mod.TokenBucket(rate=1.0, burst=100))
+    market.clear_caches()
+    try:
+        _eodhd_listing("AAPL.US")
+        p = market.profile("AAPL")
+        assert p["fundamentals_status"] == "not_configured"
+        assert p["fundamentals_provider"] is None
+    finally:
+        fh.set_client_for_tests(None)
+        market.set_client_for_tests(None)
+        market.clear_caches()
+
+
+def test_an_etf_by_its_eodhd_type_is_not_covered_without_a_call(upstream):
+    """Verify loop 2, D9: EODHD's own type word decides before Finnhub is
+    asked anything."""
+    _eodhd_listing("SPY.US", type_word="ETF")
+    p = market.profile("SPY")
+    assert p["fundamentals_status"] == "not_covered"
+    assert upstream.calls == []
+    market.set_client_for_tests(None)
+
+
+def test_every_status_the_panel_can_state(upstream, monkeypatch):
+    """ok, not_covered (an empty company profile), unavailable (an outage):
+    each one reaches the payload as itself."""
+    _eodhd_listing("AAPL.US")
+    assert market.profile("AAPL")["fundamentals_status"] == "ok"
+    market.clear_caches()
+    _eodhd_listing("AAPL.US")
+    upstream.script = {"/api/v1/stock/profile2": [(200, {})]}
+    assert market.profile("AAPL")["fundamentals_status"] == "not_covered"
+    market.clear_caches()
+    _eodhd_listing("AAPL.US")
+    upstream.script = {"/api/v1/stock/profile2": [(503, {"error": "down"})]}
+    assert market.profile("AAPL")["fundamentals_status"] == "unavailable"
     market.set_client_for_tests(None)

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor, fireEvent, within } from "@testing-library/react";
-import SingleName from "./SingleName";
+import SingleName, { fundamentalsCaption } from "./SingleName";
 import { renderWithProviders, stubFetch } from "../../test/utils";
 
 vi.mock("./CandleChart", () => ({ default: ({ bars }: { bars: { close: number }[] }) => <div data-testid="chart">bars:{bars.length}</div> }));
@@ -376,5 +376,17 @@ describe("SingleName fundamentals (launch-1)", () => {
     renderWithProviders(<SingleName symbol="AMZN" onClose={() => {}} />);
     await waitFor(() => expect(document.body.textContent).toMatch(/Fundamentals are temporarily unavailable/));
     expect(document.body.textContent).not.toMatch(/not available for this instrument/);
+  });
+});
+
+describe("fundamentalsCaption (launch-1 loop 2)", () => {
+  it("states each reason there is nothing to show, in one sentence", () => {
+    const none = { fundamentals_provider: null };
+    expect(fundamentalsCaption({ ...none, fundamentals_status: "other_listing" })).toMatch(/another listing or in another currency/);
+    expect(fundamentalsCaption({ ...none, fundamentals_status: "not_configured" })).toMatch(/not set up on this server/);
+    expect(fundamentalsCaption({ ...none, fundamentals_status: "not_configured" })).not.toMatch(/come back/);
+    expect(fundamentalsCaption({ ...none, fundamentals_status: "unavailable" })).toMatch(/come back on their own/);
+    expect(fundamentalsCaption({ ...none, fundamentals_status: "not_covered" })).toMatch(/funds, indices, currencies and crypto/);
+    expect(fundamentalsCaption({ fundamentals_provider: "finnhub", fundamentals_status: "ok" })).toMatch(/^Fundamentals via Finnhub/);
   });
 });

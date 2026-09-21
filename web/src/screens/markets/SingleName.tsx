@@ -120,6 +120,12 @@ export function fundamentalsCaption(p: { fundamentals_provider: string | null; f
   if (p.fundamentals_status === "unavailable") {
     return "Fundamentals are temporarily unavailable: the source did not answer just now. The price and chart are unaffected, and they come back on their own.";
   }
+  if (p.fundamentals_status === "other_listing") {
+    return "Fundamentals are not available for this listing: the source reports this company on another listing or in another currency, so its figures would not match this price.";
+  }
+  if (p.fundamentals_status === "not_configured") {
+    return "Fundamentals are not set up on this server, so this panel shows the price and chart only.";
+  }
   return "Fundamentals are not available for this instrument: the data covers US-listed companies, so funds, indices, currencies and crypto show price and history only.";
 }
 

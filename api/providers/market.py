@@ -403,11 +403,13 @@ class _NotCached(Exception):
 
 
 def _fundamentals(inst: Instrument, type_word: str | None = None) -> tuple[dict, str]:
-    """The panel's fundamentals for one listing and what they are:
-    ("ok") filled from Finnhub, ("not_covered") nobody publishes company
-    fundamentals for it, or ("unavailable") the source did not answer this
-    time. Never raises: a fundamentals outage must not take the quote down,
-    and it must not tell a visitor that NVDA is not a company (loop 1)."""
+    """The panel's fundamentals for one listing and what they are: "ok" filled
+    from Finnhub; "not_covered" nobody publishes company fundamentals for it;
+    "other_listing" Finnhub only has another listing of the company (loop 2);
+    "not_configured" this server has no Finnhub key; "unavailable" the source
+    did not answer this time. Never raises: a fundamentals outage must not
+    take the quote down, and it must not tell a visitor that NVDA is not a
+    company (loop 1)."""
     if inst.kind != "equity" or inst.exchange != "US" or (type_word or "") in _NOT_A_COMPANY:
         return {}, "not_covered"  # crypto, FX, indices, funds and foreign lines
 
@@ -417,13 +419,17 @@ def _fundamentals(inst: Instrument, type_word: str | None = None) -> tuple[dict,
         except fh.LocalThrottle as exc:
             # Nothing was sent, so nothing was learned: do not remember it.
             raise _NotCached() from exc
+        except fh.OtherListing:
+            return {"ok": True, "fields": {}, "status": "other_listing"}
         except ProviderError as exc:
+            if exc.kind == "missing_token":
+                return {"ok": True, "fields": {}, "status": "not_configured"}
             log.info("finnhub fundamentals %s: %s", inst.canonical, exc.kind)
-            return {"ok": False, "fields": {}}
+            return {"ok": False, "fields": {}, "status": "unavailable"}
         except Exception as exc:  # noqa: BLE001 — never break a quote
             log.warning("finnhub fundamentals %s failed: %s", inst.canonical, type(exc).__name__)
-            return {"ok": False, "fields": {}}
-        return {"ok": True, "fields": fields}
+            return {"ok": False, "fields": {}, "status": "unavailable"}
+        return {"ok": True, "fields": fields, "status": "ok" if fields else "not_covered"}
 
     try:
         entry = _fundamentals_cache.get(inst.canonical, compute)
@@ -433,9 +439,7 @@ def _fundamentals(inst: Instrument, type_word: str | None = None) -> tuple[dict,
             entry = _fundamentals_cache.get(inst.canonical, compute, ttl=FUNDAMENTALS_RETRY_TTL)
     except _NotCached:
         return {}, "unavailable"
-    if not entry["ok"]:
-        return {}, "unavailable"
-    return (entry["fields"], "ok") if entry["fields"] else ({}, "not_covered")
+    return entry["fields"], entry["status"]
 
 
 # ── profile (quote + fundamentals) ────────────────────────────────────────────
@@ -516,8 +520,8 @@ def profile(symbol: str) -> dict:
         filled = {k: v for k, v in fundamentals.items() if v is not None}
         out.update(filled)
         out["fundamentals_provider"] = fh.PROVIDER if filled else None
-        # What the caption says: named source, not published for this kind of
-        # instrument, or not answering right now (launch-1, loop 1).
+        # What the caption says: the named source, or which of the four
+        # reasons there is nothing to show (launch-1, loops 1 and 2).
         out["fundamentals_status"] = status if (filled or status != "ok") else "not_covered"
         return out
 

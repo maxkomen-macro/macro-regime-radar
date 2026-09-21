@@ -64,6 +64,15 @@ class LocalThrottle(RateLimited):
     about the symbol is learned, and the refusal must not be cached."""
 
 
+class OtherListing(Exception):
+    """Finnhub answered for a different listing of the company, or in another
+    currency, than the US listing asked about (loop 2). Verified live
+    2026-09-21: TSM comes back as 2330.TW (TWD), BRK-B as BRK.A, ASML as
+    ASML.AS (EUR), NVO as NOVO B.CO (DKK), SAP as SAP.DE, TM as 7203.T, SHEL
+    as SHEL.L, and BABA keeps its ticker but reports in CNY. Those figures
+    would sit beside this listing's dollar price, so none of them are shown."""
+
+
 def _load_token() -> str | None:
     """FINNHUB_API_KEY from the environment, else the repo-root .env (the same
     rule api/stream.py uses for EODHD). Never logged, never sent to a client."""
@@ -118,11 +127,15 @@ class FinnhubClient:
             raise MalformedResponse(PROVIDER, "Finnhub's company profile came back in an unexpected shape.")
         return data
 
-    def metrics(self, symbol: str, *, reserved: bool = False) -> dict:
+    def metric_answer(self, symbol: str, *, reserved: bool = False) -> dict:
+        """The whole /stock/metric answer: `metric` plus the `symbol` it is for."""
         data = self._get("/stock/metric", {"symbol": symbol, "metric": "all"}, what="company metrics", reserved=reserved)
         if not isinstance(data, dict):
             raise MalformedResponse(PROVIDER, "Finnhub's metrics came back in an unexpected shape.")
-        metric = data.get("metric")
+        return data
+
+    def metrics(self, symbol: str, *, reserved: bool = False) -> dict:
+        metric = self.metric_answer(symbol, reserved=reserved).get("metric")
         return metric if isinstance(metric, dict) else {}
 
 
@@ -170,11 +183,20 @@ def _first(metric: dict, *names: str) -> float | None:
     return None
 
 
+def _listing_key(value: Any) -> str:
+    """One spelling per listing: BRK-B, BRK.B and BRK.B.US are the same one."""
+    key = str(value or "").strip().upper()
+    if key.endswith(".US"):
+        key = key[:-3]
+    return key.replace("-", ".").replace("/", ".")
+
+
 def fundamentals(symbol: str) -> dict:
     """The panel's fifteen fundamentals fields for one US-listed company, or {}
     when Finnhub has no company behind the symbol (an ETF, an index, a fund).
-    Raises ProviderError on a transport or plan failure, and LocalThrottle when
-    this server's own bucket refused; callers keep the quote either way."""
+    Raises OtherListing when Finnhub answers for a different listing, a
+    ProviderError on a transport or plan failure, and LocalThrottle when this
+    server's own bucket refused; callers keep the quote in every case."""
     c = client()
     if not c.token:
         raise MissingToken(PROVIDER, "Fundamentals are not configured on this server.")
@@ -188,7 +210,15 @@ def fundamentals(symbol: str) -> dict:
     # beside eight dashes would say otherwise, so it is "not covered".
     if not (profile.get("marketCapitalization") or profile.get("finnhubIndustry") or profile.get("name")):
         return {}
-    metric = c.metrics(symbol, reserved=True)
+    # Both answers name the listing they are for. A US listing trades in
+    # dollars, so another ticker or another currency is another listing.
+    asked = _listing_key(symbol)
+    if _listing_key(profile.get("ticker")) != asked or str(profile.get("currency") or "USD").upper() != "USD":
+        raise OtherListing(asked)
+    answer = c.metric_answer(symbol, reserved=True)
+    if answer.get("symbol") and _listing_key(answer.get("symbol")) != asked:
+        raise OtherListing(asked)
+    metric = answer.get("metric") if isinstance(answer.get("metric"), dict) else {}
     industry = (profile.get("finnhubIndustry") or "").strip() or None
     # An ADR can report per-share figures in its home currency; beside a USD
     # price they would read as nonsense. Ratios are unitless and stay.

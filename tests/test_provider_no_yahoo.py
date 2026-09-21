@@ -227,8 +227,9 @@ def test_the_profile_fills_fundamentals_from_finnhub_without_touching_yahoo(bloc
 
     def finnhub(request: httpx.Request) -> httpx.Response:
         if "profile2" in request.url.path:
-            return httpx.Response(200, json={"marketCapitalization": 3_000_000.0, "finnhubIndustry": "Semiconductors"}, request=request)
-        return httpx.Response(200, json={"metric": {"peTTM": 51.2, "beta": 2.1, "52WeekHigh": 200.0, "52WeekLow": 90.0}}, request=request)
+            return httpx.Response(200, json={"ticker": "NVDA", "currency": "USD", "marketCapitalization": 3_000_000.0,
+                                             "finnhubIndustry": "Semiconductors"}, request=request)
+        return httpx.Response(200, json={"symbol": "NVDA", "metric": {"peTTM": 51.2, "beta": 2.1, "52WeekHigh": 200.0, "52WeekLow": 90.0}}, request=request)
 
     market.set_client_for_tests(eod.EodhdClient("tok", transport=httpx.MockTransport(eodhd)))
     fh.set_client_for_tests(fh.FinnhubClient("fh-tok", transport=httpx.MockTransport(finnhub)))

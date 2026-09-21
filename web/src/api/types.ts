@@ -723,7 +723,7 @@ export interface SymbolProfile {
   /** launch-1: ok (Finnhub filled it) · not_covered (no company behind the
    * symbol: a fund, an index, a currency) · unavailable (the source did not
    * answer this time). */
-  fundamentals_status?: "ok" | "not_covered" | "unavailable" | null;
+  fundamentals_status?: "ok" | "not_covered" | "other_listing" | "not_configured" | "unavailable" | null;
   delayed: boolean;
   delay_note: string | null;
   fallback_used: boolean;
