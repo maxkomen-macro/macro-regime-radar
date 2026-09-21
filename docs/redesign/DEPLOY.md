@@ -1,190 +1,238 @@
-# DEPLOY.md — publication runbook (build everything, deploy nothing)
+# DEPLOY.md — publishing Macro Regime Radar (launch-1)
 
-Status 2026-09-06: **nothing is deployed, committed or pushed.** This is the
-runbook a human follows when the go decision is made. Two modes are
-supported by the code as built; the zero-cost mode is the one this pass
-verified end to end locally.
+The site is two pieces: a static bundle on Vercel and one always-on FastAPI
+container that holds the database, the EODHD relay and the assistant. This is
+the runbook for putting them up, in order, with the prices and the secrets.
 
-## 0. What changed in this pass (2026-09-06)
+Status: **nothing is deployed and no account was created by the build.** Every
+step below is one a human does. Prices were read from the vendors' pricing
+pages on **2026-09-21** and are quoted as they appeared.
 
-- Provider layer `api/providers/` — EODHD first for search, quotes, daily and
-  intraday candles, splits/dividends, exchange hours, options (end-of-day) and
-  bounded ticks; yfinance only as a **disclosed** fallback; FRED unchanged.
-  Every payload carries `provider`, `fetched_at`, `market_ts`, `delayed`,
-  `fallback_used`, `fallback_reason`. Entitlements are probed once per family
-  at startup (`/api/providers/status`). Today's plan: fundamentals and ticks
-  **not** entitled (403, explicit unavailable states); options entitled.
-- Security gates `api/security.py`: body caps, per-client + global rate
-  limits, assistant gate (`ASSISTANT_ACCESS`), concurrency ceilings, security
-  headers, CSP on the served shell, typed sanitized provider errors, token
-  redaction in logs (`api/logsafe.py`).
-- Freshness `api/freshness.py` + NYSE calendar `api/calendar.py`: source-aware
-  SLA verdicts and regime blockers, used by `/api/freshness` and by
-  `scripts/validate_db.py` in the workflows.
-- Zero-cost availability: `scripts/build_snapshot.py` → `snapshot/latest.json`
-  seeds the React Query cache before first paint (`web/src/api/snapshot.ts`),
-  so stored screens render with the API asleep; the shell says
-  **Validated snapshot / Delayed / Live / Reconnecting / Backend unavailable**.
-- Live relay: stale-tick detection, degraded verdict, bounded dynamic
-  subscriptions (`watch`/`unwatch`, ≤20 symbols, 10-min idle expiry),
-  `VITE_WS_BASE` for a split deploy.
-- Workflows: explicit modes with validation gates and a `validated-db`
-  artifact; the refresh dispatches the memo workflows only after a validated
-  morning full run and they consume that artifact. `make sync-data` for the
-  local copy.
+---
 
-## 1. Zero-cost mode (architecture of record for a free launch)
+## 0. The shape, and why
 
-```
-Browser ──HTTPS──> static host (web/dist + snapshot/latest.json)      always up
-   │                 Vercel Hobby (free) or Cloudflare Pages (free)
-   ├──HTTPS+CORS──> API host (uvicorn api.main:app)                    may sleep
-   │                 Render free web service (sleeps after idle)
-   └──WSS──────────> same API host, /api/stream/ws (VITE_WS_BASE)      best effort
-```
+| Piece | Where | Why |
+|---|---|---|
+| Static bundle (`web/dist`) + the validated snapshot | Vercel Hobby, free | It is files. It stays up when the API does not, and paints the last validated numbers from the snapshot. |
+| API, relay, assistant | One always-on container, ≥ 1 GB | The relay holds one EODHD socket per feed, and the token allows 50 live symbols across every connection. **Exactly one instance. No autoscaling. No second copy in a preview environment.** |
 
-Promises this mode keeps, verified locally 2026-09-06 with FastAPI stopped:
+Measured on this branch (launch-1, `docs/redesign-v2/LAUNCH_REPORT.md`): the
+container settles at about 230 MiB of anonymous memory, and a database swap
+rebuilds every derived result with the allocation child peaking inside the
+same limit. Under a 1 GB cap it never came close to an OOM kill in a two-hour
+soak. 512 MB is not enough headroom for the first pass; 1 GB is the floor and
+2 GB is the comfortable choice.
 
-- The shell, Methodology, regime, signals, freshness line, stored market
-  tables and the latest stored headlines render from the validated snapshot
-  with **no** backend; the status word says *Validated snapshot · <date>*.
-- Nothing blocks on the API: the snapshot seed is bounded (2.5 s), health
-  checks are never awaited by the UI, live services connect progressively.
-- Last-known-good: the snapshot is also kept in `localStorage`, so a cold
-  load with the static file unreachable still paints the last validated one.
-- When the API wakes, queries refetch on their own; the word changes to
-  *Delayed* or *Live*.
+---
 
-What it cannot promise: a **continuous WebSocket**. No free tier I could
-confirm keeps a process awake without a payment method or an always-on plan
-(section 4), so the live tape is available while the host is awake and
-degrades to delayed/stored data otherwise. No keepalive ping is built or
-scheduled — it is not within the free hosts' intended use and the brief made
-that an owner decision.
+## 1. Merge order (do this first, and in this order)
 
-### 1a. Static frontend
+The API computes allocation from the `asset_prices` table that a **full**
+refresh writes. A database published before that table exists makes the Tools
+allocation panel say so, politely, forever.
+
+1. **Merge the branch to `main`.**
+2. **Run Actions → Refresh Data → Run workflow → branch `main`, mode `full`.**
+   Wait for it to finish green. Its step summary must list `asset_prices` with
+   rows and a max date equal to the last completed session.
+3. **Only then deploy the API** (section 3), so its first bootstrap downloads a
+   database that already carries the table.
+
+This supersedes the "dispatch on the branch before merging" step in
+`docs/redesign-v2/PRELAUNCH_REPORT.md`: dispatching on `main` after the merge
+is the same publish with one fewer moving part.
+
+---
+
+## 2. Vercel (the static site)
+
+**Price:** Hobby is free for personal, non-commercial projects. Vercel's own
+pricing page is the reference; nothing in this repo needs a paid feature.
+
+1. Sign in at vercel.com with the GitHub account that owns the repo.
+2. **Add New → Project**, import `macro-regime-radar`.
+3. **Root Directory:** `web`. Vercel reads `web/vercel.json` from there, which
+   already carries the build command, the SPA rewrite, the security headers and
+   the cache rules.
+4. **Environment Variables** (Production, and Preview if you use previews):
+
+   | Name | Value | Why |
+   |---|---|---|
+   | `VITE_API_BASE` | `https://<your-api-host>` | Where the bundle sends its API calls. No trailing slash. |
+   | `VITE_WS_BASE` | `wss://<your-api-host>` | The relay socket. Optional: derived from `VITE_API_BASE` when unset. |
+   | `GH_SNAPSHOT_TOKEN` | a fine-grained GitHub PAT, **Contents: Read** on this repo | The build downloads the validated snapshot from the private release. Without it the build still succeeds and the site simply starts without a pre-seeded snapshot. |
+
+5. **Edit `web/vercel.json` once**: the Content-Security-Policy contains
+   `REPLACE-WITH-API-HOST` twice. Replace both with your API host (no scheme in
+   the placeholder position: the header already says `https://` and `wss://`).
+   Commit that edit. The smoke script fails if the placeholder is still there.
+6. **Deploy.** Then, in the project's **Settings → Git → Deploy Hooks**, create
+   a hook named `snapshot-refresh` on the production branch and copy its URL.
+7. In the GitHub repo: **Settings → Secrets and variables → Actions → New
+   repository secret**, name `VERCEL_DEPLOY_HOOK`, value the hook URL. Every
+   full refresh that publishes now asks Vercel to rebuild, so the site's
+   fallback snapshot is never more than one full run old. Without the secret
+   the refresh logs one line and carries on.
+
+---
+
+## 3. The API host
+
+### 3a. Render (the default)
+
+**Price, read 2026-09-21 from render.com/pricing.** Workspace: Hobby **$0/mo**
+(up to 25 services, 5 GB bandwidth included, then $0.15/GB). Compute, per
+service: **$7/month** for "less than 1 CPU, 512 MB RAM", **$25/month** for
+"1 CPU, 2 GB RAM", $85/month for "2 CPU, 4 GB". WebSockets are listed as
+available on every workspace plan, Hobby included. Free instances have
+documented limitations (they spin down when idle), which is why they are not
+an option here: a relay that sleeps is not a live tape.
+
+**Take the $25/month 1 CPU / 2 GB instance.** It is the first tier with clear
+headroom over the measured peak.
+
+1. New → **Web Service** → connect the repo.
+2. **Runtime: Docker.** Dockerfile path `./Dockerfile`, context `.`. Render
+   builds the image itself; the CMD honours the `PORT` it assigns.
+3. **Instance type:** 1 CPU / 2 GB ($25/month).
+4. **Scaling:** leave it at **1 instance** and do not enable autoscaling. Two
+   instances mean two relays on one token, and the second one gets
+   `422 Symbols limit reached`.
+5. **Health Check Path:** `/health/ready`. Not `/health/live`: readiness waits
+   for the first background pass, so Render will not route traffic to a server
+   that would answer "warming".
+6. **Environment variables:** copy them from `deploy/api.env.example`, which
+   lists every variable this process reads and the production value for each.
+   The ones that must be set:
+
+   | Name | Value |
+   |---|---|
+   | `DEPLOY_PUBLIC` | `1` |
+   | `CORS_ORIGINS` | `https://<your-vercel-domain>` |
+   | `EODHD_API_TOKEN` | your EODHD token |
+   | `GH_DB_TOKEN` | fine-grained PAT, Contents: Read on this repo |
+   | `OPS_ACCESS_KEY` | a long random string you keep |
+   | `ASSISTANT_ACCESS` | `open` |
+   | `ANTHROPIC_API_KEY` | your Anthropic key |
+   | `FINNHUB_API_KEY` | your Finnhub key |
+   | `BOOTSTRAP_DB_REFRESH_MIN` | `10` |
+   | `TRUSTED_PROXY_HOPS` | `1` |
+   | `ASSISTANT_DAILY_CAP_USD` | `1.0` |
+
+   Render's UI puts these under **Environment → Environment Variables**; each
+   value is stored encrypted and is not shown again after saving.
+7. Deploy. Watch the log for the startup block: it states whether each secret
+   resolved (yes/no, never the value), the effective CORS origins and the
+   entitlement probe's verdicts.
+8. Copy the service's URL into Vercel's `VITE_API_BASE` / `VITE_WS_BASE` and
+   into the CSP in `web/vercel.json`, then redeploy the site.
+
+### 3b. Fly.io (cheaper, more setup)
+
+**Price, read 2026-09-21 from fly.io/docs/about/pricing:** a `shared-cpu-1x`
+machine with 1 GB RAM is **$5.92/month** in Amsterdam, and pricing varies by
+region (Mumbai is quoted at $9.20). Billing is for provisioned resources,
+prorated. A payment method is required; there is no general free allowance.
+
+It suits this workload if you are comfortable with `flyctl`: deploy the same
+Dockerfile, set `[http_service] min_machines_running = 1` so the machine never
+stops, and keep `auto_stop_machines` off. Set the same environment variables
+with `fly secrets set`. Everything else in this runbook applies unchanged.
+
+Choose Render for the shortest path, Fly to spend a quarter as much.
+
+---
+
+## 4. Local development once production is live
+
+**Never run a local server with the production EODHD token.** The token allows
+50 live symbols across every connection, and the relay's fixed universe uses
+exactly 30 of them with 20 kept for what a visitor watches. A second process
+takes those symbols and the deployed relay starts answering
+`422 Symbols limit reached`.
+
+Run local work with the relay off:
 
 ```bash
-cd web
-npm ci
-# the snapshot ships with the bundle: download the last validated one first
-gh release download data-latest --repo maxkomen-macro/macro-regime-radar \
-   --pattern snapshot-latest.json --dir public/snapshot && mv public/snapshot/snapshot-latest.json public/snapshot/latest.json
-VITE_API_BASE=https://<api-host> VITE_WS_BASE=wss://<api-host> npm run build   # → dist/
+EODHD_API_TOKEN=" " .venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
-Vercel: root `web/`, build `npm run build`, output `dist/`, env
-`VITE_API_BASE`, `VITE_WS_BASE`, add `web/vercel.json` with
-`{"rewrites": [{"source": "/(.*)", "destination": "/index.html"}]}` so
-`/app/*` deep links resolve. Because the repo is private, the build step
-needs a read token to download the snapshot (`GH_TOKEN` in the Vercel build
-env) — or commit nothing and let the page run on its localStorage copy until
-the API wakes. `VITE_SNAPSHOT_URL` can point at a snapshot hosted elsewhere.
+A single space is deliberate: an empty value falls through to the repo's
+`.env`, a space does not. The feeds stay off, the tape falls back to stored
+closes, and everything else behaves normally. The alternative is a second
+EODHD token for development.
 
-### 1b. API host (free tier)
+---
 
-Docker image from the repo `Dockerfile` (one process: API + relay; serves
-`web/dist` same-origin too when present). Environment per
-`docs/RUNBOOK.md` §6; minimum: `GH_DB_TOKEN`,
-`BOOTSTRAP_DB_REFRESH_MIN=45`, `CORS_ORIGINS=https://<static-host>`,
-`EODHD_API_TOKEN` (owner adds it on the host; **not** present in GitHub
-Actions and not needed there), `ASSISTANT_ACCESS=off` (default once
-`CORS_ORIGINS` is set), `TRUSTED_PROXY_HOPS=1` behind the host proxy.
-Health check path for the host: `/health/ready` (it touches the database and answers 503 `warming` until the background worker's first pass has built every derived result, about 4 s after start on a laptop; `/health/live` only proves the event loop is alive). Behind the host's proxy set `TRUSTED_PROXY_HOPS=1` so rate limits key on real clients.
+## 5. After the deploy
 
-On wake, and every `BOOTSTRAP_DB_REFRESH_MIN` minutes, the bootstrap compares
-the `data-latest` asset's identity with the one it last swapped in and
-downloads only when it changed (fix/prelaunch-1; the local mtime never
-decides), validates it (header, `quick_check`, regime rows) and swaps it
-atomically. The background worker then builds the new generation of derived
-results and switches every screen to it at once, so a refresh never needs a
-restart. `/api/freshness.bootstrap` exposes the last attempt, result
-(`downloaded` / `unchanged` / …), asset `updated_at`, DB mtime and any
-sanitized error.
+Run the smoke script against the public URLs:
 
-Before the first deploy after the fix/prelaunch-1 merge, a `full` refresh
-must have published a database with the `asset_prices` table (allocation's
-stored price histories; `docs/RUNBOOK.md` §8). The API never downloads them,
-so on an older database the Tools allocation panel says they are not stored.
+```bash
+.venv/bin/python scripts/smoke_public.py --api https://<api-host> --site https://<site> --ops-key "$OPS_ACCESS_KEY"
+```
 
-## 2. Full live mode (paid, always-on)
+It checks every route, readiness, that freshness can say how fresh it is, the
+relay socket and its Origin allowlist, the assistant gate and its budget, the
+security headers and the CSP, that the diagnostics are closed, and that no
+feed is being refused for the symbol limit. Exit code 0 means every check
+passed.
 
-Same image on an always-on host (Fly.io `min_machines_running=1`, Railway
-paid, Render paid) with exactly **one** instance: the relay keeps one
-upstream EODHD socket per feed. Either split (static host + API) with
-`VITE_API_BASE`/`VITE_WS_BASE`/`CORS_ORIGINS`/`CSP_CONNECT_SRC`, or
-same-origin (the image serves `web/dist`; no CORS, no env on the frontend).
+Then watch these for a day:
 
-## 3. Security gates (built; verify after deploy)
+- `/health/ready` → `worker.errors` empty and `worker.held` null.
+- `/api/freshness` → `overall` not `unknown`; the `sla` rows say what is late.
+- `/api/providers/status` (with `X-Ops-Key`) → `quota.units_per_day_projected`.
+  The deploy spends roughly 8,400 EODHD units on a weekday and about 1,500 at
+  a weekend, against a paid plan's 100,000 a day.
 
-- Assistant: `ASSISTANT_ACCESS` defaults to `off` whenever `CORS_ORIGINS` is
-  set; `key` mode requires `X-Assistant-Key`; 10 req/min per client, 16 KB
-  bodies, `Cache-Control: no-store`, no persistence of visitor chats.
-- Every API path: 64 KB body cap, 600 req/min per client with a 120-request
-  burst and 4000/min global (env-tunable), 4 concurrent expensive
-  calculations, 12 concurrent provider requests, 24 concurrent stored-data
-  reads; 429 with `Retry-After`. The relay socket is capped at 20 per client
-  id and 200 in total, each connection at 30 messages/min and 40 new symbols/h.
-  Behind a proxy set `TRUSTED_PROXY_HOPS` (the header is read from the
-  right, never the spoofable left); set `OPS_ACCESS_KEY` to gate the two
-  diagnostics views.
-- Headers on every response: `X-Content-Type-Options`, `X-Frame-Options`,
-  `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`; CSP
-  on the served `index.html` (`connect-src 'self'` plus `CSP_CONNECT_SRC` —
-  name the API/WS origin there in a split deploy).
-- Inputs: symbols validated by charset/length before any provider call and
-  normalized in `api/providers/symbols.py`; free-text search rejects path
-  separators, `%`, `#`, `?` and control characters and every provider URL
-  segment is percent-encoded; ranges, pagination (offset ≤ 10,000),
-  expiration, strikes and tick windows are closed vocabularies; the
-  assistant's SELECT-only SQL guard is untouched and still imported, never
-  copied.
-- Errors: provider failures return `{detail, kind, provider, retryable}`;
-  unhandled exceptions return a generic 500; no tracebacks, URLs or tokens.
-- Intentionally public endpoints: everything under `/api/*` except
-  `/api/assistant/ask`, plus `/health/*` and the unprefixed Atlas routes —
-  all read-only over stored data or provider caches.
-
-## 4. Free-host research (official pages read 2026-09-06)
-
-| Host | Free compute | Sleeps? | Card required | WebSockets | Notes |
-|---|---|---|---|---|---|
-| Render (free web service) | yes, 750 instance-hours/mo | yes, after ~15 min idle; cold start on next request | no | yes while awake | fits zero-cost mode; the relay stops while asleep |
-| Fly.io | no free allowance for new orgs | n/a | yes | yes | paid path only |
-| Railway | trial credit, then a paid plan | n/a | yes for paid | yes | paid path only |
-| Koyeb | no free web-service compute at the time of checking | n/a | — | — | not an option |
-| Cloudflare Workers / Durable Objects | free tier with WebSocket support | no | no | yes | would require rewriting the relay; not this codebase |
-| Hugging Face Spaces (Docker) | free CPU tier sleeps; persistent always-on tiers are paid | yes | for paid tiers | yes | comparable to Render free |
-| Vercel Hobby | static + serverless, free | static: no | no | no server-side WS | static frontend only |
-| GitHub Pages | free for public repos | no | no | no | this repo is private → not free |
-| Oracle Cloud Always Free VM | free VM | reclaimed when idle for long periods | yes (identity) | yes | possible but outside "no payment method" |
-
-Conclusion stated plainly: **no compliant free host guarantees a continuous
-WebSocket relay.** Zero-cost mode is honest about it (status word, snapshot
-mode); the paid always-on mode is the only way to promise a live tape.
-
-## 5. Owner actions before publication (outstanding gates)
-
-1. Add `EODHD_API_TOKEN` (and `GH_DB_TOKEN`, `ANTHROPIC_API_KEY` if the
-   assistant is wanted) to the API host's secret store. Nothing was created
-   or transferred by the build.
-2. Choose the hosts (section 1 or 2), set the env, deploy the image and the
-   bundle; read the startup log block and the four health endpoints.
-3. Push `react-rebuild` (or merge) and dispatch `Refresh Data` → `verify-only`
-   once to see the validation summary; then `full`.
-4. Decide on a keepalive (not built) and on the assistant access mode.
+---
 
 ## 6. Rollback
 
-Image hosts: redeploy the previous image; static host: promote the previous
-deployment. Data: see `docs/RUNBOOK.md` §5 — the Release keeps the
-last-known-good because uploads are validation-gated.
+- **The site:** Vercel → Deployments → the previous production deployment →
+  **Promote to Production**. Instant, no build.
+- **The API:** Render → the service → Events → the previous deploy →
+  **Rollback**. On Fly, `flyctl releases` then `flyctl deploy --image <previous>`.
+- **The data:** nothing to undo. The release asset is replaced only after
+  validation passes, so the last good database is the one still published; the
+  API picks up whatever the release holds at its next check (10 minutes).
+  `docs/RUNBOOK.md` §5 has the manual restore if a bad snapshot ever gets
+  through.
+- **The whole branch, before it is merged:** it is local. After the merge,
+  `git revert -m 1 <merge-commit-sha>`.
 
-## 7. Pre-deploy checklist
+---
 
-- [ ] `make test-api` green (287 tests on 2026-09-06 with the local snapshot; the Streamlit-only module runs under the anaconda interpreter)
-- [ ] `make test-web` green (typecheck + 25 vitest tests), `make build-web` produces route chunks
-- [ ] `make actionlint` clean; `Refresh Data` dispatched once in `verify-only`
-- [ ] Secrets only in the host store; `EODHD_API_TOKEN` present on the API host
-- [ ] Post-deploy: `/health/ready` 200 (use it as the host's health probe, not `/health/live`), `/api/providers/status` shows the expected entitlements, `/api/stream/debug` not degraded during a session
-- [ ] Static host: `snapshot/latest.json` reachable; stop the API once and confirm the shell says *Validated snapshot*
+## 7. The single-service alternative (fallback)
+
+The image already serves the bundle: when `web/dist` exists, `api/main.py`
+mounts it and answers the SPA's routes. So one container can serve the whole
+site at one origin, with no Vercel project at all:
+
+1. Deploy the image exactly as in section 3.
+2. Leave `CORS_ORIGINS` **unset** (there is no second origin), and set
+   `DEPLOY_PUBLIC=1` so the assistant and the diagnostics still take their
+   public posture. This is why `DEPLOY_PUBLIC` exists: the posture must not
+   depend on a variable a same-origin deploy has no reason to set.
+3. Set `CSP_CONNECT_SRC` only if the socket lives on another host.
+4. Point the domain at the service.
+
+What you lose: the site goes down with the API, and the validated-snapshot
+fallback has nothing to serve it from. What you gain: one thing to run, no CORS
+and no `VITE_*` variables. Keep it in your pocket for the day Vercel is the
+problem.
+
+---
+
+## 8. Owner checklist
+
+- [ ] Merge to `main`; dispatch Refresh Data → `full` on `main`; it goes green and lists `asset_prices`.
+- [ ] Vercel project created, root `web`, three environment variables set, CSP placeholder replaced.
+- [ ] Deploy hook created and stored as the `VERCEL_DEPLOY_HOOK` repository secret.
+- [ ] API service created from the Dockerfile: 1 instance, no autoscaling, ≥ 1 GB, health check `/health/ready`.
+- [ ] Every secret from `deploy/api.env.example` entered in the host's store; none in git.
+- [ ] `VITE_API_BASE` / `VITE_WS_BASE` point at the API; the site redeployed.
+- [ ] `scripts/smoke_public.py` exits 0 against the public URLs.
+- [ ] Local development switched to a blank EODHD token.

@@ -241,6 +241,27 @@ jobs:
             echo "Uploaded snapshot-latest.json ($(du -h snapshot-latest.json | cut -f1))."
           fi
 
+      # launch-1: the static site ships a copy of the validated snapshot, so a
+      # published full refresh asks Vercel for a fresh deploy. Absent the
+      # secret this is a no-op line in the log: a fork, or a deploy that is not
+      # set up yet, must not fail the refresh.
+      - name: Ask Vercel for a deploy (snapshot changed)
+        if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.upload == 'true'
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$VERCEL_DEPLOY_HOOK" ]; then
+            echo "No VERCEL_DEPLOY_HOOK secret; the static site keeps the snapshot it was built with." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          code=$(curl -sS -X POST -o /dev/null -w '%{http_code}' "$VERCEL_DEPLOY_HOOK" || echo "000")
+          if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+            echo "Vercel deploy hook accepted ($code): the site will rebuild with this snapshot." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Vercel deploy hook answered $code; the data is published either way."
+            echo "Vercel deploy hook answered $code (the published data is unaffected)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Note when nothing changed
         if: steps.mode.outputs.mode != 'verify-only' && steps.validate.outputs.upload != 'true'
         run: echo "Validation passed but nothing changed for mode ${{ steps.mode.outputs.mode }}; the previous asset stands." >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,357 @@
+"""scripts/smoke_public.py — check a deployed Macro Regime Radar (launch-1).
+
+Run it after a deploy, and any time the site looks wrong. It reads only: every
+check is a GET, a HEAD or one WebSocket connect, and nothing it does costs the
+assistant a model call.
+
+    python scripts/smoke_public.py \
+        --api https://your-api-host.example \
+        --site https://your-site.vercel.app \
+        --ops-key "$OPS_ACCESS_KEY"
+
+Without --site it checks the API alone; without --ops-key it still checks that
+the diagnostics are closed, which is what a public deploy should answer.
+
+Exit code 0 when every check passed, 1 when any FAIL. WARN never fails the run:
+those are facts worth seeing (an empty watchlist off-hours, say) rather than
+faults. Needs the API's own dependencies (httpx, websockets), so run it from
+the repo's virtual environment.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import sys
+import time
+from dataclasses import dataclass, field
+
+import httpx
+
+# Every route the site reads, grouped so the report says which surface broke.
+STORED_ROUTES = [
+    "/health", "/health/live", "/regime/latest", "/signals/latest", "/series/latest",
+    "/api/regime/latest", "/api/regime/history?limit=24", "/api/signals/latest", "/api/priced",
+    "/api/surprises?top_n=10", "/api/alerts?limit=5", "/api/news?hours=168&limit=5",
+    "/api/news/latest?limit=5", "/api/market/daily?days=5", "/api/market/intraday",
+    "/api/calendar?days=14", "/api/calendar/recent?limit=5", "/api/backtests",
+    "/api/credit/oas?days=90", "/api/credit/metrics", "/api/recession/probability",
+    "/api/regime/intelligence", "/api/regime/playbooks", "/api/regime/duration",
+    "/api/regime/transitions", "/api/regime/analogues", "/api/regime/scenarios",
+    "/api/lbo/defaults", "/api/allocation", "/api/freshness",
+]
+PROVIDER_ROUTES = [
+    "/api/market/search?q=AAPL&limit=3",
+    "/api/market/profile/AAPL",
+    "/api/market/candles/AAPL?range=5D",
+]
+SECURITY_HEADERS = {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "cross-origin-opener-policy": "same-origin",
+}
+
+
+@dataclass
+class Report:
+    rows: list[tuple[str, str, str]] = field(default_factory=list)
+
+    def add(self, verdict: str, check: str, detail: str = "") -> None:
+        self.rows.append((verdict, check, detail))
+        print(f"{verdict:4s} {check}{'  ' + detail if detail else ''}", flush=True)
+
+    def ok(self, check: str, detail: str = "") -> None:
+        self.add("PASS", check, detail)
+
+    def fail(self, check: str, detail: str = "") -> None:
+        self.add("FAIL", check, detail)
+
+    def warn(self, check: str, detail: str = "") -> None:
+        self.add("WARN", check, detail)
+
+    @property
+    def failures(self) -> int:
+        return sum(1 for v, _, _ in self.rows if v == "FAIL")
+
+
+def check_routes(client: httpx.Client, base: str, routes: list[str], rep: Report, label: str) -> None:
+    slow: list[str] = []
+    for route in routes:
+        t0 = time.perf_counter()
+        try:
+            r = client.get(base + route)
+        except httpx.HTTPError as exc:
+            rep.fail(f"{label} {route}", type(exc).__name__)
+            continue
+        ms = (time.perf_counter() - t0) * 1000
+        if r.status_code == 200:
+            if ms > 2000:
+                slow.append(f"{route} {ms:.0f}ms")
+            rep.ok(f"{label} {route}", f"{r.status_code} in {ms:.0f}ms")
+        elif r.status_code == 503 and route == "/api/allocation":
+            rep.warn(f"{label} {route}", "503: this database predates the stored price histories")
+        else:
+            rep.fail(f"{label} {route}", f"{r.status_code} {r.text[:120]}")
+    if slow:
+        rep.warn(f"{label} slow routes", ", ".join(slow))
+
+
+def check_readiness(client: httpx.Client, api: str, rep: Report) -> None:
+    try:
+        r = client.get(api + "/health/ready")
+    except httpx.HTTPError as exc:
+        rep.fail("readiness", type(exc).__name__)
+        return
+    if r.status_code != 200:
+        rep.fail("readiness", f"{r.status_code} {r.text[:160]}")
+        return
+    body = r.json()
+    worker = body.get("worker") or {}
+    rep.ok("readiness", f"generation {worker.get('generation')} built in {worker.get('build_ms')} ms")
+    if worker.get("errors"):
+        rep.fail("worker items", f"errors: {worker['errors']}")
+    else:
+        rep.ok("worker items", "no item is answering with an error")
+    if worker.get("held"):
+        rep.warn("worker held", json.dumps(worker["held"]))
+    if body.get("relay_degraded"):
+        rep.warn("relay", "degraded (see /api/stream/debug with the ops key)")
+
+
+def check_freshness(client: httpx.Client, api: str, rep: Report) -> None:
+    try:
+        body = client.get(api + "/api/freshness").json()
+    except (httpx.HTTPError, ValueError) as exc:
+        rep.fail("freshness", type(exc).__name__)
+        return
+    overall = body.get("overall")
+    if overall in (None, "unknown"):
+        rep.fail("freshness overall", f"{overall!r}: the deploy cannot say how fresh it is")
+    elif overall == "current":
+        rep.ok("freshness overall", overall)
+    else:
+        rep.warn("freshness overall", f"{overall} (see the sla rows)")
+    gen = body.get("generation") or {}
+    if gen.get("id"):
+        rep.ok("served generation", f"{gen['id']} from {gen.get('source')}")
+    else:
+        rep.fail("served generation", "freshness names no generation")
+    stale = [row.get("feed") for row in (body.get("sla") or []) if row.get("verdict") == "stale"]
+    if stale:
+        rep.warn("stale feeds", ", ".join(str(s) for s in stale))
+
+
+def check_security_headers(client: httpx.Client, url: str, rep: Report, label: str, want_csp: bool) -> None:
+    try:
+        r = client.get(url)
+    except httpx.HTTPError as exc:
+        rep.fail(f"{label} headers", type(exc).__name__)
+        return
+    missing = [h for h, v in SECURITY_HEADERS.items() if r.headers.get(h, "").lower() != v.lower()]
+    if missing:
+        rep.fail(f"{label} security headers", f"missing or wrong: {', '.join(missing)}")
+    else:
+        rep.ok(f"{label} security headers", "nosniff, DENY, strict-origin, same-origin")
+    csp = r.headers.get("content-security-policy", "")
+    if not want_csp:
+        return
+    if not csp:
+        rep.fail(f"{label} CSP", "no Content-Security-Policy header")
+        return
+    problems = []
+    if "REPLACE-WITH-API-HOST" in csp:
+        problems.append("still carries the placeholder API host")
+    if "connect-src" not in csp:
+        problems.append("no connect-src")
+    if "frame-ancestors 'none'" not in csp:
+        problems.append("frame-ancestors is not 'none'")
+    if problems:
+        rep.fail(f"{label} CSP", "; ".join(problems))
+    else:
+        rep.ok(f"{label} CSP", csp.split("connect-src", 1)[1].split(";")[0].strip()[:80])
+
+
+def check_diagnostics(client: httpx.Client, api: str, ops_key: str | None, rep: Report) -> None:
+    for route in ("/api/providers/status", "/api/stream/debug"):
+        try:
+            r = client.get(api + route)
+        except httpx.HTTPError as exc:
+            rep.fail(f"diagnostics {route}", type(exc).__name__)
+            continue
+        if r.status_code == 200:
+            rep.fail(f"diagnostics {route}", "open to anyone: set OPS_ACCESS_KEY and DEPLOY_PUBLIC")
+        elif r.status_code in (401, 503):
+            rep.ok(f"diagnostics {route}", f"closed ({r.status_code})")
+        else:
+            rep.warn(f"diagnostics {route}", str(r.status_code))
+    if not ops_key:
+        rep.warn("relay report", "no --ops-key given, so the relay was not read")
+        return
+    try:
+        r = client.get(api + "/api/stream/debug", headers={"X-Ops-Key": ops_key})
+    except httpx.HTTPError as exc:
+        rep.fail("relay report", type(exc).__name__)
+        return
+    if r.status_code != 200:
+        rep.fail("relay report", f"the ops key was refused ({r.status_code})")
+        return
+    dbg = r.json()
+    errors = {k: v for k, v in (dbg.get("feed_last_error") or {}).items() if v}
+    limit_hits = {k: v for k, v in errors.items() if "422" in str(v) or "limit" in str(v).lower()}
+    if limit_hits:
+        rep.fail("relay symbol limit", f"{limit_hits}: another process is holding this token's symbols")
+    else:
+        rep.ok("relay symbol limit", "no symbol-limit rejection on any feed")
+    feeds = dbg.get("feeds") or {}
+    if dbg.get("degraded"):
+        rep.warn("relay feeds", f"{feeds} · {dbg.get('degraded_reasons')}")
+    else:
+        rep.ok("relay feeds", str(feeds))
+    quota = dbg.get("quota") or {}
+    try:
+        status = client.get(api + "/api/providers/status", headers={"X-Ops-Key": ops_key}).json()
+        quota = status.get("quota") or {}
+        ents = {k: v.get("available") for k, v in (status.get("entitlements") or {}).items()}
+        rep.ok("plan entitlements", json.dumps(ents))
+    except (httpx.HTTPError, ValueError):
+        pass
+    if quota:
+        rep.ok("eodhd quota", f"{quota.get('units')} units in {quota.get('elapsed_s')} s "
+                              f"→ {quota.get('units_per_day_projected')} a day projected")
+
+
+def check_assistant(client: httpx.Client, api: str, rep: Report) -> None:
+    try:
+        r = client.get(api + "/api/assistant/status")
+    except httpx.HTTPError as exc:
+        rep.fail("assistant status", type(exc).__name__)
+        return
+    if r.status_code == 503:
+        rep.ok("assistant", "disabled on this deployment (ASSISTANT_ACCESS=off)")
+        return
+    if r.status_code == 401:
+        rep.ok("assistant", "key-gated on this deployment (ASSISTANT_ACCESS=key)")
+        return
+    if r.status_code != 200:
+        rep.fail("assistant status", f"{r.status_code} {r.text[:120]}")
+        return
+    body = r.json()
+    spent, cap = body.get("spent_usd"), body.get("cap_usd")
+    if body.get("ledger") != "ok":
+        rep.fail("assistant ledger", f"{body.get('ledger')}: the ceiling cannot be counted, so the analyst is resting")
+    elif body.get("resting"):
+        rep.warn("assistant", f"resting: ${spent} of ${cap} spent today, wakes {body.get('resets_at')}")
+    else:
+        rep.ok("assistant", f"awake: ${spent} of ${cap} spent today")
+    # The gate itself, without spending a model call: an oversized body must be
+    # refused by the 16 KB cap rather than answered.
+    try:
+        r = client.post(api + "/api/assistant/ask", content=b"{" + b"x" * 17_000 + b"}",
+                        headers={"content-type": "application/json"})
+        if r.status_code == 413:
+            rep.ok("assistant body cap", "413 over 16 KB")
+        else:
+            rep.fail("assistant body cap", f"{r.status_code}: an oversized question was not refused")
+    except httpx.HTTPError as exc:
+        rep.fail("assistant body cap", type(exc).__name__)
+
+
+async def _ws_probe(url: str, origin: str | None) -> tuple[bool, str]:
+    try:
+        import websockets
+    except ImportError:
+        return False, "the websockets package is not installed in this environment"
+    headers = {"Origin": origin} if origin else None
+    try:
+        async with websockets.connect(url, additional_headers=headers, open_timeout=15, close_timeout=5) as ws:
+            raw = await asyncio.wait_for(ws.recv(), timeout=15)
+    except Exception as exc:  # noqa: BLE001 — every failure is one line in the report
+        return False, f"{type(exc).__name__}: {str(exc)[:120]}"
+    try:
+        msg = json.loads(raw)
+    except ValueError:
+        return False, "the first frame was not JSON"
+    if msg.get("type") != "snapshot":
+        return False, f"the first frame was {msg.get('type')!r}, not a snapshot"
+    return True, f"{len(msg.get('items') or [])} quotes, feeds {msg.get('feeds')}"
+
+
+def check_websocket(api: str, site: str | None, rep: Report) -> None:
+    ws_url = api.replace("https://", "wss://").replace("http://", "ws://") + "/api/stream/ws"
+    ok, detail = asyncio.run(_ws_probe(ws_url, site))
+    (rep.ok if ok else rep.fail)("relay socket", detail)
+    if site:
+        ok, detail = asyncio.run(_ws_probe(ws_url, "https://not-the-site.example"))
+        if ok:
+            rep.fail("relay origin allowlist", "a foreign Origin was accepted")
+        else:
+            rep.ok("relay origin allowlist", "a foreign Origin was refused")
+
+
+def check_site(client: httpx.Client, site: str, rep: Report) -> None:
+    try:
+        r = client.get(site + "/")
+    except httpx.HTTPError as exc:
+        rep.fail("site index", type(exc).__name__)
+        return
+    if r.status_code != 200 or "<div id=\"root\">" not in r.text:
+        rep.fail("site index", f"{r.status_code}, and no app shell in the body")
+    else:
+        rep.ok("site index", f"{len(r.text)} bytes")
+    deep = client.get(site + "/app/markets")
+    if deep.status_code == 200 and "<div id=\"root\">" in deep.text:
+        rep.ok("site deep link", "/app/markets serves the shell")
+    else:
+        rep.fail("site deep link", f"{deep.status_code}: the SPA rewrite is missing")
+    snap = client.get(site + "/snapshot/latest.json")
+    if snap.status_code == 200:
+        try:
+            body = snap.json()
+            rep.ok("site snapshot", f"generated {body.get('generated_at')}, {len(body.get('entries') or {})} entries")
+        except ValueError:
+            rep.fail("site snapshot", "not JSON")
+    else:
+        rep.warn("site snapshot", f"{snap.status_code}: the site will paint from the API alone")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--api", required=True, help="API origin, e.g. https://mrr-api.onrender.com")
+    ap.add_argument("--site", help="static site origin, e.g. https://macro-regime-radar.vercel.app")
+    ap.add_argument("--ops-key", default=None, help="OPS_ACCESS_KEY, to read the relay and plan report")
+    ap.add_argument("--skip-provider", action="store_true", help="skip the three on-demand routes (they spend EODHD quota)")
+    args = ap.parse_args()
+
+    api = args.api.rstrip("/")
+    site = args.site.rstrip("/") if args.site else None
+    rep = Report()
+    print(f"Macro Regime Radar smoke check · api={api}" + (f" site={site}" if site else ""))
+    with httpx.Client(timeout=30.0, follow_redirects=False, headers={"User-Agent": "mrr-smoke/1.0"}) as client:
+        check_readiness(client, api, rep)
+        check_routes(client, api, STORED_ROUTES, rep, "stored")
+        if not args.skip_provider:
+            check_routes(client, api, PROVIDER_ROUTES, rep, "provider")
+        check_freshness(client, api, rep)
+        check_security_headers(client, api + "/health", rep, "api", want_csp=False)
+        check_diagnostics(client, api, args.ops_key, rep)
+        check_assistant(client, api, rep)
+        if site:
+            check_site(client, site, rep)
+            check_security_headers(client, site + "/", rep, "site", want_csp=True)
+    check_websocket(api, site, rep)
+
+    passed = sum(1 for v, _, _ in rep.rows if v == "PASS")
+    warned = sum(1 for v, _, _ in rep.rows if v == "WARN")
+    print(f"\n{passed} passed, {warned} warnings, {rep.failures} failed")
+    if rep.failures:
+        print("\nFailures:")
+        for verdict, check, detail in rep.rows:
+            if verdict == "FAIL":
+                print(f"  {check}: {detail}")
+    return 1 if rep.failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -26,6 +26,11 @@ function buildStampPlugin(): Plugin {
   };
 }
 
+// Where the dev server proxies the API. Defaults to the local uvicorn; set
+// VITE_PROXY_TARGET to point a dev or e2e run at another one (a container, a
+// second port), which is how the launch-1 rehearsal runs.
+const API_TARGET = process.env.VITE_PROXY_TARGET ?? "http://127.0.0.1:8000";
+
 // Dev-time proxy: the FastAPI service (uvicorn api.main:app --port 8000) is
 // reached same-origin via /api and the unprefixed /health, matching the
 // production plan where FastAPI serves the built bundle from one process.
@@ -61,10 +66,10 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       // ws: true upgrades /api/stream/ws to the FastAPI relay alongside plain GETs.
-      "/api": { target: "http://127.0.0.1:8000", changeOrigin: true, ws: true },
-      "/health": { target: "http://127.0.0.1:8000", changeOrigin: true },
+      "/api": { target: API_TARGET, changeOrigin: true, ws: true },
+      "/health": { target: API_TARGET, changeOrigin: true },
       // Unprefixed latest-snapshot endpoints (Atlas contract) — /series/{id}/latest
-      "/series": { target: "http://127.0.0.1:8000", changeOrigin: true },
+      "/series": { target: API_TARGET, changeOrigin: true },
     },
   },
 });

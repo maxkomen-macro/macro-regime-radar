@@ -251,3 +251,37 @@ def test_the_stored_histories_step_runs_on_the_full_mode_install():
     wf = (WF / "refresh-data.yml").read_text()
     assert "python -m src.market_data.asset_history" in wf
     assert "pip install -r requirements.txt -r requirements-snapshot.txt" in wf
+
+
+# ── launch-1: the static site is told when a full refresh publishes ─────────
+
+
+def test_a_published_full_refresh_asks_vercel_for_a_deploy():
+    """The bundle ships the validated snapshot, so a publish that changes it
+    triggers a rebuild — but only on a full run that actually uploaded."""
+    wf = _load("refresh-data.yml")
+    steps = wf["jobs"]["refresh"]["steps"]
+    hook = next((s for s in steps if "Vercel" in s.get("name", "")), None)
+    assert hook is not None, "no Vercel deploy-hook step"
+    cond = hook["if"]
+    assert "mode == 'full'" in cond and "upload == 'true'" in cond, cond
+    assert hook["env"]["VERCEL_DEPLOY_HOOK"] == "${{ secrets.VERCEL_DEPLOY_HOOK }}"
+    body = hook["run"]
+    # Absent secret: a note and exit 0, never a failure.
+    assert 'if [ -z "$VERCEL_DEPLOY_HOOK" ]' in body and "exit 0" in body
+    # Present secret: one POST, and a non-2xx answer warns rather than fails.
+    assert body.count("curl") == 1 and "-X POST" in body
+    assert "::warning::" in body
+    assert "set -e" not in body
+    # The hook URL is a secret: it must never be echoed.
+    assert "echo \"$VERCEL_DEPLOY_HOOK\"" not in body and "echo $VERCEL_DEPLOY_HOOK" not in body
+
+
+def test_the_deploy_hook_runs_after_the_release_upload():
+    """Order matters: the site rebuilds only once the new snapshot is on the
+    release it downloads from."""
+    steps = _load("refresh-data.yml")["jobs"]["refresh"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    publish = next(i for i, n in enumerate(names) if n.startswith("Publish validated DB snapshot"))
+    hook = next(i for i, n in enumerate(names) if "Vercel" in n)
+    assert hook > publish, names[publish:hook + 1]
