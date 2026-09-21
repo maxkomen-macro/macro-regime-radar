@@ -8,10 +8,12 @@
  * long stale time (regimes/signals are monthly-cadence data).
  */
 
-import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { ApiError, getJson, postJson } from "./client";
 import type {
   Alert,
+  AssistantStatus,
   AllocationData,
   Analogue,
   BacktestRow,
@@ -213,7 +215,8 @@ export function useCreditOas(days = 90) {
   });
 }
 
-/** Trains in-process server-side on cold call (~1s), then 15-min TTL cache. */
+/** Built by the background worker once per generation; the handler looks
+ * the result up and never trains on the request path (fix/prelaunch-1). */
 export function useRecessionProbability() {
   return useQuery({
     queryKey: ["recession", "probability"],
@@ -235,12 +238,60 @@ export function useSeriesLatest(seriesId: string) {
   });
 }
 
+/** Query families that do not come from the database, so a database swap is
+ * no reason to refetch them: on-demand symbol lookups and the two diagnostics
+ * views each cost a provider call. */
+const NOT_FROM_THE_DATABASE = new Set(["symbol", "providers", "stream"]);
+
+/** The last generation this tab saw the server serve (module scope: several
+ * components read freshness, and only the first to notice a change needs to
+ * act). */
+let lastGeneration: number | null = null;
+
 export function useFreshness() {
-  return useQuery({
+  const client = useQueryClient();
+  const query = useQuery({
     queryKey: ["freshness"],
     queryFn: () => getJson<Freshness>("/api/freshness"),
     refetchInterval: MINUTE,
     staleTime: 30_000,
+  });
+  // launch-1: the server rebuilds every derived result when a refresh
+  // publishes a new database, and switches screens to it at once. A tab left
+  // open used to keep pre-swap values until each query's own stale time
+  // expired — thirty minutes for credit and the LBO defaults — so one screen
+  // could disagree with another. The freshness payload names the generation
+  // that answered; when it changes, everything read from the database is
+  // dropped and refetched.
+  const generation = query.data?.generation?.id ?? null;
+  const seen = useRef(false);
+  useEffect(() => {
+    if (generation == null) return;
+    if (!seen.current && lastGeneration == null) {
+      seen.current = true;
+      lastGeneration = generation;
+      return;
+    }
+    if (generation === lastGeneration) return;
+    lastGeneration = generation;
+    void client.invalidateQueries({
+      predicate: (q) => !NOT_FROM_THE_DATABASE.has(String(q.queryKey[0])) && String(q.queryKey[0]) !== "freshness",
+    });
+  }, [generation, client]);
+  return query;
+}
+
+/** Whether the AI analyst is awake, and what today's budget has left. The
+ * assistant is open to the public with a hard daily ceiling (launch-1), and
+ * the chip says plainly when it is resting rather than failing on click. */
+export function useAssistantStatus(enabled = true) {
+  return useQuery({
+    queryKey: ["assistant", "status"],
+    queryFn: () => getJson<AssistantStatus>("/api/assistant/status"),
+    enabled,
+    staleTime: 5 * MINUTE,
+    refetchInterval: enabled ? 5 * MINUTE : undefined,
+    retry: false,
   });
 }
 
@@ -361,8 +412,9 @@ export function useLboRun(req: LboRequest | null) {
   });
 }
 
-/** Cold call downloads return histories server-side (~30–60s) — the screen
- * states that; afterwards the server cache answers in milliseconds. */
+/** Computed by the background worker from the price histories the full
+ * refresh stores (`asset_prices`); the API never downloads them, and answers
+ * in milliseconds or says plainly that the database predates the table. */
 export function useAllocation() {
   return useQuery({
     queryKey: ["allocation"],
@@ -394,7 +446,7 @@ export function useCalendarRecent(limit = 10, enabled = true) {
   });
 }
 
-/* ── On-demand symbol layer (EODHD first, yfinance fallback; 2026-09-06) ── */
+/* ── On-demand symbol layer (EODHD only since fix/prelaunch-1) ─────────── */
 
 /** Provider errors are typed: a 404 (unknown symbol / empty range), a 422
  * (unsupported instrument) and a 403 (not in the plan) are final; everything
@@ -417,7 +469,7 @@ export function useSymbolSearch(q: string, limit = 10) {
   });
 }
 
-/** Delayed quote (EODHD, yfinance fallback) + fundamentals; refetched so the
+/** Delayed quote from EODHD plus fundamentals from Finnhub; refetched so the
  * delayed read stays as current as the source allows. */
 export function useSymbolProfile(symbol: string | null) {
   return useQuery({

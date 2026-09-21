@@ -199,6 +199,22 @@ export interface Surprise {
   interpretation: string;
 }
 
+export interface AssistantStatus {
+  resting: boolean;
+  spent_usd: number | null;
+  cap_usd: number;
+  reserve_usd: number;
+  resets_at: string;
+  ledger: string;
+  reason: string | null;
+}
+
+export interface FreshnessGeneration {
+  id: number | null;
+  built_at: string | null;
+  source: string | null;
+}
+
 export interface Freshness {
   regimes_date: string | null;
   signals_date: string | null;
@@ -215,6 +231,9 @@ export interface Freshness {
   regime?: RegimeFreshness | null;
   bootstrap?: BootstrapStatus | null;
   relay?: { feeds: Record<string, string>; feed_stale: Record<string, boolean>; degraded: boolean; degraded_reasons: string[]; token_configured: boolean } | null;
+  /** Which generation of derived results answered this request (launch-1):
+   * when it changes, an open tab drops every cache read from the database. */
+  generation?: FreshnessGeneration | null;
   /** B3 (2026-09-18): one state object per source, rendered by
    * screens/shared/fresh-state.ts (docs/redesign-v2/FRESHNESS_CONTRACT.md §1). */
   series?: SeriesState[];
