@@ -2556,6 +2556,29 @@ button.mrr-mover:hover {
    copy | chart grid at full width (a 327 to 750px chart column from 1200 to
    1619), the same shape as at 1672. 1620 is also where the strip goes
    two-up. Replaces the 1520 inner-grid step (checklist 10 G1, QUESTIONS 117). */
+/* Below 1620 the hero row stacks the summary card under the hero (Iteration
+   1, hero-row root cause; re-tested and kept by Iteration 2, F5).
+
+   F5 asked for side-by-side down to 1400 on tighter spacing, because Max's
+   laptop is about 1512px and the 1620 step means he never sees the mockup's
+   layout. It was built and measured, not reasoned about: the summary narrowed
+   432 -> 380, the row gap 16 -> 12, the hero's padding 62 -> 40 and its copy
+   column 540 -> 400, on top of the right margin F1's inline legend freed.
+   That turned the chart column at 1512 from 202px into 398px, and at 1440
+   from 130px into 326px - a real improvement, and still not enough.
+
+   G2 fails at every width below 1620, measured with the project's own
+   auditDeadSpace: the hero's tail gap runs 195px at 1560, 214px at 1512,
+   243px at 1440 and 245px at 1400, against a 129px allowance. The cause is
+   structural rather than a spacing choice. Side by side, the row's height is
+   the summary card's, and narrowing the summary makes it taller because its
+   eleven rows wrap; the hero cannot fill that height, because the chart's
+   aspect cap (0.8 of its width, so a 326px column yields a 280px plot) stops
+   it growing into the space, and no served row exists to put there.
+
+   So the stack stands below 1620, which is where side-by-side does hold: at
+   1620 the gap is inside the allowance and the chart column is 874px. F5's
+   own escape clause covers this, and the report carries both captures. */
 @media (max-width: 1619.98px) {
   .mrr-hero-row {
     grid-template-columns: 1fr;
