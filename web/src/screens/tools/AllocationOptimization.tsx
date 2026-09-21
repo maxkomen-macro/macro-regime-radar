@@ -46,7 +46,7 @@ export default function AllocationOptimization({ a }: { a: AllocationData }) {
   const opt = optimizationsOf(a);
   const names = assetNames(a);
   const curRegime = a.current_regime;
-  const sample = a.optimizations_skipped ?? a.optimization_sample ?? null;
+  const sample = a.optimizations_skipped ?? null;
 
   return (
     <Card as="section" id="allocation-optimization" variant="panel" style={{ minWidth: 0 }}>

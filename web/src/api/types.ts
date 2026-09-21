@@ -602,12 +602,14 @@ export interface AllocationData {
     universe?: OptimizerUniverse;
   }) | null;
   optimizations_skipped?: (OptimizationSample & { window: string }) | null;
-  optimization_sample?: OptimizationSample | null;
   drawdowns: { by_regime: FrameData; overall: Record<string, number> };
   data_start: string;
   data_end: string;
   n_months: number;
-  asset_classes: Record<string, { etf: string; index?: string | null; etf_start?: string }>;
+  /** `list(ASSET_CLASSES.keys())` from src/analytics/allocation.py: the asset
+   * class names, in house order. It was declared as a Record of ETF metadata,
+   * which the API has never sent. */
+  asset_classes: string[];
   cvar_95: { confidence: number; asset_cvar: Record<string, CvarEntry> };
   cvar_99: { confidence: number; asset_cvar: Record<string, CvarEntry> };
   regime_cvar: Record<string, { confidence: number; asset_cvar: Record<string, CvarEntry> }>;

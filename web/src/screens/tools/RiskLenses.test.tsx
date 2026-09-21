@@ -137,18 +137,38 @@ describe("RiskLenses (checklist 09 E.1 row 9)", () => {
     expect(text(risk())).toContain("Blue cells are the true diversifiers.");
   });
 
-  it("factors: a row per method with the signed betas, R² and α, the fallback marker, and the Regime Lab link", async () => {
+  // Iteration 2 (backend handoff F-H2): the lens is a table, not a div grid.
+  // It had only ever rendered its StateNote, because portfolio_factors is
+  // regressed on optimizer weights and the optimizer had never solved; once
+  // N-B2 made it solve, seven labelled rows of five betas shipped as an
+  // undifferentiated run of spans. The assertions moved from flat text to the
+  // header-and-cell association a screen reader actually needs.
+  it("factors: a table row per method with the signed betas, R² and α, the fallback marker, and the Regime Lab link", async () => {
     await open();
     pick("Factors");
     const t = text(risk());
     expect(t).toContain("Portfolio factor exposures · OLS betas");
-    expect(t).toContain("Mean-Variance");
-    expect(t).toContain("Value -0.12");
-    expect(t).toContain("Momentum +0.31");
-    expect(t).toContain("R² 0.34");
-    expect(t).toContain("α +1.2%/yr");
-    expect(t).toContain("Min CVaR (fallback)");
-    expect(t).toContain("HERC");
+    const table = within(risk()).getByRole("table", { name: /Portfolio factor exposures/i });
+    expect(within(table).getAllByRole("columnheader").map((th) => text(th))).toEqual([
+      "Method",
+      "Value",
+      "Momentum",
+      "Quality",
+      "Size",
+      "Low Vol",
+      "R²",
+      "α/yr",
+    ]);
+    const rowNames = within(table).getAllByRole("rowheader").map((th) => text(th));
+    expect(rowNames[0]).toBe("Mean-Variance");
+    expect(rowNames).toContain("Min CVaR (fallback)");
+    expect(rowNames).toContain("HERC");
+    // The first method's cells, in column order: five betas, R², α.
+    const cells = within(within(table).getAllByRole("row")[1]).getAllByRole("cell").map((td) => text(td));
+    expect(cells[0]).toBe("-0.12");
+    expect(cells[1]).toBe("+0.31");
+    expect(cells[5]).toBe("0.34");
+    expect(cells[6]).toBe("+1.2%");
     expect(within(risk()).getByRole("link", { name: /Regime Lab → Backtests/ })).toHaveAttribute("href", "/app/regime-lab#backtests");
     expect(t).toContain("the Fama-French idea without their data files");
   });

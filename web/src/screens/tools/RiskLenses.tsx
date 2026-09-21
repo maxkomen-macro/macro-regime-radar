@@ -12,7 +12,7 @@
  * `real_nominal` null): a missing block renders its sentence, never a blank.
  */
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Card, DataTable, HeatMatrix, MeterRow, SectionHeader, Segmented } from "../../components";
 import type { DataTableColumn } from "../../components/data/DataTable";
@@ -339,39 +339,90 @@ function CorrelationLens({
 
 /* ── Factors ───────────────────────────────────────────────────────────── */
 
+/** Header and cell rules for the factor table, matching the panel's tiles. */
+const FACTOR_TH: CSSProperties = {
+  fontFamily: "var(--font-ui)",
+  fontSize: 10.5,
+  letterSpacing: ".08em",
+  textTransform: "uppercase",
+  color: "var(--text-eyebrow)",
+  fontWeight: 500,
+  textAlign: "left",
+  padding: "0 0 6px",
+  whiteSpace: "nowrap",
+};
+const FACTOR_TD: CSSProperties = { padding: "3px 0", borderTop: "1px solid rgba(150,175,200,.08)", whiteSpace: "nowrap" };
+
 function FactorsLens({ a }: { a: AllocationData }) {
   const opt = optimizationsOf(a);
   const curRegime = a.current_regime;
+  const factorRows = METHODS.flatMap((m) => {
+    const pf = a.portfolio_factors?.[m.key];
+    return pf ? [{ m, pf, fb: isFallback(opt?.[m.key]) }] : [];
+  });
+  /** One column per factor across every served row, so a method missing one
+   * leaves a marked slot instead of shifting the columns beside it. */
+  const factorNames = [...new Set(factorRows.flatMap(({ pf }) => Object.keys(pf.exposures)))];
   return (
     <Card variant="tile" style={{ minWidth: 0 }}>
       {/* The factor × regime table's single home is Regime Lab →
           Backtests (it appeared verbatim in both places — critique);
           this lens keeps the portfolio-level betas. */}
       <div style={{ ...eyebrowStyle, marginBottom: 8 }}>Portfolio factor exposures · OLS betas</div>
-      <div style={{ display: "grid", gap: 6 }}>
-        {METHODS.filter((m) => a.portfolio_factors?.[m.key]).map((m) => {
-          const pf = a.portfolio_factors?.[m.key];
-          if (!pf) return null;
-          const fb = isFallback(opt?.[m.key]);
-          return (
-            <div key={m.key} style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
-              <span style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--text-2)", minWidth: 130 }}>
-                {m.label}
-                {fb ? <span style={{ color: "var(--text-3)" }}> (fallback)</span> : ""}
-              </span>
-              {Object.entries(pf.exposures).map(([f, b]) => (
-                <span key={f} style={monoNoteStyle}>
-                  {f} <span style={{ color: b >= 0 ? "var(--text)" : "var(--neg)" }}>{b >= 0 ? "+" : ""}{b.toFixed(2)}</span>
-                </span>
+      {/* Iteration 2: seven labelled rows of five betas plus R² and alpha is a
+          table, and until the optimizer solved it had never rendered - the
+          lens only ever showed its StateNote, so the div grid was never read
+          by anyone. A screen reader got an undifferentiated run of spans with
+          no column to tie a number to. Table semantics fix that and satisfy
+          e2e/tools.spec.ts case 13's existing selector unchanged, which is why
+          the markup moved rather than the assertion. */}
+      {factorRows.length ? (
+        <ScrollTable label="Portfolio factor exposures">
+          <table className="mrr-factors" style={{ width: "100%", borderCollapse: "collapse" }}>
+            <caption className="sr-only">Portfolio factor exposures by optimizer method: OLS betas, R² and alpha.</caption>
+            <thead>
+              <tr>
+                <th scope="col" style={FACTOR_TH}>
+                  Method
+                </th>
+                {factorNames.map((f) => (
+                  <th key={f} scope="col" style={{ ...FACTOR_TH, textAlign: "right" }}>
+                    {f}
+                  </th>
+                ))}
+                <th scope="col" style={{ ...FACTOR_TH, textAlign: "right" }}>
+                  <Jargon term="R²">R²</Jargon>
+                </th>
+                <th scope="col" style={{ ...FACTOR_TH, textAlign: "right" }}>
+                  <Jargon term="alpha">α</Jargon>/yr
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {factorRows.map(({ m, pf, fb }) => (
+                <tr key={m.key}>
+                  <th scope="row" style={{ ...FACTOR_TD, textAlign: "left", fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--text-2)", fontWeight: 400 }}>
+                    {m.label}
+                    {fb ? <span style={{ color: "var(--text-3)" }}> (fallback)</span> : ""}
+                  </th>
+                  {factorNames.map((f) => {
+                    const b = pf.exposures[f];
+                    // A method missing a factor leaves a marked slot, never a
+                    // gap that shifts the columns under it (G3).
+                    return (
+                      <td key={f} style={{ ...FACTOR_TD, ...monoNoteStyle, textAlign: "right", color: b == null ? "var(--text-3)" : b >= 0 ? "var(--text)" : "var(--neg)" }}>
+                        {b == null ? "—" : `${b >= 0 ? "+" : ""}${b.toFixed(2)}`}
+                      </td>
+                    );
+                  })}
+                  <td style={{ ...FACTOR_TD, ...monoNoteStyle, textAlign: "right" }}>{pf.r_squared.toFixed(2)}</td>
+                  <td style={{ ...FACTOR_TD, ...monoNoteStyle, textAlign: "right" }}>{spct(pf.alpha)}</td>
+                </tr>
               ))}
-              <span style={{ ...monoNoteStyle, marginLeft: "auto" }}>
-                <Jargon term="R²">R²</Jargon> {pf.r_squared.toFixed(2)} ·{" "}
-                <Jargon term="alpha">α</Jargon> {spct(pf.alpha)}/yr
-              </span>
-            </div>
-          );
-        })}
-      </div>
+            </tbody>
+          </table>
+        </ScrollTable>
+      ) : null}
       {!opt && (
         /* Betas are regressed on optimizer weights upstream, so this grid
            ships empty alongside a null optimization block — say it rather

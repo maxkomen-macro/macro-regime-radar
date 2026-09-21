@@ -144,7 +144,6 @@ export const FULL: AllocationData = {
   regime_correlations: REGIME_CORRELATIONS,
   optimizations: OPTIMIZATIONS,
   optimizations_skipped: null,
-  optimization_sample: null,
   drawdowns: {
     by_regime: frame(NAMES, REGIMES, [
       [-0.12, -0.34, -0.48, -0.22],
@@ -156,7 +155,7 @@ export const FULL: AllocationData = {
   data_start: "2002-08",
   data_end: "2026-08",
   n_months: 289,
-  asset_classes: { SPY: { etf: "SPY" }, TLT: { etf: "TLT" }, GLD: { etf: "GLD" } },
+  asset_classes: ["SPY", "TLT", "GLD"],
   cvar_95: cvarBlock(0.95),
   cvar_99: cvarBlock(0.99),
   regime_cvar: Object.fromEntries(REGIMES.map((r) => [r, cvarBlock(0.95)])),
@@ -188,7 +187,7 @@ export const FULL: AllocationData = {
 };
 
 /** The unavailable-optimizer branch: the same history with no optimizer output and the exact sample accounting. */
-export const NULL_OPT: AllocationData = { ...FULL, optimizations: null, optimizations_skipped: SAMPLE, optimization_sample: SAMPLE };
+export const NULL_OPT: AllocationData = { ...FULL, optimizations: null, optimizations_skipped: SAMPLE };
 
 /** A copy of FULL with one optimizer method patched (`converged`, `method`, weights). */
 export function withMethod(key: string, patch: Partial<OptimizationResult>): AllocationData {

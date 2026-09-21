@@ -136,7 +136,7 @@ describe("allocationStrip (the four B.9 states)", () => {
       detail: `${SAMPLE.complete_months} complete months · ${SAMPLE.required_cov_months} required`,
     });
     expect(allocationStrip(NULL_OPT, false).detail).toBe("21 complete months · 24 required");
-    const noSample: AllocationData = { ...NULL_OPT, optimizations_skipped: null, optimization_sample: null };
+    const noSample: AllocationData = { ...NULL_OPT, optimizations_skipped: null };
     expect(allocationStrip(noSample, false)).toMatchObject({ tone: "amber", title: "Optimizer skipped this session", detail: "needs 24 complete months" });
   });
 

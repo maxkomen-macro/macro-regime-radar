@@ -101,7 +101,7 @@ export function currentStats(a: AllocationData): RegimeStats | undefined {
 
 /** The optimizer sample accounting the disclosure and the strip print. */
 export function sampleOf(a: AllocationData): OptimizationSample | null {
-  return a.optimizations_skipped ?? a.optimization_sample ?? null;
+  return a.optimizations_skipped ?? null;
 }
 
 export function startMonYr(a: AllocationData): string {
