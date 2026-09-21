@@ -184,6 +184,23 @@ ENRICH_PER_HOUR = 10
 # happened to arrive in the last hour (N-B1).
 DISPLAY_WINDOW_HOURS = 168
 DISPLAY_TOP_N = 10
+# fix/prelaunch-1 (B-H2): the page loads the first 150 rows of that window
+# (useNews(168, undefined, 150) in web/src/screens/news/NewsScreen.tsx) and
+# merges near-identical headlines before it ranks; the top-up reads the same
+# rows and collapses on the same key, so its ten are the page's ten cards.
+DISPLAY_LIMIT = 150
+
+# The page's story key, web/src/screens/news/news-copy.ts headlineKey:
+# headline.trim().toLowerCase().replace(/\s+/g, " "). JavaScript's \s and
+# trim() are one character set, and it is not Python's: str.split() also
+# splits on U+001C-U+001F and U+0085, and str.strip() keeps U+FEFF. So the set
+# is spelled out. The shared fixture web/src/screens/news/__fixtures__/
+# story-keys.json, generated from the JavaScript, pins the two together.
+_JS_SPACE = "".join(map(chr, (
+    0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0xA0, 0x1680, *range(0x2000, 0x200B),
+    0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF,
+)))
+_JS_SPACE_RUN = re.compile("[" + re.escape(_JS_SPACE) + "]+")
 ENRICH_WALL_SECONDS = 150
 FUTURE_TOLERANCE = timedelta(minutes=5)   # later-dated candidates are dropped
 INTERPRETATION_MAX_SENTENCES = 2
@@ -1006,6 +1023,27 @@ def _priority(row: dict, displayed=frozenset()) -> tuple:
             -float(row["overall_significance"] or 0.0), -(pub.timestamp() if pub else 0.0), row["id"])
 
 
+def headline_key(headline: str | None) -> str:
+    """The page's story key (news-copy.ts headlineKey), in Python."""
+    return _JS_SPACE_RUN.sub(" ", (headline or "").strip(_JS_SPACE).lower())
+
+
+def display_stories(rows: list[dict], top_n: int = DISPLAY_TOP_N) -> list[dict]:
+    """The first `top_n` distinct stories of rows in the page's order: one row
+    per headline_key, the first one, which is the copy the page renders."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for r in rows:
+        key = headline_key(r["headline"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+        if len(out) == top_n:
+            break
+    return out
+
+
 def select_display_topups(
     conn: sqlite3.Connection,
     *,
@@ -1013,16 +1051,20 @@ def select_display_topups(
     window_hours: int = DISPLAY_WINDOW_HOURS,
     top_n: int = DISPLAY_TOP_N,
     floor: float = SIGNIFICANCE_FLOOR,
+    limit: int = DISPLAY_LIMIT,
 ) -> list[int]:
-    """The ids of the top `top_n` cards in the display window that carry no AI
-    read yet, highest significance first.
+    """The ids of the top `top_n` stories of the display window that carry no
+    AI read yet, highest significance first.
 
-    The window and the ordering mirror /api/news (api/db.py) — same normalised
-    published_at comparison, same ORDER BY — so the set is the one the page
-    ranks, not a second opinion about it. Rows already enriched keep their slot
-    in the ten and are simply not returned, so a run never reaches past the
-    cards a reader can see. The SQL is written here rather than imported from
-    api/db.py: the hourly workflow installs only requirements-news.txt.
+    The window, the ordering and the depth mirror what the page loads
+    (/api/news, api/db.py: same normalised published_at comparison, same ORDER
+    BY, the page's 150 rows), and the rows are collapsed on the page's story key
+    before the ten are taken (B-H2, fix/prelaunch-1), so the set is the ten
+    cards the page shows, not ten rows two of which it merges away. Stories
+    already enriched keep their slot in the ten and are simply not returned, so
+    a run never reaches past the cards a reader can see. The SQL is written
+    here rather than imported from api/db.py: the hourly workflow installs only
+    requirements-news.txt.
     """
     at = ai_spend.as_utc(now)
     cutoff = (at - timedelta(hours=window_hours)).strftime("%Y-%m-%d %H:%M:%S")
@@ -1032,10 +1074,10 @@ def select_display_topups(
             f"SELECT {', '.join(_ROW_COLUMNS)} FROM news_feed "
             "WHERE replace(substr(published_at, 1, 19), 'T', ' ') >= ? "
             "ORDER BY overall_significance DESC, published_at DESC LIMIT ?",
-            (cutoff, int(top_n)),
+            (cutoff, int(limit)),
         )
     ]
-    return [r["id"] for r in rows if _eligible(r, floor)]
+    return [r["id"] for r in display_stories(rows, top_n) if _eligible(r, floor)]
 
 
 def _research_query(current_regime: str, headline: str) -> str:

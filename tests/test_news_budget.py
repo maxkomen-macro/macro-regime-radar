@@ -14,6 +14,7 @@ key may reach the ledger, the database file or stdout.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -911,3 +912,62 @@ def test_the_summary_counts_the_top_ups_it_enriched_not_the_ones_it_looked_at(db
     assert stats["topped_up"] == 2
     assert "2 topped up from the displayed window" in stats["line"]
     capsys.readouterr()
+
+
+# ── (j) B-H2 (fix/prelaunch-1): the backend and the page mean the same ten ─────
+#
+# The page collapses near-identical headlines (web/src/screens/news/
+# news-copy.ts headlineKey) before it renders, so a top-up that took the raw
+# top ten covered eight distinct cards. One fixture, generated from the page's
+# own JavaScript, drives this file and web/src/screens/news/news-copy.test.ts,
+# so the two keys and the two selections cannot drift apart.
+
+STORY_FIXTURE = json.loads((Path(__file__).resolve().parent.parent / "web/src/screens/news/__fixtures__/story-keys.json").read_text())
+
+
+def _insert_fixture_rows(path: Path, rows: list[dict]) -> None:
+    conn = sqlite3.connect(path)
+    for r in rows:
+        conn.execute(
+            "INSERT INTO news_feed (id, headline, summary, url, source, category, published_at, overall_significance,"
+            " regime_interpretation, perplexity_research, ticker) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (r["id"], r["headline"], f"wire summary {r['id']}", f"https://example.com/{r['id']}", "Finnhub", "MACRO",
+             r["published_at"], r["overall_significance"], "a stored read" if r["has_read"] else "", "", ""),
+        )
+    conn.commit()
+    conn.close()
+
+
+def test_the_story_key_is_the_pages_key():
+    for case in STORY_FIXTURE["keys"]:
+        assert news.headline_key(case["headline"]) == case["key"], case
+
+
+def test_the_top_up_covers_the_same_ten_distinct_stories_the_page_shows(db):
+    _insert_fixture_rows(db, STORY_FIXTURE["window"])
+    now = datetime.fromisoformat(STORY_FIXTURE["now"])
+    conn = sqlite3.connect(db)
+    try:
+        rows = [dict(zip(news._ROW_COLUMNS, r)) for r in conn.execute(
+            f"SELECT {', '.join(news._ROW_COLUMNS)} FROM news_feed ORDER BY overall_significance DESC, published_at DESC")]
+    finally:
+        conn.close()
+    assert [r["id"] for r in news.display_stories(rows)] == STORY_FIXTURE["ten"]
+    # the ones without a read that clear the floor, in the page's order; a
+    # duplicate that carries a read does not stand in for the card it merged into
+    assert topups(db, now=now) == STORY_FIXTURE["pending"]
+
+
+def test_a_window_with_fewer_than_ten_stories_tops_up_every_one_it_holds(db):
+    small = [r for r in STORY_FIXTURE["window"] if r["id"] in STORY_FIXTURE["small_window"]["rows"]]
+    _insert_fixture_rows(db, small)
+    assert topups(db, now=datetime.fromisoformat(STORY_FIXTURE["now"])) == STORY_FIXTURE["small_window"]["pending"]
+
+
+def test_the_selection_reads_the_rows_the_page_loads():
+    assert news.SIGNIFICANCE_FLOOR == STORY_FIXTURE["floor"]
+    assert news.DISPLAY_TOP_N == STORY_FIXTURE["top_n"]
+    assert news.DISPLAY_WINDOW_HOURS == STORY_FIXTURE["window_hours"]
+    assert news.DISPLAY_LIMIT == STORY_FIXTURE["page_limit"]
+    page = (Path(__file__).resolve().parent.parent / "web/src/screens/news/NewsScreen.tsx").read_text()
+    assert f"useNews({news.DISPLAY_WINDOW_HOURS}, undefined, {news.DISPLAY_LIMIT}" in page, "the page's enrichment window query"

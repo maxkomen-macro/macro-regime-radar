@@ -10,9 +10,14 @@
  */
 import { describe, expect, it } from "vitest";
 import type { CalendarEvent, NewsItem } from "../../api/types";
+import storyKeys from "./__fixtures__/story-keys.json";
 import {
   aiReadValue,
   pendingReadIds,
+  displayStories,
+  headlineKey,
+  ENRICH_FLOOR,
+  ENRICH_TOP_N,
   categoryMixValue,
   clockEt,
   countdownHeadline,
@@ -446,5 +451,56 @@ describe("pendingReadIds (Iteration 2, F3)", () => {
   it("honours a different top-N", () => {
     const window7d = [row(1), row(2), row(3)];
     expect([...pendingReadIds(window7d, 2)]).toEqual([1, 2]);
+  });
+});
+
+/**
+ * fix/prelaunch-1 (B-H2): the page and the backend mean the same ten stories.
+ * The page merges near-identical headlines before it renders, so the backend's
+ * top-up (src/analytics/news.py select_display_topups) now collapses on the
+ * same key, and the pending labels are computed on the same merged ten. One
+ * fixture, generated from headlineKey, drives this block and
+ * tests/test_news_budget.py, so the two sides cannot drift.
+ */
+describe("the page and the backend mean the same ten stories (fix/prelaunch-1, B-H2)", () => {
+  const asItem = (r: (typeof storyKeys.window)[number]): NewsItem =>
+    ({
+      id: r.id,
+      headline: r.headline,
+      source: "Finnhub",
+      url: `https://example.com/${r.id}`,
+      summary: "s",
+      published_at: r.published_at,
+      overall_significance: r.overall_significance,
+      regime_interpretation: r.has_read ? "a stored read" : null,
+      perplexity_research: null,
+    }) as NewsItem;
+  const window7d = storyKeys.window.map(asItem);
+
+  it("headlineKey is the key the fixture pins (and the Python port must agree with)", () => {
+    for (const c of storyKeys.keys) expect(headlineKey(c.headline)).toBe(c.key);
+  });
+
+  it("the ten are the first ten distinct stories in the served order", () => {
+    expect(displayStories(window7d).map((r) => r.id)).toEqual(storyKeys.ten);
+  });
+
+  it("pending is the unread stories among the ten that clear the backend's floor", () => {
+    expect([...pendingReadIds(window7d)]).toEqual(storyKeys.pending);
+    // a duplicate that carries a read does not make its merged card read
+    expect(pendingReadIds(window7d).has(103)).toBe(true);
+    // below the floor inside the ten: no read is coming, so never pending
+    expect(pendingReadIds(window7d).has(113)).toBe(false);
+  });
+
+  it("a window with fewer than ten stories is covered whole", () => {
+    const small = window7d.filter((r) => storyKeys.small_window.rows.includes(r.id));
+    expect(displayStories(small).map((r) => r.id)).toEqual(storyKeys.small_window.ten);
+    expect([...pendingReadIds(small)]).toEqual(storyKeys.small_window.pending);
+  });
+
+  it("the floor and the depth are the backend's", () => {
+    expect(ENRICH_FLOOR).toBe(storyKeys.floor);
+    expect(ENRICH_TOP_N).toBe(storyKeys.top_n);
   });
 });

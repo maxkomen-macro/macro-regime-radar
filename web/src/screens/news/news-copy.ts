@@ -292,20 +292,50 @@ export function hasAiRead(r: NewsItem): boolean {
 }
 
 /**
- * How many articles each hourly run tops up: `ENRICH_PER_HOUR` in
- * `src/analytics/news.py`. The backend enriches the highest-significance rows
- * of the display window that carry no read yet, so these are the cards a
- * reader should expect a read on.
+ * How many stories each hourly run tops up: `DISPLAY_TOP_N` in
+ * `src/analytics/news.py`. The backend enriches the highest-significance
+ * stories of the display window that carry no read yet, so these are the
+ * cards a reader should expect a read on.
  */
 export const ENRICH_TOP_N = 10;
 
 /**
- * Iteration 2 (F3): the ids that should carry an AI read but do not yet.
+ * The backend enriches nothing below this significance (`SIGNIFICANCE_FLOOR`
+ * in `src/analytics/news.py`), so a card under it is never pending. Pinned to
+ * the backend by the shared fixture `__fixtures__/story-keys.json`.
+ */
+export const ENRICH_FLOOR = 2.5;
+
+/**
+ * fix/prelaunch-1 (B-H2): the first `topN` distinct stories in the served
+ * order, one card per `headlineKey`, the copy the page renders. The backend's
+ * top-up (`select_display_topups`) collapses on the same key over the same
+ * rows, so "the ten" means the same ten cards on both sides.
+ */
+export function displayStories(window7d: NewsItem[], topN = ENRICH_TOP_N): NewsItem[] {
+  const seen = new Set<string>();
+  const out: NewsItem[] = [];
+  for (const r of window7d) {
+    const key = headlineKey(r.headline);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+    if (out.length === topN) break;
+  }
+  return out;
+}
+
+/**
+ * Iteration 2 (F3), made dedupe-aware in fix/prelaunch-1 (B-H2): the ids that
+ * should carry an AI read but do not yet.
  *
  * `window7d` is always the **default seven-day window**, never the filtered
  * view: the backend picks its ten from that window, so narrowing to 24H must
  * not promote a card into the set or demote one out of it. Rows arrive sorted
- * by significance, which is the same order the backend ranks on.
+ * by significance, which is the same order the backend ranks on. Duplicates
+ * are merged first (a read on a merged-away duplicate does not reach the card),
+ * and a story under the backend's floor is never pending, because no read is
+ * coming for it.
  *
  * A card outside the set is not pending - no read is coming for it - and says
  * "Wire summary" instead. That is the difference F3 asks the page to show
@@ -313,9 +343,8 @@ export const ENRICH_TOP_N = 10;
  */
 export function pendingReadIds(window7d: NewsItem[], topN = ENRICH_TOP_N): ReadonlySet<number> {
   return new Set(
-    window7d
-      .slice(0, topN)
-      .filter((r) => !hasAiRead(r))
+    displayStories(window7d, topN)
+      .filter((r) => !hasAiRead(r) && (r.overall_significance ?? 0) >= ENRICH_FLOOR)
       .map((r) => r.id),
   );
 }
