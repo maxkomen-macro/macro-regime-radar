@@ -84,6 +84,11 @@ def pinned(gen: GenerationRef) -> Iterator[None]:
         _pinned.reset(token)
 
 
+def pinned_generation() -> Optional[GenerationRef]:
+    """The generation this thread is building, if any (the worker's pin)."""
+    return _pinned.get()
+
+
 def _same(a: Path | str, b: Path | str) -> bool:
     try:
         return os.path.realpath(a) == os.path.realpath(b)

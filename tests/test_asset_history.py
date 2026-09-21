@@ -231,7 +231,7 @@ def test_allocation_is_computed_from_stored_histories_and_never_reaches_yahoo(tm
     assert data["histories"]["as_of"] == "2026-09-18"
 
 
-def test_without_the_table_the_endpoint_says_the_histories_are_not_stored(tmp_path, monkeypatch, no_yahoo):
+def test_without_the_table_the_endpoint_says_the_histories_are_not_stored(tmp_path, monkeypatch, no_yahoo, install_worker):
     from api import worker as worker_mod
     from api.main import app
     from fastapi.testclient import TestClient
@@ -240,8 +240,7 @@ def test_without_the_table_the_endpoint_says_the_histories_are_not_stored(tmp_pa
     path = _copy(REPO_DB, tmp_path / "macro_radar.db")  # the local snapshot has no asset_prices table
     monkeypatch.setattr(db, "DB_PATH", path)
     db.reset_connections_for_tests()
-    w = worker_mod.AnalyticsWorker(poll_s=0.05)
-    monkeypatch.setattr(worker_mod, "_worker", w)
+    w = install_worker(worker_mod.AnalyticsWorker(poll_s=0.05))
     try:
         w.start(serving=True)
         assert w.wait_published(timeout=120)
@@ -256,7 +255,7 @@ def test_without_the_table_the_endpoint_says_the_histories_are_not_stored(tmp_pa
         db.reset_connections_for_tests()
 
 
-def test_allocation_answers_in_under_500_ms_after_the_first_pass_with_yahoo_blocked(tmp_path, monkeypatch, no_yahoo):
+def test_allocation_answers_in_under_500_ms_after_the_first_pass_with_yahoo_blocked(tmp_path, monkeypatch, no_yahoo, install_worker):
     from api import worker as worker_mod
     from api.main import app
     from fastapi.testclient import TestClient
@@ -266,8 +265,7 @@ def test_allocation_answers_in_under_500_ms_after_the_first_pass_with_yahoo_bloc
     _seed_asset_prices(path)
     monkeypatch.setattr(db, "DB_PATH", path)
     db.reset_connections_for_tests()
-    w = worker_mod.AnalyticsWorker(poll_s=0.05)
-    monkeypatch.setattr(worker_mod, "_worker", w)
+    w = install_worker(worker_mod.AnalyticsWorker(poll_s=0.05))
     try:
         w.start(serving=True)
         assert w.wait_published(timeout=120)

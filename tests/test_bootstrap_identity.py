@@ -78,7 +78,7 @@ def _write_identity(asset: dict) -> None:
     bootstrap.identity_path().write_text(json.dumps(bootstrap.asset_identity(asset)))
 
 
-def test_an_unchanged_asset_triggers_no_download_no_swap_and_no_recompute(env, monkeypatch):
+def test_an_unchanged_asset_triggers_no_download_no_swap_and_no_recompute(env, monkeypatch, install_worker):
     from api import worker as worker_mod
 
     asset = _asset(11, "2026-09-20T11:30:00Z", env.stat().st_size)
@@ -86,8 +86,7 @@ def test_an_unchanged_asset_triggers_no_download_no_swap_and_no_recompute(env, m
     gh = GitHub(asset)
     _install(monkeypatch, gh)
     counter: list = []
-    w = worker_mod.AnalyticsWorker(items=[("probe", lambda ctx: counter.append(1) or len(counter))], poll_s=0.05)
-    monkeypatch.setattr(worker_mod, "_worker", w)
+    w = install_worker(worker_mod.AnalyticsWorker(items=[("probe", lambda ctx: counter.append(1) or len(counter))], poll_s=0.05))
     try:
         w.start(serving=True)
         assert w.wait_published(timeout=30)
@@ -115,7 +114,7 @@ def test_an_old_file_with_the_current_identity_is_never_redownloaded(env, monkey
     assert gh.downloads == 0
 
 
-def test_a_changed_asset_is_downloaded_validated_swapped_and_rebuilt(env, tmp_path, monkeypatch):
+def test_a_changed_asset_is_downloaded_validated_swapped_and_rebuilt(env, tmp_path, monkeypatch, install_worker):
     from api import worker as worker_mod
 
     old = _asset(11, "2026-09-20T11:30:00Z", env.stat().st_size)
@@ -130,8 +129,7 @@ def test_a_changed_asset_is_downloaded_validated_swapped_and_rebuilt(env, tmp_pa
     gh = GitHub(new, payload)
     _install(monkeypatch, gh)
     counter: list = []
-    w = worker_mod.AnalyticsWorker(items=[("probe", lambda ctx: counter.append(1) or len(counter))], poll_s=0.05)
-    monkeypatch.setattr(worker_mod, "_worker", w)
+    w = install_worker(worker_mod.AnalyticsWorker(items=[("probe", lambda ctx: counter.append(1) or len(counter))], poll_s=0.05))
     try:
         w.start(serving=True)
         assert w.wait_published(timeout=30)

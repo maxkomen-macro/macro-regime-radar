@@ -186,14 +186,89 @@ def _scenario_defs(ctx: dict) -> list:
     return [{"key": k, **jsonable(v)} for k, v in SCENARIOS.items()]
 
 
-def _allocation(ctx: dict) -> dict:
-    """get_allocation_data() over the stored price histories: no network."""
-    from src.analytics.allocation import AssetHistoriesNotStored, get_allocation_data
+ALLOCATION_TIMEOUT_S = 300.0
 
-    try:
-        return jsonable(get_allocation_data())
-    except AssetHistoriesNotStored as exc:
-        raise NotStored(str(exc)) from exc
+
+class _AllocationInChild:
+    """get_allocation_data() over the stored price histories, in a spawned
+    child process (api/allocation_child.py): its numerical libraries hold the
+    GIL long enough to stall the server's event loop, and a child has its own.
+    An async item: the worker starts it before the rest of the generation and
+    collects it last, so the child's imports overlap the other items."""
+
+    def start(self, ctx: dict):
+        import multiprocessing
+        import os
+        import sqlite3
+        import tempfile
+
+        from api import allocation_child
+        from api import db
+        from src.analytics import dbpath
+
+        fd, snap = tempfile.mkstemp(prefix="mrr-allocation-", suffix=".db")
+        os.close(fd)
+        gen = dbpath.pinned_generation()
+        dst = sqlite3.connect(snap)
+        try:
+            if gen is not None and getattr(gen, "anchor", None) is not None:
+                gen.anchor.backup(dst)  # the generation's own copy, not the file on disk now
+            else:
+                src = sqlite3.connect(f"file:{db.DB_PATH}?mode=ro", uri=True)
+                try:
+                    src.backup(dst)
+                finally:
+                    src.close()
+        finally:
+            dst.close()
+        mp = multiprocessing.get_context("spawn")
+        parent, child = mp.Pipe(duplex=False)
+        proc = mp.Process(target=allocation_child.run, args=(snap, child), name="mrr-allocation", daemon=True)
+        proc.start()
+        child.close()
+        return proc, parent, snap
+
+    def finish(self, handle) -> dict:
+        import os
+
+        proc, conn, snap = handle
+        try:
+            if not conn.poll(ALLOCATION_TIMEOUT_S):
+                proc.terminate()
+                raise TimeoutError(f"allocation did not finish within {ALLOCATION_TIMEOUT_S:.0f} s")
+            out = conn.recv()
+        finally:
+            conn.close()
+            proc.join(10)
+            if proc.is_alive():
+                proc.kill()
+            try:
+                os.remove(snap)
+            except OSError:
+                pass
+        if "not_stored" in out:
+            raise NotStored(out["not_stored"])
+        if "error" in out:
+            raise RuntimeError(f"allocation failed in its child process: {out['error']}")
+        return out["payload"]
+
+    def cancel(self, handle) -> None:
+        import os
+
+        proc, conn, snap = handle
+        proc.terminate()
+        proc.join(5)
+        conn.close()
+        try:
+            os.remove(snap)
+        except OSError:
+            pass
+
+    def __call__(self, ctx: dict) -> dict:
+        return self.finish(self.start(ctx))
+
+
+_allocation = _AllocationInChild()
 
 
 ITEMS = [

@@ -55,6 +55,10 @@ PREFETCH_MARGIN_S = 20.0  # refresh this long before the cache entry expires
 PREFETCH_EVERY_S = 10.0
 
 Item = tuple[str, Callable[[dict], Any]]
+# A shared-cache in-memory database is found by name: two generations sharing
+# a name would share one database. Names come from a process-wide counter,
+# never from id(), which Python reuses after an object is collected.
+_URI_SEQ = itertools.count(1)
 
 
 class Warming(Exception):
@@ -101,24 +105,20 @@ def _same_path(a: Path | str, b: Path | str) -> bool:
 
 
 def _preload_libraries() -> None:
-    """Import everything a build touches, off the request path, once."""
+    """Import everything this process's builds touch, off the request path,
+    once. Allocation's libraries (riskfolio, cvxpy) load only in its child
+    process (api/allocation_child.py), never here."""
     import numpy  # noqa: F401
     import pandas  # noqa: F401
-    import scipy.optimize  # noqa: F401
     import sklearn.linear_model  # noqa: F401
     import sklearn.preprocessing  # noqa: F401
 
-    import src.analytics.allocation  # noqa: F401
+    import api.analytics_cache  # noqa: F401
     import src.analytics.credit  # noqa: F401
     import src.analytics.intelligence  # noqa: F401
     import src.analytics.lbo  # noqa: F401
     import src.analytics.recession  # noqa: F401
     import src.analytics.regimes  # noqa: F401
-
-    try:
-        import riskfolio  # noqa: F401  (CVaR and HERC)
-    except Exception:  # noqa: BLE001 — allocation falls back and says so
-        pass
 
 
 def _default_items() -> list[Item]:
@@ -175,6 +175,7 @@ class AnalyticsWorker:
         self.state = "idle"
         self.last_error: str | None = None
         self._next_prefetch = 0.0
+        self._preloaded = False
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -221,12 +222,8 @@ class AnalyticsWorker:
     # ── building ─────────────────────────────────────────────────────────
 
     def _run(self) -> None:
-        if self._preload:
-            self.state = "preloading"
-            try:
-                _preload_libraries()
-            except Exception:  # noqa: BLE001
-                log.exception("preload failed; builds will import on demand")
+        # The preload happens inside the first build, after its async items
+        # (allocation's child process) have started, so the two overlap.
         while not self._stop.is_set():
             try:
                 self._maybe_build()
@@ -259,7 +256,7 @@ class AnalyticsWorker:
 
     def _stage(self, src: Path, key: tuple) -> Generation | None:
         gid = next(self._ids)
-        uri = f"file:mrr-gen-{os.getpid()}-{id(self):x}-{gid}?mode=memory&cache=shared"
+        uri = f"file:mrr-gen-{os.getpid()}-{next(_URI_SEQ)}?mode=memory&cache=shared"
         anchor = sqlite3.connect(uri, uri=True, check_same_thread=False)
         try:
             source = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
@@ -287,9 +284,33 @@ class AnalyticsWorker:
                     return
         items = self._items if self._items is not None else _default_items()
         ctx: dict[str, Any] = {}
+        pending: list[tuple[str, Any, Any, float]] = []
         with dbpath.pinned(gen):
+            # Async items (start/finish, e.g. allocation in its child process)
+            # start first and are collected last.
             for name, fn in items:
+                if hasattr(fn, "start"):
+                    t = time.perf_counter()
+                    self.compute_threads.add(threading.current_thread().name)
+                    try:
+                        pending.append((name, fn, fn.start(ctx), t))
+                    except Exception as exc:  # noqa: BLE001
+                        gen.errors[name] = exc
+                        self.compute_counts[name] += 1
+            if self._preload and not self._preloaded:
+                self.state = "preloading"
+                try:
+                    _preload_libraries()
+                except Exception:  # noqa: BLE001
+                    log.exception("preload failed; builds will import on demand")
+                self._preloaded = True
+                self.state = "building"
+            for name, fn in items:
+                if hasattr(fn, "start"):
+                    continue
                 if self._stop.is_set():
+                    for _, afn, handle, _ in pending:
+                        afn.cancel(handle)
                     gen.close()
                     return
                 t = time.perf_counter()
@@ -297,6 +318,17 @@ class AnalyticsWorker:
                 try:
                     value = fn(ctx)
                 except Exception as exc:  # noqa: BLE001 — stored as this item's answer
+                    gen.errors[name] = exc
+                    log.warning("generation %d: %s failed: %s", gen.id, name, exc)
+                else:
+                    ctx[name] = value
+                    gen.results[name] = value
+                self.compute_counts[name] += 1
+                gen.item_ms[name] = round((time.perf_counter() - t) * 1000, 1)
+            for name, fn, handle, t in pending:
+                try:
+                    value = fn.finish(handle)
+                except Exception as exc:  # noqa: BLE001
                     gen.errors[name] = exc
                     log.warning("generation %d: %s failed: %s", gen.id, name, exc)
                 else:

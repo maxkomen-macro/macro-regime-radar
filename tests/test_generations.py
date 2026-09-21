@@ -106,23 +106,15 @@ def scratch(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
-def serving_worker(monkeypatch):
-    """A worker in serving mode (reads redirected to generations), torn down
-    after the test so no provider leaks into other tests."""
+def serving_worker(install_worker):
+    """A worker in serving mode (reads redirected to generations), the only one
+    running during the test, torn down after it so no provider leaks."""
     from api import worker as worker_mod
 
-    made: list = []
-
     def make(**kw):
-        w = worker_mod.AnalyticsWorker(poll_s=kw.pop("poll_s", 0.05), **kw)
-        monkeypatch.setattr(worker_mod, "_worker", w)
-        made.append(w)
-        return w
+        return install_worker(worker_mod.AnalyticsWorker(poll_s=kw.pop("poll_s", 0.05), **kw))
 
-    yield make
-    for w in made:
-        w.stop()
-    dbpath.clear_provider()
+    return make
 
 
 # ── the file key ─────────────────────────────────────────────────────────────
@@ -431,3 +423,47 @@ def test_the_frontier_yields_the_gil_in_every_solver_callback_and_changes_nothin
     monkeypatch.setattr(al.time, "sleep", lambda s: None)
     without = al.generate_efficient_frontier(mu, cov, 0.03)
     assert len(with_yield) > 5 and with_yield.equals(without)
+
+
+def test_allocation_is_computed_in_a_child_process_never_in_the_server(serving_worker, scratch, monkeypatch):
+    """Its libraries hold the GIL long enough to stall the event loop (measured:
+    /health/live up to ~124 ms even after the frontier fix), so it runs in a
+    spawned child that reads a snapshot of the generation being built."""
+    import multiprocessing
+
+    from api import analytics_cache
+    from src.analytics import allocation
+
+    in_server: list = []
+    monkeypatch.setattr(allocation, "get_allocation_data", lambda *a, **k: in_server.append(1) or {})
+    spawned: list = []
+    real_ctx = multiprocessing.get_context
+
+    def spy(method=None):
+        ctx = real_ctx(method)
+        if method == "spawn":
+            spawned.append(method)
+        return ctx
+
+    monkeypatch.setattr(multiprocessing, "get_context", spy)
+    w = serving_worker(items=[("allocation", analytics_cache._allocation)])
+    w.start(serving=True)
+    assert w.wait_published(timeout=120)
+    body = w.result("allocation")
+    assert in_server == [] and spawned == ["spawn"]
+    assert body["n_months"] > 100 and body["histories"]["as_of"] == "2026-09-18"
+
+
+def test_an_overrunning_allocation_child_is_terminated_and_the_rest_still_publishes(serving_worker, scratch, monkeypatch):
+    from api import analytics_cache
+
+    monkeypatch.setattr(analytics_cache, "ALLOCATION_TIMEOUT_S", 0.05)
+    w = serving_worker(items=[("allocation", analytics_cache._allocation), ("probe", lambda ctx: 7)])
+    w.start(serving=True)
+    assert w.wait_published(timeout=60)
+    assert w.result("probe") == 7
+    with pytest.raises(TimeoutError):
+        w.result("allocation")
+    import multiprocessing
+
+    assert not [p for p in multiprocessing.active_children() if p.name == "mrr-allocation"], "the child was reaped"

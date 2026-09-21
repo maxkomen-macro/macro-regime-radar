@@ -22,7 +22,7 @@ def test_health_live(client):
 
 
 @pytest.mark.skipif(not db.DB_PATH.exists(), reason="local DB snapshot absent")
-def test_health_ready_with_db(client, monkeypatch):
+def test_health_ready_with_db(client, monkeypatch, install_worker):
     """fix/prelaunch-1: ready only once the background worker's first pass has
     built every derived result; warming (503) before that."""
     import threading
@@ -30,8 +30,7 @@ def test_health_ready_with_db(client, monkeypatch):
     from api import worker as worker_mod
 
     gate = threading.Event()
-    w = worker_mod.AnalyticsWorker(build_gate=gate, poll_s=0.05)
-    monkeypatch.setattr(worker_mod, "_worker", w)
+    w = install_worker(worker_mod.AnalyticsWorker(build_gate=gate, poll_s=0.05))
     try:
         w.start(serving=False)
         warming = client.get("/health/ready")
