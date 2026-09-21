@@ -10,6 +10,7 @@
  */
 
 import type { RefObject } from "react";
+import { Link } from "react-router-dom";
 import { useAlerts } from "../../api/queries";
 import { BellIcon, SearchIcon } from "./nav-icons";
 import { alertSummary, STATUS_COLOR } from "./shell-status";
@@ -73,6 +74,11 @@ export default function TopBar({
 }: TopBarProps) {
   return (
     <header className="mrr-top">
+      {/* The Desk entry (desk/frame §1): an understated text link in the left
+          track, never a tab; below 860 the MobileNav list carries it. */}
+      <Link to="/desk" className="mrr-desk-entry" title="Open the analyst workspace">
+        Analyst Workspace <span className="arrow" aria-hidden="true">→</span>
+      </Link>
       <button
         type="button"
         onClick={onOpenPalette}

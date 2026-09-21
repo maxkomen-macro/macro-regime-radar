@@ -124,6 +124,13 @@ export default function MobileNav({
             </li>
           );
         })}
+        {/* The Desk (desk/frame §1): the analyst workspace is reachable on a
+            phone from here, since the top bar's entry link is hidden below 860. */}
+        <li className="mrr-mnav-sep">
+          <Link to="/desk" title="Open the analyst workspace">
+            <span className="mrr-mnav-label">Analyst Workspace</span> <span className="mrr-mnav-hint">Desk</span>
+          </Link>
+        </li>
         {onOpenPalette ? (
           <li className="mrr-mnav-sep">
             <button

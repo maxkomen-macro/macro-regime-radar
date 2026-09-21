@@ -36,10 +36,11 @@ const VERSION: string = typeof __MRR_VERSION__ === "string" ? __MRR_VERSION__ : 
 export const SIDEBAR_ID = "mrr-sidebar";
 
 /** Mountain mark over "MACRO / REGIME RADAR", linking to the landing page.
- * `compact` is the one-line variant MobileNav renders below 860 px. */
-export function Wordmark({ compact = false }: { compact?: boolean }) {
+ * `compact` is the one-line variant MobileNav renders below 860 px. The Desk
+ * shell (desk/frame §1) points it at the dashboard instead through `to`. */
+export function Wordmark({ compact = false, to = "/", title = "Macro Regime Radar · landing page" }: { compact?: boolean; to?: string; title?: string }) {
   return (
-    <Link to="/" className={compact ? "mrr-logo mrr-logo-compact" : "mrr-logo"} title="Macro Regime Radar · landing page">
+    <Link to={to} className={compact ? "mrr-logo mrr-logo-compact" : "mrr-logo"} title={title}>
       <MountainMark {...(compact ? { width: 30, height: 16 } : {})} />
       <p>
         <span>MACRO</span>

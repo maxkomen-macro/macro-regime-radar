@@ -106,15 +106,17 @@ function parse(src: string): Block[] {
   return blocks;
 }
 
-export default function Markdown({ text }: { text: string }) {
+export default function Markdown({ text, headingLevel = 3 }: { text: string; headingLevel?: 2 | 3 }) {
   const blocks = parse(text);
   return (
     <div className="mrr-md">
       {blocks.map((b, i) => {
         switch (b.kind) {
           case "h": {
-            // Model headings never outrank the panel's own h2.
-            const Tag = (b.level <= 2 ? "h3" : "h4") as "h3" | "h4";
+            // Model headings never outrank the panel's own h2 (headingLevel 3,
+            // the default); a page that owns its h1 (Desk Build Notes) starts
+            // its sections at h2.
+            const Tag = (b.level <= 2 ? `h${headingLevel}` : `h${headingLevel + 1}`) as "h2" | "h3" | "h4";
             return <Tag key={i}>{inline(b.text, `h${i}`)}</Tag>;
           }
           case "ul":
