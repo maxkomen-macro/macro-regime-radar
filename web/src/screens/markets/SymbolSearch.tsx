@@ -99,7 +99,6 @@ export default function SymbolSearch({
   const hits = rankHits([...altHits, ...(q.data?.hits ?? [])], debounced);
   // The provider that answered is part of the result (2026-09-06).
   const provider = q.data?.provider ?? alt.data?.provider ?? null;
-  const fallback = Boolean(q.data?.fallback_used || alt.data?.fallback_used);
   const listId = useId();
   const boxRef = useRef<HTMLDivElement>(null);
   // Hover moves the highlight only when the pointer actually moves: a list
@@ -372,8 +371,7 @@ export default function SymbolSearch({
             <div
               style={{ padding: "6px 12px", borderTop: "0.5px solid var(--line-hair)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)" }}
             >
-              {provider === "eodhd" ? "EODHD search index" : provider === "yfinance" ? "yfinance index" : provider}
-              {fallback ? " · standing in for EODHD" : ""}
+              {provider === "eodhd" ? "EODHD search index" : provider}
             </div>
           ) : null}
         </div>

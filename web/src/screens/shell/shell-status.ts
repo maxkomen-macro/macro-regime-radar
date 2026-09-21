@@ -248,6 +248,9 @@ const FEED_LABELS: Record<string, string> = {
   signals: "Monitored signals",
   live_quotes: "Live quotes (EODHD)",
   vix_delayed: "VIX (delayed poll)",
+  // launch-1: the drawer showed the raw table name for the allocation
+  // histories the full refresh stores.
+  asset_prices: "Allocation price histories",
 };
 
 /** Reader label for an `sla` feed key; FRED series carry their input label. */

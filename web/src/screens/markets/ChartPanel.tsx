@@ -363,7 +363,7 @@ export function OnDemandHistory({ symbol }: { symbol: string }) {
         </div>
       )}
       <Caption>
-        {q.data ? candleCaption(q.data) : "History arrives from EODHD first; yfinance stands in only when EODHD cannot answer, and the caption says so."}{" "}
+        {q.data ? candleCaption(q.data) : "History arrives from EODHD. When EODHD cannot answer, the chart says so rather than quietly filling in from somewhere else."}{" "}
         The tape row owns the live quote; this chart owns the history.
       </Caption>
     </div>

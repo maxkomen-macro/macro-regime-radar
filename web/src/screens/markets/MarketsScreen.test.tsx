@@ -621,7 +621,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(single.tagName).toBe("SECTION");
     expect(within(single).getByRole("heading", { level: 2 })).toHaveTextContent(/^Single-name research$/);
     expect(text(single)).toContain("Daily candles with volume");
-    expect(text(single)).toContain("any listed symbol · EODHD first, yfinance only as a disclosed fallback · delayed quotes");
+    expect(text(single)).toContain("any listed symbol · EODHD quotes and history · Finnhub fundamentals · delayed");
     // Iteration 1 M3c: the one symbol search rides in the hero's action row.
     expect(within(single).queryByRole("combobox", { name: "Search any listed symbol" })).toBeNull();
     expect(within(hero()).getByRole("combobox", { name: "Search any listed symbol" })).toBeInTheDocument();

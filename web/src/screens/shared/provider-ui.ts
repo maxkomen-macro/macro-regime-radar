@@ -68,7 +68,7 @@ export function describeProviderError(err: unknown, what: string, symbol: string
   if (!(err instanceof ApiError)) return `Unavailable: ${what} for ${symbol} did not load.`;
   switch (err.kind) {
     case "unknown_symbol":
-      return `No listing found for ${symbol} on EODHD or yfinance.`;
+      return `No listing found for ${symbol} on EODHD.`;
     case "empty":
       return `No ${what} on file for ${symbol} in this range; try a longer range.`;
     case "unsupported":

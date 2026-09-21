@@ -40,7 +40,10 @@ const GROUP_LABELS = ["Equities", "Rates", "Credit", "Dollar & FX", "Metals", "E
 /** 5+2+2+3+2+2+2+1 rows in tape.ts TAPE_GROUPS (the checklist's "18" is a miscount). */
 const MACRO_ROWS = 19;
 const SECTOR_SYMBOLS = ["XLF", "XLE", "XLI", "XLK"];
-const FUNDAMENTALS = ["Market cap", "P/E · TTM", "Fwd P/E", "Beta", "Div yield", "52W range", "Avg vol · 3M", "Net margin"];
+const FUNDAMENTALS = ["Market cap", "P/E · TTM", "Fwd P/E", "Beta", "Div yield", "52W range", "Avg vol · 3M", "Net margin",
+  // launch-1: Finnhub publishes these four too, so they are on screen rather
+  // than only in the payload.
+  "EPS · TTM", "P/B", "Revenue growth", "52W change"];
 const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
 /** Strip title (B.2) → the freshness card's first line (FreshnessCard.tsx). Iteration 1 step 6
  * (A3): the card prints the server's §5 word for the market series, whatever the relay's
@@ -269,7 +272,7 @@ test.describe("markets (checklist 05 E.3)", () => {
     await expect(strip).toBeFocused();
   });
 
-  test("6. single-name search: NVDA by real click shows the tile, eight fundamentals, four regime tiles under the monthly label, a provider status line and the news disclosure, without a reload", async ({ page }) => {
+  test("6. single-name search: NVDA by real click shows the tile, twelve fundamentals, four regime tiles under the monthly label, a provider status line and the news disclosure, without a reload", async ({ page }) => {
     await open(page);
     await page.evaluate(() => {
       (window as unknown as { __mrrE2E?: number }).__mrrE2E = 1;
@@ -292,8 +295,8 @@ test.describe("markets (checklist 05 E.3)", () => {
     await expect(panel).toContainText("Average monthly return by regime", { ignoreCase: true, timeout: 45_000 });
     for (const r of REGIMES) await expect(panel, r).toContainText(r, { ignoreCase: true, timeout: 45_000 });
     await expect(panel).toContainText(/% up · n=\d+|no overlap/, { timeout: 45_000 });
-    await expect(panel.locator("[role='status']").filter({ hasText: /EODHD|yfinance/ }).first()).toBeVisible({ timeout: 30_000 });
-    await expect(panel).toContainText(/Fundamentals via (?:EODHD|yfinance)|Fundamentals unavailable/, { timeout: 30_000 });
+    await expect(panel.locator("[role='status']").filter({ hasText: /EODHD/ }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(panel).toContainText(/Fundamentals via Finnhub|Fundamentals are not available for this instrument/, { timeout: 30_000 });
     expect(await panel.locator("[role='group'][aria-label='Chart range']").count()).toBeLessThanOrEqual(1);
     await capture(page, "markets--nvda.png");
 
@@ -376,7 +379,7 @@ test.describe("markets (checklist 05 E.3)", () => {
     else await expect(panel.getByText(/20-day average/)).toBeVisible();
   });
 
-  test("9. tape: the C.2 headers, eight groups, a QQQ row click opens the focused panel and Esc returns focus, the single names under the tape, the hash route, the scrolling well with the pinned symbol column", async ({ page }) => {
+  test("9. tape: the C.2 headers, eight groups, a QQQ row click opens the focused panel and Esc returns focus, the single names under the tape, the hash route, and the full-width well that does not scroll at 1672 (F2)", async ({ page }) => {
     await open(page);
     await test.step("headers, groups and the well", async () => {
       await expect(macroTable(page).locator("thead th")).toHaveCount(TAPE_HEADERS.length);
@@ -389,10 +392,13 @@ test.describe("markets (checklist 05 E.3)", () => {
         const last = clean(await row.locator("td").last().innerText());
         expect(last).toMatch(/(?:\d\d:\d\d(?::\d\d)? ET|close|15m delayed|^\u2014$)/);
       }
-      await expect(tape(page).locator(".mrr-scroll[data-scrollable='true']").first()).toBeVisible();
-      await expect(macroTable(page).locator("xpath=ancestor::*[contains(@class,'mrr-scroll')][1]")).toHaveAttribute("data-scrollable", "true");
-      const first = tapeRow(page, "QQQ").row.locator("td").first();
-      expect(await first.evaluate((el) => getComputedStyle(el).position)).toBe("sticky");
+      // Iteration 2 (F2): the tape spans the full row beneath the hero, so at
+      // 1672 every column renders inside the well and nothing scrolls sideways
+      // in the panel. The well only becomes scrollable below 1280 (test 17).
+      const well = macroTable(page).locator("xpath=ancestor::*[contains(@class,'mrr-scroll')][1]");
+      await expect(well).toHaveAttribute("data-scrollable", "false");
+      const fits = await well.evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+      expect(fits, "the tape's well must hold the whole table at 1672").toBe(true);
     });
 
     await test.step("row click, focus and Esc", async () => {
@@ -497,7 +503,7 @@ test.describe("markets (checklist 05 E.3)", () => {
     await expect(page.locator("main p.mrr-disclosure-line")).toContainText("macro metrics via FRED.");
   });
 
-  test("17. at 390 px the hero stacks over the summary, the body grid is one column, the phone column set shows five headers and nothing scrolls sideways", async ({ page }) => {
+  test("17. at 390 px the hero stacks over the summary, the tape spans the row above the stack (F2), the phone column set shows five headers with the named drops, and the page never scrolls sideways", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page);
     await expect(page.locator("main h1")).toHaveCount(1);
@@ -508,11 +514,18 @@ test.describe("markets (checklist 05 E.3)", () => {
     for (const [k, v] of Object.entries(boxes)) expect(v, k).not.toBeNull();
     expect((boxes.summary as DOMRect).top).toBeGreaterThanOrEqual((boxes.hero as DOMRect).bottom - 1);
     expect(Math.abs((boxes.summary as DOMRect).left - (boxes.hero as DOMRect).left)).toBeLessThan(2);
-    // One column: the tape follows the stack instead of sitting beside it.
+    // One column, and since F2 the tape spans the row directly under the hero:
+    // it sits above the panel stack rather than below Surprises.
     expect(Math.abs((boxes.tape as DOMRect).left - (boxes.research as DOMRect).left)).toBeLessThan(2);
-    expect((boxes.tape as DOMRect).top).toBeGreaterThanOrEqual((boxes.surprises as DOMRect).bottom - 1);
+    expect((boxes.tape as DOMRect).bottom).toBeLessThanOrEqual((boxes.research as DOMRect).top + 1);
+    expect((boxes.research as DOMRect).bottom).toBeLessThanOrEqual((boxes.surprises as DOMRect).top + 1);
     await expect(macroTable(page).locator("thead th")).toHaveCount(TAPE_HEADERS_NARROW.length);
     expect(lower(await macroTable(page).locator("thead th").allTextContents())).toEqual(lower(TAPE_HEADERS_NARROW));
+    // Below 1280 the reduced set is still wider than the phone's well, so the
+    // scroll well stands, with the dropped columns named above the board.
+    const well = macroTable(page).locator("xpath=ancestor::*[contains(@class,'mrr-scroll')][1]");
+    await expect(well).toHaveAttribute("data-scrollable", "true");
+    await expect(tape(page)).toContainText(/hidden at this width/i);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, "overflow at 390 px").toBeLessThanOrEqual(0);
     await capture(page, "markets--390.png");

@@ -530,9 +530,9 @@ export default function MethodologyScreen() {
               {(
                 [
                   ["FRED", "https://fred.stlouisfed.org", "Macro series (INDPRO, CPI, unemployment), daily Treasury yields (DGS2, DGS10), ICE BofA OAS indices, breakevens (T5YIE, T10YIE). Refreshed mornings ET; monthly and daily cadences."],
-                  ["yfinance", "https://github.com/ranaroussi/yfinance", "Daily candles for the stored ETF universe; 5-minute bars for SPY and QQQ; on-demand quotes, candles and fundamentals for any listed symbol (delayed up to 15 minutes)."],
-                  ["EODHD", "https://eodhd.com", "Live tape quotes over WebSocket: crypto and FX around the clock, US equities in session, 15-minute delayed REST fills off-hours. The token stays server-side."],
-                  ["Finnhub · NewsAPI · RSS", "https://finnhub.io", "Headlines ingested hourly, deduplicated and scored on five dimensions; the top items each cycle receive a Claude regime interpretation and Perplexity-cited research."],
+                  ["yfinance", "https://github.com/ranaroussi/yfinance", "The refresh pipeline only: daily candles for the stored ETF universe, 5-minute bars for SPY and QQQ, and the allocation price histories where EODHD does not carry the instrument. The site itself never calls it."],
+                  ["EODHD", "https://eodhd.com", "Live tape quotes over WebSocket: crypto and FX around the clock, US equities in session, 15-minute delayed REST fills off-hours. Also every on-demand lookup: search, quotes, candles, splits and dividends, and end-of-day options. The token stays server-side."],
+                  ["Finnhub · NewsAPI · RSS", "https://finnhub.io", "Headlines ingested hourly, deduplicated and scored on five dimensions; the top items each cycle receive a Claude regime interpretation and Perplexity-cited research. Finnhub also publishes the single-name fundamentals, which the EODHD plan here does not include."],
                   ["NBER", "https://www.nber.org/research/business-cycle-dating", "Official US recession dates: the recession model's training target and the shaded bands on history charts."],
                   ["Hand-maintained calendar", null, "FOMC, CPI, jobs and GDP dates through December 2026, kept by hand in a CSV; labeled as such wherever it renders."],
                 ] as const

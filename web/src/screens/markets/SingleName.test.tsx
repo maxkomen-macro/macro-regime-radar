@@ -49,11 +49,11 @@ describe("SingleName", () => {
   it("names an unknown symbol, and an options plan gap, without fabricating", async () => {
     stubFetch({
       ...common,
-      "/api/market/profile/ZZZQ": () => ({ status: 404, body: { detail: "No listing found for 'ZZZQ' on EODHD or yfinance.", kind: "unknown_symbol", provider: "api", retryable: false } }),
+      "/api/market/profile/ZZZQ": () => ({ status: 404, body: { detail: "No listing found for 'ZZZQ' on EODHD.", kind: "unknown_symbol", provider: "api", retryable: false } }),
       "/api/market/candles/ZZZQ": () => ({ status: 404, body: { detail: "No listing", kind: "unknown_symbol", provider: "api", retryable: false } }),
     });
     renderWithProviders(<SingleName symbol="ZZZQ" onClose={() => {}} />);
-    await waitFor(() => expect(document.body.textContent).toMatch(/No listing found for ZZZQ on EODHD or yfinance/));
+    await waitFor(() => expect(document.body.textContent).toMatch(/No listing found for ZZZQ on EODHD/));
     expect(screen.queryByTestId("chart")).toBeNull();
   });
 
@@ -279,13 +279,13 @@ describe("SingleName, Iteration 1 (M5)", () => {
   it("an unknown symbol reads one plain sentence in place of the tile, with the provider reason and a close button", async () => {
     stubFetch({
       ...common,
-      "/api/market/profile/ZZZZQX": () => ({ status: 404, body: { detail: "No listing found for 'ZZZZQX' on EODHD or yfinance.", kind: "unknown_symbol", provider: "api", retryable: false } }),
+      "/api/market/profile/ZZZZQX": () => ({ status: 404, body: { detail: "No listing found for 'ZZZZQX' on EODHD.", kind: "unknown_symbol", provider: "api", retryable: false } }),
       "/api/market/candles/ZZZZQX": () => ({ status: 404, body: { detail: "No listing", kind: "unknown_symbol", provider: "api", retryable: false } }),
     });
     const onClose = vi.fn();
     renderWithProviders(<SingleName symbol="ZZZZQX" onClose={onClose} />);
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("No listed symbol matches ZZZZQX."));
-    expect(document.body.textContent).toMatch(/No listing found for ZZZZQX on EODHD or yfinance\./);
+    expect(document.body.textContent).toMatch(/No listing found for ZZZZQX on EODHD\./);
     expect(screen.queryByRole("button", { name: /Options lens/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /News for ZZZZQX/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close single-name panel" }));

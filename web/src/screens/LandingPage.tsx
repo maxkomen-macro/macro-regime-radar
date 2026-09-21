@@ -398,7 +398,7 @@ export default function LandingPage() {
           color: "var(--text-muted)",
         }}
       >
-        <span>Data: FRED · EODHD (yfinance as disclosed fallback) · Finnhub · NewsAPI · RSS</span>
+        <span>Data: FRED · EODHD · Finnhub · NewsAPI · RSS</span>
         <span>Automated briefing from Macro Regime Radar. Not investment advice.</span>
       </footer>
     </div>

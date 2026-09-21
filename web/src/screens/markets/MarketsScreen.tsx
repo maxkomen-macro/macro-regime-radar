@@ -886,7 +886,7 @@ export default function MarketsScreen() {
             />
             {/* The provider meta (M6) sits under the header on its own line. */}
             <div style={{ ...metaStyle, margin: "-6px 0 12px" }}>
-              any listed symbol · EODHD first, yfinance only as a disclosed fallback · delayed quotes
+              any listed symbol · EODHD quotes and history · Finnhub fundamentals · delayed
             </div>
             {lookupSym ? (
               <SingleName symbol={lookupSym} range={range} onRangeChange={setRange} onClose={closeLookup} />

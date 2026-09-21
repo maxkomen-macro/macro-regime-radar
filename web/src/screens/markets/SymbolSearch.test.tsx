@@ -25,11 +25,15 @@ describe("SymbolSearch", () => {
     expect(screen.queryByRole("option")).toBeNull();
   });
 
-  it("labels a yfinance fallback", async () => {
-    stubFetch({ "/api/market/search": () => envelope([hit("NVDA", "NVIDIA")], "yfinance", true) });
+  it("names the index the hits came from, and promises no stand-in (launch-1)", async () => {
+    // The on-demand layer is EODHD only (fix/prelaunch-1): the search box must
+    // not offer a fallback that cannot happen.
+    stubFetch({ "/api/market/search": () => envelope([hit("NVDA", "NVIDIA")]) });
     renderWithProviders(<SymbolSearch onSelect={() => {}} />);
     fireEvent.change(screen.getByRole("combobox", { name: "Search any listed symbol" }), { target: { value: "nvidia" } });
-    await waitFor(() => expect(document.body.textContent).toMatch(/yfinance index · standing in for EODHD/));
+    await waitFor(() => expect(document.body.textContent).toMatch(/EODHD search index/));
+    expect(document.body.textContent).not.toMatch(/yfinance/i);
+    expect(document.body.textContent).not.toMatch(/standing in/i);
   });
 
   it("never offers the previous query's hits while a new query is in flight (rapid switching)", async () => {
