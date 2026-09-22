@@ -127,6 +127,15 @@ jobs:
         if: steps.mode.outputs.mode == 'full'
         run: python -m src.market_data.asset_history
 
+      # desk/event-study: the Desk's daily series (src/market_data/desk_history.py),
+      # FRED direct (the .env above carries the key) plus, at tier 2, market
+      # series through the same EODHD-first/Yahoo-fallback path as the step
+      # above. Tier 1 makes no provider calls. Never fails the refresh;
+      # validate_db judges the table.
+      - name: Store Desk daily series
+        if: steps.mode.outputs.mode == 'full'
+        run: python -m src.market_data.desk_history --tier 1
+
       - name: Fetch intraday bars
         if: steps.mode.outputs.mode == 'market-only'
         run: python src/market_data/fetch_market.py --mode intraday-only

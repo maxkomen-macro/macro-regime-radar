@@ -32,7 +32,10 @@ API_PREFIXES = ("/api", "/health", "/regime", "/signals", "/series")
 # probability used to compute on a cold call; since fix/prelaunch-1 the
 # background worker computes them and the handlers only look results up, so
 # they sit under the stored-read ceiling like every other lookup.
-EXPENSIVE_PATHS = {"/api/lbo/run", "/api/regime/scenario", "/api/recession/scenario"}
+# desk/event-study (2026-09-21): a free-form event study cannot be precomputed,
+# so GET /api/desk/event-study computes on request (its presets are worker
+# items) and sits under the same ceiling as the POST calculators.
+EXPENSIVE_PATHS = {"/api/lbo/run", "/api/regime/scenario", "/api/recession/scenario", "/api/desk/event-study"}
 PROVIDER_PREFIX = "/api/market/"
 # Everything else under the API prefixes is a stored-data read: bounded by
 # the `db` ceiling so a burst sheds load as 429s instead of wedging the

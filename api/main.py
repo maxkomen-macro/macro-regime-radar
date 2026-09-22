@@ -139,7 +139,7 @@ async def _lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Macro Regime Radar API",
-    version="1.4.0",
+    version="1.5.0",
     description="Read-only access to macro regime, signals, markets, news, and model outputs.",
     lifespan=_lifespan,
 )
@@ -1516,6 +1516,9 @@ def api_calendar_recent(
 
 app.include_router(api)
 app.include_router(assistant_router)
+from api.desk import router as desk_router  # noqa: E402  (desk/event-study: /api/desk/event-study[/assets])
+
+app.include_router(desk_router)
 
 
 @app.websocket("/api/stream/ws")

@@ -40,3 +40,6 @@ proposals/**/*.webp
 # Playwright e2e artifacts (web/e2e specs; captures live under gitignored/excluded folders)
 web/test-results/
 web/playwright-report/
+
+# Desk event-study: a local scratch copy of the DB populated by the owner for real-data tests (never the real DB)
+data/desk_scratch.db
