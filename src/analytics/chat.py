@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -181,11 +182,20 @@ def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 # e.g. an unbounded `WITH RECURSIVE` bomb.
 _QUERY_PROGRESS_PERIOD = 10_000
 _QUERY_PROGRESS_BUDGET = 2_000
-# The largest single value a query may build (SQLITE_LIMIT_LENGTH). The
-# progress handler counts instructions, not bytes: printf('%.*c', 999999999,
-# 'x') is a handful of instructions and ~1 GB of memory (launch-1, item 2
-# re-audit). A megabyte is far above any stored value or legitimate result.
-_QUERY_MAX_VALUE_BYTES = 1_000_000
+# Bounds on bytes and time, which the instruction budget cannot express
+# (launch-1, item 2 re-audit). printf('%.*c', 999999999, 'x') is a handful of
+# instructions and ~1 GB of memory; 200 rows of five wide values was another
+# gigabyte; a sort of many wide rows spills to temp files at disk speed.
+_QUERY_MAX_VALUE_BYTES = 256_000   # one value (SQLITE_LIMIT_LENGTH); stored rows are ~1.4 KB
+_QUERY_MAX_COLUMNS = 32            # one row (SQLITE_LIMIT_COLUMN)
+_QUERY_MAX_RESULT_BYTES = 2_000_000  # the whole result, counted while it is read
+_QUERY_TIME_BUDGET_S = 2.0         # wall clock, checked with the instruction budget
+
+
+def _value_bytes(value: Any) -> int:
+    if isinstance(value, (str, bytes)):
+        return len(value)
+    return 8
 
 
 def _tool_query_database(sql: str) -> dict[str, Any]:
@@ -194,22 +204,33 @@ def _tool_query_database(sql: str) -> dict[str, Any]:
     try:
         with _ro_conn() as conn:
             remaining = _QUERY_PROGRESS_BUDGET
+            deadline = time.monotonic() + _QUERY_TIME_BUDGET_S
 
             def _budget_exceeded() -> int:
                 nonlocal remaining
                 remaining -= 1
-                return 1 if remaining < 0 else 0
+                return 1 if remaining < 0 or time.monotonic() > deadline else 0
 
             conn.set_progress_handler(_budget_exceeded, _QUERY_PROGRESS_PERIOD)
             conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _QUERY_MAX_VALUE_BYTES)
+            conn.setlimit(sqlite3.SQLITE_LIMIT_COLUMN, _QUERY_MAX_COLUMNS)
             # The connection refuses writes itself, not only the guard: a
             # generation copy already does, and the file fallback (before the
             # first generation) accepted temp tables, ATTACH and VACUUM INTO.
             conn.set_authorizer(dbpath.read_only_authorizer)
             try:
                 cur = conn.execute(sql)
-                rows = cur.fetchmany(200)  # cap at 200 rows
                 cols = [d[0] for d in cur.description] if cur.description else []
+                rows: list = []
+                size = 0
+                while len(rows) < 200:  # cap at 200 rows
+                    row = cur.fetchone()
+                    if row is None:
+                        break
+                    size += sum(_value_bytes(v) for v in row)
+                    if size > _QUERY_MAX_RESULT_BYTES:
+                        return {"error": "The result is too large to return: select fewer or narrower columns, or fewer rows."}
+                    rows.append(row)
             finally:
                 conn.set_progress_handler(None, 0)
         return {"columns": cols, "rows": _rows_to_dicts(rows), "row_count": len(rows)}

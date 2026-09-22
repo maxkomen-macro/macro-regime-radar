@@ -261,8 +261,8 @@ def test_one_value_cannot_grow_past_a_megabyte(tmp_path, monkeypatch):
         "SELECT max(length(x)) AS n FROM s")
     assert "error" in doubling or (doubling["rows"][0]["n"] or 0) <= 1_000_000, doubling
     assert time.perf_counter() - t < 2.0
-    ok = chat_mod._tool_query_database("SELECT length(printf('%.*c', 900000, 'x')) AS n")
-    assert ok["rows"] == [{"n": 900000}]
+    ok = chat_mod._tool_query_database("SELECT length(printf('%.*c', 200000, 'x')) AS n")
+    assert ok["rows"] == [{"n": 200000}]
 
 
 def test_the_tool_connection_refuses_writes_even_on_the_file(tmp_path, monkeypatch):
@@ -283,3 +283,38 @@ def test_the_tool_connection_refuses_writes_even_on_the_file(tmp_path, monkeypat
         assert "error" in out, (sql, out)
     assert not target.exists()
     assert chat_mod._tool_query_database("SELECT label FROM regimes")["rows"] == [{"label": "Overheating"}]
+
+
+def test_one_call_cannot_return_a_gigabyte_of_rows(tmp_path, monkeypatch):
+    """Item 2 re-audit, loop 2: with each value capped, 200 rows of five wide
+    values still grew memory by a gigabyte in 0.15 s. The result is read a
+    row at a time under a byte budget, and a row has at most 32 columns."""
+    import time
+
+    from src.analytics import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    wide = ", ".join(f"printf('%.*c', 200000, 'x') AS c{i}" for i in range(5))
+    t = time.perf_counter()
+    out = chat_mod._tool_query_database(
+        f"WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 200) SELECT {wide} FROM r")
+    assert "error" in out and "too large" in out["error"], {k: v for k, v in out.items() if k != "rows"}
+    many = ", ".join(f"1 AS c{i}" for i in range(300))
+    out = chat_mod._tool_query_database(f"SELECT {many}")
+    assert "error" in out and "too many columns" in out["error"].lower(), out
+    assert time.perf_counter() - t < 3.0
+    fine = chat_mod._tool_query_database("SELECT label FROM regimes")
+    assert fine["rows"] == [{"label": "Overheating"}]
+
+
+def test_a_query_has_a_wall_clock_budget(tmp_path, monkeypatch):
+    """The instruction budget counts VM steps, not time or bytes: a sort of
+    many wide rows spills to temp files at disk speed. A wall-clock budget
+    bounds what one query can spend."""
+    from src.analytics import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    monkeypatch.setattr(chat_mod, "_QUERY_TIME_BUDGET_S", 0.0)
+    out = chat_mod._tool_query_database(
+        "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 100000) SELECT count(*) AS n FROM r")
+    assert "error" in out and "interrupted" in out["error"], out
