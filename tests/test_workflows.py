@@ -270,7 +270,7 @@ def test_a_published_full_refresh_asks_vercel_for_a_deploy():
     # Absent secret: a note and exit 0, never a failure.
     assert 'if [ -z "$VERCEL_DEPLOY_HOOK" ]' in body and "exit 0" in body
     # Present secret: one POST, and a non-2xx answer warns rather than fails.
-    assert body.count("curl") == 1 and "-X POST" in body
+    assert len(re.findall(r"\bcurl\s+-", body)) == 1 and "-X POST" in body  # one invocation
     assert "::warning::" in body
     assert "set -e" not in body
     # The hook URL is a secret: it must never be echoed.
@@ -285,3 +285,68 @@ def test_the_deploy_hook_runs_after_the_release_upload():
     publish = next(i for i, n in enumerate(names) if n.startswith("Publish validated DB snapshot"))
     hook = next(i for i, n in enumerate(names) if "Vercel" in n)
     assert hook > publish, names[publish:hook + 1]
+
+
+# The step body itself, run the way Actions runs it (bash -e) with a stub curl
+# on PATH (launch-1 verify loop 1: the text checks above let a doubled "000000"
+# and an unbounded curl through).
+
+def _hook_step() -> dict:
+    steps = _load("refresh-data.yml")["jobs"]["refresh"]["steps"]
+    return next(s for s in steps if "Vercel" in s.get("name", ""))
+
+
+def _run_hook(tmp_path, *, secret: str | None, curl: str) -> tuple[int, str, str, str]:
+    import os
+    import subprocess
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "curl"
+    stub.write_text("#!/bin/sh\necho called >> \"$CURL_LOG\"\n" + curl)
+    stub.chmod(0o755)
+    summary = tmp_path / "summary.md"
+    summary.write_text("")
+    log = tmp_path / "curl.log"
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "GITHUB_STEP_SUMMARY": str(summary), "CURL_LOG": str(log)}
+    if secret is not None:
+        env["VERCEL_DEPLOY_HOOK"] = secret
+    r = subprocess.run(["bash", "-e", "-c", _hook_step()["run"]], env=env, capture_output=True, text=True, timeout=30)
+    calls = log.read_text() if log.exists() else ""
+    return r.returncode, r.stdout + r.stderr, summary.read_text(), calls
+
+
+HOOK = "https://api.vercel.com/v1/integrations/deploy/prj_SECRET/HOOKTOKEN"
+
+
+def test_the_hook_step_without_the_secret_notes_it_and_succeeds(tmp_path):
+    for secret in (None, ""):
+        code, out, summary, calls = _run_hook(tmp_path, secret=secret, curl="printf 201\n")
+        assert code == 0 and calls == "" and "No VERCEL_DEPLOY_HOOK secret" in summary
+
+
+@pytest.mark.parametrize("answer, accepted", [("200", True), ("201", True), ("202", True), ("404", False), ("500", False)])
+def test_the_hook_step_with_the_secret_posts_once_and_never_fails(tmp_path, answer, accepted):
+    code, out, summary, calls = _run_hook(tmp_path, secret=HOOK, curl=f"printf {answer}\n")
+    assert code == 0 and calls.count("called") == 1
+    assert ("accepted" in summary) is accepted
+    assert ("::warning::" in out) is (not accepted)
+    assert "HOOKTOKEN" not in out + summary
+
+
+def test_a_connection_failure_reads_000_once(tmp_path):
+    """curl prints 000 itself when it cannot connect, then exits non-zero; the
+    step used to append a second 000."""
+    code, out, summary, calls = _run_hook(tmp_path, secret=HOOK, curl="printf 000\nexit 7\n")
+    assert code == 0
+    assert "answered 000 " in summary and "000000" not in summary + out
+    assert "HOOKTOKEN" not in out + summary
+
+
+def test_the_hook_step_is_bounded_and_cannot_fail_the_refresh():
+    """A hook that accepts the connection and never answers must not hold the
+    data-write queue for GitHub's six hours."""
+    step = _hook_step()
+    assert "--max-time" in step["run"]
+    assert step.get("timeout-minutes") and int(step["timeout-minutes"]) <= 5
+    assert step.get("continue-on-error") is True

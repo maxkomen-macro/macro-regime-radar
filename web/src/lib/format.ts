@@ -95,6 +95,22 @@ export function fmtDate(iso: string): string {
   return `${MONTHS[(m ?? 1) - 1]} ${String(d).padStart(2, "0")}, ${y}`;
 }
 
+const NY_DATE_FMT = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
+
+/** An instant ("2026-09-22T00:30:00Z") dated by its New York calendar day, as
+ * every other freshness label is: "Sep 21, 2026". A bare date reads as itself.
+ * The snapshot badge used fmtDate, which took the UTC day, so the evening
+ * refresh (00:23 UTC) showed tomorrow's date (launch-1, item 6). */
+export function fmtDateNy(iso: string): string {
+  if (!/[T ]\d{2}:\d{2}/.test(iso)) return fmtDate(iso);
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(iso);
+  const d = new Date(hasZone ? iso.replace(" ", "T") : `${iso.replace(" ", "T")}Z`);
+  if (Number.isNaN(d.getTime())) return fmtDate(iso);
+  const parts = NY_DATE_FMT.formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return fmtDate(`${get("year")}-${get("month")}-${get("day")}`);
+}
+
 /** "2026-08-05 15:55:00" (ET session bars) → "Aug 05, 15:55 ET" */
 export function fmtIntradayTs(ts: string): string {
   const [date, time] = ts.replace("T", " ").split(" ");

@@ -247,6 +247,11 @@ jobs:
       # set up yet, must not fail the refresh.
       - name: Ask Vercel for a deploy (snapshot changed)
         if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.upload == 'true'
+        # Bounded, and never the step that fails a refresh whose data is
+        # already published: a hook that hangs must not hold the data-write
+        # queue or skip the steps below.
+        timeout-minutes: 2
+        continue-on-error: true
         env:
           VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
         run: |
@@ -254,8 +259,11 @@ jobs:
             echo "No VERCEL_DEPLOY_HOOK secret; the static site keeps the snapshot it was built with." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          code=$(curl -sS -X POST -o /dev/null -w '%{http_code}' "$VERCEL_DEPLOY_HOOK" || echo "000")
-          if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+          # curl prints 000 itself when it cannot connect and exits non-zero:
+          # keep what it printed, and only fill in 000 when it printed nothing.
+          code=$(curl -sS --max-time 30 -X POST -o /dev/null -w '%{http_code}' "$VERCEL_DEPLOY_HOOK") || true
+          code=${code:-000}
+          if [ "${code#2}" != "$code" ] && [ ${#code} -eq 3 ]; then
             echo "Vercel deploy hook accepted ($code): the site will rebuild with this snapshot." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::warning::Vercel deploy hook answered $code; the data is published either way."

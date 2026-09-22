@@ -19,7 +19,7 @@
 import type { Alert, Freshness, Regime, RegimeFreshness, SeriesState } from "../../api/types";
 import type { SnapshotMeta } from "../../api/snapshot";
 import type { LiveFeeds, LiveQuote, StreamWord } from "../../live/quotes";
-import { daysSince, fmtDate, fmtIntradayTs, fmtMonYr, fmtUtcStampEt } from "../../lib/format";
+import { daysSince, fmtDate, fmtDateNy, fmtIntradayTs, fmtMonYr, fmtUtcStampEt } from "../../lib/format";
 import {
   REGIME_INPUT_IDS,
   freshLabel,
@@ -436,7 +436,7 @@ export function composeShellStatus(input: ShellStatusInput): ShellStatus {
     statusTitle: statusTitle(statusWord, snapshotGeneratedAt),
     degradedWord,
     liveSuffix: suffix,
-    snapshotDate: statusWord === "Validated snapshot" && snapshotGeneratedAt ? ` · ${fmtDate(snapshotGeneratedAt)}` : "",
+    snapshotDate: statusWord === "Validated snapshot" && snapshotGeneratedAt ? ` · ${fmtDateNy(snapshotGeneratedAt)}` : "",
     snapshotNote: statusWord === "Validated snapshot" ? SNAPSHOT_NOTE : null,
     snapshotGeneratedAt,
     seeded,

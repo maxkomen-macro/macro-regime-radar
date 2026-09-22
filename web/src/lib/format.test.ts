@@ -30,7 +30,7 @@ import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import * as format from "./format";
-import { fmtBps, fmtPct, fmtWholePct } from "./format";
+import { fmtBps, fmtDateNy, fmtPct, fmtWholePct } from "./format";
 import type { CreditMetrics, DatedValue } from "../api/types";
 import { renderWithProviders } from "../test/utils";
 import QualityLadder from "../screens/credit/QualityLadder";
@@ -272,5 +272,17 @@ describe("A4 · the CCC-vs-distress-line ratio is not routed through the probabi
     renderWithProviders(createElement(QualityLadder, { m: ladderMetrics({ ccc_oas: 580, ccc_pct_of_distress_line: 58, ccc_bps_vs_distress_line: -420 }), status: "ready" }), { route: "/app/credit" });
     const section = document.getElementById("quality-ladder") as HTMLElement;
     expect(within(section).getAllByText((_, el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim() === "58.0%").length).toBeGreaterThan(0);
+  });
+});
+
+describe("fmtDateNy (launch-1, item 6)", () => {
+  it("dates an instant by its New York calendar day, like every other freshness label", () => {
+    // The evening full refresh publishes at 00:23 UTC: still the previous day in New York.
+    expect(fmtDateNy("2026-09-22T00:30:00Z")).toBe("Sep 21, 2026");
+    expect(fmtDateNy("2026-09-21T11:40:00Z")).toBe("Sep 21, 2026");
+    expect(fmtDateNy("2026-09-21T11:40:00+00:00")).toBe("Sep 21, 2026");
+  });
+  it("reads a bare date as itself", () => {
+    expect(fmtDateNy("2026-09-21")).toBe("Sep 21, 2026");
   });
 });
