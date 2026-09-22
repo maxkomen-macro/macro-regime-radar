@@ -233,3 +233,40 @@ def test_a_non_ascii_ops_key_is_refused_not_a_crash(monkeypatch):
     r = client.get("/api/stream/debug", headers={"x-ops-key": b"caf\xe9"})
     assert r.status_code == 401
     assert client.get("/api/stream/debug", headers={"x-ops-key": "wrong"}).status_code == 401
+
+
+# ── launch-1 verify loop 1 (item 3) ─────────────────────────────────────────
+
+
+def test_whoami_reports_what_the_gates_see_behind_the_ops_key(monkeypatch):
+    """After a deploy the owner checks that the rate limits key on their own
+    address, not on a proxy's. Closed like every diagnostic."""
+    monkeypatch.setenv("OPS_ACCESS_KEY", "ops-s3cret")
+    assert client.get("/api/ops/whoami").status_code == 401
+    r = client.get("/api/ops/whoami", headers={"x-ops-key": "ops-s3cret", "x-forwarded-for": "198.51.100.7"})
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body) >= {"client_id", "peer", "forwarded_for_entries", "trusted_proxy_hops", "client_ip_header", "client_ip_header_present"}
+    assert body["forwarded_for_entries"] == 1
+
+
+def test_a_single_service_deploy_serves_its_root_files_and_the_snapshot(tmp_path, monkeypatch):
+    """The SPA catch-all used to answer /favicon.svg and /snapshot/latest.json
+    with index.html; the snapshot fallback then failed to parse."""
+    import api.main as main_mod
+
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "snapshot").mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>shell</title>")
+    (dist / "favicon.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
+    (dist / "snapshot" / "latest.json").write_text('{"generated_at": "2026-09-21T00:00:00Z", "entries": {}}')
+    monkeypatch.setattr(main_mod, "WEB_DIST", dist)
+    r = client.get("/favicon.svg")
+    assert r.status_code == 200 and "svg" in r.headers["content-type"]
+    r = client.get("/snapshot/latest.json")
+    assert r.status_code == 200 and r.json()["generated_at"].startswith("2026")
+    r = client.get("/markets")
+    assert r.status_code == 200 and "shell" in r.text
+    r = client.get("/../etc/passwd")
+    assert "root:" not in r.text

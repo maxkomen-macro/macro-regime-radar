@@ -3,9 +3,9 @@
 httpx logs "HTTP Request: GET <full url>" at INFO, and EODHD authenticates
 with an api_token query parameter, so a bare basicConfig(INFO) would print
 the token on every provider call. Two layers: the httpx/httpcore loggers are
-held at WARNING, and a redaction filter on the root logger rewrites any
-api_token/token/api_key query value or Bearer header that still slips
-through, in the message and in its args.
+held at WARNING, and a redaction filter on every handler rewrites any
+api_token/token/api_key query value, signed-URL credential or Bearer header
+that still slips through, in the rendered message and in the traceback.
 """
 
 from __future__ import annotations
@@ -17,6 +17,9 @@ _PATTERNS = [
     re.compile(r"(api_token=)[^&\s\"']+", re.IGNORECASE),
     re.compile(r"(api_key=)[^&\s\"']+", re.IGNORECASE),
     re.compile(r"(token=)[^&\s\"']+", re.IGNORECASE),
+    # Signed download URLs (GitHub's release-asset CDN and S3-style links):
+    # credentials valid for minutes, never for a log (launch-1 verify loop 1).
+    re.compile(r"((?:sig|jwt|X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token)=)[^&\s\"']+", re.IGNORECASE),
     re.compile(r"(Bearer\s+)[A-Za-z0-9._\-]+"),
 ]
 
@@ -28,16 +31,27 @@ def redact(text: str) -> str:
 
 
 class RedactingFilter(logging.Filter):
+    """Rewrites the whole rendered message, whatever its arguments are (httpx
+    passes the URL as an httpx.URL, not a str), and the traceback and stack
+    text a formatter would print (launch-1 verify loop 1)."""
+
+    _formatter = logging.Formatter()
+
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            if isinstance(record.msg, str):
-                record.msg = redact(record.msg)
-            if record.args:
-                if isinstance(record.args, dict):
-                    record.args = {k: redact(v) if isinstance(v, str) else v for k, v in record.args.items()}
-                else:
-                    record.args = tuple(redact(a) if isinstance(a, str) else a for a in record.args)
+            message = record.getMessage()
+            record.msg = redact(message)
+            record.args = None
         except Exception:  # noqa: BLE001 — a filter must never break logging
+            pass
+        try:
+            if record.exc_info and not record.exc_text:
+                record.exc_text = self._formatter.formatException(record.exc_info)
+            if record.exc_text:
+                record.exc_text = redact(record.exc_text)
+            if record.stack_info:
+                record.stack_info = redact(record.stack_info)
+        except Exception:  # noqa: BLE001
             pass
         return True
 
@@ -51,11 +65,15 @@ def install() -> None:
     global _installed
     for name in ("httpx", "httpcore", "httpcore.http11", "httpcore.connection"):
         logging.getLogger(name).setLevel(logging.WARNING)
-    root = logging.getLogger()
     flt = RedactingFilter()
-    for h in root.handlers:
-        if not any(isinstance(f, RedactingFilter) for f in h.filters):
-            h.addFilter(flt)
+    # Every handler that already exists, not only the root's: uvicorn builds
+    # its handlers from its logging config before the app is imported
+    # (launch-1 verify loop 1).
+    loggers = [logging.getLogger()] + [lg for lg in logging.Logger.manager.loggerDict.values() if isinstance(lg, logging.Logger)]
+    for lg in loggers:
+        for h in lg.handlers:
+            if not any(isinstance(f, RedactingFilter) for f in h.filters):
+                h.addFilter(flt)
     if not _installed:
         _installed = True
         # Handlers added after install() (uvicorn's, a test's caplog) get the

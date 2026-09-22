@@ -83,7 +83,8 @@ Environment (host secret store only; never in git, never in the image):
 | `RATE_LIMIT_GLOBAL_PER_MIN` / `RATE_LIMIT_GLOBAL_BURST` | defaults 4000 / 600 |
 | `DB_MAX_CONCURRENCY` | stored-data reads in flight (default 24); beyond it the API answers 429 instead of queueing the worker pool |
 | `WS_MAX_PER_CLIENT` / `WS_MAX_TOTAL` | relay sockets per client id / in total (defaults 20 / 200 — a NAT address counts as one client unless `TRUSTED_PROXY_HOPS` is set); refused sockets close before accept |
-| `TRUSTED_PROXY_HOPS` | number of reverse proxies in front of the API that append `X-Forwarded-For` (typically `1`); the client is read that many entries from the right, never from the spoofable left. `0` (default) keys limits on the socket peer. `TRUST_X_FORWARDED_FOR=1` is an alias for one hop |
+| `CLIENT_IP_HEADER` | a single-value header the host's edge sets on every request, read as the visitor's address and preferred over `X-Forwarded-For`: `cf-connecting-ip` on Render (fronted by Cloudflare), `fly-client-ip` on Fly. Only a header the edge overwrites, or a visitor could choose its own key |
+| `TRUSTED_PROXY_HOPS` | how many entries from the right of `X-Forwarded-For` the visitor's address sits, the fallback when `CLIENT_IP_HEADER` is absent: `2` on Render (the chain is `visitor, Cloudflare edge`), `1` on Fly; never the spoofable left. `0` (default) keys limits on the socket peer. `TRUST_X_FORWARDED_FOR=1` is an alias for one hop. Check with `GET /api/ops/whoami` and the `X-Ops-Key` header: `client_id` must be your own address |
 | `OPS_ACCESS_KEY` | when set, `/api/providers/status` and `/api/stream/debug` require the `X-Ops-Key` header; on a public deploy with no key they answer 503 |
 | `CSP_CONNECT_SRC` | extra `connect-src` origins for the served shell (split API/WS host) |
 | `PROVIDER_MAX_CONCURRENCY` | upstream provider calls in flight (default 8) |

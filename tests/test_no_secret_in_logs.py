@@ -121,3 +121,116 @@ def test_the_ops_and_assistant_keys_never_reach_a_response(secrets):
     r = client.get("/api/stream/debug", headers={"X-Ops-Key": secrets["OPS_ACCESS_KEY"]})
     assert r.status_code == 200
     _assert_clean(r.text)
+
+
+# ── launch-1 verify loop 1 (item 3) ─────────────────────────────────────────
+
+
+def _handler_with_filter() -> tuple[logging.Handler, "io.StringIO"]:
+    import io
+
+    buf = io.StringIO()
+    h = logging.StreamHandler(buf)
+    h.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+    h.addFilter(logsafe.RedactingFilter())
+    return h, buf
+
+
+def test_the_filter_redacts_a_real_httpx_record_with_a_url_object(secrets):
+    """httpx logs the URL as an httpx.URL, not a str; the filter used to look
+    at string arguments only, so at INFO the token printed in full."""
+    h, buf = _handler_with_filter()
+    lg = logging.getLogger("httpx")
+    old_level = lg.level
+    lg.addHandler(h)
+    lg.setLevel(logging.INFO)
+    try:
+        transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}, request=r))
+        with httpx.Client(transport=transport) as c:
+            c.get("https://eodhd.com/api/real-time/AAPL.US", params={"api_token": secrets["EODHD_API_TOKEN"], "fmt": "json"})
+    finally:
+        lg.removeHandler(h)
+        lg.setLevel(old_level)
+    assert "HTTP Request" in buf.getvalue()
+    _assert_clean(buf.getvalue())
+
+
+def test_the_filter_redacts_a_traceback(secrets):
+    h, buf = _handler_with_filter()
+    lg = logging.getLogger("mrr.test.traceback")
+    lg.addHandler(h)
+    try:
+        try:
+            raise RuntimeError(f"GET https://eodhd.com/api/eod/AAPL.US?api_token={secrets['EODHD_API_TOKEN']}")
+        except RuntimeError:
+            lg.exception("provider call failed")
+    finally:
+        lg.removeHandler(h)
+    assert "Traceback" in buf.getvalue()
+    _assert_clean(buf.getvalue())
+
+
+def test_signed_download_urls_are_redacted():
+    line = ("https://release-assets.githubusercontent.com/x/1/abc?sp=r&se=2026&sig=SIG-SENTINEL&jwt=JWT-SENTINEL"
+            "&X-Amz-Credential=AMZ-CRED-SENTINEL&X-Amz-Signature=AMZ-SIG-SENTINEL")
+    assert "SENTINEL" not in logsafe.redact(line)
+
+
+def test_handlers_that_existed_before_install_get_the_filter():
+    """uvicorn builds its handlers before the app is imported; install()
+    must reach them, not only the root logger's."""
+    lg = logging.getLogger("uvicorn.error.launch1test")
+    h = logging.StreamHandler()
+    lg.handlers.append(h)  # attached without the addHandler hook, as dictConfig-era handlers are
+    try:
+        logsafe.install()
+        assert any(isinstance(f, logsafe.RedactingFilter) for f in h.filters)
+    finally:
+        lg.handlers.remove(h)
+
+
+def test_a_token_with_a_trailing_newline_never_reaches_status_or_a_log(monkeypatch, caplog, tmp_path):
+    """Defect 1: a GH_DB_TOKEN pasted with a newline made h11 reject the
+    header with the token in the message; the text went to the log and to
+    the public /api/freshness through bootstrap.last_error."""
+    from api import bootstrap, db
+
+    monkeypatch.setenv("GH_DB_TOKEN", "github-SENTINEL-1b8c\n")
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "macro_radar.db")
+    assert bootstrap._token() == "github-SENTINEL-1b8c"
+
+    def boom(request):
+        raise httpx.LocalProtocolError(f"Illegal header value b'Bearer {request.headers.get('authorization', '')[7:]}\\n'")
+
+    monkeypatch.setattr(bootstrap, "_transport", httpx.MockTransport(boom))
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(Exception):
+            bootstrap.refresh_db()
+    status_text = str(bootstrap.status())
+    assert "SENTINEL" not in status_text and "SENTINEL" not in caplog.text
+    assert bootstrap.status()["last_error"]
+
+
+def test_a_failed_signed_download_keeps_the_url_out_of_status(monkeypatch, caplog, tmp_path):
+    from api import bootstrap, db
+
+    monkeypatch.setenv("GH_DB_TOKEN", "github-SENTINEL-1b8c")
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "macro_radar.db")
+    signed = "https://release-assets.githubusercontent.com/x/1/abc?sp=r&sig=SIG-SENTINEL&jwt=JWT-SENTINEL"
+
+    def handler(req):
+        if req.url.path.endswith("/releases/tags/data-latest"):
+            return httpx.Response(200, json={"assets": [{"name": "macro_radar.db", "id": 1, "size": 10,
+                                                         "updated_at": "2026-09-21T00:00:00Z",
+                                                         "url": "https://api.github.com/repos/x/y/releases/assets/1"}]}, request=req)
+        if req.url.host == "api.github.com":
+            return httpx.Response(302, headers={"Location": signed}, request=req)
+        return httpx.Response(503, text="upstream", request=req)
+
+    monkeypatch.setattr(bootstrap, "_transport", httpx.MockTransport(handler))
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(Exception):
+            bootstrap.refresh_db()
+    status_text = str(bootstrap.status())
+    assert "SENTINEL" not in status_text and "SENTINEL" not in caplog.text
+    assert "503" in str(bootstrap.status()["last_error"])

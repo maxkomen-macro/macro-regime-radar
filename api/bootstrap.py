@@ -81,7 +81,21 @@ _transport: httpx.BaseTransport | None = None
 
 
 def _token() -> str:
-    return os.environ.get("GH_DB_TOKEN", "")
+    # Stripped like every other token loader: a value pasted with a trailing
+    # newline made h11 reject the header with the token in the error text
+    # (launch-1 verify loop 1).
+    return os.environ.get("GH_DB_TOKEN", "").strip()
+
+
+def public_error(exc: BaseException) -> str:
+    """What a failed refresh may say in /api/freshness and in a log line: the
+    kind of failure and an HTTP status, never the exception's own text, which
+    can carry a signed download URL or a header value."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code} from GitHub"
+    if isinstance(exc, ValueError) and str(exc).startswith("downloaded "):
+        return str(exc)  # _validate_sqlite's own sentences
+    return type(exc).__name__
 
 
 def refresh_interval_min() -> float:
@@ -166,7 +180,7 @@ def refresh_db(force: bool = False) -> bool:
         except Exception as exc:
             # a failed check is this attempt's result, never the last one's
             _state["last_result"] = "error"
-            _state["last_error"] = _redact(repr(exc), token)
+            _state["last_error"] = public_error(exc)
             raise
         asset = next(
             (a for a in assets if a["name"] == _DB_ASSET_NAME),
@@ -206,7 +220,7 @@ def refresh_db(force: bool = False) -> bool:
             _write_identity(remote)
         except Exception as exc:
             _state["last_result"] = "error"
-            _state["last_error"] = _redact(repr(exc), token)
+            _state["last_error"] = public_error(exc)
             raise
         finally:
             if os.path.exists(tmp):
@@ -253,5 +267,5 @@ async def periodic_refresh(interval_min: float) -> None:
             await asyncio.to_thread(refresh_db, False)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            log.exception("periodic DB refresh failed — will retry next interval")
+        except Exception as exc:  # noqa: BLE001 — no traceback: its text can carry a signed URL
+            log.warning("periodic DB refresh failed (%s); will retry next interval", public_error(exc))

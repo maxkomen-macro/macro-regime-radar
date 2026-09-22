@@ -143,7 +143,7 @@ def check_freshness(client: httpx.Client, api: str, rep: Report) -> None:
         rep.warn("stale feeds", ", ".join(str(s) for s in stale))
 
 
-def check_security_headers(client: httpx.Client, url: str, rep: Report, label: str, want_csp: bool) -> None:
+def check_security_headers(client: httpx.Client, url: str, rep: Report, label: str, want_csp: bool, api: str | None = None) -> None:
     try:
         r = client.get(url)
     except httpx.HTTPError as exc:
@@ -167,6 +167,15 @@ def check_security_headers(client: httpx.Client, url: str, rep: Report, label: s
         problems.append("no connect-src")
     if "frame-ancestors 'none'" not in csp:
         problems.append("frame-ancestors is not 'none'")
+    if api and "connect-src" in csp:
+        # The API's own origins, for its scheme: https + wss in production,
+        # http + ws for a local rehearsal (launch-1 verify loop 1).
+        connect = csp.split("connect-src", 1)[1].split(";")[0].split()
+        host = api.split("://", 1)[1]
+        want = [f"https://{host}", f"wss://{host}"] if api.startswith("https://") else [f"http://{host}", f"ws://{host}"]
+        absent = [w for w in want if w not in connect]
+        if absent:
+            problems.append(f"connect-src does not name {', '.join(absent)}")
     if problems:
         rep.fail(f"{label} CSP", "; ".join(problems))
     else:
@@ -278,6 +287,41 @@ async def _ws_probe(url: str, origin: str | None) -> tuple[bool, str]:
     return True, f"{len(msg.get('items') or [])} quotes, feeds {msg.get('feeds')}"
 
 
+def check_client_identity(client: httpx.Client, api: str, ops_key: str | None, my_ip: str | None, rep: Report) -> None:
+    """What the rate limits key this request on (launch-1). Behind a proxy that
+    must be the visitor's own public address: the proxy's, or a private one,
+    means every visitor shares one bucket."""
+    import ipaddress
+
+    if not ops_key:
+        rep.warn("client address", "no --ops-key given, so what the rate limits see was not read")
+        return
+    try:
+        r = client.get(api + "/api/ops/whoami", headers={"X-Ops-Key": ops_key})
+    except httpx.HTTPError as exc:
+        rep.fail("client address", type(exc).__name__)
+        return
+    if r.status_code != 200:
+        rep.fail("client address", f"{r.status_code} from /api/ops/whoami")
+        return
+    who = r.json()
+    cid, peer, hops = who.get("client_id"), who.get("peer"), who.get("forwarded_for_entries") or 0
+    via = f"header {who.get('client_ip_header')}" if who.get("client_ip_header_present") else f"{who.get('trusted_proxy_hops')} hop(s) of {hops}"
+    try:
+        private = ipaddress.ip_address(str(cid)).is_private
+    except ValueError:
+        private = False
+    if my_ip:
+        (rep.ok if cid == my_ip else rep.fail)("client address", f"limits key on {cid} ({via}); you are {my_ip}")
+    elif hops and (cid == peer or private):
+        rep.fail("client address", f"behind a proxy, yet the limits key on {cid} ({via}): every visitor shares one bucket. "
+                                   "Set CLIENT_IP_HEADER (Render: cf-connecting-ip) or TRUSTED_PROXY_HOPS")
+    elif hops:
+        rep.ok("client address", f"limits key on {cid} ({via}); pass --my-ip to confirm it is yours")
+    else:
+        rep.ok("client address", f"no proxy in front; limits key on the socket peer {cid}")
+
+
 def check_websocket(api: str, site: str | None, rep: Report) -> None:
     ws_url = api.replace("https://", "wss://").replace("http://", "ws://") + "/api/stream/ws"
     ok, detail = asyncio.run(_ws_probe(ws_url, site))
@@ -322,6 +366,7 @@ def main() -> int:
     ap.add_argument("--site", help="static site origin, e.g. https://macro-regime-radar.vercel.app")
     ap.add_argument("--ops-key", default=None, help="OPS_ACCESS_KEY, to read the relay and plan report")
     ap.add_argument("--skip-provider", action="store_true", help="skip the three on-demand routes (they spend EODHD quota)")
+    ap.add_argument("--my-ip", default=None, help="your own public address, to confirm the rate limits key on it")
     args = ap.parse_args()
 
     api = args.api.rstrip("/")
@@ -336,10 +381,11 @@ def main() -> int:
         check_freshness(client, api, rep)
         check_security_headers(client, api + "/health", rep, "api", want_csp=False)
         check_diagnostics(client, api, args.ops_key, rep)
+        check_client_identity(client, api, args.ops_key, args.my_ip, rep)
         check_assistant(client, api, rep)
         if site:
             check_site(client, site, rep)
-            check_security_headers(client, site + "/", rep, "site", want_csp=True)
+            check_security_headers(client, site + "/", rep, "site", want_csp=True, api=api)
     check_websocket(api, site, rep)
 
     passed = sum(1 for v, _, _ in rep.rows if v == "PASS")

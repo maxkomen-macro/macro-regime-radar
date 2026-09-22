@@ -32,7 +32,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from api import bootstrap, db, security, stream
+from api import assistant_budget, bootstrap, db, security, stream
 from api import worker as worker_mod
 from api.db import NotStored
 from api import freshness as freshness_mod
@@ -74,6 +74,12 @@ def _anthropic_key_resolvable() -> bool:
         return False
 
 
+def _finnhub_key_present() -> bool:
+    from api.providers import finnhub as fh
+
+    return bool(fh.client().token)
+
+
 def _log_startup_state() -> None:
     """One honest block at lifespan start — presence yes/no only, never values."""
     if db.DB_PATH.exists():
@@ -91,6 +97,18 @@ def _log_startup_state() -> None:
     log.info("startup: GH_DB_TOKEN %s", "yes" if os.environ.get("GH_DB_TOKEN") else "no")
     log.info("startup: EODHD_API_TOKEN %s", "yes" if stream.hub.token else "no")
     log.info("startup: ANTHROPIC_API_KEY resolvable: %s", "yes" if _anthropic_key_resolvable() else "no")
+    log.info("startup: FINNHUB_API_KEY %s", "yes" if _finnhub_key_present() else "no")
+    log.info("startup: OPS_ACCESS_KEY %s", "yes" if os.environ.get("OPS_ACCESS_KEY", "").strip() else "no")
+    log.info("startup: public posture %s; assistant %s; daily cap $%.2f; ledger %s (%s)",
+             "on" if security.is_public_deploy() else "off", security.assistant_mode(),
+             assistant_budget.daily_cap_usd(), assistant_budget.LEDGER_PATH,
+             "writable" if assistant_budget.ledger_writable() else "NOT WRITABLE")
+    if security.assistant_mode() != "off" and not assistant_budget.ledger_writable():
+        log.warning("startup: this user cannot write the assistant's spend ledger at %s, so the analyst "
+                    "will rest; see DEPLOY.md (the ledger disk)", assistant_budget.LEDGER_PATH)
+    log.info("startup: client address from %s",
+             f"the {security.client_ip_header()} header" if security.client_ip_header()
+             else (f"X-Forwarded-For, {security.trusted_proxy_hops()} hop(s) from the right" if security.trusted_proxy_hops() else "the socket peer"))
     log.info("startup: effective CORS origins: %s", CORS_ORIGINS)
 
 
@@ -101,8 +119,8 @@ async def _lifespan(_: FastAPI):
     # before the stream hub so a fresh deploy has data before it serves.
     try:
         await asyncio.to_thread(bootstrap.refresh_db)
-    except Exception:
-        log.exception("DB bootstrap failed — continuing with the on-disk DB")
+    except Exception as exc:  # noqa: BLE001 — no traceback: its text can carry a signed URL
+        log.warning("DB bootstrap failed (%s); continuing with the on-disk DB", bootstrap.public_error(exc))
     # The background worker (api/worker.py, fix/prelaunch-1): preloads the
     # heavy libraries, builds the first generation of every derived result,
     # and rebuilds on every database change; handlers only look results up.
@@ -1213,6 +1231,28 @@ def _ops_gate(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Diagnostics require an ops key on this deployment.")
 
 
+@api.get("/ops/whoami")
+def api_ops_whoami(request: Request) -> dict:
+    """What the rate limits see this request as (launch-1): after a deploy the
+    owner checks that client_id is their own public address, not a proxy's.
+    Behind the ops key like every diagnostic; it only echoes the caller's own
+    request."""
+    _ops_gate(request)
+    scope = request.scope
+    lines = [v.decode("latin-1") for k, v in scope.get("headers", []) if k == b"x-forwarded-for"]
+    entries = [x.strip() for x in ",".join(lines).split(",") if x.strip()]
+    name = security.client_ip_header()
+    return {
+        "client_id": security.client_id_from(scope, security.trusted_proxy_hops()),
+        "peer": (scope.get("client") or ("unknown",))[0],
+        "forwarded_for_entries": len(entries),
+        "forwarded_for": entries,
+        "trusted_proxy_hops": security.trusted_proxy_hops(),
+        "client_ip_header": name or None,
+        "client_ip_header_present": bool(name) and any(k == name.encode("latin-1", "ignore") for k, _ in scope.get("headers", [])),
+    }
+
+
 @api.get("/providers/status")
 def api_providers_status(request: Request) -> dict:
     """Which provider is primary per dataset, the cached entitlement probe
@@ -1653,17 +1693,29 @@ def _csp() -> str:
     )
 
 
+# Read at request time, so a test can point it at a scratch bundle.
+WEB_DIST = _WEB_DIST
+
 if _WEB_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=_WEB_DIST / "assets"), name="assets")
     app.mount("/fonts", StaticFiles(directory=_WEB_DIST / "fonts"), name="fonts")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback(full_path: str) -> FileResponse:
-        """SPA fallback: client-side routes (/, /app/*, /kit) get index.html;
-        unknown API-ish paths stay JSON 404s exactly as before the mount."""
+        """SPA fallback: a file the bundle ships at its root (the favicons, the
+        validated snapshot) is served as itself; client-side routes (/, /app/*,
+        /kit) get index.html; unknown API-ish paths stay JSON 404s exactly as
+        before the mount (launch-1 verify loop 1: the snapshot and favicons
+        used to come back as index.html)."""
         if full_path.split("/", 1)[0] in _NON_SPA_FIRST_SEGMENTS:
             raise HTTPException(status_code=404, detail="Not Found")
-        return FileResponse(_WEB_DIST / "index.html", headers={"Content-Security-Policy": _csp(), "Cache-Control": "no-cache"})
+        base = Path(WEB_DIST).resolve()
+        if full_path and full_path != "index.html":
+            candidate = (base / full_path).resolve()
+            if base in candidate.parents and candidate.is_file():
+                cache = "public, max-age=300" if full_path.startswith("snapshot/") else "public, max-age=86400"
+                return FileResponse(candidate, headers={"Cache-Control": cache})
+        return FileResponse(base / "index.html", headers={"Content-Security-Policy": _csp(), "Cache-Control": "no-cache"})
 
 else:
     log.info("web/dist absent — SPA not mounted; dev flow (Vite :5173) unchanged")

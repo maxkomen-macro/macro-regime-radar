@@ -1,4 +1,7 @@
 .env
+# Local copies of the env templates (web/.env.example says copy to .env.local).
+.env.local
+.env.*.local
 .streamlit/secrets.toml
 __pycache__/
 *.pyc

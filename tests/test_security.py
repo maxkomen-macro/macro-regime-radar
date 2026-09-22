@@ -430,15 +430,16 @@ def test_two_origin_headers_are_refused(monkeypatch):
 
 
 def test_the_assistant_ceiling_is_four_at_production(production_env, monkeypatch):
-    monkeypatch.delenv("ASSISTANT_MAX_CONCURRENCY", raising=False)
-    import importlib
+    """Loaded as a separate copy with the variable unset, so the module the
+    app uses (and its counters) is never replaced (verify loop 2, R5)."""
+    import importlib.util
 
-    fresh = importlib.reload(security)
-    try:
-        assert fresh.ASSISTANT_MAX_CONCURRENCY == 4
-        assert fresh.SecurityMiddleware(lambda *a: None).assistant._initial_value == 4
-    finally:
-        importlib.reload(security)
+    monkeypatch.delenv("ASSISTANT_MAX_CONCURRENCY", raising=False)
+    spec = importlib.util.spec_from_file_location("security_production_copy", security.__file__)
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+    assert fresh.ASSISTANT_MAX_CONCURRENCY == 4
+    assert fresh.SecurityMiddleware(lambda *a: None).assistant._initial_value == 4
 
 
 def test_websocket_total_cap_refuses_beyond_the_ceiling():
@@ -476,3 +477,31 @@ def test_websocket_total_cap_refuses_beyond_the_ceiling():
         assert mw.ws_active_total() == 0
 
     asyncio.run(run())
+
+
+# ── launch-1 verify loop 1 (item 3): the client's address on the real hosts ──
+
+
+def test_a_client_ip_header_set_by_the_edge_wins(monkeypatch):
+    """Render sits behind Cloudflare, so X-Forwarded-For arrives as
+    "client, cloudflare-edge": one hop from the right is Cloudflare, and every
+    visitor would share its bucket. CLIENT_IP_HEADER names a header the edge
+    itself sets on every request."""
+    scope = {"client": ("10.0.0.1", 5), "headers": [
+        (b"x-forwarded-for", b"203.0.113.9, 104.22.17.40"),
+        (b"cf-connecting-ip", b"203.0.113.9"),
+    ]}
+    monkeypatch.setenv("CLIENT_IP_HEADER", "CF-Connecting-IP")
+    assert security.client_ip_header() == "cf-connecting-ip"
+    assert security.client_id_from(scope, 1) == "203.0.113.9"
+    # Missing on a request: fall back to the hop count, then the peer.
+    bare = {"client": ("10.0.0.1", 5), "headers": [(b"x-forwarded-for", b"203.0.113.9, 104.22.17.40")]}
+    assert security.client_id_from(bare, 2) == "203.0.113.9"
+    monkeypatch.delenv("CLIENT_IP_HEADER")
+    assert security.client_id_from(scope, 1) == "104.22.17.40", "without the header, one hop is the edge"
+
+
+def test_a_garbage_client_ip_header_is_ignored(monkeypatch):
+    monkeypatch.setenv("CLIENT_IP_HEADER", "cf-connecting-ip")
+    scope = {"client": ("10.0.0.1", 5), "headers": [(b"cf-connecting-ip", b"x" * 300)]}
+    assert security.client_id_from(scope, 0) == "10.0.0.1"

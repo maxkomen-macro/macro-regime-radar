@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { seedSnapshot } from "./api/snapshot";
+import { installStaleChunkReload } from "./lib/stale-chunks";
 import "./styles/styles.css";
 import "./styles/app.css";
 
@@ -27,6 +28,8 @@ function mount() {
     </React.StrictMode>,
   );
 }
+
+installStaleChunkReload();
 
 // Seed the cache from the validated snapshot first (bounded, never throws),
 // so the stored screens paint even while the API host wakes up.

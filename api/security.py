@@ -145,11 +145,36 @@ def trusted_proxy_hops() -> int:
     return 1 if os.environ.get("TRUST_X_FORWARDED_FOR", "").strip() in ("1", "true", "yes") else 0
 
 
+def client_ip_header() -> str:
+    """CLIENT_IP_HEADER, lower-cased: a single-value header the host's edge
+    sets itself on every request (launch-1). Render is fronted by Cloudflare,
+    which sets `cf-connecting-ip`; Fly's proxy sets `fly-client-ip`. Only name
+    a header the edge overwrites: a client could otherwise choose its own
+    rate-limit key."""
+    return os.environ.get("CLIENT_IP_HEADER", "").strip().lower()
+
+
+def _plausible_address(value: str) -> bool:
+    return 0 < len(value) <= 64 and all(c.isalnum() or c in ".:-_[]%" for c in value)
+
+
 def client_id_from(scope: dict, hops: int) -> str:
-    """Rate-limit key: the socket peer, or — behind `hops` trusted proxies —
-    the X-Forwarded-For entry that many places from the right."""
+    """Rate-limit key: the header CLIENT_IP_HEADER names when present; else,
+    behind `hops` trusted proxies, the X-Forwarded-For entry that many places
+    from the right; else the socket peer. On Render the forwarded chain is
+    "client, cloudflare-edge", so one hop from the right is Cloudflare and
+    every visitor would share its bucket: that is what the header is for."""
     peer = scope.get("client")
     peer_ip = peer[0] if peer else "unknown"
+    name = client_ip_header()
+    if name:
+        wanted = name.encode("latin-1", "ignore")
+        for k, v in scope.get("headers", []):
+            if k == wanted:
+                value = v.decode("latin-1").strip()
+                if _plausible_address(value):
+                    return value
+                break
     if hops <= 0:
         return peer_ip
     # Every X-Forwarded-For line, in order: RFC 9110 reads repeated lines as
