@@ -9,26 +9,27 @@
  * that answered, and the client drops everything read from the database when
  * that number changes.
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useCreditMetrics, useFreshness, useSymbolProfile } from "./queries";
+import { resetGenerationTrackingForTests, useCreditMetrics, useFreshness, useSymbolProfile } from "./queries";
 import { stubFetch } from "../test/utils";
 
-const freshness = (id: number) => ({
+const freshness = (id: number, builtAt?: string) => ({
   regimes_date: "2026-08-01", signals_date: "2026-08-01", market_daily_date: "2026-09-18",
   market_intraday_ts: null, news_published_at: null, raw_series_date: "2026-09-18",
   generated_at: "2026-09-21T18:00:00Z", overall: "current",
-  generation: { id, built_at: `2026-09-21T18:0${id}:00Z`, source: "macro_radar.db" },
+  generation: { id, built_at: builtAt ?? `2026-09-21T18:0${id}:00Z`, source: "macro_radar.db" },
 });
 
 function harness() {
   let generation = 1;
+  let builtAt: string | undefined;
   let creditCalls = 0;
   let profileCalls = 0;
   stubFetch({
-    "/api/freshness": () => freshness(generation),
+    "/api/freshness": () => freshness(generation, builtAt),
     "/api/credit/metrics": () => {
       creditCalls += 1;
       return { hy_oas: 2.65 + creditCalls / 100, ig_oas: 0.81, as_of: "2026-09-18" };
@@ -45,14 +46,19 @@ function harness() {
   return {
     client,
     wrapper,
-    publish: (id: number) => {
+    publish: (id: number, at?: string) => {
       generation = id;
+      builtAt = at;
     },
     counts: () => ({ credit: creditCalls, profile: profileCalls }),
   };
 }
 
 describe("generation coherence", () => {
+  // The tracker is module-level (one tab, one value), so each case starts it
+  // afresh rather than inheriting the last case's generation.
+  beforeEach(() => resetGenerationTrackingForTests());
+
   it("drops database-derived caches when the served generation changes", async () => {
     const h = harness();
     const { result } = renderHook(
@@ -97,5 +103,23 @@ describe("generation coherence", () => {
     await h.client.invalidateQueries({ queryKey: ["freshness"] });
     await waitFor(() => expect(h.counts().credit).toBe(before.credit + 1));
     expect(h.counts().profile).toBe(before.profile);
+  });
+
+  it("treats a restarted process that repeats the id as a new generation", async () => {
+    // Ids count from 1 in every process. A redeploy that publishes its own
+    // generation 1 from a newer database must still drop the tab's caches:
+    // the build time tells the two apart.
+    const h = harness();
+    const { result } = renderHook(
+      () => ({ fresh: useFreshness(), credit: useCreditMetrics() }),
+      { wrapper: h.wrapper },
+    );
+    await waitFor(() => expect(result.current.credit.data).toBeDefined());
+    await waitFor(() => expect(result.current.fresh.data?.generation?.id).toBe(1));
+    expect(h.counts().credit).toBe(1);
+    h.publish(1, "2026-09-21T19:00:00Z");
+    await h.client.invalidateQueries({ queryKey: ["freshness"] });
+    await waitFor(() => expect(result.current.fresh.data?.generation?.built_at).toBe("2026-09-21T19:00:00Z"));
+    await waitFor(() => expect(h.counts().credit).toBe(2));
   });
 });

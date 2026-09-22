@@ -245,8 +245,16 @@ const NOT_FROM_THE_DATABASE = new Set(["symbol", "providers", "stream"]);
 
 /** The last generation this tab saw the server serve (module scope: several
  * components read freshness, and only the first to notice a change needs to
- * act). */
-let lastGeneration: number | null = null;
+ * act). Keyed on the id and the build time together: ids count from 1 in
+ * every process, so a redeploy that publishes its own generation 1 from a
+ * newer database would otherwise look unchanged (launch-1 verify, item 10). */
+let lastGeneration: string | null = null;
+
+/** Test hook: each test starts the tracker afresh instead of inheriting the
+ * previous test's generation. */
+export function resetGenerationTrackingForTests(): void {
+  lastGeneration = null;
+}
 
 export function useFreshness() {
   const client = useQueryClient();
@@ -263,7 +271,8 @@ export function useFreshness() {
   // could disagree with another. The freshness payload names the generation
   // that answered; when it changes, everything read from the database is
   // dropped and refetched.
-  const generation = query.data?.generation?.id ?? null;
+  const served = query.data?.generation;
+  const generation = served ? `${served.id}@${served.built_at}` : null;
   const seen = useRef(false);
   useEffect(() => {
     if (generation == null) return;
