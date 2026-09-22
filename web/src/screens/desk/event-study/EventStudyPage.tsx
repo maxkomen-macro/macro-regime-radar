@@ -335,6 +335,10 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         <StateNote live>{`The study "${unknownSlug}" in the address is not one the engine can read; the preset is shown. Run a query to write an address the page can read back.`}</StateNote>
       ) : null}
 
+      {!isClient && !assets && assetsQ.isError ? (
+        <StateNote live>{`The engine's asset lists did not load (${assetsQ.error instanceof Error ? assetsQ.error.message : "no answer"}); the query builder returns when they do. Reload to ask again.`}</StateNote>
+      ) : null}
+
       {!isClient && assets ? (
         <Panel id="query" title="Query" description="Shock, window, threshold and sign define the event; the co-condition and regime filter narrow it; Run rewrites ?study=." badge={assetsQ.data ? badge : <StatusBadge designed note="Fixture asset lists; this server does not run the event-study engine." />}>
           <QueryBuilder assets={assets} params={params} onRun={(p) => go(slugFor(p))} onPreset={go} />

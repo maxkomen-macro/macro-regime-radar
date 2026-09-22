@@ -388,18 +388,27 @@ export function isEngineAbsent(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
 }
 
+/** Retry what the API marks retryable (503 warming right after a deploy, a
+ * client-side timeout, 429 busy) up to three times, three seconds apart;
+ * never a 404 (no engine), a 422 or a not_stored (verifier V-03). */
+export function deskRetry(failures: number, err: unknown): boolean {
+  return err instanceof ApiError && err.retryable && failures < 3;
+}
+
 export function useEventStudyAssets() {
   return useQuery({
     queryKey: ["desk", "event-study", "assets"],
     queryFn: async () => toPageAssets(await getJson<EngineAssets>("/api/desk/event-study/assets")),
     staleTime: 30 * MINUTE,
-    retry: false,
+    retry: deskRetry,
+    retryDelay: 3_000,
   });
 }
 
 /** One study by its engine slug. A 202 `computing` is polled every 3 s (the
- * engine's Retry-After) until it is ready; a 429 `busy` is retried the same
- * way a few times; 422 and 503 surface as errors with the engine's reason. */
+ * engine's Retry-After) until it is ready; a retryable error (429 busy, 503
+ * warming, a timeout) is retried a few times; 422 and 503 not_stored surface
+ * as errors with the engine's reason. */
 export function useEventStudy(slug: string | null) {
   return useQuery({
     queryKey: ["desk", "event-study", slug],
@@ -407,7 +416,7 @@ export function useEventStudy(slug: string | null) {
     enabled: slug != null,
     staleTime: 15 * MINUTE,
     refetchInterval: (q) => (q.state.data?.state === "computing" ? 3_000 : false),
-    retry: (count, err) => err instanceof ApiError && err.status === 429 && count < 5,
+    retry: deskRetry,
     retryDelay: 3_000,
   });
 }

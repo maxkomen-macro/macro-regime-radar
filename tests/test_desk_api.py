@@ -80,7 +80,10 @@ def test_assets_is_a_worker_item_with_stored_coverage(served):
 
 def test_preset_is_looked_up_from_the_generation(served, monkeypatch):
     calls = []
+    # desk/integration (verifier V-05): the request path computes through
+    # es.run_on (api/desk._compute); patching es.run alone could never fail.
     monkeypatch.setattr(es, "run", lambda *a, **k: calls.append(1) or {})
+    monkeypatch.setattr(es, "run_on", lambda *a, **k: calls.append(1) or {})
     r = client.get("/api/desk/event-study", params={"study": "gold-2sigma-spx-weak"})
     assert r.status_code == 200, r.text
     body = r.json()
@@ -136,13 +139,13 @@ def test_free_form_query_computes_once_per_generation_then_hits_the_cache(served
 
 
 def test_slow_computation_answers_computing_not_blank(served, monkeypatch):
-    real = es.run
+    real = es.run_on  # the job's call (verifier V-05: es.run is not on the request path)
 
-    def slow(q, *a, **k):
+    def slow(*a, **k):
         time.sleep(0.6)
-        return real(q, *a, **k)
+        return real(*a, **k)
 
-    monkeypatch.setattr(es, "run", slow)
+    monkeypatch.setattr(es, "run_on", slow)
     monkeypatch.setattr(desk_mod, "COMPUTE_TIMEOUT_S", 0.05)
     params = {"shock": "us10y", "w": 20, "z": 2.5, "sign": "-", "target": "gold"}
     r = client.get("/api/desk/event-study", params=params)
@@ -180,13 +183,13 @@ def test_cache_key_is_the_validated_parameters_not_the_spelling(served):
 
 def test_a_full_queue_answers_429_with_retry_after(served, monkeypatch):
     """R-13: outstanding computations are bounded at CACHE_MAX."""
-    real = es.run
+    real = es.run_on  # the job's call (verifier V-05)
 
-    def slow(q, *a, **k):
+    def slow(*a, **k):
         time.sleep(0.8)
-        return real(q, *a, **k)
+        return real(*a, **k)
 
-    monkeypatch.setattr(es, "run", slow)
+    monkeypatch.setattr(es, "run_on", slow)
     monkeypatch.setattr(desk_mod, "COMPUTE_TIMEOUT_S", 0.05)
     monkeypatch.setattr(desk_mod, "CACHE_MAX", 1)
     desk_mod.clear_cache()
@@ -233,9 +236,55 @@ def test_a_job_whose_generation_expired_is_cancelled_and_the_client_gets_a_fresh
     assert r2.json()["provenance"]["generation"] == str(served.current.key), "computed against the current generation only"
 
 
-def test_the_study_path_is_under_the_expensive_gate():
-    assert "/api/desk/event-study" in security.EXPENSIVE_PATHS
-    assert "/api/desk/event-study/assets" not in security.EXPENSIVE_PATHS
+def test_the_study_path_has_its_own_ceiling():
+    """desk/integration (verifier V-02): a free-form study is bounded, but by its
+    own ceiling, never the POST calculators' four slots."""
+    assert "/api/desk/event-study" in security.DESK_STUDY_PATHS
+    assert "/api/desk/event-study" not in security.EXPENSIVE_PATHS
+    assert "/api/desk/event-study/assets" not in security.EXPENSIVE_PATHS | security.DESK_STUDY_PATHS
+
+
+def test_a_study_in_flight_never_takes_a_calculator_slot():
+    import asyncio
+
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"{}"})
+
+    mw = security.SecurityMiddleware(inner, expensive_slots=1, desk_study_slots=1, per_client_per_min=1000, per_client_burst=1000, global_per_min=1000)
+    sent: list[dict] = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    def call(path, method="GET"):
+        sent.clear()
+        asyncio.run(mw({"type": "http", "path": path, "method": method, "query_string": b"", "headers": [], "client": ("1.2.3.4", 1)}, receive, send))
+        return sent[0]["status"]
+
+    assert mw.desk_study.acquire(blocking=False)  # a slow study in flight
+    try:
+        assert call("/api/lbo/run", "POST") == 200, "a study never holds a calculator slot"
+        assert call("/api/recession/scenario", "POST") == 200
+        assert call("/api/desk/event-study") == 429, "a second study waits for the first"
+    finally:
+        mw.desk_study.release()
+    assert call("/api/desk/event-study") == 200
+
+
+def test_a_study_answers_before_the_browser_gives_up():
+    """desk/integration (verifier V-03): the browser aborts a request after
+    web/src/api/client.ts's TIMEOUT_MS; the server answers 202 `computing`
+    after COMPUTE_TIMEOUT_S. Past the client's limit the page could never
+    reach its computing state, so the server answers well before it."""
+    import re
+
+    ts = (ROOT / "web/src/api/client.ts").read_text()
+    client_ms = int(re.search(r"const TIMEOUT_MS = ([\d_]+);", ts).group(1).replace("_", ""))
+    assert desk_mod.COMPUTE_TIMEOUT_S * 1000 <= client_ms - 5000, (desk_mod.COMPUTE_TIMEOUT_S, client_ms)
 
 
 def _imported_modules(path: Path) -> set[str]:
@@ -546,9 +595,13 @@ def test_before_the_first_refresh_the_event_study_says_it_is_awaiting_it(served_
     assert body["status"] == "awaiting_refresh" and body["slug"] == "vix-w5-z2.0-up-none-spx" and body["series"] == "vix"
     assert "first full refresh" in body["detail"] and "no such table" not in body["detail"]
     assert r.headers["cache-control"] == "no-store"
-    # A condition on a desk_series input is awaiting too, and so is the same study by its slug.
+    # The same study by its slug.
     r = client.get("/api/desk/event-study", params={"study": "vix-w5-z2.0-up-none-spx"})
     assert r.status_code == 200 and r.json()["status"] == "awaiting_refresh"
+    # A condition on a desk_series input, with a shock and target in asset_prices (verifier V-05).
+    for cond, value, series in (("vix_above", "20", "vix"), ("hy_oas_20d_change_above", "25", "hy_oas")):
+        r = client.get("/api/desk/event-study", params={"shock": "gold", "w": 20, "z": 2.0, "sign": "+", "cond": cond, "cond_value": value, "target": "spx"})
+        assert r.status_code == 200 and r.json()["status"] == "awaiting_refresh" and r.json()["series"] == series, r.text[:200]
 
     # The presets read asset_prices and the regime table only: ready before the refresh.
     for slug in es.PRESETS:
@@ -597,3 +650,112 @@ def test_the_freshness_drawer_names_every_sla_feed_the_api_emits():
     block = ts[ts.index("const FEED_LABELS"): ts.index("};", ts.index("const FEED_LABELS"))]
     labelled = set(re.findall(r"^\s*([a-z_]+):\s*\"", block, flags=re.M))
     assert feeds <= labelled, sorted(feeds - labelled)
+
+
+def test_a_preset_awaiting_the_refresh_never_holds_a_generation_back(tmp_path, install_worker, monkeypatch):
+    """Verifier V-01 (desk/integration). The worker holds a new generation back
+    when an item the served one answers well fails on the new file, except when
+    the failure is a fact about the file (api.db.NotStored: allocation on a
+    database without asset_prices). The presets fail on such a file with the
+    engine's NotStored, awaiting the first full refresh: the same fact, so the
+    new generation must publish at once instead of answering `warming` for the
+    ~90 s the hold takes (tests/test_api.py::test_api_allocation_smoke failed
+    this way on a repo database that carries asset_prices)."""
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    import sqlite3
+
+    from api import worker as worker_mod
+
+    def copy(dst, drop=()):
+        src = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+        out = sqlite3.connect(dst)
+        src.backup(out)
+        src.close()
+        for table in drop:
+            out.execute(f"DROP TABLE IF EXISTS {table}")
+        out.commit()
+        out.close()
+        return dst
+
+    full = copy(tmp_path / "full.db")
+    bare = copy(tmp_path / "bare.db", drop=("asset_prices", "desk_series"))
+    monkeypatch.setattr(db, "DB_PATH", full)
+    db.reset_connections_for_tests()
+    w = install_worker(worker_mod.AnalyticsWorker(poll_s=0.05))
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    assert "desk_preset:gold-2sigma-spx-weak" in w.current.results
+    desk_mod.clear_cache()
+
+    monkeypatch.setattr(db, "DB_PATH", bare)
+    db.reset_connections_for_tests()
+    t = time.perf_counter()
+    r = client.get("/api/desk/event-study", params={"study": "gold-2sigma-spx-weak"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "awaiting_refresh", r.text[:300]
+    assert time.perf_counter() - t < 30, "the new generation published without a hold"
+    assert w._held is None
+    alloc = client.get("/api/allocation")
+    assert alloc.status_code == 503 and alloc.json()["kind"] == "not_stored"
+
+
+def test_the_drawer_verdict_follows_the_series_the_refresh_stores():
+    """desk/integration (verifier V-06): event-study's `desk_series` sla verdict
+    judged the oldest newest date across every stored series on the NYSE
+    calendar, so the day after Columbus Day (bond market closed, NYSE open) it
+    read stale while every inventory row read close, and a tier-2 series
+    fetched by hand pinned it stale for good. It follows the same per-series
+    rule as the inventory now, over the series the full refresh stores."""
+    from api import freshness as freshness_mod
+
+    base = {"regimes_date": "2026-09-01", "signals_date": "2026-10-01", "market_daily_date": "2026-10-13",
+            "market_intraday_ts": None, "news_published_at": None, "raw_series_date": "2026-10-01", "asset_prices_date": "2026-10-13"}
+    now = datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc)
+    latest = {"DGS10": "2026-10-09", "DGS2": "2026-10-09", "T10Y2Y": "2026-10-09", "BAMLH0A0HYM2": "2026-10-09", "VIXCLS": "2026-10-13",
+              "^NDX": "2026-09-21"}  # a tier-2 series fetched by hand, weeks old
+
+    def verdict(latest_by_id):
+        fresh = {**base, "desk_series_date": min(latest_by_id.values()) if latest_by_id else None, "desk_series_latest": latest_by_id}
+        rep = freshness_mod.assess(db_fresh=fresh, series_latest=[], relay=None, bootstrap=None, now=now, watermarks={})
+        return next(r for r in rep["sla"] if r["feed"] == "desk_series")
+
+    row = verdict(latest)
+    assert row["verdict"] == "current", row
+    states = freshness_mod.desk_series_states(stored=latest, specs=desk_mod.desk_series_specs(stored=latest), watermarks={}, now=now)
+    assert all(s["state"] == "close" for s in states if s["id"] != "desk:^NDX")
+    lagging = verdict({**latest, "DGS2": "2026-09-14"})
+    assert lagging["verdict"] == "stale" and "2Y Treasury" in lagging["reason"], lagging
+    missing = verdict(None)
+    assert missing["verdict"] == "unavailable" and missing["latest"] is None
+
+
+def test_a_series_missing_from_an_existing_table_awaits_the_next_refresh_not_the_first():
+    """Verifier V-08: "the first full refresh" only when the table itself is absent."""
+    import sqlite3
+
+    from src.desk import series as registry
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE desk_series (series_id TEXT, date TEXT, value REAL, provider TEXT)")
+    with pytest.raises(es.NotStored) as exc:
+        es.load_level(conn, registry.get("vix"))
+    assert exc.value.awaiting_refresh and "next full refresh" in str(exc.value) and "first" not in str(exc.value)
+    conn.execute("DROP TABLE desk_series")
+    with pytest.raises(es.NotStored) as exc:
+        es.load_level(conn, registry.get("vix"))
+    assert exc.value.awaiting_refresh and "first full refresh" in str(exc.value)
+
+
+def test_patching_the_engine_through_the_proxy_leaves_no_shadow(monkeypatch):
+    """Verifier V-07: attribute writes on api.desk.es reach the real module, so
+    an undone patch leaves nothing behind that later hides the module."""
+    from src.desk import event_study as real
+
+    with monkeypatch.context() as m:
+        m.setattr(desk_mod.es, "DEFAULT_SEED", 1)
+        assert real.DEFAULT_SEED == 1 and desk_mod.es.DEFAULT_SEED == 1
+    assert "DEFAULT_SEED" not in vars(desk_mod.es)
+    with monkeypatch.context() as m:
+        m.setattr(real, "DEFAULT_SEED", 99)
+        assert desk_mod.es.DEFAULT_SEED == 99

@@ -166,7 +166,7 @@ def test_a_desk_awaiting_the_first_refresh_is_a_warn_and_a_ready_one_passes():
         smoke.check_desk(c, API, rep)
     rows = _rows(rep)
     assert rep.failures == 0, rep.rows
-    assert rows["desk /api/desk/pipeline/inventory"][0] == "WARN" and "first full refresh" in rows["desk /api/desk/pipeline/inventory"][1]
+    assert rows["desk /api/desk/pipeline/inventory"][0] == "WARN" and "awaiting a full refresh" in rows["desk /api/desk/pipeline/inventory"][1]
     assert rows["desk /api/desk/event-study/assets"][0] == "WARN"
     assert rows["desk /api/desk/event-study?study=gold-2sigma-spx-weak"][0] == "WARN"
     assert rows["desk /api/desk/event-study?study=spx-golden-cross"][0] == "PASS"

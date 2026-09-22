@@ -121,6 +121,27 @@ def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, wate
     return _state(sid, label, "fred", cadence, month.isoformat(), "close" if cycles == 0 else "stale", cycles_behind=cycles, reason=reason)
 
 
+def desk_series_specs(stored: dict[str, str] | None, *, refresh_only: bool = False) -> list[dict]:
+    """The desk_series series to judge (desk/integration, the event-study
+    report's §10 follow-up): the ones the full refresh stores
+    (src/desk/series.REFRESH_TIER), in registry order, then, unless
+    `refresh_only`, any other series the table holds (a tier-2 fetch run by
+    hand). Rates and spreads follow the bond calendar, everything else the
+    NYSE's. The registry is stdlib and config-free."""
+    from src.desk import series as registry
+
+    ids = [s.series_id for s in registry.fetched(registry.REFRESH_TIER)]
+    if not refresh_only:
+        ids += sorted(sid for sid in (stored or {}) if sid not in ids)
+    specs = []
+    for sid in ids:
+        spec = registry.BY_SERIES_ID.get(sid)
+        kind = "fred" if spec is None or spec.source == "fred" else "market"
+        calendar = SERIES_REGISTRY.get(sid, {}).get("calendar") or ("bond" if spec is not None and spec.unit == "bp" else "nyse")
+        specs.append({"id": sid, "label": spec.label if spec else sid, "kind": kind, "calendar": calendar})
+    return specs
+
+
 def desk_series_states(*, stored: dict[str, str] | None, specs: list[dict], watermarks: dict | None,
                        now: datetime | None = None) -> list[dict]:
     """One state per series of the Desk's daily history, `desk_series`
@@ -263,12 +284,30 @@ def assess(
         rows.append(_verdict("asset_prices", db_fresh.get("asset_prices_date"), exp_md.isoformat(), ap_ok, ap_grace, ap_reason))
 
     # ── desk_series: the Desk's daily series (desk/event-study, 2026-09-21) ──
-    # FRED posts a daily observation the next business day (VIX and the ICE
-    # BofA OAS by the next morning, yields the same afternoon), so the table
-    # is current when its oldest newest observation is at least the session
-    # before the last completed one. Not a regime input, never in `overall`.
+    # Not a regime input, never in `overall`. With the per-series maxima
+    # (api/db.freshness and validate_db both report them since desk/integration,
+    # verifier V-06) the verdict is the inventory's own per-series rule over the
+    # series the full refresh stores: the bond calendar for rates and spreads,
+    # so the day after a bond-market holiday is not "behind", and a tier-2
+    # series fetched by hand never pins it. Without them, the table-wide rule:
+    # the oldest newest observation at least the session before the last
+    # completed one (FRED posts next day).
     ds_known = "desk_series_date" in db_fresh
-    if ds_known:
+    if ds_known and "desk_series_latest" in db_fresh:
+        by_id = db_fresh.get("desk_series_latest")
+        ds_detail = ((watermarks or {}).get("desk_series") or {}).get("detail")
+        ds_src = f" Series: {ds_detail}." if ds_detail else ""
+        if by_id is None:
+            rows.append(_verdict("desk_series", None, None, False, False,
+                                 "The Desk's daily series are not stored in this database yet; the next full refresh stores them."))
+        else:
+            states = desk_series_states(stored=by_id, specs=desk_series_specs(by_id, refresh_only=True), watermarks=watermarks, now=now)
+            behind = [s for s in states if s["state"] != "close"]
+            dated = [s["as_of"] for s in states if s["as_of"]]
+            reason = ("Every series the full refresh stores includes its newest print due (FRED posts next day)." + ds_src if not behind
+                      else "Behind: " + " ".join(s["reason"] for s in behind))
+            rows.append(_verdict("desk_series", min(dated) if dated else None, None, not behind, False, reason))
+    elif ds_known:
         ds = _parse_date(db_fresh.get("desk_series_date"))
         ds_detail = ((watermarks or {}).get("desk_series") or {}).get("detail")
         ds_src = f" Series: {ds_detail}." if ds_detail else ""

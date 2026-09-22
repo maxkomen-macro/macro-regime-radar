@@ -204,6 +204,7 @@ def inspect(path: Path) -> dict:
             "raw_series_date": out["tables"].get("raw_series", {}).get("max"),
             "asset_prices_date": None,
             "desk_series_date": None,
+            "desk_series_latest": None,
         }
         if "asset_prices" in out["tables"]:
             try:
@@ -218,6 +219,9 @@ def inspect(path: Path) -> dict:
                 out["fresh"]["desk_series_date"] = conn.execute(
                     "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM desk_series GROUP BY series_id)"
                 ).fetchone()[0]
+                # desk/integration (verifier V-06): per series, as api/db.freshness reports them
+                out["fresh"]["desk_series_latest"] = dict(conn.execute(
+                    "SELECT series_id, MAX(date) FROM desk_series GROUP BY series_id").fetchall())
             except sqlite3.Error:
                 pass
     finally:

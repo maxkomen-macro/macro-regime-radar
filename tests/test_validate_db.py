@@ -43,7 +43,10 @@ def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime=
         # desk/event-study: the Desk's daily series, stored by the same full refresh.
         conn.execute("CREATE TABLE desk_series (series_id TEXT NOT NULL, date TEXT NOT NULL, value REAL NOT NULL,"
                      " provider TEXT NOT NULL, PRIMARY KEY (series_id, date))")
-        conn.executemany("INSERT INTO desk_series VALUES (?,?,?,?)", [("DGS10", daily, 4.0, "fred"), ("VIXCLS", daily, 15.0, "fred")])
+        # desk/integration: the five tier-1 series the full refresh stores (the
+        # drawer's verdict judges each, verifier V-06).
+        conn.executemany("INSERT INTO desk_series VALUES (?,?,?,?)", [(sid, daily, v, "fred") for sid, v in
+                                                                       (("DGS10", 4.0), ("DGS2", 3.6), ("T10Y2Y", 0.4), ("VIXCLS", 15.0), ("BAMLH0A0HYM2", 3.0))])
     if watermarks:
         # B6: a full refresh records each FRED daily series' true last observation
         # (raw_series keeps month-stamped rows); checked within this run's window.

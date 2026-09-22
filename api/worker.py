@@ -148,6 +148,17 @@ def _detached(exc: BaseException) -> BaseException:
     return exc
 
 
+def _fact_about_the_file(exc: BaseException) -> bool:
+    """An item's error that says what the file lacks, not that the build broke:
+    api.db.NotStored (allocation on a database without asset_prices), or an
+    error flagged `awaiting_refresh` (desk/integration: the Desk engine's
+    NotStored for a series the full refresh stores, the presets on the same
+    database). Duck-typed on the flag, so this module imports nothing of the
+    Desk's. A new file answering this way publishes at once: holding it back
+    keeps nothing the file could give (verifier V-01)."""
+    return isinstance(exc, db.NotStored) or getattr(exc, "awaiting_refresh", False) is True
+
+
 def _fresh(exc: BaseException) -> BaseException:
     """A copy of a stored error to raise. Raising the stored object itself
     chained every request's frames onto its traceback (~53 KB a request, with
@@ -476,7 +487,7 @@ class AnalyticsWorker:
         # has no good result to keep, and waiting would only make every
         # refresh late while it stays broken.
         regressed = sorted(n for n, e in gen.errors.items()
-                           if not isinstance(e, db.NotStored) and cur is not None and n in cur.results)
+                           if not _fact_about_the_file(e) and cur is not None and n in cur.results)
         if regressed:
             # consecutive failed builds since the last publish, whatever the
             # file, so failing files arriving faster than the retries still publish

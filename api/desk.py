@@ -14,7 +14,8 @@ GET /api/desk/event-study?study=<slug> | ?shock=&w=&z=&sign=&cond=&cond_value=&r
     One study. The presets (`desk_preset:<name>` items) are precomputed by
     the worker and only looked up. A free-form query computes on request
     (decision 2026-09-21: it cannot be precomputed), behind the expensive-
-    calculator semaphore (api/security.EXPENSIVE_PATHS), pinned to the
+    study ceiling (api/security.DESK_STUDY_PATHS, its own since
+    desk/integration), pinned to the
     generation the request arrived on, and cached by (generation key, study
     slug, seed) so a repeat is a lookup. A request waits at most
     COMPUTE_TIMEOUT_S for its computation; past that it answers 202 with a
@@ -69,7 +70,6 @@ from api import bootstrap, db, stream
 from api import freshness as freshness_mod
 from api.db import NotStored
 from src.analytics import dbpath
-from src.desk import series as registry
 
 
 class _Engine:
@@ -85,6 +85,18 @@ class _Engine:
 
         return getattr(event_study, name)
 
+    # Writes reach the real module too (verifier V-07): a patch set and undone
+    # through this name must leave no attribute here that later hides the module.
+    def __setattr__(self, name: str, value: Any) -> None:
+        from src.desk import event_study
+
+        setattr(event_study, name, value)
+
+    def __delattr__(self, name: str) -> None:
+        from src.desk import event_study
+
+        delattr(event_study, name)
+
 
 es = _Engine()
 
@@ -92,7 +104,10 @@ router = APIRouter(prefix="/api/desk")
 
 # ── Event study (desk/event-study) ──────────────────────────────────────────
 
-COMPUTE_TIMEOUT_S = 20.0
+# desk/integration (verifier V-03): under the browser's 15 s abort
+# (web/src/api/client.ts TIMEOUT_MS), so a slow study reaches the page as 202
+# `computing` and is polled, and a request holds its ceiling slot briefly.
+COMPUTE_TIMEOUT_S = 8.0
 RETRY_AFTER_S = 3
 CACHE_MAX = 64
 
@@ -393,20 +408,9 @@ def inventory_rows(series: list[dict]) -> list[dict]:
 
 
 def desk_series_specs(stored: dict[str, str] | None) -> list[dict]:
-    """The desk_series series the inventory lists (desk/integration, the
-    event-study report's §10 follow-up): the ones the full refresh stores
-    (registry.REFRESH_TIER), in registry order, then any other series the
-    table holds (a tier-2 fetch run by hand). Rates and spreads follow the
-    bond calendar, everything else the NYSE's."""
-    ids = [s.series_id for s in registry.fetched(registry.REFRESH_TIER)]
-    ids += sorted(sid for sid in (stored or {}) if sid not in ids)
-    specs = []
-    for sid in ids:
-        spec = registry.BY_SERIES_ID.get(sid)
-        kind = "fred" if spec is None or spec.source == "fred" else "market"
-        calendar = freshness_mod.SERIES_REGISTRY.get(sid, {}).get("calendar") or ("bond" if spec is not None and spec.unit == "bp" else "nyse")
-        specs.append({"id": sid, "label": spec.label if spec else sid, "kind": kind, "calendar": calendar})
-    return specs
+    """The desk_series series the inventory lists (api/freshness, which the
+    drawer's sla verdict shares)."""
+    return freshness_mod.desk_series_specs(stored)
 
 
 def desk_inventory_rows(stored: dict[str, str] | None, watermarks: dict | None, now) -> list[dict]:

@@ -34,10 +34,15 @@ API_PREFIXES = ("/api", "/health", "/regime", "/signals", "/series")
 # probability used to compute on a cold call; since fix/prelaunch-1 the
 # background worker computes them and the handlers only look results up, so
 # they sit under the stored-read ceiling like every other lookup.
+EXPENSIVE_PATHS = {"/api/lbo/run", "/api/regime/scenario", "/api/recession/scenario"}
 # desk/event-study (2026-09-21): a free-form event study cannot be precomputed,
 # so GET /api/desk/event-study computes on request (its presets are worker
-# items) and sits under the same ceiling as the POST calculators.
-EXPENSIVE_PATHS = {"/api/lbo/run", "/api/regime/scenario", "/api/recession/scenario", "/api/desk/event-study"}
+# items). desk/integration (verifier V-02): it has its own ceiling, because a
+# request holds its slot while it waits on the engine (api/desk.COMPUTE_TIMEOUT_S),
+# and four slow studies sharing the calculators' slots answered the LBO and
+# the scenario POSTs 429.
+DESK_STUDY_PATHS = {"/api/desk/event-study"}
+DESK_STUDY_MAX_CONCURRENCY = int(os.environ.get("DESK_STUDY_MAX_CONCURRENCY", "4"))
 PROVIDER_PREFIX = "/api/market/"
 # Everything else under the API prefixes is a stored-data read: bounded by
 # the `db` ceiling so a burst sheds load as 429s instead of wedging the
@@ -239,6 +244,7 @@ class SecurityMiddleware:
         global_per_min: float | None = None,
         assistant_per_min: float = 10.0,
         expensive_slots: int = 4,
+        desk_study_slots: int | None = None,
         provider_slots: int = 12,
         db_slots: int | None = None,
         assistant_slots: int | None = None,
@@ -257,6 +263,7 @@ class SecurityMiddleware:
         self.assistant_limiter = RateLimiter(assistant_per_min, assistant_per_min)
         self.assistant_global = RateLimiter(assistant_per_min * 6, assistant_per_min * 6, max_clients=1)
         self.expensive = threading.BoundedSemaphore(expensive_slots)
+        self.desk_study = threading.BoundedSemaphore(desk_study_slots if desk_study_slots is not None else DESK_STUDY_MAX_CONCURRENCY)
         self.provider = threading.BoundedSemaphore(provider_slots)
         self.db = threading.BoundedSemaphore(db_slots if db_slots is not None else int(os.environ.get("DB_MAX_CONCURRENCY", "24")))
         self.assistant = threading.BoundedSemaphore(assistant_slots if assistant_slots is not None else ASSISTANT_MAX_CONCURRENCY)
@@ -385,6 +392,8 @@ class SecurityMiddleware:
         sem = None
         if path in EXPENSIVE_PATHS:
             sem = self.expensive
+        elif path in DESK_STUDY_PATHS:
+            sem = self.desk_study
         elif path.startswith(PROVIDER_PREFIX):
             sem = self.provider
         elif is_question:

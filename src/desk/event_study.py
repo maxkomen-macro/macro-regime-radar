@@ -329,10 +329,12 @@ def not_stored(spec: registry.DeskSeries, *, table_missing: bool) -> NotStored:
     the first full refresh when that refresh stores it, planned otherwise."""
     name = f"{spec.label} ({spec.series_id})"
     if registry.stored_by_refresh(spec):
-        why = (f"this database has no {spec.table} table yet" if table_missing
-               else f"this database has no {spec.series_id} rows in {spec.table} yet")
-        return NotStored(f"{name} is awaiting the first full refresh: {why}, and that refresh stores it.",
-                         series=spec.key, awaiting_refresh=True)
+        # "first" only when the table itself is absent; a table without this
+        # series' rows means a fetch that did not land (verifier V-08).
+        msg = (f"{name} is awaiting the first full refresh: this database has no {spec.table} table yet, and that refresh stores it."
+               if table_missing else
+               f"{name} is awaiting the next full refresh: this database has no {spec.series_id} rows in {spec.table} yet.")
+        return NotStored(msg, series=spec.key, awaiting_refresh=True)
     return NotStored(f"{name} is not stored in this database: it is a tier {spec.tier} series, and the full refresh "
                      f"stores tier {registry.REFRESH_TIER} only.", series=spec.key)
 

@@ -168,7 +168,7 @@ def check_desk(client: httpx.Client, api: str, rep: Report) -> None:
             if not rows:
                 rep.fail(check, "no desk_series rows in the inventory")
             elif waiting:
-                rep.warn(check, f"{len(waiting)} of {len(rows)} desk series unknown: awaiting the first full refresh ({', '.join(waiting)})")
+                rep.warn(check, f"{len(waiting)} of {len(rows)} desk series not stored yet, awaiting a full refresh ({', '.join(waiting)})")
             else:
                 rep.ok(check, f"{len(rows)} desk series judged, in {ms:.0f}ms")
         elif route == "/api/desk/event-study/assets":
@@ -180,7 +180,7 @@ def check_desk(client: httpx.Client, api: str, rep: Report) -> None:
         elif body.get("status") == "ready":
             rep.ok(check, f"ready, {(body.get('provenance') or {}).get('n_events')} events, in {ms:.0f}ms")
         elif body.get("status") == "awaiting_refresh":
-            rep.warn(check, str(body.get("detail") or "awaiting the first full refresh"))
+            rep.warn(check, str(body.get("detail") or "awaiting a full refresh"))
         else:
             rep.fail(check, f"status {body.get('status')!r}")
 

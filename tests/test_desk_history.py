@@ -313,6 +313,14 @@ def test_validate_db_requires_the_table_in_full_mode_and_reports_short_series(tm
     c.commit(); c.close()
     rep = v.validate(ok, None, "full", now=now)
     assert rep["verdict"] == "pass" and any("desk:BAMLH0A0HYM2 short" in w for w in rep["warnings"])
+    # desk/integration (verifier V-06): a tier-1 series the refresh did not store
+    # makes the verdict say so, by name, without failing the run.
+    c = sqlite3.connect(ok)
+    c.execute("DELETE FROM desk_series WHERE series_id = 'DGS2'"); c.commit(); c.close()
+    rep = v.validate(ok, None, "full", now=now)
+    row = next(r for r in rep["sla_all"] if r["feed"] == "desk_series")
+    assert row["verdict"] != "current" and "2Y Treasury" in row["reason"], row
+    assert rep["verdict"] == "pass", rep["failures"]
     gone = tmp_path / "gone.db"
     _make(gone)
     c = sqlite3.connect(gone)

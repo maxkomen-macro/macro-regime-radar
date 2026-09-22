@@ -110,3 +110,21 @@ describe("a study: the engine's payload in the page's terms", () => {
     expect(w).toEqual({ state: "awaiting_refresh", slug: "vix-w5-z2.0-up-none-spx", series: "vix", detail: expect.stringContaining("first full refresh") });
   });
 });
+
+describe("retries (desk/integration, verifier V-03)", () => {
+  it("retries what the API marks retryable, a few times, and nothing else", async () => {
+    const { ApiError } = await import("../../../api/client");
+    const { deskRetry } = await import("../../../api/desk");
+    const warming = new ApiError(503, "/api/desk/event-study", "The server is warming up", "warming", true);
+    const timeout = new ApiError(0, "/api/desk/event-study", "did not answer", "timeout", true);
+    const busy = new ApiError(429, "/api/desk/event-study", "busy", null, true);
+    for (const e of [warming, timeout, busy]) {
+      expect(deskRetry(0, e), e.message).toBe(true);
+      expect(deskRetry(4, e), e.message).toBe(false);
+    }
+    expect(deskRetry(0, new ApiError(422, "/api/desk/event-study", "w must be one of (5, 20, 60)", null, false))).toBe(false);
+    expect(deskRetry(0, new ApiError(503, "/api/desk/event-study", "tier 2", "not_stored", false))).toBe(false);
+    expect(deskRetry(0, new ApiError(404, "/api/desk/event-study", "Not Found", null, false))).toBe(false);
+    expect(deskRetry(0, new Error("boom"))).toBe(false);
+  });
+});
