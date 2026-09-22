@@ -265,7 +265,7 @@ class _AllocationInChild:
             raise NotStored(out["not_stored"])
         if "error" in out:
             if out.get("type") in ("ModuleNotFoundError", "ImportError") and out.get("module"):
-                # /api/allocation answers 503 "dependency missing: <name>"
+                # /api/allocation answers 503 in plain words and logs the module name
                 raise ModuleNotFoundError(out["error"], name=out["module"])
             raise RuntimeError(f"allocation failed in its child process: {out['error']}")
         return out["payload"]
@@ -277,10 +277,11 @@ class _AllocationInChild:
         proc.terminate()
         proc.join(5)
         conn.close()
-        try:
-            os.remove(snap)
-        except OSError:
-            pass
+        for leftover in (snap, f"{snap}-wal", f"{snap}-shm", f"{snap}-journal"):
+            try:
+                os.remove(leftover)
+            except OSError:
+                pass
 
     def __call__(self, ctx: dict) -> dict:
         return self.finish(self.start(ctx))

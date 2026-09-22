@@ -318,3 +318,13 @@ def test_a_query_has_a_wall_clock_budget(tmp_path, monkeypatch):
     out = chat_mod._tool_query_database(
         "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 100000) SELECT count(*) AS n FROM r")
     assert "error" in out and "interrupted" in out["error"], out
+
+
+def test_the_row_cap_is_two_hundred(tmp_path, monkeypatch):
+    """SR-1c e: the cap the byte budget relies on, pinned (item 2 re-audit)."""
+    from src.analytics import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    out = chat_mod._tool_query_database(
+        "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 500) SELECT i FROM r")
+    assert out["row_count"] == 200 and len(out["rows"]) == 200
