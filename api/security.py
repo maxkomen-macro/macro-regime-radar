@@ -328,6 +328,13 @@ class SecurityMiddleware:
         headers = dict(scope.get("headers", []))
         is_api = path.startswith(API_PREFIXES)
         is_assistant = path.startswith("/api/assistant")
+        # A question is a POST. The chip's GET of /api/assistant/status is a
+        # read on every page load; it follows the assistant's mode (off, key)
+        # but not its ten-a-minute bucket or its four slots (launch-1 verify,
+        # item 9: sixty first-time visitors in a minute used to refuse every
+        # question for that minute, and one visitor's eleventh page load was
+        # a 429).
+        is_question = is_assistant and method == "POST"
 
         # 1. size cap
         limit = ASSISTANT_MAX_BODY_BYTES if is_assistant else self.max_body
@@ -362,13 +369,14 @@ class SecurityMiddleware:
                 if not keys_match(headers.get(b"x-assistant-key", b""), expected):
                     self.stats["assistant_blocked"] += 1
                     return await self._reply(send, 401, "The AI analyst requires an access key on this deployment.")
-            cid = self._client_id(scope)
-            ok, wait = self.assistant_limiter.take(cid)
-            if ok:
-                ok, wait = self.assistant_global.take("global")
-            if not ok:
-                self.stats["rate_limited"] += 1
-                return await self._reply(send, 429, "The AI analyst is rate limited; retry in a minute.", [(b"retry-after", str(max(1, int(wait + 0.999))).encode())])
+            if is_question:
+                cid = self._client_id(scope)
+                ok, wait = self.assistant_limiter.take(cid)
+                if ok:
+                    ok, wait = self.assistant_global.take("global")
+                if not ok:
+                    self.stats["rate_limited"] += 1
+                    return await self._reply(send, 429, "The AI analyst is rate limited; retry in a minute.", [(b"retry-after", str(max(1, int(wait + 0.999))).encode())])
 
         # 3. concurrency ceilings — every API read is bounded somewhere
         sem = None
@@ -376,8 +384,10 @@ class SecurityMiddleware:
             sem = self.expensive
         elif path.startswith(PROVIDER_PREFIX):
             sem = self.provider
-        elif is_assistant:
+        elif is_question:
             sem = self.assistant  # launch-1: a sync route needs its own ceiling
+        elif is_assistant:
+            sem = self.db  # the status read is a stored-data-sized read
         elif is_api and path not in LIVE_PATHS:
             sem = self.db
         if sem is not None and not sem.acquire(blocking=False):

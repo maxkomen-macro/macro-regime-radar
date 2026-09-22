@@ -29,6 +29,10 @@ def _app(**opts) -> FastAPI:
     def ask(body: dict):
         return {"answer": "stub"}
 
+    @app.get("/api/assistant/status")
+    def status():
+        return {"resting": False}
+
     @app.get("/static/x")
     def static():
         return {"static": True}
@@ -505,3 +509,64 @@ def test_a_garbage_client_ip_header_is_ignored(monkeypatch):
     monkeypatch.setenv("CLIENT_IP_HEADER", "cf-connecting-ip")
     scope = {"client": ("10.0.0.1", 5), "headers": [(b"cf-connecting-ip", b"x" * 300)]}
     assert security.client_id_from(scope, 0) == "10.0.0.1"
+
+
+# ── launch-1 verify (item 9): the chip's status read is not a question ──────
+
+
+def test_the_status_read_does_not_spend_the_assistant_buckets(production_env, monkeypatch):
+    """GET /api/assistant/status is read on every page load and every five
+    minutes per tab. It shared the 10-a-minute question bucket, so sixty
+    first-time visitors in a minute refused every question for that minute,
+    and one visitor's eleventh page load was a 429."""
+    monkeypatch.setenv("ASSISTANT_ACCESS", "open")
+    client = TestClient(_app())
+    assert [client.get("/api/assistant/status").status_code for _ in range(30)] == [200] * 30
+    codes = [client.post("/api/assistant/ask", json={"m": 1}).status_code for _ in range(12)]
+    assert codes[:10] == [200] * 10 and 429 in codes[10:], "questions keep their own ten a minute"
+    assert client.get("/api/assistant/status").status_code == 200, "after the questions are shed, the chip still reads"
+
+
+def test_the_status_read_still_follows_the_assistant_mode(monkeypatch):
+    """Off and key-gated deployments answer the chip's read the same way as a
+    question, so the chip can say what it is looking at."""
+    client = TestClient(_app())
+    monkeypatch.setenv("ASSISTANT_ACCESS", "off")
+    assert client.get("/api/assistant/status").status_code == 503
+    monkeypatch.setenv("ASSISTANT_ACCESS", "key")
+    monkeypatch.setenv("ASSISTANT_ACCESS_KEY", "s3cret")
+    assert client.get("/api/assistant/status").status_code == 401
+    assert client.get("/api/assistant/status", headers={"x-assistant-key": "s3cret"}).status_code == 200
+
+
+def test_the_assistant_ceiling_applies_to_questions_not_the_status_read(monkeypatch):
+    import threading
+
+    monkeypatch.setenv("ASSISTANT_ACCESS", "open")
+    release = threading.Event()
+    app2 = FastAPI()
+
+    @app2.post("/api/assistant/ask")
+    def ask(body: dict):
+        release.wait(5)
+        return {"ok": True}
+
+    @app2.get("/api/assistant/status")
+    def status():
+        return {"resting": False}
+
+    app2.add_middleware(security.SecurityMiddleware, assistant_slots=1)
+    c = TestClient(app2)
+    codes: list[int] = []
+    t = threading.Thread(target=lambda: codes.append(c.post("/api/assistant/ask", json={"m": 1}).status_code))
+    t.start()
+    try:
+        import time
+
+        time.sleep(0.2)
+        assert c.get("/api/assistant/status").status_code == 200, "a question in flight must not block the chip's read"
+        assert c.post("/api/assistant/ask", json={"m": 2}).status_code == 429
+    finally:
+        release.set()
+        t.join(10)
+    assert codes == [200]
