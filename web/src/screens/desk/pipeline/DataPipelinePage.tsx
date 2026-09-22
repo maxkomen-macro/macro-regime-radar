@@ -20,19 +20,11 @@ import type { DeskPage } from "../desk-sections";
 import { EmptyState, Panel } from "../desk-ui";
 import { useDeskView } from "../desk-view";
 import schemaMd from "../../../content/desk/schema.md?raw";
+import { GROUP_ORDER, groupOf } from "./inventory-groups";
 import Lineage from "./Lineage";
 import { parseSchema } from "./schema-parse";
 
 const STATUS_WORD: Record<string, string> = { live: "Live", delayed: "Delayed", close: "Current", stale: "Stale", fallback: "Stated default", unknown: "Unknown" };
-
-function groupOf(r: InventoryRow): string {
-  if (r.kind === "fred") return r.cadence === "monthly" ? "FRED · monthly prints" : "FRED · daily series";
-  if (r.kind === "market") return "Stored market data";
-  if (r.kind === "live") return "Live relay";
-  return "Derived";
-}
-
-const GROUP_ORDER = ["FRED · daily series", "FRED · monthly prints", "Stored market data", "Live relay", "Derived"];
 
 export default function DataPipelinePage({ page }: { page: DeskPage }) {
   const { isClient } = useDeskView();

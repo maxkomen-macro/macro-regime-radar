@@ -26,6 +26,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -343,10 +344,99 @@ def test_pipeline_inventory_matches_freshness_report():
     assert set(row) >= {"id", "label", "kind", "cadence", "as_of", "state", "stale", "reason", "source", "source_id", "feeds"}
     fresh = client.get("/api/freshness").json()
     by_id = {s["id"]: s for s in fresh.get("series") or []}
-    assert set(by_id) == {s["id"] for s in body["series"]}
+    # desk/integration: the inventory is the freshness report's series[] plus
+    # the Desk's daily history rows (desk:<series_id>), which /api/freshness
+    # does not carry because no main-app page reads desk_series.
+    inv_ids = {s["id"] for s in body["series"]}
+    assert set(by_id) <= inv_ids
+    extra = inv_ids - set(by_id)
+    assert all(i.startswith("desk:") for i in extra), extra
+    assert {f"desk:{sid}" for sid in REFRESH_IDS} <= extra
     for s in body["series"]:
-        assert s["state"] == by_id[s["id"]]["state"], s["id"]
-        assert s["as_of"] == by_id[s["id"]]["as_of"], s["id"]
+        if s["id"] in by_id:
+            assert s["state"] == by_id[s["id"]]["state"], s["id"]
+            assert s["as_of"] == by_id[s["id"]]["as_of"], s["id"]
+
+
+# ── desk/integration: the desk_series rows in the inventory (Step 3) ────────
+
+REFRESH_IDS = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2"]
+NOW = datetime(2026, 9, 22, 20, 0, tzinfo=timezone.utc)  # Tue 2026-09-22 16:00 ET, a bond and NYSE session
+
+
+def test_the_refresh_tier_is_the_workflows_tier():
+    """The inventory lists the series the full refresh stores: the registry's
+    REFRESH_TIER, which must be the tier refresh-data.yml runs and the
+    writer's default."""
+    from src.desk import series as registry
+    from src.market_data import desk_history
+
+    wf = (ROOT / ".github/workflows/refresh-data.yml").read_text()
+    assert f"python -m src.market_data.desk_history --tier {registry.REFRESH_TIER}" in wf
+    assert desk_history.DEFAULT_TIER == registry.REFRESH_TIER
+    assert [s.series_id for s in registry.fetched(registry.REFRESH_TIER)] == REFRESH_IDS
+    assert [s["id"] for s in desk_mod.desk_series_specs(stored=None)] == REFRESH_IDS
+
+
+def test_desk_series_states_before_the_table_exists():
+    from api import freshness as freshness_mod
+
+    rows = freshness_mod.desk_series_states(stored=None, specs=desk_mod.desk_series_specs(stored=None), watermarks=None, now=NOW)
+    assert [r["id"] for r in rows] == [f"desk:{sid}" for sid in REFRESH_IDS]
+    for r in rows:
+        assert r["state"] == "unknown" and r["as_of"] is None and r["stale"] is False, r
+        assert "first full refresh" in r["reason"], r["reason"]
+        assert r["cadence"] == "daily" and r["kind"] == "fred"
+
+
+def test_desk_series_states_judge_each_stored_series():
+    from api import calendar as cal
+    from api import freshness as freshness_mod
+
+    stored = {"DGS10": "2026-09-21", "DGS2": "2026-09-14", "T10Y2Y": "2026-09-21", "VIXCLS": "2026-09-21", "^NDX": "2026-09-21"}
+    marks = {
+        "desk:BAMLH0A0HYM2": {"source": "desk:BAMLH0A0HYM2", "last_obs": None, "status": "error", "detail": "ConnectionError"},
+        "desk:T10Y2Y": {"source": "desk:T10Y2Y", "last_obs": "2026-09-21", "status": "short",
+                        "detail": "fred; served from 1990-01-02; stored from 1990-01-02; 9000 rows; declared 1976-06-01"},
+    }
+    rows = freshness_mod.desk_series_states(stored=stored, specs=desk_mod.desk_series_specs(stored=stored), watermarks=marks, now=NOW)
+    by = {r["id"]: r for r in rows}
+    # the refresh set in registry order, then any other stored series
+    assert list(by) == [f"desk:{sid}" for sid in REFRESH_IDS] + ["desk:^NDX"]
+    assert by["desk:DGS10"]["as_of"] == "2026-09-21" and by["desk:DGS10"]["state"] == "close" and by["desk:DGS10"]["cycles_behind"] == 0
+    lag = cal.bond_business_days_between(date(2026, 9, 14), date(2026, 9, 21))
+    assert by["desk:DGS2"]["state"] == "stale" and by["desk:DGS2"]["stale"] is True and by["desk:DGS2"]["cycles_behind"] == lag > freshness_mod.DAILY_TOLERANCE
+    assert by["desk:T10Y2Y"]["state"] == "close" and "declared 1976-06-01" in by["desk:T10Y2Y"]["reason"]
+    assert by["desk:VIXCLS"]["state"] == "close"
+    assert by["desk:BAMLH0A0HYM2"]["state"] == "unknown" and by["desk:BAMLH0A0HYM2"]["as_of"] is None
+    assert "ConnectionError" in by["desk:BAMLH0A0HYM2"]["reason"]
+    assert by["desk:^NDX"]["kind"] == "market" and by["desk:^NDX"]["state"] == "close"
+
+
+def test_inventory_lists_the_desk_series_rows_with_their_freshness(served):
+    """The event-study report's §10 follow-up: the Data Pipeline inventory
+    carries a row per desk_series series with its as-of date and state."""
+    import sqlite3
+
+    conn = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    try:
+        stored = dict(conn.execute("SELECT series_id, MAX(date) FROM desk_series GROUP BY series_id").fetchall())
+    finally:
+        conn.close()
+    r = client.get("/api/desk/pipeline/inventory")
+    assert r.status_code == 200, r.text
+    series = r.json()["series"]
+    desk_rows = [s for s in series if s["id"].startswith("desk:")]
+    assert [s["id"] for s in desk_rows][: len(REFRESH_IDS)] == [f"desk:{sid}" for sid in REFRESH_IDS]
+    assert {s["id"] for s in desk_rows} == {f"desk:{sid}" for sid in stored} | {f"desk:{sid}" for sid in REFRESH_IDS}
+    for s in desk_rows:
+        sid = s["id"].split(":", 1)[1]
+        assert s["as_of"] == stored[sid], s
+        assert s["state"] in ("close", "stale") and s["cadence"] == "daily", s
+        assert s["source_id"] == sid and s["feeds"] == [desk_mod.DESK_EVENT_STUDY], s
+        assert s["source"].startswith("FRED") and s["kind"] == "fred", s
+    ap = next(s for s in series if s["id"] == "asset_prices")
+    assert desk_mod.DESK_EVENT_STUDY in ap["feeds"], "the engine reads ^GSPC and GC=F from asset_prices"
 
 
 def test_desk_router_is_get_only():

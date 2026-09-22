@@ -42,7 +42,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 HISTORY_BAR = "1990-12-31"  # default lists carry only series with history from 1990 or earlier (the year, not the day)
-UNITS = ("log_return", "bp", "log_change")
+# The tier the full refresh stores (refresh-data.yml's "Store Desk daily series"
+# step runs `desk_history --tier 1`; pinned by tests/test_desk_api.py). A series
+# at or below it that a database lacks is awaiting that refresh; one above it is
+# planned and no refresh will store it until the step changes (desk/integration).
+REFRESH_TIER = 1
+UNITS =("log_return", "bp", "log_change")
 SOURCES = ("fred", "market", "asset_prices")
 ROLES = ("shock", "condition", "target")
 KNOWN_BY = ("close", "after_close")

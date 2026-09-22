@@ -121,6 +121,48 @@ def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, wate
     return _state(sid, label, "fred", cadence, month.isoformat(), "close" if cycles == 0 else "stale", cycles_behind=cycles, reason=reason)
 
 
+def desk_series_states(*, stored: dict[str, str] | None, specs: list[dict], watermarks: dict | None,
+                       now: datetime | None = None) -> list[dict]:
+    """One state per series of the Desk's daily history, `desk_series`
+    (desk/integration: the event-study report's §10 follow-up, a desk_series
+    row in the Data Pipeline inventory). `specs` lists the series in order
+    (id, label, kind, calendar), the ones the full refresh stores first;
+    `stored` maps series_id to its newest stored date, None when the database
+    has no desk_series table yet. The table stores true observation dates, so
+    the newest stored date is the as-of, judged by the FRED daily rule above
+    (current within DAILY_TOLERANCE business days of the newest print due, on
+    the bond calendar for rates and spreads). The writer's per-series watermark
+    (`desk:<id>`) adds what the last refresh saw: a failed fetch, or a source
+    serving less history than the registry declares."""
+    now = now or datetime.now(timezone.utc)
+    today_ny = now.astimezone(cal.NY).date()
+    out: list[dict] = []
+    for spec in specs:
+        sid, label, kind = spec["id"], spec["label"], spec["kind"]
+        rid = f"desk:{sid}"
+        wm = (watermarks or {}).get(rid) or {}
+        d = _parse_date((stored or {}).get(sid))
+        if stored is None:
+            out.append(_state(rid, label, kind, "daily", None, "unknown",
+                              reason=f"{label} is awaiting the first full refresh: this database has no desk_series table yet, and that refresh stores it."))
+            continue
+        if d is None:
+            why = (f"The last full refresh could not fetch {label} ({wm.get('detail')}); nothing is stored yet."
+                   if wm.get("status") == "error" else f"{label} is not stored yet; the next full refresh stores it.")
+            out.append(_state(rid, label, kind, "daily", None, "unknown", reason=why))
+            continue
+        exp, lag = _daily_expected_and_lag(d, today_ny, spec.get("calendar") == "bond")
+        state = "close" if lag <= DAILY_TOLERANCE else "stale"
+        reason = (f"{label} observed {d.isoformat()}, the newest print due." if lag == 0
+                  else f"{label} observed {d.isoformat()}; {lag} business day(s) behind the {exp.isoformat()} print.")
+        if wm.get("status") == "short":
+            reason += f" The source serves less history than the registry declares ({wm.get('detail')})."
+        elif wm.get("status") == "error":
+            reason += f" The last full refresh could not fetch it ({wm.get('detail')}); the stored rows stand."
+        out.append(_state(rid, label, kind, "daily", d.isoformat(), state, cycles_behind=lag, reason=reason))
+    return out
+
+
 def _parse_dt(s: str | None, naive_tz=timezone.utc) -> datetime | None:
     """Parse a stored stamp. Stamps without an offset are taken as `naive_tz`
     — UTC by default; the intraday pipeline stamps Eastern wall time

@@ -36,7 +36,11 @@ GET /api/desk/pipeline/inventory  (desk/frame, docs/desk/DESK_FRAME_SPEC.md §7)
     ``series[]`` that ``/api/freshness`` serves, so the two can never
     disagree) with two static facts about each source: which provider
     publishes it and which modules read it. No analytics, no computation,
-    nothing written. ``/api/desk/positions`` (§7, "if a store exists") is not
+    nothing written. After those rows come the Desk's daily history rows
+    (``desk:<series_id>``, one per desk_series series, judged by
+    ``api/freshness.desk_series_states``; the event-study report's §10
+    follow-up), which ``/api/freshness`` does not carry because no main-app
+    page reads desk_series. ``/api/desk/positions`` (§7, "if a store exists") is not
     here: positions live in the visitor's browser (§5), the app has no
     accounts and no store.
 
@@ -51,6 +55,7 @@ from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import replace
+from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
 
 from fastapi import APIRouter, HTTPException, Query
@@ -61,6 +66,7 @@ from api import bootstrap, db, stream
 from api import freshness as freshness_mod
 from api.db import NotStored
 from src.analytics import dbpath
+from src.desk import series as registry
 
 
 class _Engine:
@@ -296,6 +302,7 @@ DASHBOARD = "Dashboard key levels"
 ALLOCATION = "Asset allocation"
 TAPE = "Live tape"
 DESK_POSITIONS = "Desk · Position Monitor"
+DESK_EVENT_STUDY = "Desk · Event Study"
 
 FEEDS: dict[str, list[str]] = {
     "INDPRO": [REGIME, SIGNALS, RECESSION],
@@ -319,7 +326,7 @@ FEEDS: dict[str, list[str]] = {
     "USSLIND": [f"{RECESSION} (staleness probe only; discontinued Feb 2020)"],
     "market_daily": [MARKETS, DASHBOARD, "Quote cards", DESK_POSITIONS],
     "market_intraday": [MARKETS, "Quote cards"],
-    "asset_prices": [ALLOCATION],
+    "asset_prices": [ALLOCATION, DESK_EVENT_STUDY],  # the engine reads ^GSPC and GC=F here
     "live_quotes": [TAPE, "Watchlist"],
     "vix_delayed": [TAPE],
     "lbo_all_in_rate": ["Tools · LBO calculator"],
@@ -372,6 +379,34 @@ def inventory_rows(series: list[dict]) -> list[dict]:
     return rows
 
 
+def desk_series_specs(stored: dict[str, str] | None) -> list[dict]:
+    """The desk_series series the inventory lists (desk/integration, the
+    event-study report's §10 follow-up): the ones the full refresh stores
+    (registry.REFRESH_TIER), in registry order, then any other series the
+    table holds (a tier-2 fetch run by hand). Rates and spreads follow the
+    bond calendar, everything else the NYSE's."""
+    ids = [s.series_id for s in registry.fetched(registry.REFRESH_TIER)]
+    ids += sorted(sid for sid in (stored or {}) if sid not in ids)
+    specs = []
+    for sid in ids:
+        spec = registry.BY_SERIES_ID.get(sid)
+        kind = "fred" if spec is None or spec.source == "fred" else "market"
+        calendar = freshness_mod.SERIES_REGISTRY.get(sid, {}).get("calendar") or ("bond" if spec is not None and spec.unit == "bp" else "nyse")
+        specs.append({"id": sid, "label": spec.label if spec else sid, "kind": kind, "calendar": calendar})
+    return specs
+
+
+def desk_inventory_rows(stored: dict[str, str] | None, watermarks: dict | None, now) -> list[dict]:
+    """Pure: the desk_series rows, judged by api/freshness.desk_series_states,
+    with their provider and reader. The event study is the one reader."""
+    rows = []
+    for s in freshness_mod.desk_series_states(stored=stored, specs=desk_series_specs(stored), watermarks=watermarks, now=now):
+        sid = s["id"].split(":", 1)[1]
+        source = "FRED (Desk daily history)" if s["kind"] == "fred" else "EODHD first, Yahoo disclosed fallback (Desk daily history)"
+        rows.append({**s, "source": source, "source_id": sid, "feeds": [DESK_EVENT_STUDY]})
+    return rows
+
+
 @router.get("/pipeline/inventory", response_model=PipelineInventory)
 def pipeline_inventory() -> PipelineInventory:
     """Every stored source with its provider, cadence, true as-of date, the
@@ -381,12 +416,17 @@ def pipeline_inventory() -> PipelineInventory:
     base = _guarded(db.freshness)
     series = _guarded(db.latest_series_all)
     marks = _guarded(db.watermarks)
+    now = datetime.now(timezone.utc)
     report = freshness_mod.assess(
-        db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status(), watermarks=marks
+        db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status(), watermarks=marks, now=now
     )
+    # desk/integration: the Desk's daily history, one row per desk_series
+    # series, after the rows /api/freshness serves (which carries none of them:
+    # no main-app page reads desk_series).
+    desk_rows = desk_inventory_rows(base.get("desk_series_latest"), marks, now)
     return PipelineInventory(
         generated_at=report.get("generated_at"),
         overall=report.get("overall"),
         **{k: report.get(k) for k in ("regimes_date", "signals_date", "market_daily_date", "market_intraday_ts", "news_published_at", "raw_series_date")},
-        series=[InventoryRow(**r) for r in inventory_rows(report.get("series") or [])],
+        series=[InventoryRow(**r) for r in inventory_rows(report.get("series") or []) + desk_rows],
     )

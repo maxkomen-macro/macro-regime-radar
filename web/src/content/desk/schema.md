@@ -7,6 +7,7 @@ Source rows as fetched, one provider per series, never rewritten by a model.
 - `market_intraday` · 5-minute bars for SPY and QQQ, stored after the session completes.
 - `news_feed` · scored headlines from Finnhub, NewsAPI and RSS, with the AI reads (`regime_interpretation`, `perplexity_research`).
 - `source_watermarks` · per source: the newest observation date, when it last advanced, when it was last checked.
+- `desk_series` · the Desk's daily history per series (FRED direct, merged so a rolling window never forgets; tier 2 adds market closes), read by the event study.
 - `ai_spend_ledger` · append-only cost of every AI call, never pruned.
 - `event_calendar` · the hand-maintained macro calendar.
 

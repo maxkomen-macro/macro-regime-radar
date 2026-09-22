@@ -707,4 +707,10 @@ def _freshness_uncached() -> dict:
         out["desk_series_date"] = conn.execute(
             "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM desk_series GROUP BY series_id)"
         ).fetchone()[0] if has_desk else None
+        # Per series (desk/integration): the Data Pipeline inventory lists each
+        # desk_series series with its own as-of. desk_series stores true
+        # observation dates, never month stamps. None before the table exists.
+        out["desk_series_latest"] = {
+            r[0]: r[1] for r in conn.execute("SELECT series_id, MAX(date) FROM desk_series GROUP BY series_id")
+        } if has_desk else None
     return out
