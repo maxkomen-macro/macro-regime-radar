@@ -307,13 +307,19 @@ One warning and three failures have a fix outside the code:
 Then watch these for a day:
 
 - The service's **Memory** graph in Render. Idle, the container sits near
-  230 MiB and a database rebuild peaks near 480 MiB. The two-hour soak on
-  this branch showed a slow upward drift of a few MiB an hour that two hours
-  could not tell from allocator settling; a long-running process could carry
-  it further. If the graph climbs past **700 MiB** with no rebuild in
-  progress, redeploy (Manual Deploy → Deploy latest commit), which starts the
-  process afresh, and mention it in the next session. A restart costs the
-  site nothing but a short outage during which it paints its snapshot.
+  230 MiB and a database rebuild peaks about 250 MiB above whatever the idle
+  level is. Two soaks on this branch measured a slow, steady rise of the idle
+  level: +1.7 MiB an hour over two hours, and +2.8 MiB an hour over an hour
+  with a rebuild every five minutes; tracemalloc showed under 1 MiB of it in
+  Python objects, so the rest is the C heap, and the glibc arena cap did not
+  remove it. At those rates the idle level reaches the restart point in
+  roughly a week. **Restart the service by hand** (Manual Deploy → Deploy
+  latest commit, which starts the process afresh) when the graph shows the
+  idle level, with no rebuild in progress, above **700 MiB on the 2 GB
+  tier** or above **600 MiB on a 1 GB plan**, so that the next rebuild's
+  peak stays clear of the limit. A restart costs the site nothing but a short
+  outage during which it paints its snapshot. A watchdog for this is a
+  post-launch follow-up, not part of this branch.
 - `/health/ready` → `worker.errors` empty and `worker.held` null.
 - `/api/freshness` → `overall` not `unknown`; the `sla` rows say what is late.
 - `/api/providers/status` (with `X-Ops-Key`) → `quota.units_per_day_projected`
