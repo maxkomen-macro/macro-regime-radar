@@ -260,6 +260,20 @@ def test_the_api_never_imports_the_writer_or_yahoo():
     assert "desk_history" not in (ROOT / "api" / "analytics_cache.py").read_text()
 
 
+def test_importing_the_app_loads_no_heavy_dependency():
+    """CLAUDE.md (FastAPI section): every heavy dependency is imported at the
+    point of use, never at module import. The event-study engine loads pandas,
+    numpy and exchange_calendars, so api/desk.py reaches it on first use (the
+    worker's first build or the first study), and `import api.main` stays as
+    light as it was before the Desk (desk/integration)."""
+    heavy = ("pandas", "numpy", "sklearn", "scipy", "exchange_calendars", "riskfolio", "anthropic")
+    code = f"import sys, api.main; print(sorted(m for m in {heavy!r} if m in sys.modules))"
+    env = {k: v for k, v in os.environ.items() if k != "FRED_API_KEY"}
+    out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip().splitlines()[-1] == "[]"
+
+
 # ── Pipeline inventory (desk/frame) ─────────────────────────────────────────
 
 

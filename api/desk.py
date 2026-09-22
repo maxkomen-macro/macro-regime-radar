@@ -61,7 +61,23 @@ from api import bootstrap, db, stream
 from api import freshness as freshness_mod
 from api.db import NotStored
 from src.analytics import dbpath
-from src.desk import event_study as es
+
+
+class _Engine:
+    """src.desk.event_study, imported on first use (desk/integration). The
+    engine loads pandas, numpy and exchange_calendars at import, and api/
+    imports no heavy dependency at module import (CLAUDE.md, FastAPI section),
+    so `import api.main` stays as light as it was before the Desk. The worker's
+    first build (desk_assets, the presets) or the first study loads it; every
+    `es.<name>` below reads the real module, monkeypatches included."""
+
+    def __getattr__(self, name: str) -> Any:
+        from src.desk import event_study
+
+        return getattr(event_study, name)
+
+
+es = _Engine()
 
 router = APIRouter(prefix="/api/desk")
 
