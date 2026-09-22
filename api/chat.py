@@ -132,8 +132,11 @@ def _event_stream(req: ChatRequest) -> Iterator[str]:
         # The chip had room, but this answer's first call does not fit what
         # is left of the day, or another question took it first: the same
         # plain resting state, never an error.
-        budget.note_cap_reached()
-        yield _sse({"message": budget.RESTING_MESSAGE, "resets_at": budget.state()["resets_at"]}, event="resting")
+        state = budget.state()
+        if state.get("ledger") == "ok":
+            budget.note_cap_reached()
+        # The ledger's own reason when it is the ledger that refused the hold.
+        yield _sse({"message": state.get("reason") or budget.RESTING_MESSAGE, "resets_at": state["resets_at"]}, event="resting")
     except chat.RateLimited:
         yield _sse({"message": "_Hit a rate limit — try again in a moment._"}, event="error")
     except chat.NetworkError:

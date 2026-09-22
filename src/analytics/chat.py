@@ -117,7 +117,7 @@ def prompt_token_bound(system: str, tools: list, messages: list) -> int:
 
 
 BUDGET_STOP_NOTE = (
-    "\n\n_Stopping here: today's AI budget is spent. "
+    "\n\n_Stopping here: the next step would take more than what is left of today's AI budget. "
     "The analyst wakes up at midnight UTC; every other screen works as usual._"
 )
 
@@ -633,6 +633,11 @@ class MacroRadarAgent:
         messages.append({"role": "user", "content": user_msg})
 
         guard = SPEND_GUARD.get()
+        api = self.client
+        if guard is not None and hasattr(api, "with_options"):
+            # One hold pays for one request. The SDK's own retries would send
+            # the same prompt again under it (launch-1 verify loop 2, R1).
+            api = api.with_options(max_retries=0)
         for iteration in range(MAX_TOOL_ITERATIONS):
             # Pay before calling (launch-1, api/assistant_budget.py): the call
             # is held at its worst case, and without a hold it is not made.
@@ -652,7 +657,7 @@ class MacroRadarAgent:
                     return
             started = False
             try:
-                with self.client.messages.stream(
+                with api.messages.stream(
                     model=self.model,
                     max_tokens=MAX_TOKENS,
                     system=system_prompt,

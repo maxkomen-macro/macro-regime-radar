@@ -473,7 +473,7 @@ def test_a_large_tool_result_is_priced_before_the_next_call(ledger, monkeypatch)
     monkeypatch.setattr(api_chat, "_agent", _real_agent(monkeypatch, client_))
     frames = _ask()
     assert client_.calls == 1, "the second call could not be paid for and must not be made"
-    assert any("budget is spent" in f for f in frames)
+    assert any("more than what is left of today" in f for f in frames)
     assert budget.spent_today() <= budget.daily_cap_usd() + 1e-9
 
 
@@ -588,3 +588,48 @@ def test_the_suite_never_touches_a_real_ledger():
 
     repo_default = Path(budget.__file__).resolve().parent.parent / "data" / "assistant_spend.db"
     assert Path(budget.LEDGER_PATH).resolve() != repo_default.resolve()
+
+
+def test_the_sdk_does_not_retry_under_a_hold(ledger, monkeypatch):
+    """Verify loop 2, R1: the SDK's automatic retries would send a second
+    paid request under one hold."""
+    import api.chat as api_chat
+
+    seen: dict = {}
+
+    class _Retrying(_ScriptedClient):
+        def with_options(self, **kwargs):
+            seen.update(kwargs)
+            return self
+
+    client_ = _Retrying([_answer()])
+    monkeypatch.setattr(api_chat, "_agent", _real_agent(monkeypatch, client_))
+    _ask()
+    assert seen.get("max_retries") == 0 and client_.calls == 1
+
+
+def test_the_chip_keeps_the_largest_first_call_in_hand():
+    """Verify loop 2, R4: the chip's reserve covers a first call at the body
+    cap, so it never says awake to a question that would be told to rest."""
+    from api import security as sec
+
+    body = "x" * sec.ASSISTANT_MAX_BODY_BYTES
+    largest = chat_mod.prompt_token_bound(
+        chat_mod.SYSTEM_PROMPT_TEMPLATE.format(state_snapshot="snapshot"), chat_mod.TOOLS,
+        [{"role": "user", "content": body}])
+    assert budget.RESERVE_INPUT_TOKENS >= largest
+    assert budget.reserve_usd() >= budget.call_worst_case_usd(largest, chat_mod.MAX_TOKENS)
+
+
+def test_a_ledger_refusal_says_it_is_the_ledger(ledger, monkeypatch):
+    """Verify loop 2, R4: a hold that could not be written rests the analyst
+    with the ledger's reason, not the budget's."""
+    import api.chat as api_chat
+
+    def full(*a, **k):
+        raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(ai_spend, "record", full)
+    monkeypatch.setattr(api_chat, "_agent", _real_agent(monkeypatch, _ScriptedClient([_answer()])))
+    body = "".join(_ask())
+    assert "event: resting" in body and "ledger" in body

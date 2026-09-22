@@ -60,10 +60,12 @@ LEDGER_PATH = Path(os.environ.get("ASSISTANT_LEDGER_PATH") or (Path(__file__).re
 DEFAULT_DAILY_CAP_USD = 1.0
 # What the chip compares with the day's remaining budget: a first call at its
 # largest (the 16 KB body cap holds the question and its history, plus the
-# system block and tool definitions), priced as reserve() prices any call.
+# system block and tool definitions: 24,838 tokens by prompt_token_bound in
+# verify loop 2), priced as reserve() prices any call, so the chip never says
+# awake when the largest question would be told the analyst is resting.
 # Every real call is still reserved at its own worst case; this only decides
 # when the chip says "resting" before anyone asks.
-RESERVE_INPUT_TOKENS = 16_000
+RESERVE_INPUT_TOKENS = 25_000  # a 16 KB body, system block and tools, as prompt_token_bound counts them
 RESERVE_OUTPUT_TOKENS = 2_000  # src/analytics/chat.py MAX_TOKENS
 
 # How long a failed ledger write rests the analyst: long enough that a full
@@ -157,6 +159,18 @@ def _ledger_problem() -> str | None:
     if path.exists() and not (os.access(path, os.W_OK) and os.access(path.parent, os.W_OK)):
         return "read-only"
     return None
+
+
+def ledger_writable() -> bool:
+    """Whether this process can write the ledger: the file and its directory,
+    or, before the first write, the nearest directory that exists."""
+    path = Path(LEDGER_PATH)
+    if path.exists():
+        return os.access(path, os.W_OK) and os.access(path.parent, os.W_OK)
+    probe = path.parent
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    return os.access(probe, os.W_OK)
 
 
 def spent_today(now: datetime | None = None) -> float:

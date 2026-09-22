@@ -37,11 +37,13 @@ COPY api/ api/
 COPY src/ src/
 COPY --from=webbuild /build/web/dist web/dist
 # Runs as a non-root user (launch-1). /app/data holds the database the
-# bootstrap downloads and the assistant's spend ledger, so it is created and
-# owned here rather than by the first write.
+# bootstrap downloads; /var/data is where DEPLOY.md mounts a disk for the
+# assistant's spend ledger. Both are created and owned here, so the ledger
+# path works with or without a disk (a disk the user cannot write is reported
+# at startup and by the smoke check, and the analyst rests).
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin app \
-    && mkdir -p /app/data \
-    && chown -R app:app /app
+    && mkdir -p /app/data /var/data \
+    && chown -R app:app /app /var/data
 USER app
 EXPOSE 8000
 # --workers 1 is pinned (launch-1): uvicorn otherwise takes its worker count
