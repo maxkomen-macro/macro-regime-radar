@@ -258,6 +258,9 @@ def test_uvicorns_own_formatters_still_work_with_the_filter(secrets, capsys):
         access = logging.getLogger("uvicorn.access")
         access.info('%s - "%s %s HTTP/%s" %d', "203.0.113.7:51234", "GET",
                     f"/api/eod/AAPL.US?api_token={secrets['EODHD_API_TOKEN']}", "1.1", 200)
+        # No secret here: the word Bearer in a path must not look redactable
+        # (verify loop 3 follow-up: it flattened the record and lost the line).
+        access.info('%s - "%s %s HTTP/%s" %d', "203.0.113.7:51234", "GET", "/Bearer", "1.1", 404)
         logging.getLogger("uvicorn.error").info(
             "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)", "http", "0.0.0.0", 8000,
             extra={"color_message": "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)"})
@@ -267,6 +270,7 @@ def test_uvicorns_own_formatters_still_work_with_the_filter(secrets, capsys):
     err = capsys.readouterr().err
     assert "Logging error" not in err and "TypeError" not in err, err
     assert '"GET /api/eod/AAPL.US?api_token=*** HTTP/1.1" 200' in out, out
+    assert '"GET /Bearer HTTP/1.1" 404' in out, out
     assert "Uvicorn running on http://0.0.0.0:8000" in out, out
     _assert_clean(out + err)
 

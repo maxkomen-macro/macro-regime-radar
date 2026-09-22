@@ -20,7 +20,9 @@ _PATTERNS = [
     # Signed download URLs (GitHub's release-asset CDN and S3-style links):
     # credentials valid for minutes, never for a log (launch-1 verify loop 1).
     re.compile(r"((?:sig|jwt|X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token)=)[^&\s\"']+", re.IGNORECASE),
-    re.compile(r"(Bearer\s+)[A-Za-z0-9._\-]+"),
+    # A credential, not the next word: "GET /Bearer HTTP/1.1" is a path and a
+    # protocol, and matching it made a secret-free access line look redactable.
+    re.compile(r"(Bearer\s+)[A-Za-z0-9._\-]{16,}"),
 ]
 
 
@@ -69,7 +71,9 @@ class RedactingFilter(logging.Filter):
             # the message. Only when the rendered text still carries one is
             # the record flattened to its redacted text.
             rendered = record.getMessage()
-            if redact(rendered) != rendered:
+            # uvicorn's access template carries no key text, so the pass over
+            # its arguments covers it, and its formatter must keep them.
+            if record.name != "uvicorn.access" and redact(rendered) != rendered:
                 record.msg, record.args = redact(rendered), None
                 if hasattr(record, "color_message"):
                     record.color_message = record.msg
