@@ -284,3 +284,43 @@ def test_a_recovered_prefetch_forgets_its_backoff(monkeypatch):
     worker_mod.prefetch_tick()
     assert state["calls"] - before == len(worker_mod.PREFETCH_SYMBOLS), "no backoff left after a success"
     worker_mod.reset_prefetch_backoff()
+
+
+# ── loop-2 pins (the verifier's surviving mutants) ──────────────────────────
+
+
+def test_pace_wakes_within_half_a_minute_from_any_start(clock):
+    """A start that is not a multiple of any re-check period: only a 30 s
+    re-check lands within half a minute of the bell (a 300 s one would not)."""
+    bell = datetime(2026, 9, 22, 13, 30, tzinfo=timezone.utc)
+    c = clock(bell - timedelta(minutes=20, seconds=7))
+    _run(stream.QuoteHub()._pace(stream._VIX_POLL_SECONDS))
+    assert bell <= c.now <= bell + timedelta(seconds=30), c.now
+
+
+def test_a_poll_from_the_last_minute_of_the_session_is_not_silent_after_the_close():
+    """Polled at 15:59:30 ET, read at 16:05: the allowance is the longer of
+    the two cadences, so the closed half-hour one applies."""
+    close = datetime(2026, 9, 22, 20, 0, tzinfo=timezone.utc)  # Tuesday 16:00 ET
+    now = close + timedelta(minutes=5)
+    age = (now - (close - timedelta(seconds=30))).total_seconds()
+    assert _vix_hub(age).stale_flags(now=now, mono=1_000_000.0)["vix"] is False
+
+
+def test_every_retry_is_counted_in_the_quota():
+    """Three billed attempts are three requests and three weights."""
+    import httpx
+
+    from api.providers import eodhd as eod
+    from api.providers import quota
+    from api.providers.errors import ProviderError
+
+    quota.reset()
+    client = eod.EodhdClient("tok", transport=httpx.MockTransport(lambda r: httpx.Response(503, json={}, request=r)))
+    client.max_retries = 2
+    client.backoff = 0.0
+    with pytest.raises(ProviderError):
+        client.intraday("AAPL.US", interval="5m", from_ts=1, to_ts=2)
+    snap = quota.snapshot(elapsed_override_s=3600)
+    assert snap["requests"] == 3 and snap["units"] == 15
+    quota.reset()
