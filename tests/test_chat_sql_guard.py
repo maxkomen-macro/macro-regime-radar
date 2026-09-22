@@ -328,3 +328,39 @@ def test_the_row_cap_is_two_hundred(tmp_path, monkeypatch):
     out = chat_mod._tool_query_database(
         "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 500) SELECT i FROM r")
     assert out["row_count"] == 200 and len(out["rows"]) == 200
+
+
+def test_a_wide_table_in_the_schema_does_not_break_every_query(tmp_path, monkeypatch):
+    """Item 2 re-audit, loop 3: the column limit was set before SQLite had
+    loaded the schema, so a table wider than the limit made SQLite refuse the
+    whole schema ("malformed database schema") and every query with it. The
+    schema is loaded first; a result set wider than the limit is still refused."""
+    import sqlite3 as _sq
+
+    from src.analytics import chat as chat_mod
+    from src.analytics import dbpath
+
+    db = _scratch_db(tmp_path)
+    conn = _sq.connect(db)
+    conn.execute("CREATE TABLE wide (" + ", ".join(f"c{i} INTEGER" for i in range(40)) + ")")
+    conn.execute("INSERT INTO wide VALUES (" + ", ".join("1" for _ in range(40)) + ")")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(chat_mod, "DB_PATH", db)
+    monkeypatch.setattr(dbpath, "_provider", None)
+    assert chat_mod._tool_query_database("SELECT label FROM regimes")["rows"] == [{"label": "Overheating"}]
+    assert chat_mod._tool_query_database("SELECT c0, c1 FROM wide")["rows"] == [{"c0": 1, "c1": 1}]
+    out = chat_mod._tool_query_database("SELECT * FROM wide")
+    assert "error" in out and "too many columns" in out["error"].lower(), out
+
+
+def test_the_result_budget_counts_bytes_not_characters(tmp_path, monkeypatch):
+    """A four-byte character is four bytes of result, not one."""
+    from src.analytics import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    monkeypatch.setattr(chat_mod, "_QUERY_MAX_RESULT_BYTES", 1_000)
+    fits = chat_mod._tool_query_database("SELECT printf('%.*c', 900, 'x') AS s")
+    assert fits["row_count"] == 1
+    wide = chat_mod._tool_query_database("SELECT printf('%.*c', 300, char(128200)) AS s")  # 300 chars, 1,200 bytes
+    assert "error" in wide and "too large" in wide["error"], {k: v for k, v in wide.items() if k != "rows"}

@@ -193,7 +193,9 @@ _QUERY_TIME_BUDGET_S = 2.0         # wall clock, checked with the instruction bu
 
 
 def _value_bytes(value: Any) -> int:
-    if isinstance(value, (str, bytes)):
+    if isinstance(value, str):
+        return len(value.encode("utf-8", "replace"))  # bytes, not code points
+    if isinstance(value, bytes):
         return len(value)
     return 8
 
@@ -212,6 +214,11 @@ def _tool_query_database(sql: str) -> dict[str, Any]:
                 return 1 if remaining < 0 or time.monotonic() > deadline else 0
 
             conn.set_progress_handler(_budget_exceeded, _QUERY_PROGRESS_PERIOD)
+            # Load the schema before the column limit is set: with the limit
+            # in place first, SQLite refuses to load any table wider than it
+            # and every query fails (item 2 re-audit, loop 3). Loaded, the
+            # limit applies to result sets, which is what it is for.
+            conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchall()
             conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _QUERY_MAX_VALUE_BYTES)
             conn.setlimit(sqlite3.SQLITE_LIMIT_COLUMN, _QUERY_MAX_COLUMNS)
             # The connection refuses writes itself, not only the guard: a
