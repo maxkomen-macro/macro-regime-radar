@@ -759,3 +759,53 @@ def test_patching_the_engine_through_the_proxy_leaves_no_shadow(monkeypatch):
     with monkeypatch.context() as m:
         m.setattr(real, "DEFAULT_SEED", 99)
         assert desk_mod.es.DEFAULT_SEED == 99
+
+
+def test_the_freshness_mirror_of_the_refresh_series_is_the_registrys():
+    """Verifier V-12: api/freshness.py stays stdlib + api/ (validate_db runs it
+    on the lean installs; tests/test_workflows.py pins it), so the drawer's
+    desk_series verdict reads a mirror of the series the full refresh stores.
+    The mirror is the registry's, exactly."""
+    from api import freshness as freshness_mod
+
+    assert freshness_mod.desk_refresh_specs() == desk_mod.desk_series_specs(stored=None)
+
+
+def test_a_preset_lookup_never_waits_behind_the_study_ceiling():
+    """Verifier V-13: the presets are worker items (a lookup), so the page's
+    default study must not queue behind other visitors' free-form studies. A
+    preset by its slug alone is a stored read; with a seed, or by parameters,
+    it computes and takes the study ceiling."""
+    import asyncio
+
+    from src.desk import event_study as real
+
+    assert security.DESK_PRESET_SLUGS == frozenset(real.PRESETS)
+
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"{}"})
+
+    mw = security.SecurityMiddleware(inner, desk_study_slots=1, per_client_per_min=1000, per_client_burst=1000, global_per_min=1000)
+    sent: list[dict] = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    def get(qs: bytes):
+        sent.clear()
+        asyncio.run(mw({"type": "http", "path": "/api/desk/event-study", "method": "GET", "query_string": qs, "headers": [], "client": ("1.2.3.4", 1)}, receive, send))
+        return sent[0]["status"]
+
+    assert mw.desk_study.acquire(blocking=False)  # every study slot is taken
+    try:
+        for preset in sorted(real.PRESETS):
+            assert get(f"study={preset}".encode()) == 200, preset
+        assert get(b"study=spx-golden-cross&seed=7") == 429, "another seed computes"
+        assert get(b"study=vix-w5-z2.0-up-none-spx") == 429
+        assert get(b"shock=gold&w=20&z=2&sign=%2B&cond=spx_below_50dma&target=spx") == 429
+    finally:
+        mw.desk_study.release()

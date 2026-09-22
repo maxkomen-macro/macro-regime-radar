@@ -75,7 +75,7 @@ function AssetSelect({ id, label, value, options, onChange }: { id: string; labe
       <p className="mrr-desk-hint">
         {chosen
           ? chosen.status === "awaiting_refresh"
-            ? `Awaiting the first full refresh: this database does not store ${chosen.label} yet.`
+            ? `Awaiting a full refresh: this database does not store ${chosen.label} yet.`
             : chosen.warn
               ? `Short history: from ${fmtDate(chosen.history_from)}. Reads before that date are not possible.`
               : `History from ${fmtDate(chosen.history_from)}.`
@@ -344,7 +344,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
           <QueryBuilder assets={assets} params={params} onRun={(p) => go(slugFor(p))} onPreset={go} />
           {assets.awaiting?.length ? (
             <Caption as="p" style={{ marginTop: 10 }}>
-              {`Awaiting the first full refresh: ${assets.awaiting.join(", ")}. A study on them says so until the refresh has stored their daily history.`}
+              {`Awaiting a full refresh: ${assets.awaiting.join(", ")}. A study on them says so until a refresh has stored their daily history.`}
             </Caption>
           ) : null}
         </Panel>
@@ -357,7 +357,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
           ) : result?.state === "computing" ? (
             <EmptyState title="Computing the study…">The engine computes every horizon and the bootstrap interval; this page asks again every few seconds.</EmptyState>
           ) : result?.state === "awaiting_refresh" ? (
-            <EmptyState title="Awaiting the first full refresh">
+            <EmptyState title="Awaiting a full refresh">
               {result.detail} The presets read the stored index and gold histories, not the Desk's daily series.
               {slug !== PRESET_SLUG ? (
                 <button type="button" className="mrr-btn" style={{ marginTop: 10 }} onClick={() => go(PRESET_SLUG)}>

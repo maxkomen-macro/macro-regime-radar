@@ -121,25 +121,23 @@ def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, wate
     return _state(sid, label, "fred", cadence, month.isoformat(), "close" if cycles == 0 else "stale", cycles_behind=cycles, reason=reason)
 
 
-def desk_series_specs(stored: dict[str, str] | None, *, refresh_only: bool = False) -> list[dict]:
-    """The desk_series series to judge (desk/integration, the event-study
-    report's §10 follow-up): the ones the full refresh stores
-    (src/desk/series.REFRESH_TIER), in registry order, then, unless
-    `refresh_only`, any other series the table holds (a tier-2 fetch run by
-    hand). Rates and spreads follow the bond calendar, everything else the
-    NYSE's. The registry is stdlib and config-free."""
-    from src.desk import series as registry
+# The Desk's daily series the full refresh stores (src/desk/series.fetched at
+# REFRESH_TIER), mirrored here because this module stays stdlib + api/
+# (scripts/validate_db.py runs it on the lean installs; tests/test_workflows.py
+# pins it). tests/test_desk_api.py pins the mirror to the registry. Rates and
+# spreads follow the bond calendar, VIX the NYSE's (desk/integration).
+DESK_REFRESH_SERIES: dict[str, dict[str, str]] = {
+    "DGS10": {"label": "10Y Treasury", "kind": "fred", "calendar": "bond"},
+    "DGS2": {"label": "2Y Treasury", "kind": "fred", "calendar": "bond"},
+    "T10Y2Y": {"label": "2s10s curve", "kind": "fred", "calendar": "bond"},
+    "VIXCLS": {"label": "VIX", "kind": "fred", "calendar": "nyse"},
+    "BAMLH0A0HYM2": {"label": "US HY OAS", "kind": "fred", "calendar": "bond"},
+}
 
-    ids = [s.series_id for s in registry.fetched(registry.REFRESH_TIER)]
-    if not refresh_only:
-        ids += sorted(sid for sid in (stored or {}) if sid not in ids)
-    specs = []
-    for sid in ids:
-        spec = registry.BY_SERIES_ID.get(sid)
-        kind = "fred" if spec is None or spec.source == "fred" else "market"
-        calendar = SERIES_REGISTRY.get(sid, {}).get("calendar") or ("bond" if spec is not None and spec.unit == "bp" else "nyse")
-        specs.append({"id": sid, "label": spec.label if spec else sid, "kind": kind, "calendar": calendar})
-    return specs
+
+def desk_refresh_specs() -> list[dict]:
+    """The series the drawer's desk_series verdict judges, in registry order."""
+    return [{"id": sid, **meta} for sid, meta in DESK_REFRESH_SERIES.items()]
 
 
 def desk_series_states(*, stored: dict[str, str] | None, specs: list[dict], watermarks: dict | None,
@@ -301,7 +299,7 @@ def assess(
             rows.append(_verdict("desk_series", None, None, False, False,
                                  "The Desk's daily series are not stored in this database yet; the next full refresh stores them."))
         else:
-            states = desk_series_states(stored=by_id, specs=desk_series_specs(by_id, refresh_only=True), watermarks=watermarks, now=now)
+            states = desk_series_states(stored=by_id, specs=desk_refresh_specs(), watermarks=watermarks, now=now)
             behind = [s for s in states if s["state"] != "close"]
             dated = [s["as_of"] for s in states if s["as_of"]]
             reason = ("Every series the full refresh stores includes its newest print due (FRED posts next day)." + ds_src if not behind

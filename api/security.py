@@ -25,7 +25,7 @@ import threading
 import time
 from collections import OrderedDict
 from typing import Any, Awaitable, Callable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", str(64 * 1024)))
 ASSISTANT_MAX_BODY_BYTES = 16 * 1024
@@ -42,7 +42,10 @@ EXPENSIVE_PATHS = {"/api/lbo/run", "/api/regime/scenario", "/api/recession/scena
 # and four slow studies sharing the calculators' slots answered the LBO and
 # the scenario POSTs 429.
 DESK_STUDY_PATHS = {"/api/desk/event-study"}
-DESK_STUDY_MAX_CONCURRENCY = int(os.environ.get("DESK_STUDY_MAX_CONCURRENCY", "4"))
+# A preset by its slug alone is a worker item, a lookup: it reads under the
+# stored-read ceiling, never behind other visitors' studies (verifier V-13).
+# Mirrors src/desk/event_study.PRESETS (parity pinned by tests/test_desk_api.py).
+DESK_PRESET_SLUGS = frozenset({"gold-2sigma-spx-weak", "spx-golden-cross", "spx-death-cross"})
 PROVIDER_PREFIX = "/api/market/"
 # Everything else under the API prefixes is a stored-data read: bounded by
 # the `db` ceiling so a burst sheds load as 429s instead of wedging the
@@ -263,7 +266,8 @@ class SecurityMiddleware:
         self.assistant_limiter = RateLimiter(assistant_per_min, assistant_per_min)
         self.assistant_global = RateLimiter(assistant_per_min * 6, assistant_per_min * 6, max_clients=1)
         self.expensive = threading.BoundedSemaphore(expensive_slots)
-        self.desk_study = threading.BoundedSemaphore(desk_study_slots if desk_study_slots is not None else DESK_STUDY_MAX_CONCURRENCY)
+        self.desk_study = threading.BoundedSemaphore(
+            desk_study_slots if desk_study_slots is not None else int(os.environ.get("DESK_STUDY_MAX_CONCURRENCY", "4")))
         self.provider = threading.BoundedSemaphore(provider_slots)
         self.db = threading.BoundedSemaphore(db_slots if db_slots is not None else int(os.environ.get("DB_MAX_CONCURRENCY", "24")))
         self.assistant = threading.BoundedSemaphore(assistant_slots if assistant_slots is not None else ASSISTANT_MAX_CONCURRENCY)
@@ -393,7 +397,7 @@ class SecurityMiddleware:
         if path in EXPENSIVE_PATHS:
             sem = self.expensive
         elif path in DESK_STUDY_PATHS:
-            sem = self.desk_study
+            sem = self.db if self._preset_lookup(scope) else self.desk_study
         elif path.startswith(PROVIDER_PREFIX):
             sem = self.provider
         elif is_question:
@@ -423,6 +427,12 @@ class SecurityMiddleware:
         finally:
             if sem is not None:
                 sem.release()
+
+    @staticmethod
+    def _preset_lookup(scope: dict) -> bool:
+        """`?study=<preset>` and nothing else: the worker's precomputed item."""
+        q = parse_qs((scope.get("query_string") or b"").decode("latin-1"), keep_blank_values=True)
+        return set(q) == {"study"} and len(q["study"]) == 1 and q["study"][0] in DESK_PRESET_SLUGS
 
     @staticmethod
     def _bounded_receive(receive: Callable[[], Awaitable[dict]], limit: int) -> Callable[[], Awaitable[dict]]:

@@ -408,9 +408,23 @@ def inventory_rows(series: list[dict]) -> list[dict]:
 
 
 def desk_series_specs(stored: dict[str, str] | None) -> list[dict]:
-    """The desk_series series the inventory lists (api/freshness, which the
-    drawer's sla verdict shares)."""
-    return freshness_mod.desk_series_specs(stored)
+    """The desk_series series the inventory lists (desk/integration, the
+    event-study report's §10 follow-up): the ones the full refresh stores
+    (registry.REFRESH_TIER), in registry order, then any other series the
+    table holds (a tier-2 fetch run by hand). Rates and spreads follow the
+    bond calendar, everything else the NYSE's. The refresh set is mirrored in
+    api/freshness.DESK_REFRESH_SERIES for the drawer's verdict (parity pinned)."""
+    from src.desk import series as registry
+
+    ids = [s.series_id for s in registry.fetched(registry.REFRESH_TIER)]
+    ids += sorted(sid for sid in (stored or {}) if sid not in ids)
+    specs = []
+    for sid in ids:
+        spec = registry.BY_SERIES_ID.get(sid)
+        kind = "fred" if spec is None or spec.source == "fred" else "market"
+        calendar = freshness_mod.SERIES_REGISTRY.get(sid, {}).get("calendar") or ("bond" if spec is not None and spec.unit == "bp" else "nyse")
+        specs.append({"id": sid, "label": spec.label if spec else sid, "kind": kind, "calendar": calendar})
+    return specs
 
 
 def desk_inventory_rows(stored: dict[str, str] | None, watermarks: dict | None, now) -> list[dict]:
