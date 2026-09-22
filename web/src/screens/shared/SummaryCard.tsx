@@ -228,7 +228,17 @@ export function SummaryCard({ title, as = "h3", rows, status, children, stamp, i
           {stamp}
         </div>
       ) : null}
-      <dl className="mrr-kv" style={{ margin: 0 }}>
+      <dl
+        className="mrr-kv"
+        // A card stretched by its row (the hero rows) has more height than
+        // its rows need. The difference used to pool above the status strip,
+        // where on the Markets hero it sat at the dead-space allowance and
+        // flipped with the hero's live wording (launch-1 e2e run). It is now
+        // spread between the rows as separator space: each row keeps its
+        // natural height, the first stays at the top, and a card at its
+        // natural height is unchanged.
+        style={{ margin: 0, flex: "1 1 auto", display: "flex", flexDirection: "column", justifyContent: "space-between" }}
+      >
         {rows.map((r, i) => (
           <div
             key={rowKey(r, i)}
@@ -263,9 +273,10 @@ export function SummaryCard({ title, as = "h3", rows, status, children, stamp, i
       {children}
       {status ? (
         // The strip anchors to the card's bottom (the auto top margin) with at
-        // least 12px above it; the rows keep their natural height at the top.
-        // A card stretched by its row shows the difference between the rows
-        // and the strip, never as padding inside the rows (Iteration 1, G2).
+        // least 12px above it. A card stretched by its row spreads the
+        // difference between the rows (see the list above), never as padding
+        // inside a row and no longer as one block above the strip (Iteration
+        // 1 chose the block; the Markets hero put it at the G2 allowance).
         <div className="mrr-summary-foot" style={{ marginTop: "auto", paddingTop: 12 }}>
           <StatusStrip {...status} />
         </div>
