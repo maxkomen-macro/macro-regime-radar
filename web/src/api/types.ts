@@ -679,7 +679,7 @@ export interface SearchHit {
 }
 
 /** Search envelope (2026-09-06): the provider that answered is part of the
- * result, so the list can say when yfinance stood in for EODHD. */
+ * result, so the list can name it (EODHD only since fix/prelaunch-1). */
 export interface SearchResponse {
   provider: Provider;
   fallback_used: boolean;

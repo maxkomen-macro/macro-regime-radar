@@ -2,13 +2,13 @@
  * Single-name deep dive: profile, candles, regime context, stored coverage
  * and an optional end-of-day Options lens for any listed symbol.
  *
- * Data honesty (2026-09-06): every block names its provider. The quote is
- * the EODHD stream when this symbol is on it and ticking (the panel asks the
- * relay to watch it); otherwise the delayed EODHD REST quote, or yfinance
- * standing in, each labeled, with the market timestamp separate from the
- * fetch time. Candles come as a provenance envelope (one provider per
- * series, fallback disclosed); a new symbol never paints the previous
- * symbol's history. The regime table is computed here from monthly closes
+ * Data honesty (2026-09-06, EODHD only since fix/prelaunch-1): every block
+ * names its provider. The quote is the EODHD stream when this symbol is on it
+ * and ticking (the panel asks the relay to watch it); otherwise the delayed
+ * EODHD REST quote, labeled, with the market timestamp separate from the
+ * fetch time; fundamentals come from Finnhub (launch-1). Candles come as a
+ * provenance envelope (one provider per series, never a stand-in); a new
+ * symbol never paints the previous symbol's history. The regime table is computed here from monthly closes
  * joined to the stored classifier history; it never re-derives anything a
  * table already asserts.
  *
@@ -20,7 +20,7 @@
  * controlled by the panel header when `range` and `onRangeChange` are both
  * given; without them the tile keeps its own state and picker.
  *
- * Iteration 1 (M5): no blank block. A symbol neither provider lists reads
+ * Iteration 1 (M5): no blank block. A symbol EODHD does not list reads
  * one plain sentence in place of the tile; otherwise every block that has
  * nothing for this ticker says what is missing in one sentence (fundamentals
  * that did not load, a regime history that did not load, options not served

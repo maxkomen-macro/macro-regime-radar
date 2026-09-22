@@ -1,7 +1,7 @@
 /**
  * Symbol search — the entry point to single-name research. A mono input over
- * /api/market/search (EODHD's search index first, yfinance as the disclosed
- * fallback; cached server-side), with a keyboard-navigable result list. Combobox semantics: ArrowUp/Down move, Enter picks,
+ * /api/market/search (EODHD's search index, cached server-side; no stand-in
+ * since fix/prelaunch-1), with a keyboard-navigable result list. Combobox semantics: ArrowUp/Down move, Enter picks,
  * Escape clears. No icons; the ▸ glyph marks the active row.
  *
  * `compact` (redesign Phase 1) is the watchlist popover's variant: a 36 px

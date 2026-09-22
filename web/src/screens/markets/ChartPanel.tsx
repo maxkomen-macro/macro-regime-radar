@@ -4,8 +4,8 @@
  * concrete values). Daily candles come from /api/market/daily; the intraday
  * line exists only where the DB stores it (SPY/QQQ), per the day-1 spec.
  * Symbols outside the stored 23-ETF universe (crypto, FX, single names, VIX)
- * request their history on demand from the provider layer (EODHD first,
- * yfinance disclosed as fallback) with range chips, a provider/as-of caption
+ * request their history on demand from the provider layer (EODHD only since
+ * fix/prelaunch-1; a failure is said, never filled in) with range chips, a provider/as-of caption
  * and explicit loading and failure states (2026-09-06).
  *
  * Critique fixes (2026-08-06, one pass):

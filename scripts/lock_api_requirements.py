@@ -9,9 +9,10 @@ each one requires), the pins from pip freeze, and the two must agree.
 
     .venv/bin/python scripts/lock_api_requirements.py > requirements-api.lock
 
-pip, the stdlib and `packaging`, all already installed; no new tooling.
-yfinance is not a root: the API never calls Yahoo (fix/prelaunch-1), and the
-refresh pipeline installs it from its own requirements file.
+pip, the stdlib and `packaging`, all already installed; no new tooling. The
+roots are requirements-api.txt's packages; yfinance is not among them since
+launch-1 (the API never calls Yahoo, and the refresh pipeline installs it
+from its own requirements file).
 """
 
 from __future__ import annotations
@@ -100,8 +101,8 @@ def main() -> None:
         "# dependency closure, so an image built later runs the versions that were tested\n"
         "# rather than whatever resolves that day.\n"
         "#\n"
-        "# Roots: requirements-api.txt minus yfinance (the API never calls Yahoo since\n"
-        "# fix/prelaunch-1). Regenerate after changing requirements-api.txt."
+        "# Roots: requirements-api.txt (no yfinance: the API never calls Yahoo).\n"
+        "# Regenerate after changing requirements-api.txt."
     )
     for line in sorted(lines, key=lambda l: _key(l.split("==", 1)[0])):
         print(line)
