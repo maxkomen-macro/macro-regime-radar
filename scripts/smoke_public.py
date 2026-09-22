@@ -102,7 +102,15 @@ def check_routes(client: httpx.Client, base: str, routes: list[str], rep: Report
                 slow.append(f"{route} {ms:.0f}ms")
             rep.ok(f"{label} {route}", f"{r.status_code} in {ms:.0f}ms")
         elif r.status_code == 503 and route == "/api/allocation":
-            rep.warn(f"{label} {route}", "503: this database predates the stored price histories")
+            kind = None
+            try:
+                kind = (r.json() or {}).get("kind")
+            except ValueError:
+                pass
+            if kind == "not_stored":
+                rep.warn(f"{label} {route}", "503: this database predates the stored price histories")
+            else:
+                rep.fail(f"{label} {route}", f"503 {r.text[:120]}")
         else:
             rep.fail(f"{label} {route}", f"{r.status_code} {r.text[:120]}")
     if slow:
@@ -199,8 +207,8 @@ def check_security_headers(client: httpx.Client, url: str, rep: Report, label: s
         # http + ws for a local rehearsal (launch-1 verify loop 1). On the
         # single-service deploy the site is the API, and 'self' names it.
         connect = csp.split("connect-src", 1)[1].split(";")[0].split()
-        host = api.split("://", 1)[1].rstrip("/")
-        same_origin = url.split("://", 1)[1].split("/", 1)[0] == host
+        host = api.split("://", 1)[1].rstrip("/").lower()
+        same_origin = url.split("://", 1)[1].split("/", 1)[0].lower() == host
         if not (same_origin and "'self'" in connect):
             want = [f"https://{host}", f"wss://{host}"] if api.startswith("https://") else [f"http://{host}", f"ws://{host}"]
             absent = [w for w in want if w not in connect]
@@ -414,7 +422,7 @@ def main() -> int:
     ap.add_argument("--api", required=True, help="API origin, e.g. https://mrr-api.onrender.com")
     ap.add_argument("--site", help="static site origin, e.g. https://macro-regime-radar.vercel.app")
     ap.add_argument("--ops-key", default=None, help="OPS_ACCESS_KEY, to read the relay and plan report")
-    ap.add_argument("--skip-provider", action="store_true", help="skip the three on-demand routes (they spend EODHD quota)")
+    ap.add_argument("--skip-provider", action="store_true", help="skip the on-demand provider routes (they spend EODHD quota)")
     ap.add_argument("--my-ip", default=None, help="your own public address, to confirm the rate limits key on it")
     args = ap.parse_args()
 

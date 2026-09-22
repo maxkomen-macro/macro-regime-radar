@@ -105,6 +105,20 @@ def test_a_same_origin_deploy_satisfies_the_csp_check():
     with _client(handler) as c:
         smoke.check_security_headers(c, "http://site.test/", rep, "site", want_csp=True, api=API)
     assert _rows(rep)["site CSP"][0] == "FAIL", "a split deploy must name the API's origins"
+    rep = smoke.Report()
+    with _client(handler) as c:
+        smoke.check_security_headers(c, "http://API.test/", rep, "site", want_csp=True, api=API)
+    assert _rows(rep)["site CSP"][0] == "PASS", "host names compare without case"
+
+
+def test_an_allocation_503_that_is_not_not_stored_fails():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _json(503, {"detail": "Allocation is not available on this server right now."})
+
+    rep = smoke.Report()
+    with _client(handler) as c:
+        smoke.check_routes(c, API, ["/api/allocation"], rep, "stored")
+    assert _rows(rep)["stored /api/allocation"][0] == "FAIL"
 
 
 def test_the_docstring_describes_what_the_script_sends():
