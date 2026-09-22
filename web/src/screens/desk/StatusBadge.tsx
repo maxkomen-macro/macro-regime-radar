@@ -53,7 +53,9 @@ export function badgeWords(label: FreshLabel, seeded: boolean, liveAsOf?: string
   if (seeded) return { word: "Snapshot", stamp: label.word.replace(/^Snapshot · as of /, ""), muted: null };
   // A feed the report does not judge carries its own stamp (stampLabel): the
   // stamp is the word, and the tone stays grey (never a health mark).
-  if (dated) return { word: "Live", stamp: label.word, muted: null };
+  // With no stamp yet the label's word is "As of unknown", and the badge prints
+  // its own "as of " (desk/integration: "as of As of unknown").
+  if (dated) return { word: "Live", stamp: label.word.replace(/^As of /, ""), muted: null };
   if (label.tone === "live") return { word: "Live", stamp: etClock(liveAsOf) ?? "live tick", muted: null };
   if (label.tone === "unknown" || label.tone === "fallback") return { word: "Live", stamp: label.tone === "fallback" ? "stated default" : "unknown", muted: null };
   return { word: "Live", stamp: label.word, muted: label.muted };

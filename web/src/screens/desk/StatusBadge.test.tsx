@@ -32,6 +32,14 @@ describe("badgeWords", () => {
     expect(badgeWords(freshLabel(undefined), false).stamp).toBe("unknown");
     expect(badgeWords(stampLabel("Sep 21, 17:51 ET", ""), false, null, true)).toEqual({ word: "Live", stamp: "Sep 21, 17:51 ET", muted: null });
   });
+  it("a dated feed with no stamp yet reads 'as of unknown', never 'as of As of unknown' (desk/integration)", () => {
+    expect(badgeWords(stampLabel(null, "awaiting the first full refresh"), false, null, true)).toEqual({ word: "Live", stamp: "unknown", muted: null });
+    stubFetch({ "/api/freshness": () => ({ regimes_date: null, signals_date: null, market_daily_date: null, market_intraday_ts: null, news_published_at: null, raw_series_date: null, series: [] }) });
+    renderWithProviders(<StatusBadge source={{ label: "event-study engine", asOf: null, reason: "awaiting the first full refresh" }} />);
+    const text = screen.getByTestId("desk-badge").textContent ?? "";
+    expect(text).toMatch(/as of unknown/);
+    expect(text).not.toMatch(/As of unknown/);
+  });
   it("a seeded snapshot reads Snapshot, never Live", () => {
     const seeded = { word: "Snapshot · as of Sep 18", muted: null, tone: "unknown" as const, reason: "", stale: false };
     expect(badgeWords(seeded, true)).toEqual({ word: "Snapshot", stamp: "Sep 18", muted: null });

@@ -354,7 +354,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
             <EmptyState title="Computing the study…">The engine computes every horizon and the bootstrap interval; this page asks again every few seconds.</EmptyState>
           ) : result?.state === "awaiting_refresh" ? (
             <EmptyState title="Awaiting the first full refresh">
-              {result.detail} The presets read stored index and gold prices and answer now.
+              {result.detail} The presets read the stored index and gold histories, not the Desk's daily series.
               {slug !== PRESET_SLUG ? (
                 <button type="button" className="mrr-btn" style={{ marginTop: 10 }} onClick={() => go(PRESET_SLUG)}>
                   Load the first preset
@@ -385,7 +385,9 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         <>
           <div className="mrr-desk-2">
             <Panel id="verdict" title="Verdict" description={fixture ? "Illustrative text from the fixture; the engine writes its verdict from rules, in calibrated words." : "Written by the engine from rules; calibrated vocabulary only."} badge={badge}>
-              <p className="mrr-desk-verdict">{study.verdict.text}</p>
+              {/* The engine's text is its sentences joined: the desk view lists
+                  them, the client view reads the paragraph (desk/integration). */}
+              {isClient || !study.verdict.points.length || fixture ? <p className="mrr-desk-verdict">{study.verdict.text}</p> : null}
               {isClient && twenty ? (
                 <Caption as="p" style={{ marginTop: 10 }}>
                   Over {sessionsInWords(twenty.h)} the {study.target.label} finished higher {timesInTen(twenty.hit_rate)}, against {timesInTen(twenty.baseline_hit_rate)} at baseline; the typical move was {moveInWords(twenty.median, unit)}.
