@@ -144,6 +144,11 @@ def _read_only_authorizer(action: int, arg1, arg2, db_name, trigger) -> int:
     return sqlite3.SQLITE_DENY
 
 
+# The same rule for any read connection that runs SQL it did not write (the
+# assistant's query tool, launch-1).
+read_only_authorizer = _read_only_authorizer
+
+
 def open_generation(gen: GenerationRef, factory: type = sqlite3.Connection) -> Optional[sqlite3.Connection]:
     """A read-only connection to `gen`'s in-memory copy, or None when the copy
     has been released (its name would open a new, empty database)."""

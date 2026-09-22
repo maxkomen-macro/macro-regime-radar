@@ -181,6 +181,11 @@ def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 # e.g. an unbounded `WITH RECURSIVE` bomb.
 _QUERY_PROGRESS_PERIOD = 10_000
 _QUERY_PROGRESS_BUDGET = 2_000
+# The largest single value a query may build (SQLITE_LIMIT_LENGTH). The
+# progress handler counts instructions, not bytes: printf('%.*c', 999999999,
+# 'x') is a handful of instructions and ~1 GB of memory (launch-1, item 2
+# re-audit). A megabyte is far above any stored value or legitimate result.
+_QUERY_MAX_VALUE_BYTES = 1_000_000
 
 
 def _tool_query_database(sql: str) -> dict[str, Any]:
@@ -196,6 +201,11 @@ def _tool_query_database(sql: str) -> dict[str, Any]:
                 return 1 if remaining < 0 else 0
 
             conn.set_progress_handler(_budget_exceeded, _QUERY_PROGRESS_PERIOD)
+            conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _QUERY_MAX_VALUE_BYTES)
+            # The connection refuses writes itself, not only the guard: a
+            # generation copy already does, and the file fallback (before the
+            # first generation) accepted temp tables, ATTACH and VACUUM INTO.
+            conn.set_authorizer(dbpath.read_only_authorizer)
             try:
                 cur = conn.execute(sql)
                 rows = cur.fetchmany(200)  # cap at 200 rows

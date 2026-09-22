@@ -283,3 +283,60 @@ def test_a_crafted_path_is_the_shell_not_a_server_error(tmp_path, monkeypatch):
     for path in ("/a%00b", "/%00", "/snapshot/%00latest.json"):
         r = client.get(path)
         assert r.status_code == 200 and "shell" in r.text, path
+
+
+# ── item 2 re-audit, loop 1: the wiring, not only the parts ────────────────
+
+
+def test_the_real_app_runs_the_security_middleware():
+    """D2: with the middleware line removed from api/main.py every security
+    test still passed. This one goes through the app the image serves."""
+    from api import security as sec
+
+    assert any(m.cls is sec.SecurityMiddleware for m in app.user_middleware)
+    r = client.get("/health")
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    big = client.post("/api/assistant/ask", content=b"x" * (16 * 1024 + 1), headers={"content-type": "application/json"})
+    assert big.status_code == 413
+
+
+def test_a_public_process_serves_no_docs_and_no_schema():
+    """D3: the app's own constructor must take docs_enabled() at import; a
+    fresh process with DEPLOY_PUBLIC=1 proves it end to end."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    code = (
+        "from fastapi.testclient import TestClient\n"
+        "from api.main import app\n"
+        "c = TestClient(app)\n"
+        "body = c.get('/openapi.json').text[:200]\n"
+        "print('DOCS', app.docs_url, app.redoc_url, app.openapi_url, 'schema' if '\"openapi\"' in body else 'no-schema')\n"
+    )
+    env = {**os.environ, "DEPLOY_PUBLIC": "1", "EODHD_PROBE_ON_START": "0"}
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=180,
+                         cwd=Path(__file__).resolve().parent.parent)
+    line = next((ln for ln in out.stdout.splitlines() if ln.startswith("DOCS ")), "")
+    assert line.split()[1:] == ["None", "None", "None", "no-schema"], (out.stdout[-500:], out.stderr[-500:])
+
+
+def test_an_allocation_failure_names_no_module_or_class(monkeypatch):
+    """Item 2 re-audit (F6, the milder half): the 503 named the missing module
+    and the 502 the exception class; the detail stays in the server log."""
+    from api import analytics_cache
+
+    def missing():
+        raise ModuleNotFoundError("No module named 'riskfolio'", name="riskfolio")
+
+    monkeypatch.setattr(analytics_cache, "get_cached_allocation", missing)
+    r = client.get("/api/allocation")
+    assert r.status_code == 503 and "riskfolio" not in r.text and "ModuleNotFound" not in r.text
+
+    def broken():
+        raise ZeroDivisionError("float division by zero")
+
+    monkeypatch.setattr(analytics_cache, "get_cached_allocation", broken)
+    r = client.get("/api/allocation")
+    assert r.status_code == 502 and "ZeroDivision" not in r.text

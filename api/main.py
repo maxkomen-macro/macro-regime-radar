@@ -1571,17 +1571,20 @@ def api_allocation() -> dict:
     try:
         payload = _guarded(analytics_cache.get_cached_allocation)
     except ModuleNotFoundError as exc:
+        # The module's name is for the server log, not for a visitor
+        # (launch-1, item 2 re-audit, F6).
+        log.error("allocation engine dependency missing: %s (install requirements-api.lock)", exc.name)
         raise HTTPException(
             status_code=503,
-            detail=f"Allocation engine dependency missing: {exc.name}. "
-            "Install requirements-api.txt into the API environment.",
+            detail="Allocation is not available on this server right now. Every other screen works as usual.",
         ) from exc
     except (HTTPException, NotStored, worker_mod.Warming):
         raise
     except Exception as exc:  # a numerical failure over the stored histories
+        log.warning("allocation failed: %s", type(exc).__name__)
         raise HTTPException(
             status_code=502,
-            detail=f"Allocation could not be computed from the stored histories ({type(exc).__name__}).",
+            detail="Allocation could not be computed from the stored histories this time.",
         ) from exc
     return {**payload, "freshness": _freshness_block(["asset_prices"])}
 

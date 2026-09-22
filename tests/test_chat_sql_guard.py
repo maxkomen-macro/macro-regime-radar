@@ -226,3 +226,60 @@ def test_get_secret_commented_env_file_line_ignored(monkeypatch, tmp_path):
     monkeypatch.delenv("___CHAT_SECRET_PROBE___", raising=False)
     monkeypatch.setattr(_chat, "_ENV_FILE", env_file)
     assert _chat.get_secret("___CHAT_SECRET_PROBE___") == ""
+
+
+# ── launch-1, item 2 re-audit: bounds the keyword guard cannot express ──────
+
+
+def _scratch_db(tmp_path):
+    import sqlite3 as _sq
+
+    path = tmp_path / "scratch.db"
+    conn = _sq.connect(path)
+    conn.execute("CREATE TABLE regimes (date TEXT, label TEXT)")
+    conn.execute("INSERT INTO regimes VALUES ('2026-08-01', 'Overheating')")
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_one_value_cannot_grow_past_a_megabyte(tmp_path, monkeypatch):
+    """printf('%.*c', 999999999, 'x') passed the guard, the progress handler
+    and the row cap, and allocated about 1 GB in half a second."""
+    import time
+
+    from src.analytics import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    t = time.perf_counter()
+    out = chat_mod._tool_query_database("SELECT length(printf('%.*c', 999999999, 'x')) AS n")
+    # Past the limit SQLite's printf yields NULL rather than the value; either
+    # way nothing near a gigabyte is built.
+    assert "error" in out or out["rows"] == [{"n": None}], out
+    doubling = chat_mod._tool_query_database(
+        "WITH RECURSIVE s(x) AS (SELECT 'x' UNION ALL SELECT x || x FROM s WHERE length(x) < 250000000) "
+        "SELECT max(length(x)) AS n FROM s")
+    assert "error" in doubling or (doubling["rows"][0]["n"] or 0) <= 1_000_000, doubling
+    assert time.perf_counter() - t < 2.0
+    ok = chat_mod._tool_query_database("SELECT length(printf('%.*c', 900000, 'x')) AS n")
+    assert ok["rows"] == [{"n": 900000}]
+
+
+def test_the_tool_connection_refuses_writes_even_on_the_file(tmp_path, monkeypatch):
+    """With no generation published the tool reads the file itself, where a
+    read-only open still allowed temp tables, ATTACH and VACUUM INTO. The
+    guard stops those; the connection now refuses them too."""
+    from src.analytics import chat as chat_mod
+    from src.analytics import dbpath
+
+    db = _scratch_db(tmp_path)
+    monkeypatch.setattr(chat_mod, "DB_PATH", db)
+    monkeypatch.setattr(dbpath, "_provider", None)
+    target = tmp_path / "copy.db"
+    for sql in (f"VACUUM INTO '{target}'", "CREATE TEMP TABLE t(x)", "ATTACH ':memory:' AS m"):
+        # Called past the guard on purpose: the connection is the second wall.
+        monkeypatch.setattr(chat_mod, "is_safe_select", lambda s: True)
+        out = chat_mod._tool_query_database(sql)
+        assert "error" in out, (sql, out)
+    assert not target.exists()
+    assert chat_mod._tool_query_database("SELECT label FROM regimes")["rows"] == [{"label": "Overheating"}]

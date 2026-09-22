@@ -254,10 +254,13 @@ class _AllocationInChild:
             proc.join(10)
             if proc.is_alive():
                 proc.kill()
-            try:
-                os.remove(snap)
-            except OSError:
-                pass
+            # The snapshot and any sidecar SQLite left beside it (item 2
+            # re-audit: -wal/-shm files piled up in TMPDIR, one pair a build).
+            for leftover in (snap, f"{snap}-wal", f"{snap}-shm", f"{snap}-journal"):
+                try:
+                    os.remove(leftover)
+                except OSError:
+                    pass
         if "not_stored" in out:
             raise NotStored(out["not_stored"])
         if "error" in out:
