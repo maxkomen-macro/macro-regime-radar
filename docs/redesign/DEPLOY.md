@@ -281,7 +281,11 @@ diagnostics are closed, that the rate limits key on your address rather than
 a proxy's, and that no feed is being refused for the symbol limit. Exit code 0
 means every check passed.
 
-Two failures have a fix outside the code:
+One warning and two failures have a fix outside the code:
+
+- **"assistant ledger disk … the container's own disk" (a warning):** the disk
+  from section 3a step 6 is missing, so every restart starts a fresh day's
+  ledger. Attach it, or accept that and rely on the workspace limit.
 
 - **"assistant ledger … read-only" or "unavailable":** the disk at `/var/data`
   is not writable by the container's user (uid 10001). Remove

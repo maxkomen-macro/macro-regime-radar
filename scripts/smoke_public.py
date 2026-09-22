@@ -254,6 +254,11 @@ def check_assistant(client: httpx.Client, api: str, rep: Report) -> None:
         rep.warn("assistant", f"resting: ${spent} of ${cap} spent today, wakes {body.get('resets_at')}")
     else:
         rep.ok("assistant", f"awake: ${spent} of ${cap} spent today")
+    if body.get("ledger_persistent") is False:
+        rep.warn("assistant ledger disk", "the ledger is on the container's own disk: each restart starts a fresh day "
+                                          "(attach the disk, DEPLOY.md section 3a step 6)")
+    elif body.get("ledger_persistent"):
+        rep.ok("assistant ledger disk", "on a mounted disk")
     # The gate itself, without spending a model call: an oversized body must be
     # refused by the 16 KB cap rather than answered.
     try:

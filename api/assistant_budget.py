@@ -60,12 +60,13 @@ LEDGER_PATH = Path(os.environ.get("ASSISTANT_LEDGER_PATH") or (Path(__file__).re
 DEFAULT_DAILY_CAP_USD = 1.0
 # What the chip compares with the day's remaining budget: a first call at its
 # largest (the 16 KB body cap holds the question and its history, plus the
-# system block and tool definitions: 24,838 tokens by prompt_token_bound in
-# verify loop 2), priced as reserve() prices any call, so the chip never says
+# system block and tool definitions: up to about 25,400 tokens by
+# prompt_token_bound when the body is split over the forty kept history turns,
+# verify loop 2 and its follow-up), priced as reserve() prices any call, so the chip never says
 # awake when the largest question would be told the analyst is resting.
 # Every real call is still reserved at its own worst case; this only decides
 # when the chip says "resting" before anyone asks.
-RESERVE_INPUT_TOKENS = 25_000  # a 16 KB body, system block and tools, as prompt_token_bound counts them
+RESERVE_INPUT_TOKENS = 26_000  # a 16 KB body as 41 blocks, system block and tools, as prompt_token_bound counts them
 RESERVE_OUTPUT_TOKENS = 2_000  # src/analytics/chat.py MAX_TOKENS
 
 # How long a failed ledger write rests the analyst: long enough that a full
@@ -173,6 +174,17 @@ def ledger_writable() -> bool:
     return os.access(probe, os.W_OK)
 
 
+def ledger_persistent() -> bool:
+    """Whether the ledger sits on a mounted disk or volume rather than the
+    container's own layer, which a restart discards (follow-up R3: without
+    this, a deploy that forgot the disk looked healthy)."""
+    here = Path(LEDGER_PATH).resolve().parent
+    try:
+        return any(os.path.ismount(p) for p in (here, *here.parents) if p != Path(p.anchor))
+    except OSError:
+        return False
+
+
 def spent_today(now: datetime | None = None) -> float:
     """The day's charged spend: settled calls plus the holds of calls still
     running or never settled. Raises OSError or sqlite3.Error when the ledger
@@ -195,7 +207,7 @@ def state(now: datetime | None = None) -> dict:
     """What the chip shows: resting or not, the day's spend, the cap and when
     the day turns over. Never raises."""
     cap, reserve = daily_cap_usd(), reserve_usd()
-    base = {"cap_usd": cap, "reserve_usd": round(reserve, 6), "resets_at": _resets_at(now)}
+    base = {"cap_usd": cap, "reserve_usd": round(reserve, 6), "resets_at": _resets_at(now), "ledger_persistent": ledger_persistent()}
     problem = _ledger_problem()
     spent = None
     if problem is None:

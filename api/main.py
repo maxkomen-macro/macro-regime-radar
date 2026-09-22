@@ -99,10 +99,11 @@ def _log_startup_state() -> None:
     log.info("startup: ANTHROPIC_API_KEY resolvable: %s", "yes" if _anthropic_key_resolvable() else "no")
     log.info("startup: FINNHUB_API_KEY %s", "yes" if _finnhub_key_present() else "no")
     log.info("startup: OPS_ACCESS_KEY %s", "yes" if os.environ.get("OPS_ACCESS_KEY", "").strip() else "no")
-    log.info("startup: public posture %s; assistant %s; daily cap $%.2f; ledger %s (%s)",
+    log.info("startup: public posture %s; assistant %s; daily cap $%.2f; ledger %s (%s, %s)",
              "on" if security.is_public_deploy() else "off", security.assistant_mode(),
              assistant_budget.daily_cap_usd(), assistant_budget.LEDGER_PATH,
-             "writable" if assistant_budget.ledger_writable() else "NOT WRITABLE")
+             "writable" if assistant_budget.ledger_writable() else "NOT WRITABLE",
+             "on a mounted disk" if assistant_budget.ledger_persistent() else "on the container's own disk, reset by a restart")
     if security.assistant_mode() != "off" and not assistant_budget.ledger_writable():
         log.warning("startup: this user cannot write the assistant's spend ledger at %s, so the analyst "
                     "will rest; see DEPLOY.md (the ledger disk)", assistant_budget.LEDGER_PATH)

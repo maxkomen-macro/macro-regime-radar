@@ -206,6 +206,8 @@ export interface AssistantStatus {
   reserve_usd: number;
   resets_at: string;
   ledger: string;
+  /** Whether the ledger is on a mounted disk (launch-1): false means a restart starts a fresh day. */
+  ledger_persistent?: boolean;
   reason: string | null;
 }
 

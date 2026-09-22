@@ -610,15 +610,29 @@ def test_the_sdk_does_not_retry_under_a_hold(ledger, monkeypatch):
 
 def test_the_chip_keeps_the_largest_first_call_in_hand():
     """Verify loop 2, R4: the chip's reserve covers a first call at the body
-    cap, so it never says awake to a question that would be told to rest."""
+    cap in its largest shape: the forty history turns the agent keeps plus the
+    question (each turn adds block framing), under a generous state snapshot."""
     from api import security as sec
 
-    body = "x" * sec.ASSISTANT_MAX_BODY_BYTES
-    largest = chat_mod.prompt_token_bound(
-        chat_mod.SYSTEM_PROMPT_TEMPLATE.format(state_snapshot="snapshot"), chat_mod.TOOLS,
-        [{"role": "user", "content": body}])
-    assert budget.RESERVE_INPUT_TOKENS >= largest
+    system = chat_mod.SYSTEM_PROMPT_TEMPLATE.format(state_snapshot="s" * 400)
+    cap = sec.ASSISTANT_MAX_BODY_BYTES
+    one = [{"role": "user", "content": "x" * cap}]
+    turns = [{"role": "user" if i % 2 == 0 else "assistant", "content": "h"} for i in range(chat_mod.HISTORY_TURN_LIMIT * 2)]
+    many = turns + [{"role": "user", "content": "x" * (cap - len(json.dumps(turns)))}]
+    largest = max(chat_mod.prompt_token_bound(system, chat_mod.TOOLS, shape) for shape in (one, many))
+    assert budget.RESERVE_INPUT_TOKENS >= largest, largest
     assert budget.reserve_usd() >= budget.call_worst_case_usd(largest, chat_mod.MAX_TOKENS)
+
+
+def test_the_status_says_whether_the_ledger_survives_a_restart(ledger, monkeypatch):
+    """Follow-up R3: the image's own /var/data is writable, so a deploy that
+    forgot the disk looked healthy while every restart began a fresh day."""
+    import os
+
+    monkeypatch.setattr(os.path, "ismount", lambda p: False)
+    assert budget.state()["ledger_persistent"] is False
+    monkeypatch.setattr(os.path, "ismount", lambda p: str(p) == str(ledger.parent))
+    assert budget.state()["ledger_persistent"] is True
 
 
 def test_a_ledger_refusal_says_it_is_the_ledger(ledger, monkeypatch):
