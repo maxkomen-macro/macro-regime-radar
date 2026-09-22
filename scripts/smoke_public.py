@@ -1,8 +1,9 @@
 """scripts/smoke_public.py — check a deployed Macro Regime Radar (launch-1).
 
 Run it after a deploy, and any time the site looks wrong. It reads only: every
-check is a GET, a HEAD or one WebSocket connect, and nothing it does costs the
-assistant a model call.
+check is a GET or a WebSocket connect, except one oversized POST to the
+assistant that the 16 KB body cap refuses before the agent runs, so nothing it
+does costs a model call.
 
     python scripts/smoke_public.py \
         --api https://your-api-host.example \
@@ -40,12 +41,22 @@ STORED_ROUTES = [
     "/api/regime/intelligence", "/api/regime/playbooks", "/api/regime/duration",
     "/api/regime/transitions", "/api/regime/analogues", "/api/regime/scenarios",
     "/api/lbo/defaults", "/api/allocation", "/api/freshness",
+    "/series/FEDFUNDS/latest", "/series/VIXCLS/latest",  # the Dashboard's two series tiles
 ]
+# Each of these spends EODHD quota (the options chain bills the marketplace
+# allowance): --skip-provider leaves them out. The chain itself needs an
+# expiration, so the expirations list stands for the options lens.
 PROVIDER_ROUTES = [
     "/api/market/search?q=AAPL&limit=3",
     "/api/market/profile/AAPL",
     "/api/market/candles/AAPL?range=5D",
+    "/api/market/options/AAPL/expirations",
 ]
+# Not probed, on purpose: the three POST calculators (they run a visitor's own
+# inputs; their GET halves are above), a real question to the assistant (a
+# model call costs money), /series (Atlas only), corporate actions and ticks
+# (no screen reads them), and the SPA shell (Vercel serves it on the split
+# deploy; the single-service fallback is covered by the site checks).
 SECURITY_HEADERS = {
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
@@ -98,6 +109,16 @@ def check_routes(client: httpx.Client, base: str, routes: list[str], rep: Report
         rep.warn(f"{label} slow routes", ", ".join(slow))
 
 
+def _allocation_not_stored(client: httpx.Client, api: str) -> bool:
+    """Whether /api/allocation answers 503 not_stored: the one worker error
+    that is a fact about the database rather than a fault."""
+    try:
+        r = client.get(api + "/api/allocation")
+        return r.status_code == 503 and (r.json() or {}).get("kind") == "not_stored"
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
 def check_readiness(client: httpx.Client, api: str, rep: Report) -> None:
     try:
         r = client.get(api + "/health/ready")
@@ -110,9 +131,15 @@ def check_readiness(client: httpx.Client, api: str, rep: Report) -> None:
     body = r.json()
     worker = body.get("worker") or {}
     rep.ok("readiness", f"generation {worker.get('generation')} built in {worker.get('build_ms')} ms")
-    if worker.get("errors"):
-        rep.fail("worker items", f"errors: {worker['errors']}")
-    else:
+    errors = list(worker.get("errors") or [])
+    if "allocation" in errors and _allocation_not_stored(client, api):
+        # One verdict, not two: a database that predates the stored price
+        # histories is a WARN here and on the route, never a FAIL beside a WARN.
+        errors.remove("allocation")
+        rep.warn("worker items", "allocation: this database predates the stored price histories")
+    if errors:
+        rep.fail("worker items", f"errors: {errors}")
+    elif "allocation" not in (worker.get("errors") or []):
         rep.ok("worker items", "no item is answering with an error")
     if worker.get("held"):
         rep.warn("worker held", json.dumps(worker["held"]))
@@ -169,13 +196,16 @@ def check_security_headers(client: httpx.Client, url: str, rep: Report, label: s
         problems.append("frame-ancestors is not 'none'")
     if api and "connect-src" in csp:
         # The API's own origins, for its scheme: https + wss in production,
-        # http + ws for a local rehearsal (launch-1 verify loop 1).
+        # http + ws for a local rehearsal (launch-1 verify loop 1). On the
+        # single-service deploy the site is the API, and 'self' names it.
         connect = csp.split("connect-src", 1)[1].split(";")[0].split()
-        host = api.split("://", 1)[1]
-        want = [f"https://{host}", f"wss://{host}"] if api.startswith("https://") else [f"http://{host}", f"ws://{host}"]
-        absent = [w for w in want if w not in connect]
-        if absent:
-            problems.append(f"connect-src does not name {', '.join(absent)}")
+        host = api.split("://", 1)[1].rstrip("/")
+        same_origin = url.split("://", 1)[1].split("/", 1)[0] == host
+        if not (same_origin and "'self'" in connect):
+            want = [f"https://{host}", f"wss://{host}"] if api.startswith("https://") else [f"http://{host}", f"ws://{host}"]
+            absent = [w for w in want if w not in connect]
+            if absent:
+                problems.append(f"connect-src does not name {', '.join(absent)}")
     if problems:
         rep.fail(f"{label} CSP", "; ".join(problems))
     else:
@@ -245,22 +275,23 @@ def check_assistant(client: httpx.Client, api: str, rep: Report) -> None:
         return
     if r.status_code != 200:
         rep.fail("assistant status", f"{r.status_code} {r.text[:120]}")
-        return
-    body = r.json()
-    spent, cap = body.get("spent_usd"), body.get("cap_usd")
-    if body.get("ledger") != "ok":
-        rep.fail("assistant ledger", f"{body.get('ledger')}: the ceiling cannot be counted, so the analyst is resting")
-    elif body.get("resting"):
-        rep.warn("assistant", f"resting: ${spent} of ${cap} spent today, wakes {body.get('resets_at')}")
     else:
-        rep.ok("assistant", f"awake: ${spent} of ${cap} spent today")
-    if body.get("ledger_persistent") is False:
-        rep.warn("assistant ledger disk", "the ledger is on the container's own disk: each restart starts a fresh day "
-                                          "(attach the disk, DEPLOY.md section 3a step 6)")
-    elif body.get("ledger_persistent"):
-        rep.ok("assistant ledger disk", "on a mounted disk")
-    # The gate itself, without spending a model call: an oversized body must be
-    # refused by the 16 KB cap rather than answered.
+        body = r.json()
+        spent, cap = body.get("spent_usd"), body.get("cap_usd")
+        if body.get("ledger") != "ok":
+            rep.fail("assistant ledger", f"{body.get('ledger')}: the ceiling cannot be counted, so the analyst is resting")
+        elif body.get("resting"):
+            rep.warn("assistant", f"resting: ${spent} of ${cap} spent today, wakes {body.get('resets_at')}")
+        else:
+            rep.ok("assistant", f"awake: ${spent} of ${cap} spent today")
+        if body.get("ledger_persistent") is False:
+            rep.warn("assistant ledger disk", "the ledger is on the container's own disk: each restart starts a fresh day "
+                                              "(attach the disk, DEPLOY.md section 3a step 6)")
+        elif body.get("ledger_persistent"):
+            rep.ok("assistant ledger disk", "on a mounted disk")
+    # The gate itself, without spending a model call, whatever the status read
+    # answered: an oversized body must be refused by the 16 KB cap rather than
+    # answered.
     try:
         r = client.post(api + "/api/assistant/ask", content=b"{" + b"x" * 17_000 + b"}",
                         headers={"content-type": "application/json"})

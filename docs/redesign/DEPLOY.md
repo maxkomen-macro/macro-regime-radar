@@ -306,6 +306,14 @@ One warning and three failures have a fix outside the code:
 
 Then watch these for a day:
 
+- The service's **Memory** graph in Render. Idle, the container sits near
+  230 MiB and a database rebuild peaks near 480 MiB. The two-hour soak on
+  this branch showed a slow upward drift of a few MiB an hour that two hours
+  could not tell from allocator settling; a long-running process could carry
+  it further. If the graph climbs past **700 MiB** with no rebuild in
+  progress, redeploy (Manual Deploy → Deploy latest commit), which starts the
+  process afresh, and mention it in the next session. A restart costs the
+  site nothing but a short outage during which it paints its snapshot.
 - `/health/ready` → `worker.errors` empty and `worker.held` null.
 - `/api/freshness` → `overall` not `unknown`; the `sla` rows say what is late.
 - `/api/providers/status` (with `X-Ops-Key`) → `quota.units_per_day_projected`

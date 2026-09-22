@@ -1579,7 +1579,9 @@ def calculate_hedging_impact(
     hedge_ratio: float = 0.5,
 ) -> Optional[Dict]:
     """Simplified FX hedging impact estimate using EUR/USD as primary hedge."""
-    aligned = pd.concat([portfolio_returns, fx_returns], axis=1).dropna()
+    # sort=True names the alignment the code has always relied on (pandas 3
+    # deprecates the default for DatetimeIndex concats; launch-1, item 4).
+    aligned = pd.concat([portfolio_returns, fx_returns], axis=1, sort=True).dropna()
     if len(aligned) < 12 or "EUR/USD" not in aligned.columns:
         return None
 
