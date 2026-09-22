@@ -2253,6 +2253,7 @@ button.mrr-mover:hover {
    the last three), stacking into three lines below 768 (media rules in the
    responsive blocks). */
 .mrr-news {
+  container: mrr-news / inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--gap-panel);
@@ -2279,6 +2280,15 @@ button.mrr-mover:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--gap-tile);
   align-items: stretch;
+}
+/* With the sidebar expanded at 1024 px the content column is about 740 px:
+   two lead cards side by side left the shorter one a 52 px hole above its
+   pinned footer (G2 dead space, launch-1 e2e run). Under 800 px of content
+   the leads stack, as they already do below the 768 px media query. */
+@container mrr-news (max-width: 799.98px) {
+  .mrr-news-lead {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .mrr-news-tiles {
   display: grid;

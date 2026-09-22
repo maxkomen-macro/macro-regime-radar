@@ -309,16 +309,23 @@ test.describe("regime lab (checklist 04 E.3)", () => {
     await expect(page.locator("#playbook")).toContainText("Sector tilts", { ignoreCase: true });
     await capture(page, "regime-lab--playbook.png");
 
-    const overheating = group.locator("button[aria-pressed]").filter({ hasText: /^Overheating/ });
-    await overheating.click();
-    await expect(overheating).toHaveAttribute("aria-pressed", "true");
+    // A regime other than the served one: when the served regime is
+    // Overheating, "Overheating" and "← now" are the same button, and a test
+    // that assumed otherwise could never see it unpress (launch-1 e2e run).
+    const other = group.locator("button[aria-pressed]").filter({ hasNotText: /← now$/ }).first();
+    const otherLabel = clean(await other.innerText());
+    const otherKey = Object.keys(playbooks).find((k) => k.toLowerCase() === otherLabel.toLowerCase());
+    expect(otherKey, `the served playbooks carry a regime named ${otherLabel}`).toBeDefined();
+    await other.click();
+    await expect(other).toHaveAttribute("aria-pressed", "true");
     expect(await group.locator("button[aria-pressed='true']").count()).toBe(1);
-    const expected = [...playbooks.Overheating.sector_tilts.overweight, ...playbooks.Overheating.sector_tilts.underweight].map((s) => s.sector);
+    const tilts = playbooks[otherKey as string].sector_tilts;
+    const expected = [...tilts.overweight, ...tilts.underweight].map((s) => s.sector);
     await expect.poll(async () => (await page.locator("#playbook .mrr-meter-row > span:first-child").allInnerTexts()).map(clean), { timeout: 15_000 }).toEqual(expected);
-    await capture(page, "regime-lab--playbook-overheating.png");
+    await capture(page, `regime-lab--playbook-${otherLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`);
     await now.click();
     await expect(now).toHaveAttribute("aria-pressed", "true");
-    await expect(overheating).toHaveAttribute("aria-pressed", "false");
+    await expect(other).toHaveAttribute("aria-pressed", "false");
   });
 
   test("9. Scenarios: the first preset scores on load; Custom shocks reveals the sliders; five ArrowRights on the HY shock POST once and move the stressed odds only; reset clears", async ({ page }) => {

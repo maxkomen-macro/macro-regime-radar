@@ -358,6 +358,7 @@ test.describe("news (checklist 08 E.3)", () => {
     note("headlines-title", title);
     let wire = 0;
     let ai = 0;
+    let pending = 0;
     for (let i = 0; i < n; i++) {
       const a = articles(page).nth(i);
       const link = a.locator("h3 a");
@@ -368,9 +369,13 @@ test.describe("news (checklist 08 E.3)", () => {
       const text = await visibleText(a);
       expect(text).toMatch(/SIG \d\.\d \/ 5/);
       await expect(a.locator("i")).toHaveCount(5);
-      const labelled = /WHY IT MATTERS · AI/.test(text) ? "ai" : /WIRE SUMMARY/.test(text) ? "wire" : null;
-      expect(labelled, `article ${i + 1} carries an AI or wire label`).not.toBeNull();
+      // Three provenance labels (NewsCard.jsx): the AI read, the wire summary,
+      // or "AI read pending" for a story in the enrichment set whose read has
+      // not arrived yet (news-copy.ts pendingReadIds); every lead carries one.
+      const labelled = /WHY IT MATTERS · AI/.test(text) ? "ai" : /WIRE SUMMARY/.test(text) ? "wire" : /AI READ PENDING/.test(text) ? "pending" : null;
+      expect(labelled, `article ${i + 1} carries an AI, wire or pending label`).not.toBeNull();
       if (labelled === "ai") ai++;
+      else if (labelled === "pending") pending++;
       else wire++;
       const readAt = a.getByRole("link", { name: /^Read at .+ →$/ });
       await expect(readAt).toHaveCount(1);
@@ -388,7 +393,7 @@ test.describe("news (checklist 08 E.3)", () => {
         note(`regime-read-${i + 1}`, `${name}: ${expectedN} source links`);
       }
     }
-    note("labels", `${ai} lead cards read WHY IT MATTERS · AI, ${wire} read WIRE SUMMARY${wire === n ? " (local DB: no enrichment ran, accepted as a pass)" : ""}`);
+    note("labels", `${ai} lead cards read WHY IT MATTERS · AI, ${wire} read WIRE SUMMARY, ${pending} read AI READ PENDING${ai === 0 ? " (local DB: no enrichment ran, accepted as a pass)" : ""}`);
     const breakdown = articles(page).first().getByRole("button", { name: /Score breakdown/ });
     await expect(breakdown).toHaveCount(1);
     await expect(breakdown).toHaveAttribute("aria-expanded", "false");

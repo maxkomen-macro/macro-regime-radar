@@ -7,7 +7,8 @@
  * for credit metrics and the LBO defaults — so a tab left open could show the
  * old HY OAS beside the new regime. `/api/freshness` now names the generation
  * that answered, and the client drops everything read from the database when
- * that number changes.
+ * that generation changes: its id and its build time together, since ids
+ * count from 1 in every process.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";

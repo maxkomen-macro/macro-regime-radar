@@ -250,8 +250,12 @@ async function checkSnapshot(page: Page, slug: string, seededLabel: string | nul
       break;
     }
     case "credit": {
-      // credit/metrics is not seeded (F1); credit/oas is, so the strip's US 10Y card prints.
-      await expect(section(page, "oas")).toContainText(NOTE_ERROR, { timeout: 20_000 });
+      // credit/metrics and credit/oas are both seeded (scripts/build_snapshot.py
+      // carries /api/credit/metrics since fix/prelaunch-1): the Spread monitor
+      // prints from the snapshot under its own stamp, and the strip's US 10Y
+      // card prints. The old "not seeded (F1)" expectation predates that.
+      await expect(section(page, "oas")).toContainText(/Snapshot · as of/, { timeout: 20_000 });
+      await expect(section(page, "oas")).not.toContainText(NOTE_ERROR);
       await expect(strip(page).locator('[data-symbol="US 10Y"] .v')).toHaveText(/^\d\.\d\d%$/);
       break;
     }
