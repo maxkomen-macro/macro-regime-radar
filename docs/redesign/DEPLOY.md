@@ -286,12 +286,11 @@ diagnostics are closed, that the rate limits key on your address rather than
 a proxy's, and that no feed is being refused for the symbol limit. Exit code 0
 means every check passed.
 
-One warning and two failures have a fix outside the code:
+One warning and three failures have a fix outside the code:
 
 - **"assistant ledger disk … the container's own disk" (a warning):** the disk
   from section 3a step 6 is missing, so every restart starts a fresh day's
   ledger. Attach it, or accept that and rely on the workspace limit.
-
 - **"assistant ledger … read-only" or "unavailable":** the disk at `/var/data`
   is not writable by the container's user (uid 10001). Remove
   `ASSISTANT_LEDGER_PATH` so the ledger lives in `/app/data` on the container's
@@ -301,6 +300,9 @@ One warning and two failures have a fix outside the code:
   `CLIENT_IP_HEADER` as in section 3 (or adjust `TRUSTED_PROXY_HOPS`) until
   `GET /api/ops/whoami` with the `X-Ops-Key` header shows your own address as
   `client_id`.
+- **"client address header … a forged … became the key":** the host's edge does
+  not overwrite that header, so a visitor could pick its own rate-limit key.
+  Unset `CLIENT_IP_HEADER` and rely on `TRUSTED_PROXY_HOPS`.
 
 Then watch these for a day:
 
