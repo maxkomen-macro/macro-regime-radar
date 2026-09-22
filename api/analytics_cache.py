@@ -290,6 +290,29 @@ class _AllocationInChild:
 _allocation = _AllocationInChild()
 
 
+def _desk_assets(ctx: dict) -> dict:
+    """The Desk's assets list with stored coverage (src/desk/event_study)."""
+    from src.desk import event_study as es
+
+    return es.assets_with_coverage(es.DB_PATH)
+
+
+def _desk_preset(name: str):
+    """One precomputed event study (desk/event-study, 2026-09-21): the
+    presets are the only studies computed ahead of a request."""
+
+    def build(ctx: dict) -> dict:
+        from src.desk import event_study as es
+
+        return es.run(es.PRESETS[name])
+
+    build.__name__ = f"_desk_preset_{name.replace('-', '_')}"
+    return build
+
+
+DESK_PRESETS = ("gold-2sigma-spx-weak", "spx-golden-cross", "spx-death-cross")
+
+
 ITEMS = [
     ("credit", _credit),
     ("recession", _recession),
@@ -303,6 +326,8 @@ ITEMS = [
     ("playbooks", _playbooks),
     ("scenario_defs", _scenario_defs),
     ("allocation", _allocation),
+    ("desk_assets", _desk_assets),
+    *[(f"desk_preset:{name}", _desk_preset(name)) for name in DESK_PRESETS],
 ]
 
 

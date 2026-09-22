@@ -220,6 +220,30 @@ def assess(
             ap_reason = f"Stored histories end {ap.isoformat()}; {ap_lag} session(s) behind {exp_md.isoformat()}." + ap_src
         rows.append(_verdict("asset_prices", db_fresh.get("asset_prices_date"), exp_md.isoformat(), ap_ok, ap_grace, ap_reason))
 
+    # ── desk_series: the Desk's daily series (desk/event-study, 2026-09-21) ──
+    # FRED posts a daily observation the next business day (VIX and the ICE
+    # BofA OAS by the next morning, yields the same afternoon), so the table
+    # is current when its oldest newest observation is at least the session
+    # before the last completed one. Not a regime input, never in `overall`.
+    ds_known = "desk_series_date" in db_fresh
+    if ds_known:
+        ds = _parse_date(db_fresh.get("desk_series_date"))
+        ds_detail = ((watermarks or {}).get("desk_series") or {}).get("detail")
+        ds_src = f" Series: {ds_detail}." if ds_detail else ""
+        exp_ds = cal.previous_trading_day(exp_md)
+        ds_ok = ds is not None and ds >= exp_ds
+        ds_grace = ds is not None and ds >= cal.previous_trading_day(exp_ds) and now < grace_until
+        ds_lag = cal.business_days_between(ds, exp_ds) if ds else None
+        if ds is None:
+            ds_reason = "The Desk's daily series are not stored in this database yet; the next full refresh stores them."
+        elif ds_ok:
+            ds_reason = f"Stored Desk series include {exp_ds.isoformat()} (FRED posts next day)." + ds_src
+        elif ds_grace:
+            ds_reason = f"Observation for {exp_ds.isoformat()} not yet stored; the full refresh has until 06:00 UTC." + ds_src
+        else:
+            ds_reason = f"Stored Desk series end {ds.isoformat()}; {ds_lag} session(s) behind {exp_ds.isoformat()}." + ds_src
+        rows.append(_verdict("desk_series", db_fresh.get("desk_series_date"), exp_ds.isoformat(), ds_ok, ds_grace, ds_reason))
+
     # ── market_intraday: 20 min in session, else last session close ─────────
     mi = _parse_dt(db_fresh.get("market_intraday_ts"), naive_tz=cal.NY)  # pipeline stamps ET wall time
     if session["is_open"]:

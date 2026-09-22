@@ -1615,6 +1615,9 @@ def api_calendar_recent(
 
 app.include_router(api)
 app.include_router(assistant_router)
+from api.desk import router as desk_router  # noqa: E402  (desk/event-study: /api/desk/event-study[/assets])
+
+app.include_router(desk_router)
 
 
 @app.websocket("/api/stream/ws")

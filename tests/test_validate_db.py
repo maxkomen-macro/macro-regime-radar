@@ -40,6 +40,10 @@ def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime=
                      " close REAL NOT NULL, provider TEXT NOT NULL, PRIMARY KEY (symbol, interval, date))")
         conn.executemany("INSERT INTO asset_prices VALUES (?,?,?,?,?)",
                          [("SPY", "1d", daily, 500.0, "yfinance"), ("SPY", "1mo", daily[:8] + "01", 500.0, "yfinance")])
+        # desk/event-study: the Desk's daily series, stored by the same full refresh.
+        conn.execute("CREATE TABLE desk_series (series_id TEXT NOT NULL, date TEXT NOT NULL, value REAL NOT NULL,"
+                     " provider TEXT NOT NULL, PRIMARY KEY (series_id, date))")
+        conn.executemany("INSERT INTO desk_series VALUES (?,?,?,?)", [("DGS10", daily, 4.0, "fred"), ("VIXCLS", daily, 15.0, "fred")])
     if watermarks:
         # B6: a full refresh records each FRED daily series' true last observation
         # (raw_series keeps month-stamped rows); checked within this run's window.
@@ -54,6 +58,8 @@ def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime=
         if histories:
             conn.execute("INSERT INTO source_watermarks VALUES (?,?,?,?,?,?,?)",
                          ("asset_prices", daily, None, "2026-09-05T21:00:00Z", "2026-09-05T21:00:00Z", "ok", "yfinance 1"))
+            conn.execute("INSERT INTO source_watermarks VALUES (?,?,?,?,?,?,?)",
+                         ("desk_series", daily, None, "2026-09-05T21:00:00Z", "2026-09-05T21:00:00Z", "ok", "fred 2"))
     conn.commit()
     conn.close()
 
