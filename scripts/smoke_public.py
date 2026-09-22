@@ -316,6 +316,19 @@ def check_client_identity(client: httpx.Client, api: str, ops_key: str | None, m
         private = ipaddress.ip_address(str(cid)).is_private
     except ValueError:
         private = False
+    if hops and who.get("client_ip_header"):
+        # The header is trusted only because the edge overwrites it: send a
+        # forged one and make sure it does not come back as the key.
+        forged = "203.0.113.7"
+        try:
+            again = client.get(api + "/api/ops/whoami", headers={"X-Ops-Key": ops_key, who["client_ip_header"]: forged}).json()
+            if again.get("client_id") == forged:
+                rep.fail("client address header", f"a forged {who['client_ip_header']} became the key: the edge does not "
+                                                  "overwrite it, so unset CLIENT_IP_HEADER and use TRUSTED_PROXY_HOPS")
+            else:
+                rep.ok("client address header", f"a forged {who['client_ip_header']} was overwritten by the edge")
+        except (httpx.HTTPError, ValueError) as exc:
+            rep.warn("client address header", type(exc).__name__)
     if my_ip:
         (rep.ok if cid == my_ip else rep.fail)("client address", f"limits key on {cid} ({via}); you are {my_ip}")
     elif hops and (cid == peer or private):

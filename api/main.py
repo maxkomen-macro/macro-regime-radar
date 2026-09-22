@@ -1712,8 +1712,12 @@ if _WEB_DIST.is_dir():
             raise HTTPException(status_code=404, detail="Not Found")
         base = Path(WEB_DIST).resolve()
         if full_path and full_path != "index.html":
-            candidate = (base / full_path).resolve()
-            if base in candidate.parents and candidate.is_file():
+            try:
+                candidate = (base / full_path).resolve()
+                is_file = base in candidate.parents and candidate.is_file()
+            except (ValueError, OSError):  # a null byte or an impossible path: not a file
+                is_file = False
+            if is_file:
                 cache = "public, max-age=300" if full_path.startswith("snapshot/") else "public, max-age=86400"
                 return FileResponse(candidate, headers={"Cache-Control": cache})
         return FileResponse(base / "index.html", headers={"Content-Security-Policy": _csp(), "Cache-Control": "no-cache"})

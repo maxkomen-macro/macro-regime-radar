@@ -270,3 +270,16 @@ def test_a_single_service_deploy_serves_its_root_files_and_the_snapshot(tmp_path
     assert r.status_code == 200 and "shell" in r.text
     r = client.get("/../etc/passwd")
     assert "root:" not in r.text
+
+
+def test_a_crafted_path_is_the_shell_not_a_server_error(tmp_path, monkeypatch):
+    """Items 6/7 verify loop 2: a null byte made Path.resolve raise, a 500."""
+    import api.main as main_mod
+
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>shell</title>")
+    monkeypatch.setattr(main_mod, "WEB_DIST", dist)
+    for path in ("/a%00b", "/%00", "/snapshot/%00latest.json"):
+        r = client.get(path)
+        assert r.status_code == 200 and "shell" in r.text, path

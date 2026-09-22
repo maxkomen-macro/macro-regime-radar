@@ -30,6 +30,8 @@ The site needs the API's address and the API needs the site's, so pick both
 names first and write them down:
 
 - **The site:** the Vercel project name becomes `https://<project>.vercel.app`.
+  If that name is taken, Vercel adds a suffix too: read the real domain on the
+  project's page and use it in `CORS_ORIGINS`.
 - **The API:** the Render service name becomes `https://<service>.onrender.com`.
   If the name is taken, Render adds a suffix: read the real URL on the
   service's page after creating it and correct the site's settings if it differs.
@@ -44,7 +46,10 @@ Both are fine-grained personal access tokens, created the same way:
 **GitHub → Settings → Developer settings → Personal access tokens →
 Fine-grained tokens → Generate new token.**
 
-1. **Repository access:** Only select repositories → `macro-regime-radar`.
+1. **Resource owner:** the account or organisation that owns the repository
+   (`maxkomen-macro`). If that is an organisation, it may have to approve the
+   token before it works. **Repository access:** Only select repositories →
+   `macro-regime-radar`.
 2. **Permissions → Repository permissions → Contents: Read-only** (GitHub adds
    Metadata: Read-only by itself). Nothing else.
 3. **Expiration:** GitHub pre-selects 30 days. Pick the longest your account
