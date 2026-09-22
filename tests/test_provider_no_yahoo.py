@@ -140,7 +140,11 @@ def test_the_profile_makes_its_two_eodhd_calls_concurrently(blocked):
     assert sorted(paths) == ["/api/real-time/AMZN.US", "/api/search/AMZN"]
     (_, a0, a1), (_, b0, b1) = up.calls
     assert max(a0, b0) < min(a1, b1), "the two calls overlap in time"
-    assert elapsed < 0.6, f"{elapsed:.2f}s: sequential would be at least 0.70s"
+    # Faster than the two calls back to back, as they were measured: a fixed
+    # 0.6 s bound read 0.63 s under a loaded machine (launch-1 verify) while
+    # the calls did overlap, so the bound is the property itself.
+    back_to_back = (a1 - a0) + (b1 - b0)
+    assert elapsed < back_to_back, f"{elapsed:.2f}s is not faster than the two calls in sequence ({back_to_back:.2f}s)"
     assert p["last"] == 203.5 and p["name"] == "Amazon.com Inc" and p["quote_provider"] == "eodhd"
     assert p["fundamentals_provider"] is None and p["market_cap"] is None and p["fallback_used"] is False
 
