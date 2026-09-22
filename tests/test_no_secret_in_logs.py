@@ -269,3 +269,22 @@ def test_uvicorns_own_formatters_still_work_with_the_filter(secrets, capsys):
     assert '"GET /api/eod/AAPL.US?api_token=*** HTTP/1.1" 200' in out, out
     assert "Uvicorn running on http://0.0.0.0:8000" in out, out
     _assert_clean(out + err)
+
+
+def test_the_filter_catches_a_secret_split_from_its_key_and_an_exception_message(secrets, capsys):
+    """Item 3 verify loop 3 (follow-up): the key in the format string with the
+    secret as its own argument, and an exception passed as the message, both
+    slipped past per-argument redaction. The rendered text is the last net."""
+    h, buf = _handler_with_filter()
+    lg = logging.getLogger("mrr.test.shapes")
+    lg.addHandler(h)
+    try:
+        lg.warning("GET %s?api_token=%s", "https://eodhd.com/api/eod/AAPL.US", secrets["EODHD_API_TOKEN"])
+        lg.warning(RuntimeError(f"upstream said api_token={secrets['EODHD_API_TOKEN']}"))
+        lg.warning("%s items, %d bad", "12", 3)  # no secret: formatting untouched
+    finally:
+        lg.removeHandler(h)
+    out, err = buf.getvalue(), capsys.readouterr().err
+    assert "Logging error" not in err, err
+    assert "api_token=***" in out and "12 items, 3 bad" in out, out
+    _assert_clean(out + err)

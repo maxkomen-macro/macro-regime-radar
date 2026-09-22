@@ -53,15 +53,26 @@ class RedactingFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            if isinstance(record.msg, str):
-                record.msg = redact(record.msg)
             if isinstance(record.args, dict):
                 record.args = {k: _redact_arg(v) for k, v in record.args.items()}
             elif isinstance(record.args, tuple):
                 record.args = tuple(_redact_arg(a) for a in record.args)
+            elif isinstance(record.msg, str):
+                # A message with no arguments is its own text. A template is
+                # never rewritten: "api_token=%s" would lose its placeholder.
+                record.msg = redact(record.msg)
             colour = getattr(record, "color_message", None)
-            if isinstance(colour, str):
+            if isinstance(colour, str) and not record.args:
                 record.color_message = redact(colour)
+            # The last net (verify loop 3 follow-up): a key in the template
+            # with the secret as its own argument, or an exception passed as
+            # the message. Only when the rendered text still carries one is
+            # the record flattened to its redacted text.
+            rendered = record.getMessage()
+            if redact(rendered) != rendered:
+                record.msg, record.args = redact(rendered), None
+                if hasattr(record, "color_message"):
+                    record.color_message = record.msg
         except Exception:  # noqa: BLE001 — a filter must never break logging
             pass
         try:
