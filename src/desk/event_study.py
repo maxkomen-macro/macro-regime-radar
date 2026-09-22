@@ -142,7 +142,17 @@ class StudyError(ValueError):
 
 
 class NotStored(RuntimeError):
-    """An input series has no stored rows in this database (the API answers 503)."""
+    """An input series has no stored rows in this database. When the full
+    refresh stores that series (registry.stored_by_refresh) the database
+    predates it: `awaiting_refresh` is set and the API answers 200
+    `awaiting_refresh`; otherwise (a planned tier) the API answers 503
+    `not_stored` (desk/integration). `series` is the registry key. Both
+    survive copy.copy, which is how the worker re-raises a stored error."""
+
+    def __init__(self, message: str, *, series: str | None = None, awaiting_refresh: bool = False):
+        super().__init__(message)
+        self.series = series
+        self.awaiting_refresh = awaiting_refresh
 
 
 @dataclass(frozen=True)
@@ -305,13 +315,26 @@ def load_level(conn: sqlite3.Connection, spec: registry.DeskSeries) -> pd.Series
         sql, arg = "SELECT date, value FROM desk_series WHERE series_id = ? ORDER BY date", spec.series_id
     try:
         rows = conn.execute(sql, (arg,)).fetchall()
-    except sqlite3.OperationalError as exc:  # the table does not exist in this database
-        raise NotStored(f"{spec.label} ({spec.series_id}) is not stored in this database: {exc}") from None
+    except sqlite3.OperationalError:  # the table does not exist in this database
+        rows = None
     if not rows:
-        raise NotStored(f"{spec.label} ({spec.series_id}) is not stored in this database; the full refresh stores it.")
+        raise not_stored(spec, table_missing=rows is None)
     idx = pd.DatetimeIndex([r[0] for r in rows])
     s = pd.Series([float(r[1]) for r in rows], index=idx, name=spec.key).sort_index()
     return s[~s.index.duplicated(keep="last")]
+
+
+def not_stored(spec: registry.DeskSeries, *, table_missing: bool) -> NotStored:
+    """The typed absence of one series, in words (desk/integration): awaiting
+    the first full refresh when that refresh stores it, planned otherwise."""
+    name = f"{spec.label} ({spec.series_id})"
+    if registry.stored_by_refresh(spec):
+        why = (f"this database has no {spec.table} table yet" if table_missing
+               else f"this database has no {spec.series_id} rows in {spec.table} yet")
+        return NotStored(f"{name} is awaiting the first full refresh: {why}, and that refresh stores it.",
+                         series=spec.key, awaiting_refresh=True)
+    return NotStored(f"{name} is not stored in this database: it is a tier {spec.tier} series, and the full refresh "
+                     f"stores tier {registry.REFRESH_TIER} only.", series=spec.key)
 
 
 def load_regimes(conn: sqlite3.Connection) -> pd.Series:
@@ -1177,6 +1200,8 @@ def assets_with_coverage(db_path: Path | str | None) -> dict:
             status = "unavailable"
         elif cov:
             status = "stored"
+        elif db_path is not None and registry.stored_by_refresh(spec):
+            status = "awaiting_refresh"  # desk/integration: the full refresh stores it; this database predates that
         elif spec.tier >= 3:
             status = "deferred"
         else:
@@ -1200,6 +1225,8 @@ def assets_with_coverage(db_path: Path | str | None) -> dict:
         "conditions": [{"key": k, "label": v["label"], "series": v["series"], "param": v["param"]} for k, v in CONDITIONS.items()],
         "targets": [by_key[s.key] for s in registry.with_role("target")],
         "unavailable": [r for r in everything if r["status"] == "unavailable"],
+        # desk/integration: the keys a study cannot read until the full refresh stores them
+        "awaiting_refresh": [r["key"] for r in everything if r["status"] == "awaiting_refresh"],
         "windows": list(WINDOWS), "thresholds": list(THRESHOLDS), "signs": list(SIGNS), "horizons": list(HORIZONS),
         "regimes": list(REGIME_LABELS),
         "presets": [{"slug": n, "params": asdict(p), "kind": p.kind} for n, p in PRESETS.items()],

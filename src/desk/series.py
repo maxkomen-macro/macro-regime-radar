@@ -159,6 +159,14 @@ def fetched(tier: int) -> list[DeskSeries]:
     return [s for s in SERIES if s.available and s.source != "asset_prices" and s.tier <= min(tier, 2)]
 
 
+def stored_by_refresh(spec: DeskSeries) -> bool:
+    """True when the full refresh stores this series (desk/integration): the
+    allocation refresh's asset_prices rows always, desk_series rows at or
+    below REFRESH_TIER. A database lacking such a series is awaiting that
+    refresh; any other missing series is planned or deferred."""
+    return spec.available and (spec.source == "asset_prices" or spec in fetched(REFRESH_TIER))
+
+
 def with_role(role: str) -> list[DeskSeries]:
     return [s for s in SERIES if s.available and role in s.roles]
 

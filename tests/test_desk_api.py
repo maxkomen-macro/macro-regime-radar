@@ -450,3 +450,127 @@ def test_desk_router_is_get_only():
     ]
     for path, _ in paths:
         assert client.post(path).status_code == 405, path
+
+
+# ── desk/integration, Step 4: a database that predates desk_series ──────────
+# The deployed database has no desk_series table until the first full refresh
+# after the merge (and a database older than fix/prelaunch-1 has no
+# asset_prices either). The API must boot and serve every route, and the
+# event study must say "awaiting the first full refresh", never an error.
+
+TIER1_KEYS = ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas"]
+POSTS = {
+    "/api/regime/scenario": {"scenario_key": "rate_shock"},
+    "/api/recession/scenario": {"yield_curve_bps": 50, "unemployment": 4.3, "hy_oas_bps": 350, "indpro_yoy": 1.0, "lei": 0.0},
+    "/api/lbo/run": {"ebitda": 100.0, "ebitda_growth_rate": 5.0, "entry_multiple": 8.0, "exit_multiple": 9.0, "hold_period": 5,
+                     "leverage_ratio": 4.5, "interest_rate": 9.0, "amortization_rate": 5.0, "mgmt_fee_pct": 1.5},
+}
+# The on-demand symbol layer calls EODHD; a checkout with a token must not make
+# network calls from the suite, and without one these answer a typed 503.
+PROVIDER_PATHS = ("/api/market/search", "/api/market/profile/", "/api/market/candles/", "/api/market/actions/",
+                  "/api/market/options/", "/api/market/ticks/")
+
+
+def _serve_copy(tmp_path, install_worker, monkeypatch, drop: tuple[str, ...]):
+    """A worker serving a copy of the scratch database with `drop` removed (and
+    the Desk's watermarks, which the writer records beside its table)."""
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    import sqlite3
+
+    from api import worker as worker_mod
+
+    path = tmp_path / "macro_radar.db"
+    src = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    dst = sqlite3.connect(path)
+    src.backup(dst)
+    src.close()
+    for table in drop:
+        dst.execute(f"DROP TABLE IF EXISTS {table}")
+    dst.execute("DELETE FROM source_watermarks WHERE source LIKE 'desk%'")
+    dst.commit()
+    dst.close()
+    monkeypatch.setattr(db, "DB_PATH", path)
+    db.reset_connections_for_tests()
+    w = install_worker(worker_mod.AnalyticsWorker(poll_s=0.05))
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    desk_mod.clear_cache()
+    return w
+
+
+@pytest.fixture()
+def served_before_refresh(tmp_path, install_worker, monkeypatch):
+    """The deployed database before the first full refresh after the merge."""
+    return _serve_copy(tmp_path, install_worker, monkeypatch, drop=("desk_series",))
+
+
+@pytest.fixture()
+def served_before_histories(tmp_path, install_worker, monkeypatch):
+    """A database older still: neither desk_series nor asset_prices."""
+    return _serve_copy(tmp_path, install_worker, monkeypatch, drop=("desk_series", "asset_prices"))
+
+
+def test_before_the_first_refresh_every_route_answers(served_before_refresh):
+    tc = TestClient(app, raise_server_exceptions=False)
+    paths = [p.replace("{series_id}", "DGS10") for p, ops in app.openapi()["paths"].items() if "get" in ops]
+    assert "/api/desk/event-study" in paths and "/api/desk/pipeline/inventory" in paths and "/api/allocation" in paths
+    failed = {}
+    for path in paths:
+        if path.startswith(PROVIDER_PATHS):
+            continue
+        r = tc.get(path)
+        if r.status_code >= 500:
+            failed[path] = (r.status_code, r.text[:200])
+    for path, body in POSTS.items():
+        r = tc.post(path, json=body)
+        if r.status_code != 200:
+            failed[path] = (r.status_code, r.text[:200])
+    assert failed == {}, failed
+    ready = tc.get("/health/ready")
+    assert ready.status_code == 200 and ready.json()["status"] == "ready"
+
+
+def test_before_the_first_refresh_the_event_study_says_it_is_awaiting_it(served_before_refresh):
+    assets = client.get("/api/desk/event-study/assets")
+    assert assets.status_code == 200, assets.text
+    a = assets.json()
+    assert a["awaiting_refresh"] == TIER1_KEYS
+    by = {x["key"]: x for x in a["shocks"]}
+    assert all(by[k]["status"] == "awaiting_refresh" for k in TIER1_KEYS)
+    assert by["spx"]["status"] == "stored" and by["gold"]["status"] == "stored" and by["ndx"]["status"] == "planned"
+
+    r = client.get("/api/desk/event-study", params={"shock": "vix", "w": 5, "z": 2.0, "sign": "+", "target": "spx"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "awaiting_refresh" and body["slug"] == "vix-w5-z2.0-up-none-spx" and body["series"] == "vix"
+    assert "first full refresh" in body["detail"] and "no such table" not in body["detail"]
+    assert r.headers["cache-control"] == "no-store"
+    # A condition on a desk_series input is awaiting too, and so is the same study by its slug.
+    r = client.get("/api/desk/event-study", params={"study": "vix-w5-z2.0-up-none-spx"})
+    assert r.status_code == 200 and r.json()["status"] == "awaiting_refresh"
+
+    # The presets read asset_prices and the regime table only: ready before the refresh.
+    for slug in es.PRESETS:
+        r = client.get("/api/desk/event-study", params={"study": slug})
+        assert r.status_code == 200 and r.json()["status"] == "ready", (slug, r.text[:200])
+
+    # A planned series is not stored and no refresh will store it yet: still 503, with the reason.
+    r = client.get("/api/desk/event-study", params={"shock": "ndx", "target": "spx"})
+    assert r.status_code == 503 and r.json()["kind"] == "not_stored" and "tier 2" in r.json()["detail"]
+
+    inv = client.get("/api/desk/pipeline/inventory").json()
+    rows = [s for s in inv["series"] if s["id"].startswith("desk:")]
+    assert [s["id"] for s in rows] == [f"desk:{sid}" for sid in REFRESH_IDS]
+    assert all(s["state"] == "unknown" and "first full refresh" in s["reason"] for s in rows), rows
+
+
+def test_before_the_histories_the_presets_say_they_are_awaiting_the_first_refresh(served_before_histories):
+    for slug in es.PRESETS:
+        r = client.get("/api/desk/event-study", params={"study": slug})
+        assert r.status_code == 200, (slug, r.text)
+        body = r.json()
+        assert body["status"] == "awaiting_refresh" and body["slug"] == slug and "first full refresh" in body["detail"], body
+    a = client.get("/api/desk/event-study/assets").json()
+    assert {"spx", "gold"} <= set(a["awaiting_refresh"])
+    assert client.get("/health/ready").status_code == 200

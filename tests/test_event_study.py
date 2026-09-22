@@ -708,6 +708,37 @@ def test_not_stored_is_typed(tmp_path):
     assert es.run(es.PRESETS["gold-2sigma-spx-weak"], db)["provenance"]["n_events"] >= 0
 
 
+def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp_path):
+    """desk/integration, Step 4: the deployed database has no desk_series table
+    until the first full refresh after the merge. A study on a series that
+    refresh stores says so (awaiting_refresh, never the raw sqlite error); a
+    series no refresh stores yet (tier 2) stays not-stored and says why. The
+    flag survives copy.copy, which is how the worker re-raises a stored error."""
+    import copy
+
+    db = _synthetic_db(tmp_path / "s.db")
+    conn = sqlite3.connect(db); conn.execute("DROP TABLE desk_series"); conn.commit(); conn.close()
+    with pytest.raises(es.NotStored) as awaiting:
+        es.run(es.Query(shock="us10y", target="spx"), db)
+    assert awaiting.value.awaiting_refresh is True and awaiting.value.series == "us10y"
+    assert "first full refresh" in str(awaiting.value) and "no such table" not in str(awaiting.value)
+    again = copy.copy(awaiting.value)
+    assert again.awaiting_refresh is True and again.series == "us10y" and str(again) == str(awaiting.value)
+    with pytest.raises(es.NotStored) as planned:
+        es.run(es.Query(shock="ndx", target="spx"), db)
+    assert planned.value.awaiting_refresh is False and "tier 2" in str(planned.value) and "^NDX" in str(planned.value)
+
+    a = es.assets_with_coverage(db)
+    by = {x["key"]: x for x in a["shocks"]}
+    tier1 = [s.key for s in registry.fetched(registry.REFRESH_TIER)]
+    assert tier1 == ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas"]
+    assert set(tier1) <= set(a["awaiting_refresh"])
+    for k in a["awaiting_refresh"]:
+        assert by[k]["status"] == "awaiting_refresh" and registry.stored_by_refresh(registry.get(k)), k
+    assert by["ndx"]["status"] == "planned" and by["wti"]["status"] == "planned" and by["spx"]["status"] == "stored"
+    assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["rut"]  # ^RUT is not in the synthetic store
+
+
 def test_assets_from_the_registry_with_stored_coverage(synth):
     a = es.assets_with_coverage(synth)
     by = {x["key"]: x for x in a["shocks"]}

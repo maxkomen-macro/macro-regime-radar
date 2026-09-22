@@ -28,7 +28,10 @@ GET /api/desk/event-study?study=<slug> | ?shock=&w=&z=&sign=&cond=&cond_value=&r
     losslessly serialized validated parameters (R-07). Numeric parameters
     arrive as strings and are parsed by the engine's validation, so a parse
     failure is a 422 with the engine's reason (R-14). Never a blank panel:
-    every answer is `ready`, `computing`, 429 `busy`, 422 or 503 `not_stored`.
+    every answer is `ready`, `computing`, 429 `busy`, 422 or 503 `not_stored`,
+    or (desk/integration) 200 `awaiting_refresh` when the database predates
+    the full refresh that stores the study's inputs: the deployed database has
+    no desk_series table until the first full refresh after the merge.
 
 GET /api/desk/pipeline/inventory  (desk/frame, docs/desk/DESK_FRAME_SPEC.md §7)
     The series inventory the Data Pipeline page prints. It joins the
@@ -237,6 +240,16 @@ def desk_event_study(
     except es.StudyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except es.NotStored as exc:
+        if getattr(exc, "awaiting_refresh", False):
+            # desk/integration: the database predates the full refresh that
+            # stores this study's inputs (the deployed one until the first run
+            # after the merge). A state, not an error: 200 and plain words.
+            return JSONResponse(
+                status_code=200,
+                headers={"Cache-Control": "no-store"},
+                content={"status": "awaiting_refresh", "slug": es.slug_for(q), "series": getattr(exc, "series", None),
+                         "detail": str(exc)},
+            )
         raise NotStored(str(exc)) from exc  # the app answers 503 not_stored
     except QueueFull:
         return JSONResponse(
