@@ -1,0 +1,185 @@
+{
+  "_comment": "desk/integration: the engine's study slugs (src/desk/event_study.slug_for / parse_slug), generated from the engine. tests/test_event_study.py pins this file to the engine and web/src/screens/desk/event-study/studies.test.ts pins the page's port to it.",
+  "cases": [
+    {
+      "query": {
+        "kind": "shock",
+        "shock": "gold",
+        "w": 20,
+        "z": 2.0,
+        "sign": "+",
+        "cond": "spx_below_50dma",
+        "cond_value": null,
+        "regime": "all",
+        "target": "spx",
+        "cross": null
+      },
+      "slug": "gold-2sigma-spx-weak"
+    },
+    {
+      "query": {
+        "kind": "cross",
+        "shock": "spx",
+        "w": 20,
+        "z": 2.0,
+        "sign": "+",
+        "cond": null,
+        "cond_value": null,
+        "regime": "all",
+        "target": "spx",
+        "cross": "golden"
+      },
+      "slug": "spx-golden-cross"
+    },
+    {
+      "query": {
+        "kind": "cross",
+        "shock": "spx",
+        "w": 20,
+        "z": 2.0,
+        "sign": "+",
+        "cond": null,
+        "cond_value": null,
+        "regime": "all",
+        "target": "spx",
+        "cross": "death"
+      },
+      "slug": "spx-death-cross"
+    },
+    {
+      "query": {
+        "kind": "cross",
+        "shock": "spx",
+        "w": 20,
+        "z": 2.0,
+        "sign": "+",
+        "cond": null,
+        "cond_value": null,
+        "regime": "Stagflation",
+        "target": "spx",
+        "cross": "golden"
+      },
+      "slug": "spx-golden-cross-stagflation"
+    },
+    {
+      "query": {
+        "kind": "cross",
+        "shock": "spx",
+        "w": 20,
+        "z": 2.0,
+        "sign": "+",
+        "cond": null,
+        "cond_value": null,
+        "regime": "Recession Risk",
+        "target": "spx",
+        "cross": "death"
+      },
+      "slug": "spx-death-cross-recession_risk"
+    },
+    {
+      "query": {
+        "kind": "shock",
+        "shock": "vix",
+        "w": 5,
+        "z": 2.0,
+        "sign": "+",
+        "cond": null,
+        "cond_value": null,
+        "regime": "all",
+        "target": "spx",
+        "cross": null
+      },
+      "slug": "vix-w5-z2.0-up-none-spx"
+    },
+    {
+      "query": {
+        "kind": "shock",
+        "shock": "us10y",
+        "w": 5,
+        "z": 1.5,
+        "sign": "-",
+        "cond": "vix_above",
+        "cond_value": 25.0,
+        "regime": "all",
+        "target": "spx",
+        "cross": null
+      },
+      "slug": "us10y-w5-z1.5-down-vix_above=25.0-spx"
+    },
+    {
+      "query": {
+        "kind": "shock",
+        "shock": "us10y",
+        "w": 20,
+        "z": 2.5,
+        "sign": "both",
+        "cond": "hy_oas_20d_change_above",
+        "cond_value": 25.0,
+        "regime": "Recession Risk",
+        "target": "gold",
+        "cross": null
+      },
+      "slug": "us10y-w20-z2.5-abs-hy_oas_20d_change_above=25.0-gold-recession_risk"
+    },
+    {
+      "query": {
+        "kind": "shock",
+        "shock": "gold",
+        "w": 20,
+        "z": 2.0,
+        "sign": "+",
+        "cond": "spx_below_50dma",
+        "cond_value": null,
+        "regime": "Goldilocks",
+        "target": "spx",
+        "cross": null
+      },
+      "slug": "gold-w20-z2.0-up-spx_below_50dma-spx-goldilocks"
+    },
+    {
+      "query": {
+        "kind": "shock",
+        "shock": "spx",
+        "w": 60,
+        "z": 2.0,
+        "sign": "-",
+        "cond": "regime",
+        "cond_value": "Stagflation",
+        "regime": "all",
+        "target": "us10y",
+        "cross": null
+      },
+      "slug": "spx-w60-z2.0-down-regime=stagflation-us10y"
+    },
+    {
+      "query": {
+        "kind": "shock",
+        "shock": "hy_oas",
+        "w": 5,
+        "z": 2.5,
+        "sign": "+",
+        "cond": "spx_20d_negative",
+        "cond_value": null,
+        "regime": "all",
+        "target": "vix",
+        "cross": null
+      },
+      "slug": "hy_oas-w5-z2.5-up-spx_20d_negative-vix"
+    },
+    {
+      "query": {
+        "kind": "shock",
+        "shock": "curve_2s10s",
+        "w": 60,
+        "z": 1.5,
+        "sign": "both",
+        "cond": "vix_above",
+        "cond_value": 20.0,
+        "regime": "Overheating",
+        "target": "hy_oas",
+        "cross": null
+      },
+      "slug": "curve_2s10s-w60-z1.5-abs-vix_above=20.0-hy_oas-overheating"
+    }
+  ]
+}

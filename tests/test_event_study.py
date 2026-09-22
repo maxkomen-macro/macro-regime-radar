@@ -739,6 +739,65 @@ def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp
     assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["rut"]  # ^RUT is not in the synthetic store
 
 
+def test_the_web_slug_fixture_is_the_engines():
+    """desk/integration: the Desk page addresses a study by the engine's own
+    slug. Its TypeScript port (web/src/screens/desk/event-study/studies.ts) is
+    pinned to __fixtures__/slugs.json by studies.test.ts; this pins the file to
+    the engine, so the page and the API can never name one study two ways."""
+    import json
+
+    doc = json.loads((ROOT / "web/src/screens/desk/event-study/__fixtures__/slugs.json").read_text())
+    assert len(doc["cases"]) >= 10
+    for case in doc["cases"]:
+        q = es.Query(**case["query"])
+        assert es.slug_for(q) == case["slug"], case
+        assert es.validate(es.parse_slug(case["slug"])) == es.validate(q), case
+        assert asdict_without_seed(es.validate(q)) == case["query"], case
+
+
+def _key_paths(x, prefix: str = "") -> set[str]:
+    """Every dict key path in a JSON value, lists read through their first element."""
+    out: set[str] = set()
+    if isinstance(x, dict):
+        for k, v in x.items():
+            out.add(prefix + k)
+            out |= _key_paths(v, prefix + k + ".")
+    elif isinstance(x, list) and x:
+        out |= _key_paths(x[0], prefix + "[].")
+    return out
+
+
+def test_the_web_payload_fixtures_carry_only_keys_the_engine_serves(synth):
+    """desk/integration: the page's adapter (web/src/api/desk.ts) is tested
+    against real engine payloads saved under __fixtures__/. A key the engine
+    stops serving must fail here, not only in the browser."""
+    import json
+
+    base = ROOT / "web/src/screens/desk/event-study/__fixtures__"
+    studies = json.loads((base / "engine-studies.json").read_text())
+    live = {
+        "preset": es.run(es.PRESETS["gold-2sigma-spx-weak"], synth),
+        "cross": es.run(es.PRESETS["spx-golden-cross"], synth),
+        "bp_target": es.run(es.Query(shock="gold", w=5, z=2.5, sign="-", target="us10y"), synth),
+    }
+    for name, payload in live.items():
+        saved = {k: v for k, v in studies[name].items() if k != "status"}
+        missing = _key_paths(saved) - _key_paths(payload)
+        assert not missing, (name, sorted(missing))
+    assets = json.loads((base / "engine-assets.json").read_text())
+    assets.pop("_comment")
+    missing = _key_paths(assets) - _key_paths(es.assets_with_coverage(synth))
+    assert not missing, sorted(missing)
+
+
+def asdict_without_seed(q: es.Query) -> dict:
+    from dataclasses import asdict
+
+    d = asdict(q)
+    d.pop("seed")
+    return d
+
+
 def test_assets_from_the_registry_with_stored_coverage(synth):
     a = es.assets_with_coverage(synth)
     by = {x["key"]: x for x in a["shocks"]}

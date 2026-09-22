@@ -574,3 +574,26 @@ def test_before_the_histories_the_presets_say_they_are_awaiting_the_first_refres
     a = client.get("/api/desk/event-study/assets").json()
     assert {"spx", "gold"} <= set(a["awaiting_refresh"])
     assert client.get("/health/ready").status_code == 200
+
+
+def test_the_freshness_drawer_names_every_sla_feed_the_api_emits():
+    """desk/event-study added a `desk_series` verdict to /api/freshness's sla
+    rows, which the main app's Freshness drawer lists; without a label it
+    printed the table name, the defect launch-1 fixed for asset_prices. Every
+    feed assess() can emit, the FRED ones aside (labelled by series), must
+    have a reader label in web/src/screens/shell/shell-status.ts."""
+    import re
+
+    from api import freshness as freshness_mod
+
+    fresh = {"regimes_date": "2026-08-01", "signals_date": "2026-09-01", "market_daily_date": "2026-09-18",
+             "market_intraday_ts": "2026-09-18 15:55:00", "news_published_at": "2026-09-20T23:07:12+00:00",
+             "raw_series_date": "2026-09-01", "asset_prices_date": "2026-09-18", "desk_series_date": "2026-09-18"}
+    relay = {"token_configured": True, "feeds": {"us": "open", "vix": "rest"}, "feed_stale": {}, "feed_last_frame_at": {}, "feed_last_tick_at": {}}
+    rep = freshness_mod.assess(db_fresh=fresh, series_latest=[], relay=relay, bootstrap=None, now=NOW, watermarks={})
+    feeds = {r["feed"] for r in rep["sla"] if not r["feed"].startswith("fred:")}
+    assert {"asset_prices", "desk_series", "live_quotes", "vix_delayed"} <= feeds, feeds
+    ts = (ROOT / "web/src/screens/shell/shell-status.ts").read_text()
+    block = ts[ts.index("const FEED_LABELS"): ts.index("};", ts.index("const FEED_LABELS"))]
+    labelled = set(re.findall(r"^\s*([a-z_]+):\s*\"", block, flags=re.M))
+    assert feeds <= labelled, sorted(feeds - labelled)

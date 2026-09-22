@@ -251,6 +251,9 @@ const FEED_LABELS: Record<string, string> = {
   // launch-1: the drawer showed the raw table name for the allocation
   // histories the full refresh stores.
   asset_prices: "Allocation price histories",
+  // desk/integration: the Desk's daily series (desk/event-study's sla row);
+  // tests/test_desk_api.py checks every sla feed the API emits has a label.
+  desk_series: "Desk daily history",
 };
 
 /** Reader label for an `sla` feed key; FRED series carry their input label. */

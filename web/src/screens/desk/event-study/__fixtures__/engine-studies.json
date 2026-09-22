@@ -1,0 +1,1697 @@
+{
+ "_comment": "desk/integration: real /api/desk/event-study payloads from the engine against the owner's scratch copy (2026-09-22), provenance trimmed to the keys the page reads. tests/test_event_study.py checks every key here against a fresh engine run.",
+ "preset": {
+  "status": "ready",
+  "study": {
+   "slug": "gold-2sigma-spx-weak",
+   "preset": "gold-2sigma-spx-weak",
+   "kind": "shock",
+   "label": "Gold (COMEX front month) 20-session move ≥ +2σ (252-session z), while S&P 500 below its 50-day average → S&P 500",
+   "params": {
+    "kind": "shock",
+    "shock": "gold",
+    "w": 20,
+    "z": 2.0,
+    "sign": "+",
+    "cond": "spx_below_50dma",
+    "cond_value": null,
+    "regime": "all",
+    "target": "spx",
+    "cross": null,
+    "seed": 20260921
+   },
+   "shock": {
+    "key": "gold",
+    "label": "Gold (COMEX front month)",
+    "unit": "log_return"
+   },
+   "condition": {
+    "key": "spx_below_50dma",
+    "label": "S&P 500 below its 50-day average",
+    "value": null
+   },
+   "target": {
+    "key": "spx",
+    "label": "S&P 500",
+    "unit": "log_return",
+    "format": "pct"
+   }
+  },
+  "horizons": [
+   {
+    "h": 5,
+    "n": 18,
+    "n_incomplete": 0,
+    "baseline_n": 6227,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.003382009077730633,
+    "baseline_hit_rate": 0.5813393287297254,
+    "baseline_p25": -0.009312161951124151,
+    "baseline_p75": 0.014511305700826645,
+    "hit_rate": 0.5555555555555556,
+    "median": 0.015839305769570954,
+    "mean": 0.006208241419706662,
+    "p25": -0.022525665102070977,
+    "p75": 0.03418471743258779,
+    "delta": 0.01245729669184032,
+    "n_blocks": 18,
+    "ci90": [
+     -0.018047027442224462,
+     0.02963368732294181
+    ],
+    "opposite_sign_share": 0.3434,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   },
+   {
+    "h": 10,
+    "n": 18,
+    "n_incomplete": 0,
+    "baseline_n": 6222,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.00667796766329991,
+    "baseline_hit_rate": 0.6107360977177756,
+    "baseline_p25": -0.011183686180100995,
+    "baseline_p75": 0.021146143082088693,
+    "hit_rate": 0.6111111111111112,
+    "median": 0.019400574427929328,
+    "mean": 0.017455582891657162,
+    "p25": -0.0055111266962336964,
+    "p75": 0.0406426885120705,
+    "delta": 0.012722606764629418,
+    "n_blocks": 18,
+    "ci90": [
+     -0.009043454845980826,
+     0.03216721067684166
+    ],
+    "opposite_sign_share": 0.4162,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   },
+   {
+    "h": 20,
+    "n": 18,
+    "n_incomplete": 0,
+    "baseline_n": 6212,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.01313589751208459,
+    "baseline_hit_rate": 0.6482614294913072,
+    "baseline_p25": -0.013796633012726931,
+    "baseline_p75": 0.03237888047770431,
+    "hit_rate": 0.6666666666666666,
+    "median": 0.03091584327727763,
+    "mean": 0.02718817176349704,
+    "p25": -0.008888212168063686,
+    "p75": 0.059967932491807326,
+    "delta": 0.01777994576519304,
+    "n_blocks": 18,
+    "ci90": [
+     -0.016233700372549616,
+     0.04099238631136686
+    ],
+    "opposite_sign_share": 0.146,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   },
+   {
+    "h": 60,
+    "n": 18,
+    "n_incomplete": 0,
+    "baseline_n": 6172,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.03191212191342918,
+    "baseline_hit_rate": 0.7030136098509397,
+    "baseline_p25": -0.011615747237769416,
+    "baseline_p75": 0.06451029053783866,
+    "hit_rate": 0.6111111111111112,
+    "median": 0.029851936529838932,
+    "mean": 0.041984585363463806,
+    "p25": -0.011141259625721978,
+    "p75": 0.10001581904244937,
+    "delta": -0.002060185383590249,
+    "n_blocks": 17,
+    "ci90": [
+     -0.04156745222628124,
+     0.06284867369241504
+    ],
+    "opposite_sign_share": 0.4908,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   }
+  ],
+  "regimes": [
+   {
+    "regime": "Goldilocks",
+    "n_events": 2,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 2,
+      "baseline_n": 523,
+      "baseline_median": 0.002754095330196847,
+      "baseline_hit_rate": 0.5640535372848948,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 2,
+      "baseline_n": 518,
+      "baseline_median": 0.005878738476826976,
+      "baseline_hit_rate": 0.5945945945945946,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 2,
+      "baseline_n": 515,
+      "baseline_median": 0.011589237345950692,
+      "baseline_hit_rate": 0.6699029126213593,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 2,
+      "baseline_n": 515,
+      "baseline_median": 0.025291186626692448,
+      "baseline_hit_rate": 0.7786407766990291,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Overheating",
+    "n_events": 6,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 6,
+      "baseline_n": 3411,
+      "baseline_median": 0.003797834765084776,
+      "baseline_hit_rate": 0.5860451480504251,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 6,
+      "baseline_n": 3411,
+      "baseline_median": 0.00691905525145743,
+      "baseline_hit_rate": 0.6150688947522721,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 6,
+      "baseline_n": 3404,
+      "baseline_median": 0.0145330558831195,
+      "baseline_hit_rate": 0.6609870740305523,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 6,
+      "baseline_n": 3364,
+      "baseline_median": 0.03458864252895398,
+      "baseline_hit_rate": 0.7274078478002378,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Stagflation",
+    "n_events": 9,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 9,
+      "baseline_n": 1855,
+      "baseline_median": 0.003120914788143825,
+      "baseline_hit_rate": 0.58544474393531,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 9,
+      "baseline_n": 1855,
+      "baseline_median": 0.0064281559281852505,
+      "baseline_hit_rate": 0.6053908355795148,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 9,
+      "baseline_n": 1855,
+      "baseline_median": 0.011477822285507666,
+      "baseline_hit_rate": 0.6291105121293801,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 9,
+      "baseline_n": 1855,
+      "baseline_median": 0.029926382686000945,
+      "baseline_hit_rate": 0.6522911051212938,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Recession Risk",
+    "n_events": 1,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 1,
+      "baseline_n": 438,
+      "baseline_median": 0.0019586768792199936,
+      "baseline_hit_rate": 0.547945205479452,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 1,
+      "baseline_n": 438,
+      "baseline_median": 0.006674018796470829,
+      "baseline_hit_rate": 0.6187214611872146,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 1,
+      "baseline_n": 438,
+      "baseline_median": 0.009087330033972855,
+      "baseline_hit_rate": 0.6050228310502284,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 1,
+      "baseline_n": 438,
+      "baseline_median": 0.017858677069759746,
+      "baseline_hit_rate": 0.6415525114155252,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Unlabeled",
+    "n_events": 0,
+    "excluded_from_totals": true,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 0,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 0,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 0,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 0,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   }
+  ],
+  "recent_events": [
+   {
+    "date": "2025-04-16",
+    "z": 2.08,
+    "regime": "Overheating",
+    "entry_date": "2025-04-17",
+    "same_session": false,
+    "moves": {
+     "5": 0.04488388721913243,
+     "10": 0.07368745346460658,
+     "20": 0.12036124675390476,
+     "60": 0.17033372823917925
+    }
+   },
+   {
+    "date": "2023-03-23",
+    "z": 2.11,
+    "regime": "Stagflation",
+    "entry_date": "2023-03-24",
+    "same_session": false,
+    "moves": {
+     "5": 0.03423972164890821,
+     "10": 0.03419100182197337,
+     "20": 0.040965122386110074,
+     "60": 0.09476079560584422
+    }
+   },
+   {
+    "date": "2022-03-01",
+    "z": 2.21,
+    "regime": "Stagflation",
+    "entry_date": "2022-03-02",
+    "same_session": false,
+    "moves": {
+     "5": -0.025083225032377553,
+     "10": -0.006559673200751289,
+     "20": 0.04804805242792699,
+     "60": -0.07788992445205838
+    }
+   },
+   {
+    "date": "2020-04-09",
+    "z": 2.03,
+    "regime": "Stagflation",
+    "entry_date": "2020-04-13",
+    "same_session": false,
+    "moves": {
+     "5": 0.02203574063247451,
+     "10": 0.04144132814122379,
+     "20": 0.059246184310301576,
+     "60": 0.13789157981379074
+    }
+   },
+   {
+    "date": "2019-08-23",
+    "z": 2.06,
+    "regime": "Goldilocks",
+    "entry_date": "2019-08-26",
+    "same_session": false,
+    "moves": {
+     "5": 0.009642870906667402,
+     "10": 0.03449094686971233,
+     "20": 0.030188948472383816,
+     "60": 0.08066305927189936
+    }
+   },
+   {
+    "date": "2018-12-27",
+    "z": 2.09,
+    "regime": "Stagflation",
+    "entry_date": "2018-12-28",
+    "same_session": false,
+    "moves": {
+     "5": 0.025401341993115462,
+     "10": 0.03823015227109671,
+     "20": 0.06020851521897591,
+     "60": 0.120965071290706
+    }
+   },
+   {
+    "date": "2016-02-08",
+    "z": 2.45,
+    "regime": "Stagflation",
+    "entry_date": "2016-02-09",
+    "same_session": false,
+    "moves": {
+     "5": 0.03949140300112963,
+     "10": 0.04103684987969852,
+     "20": 0.0713831895586575,
+     "60": 0.10176749352131775
+    }
+   },
+   {
+    "date": "2015-08-21",
+    "z": 2.02,
+    "regime": "Stagflation",
+    "entry_date": "2015-08-24",
+    "same_session": false,
+    "moves": {
+     "5": 0.04086577951252368,
+     "10": 0.039460204409186427,
+     "20": 0.025825546653159646,
+     "60": 0.07978055439790092
+    }
+   },
+   {
+    "date": "2015-01-20",
+    "z": 2.21,
+    "regime": "Goldilocks",
+    "entry_date": "2015-01-21",
+    "same_session": false,
+    "moves": {
+     "5": -0.014852985311151257,
+     "10": 0.004610147033885288,
+     "20": 0.03164273808217145,
+     "60": 0.02385540940703394
+    }
+   },
+   {
+    "date": "2011-08-30",
+    "z": 2.07,
+    "regime": "Overheating",
+    "entry_date": "2011-08-31",
+    "same_session": false,
+    "moves": {
+     "5": -0.027438628538919863,
+     "10": -0.008056056749163138,
+     "20": -0.04917583526242041,
+     "60": -0.050667812926669074
+    }
+   }
+  ],
+  "verdict": {
+   "text": "S&P 500 is not distinguishable from baseline at 5 sessions (n = 18, 18 blocks); 10 sessions (n = 18, 18 blocks); 20 sessions (n = 18, 18 blocks); 60 sessions (n = 18, 17 blocks) (the 90% interval on Δ includes zero). No regime reaches n = 10 at 20 sessions, so the split is not informative. n<10: Goldilocks (2), Overheating (6), Stagflation (9), Recession Risk (1). Sample since 2000 (data from 2000-08-30; events evaluable 2001-09-19 to 2026-09-21); 18 events after a 20-session cooldown (193 shock sessions before it); 18 independent blocks at 20 sessions (Monte Carlo, 10,000 draws).",
+   "sentences": [
+    "S&P 500 is not distinguishable from baseline at 5 sessions (n = 18, 18 blocks); 10 sessions (n = 18, 18 blocks); 20 sessions (n = 18, 18 blocks); 60 sessions (n = 18, 17 blocks) (the 90% interval on Δ includes zero).",
+    "No regime reaches n = 10 at 20 sessions, so the split is not informative.",
+    "n<10: Goldilocks (2), Overheating (6), Stagflation (9), Recession Risk (1).",
+    "Sample since 2000 (data from 2000-08-30; events evaluable 2001-09-19 to 2026-09-21); 18 events after a 20-session cooldown (193 shock sessions before it); 18 independent blocks at 20 sessions (Monte Carlo, 10,000 draws)."
+   ]
+  },
+  "provenance": {
+   "as_of": "2026-09-21",
+   "sample_start": "2001-09-19",
+   "sample_end": "2026-09-21",
+   "n_events": 18,
+   "cooldown": "20 sessions on the session calendar",
+   "cooldown_sessions": 20,
+   "seed": 20260921,
+   "n_boot": 10000,
+   "ci": 0.9,
+   "bootstrap": "cluster bootstrap: events whose forward windows overlap form one block; every draw of B blocks is enumerated when B ≤ 7, else 10000 Monte Carlo draws; an interval needs 5 blocks; a zero-exclusion claim needs 10 blocks, the 90% interval on the point estimate's side of zero and fewer than 3% of resampled medians adverse (zero counts as adverse)",
+   "inputs_hash": "84684210bb3a78ae",
+   "warnings": [
+    "Gold (COMEX front month): history from 2000-08-30 (after 1990)",
+    "off-session observations dropped: gold 6.",
+    "calendar sessions without a value: gold 19."
+   ]
+  }
+ },
+ "cross": {
+  "status": "ready",
+  "study": {
+   "slug": "spx-golden-cross",
+   "preset": "spx-golden-cross",
+   "kind": "cross",
+   "label": "S&P 500 golden cross (50-day average crossing above the 200-day, strict) → S&P 500",
+   "params": {
+    "kind": "cross",
+    "shock": "spx",
+    "w": 20,
+    "z": 2.0,
+    "sign": "+",
+    "cond": null,
+    "cond_value": null,
+    "regime": "all",
+    "target": "spx",
+    "cross": "golden",
+    "seed": 20260921
+   },
+   "shock": {
+    "key": "spx",
+    "label": "S&P 500",
+    "unit": "log_return"
+   },
+   "condition": null,
+   "target": {
+    "key": "spx",
+    "label": "S&P 500",
+    "unit": "log_return",
+    "format": "pct"
+   }
+  },
+  "horizons": [
+   {
+    "h": 5,
+    "n": 14,
+    "n_incomplete": 0,
+    "baseline_n": 7577,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.003463301828272894,
+    "baseline_hit_rate": 0.5764814570410453,
+    "baseline_p25": -0.010066567462153522,
+    "baseline_p75": 0.015126798641505,
+    "hit_rate": 0.7142857142857143,
+    "median": 0.01019558708482957,
+    "mean": 0.007949683180877947,
+    "p25": -0.002250202181457511,
+    "p75": 0.024526813968745613,
+    "delta": 0.006732285256556675,
+    "n_blocks": 14,
+    "ci90": [
+     -0.004912725390883743,
+     0.01754472555995878
+    ],
+    "opposite_sign_share": 0.155,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   },
+   {
+    "h": 10,
+    "n": 14,
+    "n_incomplete": 0,
+    "baseline_n": 7572,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.0066437012743711,
+    "baseline_hit_rate": 0.6036714210248283,
+    "baseline_p25": -0.01243769210887499,
+    "baseline_p75": 0.022049117666794044,
+    "hit_rate": 0.7142857142857143,
+    "median": 0.012134990225729368,
+    "mean": 0.008678165406581862,
+    "p25": -0.00963485298167958,
+    "p75": 0.023501833834897696,
+    "delta": 0.005491288951358268,
+    "n_blocks": 14,
+    "ci90": [
+     -0.011877126600402032,
+     0.015227124772940987
+    ],
+    "opposite_sign_share": 0.1121,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   },
+   {
+    "h": 20,
+    "n": 14,
+    "n_incomplete": 0,
+    "baseline_n": 7562,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.013063597242458131,
+    "baseline_hit_rate": 0.635942872256017,
+    "baseline_p25": -0.01605130907739969,
+    "baseline_p75": 0.03392646777269576,
+    "hit_rate": 0.7857142857142857,
+    "median": 0.026657107900459658,
+    "mean": 0.022206367553149205,
+    "p25": 0.015591116611882888,
+    "p75": 0.05543922874300504,
+    "delta": 0.013593510658001526,
+    "n_blocks": 14,
+    "ci90": [
+     0.004143311896463676,
+     0.032671738002342646
+    ],
+    "opposite_sign_share": 0.0167,
+    "ci_excludes_zero": true,
+    "exclusion": "established",
+    "note": null
+   },
+   {
+    "h": 60,
+    "n": 14,
+    "n_incomplete": 0,
+    "baseline_n": 7522,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.031846314343594806,
+    "baseline_hit_rate": 0.6936984844456262,
+    "baseline_p25": -0.014300134040729827,
+    "baseline_p75": 0.06581079539164375,
+    "hit_rate": 0.9285714285714286,
+    "median": 0.05156573121678598,
+    "mean": 0.05511017828323964,
+    "p25": 0.027173259295286578,
+    "p75": 0.07114550312696026,
+    "delta": 0.019719416873191176,
+    "n_blocks": 14,
+    "ci90": [
+     -0.0004052298432414003,
+     0.037114957441359675
+    ],
+    "opposite_sign_share": 0.0673,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   }
+  ],
+  "regimes": [
+   {
+    "regime": "Goldilocks",
+    "n_events": 1,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 1,
+      "baseline_n": 548,
+      "baseline_median": 0.0017767413834912115,
+      "baseline_hit_rate": 0.5583941605839416,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 1,
+      "baseline_n": 543,
+      "baseline_median": 0.004716587292824914,
+      "baseline_hit_rate": 0.58195211786372,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 1,
+      "baseline_n": 539,
+      "baseline_median": 0.011145502264489685,
+      "baseline_hit_rate": 0.6586270871985158,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 1,
+      "baseline_n": 539,
+      "baseline_median": 0.02364541629118415,
+      "baseline_hit_rate": 0.764378478664193,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Overheating",
+    "n_events": 5,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 5,
+      "baseline_n": 4463,
+      "baseline_median": 0.004212795520549752,
+      "baseline_hit_rate": 0.5872731346627829,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 5,
+      "baseline_n": 4463,
+      "baseline_median": 0.0076009786765012695,
+      "baseline_hit_rate": 0.6184181044140713,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 5,
+      "baseline_n": 4457,
+      "baseline_median": 0.015178527432488601,
+      "baseline_hit_rate": 0.6542517388377833,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 5,
+      "baseline_n": 4417,
+      "baseline_median": 0.03681193347398458,
+      "baseline_hit_rate": 0.7321711568938193,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Stagflation",
+    "n_events": 6,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 6,
+      "baseline_n": 2126,
+      "baseline_median": 0.002751310060108738,
+      "baseline_hit_rate": 0.5653809971777987,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 6,
+      "baseline_n": 2126,
+      "baseline_median": 0.005202980378974875,
+      "baseline_hit_rate": 0.5761994355597366,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 6,
+      "baseline_n": 2126,
+      "baseline_median": 0.009435181968218388,
+      "baseline_hit_rate": 0.599247412982126,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 6,
+      "baseline_n": 2126,
+      "baseline_median": 0.0256791628772377,
+      "baseline_hit_rate": 0.6081843838193791,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Recession Risk",
+    "n_events": 2,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 2,
+      "baseline_n": 440,
+      "baseline_median": 0.0015426530613435066,
+      "baseline_hit_rate": 0.5431818181818182,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 2,
+      "baseline_n": 440,
+      "baseline_median": 0.0062947307687408974,
+      "baseline_hit_rate": 0.6136363636363636,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 2,
+      "baseline_n": 440,
+      "baseline_median": 0.008522980118572231,
+      "baseline_hit_rate": 0.6,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 2,
+      "baseline_n": 440,
+      "baseline_median": 0.017093386221250867,
+      "baseline_hit_rate": 0.634090909090909,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Unlabeled",
+    "n_events": 2,
+    "excluded_from_totals": true,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 2,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 2,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 2,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 2,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   }
+  ],
+  "recent_events": [
+   {
+    "date": "2025-07-01",
+    "z": null,
+    "regime": "Stagflation",
+    "entry_date": "2025-07-01",
+    "same_session": true,
+    "moves": {
+     "5": 0.010472543881441778,
+     "10": 0.010542856231793726,
+     "20": 0.026255992034237514,
+     "60": 0.06355633471039697
+    }
+   },
+   {
+    "date": "2023-02-02",
+    "z": null,
+    "regime": "Stagflation",
+    "entry_date": "2023-02-02",
+    "same_session": true,
+    "moves": {
+     "5": -0.023789212861433214,
+     "10": -0.021608595688790255,
+     "20": -0.032614047468966186,
+     "60": -0.002848642832183188
+    }
+   },
+   {
+    "date": "2020-07-09",
+    "z": null,
+    "regime": "Recession Risk",
+    "entry_date": "2020-07-09",
+    "same_session": true,
+    "moves": {
+     "5": 0.01995163219425664,
+     "10": 0.026179859971474664,
+     "20": 0.0606565034540031,
+     "60": 0.06043552810914443
+    }
+   },
+   {
+    "date": "2019-04-01",
+    "z": null,
+    "regime": "Stagflation",
+    "entry_date": "2019-04-01",
+    "same_session": true,
+    "moves": {
+     "5": 0.009918630288217361,
+     "10": 0.013300639365947916,
+     "20": 0.027058223766681804,
+     "60": 0.016118786133298965
+    }
+   },
+   {
+    "date": "2016-04-25",
+    "z": null,
+    "regime": "Goldilocks",
+    "entry_date": "2016-04-25",
+    "same_session": true,
+    "moves": {
+     "5": -0.003050980800304174,
+     "10": -0.014036280637328227,
+     "20": -0.019222852013244092,
+     "60": 0.04001181484778782
+    }
+   },
+   {
+    "date": "2015-12-21",
+    "z": null,
+    "regime": "Recession Risk",
+    "entry_date": "2015-12-21",
+    "same_session": true,
+    "moves": {
+     "5": 0.02791251294024441,
+     "10": -0.015401372881757597,
+     "20": -0.07826847834577226,
+     "60": 0.013968286551548867
+    }
+   },
+   {
+    "date": "2012-01-31",
+    "z": null,
+    "regime": "Overheating",
+    "entry_date": "2012-01-31",
+    "same_session": true,
+    "moves": {
+     "5": 0.026051874560241935,
+     "10": 0.028609752546590643,
+     "20": 0.039787404610010846,
+     "60": 0.0645928091009429
+    }
+   },
+   {
+    "date": "2010-10-22",
+    "z": null,
+    "regime": "Overheating",
+    "entry_date": "2010-10-22",
+    "same_session": true,
+    "moves": {
+     "5": 0.00015213367508247694,
+     "10": 0.03551327353317114,
+     "20": 0.013975324084843971,
+     "60": 0.08023774666244854
+    }
+   },
+   {
+    "date": "2009-06-23",
+    "z": null,
+    "regime": "Stagflation",
+    "entry_date": "2009-06-23",
+    "same_session": true,
+    "moves": {
+     "5": 0.026698822439836702,
+     "10": -0.01751366144632346,
+     "20": 0.06380160014161484,
+     "60": 0.17425462235260303
+    }
+   },
+   {
+    "date": "2006-09-12",
+    "z": null,
+    "regime": "Overheating",
+    "entry_date": "2006-09-12",
+    "same_session": true,
+    "moves": {
+     "5": 0.003527662326912238,
+     "10": 0.017627421531966156,
+     "20": 0.030320126983304163,
+     "60": 0.07332973446896605
+    }
+   }
+  ],
+  "verdict": {
+   "text": "The 90% interval on Δ excludes zero at 20 sessions (n = 14, 14 blocks). The effect is modest at 20 sessions (n = 14): median +2.7% against a baseline of +1.3%, Δ +1.4%. S&P 500 is not distinguishable from baseline at 5 sessions (n = 14, 14 blocks); 10 sessions (n = 14, 14 blocks); 60 sessions (n = 14, 14 blocks). No regime reaches n = 10 at 20 sessions, so the split is not informative. n<10: Goldilocks (1), Overheating (5), Stagflation (6), Recession Risk (2), Unlabeled (2, outside the totals). Sample since 1990 (data from 1990-01-02; events evaluable 1996-07-01 to 2026-09-21); 14 events; no cooldown, a cross cannot recur before the opposite cross; 14 independent blocks at 20 sessions (Monte Carlo, 10,000 draws).",
+   "sentences": [
+    "The 90% interval on Δ excludes zero at 20 sessions (n = 14, 14 blocks).",
+    "The effect is modest at 20 sessions (n = 14): median +2.7% against a baseline of +1.3%, Δ +1.4%.",
+    "S&P 500 is not distinguishable from baseline at 5 sessions (n = 14, 14 blocks); 10 sessions (n = 14, 14 blocks); 60 sessions (n = 14, 14 blocks).",
+    "No regime reaches n = 10 at 20 sessions, so the split is not informative.",
+    "n<10: Goldilocks (1), Overheating (5), Stagflation (6), Recession Risk (2), Unlabeled (2, outside the totals).",
+    "Sample since 1990 (data from 1990-01-02; events evaluable 1996-07-01 to 2026-09-21); 14 events; no cooldown, a cross cannot recur before the opposite cross; 14 independent blocks at 20 sessions (Monte Carlo, 10,000 draws)."
+   ]
+  },
+  "provenance": {
+   "as_of": "2026-09-21",
+   "sample_start": "1996-07-01",
+   "sample_end": "2026-09-21",
+   "n_events": 14,
+   "cooldown": "no cooldown (a cross cannot recur before the opposite cross)",
+   "cooldown_sessions": null,
+   "seed": 20260921,
+   "n_boot": 10000,
+   "ci": 0.9,
+   "bootstrap": "cluster bootstrap: events whose forward windows overlap form one block; every draw of B blocks is enumerated when B ≤ 7, else 10000 Monte Carlo draws; an interval needs 5 blocks; a zero-exclusion claim needs 10 blocks, the 90% interval on the point estimate's side of zero and fewer than 3% of resampled medians adverse (zero counts as adverse)",
+   "inputs_hash": "4ffb414725edc09d",
+   "warnings": []
+  }
+ },
+ "computing": {
+  "status": "computing",
+  "slug": "vix-w5-z2.0-up-none-spx",
+  "retry_after": 3,
+  "detail": "The study vix-w5-z2.0-up-none-spx is computing; retry in 3 seconds."
+ },
+ "awaiting_refresh": {
+  "status": "awaiting_refresh",
+  "slug": "vix-w5-z2.0-up-none-spx",
+  "series": "vix",
+  "detail": "VIX (VIXCLS) is awaiting the first full refresh: this database has no desk_series table yet, and that refresh stores it."
+ },
+ "bp_target": {
+  "status": "ready",
+  "study": {
+   "slug": "gold-w5-z2.5-down-none-us10y",
+   "preset": null,
+   "kind": "shock",
+   "label": "Gold (COMEX front month) 5-session move ≤ −2.5σ (252-session z) → 10Y Treasury",
+   "params": {
+    "kind": "shock",
+    "shock": "gold",
+    "w": 5,
+    "z": 2.5,
+    "sign": "-",
+    "cond": null,
+    "cond_value": null,
+    "regime": "all",
+    "target": "us10y",
+    "cross": null,
+    "seed": 20260921
+   },
+   "shock": {
+    "key": "gold",
+    "label": "Gold (COMEX front month)",
+    "unit": "log_return"
+   },
+   "condition": null,
+   "target": {
+    "key": "us10y",
+    "label": "10Y Treasury",
+    "unit": "bp",
+    "format": "bp"
+   }
+  },
+  "horizons": [
+   {
+    "h": 5,
+    "n": 43,
+    "n_incomplete": 0,
+    "baseline_n": 6102,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.0,
+    "baseline_hit_rate": 0.4673877417240249,
+    "baseline_p25": -7.000000000000028,
+    "baseline_p75": 7.999999999999918,
+    "hit_rate": 0.4883720930232558,
+    "median": 0.0,
+    "mean": -1.069767441860461,
+    "p25": -9.999999999999986,
+    "p75": 6.500000000000005,
+    "delta": 0.0,
+    "n_blocks": 43,
+    "ci90": [
+     -4.999999999999982,
+     4.999999999999982
+    ],
+    "opposite_sign_share": 1.0,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   },
+   {
+    "h": 10,
+    "n": 41,
+    "n_incomplete": 2,
+    "baseline_n": 6097,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.0,
+    "baseline_hit_rate": 0.4779399704772839,
+    "baseline_p25": -10.999999999999988,
+    "baseline_p75": 10.999999999999988,
+    "hit_rate": 0.3902439024390244,
+    "median": -2.0000000000000018,
+    "mean": -2.1707317073170755,
+    "p25": -12.00000000000001,
+    "p75": 12.00000000000001,
+    "delta": -2.0000000000000018,
+    "n_blocks": 37,
+    "ci90": [
+     -8.999999999999986,
+     0.9999999999999787
+    ],
+    "opposite_sign_share": 0.0702,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   },
+   {
+    "h": 20,
+    "n": 43,
+    "n_incomplete": 0,
+    "baseline_n": 6095,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": -0.9999999999999787,
+    "baseline_hit_rate": 0.4774405250205086,
+    "baseline_p25": -14.999999999999991,
+    "baseline_p75": 14.999999999999996,
+    "hit_rate": 0.4883720930232558,
+    "median": 0.0,
+    "mean": -1.9534883720930218,
+    "p25": -16.999999999999993,
+    "p75": 9.999999999999964,
+    "delta": 0.9999999999999787,
+    "n_blocks": 36,
+    "ci90": [
+     -9.499999999999975,
+     4.0000000000000036
+    ],
+    "opposite_sign_share": 0.4542,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   },
+   {
+    "h": 60,
+    "n": 43,
+    "n_incomplete": 0,
+    "baseline_n": 6049,
+    "resampling": "monte_carlo",
+    "n_draws": 10000,
+    "baseline_median": 0.0,
+    "baseline_hit_rate": 0.49958670854686726,
+    "baseline_p25": -26.00000000000002,
+    "baseline_p75": 25.0,
+    "hit_rate": 0.5348837209302325,
+    "median": 4.0000000000000036,
+    "mean": 0.8837209302325576,
+    "p25": -28.99999999999997,
+    "p75": 28.500000000000014,
+    "delta": 4.0000000000000036,
+    "n_blocks": 26,
+    "ci90": [
+     -24.00000000000002,
+     17.99999999999997
+    ],
+    "opposite_sign_share": 0.3731,
+    "ci_excludes_zero": false,
+    "exclusion": "included",
+    "note": null
+   }
+  ],
+  "regimes": [
+   {
+    "regime": "Goldilocks",
+    "n_events": 2,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 2,
+      "baseline_n": 517,
+      "baseline_median": -1.9999999999999574,
+      "baseline_hit_rate": 0.41779497098646035,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 2,
+      "baseline_n": 513,
+      "baseline_median": -2.9999999999999805,
+      "baseline_hit_rate": 0.4152046783625731,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 2,
+      "baseline_n": 511,
+      "baseline_median": -2.0000000000000018,
+      "baseline_hit_rate": 0.4344422700587084,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 2,
+      "baseline_n": 505,
+      "baseline_median": 1.0000000000000009,
+      "baseline_hit_rate": 0.5069306930693069,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Overheating",
+    "n_events": 25,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 25,
+      "baseline_n": 3327,
+      "baseline_median": 0.0,
+      "baseline_hit_rate": 0.47820859633303275,
+      "hit_rate": 0.6,
+      "median": 2.0000000000000018,
+      "mean": -1.4399999999999975,
+      "note": null
+     },
+     {
+      "h": 10,
+      "n": 23,
+      "baseline_n": 3324,
+      "baseline_median": 0.0,
+      "baseline_hit_rate": 0.4741275571600481,
+      "hit_rate": 0.34782608695652173,
+      "median": -3.0000000000000027,
+      "mean": -2.173913043478271,
+      "note": null
+     },
+     {
+      "h": 20,
+      "n": 25,
+      "baseline_n": 3321,
+      "baseline_median": -0.9999999999999787,
+      "baseline_hit_rate": 0.48027702499247216,
+      "hit_rate": 0.56,
+      "median": 1.9999999999999574,
+      "mean": 0.07999999999999759,
+      "note": null
+     },
+     {
+      "h": 60,
+      "n": 25,
+      "baseline_n": 3285,
+      "baseline_median": 0.0,
+      "baseline_hit_rate": 0.4974124809741248,
+      "hit_rate": 0.4,
+      "median": -24.00000000000002,
+      "mean": -10.720000000000002,
+      "note": null
+     }
+    ]
+   },
+   {
+    "regime": "Stagflation",
+    "n_events": 14,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 14,
+      "baseline_n": 1828,
+      "baseline_median": -0.9999999999999787,
+      "baseline_hit_rate": 0.45568927789934355,
+      "hit_rate": 0.35714285714285715,
+      "median": -3.4999999999999867,
+      "mean": 0.07142857142857714,
+      "note": null
+     },
+     {
+      "h": 10,
+      "n": 14,
+      "baseline_n": 1829,
+      "baseline_median": 0.0,
+      "baseline_hit_rate": 0.49589939857845816,
+      "hit_rate": 0.5,
+      "median": -0.5000000000000115,
+      "mean": -2.285714285714278,
+      "note": null
+     },
+     {
+      "h": 20,
+      "n": 14,
+      "baseline_n": 1832,
+      "baseline_median": -1.9999999999999574,
+      "baseline_hit_rate": 0.46124454148471616,
+      "hit_rate": 0.35714285714285715,
+      "median": -11.499999999999977,
+      "mean": -5.714285714285708,
+      "note": null
+     },
+     {
+      "h": 60,
+      "n": 14,
+      "baseline_n": 1830,
+      "baseline_median": -2.9999999999999805,
+      "baseline_hit_rate": 0.4672131147540984,
+      "hit_rate": 0.7857142857142857,
+      "median": 18.500000000000007,
+      "mean": 22.35714285714286,
+      "note": null
+     }
+    ]
+   },
+   {
+    "regime": "Recession Risk",
+    "n_events": 2,
+    "excluded_from_totals": false,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 2,
+      "baseline_n": 430,
+      "baseline_median": 0.0,
+      "baseline_hit_rate": 0.4930232558139535,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 2,
+      "baseline_n": 431,
+      "baseline_median": 1.000000000000023,
+      "baseline_hit_rate": 0.505800464037123,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 2,
+      "baseline_n": 431,
+      "baseline_median": 5.000000000000004,
+      "baseline_hit_rate": 0.5754060324825986,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 2,
+      "baseline_n": 429,
+      "baseline_median": 16.000000000000014,
+      "baseline_hit_rate": 0.6456876456876457,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   },
+   {
+    "regime": "Unlabeled",
+    "n_events": 0,
+    "excluded_from_totals": true,
+    "horizons": [
+     {
+      "h": 5,
+      "n": 0,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 10,
+      "n": 0,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 20,
+      "n": 0,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     },
+     {
+      "h": 60,
+      "n": 0,
+      "baseline_n": 0,
+      "baseline_median": null,
+      "baseline_hit_rate": null,
+      "hit_rate": null,
+      "median": null,
+      "mean": null,
+      "note": "n<10"
+     }
+    ]
+   }
+  ],
+  "recent_events": [
+   {
+    "date": "2026-06-11",
+    "z": -2.65,
+    "regime": "Overheating",
+    "entry_date": "2026-06-12",
+    "same_session": false,
+    "moves": {
+     "5": 2.999999999999936,
+     "10": -10.000000000000053,
+     "20": 9.999999999999964,
+     "60": 34.999999999999964
+    }
+   },
+   {
+    "date": "2026-03-19",
+    "z": -3.56,
+    "regime": "Overheating",
+    "entry_date": "2026-03-20",
+    "same_session": false,
+    "moves": {
+     "5": 5.000000000000071,
+     "10": -4.999999999999982,
+     "20": -12.99999999999999,
+     "60": 4.0000000000000036
+    }
+   },
+   {
+    "date": "2026-02-02",
+    "z": -3.39,
+    "regime": "Stagflation",
+    "entry_date": "2026-02-03",
+    "same_session": false,
+    "moves": {
+     "5": -12.00000000000001,
+     "10": -19.00000000000004,
+     "20": -19.00000000000004,
+     "60": 12.00000000000001
+    }
+   },
+   {
+    "date": "2025-10-27",
+    "z": -3.36,
+    "regime": "Overheating",
+    "entry_date": "2025-10-28",
+    "same_session": false,
+    "moves": {
+     "5": 10.999999999999943,
+     "10": null,
+     "20": 1.9999999999999574,
+     "60": 22.999999999999954
+    }
+   },
+   {
+    "date": "2025-05-13",
+    "z": -2.55,
+    "regime": "Overheating",
+    "entry_date": "2025-05-14",
+    "same_session": false,
+    "moves": {
+     "5": 4.999999999999982,
+     "10": -10.000000000000053,
+     "20": -16.999999999999993,
+     "60": -26.000000000000068
+    }
+   },
+   {
+    "date": "2025-04-07",
+    "z": -2.68,
+    "regime": "Overheating",
+    "entry_date": "2025-04-08",
+    "same_session": false,
+    "moves": {
+     "5": 8.999999999999986,
+     "10": 14.000000000000057,
+     "20": 0.0,
+     "60": 14.000000000000057
+    }
+   },
+   {
+    "date": "2024-11-14",
+    "z": -2.77,
+    "regime": "Stagflation",
+    "entry_date": "2024-11-15",
+    "same_session": false,
+    "moves": {
+     "5": -1.9999999999999574,
+     "10": -23.999999999999932,
+     "20": -4.0000000000000036,
+     "60": 4.0000000000000036
+    }
+   },
+   {
+    "date": "2024-11-06",
+    "z": -2.67,
+    "regime": "Stagflation",
+    "entry_date": "2024-11-07",
+    "same_session": false,
+    "moves": {
+     "5": 12.00000000000001,
+     "10": 12.00000000000001,
+     "20": -15.999999999999925,
+     "60": 14.000000000000057
+    }
+   },
+   {
+    "date": "2023-10-02",
+    "z": -2.58,
+    "regime": "Overheating",
+    "entry_date": "2023-10-03",
+    "same_session": false,
+    "moves": {
+     "5": -14.999999999999947,
+     "10": 2.000000000000046,
+     "20": 7.000000000000028,
+     "60": -96.99999999999997
+    }
+   },
+   {
+    "date": "2022-07-06",
+    "z": -2.51,
+    "regime": "Stagflation",
+    "entry_date": "2022-07-07",
+    "same_session": false,
+    "moves": {
+     "5": -4.999999999999982,
+     "10": -9.999999999999964,
+     "20": -32.999999999999964,
+     "60": 82.00000000000003
+    }
+   }
+  ],
+  "verdict": {
+   "text": "10Y Treasury is not distinguishable from baseline at 5 sessions (n = 43, 43 blocks); 10 sessions (n = 41, 37 blocks); 20 sessions (n = 43, 36 blocks); 60 sessions (n = 43, 26 blocks) (the 90% interval on Δ includes zero). At 20 sessions the response is concentrated in Overheating (n = 25, median +2 bp); weakest in Stagflation (n = 14, median -11 bp). n<10: Goldilocks (2), Recession Risk (2). Sample since 2000 (data from 2000-08-30; events evaluable 2001-08-22 to 2026-09-18); 43 events after a 5-session cooldown (98 shock sessions before it); 36 independent blocks at 20 sessions (Monte Carlo, 10,000 draws).",
+   "sentences": [
+    "10Y Treasury is not distinguishable from baseline at 5 sessions (n = 43, 43 blocks); 10 sessions (n = 41, 37 blocks); 20 sessions (n = 43, 36 blocks); 60 sessions (n = 43, 26 blocks) (the 90% interval on Δ includes zero).",
+    "At 20 sessions the response is concentrated in Overheating (n = 25, median +2 bp); weakest in Stagflation (n = 14, median -11 bp).",
+    "n<10: Goldilocks (2), Recession Risk (2).",
+    "Sample since 2000 (data from 2000-08-30; events evaluable 2001-08-22 to 2026-09-18); 43 events after a 5-session cooldown (98 shock sessions before it); 36 independent blocks at 20 sessions (Monte Carlo, 10,000 draws)."
+   ]
+  },
+  "provenance": {
+   "as_of": "2026-09-18",
+   "sample_start": "2001-08-22",
+   "sample_end": "2026-09-18",
+   "n_events": 43,
+   "cooldown": "5 sessions on the session calendar",
+   "cooldown_sessions": 5,
+   "seed": 20260921,
+   "n_boot": 10000,
+   "ci": 0.9,
+   "bootstrap": "cluster bootstrap: events whose forward windows overlap form one block; every draw of B blocks is enumerated when B ≤ 7, else 10000 Monte Carlo draws; an interval needs 5 blocks; a zero-exclusion claim needs 10 blocks, the 90% interval on the point estimate's side of zero and fewer than 3% of resampled medians adverse (zero counts as adverse)",
+   "inputs_hash": "bf4d62518d35e3af",
+   "warnings": [
+    "Gold (COMEX front month): history from 2000-08-30 (after 1990)",
+    "off-session observations dropped: gold 6, us10y 41.",
+    "calendar sessions without a value: gold 19, us10y 232."
+   ]
+  }
+ }
+}
