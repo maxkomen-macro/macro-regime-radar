@@ -1065,6 +1065,35 @@ main .mrr-scroll {
   font-variant-numeric: tabular-nums;
 }
 
+/* The Desk entry (desk/frame §1): an understated text link in the top bar's
+   empty left track (grid-column 1, kept for the centring since Phase 10),
+   hidden below 860 where the MobileNav list carries the Desk row. Lives here,
+   not in desk.css, because the top bar renders on every /app route and the
+   Desk stylesheet loads only with the Desk chunk. */
+.mrr-top .mrr-desk-entry {
+  grid-column: 1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.mrr-top .mrr-desk-entry:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.mrr-top .mrr-desk-entry .arrow {
+  font-family: var(--font-mono);
+}
+@media (max-width: 859.98px) {
+  .mrr-top .mrr-desk-entry {
+    display: none;
+  }
+}
+
 /* Ticker strip: three 54px quote cards and the freshness card. */
 .mrr-strip {
   display: grid;

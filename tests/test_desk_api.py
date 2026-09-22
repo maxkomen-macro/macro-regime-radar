@@ -1,17 +1,30 @@
-"""GET /api/desk/event-study and /assets (desk/event-study, 2026-09-21).
+"""tests/test_desk_api.py — the Desk's endpoints, one router (desk/integration, 2026-09-22).
 
-Against the owner-populated scratch copy (data/desk_scratch.db, DESK_DB
-overrides; skipped without it) served by a fresh worker so the generation is
-built from that file. The presets are worker items (looked up, never
-computed on the request path); a free-form query computes on request behind
-the expensive-calculator gate, is cached by (generation key, slug, seed),
-and answers 202 `computing` with Retry-After past the wait instead of a
-blank panel. The TestClient never enters the lifespan, so no relay and no
-provider probe run here."""
+desk/event-study's suite and desk/frame's suite, unified with api/desk.py.
+
+Event study (desk/event-study, 2026-09-21): GET /api/desk/event-study and
+/assets against the owner-populated scratch copy (data/desk_scratch.db,
+DESK_DB overrides; the tests that need it skip without it) served by a fresh
+worker so the generation is built from that file. The presets are worker
+items (looked up, never computed on the request path); a free-form query
+computes on request behind the expensive-calculator gate, is cached by
+(generation key, slug, seed), and answers 202 `computing` with Retry-After
+past the wait instead of a blank panel. The TestClient never enters the
+lifespan, so no relay and no provider probe run here.
+
+Pipeline inventory (desk/frame, spec §7): shape and provenance only. The
+inventory is the freshness report's series[] joined with static provider and
+reader facts, so every row must carry the same state /api/freshness serves
+for that id, and the module must stay free of src.config (the api/ package
+runs without FRED_API_KEY).
+"""
 
 from __future__ import annotations
 
+import ast
 import os
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -27,14 +40,16 @@ from src.desk import event_study as es
 ROOT = Path(__file__).resolve().parent.parent
 SCRATCH = Path(os.environ.get("DESK_DB", ROOT / "data" / "desk_scratch.db"))
 
-pytestmark = pytest.mark.skipif(not SCRATCH.exists(), reason="populate data/desk_scratch.db for the Desk API tests")
-
 client = TestClient(app)
 
 
 @pytest.fixture()
 def served(install_worker, monkeypatch):
-    """A worker serving the scratch copy (the file every Desk read redirects to)."""
+    """A worker serving the scratch copy (the file every Desk read redirects to).
+    Skips without the scratch copy (the event-study suite's module-level skip
+    before the merge; the inventory tests below need no scratch copy)."""
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
     from api import worker as worker_mod
 
     monkeypatch.setattr(db, "DB_PATH", SCRATCH)
@@ -222,7 +237,112 @@ def test_the_study_path_is_under_the_expensive_gate():
     assert "/api/desk/event-study/assets" not in security.EXPENSIVE_PATHS
 
 
+def _imported_modules(path: Path) -> set[str]:
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            names.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+            names.update(f"{node.module}.{a.name}" for a in node.names)
+        elif isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", None)) in ("import_module", "__import__"):
+            names.update(a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str))
+    return names
+
+
 def test_the_api_never_imports_the_writer_or_yahoo():
+    """Imports, not text (desk/integration): the merged module names yfinance
+    as the provider of the stored market tables in the inventory's labels,
+    which the event-study branch's text check read as an import."""
     for name in ("api/desk.py", "api/analytics_cache.py"):
-        text = (ROOT / name).read_text()
-        assert "desk_history" not in text and "yfinance" not in text, name
+        mods = _imported_modules(ROOT / name)
+        assert not any("desk_history" in m or m.split(".")[0] == "yfinance" for m in mods), (name, sorted(mods))
+    assert "desk_history" not in (ROOT / "api" / "analytics_cache.py").read_text()
+
+
+# ── Pipeline inventory (desk/frame) ─────────────────────────────────────────
+
+
+def test_desk_module_never_imports_src_config():
+    """desk/frame's rule, kept through the merge: the api/ package runs without
+    FRED_API_KEY, so the Desk module never imports src.config, directly or
+    through what it imports. (The frame's stricter "no src.* at all" could not
+    survive the merge: desk/event-study's base reads the config-free engine
+    and dbpath from src/.)"""
+    tree = ast.parse((ROOT / "api" / "desk.py").read_text())
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+            names.update(f"{node.module}.{a.name}" for a in node.names)
+    assert not any(n == "src.config" or n.startswith("src.config.") for n in names), names
+    env = {k: v for k, v in os.environ.items() if k != "FRED_API_KEY"}
+    out = subprocess.run(
+        [sys.executable, "-c", "import sys, api.desk; print('src.config' in sys.modules)"],
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=120,
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip().splitlines()[-1] == "False"
+
+
+def test_inventory_rows_join_is_pure_and_complete():
+    series = [
+        {"id": "DGS10", "label": "10-year Treasury yield", "kind": "fred", "cadence": "daily", "as_of": "2026-09-18",
+         "state": "close", "delay_min": None, "cycles_behind": 0, "stale": False, "discontinued": False, "reason": "r"},
+        {"id": "market_daily", "label": "Daily bars (stored)", "kind": "market", "cadence": "daily", "as_of": "2026-09-18",
+         "state": "stale", "delay_min": None, "cycles_behind": 2, "stale": True, "discontinued": False, "reason": "r"},
+        {"id": "brand_new", "label": "?", "kind": "market", "cadence": "daily", "as_of": None,
+         "state": "unknown", "delay_min": None, "cycles_behind": None, "stale": False, "discontinued": False, "reason": ""},
+    ]
+    rows = desk_mod.inventory_rows(series)
+    assert [r["id"] for r in rows] == ["DGS10", "market_daily", "brand_new"]
+    assert rows[0]["source"] == "FRED" and rows[0]["source_id"] == "DGS10" and "Recession model" in rows[0]["feeds"]
+    assert rows[1]["source"].startswith("yfinance") and rows[1]["source_id"] is None
+    # An id the map does not know still gets a provider word and an empty reader list, never a KeyError.
+    assert rows[2]["source"] == "stored market data" and rows[2]["feeds"] == []
+    # The state fields pass through untouched: the endpoint judges nothing.
+    assert rows[1]["state"] == "stale" and rows[1]["cycles_behind"] == 2
+
+
+def test_every_registered_fred_series_has_readers():
+    missing = [sid for sid in freshness_registry() if sid not in desk_mod.FEEDS]
+    assert missing == [], f"series without a reader entry: {missing}"
+
+
+def freshness_registry() -> list[str]:
+    from api import freshness as freshness_mod
+
+    return list(freshness_mod.SERIES_REGISTRY)
+
+
+@pytest.mark.skipif(not db.DB_PATH.exists(), reason="macro_radar.db not present")
+def test_pipeline_inventory_matches_freshness_report():
+    r = client.get("/api/desk/pipeline/inventory")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    for key in ("generated_at", "overall", "regimes_date", "signals_date", "market_daily_date", "series"):
+        assert key in body
+    assert isinstance(body["series"], list) and body["series"]
+    row = body["series"][0]
+    assert set(row) >= {"id", "label", "kind", "cadence", "as_of", "state", "stale", "reason", "source", "source_id", "feeds"}
+    fresh = client.get("/api/freshness").json()
+    by_id = {s["id"]: s for s in fresh.get("series") or []}
+    assert set(by_id) == {s["id"] for s in body["series"]}
+    for s in body["series"]:
+        assert s["state"] == by_id[s["id"]]["state"], s["id"]
+        assert s["as_of"] == by_id[s["id"]]["as_of"], s["id"]
+
+
+def test_desk_router_is_get_only():
+    """The Desk's routes, GET only: the event study's two and the frame's
+    inventory (spec §7), one router; nothing else and nothing that writes."""
+    paths = sorted((r.path, sorted(r.methods)) for r in desk_mod.router.routes)
+    assert paths == [
+        ("/api/desk/event-study", ["GET"]),
+        ("/api/desk/event-study/assets", ["GET"]),
+        ("/api/desk/pipeline/inventory", ["GET"]),
+    ]
+    for path, _ in paths:
+        assert client.post(path).status_code == 405, path
