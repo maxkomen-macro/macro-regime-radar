@@ -1,0 +1,247 @@
+{
+  "_note": "One fixture, two suites (fix/prelaunch-1, B-H2): web/src/screens/news/news-copy.test.ts and tests/test_news_budget.py. 'key' values are what the page's own JavaScript computes (generated with Node from headlineKey); the Python port must agree. 'reads' are stored read values and whether the page's hasAiRead sees a read in them (Node's own trim()); the backend's _eligible must agree. 'window' rows are in the order /api/news serves them; 'ten' is the ten distinct stories the page shows first, 'pending' the ones the backend tops up.",
+  "now": "2026-09-21T12:00:00+00:00",
+  "floor": 2.5,
+  "top_n": 10,
+  "page_limit": 150,
+  "window_hours": 168,
+  "keys": [
+    {
+      "headline": "Fed holds rates steady",
+      "key": "fed holds rates steady"
+    },
+    {
+      "headline": "  Fed   holds\trates\nsteady  ",
+      "key": "fed holds rates steady"
+    },
+    {
+      "headline": "Fed holds rates",
+      "key": "fed holds rates"
+    },
+    {
+      "headline": "﻿Fed holds rates",
+      "key": "fed holds rates"
+    },
+    {
+      "headline": "Fed　holds rates",
+      "key": "fed holds rates"
+    },
+    {
+      "headline": "Fed holds rates",
+      "key": "fed holds rates"
+    },
+    {
+      "headline": "Fedholds rates",
+      "key": "fedholds rates"
+    },
+    {
+      "headline": "Fed\u001cholds rates",
+      "key": "fed\u001cholds rates"
+    },
+    {
+      "headline": "​Fed holds rates",
+      "key": "​fed holds rates"
+    },
+    {
+      "headline": "İSTANBUL MARKETS OPEN HIGHER",
+      "key": "i̇stanbul markets open higher"
+    },
+    {
+      "headline": "ΟΔΥΣΣΕΑΣ KAI ΣΟΦΟΣ",
+      "key": "οδυσσεας kai σοφος"
+    },
+    {
+      "headline": "ÉCONOMIE: la BCE maintient ses taux",
+      "key": "économie: la bce maintient ses taux"
+    },
+    {
+      "headline": "S&P 500 hits a record 🚀",
+      "key": "s&p 500 hits a record 🚀"
+    },
+    {
+      "headline": "",
+      "key": ""
+    },
+    {
+      "headline": "   ",
+      "key": ""
+    }
+  ],
+  "window": [
+    {
+      "id": 101,
+      "headline": "Fed holds rates steady",
+      "overall_significance": 4.8,
+      "published_at": "2026-09-20T18:00:00+00:00",
+      "has_read": true
+    },
+    {
+      "id": 102,
+      "headline": "  FED holds  rates steady",
+      "overall_significance": 4.8,
+      "published_at": "2026-09-20T17:00:00+00:00",
+      "has_read": true
+    },
+    {
+      "id": 103,
+      "headline": "Oil jumps on a surprise supply cut",
+      "overall_significance": 4.6,
+      "published_at": "2026-09-20T16:00:00+00:00",
+      "has_read": false
+    },
+    {
+      "id": 104,
+      "headline": "OIL JUMPS ON A SURPRISE SUPPLY CUT",
+      "overall_significance": 4.5,
+      "published_at": "2026-09-20T15:00:00+00:00",
+      "has_read": true
+    },
+    {
+      "id": 105,
+      "headline": "Payrolls beat and the curve bear-flattens",
+      "overall_significance": 4.4,
+      "published_at": "2026-09-19T14:00:00+00:00",
+      "has_read": false
+    },
+    {
+      "id": 106,
+      "headline": "Ten-year yield climbs to a three-month high",
+      "overall_significance": 4.2,
+      "published_at": "2026-09-19T13:00:00+00:00",
+      "has_read": true
+    },
+    {
+      "id": 107,
+      "headline": "China unveils a property stimulus package",
+      "overall_significance": 4,
+      "published_at": "2026-09-19T12:00:00+00:00",
+      "has_read": false
+    },
+    {
+      "id": 108,
+      "headline": "Gold sets a record as the dollar slips",
+      "overall_significance": 3.8,
+      "published_at": "2026-09-18T11:00:00+00:00",
+      "has_read": false
+    },
+    {
+      "id": 109,
+      "headline": "Payrolls beat and the curve bear-flattens ",
+      "overall_significance": 3.6,
+      "published_at": "2026-09-18T10:00:00+00:00",
+      "has_read": false
+    },
+    {
+      "id": 110,
+      "headline": "Dollar slides after the Fed minutes",
+      "overall_significance": 3.4,
+      "published_at": "2026-09-18T09:00:00+00:00",
+      "has_read": false
+    },
+    {
+      "id": 111,
+      "headline": "Euro rallies on a hawkish ECB",
+      "overall_significance": 3.2,
+      "published_at": "2026-09-17T08:00:00+00:00",
+      "has_read": false
+    },
+    {
+      "id": 112,
+      "headline": "Housing starts fall for a third month",
+      "overall_significance": 3,
+      "published_at": "2026-09-17T07:00:00+00:00",
+      "has_read": false
+    },
+    {
+      "id": 113,
+      "headline": "Retail sales flat in August",
+      "overall_significance": 2.2,
+      "published_at": "2026-09-16T06:00:00+00:00",
+      "has_read": false
+    },
+    {
+      "id": 114,
+      "headline": "A quiet note on the municipal market",
+      "overall_significance": 2.1,
+      "published_at": "2026-09-16T05:00:00+00:00",
+      "has_read": false
+    }
+  ],
+  "ten": [
+    101,
+    103,
+    105,
+    106,
+    107,
+    108,
+    110,
+    111,
+    112,
+    113
+  ],
+  "pending": [
+    103,
+    105,
+    107,
+    108,
+    110,
+    111,
+    112
+  ],
+  "small_window": {
+    "rows": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "ten": [
+      101,
+      103,
+      105
+    ],
+    "pending": [
+      103,
+      105
+    ]
+  },
+  "reads": [
+    {
+      "value": "a stored read",
+      "has_read": true
+    },
+    {
+      "value": "",
+      "has_read": false
+    },
+    {
+      "value": "   ",
+      "has_read": false
+    },
+    {
+      "value": "﻿",
+      "has_read": false
+    },
+    {
+      "value": "",
+      "has_read": true
+    },
+    {
+      "value": "\u001c",
+      "has_read": true
+    },
+    {
+      "value": "　  ",
+      "has_read": false
+    },
+    {
+      "value": "​",
+      "has_read": true
+    },
+    {
+      "value": " \t\nx",
+      "has_read": true
+    }
+  ]
+}

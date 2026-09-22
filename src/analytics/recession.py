@@ -14,6 +14,8 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
+from src.analytics import dbpath
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 ROOT    = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "macro_radar.db"
@@ -31,9 +33,11 @@ FEATURE_NAMES = ["yield_curve", "unemployment", "hy_spread", "indpro_yoy", "lei_
 
 
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # Read-only (B3, 2026-09-18): this module only reads, and a read-write
+    # open on a missing path would create an empty database that the API then
+    # serves (and bootstrap would skip downloading over).
+    conn = dbpath.connect_ro(DB_PATH)  # the published generation in the API (fix/prelaunch-1)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -347,7 +351,11 @@ def get_recession_metrics() -> dict:
         "divergence_score":         divergence_score,
         "divergence_label":         divergence_label,
         "divergence_color":         divergence_color,
-        "recession_prob_series":    prob_series,
+        # B7 (2026-09-18): same rule as the headline (points dated on or before
+        # today). The month-end index put a future-dated point (e.g. 2026-09-30
+        # on 2026-09-18) at the end of the chart, so the chart and the headline
+        # disagreed on the same screen.
+        "recession_prob_series":    valid_prob,
         "yield_curve_series":       yield_curve_daily,
         "usrec_series":             usrec_series,
         "n_training_samples":       len(combined),

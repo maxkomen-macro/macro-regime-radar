@@ -2,7 +2,8 @@ import collections
 import pandas as pd
 from datetime import datetime, timezone
 from src.config import SERIES, LOOKBACK_YEARS
-from src.utils.fred_client import fetch_series
+from src.utils.fred_client import fetch_series_observed
+from src import watermarks
 from src.utils.db import get_connection
 
 
@@ -17,7 +18,7 @@ def fetch_all_series() -> dict:
     try:
         for name, series_id in SERIES.items():
             print(f"[fetch_data] Fetching {series_id} ({name})...")
-            s = fetch_series(series_id, LOOKBACK_YEARS)
+            s, last_obs, last_value = fetch_series_observed(series_id, LOOKBACK_YEARS)
 
             fetched_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             rows = [
@@ -34,6 +35,10 @@ def fetch_all_series() -> dict:
                 """,
                 rows,
             )
+            # B6: the true date of the newest observation (the rows above are
+            # month-stamped), so freshness can tell a current value from a
+            # stale one and a series that stops advancing is caught.
+            watermarks.record(conn, f"fred:{series_id}", last_obs, last_value)
             conn.commit()
             result[name] = s
             print(f"[fetch_data]   -> {len(s)} observations saved.")

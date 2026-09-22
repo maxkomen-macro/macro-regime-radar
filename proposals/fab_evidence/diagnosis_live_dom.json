@@ -1,0 +1,20 @@
+{
+  "captured": "2026-07-09 ~12:08 PDT",
+  "source": "http://localhost:8501 Dashboard tab, BROKEN FAB (pre-fix), Streamlit 1.54.0",
+  "root_cause": "H2 (selector validity) — NOT H1 (style stripping)",
+  "button_computed": {
+    "text": "💬 AI Analyst",
+    "position": "relative",
+    "note": "in normal flow, NOT fixed",
+    "rect": {"x": 80, "y": 4183, "w": 84, "h": 112, "right_edge": 164, "bottom_edge": 4295},
+    "zIndex": "2",
+    "display": "inline-flex"
+  },
+  "button_container_classes": "stElementContainer element-container st-key-__macro_chat_fab__ st-emotion-cache-zh2fnc",
+  "H1_style_stripping": {"verdict": "FALSE here", "fabCssInStyleTag": true, "markerPresent": true, "note": "st.markdown did NOT strip the <style>; the CSS is present in the DOM but not applying"},
+  "H2_selector_validity": {"verdict": "TRUE — confirmed root cause", "stKeyFabPresent": true, "markerDepthFromContainer": 4, "selector_expects_depth": "2-3 via ':has(> div > div > #marker)' / ':has(> div > #marker)' child combinators", "markerContainerDisplay": "block", "note": "marker is 4 levels deep so :has() never matches; neither hide-marker rule nor fix-next-sibling rule fires -> button stays position:relative"},
+  "H4_render_location": {"verdict": "SAFE / global", "note": "render_chat_launcher() at app.py:1508 module top level after last tab block; no move needed"},
+  "H5_stacking": {"verdict": "SAFE", "fixedWillBeViewportRelative": true, "containingBlockAncestors": [], "note": "no ancestor transform/filter/perspective -> position:fixed resolves to viewport"},
+  "viewport": {"w": 1004, "h": 746, "scrollY": 0},
+  "chosen_fix": "Target .st-key-__macro_chat_fab__ directly (position:fixed bottom/right 24px), inject via st.html(), remove marker div. Confined to chat_widget.py."
+}

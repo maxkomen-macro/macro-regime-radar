@@ -52,8 +52,11 @@ def z_interpretation(metric: str, label: str, z: float, raw_val: float | None) -
     kind = _Z_METRIC_KIND.get(metric, "ret")
     if kind == "level_pct":
         hilo = "high" if z > 0 else "low"
+        # A label like "CPI YoY" plus the "% YoY" unit would say YoY twice
+        # ("CPI YoY runs at 3.46% YoY") — the unit owns the suffix.
+        name = label.removesuffix(" YoY")
         lvl = f" at {raw_val:.2f}% YoY" if raw_val is not None else ""
-        return f"{label} runs{lvl} — a {abs(z):.1f}σ {hilo} reading vs its recent range"
+        return f"{name} runs{lvl} — a {abs(z):.1f}σ {hilo} reading vs its recent range"
     direction = "surged" if z > 0 else "fell"
     mag = "sharply" if abs(z) >= 2.5 else ("notably" if abs(z) >= 1.5 else "modestly")
     if raw_val is None:

@@ -1,0 +1,22 @@
+[
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Users/maxkomen/Projects/Macro/macro-regime-radar/web/src/screens/shared/DeskRead.tsx",
+    "line": 161,
+    "snippet": "borderLeft: \"3px solid"
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Users/maxkomen/Projects/Macro/macro-regime-radar/web/src/screens/shell/AlertDrawer.tsx",
+    "line": 36,
+    "snippet": "borderLeft: `3px solid"
+  }
+]

@@ -8,13 +8,62 @@ without Streamlit (tools that need session_state degrade gracefully).
 
 from __future__ import annotations
 
+import copy
+import contextvars
+import json
+import os
 import re
 import sqlite3
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from src.config import DB_PATH, get_secret
+from src.analytics import dbpath
+
+# ── Config (self-contained) ──────────────────────────────────────────────────
+# Deliberately NOT imported from src.config: that module raises at import time
+# without FRED_API_KEY, and the FastAPI service (api/chat.py) must be able to
+# import this module in key-less environments. DB_PATH resolves to the same
+# file src.config.DB_PATH points at.
+DB_PATH = Path(__file__).resolve().parents[2] / "data" / "macro_radar.db"
+
+# Repo-root .env, parsed as get_secret's last resort (api/stream.py:_load_token
+# idiom). src.config gets .env into os.environ via load_dotenv at import; this
+# module must not import src.config, so bare-uvicorn processes launched without
+# .env in their environment would otherwise never see the keys it holds.
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _env_file_value(key: str) -> str:
+    """`key` from the repo-root .env file, '' if absent/unreadable.
+    The value is never logged and never leaves this process."""
+    try:
+        for line in _ENV_FILE.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith(f"{key}="):
+                return line.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        pass
+    return ""
+
+
+def get_secret(key: str) -> str:
+    """Resolve a secret: env var, else Streamlit secrets where available, else
+    the repo-root .env file. Identical resolution for the Streamlit path and
+    the bare-uvicorn path; returns '' when the key is absent everywhere."""
+    val = os.environ.get(key, "")
+    if val:
+        return val
+    try:
+        import streamlit as st
+        val = st.secrets.get(key, "")
+    except Exception:
+        val = ""
+    return val or _env_file_value(key)
+
 
 # ── Anthropic SDK ─────────────────────────────────────────────────────────────
 # Imported lazily so importing this module doesn't crash if the SDK is missing
@@ -28,6 +77,50 @@ except ImportError:  # pragma: no cover
 MODEL              = "claude-sonnet-4-5-20250929"
 MAX_TOKENS         = 2000
 MAX_TOOL_ITERATIONS = 10
+
+# ── Tab-context bridge (API → tools) ─────────────────────────────────────────
+# The FastAPI layer (api/chat.py) sets this per request so explain_current_view
+# works without Streamlit session state. Streamlit never touches it: the tool
+# falls back to st.session_state when the ContextVar is unset.
+TAB_CONTEXT: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "macro_radar_tab_context", default=None
+)
+
+# ── Spend bridge (agent → API, launch-1) ─────────────────────────────────────
+# On the public deploy the assistant answers strangers, so every model call is
+# paid for before it is made (api/assistant_budget.py). SPEND_GUARD, when set,
+# is asked to reserve each call at its worst case before the request is sent;
+# the call is made only with a hold, which is then settled with the call's real
+# usage, or released when Anthropic refused the request outright. A visitor who
+# hangs up leaves the hold charged. Streamlit sets nothing: unset means no
+# accounting and no gate, the old behaviour.
+SPEND_GUARD: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "macro_radar_spend_guard", default=None
+)
+
+# The request's worst case in tokens. A byte-level BPE token covers at least one
+# byte, so a prompt holds at most one token per UTF-8 byte of its text; the
+# request is measured as JSON, whose quoting only adds bytes. The API wraps the
+# tool definitions in its own tool-use system prompt (a few hundred tokens) and
+# frames every turn and block; these margins cover that with room to spare.
+PROMPT_FRAMING_TOKENS = 2_000
+BLOCK_FRAMING_TOKENS = 64
+
+
+def prompt_token_bound(system: str, tools: list, messages: list) -> int:
+    """An upper bound on the input tokens of one Messages API request."""
+    body = json.dumps({"system": system, "tools": tools, "messages": messages}, ensure_ascii=False, default=str)
+    blocks = 0
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        blocks += len(content) if isinstance(content, list) else 1
+    return len(body.encode("utf-8")) + PROMPT_FRAMING_TOKENS + BLOCK_FRAMING_TOKENS * blocks
+
+
+BUDGET_STOP_NOTE = (
+    "\n\n_Stopping here: the next step would take more than what is left of today's AI budget. "
+    "The analyst wakes up at midnight UTC; every other screen works as usual._"
+)
 
 
 # ── SQL guard ─────────────────────────────────────────────────────────────────
@@ -54,8 +147,8 @@ def is_safe_select(sql: str) -> bool:
     s = sql.strip().rstrip(";").strip()
     if not s:
         return False
-    # Reject statement chaining via `;` — by here at most one trailing `;`
-    # has been stripped, so any remaining semicolons are interior.
+    # Reject statement chaining via `;` — the rstrip above removed the whole
+    # run of trailing semicolons, so any remaining `;` is interior.
     if ";" in s:
         return False
     if _FORBIDDEN_KEYWORDS.search(s):
@@ -67,9 +160,10 @@ def is_safe_select(sql: str) -> bool:
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-def _ro_conn(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    """Open SQLite in read-only mode via URI."""
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+def _ro_conn(db_path: Path | None = None) -> sqlite3.Connection:
+    """Open SQLite read-only. Through dbpath (fix/prelaunch-1): in the API the
+    assistant reads the same published generation every screen reads."""
+    conn = dbpath.connect_ro(db_path or DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -80,14 +174,72 @@ def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 
 # ── Tool implementations ──────────────────────────────────────────────────────
 
+# Execution bound for query_database: SQLite invokes the progress handler every
+# _QUERY_PROGRESS_PERIOD VM instructions; after _QUERY_PROGRESS_BUDGET callbacks
+# (≈ 20M instructions — orders of magnitude above any legitimate dashboard
+# query) the handler returns non-zero and SQLite aborts with OperationalError
+# ("interrupted"). Guards against runaway queries the keyword guard cannot see,
+# e.g. an unbounded `WITH RECURSIVE` bomb.
+_QUERY_PROGRESS_PERIOD = 10_000
+_QUERY_PROGRESS_BUDGET = 2_000
+# Bounds on bytes and time, which the instruction budget cannot express
+# (launch-1, item 2 re-audit). printf('%.*c', 999999999, 'x') is a handful of
+# instructions and ~1 GB of memory; 200 rows of five wide values was another
+# gigabyte; a sort of many wide rows spills to temp files at disk speed.
+_QUERY_MAX_VALUE_BYTES = 256_000   # one value (SQLITE_LIMIT_LENGTH); stored rows are ~1.4 KB
+_QUERY_MAX_COLUMNS = 32            # one row (SQLITE_LIMIT_COLUMN)
+_QUERY_MAX_RESULT_BYTES = 2_000_000  # the whole result, counted while it is read
+_QUERY_TIME_BUDGET_S = 2.0         # wall clock, checked with the instruction budget
+
+
+def _value_bytes(value: Any) -> int:
+    if isinstance(value, str):
+        return len(value.encode("utf-8", "replace"))  # bytes, not code points
+    if isinstance(value, bytes):
+        return len(value)
+    return 8
+
+
 def _tool_query_database(sql: str) -> dict[str, Any]:
     if not is_safe_select(sql):
         return {"error": "SQL guard: only single-statement SELECT (or WITH ... SELECT) queries are permitted."}
     try:
         with _ro_conn() as conn:
-            cur = conn.execute(sql)
-            rows = cur.fetchmany(200)  # cap at 200 rows
-            cols = [d[0] for d in cur.description] if cur.description else []
+            remaining = _QUERY_PROGRESS_BUDGET
+            deadline = time.monotonic() + _QUERY_TIME_BUDGET_S
+
+            def _budget_exceeded() -> int:
+                nonlocal remaining
+                remaining -= 1
+                return 1 if remaining < 0 or time.monotonic() > deadline else 0
+
+            conn.set_progress_handler(_budget_exceeded, _QUERY_PROGRESS_PERIOD)
+            # Load the schema before the column limit is set: with the limit
+            # in place first, SQLite refuses to load any table wider than it
+            # and every query fails (item 2 re-audit, loop 3). Loaded, the
+            # limit applies to result sets, which is what it is for.
+            conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchall()
+            conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _QUERY_MAX_VALUE_BYTES)
+            conn.setlimit(sqlite3.SQLITE_LIMIT_COLUMN, _QUERY_MAX_COLUMNS)
+            # The connection refuses writes itself, not only the guard: a
+            # generation copy already does, and the file fallback (before the
+            # first generation) accepted temp tables, ATTACH and VACUUM INTO.
+            conn.set_authorizer(dbpath.read_only_authorizer)
+            try:
+                cur = conn.execute(sql)
+                cols = [d[0] for d in cur.description] if cur.description else []
+                rows: list = []
+                size = 0
+                while len(rows) < 200:  # cap at 200 rows
+                    row = cur.fetchone()
+                    if row is None:
+                        break
+                    size += sum(_value_bytes(v) for v in row)
+                    if size > _QUERY_MAX_RESULT_BYTES:
+                        return {"error": "The result is too large to return: select fewer or narrower columns, or fewer rows."}
+                    rows.append(row)
+            finally:
+                conn.set_progress_handler(None, 0)
         return {"columns": cols, "rows": _rows_to_dicts(rows), "row_count": len(rows)}
     except sqlite3.Error as exc:
         return {"error": f"SQL error: {exc}"}
@@ -121,23 +273,87 @@ def _tool_get_signal_status(signal_name: str | None = None) -> dict[str, Any]:
     return {"signals": _rows_to_dicts(rows)}
 
 
+# Keyed on the database file key (B-H1, fix/prelaunch-1): a swapped or
+# rewritten database is a miss, so the assistant never quotes the previous
+# file's probability. src/ cannot import api/, so the check is dbpath's own
+# (the published generation's key in the API, the file's key elsewhere).
+_RECESSION_MODEL_CACHE: dict[str, Any] = {}
+
+
+def _recession_model_view() -> dict[str, Any]:
+    """The recession model's 12-month probability (percent) and its 1/3/6-month
+    priors. Under the API the worker derives it once per generation
+    (api/analytics_cache "assistant_recession") and this only looks it up, so
+    no request fits the model (fix/prelaunch-1); elsewhere the model trains
+    in-process and the view is kept per database."""
+    gen = dbpath.generation_for(DB_PATH)
+    results = getattr(gen, "results", None)
+    if results is not None and "assistant_recession" in results:
+        return results["assistant_recession"]
+    errors = getattr(gen, "errors", None)
+    if errors and "assistant_recession" in errors:
+        # a copy: raising the stored object would chain every request's frames onto it
+        raise copy.copy(errors["assistant_recession"])
+    key = dbpath.current_key(DB_PATH)
+    hit = _RECESSION_MODEL_CACHE.get("view")
+    if hit and key is not None and hit[0] == key:
+        return hit[1]
+    view = _compute_recession_view()
+    _RECESSION_MODEL_CACHE["view"] = (key, view)
+    return view
+
+
+def _compute_recession_view() -> dict[str, Any]:
+    from src.analytics.recession import get_recession_metrics
+
+    return recession_view_from_metrics(get_recession_metrics())
+
+
+def recession_view_from_metrics(m: dict) -> dict[str, Any]:
+    """The assistant's view of one get_recession_metrics() result."""
+    series = m.get("recession_prob_series")
+    prob = m.get("recession_prob")
+    view: dict[str, Any] = {"source": "NBER recession model, 12-month probability (the app's recession probability)",
+                            "probability_pct": prob, "label": m.get("recession_label")}
+    if series is not None and len(series):
+        vals = [float(v) for v in series.values]
+        view["as_of"] = str(series.index[-1])[:10]
+        for n, key in ((1, "prob_1m_ago_pct"), (3, "prob_3m_ago_pct"), (6, "prob_6m_ago_pct")):
+            view[key] = vals[-1 - n] if len(vals) > n else None
+    return view
+
+
 def _tool_get_recession_probability() -> dict[str, Any]:
+    """B7 (2026-09-18): two different numbers, each under its own name. The
+    recession model's probability is the app's recession probability (the
+    Recession tab and the Dashboard key level); the classifier's Recession Risk
+    odds are one of the four regime odds. This tool used to return the
+    classifier's odds under the model's name."""
+    out: dict[str, Any] = {
+        "note": "recession_model is the app's recession probability (percent); regime_recession_risk_odds is the "
+                "regime classifier's separate Recession Risk odds (0-1). Never present one as the other.",
+    }
+    try:
+        out["recession_model"] = _recession_model_view()
+    except Exception as exc:  # the model needs pandas/scikit-learn and enough history
+        out["recession_model"] = {"error": f"recession model unavailable ({type(exc).__name__})"}
     with _ro_conn() as conn:
         rows = conn.execute(
             "SELECT date, prob_recession FROM regimes "
             "WHERE prob_recession IS NOT NULL ORDER BY date DESC LIMIT 7"
         ).fetchall()
-    if not rows:
-        return {"error": "No recession probability data."}
-    rec = _rows_to_dicts(rows)
-    latest = rec[0]
-    return {
-        "latest_date":     latest["date"],
-        "prob_now":        latest["prob_recession"],
-        "prob_1m_ago":     rec[1]["prob_recession"] if len(rec) > 1 else None,
-        "prob_3m_ago":     rec[3]["prob_recession"] if len(rec) > 3 else None,
-        "prob_6m_ago":     rec[6]["prob_recession"] if len(rec) > 6 else None,
-    }
+    if rows:
+        rec = _rows_to_dicts(rows)
+        out["regime_recession_risk_odds"] = {
+            "latest_date": rec[0]["date"],
+            "odds_now":    rec[0]["prob_recession"],
+            "odds_1m_ago": rec[1]["prob_recession"] if len(rec) > 1 else None,
+            "odds_3m_ago": rec[3]["prob_recession"] if len(rec) > 3 else None,
+            "odds_6m_ago": rec[6]["prob_recession"] if len(rec) > 6 else None,
+        }
+    else:
+        out["regime_recession_risk_odds"] = {"error": "No regime rows."}
+    return out
 
 
 def _latest_series(conn: sqlite3.Connection, series_id: str) -> tuple[str | None, float | None]:
@@ -220,7 +436,10 @@ def _tool_get_recent_headlines(limit: int = 5, min_significance: int = 3) -> dic
 
 
 def _tool_explain_current_view() -> dict[str, Any]:
-    """Read tab context from Streamlit session state. Empty dict if unavailable."""
+    """Read tab context — the API-set ContextVar first, then Streamlit session state."""
+    api_ctx = TAB_CONTEXT.get()
+    if api_ctx:
+        return api_ctx
     try:
         import streamlit as st
         ctx = st.session_state.get("current_tab_context")
@@ -284,7 +503,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_recession_probability",
-        "description": "Latest recession probability and 1m / 3m / 6m prior values for trend.",
+        "description": "The recession model's 12-month recession probability in percent (the app's recession probability) with 1m / 3m / 6m priors, and separately the regime classifier's Recession Risk odds (0-1). Two different numbers, each labelled.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -367,8 +586,12 @@ def _build_state_snapshot() -> str:
         pass
     try:
         rec = _tool_get_recession_probability()
-        if "error" not in rec and rec.get("prob_now") is not None:
-            parts.append(f"Recession prob: {rec['prob_now']:.0%}")
+        model = rec.get("recession_model") or {}
+        if model.get("probability_pct") is not None:
+            parts.append(f"Recession model (12m): {model['probability_pct']:.0f}%")
+        odds = rec.get("regime_recession_risk_odds") or {}
+        if odds.get("odds_now") is not None:
+            parts.append(f"Regime Recession Risk odds: {odds['odds_now']:.0%}")
     except Exception:
         pass
     try:
@@ -401,6 +624,11 @@ class RateLimited(AgentError):
 
 class NetworkError(AgentError):
     """Raised on connection issues talking to the upstream API."""
+
+
+class BudgetExhausted(AgentError):
+    """The day's spend ceiling cannot pay for the answer's first model call
+    (launch-1). The API shows its resting state; nothing reached Anthropic."""
 
 
 # Cap conversation history sent to the API to avoid runaway costs.
@@ -442,9 +670,32 @@ class MacroRadarAgent:
         messages: list[dict] = trimmed
         messages.append({"role": "user", "content": user_msg})
 
-        for _iteration in range(MAX_TOOL_ITERATIONS):
+        guard = SPEND_GUARD.get()
+        api = self.client
+        if guard is not None and hasattr(api, "with_options"):
+            # One hold pays for one request. The SDK's own retries would send
+            # the same prompt again under it (launch-1 verify loop 2, R1).
+            api = api.with_options(max_retries=0)
+        for iteration in range(MAX_TOOL_ITERATIONS):
+            # Pay before calling (launch-1, api/assistant_budget.py): the call
+            # is held at its worst case, and without a hold it is not made.
+            hold = None
+            if guard is not None:
+                try:
+                    hold = guard.reserve(
+                        prompt_tokens=prompt_token_bound(system_prompt, TOOLS, messages),
+                        max_tokens=MAX_TOKENS,
+                    )
+                except Exception:  # noqa: BLE001 — a broken guard must not spend
+                    hold = None
+                if hold is None:
+                    if iteration == 0:
+                        raise BudgetExhausted("today's AI budget cannot pay for this answer")
+                    yield BUDGET_STOP_NOTE
+                    return
+            started = False
             try:
-                with self.client.messages.stream(
+                with api.messages.stream(
                     model=self.model,
                     max_tokens=MAX_TOKENS,
                     system=system_prompt,
@@ -452,16 +703,24 @@ class MacroRadarAgent:
                     messages=messages,
                 ) as stream:
                     for event in stream:
+                        started = True
                         if getattr(event, "type", None) == "text":
                             yield event.text
                     final = stream.get_final_message()
-            except anthropic.RateLimitError as exc:
-                raise RateLimited("Hit a rate limit — try again in a moment.") from exc
+            except anthropic.APIStatusError as exc:
+                # Refused with an HTTP error before any event: Anthropic bills
+                # nothing, so the hold goes back. An error once the stream has
+                # begun keeps it (an SSE error arrives with status 200).
+                if hold is not None and not started and (getattr(exc, "status_code", 0) or 0) >= 400:
+                    self._release(guard, hold)
+                if isinstance(exc, anthropic.RateLimitError):
+                    raise RateLimited("Hit a rate limit — try again in a moment.") from exc
+                raise AgentError(f"Anthropic API error: {exc}") from exc
             except anthropic.APIConnectionError as exc:
                 raise NetworkError("AI service unreachable. Please retry.") from exc
-            except anthropic.APIStatusError as exc:
-                raise AgentError(f"Anthropic API error: {exc}") from exc
 
+            if hold is not None:
+                self._settle(guard, hold, final)
             self._record_usage(final)
 
             assistant_blocks = [b.model_dump() for b in final.content]
@@ -509,10 +768,31 @@ class MacroRadarAgent:
         except Exception:
             pass
 
+    def _settle(self, guard: Any, hold: Any, message: Any) -> None:
+        """Charge the finished call its real cost; the hold is released beside it."""
+        usage = getattr(message, "usage", None)
+        try:
+            guard.settle(hold, {
+                "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+                "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+                "model": getattr(message, "model", None) or self.model,
+            })
+        except Exception:  # noqa: BLE001 — an unsettled hold stays charged, the safe side
+            pass
+
+    def _release(self, guard: Any, hold: Any) -> None:
+        try:
+            guard.release(hold)
+        except Exception:  # noqa: BLE001 — an unreleased hold stays charged, the safe side
+            pass
+
     def _record_usage(self, message: Any) -> None:
+        """The Streamlit dialog's token counter (session state only)."""
+        usage = getattr(message, "usage", None)
         try:
             import streamlit as st
-            usage = getattr(message, "usage", None)
             if usage is None:
                 return
             log = st.session_state.setdefault("chat_token_log", {"input": 0, "output": 0})

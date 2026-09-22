@@ -31,11 +31,12 @@ _TD_ALT_STYLE = (
     "vertical-align:top;line-height:1.5;background:#0d1117"
 )
 
+# Hue source: the regime ramp (REGIME_COLORS / web tokens) — 2026-08-26 back-port.
 _REGIME_BADGES = {
-    "Goldilocks":     "background:rgba(63,185,80,0.12);color:#3fb950;border:0.5px solid rgba(63,185,80,0.25)",
-    "Overheating":    "background:rgba(218,54,51,0.12);color:#f08785;border:0.5px solid rgba(218,54,51,0.25)",
-    "Stagflation":    "background:rgba(210,153,34,0.12);color:#d29922;border:0.5px solid rgba(210,153,34,0.25)",
-    "Recession Risk": "background:rgba(218,54,51,0.20);color:#f08785;border:0.5px solid rgba(218,54,51,0.40)",
+    "Goldilocks":     "background:rgba(46,204,113,0.12);color:#2ecc71;border:0.5px solid rgba(46,204,113,0.25)",
+    "Overheating":    "background:rgba(230,126,34,0.12);color:#e67e22;border:0.5px solid rgba(230,126,34,0.25)",
+    "Stagflation":    "background:rgba(231,76,60,0.12);color:#f08785;border:0.5px solid rgba(231,76,60,0.25)",
+    "Recession Risk": "background:rgba(149,165,166,0.12);color:#95a5a6;border:0.5px solid rgba(149,165,166,0.25)",
 }
 
 
@@ -476,9 +477,11 @@ def _render_lbo_calculator() -> None:
   <tbody>
     <tr><td style="{_TD_STYLE}">Entry EV</td><td style="{_TD_STYLE}">EBITDA &times; Entry Multiple</td></tr>
     <tr><td style="{_TD_ALT_STYLE}">Entry Debt</td><td style="{_TD_ALT_STYLE}">EBITDA &times; Leverage Ratio</td></tr>
-    <tr><td style="{_TD_STYLE}">Entry Equity</td><td style="{_TD_STYLE}">Entry EV &minus; Entry Debt &minus; Transaction Fees</td></tr>
-    <tr><td style="{_TD_ALT_STYLE}">Interest</td><td style="{_TD_ALT_STYLE}">Declining balance — interest on remaining principal each year</td></tr>
-    <tr><td style="{_TD_STYLE}">Exit Equity</td><td style="{_TD_STYLE}">Exit EV &minus; Remaining Debt</td></tr>
+    <tr><td style="{_TD_STYLE}">Entry Equity</td><td style="{_TD_STYLE}">Entry EV &plus; Transaction Fees &minus; Entry Debt</td></tr>
+    <tr><td style="{_TD_ALT_STYLE}">Cash for debt service</td><td style="{_TD_ALT_STYLE}">60% of each year&rsquo;s EBITDA (one assumption for taxes, capex and working capital)</td></tr>
+    <tr><td style="{_TD_STYLE}">Interest</td><td style="{_TD_STYLE}">On the opening debt each year, paid first from that cash; interest the cash cannot cover is added to the debt</td></tr>
+    <tr><td style="{_TD_ALT_STYLE}">Debt paydown</td><td style="{_TD_ALT_STYLE}">Scheduled amortization is a floor; the cash left after interest sweeps to debt, so a higher rate leaves more debt at exit</td></tr>
+    <tr><td style="{_TD_STYLE}">Exit Equity</td><td style="{_TD_STYLE}">Exit EV &minus; Remaining Debt &plus; Cash built up after the debt is repaid</td></tr>
     <tr><td style="{_TD_ALT_STYLE}">MOIC</td><td style="{_TD_ALT_STYLE}">Exit Equity &divide; Entry Equity</td></tr>
     <tr><td style="{_TD_STYLE}">IRR</td><td style="{_TD_STYLE}">Solved via binary search on NPV (no numpy dependency)</td></tr>
   </tbody>

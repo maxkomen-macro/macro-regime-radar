@@ -1,0 +1,2845 @@
+/* App-level chrome, owned by web/, layered after the verbatim token files.
+   Browser surfaces (scrollbars), the jargon-definition affordance, the overlay
+   surfaces (alert drawer, freshness drawer, command palette, assistant panel)
+   and, since the redesign's Phase 1, the shell itself: the sidebar, the top
+   bar, the ticker strip and the mobile nav (spec §2, docs/redesign-v2). No new
+   colours or sizes outside the token layer: every shell value is a Phase 1
+   token with the mockup's literal as its fallback, so the shell reads the
+   same whether or not a token has landed yet. */
+
+/* Scrollbars: the parts we didn't draw still carry the design. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface-raised);
+  border-radius: var(--r-sm);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--line-strong);
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-raised) var(--bg-base);
+}
+
+html,
+body {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+}
+
+/* ── Layout: kill grid/flex item min-content propagation ────────────────
+   Every screen renders a root grid whose children are <section>s. A grid (or
+   flex) item's automatic minimum size is its content's MIN-CONTENT width, not
+   zero; so one wide descendant (the Regime Lab Gantt's 1385px svg, the tape's
+   fixed-track table) makes its section that wide, the section widens the page
+   root, and the whole document scrolls sideways. That happens even when the
+   wide thing already sits in its own `overflow-x: auto` well: the well can only
+   scroll once its own box has been allowed to shrink.
+
+   `min-width: 0` restores the shrinkable default. It is a no-op for a section
+   in normal block layout (block boxes take their container's width regardless),
+   so this only ever binds where a <section> is a flex/grid item; exactly the
+   screen roots. MethodologyScreen carries the same value inline with its own
+   explanation; harmless duplication, left in place. */
+main section,
+main [role="tablist"],
+main .mrr-scroll {
+  min-width: 0;
+}
+
+/* The house focus ring (spec §0: never removed): 2px link blue, 2px offset,
+   matching base.css; the palette / assistant inputs keep their inset variants. */
+:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+/* Jargon terms: dotted underline, plain-language definition on hover/focus.
+   Content comes from the confusion index. Native title="" is the v1 fallback;
+   the styled tooltip is the ::after pattern below. */
+.jargon {
+  /* The dotted underline is the "definition available" affordance; functional,
+     so it sits at muted per the 2026-08-06 contrast ruling. */
+  text-decoration: underline dotted var(--text-muted);
+  text-underline-offset: 2px;
+  cursor: help;
+  position: relative;
+}
+.jargon:hover,
+.jargon:focus-visible {
+  text-decoration-color: var(--text-muted);
+}
+/* The hidden tooltip is `display: none`, not merely `visibility: hidden`.
+   A visibility-hidden absolutely-positioned box still generates a box, and a
+   `width: max-content` box up to 320px wide hanging off a term near the right
+   gutter still counts toward the document's scrollable overflow region; so
+   every jargon term at desk width was quietly adding horizontal page scroll it
+   never showed (1440px viewport measured a 1642px scrollWidth on Dashboard).
+   display:none generates no box, so there is nothing to overflow.
+
+   Cost: the opacity fade is now instant in both directions (a display change
+   gives the transition no start style to run from). DESIGN.md is explicit that
+   "the only motion tells you something changed" and that nothing fades; a
+   tooltip appearing is a state change, not an animation, so instant is if
+   anything the more house-correct behaviour. The opacity/visibility pair is
+   kept below so the fade returns for free if someone later adds
+   `transition-behavior: allow-discrete` + `@starting-style`. */
+.jargon-wrap {
+  position: relative;
+  display: inline;
+}
+.jargon-tip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  width: max-content;
+  max-width: 320px;
+  background: var(--surface-raised);
+  color: var(--text-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-s);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.5;
+  white-space: normal;
+  /* Hoverable (WCAG 1.4.13): the pointer may rest on the definition. */
+  pointer-events: auto;
+}
+.jargon-tip[hidden] {
+  display: none;
+}
+
+/* Skip link: visually hidden until it receives keyboard focus. */
+.mrr-skip {
+  position: absolute;
+  left: 8px;
+  top: -40px;
+  z-index: 60;
+  padding: 6px 10px;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--link);
+  border-radius: var(--r-xs);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-s);
+}
+.mrr-skip:focus-visible {
+  top: 8px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Overlay scrim, shared by the drawers and the palette. Flat, no blur. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(1, 4, 9, 0.55);
+  z-index: 50;
+}
+
+/* Right-side drawers: the alert drawer (AlertDrawer.tsx keeps its class) and
+   the generalised .mrr-drawer the freshness breakdown uses. 380px, 92vw cap,
+   scrolls inside itself. */
+.alert-drawer,
+.mrr-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 92vw;
+  background: var(--panel, var(--surface));
+  border-left: 1px solid var(--line);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+/* The freshness drawer (Iteration 1, M4). Measured cause of the right-edge
+   cut-off: the body is a grid whose implicit column is `auto`, and a grid
+   item's automatic minimum is its MIN-CONTENT width, so the five-column feed
+   table (nowrap cells plus a 220px reason column: 709px) widened the track
+   past the 380px drawer. The drawer then scrolled sideways, and focusing the
+   close button (the far end of the widened head) scrolled it 345px right, so
+   the title and the left of every block sat off screen. The `main section`
+   guard at the top of this file does not reach it: the drawer lives outside
+   <main>. Fix: a shrinkable column (minmax(0, 1fr) / min(100%, …)) and
+   `min-width: 0` on every block, a drawer wide enough for the whole feed
+   table at desk widths (720px, still 92vw at most), the feed names allowed
+   to wrap, and below that width the table scrolls inside its own
+   keyboard-reachable ScrollTable well rather than widening the drawer. The
+   key-value blocks sit two-up once the drawer has room for two columns. */
+.mrr-drawer {
+  width: 720px;
+}
+.mrr-drawer-body {
+  padding: 16px 16px 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 18px;
+  align-content: start;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+.mrr-drawer-body > * {
+  min-width: 0;
+}
+.mrr-drawer-head,
+.mrr-fresh-status,
+.mrr-fresh-block-wide,
+.mrr-drawer-foot {
+  grid-column: 1 / -1;
+}
+.mrr-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.mrr-drawer-title,
+.mrr-fresh-block h3 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  color: var(--text-eyebrow, var(--text-label));
+  margin: 0;
+}
+.mrr-fresh-block h3 {
+  margin: 0 0 8px;
+}
+.mrr-fresh-status {
+  display: grid;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-fresh-words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.mrr-fresh-kv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+}
+.mrr-fresh-kv dt {
+  color: var(--text-3, var(--text-muted));
+  margin: 0;
+  min-width: 0;
+}
+.mrr-fresh-kv dd {
+  color: var(--text);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: break-word;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-meta);
+}
+.mrr-fresh-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+.mrr-fresh-table th {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  color: var(--text-3, var(--text-muted));
+  text-align: left;
+  padding: 0 10px 6px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.mrr-fresh-table td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--line-2, var(--line-hair));
+  vertical-align: top;
+  color: var(--text-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Acceptance (M4 after A3): the State column added in step 6 pushed the
+   Reason column past the 720px drawer at 1672. State, Latest and Expected
+   may wrap onto two lines and the Reason column keeps a 180px floor, so the
+   whole table fits the drawer at desk widths again; below that the table
+   still scrolls in its own keyboard-reachable well. */
+.mrr-fresh-table td.wrap {
+  white-space: normal;
+  min-width: 6.5em;
+}
+.mrr-fresh-table td.reason {
+  white-space: normal;
+  min-width: 180px;
+  color: var(--text-3, var(--text-muted));
+}
+/* Feed names wrap (M4): "Intraday bars (SPY, QQQ)" on one line cost the
+   table 210px and pushed it past the drawer. */
+.mrr-fresh-table td.feed {
+  white-space: normal;
+  min-width: 7.5em;
+}
+.mrr-fresh-list {
+  margin: 0;
+  padding-left: 16px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption);
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.mrr-drawer-foot {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-4);
+}
+
+/* Command palette, centered near the top. */
+.palette {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 560px;
+  max-width: 92vw;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  z-index: 60;
+  overflow: hidden;
+}
+.palette input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--void);
+  border: none;
+  border-bottom: 1px solid var(--line-hair);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  padding: 12px 14px;
+  /* Focus ring stays (the constitution never removes it); inset so the
+     ring hugs the input inside the palette frame. */
+}
+.palette input:focus-visible {
+  outline: 1px solid var(--link);
+  outline-offset: -2px;
+}
+.palette input::placeholder {
+  color: var(--text-muted);
+}
+.palette-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.palette-row[data-active="true"] {
+  background: var(--link-a10);
+  border-left-color: var(--link);
+}
+/* An action row's shortcut (Iteration 1, S3), drawn like the top bar's ⌘ K. */
+.palette-kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3, var(--text-muted));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+/* ── AI analyst: floating launcher + terminal panel ────────────────────
+   Non-modal on purpose: no scrim, and both sit under the drawer/palette
+   z-index (60) so a modal overlay still covers them. `--shadow-float` is the
+   system's one drop shadow and DESIGN.md reserves it for exactly this. */
+.assistant-launcher {
+  position: fixed;
+  right: 28px; /* page gutter */
+  bottom: 20px;
+  z-index: 45;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-float);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.assistant-launcher:hover {
+  /* Border/text only; hover fills are a table affordance in this system. */
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.assistant-panel {
+  position: fixed;
+  right: 28px;
+  bottom: 20px; /* the launcher moved into the header (2026-09-05) */
+  width: 380px;
+  /* 92vw is the house overlay clamp; the calc keeps the 28px gutter honest on
+     phone widths, where 92vw + 28px would run off the screen. */
+  max-width: min(92vw, calc(100vw - 44px));
+  max-height: 70vh;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+.assistant-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--void);
+  border: 0.5px solid var(--line-hair);
+  border-radius: var(--r-xs);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body-s);
+  padding: 7px 9px;
+}
+.assistant-input::placeholder {
+  color: var(--text-muted);
+}
+.assistant-input:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+/* Focus ring stays (never removed); inset so it hugs the field inside the frame. */
+.assistant-input:focus-visible {
+  outline: 1px solid var(--link);
+  outline-offset: -2px;
+}
+
+/* ── House slider (Recession sensitivity, LBO, scenario builder) ────────
+   Native range input on the 4px gauge-track idiom: raised track, accent
+   fill painted via inline gradient, 12px square-ish thumb. */
+.mrr-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: var(--r-xs);
+  outline-offset: 4px;
+  cursor: pointer;
+}
+.mrr-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-xs);
+  background: var(--text);
+  border: 0.5px solid var(--line);
+}
+.mrr-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-xs);
+  background: var(--text);
+  border: 0.5px solid var(--line);
+}
+
+/* News arrival flash: link blue is the house attention accent, not a valence colour. */
+@keyframes mrr-news-arrive {
+  from {
+    background: rgba(88, 184, 230, 0.1);
+  }
+  to {
+    background: transparent;
+  }
+}
+.mrr-news-new {
+  animation: mrr-news-arrive 1.5s var(--ease-out);
+  border-radius: var(--r-tile);
+}
+
+/* ══ Executive foundation (2026-09-05) ═══════════════════════════════════
+   Responsive table well, house slider with a real hit area, markdown for the
+   analyst, and touch-target floors. Everything references the token layer;
+   no new colours. */
+
+/* Content frame: no longer used by the shell (the redesign's shell fills the
+   viewport, spec §1 / checklist I.16); kept for the Phase 10 cleanup. Prose
+   inside a screen stays at the 74ch measure via .mrr-prose. */
+.mrr-frame {
+  width: 100%;
+  max-width: var(--maxw-frame, 1520px);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+.mrr-prose {
+  max-width: var(--maxw-prose);
+}
+
+/* ══ Shell (redesign Phase 1, spec §2, mockup regime-lab.html) ═══════════
+   196px sidebar beside a main column; no centred frame. Landmarks: <aside
+   aria-label="Sidebar"> holding <nav aria-label="Primary">, <header
+   class="mrr-top">, the strip region, <main id="main-content">. */
+.mrr-app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w, 196px) minmax(0, 1fr);
+  min-height: 100vh;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+/* Collapsed (Iteration 1, S3): the 56px rail replaces the sidebar and the
+   main column takes the freed width. */
+.mrr-app[data-sidebar="collapsed"] {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+/* The inert wrapper (#shell-content) has no box of its own, so the aside and
+   the main column stay direct grid items. */
+.mrr-app-content {
+  display: contents;
+}
+.mrr-main {
+  padding: var(--main-pad, 10px 18px 36px 22px);
+  min-width: 0;
+}
+
+/* Sidebar: sticky and one viewport tall, a column of fixed blocks around one
+   flexible one (Iteration 1, S1): the head, the nav and the divider on top,
+   the footer pinned at the bottom, and the watchlist between them taking the
+   remaining height, its rows scrolling inside it. The footer used to be
+   drawn over the rows once the list outgrew the space. The column scrolls as
+   a whole only when a viewport is too short for even the fixed blocks (the
+   short-viewport steps below keep that under 470px). */
+.mrr-side {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 4px 18px;
+  box-sizing: border-box;
+  background: var(--sidebar, linear-gradient(180deg, #131e25 0%, #0d161c 100%));
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  overflow-y: auto;
+}
+.mrr-side > * {
+  flex: none;
+}
+/* Head: the wordmark and the collapse control on one row. */
+.mrr-side-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 34px;
+}
+.mrr-side-head .mrr-logo {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.mrr-side-head .mrr-logo span {
+  white-space: nowrap;
+}
+/* The collapse control (S3): a 28px ghost square, the watchlist "+" idiom,
+   top-aligned with the mountain mark. The rail holds the same control. */
+.mrr-side-toggle {
+  appearance: none;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: none;
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+.mrr-side-toggle:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.mrr-side-toggle svg {
+  display: block;
+}
+
+/* The rail (S3): 56px, sticky, the toggle on top and the freshness entry at
+   the bottom. */
+.mrr-rail {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 0 18px;
+  box-sizing: border-box;
+  background: var(--sidebar, linear-gradient(180deg, #131e25 0%, #0d161c 100%));
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+.mrr-rail-fresh {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+.mrr-rail-fresh:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.mrr-rail-fresh .mrr-dot {
+  margin-right: 0;
+  vertical-align: 0;
+}
+
+/* Wordmark: mountain mark over MACRO / REGIME RADAR in the UI face. */
+.mrr-logo {
+  display: block;
+  padding: 0 0 0 32px;
+  margin-bottom: 34px;
+  color: var(--text-wordmark, #dfe6ec);
+  text-decoration: none;
+}
+.mrr-logo:hover,
+.mrr-logo:active {
+  color: var(--text);
+  text-decoration: none;
+}
+.mrr-logo svg {
+  display: block;
+  margin-bottom: 8px;
+}
+.mrr-logo h1,
+.mrr-logo p {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-weight: 500;
+}
+.mrr-logo span {
+  display: block;
+  font-size: var(--fs-wordmark, 12.5px);
+  font-weight: 500;
+  letter-spacing: var(--ls-wordmark, 0.2em);
+  color: var(--text-wordmark, #dfe6ec);
+  line-height: 1.55;
+}
+.mrr-logo:hover span {
+  color: var(--text);
+}
+/* One-line variant for the MobileNav row. */
+.mrr-logo-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  min-height: 44px;
+}
+.mrr-logo-compact svg {
+  margin: 0;
+}
+.mrr-logo-compact h1,
+.mrr-logo-compact p {
+  display: flex;
+  gap: 0.55em;
+  white-space: nowrap;
+}
+.mrr-logo-compact span {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+}
+
+/* Primary nav: sidebar items with 22px hand-drawn icons; the active route
+   (aria-current="page") carries the white 11%→6% gradient and a 1px border.
+   Links, not buttons: a route is a URL. */
+.mrr-nav {
+  display: grid;
+  gap: 4px;
+}
+.mrr-nav a {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: var(--nav-item-h, 47px);
+  padding: 0 0 0 24px;
+  border-radius: var(--r-nav, 9px);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-nav, 14px);
+  border: 1px solid transparent;
+  box-sizing: border-box;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.mrr-nav a svg {
+  flex: none;
+  opacity: 0.9;
+}
+.mrr-nav a:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  text-decoration: none;
+}
+.mrr-nav a[aria-current="page"] {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.06));
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-weight: 500;
+}
+.mrr-nav a.mrr-nav-sub {
+  height: var(--nav-sub-h, 36px);
+  margin-top: 6px;
+  font-size: var(--fs-nav-sub, 13px);
+  color: var(--text-3, var(--text-muted));
+  gap: 20px;
+  padding-left: 26px;
+}
+.mrr-nav a.mrr-nav-sub:hover {
+  color: var(--text);
+}
+.mrr-nav a.mrr-nav-sub[aria-current="page"] {
+  color: #fff;
+}
+.mrr-side-hr {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  margin: 30px 20px 14px;
+}
+/* The watchlist block takes what the fixed blocks leave (S1). Inside it the
+   head and the "Saved in this browser" note keep their size and the rows
+   shrink and scroll (the 8-row cap in watchlist.css still applies). The 4px
+   top padding keeps the "+" focus ring inside the clip. */
+.mrr-side .mrr-side-wl {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  padding-top: 4px;
+  margin-bottom: 16px;
+}
+.mrr-side-wl > .mrr-wl {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mrr-side-wl .mrr-wl-head,
+.mrr-side-wl .mrr-wl-note,
+.mrr-side-wl .mrr-wl-empty {
+  flex: none;
+}
+.mrr-side-wl .mrr-wl-rows {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+/* Footer: live dot + word, two-line stamp, version. Not part of the scroll:
+   it stays pinned under the watchlist block. The dot, the word and the stamp
+   are one button that opens the freshness drawer (S4). */
+.mrr-side-foot {
+  margin-top: auto;
+  padding: 0 0 0 22px;
+  font-size: 12px;
+  color: var(--text-3, var(--text-muted));
+  line-height: 1.75;
+}
+.mrr-side-fresh {
+  appearance: none;
+  display: block;
+  width: calc(100% - 8px);
+  margin: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mrr-side-fresh:hover {
+  color: var(--text-2);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.mrr-side-status {
+  display: block;
+}
+.mrr-side-stamp {
+  display: block;
+  padding-left: 16px;
+}
+.mrr-side-foot .ver {
+  margin-top: 14px;
+  padding-left: 4px;
+  color: var(--text-4);
+}
+.mrr-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mint, #26dca0);
+  box-shadow: var(--glow-dot, 0 0 10px rgba(38, 220, 160, 0.7));
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+.mrr-dot.mrr-dot-idle {
+  background: var(--text-4);
+  box-shadow: none;
+  animation: none;
+}
+/* The dot coloured from the live_quotes series state when /api/freshness
+   carries series[] (fresh-state.ts tones): only "live" glows and pulses. */
+.mrr-dot[data-tone="delayed"],
+.mrr-dot[data-tone="neutral"],
+.mrr-dot[data-tone="stale"],
+.mrr-dot[data-tone="fallback"],
+.mrr-dot[data-tone="unknown"] {
+  box-shadow: none;
+  animation: none;
+}
+.mrr-dot[data-tone="delayed"] {
+  background: var(--amber, #f5b52e);
+}
+.mrr-dot[data-tone="neutral"] {
+  background: var(--text-3, var(--text-muted));
+}
+.mrr-dot[data-tone="stale"] {
+  background: var(--warn-hot, #e67e22);
+}
+.mrr-dot[data-tone="fallback"],
+.mrr-dot[data-tone="unknown"] {
+  background: var(--text-4);
+}
+
+/* Short viewports (S1): the fixed blocks tighten in three steps so the
+   watchlist keeps rows in view (four at 900px, two at 760px, one at 600px).
+   From 1000px of height up nothing changes. */
+@media (max-height: 999.98px) {
+  .mrr-side-head {
+    margin-bottom: 22px;
+  }
+  .mrr-nav a {
+    height: 44px;
+  }
+  .mrr-side-hr {
+    margin: 20px 20px 10px;
+  }
+  .mrr-side-foot .ver {
+    margin-top: 8px;
+  }
+}
+@media (max-height: 859.98px) {
+  .mrr-side-head {
+    margin-bottom: 16px;
+  }
+  .mrr-nav a {
+    height: 38px;
+  }
+  .mrr-nav a.mrr-nav-sub {
+    height: 32px;
+  }
+  .mrr-side-hr {
+    margin: 14px 20px 8px;
+  }
+  .mrr-side-foot .ver {
+    margin-top: 4px;
+  }
+}
+@media (max-height: 759.98px) {
+  .mrr-side {
+    padding: 16px 4px 10px;
+  }
+  .mrr-rail {
+    padding: 16px 0 10px;
+  }
+  .mrr-side-head {
+    margin-bottom: 12px;
+  }
+  .mrr-nav {
+    gap: 2px;
+  }
+  .mrr-nav a {
+    height: 32px;
+  }
+  .mrr-nav a.mrr-nav-sub {
+    height: 28px;
+    margin-top: 2px;
+  }
+  .mrr-side-hr {
+    margin: 8px 20px 6px;
+  }
+  .mrr-side-foot {
+    line-height: 1.5;
+  }
+  .mrr-side-foot .ver {
+    margin-top: 2px;
+  }
+  .mrr-side-wl .mrr-wl-head {
+    margin-bottom: 6px;
+  }
+  .mrr-side-wl .mrr-wl-note {
+    padding-top: 6px;
+  }
+}
+
+/* Top bar: 1fr / 368px / 1fr. The palette trigger is placed in track 2 and
+   the right cluster (Ask the analyst, then the bell) in track 3, so the
+   trigger stays centred in the main column and the cluster right-aligned.
+   Track 1 has been empty since Phase 10 (the transitional regime pill and
+   odds bar left, checklist 10 B.8) and is kept so the centring holds. The
+   side tracks stay plain 1fr (auto minimum): between 860 and about 1035px
+   the cluster's min-content (about 210px) exceeds half the leftover width,
+   and the auto minimum lets track 3 grow rather than overlap the trigger;
+   below 860 the row becomes 1fr / auto with the trigger in track 1
+   (responsive block). No avatar. */
+.mrr-top {
+  display: grid;
+  grid-template-columns: 1fr var(--search-w, 368px) 1fr;
+  align-items: center;
+  height: var(--topbar-h, 40px);
+  margin-bottom: 12px;
+}
+.mrr-search {
+  grid-column: 2;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--search-h, 38px);
+  padding: 0 8px 0 14px;
+  border-radius: var(--r-nav, 9px);
+  background: var(--field, #141f29);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-3, var(--text-muted));
+  font-family: var(--font-ui);
+  font-size: var(--fs-kv, 13.5px);
+  text-align: left;
+  min-width: 0;
+  cursor: pointer;
+}
+.mrr-search:hover {
+  color: var(--text-2);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.mrr-search svg {
+  flex: none;
+}
+.mrr-search-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mrr-search kbd {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3, var(--text-muted));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+/* The command glyph lives in the system face: Plex Mono has no ⌘. */
+.mrr-cmd-glyph {
+  font-family: system-ui, -apple-system, sans-serif;
+}
+.mrr-top-r {
+  grid-column: 3;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 22px;
+  padding-right: 6px;
+}
+.mrr-ask {
+  appearance: none;
+  height: var(--ask-h, 34px);
+  padding: 0 14px;
+  border-radius: var(--r-nav, 9px);
+  border: 1px solid rgba(38, 220, 160, 0.35);
+  background: rgba(38, 220, 160, 0.07);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mrr-ask:hover {
+  border-color: rgba(38, 220, 160, 0.6);
+}
+.mrr-ask[aria-expanded="true"] {
+  border-color: var(--mint, #26dca0);
+  background: rgba(38, 220, 160, 0.12);
+}
+.mrr-ask-glyph {
+  color: var(--mint, #26dca0);
+}
+.mrr-bell {
+  position: relative;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.mrr-bell:hover {
+  color: var(--text);
+}
+.mrr-bell-count {
+  position: absolute;
+  top: -2px;
+  right: -6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ticker strip: three 54px quote cards and the freshness card. */
+.mrr-strip {
+  display: grid;
+  grid-template-columns: 325px 332px 332px minmax(0, 1fr);
+  gap: var(--gap-col, 16px);
+  margin-bottom: var(--gap-panel, 14px);
+}
+.mrr-quote,
+.mrr-upd {
+  height: var(--strip-h, 54px);
+  border-radius: var(--r-strip, 10px);
+  border: 1px solid var(--line);
+  background: var(--strip-grad, linear-gradient(180deg, #111c26, #0d1720));
+  display: flex;
+  align-items: center;
+  padding: 0 22px 0 26px;
+  box-sizing: border-box;
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+/* The fixed-slot quote tile (Iteration 1, S2): symbol · value · change · tag
+   · spark on one grid, every slot always rendered (QuoteSlots in
+   QuoteCard.tsx), so a missing change or sparkline leaves a marked slot and
+   every tile in a row keeps one shape. The three text tracks keep the
+   mockup's 72 / 72 / 70 px and give way to their content when the card is
+   narrow; the tag track is its content (never squeezed under the spark) and
+   takes the slack, which parks the spark at the right edge as the old auto
+   margin did. Overflow is clipped so a card narrower than its slots can
+   never spill into its neighbour. */
+.mrr-qslots {
+  display: grid;
+  grid-template-columns: minmax(min-content, 72px) minmax(min-content, 72px) minmax(min-content, 70px) auto 80px;
+  column-gap: 6px;
+  align-items: center;
+}
+.mrr-qslots > [data-slot] {
+  white-space: nowrap;
+}
+.mrr-quote.mrr-qslots {
+  overflow: hidden;
+}
+.mrr-quote b {
+  font-weight: 500;
+  font-size: var(--fs-quote, 15px);
+  text-transform: uppercase;
+  color: var(--text);
+}
+.mrr-quote .v {
+  font-size: var(--fs-quote, 15px);
+  color: var(--text);
+}
+.mrr-quote .c {
+  font-size: var(--fs-quote-chg, 14px);
+}
+/* No day change: the dash is a marked absence, in the muted ink. */
+.mrr-qslots .c[data-empty="true"] {
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-qslots > [data-slot="spark"] {
+  display: flex;
+  justify-content: flex-end;
+}
+.mrr-qslots > [data-slot="spark"] svg,
+.mrr-spark-ph {
+  display: block;
+  flex: none;
+}
+/* Delayed / stored read tags: 15M, CLOSE, 1W. */
+.mrr-tag {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tag, 9.5px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber, #f5b52e);
+  white-space: nowrap;
+  margin-left: 2px;
+}
+.mrr-tag[data-tone="muted"] {
+  color: var(--text-3, var(--text-muted));
+}
+/* Glance tile (Iteration 1, D2): the same five slots on a stacked grid, one
+   layout for every tile of every glance view. The symbol slot carries the
+   symbol eyebrow and the instrument name; the price has its own row; the day
+   change sits beside its tag (a missing change is the marked dash above);
+   the spark slot is the last row, across the tile, so the line can never run
+   under the price at any width. A live-only symbol prints its note there. */
+.mrr-glance-tile.mrr-qslots {
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-areas:
+    "symbol symbol"
+    "value value"
+    "change tag"
+    "spark spark";
+  column-gap: 8px;
+  row-gap: 0;
+  align-items: baseline;
+  align-content: start;
+}
+.mrr-glance-tile > [data-slot="symbol"] {
+  grid-area: symbol;
+  font-weight: 400;
+  white-space: normal;
+  min-width: 0;
+}
+.mrr-glance-tile > [data-slot="symbol"] > span:first-child {
+  display: block;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: var(--fs-eyebrow-sm);
+  letter-spacing: var(--ls-eyebrow-sm);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.mrr-glance-tile > [data-slot="symbol"] > .n {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
+.mrr-glance-tile > [data-slot="value"] {
+  grid-area: value;
+  margin-top: 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-glance-price, 21px);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.mrr-glance-tile > [data-slot="change"] {
+  grid-area: change;
+  margin-top: 2px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+}
+.mrr-glance-tile > [data-slot="tag"] {
+  grid-area: tag;
+  justify-self: start;
+  min-width: 0;
+}
+.mrr-glance-tile > [data-slot="spark"] {
+  grid-area: spark;
+  display: block;
+  margin-top: 8px;
+  min-height: 26px;
+  white-space: normal;
+  min-width: 0;
+}
+/* A1 (Iteration 1 step 6): a quote tile's source and as-of stamp is a
+   sixth child after the five slots (never a slot), on a row of its own. On a
+   strip card it runs under the slots, across the card; the spark keeps
+   row one, so the 54 px card holds two short rows. On a glance tile it is
+   the last row, across the tile. */
+.mrr-quote.mrr-qslots[data-stamped] {
+  grid-template-rows: auto auto;
+  row-gap: 1px;
+  align-content: center;
+}
+.mrr-qslots > .s {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+.mrr-quote.mrr-qslots > .s .mrr-stamp {
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.mrr-glance-tile.mrr-qslots > .s {
+  margin-top: 6px;
+  white-space: normal;
+}
+.mrr-glance-tile .mrr-spark-note {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.mrr-upd {
+  justify-content: space-between;
+  padding: 0 28px 0 24px;
+  gap: 12px;
+}
+.mrr-upd-lines {
+  min-width: 0;
+}
+.mrr-upd small {
+  display: block;
+  font-size: 12px;
+  color: var(--text-3, var(--text-muted));
+  line-height: 1.35;
+}
+.mrr-upd small.mrr-upd-macro {
+  color: var(--text-2);
+}
+.mrr-upd em {
+  font-style: normal;
+  font-size: var(--fs-kv, 13.5px);
+  color: var(--text);
+}
+.mrr-upd-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+/* A3 (Iteration 1 step 6): every freshness line is the server's §5 word, so
+   a line can run longer than the old stamp; each card line stays one
+   rendered line (G4) and the full words sit in its title and the drawer. */
+.mrr-upd small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The footer stamp of a stale stored close, and a stale number (the §5
+   "mark on the number itself"): warm ink and a dotted rule under it. */
+/* A seeded snapshot's footer mark (Sidebar.tsx StatusDot): no health dot. */
+.mrr-side-snapmark {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 9px;
+  color: var(--text-4);
+}
+.mrr-rail-fresh .mrr-side-snapmark {
+  margin-right: 0;
+}
+.mrr-side-stamp[data-stale="true"] {
+  color: var(--warn-hot, #e67e22);
+}
+.mrr-qslots .v[data-stale="true"],
+.mrr-stale-num {
+  color: var(--warn-hot, #e67e22);
+  text-decoration: underline dotted;
+  text-decoration-color: var(--warn-hot, #e67e22);
+  text-underline-offset: 3px;
+}
+/* The stored-close notice (StoredCloseNotice.tsx): one slim status line
+   under the top bar on every route when the newest stored close is behind
+   the bell. One rendered line at every width: the phone form replaces the
+   sentence below 768 and the sentence stays for screen readers. */
+.mrr-close-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 var(--gap-panel, 14px);
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--strip-grad, linear-gradient(180deg, #111c26, #0d1720));
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mrr-close-glyph {
+  flex: none;
+  color: var(--warn-hot, #e67e22);
+  font-size: 10px;
+}
+.mrr-close-full,
+.mrr-close-short {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mrr-close-short {
+  display: none;
+}
+@media (max-width: 767.98px) {
+  .mrr-close-full {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .mrr-close-short {
+    display: block;
+  }
+}
+.mrr-fresh-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-kv, 13.5px);
+  color: var(--link);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mrr-fresh-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Mobile nav (< 860px): wordmark · Menu, then the list. */
+.mrr-mnav {
+  position: relative;
+  margin-bottom: 10px;
+}
+.mrr-mnav-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 44px;
+}
+.mrr-mnav-menu {
+  appearance: none;
+  margin-left: auto;
+  background: var(--panel, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--r-nav, 9px);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  min-height: 44px;
+  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.mrr-mnav-glyph {
+  font-family: var(--font-mono);
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-mnav-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 4px;
+  background: var(--panel, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--r-card, 12px);
+}
+.mrr-mnav-list a,
+.mrr-mnav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: var(--r-nav, 9px);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  text-decoration: none;
+  box-sizing: border-box;
+}
+.mrr-mnav-list a:hover {
+  color: var(--text);
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.03);
+}
+.mrr-mnav-list a[aria-current="page"] {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.06));
+  color: #fff;
+  font-weight: 500;
+}
+.mrr-mnav-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.mrr-mnav-label svg {
+  flex: none;
+  opacity: 0.9;
+}
+.mrr-mnav-hint {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-micro);
+  color: var(--text-3, var(--text-muted));
+}
+.mrr-mnav-sep {
+  border-top: 1px solid var(--line-2, var(--line-hair));
+  margin-top: 4px;
+  padding-top: 4px;
+}
+.mrr-mnav-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.mrr-mnav-wl {
+  padding: 6px 0 4px;
+  position: relative;
+}
+
+/* Header chip buttons (drawer close ×; the old alerts / ⌘K chips): 28px desk
+   rows, 40px touch rows. */
+.mrr-chip-btn {
+  appearance: none;
+  background: none;
+  border: 0.5px solid var(--line);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 9px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  letter-spacing: var(--ls-micro);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.mrr-chip-btn:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.mrr-chip-btn[data-touch="true"] {
+  /* 44px on touch layouts (WCAG 2.5.8 AAA floor the brief asked for; 2026-09-06). */
+  min-height: 44px;
+  padding: 8px 12px;
+}
+
+/* Responsive table well: pairs with ScrollTable.tsx. */
+.mrr-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--r-xs);
+}
+.mrr-scroll[data-scrollable="true"]:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+.mrr-scroll-sticky table th:first-child,
+.mrr-scroll-sticky table td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.mrr-scroll-sticky[data-scrollable="true"] table th:first-child,
+.mrr-scroll-sticky[data-scrollable="true"] table td:first-child {
+  box-shadow: 1px 0 0 var(--line-hair);
+}
+
+
+/* House slider, second generation: the input is a 28px-tall transparent hit
+   area over a 4px track drawn by the wrapper (no gradients). Redesign Phase 2
+   (checklist 02 B.12, recession.html): 16px round white thumb with a 4px
+   solid ring (link blue; amber while the row is changed, risk G5 default),
+   a 1px "current reading" tick, rows divided by --line-2. The row's
+   data-changed attribute is set by SliderRow. Keyboard focus rings the input. */
+.mrr-slider-row {
+  border-bottom: 1px solid var(--line-2);
+}
+.mrr-slider-row:last-child {
+  border-bottom: 0;
+}
+.mrr-slider-wrap {
+  position: relative;
+  height: 28px;
+  display: flex;
+  align-items: center;
+}
+.mrr-slider-track,
+.mrr-slider-fill {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  height: 4px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.mrr-slider-track {
+  right: 0;
+  background: var(--track);
+}
+.mrr-slider-fill {
+  background: var(--link);
+}
+.mrr-slider-row[data-changed="true"] .mrr-slider-fill {
+  background: var(--amber);
+}
+.mrr-slider-tick {
+  position: absolute;
+  top: 7px;
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+.mrr-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  outline-offset: 2px;
+}
+.mrr-slider:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+.mrr-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+.mrr-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 4px rgba(88, 184, 230, 0.2);
+}
+.mrr-slider::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+.mrr-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 4px rgba(88, 184, 230, 0.2);
+}
+.mrr-slider-row[data-changed="true"] .mrr-slider::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(245, 181, 46, 0.2);
+}
+.mrr-slider-row[data-changed="true"] .mrr-slider::-moz-range-thumb {
+  box-shadow: 0 0 0 4px rgba(245, 181, 46, 0.2);
+}
+.mrr-slider:disabled {
+  cursor: default;
+}
+.mrr-slider:disabled::-webkit-slider-thumb {
+  background: var(--text-3);
+  box-shadow: none;
+}
+.mrr-slider:disabled::-moz-range-thumb {
+  background: var(--text-3);
+  box-shadow: none;
+}
+
+/* Typed numeric field that pairs with a slider. */
+.mrr-number {
+  width: 7.5em;
+  box-sizing: border-box;
+  background: var(--void);
+  border: 0.5px solid var(--line);
+  border-radius: var(--r-xs);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-body-s);
+  text-align: right;
+  min-height: 28px;
+  padding: 3px 8px;
+}
+.mrr-number:focus-visible {
+  outline: 1px solid var(--link);
+  outline-offset: -1px;
+}
+.mrr-number[aria-invalid="true"] {
+  border-color: rgba(240, 80, 63, 0.6); /* --neg at 60% */
+}
+.mrr-number::-webkit-outer-spin-button,
+.mrr-number::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.mrr-number[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Small ghost button (Reset, Show more): the mockup .btn-ghost at 30px
+   (redesign Phase 2, checklist 02 B.18). .mrr-btn-accent keeps the link tint;
+   .mrr-btn-primary is the white hero primary for a screen composing it
+   outside TabHero. The 44px data-touch floor is kept. */
+.mrr-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: none;
+  border: 1px solid var(--line-white-30);
+  border-radius: var(--r-ctl);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 12.5px;
+  line-height: 1;
+  min-height: 30px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+.mrr-btn:hover {
+  border-color: #fff;
+}
+.mrr-btn:disabled {
+  color: var(--text-4);
+  border-color: var(--line-white-14);
+  cursor: default;
+}
+.mrr-btn[data-touch="true"] {
+  min-height: 44px;
+  padding: 10px 14px;
+}
+.mrr-btn-accent {
+  color: var(--link);
+  border-color: var(--link-a32);
+}
+.mrr-btn-accent:hover {
+  border-color: var(--link);
+}
+.mrr-btn-primary {
+  background: #fff;
+  color: #0b1117;
+  border-color: #fff;
+}
+.mrr-btn-primary:disabled {
+  background: var(--line-white-14);
+  color: var(--text-4);
+  border-color: transparent;
+}
+
+/* ── Redesign Phase 2 shared rules (checklist 02, pseudo-classes only) ────
+   Components style themselves inline; these carry what inline cannot. */
+
+/* Segmented (core/Segmented): unpressed option brightens on hover. The custom
+   property covers an inline `color: var(--seg-fg, var(--text-2))`. */
+.mrr-seg button:hover:not([aria-pressed="true"]):not(:disabled) {
+  color: var(--text);
+  --seg-fg: var(--text);
+}
+
+/* Section-header link action (mockup .link): text plus the 16px arrow. */
+.mrr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--link);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+/* The mono footer line that closes every tab (mockup .disclosure). */
+.mrr-disclosure-line {
+  margin: 18px 0 0;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.03em;
+  /* --text-3, not --text-4: 11px words must clear AA (Phase 10, G18). */
+  color: var(--text-3);
+  max-width: 1100px;
+}
+
+/* Hero row (spec section 4): TabHero beside the 432px SummaryCard; one
+   column below 1620 (Iteration 1; media rule in the responsive block). The
+   two cards stretch to one height (G3); the summary's status strip anchors
+   to its bottom (StatusStrip's auto top margin). */
+.mrr-hero-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--summary-w);
+  gap: var(--gap-col);
+  margin-bottom: var(--gap-panel);
+}
+
+/* Dashboard (Phase 3, checklist 03 B.0): the page is a stack of panels 14px
+   apart. The hero row's own bottom margin yields to the stack gap, so hero to
+   signals is one gap, not two. */
+.mrr-dash {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+/* Regime Lab (Phase 4, checklist 04 A.11 / B.0): the same stack of panels;
+   the tile grids inside the Overview and Playbook panels collapse to one
+   column below 768 (media rule in the responsive block). */
+.mrr-lab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-lab > .mrr-hero-row {
+  margin-bottom: 0;
+}
+.mrr-lab-tiles-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--gap-tile);
+}
+.mrr-lab-tiles-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+.mrr-lab-playbook {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap-tile);
+}
+/* Regime Lab container steps (Iteration 1, G2 / G3): `.mrr-lab` is an
+   inline-size container, so the Overview tile rows read the lab's own width
+   (1436 / 1576 at 1672, 1204 / 1344 at 1440, 1044 / 1184 at 1280, 788 / 928
+   at 1024, 728 at 768, 350 at 390; expanded / collapsed). Below 1000 the
+   cycle tiles stack (each sizes to its content) and the exits tile takes the
+   row under the two odds tiles; below 560 one column. */
+.mrr-lab {
+  container: mrr-lab / inline-size;
+}
+@container mrr-lab (max-width: 999.98px) {
+  .mrr-lab-tiles-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-lab-tiles-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrr-lab-tiles-3 > .mrr-lab-exits {
+    grid-column: 1 / -1;
+  }
+}
+@container mrr-lab (max-width: 559.98px) {
+  .mrr-lab-tiles-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Methodology (Iteration 1, Y2 / Y3 / G2).
+   Contents (Y3): every entry is a card link: the tile surface and a 1px
+   border, a brighter border and a lifted fill on hover (nav items may take
+   hover fills, DESIGN section 11), the house focus ring plus a link-blue
+   border on focus, a pointer. A column on the rail, a wrapping row above the
+   sections below 1024. Text stays on --text-2 / --text-3 over the tile
+   (9:1 and 6:1). */
+.mrr-meth-toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mrr-meth-toc[data-rail="true"] ol {
+  display: grid;
+  gap: 6px;
+}
+.mrr-meth-toc a {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-height: 40px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctl);
+  background: var(--tile);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-s);
+  line-height: 1.35;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.mrr-meth-toc-kind {
+  color: var(--text-3);
+}
+.mrr-meth-toc a:hover {
+  border-color: var(--line-strong);
+  background: #14212d;
+  color: var(--text);
+}
+.mrr-meth-toc a:hover .mrr-meth-toc-kind {
+  color: var(--text-2);
+}
+.mrr-meth-toc a:focus-visible {
+  border-color: var(--link);
+  color: var(--text);
+}
+/* How to read (Y2): the paragraph and the reading order side by side once
+   the card is wide enough for two 420px columns, stacked below that. */
+.mrr-meth-read {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 10px 32px;
+  align-items: start;
+}
+/* Models and Ramps (G2): two balanced columns of cards, each sized to its
+   own content (a two-by-two grid stretched a four-line card to its
+   partner's ten lines); one column below 768. */
+.mrr-meth-cols {
+  column-count: 2;
+  column-gap: 12px;
+}
+.mrr-meth-cols > * {
+  break-inside: avoid;
+  margin-bottom: 12px;
+}
+@media (max-width: 767.98px) {
+  .mrr-meth-cols {
+    column-count: 1;
+  }
+}
+.mrr-dash > .mrr-hero-row {
+  margin-bottom: 0;
+}
+/* Acceptance F4 (D1): from 1620 the hero sits beside the summary card and the
+   row takes the summary's height (G3), about 770 px. Beside the 540 px copy
+   the regime-odds chart had a 370 px column and drew portrait (359 × 632),
+   and a landscape cap on that column would leave a blank above and below it.
+   So here the hero stacks: the copy on top, the 24-month chart under it at the
+   hero's full width, its row taking whatever height the summary gives
+   (`auto 1fr`), so the chart reads across and fills the card. Below 1620 the
+   row stacks and the hero keeps its copy | chart grid (1200 to 1619) or
+   stacks already (below 1200). */
+@media (min-width: 1620px) {
+  .mrr-dash > .mrr-hero-row > .mrr-hero {
+    --hero-cols: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+}
+/* Key levels (Iteration 1, G2): the five level tiles over the two
+   model-reading tiles (`.mrr-level-wide`, half the row each) on a ten-track
+   grid; narrower steps in the dashboard container block below. */
+.mrr-dash-levels {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+.mrr-dash-levels > * {
+  grid-column: span 2;
+}
+.mrr-dash-levels > .mrr-level-wide {
+  grid-column: span 5;
+}
+/* Monitored signals: five cards across; narrower steps below. */
+.mrr-dash-signals {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+/* Bottom row: Markets at a glance | US 10Y | Macro calendar in the mockup's
+   792 / 284 / 324 ratio; narrower steps below. */
+.mrr-dash-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 2.8fr) minmax(0, 1fr) minmax(0, 1.14fr);
+  gap: var(--gap-col);
+}
+/* Glance tiles: four across; 2 below 768, 1 below 480. */
+.mrr-dash-glance {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+/* Dashboard container steps (Iteration 1, G2 / G3). `.mrr-dash` is an
+   inline-size container, so the grids read the dashboard's own width, not
+   the viewport, and the collapsed sidebar's extra 140px counts. Dashboard
+   widths at the G6 cells (expanded / collapsed): 1436 / 1576 at 1672,
+   1204 / 1344 at 1440, 1044 / 1184 at 1280, 788 / 928 at 1024, 728 at 768,
+   350 at 390.
+   - Signals: five across from 1300px (250px cards and wider, whose mono
+     lines wrap alike, so no card in a row keeps a tail); three over two on
+     a six-track grid down to 700; two (the fifth across) down to 460; one.
+   - Key levels: five over two from 1000px; three / two / two (six tracks)
+     down to 560; one per row below.
+   - Bottom row: three across from 1380px; the glance panel over US 10Y |
+     calendar down to 700 (the 10Y sparkline and the calendar's five rows
+     then fill the pair); one column below. */
+.mrr-dash {
+  container: mrr-dash / inline-size;
+}
+@container mrr-dash (max-width: 1379.98px) {
+  .mrr-dash-bottom {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrr-dash-bottom > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+@container mrr-dash (max-width: 1299.98px) {
+  .mrr-dash-signals {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .mrr-dash-signals > * {
+    grid-column: span 2;
+  }
+  .mrr-dash-signals > :nth-child(n + 4) {
+    grid-column: span 3;
+  }
+}
+@container mrr-dash (max-width: 999.98px) {
+  .mrr-dash-levels {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .mrr-dash-levels > :nth-child(n + 4) {
+    grid-column: span 3;
+  }
+}
+@container mrr-dash (max-width: 699.98px) {
+  .mrr-dash-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-dash-signals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrr-dash-signals > :nth-child(n) {
+    grid-column: auto;
+  }
+  .mrr-dash-signals > :nth-child(5) {
+    grid-column: 1 / -1;
+  }
+}
+@container mrr-dash (max-width: 559.98px) {
+  .mrr-dash-levels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-dash-levels > :nth-child(n) {
+    grid-column: auto;
+  }
+}
+@container mrr-dash (max-width: 459.98px) {
+  .mrr-dash-signals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-dash-signals > :nth-child(5) {
+    grid-column: auto;
+  }
+}
+/* Markets (Phase 5, checklist 05 A.13 / B.0): the same one-column panel
+   stack, hero-row margin zeroed. The body grid pairs the left panel stack
+   with the 432px tape column (spec section 4 "minmax(0,1fr) | 432px"); one
+   column below 1200 (media rule in the responsive block). Its own bottom
+   margin yields to the stack gap the same way the hero row's does. */
+.mrr-mkt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-mkt > .mrr-hero-row,
+.mrr-mkt > .mrr-mkt-body {
+  margin-bottom: 0;
+}
+/* Iteration 2 (F2): the macro tape left this row for the page's full width,
+   so the body is one column. It was `minmax(0,1fr) var(--summary-w)`, which
+   handed the tape's eight columns a 368px well and clipped five of them. */
+.mrr-mkt-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-col);
+  align-items: start;
+  margin-bottom: var(--gap-panel);
+}
+.mrr-mkt-stack {
+  display: grid;
+  gap: var(--gap-panel);
+}
+/* Iteration 1 (M3c): the symbol search in the hero's action row. It shares
+   the line with the two buttons when there is room and otherwise takes a line
+   of its own at the copy column's width. */
+.mrr-mkt-hero-search {
+  flex: 1 1 300px;
+  min-width: min(100%, 260px);
+  max-width: 100%;
+}
+/* Iteration 1 (M3a): the single-name movers row, gainers | losers, three
+   fixed slots each (a missing mover is a marked slot, G3). The two groups sit
+   side by side while each keeps 3 x 150px tiles, stacked below that. */
+.mrr-movers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: var(--gap-tile) 18px;
+}
+.mrr-movers-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.mrr-mover {
+  appearance: none;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(150, 175, 200, 0.1);
+  border-radius: var(--r-tile);
+  background: var(--tile);
+  color: var(--text);
+  font-family: var(--font-ui);
+  text-align: left;
+}
+button.mrr-mover {
+  cursor: pointer;
+}
+button.mrr-mover:hover {
+  border-color: var(--line-strong);
+}
+.mrr-mover-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.mrr-mover-head b {
+  flex: none;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.mrr-mover-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.mrr-mover-chg {
+  font-size: 18px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.mrr-mover-stamp {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.mrr-mover[data-empty="true"] .mrr-mover-stamp {
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+/* Credit (Phase 6, checklist 06 A.10 / B.0): the same one-column panel
+   stack, hero-row margin zeroed. Iteration 1 (C2, G2, G3): the ladder row is
+   one column at every width (paired, the quality ladder ran 300 to 440px
+   taller than the credit state odds and one of the two always carried that
+   height as blank); the ladder body puts the chart, which fills the height of
+   the tiles beside it, next to a 340px tile stack, one column below 768; the
+   state-odds body puts the matrix beside the stat tiles and caption, one
+   column below 1024; the financing grid pairs the all-in tile with the
+   classification ladder, one column below 1200; the spread monitor is five
+   SignalCards across at 1200 and up (value over sparkline there, so a
+   190px card never runs the number under its sparkline, G1), auto-fit
+   below, one column below 480 (media rules in the responsive blocks). */
+.mrr-credit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-credit > .mrr-hero-row {
+  margin-bottom: 0;
+}
+.mrr-credit-ladder-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-credit-ladder-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--gap-tile);
+}
+.mrr-credit-odds-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: var(--gap-tile);
+  align-items: start;
+}
+.mrr-credit-fin {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--gap-tile);
+}
+.mrr-credit-monitor {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+/* SignalCard's value row (number beside a fixed 118px sparkline) is inline
+   styled; five across, the sparkline sits under the number. */
+@media (min-width: 1200px) {
+  .mrr-credit-monitor > article > div:nth-child(2) {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+}
+/* Recession (Phase 7, checklist 07 A.10 / B.0): the same one-column panel
+   stack, hero-row margin zeroed. The model inputs are five SignalCards
+   across (3 / 2 / 1 below 1200 / 768 / 480), their names wrapping instead
+   of truncating beside the badge; the curve monitor puts the 2s10s chart
+   beside the 340px curve-shape tile (recession.html:186), one column below
+   1200; the bottom row pairs Sensitivity with Model transparency
+   (`minmax(0,1.25fr) minmax(0,1fr)`, recession.html:195), one column below
+   1200. Iteration 1 X3 opens the sensitivity sliders on load, so the two
+   panels stretch to one height (G3) and the sensitivity body stacks the
+   sliders over the result tile at every width, which keeps the pair within
+   the G2 allowance (media rules in the responsive blocks). */
+.mrr-rec {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-rec > .mrr-hero-row {
+  margin-bottom: 0;
+}
+.mrr-rec-inputs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+.mrr-rec-curve {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--gap-tile);
+}
+.mrr-rec-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--gap-col);
+}
+.mrr-rec-sens {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-tile);
+}
+/* SignalCard sets its header row (name beside badge) and a nowrap name
+   inline; in the five input cards the badge drops under the name and the
+   name wraps, so "10Y − 5Y breakeven spread" and "Industrial production
+   YoY" read whole in a 190px card and every card keeps the same slots. */
+.mrr-rec-inputs > article > div:first-child {
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: 6px !important;
+}
+.mrr-rec-inputs h3 {
+  white-space: normal !important;
+}
+/* News & Calendar (Phase 8, checklist 08 A.8 / B.0): the same one-column
+   panel stack, hero-row margin zeroed. The body grid pairs the left panel
+   stack (Priority headlines over More headlines) with the 432px calendar
+   column, stretched to the stack's height (news.html:172), one column below
+   1200; the lead cards are a 2x2 grid (four cards, discrepancy 11), one
+   column below 768; the count tiles are five across, auto-fit below 768; the
+   filter bar is a fieldset (reset, then the mockup bar) whose three inner
+   fieldsets carry sr-only legends; the list row is the mockup's five-column
+   grid (clock, badge, headline, detail, score, then the opened block spanning
+   the last three), stacking into three lines below 768 (media rules in the
+   responsive blocks). */
+.mrr-news {
+  container: mrr-news / inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-news > .mrr-hero-row {
+  margin-bottom: 0;
+}
+/* Iteration 1 (N3): the calendar column sizes to its content instead of
+   stretching beside the headline stack, so the card carries no blank below
+   "Recent releases" (G2). */
+.mrr-news-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--summary-w);
+  gap: var(--gap-col);
+  align-items: start;
+}
+.mrr-news-stack {
+  display: grid;
+  gap: var(--gap-panel);
+  align-content: start;
+}
+.mrr-news-lead {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-tile);
+  align-items: stretch;
+}
+/* With the sidebar expanded at 1024 px the content column is about 740 px:
+   two lead cards side by side left the shorter one a 52 px hole above its
+   pinned footer (G2 dead space, launch-1 e2e run). Under 800 px of content
+   the leads stack, as they already do below the 768 px media query. */
+@container mrr-news (max-width: 799.98px) {
+  .mrr-news-lead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mrr-news-tiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.mrr-news-filters,
+.mrr-news-filters fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.mrr-news-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, 0.015);
+  margin-bottom: 12px;
+}
+.mrr-news-divider {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+}
+/* The list row (intel/NewsCard variant="row"): five cells in DOM order, the
+   opened block sixth. */
+.mrr-news-row {
+  display: grid;
+  /* The score cell ("Sig 3.4 / 5") measures 102px; a fixed 96px track
+     spilled 6px at every width (Phase 10 verifier). */
+  grid-template-columns: 60px 86px minmax(0, 1fr) 148px minmax(96px, max-content);
+  gap: 12px;
+  align-items: center;
+  min-height: 42px;
+  border-bottom: 1px solid var(--line-2);
+}
+/* Iteration 1 (G1): the five-column row needs about 760px; in a narrower
+   feed column (1440 and 1280 beside the calendar, 1024) the headline cell's
+   source line ran into the detail toggle. The row stacks by the width of its
+   own list, the same three lines the phone query draws. */
+.mrr-news-rows {
+  container: news-rows / inline-size;
+}
+@container news-rows (max-width: 759.98px) {
+  .mrr-news-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 12px;
+    padding: 8px 0;
+  }
+  .mrr-news-row > :nth-child(3) {
+    grid-column: 1 / -1 !important;
+  }
+  .mrr-news-row > :nth-child(4) {
+    text-align: left;
+  }
+  .mrr-news-row > :nth-child(5) {
+    justify-self: end;
+  }
+  .mrr-news-row > :nth-child(n + 6) {
+    grid-column: 1 / -1 !important;
+  }
+}
+/* The calendar panel's impact legend (news.html:216). */
+.mrr-cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin: -4px 0 10px;
+}
+/* The tape's ticker button (checklist 05 B.7): the keyboard and assistive
+   path to the chart panel; the whole row is the pointer target. The selected
+   row carries a 3px link rail on its pinned first cell. */
+.mrr-tape-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: 700 13px var(--font-mono);
+  color: var(--text);
+  cursor: pointer;
+}
+.mrr-tape td:first-child {
+  position: relative;
+}
+.mrr-tape tr[data-selected="true"] td:first-child::before {
+  content: "";
+  position: absolute;
+  left: -12px; /* the tape well's left padding (MacroTape.tsx) */
+  top: 2px;
+  bottom: 2px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--link);
+}
+.mrr-tape tr[data-clickable] {
+  cursor: pointer;
+}
+/* What's priced rows (checklist 05 B.8): the metric name is a row header so
+   the label harvest keeps reading it. */
+.mrr-priced th[scope="row"] {
+  font: 400 13px var(--font-ui);
+  color: var(--text-2);
+  text-align: left;
+  padding-left: 0;
+}
+
+/* Analyst markdown: model prose is set like memo body, with lists and code
+   the way the terminal already sets data. */
+.mrr-md > :first-child {
+  margin-top: 0;
+}
+.mrr-md > :last-child {
+  margin-bottom: 0;
+}
+.mrr-md p {
+  margin: 0 0 8px;
+}
+.mrr-md h3,
+.mrr-md h4 {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-s);
+  font-weight: 600;
+  color: var(--text);
+  margin: 10px 0 4px;
+}
+.mrr-md ul,
+.mrr-md ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.mrr-md li {
+  margin: 2px 0;
+}
+.mrr-md-code,
+.mrr-md pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  background: var(--void);
+  border: 0.5px solid var(--line-hair);
+  border-radius: var(--r-xs);
+}
+.mrr-md-code {
+  padding: 0 4px;
+}
+.mrr-md pre {
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+.mrr-md hr {
+  border: 0;
+  border-top: 0.5px solid var(--line-hair);
+  margin: 8px 0;
+}
+
+/* Tools (Phase 9, checklist 09 A.14 / B.0): the same one-column panel
+   stack, hero-row margin zeroed; the hero row of the active tool sits above
+   the sub-tabs. The LBO body pairs the 400px assumptions panel with the
+   results stack (tools.html:178), one column below 1200; the results stack
+   sets the schedule over the IRR sensitivity at every width (Iteration 1 T2 /
+   T3: paired, the results column ended 300 to 400px above the assumptions
+   panel and the two cards differed by up to 29px); the four output tiles are
+   four across, auto-fit below 768 and one column below 480 (the
+   LboPanel.tsx:397-406 rule; media rules in the responsive blocks). The
+   switch is the all-in-rate toggle on the
+   assumptions tile (tools.html:184): 38x22, mint when checked, the track
+   colour otherwise, a 16px knob; the base focus ring; no motion under
+   reduced motion. */
+.mrr-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-tools > .mrr-hero-row {
+  margin-bottom: 0;
+}
+.mrr-tools-lbo {
+  display: grid;
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: var(--gap-col);
+  align-items: start;
+}
+.mrr-tools-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-panel);
+}
+.mrr-tools-outputs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-tile);
+}
+.mrr-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: var(--track);
+  cursor: pointer;
+}
+.mrr-switch[aria-checked="true"] {
+  background: var(--mint);
+}
+.mrr-switch > i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: left var(--dur-fast) var(--ease-out);
+}
+.mrr-switch[aria-checked="true"] > i {
+  left: 19px;
+  background: #04140e;
+}
+.mrr-switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.mrr-switch:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+/* ── Responsive (spec §2; `.98` upper bounds like useBreakpoint.ts) ─────── */
+
+/* Below 1620 the strip goes two-up: its four desk tracks (325 / 332 / 332 /
+   1fr) need 1037px plus about 323px for the freshness card's two lines, so
+   at 1440 the freshness column was 156px (the lines wrapped word by word)
+   and at 1280 it was 0px (the card spilled past the viewport). 1672 keeps
+   the four columns (Phase 10 verifier, QUESTIONS 116). */
+@media (max-width: 1619.98px) {
+  .mrr-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Between 1200 and 1520 the glance grid is four tiles in 2.8 of 4.94 of the
+   bottom row: 112 to 150px tiles, under a nine-figure crypto price at 21px
+   (Iteration 1, D2). The price steps down to 17px there; two-up below 1200
+   and the wide tiles above keep 21. */
+@media (min-width: 1200px) and (max-width: 1519.98px) {
+  .mrr-glance-tile {
+    --fs-glance-price: 17px;
+  }
+}
+
+/* Below 1620 the hero row stacks the summary card under the hero (Iteration
+   1, hero-row root cause). Beside the 432px summary the hero's chart column
+   is the viewport minus 1321px (sidebar 196, main padding 40, scrollbar 11,
+   summary card 432, row gap 16, hero padding 62, copy column 540, inner gap
+   24): 299px at 1620, 119px at 1440, 0px at 1280. The old answer stacked the
+   chart under the copy there, which made the hero 700 to 1000px tall beside
+   a summary card of 350 to 550px: every tab's summary carried 300 to 620px
+   of blank no served row could honestly fill (G2), and the row could not be
+   level (G3). Stacked, the summary sizes to its rows and the hero keeps its
+   copy | chart grid at full width (a 327 to 750px chart column from 1200 to
+   1619), the same shape as at 1672. 1620 is also where the strip goes
+   two-up. Replaces the 1520 inner-grid step (checklist 10 G1, QUESTIONS 117). */
+/* Below 1620 the hero row stacks the summary card under the hero (Iteration
+   1, hero-row root cause; re-tested and kept by Iteration 2, F5).
+
+   F5 asked for side-by-side down to 1400 on tighter spacing, because Max's
+   laptop is about 1512px and the 1620 step means he never sees the mockup's
+   layout. It was built and measured, not reasoned about: the summary narrowed
+   432 -> 380, the row gap 16 -> 12, the hero's padding 62 -> 40 and its copy
+   column 540 -> 400, on top of the right margin F1's inline legend freed.
+   That turned the chart column at 1512 from 202px into 398px, and at 1440
+   from 130px into 326px - a real improvement, and still not enough.
+
+   G2 fails at every width below 1620, measured with the project's own
+   auditDeadSpace: the hero's tail gap runs 195px at 1560, 214px at 1512,
+   243px at 1440 and 245px at 1400, against a 129px allowance. The cause is
+   structural rather than a spacing choice. Side by side, the row's height is
+   the summary card's, and narrowing the summary makes it taller because its
+   eleven rows wrap; the hero cannot fill that height, because the chart's
+   aspect cap (0.8 of its width, so a 326px column yields a 280px plot) stops
+   it growing into the space, and no served row exists to put there.
+
+   So the stack stands below 1620, which is where side-by-side does hold: at
+   1620 the gap is inside the allowance and the chart column is 874px. F5's
+   own escape clause covers this, and the report carries both captures. */
+@media (max-width: 1619.98px) {
+  .mrr-hero-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Below 1200 the hero's inner grid stacks the copy over the chart: the full-
+   width hero's chart column (viewport minus 873px) passes under 327px here.
+   TabHero reads --hero-cols inline (var with the two-column fallback), so
+   overriding the token here beats its inline style without !important. */
+@media (max-width: 1199.98px) {
+  .mrr-hero {
+    --hero-cols: 1fr;
+  }
+  /* Glance tiles two-up below 1200 (Phase 10 verifier): four-up leaves 176px
+     tiles at 1024 (main 777px) and the value cell spills; two-up needs a
+     786px main, so the rule sits with the other sub-1200 stacks. */
+  .mrr-dash-glance {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* 256px, not 200: a SignalCard's value row is the number beside a fixed
+     118px sparkline and an 8px gap, so a 200px tile (three 234px columns
+     at 768; three 213px columns at 900) left 74px or less for a number that
+     needs 77 to 89px ("265 bps", "1076 bps"). 256px keeps 222px inside the
+     tile, 96px for the number; the row self-fits to two columns at 768 and
+     in the 860 to 1023 band, three at 1024 to 1199, five above (Phase 10
+     verifier). */
+  .mrr-credit-monitor {
+    grid-template-columns: repeat(auto-fit, minmax(256px, 1fr));
+  }
+  /* The financing grid stacks the all-in tile over the classification
+     ladder below 1200 (Iteration 1 G2: from 1024 to 1199 the ladder's rules
+     wrapped in the narrow column and left the all-in tile up to 90px of
+     blank; below 1024 since Phase 6). */
+  .mrr-credit-fin {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-rec-inputs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .mrr-rec-curve,
+  .mrr-rec-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-news-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-tools-lbo,
+  .mrr-tools-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Below 1024 the state-odds body stacks the stat tiles and caption under
+   the matrix (Credit, Iteration 1). */
+@media (max-width: 1023.98px) {
+  .mrr-credit-odds-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Just above 860 the expanded sidebar leaves ~299px strip cards, under the
+   ~266px of slots plus the desk padding a US 10Y card needs (S2); the
+   padding tightens until the cards pass 314px near 900. */
+@media (min-width: 860px) and (max-width: 899.98px) {
+  .mrr-quote {
+    padding: 0 14px 0 16px;
+  }
+}
+
+/* Below 860 the sidebar is not rendered (useBreakpoint().shellCompact swaps
+   it for MobileNav) and the grid collapses to one column; the top bar keeps
+   the palette trigger on the left and the actions on the right. The
+   collapsed-rail track is reset too: the rail is not rendered here either. */
+@media (max-width: 859.98px) {
+  .mrr-app,
+  .mrr-app[data-sidebar="collapsed"] {
+    grid-template-columns: 1fr;
+  }
+  /* The hero headline reads var(--fs-display) inline; 58 becomes 44 here. */
+  .mrr-hero {
+    --fs-display: 44px;
+  }
+  .mrr-top {
+    grid-template-columns: 1fr auto;
+    height: auto;
+    min-height: var(--topbar-h, 40px);
+  }
+  .mrr-search {
+    grid-column: 1;
+  }
+  .mrr-top-r {
+    grid-column: 2;
+    gap: 14px;
+    padding-right: 0;
+  }
+}
+
+/* The analyst panel must never sit on top of data on a phone: below 768 it
+   docks into a full-width bottom bar. */
+@media (max-width: 767.98px) {
+  /* Strip one card per row (Iteration 1, S2): two columns left ~167px cards
+     at 390 that wrapped unevenly, and the US 10Y card stretched to the
+     freshness card beside it. One per row keeps every quote card 54px on the
+     one-row slot grid; the freshness card takes its own row and its height. */
+  .mrr-strip {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .mrr-upd {
+    height: auto;
+    min-height: var(--strip-h, 54px);
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+  .mrr-number {
+    min-height: 40px;
+    font-size: var(--fs-body);
+  }
+  /* Panel header (core/SectionHeader layout="panel"): meta and actions drop
+     under the eyebrow on a phone. */
+  .mrr-sec-head {
+    flex-wrap: wrap;
+  }
+  .mrr-sec-sp {
+    margin-left: 0;
+    width: 100%;
+    /* Search field and range picker each take a row (Markets, Phase 5). */
+    flex-wrap: wrap;
+  }
+  /* The hero reads var(--hero-pad) inline; the 30px sides tighten here. */
+  .mrr-hero {
+    --hero-pad: 18px 16px 16px;
+  }
+  .mrr-lab-playbook {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-credit-ladder-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-rec-inputs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrr-rec-sens {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* News (Phase 8): lead cards one per row, count tiles self-fitting, and
+     the list row's five cells stacked into three lines: clock + badge,
+     the headline, detail + score; the opened block spans both columns.
+     The two spanning rules override the row's inline desk placement
+     (`grid-column: 3 / 6`), hence !important inside this query only. */
+  .mrr-news-lead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-news-tiles {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  }
+  .mrr-news-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 12px;
+    padding: 8px 0;
+  }
+  .mrr-news-row > :nth-child(3) {
+    grid-column: 1 / -1 !important;
+  }
+  .mrr-news-row > :nth-child(4) {
+    text-align: left;
+  }
+  .mrr-news-row > :nth-child(5) {
+    justify-self: end;
+  }
+  .mrr-news-row > :nth-child(n + 6) {
+    grid-column: 1 / -1 !important;
+  }
+  /* Tools (Phase 9): the four output tiles fit what they can. */
+  .mrr-tools-outputs {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  .assistant-panel {
+    right: 8px;
+    left: 8px;
+    bottom: 12px;
+    width: auto;
+    max-width: none;
+    max-height: 72vh;
+  }
+}
+
+/* Phone: the four strip cards stack one per row, each quote card keeping the
+   one fixed-slot layout it has at every width; its desk padding tightens so
+   the five slots fit a 350px card. */
+@media (max-width: 479.98px) {
+  .mrr-quote {
+    padding: 0 14px 0 16px;
+  }
+  .mrr-dash-glance {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-credit-monitor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-rec-inputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-tools-outputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Reduced motion (spec §0 "Honor reduced motion"): one block, last in the
+   sheet so it outranks every rule above at equal specificity. Merged in
+   Phase 10 from the three blocks that had grown with the shell; every rule
+   survives. motion.css silences the pulse and caret keyframes; the
+   components set the same animations inline (SignalCard's Triggered dot,
+   StatTile's live dot, IntelBanner's dot, the hero dot), so the attribute
+   matches on the inline styles catch those and the quote cards' tick flash.
+   The refill match is `transition: transform` because GaugeBar and
+   ProbabilityBar animate scaleX (owner ruling 2026-08-06); they are the only
+   inline transform transitions in the app. Colour and background eases are
+   motion too: `a` covers base.css's global link colour ease, the attribute
+   matches the two inline ones (LandingPage's CTA background, TabBar's tab
+   colour). The footer live dot, the news arrival flash and the live-rate
+   switch knob close the list. Not a global animation kill: state changes
+   still render, instantly; the mint glow is a static box-shadow and stays. */
+@media (prefers-reduced-motion: reduce) {
+  .jargon::after {
+    transition: none;
+  }
+  [style*="mrr-flash"],
+  [style*="mrr-pulse"] {
+    animation: none !important;
+  }
+  [style*="transition: transform"],
+  [style*="transition:transform"] {
+    transition: none !important;
+  }
+  a,
+  [style*="transition: background"],
+  [style*="transition:background"],
+  [style*="transition: color"],
+  [style*="transition:color"] {
+    transition: none !important;
+  }
+  .mrr-dot {
+    animation: none !important;
+  }
+  .mrr-news-new {
+    animation: none;
+  }
+  .mrr-switch > i {
+    transition: none;
+  }
+}

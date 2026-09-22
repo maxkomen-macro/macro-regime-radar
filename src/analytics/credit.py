@@ -14,7 +14,9 @@ Returns a dict with:
   hy_oas, ig_oas, ccc_oas, bb_oas, b_oas   — latest values in bps (float | None)
   hy_1w_change, ig_1w_change, ...           — 5-business-day change in bps (float | None)
   hy_ig_ratio                               — hy_oas / ig_oas (float | None)
-  distress_ratio                            — ccc_oas / 1000 * 100 as % (float | None)
+  ccc_pct_of_distress_line                  — CCC OAS as % of the 1,000 bps distress line (float | None;
+                                              may exceed 100: a level vs a threshold, not a share)
+  ccc_bps_vs_distress_line                  — CCC OAS minus 1,000 bps, signed (float | None)
   lbo_all_in_cost                           — (FEDFUNDS + hy_oas/100) as "X.XX%" (str | None)
   credit_label                              — "Normal" | "Tight" | "Stressed" | "Crisis" | "No data"
   credit_label_color                        — hex color for label
@@ -30,6 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from src.utils.format import ordinal
+from src.analytics import dbpath
 import pandas as pd
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
@@ -53,9 +56,11 @@ _LABEL_COLORS = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # Read-only (B3, 2026-09-18): this module only reads, and a read-write
+    # open on a missing path would create an empty database that the API then
+    # serves (and bootstrap would skip downloading over).
+    conn = dbpath.connect_ro(DB_PATH)  # the published generation in the API (fix/prelaunch-1)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -129,7 +134,7 @@ def _classify_hy_only(hy_oas: float, ig_oas: float | None = None) -> str:
     return label
 
 
-def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None) -> tuple[dict, dict]:
+def _transition_tables(hy_series: pd.Series, ig_series: pd.Series | None = None) -> tuple[dict, dict, dict, dict]:
     """
     Compute credit state transition matrices for 3-month and 6-month horizons.
 
@@ -143,11 +148,11 @@ def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None)
     Returns ({}, {}) if fewer than 60 monthly observations exist.
     """
     if hy_series.empty:
-        return {}, {}
+        return {}, {}, {}, {}
 
     monthly = hy_series.resample("ME").last().dropna()
     if len(monthly) < 60:
-        return {}, {}
+        return {}, {}, {}, {}
 
     # Align IG series if available
     if ig_series is not None and not ig_series.empty:
@@ -164,6 +169,7 @@ def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None)
     n = len(states)
 
     results = {}
+    observed: dict[int, dict[str, int]] = {}
     for horizon in (3, 6):
         # Count transitions: from_state → to_state
         counts: dict[str, dict[str, int]] = {s: {t: 0 for t in CREDIT_STATES} for s in CREDIT_STATES}
@@ -183,8 +189,16 @@ def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None)
                 except ZeroDivisionError:
                     probs[from_s][to_s] = 0.0
         results[horizon] = probs
+        observed[horizon] = {s: sum(counts[s].values()) for s in CREDIT_STATES}
 
-    return results.get(3, {}), results.get(6, {})
+    # B7 (2026-09-18): observed transitions per from-state; a row with 0 has no history.
+    return results.get(3, {}), results.get(6, {}), observed.get(3, {}), observed.get(6, {})
+
+
+def _transition_matrix(hy_series: pd.Series, ig_series: pd.Series | None = None) -> tuple[dict, dict]:
+    """Transition probabilities only (3m, 6m); see _transition_tables for the counts."""
+    t3, t6, _, _ = _transition_tables(hy_series, ig_series)
+    return t3, t6
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -205,7 +219,8 @@ def _empty_metrics() -> dict:
         "bb_1w_change":     None,
         "b_1w_change":      None,
         "hy_ig_ratio":      None,
-        "distress_ratio":   None,
+        "ccc_pct_of_distress_line": None,
+        "ccc_bps_vs_distress_line": None,
         "lbo_all_in_cost":  None,
         "credit_label":     "No data",
         "credit_label_color": _LABEL_COLORS["No data"],
@@ -215,6 +230,8 @@ def _empty_metrics() -> dict:
         "ig_series":        pd.Series(dtype=float),
         "data_as_of":       None,
         "transition_3m":    {},
+        "transition_obs_3m": {},
+        "transition_obs_6m": {},
         "transition_6m":    {},
         "tight_count":      0,
         "hy_sparkline":     pd.Series(dtype=float),
@@ -273,7 +290,10 @@ def get_credit_metrics() -> dict:
 
     # ── Derived metrics ───────────────────────────────────────────────────────
     hy_ig_ratio = round(hy_oas / ig_oas, 2) if (hy_oas and ig_oas and ig_oas != 0) else None
-    distress_ratio = round(ccc_oas / 1000 * 100, 1) if ccc_oas is not None else None
+    # B2 (2026-09-18): CCC OAS measured against the 1,000 bps distress line.
+    # A level against a threshold (can exceed 100), never a share of issuers.
+    ccc_pct_of_distress_line = round(ccc_oas / 1000 * 100, 1) if ccc_oas is not None else None
+    ccc_bps_vs_distress_line = round(ccc_oas - 1000, 1) if ccc_oas is not None else None
 
     # LBO all-in cost: FEDFUNDS (already in %) + HY OAS converted to %
     lbo_all_in_cost = None
@@ -305,7 +325,7 @@ def get_credit_metrics() -> dict:
     )
 
     # Transition matrices (pass IG series so Tight state can be detected)
-    transition_3m, transition_6m = _transition_matrix(hy_s, ig_s)
+    transition_3m, transition_6m, obs_3m, obs_6m = _transition_tables(hy_s, ig_s)
 
     return {
         "hy_oas":             hy_oas,
@@ -319,7 +339,8 @@ def get_credit_metrics() -> dict:
         "bb_1w_change":       _1w_chg(bb_s),
         "b_1w_change":        _1w_chg(b_s),
         "hy_ig_ratio":        hy_ig_ratio,
-        "distress_ratio":     distress_ratio,
+        "ccc_pct_of_distress_line": ccc_pct_of_distress_line,
+        "ccc_bps_vs_distress_line": ccc_bps_vs_distress_line,
         "lbo_all_in_cost":    lbo_all_in_cost,
         "credit_label":       credit_label,
         "credit_label_color": credit_label_color,
@@ -329,6 +350,10 @@ def get_credit_metrics() -> dict:
         "ig_series":          ig_s,
         "data_as_of":         data_as_of,
         "transition_3m":      transition_3m,
+        # B7 (2026-09-18): observed transitions per from-state. A row with 0
+        # observations has no history (its 0.0 cells are not probabilities).
+        "transition_obs_3m":  obs_3m,
+        "transition_obs_6m":  obs_6m,
         "transition_6m":      transition_6m,
         "tight_count":        tight_count,
         "hy_sparkline":       _sparkline(hy_s),
@@ -351,7 +376,7 @@ if __name__ == "__main__":
     print(f"CCC OAS      : {m['ccc_oas']} bps")
     print(f"HY 1W chg    : {m['hy_1w_change']} bps")
     print(f"HY/IG ratio  : {m['hy_ig_ratio']}")
-    print(f"Distress %   : {m['distress_ratio']}%")
+    print(f"CCC vs line  : {m['ccc_pct_of_distress_line']}% of 1,000 bps ({m['ccc_bps_vs_distress_line']} bps)")
     print(f"LBO all-in   : {m['lbo_all_in_cost']}")
     print(f"HY pct rank  : {ordinal(m['hy_pct_rank'])} percentile")
     print(f"IG pct rank  : {ordinal(m['ig_pct_rank'])} percentile")

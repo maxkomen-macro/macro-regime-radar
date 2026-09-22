@@ -1,0 +1,85 @@
+/* Type tokens. Three faces with mechanical jobs (UI_SPEC.md section 1, 2026-09-15):
+     display  Source Serif 4  one 58px headline per tab (the tab's answer), nowhere else
+     ui       IBM Plex Sans   everything readable, including big numbers (500, tabular)
+     mono     IBM Plex Mono   badges, the pill, meta strings, "Last alert:" lines,
+                              axis labels, timestamps */
+:root{
+--font-display:"Source Serif 4",Georgia,"Times New Roman",serif;
+--font-ui:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+--font-mono:"IBM Plex Mono","SF Mono","Fira Code",SFMono-Regular,Consolas,monospace;
+
+/* Display rung (Phase 2 TabHero; .mrr-display below). Automatic optical sizing
+   would pick opsz 60 at 58px; the mockup pins 30, so every consumer sets
+   font-variation-settings:"opsz" var(--opsz-display) explicitly. */
+--fs-display:58px; /* @kind font */
+--lh-display:1.02; /* @kind font */
+--ls-display:-.012em; /* @kind font */
+--opsz-display:30; /* @kind font */
+
+/* Hero subhead and lede (Phase 2 TabHero) */
+--fs-hero-sub:23px; /* @kind font */   /* hero h2, 500 */
+--lh-hero-sub:1.3; /* @kind font */
+--ls-hero-sub:-.005em; /* @kind font */
+--fs-lede:15.5px; /* @kind font */     /* hero lede, 400, measure var(--maxw-lede) */
+--lh-lede:1.6; /* @kind font */
+
+/* Size ramp. Evolved 2026-08-26 (readability pass: each rung up one step, mono
+   narrowed to data) and 2026-09-05 (floor raised to 11px mono / 13px sans).
+   Retired 2026-09-15 (Phase 2, StatTile on the UI face): --fs-metric and
+   --fs-value-lg. --fs-lead stays until Phase 10 (DeskRead, LandingPage). */
+--fs-micro:11px;   /* gauge captions, status words */
+--fs-meta:12px;    /* timestamps, "Last alert:" */
+--fs-label:11px;   /* UPPERCASE section labels */
+--fs-caption:13px; /* desk-note captions: Plex Sans, never mono */
+--fs-body-s:13px;  /* card titles, table cells */
+--fs-body:14px;    /* prose, memo body */
+--fs-kv:13.5px;    /* summary card rows, search field text, watchlist head */
+--fs-value:18px;   /* signal card value, regime badge */
+--fs-lead:20px;    /* the desk-read conclusion sentence (retire: Phase 10, with DeskRead) */
+
+/* Badges, pill, tags: mono, uppercase */
+--fs-badge:11.5px; /* @kind font */    /* Tag, 24px tall (Phase 2) */
+--ls-badge-mono:.1em; /* @kind font */
+--fs-tag:9.5px; /* @kind font */       /* strip and watchlist EOD / 15M / CLOSE / 1W tags, amber */
+--fs-pill:14px; /* @kind font */       /* probability pill (Phase 2 RegimeBadge) */
+--ls-pill:.13em; /* @kind font */
+
+/* Eyebrows: Plex Sans 500, uppercase */
+--fs-eyebrow:12px; /* @kind font */    /* --text-eyebrow (Phase 2 SectionHeader) */
+--ls-eyebrow:.24em; /* @kind font */
+--fs-eyebrow-sm:11px; /* @kind font */ /* sub-eyebrows inside tiles, --text-3 */
+--ls-eyebrow-sm:.2em; /* @kind font */
+
+/* Shell */
+--fs-wordmark:12.5px; /* @kind font */ /* sidebar wordmark and the Landing h1 */
+--ls-wordmark:.2em; /* @kind font */
+--lh-wordmark:1.55; /* @kind font */
+--fs-nav:14px; /* @kind font */
+--fs-nav-sub:13px; /* @kind font */    /* Methodology item */
+--fs-quote:15px; /* @kind font */      /* quote card symbol and price */
+--fs-quote-chg:14px; /* @kind font */  /* quote card 1D change */
+--fs-wl:12px; /* @kind font */         /* watchlist rows */
+
+--lh-tight:1; /* @kind font */
+--lh-snug:1.35; /* @kind font */
+--lh-body:1.6; /* @kind font */
+--lh-loose:1.6; /* @kind font */
+
+--fw-regular:400; /* @kind font */
+--fw-medium:500; /* @kind font */
+--fw-semibold:600; /* @kind font */
+--fw-bold:700; /* @kind font */
+
+/* Tracking: widens as mono type shrinks, never past 1px on the old ramp */
+--ls-label:.5px; /* @kind font */   /* 11px uppercase section header */
+--ls-micro:.6px; /* @kind font */   /* 12px meta labels */
+--ls-wide:1px; /* @kind font */     /* eyebrow / column headers on the old ramp */
+--ls-numeric:-.02em; /* @kind font */ /* large mono numbers pull tighter */
+
+--numeric:tabular-nums; /* @kind font */
+}
+
+/* Utility classes: thin, opt-in; components style themselves inline */
+.mrr-display{font-family:var(--font-display);font-weight:700;font-size:var(--fs-display);line-height:var(--lh-display);letter-spacing:var(--ls-display);font-variation-settings:"opsz" var(--opsz-display)}
+.mrr-mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.mrr-label{font-family:var(--font-mono);font-size:var(--fs-label);font-weight:var(--fw-semibold);text-transform:uppercase;letter-spacing:var(--ls-label);color:var(--text-label)}

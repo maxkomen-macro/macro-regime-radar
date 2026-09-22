@@ -1,12 +1,23 @@
 name: Daily Memo Email
 
+# Produced only from a validated FULL refresh (2026-09-06): the Refresh Data
+# workflow dispatches this one after a validated morning full run on a
+# weekday, passing its run id; the memo consumes that run's validated
+# database artifact — the exact snapshot the validation gate passed. A
+# manual dispatch without a run id uses the current data-latest asset. The
+# memo commit uses the retry / soft-reset loop (never stash/rebase).
+
 on:
-  schedule:
-    - cron: "5 11 * * 1-5"   # Mon–Fri at 11:05 UTC = 6:05 AM ET (5 min after data refresh)
-  workflow_dispatch:           # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Refresh Data run id whose validated-db artifact to use (set automatically by the refresh workflow; leave empty for a manual run on the current Release asset)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   email-memo:
@@ -18,28 +29,62 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Download the validated snapshot from the dispatching run
+        if: github.event.inputs.run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: validated-db
+          path: validated
+          run-id: ${{ github.event.inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide whether this run produces a memo
+        id: gate
+        env:
+          RUN_ID: ${{ github.event.inputs.run_id }}
+        run: |
+          if [ -z "$RUN_ID" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"; echo "manual run on the current Release asset"; exit 0
+          fi
+          if [ ! -f validated/refresh-meta.txt ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"; echo "Run $RUN_ID carries no validated-db artifact — refusing to produce a memo from an unvalidated refresh."; exit 0
+          fi
+          MODE=$(grep '^mode=' validated/refresh-meta.txt | cut -d= -f2)
+          if [ "$MODE" = "full" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"; echo "validated full refresh $RUN_ID — producing the memo"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"; echo "mode=$MODE — not a full refresh, no memo"
+          fi
+
       - name: Set up Python 3.12
+        if: steps.gate.outputs.go == 'true'
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Install dependencies
+        if: steps.gate.outputs.go == 'true'
         run: pip install -r requirements.txt
 
-      - name: Fetch current DB snapshot from data-latest release
+      - name: Use the validated snapshot (or the current release on manual runs)
+        if: steps.gate.outputs.go == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.inputs.run_id }}
         run: |
           mkdir -p data
-          if gh release view data-latest >/dev/null 2>&1; then
-            gh release download data-latest --pattern macro_radar.db --dir data --clobber
-            echo "DB snapshot: $(du -h data/macro_radar.db | cut -f1)"
+          if [ -f validated/macro_radar.db ]; then
+            cp validated/macro_radar.db data/macro_radar.db
+            echo "Using the validated artifact from run $RUN_ID"
           else
-            echo "No data-latest release yet; proceeding without a prior DB."
+            gh release download data-latest --pattern macro_radar.db --dir data --clobber
+            echo "Manual run: using the current data-latest asset"
           fi
+          python scripts/validate_db.py data/macro_radar.db --mode verify-only --allow-stale "memo input: validated upstream"
 
       - name: Generate daily memo
+        if: steps.gate.outputs.go == 'true'
         id: memo_meta
         env:
           ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
@@ -49,27 +94,30 @@ jobs:
           echo "$OUTPUT"
           MEMO_DATE=$(echo "$OUTPUT" | grep "^MEMO_DATE=" | cut -d= -f2)
           MEMO_REGIME=$(echo "$OUTPUT" | grep "^MEMO_REGIME=" | cut -d= -f2)
-          echo "memo_date=$MEMO_DATE" >> $GITHUB_OUTPUT
-          echo "memo_regime=$MEMO_REGIME" >> $GITHUB_OUTPUT
+          echo "memo_date=$MEMO_DATE" >> "$GITHUB_OUTPUT"
+          echo "memo_regime=$MEMO_REGIME" >> "$GITHUB_OUTPUT"
 
       - name: Copy memo to GitHub Pages location
+        if: steps.gate.outputs.go == 'true'
         run: |
           mkdir -p docs/memo
           cp output/daily_memo.html docs/memo/daily_memo.html
 
       - name: Build email body with browser link
+        if: steps.gate.outputs.go == 'true'
         run: |
-          cat > output/email_header.html << 'EOF'
+          cat > output/email_header.html << 'EOF2'
           <div style="font-family: Arial, sans-serif; font-size: 16px; padding: 15px; background-color: #f0f4f8; border-radius: 8px; margin-bottom: 20px;">
             📊 <a href="https://maxkomen-macro.github.io/macro-regime-radar/memo/daily_memo.html" style="color: #1f77b4; text-decoration: none; font-weight: bold;">View this memo in your browser</a>
             &nbsp;|&nbsp;
             📈 <a href="https://macro-regime-radar.streamlit.app/" style="color: #1f77b4; text-decoration: none; font-weight: bold;">Live Dashboard</a>
           </div>
           <hr style="border: 1px solid #ddd; margin-bottom: 20px;">
-          EOF
+          EOF2
           cat output/email_header.html output/daily_memo.html > output/email_body.html
 
       - name: Commit and push updated memo to GitHub Pages
+        if: steps.gate.outputs.go == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -78,18 +126,27 @@ jobs:
             echo "No memo changes to commit"
           else
             git commit -m "Update daily memo [skip ci]"
-            git stash --include-untracked
-            git pull --rebase
-            git stash pop || true
-            git push
-          fi
-          if [ ! -f output/email_body.html ]; then
-            cat output/email_header.html output/daily_memo.html > output/email_body.html 2>/dev/null || cp output/daily_memo.html output/email_body.html
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            # Retry / soft-reset loop (never stash/rebase): the whole attempt
+            # is one conditional so a transient fetch failure retries too.
+            for i in 1 2 3 4 5; do
+              if git fetch origin main \
+                 && git reset --soft origin/main \
+                 && git commit -m "$COMMIT_MSG" \
+                 && git push; then
+                echo "Push succeeded on attempt $i"
+                break
+              fi
+              if [ "$i" -eq 5 ]; then echo "Push failed after 5 attempts"; exit 1; fi
+              echo "Attempt $i failed (fetch/reset/commit/push), retrying..."
+              sleep $((RANDOM % 10 + 5))
+            done
           fi
           ls -la output/email_body.html
 
       - name: Send memo email
-        uses: dawidd6/action-send-mail@v2
+        if: steps.gate.outputs.go == 'true'
+        uses: dawidd6/action-send-mail@v18
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -98,6 +155,5 @@ jobs:
           subject: "📊 Daily Briefing — ${{ steps.memo_meta.outputs.memo_date }} — ${{ steps.memo_meta.outputs.memo_regime }}"
           to: ${{ secrets.MEMO_RECIPIENTS }}
           from: Macro Radar <${{ secrets.GMAIL_ADDRESS }}>
-          body: file://output/email_body.html
-          content_type: text/html
+          html_body: file://output/email_body.html
           attachments: output/daily_memo.html

@@ -1,4 +1,7 @@
 .env
+# Local copies of the env templates (web/.env.example says copy to .env.local).
+.env.local
+.env.*.local
 .streamlit/secrets.toml
 __pycache__/
 *.pyc
@@ -17,3 +20,28 @@ output/tearsheets/
 # Committing this ~10 MB binary hourly bloated the repo and broke Streamlit Cloud's
 # deploy clone (283 MB / ~140 s). Workflows download it at start and upload it at end.
 data/macro_radar.db
+# The assistant's daily spend ledger, written by the API at runtime (launch-1).
+data/assistant_spend.db
+# The release-asset identity bootstrap records beside the database (fix/prelaunch-1).
+data/*.asset.json
+
+# Vendored/build trees — never commit (node_modules previously bloated this repo's history)
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+
+# Browser-audit artifacts (Playwright MCP session logs/snapshots)
+.playwright-mcp/
+
+# Generated static snapshot for zero-cost mode (scripts/build_snapshot.py); never committed.
+web/public/snapshot/
+
+# Review screenshots under proposals/ (250+ PNG/GIF, ~58 MB) stay local — the clone must stay small (see CLAUDE.md → Database).
+proposals/**/*.png
+proposals/**/*.gif
+proposals/**/*.jpg
+proposals/**/*.webp
+
+# Playwright e2e artifacts (web/e2e specs; captures live under gitignored/excluded folders)
+web/test-results/
+web/playwright-report/

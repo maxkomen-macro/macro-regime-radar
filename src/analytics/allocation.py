@@ -9,10 +9,20 @@ Implements portfolio optimization methods:
 
 Uses index proxies (^GSPC, ^RUT, GC=F) for longer history pre-ETF-inception.
 NO imports from src.config — avoids FRED_API_KEY requirement.
+
+Price histories (fix/prelaunch-1): every series get_allocation_data reads is
+stored in the `asset_prices` table by the full refresh
+(src/market_data/asset_history.py: EODHD first, Yahoo as the disclosed
+fallback, one provider per series). This module computes from the table and
+never downloads; on a database without it, AssetHistoriesNotStored says so.
+The Yahoo downloader below (_fetch_prices) remains only for two Streamlit
+callers (daily tearsheets, factor backtests) and imports yfinance lazily, so
+the API process never loads it.
 """
 from __future__ import annotations
 
 import sqlite3
+import time
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -20,8 +30,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 from scipy.optimize import minimize
+
+from src.analytics import dbpath
 
 warnings.filterwarnings("ignore")
 
@@ -43,6 +54,14 @@ ASSET_CLASSES: Dict[str, Dict] = {
     "Commodities":      {"etf": "DJP",  "index": None,    "etf_start": "2006-06-06"},
     "Gold":             {"etf": "GLD",  "index": "GC=F",  "etf_start": "2004-11-18"},
 }
+
+# The optimizer never fits on less than this: below four assets a "portfolio"
+# is not one, and below twelve months a covariance is noise (N-B2).
+MIN_OPTIMIZER_ASSETS = 4
+MIN_OPTIMIZER_MONTHS = 12
+# The rectangular months the optimizers want. One constant, so get_allocation_data
+# reports the universe with the same bar get_regime_conditional_covariance used.
+COV_MIN_MONTHS = 24
 
 REGIME_LABELS: List[str] = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"]
 
@@ -75,9 +94,11 @@ CURRENCY_PAIRS: Dict[str, str] = {
 # ── Database ───────────────────────────────────────────────────────────────────
 
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # Read-only through src/analytics/dbpath.py (fix/prelaunch-1): this module
+    # only reads, a read-write open on a missing path would create an empty
+    # database, and in the API the read goes to the published generation.
+    conn = dbpath.connect_ro(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -89,8 +110,14 @@ def _normalize_month(idx: pd.DatetimeIndex) -> pd.DatetimeIndex:
 # ── Data fetching ──────────────────────────────────────────────────────────────
 
 def _fetch_prices(ticker: str, start: str, end: str) -> pd.Series:
-    """Download adjusted close prices via yfinance. Returns empty Series on failure."""
+    """Download adjusted close prices via yfinance. Returns empty Series on failure.
+
+    Streamlit only (get_daily_asset_returns' tearsheets and the factor
+    backtests in dashboard/components/backtests.py). The API never calls it:
+    allocation reads the stored histories (_stored_series)."""
     try:
+        import yfinance as yf  # lazy: the API process never imports yfinance
+
         raw = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
         if raw is None or raw.empty:
             return pd.Series(dtype=float)
@@ -110,6 +137,89 @@ def _fetch_prices(ticker: str, start: str, end: str) -> pd.Series:
     except Exception as exc:
         print(f"  Warning: could not fetch {ticker}: {exc}")
         return pd.Series(dtype=float)
+
+
+# ── Stored histories (fix/prelaunch-1) ─────────────────────────────────────────
+
+class AssetHistoriesNotStored(LookupError):
+    """The database predates the stored histories (an older snapshot)."""
+
+
+NOT_STORED_MESSAGE = (
+    "Asset price histories are not stored in this database yet: the next full refresh "
+    "stores them, and this server never downloads them."
+)
+
+
+def _histories_table_exists(conn: sqlite3.Connection) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'asset_prices'"
+    ).fetchone() is not None
+
+
+def _stored_series(symbol: str, interval: str, start: Optional[str] = None, end: Optional[str] = None) -> pd.Series:
+    """Stored adjusted closes for one series; start inclusive, end exclusive
+    (the yfinance download convention this replaces). Empty when the series
+    has no rows; AssetHistoriesNotStored when the table does not exist."""
+    conn = _get_conn()
+    try:
+        if not _histories_table_exists(conn):
+            raise AssetHistoriesNotStored(NOT_STORED_MESSAGE)
+        sql = "SELECT date, close FROM asset_prices WHERE symbol = ? AND interval = ?"
+        args: list = [symbol, interval]
+        if start:
+            sql += " AND date >= ?"
+            args.append(start)
+        if end:
+            sql += " AND date < ?"
+            args.append(end)
+        rows = conn.execute(sql + " ORDER BY date", args).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return pd.Series(dtype=float)
+    return pd.Series([float(r[1]) for r in rows], index=pd.to_datetime([r[0] for r in rows]), dtype=float)
+
+
+def _stored_monthly(symbols: List[str]) -> pd.DataFrame:
+    """Month-start-dated closes, one column per stored series: the frame that
+    yf.download(..., interval="1mo")["Close"] used to return."""
+    cols = {s: _stored_series(s, "1mo") for s in symbols}
+    return pd.DataFrame({s: v for s, v in cols.items() if len(v)})
+
+
+def stored_histories_summary() -> Dict:
+    """What the stored histories are and where they came from, for the payload:
+    as_of is the oldest of the daily series' newest closes (allocation is only
+    as current as its stalest spliced input; api/db.freshness() and the
+    pipeline's watermark use the same definition); provider_counts counts
+    series per provider; fallbacks names the series Yahoo supplied."""
+    conn = _get_conn()
+    try:
+        if not _histories_table_exists(conn):
+            raise AssetHistoriesNotStored(NOT_STORED_MESSAGE)
+        rows = conn.execute(
+            "SELECT symbol, interval, provider, MAX(date) FROM asset_prices GROUP BY symbol, interval, provider"
+        ).fetchall()
+    finally:
+        conn.close()
+    etfs = {cfg["etf"] for cfg in ASSET_CLASSES.values()}
+    providers: Dict[str, int] = {}
+    fallbacks: set = set()
+    newest: Dict[str, str] = {}
+    for sym, interval, prov, mx in rows:
+        providers[prov] = providers.get(prov, 0) + 1
+        if prov != "eodhd":
+            fallbacks.add(sym)
+        if interval == "1d" and mx:
+            newest[sym] = max(mx, newest.get(sym, mx))
+    return {
+        "as_of": min(newest.values()) if newest else None,
+        "provider_counts": providers,
+        "fallbacks": sorted(fallbacks),
+        "series": len(rows),
+        "missing_etfs": sorted(etfs - set(newest)),
+    }
 
 
 def get_asset_returns(
@@ -136,8 +246,8 @@ def get_asset_returns(
         idx       = cfg["index"]
         etf_start = cfg["etf_start"]
 
-        # ── Fetch ETF prices ───────────────────────────────────────────────────
-        etf_prices = _fetch_prices(etf, etf_start, end_date)
+        # ── Stored ETF prices ──────────────────────────────────────────────────
+        etf_prices = _stored_series(etf, "1d", etf_start, end_date)
 
         if len(etf_prices) == 0:
             print(f"  Skipping {name}: no ETF data")
@@ -147,7 +257,7 @@ def get_asset_returns(
 
         # ── Splice index proxy for pre-ETF history ─────────────────────────────
         if idx is not None and start_date < etf_start:
-            idx_prices = _fetch_prices(idx, start_date, etf_start)
+            idx_prices = _stored_series(idx, "1d", start_date, etf_start)
 
             if len(idx_prices) > 0:
                 # Find first ETF price and last index price to compute scale factor
@@ -336,25 +446,209 @@ def get_regime_conditional_stats(
     return stats
 
 
-def get_regime_conditional_covariance(
-    returns: pd.DataFrame,
-    regimes: pd.DataFrame,
-    min_months: int = 24,
-) -> Dict[str, pd.DataFrame]:
-    """Annualized covariance matrix per regime (only regimes with ≥ min_months)."""
+def regime_frame(returns: pd.DataFrame, regimes: pd.DataFrame, regime: str) -> pd.DataFrame:
+    """One regime's monthly returns, with assets that have no observation at
+    all in the regime dropped. Still ragged: an asset that launched mid-regime
+    keeps its NaNs, which is what the adaptive pass reads."""
     combined = returns.copy()
     combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
     combined = combined.dropna(subset=["regime"])
+    sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+    return sub.dropna(axis=1, how="all")
 
+
+def _join(names: List[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}"
+
+
+def adaptive_regime_block(
+    sub: pd.DataFrame,
+    *,
+    required_months: int = COV_MIN_MONTHS,
+    min_assets: int = MIN_OPTIMIZER_ASSETS,
+    floor_months: int = MIN_OPTIMIZER_MONTHS,
+) -> Dict:
+    """The largest usable rectangular block for one regime, and what it cost.
+
+    The optimizers fit on months where every asset in the universe has a
+    return. Across all ten that block only starts in Feb 2010, because High
+    Yield and Commodities have no returns before 2007, so Goldilocks, whose
+    months reach back to 2002, never cleared the 24-month bar and the optimizer
+    had never produced weights (N-B2).
+
+    Two levers, in this order. Drop the assets whose gaps cost the most months,
+    one at a time, but only while dropping still buys the bar, then put back
+    anything a later drop made unnecessary: an exclusion is a claim the screen
+    makes about an asset, so it has to earn itself. If no set of drops reaches
+    the bar, keep every asset and state the shorter sample instead, never below
+    `floor_months`. `min_assets` stops the drop loop; a regime universe already
+    smaller than it is used as it is, never blocked for being small. The
+    excluded assets, the months used and the bar actually applied travel in the
+    payload: weights that leave two asset classes out have to say so on screen.
+    """
+    total = int(len(sub))
+    universe = list(sub.columns)
+    full_block = sub.dropna() if universe else sub
+
+    kept, excluded, block = list(universe), [], full_block
+    while len(block) < required_months and len(kept) > min_assets:
+        missing = sub[kept].isna().sum().sort_values(ascending=False)
+        worst, cost = str(missing.index[0]), int(missing.iloc[0])
+        if cost == 0:
+            break                      # every remaining asset is complete; the months are not there
+        kept.remove(worst)
+        excluded.append({
+            "asset": worst,
+            "missing_months": cost,
+            "reason": f"no return in {cost} of the {total} regime months",
+        })
+        block = sub[kept].dropna()
+
+    if len(block) < required_months:
+        # The drops bought nothing, so take none of them and lower the bar.
+        kept, excluded, block = list(universe), [], full_block
+    elif excluded:
+        # Greedy takes the costliest gap first, which on interior holes can drop
+        # an asset a later drop made unnecessary. Put those back, cheapest
+        # first, while the block still clears the bar.
+        for e in sorted(excluded, key=lambda x: x["missing_months"]):
+            trial = [c for c in universe if c in set(kept) | {e["asset"]}]
+            if len(sub[trial].dropna()) >= required_months:
+                kept = trial
+        excluded = [e for e in excluded if e["asset"] not in set(kept)]
+        block = sub[kept].dropna()
+
+    months = int(len(block))
+    lowered = months < required_months
+    applied = months if lowered else required_months
+    ok = months >= floor_months and len(kept) >= min(min_assets, len(universe))
+
+    if excluded:
+        names = _join([e["asset"] for e in excluded])
+        counts = {e["missing_months"] for e in excluded}
+        if len(counts) == 1:
+            tail = f"{names} are excluded: no return in {counts.pop()} of the {total} regime months."
+        else:
+            tail = "Excluded: " + _join([f"{e['asset']} for {e['missing_months']} of the {total} regime months" for e in excluded]) + "."
+        sentence = f"Optimized over {len(kept)} of {len(universe)} asset classes on {months} complete months. {tail}"
+    elif lowered:
+        sentence = (
+            f"Optimized over all {len(universe)} asset classes on {months} complete months, "
+            f"fewer than the {required_months} usually required."
+        )
+    else:
+        sentence = f"Optimized over all {len(universe)} asset classes on {months} complete months."
+
+    return {
+        "included": kept,
+        "excluded": excluded,
+        "assets_total": len(universe),
+        "assets_used": len(kept),
+        "regime_months": total,
+        "months_used": months,
+        "required_months": applied,
+        "standard_months": required_months,
+        "lowered": lowered,
+        "reduced": bool(excluded) or lowered,
+        "ok": bool(ok),
+        "sentence": sentence,
+        "block": block,
+    }
+
+
+def get_regime_conditional_covariance(
+    returns: pd.DataFrame,
+    regimes: pd.DataFrame,
+    min_months: int = COV_MIN_MONTHS,
+) -> Dict[str, pd.DataFrame]:
+    """Annualized covariance matrix per regime, over the adaptive universe
+    (N-B2): the assets that block the rectangular sample are dropped, and the
+    bar falls to the months the rest support rather than the regime producing
+    nothing at all. get_allocation_data reports what was dropped."""
     covs: Dict[str, pd.DataFrame] = {}
     for regime in REGIME_LABELS:
-        sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
-        sub = sub.dropna(axis=1, how="all")   # drop assets absent for this regime
-        sub_clean = sub.dropna()              # rectangular block: rows with all remaining assets
-        if len(sub_clean) < min_months:
+        universe = adaptive_regime_block(regime_frame(returns, regimes, regime), required_months=min_months)
+        if not universe["ok"]:
             continue
-        covs[regime] = sub_clean.cov() * 12
+        covs[regime] = universe["block"].cov() * 12
     return covs
+
+
+def _regime_month_counts(
+    returns: pd.DataFrame,
+    regimes: pd.DataFrame,
+    regime: str,
+) -> Tuple[int, int]:
+    """Month counts for one regime, applying the exact filtering the gate
+    functions above use: (stats_months, cov_months) — stats_months is the row
+    count get_regime_conditional_stats sees (min 12), cov_months the
+    rectangular row count get_regime_conditional_covariance sees (min 24)."""
+    combined = returns.copy()
+    combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
+    combined = combined.dropna(subset=["regime"])
+    sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+    sub = sub.dropna(axis=1, how="all")
+    return len(sub), len(sub.dropna())
+
+
+def regime_sample_detail(
+    returns: pd.DataFrame,
+    regimes: pd.DataFrame,
+    regime: str,
+    required_stats_months: int = 12,
+    required_cov_months: int = 24,
+) -> Dict:
+    """Exact sample accounting for one regime (2026-09-06): how many regime
+    months exist, how many are complete across every asset that has any
+    history in the regime (the rectangular block the optimizers need), which
+    months are excluded and which assets are responsible. Applies the same
+    filtering as the gate functions above, so the numbers here are the
+    numbers the gate saw."""
+    combined = returns.copy()
+    combined["regime"] = regimes["regime"].reindex(returns.index, method="ffill")
+    combined = combined.dropna(subset=["regime"])
+    sub = combined.loc[combined["regime"] == regime].drop(columns=["regime"])
+    total = int(len(sub))
+    sub = sub.dropna(axis=1, how="all")
+    assets = list(sub.columns)
+    complete_mask = sub.notna().all(axis=1) if len(sub.columns) else pd.Series(False, index=sub.index)
+    complete = int(complete_mask.sum())
+    missing = sub.isna().sum()
+    responsible = [
+        {"asset": str(a), "missing_months": int(missing[a])}
+        for a in assets
+        if int(missing[a]) > 0
+    ]
+    responsible.sort(key=lambda r: -r["missing_months"])
+    excluded_index = sub.index[~complete_mask]
+    first_complete = sub.index[complete_mask][0].strftime("%Y-%m") if complete else None
+    last_complete = sub.index[complete_mask][-1].strftime("%Y-%m") if complete else None
+    n_assets = len(assets)
+    words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+    sentence = (
+        f"{complete} of {total} {regime} months have complete returns across all "
+        f"{words.get(n_assets, n_assets)} assets; {required_cov_months} are required."
+    )
+    return {
+        "regime": regime,
+        "total_regime_months": total,
+        "stats_months": total,
+        "complete_months": complete,
+        "cov_months": complete,
+        "excluded_months": int(total - complete),
+        "excluded_range": (
+            f"{excluded_index[0].strftime('%Y-%m')} → {excluded_index[-1].strftime('%Y-%m')}"
+            if len(excluded_index) else None
+        ),
+        "complete_range": f"{first_complete} → {last_complete}" if complete else None,
+        "assets_total": n_assets,
+        "assets_responsible": responsible,
+        "required_stats_months": required_stats_months,
+        "required_cov_months": required_cov_months,
+        "stats_ok": total >= required_stats_months,
+        "cov_ok": complete >= required_cov_months,
+        "sentence": sentence,
+    }
 
 
 def get_correlation_by_regime(
@@ -682,6 +976,7 @@ def hierarchical_risk_parity_optimize(
         "weights":       weights,
         "volatility":    port_vol,
         "method":        "Hierarchical Risk Parity",
+        "converged":     True,
         "cluster_order": [asset_names[i] for i in sort_idx],
     }
 
@@ -756,15 +1051,34 @@ def herc_optimize(
 
     port = rp.HCPortfolio(returns=monthly_returns.dropna())
 
-    w_df = port.optimization(
-        model="HERC",
-        codependence="pearson",
-        rm="MV",
-        rf=0,
-        linkage="ward",
-        max_k=10,
-        leaf_order=True,
-    )
+    def _run() -> pd.DataFrame:
+        return port.optimization(
+            model="HERC",
+            codependence="pearson",
+            rm="MV",
+            rf=0,
+            linkage="ward",
+            max_k=10,
+            leaf_order=True,
+        )
+
+    try:
+        w_df = _run()
+    except TypeError as e:
+        if "unexpected keyword argument" not in str(e):
+            raise
+        # riskfolio 7.3.0 regression: optimization() forwards linkage/bound
+        # kwargs into _hierarchical_recursive_bisection(), whose signature no
+        # longer accepts them — model="HERC" raises TypeError on every call.
+        # The ward linkage is already consumed by Step-1 tree clustering and
+        # weight bounds are applied in Step-4 after bisection, so stripping the
+        # stray kwargs from the internal call is behavior-identical HERC.
+        # Remove this shim once fixed upstream.
+        inner = port._hierarchical_recursive_bisection
+        port._hierarchical_recursive_bisection = lambda Z, **kw: inner(
+            Z, **{k: v for k, v in kw.items() if k in ("rm", "rf", "model")}
+        )
+        w_df = _run()
 
     if w_df is None or w_df.empty:
         weights = np.full(n, 1.0 / n)
@@ -789,6 +1103,19 @@ def herc_optimize(
 
 # ── Efficient frontier ─────────────────────────────────────────────────────────
 
+def _yielding(fn):
+    """Hand the GIL to any waiting thread before each solver callback
+    (fix/prelaunch-1). SciPy's SLSQP holds the GIL through long stretches of a
+    solve, which froze the API's event loop for up to a second while the
+    background worker rebuilt allocation; a zero-length sleep releases it and
+    changes no arithmetic (the frontier is bit-identical, pinned by
+    tests/test_generations.py)."""
+    def call(*args):
+        time.sleep(0)
+        return fn(*args)
+    return call
+
+
 def generate_efficient_frontier(
     expected_returns: np.ndarray,
     cov_matrix: np.ndarray,
@@ -812,13 +1139,13 @@ def generate_efficient_frontier(
 
     for tgt in target_rets:
         res = minimize(
-            lambda w: np.dot(w, np.dot(cov, w)),
+            _yielding(lambda w: np.dot(w, np.dot(cov, w))),
             np.full(n, 1.0 / n),
             method="SLSQP",
             bounds=[(min_weight, max_weight)] * n,
             constraints=[
-                {"type": "eq", "fun": lambda w: np.sum(w) - 1},
-                {"type": "eq", "fun": lambda w, t=tgt: _port_return(w, expected_returns) - t},
+                {"type": "eq", "fun": _yielding(lambda w: np.sum(w) - 1)},
+                {"type": "eq", "fun": _yielding(lambda w, t=tgt: _port_return(w, expected_returns) - t)},
             ],
             options={"maxiter": 1000, "ftol": 1e-9},
         )
@@ -919,6 +1246,22 @@ def calculate_cvar(
         "asset_cvar":    asset_cvar,
         "portfolio_cvar": portfolio_cvar,
     }
+
+
+def _attach_portfolio_cvar(
+    optimizations: Dict,
+    returns: pd.DataFrame,
+    opt_assets: List[str],
+) -> None:
+    """Attach cvar_95 — the {cvar, var, worst_periods} dict from
+    calculate_cvar (or None) — to each optimizer result in place.
+    Pure: no DB, no network."""
+    for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"):
+        if key in optimizations:
+            w = np.array(optimizations[key]["weights"])
+            optimizations[key]["cvar_95"] = calculate_cvar(
+                returns[opt_assets], weights=w, confidence=0.95
+            )["portfolio_cvar"]
 
 
 def calculate_regime_cvar(
@@ -1065,12 +1408,7 @@ def get_factor_returns() -> pd.DataFrame:
         tickers.add(proxy["long"])
         tickers.add(proxy["short"])
 
-    data = yf.download(sorted(tickers), period="max", interval="1mo", progress=False)
-    # Handle both flat and MultiIndex columns from yfinance
-    if isinstance(data.columns, pd.MultiIndex):
-        prices = data["Close"]
-    else:
-        prices = data
+    prices = _stored_monthly(sorted(tickers))
     rets = prices.pct_change().dropna()
 
     factor_rets = pd.DataFrame(index=rets.index)
@@ -1097,7 +1435,10 @@ def calculate_factor_exposures(
     port.index = _normalize_month(pd.to_datetime(port.index))
     facts = factor_returns.copy()
     facts.index = _normalize_month(pd.to_datetime(facts.index))
-    aligned = pd.concat([port, facts], axis=1).dropna()
+    # sort=True keeps today's date-sorted alignment: pandas 4 flips the
+    # default for an all-DatetimeIndex concat, and an unpinned image would
+    # otherwise change this silently on its next build (launch-1).
+    aligned = pd.concat([port, facts], axis=1, sort=True).dropna()
     if len(aligned) < 12:
         return None
 
@@ -1135,13 +1476,9 @@ def calculate_regime_factor_performance(
 # ── Style / manager selection ─────────────────────────────────────────────────
 
 def get_style_returns() -> pd.DataFrame:
-    """Fetch style ETF monthly returns."""
+    """Style ETF monthly returns from the stored histories."""
     tickers = sorted(set(STYLE_ETFS.values()))
-    data = yf.download(tickers, period="max", interval="1mo", progress=False)
-    if isinstance(data.columns, pd.MultiIndex):
-        prices = data["Close"]
-    else:
-        prices = data
+    prices = _stored_monthly(tickers)
     rets = prices.pct_change().dropna()
 
     style_rets = pd.DataFrame(index=rets.index)
@@ -1196,13 +1533,9 @@ def calculate_style_regime_performance(
 # ── Currency overlay ──────────────────────────────────────────────────────────
 
 def get_currency_returns() -> pd.DataFrame:
-    """Fetch currency / FX pair monthly returns."""
+    """Currency / FX pair monthly returns from the stored histories."""
     tickers = sorted(set(CURRENCY_PAIRS.values()))
-    data = yf.download(tickers, period="max", interval="1mo", progress=False)
-    if isinstance(data.columns, pd.MultiIndex):
-        prices = data["Close"]
-    else:
-        prices = data
+    prices = _stored_monthly(tickers)
     rets = prices.pct_change().dropna()
 
     reverse_map = {v: k for k, v in CURRENCY_PAIRS.items()}
@@ -1246,7 +1579,9 @@ def calculate_hedging_impact(
     hedge_ratio: float = 0.5,
 ) -> Optional[Dict]:
     """Simplified FX hedging impact estimate using EUR/USD as primary hedge."""
-    aligned = pd.concat([portfolio_returns, fx_returns], axis=1).dropna()
+    # sort=True names the alignment the code has always relied on (pandas 3
+    # deprecates the default for DatetimeIndex concats; launch-1, item 4).
+    aligned = pd.concat([portfolio_returns, fx_returns], axis=1, sort=True).dropna()
     if len(aligned) < 12 or "EUR/USD" not in aligned.columns:
         return None
 
@@ -1274,9 +1609,12 @@ def get_allocation_data() -> Dict:
         labeled regime, 0–1 or None), rf_rate,
         regime_stats, regime_correlations,
         optimizations (mvo/min_var/risk_parity/frontier/asset_names) or None,
+        optimizations_skipped (why the optimization gate skipped: regime, month
+        counts vs the 12/24 thresholds, data window) or None when they ran,
         drawdowns, data_start, data_end, n_months, asset_classes
     """
-    print("Fetching asset returns (this may take ~30s on first run)...")
+    histories = stored_histories_summary()  # AssetHistoriesNotStored on an older database
+    print(f"Reading stored asset histories (as of {histories['as_of']})...")
     returns = get_asset_returns(start_date="1990-01-01")
     n_months   = len(returns)
     data_start = returns.index[0].strftime("%Y-%m") if n_months else "N/A"
@@ -1295,6 +1633,7 @@ def get_allocation_data() -> Dict:
     print(f"Risk-free rate: {rf_rate:.2%}")
 
     optimizations = None
+    optimizations_skipped: Optional[Dict] = None
     if current_regime in regime_stats and current_regime in regime_cov:
         # Intersect: only assets with a non-NaN mean AND present in the cov matrix
         stats_assets = [
@@ -1303,6 +1642,10 @@ def get_allocation_data() -> Dict:
         ]
         cov_df      = regime_cov[current_regime]
         asset_names = [a for a in stats_assets if a in cov_df.index]
+        # What the adaptive pass had to leave out to get a rectangular sample
+        # (N-B2). The screen states this beside the weights: nobody should read
+        # an allocation without knowing which asset classes are not in it.
+        universe = adaptive_regime_block(regime_frame(returns, regimes, current_regime))
 
         mu  = regime_stats[current_regime]["mean"][asset_names].values
         cov = cov_df.loc[asset_names, asset_names].values
@@ -1357,6 +1700,7 @@ def get_allocation_data() -> Dict:
                 "volatility":      float(np.sqrt(eq_w @ cov @ eq_w)),
                 "sharpe_ratio":    0.0,
                 "method":          "HRP (fallback)",
+                "converged":       False,
             }
 
         # Min CVaR — tail-risk optimization via riskfolio (with fallback)
@@ -1417,7 +1761,28 @@ def get_allocation_data() -> Dict:
             "herc":             herc_result,
             "frontier":         frontier,
             "asset_names":      asset_names,
+            "universe":         {k: v for k, v in universe.items() if k != "block"},
         }
+        print(f"  universe: {universe['sentence']}")
+    else:
+        stats_months, cov_months = _regime_month_counts(returns, regimes, current_regime)
+        optimizations_skipped = {
+            "regime":                current_regime,
+            "stats_months":          stats_months,
+            "cov_months":            cov_months,
+            "required_stats_months": 12,
+            "required_cov_months":   24,
+            "window":                f"{data_start} → {data_end}",
+            # Exact accounting (2026-09-06): total vs complete months, which
+            # months fall out and which assets cause it.
+            **regime_sample_detail(returns, regimes, current_regime),
+        }
+        print(f"Optimizations skipped: regime '{current_regime}' has "
+              f"{stats_months} stats months (need 12) and {cov_months} "
+              f"rectangular cov months (need 24) in {data_start} → {data_end}")
+
+    optimization_sample = regime_sample_detail(returns, regimes, current_regime)
+    optimization_sample["window"] = f"{data_start} → {data_end}"
 
     # ── Risk analytics (CVaR, transitions, real returns) ───────────────────────
     print("\nComputing risk analytics...")
@@ -1456,12 +1821,7 @@ def get_allocation_data() -> Dict:
     # Add portfolio CVaR per optimisation method
     if optimizations is not None:
         opt_assets = optimizations.get("asset_names", list(returns.columns))
-        for key in ("mvo", "min_var", "risk_parity", "black_litterman", "hrp", "cvar", "herc"):
-            if key in optimizations:
-                w = np.array(optimizations[key]["weights"])
-                optimizations[key]["cvar_95"] = calculate_cvar(
-                    returns[opt_assets], weights=w, confidence=0.95
-                )["portfolio_cvar"]
+        _attach_portfolio_cvar(optimizations, returns, opt_assets)
 
     transition_pnl = calculate_transition_pnl(returns, regimes_df) if not regimes_df.empty else {}
 
@@ -1523,6 +1883,7 @@ def get_allocation_data() -> Dict:
         "regime_stats":        regime_stats,
         "regime_correlations": regime_corr,
         "optimizations":       optimizations,
+        "optimizations_skipped": optimizations_skipped,
         "drawdowns":           drawdowns,
         "data_start":          data_start,
         "data_end":            data_end,
@@ -1537,6 +1898,7 @@ def get_allocation_data() -> Dict:
         "portfolio_factors":   portfolio_factors,
         "style_performance":   style_performance,
         "currency_impact":     currency_impact,
+        "histories":           histories,
     }
 
 

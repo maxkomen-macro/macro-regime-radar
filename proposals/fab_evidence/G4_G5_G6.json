@@ -1,0 +1,35 @@
+{
+  "captured": "2026-07-09 ~12:40-12:45 PDT, http://localhost:8501, fix/fab-float @ 8f9eb37",
+  "G4_cross_tab_persistence": {
+    "result": "PASS",
+    "tabs_verified": [
+      {"tab": "Dashboard", "via": "G1", "opacity": "1", "position": "fixed", "rect": {"left": 853, "top": 610, "right": 980, "bottom": 722}, "bottomRight": true},
+      {"tab": "Recession Risk", "activeTabConfirmed": true, "opacity": "1", "position": "fixed", "rect": {"left": 853, "top": 610, "right": 980, "bottom": 722}, "distFromRight": 24, "distFromBottom": 24, "bottomRight": true, "screenshotId_inline": "ss_6815e86eo"},
+      {"tab": "Methodology", "activeTabConfirmed": true, "opacity": "1", "position": "fixed", "rect": {"left": 853, "top": 610, "right": 980, "bottom": 722}, "distFromRight": 24, "distFromBottom": 24, "bottomRight": true, "screenshotId_inline": "ss_5627319o5"}
+    ],
+    "note": "FAB present + fixed + bottom-right (identical rect) on all 3 tabs after switching. FAB is rendered once at module top level (app.py:1508, after last tab) so it is structurally global."
+  },
+  "G5_clickable_opens_dialog": {
+    "result": "PASS",
+    "method": "real mouse left_click on FAB at screenshot (1170,850)",
+    "dialogPresent": true,
+    "hasChatInput": true,
+    "dialogText": "Macro Regime Radar — AI Analyst · Powered by Claude Sonnet 4.5 · session-only · tool-using over the live DB · TRY ASKING: What's driving the current regime? / Should I be worried about re...",
+    "screenshotId_inline": "ss_2167jrgbk",
+    "no_query_submitted": true,
+    "closed_via": "Escape (dialogPresent=false after)",
+    "note": "Verified dialog OPEN-state only; did NOT submit any chat query (would spend human's Anthropic tokens)."
+  },
+  "G6_no_regression": {
+    "result": "PASS",
+    "startupLog_tracebacks": 0,
+    "widget_error_lines": 0,
+    "visibleExceptionsOnPage": 0,
+    "headerRendersRealNumbers": true,
+    "tabsAndChartsRender": true,
+    "styleBleed_check": {"myContainerSelectorMatches": 1, "myButtonSelectorMatches": 1, "verdict": "no bleed — selectors match exactly the FAB only"},
+    "fab_still_ok_after_dialog_cycle": {"opacity": "1", "position": "fixed", "distFromRight": 24, "distFromBottom": 24},
+    "robustness_bonus": "viewport resized to 1316x904 during interactions; FAB stayed 24px from bottom-right",
+    "screenshotId_inline": "ss_8331o7cvz"
+  }
+}

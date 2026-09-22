@@ -1,0 +1,152 @@
+[
+  {
+    "key": [
+      "regime",
+      "latest"
+    ],
+    "path": "/api/regime/latest"
+  },
+  {
+    "key": [
+      "regime",
+      "history",
+      "all"
+    ],
+    "path": "/api/regime/history"
+  },
+  {
+    "key": [
+      "regime",
+      "history",
+      24
+    ],
+    "path": "/api/regime/history?limit=24"
+  },
+  {
+    "key": [
+      "regime",
+      "history",
+      36
+    ],
+    "path": "/api/regime/history?limit=36"
+  },
+  {
+    "key": [
+      "regime",
+      "history",
+      400
+    ],
+    "path": "/api/regime/history?limit=400"
+  },
+  {
+    "key": [
+      "signals",
+      "latest"
+    ],
+    "path": "/api/signals/latest"
+  },
+  {
+    "key": [
+      "alerts",
+      200
+    ],
+    "path": "/api/alerts?limit=200"
+  },
+  {
+    "key": [
+      "freshness"
+    ],
+    "path": "/api/freshness"
+  },
+  {
+    "key": [
+      "priced"
+    ],
+    "path": "/api/priced"
+  },
+  {
+    "key": [
+      "surprises",
+      10
+    ],
+    "path": "/api/surprises?top_n=10"
+  },
+  {
+    "key": [
+      "calendar",
+      30
+    ],
+    "path": "/api/calendar?days=30"
+  },
+  {
+    "key": [
+      "calendar",
+      "recent",
+      10
+    ],
+    "path": "/api/calendar/recent?limit=10"
+  },
+  {
+    "key": [
+      "backtests"
+    ],
+    "path": "/api/backtests"
+  },
+  {
+    "key": [
+      "credit",
+      "oas",
+      90
+    ],
+    "path": "/api/credit/oas?days=90"
+  },
+  {
+    "key": [
+      "credit",
+      "metrics"
+    ],
+    "path": "/api/credit/metrics"
+  },
+  {
+    "key": [
+      "series",
+      "VIXCLS",
+      "latest"
+    ],
+    "path": "/series/VIXCLS/latest"
+  },
+  {
+    "key": [
+      "series",
+      "FEDFUNDS",
+      "latest"
+    ],
+    "path": "/series/FEDFUNDS/latest"
+  },
+  {
+    "key": [
+      "news",
+      168,
+      "any",
+      150,
+      "all"
+    ],
+    "path": "/api/news?hours=168&limit=150"
+  },
+  {
+    "key": [
+      "news",
+      "latest",
+      "all",
+      50
+    ],
+    "path": "/api/news/latest?limit=50"
+  },
+  {
+    "key": [
+      "regime",
+      "playbooks"
+    ],
+    "path": "/api/regime/playbooks"
+  }
+]

@@ -4,7 +4,7 @@ dashboard/components/credit_tab.py — Phase 7 Credit Spreads tab.
 Sections:
   1. Status bar (credit regime badge + data freshness)
   2. Five OAS spread cards (HY, IG, CCC, BB, B) with 1W changes
-  3. Chart row: OAS history (Altair) + HY/IG ratio & distress ratio cards
+  3. Chart row: OAS history (Altair) + HY/IG ratio & CCC-vs-distress-line cards
   4. Three-column analytical row: LBO cost · Conditions logic · Percentile ranks
   5. Regime-conditional asset performance table
   6. Credit regime transition matrix (3M and 6M)
@@ -295,9 +295,9 @@ def _render_oas_chart(hy_series: pd.Series, ig_series: pd.Series) -> None:
 
 
 def _render_ratio_distress_cards(m: dict) -> None:
-    """Render HY/IG ratio card and distress ratio card (stacked)."""
+    """Render HY/IG ratio card and CCC-vs-distress-line card (stacked)."""
     ratio = m.get("hy_ig_ratio")
-    distress = m.get("distress_ratio")
+    distress = m.get("ccc_pct_of_distress_line")
 
     ratio_str = f"{ratio:.2f}×" if ratio is not None else "—"
     distress_str = f"{distress:.1f}%" if distress is not None else "—"
@@ -327,10 +327,10 @@ body {{ background:#0e1117; font-family:-apple-system,BlinkMacSystemFont,"Segoe 
   <div class="context">Historical avg ~3.5× &nbsp;·&nbsp; 2008 peak 8.2×</div>
 </div>
 <div class="card">
-  <div class="label">Distress Ratio (CCC vs 1000 bps)</div>
+  <div class="label">CCC vs 1,000 bps distress line</div>
   <div class="value">{distress_str}</div>
   <div class="bar-track"><div class="bar-fill"></div></div>
-  <div class="context">Above 100% = systemic credit stress</div>
+  <div class="context">CCC OAS as % of the line, not a share of issuers &nbsp;·&nbsp; above 100% = past the line</div>
 </div>
 </body></html>""",
         height=270,
@@ -719,7 +719,7 @@ def render() -> None:
 
     m = _load_credit_metrics()
     register_tab_context("Credit", {
-        "shows": "IG/HY/CCC/BB/B OAS spreads, distress ratio, LBO all-in financing cost, credit regime",
+        "shows": "IG/HY/CCC/BB/B OAS spreads, CCC vs the 1,000 bps distress line, LBO all-in financing cost, credit regime",
         "credit_regime":   m.get("credit_label"),
         "ig_oas_bps":      m.get("ig_oas"),
         "hy_oas_bps":      m.get("hy_oas"),

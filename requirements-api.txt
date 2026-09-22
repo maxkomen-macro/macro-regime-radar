@@ -1,6 +1,29 @@
-# Local read-only API for Atlas (api/). Kept separate from requirements.txt so
-# the Streamlit Cloud build (Python 3.12 deploy target) does not pull these in —
-# this service runs locally only. Install with: pip install -r requirements-api.txt
+# API service deps (api/). Kept separate from requirements.txt so the Streamlit
+# Cloud build (Python 3.12 deploy target) does not pull these in.
+# The image installs requirements-api.lock (pip freeze of the tested venv, kept
+# to this file's closure; scripts/lock_api_requirements.py regenerates it).
+# Locally: pip install -r requirements-api.txt
 fastapi
 uvicorn[standard]
-httpx  # required by fastapi.testclient.TestClient (tests/test_api.py)
+httpx  # TestClient (tests/test_api.py) + the EODHD delayed-quote REST poll (api/stream.py)
+# api/stream.py uses the websockets CLIENT API for the upstream EODHD feeds —
+# uvicorn[standard] happens to bundle it, but our use is a direct dependency:
+websockets
+# /api/recession/probability imports src/analytics/recession.py, which trains
+# the logistic-regression model in-process (no artifact on disk):
+pandas
+numpy
+scikit-learn
+# /api/allocation is built by the background worker from the price histories
+# the full refresh stores in asset_prices (fix/prelaunch-1): the API never
+# downloads them and never calls Yahoo, so yfinance is not a dependency here
+# (the refresh pipeline installs it from its own requirements file). scipy
+# arrives with scikit-learn; riskfolio-lib powers the CVaR/HERC optimizers for
+# real — if its import fails they fall back to equal weight, flagged
+# converged=false in the payload.
+# Pinned to 7.3.x: herc_optimize in src/analytics/allocation.py carries a shim
+# for 7.3.0's broken HERC kwarg forwarding (_hierarchical_recursive_bisection);
+# remove the pin together with the shim once upstream fixes it.
+riskfolio-lib==7.3.*
+# POST /api/assistant/ask (api/chat.py) drives src/analytics/chat.py's agent:
+anthropic

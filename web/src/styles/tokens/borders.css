@@ -1,0 +1,44 @@
+:root{
+/* Radii (UI_SPEC.md section 1, 2026-09-15): 12 for panels and cards, 9 for
+   tiles, 8 for buttons and inputs, 7 for badges, 999 for the probability pill.
+   Shell: 10 for the strip cards, 9 for sidebar items, the search field and the
+   Ask chip. */
+--r-card:12px;
+--r-tile:9px;
+--r-ctl:8px;
+--r-badge:7px;
+--r-pill:999px;
+--r-strip:10px;
+--r-nav:9px;
+/* Pre-redesign radii, kept resolving for screens not yet restyled.
+   --r-md retires at Phase 2 (Card, Tag and buttons move to --r-card,
+   --r-badge, --r-ctl); --r-xs and --r-sm go with their screens. */
+--r-xs:3px;   /* gauge bars, inline chips */
+--r-sm:4px;
+--r-md:6px;   /* the old card / badge / button default */
+
+/* Strokes: 1px is the house border. The .5px hairline survives only in inline
+   strings on screens not yet restyled. --bw-hair and its one consumer
+   --border-card were retired in Phase 10 (zero consumers under web/src). */
+--bw:1px; /* @kind spacing */
+--bw-accent:3px; /* @kind spacing */ /* left accent bar on intelligence / read-through panels */
+
+--border-strong:var(--bw) solid var(--line); /* @kind other */
+--divider:var(--bw) solid var(--line-hair); /* @kind other */
+
+/* Elevation. Allowed: the probability pill glow, the live-dot glow, the
+   assistant float, the popover shadow, the hero glow and the page glow.
+   Nothing else casts a shadow. */
+--shadow-none:none; /* @kind shadow */
+--shadow-float:0 8px 24px rgba(1,4,9,.6);      /* assistant panel */
+--shadow-popover:0 12px 32px rgba(0,0,0,.55);  /* .mrr-popover */
+--glow-pill:0 0 22px rgba(38,220,160,.16),inset 0 0 12px rgba(38,220,160,.08);
+--glow-pill-amber:0 0 22px rgba(245,181,46,.14),inset 0 0 12px rgba(245,181,46,.07);
+--glow-dot:0 0 10px rgba(38,220,160,.7);       /* live dot: sidebar footer, freshness card, .mrr-live-dot */
+/* --hero-glow reads var(--glow) on :root at definition time (custom properties
+   substitute where they are declared), so a per-hero --glow override must
+   redeclare --hero-glow on the hero element (or paint the radial-gradient
+   there directly). The fallback is the mint glow. */
+--hero-glow:radial-gradient(520px 320px at 88% 40%,var(--glow,rgba(38,220,160,.07)),transparent 70%);
+--page-glow:radial-gradient(1200px 600px at 70% -10%,rgba(40,70,90,.18),transparent 60%); /* body background layer */
+}
