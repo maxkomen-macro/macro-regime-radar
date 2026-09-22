@@ -30,18 +30,38 @@ def redact(text: str) -> str:
     return text
 
 
+def _redact_arg(value):
+    """One logging argument, redacted without changing its shape: numbers and
+    None pass through (a %d still needs an int), anything else is compared as
+    text and replaced by the redacted text only when redaction changed it
+    (httpx passes the URL as an httpx.URL, not a str)."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    text = value if isinstance(value, str) else str(value)
+    red = redact(text)
+    return red if red != text else value
+
+
 class RedactingFilter(logging.Filter):
-    """Rewrites the whole rendered message, whatever its arguments are (httpx
-    passes the URL as an httpx.URL, not a str), and the traceback and stack
-    text a formatter would print (launch-1 verify loop 1)."""
+    """Redacts the message, each of its arguments and uvicorn's colour copy of
+    it, keeping the arguments' shape: formatters such as uvicorn's access
+    formatter unpack them (launch-1 verify loop 2: clearing them lost every
+    access line). Tracebacks and stack text are redacted as a formatter would
+    print them."""
 
     _formatter = logging.Formatter()
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            message = record.getMessage()
-            record.msg = redact(message)
-            record.args = None
+            if isinstance(record.msg, str):
+                record.msg = redact(record.msg)
+            if isinstance(record.args, dict):
+                record.args = {k: _redact_arg(v) for k, v in record.args.items()}
+            elif isinstance(record.args, tuple):
+                record.args = tuple(_redact_arg(a) for a in record.args)
+            colour = getattr(record, "color_message", None)
+            if isinstance(colour, str):
+                record.color_message = redact(colour)
         except Exception:  # noqa: BLE001 — a filter must never break logging
             pass
         try:

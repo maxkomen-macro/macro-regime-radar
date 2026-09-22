@@ -234,3 +234,38 @@ def test_a_failed_signed_download_keeps_the_url_out_of_status(monkeypatch, caplo
     status_text = str(bootstrap.status())
     assert "SENTINEL" not in status_text and "SENTINEL" not in caplog.text
     assert "503" in str(bootstrap.status()["last_error"])
+
+
+def test_uvicorns_own_formatters_still_work_with_the_filter(secrets, capsys):
+    """Item 3 verify loop 2: clearing record.args broke uvicorn's access
+    formatter (it unpacks five args) on every request, and its coloured
+    startup lines printed raw placeholders. The filter keeps the args' shape
+    and redacts inside them."""
+    import copy
+    import io
+    import logging.config
+
+    from uvicorn.config import LOGGING_CONFIG
+
+    cfg = copy.deepcopy(LOGGING_CONFIG)
+    buf = io.StringIO()
+    for h in cfg["handlers"].values():
+        h["class"] = "logging.StreamHandler"
+        h["stream"] = buf
+    logging.config.dictConfig(cfg)
+    try:
+        logsafe.install()
+        access = logging.getLogger("uvicorn.access")
+        access.info('%s - "%s %s HTTP/%s" %d', "203.0.113.7:51234", "GET",
+                    f"/api/eod/AAPL.US?api_token={secrets['EODHD_API_TOKEN']}", "1.1", 200)
+        logging.getLogger("uvicorn.error").info(
+            "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)", "http", "0.0.0.0", 8000,
+            extra={"color_message": "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)"})
+    finally:
+        logging.config.dictConfig({"version": 1, "disable_existing_loggers": False})
+    out = buf.getvalue()
+    err = capsys.readouterr().err
+    assert "Logging error" not in err and "TypeError" not in err, err
+    assert '"GET /api/eod/AAPL.US?api_token=*** HTTP/1.1" 200' in out, out
+    assert "Uvicorn running on http://0.0.0.0:8000" in out, out
+    _assert_clean(out + err)

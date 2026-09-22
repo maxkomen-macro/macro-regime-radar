@@ -39,13 +39,14 @@ describe("installStaleChunkReload (launch-1, item 3)", () => {
     expect(reload).toHaveBeenCalledTimes(2);
   });
 
-  it("never throws when storage is unavailable", () => {
+  it("never reloads, and never throws, when storage is unavailable", () => {
+    // Nothing could remember the reload, so a chunk gone for good would loop.
     const { win, fire, reload } = fakeWindow();
     win.sessionStorage.getItem = () => {
       throw new Error("blocked");
     };
     installStaleChunkReload(win as unknown as Window, () => 1_000_000);
     expect(() => fire()).not.toThrow();
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
   });
 });

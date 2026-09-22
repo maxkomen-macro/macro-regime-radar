@@ -11,18 +11,16 @@ const ONCE_PER_MS = 60_000;
 
 export function installStaleChunkReload(win: Window = window, now: () => number = Date.now): void {
   win.addEventListener("vite:preloadError", (event: Event) => {
-    let last = 0;
-    try {
-      last = Number(win.sessionStorage.getItem(KEY) ?? 0) || 0;
-    } catch {
-      last = 0;
-    }
     const t = now();
-    if (t - last < ONCE_PER_MS) return;
     try {
+      const last = Number(win.sessionStorage.getItem(KEY) ?? 0) || 0;
+      if (t - last < ONCE_PER_MS) return;
       win.sessionStorage.setItem(KEY, String(t));
     } catch {
-      // storage blocked: reload anyway; the browser's own cache stops a loop
+      // Storage blocked: nothing can remember that this tab already reloaded,
+      // so a chunk that is gone for good would reload it forever (item 3,
+      // verify loop 2). Leave the error to the screen's own error state.
+      return;
     }
     event.preventDefault();
     win.location.reload();
