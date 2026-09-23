@@ -12,7 +12,6 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { getJson } from "../../../api/client";
 import type { DailyBar } from "../../../api/types";
 import { fmtDate, fmtMonYr } from "../../../lib/format";
-import { useFreshReport } from "../../shared/useFreshReport";
 import type { Freshness } from "../../../api/types";
 import { pyFixed, pyGrouped, pyRound } from "../pyformat";
 import type { Position } from "./store";
@@ -81,11 +80,14 @@ export function seriesRef(id: string | null | undefined): SeriesRef | undefined 
 export interface Reading {
   value: number;
   /** The observation's own date: a stored bar's date, or for a FRED series
-   * the freshness report's observation date (review R-07); null when neither
-   * is known. Never the month stamp /series/{id}/latest carries. */
+   * the freshness report's observation date served by the same data
+   * generation as the value (review R-07); null when that cannot be shown.
+   * Never the month stamp /series/{id}/latest carries. */
   date: string | null;
   /** A monthly series: the date names a month. */
   monthly?: boolean;
+  /** The data generation both halves of a FRED pair came from. */
+  generation?: number | null;
 }
 
 /** "Sep 17, 2026", "Aug 2026" for a monthly series, or "date unknown". */
@@ -94,13 +96,33 @@ export function readingDate(r: Pick<Reading, "date" | "monthly">): string {
   return r.monthly ? fmtMonYr(r.date) : fmtDate(r.date);
 }
 
-/** Pure: a FRED reading dated by the freshness report's observation date for
- * the series (source_watermarks, CLAUDE.md B6); a market reading keeps its
- * bar's date. */
-export function datedReading(ref: SeriesRef | undefined, r: Reading | undefined, f: Freshness | null | undefined): Reading | undefined {
-  if (!r || !ref || ref.kind !== "fred") return r;
-  const s = f?.series?.find((x) => x.id === ref.id);
-  return { value: r.value, date: s?.as_of ? s.as_of.slice(0, 10) : null, monthly: s?.cadence === "monthly" };
+/** The parts of /api/freshness a FRED pair reads. */
+type FreshnessLite = Pick<Freshness, "series" | "generation">;
+
+/** A FRED value and its observation date as one pair from one data generation
+ * (review R-07). /series/{id}/latest carries no generation, so the value is
+ * read between two freshness reads: generations only advance, so when both
+ * name the same generation the value was served by it too, and that report's
+ * observation date belongs to that value. Another generation published in
+ * between: read the pair again, once; still split, refuse (the caller shows
+ * the old pair it holds, or "unavailable"). A report without generations
+ * (an older API) gives the value with no date ("date unknown"). The pair is
+ * cached as one object, so a refetch that fails keeps the old value with its
+ * old date, and a newer date is never attached to a cached value. */
+export async function fetchFredPair(ref: SeriesRef, get: typeof getJson = getJson): Promise<Reading> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const before = await get<FreshnessLite>("/api/freshness");
+    const p = await get<{ series_id: string; date: string; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
+    const after = await get<FreshnessLite>("/api/freshness");
+    const g1 = before.generation?.id ?? null;
+    const g2 = after.generation?.id ?? null;
+    if (g1 == null && g2 == null) return { value: p.value, date: null, generation: null };
+    if (g1 != null && g1 === g2) {
+      const s = before.series?.find((x) => x.id === ref.id);
+      return { value: p.value, date: s?.as_of ? s.as_of.slice(0, 10) : null, monthly: s?.cadence === "monthly", generation: g1 };
+    }
+  }
+  throw new Error(`The ${ref.id} reading and its date came from different data generations twice; not shown.`);
 }
 
 const MINUTE = 60_000;
@@ -113,9 +135,7 @@ async function fetchReading(ref: SeriesRef): Promise<Reading> {
     if (!last || last.close == null) throw new Error(`No stored bars for ${ref.id}.`);
     return { value: last.close, date: last.date };
   }
-  // The value only: this endpoint dates a daily FRED series by its month stamp.
-  const p = await getJson<{ series_id: string; date: string; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
-  return { value: p.value, date: null };
+  return fetchFredPair(ref);
 }
 
 type ReadingKey = readonly ["desk", "reading", string, string];
@@ -131,10 +151,7 @@ function readingOptions(ref: SeriesRef | undefined) {
 }
 
 export function useReading(id: string | null | undefined) {
-  const ref = seriesRef(id);
-  const q = useQuery<Reading, Error, Reading, ReadingKey>(readingOptions(ref));
-  const report = useFreshReport();
-  return { ...q, data: datedReading(ref, q.data, report.f) };
+  return useQuery<Reading, Error, Reading, ReadingKey>(readingOptions(seriesRef(id)));
 }
 
 export interface ReadingState {
@@ -146,10 +163,9 @@ export interface ReadingState {
 /** One reading per position, keyed by the position id. */
 export function useReadings(positions: readonly Position[]): Record<string, ReadingState> {
   const results = useQueries({ queries: positions.map((p) => readingOptions(seriesRef(p.falsification.series))) });
-  const report = useFreshReport();
   const out: Record<string, ReadingState> = {};
   positions.forEach((p, i) => {
-    out[p.id] = { data: datedReading(seriesRef(p.falsification.series), results[i]?.data, report.f), isLoading: Boolean(results[i]?.isLoading), isError: Boolean(results[i]?.isError) };
+    out[p.id] = { data: results[i]?.data, isLoading: Boolean(results[i]?.isLoading), isError: Boolean(results[i]?.isError) };
   });
   return out;
 }

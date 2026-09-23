@@ -61,7 +61,7 @@ function current(study: EventStudyResponse, b: Behind | null): (Behind & { n: nu
 }
 
 function Missing({ study, e, h }: { study: EventStudyResponse; e: EventStudyEvent; h: number }) {
-  return <span style={{ color: "var(--text-3)" }}>{missingForwardWord(study.recent_events, e.date, h)}</span>;
+  return <span style={{ color: "var(--text-3)" }}>{missingForwardWord(study.recent_events, study.horizons, e.date, h)}</span>;
 }
 
 /** The events the response carries behind one cell, with the count stated. */

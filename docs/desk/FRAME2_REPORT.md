@@ -184,7 +184,16 @@ After `21ee29f`: vitest 102 files / 1,136 passed, the build is clean, `e2e/desk.
 
 Gates after the fixes: `tsc` clean; vitest 103 files / 1,152 passed (Desk 100: `pyformat.test.ts` 4, the review-round shell tests, `frame2.test.ts` 18, `store.test.ts` 5, the language scan with Build Notes); the build clean; pytest `test_desk_format_fixture.py`, `test_desk_api.py` and the engine's fixture pins 57 passed; `scripts/desk_format_fixture.py --check` current; `e2e/desk.spec.ts` 15/15 against the local API (:8781, relay off) through Vite (:5197).
 
-## 7. After `PUSH OK desk/frame-2`
+## 7. Third review: R-07 (blocking), R-08 and R-12 (high); R-11 closed
+
+| # | Finding | Fix |
+|---|---|---|
+| R-07 | The second-round fix still paired a cached FRED value with the freshness report of the moment. When a refetch of the value failed (the 503 repro) and a new generation's report arrived, the old value showed the new generation's date. | `fetchFredPair` (`positions/series.ts`) fetches the value between two `/api/freshness` reads and pairs it with that report's observation date only when both reads name the same data generation (generations only advance, so the value came from it). A generation published mid-read means one more try; split twice means refuse. The pair (value, date, generation) is one cached object: a failed refetch keeps the old pair with its old date, or shows "Live reading unavailable" when there is none, and no newer date can reach a cached value. An API that reports no generation gives the value with "date unknown". The 503 repro is a shell test: value 4.12 at Sep 17 in generation 1; generation 2 with Sep 18 lands while `/series/DGS10/latest` answers 503; the row keeps "4.12% now (Sep 17, 2026)". The test fails on the previous `series.ts` ("4.12% now (Sep 18, 2026)") and passes now. |
+| R-08 | "window open" was inferred from the list's order alone. | The adapter carries each horizon's served `n_incomplete`. "window open" only when the response marks that horizon incomplete (`n_incomplete` > 0) and no newer event has a closed window there; every other missing return reads "no observation". |
+| R-12 | "Presets fired" took its badge from the first study that answered. | The badge is stamped with the earliest `as_of` among the studies that answered, its tone is the weakest verdict across all their tables, and its tooltip lists each study's own `as_of`. When the cutoffs differ the card body says so ("Cutoffs differ: …" with each date). The same badge now dates the two S&P Internals cards that read both crosses. |
+| R-11 | Browser arithmetic on served numbers (the five-weekday windows, the falsification distance). | **Closed by decision** as an accepted exception (§6); no change. |
+
+## 8. After `PUSH OK desk/frame-2`
 
 ```
 git push -u origin desk/frame-2

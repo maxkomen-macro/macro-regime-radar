@@ -58,6 +58,39 @@ export function studySource(study: EventStudyResponse | null | undefined, sla: r
   };
 }
 
+export interface NamedStudy {
+  name: string;
+  study: EventStudyResponse;
+}
+
+/** Pure: the earliest as_of among several studies, and whether they differ. */
+export function cutoffs(items: readonly NamedStudy[]): { earliest: string | null; differ: boolean } {
+  const dates = items.map((i) => i.study.provenance.as_of).sort();
+  return { earliest: dates[0] ?? null, differ: new Set(dates).size > 1 };
+}
+
+/** Pure: one badge for a card that reads several studies (review R-12). Its
+ * stamp is the earliest as_of among them, so the card never claims a later
+ * cutoff than its oldest input; its tone is the weakest report verdict
+ * across every table any of them reads; the tooltip lists each study's own
+ * as_of. */
+export function studiesSource(items: readonly NamedStudy[], sla: readonly SlaRow[] | null | undefined): BadgeSource {
+  const { earliest, differ } = cutoffs(items);
+  const tables = items.flatMap((i) => i.study.provenance.inputs.map((x) => x.table));
+  const each = items.map((i) => `${i.name} as of ${i.study.provenance.as_of}`).join("; ");
+  return {
+    label: ENGINE_SOURCE,
+    asOf: earliest ? fmtDate(earliest) : null,
+    verdict: studyVerdict(tables, sla),
+    reason: `${differ ? "Cutoffs differ; the stamp is the earliest. " : ""}${each}${unjudged(tables, sla).length ? `; unavailable or not in the report: ${unjudged(tables, sla).join(", ")}` : ""}`,
+  };
+}
+
+export function StudiesBadge({ items }: { items: readonly NamedStudy[] }) {
+  const report = useFreshReport();
+  return <StatusBadge source={studiesSource(items, report.f?.sla)} />;
+}
+
 /** No study on screen: the source and what it is doing, never "Live". */
 export type StudyWait = "waiting" | "computing" | "busy" | "awaiting refresh" | "refused" | "not on this server" | "no answer";
 

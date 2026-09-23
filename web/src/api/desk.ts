@@ -127,6 +127,8 @@ export interface EventStudyHorizon {
   n_blocks: number | null;
   exclusion: Exclusion | null;
   note: string | null;
+  /** Events at this horizon whose window the engine marks incomplete (review R-08). */
+  n_incomplete: number | null;
 }
 
 export interface EventStudyRegimeCell {
@@ -262,6 +264,7 @@ interface EngineHorizon {
   n_blocks: number | null;
   exclusion: Exclusion | null;
   note: string | null;
+  n_incomplete?: number | null;
 }
 
 interface EngineQuery {
@@ -428,6 +431,7 @@ export function toStudyResult(a: EngineAnswer): EventStudyResult {
       n_blocks: h.n_blocks,
       exclusion: h.exclusion ?? null,
       note: h.note ?? null,
+      n_incomplete: typeof h.n_incomplete === "number" ? h.n_incomplete : null,
     })),
     regime_split: a.regimes.map((r) => ({
       regime: r.regime,

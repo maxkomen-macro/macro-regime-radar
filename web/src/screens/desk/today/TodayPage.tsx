@@ -36,7 +36,7 @@ import { SOURCES } from "../badge-sources";
 import type { DeskPage } from "../desk-sections";
 import { EmptyState, Panel, numStyle } from "../desk-ui";
 import { useDeskView, withView, type DeskView } from "../desk-view";
-import StudyBadge from "../event-study/StudyBadge";
+import StudyBadge, { StudiesBadge, cutoffs, type NamedStudy } from "../event-study/StudyBadge";
 import { PRESETS } from "../event-study/studies";
 import { MonitoredRow } from "../positions/PositionMonitorPage";
 import { distanceOf, useReadings } from "../positions/series";
@@ -194,7 +194,9 @@ function PresetsCard({ slugs, isClient, view }: { slugs: string[]; isClient: boo
   const inputs: PresetInput[] = qs.map((q, i) => ({ slug: slugs[i], study: q.data?.state === "ready" ? q.data.study : null, state: presetStateOf(q) }));
   const reads = presetReads(inputs);
   const head = presetsHeadline(reads);
-  const first = inputs.find((x) => x.study)?.study ?? null;
+  // The studies that answered: the badge takes the earliest of their as_of dates (review R-12).
+  const named: NamedStudy[] = inputs.filter((x) => x.study).map((x) => ({ name: PRESET_LABEL[x.slug] ?? x.slug, study: x.study! }));
+  const cut = cutoffs(named);
   const windows = [...new Set(reads.filter((r) => r.window).map((r) => `${r.window!.from}|${r.window!.to}`))];
   const one = windows.length === 1 ? windows[0].split("|") : null;
   const answered = reads.filter((r) => r.state === "answered").length;
@@ -204,11 +206,16 @@ function PresetsCard({ slugs, isClient, view }: { slugs: string[]; isClient: boo
       ? `Five weekdays to the last session read, ${fmtDate(one[0])} to ${fmtDate(one[1])}`
       : "Five weekdays to each preset's own last session read";
   return (
-    <Panel id="fired" title="Presets fired" badge={<StudyBadge study={first} />} className="mrr-desk-strip-card">
+    <Panel id="fired" title="Presets fired" badge={named.length ? <StudiesBadge items={named} /> : <StudyBadge study={null} />} className="mrr-desk-strip-card">
       <Eyebrow>{eyebrow}</Eyebrow>
       <div className="mrr-desk-strip-value" style={numStyle} data-testid="today-fired" data-complete={head.complete ? "true" : "false"}>
         {head.value}
       </div>
+      {cut.differ ? (
+        <p className="mrr-desk-strip-sub" data-testid="today-cutoffs">
+          {`Cutoffs differ: ${named.map((n) => `${n.name} ${fmtDate(n.study.provenance.as_of)}`).join("; ")}.`}
+        </p>
+      ) : null}
       <ul className="mrr-desk-strip-list" aria-label="Presets and their newest event">
         {reads.map((r) => (
           <li key={r.slug} data-fired={r.fired ? "true" : undefined} data-state={r.state} title={r.window ? `Window ${r.window.from} to ${r.window.to}` : undefined}>

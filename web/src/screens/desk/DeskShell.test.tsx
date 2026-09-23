@@ -548,3 +548,55 @@ describe("Today strip dates at the evening boundary (R-06)", () => {
   });
 });
 
+describe("R-07 repro: a cached FRED value keeps its own date through a failed refetch", () => {
+  it("a new generation's date is never attached to the old value when the value endpoint answers 503", async () => {
+    let gen = 1;
+    let asOf = "2026-09-17";
+    let valueDown = false;
+    stub({
+      "/api/freshness": () => ({ ...fresh(), generation: { id: gen, built_at: null, source: "macro_radar.db" }, series: fresh().series.map((x) => (x.id === "DGS10" ? { ...x, as_of: asOf } : x)) }),
+      "/series/DGS10/latest": () => (valueDown ? { status: 503, body: { detail: "The server is warming up", kind: "warming", retryable: true } } : { series_id: "DGS10", date: "2026-09-01", value: 4.12 }),
+    });
+    window.localStorage.setItem(
+      POSITIONS_KEY,
+      JSON.stringify({ version: 1, positions: [{ id: "p1", instrument: "TLT", direction: "long", size: "", horizon: "3 months", variant_view: "Duration is likely to cheapen.", pre_mortem: "The curve steepened.", falsification: { series: "DGS10", level: 3.8, direction: "below" }, created_at: "2026-09-20T14:00:00Z" }] }),
+    );
+    const { client } = renderDesk("/desk/position-monitor");
+    const row = await screen.findByTestId("desk-position");
+    await waitFor(() => expect(row).toHaveTextContent("4.12% now (Sep 17, 2026)"));
+    // Generation 2 lands with a newer observation date; the value endpoint answers 503.
+    gen = 2;
+    asOf = "2026-09-18";
+    valueDown = true;
+    await client.refetchQueries();
+    // The report moved on; the cached value kept its own date.
+    const report = client.getQueriesData<{ generation?: { id: number } }>({ predicate: (q) => JSON.stringify(q.queryKey).includes("freshness") });
+    expect(report.some(([, d]) => d?.generation?.id === 2)).toBe(true);
+    expect(screen.getByTestId("desk-position")).toHaveTextContent("4.12% now (Sep 17, 2026)");
+    expect(screen.getByTestId("desk-position")).not.toHaveTextContent("Sep 18");
+  });
+});
+
+describe("R-12: Presets fired dates itself by the earliest cutoff", () => {
+  it("the badge shows the earliest as_of, its tooltip each study's own, and the body says cutoffs differ", async () => {
+    const death = structuredClone(engineStudies.cross) as { study: { slug: string }; provenance: { as_of: string } };
+    death.study.slug = "spx-death-cross";
+    death.provenance.as_of = "2026-09-11";
+    engine = { "spx-death-cross": { status: 200, body: death } };
+    renderDesk("/desk/today");
+    await waitFor(() => expect(screen.getByTestId("today-fired")).toHaveAttribute("data-complete", "true"));
+    const card = document.getElementById("fired")!;
+    const badge = within(card).getByTestId("desk-badge");
+    expect(badge).toHaveTextContent("as of Sep 11, 2026");
+    expect(badge.getAttribute("title")).toMatch(/S&P death cross as of 2026-09-11/);
+    expect(badge.getAttribute("title")).toMatch(/S&P golden cross as of \d{4}-\d{2}-\d{2}/);
+    expect(within(card).getByTestId("today-cutoffs")).toHaveTextContent(/^Cutoffs differ: .*S&P death cross Sep 11, 2026/);
+  });
+
+  it("with one cutoff the body says nothing about cutoffs", async () => {
+    renderDesk("/desk/today");
+    await waitFor(() => expect(screen.getByTestId("today-fired")).toHaveAttribute("data-complete", "true"));
+    expect(screen.queryByTestId("today-cutoffs")).toBeNull();
+  });
+});
+

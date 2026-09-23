@@ -78,12 +78,14 @@ export function eventsBehind(events: EventStudyEvent[], h: number, regime?: stri
   return events.filter((e) => e.forward[String(h)] != null && (regime == null || e.regime === regime));
 }
 
-/** Why a forward move is missing (review R-08). The engine leaves a move out
- * when its window is incomplete: still open at the end of the data, or cut by
- * a missing session. Events come newest first, so a window can only be open
- * when no newer event has a closed one at that horizon; any other gap is a
- * missing observation, never "window open". Reads the served order only. */
-export function missingForwardWord(events: readonly EventStudyEvent[], date: string, h: number): "window open" | "no observation" {
+/** Why a forward move is missing (review R-08, third round). "window open"
+ * only when the response itself marks that horizon incomplete (the horizon's
+ * `n_incomplete` above zero) and no newer event has a closed window at it
+ * (events come newest first, so an older gap cannot be an open window). Every
+ * other missing return reads "no observation". Reads served fields only. */
+export function missingForwardWord(events: readonly EventStudyEvent[], horizons: readonly Pick<EventStudyHorizon, "h" | "n_incomplete">[], date: string, h: number): "window open" | "no observation" {
+  const marked = (horizons.find((x) => x.h === h)?.n_incomplete ?? 0) > 0;
+  if (!marked) return "no observation";
   const key = String(h);
   const i = events.findIndex((e) => e.date === date);
   const newerClosed = events.slice(0, i < 0 ? 0 : i).some((e) => e.forward[key] != null);

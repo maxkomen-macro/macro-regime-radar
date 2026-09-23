@@ -23,7 +23,7 @@ import { EmptyState, Panel, ReadsNote } from "../desk-ui";
 import { useDeskView } from "../desk-view";
 import { listWords } from "../words";
 import { StudyState } from "../event-study/EventStudyPage";
-import StudyBadge from "../event-study/StudyBadge";
+import StudyBadge, { StudiesBadge, type NamedStudy } from "../event-study/StudyBadge";
 import { EXCLUSION_CLIENT } from "../event-study/format";
 import { EventsCard, HorizonCard, RegimeCard, VerdictCard } from "../event-study/results";
 
@@ -112,6 +112,16 @@ function CrossColumn({ name, line, slug, isClient }: { name: string; line: strin
   );
 }
 
+/** A card that reads both crosses carries one badge stamped by the earlier
+ * of their as_of dates, each listed in its tooltip (review R-12). */
+function CrossesBadge({ golden, death }: { golden: EventStudyResponse | null; death: EventStudyResponse | null }) {
+  const items: NamedStudy[] = [
+    ...(golden ? [{ name: CROSSES[0].name, study: golden }] : []),
+    ...(death ? [{ name: CROSSES[1].name, study: death }] : []),
+  ];
+  return items.length ? <StudiesBadge items={items} /> : <StudyBadge study={null} />;
+}
+
 function ReadsCard({ golden, death, isClient }: { golden: EventStudyResponse | null; death: EventStudyResponse | null; isClient: boolean }) {
   const rows: { name: string; study: EventStudyResponse | null }[] = [
     { name: CROSSES[0].name, study: golden },
@@ -148,7 +158,7 @@ function ReadsCard({ golden, death, isClient }: { golden: EventStudyResponse | n
     );
   }
   return (
-    <Panel id="reads" title="What the engine establishes" description={isClient ? "The two crosses, in plain words." : "Per cross, the horizons whose 90% interval on Δ excludes zero under the engine's rules, then the engine's own sentences."} badge={<StudyBadge study={any} />}>
+    <Panel id="reads" title="What the engine establishes" description={isClient ? "The two crosses, in plain words." : "Per cross, the horizons whose 90% interval on Δ excludes zero under the engine's rules, then the engine's own sentences."} badge={<CrossesBadge golden={golden} death={death} />}>
       {body}
     </Panel>
   );
@@ -169,7 +179,7 @@ export default function InternalsPage({ page }: { page: DeskPage }) {
         page={page}
         title={isClient ? "The S&P 500's 50-day and 200-day crosses" : page.label}
         description={isClient ? "What the S&P 500 did after its 50-day average crossed its 200-day, in either direction." : page.blurb}
-        badge={<StudyBadge study={g ?? d} />}
+        badge={<CrossesBadge golden={g} death={d} />}
       />
       <ReadsCard golden={g} death={d} isClient={isClient} />
       <div className="mrr-desk-2 mrr-desk-cols">
