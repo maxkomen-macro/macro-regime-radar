@@ -11,7 +11,7 @@
 
 import type { EventStudyHorizon } from "../../../api/desk";
 import { useChartWidth } from "./useChartWidth";
-import { fmtMove, type MoveUnit } from "./format";
+import { fmtMove, fmtTick, type MoveUnit } from "./format";
 import { niceTicks } from "./HorizonChart";
 
 const AXIS = "#6f7d8a";
@@ -53,7 +53,7 @@ export default function QuartileChart({ horizons, unit, targetLabel }: { horizon
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={sy(t)} y2={sy(t)} stroke="var(--line-2)" />
             <text x={PAD.left - 6} y={sy(t) + 3} textAnchor="end" fontFamily="var(--font-mono)" fontSize="10" fill={AXIS}>
-              {fmtMove(t, unit).replace(" bp", "")}
+              {fmtTick(t, unit)}
             </text>
           </g>
         ))}

@@ -6,6 +6,8 @@
  * "about". Pure, no React.
  */
 
+import { pyFixed, pyRound } from "./pyformat";
+
 const ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"] as const;
 
 /** A share in [0, 1] as "about N times in ten"; the tails read "fewer than
@@ -15,7 +17,7 @@ export function timesInTen(p: number | null | undefined): string {
   const x = Math.min(1, Math.max(0, p));
   if (x < 0.05) return "fewer than one time in twenty";
   if (x > 0.95) return "more than nineteen times in twenty";
-  const n = Math.round(x * 10);
+  const n = pyRound(x * 10);
   if (n === 5) return "about half the time";
   return `about ${ONES[n]} times in ten`;
 }
@@ -26,7 +28,7 @@ export function oddsInWords(p: number | null | undefined): string {
   const x = Math.min(1, Math.max(0, p));
   if (x < 0.05) return "under one in twenty";
   if (x > 0.95) return "over nineteen in twenty";
-  const n = Math.round(x * 10);
+  const n = pyRound(x * 10);
   if (n === 5) return "about even";
   return `about ${ONES[n]} in ten`;
 }
@@ -49,7 +51,7 @@ export function moveInWords(x: number | null | undefined, unit: "%" | "bp", dp =
   if (Math.abs(x) < steps[0] / 2) return "roughly flat";
   const word = magnitudeWord(x, steps);
   const dir = x > 0 ? (unit === "%" ? "gain" : "rise") : unit === "%" ? "loss" : "fall";
-  const value = `${Math.abs(x).toFixed(dp)}${unit === "%" ? "%" : " bp"}`;
+  const value = `${pyFixed(x, dp)}${unit === "%" ? "%" : " bp"}`;
   // `plain` drops the size word: where the engine grades an effect itself
   // (its verdict's "modest"), the client words must not grade it again.
   return plain ? `a ${dir} of about ${value}` : `a ${word} ${dir} of about ${value}`;

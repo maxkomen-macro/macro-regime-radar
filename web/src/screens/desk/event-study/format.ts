@@ -6,7 +6,7 @@
  */
 
 import type { EventStudyEvent, EventStudyHorizon, EventStudyResponse, Exclusion, ShockUnit } from "../../../api/desk";
-import { fmtWholePct } from "../../../lib/format";
+import { isNegative, pyFixed, pySigned } from "../pyformat";
 
 export type MoveUnit = "%" | "bp";
 
@@ -14,36 +14,29 @@ export function unitWord(u: ShockUnit): MoveUnit {
   return u === "bp" ? "bp" : "%";
 }
 
-/** A signed move in its unit: "+1.6%", "−12 bp"; a dash for no reading. */
+/** A signed move in its unit exactly as the engine's `fmt_move` prints it
+ * (`+.1f` percent, `+.0f` bp, the sign always kept, Python's rounding; review
+ * R-03), with the house minus: "+1.6%", "−0.0%", "−12 bp"; a dash for none. */
 export function fmtMove(x: number | null | undefined, unit: MoveUnit): string {
   if (x == null || !Number.isFinite(x)) return "—";
-  const dp = unit === "%" ? 1 : 0;
-  const body = Math.abs(x).toFixed(dp);
-  const sign = Number(body) === 0 ? "" : x > 0 ? "+" : "−";
-  return `${sign}${body}${unit === "%" ? "%" : " bp"}`;
+  return `${pySigned(x, unit === "%" ? 1 : 0)}${unit === "%" ? "%" : " bp"}`;
 }
 
+/** An axis tick: a round number, unsigned at zero ("0.0%", "+5.0%"). */
+export function fmtTick(x: number, unit: MoveUnit): string {
+  return x === 0 ? (unit === "%" ? "0.0%" : "0") : fmtMove(x, unit).replace(" bp", "");
+}
+
+/** A share as a whole percent, Python's rounding: 0.555… → "56%". */
 export function fmtShare(x: number | null | undefined): string {
-  return x == null || !Number.isFinite(x) ? "—" : fmtWholePct(x);
+  return x == null || !Number.isFinite(x) ? "—" : `${pyFixed(x * 100, 0)}%`;
 }
 
-/** One interval bound exactly as the engine prints it (`fmt_move`: `+.1f`
- * percent, `+.0f` bp): ordinary rounding with the sign always kept, so a bound
- * just below zero reads "−0.0%" (verifier V-02) and the cell agrees with the
- * engine's own sentence on the same screen (N-1). The minus is U+2212. */
+/** One interval bound exactly as the engine prints it: the same `fmt_move`
+ * rule as a move, so a bound just below zero reads "−0.0%" (verifier V-02)
+ * and the cell agrees with the engine's own sentence on the screen (N-1). */
 export function fmtBound(x: number, unit: MoveUnit): string {
-  const dp = unit === "%" ? 1 : 0;
-  return `${x < 0 ? "−" : "+"}${halfEven(Math.abs(x), dp)}${unit === "%" ? "%" : " bp"}`;
-}
-
-/** Python's rounding for `format`: an exact binary tie goes to the even digit
- * (2.5 → "2"), everything else as toFixed (verifier R3-04). */
-function halfEven(a: number, dp: number): string {
-  const k = 10 ** dp;
-  const scaled = a * k;
-  const floor = Math.floor(scaled);
-  if (scaled - floor === 0.5 && Number.isInteger(scaled * 2)) return ((floor % 2 === 0 ? floor : floor + 1) / k).toFixed(dp);
-  return a.toFixed(dp);
+  return fmtMove(x, unit);
 }
 
 /** The 90% interval on Δ as served: "−1.6% to +4.1%". */
@@ -51,9 +44,9 @@ export function fmtInterval(ci: [number, number] | null, unit: MoveUnit): string
   return ci ? `${fmtBound(ci[0], unit)} to ${fmtBound(ci[1], unit)}` : null;
 }
 
-/** A z-score with a true minus sign. */
+/** A z-score to two places, Python's rounding, with a true minus sign. */
 export function fmtZ(z: number | null | undefined): string {
-  return z == null || !Number.isFinite(z) ? "—" : `${z < 0 ? "−" : ""}${Math.abs(z).toFixed(2)}`;
+  return z == null || !Number.isFinite(z) ? "—" : `${isNegative(z) ? "−" : ""}${pyFixed(z, 2)}`;
 }
 
 /** The engine's exclusion verdict, or its note when it gives none. */
@@ -83,6 +76,18 @@ export const EXCLUSION_CLIENT_SHORT: Record<Exclusion, string> = {
  * the last ten events, so a cell can have more events than the list holds. */
 export function eventsBehind(events: EventStudyEvent[], h: number, regime?: string): EventStudyEvent[] {
   return events.filter((e) => e.forward[String(h)] != null && (regime == null || e.regime === regime));
+}
+
+/** Why a forward move is missing (review R-08). The engine leaves a move out
+ * when its window is incomplete: still open at the end of the data, or cut by
+ * a missing session. Events come newest first, so a window can only be open
+ * when no newer event has a closed one at that horizon; any other gap is a
+ * missing observation, never "window open". Reads the served order only. */
+export function missingForwardWord(events: readonly EventStudyEvent[], date: string, h: number): "window open" | "no observation" {
+  const key = String(h);
+  const i = events.findIndex((e) => e.date === date);
+  const newerClosed = events.slice(0, i < 0 ? 0 : i).some((e) => e.forward[key] != null);
+  return newerClosed ? "no observation" : "window open";
 }
 
 /** The facts line under the verdict (spec §3):

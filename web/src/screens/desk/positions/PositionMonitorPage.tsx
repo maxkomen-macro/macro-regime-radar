@@ -20,7 +20,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Segmented, Tag } from "../../../components";
 import { useEventStudy, type EventStudyResponse } from "../../../api/desk";
 import { paramsFor } from "../event-study/studies";
-import { fmtDate } from "../../../lib/format";
+import { fmtDate, fmtDateNy } from "../../../lib/format";
 import { Caption } from "../../shared/screen-ui";
 import DeskPageHead from "../DeskPageHead";
 import { Seals } from "../Seals";
@@ -31,7 +31,7 @@ import { GATES } from "../desk-sections";
 import { EmptyState, Panel } from "../desk-ui";
 import { useDeskView, withView } from "../desk-view";
 import { EMPTY_DRAFT, applyRewrite, gateStatus, type Draft, type Flag, type ThesisField } from "./gate";
-import { FRED_SERIES, MARKET_SERIES, distanceInWords, distanceSentence, fmtValue, seriesRef, useReading, useReadings, type ReadingState } from "./series";
+import { FRED_SERIES, MARKET_SERIES, distanceInWords, distanceSentence, fmtValue, readingDate, seriesRef, useReading, useReadings, type ReadingState } from "./series";
 import { usePositions, type Position } from "./store";
 
 const HORIZONS = ["1 week", "1 month", "3 months", "6 months", "12 months"];
@@ -232,7 +232,7 @@ function PromoteForm({ onSaved, signal }: { onSaved: (p: Position, persisted: bo
             </optgroup>
           </select>
           <p className="mrr-desk-hint" role="status">
-            {!ref ? "The level is judged against this series' live reading." : reading.data ? `Now ${fmtValue(ref, reading.data.value)} (${fmtDate(reading.data.date)}).` : reading.isError ? "The live reading did not answer." : "Reading the series…"}
+            {!ref ? "The level is judged against this series' live reading." : reading.data ? `Now ${fmtValue(ref, reading.data.value)} (${readingDate(reading.data)}).` : reading.isError ? "The live reading did not answer." : "Reading the series…"}
           </p>
         </div>
         <div className="mrr-desk-field">
@@ -295,7 +295,7 @@ export function MonitoredRow({ p, reading, isClient, onRemove, compact = false }
         <div className="mrr-desk-row-sub">
           {ref?.label ?? p.falsification.series}: {isClient ? `wrong ${p.falsification.direction} ${fmtValue(ref, p.falsification.level)}` : s ? `${s.now} · ${s.rule}` : `falsified ${p.falsification.direction} ${fmtValue(ref, p.falsification.level)}`}
           {" · "}
-          {p.horizon} horizon · saved {fmtDate(p.created_at.slice(0, 10))}
+          {p.horizon} horizon · saved {fmtDateNy(p.created_at)}
         </div>
       </div>
       <div style={{ textAlign: "right" }}>

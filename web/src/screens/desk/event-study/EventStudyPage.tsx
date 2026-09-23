@@ -30,26 +30,36 @@ import type { DeskPage } from "../desk-sections";
 import { EmptyState, Panel } from "../desk-ui";
 import { useDeskView } from "../desk-view";
 import { listWords } from "../words";
-import QuerySentence from "./QuerySentence";
+import QuerySentence, { REGIME_WORD } from "./QuerySentence";
 import StudyBadge, { type StudyWait } from "./StudyBadge";
 import { EventsCard, HorizonCard, RegimeCard, VerdictCard } from "./results";
 import { PRESET, PRESET_SLUG, paramsFor } from "./studies";
 
-export function titleFor(study: EventStudyResponse, isClient: boolean): string {
-  const p = study.params;
-  if (p.kind === "cross") {
-    const across = p.cross === "death" ? "below" : "above";
-    return isClient ? `What the ${study.target.label} did after its 50-day average crossed ${across} the 200-day` : `${study.target.label} ${p.cross === "death" ? "death" : "golden"} cross (50-day ${across} 200-day)`;
-  }
-  const move = p.sign === "+" ? "rise" : p.sign === "-" ? "fall" : "move";
-  return `What the ${study.target.label} did after an unusually large ${p.w}-session ${move} in ${study.shock.label}${study.condition ? `, with ${study.condition.label}` : ""}`;
+/** The regime a study is restricted to, in words; null for all regimes (review R-04). */
+export function regimeRestriction(study: EventStudyResponse): string | null {
+  const r = study.params.regime;
+  return r && r !== "all" ? (REGIME_WORD[r] ?? r) : null;
 }
 
-/** The source line the client view and the one-pager print (§5). */
+export function titleFor(study: EventStudyResponse, isClient: boolean): string {
+  const p = study.params;
+  const regime = regimeRestriction(study);
+  const only = regime ? `, counting only events in ${regime}` : "";
+  if (p.kind === "cross") {
+    const across = p.cross === "death" ? "below" : "above";
+    return isClient ? `What the ${study.target.label} did after its 50-day average crossed ${across} the 200-day${only}` : `${study.target.label} ${p.cross === "death" ? "death" : "golden"} cross (50-day ${across} 200-day)${regime ? `, ${regime} only` : ""}`;
+  }
+  const move = p.sign === "+" ? "rise" : p.sign === "-" ? "fall" : "move";
+  return `What the ${study.target.label} did after an unusually large ${p.w}-session ${move} in ${study.shock.label}${study.condition ? `, with ${study.condition.label}` : ""}${only}`;
+}
+
+/** The source line the client view and the one-pager print (§5), naming the
+ * regime restriction when one is set (review R-04). */
 export function sourceLine(study: EventStudyResponse): string {
   const p = study.provenance;
   const inputs = p.inputs.map((i) => i.label).join(" and ");
-  return `Source: Macro Regime Radar event-study engine${inputs ? `, reading ${inputs} daily closes` : ""}; as of ${fmtDate(p.as_of)}; sample ${p.data_start ?? p.sample_start} to ${p.sample_end}.`;
+  const regime = regimeRestriction(study);
+  return `Source: Macro Regime Radar event-study engine${inputs ? `, reading ${inputs} daily closes` : ""}; as of ${fmtDate(p.as_of)}; sample ${p.data_start ?? p.sample_start} to ${p.sample_end}${regime ? `; events in ${regime} only, by the regime classifier's label` : ""}.`;
 }
 
 /** The results area when there is no study to print: one sentence per state. */

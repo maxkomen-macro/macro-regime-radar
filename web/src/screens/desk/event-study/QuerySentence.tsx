@@ -14,6 +14,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Segmented } from "../../../components";
 import type { EventStudyAsset, EventStudyAssets, EventStudyParams, EventStudyResponse } from "../../../api/desk";
 import Jargon from "../../shared/Jargon";
+import { pyFixed } from "../pyformat";
 import { listWords } from "../words";
 import { historyLine, sampleLine } from "./format";
 import { PRESET, slugFor } from "./studies";
@@ -85,7 +86,7 @@ export default function QuerySentence({ assets, params, slug, study, refusal, on
         <Jargon term="shock move" def={`The shock is the move over the window: a log return for a price, a change in basis points for a yield or a spread, a log change for VIX, scored as a z-score against its own trailing ${study?.provenance.z_window != null ? `${study.provenance.z_window} sessions` : "year of sessions"}.`}>
           moves
         </Jargon>{" "}
-        <InlineSelect label="Threshold" value={String(draft.z)} options={assets.thresholds.map((z) => ({ id: String(z), label: `≥ ${z.toFixed(1)}σ` }))} onChange={(v) => set("z")(Number(v))} testId="es-z" />{" "}
+        <InlineSelect label="Threshold" value={String(draft.z)} options={assets.thresholds.map((z) => ({ id: String(z), label: `≥ ${pyFixed(z, 1)}σ` }))} onChange={(v) => set("z")(Number(v))} testId="es-z" />{" "}
         <Segmented label="Direction" options={signs.map((s) => ({ id: s, label: SIGN_WORD[s] }))} value={draft.sign} onChange={(v) => set("sign")(v as EventStudyParams["sign"])} className="mrr-desk-inline-seg" /> over{" "}
         <InlineSelect label="Window in sessions" value={String(draft.w)} options={assets.windows.map((w) => ({ id: String(w), label: String(w) }))} onChange={(v) => set("w")(Number(v))} testId="es-w" />{" "}
         <Jargon term="sessions" def="Trading sessions on the NYSE calendar (XNYS), early closes included; weekends and exchange holidays are not sessions.">

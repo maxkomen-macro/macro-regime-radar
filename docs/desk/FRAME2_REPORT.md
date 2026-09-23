@@ -166,7 +166,25 @@ After `21ee29f`: vitest 102 files / 1,136 passed, the build is clean, `e2e/desk.
   field for the reading's month and its input month would let every screen say both without the
   browser knowing the lag.
 
-## 6. After `PUSH OK desk/frame-2`
+## 6. Independent review (11 findings, all accepted) and the fixes
+
+| # | Finding | Fix |
+|---|---|---|
+| R-01 | An open horizon cell or regime row outlived a study change, with a count stored from the old response. | The selection carries its study's slug, is cleared in the render where the slug changes (switching back does not bring it back), and its count is read from the response on screen at render (`behindCount`). Tested by rerendering the same mounted cards with a second study and back. |
+| R-02 | "Presets fired" said "None fired" before every preset had answered, and judged every preset against the first answer's window. | Each preset is judged against the five weekdays to its own `as_of`. Until all three have answered the card reads "Incomplete" (or "N fired so far") with "k of 3 presets answered", and each row names its state (loading, computing, awaiting refresh, no answer). "None fired" appears only when every preset has answered. |
+| R-03 | `toFixed` and `Math.round` round differently from the engine's Python. | `web/src/screens/desk/pyformat.ts` rounds the double's exact binary value (BigInt mantissa × 2^exponent) half-to-even, as Python's `format` does. Every Desk number formatter goes through it: moves, bounds, bp, z, shares, words, Position Monitor levels and distances, the recession figure, the σ labels. A point move now keeps its sign at zero as `fmt_move` does ("+0.0%"). `scripts/desk_format_fixture.py` writes Python's own strings (the engine's `fmt_move` and `format`) for 470 doubles: every value in the saved payloads, exact ties, near-ties, −0.0, a subnormal and large values. They go to `__fixtures__/py-format.json`. `pyformat.test.ts` checks moves, bounds, bp, shares and the fixed-point core against it, and `tests/test_desk_format_fixture.py` fails if the file drifts from a fresh run. |
+| R-04 | The client title and source line dropped a regime restriction. | Both name it: "…, counting only events in Stagflation" and "…; events in Stagflation only, by the regime classifier's label". |
+| R-05 | Positions loaded from storage were checked for shape only. | On load each passes the discipline gate as a draft and a catalogue check of its series; a refused one is dropped with a console note naming it and why. |
+| R-06 | "saved" dates used the UTC day. | Saved instants print by their New York day (`fmtDateNy`). The date test gains the evening boundary: a position saved at 21:30 ET on Sep 22 (01:30Z on Sep 23) reads "saved Sep 22, 2026", and no date on the page is later than the New York day. |
+| R-07 | FRED readings in the Position Monitor were dated by `/series/{id}/latest`'s month stamp. | The value still comes from there; the date is the freshness report's observation date for the series (a monthly series prints its month), and "date unknown" when the report has none. |
+| R-08 | Every missing forward move read "window open". | Events come newest first, so a window can be open only while no newer event has a closed one at that horizon. Any other gap reads "no observation" (`missingForwardWord`). |
+| R-09 | The study badge skipped unavailable and missing input tables. | They count as the weakest state (`unavailable`, grey) and are named in the tooltip; only a report that has not loaded leaves the badge unjudged. |
+| R-10 | Build Notes was exempt from the language scan. | The scan now includes it. "model" passes only in a sentence about the recession regression (one naming the recession probability, a logistic regression or the logistic model). In both copies (still identical): "a second model" → "a second, independent reviewer"; "a rules-based classifier, not a trained model" → "a fixed-rule classifier: nothing in it is fitted or trained"; the two recession sentences became one that keeps "the only number in Desk I call a model"; "never calls" → "does not call"; "is never recomputed" → "is not recomputed"; "that's never edited" → "that stays unedited"; "will compare" → "is likely to compare" (the gate's own rewrite for "will"). |
+| R-11 | **Approved exception**, recorded: two computations on served numbers happen in the browser. (1) The five-weekday windows on Today (`firedWindow`: weekdays counted back from a served `as_of`; the dates are printed). (2) The distance to falsification (`distanceOf`: level − reading, and \|gap\| / \|reading\|). Both print their inputs beside the result. Everywhere else the page only formats served fields. | — |
+
+Gates after the fixes: `tsc` clean; vitest 103 files / 1,152 passed (Desk 100: `pyformat.test.ts` 4, the review-round shell tests, `frame2.test.ts` 18, `store.test.ts` 5, the language scan with Build Notes); the build clean; pytest `test_desk_format_fixture.py`, `test_desk_api.py` and the engine's fixture pins 57 passed; `scripts/desk_format_fixture.py --check` current; `e2e/desk.spec.ts` 15/15 against the local API (:8781, relay off) through Vite (:5197).
+
+## 7. After `PUSH OK desk/frame-2`
 
 ```
 git push -u origin desk/frame-2

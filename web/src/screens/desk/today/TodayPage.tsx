@@ -13,8 +13,10 @@
  *   the newest input bucket (a partial month, e.g. "2026-09-30" on Sep 23), a
  *   day in the future the displayed number does not even read.
  * - Presets fired: each engine preset's newest event date, from its own
- *   response, against the last five sessions the engine has read (the
- *   window ends at the studies' as_of, so a stale store never reads as quiet).
+ *   response, against the five weekdays to its own as_of (a stale store never
+ *   reads as quiet). "None fired" only once every preset has answered; a
+ *   preset still loading, computing or awaiting a refresh makes the card say
+ *   the read is incomplete (review R-02).
  * - Positions nearest falsification: saved on this device, the three closest.
  *
  * One badge per card. Client view prints the probability and the distances
@@ -25,7 +27,7 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useRecessionProbability, useRegimeLatest } from "../../../api/queries";
 import { PRESET_LABEL, useEventStudy, useEventStudyAssets, type EventStudyResponse } from "../../../api/desk";
-import { fmtDate, fmtMonYr, fmtProb } from "../../../lib/format";
+import { fmtDate, fmtMonYr } from "../../../lib/format";
 import Jargon from "../../shared/Jargon";
 import { StateNote } from "../../shared/screen-ui";
 import DeskPageHead from "../DeskPageHead";
@@ -39,6 +41,7 @@ import { PRESETS } from "../event-study/studies";
 import { MonitoredRow } from "../positions/PositionMonitorPage";
 import { distanceOf, useReadings } from "../positions/series";
 import { usePositions } from "../positions/store";
+import { pyFixed } from "../pyformat";
 import { oddsInWords } from "../words";
 
 /** The recession card's label: the one place the Desk says "model". */
@@ -68,20 +71,54 @@ export function firedWindow(lastSession: string | null | undefined): { from: str
   return { from: d.toISOString().slice(0, 10), to };
 }
 
+/** Where one preset stands (review R-02): answered with its newest event
+ * judged against its own five weekdays, or still waiting on the engine. */
+export type PresetState = "answered" | "loading" | "computing" | "awaiting refresh" | "no answer";
+
 export interface PresetRead {
   slug: string;
   label: string;
+  state: PresetState;
+  /** Five weekdays to this preset's own as_of; null until it answers. */
+  window: { from: string; to: string } | null;
   /** The newest event the engine serves for the preset, YYYY-MM-DD. */
   last: string | null;
   fired: boolean;
 }
 
-/** Pure: each preset's newest event against the window. */
-export function presetReads(studies: { slug: string; study: EventStudyResponse | null }[], window: { from: string; to: string } | null): PresetRead[] {
-  return studies.map(({ slug, study }) => {
-    const last = study?.recent_events[0]?.date ?? null;
-    return { slug, label: PRESET_LABEL[slug] ?? slug, last, fired: Boolean(window && last && last >= window.from && last <= window.to) };
+export interface PresetInput {
+  slug: string;
+  study: EventStudyResponse | null;
+  /** When there is no study: why. */
+  state: Exclude<PresetState, "answered">;
+}
+
+/** Pure: each preset's newest event against its own window (its own as_of). */
+export function presetReads(inputs: readonly PresetInput[]): PresetRead[] {
+  return inputs.map(({ slug, study, state }) => {
+    if (!study) return { slug, label: PRESET_LABEL[slug] ?? slug, state, window: null, last: null, fired: false };
+    const window = firedWindow(study.provenance.as_of);
+    const last = study.recent_events[0]?.date ?? null;
+    return { slug, label: PRESET_LABEL[slug] ?? slug, state: "answered", window, last, fired: Boolean(last && last >= window.from && last <= window.to) };
   });
+}
+
+/** Pure: the card's headline. "None fired" only once every preset has
+ * answered; while any is loading, computing, awaiting a refresh or silent, the
+ * card says the read is incomplete (review R-02). */
+export function presetsHeadline(reads: readonly PresetRead[]): { value: string; complete: boolean } {
+  const fired = reads.filter((r) => r.fired).length;
+  const answered = reads.filter((r) => r.state === "answered").length;
+  const complete = reads.length > 0 && answered === reads.length;
+  if (complete) return { value: fired ? `${fired} fired` : "None fired", complete };
+  return { value: fired ? `${fired} fired so far` : "Incomplete", complete };
+}
+
+function presetStateOf(q: ReturnType<typeof useEventStudy>): Exclude<PresetState, "answered"> {
+  if (q.data?.state === "computing") return "computing";
+  if (q.data?.state === "awaiting_refresh") return "awaiting refresh";
+  if (q.isError) return "no answer";
+  return "loading";
 }
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -133,7 +170,7 @@ function RecessionCard({ isClient }: { isClient: boolean }) {
             </Jargon>
           </Eyebrow>
           <div className="mrr-desk-strip-value" style={numStyle} data-testid="today-recession">
-            {isClient ? oddsInWords(pct != null ? pct / 100 : null) : fmtProb(pct, "percent", 1)}
+            {isClient ? oddsInWords(pct != null ? pct / 100 : null) : pct != null && Number.isFinite(pct) ? `${pyFixed(pct, 1)}%` : "—"}
           </div>
           <p className="mrr-desk-strip-sub" data-testid="today-recession-sub">
             {rec.recession_label}
@@ -154,23 +191,29 @@ function PresetsCard({ slugs, isClient, view }: { slugs: string[]; isClient: boo
   const q1 = useEventStudy(slugs[1] ?? null);
   const q2 = useEventStudy(slugs[2] ?? null);
   const qs = [q0, q1, q2].slice(0, slugs.length);
-  const studies = qs.map((q, i) => ({ slug: slugs[i], study: q.data?.state === "ready" ? q.data.study : null }));
-  const first = studies.find((s) => s.study)?.study ?? null;
-  const window = first ? firedWindow(first.provenance.as_of) : null;
-  const reads = presetReads(studies, window);
-  const fired = reads.filter((r) => r.fired);
-  const loading = qs.some((q) => q.isLoading);
+  const inputs: PresetInput[] = qs.map((q, i) => ({ slug: slugs[i], study: q.data?.state === "ready" ? q.data.study : null, state: presetStateOf(q) }));
+  const reads = presetReads(inputs);
+  const head = presetsHeadline(reads);
+  const first = inputs.find((x) => x.study)?.study ?? null;
+  const windows = [...new Set(reads.filter((r) => r.window).map((r) => `${r.window!.from}|${r.window!.to}`))];
+  const one = windows.length === 1 ? windows[0].split("|") : null;
+  const answered = reads.filter((r) => r.state === "answered").length;
+  const eyebrow = !head.complete
+    ? `${answered} of ${reads.length} presets answered; the read is incomplete until all have`
+    : one
+      ? `Five weekdays to the last session read, ${fmtDate(one[0])} to ${fmtDate(one[1])}`
+      : "Five weekdays to each preset's own last session read";
   return (
     <Panel id="fired" title="Presets fired" badge={<StudyBadge study={first} />} className="mrr-desk-strip-card">
-      <Eyebrow>{window ? `Five weekdays to the last session read, ${fmtDate(window.from)} to ${fmtDate(window.to)}` : "Five weekdays to the last session read"}</Eyebrow>
-      <div className="mrr-desk-strip-value" style={numStyle} data-testid="today-fired">
-        {!window ? (loading ? "…" : "—") : fired.length ? `${fired.length} fired` : "None fired"}
+      <Eyebrow>{eyebrow}</Eyebrow>
+      <div className="mrr-desk-strip-value" style={numStyle} data-testid="today-fired" data-complete={head.complete ? "true" : "false"}>
+        {head.value}
       </div>
       <ul className="mrr-desk-strip-list" aria-label="Presets and their newest event">
         {reads.map((r) => (
-          <li key={r.slug} data-fired={r.fired ? "true" : undefined}>
+          <li key={r.slug} data-fired={r.fired ? "true" : undefined} data-state={r.state} title={r.window ? `Window ${r.window.from} to ${r.window.to}` : undefined}>
             <Link to={withView(`/desk/event-study?study=${r.slug}`, view)}>{r.label}</Link>
-            <span>{r.last ? `${r.fired ? "fired" : "last"} ${fmtDate(r.last)}` : isClient ? "no reading" : "not answered"}</span>
+            <span>{r.state !== "answered" ? r.state : r.last ? `${r.fired ? "fired" : "last"} ${fmtDate(r.last)}` : isClient ? "no reading" : "no event served"}</span>
           </li>
         ))}
       </ul>

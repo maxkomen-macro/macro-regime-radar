@@ -11,7 +11,10 @@ import { pollInterval, toStudyResult, type EngineAnswer, type EventStudyResponse
 import type { SlaRow } from "../../../api/types";
 import { clientVerdict, listWords } from "../words";
 import studiesJson from "./__fixtures__/engine-studies.json";
-import { EXCLUSION_CLIENT, EXCLUSION_CLIENT_SHORT, eventsBehind, factsLine, fmtInterval, fmtMove, fmtZ, historyLine, sampleLine } from "./format";
+import { EXCLUSION_CLIENT, EXCLUSION_CLIENT_SHORT, eventsBehind, factsLine, fmtInterval, fmtMove, fmtZ, historyLine, missingForwardWord, sampleLine } from "./format";
+import { sourceLine, titleFor } from "./EventStudyPage";
+import { behindCount } from "./results";
+import { datedReading, readingDate, seriesRef } from "../positions/series";
 import { niceTicks } from "./HorizonChart";
 import { studySource, studyVerdict } from "./StudyBadge";
 
@@ -31,7 +34,9 @@ describe("formatting prints served values only", () => {
   it("signs and units: percent to one place, bp whole, a true minus, a dash for none", () => {
     expect(fmtMove(1.58, "%")).toBe("+1.6%");
     expect(fmtMove(-12.4, "bp")).toBe("−12 bp");
-    expect(fmtMove(0.01, "%")).toBe("0.0%");
+    // The engine's fmt_move keeps the sign at zero (R-03): "+0.0%", "−0.0%".
+    expect(fmtMove(0.01, "%")).toBe("+0.0%");
+    expect(fmtMove(-0.04, "%")).toBe("−0.0%");
     expect(fmtMove(null, "%")).toBe("—");
     expect(fmtInterval([-1.8, 3.0], "%")).toBe("−1.8% to +3.0%");
     expect(fmtInterval(null, "%")).toBeNull();
@@ -119,7 +124,11 @@ describe("the study badge", () => {
   it("takes the weakest report verdict across the tables the study reads", () => {
     expect(studyVerdict(["asset_prices"], [sla("asset_prices", "current"), sla("desk_series", "stale")])).toBe("current");
     expect(studyVerdict(["asset_prices", "desk_series"], [sla("asset_prices", "current"), sla("desk_series", "delayed")])).toBe("delayed");
-    expect(studyVerdict(["asset_prices"], [sla("asset_prices", "unavailable")])).toBeNull();
+    // Unavailable and missing inputs count as the weakest state (R-09).
+    expect(studyVerdict(["asset_prices"], [sla("asset_prices", "unavailable")])).toBe("unavailable");
+    expect(studyVerdict(["asset_prices", "desk_series"], [sla("asset_prices", "current"), sla("desk_series", "unavailable")])).toBe("unavailable");
+    expect(studyVerdict(["asset_prices", "desk_series"], [sla("asset_prices", "stale")])).toBe("unavailable");
+    expect(studyVerdict(["asset_prices"], [sla("asset_prices", "delayed"), sla("desk_series", "unavailable")])).toBe("delayed");
     expect(studyVerdict(["asset_prices"], null)).toBeNull();
   });
 
@@ -139,3 +148,43 @@ describe("polling", () => {
     expect(pollInterval(undefined)).toBe(false);
   });
 });
+
+describe("review round (R-01, R-04, R-07, R-08)", () => {
+  it("R-01: a cell's count comes from the response on screen; a cell it lacks has none", () => {
+    expect(behindCount(gold, { h: 20 })).toBe(gold.horizons.find((h) => h.h === 20)!.n);
+    const row = gold.regime_split[1];
+    expect(behindCount(gold, { h: 20, regime: row.regime })).toBe(row.by_horizon["20"].n);
+    expect(behindCount(golden, { h: 20, regime: "No such regime" })).toBeNull();
+    expect(behindCount(golden, { h: 7 })).toBeNull();
+  });
+
+  it("R-04: the client title and the source line name a regime restriction", () => {
+    const restricted = { ...gold, params: { ...gold.params, regime: "stagflation" } };
+    expect(titleFor(restricted, true)).toMatch(/, counting only events in Stagflation$/);
+    expect(sourceLine(restricted)).toContain("events in Stagflation only");
+    expect(titleFor(gold, true)).not.toMatch(/counting only/);
+    expect(sourceLine(gold)).not.toMatch(/only/);
+    const cross = { ...golden, params: { ...golden.params, regime: "goldilocks" } };
+    expect(titleFor(cross, true)).toContain("counting only events in Goldilocks");
+  });
+
+  it("R-08: a missing forward move is 'window open' only at the head of the list", () => {
+    const ev = (date: string, v: number | null) => ({ date, regime: "Goldilocks", z: null, entry_date: date, same_session: true, forward: { "60": v } });
+    const events = [ev("2026-09-10", null), ev("2026-07-01", null), ev("2026-03-01", 1.2), ev("2025-11-01", null), ev("2025-06-01", 2.0)];
+    expect(missingForwardWord(events, "2026-09-10", 60)).toBe("window open");
+    expect(missingForwardWord(events, "2026-07-01", 60)).toBe("window open");
+    expect(missingForwardWord(events, "2025-11-01", 60)).toBe("no observation");
+  });
+
+  it("R-07: a FRED reading is dated by the freshness report's observation date, else 'date unknown'", () => {
+    const f = { series: [{ id: "DGS10", as_of: "2026-09-17", cadence: "daily" }, { id: "UNRATE", as_of: "2026-08-01", cadence: "monthly" }] } as never;
+    const stamp = { value: 4.12, date: null };
+    expect(datedReading(seriesRef("DGS10"), stamp, f)).toEqual({ value: 4.12, date: "2026-09-17", monthly: false });
+    expect(readingDate(datedReading(seriesRef("DGS10"), stamp, f)!)).toBe("Sep 17, 2026");
+    expect(readingDate(datedReading(seriesRef("UNRATE"), { value: 4.1, date: null }, f)!)).toBe("Aug 2026");
+    expect(readingDate(datedReading(seriesRef("DGS2"), stamp, f)!)).toBe("date unknown");
+    // A market reading keeps its bar's date.
+    expect(datedReading(seriesRef("SPY"), { value: 600, date: "2026-09-18" }, f)).toEqual({ value: 600, date: "2026-09-18" });
+  });
+});
+

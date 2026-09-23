@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EMPTY_DRAFT, type Draft } from "./gate";
-import { POSITIONS_KEY, addPosition, parsePositions, removePosition, resetPositionsForTests, serializePositions } from "./store";
+import { POSITIONS_KEY, addPosition, parsePositions, positionProblem, removePosition, resetPositionsForTests, serializePositions } from "./store";
 
 const GOOD: Draft = {
   ...EMPTY_DRAFT,
@@ -48,5 +48,18 @@ describe("positions store", () => {
     expect(parsePositions(JSON.stringify({ version: 1, positions: [{ id: "x", instrument: "TLT" }] }))).toEqual([]);
     const ok = { id: "a", instrument: "TLT", direction: "long", size: "", horizon: "3 months", variant_view: "v", pre_mortem: "p", falsification: { series: "DGS10", level: 3.8, direction: "below" }, created_at: "2026-01-01T00:00:00Z" };
     expect(parsePositions(serializePositions([ok as never]))).toHaveLength(1);
+  });
+  it("drops a stored position the gate or the series check refuses, with a console note (R-05)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const base = { id: "a", instrument: "TLT", direction: "long", size: "", horizon: "3 months", variant_view: "Duration is likely to cheapen.", pre_mortem: "The curve steepened.", falsification: { series: "DGS10", level: 3.8, direction: "below" }, created_at: "2026-01-01T00:00:00Z" };
+    const flagged = { ...base, id: "b", variant_view: "This will definitely work." };
+    const empty = { ...base, id: "c", pre_mortem: "  " };
+    const foreign = { ...base, id: "d", falsification: { series: "NOT_A_SERIES", level: 1, direction: "above" } };
+    const kept = parsePositions(serializePositions([base, flagged, empty, foreign] as never));
+    expect(kept.map((p) => p.id)).toEqual(["a"]);
+    expect(warn).toHaveBeenCalledTimes(3);
+    expect(warn.mock.calls.map((c) => String(c[0])).join(" | ")).toMatch(/replace 2 flagged words[\s\S]*write the pre-mortem[\s\S]*not one the Desk reads/);
+    expect(positionProblem(base as never)).toBeNull();
+    warn.mockRestore();
   });
 });

@@ -17,18 +17,29 @@ import { useFreshReport } from "../../shared/useFreshReport";
 
 export const ENGINE_SOURCE = "event-study engine";
 
-const RANK = { current: 0, delayed: 1, stale: 2 } as const;
+const RANK = { current: 0, delayed: 1, stale: 2, unavailable: 3 } as const;
 
-/** Pure: the weakest report verdict across the tables a study reads; null
- * when the report judges none of them (the badge then stays grey). */
-export function studyVerdict(tables: readonly string[], sla: readonly SlaRow[] | null | undefined): "current" | "delayed" | "stale" | null {
-  let worst: "current" | "delayed" | "stale" | null = null;
+/** Pure: the weakest report verdict across the tables a study reads (review
+ * R-09): a table the report calls unavailable, or does not list at all, is
+ * the weakest state and counts, never skipped. Null only when there is no
+ * report yet or the study reads no stored table (the badge then stays grey). */
+export function studyVerdict(tables: readonly string[], sla: readonly SlaRow[] | null | undefined): "current" | "delayed" | "stale" | "unavailable" | null {
+  if (!sla) return null;
+  let worst: keyof typeof RANK | null = null;
   for (const t of new Set(tables)) {
-    const row = sla?.find((r) => r.feed === t);
-    if (!row || row.verdict === "unavailable") continue;
-    if (worst == null || RANK[row.verdict] > RANK[worst]) worst = row.verdict;
+    const verdict = sla.find((r) => r.feed === t)?.verdict ?? "unavailable";
+    if (worst == null || RANK[verdict] > RANK[worst]) worst = verdict;
   }
   return worst;
+}
+
+/** The tables the report does not judge, named in the badge's tooltip. */
+function unjudged(tables: readonly string[], sla: readonly SlaRow[] | null | undefined): string[] {
+  if (!sla) return [];
+  return [...new Set(tables)].filter((t) => {
+    const v = sla.find((r) => r.feed === t)?.verdict;
+    return v == null || v === "unavailable";
+  });
 }
 
 /** Pure: the badge source for a study, or the unstamped one before it answers. */
@@ -43,7 +54,7 @@ export function studySource(study: EventStudyResponse | null | undefined, sla: r
     label: ENGINE_SOURCE,
     asOf: fmtDate(p.as_of),
     verdict: studyVerdict(tables, sla),
-    reason: `Inputs as of ${bySeries || p.as_of}; sample ${p.data_start ?? p.sample_start} to ${p.sample_end}; tone from the freshness report's verdict on ${[...new Set(tables)].join(" and ") || "no stored table"}`,
+    reason: `Inputs as of ${bySeries || p.as_of}; sample ${p.data_start ?? p.sample_start} to ${p.sample_end}; tone from the freshness report's verdict on ${[...new Set(tables)].join(" and ") || "no stored table"}${unjudged(tables, sla).length ? `; unavailable or not in the report: ${unjudged(tables, sla).join(", ")}` : ""}`,
   };
 }
 

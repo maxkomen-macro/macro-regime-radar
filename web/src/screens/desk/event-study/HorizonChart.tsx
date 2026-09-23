@@ -20,7 +20,7 @@
 import type { EventStudyHorizon } from "../../../api/desk";
 import { useChartWidth } from "./useChartWidth";
 import { moveInWords, sessionsInWords } from "../words";
-import { EXCLUSION_CLIENT, EXCLUSION_CLIENT_SHORT, exclusionWord, fmtInterval, fmtMove, type MoveUnit } from "./format";
+import { EXCLUSION_CLIENT, EXCLUSION_CLIENT_SHORT, exclusionWord, fmtInterval, fmtMove, fmtTick, type MoveUnit } from "./format";
 
 const AXIS = "#6f7d8a";
 const GLYPH: Record<string, string> = { established: "●", "not established": "◐", included: "○" };
@@ -91,7 +91,7 @@ export default function HorizonChart({ horizons, unit, targetLabel, simple = fal
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={sy(t)} y2={sy(t)} stroke="var(--line-2)" />
             <text x={PAD.left - 6} y={sy(t) + 3} textAnchor="end" fontFamily="var(--font-mono)" fontSize="10" fill={AXIS}>
-              {fmtMove(t, unit).replace(" bp", "")}
+              {fmtTick(t, unit)}
             </text>
           </g>
         ))}

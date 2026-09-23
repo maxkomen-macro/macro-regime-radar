@@ -11,7 +11,10 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { getJson } from "../../../api/client";
 import type { DailyBar } from "../../../api/types";
-import { fmtDate } from "../../../lib/format";
+import { fmtDate, fmtMonYr } from "../../../lib/format";
+import { useFreshReport } from "../../shared/useFreshReport";
+import type { Freshness } from "../../../api/types";
+import { pyFixed, pyGrouped, pyRound } from "../pyformat";
 import type { Position } from "./store";
 
 export interface SeriesRef {
@@ -77,7 +80,27 @@ export function seriesRef(id: string | null | undefined): SeriesRef | undefined 
 
 export interface Reading {
   value: number;
-  date: string;
+  /** The observation's own date: a stored bar's date, or for a FRED series
+   * the freshness report's observation date (review R-07); null when neither
+   * is known. Never the month stamp /series/{id}/latest carries. */
+  date: string | null;
+  /** A monthly series: the date names a month. */
+  monthly?: boolean;
+}
+
+/** "Sep 17, 2026", "Aug 2026" for a monthly series, or "date unknown". */
+export function readingDate(r: Pick<Reading, "date" | "monthly">): string {
+  if (!r.date) return "date unknown";
+  return r.monthly ? fmtMonYr(r.date) : fmtDate(r.date);
+}
+
+/** Pure: a FRED reading dated by the freshness report's observation date for
+ * the series (source_watermarks, CLAUDE.md B6); a market reading keeps its
+ * bar's date. */
+export function datedReading(ref: SeriesRef | undefined, r: Reading | undefined, f: Freshness | null | undefined): Reading | undefined {
+  if (!r || !ref || ref.kind !== "fred") return r;
+  const s = f?.series?.find((x) => x.id === ref.id);
+  return { value: r.value, date: s?.as_of ? s.as_of.slice(0, 10) : null, monthly: s?.cadence === "monthly" };
 }
 
 const MINUTE = 60_000;
@@ -90,8 +113,9 @@ async function fetchReading(ref: SeriesRef): Promise<Reading> {
     if (!last || last.close == null) throw new Error(`No stored bars for ${ref.id}.`);
     return { value: last.close, date: last.date };
   }
+  // The value only: this endpoint dates a daily FRED series by its month stamp.
   const p = await getJson<{ series_id: string; date: string; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
-  return { value: p.value, date: p.date };
+  return { value: p.value, date: null };
 }
 
 type ReadingKey = readonly ["desk", "reading", string, string];
@@ -107,7 +131,10 @@ function readingOptions(ref: SeriesRef | undefined) {
 }
 
 export function useReading(id: string | null | undefined) {
-  return useQuery<Reading, Error, Reading, ReadingKey>(readingOptions(seriesRef(id)));
+  const ref = seriesRef(id);
+  const q = useQuery<Reading, Error, Reading, ReadingKey>(readingOptions(ref));
+  const report = useFreshReport();
+  return { ...q, data: datedReading(ref, q.data, report.f) };
 }
 
 export interface ReadingState {
@@ -119,9 +146,10 @@ export interface ReadingState {
 /** One reading per position, keyed by the position id. */
 export function useReadings(positions: readonly Position[]): Record<string, ReadingState> {
   const results = useQueries({ queries: positions.map((p) => readingOptions(seriesRef(p.falsification.series))) });
+  const report = useFreshReport();
   const out: Record<string, ReadingState> = {};
   positions.forEach((p, i) => {
-    out[p.id] = { data: results[i]?.data, isLoading: Boolean(results[i]?.isLoading), isError: Boolean(results[i]?.isError) };
+    out[p.id] = { data: datedReading(seriesRef(p.falsification.series), results[i]?.data, report.f), isLoading: Boolean(results[i]?.isLoading), isError: Boolean(results[i]?.isError) };
   });
   return out;
 }
@@ -130,7 +158,7 @@ export function useReadings(positions: readonly Position[]): Record<string, Read
 
 export function fmtValue(ref: SeriesRef | undefined, v: number): string {
   const dp = ref?.dp ?? 2;
-  const s = v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  const s = pyGrouped(v, dp);
   if (!ref) return s;
   if (ref.unit === "$") return `$${s}`;
   return ref.unit ? `${s}${ref.unit}` : s;
@@ -155,9 +183,9 @@ export function distanceOf(reading: Reading, level: number, direction: "above" |
 /** "4.12% now (Sep 18) · falsified below 3.80% · 0.32% away (7.8% of current)". */
 export function distanceSentence(ref: SeriesRef | undefined, reading: Reading, f: { level: number; direction: "above" | "below" }): { now: string; rule: string; distance: string; falsified: boolean } {
   const d = distanceOf(reading, f.level, f.direction);
-  const now = `${fmtValue(ref, reading.value)} now (${fmtDate(reading.date)})`;
+  const now = `${fmtValue(ref, reading.value)} now (${readingDate(reading)})`;
   const rule = `falsified ${f.direction} ${fmtValue(ref, f.level)}`;
-  const pct = d.pct != null ? ` (${(d.pct * 100).toFixed(1)}% of current)` : "";
+  const pct = d.pct != null ? ` (${pyFixed(d.pct * 100, 1)}% of current)` : "";
   const distance = d.falsified ? `Falsified: ${fmtValue(ref, reading.value)} is ${f.direction === "below" ? "at or under" : "at or over"} ${fmtValue(ref, f.level)}` : `${fmtValue(ref, Math.abs(d.gap))} away${pct}`;
   return { now, rule, distance, falsified: d.falsified };
 }
@@ -169,5 +197,5 @@ export function distanceInWords(reading: Reading, f: { level: number; direction:
   if (d.pct == null) return "distance unknown";
   const pct = d.pct * 100;
   if (pct < 1) return "under one percent from its falsification level";
-  return `about ${Math.round(pct)}% from its falsification level`;
+  return `about ${pyRound(pct)}% from its falsification level`;
 }

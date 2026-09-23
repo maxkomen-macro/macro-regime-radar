@@ -22,19 +22,50 @@ import { clientVerdict } from "../words";
 import HorizonChart from "./HorizonChart";
 import QuartileChart from "./QuartileChart";
 import StudyBadge from "./StudyBadge";
-import { eventsBehind, exclusionWord, factsLine, fmtInterval, fmtMove, fmtShare, fmtZ, unitWord, type MoveUnit } from "./format";
+import { eventsBehind, exclusionWord, factsLine, fmtInterval, fmtMove, fmtShare, fmtZ, missingForwardWord, unitWord, type MoveUnit } from "./format";
 
 export const REGIME_HORIZON_DEFAULT = 20;
 
+/** An open cell: the study it belongs to, its horizon, and its regime row.
+ * Its count is read from the current response at render, never stored, and a
+ * selection from another study is not open (review R-01). */
 interface Behind {
+  slug: string;
   h: number;
   regime?: string;
-  /** The cell's own n, as served. */
-  n: number;
+}
+
+/** The cell's own n from the response on screen; null when the cell is not in it. */
+export function behindCount(study: EventStudyResponse, b: Pick<Behind, "h" | "regime">): number | null {
+  if (b.regime == null) return study.horizons.find((x) => x.h === b.h)?.n ?? null;
+  const row = study.regime_split.find((r) => r.regime === b.regime);
+  return row ? (row.by_horizon[String(b.h)]?.n ?? row.n) : null;
+}
+
+/** Resets a card's selection the moment its study changes (review R-01): the
+ * selection is cleared during that render, so switching back later does not
+ * bring an old selection back. */
+function useResetOnStudy<T>(slug: string, reset: (v: T | null) => void): void {
+  const [seen, setSeen] = useState(slug);
+  if (seen !== slug) {
+    setSeen(slug);
+    reset(null);
+  }
+}
+
+/** The selection, only while it belongs to the study on screen and names a cell in it. */
+function current(study: EventStudyResponse, b: Behind | null): (Behind & { n: number }) | null {
+  if (!b || b.slug !== study.slug) return null;
+  const n = behindCount(study, b);
+  return n == null ? null : { ...b, n };
+}
+
+function Missing({ study, e, h }: { study: EventStudyResponse; e: EventStudyEvent; h: number }) {
+  return <span style={{ color: "var(--text-3)" }}>{missingForwardWord(study.recent_events, e.date, h)}</span>;
 }
 
 /** The events the response carries behind one cell, with the count stated. */
-export function EventsBehind({ study, behind, unit, onClose, id }: { study: EventStudyResponse; behind: Behind; unit: MoveUnit; onClose: () => void; id: string }) {
+export function EventsBehind({ study, behind, unit, onClose, id }: { study: EventStudyResponse; behind: Behind & { n: number }; unit: MoveUnit; onClose: () => void; id: string }) {
   const rows = eventsBehind(study.recent_events, behind.h, behind.regime).map((e) => ({ ...e, id: e.date }));
   const what = behind.regime ? `${behind.regime} at ${behind.h} sessions` : `${behind.h} sessions`;
   const carried = study.recent_events.length;
@@ -53,7 +84,7 @@ export function EventsBehind({ study, behind, unit, onClose, id }: { study: Even
       label: h === behind.h ? `▸ +${h}d` : `+${h}d`,
       mono: true,
       align: "right" as const,
-      render: (e: Ev) => (e.forward[String(h)] == null ? <span style={{ color: "var(--text-3)" }}>window open</span> : fmtMove(e.forward[String(h)], unit)),
+      render: (e: Ev) => (e.forward[String(h)] == null ? <Missing study={study} e={e} h={h} /> : fmtMove(e.forward[String(h)], unit)),
     })),
   ];
   return (
@@ -101,9 +132,11 @@ function HorizonCells({ study, unit, open, onToggle, controls }: { study: EventS
 export function HorizonCard({ study, isClient, id = "horizons", title = "By horizon" }: { study: EventStudyResponse; isClient: boolean; id?: string; title?: ReactNode }) {
   const unit = unitWord(study.target.unit);
   const [view, setView] = useState<"medians" | "distribution">("medians");
-  const [open, setOpen] = useState<Behind | null>(null);
+  const [picked, setOpen] = useState<Behind | null>(null);
+  useResetOnStudy<Behind>(study.slug, setOpen);
+  const open = current(study, picked);
   const behindId = useId();
-  const toggle = (h: EventStudyHorizon) => setOpen((o) => (o?.h === h.h ? null : { h: h.h, n: h.n }));
+  const toggle = (h: EventStudyHorizon) => setOpen((o) => (o && o.slug === study.slug && o.h === h.h ? null : { slug: study.slug, h: h.h }));
   return (
     <Panel
       id={id}
@@ -173,7 +206,10 @@ export function RegimeCard({ study, id = "regimes", title = "By regime" }: { stu
   const unit = unitWord(study.target.unit);
   const hs = study.horizons.map((h) => h.h);
   const [h, setH] = useState<number>(hs.includes(REGIME_HORIZON_DEFAULT) ? REGIME_HORIZON_DEFAULT : (hs[0] ?? REGIME_HORIZON_DEFAULT));
-  const [open, setOpen] = useState<string | null>(null);
+  // The open row belongs to one study; another study on screen closes it (R-01).
+  const [picked, setOpen] = useState<{ slug: string; regime: string } | null>(null);
+  useResetOnStudy<{ slug: string; regime: string }>(study.slug, setOpen);
+  const open = picked && picked.slug === study.slug ? picked.regime : null;
   const behindId = useId();
   type Row = EventStudyRegimeRow & { id: string };
   const rows: Row[] = study.regime_split.map((r) => ({ ...r, id: r.regime }));
@@ -184,7 +220,7 @@ export function RegimeCard({ study, id = "regimes", title = "By regime" }: { stu
     if (!c || c.median == null) return dim(c?.note ?? "n<10");
     return v(c);
   };
-  const toggle = (r: Row) => setOpen((o) => (o === r.regime ? null : r.regime));
+  const toggle = (r: Row) => setOpen((o) => (o && o.slug === study.slug && o.regime === r.regime ? null : { slug: study.slug, regime: r.regime }));
   const columns = [
     {
       key: "regime",
@@ -218,7 +254,7 @@ export function RegimeCard({ study, id = "regimes", title = "By regime" }: { stu
       <ScrollTable label="By regime">
         <DataTable caption={`Forward moves by regime at ${h} sessions`} columns={columns} rows={rows} zebra={false} rowProps={(r: Row) => ({ onClick: () => toggle(r), style: { cursor: "pointer" }, "data-regime": r.regime })} />
       </ScrollTable>
-      {openRow ? <EventsBehind study={study} behind={{ h, regime: openRow.regime, n: cellOf(openRow)?.n ?? openRow.n }} unit={unit} onClose={() => setOpen(null)} id={behindId} /> : null}
+      {openRow ? <EventsBehind study={study} behind={{ slug: study.slug, h, regime: openRow.regime, n: behindCount(study, { h, regime: openRow.regime }) ?? openRow.n }} unit={unit} onClose={() => setOpen(null)} id={behindId} /> : null}
       <Caption>{study.provenance.regime_rule ?? "Events before the first stored label sit in the Unlabeled row, outside the totals."}</Caption>
     </Panel>
   );
@@ -234,7 +270,7 @@ export function EventsCard({ study, id = "events", title = "Recent events" }: { 
     { key: "date", label: "Event date", mono: true, render: (e: Ev) => fmtDate(e.date) },
     { key: "regime", label: "Regime" },
     ...(study.kind === "cross" ? [] : [{ key: "z", label: <Jargon term="z-score">z</Jargon>, mono: true, align: "right" as const, render: (e: Ev) => fmtZ(e.z) }]),
-    ...hs.map((h) => ({ key: `f${h}`, label: `+${h}d`, mono: true, align: "right" as const, render: (e: Ev) => (e.forward[String(h)] == null ? <span style={{ color: "var(--text-3)" }}>window open</span> : fmtMove(e.forward[String(h)], unit)) })),
+    ...hs.map((h) => ({ key: `f${h}`, label: `+${h}d`, mono: true, align: "right" as const, render: (e: Ev) => (e.forward[String(h)] == null ? <Missing study={study} e={e} h={h} /> : fmtMove(e.forward[String(h)], unit)) })),
   ];
   return (
     <Panel id={id} title={title} description={`The last ${rows.length} of ${study.provenance.n_events} events, newest first${study.condition ? `, while ${study.condition.label}` : ""}.`} badge={<StudyBadge study={study} />}>

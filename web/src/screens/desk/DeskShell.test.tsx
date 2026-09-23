@@ -469,3 +469,82 @@ describe("Today strip dates", () => {
   });
 });
 
+describe("review round (R-01, R-02, R-06)", () => {
+  it("R-01: an open cell closes when the study on screen changes under a mounted card", async () => {
+    const { toStudyResult } = await import("../../api/desk");
+    const { HorizonCard, RegimeCard } = await import("./event-study/results");
+    type Study = Extract<ReturnType<typeof toStudyResult>, { state: "ready" }>["study"];
+    const ready = (a: unknown): Study => {
+      const r = toStudyResult(a as never);
+      if (r.state !== "ready") throw new Error("not ready");
+      return r.study;
+    };
+    const gold = ready(engineStudies.preset);
+    const cross = ready(engineStudies.cross);
+    const ui = (s: Study) => (
+      <>
+        <HorizonCard study={s} isClient={false} />
+        <RegimeCard study={s} />
+      </>
+    );
+    const r = renderWithProviders(ui(gold), { route: "/desk/event-study" });
+    fireEvent.click(screen.getByRole("button", { name: /^20d n \d+/ }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(gold.regime_split[1].regime) }));
+    expect(screen.getAllByRole("region", { name: /Events behind/ })).toHaveLength(2);
+    // The same card instances, a different study: nothing stays open.
+    r.rerender(ui(cross));
+    expect(screen.queryByRole("region", { name: /Events behind/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^20d n \d+/ })).toHaveAttribute("aria-expanded", "false");
+    // Back to the first study: the old selection does not return with stale counts.
+    r.rerender(ui(gold));
+    expect(screen.queryByRole("region", { name: /Events behind/ })).toBeNull();
+  });
+
+  it("R-02: while any preset is computing the card says the read is incomplete, never 'None fired'", async () => {
+    engine = { "spx-death-cross": { status: 202, body: { ...engineStudies.computing, slug: "spx-death-cross" } } };
+    renderDesk("/desk/today");
+    const list = await screen.findByLabelText("Presets and their newest event");
+    await waitFor(() => expect(list).toHaveTextContent("computing"));
+    await waitFor(() => expect(screen.getByTestId("today-strip")).toHaveTextContent(/2 of 3 presets answered/));
+    expect(screen.getByTestId("today-fired")).toHaveTextContent("Incomplete");
+    expect(screen.getByTestId("today-fired")).not.toHaveTextContent("None fired");
+    expect(screen.getByTestId("today-fired")).toHaveAttribute("data-complete", "false");
+  });
+
+  it("R-02: each preset is judged against its own as_of", async () => {
+    const preset = structuredClone(engineStudies.preset) as { provenance: { as_of: string }; recent_events: { date: string }[] };
+    preset.provenance.as_of = "2025-04-18";
+    preset.recent_events[0].date = "2025-04-16";
+    engine = { "gold-2sigma-spx-weak": { status: 200, body: preset } };
+    renderDesk("/desk/today");
+    await waitFor(() => expect(screen.getByTestId("today-fired")).toHaveTextContent("1 fired"));
+    expect(screen.getByTestId("today-fired")).toHaveAttribute("data-complete", "true");
+    expect(screen.getByLabelText("Presets and their newest event")).toHaveTextContent("fired Apr 16, 2025");
+    expect(screen.getByTestId("today-strip")).toHaveTextContent("Five weekdays to each preset's own last session read");
+  });
+});
+
+describe("Today strip dates at the evening boundary (R-06)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("a position saved at 21:30 in New York reads that day, and nothing is dated after it", async () => {
+    // 2026-09-23T01:30Z is Sep 22, 21:30 ET: the UTC day is already Sep 23.
+    const NOW = "2026-09-23T01:30:00Z";
+    const TODAY_NY = "2026-09-22";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(NOW));
+    window.localStorage.setItem(
+      POSITIONS_KEY,
+      JSON.stringify({ version: 1, positions: [{ id: "p1", instrument: "TLT", direction: "long", size: "", horizon: "3 months", variant_view: "Duration is likely to cheapen.", pre_mortem: "The curve steepened.", falsification: { series: "DGS10", level: 3.8, direction: "above" }, created_at: NOW }] }),
+    );
+    renderDesk("/desk/position-monitor");
+    const row = await screen.findByTestId("desk-position");
+    expect(row).toHaveTextContent("saved Sep 22, 2026");
+    expect(row).not.toHaveTextContent("Sep 23");
+    const later = datesIn(document.querySelector("main")?.textContent ?? "", 2026).filter((d) => d.day > TODAY_NY);
+    expect(later.map((d) => d.raw)).toEqual([]);
+  });
+});
+

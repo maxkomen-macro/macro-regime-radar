@@ -6,17 +6,19 @@
  * never, obviously, and model (or models) outside the recession label.
  *
  * Parsed with the TypeScript compiler, so comments never count and every
- * string does. Not scanned: tests and saved engine payloads (they carry the
- * words on purpose, as inputs to the gate or as the engine's own text);
- * BUILD_NOTES.md (the owner's prose, rendered as written: §5 says not to edit
- * it); in gate.ts, the ban list's own entries (a list of the words is the
- * words). "model" passes only inside "(logistic model)", the recession label.
+ * string does. Build Notes is scanned like every other file (review R-10).
+ * Not scanned: tests and saved engine payloads (they carry the words on
+ * purpose, as inputs to the gate or as the engine's own text); in gate.ts,
+ * the ban list's own entries (a list of the words is the words). "model"
+ * passes only in a sentence about the recession regression: one that names
+ * the recession probability, a logistic regression or the logistic model.
  */
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const BANNED = /\b(will|predicts|proves|guaranteed|always|never|obviously|models?)\b/gi;
-const RECESSION_LABEL = /\(logistic model\)/gi;
+/** A sentence about the recession regression, the one thing the Desk calls a model. */
+const RECESSION_SENTENCE = /recession probability|logistic regression|logistic model/i;
 
 // Read through Vite's import.meta.glob (raw, eager), as hook-coverage does, so
 // the scan needs no Node types and sees exactly the files the build sees.
@@ -25,7 +27,7 @@ const SOURCES = import.meta.glob<string>(["/src/**/desk/**/*.{ts,tsx,md}", "/src
 /** Every file the scan covers, as /src/... paths. */
 export function deskFiles(): string[] {
   return Object.keys(SOURCES)
-    .filter((p) => !/\.test\.tsx?$/.test(p) && !p.includes("__fixtures__") && !p.endsWith("BUILD_NOTES.md"))
+    .filter((p) => !/\.test\.tsx?$/.test(p) && !p.includes("__fixtures__"))
     .sort();
 }
 
@@ -46,7 +48,9 @@ export function stringsOf(file: string, text: string): string[] {
 }
 
 function offending(file: string, s: string): string[] {
-  const words = [...s.replace(RECESSION_LABEL, "").matchAll(BANNED)].map((m) => m[0]);
+  const words = s
+    .split(/(?<=[.!?])\s+/)
+    .flatMap((sentence) => [...sentence.matchAll(BANNED)].map((m) => m[0]).filter((w) => !(/^models?$/i.test(w) && RECESSION_SENTENCE.test(sentence))));
   // gate.ts: the ban list's entries are the words themselves.
   if (file.endsWith("/positions/gate.ts") && /^[a-z]+$/.test(s.trim()) && words.length === 1) return [];
   return words;
@@ -56,7 +60,7 @@ describe("the Desk's language ban list", () => {
   const files = deskFiles();
 
   it("covers the Desk's pages, the adapter and the content", () => {
-    expect(files).toEqual(expect.arrayContaining(["/src/api/desk.ts", "/src/screens/desk/event-study/EventStudyPage.tsx", "/src/screens/desk/today/TodayPage.tsx", "/src/content/desk/schema.md"]));
+    expect(files).toEqual(expect.arrayContaining(["/src/api/desk.ts", "/src/screens/desk/event-study/EventStudyPage.tsx", "/src/screens/desk/today/TodayPage.tsx", "/src/content/desk/schema.md", "/src/content/desk/BUILD_NOTES.md"]));
     expect(files.length).toBeGreaterThan(25);
   });
 
@@ -80,6 +84,8 @@ describe("the Desk's language ban list", () => {
     expect(got).toContain("proves");
     expect(got).not.toContain("will never");
     expect(offending("x.tsx", "Recession probability (logistic model)")).toEqual([]);
-    expect(offending("x.tsx", "the recession model")).toEqual(["model"]);
+    expect(offending("x.md", "The recession probability is a model: a logistic regression. The regime label is a trained model.")).toEqual(["model"]);
+    expect(offending("x.tsx", "the regime model")).toEqual(["model"]);
+    expect(offending("x.md", "It never fails.")).toEqual(["never"]);
   });
 });
