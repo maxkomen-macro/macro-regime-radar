@@ -5,7 +5,8 @@ Branch `desk/integration`, cut from `origin/main` @ `a739585` on 2026-09-22 in t
 (`447467d`) and `desk/frame` (`0ac8b5c`) and makes them one product. Nothing pushed; `main` and
 `origin/main` untouched (`a739585`); no `.db` or `data/` path in any commit; every file staged by
 explicit path; the real database never opened for writing (every run used copies in the session's
-scratch folder). **Stopped at the gate: waiting for `PUSH OK desk/integration`.**
+scratch folder). **`PUSH OK desk/integration` given by the owner on 2026-09-22 after a pre-push
+review of `a739585..8f75ab6` (verdict: safe to push; its three findings are follow-ups in §7).**
 
 ## 0. Where it stands
 
@@ -205,6 +206,23 @@ provider or model call was made.
   builder composes shock studies only (crosses are presets); tier 2 fetching; a `RELAY_DISABLED`
   switch (event-study §10); the frame's formatter prints a tiny negative as "-0.0%"; the drawer's
   desk_series row prints "—" under Expected.
+
+### Follow-ups from the pre-push review (`a739585..8f75ab6`, verdict: safe to push)
+
+Recorded as the review states them; not fixed on this branch.
+
+- **R-01 · high · `api/analytics_cache.py:293-307`, `api/worker.py:373-385, 459-461`.** A failed
+  first import of `src.desk.event_study` can leave the `desk_assets` worker item permanently failed
+  for the current generation even after later imports succeed; `/api/desk/event-study/assets` and
+  custom studies return 500 until a refresh or restart. Fix: retry generations containing
+  transient import failures with bounded backoff, preserving generation consistency.
+- **R-02 · low · `tests/test_api_lock.py:24-30, 46-50`.** The lock-consistency tests check package
+  names only: replacing `exchange_calendars==4.13.2` with `==0.0.0` and removing `toolz==1.1.0`
+  still passes. Fix: check version constraints and the dependency closure, not just root-package
+  presence.
+- **R-03 · low · `tests/test_desk_api.py:563-580`.** The "every route answers" test accepts 404 and
+  derives its route inventory from the app under test, so a missing endpoint passes. Fix: assert
+  expected statuses against an independent inventory of existing routes.
 
 ## 8. Commands
 
