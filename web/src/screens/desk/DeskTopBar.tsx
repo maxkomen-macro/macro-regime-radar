@@ -34,10 +34,9 @@ export default function DeskTopBar({ view, onChangeView }: { view: DeskView; onC
           type="button"
           id={TOUR_BUTTON_ID}
           className="mrr-btn"
-          aria-pressed={touring}
           aria-controls={touring ? TOUR_STRIP_ID : undefined}
           onClick={() => navigate(tourHref(1))}
-          title="Six steps through the Desk, each a real page; Back and Next, nothing plays by itself"
+          title={touring ? "Start the walkthrough again from step 1" : "Six steps through the Desk, each a real page; Back and Next, nothing plays by itself"}
           data-print-hide="true"
           data-testid="desk-walkthrough"
         >

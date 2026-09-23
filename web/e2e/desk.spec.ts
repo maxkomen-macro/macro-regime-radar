@@ -243,7 +243,13 @@ test.describe("desk frame", () => {
       await expect(strip).toContainText(`Step ${i + 1} of 6`);
       await expect(strip).toContainText(caption);
       await state();
-      if (i < checks.length - 1) await next.click();
+      if (i < checks.length - 1) {
+        // Keyboard: Enter on a focused Next, and focus stays on Next across every step (R3-01).
+        await next.focus();
+        await page.keyboard.press("Enter");
+        await expect(page).toHaveURL(checks[i + 1][0]);
+        if (i + 1 < checks.length - 1) await expect(next).toBeFocused();
+      }
     }
     await expect(next).toBeDisabled();
     // Nothing autoplays: a wait leaves the step where it is.

@@ -44,13 +44,22 @@ export function parseTour(search: string | URLSearchParams): number | null {
   return n >= 1 && n <= TOUR_STEPS.length ? n : null;
 }
 
-/** The link for step `n`: its route with `tour=n` added. */
+/** A Desk path with a short path resolved to its page's slug. */
+export function resolvePath(path: string): string {
+  const m = /^\/desk\/([^/?#]+)$/.exec(path);
+  const alias = m ? DESK_ALIASES[m[1]] : undefined;
+  return alias ? `/desk/${alias}` : path;
+}
+
+/** The link for step `n`: its route, the short path resolved to the page's
+ * slug (so Back and Next never pass through a redirect that would drop focus,
+ * verifier R3-01; the short paths still open inbound), with `tour=n` added. */
 export function tourHref(n: number): string {
   const step = TOUR_STEPS[Math.min(TOUR_STEPS.length, Math.max(1, n)) - 1];
   const [path, query = ""] = step.route.split("?");
   const params = new URLSearchParams(query);
   params.set(TOUR_PARAM, String(n));
-  return `${path}?${params.toString()}`;
+  return `${resolvePath(path)}?${params.toString()}`;
 }
 
 /** A query string with the tour removed (closing leaves the page where it is). */

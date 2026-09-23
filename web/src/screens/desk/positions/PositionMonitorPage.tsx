@@ -128,7 +128,9 @@ function SignalNote({ signal }: { signal: ReturnType<typeof useSignal> }) {
         <Link to={withView(`/desk/event-study?study=${s.slug}`, view)}>Open the study</Link>
       </p>
       {s.verdict.points[0] ? <blockquote>{s.verdict.points[0]}</blockquote> : null}
-      <p className="mrr-desk-hint">The instrument is filled in from the study. The variant view, the pre-mortem and the falsification level are yours to write; Save waits for all three.</p>
+      <p className="mrr-desk-hint">
+        The instrument is filled in from the study; nothing else is. Direction and horizon show the form's defaults, not a call from the signal. The variant view, the pre-mortem and the falsification level are yours to write; Save waits for all three.
+      </p>
     </div>
   );
 }

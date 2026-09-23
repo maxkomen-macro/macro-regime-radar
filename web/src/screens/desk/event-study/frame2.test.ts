@@ -43,6 +43,8 @@ describe("formatting prints served values only", () => {
     expect(fmtInterval([0.082, 2.2], "%")).toBe("+0.1% to +2.2%");
     expect(fmtInterval([-34, -1], "bp")).toBe("−34 bp to −1 bp");
     expect(fmtInterval([-33.2, -0.4], "bp")).toBe("−33 bp to −0 bp");
+    // An exact tie rounds to even, as Python's format does (R3-04).
+    expect(fmtInterval([2.5, 3.5], "bp")).toBe("+2 bp to +4 bp");
     expect(fmtZ(-2.656)).toBe("−2.66");
   });
 

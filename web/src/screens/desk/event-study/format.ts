@@ -32,8 +32,18 @@ export function fmtShare(x: number | null | undefined): string {
  * just below zero reads "−0.0%" (verifier V-02) and the cell agrees with the
  * engine's own sentence on the same screen (N-1). The minus is U+2212. */
 export function fmtBound(x: number, unit: MoveUnit): string {
-  const body = Math.abs(x).toFixed(unit === "%" ? 1 : 0);
-  return `${x < 0 ? "−" : "+"}${body}${unit === "%" ? "%" : " bp"}`;
+  const dp = unit === "%" ? 1 : 0;
+  return `${x < 0 ? "−" : "+"}${halfEven(Math.abs(x), dp)}${unit === "%" ? "%" : " bp"}`;
+}
+
+/** Python's rounding for `format`: an exact binary tie goes to the even digit
+ * (2.5 → "2"), everything else as toFixed (verifier R3-04). */
+function halfEven(a: number, dp: number): string {
+  const k = 10 ** dp;
+  const scaled = a * k;
+  const floor = Math.floor(scaled);
+  if (scaled - floor === 0.5 && Number.isInteger(scaled * 2)) return ((floor % 2 === 0 ? floor : floor + 1) / k).toFixed(dp);
+  return a.toFixed(dp);
 }
 
 /** The 90% interval on Δ as served: "−1.6% to +4.1%". */
