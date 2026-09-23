@@ -3,8 +3,9 @@
  * standard `Live · {source} · as of {date}` badge, its stamp the response's
  * provenance `as_of`, its tone the freshness report's verdict for the stored
  * tables the study reads (provenance.inputs[].table: asset_prices,
- * desk_series), the weakest one winning. Before a study answers there is no
- * stamp and the badge reads "as of unknown", grey. Nothing is hand-typed.
+ * desk_series), the weakest one winning. Before a study answers, or when
+ * none can (404, 422, awaiting the first refresh), the badge carries no
+ * "Live": the source and the state in a grey word (verifier V-08).
  */
 
 import type { EventStudyResponse } from "../../../api/desk";
@@ -42,11 +43,15 @@ export function studySource(study: EventStudyResponse | null | undefined, sla: r
     label: ENGINE_SOURCE,
     asOf: fmtDate(p.as_of),
     verdict: studyVerdict(tables, sla),
-    reason: `Inputs as of ${bySeries || p.as_of}; sample ${p.sample_start} to ${p.sample_end}; tone from the freshness report's verdict on ${[...new Set(tables)].join(" and ") || "no stored table"}`,
+    reason: `Inputs as of ${bySeries || p.as_of}; sample ${p.data_start ?? p.sample_start} to ${p.sample_end}; tone from the freshness report's verdict on ${[...new Set(tables)].join(" and ") || "no stored table"}`,
   };
 }
 
-export default function StudyBadge({ study, pending }: { study: EventStudyResponse | null | undefined; pending?: string }) {
+/** No study on screen: the source and what it is doing, never "Live". */
+export type StudyWait = "waiting" | "computing" | "busy" | "awaiting refresh" | "refused" | "not on this server" | "no answer";
+
+export default function StudyBadge({ study, pending, wait = "waiting" }: { study: EventStudyResponse | null | undefined; pending?: string; wait?: StudyWait }) {
   const report = useFreshReport();
+  if (!study) return <StatusBadge pending={{ label: ENGINE_SOURCE, word: wait, note: pending }} />;
   return <StatusBadge source={studySource(study, report.f?.sla, pending)} />;
 }

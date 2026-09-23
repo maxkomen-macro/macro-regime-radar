@@ -22,7 +22,7 @@ import { clientVerdict } from "../words";
 import HorizonChart from "./HorizonChart";
 import QuartileChart from "./QuartileChart";
 import StudyBadge from "./StudyBadge";
-import { eventsBehind, exclusionWord, factsLine, fmtInterval, fmtMove, fmtShare, unitWord, type MoveUnit } from "./format";
+import { eventsBehind, exclusionWord, factsLine, fmtInterval, fmtMove, fmtShare, fmtZ, unitWord, type MoveUnit } from "./format";
 
 export const REGIME_HORIZON_DEFAULT = 20;
 
@@ -233,7 +233,7 @@ export function EventsCard({ study, id = "events", title = "Recent events" }: { 
   const columns = [
     { key: "date", label: "Event date", mono: true, render: (e: Ev) => fmtDate(e.date) },
     { key: "regime", label: "Regime" },
-    ...(study.kind === "cross" ? [] : [{ key: "z", label: <Jargon term="z-score">z</Jargon>, mono: true, align: "right" as const, render: (e: Ev) => (e.z == null ? "—" : e.z.toFixed(2)) }]),
+    ...(study.kind === "cross" ? [] : [{ key: "z", label: <Jargon term="z-score">z</Jargon>, mono: true, align: "right" as const, render: (e: Ev) => fmtZ(e.z) }]),
     ...hs.map((h) => ({ key: `f${h}`, label: `+${h}d`, mono: true, align: "right" as const, render: (e: Ev) => (e.forward[String(h)] == null ? <span style={{ color: "var(--text-3)" }}>window open</span> : fmtMove(e.forward[String(h)], unit)) })),
   ];
   return (

@@ -27,9 +27,25 @@ export function fmtShare(x: number | null | undefined): string {
   return x == null || !Number.isFinite(x) ? "—" : fmtWholePct(x);
 }
 
-/** The 90% interval on Δ as served: "−1.6% to +4.1%". */
+/** One interval bound at display precision, rounded outward (the low bound
+ * down, the high bound up) as the engine rounds its own bounds, so the printed
+ * interval always contains the served one and a bound just below zero never
+ * prints as 0.0 (verifier V-02). Rounding is the only thing done to it. */
+export function fmtBound(x: number, unit: MoveUnit, side: "low" | "high"): string {
+  const k = unit === "%" ? 10 : 1;
+  const r = side === "low" ? Math.floor(x * k + 1e-9) / k : Math.ceil(x * k - 1e-9) / k;
+  if (r === 0) return side === "low" && x < 0 ? (unit === "%" ? "−0.0%" : "−0 bp") : fmtMove(0, unit);
+  return fmtMove(r, unit);
+}
+
+/** The 90% interval on Δ as served, bounds rounded outward: "−1.7% to +4.1%". */
 export function fmtInterval(ci: [number, number] | null, unit: MoveUnit): string | null {
-  return ci ? `${fmtMove(ci[0], unit)} to ${fmtMove(ci[1], unit)}` : null;
+  return ci ? `${fmtBound(ci[0], unit, "low")} to ${fmtBound(ci[1], unit, "high")}` : null;
+}
+
+/** A z-score with a true minus sign. */
+export function fmtZ(z: number | null | undefined): string {
+  return z == null || !Number.isFinite(z) ? "—" : `${z < 0 ? "−" : ""}${Math.abs(z).toFixed(2)}`;
 }
 
 /** The engine's exclusion verdict, or its note when it gives none. */
@@ -37,11 +53,21 @@ export function exclusionWord(h: Pick<EventStudyHorizon, "exclusion" | "note">):
   return h.exclusion ?? h.note ?? "no verdict";
 }
 
-/** The same verdict in the client register: the engine's own category, in words. */
+/** The same verdict in the client register: the engine's own categories, in
+ * words. The engine judges the median against the baseline median, never a
+ * range of outcomes, so the words say "differs from an ordinary stretch" and
+ * "not distinguishable from an ordinary stretch" (verifier V-01). */
 export const EXCLUSION_CLIENT: Record<Exclusion, string> = {
-  established: "clear of the usual range",
+  established: "differs from an ordinary stretch",
   "not established": "difference not established",
-  included: "within the usual range",
+  included: "not distinguishable from an ordinary stretch",
+};
+
+/** The short forms under a chart's horizons; the legend spells them out. */
+export const EXCLUSION_CLIENT_SHORT: Record<Exclusion, string> = {
+  established: "differs",
+  "not established": "not established",
+  included: "not distinguishable",
 };
 
 /** The events the response carries behind one cell: every carried event with a
@@ -60,16 +86,20 @@ export function factsLine(s: EventStudyResponse): string {
   const blocks = blocksH != null ? `${p.n_blocks_by_h[blocksH]} at ${blocksH}d` : "—";
   const cooldown = p.cooldown == null ? "none" : `${p.cooldown}`;
   const entry = p.entry_same_session == null ? "—" : p.entry_same_session ? "same session" : "next session";
-  return `n ${p.n_events} · blocks ${blocks} · sample ${p.sample_start}–${p.sample_end} · cooldown ${cooldown} · entry ${entry}`;
+  return `n ${p.n_events} · blocks ${blocks} · sample ${p.data_start ?? p.sample_start}–${p.sample_end} · cooldown ${cooldown} · entry ${entry}`;
 }
 
-/** "Sample: {start} to {end}" under the sentence, from the response. */
+/** "Sample: {start} to {end}" under the sentence (§2): the start is where the
+ * shock asset's and the target's histories both begin (the engine's
+ * data_start, the later history_from), the end the newest session read. */
 export function sampleLine(s: EventStudyResponse): string {
-  return `Sample: ${s.provenance.sample_start} to ${s.provenance.sample_end}`;
+  return `Sample: ${s.provenance.data_start ?? s.provenance.sample_start} to ${s.provenance.sample_end}`;
 }
 
-/** Each input's history as the engine serves it, for the sample line's tooltip. */
+/** Each input's history as the engine serves it, and where events become
+ * evaluable, for the sample line's tooltip. */
 export function historyLine(s: EventStudyResponse): string {
   const rows = s.provenance.inputs.map((i) => `${i.label}: history from ${i.history_from}${i.last ? `, last ${i.last}` : ""}`);
-  return rows.length ? `${rows.join("; ")}.` : "The engine lists no inputs for this study.";
+  const evaluable = `Events are evaluable from ${s.provenance.sample_start} to ${s.provenance.sample_end}.`;
+  return rows.length ? `${rows.join("; ")}. ${evaluable}` : evaluable;
 }

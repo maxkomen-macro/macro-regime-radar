@@ -1388,3 +1388,37 @@ select.mrr-desk-input {
 .mrr-desk-reserve-col {
   min-height: 1100px;
 }
+/* Chart legends are prose: the UI face at the 12px floor (V-10). */
+.mrr-desk-legend {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.mrr-desk-flagword {
+  font-size: 12px;
+}
+/* The per-horizon verdict list a chart carries at phone width (V-04). */
+.mrr-desk-hverdicts {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.mrr-desk-hverdicts li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mrr-desk-hverdicts li[data-exclusion="established"] span:last-child {
+  color: var(--mint);
+}
+.mrr-desk-hverdicts li[data-exclusion="not established"] span:last-child {
+  color: var(--amber);
+}
+.mrr-desk-badge[data-state="pending"] {
+  color: var(--text-3);
+}

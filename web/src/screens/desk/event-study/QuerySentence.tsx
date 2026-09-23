@@ -111,16 +111,15 @@ export default function QuerySentence({ assets, params, slug, study, refusal, on
         <button type="submit" className="mrr-btn mrr-btn-primary" data-testid="es-run">
           Run study
         </button>
-        <span className="mrr-desk-hint" role="status">
-          {dirty ? "The sentence has changed: Run reads it." : crossOnScreen ? "A cross study is on screen; the sentence composes shock studies." : study ? (
-            <>
-              <Jargon term="sample" def={historyLine(study)}>
-                {sampleLine(study)}
-              </Jargon>
-            </>
+        <span className="mrr-desk-hint" role="status" data-testid="es-sample">
+          {study ? (
+            <Jargon term="sample" def={historyLine(study)}>
+              {sampleLine(study)}
+            </Jargon>
           ) : (
             "The sample prints here once the engine answers."
           )}
+          {dirty ? " · The sentence has changed: Run reads it." : crossOnScreen ? " · A cross study is on screen; the sentence composes shock studies." : ""}
         </span>
       </div>
       {refusal ? (

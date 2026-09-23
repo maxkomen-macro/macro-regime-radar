@@ -103,7 +103,6 @@ describe("a study: the engine's payload in the page's terms", () => {
     for (const [i, r] of raw.regimes.entries()) {
       const row = page.regime_split[i];
       expect(row.n).toBe(r.n_events);
-      expect(row.suppressed).toBe(r.horizons.every((x) => x.median == null));
       for (const x of r.horizons)
         expect(row.by_horizon[String(x.h)]).toEqual({
           n: x.n,

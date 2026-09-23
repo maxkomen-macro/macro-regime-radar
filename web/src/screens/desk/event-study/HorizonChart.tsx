@@ -20,7 +20,7 @@
 import type { EventStudyHorizon } from "../../../api/desk";
 import { useChartWidth } from "./useChartWidth";
 import { moveInWords, sessionsInWords } from "../words";
-import { EXCLUSION_CLIENT, exclusionWord, fmtInterval, fmtMove, type MoveUnit } from "./format";
+import { EXCLUSION_CLIENT, EXCLUSION_CLIENT_SHORT, exclusionWord, fmtInterval, fmtMove, type MoveUnit } from "./format";
 
 const AXIS = "#6f7d8a";
 const GLYPH: Record<string, string> = { established: "●", "not established": "◐", included: "○" };
@@ -106,7 +106,10 @@ export default function HorizonChart({ horizons, unit, targetLabel, simple = fal
           const wk = whisker(h);
           const tone = h.exclusion ? TONE[h.exclusion] : "var(--text-3)";
           const isSel = selected === h.h;
-          const valueY = (v: number | null) => (v == null ? 0 : v >= 0 ? sy(v) - 5 : sy(v) + 12);
+          // A value label sits above what it labels: the bar's top, or the
+          // interval's top when one is drawn (never beside the y-axis, V-06).
+          const topOf = (v: number | null, extra?: number) => Math.min(zeroY, v == null ? zeroY : sy(v), extra == null ? zeroY : sy(extra)) - 5;
+          const marker = simple && h.exclusion ? EXCLUSION_CLIENT_SHORT[h.exclusion] : exclusionWord(h);
           return (
             <g
               key={h.h}
@@ -125,32 +128,41 @@ export default function HorizonChart({ horizons, unit, targetLabel, simple = fal
                   <line x1={condX + bw * 0.25} x2={condX + bw * 0.75} y1={sy(wk[1])} y2={sy(wk[1])} />
                 </g>
               ) : null}
-              {!simple && h.median != null && !wk ? (
-                <text x={condX + bw / 2} y={valueY(h.median)} textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--text-2)">
+              {!simple && !isNarrow && h.median != null ? (
+                <text x={condX + bw / 2} y={topOf(h.median, wk?.[1])} textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill="var(--text-2)" data-label="median">
                   {fmtMove(h.median, unit)}
                 </text>
               ) : null}
-              {!simple && h.median != null && wk ? (
-                <text x={condX - 3} y={sy(h.median) + 3} textAnchor="end" fontFamily="var(--font-mono)" fontSize="10" fill="var(--text-2)">
-                  {isNarrow ? "" : fmtMove(h.median, unit)}
-                </text>
-              ) : null}
-              {!simple && h.baseline_median != null ? (
-                <text x={baseX + bw / 2} y={valueY(h.baseline_median)} textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill={AXIS}>
+              {!simple && !isNarrow && h.baseline_median != null ? (
+                <text x={baseX + bw / 2} y={topOf(h.baseline_median)} textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10" fill={AXIS} data-label="baseline">
                   {fmtMove(h.baseline_median, unit)}
                 </text>
               ) : null}
               <text x={cx} y={H - PAD.bottom + 15} textAnchor="middle" fontFamily="var(--font-mono)" fontSize="10.5" fill={isSel ? "var(--text)" : "var(--text-2)"}>
-                {simple ? sessionsInWords(h.h) : `${h.h}d`}
+                {simple && !isNarrow ? sessionsInWords(h.h) : `${h.h}d`}
               </text>
-              <text x={cx} y={H - PAD.bottom + 31} textAnchor="middle" fontFamily="var(--font-ui)" fontSize="10.5" fill={tone} data-exclusion={h.exclusion ?? "none"}>
+              <text x={cx} y={H - PAD.bottom + 31} textAnchor="middle" fontFamily="var(--font-ui)" fontSize="11" fill={tone} data-exclusion={h.exclusion ?? "none"}>
                 {glyphFor(h)}
-                {isNarrow ? "" : ` ${simple && h.exclusion ? EXCLUSION_CLIENT[h.exclusion] : exclusionWord(h)}`}
+                {isNarrow ? "" : ` ${marker}`}
               </text>
             </g>
           );
         })}
       </svg>
+      {isNarrow ? (
+        // At phone width the verdict words leave the chart for a list, one
+        // line per horizon, so a client still reads each verdict (V-04).
+        <ul className="mrr-desk-hverdicts" aria-hidden="true">
+          {horizons.map((h) => (
+            <li key={h.h} data-exclusion={h.exclusion ?? "none"}>
+              <span>{sessionsInWords(h.h)}</span>
+              <span>
+                {glyphFor(h)} {simple && h.exclusion ? EXCLUSION_CLIENT[h.exclusion] : exclusionWord(h)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <ul className="mrr-desk-legend" aria-hidden="true">
         <li>
           <i style={{ background: "var(--mint)" }} /> {simple ? "After the event, typical move" : "Median after the event"}

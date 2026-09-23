@@ -122,7 +122,7 @@ function RecessionCard({ isClient }: { isClient: boolean }) {
             {isClient ? oddsInWords(pct != null ? pct / 100 : null) : fmtProb(pct, "percent", 1)}
           </div>
           <p className="mrr-desk-strip-sub">
-            {rec.recession_label} · inputs as of {fmtDate(rec.data_as_of)}
+            {rec.recession_label} · inputs through {fmtMonYr(rec.data_as_of)}
           </p>
         </>
       ) : (
@@ -147,7 +147,7 @@ function PresetsCard({ slugs, isClient, view }: { slugs: string[]; isClient: boo
   const loading = qs.some((q) => q.isLoading);
   return (
     <Panel id="fired" title="Presets fired" badge={<StudyBadge study={first} />} className="mrr-desk-strip-card">
-      <Eyebrow>{window ? `Last five sessions read, ${fmtDate(window.from)} to ${fmtDate(window.to)}` : "Last five sessions read"}</Eyebrow>
+      <Eyebrow>{window ? `Five weekdays to the last session read, ${fmtDate(window.from)} to ${fmtDate(window.to)}` : "Five weekdays to the last session read"}</Eyebrow>
       <div className="mrr-desk-strip-value" style={numStyle} data-testid="today-fired">
         {!window ? (loading ? "…" : "—") : fired.length ? `${fired.length} fired` : "None fired"}
       </div>

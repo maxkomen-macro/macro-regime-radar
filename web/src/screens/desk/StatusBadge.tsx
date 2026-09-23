@@ -21,6 +21,9 @@ import { useFreshReport } from "../shared/useFreshReport";
 interface Props {
   /** A designed shell: the muted word, no source. */
   designed?: boolean;
+  /** A live-wired panel whose source has not answered (or is absent): the
+   * source and a plain state word, grey, and no "Live" (desk/frame-2, V-08). */
+  pending?: { label: string; word: string; note?: string };
   source?: BadgeSource;
   /** Tooltip for a designed panel. */
   note?: string;
@@ -61,8 +64,22 @@ export function badgeWords(label: FreshLabel, seeded: boolean, liveAsOf?: string
   return { word: "Live", stamp: label.word, muted: label.muted };
 }
 
-export function StatusBadge({ designed, source, note, id }: Props) {
+export function StatusBadge({ designed, pending, source, note, id }: Props) {
   const report = useFreshReport();
+  if (pending) {
+    return (
+      <span id={id} className="mrr-desk-badge" data-state="pending" data-testid="desk-badge" title={pending.note ?? `${pending.label}: ${pending.word}`}>
+        <span className="glyph" aria-hidden="true">
+          ◇
+        </span>
+        <span>{pending.label}</span>
+        <span className="muted" aria-hidden="true">
+          ·
+        </span>
+        <span className="stamp">{pending.word}</span>
+      </span>
+    );
+  }
   if (designed || !source) {
     return (
       <span id={id} className="mrr-desk-badge" data-state="designed" data-testid="desk-badge" title={note ?? "Designed: the layout, controls and empty states are real; no data source is wired yet."}>

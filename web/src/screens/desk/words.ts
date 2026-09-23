@@ -79,7 +79,7 @@ interface ClientStudy {
   target: { label: string };
   horizons: ClientHorizon[];
   regime_split: { regime: string; excluded_from_totals: boolean; by_horizon: Record<string, { median: number | null }> }[];
-  provenance: { sample_start: string; sample_end: string };
+  provenance: { sample_start: string; sample_end: string; data_start?: string | null };
 }
 
 /**
@@ -113,6 +113,6 @@ export function clientVerdict(s: ClientStudy, unit: "%" | "bp"): string[] {
         ? `Only ${readable[0]} has enough episodes to read on its own, so the regimes cannot be ranked.`
         : `${listWords(readable)} have enough episodes to read on their own.`,
   );
-  out.push(`The record runs from ${s.provenance.sample_start.slice(0, 4)} to ${s.provenance.sample_end.slice(0, 4)}.`);
+  out.push(`The record runs from ${(s.provenance.data_start ?? s.provenance.sample_start).slice(0, 4)} to ${s.provenance.sample_end.slice(0, 4)}.`);
   return out;
 }

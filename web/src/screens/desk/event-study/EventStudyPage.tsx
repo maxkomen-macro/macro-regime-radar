@@ -29,8 +29,9 @@ import DeskPageHead from "../DeskPageHead";
 import type { DeskPage } from "../desk-sections";
 import { EmptyState, Panel } from "../desk-ui";
 import { useDeskView } from "../desk-view";
+import { listWords } from "../words";
 import QuerySentence from "./QuerySentence";
-import StudyBadge from "./StudyBadge";
+import StudyBadge, { type StudyWait } from "./StudyBadge";
 import { EventsCard, HorizonCard, RegimeCard, VerdictCard } from "./results";
 import { PRESET, PRESET_SLUG, paramsFor } from "./studies";
 
@@ -41,7 +42,7 @@ export function titleFor(study: EventStudyResponse, isClient: boolean): string {
     return isClient ? `What the ${study.target.label} did after its 50-day average crossed ${across} the 200-day` : `${study.target.label} ${p.cross === "death" ? "death" : "golden"} cross (50-day ${across} 200-day)`;
   }
   const move = p.sign === "+" ? "rise" : p.sign === "-" ? "fall" : "move";
-  return `What the ${study.target.label} did after an unusually large ${p.w}-session ${move} in ${study.shock.label}${study.condition ? `, while ${study.condition.label}` : ""}`;
+  return `What the ${study.target.label} did after an unusually large ${p.w}-session ${move} in ${study.shock.label}${study.condition ? `, with ${study.condition.label}` : ""}`;
 }
 
 /** The source line the client view and the one-pager print (§5). */
@@ -162,14 +163,29 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   };
 
   const pending = result?.state === "computing" ? "The engine is computing this study." : result?.state === "awaiting_refresh" ? result.detail : "The study has not answered yet.";
-  const badge = <StudyBadge study={study} pending={pending} />;
+  const wait: StudyWait = study
+    ? "waiting"
+    : absent
+      ? "not on this server"
+      : busy
+        ? "busy"
+        : result?.state === "computing"
+          ? "computing"
+          : result?.state === "awaiting_refresh"
+            ? "awaiting refresh"
+            : refusal
+              ? "refused"
+              : studyQ.isError
+                ? "no answer"
+                : "waiting";
+  const badge = <StudyBadge study={study} pending={pending} wait={wait} />;
 
   return (
     <div className="mrr-desk-page">
       <DeskPageHead
         page={page}
         title={isClient && study ? titleFor(study, true) : page.label}
-        description={study ? (isClient ? `How the ${study.target.label} moved over the next ${study.horizons.map((h) => h.h).join(", ")} sessions, against an ordinary stretch of the same length.` : study.label) : page.blurb}
+        description={study ? (isClient ? `How the ${study.target.label} moved over the next ${listWords(study.horizons.map((h) => h.h))} sessions, against an ordinary stretch of the same length.` : study.label) : page.blurb}
         badge={badge}
       />
 

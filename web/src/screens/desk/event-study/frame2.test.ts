@@ -11,7 +11,7 @@ import { pollInterval, toStudyResult, type EngineAnswer, type EventStudyResponse
 import type { SlaRow } from "../../../api/types";
 import { clientVerdict, listWords } from "../words";
 import studiesJson from "./__fixtures__/engine-studies.json";
-import { eventsBehind, factsLine, fmtInterval, fmtMove, historyLine, sampleLine } from "./format";
+import { EXCLUSION_CLIENT, EXCLUSION_CLIENT_SHORT, eventsBehind, factsLine, fmtInterval, fmtMove, fmtZ, historyLine, sampleLine } from "./format";
 import { niceTicks } from "./HorizonChart";
 import { studySource, studyVerdict } from "./StudyBadge";
 
@@ -37,16 +37,27 @@ describe("formatting prints served values only", () => {
     expect(fmtInterval(null, "%")).toBeNull();
   });
 
+  it("interval bounds round outward, so a bound just below zero never prints as 0.0 (V-02)", () => {
+    expect(fmtInterval([-1.6236, 4.0989], "%")).toBe("−1.7% to +4.1%");
+    expect(fmtInterval([-0.0395, 3.71], "%")).toBe("−0.1% to +3.8%");
+    expect(fmtInterval([-34, -1], "bp")).toBe("−34 bp to −1 bp");
+    expect(fmtInterval([-33.2, -0.4], "bp")).toBe("−34 bp to 0 bp");
+    expect(fmtZ(-2.656)).toBe("−2.66");
+  });
+
   it("the facts line reads n, blocks at 20 sessions, the sample, the cooldown and the entry from provenance", () => {
     const p = gold.provenance;
-    expect(factsLine(gold)).toBe(`n ${p.n_events} · blocks ${p.n_blocks_by_h["20"]} at 20d · sample ${p.sample_start}–${p.sample_end} · cooldown 20 · entry next session`);
+    expect(factsLine(gold)).toBe(`n ${p.n_events} · blocks ${p.n_blocks_by_h["20"]} at 20d · sample ${p.data_start}–${p.sample_end} · cooldown 20 · entry next session`);
     expect(factsLine(golden)).toContain("cooldown none");
     expect(factsLine(golden)).toContain("entry same session");
   });
 
   it("the sample line and its tooltip come from the response", () => {
-    expect(sampleLine(gold)).toBe(`Sample: ${gold.provenance.sample_start} to ${gold.provenance.sample_end}`);
+    // The start is where the shock's and the target's histories both begin (V-03).
+    expect(gold.provenance.data_start).toBe(gold.provenance.inputs.map((i) => i.history_from).sort().at(-1));
+    expect(sampleLine(gold)).toBe(`Sample: ${gold.provenance.data_start} to ${gold.provenance.sample_end}`);
     for (const i of gold.provenance.inputs) expect(historyLine(gold)).toContain(`${i.label}: history from ${i.history_from}`);
+    expect(historyLine(gold)).toContain(`Events are evaluable from ${gold.provenance.sample_start}`);
   });
 
   it("chart ticks are round and cover the range", () => {
@@ -86,7 +97,12 @@ describe("the client verdict claims what the engine claims, in words", () => {
     expect(words).not.toMatch(/ran (higher|lower) than usual/);
     expect(words).toContain(`the ${gold.target.label}'s moves after these events were not distinguishable from an ordinary stretch`);
     expect(words).toContain("No single regime has enough episodes to read on its own.");
-    expect(words).toContain(`The record runs from ${gold.provenance.sample_start.slice(0, 4)} to ${gold.provenance.sample_end.slice(0, 4)}.`);
+    expect(words).toContain(`The record runs from ${gold.provenance.data_start!.slice(0, 4)} to ${gold.provenance.sample_end.slice(0, 4)}.`);
+  });
+
+  it("never speaks of a range: the engine judges medians, not ranges of outcomes (V-01)", () => {
+    for (const s of [gold, golden, us10y]) expect(clientVerdict(s, s.target.unit === "bp" ? "bp" : "%").join(" ")).not.toMatch(/range/i);
+    for (const w of [...Object.values(EXCLUSION_CLIENT), ...Object.values(EXCLUSION_CLIENT_SHORT)]) expect(w).not.toMatch(/range|clear of/i);
   });
 
   it("uses no word on the Desk's ban list", () => {

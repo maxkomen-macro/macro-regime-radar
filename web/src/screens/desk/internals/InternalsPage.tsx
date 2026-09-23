@@ -77,7 +77,13 @@ function CrossColumn({ name, line, slug, isClient }: { name: string; line: strin
   const failure = q.failureReason instanceof ApiError ? q.failureReason : null;
   if (!study) {
     return (
-      <Panel id={slug} title={name} description={line} badge={<StudyBadge study={null} pending={r?.state === "awaiting_refresh" ? r.detail : undefined} />} className={q.isLoading || r?.state === "computing" ? "mrr-desk-reserve-col" : undefined}>
+      <Panel id={slug} title={name} description={line} badge={
+          <StudyBadge
+            study={null}
+            pending={r?.state === "awaiting_refresh" ? r.detail : undefined}
+            wait={err?.status === 404 ? "not on this server" : failure?.status === 429 ? "busy" : r?.state === "computing" ? "computing" : r?.state === "awaiting_refresh" ? "awaiting refresh" : q.isError ? "no answer" : "waiting"}
+          />
+        } className={q.isLoading || r?.state === "computing" ? "mrr-desk-reserve-col" : undefined}>
         <StudyState
           slug={slug}
           loading={q.isLoading}

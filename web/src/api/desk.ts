@@ -145,7 +145,6 @@ export interface EventStudyRegimeRow {
   /** The Unlabeled row: events before the first stored label, outside the totals. */
   excluded_from_totals: boolean;
   by_horizon: Record<string, EventStudyRegimeCell>;
-  suppressed: boolean;
 }
 
 export interface EventStudyEvent {
@@ -434,7 +433,6 @@ export function toStudyResult(a: EngineAnswer): EventStudyResult {
       regime: r.regime,
       n: r.n_events,
       excluded_from_totals: r.excluded_from_totals,
-      suppressed: r.horizons.every((x) => x.median == null),
       by_horizon: Object.fromEntries(
         r.horizons.map((x) => [String(x.h), { n: x.n ?? r.n_events, hit_rate: x.hit_rate, median: m(x.median), baseline_median: m(x.baseline_median), note: x.note ?? null }]),
       ),

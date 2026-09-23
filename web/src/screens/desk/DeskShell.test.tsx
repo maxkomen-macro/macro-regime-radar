@@ -156,10 +156,10 @@ describe("Desk shell", () => {
   it("a study slug reads the engine: its verdict, its facts line and the Live badge from provenance, no fixture", async () => {
     renderDesk("/desk/event-study?study=gold-2sigma-spx-weak");
     await screen.findByRole("heading", { level: 2, name: /^Verdict/ });
-    const raw = engineStudies.preset as { verdict: { text: string }; provenance: { n_events: number; sample_start: string; as_of: string } };
+    const raw = engineStudies.preset as { verdict: { text: string }; provenance: { n_events: number; data_start: string; as_of: string } };
     expect(screen.getByText(raw.verdict.text)).toBeTruthy();
     expect(document.body).toHaveTextContent(`n ${raw.provenance.n_events} · blocks`);
-    expect(document.body).toHaveTextContent(`Sample: ${raw.provenance.sample_start} to`);
+    expect(screen.getByTestId("es-sample")).toHaveTextContent(`Sample: ${raw.provenance.data_start} to`);
     expect(screen.queryByText("Fixture")).toBeNull();
     const badges = screen.getAllByTestId("desk-badge");
     expect(badges.every((b) => b.getAttribute("data-state") === "live")).toBe(true);
@@ -221,6 +221,12 @@ describe("Desk shell", () => {
     renderDesk("/desk/event-study");
     expect(await screen.findByText("This server does not run the event-study engine.")).toBeTruthy();
     expect(document.querySelector("[data-chart]")).toBeNull();
+    // With no study on screen no badge says Live (V-08).
+    for (const badge of screen.getAllByTestId("desk-badge").filter((b) => b.textContent?.includes("event-study engine"))) {
+      expect(badge).toHaveAttribute("data-state", "pending");
+      expect(badge).not.toHaveTextContent("Live");
+    }
+    expect(screen.getAllByText("not on this server").length).toBeGreaterThan(0);
   });
 
   it("client view: the verdict in words, the simple chart and a source line; no query, no facts line", async () => {
