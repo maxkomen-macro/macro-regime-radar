@@ -277,6 +277,9 @@ export function EventsCard({ study, id = "events", title = "Recent events" }: { 
       <ScrollTable label={typeof title === "string" ? title : "Recent events"}>
         <DataTable caption="The last ten events with their forward moves" columns={columns} rows={rows} zebra={false} compact />
       </ScrollTable>
+      {study.recent_events.some((e) => Object.values(e.forward).some((v) => v == null)) ? (
+        <Caption>A missing return reads "no observation". The engine does not yet say which windows are still open, so on a recent event a longer window may not have elapsed.</Caption>
+      ) : null}
     </Panel>
   );
 }

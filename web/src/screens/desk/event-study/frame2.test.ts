@@ -228,6 +228,9 @@ describe("review round (R-01, R-04, R-07, R-08)", () => {
     expect(restarted.calls).toHaveLength(6);
     // Identical ids, a different build stamp on every read: the misdated value is rejected.
     await expect(run([g17, g18, g18, g19], 4.25)).rejects.toThrow(GenerationSplit);
+    // Only the build stamp moves (same id, same as_of): a different identity, rejected (V4-01).
+    const restamped = { ...g17, built_at: g18.built_at };
+    await expect(run([g17, restamped, g17, restamped])).rejects.toThrow(GenerationSplit);
     // The same id and build stamp but a moved observation date is a different identity too.
     await expect(run([g17, { ...g17, as_of: "2026-09-18" }, g17, { ...g17, as_of: "2026-09-18" }])).rejects.toThrow(/awaiting a refresh/);
     // A monthly series names its month; an API without generations gives no date.
