@@ -121,6 +121,67 @@ def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, wate
     return _state(sid, label, "fred", cadence, month.isoformat(), "close" if cycles == 0 else "stale", cycles_behind=cycles, reason=reason)
 
 
+# The Desk's daily series the full refresh stores (src/desk/series.fetched at
+# REFRESH_TIER), mirrored here because this module stays stdlib + api/
+# (scripts/validate_db.py runs it on the lean installs; tests/test_workflows.py
+# pins it). tests/test_desk_api.py pins the mirror to the registry. Rates and
+# spreads follow the bond calendar, VIX the NYSE's (desk/integration).
+DESK_REFRESH_SERIES: dict[str, dict[str, str]] = {
+    "DGS10": {"label": "10Y Treasury", "kind": "fred", "calendar": "bond"},
+    "DGS2": {"label": "2Y Treasury", "kind": "fred", "calendar": "bond"},
+    "T10Y2Y": {"label": "2s10s curve", "kind": "fred", "calendar": "bond"},
+    "VIXCLS": {"label": "VIX", "kind": "fred", "calendar": "nyse"},
+    "BAMLH0A0HYM2": {"label": "US HY OAS", "kind": "fred", "calendar": "bond"},
+}
+
+
+def desk_refresh_specs() -> list[dict]:
+    """The series the drawer's desk_series verdict judges, in registry order."""
+    return [{"id": sid, **meta} for sid, meta in DESK_REFRESH_SERIES.items()]
+
+
+def desk_series_states(*, stored: dict[str, str] | None, specs: list[dict], watermarks: dict | None,
+                       now: datetime | None = None) -> list[dict]:
+    """One state per series of the Desk's daily history, `desk_series`
+    (desk/integration: the event-study report's §10 follow-up, a desk_series
+    row in the Data Pipeline inventory). `specs` lists the series in order
+    (id, label, kind, calendar), the ones the full refresh stores first;
+    `stored` maps series_id to its newest stored date, None when the database
+    has no desk_series table yet. The table stores true observation dates, so
+    the newest stored date is the as-of, judged by the FRED daily rule above
+    (current within DAILY_TOLERANCE business days of the newest print due, on
+    the bond calendar for rates and spreads). The writer's per-series watermark
+    (`desk:<id>`) adds what the last refresh saw: a failed fetch, or a source
+    serving less history than the registry declares."""
+    now = now or datetime.now(timezone.utc)
+    today_ny = now.astimezone(cal.NY).date()
+    out: list[dict] = []
+    for spec in specs:
+        sid, label, kind = spec["id"], spec["label"], spec["kind"]
+        rid = f"desk:{sid}"
+        wm = (watermarks or {}).get(rid) or {}
+        d = _parse_date((stored or {}).get(sid))
+        if stored is None:
+            out.append(_state(rid, label, kind, "daily", None, "unknown",
+                              reason=f"{label} is awaiting the first full refresh: this database has no desk_series table yet, and that refresh stores it."))
+            continue
+        if d is None:
+            why = (f"The last full refresh could not fetch {label} ({wm.get('detail')}); nothing is stored yet."
+                   if wm.get("status") == "error" else f"{label} is not stored yet; the next full refresh stores it.")
+            out.append(_state(rid, label, kind, "daily", None, "unknown", reason=why))
+            continue
+        exp, lag = _daily_expected_and_lag(d, today_ny, spec.get("calendar") == "bond")
+        state = "close" if lag <= DAILY_TOLERANCE else "stale"
+        reason = (f"{label} observed {d.isoformat()}, the newest print due." if lag == 0
+                  else f"{label} observed {d.isoformat()}; {lag} business day(s) behind the {exp.isoformat()} print.")
+        if wm.get("status") == "short":
+            reason += f" The source serves less history than the registry declares ({wm.get('detail')})."
+        elif wm.get("status") == "error":
+            reason += f" The last full refresh could not fetch it ({wm.get('detail')}); the stored rows stand."
+        out.append(_state(rid, label, kind, "daily", d.isoformat(), state, cycles_behind=lag, reason=reason))
+    return out
+
+
 def _parse_dt(s: str | None, naive_tz=timezone.utc) -> datetime | None:
     """Parse a stored stamp. Stamps without an offset are taken as `naive_tz`
     — UTC by default; the intraday pipeline stamps Eastern wall time
@@ -219,6 +280,48 @@ def assess(
         else:
             ap_reason = f"Stored histories end {ap.isoformat()}; {ap_lag} session(s) behind {exp_md.isoformat()}." + ap_src
         rows.append(_verdict("asset_prices", db_fresh.get("asset_prices_date"), exp_md.isoformat(), ap_ok, ap_grace, ap_reason))
+
+    # ── desk_series: the Desk's daily series (desk/event-study, 2026-09-21) ──
+    # Not a regime input, never in `overall`. With the per-series maxima
+    # (api/db.freshness and validate_db both report them since desk/integration,
+    # verifier V-06) the verdict is the inventory's own per-series rule over the
+    # series the full refresh stores: the bond calendar for rates and spreads,
+    # so the day after a bond-market holiday is not "behind", and a tier-2
+    # series fetched by hand never pins it. Without them, the table-wide rule:
+    # the oldest newest observation at least the session before the last
+    # completed one (FRED posts next day).
+    ds_known = "desk_series_date" in db_fresh
+    if ds_known and "desk_series_latest" in db_fresh:
+        by_id = db_fresh.get("desk_series_latest")
+        ds_detail = ((watermarks or {}).get("desk_series") or {}).get("detail")
+        ds_src = f" Series: {ds_detail}." if ds_detail else ""
+        if by_id is None:
+            rows.append(_verdict("desk_series", None, None, False, False,
+                                 "The Desk's daily series are not stored in this database yet; the next full refresh stores them."))
+        else:
+            states = desk_series_states(stored=by_id, specs=desk_refresh_specs(), watermarks=watermarks, now=now)
+            behind = [s for s in states if s["state"] != "close"]
+            dated = [s["as_of"] for s in states if s["as_of"]]
+            reason = ("Every series the full refresh stores includes its newest print due (FRED posts next day)." + ds_src if not behind
+                      else "Behind: " + " ".join(s["reason"] for s in behind))
+            rows.append(_verdict("desk_series", min(dated) if dated else None, None, not behind, False, reason))
+    elif ds_known:
+        ds = _parse_date(db_fresh.get("desk_series_date"))
+        ds_detail = ((watermarks or {}).get("desk_series") or {}).get("detail")
+        ds_src = f" Series: {ds_detail}." if ds_detail else ""
+        exp_ds = cal.previous_trading_day(exp_md)
+        ds_ok = ds is not None and ds >= exp_ds
+        ds_grace = ds is not None and ds >= cal.previous_trading_day(exp_ds) and now < grace_until
+        ds_lag = cal.business_days_between(ds, exp_ds) if ds else None
+        if ds is None:
+            ds_reason = "The Desk's daily series are not stored in this database yet; the next full refresh stores them."
+        elif ds_ok:
+            ds_reason = f"Stored Desk series include {exp_ds.isoformat()} (FRED posts next day)." + ds_src
+        elif ds_grace:
+            ds_reason = f"Observation for {exp_ds.isoformat()} not yet stored; the full refresh has until 06:00 UTC." + ds_src
+        else:
+            ds_reason = f"Stored Desk series end {ds.isoformat()}; {ds_lag} session(s) behind {exp_ds.isoformat()}." + ds_src
+        rows.append(_verdict("desk_series", db_fresh.get("desk_series_date"), exp_ds.isoformat(), ds_ok, ds_grace, ds_reason))
 
     # ── market_intraday: 20 min in session, else last session close ─────────
     mi = _parse_dt(db_fresh.get("market_intraday_ts"), naive_tz=cal.NY)  # pipeline stamps ET wall time

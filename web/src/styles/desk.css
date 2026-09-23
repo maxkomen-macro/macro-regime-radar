@@ -1,0 +1,1000 @@
+/* Desk (desk/frame, docs/desk/DESK_FRAME_SPEC.md). Layered after app.css by
+   DeskShell's import: the Desk is the same product, so it reuses the shell
+   classes (.mrr-app, .mrr-side, .mrr-main, .mrr-mnav*, .mrr-btn*, .mrr-dot)
+   and adds only what the spec asks for: the three-group sidebar with its
+   House Discipline card, the Desk top bar with the Desk / Client toggle, the
+   page head, the status badge, the form fields the app never had, and the
+   print stylesheet that re-tokens the same DOM for the client one-pager (§4).
+   Dark-only like the product (DESIGN.md waiver); paper is the print block. */
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+.mrr-desk-side-head {
+  margin-bottom: 22px;
+}
+.mrr-desk-side-head .mrr-logo {
+  margin-bottom: 14px;
+}
+.mrr-desk-title {
+  padding-left: 32px;
+}
+.mrr-desk-title .mrr-desk-eyebrow {
+  margin: 0 0 3px;
+}
+.mrr-desk-title strong {
+  display: block;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  color: #fff;
+}
+/* The section eyebrow (DESIGN.md §3): Plex Sans 500, uppercase, .24em. */
+.mrr-desk-eyebrow {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: var(--fs-eyebrow, 12px);
+  letter-spacing: var(--ls-eyebrow, 0.24em);
+  text-transform: uppercase;
+  color: var(--text-eyebrow);
+}
+.mrr-desk-eyebrow[data-size="sm"] {
+  font-size: var(--fs-eyebrow-sm, 11px);
+  letter-spacing: var(--ls-eyebrow-sm, 0.2em);
+  color: var(--text-3);
+}
+
+/* Three groups (§2): a sub-eyebrow over 36px rows, the Methodology item's
+   size. Rows are links (a route is a URL); the right gutter carries a mono
+   mark that encodes the build status: ◇ a designed shell, → an external
+   destination, nothing for a live page. */
+.mrr-desk-nav {
+  display: grid;
+  gap: 2px;
+}
+.mrr-desk-group {
+  margin: 14px 0 4px;
+  padding-left: 24px;
+}
+.mrr-desk-group:first-child {
+  margin-top: 0;
+}
+.mrr-desk-nav a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: var(--nav-sub-h, 36px);
+  padding: 0 14px 0 24px;
+  border-radius: var(--r-nav, 9px);
+  border: 1px solid transparent;
+  box-sizing: border-box;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-nav-sub, 13px);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.mrr-desk-nav a:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  text-decoration: none;
+}
+.mrr-desk-nav a[aria-current="page"] {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.06));
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-weight: 500;
+}
+.mrr-desk-nav-mark {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-4);
+}
+.mrr-desk-nav a[aria-current="page"] .mrr-desk-nav-mark,
+.mrr-desk-nav a:hover .mrr-desk-nav-mark {
+  color: var(--text-3);
+}
+
+/* House Discipline card (§2): a tile pinned at the foot, the four rules and
+   the three seals every position passes. */
+.mrr-desk-house {
+  margin: auto 8px 0;
+  padding: 12px 12px 12px 14px;
+  background: var(--tile);
+  border: 1px solid rgba(150, 175, 200, 0.1);
+  border-radius: var(--r-tile, 9px);
+}
+.mrr-desk-house-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.mrr-desk-house-title b {
+  font-weight: 500;
+  color: var(--mint);
+}
+.mrr-desk-house ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.mrr-desk-house li {
+  display: flex;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.mrr-desk-house li > span:first-child {
+  font-family: var(--font-mono);
+  color: var(--text-4);
+}
+.mrr-desk-house .ver {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-4);
+}
+
+/* Seals: the signature. A hollow ring per gate that fills mint when the gate
+   is met; a dashed amber ring while the language check holds it open. */
+.mrr-desk-seals {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mrr-desk-seal {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-4);
+  background: transparent;
+}
+.mrr-desk-seals[data-size="lg"] .mrr-desk-seal {
+  width: 18px;
+  height: 18px;
+}
+.mrr-desk-seal[data-met="true"] {
+  border-color: var(--mint);
+  background: var(--mint);
+  box-shadow: inset 0 0 0 3px var(--tile);
+}
+.mrr-desk-seal[data-met="flagged"] {
+  border-color: var(--amber);
+  border-style: dashed;
+}
+
+/* ── Top bar ──────────────────────────────────────────────────────────────── */
+.mrr-desk-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: var(--topbar-h, 40px);
+  margin-bottom: 12px;
+}
+.mrr-desk-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.mrr-desk-crumb a {
+  color: var(--text-3);
+}
+.mrr-desk-crumb a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.mrr-desk-top-r {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+/* ── Page ─────────────────────────────────────────────────────────────────── */
+.mrr-desk-page {
+  display: grid;
+  gap: var(--gap-panel, 14px);
+  align-content: start;
+}
+.mrr-desk-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 2px 0;
+}
+.mrr-desk-head-l {
+  min-width: 0;
+  flex: 1 1 420px;
+}
+.mrr-desk-head .mrr-desk-eyebrow {
+  margin: 0 0 6px;
+}
+.mrr-desk-head h1 {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: var(--fs-hero-sub, 23px);
+  line-height: var(--lh-hero-sub, 1.3);
+  letter-spacing: var(--ls-hero-sub, -0.005em);
+  color: var(--text);
+}
+.mrr-desk-head h1.mrr-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  letter-spacing: var(--ls-display);
+  color: #fff;
+}
+.mrr-desk-head p {
+  margin: 6px 0 0;
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: var(--maxw-lede, 540px);
+}
+.mrr-desk-head-r {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex: none;
+  max-width: 100%;
+}
+@media (max-width: 859.98px) {
+  .mrr-desk-head h1.mrr-display {
+    font-size: 40px;
+  }
+  .mrr-desk-head-r {
+    align-items: flex-start;
+  }
+}
+
+/* Panel body grids: two or three across, one below 768; the form-beside-list
+   layout the Position Monitor uses. */
+.mrr-desk-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-panel, 14px);
+}
+.mrr-desk-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-panel, 14px);
+}
+.mrr-desk-main-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: var(--gap-panel, 14px);
+  align-items: start;
+}
+@media (max-width: 1199.98px) {
+  .mrr-desk-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrr-desk-main-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 767.98px) {
+  .mrr-desk-2,
+  .mrr-desk-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Status badge (§3) ────────────────────────────────────────────────────── */
+.mrr-desk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 24px;
+  padding: 2px 9px;
+  border-radius: var(--r-badge, 7px);
+  border: 1px solid var(--line-white-14);
+  background: rgba(255, 255, 255, 0.03);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-badge, 11.5px);
+  line-height: 1.3;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.mrr-desk-badge .glyph {
+  font-size: 9px;
+  color: var(--text-4);
+}
+.mrr-desk-badge .word {
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.mrr-desk-badge .muted {
+  color: var(--text-3);
+}
+.mrr-desk-badge[data-state="live"] {
+  border-color: var(--mint-a32);
+  background: var(--mint-a07);
+}
+.mrr-desk-badge[data-state="live"] .word,
+.mrr-desk-badge[data-state="live"] .glyph {
+  color: var(--mint);
+}
+.mrr-desk-badge[data-state="live"][data-tone="stale"] {
+  border-color: rgba(230, 126, 34, 0.4);
+  background: rgba(230, 126, 34, 0.07);
+}
+.mrr-desk-badge[data-tone="stale"] .glyph,
+.mrr-desk-badge[data-tone="stale"] .stamp {
+  color: var(--warn-hot);
+}
+.mrr-desk-badge[data-tone="stale"] .word {
+  color: var(--text-2);
+}
+.mrr-desk-badge[data-tone="delayed"] .glyph {
+  color: var(--amber);
+}
+.mrr-desk-badge[data-state="live"][data-tone="unknown"],
+.mrr-desk-badge[data-state="live"][data-tone="fallback"] {
+  border-color: var(--line-white-14);
+  background: rgba(255, 255, 255, 0.03);
+}
+.mrr-desk-badge[data-tone="unknown"] .word,
+.mrr-desk-badge[data-tone="unknown"] .glyph,
+.mrr-desk-badge[data-tone="fallback"] .word,
+.mrr-desk-badge[data-tone="fallback"] .glyph {
+  color: var(--text-3);
+}
+.mrr-desk-badge[data-state="designed"] {
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 500;
+}
+
+/* ── Forms (the app had sliders and one search field; the Desk adds text,
+      number, select and textarea fields on the house field surface) ───────── */
+.mrr-desk-form {
+  display: grid;
+  gap: 12px;
+}
+.mrr-desk-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px 12px;
+}
+.mrr-desk-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  align-content: start;
+}
+.mrr-desk-field[data-span="2"] {
+  grid-column: 1 / -1;
+}
+.mrr-desk-label {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: var(--fs-eyebrow-sm, 11px);
+  line-height: 1.2;
+  letter-spacing: var(--ls-eyebrow-sm, 0.2em);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.mrr-desk-input {
+  appearance: none;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 34px;
+  padding: 6px 10px;
+  background: var(--field, #141f29);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--r-ctl, 8px);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-kv, 13.5px);
+  line-height: 1.4;
+}
+.mrr-desk-input:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.mrr-desk-input::placeholder {
+  color: var(--text-4);
+}
+.mrr-desk-input:disabled {
+  color: var(--text-4);
+  cursor: default;
+}
+.mrr-desk-input[data-mono="true"] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.mrr-desk-input[aria-invalid="true"] {
+  border-color: var(--amber-a36);
+}
+textarea.mrr-desk-input {
+  min-height: 92px;
+  resize: vertical;
+  line-height: 1.5;
+}
+select.mrr-desk-input {
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%238f9daa' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M2.5 4.5l3.5 3.5 3.5-3.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.mrr-desk-hint {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.mrr-desk-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+/* The discipline gate row: three seals with their words, and the sentence
+   that says what still blocks the save. */
+.mrr-desk-gate {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl, 8px);
+  background: rgba(255, 255, 255, 0.02);
+}
+.mrr-desk-gate-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.mrr-desk-gate-item[data-met="true"] {
+  color: var(--text-2);
+}
+/* A flagged word: the word, its suggested rewrite, and the Replace control. */
+.mrr-desk-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mrr-desk-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 3px 8px;
+  border-radius: var(--r-badge, 7px);
+  border: 1px solid var(--amber-a36);
+  background: var(--amber-a07);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.mrr-desk-flag b {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--amber);
+}
+.mrr-desk-flag button {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: var(--link);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mrr-desk-flag button:hover {
+  color: var(--link-hover);
+}
+
+/* ── Rows and lists ───────────────────────────────────────────────────────── */
+.mrr-desk-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mrr-desk-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line-2);
+}
+.mrr-desk-row:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+.mrr-desk-row-title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-kv, 13.5px);
+  font-weight: 500;
+  color: var(--text);
+}
+.mrr-desk-row-sub {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.mrr-desk-row-num {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  color: var(--text);
+  text-align: right;
+  white-space: nowrap;
+}
+.mrr-desk-row-meta {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  text-align: right;
+  white-space: nowrap;
+}
+.mrr-desk-row-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── Charts and diagrams ──────────────────────────────────────────────────── */
+.mrr-desk-svg svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.mrr-desk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+.mrr-desk-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mrr-desk-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* Schema block (§5 Data Pipeline): RAW → CUR → MART as three tiers. */
+.mrr-desk-schema {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-tile, 12px);
+}
+.mrr-desk-tier {
+  background: var(--tile);
+  border: 1px solid rgba(150, 175, 200, 0.1);
+  border-radius: var(--r-tile, 9px);
+  padding: var(--pad-tile, 14px);
+  min-width: 0;
+}
+.mrr-desk-tier h3 {
+  margin: 0 0 4px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-eyebrow);
+}
+.mrr-desk-tier > p {
+  margin: 0 0 10px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.mrr-desk-tier ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.mrr-desk-tier li {
+  display: grid;
+  gap: 1px;
+}
+.mrr-desk-tier code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.mrr-desk-tier li span {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+@media (max-width: 767.98px) {
+  .mrr-desk-schema {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The verdict: one sentence in the lede rung, never mono. */
+.mrr-desk-verdict {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-lede, 15.5px);
+  line-height: var(--lh-lede, 1.6);
+  color: var(--text);
+  max-width: 62ch;
+}
+.mrr-desk-verdict-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption, 13px);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.mrr-desk-verdict-list li {
+  margin: 2px 0;
+}
+
+/* Designed shells (§6): the empty state is a sentence with direction, and
+   the controls are real but inert until the module is wired. */
+.mrr-desk-empty {
+  padding: 22px 18px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-tile, 9px);
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption, 13px);
+  line-height: 1.55;
+  color: var(--text-3);
+  text-align: left;
+}
+.mrr-desk-empty strong {
+  display: block;
+  font-weight: 500;
+  color: var(--text-2);
+  margin-bottom: 2px;
+}
+
+/* The markdown pages (Build Notes): prose measure, section headings one
+   rung under the page h1. */
+.mrr-desk-notes .mrr-md {
+  max-width: var(--maxw-prose, 74ch);
+  font-size: var(--fs-body);
+  line-height: 1.65;
+  color: var(--text-2);
+}
+.mrr-desk-notes .mrr-md h2 {
+  margin: 22px 0 6px;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 17px;
+  color: var(--text);
+}
+.mrr-desk-notes .mrr-md h2:first-child {
+  margin-top: 0;
+}
+.mrr-desk-notes .mrr-md h3 {
+  font-size: var(--fs-body);
+}
+
+/* The print footer line exists only on paper. */
+.mrr-desk-print-only {
+  display: none;
+}
+
+/* ── Print: the client one-pager (§4). The same DOM, re-tokened for paper:
+      every inline `var(--…)` picks these values, the chrome is removed, and
+      the page ends with the line everything that leaves the app carries. ── */
+@media print {
+  :root {
+    --bg: #fff;
+    --panel: #fff;
+    --tile: #fff;
+    --card-grad: #fff;
+    --sidebar: #fff;
+    --strip-grad: #fff;
+    --field: #fff;
+    --popover: #fff;
+    --track: #ddd;
+    --line: #9aa4ad;
+    --line-2: #cfd5da;
+    --line-strong: #555;
+    --line-white-14: #b5bcc3;
+    --line-white-30: #777;
+    --text: #111;
+    --text-2: #2b3138;
+    --text-3: #555e66;
+    --text-4: #7a838b;
+    --text-eyebrow: #444;
+    --text-wordmark: #111;
+    --mint: #0a7f5a;
+    --pos: #0a7f5a;
+    --neg: #b3261e;
+    --amber: #8a6100;
+    --warn-hot: #9a4d00;
+    --link: #0b5aa6;
+    --mint-a07: transparent;
+    --mint-a32: #0a7f5a;
+    --amber-a07: transparent;
+    --page-glow: none;
+    --hero-glow: none;
+    --glow-dot: none;
+    --glow-pill: none;
+    --glow-pill-amber: none;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .mrr-desk .mrr-side,
+  .mrr-desk .mrr-rail,
+  .mrr-desk .mrr-mnav,
+  .mrr-desk .mrr-desk-top,
+  .mrr-desk .mrr-skip,
+  .mrr-desk [data-print-hide] {
+    display: none !important;
+  }
+  .mrr-desk.mrr-app {
+    display: block;
+    min-height: 0;
+  }
+  .mrr-desk .mrr-main {
+    padding: 0;
+  }
+  .mrr-desk-page {
+    gap: 10px;
+  }
+  .mrr-desk-page > * {
+    break-inside: avoid;
+  }
+  .mrr-desk-head h1.mrr-display {
+    font-size: 34px;
+    color: #111;
+  }
+  .mrr-desk-badge[data-state="live"] .word {
+    color: #0a7f5a;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .mrr-desk-print-only {
+    display: block;
+    margin-top: 14px;
+    padding-top: 8px;
+    border-top: 1px solid #9aa4ad;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: #555e66;
+  }
+}
+
+/* ── Lineage (Data Pipeline): six nodes with arrows; three then one across ── */
+.mrr-desk-lineage {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  counter-reset: none;
+}
+.mrr-desk-lineage-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.mrr-desk-lineage-node {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px 12px 12px 14px;
+  background: var(--tile);
+  border: 1px solid rgba(150, 175, 200, 0.1);
+  border-radius: var(--r-tile, 9px);
+  min-width: 0;
+}
+.mrr-desk-lineage-node h3 {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-eyebrow);
+}
+.mrr-desk-lineage-node ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+.mrr-desk-lineage-node li {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.mrr-desk-lineage-arrow {
+  color: var(--text-4);
+  flex: none;
+}
+@media (max-width: 1199.98px) {
+  .mrr-desk-lineage {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .mrr-desk-lineage-step:nth-child(3n) .mrr-desk-lineage-arrow {
+    visibility: hidden;
+  }
+}
+@media (max-width: 767.98px) {
+  .mrr-desk-lineage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-desk-lineage-step {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+  .mrr-desk-lineage-step:nth-child(3n) .mrr-desk-lineage-arrow {
+    visibility: visible;
+  }
+  .mrr-desk-lineage-arrow {
+    transform: rotate(90deg);
+    margin: 2px 0;
+  }
+  .mrr-desk-lineage-node {
+    width: 100%;
+  }
+}
+
+/* ── Short viewports: the sidebar's rows tighten so the House Discipline card
+      stays in view (the app's steps cover .mrr-nav only) ─────────────────── */
+@media (max-height: 999.98px) {
+  .mrr-desk-side-head {
+    margin-bottom: 14px;
+  }
+  .mrr-desk-nav a {
+    height: 32px;
+  }
+  .mrr-desk-group {
+    margin: 10px 0 3px;
+  }
+  .mrr-desk-house {
+    padding: 10px 10px 10px 12px;
+  }
+  .mrr-desk-house ul {
+    margin-top: 6px;
+    gap: 2px;
+  }
+  .mrr-desk-house .ver {
+    margin-top: 6px;
+  }
+}
+@media (max-height: 859.98px) {
+  .mrr-desk-side-head {
+    margin-bottom: 10px;
+  }
+  .mrr-desk-side-head .mrr-logo {
+    margin-bottom: 8px;
+  }
+  .mrr-desk-nav a {
+    height: 29px;
+  }
+  .mrr-desk-group {
+    margin: 8px 0 2px;
+  }
+  .mrr-desk-house li {
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+}
+
+/* The side column's position rows stack their figure under the words. */
+.mrr-desk-main-side > :last-child .mrr-desk-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mrr-desk-main-side > :last-child .mrr-desk-row-num,
+.mrr-desk-main-side > :last-child .mrr-desk-row-meta {
+  text-align: left;
+}
+
+/* ── Verifier fixes (2026-09-21) ──────────────────────────────────────────── */
+/* Rows stack on a phone: the figure sits under the words, never beside a
+   46 px column (Today, Position Monitor, the shells' rubric and input rows). */
+@media (max-width: 767.98px) {
+  .mrr-desk-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mrr-desk-row-num,
+  .mrr-desk-row-meta {
+    text-align: left;
+  }
+}
+/* The House Discipline card at a laptop height: rows one step tighter than
+   the app's own short-viewport steps so the card's bottom clears 900 px. */
+@media (max-height: 999.98px) {
+  .mrr-side .mrr-desk-nav a {
+    height: 29px;
+  }
+  .mrr-side .mrr-desk-group {
+    margin: 8px 0 2px;
+  }
+  .mrr-side .mrr-desk-side-head {
+    margin-bottom: 10px;
+  }
+  .mrr-side .mrr-desk-side-head .mrr-logo {
+    margin-bottom: 8px;
+  }
+}
+@media (max-height: 859.98px) {
+  .mrr-side .mrr-desk-nav a {
+    height: 27px;
+    font-size: 12.5px;
+  }
+  .mrr-side .mrr-desk-house li {
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+}

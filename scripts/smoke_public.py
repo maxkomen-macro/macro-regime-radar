@@ -43,6 +43,15 @@ STORED_ROUTES = [
     "/api/lbo/defaults", "/api/allocation", "/api/freshness",
     "/series/FEDFUNDS/latest", "/series/VIXCLS/latest",  # the Dashboard's two series tiles
 ]
+# desk/integration: the Desk's reads (web/src/api/desk.ts). The three presets
+# are worker items, looked up; a free-form study computes on request and is
+# not probed (a visitor's own query, like the POST calculators).
+DESK_PRESETS = ("gold-2sigma-spx-weak", "spx-golden-cross", "spx-death-cross")
+DESK_ROUTES = [
+    "/api/desk/pipeline/inventory",
+    "/api/desk/event-study/assets",
+    *[f"/api/desk/event-study?study={p}" for p in DESK_PRESETS],
+]
 # Each of these spends EODHD quota (the options chain bills the marketplace
 # allowance): --skip-provider leaves them out. The chain itself needs an
 # expiration, so the expirations list stands for the options lens.
@@ -127,6 +136,55 @@ def _allocation_not_stored(client: httpx.Client, api: str) -> bool:
         return False
 
 
+def _desk_preset_awaiting(client: httpx.Client, api: str, name: str) -> bool:
+    """Whether a preset answers `awaiting_refresh`: a database older than the
+    stored histories the preset reads (desk/integration), a fact, not a fault."""
+    try:
+        r = client.get(api + "/api/desk/event-study", params={"study": name})
+        return r.status_code == 200 and (r.json() or {}).get("status") == "awaiting_refresh"
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
+def check_desk(client: httpx.Client, api: str, rep: Report) -> None:
+    """The Desk (desk/integration). The deployed database has no desk_series
+    table until the first full refresh after the merge: rows and studies that
+    say they are awaiting it are a WARN; any other answer but ready is a FAIL."""
+    for route in DESK_ROUTES:
+        check = f"desk {route}"
+        t0 = time.perf_counter()
+        try:
+            r = client.get(api + route)
+            body = r.json() if r.status_code in (200, 202) else None
+        except (httpx.HTTPError, ValueError) as exc:
+            rep.fail(check, type(exc).__name__)
+            continue
+        ms = (time.perf_counter() - t0) * 1000
+        if r.status_code != 200 or not isinstance(body, dict):
+            rep.fail(check, f"{r.status_code} {r.text[:120]}")
+        elif route == "/api/desk/pipeline/inventory":
+            rows = [s for s in body.get("series") or [] if str(s.get("id", "")).startswith("desk:")]
+            waiting = [s["id"] for s in rows if s.get("state") == "unknown"]
+            if not rows:
+                rep.fail(check, "no desk_series rows in the inventory")
+            elif waiting:
+                rep.warn(check, f"{len(waiting)} of {len(rows)} desk series not stored yet, awaiting a full refresh ({', '.join(waiting)})")
+            else:
+                rep.ok(check, f"{len(rows)} desk series judged, in {ms:.0f}ms")
+        elif route == "/api/desk/event-study/assets":
+            waiting = body.get("awaiting_refresh") or []
+            if waiting:
+                rep.warn(check, f"awaiting the first full refresh: {', '.join(waiting)}")
+            else:
+                rep.ok(check, f"200 in {ms:.0f}ms")
+        elif body.get("status") == "ready":
+            rep.ok(check, f"ready, {(body.get('provenance') or {}).get('n_events')} events, in {ms:.0f}ms")
+        elif body.get("status") == "awaiting_refresh":
+            rep.warn(check, str(body.get("detail") or "awaiting a full refresh"))
+        else:
+            rep.fail(check, f"status {body.get('status')!r}")
+
+
 def check_readiness(client: httpx.Client, api: str, rep: Report) -> None:
     try:
         r = client.get(api + "/health/ready")
@@ -140,14 +198,22 @@ def check_readiness(client: httpx.Client, api: str, rep: Report) -> None:
     worker = body.get("worker") or {}
     rep.ok("readiness", f"generation {worker.get('generation')} built in {worker.get('build_ms')} ms")
     errors = list(worker.get("errors") or [])
+    warned = False
     if "allocation" in errors and _allocation_not_stored(client, api):
         # One verdict, not two: a database that predates the stored price
         # histories is a WARN here and on the route, never a FAIL beside a WARN.
         errors.remove("allocation")
         rep.warn("worker items", "allocation: this database predates the stored price histories")
+        warned = True
+    # desk/integration: a preset reads stored histories too; the same rule.
+    for name in [e for e in errors if e.startswith("desk_preset:")]:
+        if _desk_preset_awaiting(client, api, name.split(":", 1)[1]):
+            errors.remove(name)
+            rep.warn("worker items", f"{name}: awaiting the first full refresh (the database predates the histories it reads)")
+            warned = True
     if errors:
         rep.fail("worker items", f"errors: {errors}")
-    elif "allocation" not in (worker.get("errors") or []):
+    elif not warned:
         rep.ok("worker items", "no item is answering with an error")
     if worker.get("held"):
         rep.warn("worker held", json.dumps(worker["held"]))
@@ -433,6 +499,7 @@ def main() -> int:
     with httpx.Client(timeout=30.0, follow_redirects=False, headers={"User-Agent": "mrr-smoke/1.0"}) as client:
         check_readiness(client, api, rep)
         check_routes(client, api, STORED_ROUTES, rep, "stored")
+        check_desk(client, api, rep)
         if not args.skip_provider:
             check_routes(client, api, PROVIDER_ROUTES, rep, "provider")
         check_freshness(client, api, rep)

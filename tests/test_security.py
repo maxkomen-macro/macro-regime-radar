@@ -253,7 +253,7 @@ def production_env(monkeypatch):
     """No overrides: what the container gets when the host sets none of them."""
     for var in ("RATE_LIMIT_PER_CLIENT_PER_MIN", "RATE_LIMIT_PER_CLIENT_BURST",
                 "RATE_LIMIT_GLOBAL_PER_MIN", "RATE_LIMIT_GLOBAL_BURST",
-                "DB_MAX_CONCURRENCY", "WS_MAX_PER_CLIENT", "WS_MAX_TOTAL", "MAX_BODY_BYTES"):
+                "DB_MAX_CONCURRENCY", "DESK_STUDY_MAX_CONCURRENCY", "WS_MAX_PER_CLIENT", "WS_MAX_TOTAL", "MAX_BODY_BYTES"):
         monkeypatch.delenv(var, raising=False)
     yield
 
@@ -267,6 +267,7 @@ def test_production_defaults_are_the_documented_numbers(production_env):
     assert mw.expensive._initial_value == 4
     assert mw.provider._initial_value == 12
     assert mw.db._initial_value == 24
+    assert mw.desk_study._initial_value == 4  # desk/integration: the event study's own ceiling
     assert (mw.ws_per_client, mw.ws_total) == (20, 200)
     assert mw.max_body == 64 * 1024
     assert security.ASSISTANT_MAX_BODY_BYTES == 16 * 1024

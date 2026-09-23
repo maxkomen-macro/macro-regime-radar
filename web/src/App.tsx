@@ -6,6 +6,9 @@ import ErrorBoundary from "./screens/shared/ErrorBoundary";
 
 // The design-system scratch route is never on a visitor's path: lazy chunk.
 const KitScreen = lazy(() => import("./screens/KitScreen"));
+// The Desk (analyst workspace, desk/frame): its own shell and stylesheet in
+// one chunk, so a dashboard visitor never downloads it.
+const DeskShell = lazy(() => import("./screens/desk/DeskShell"));
 
 export default function App() {
   return (
@@ -21,6 +24,18 @@ export default function App() {
       {/* Active tab lives in the URL so every tab is linkable. */}
       <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />
       <Route path="/app/:tab" element={<AppShell />} />
+      {/* The Desk: /desk lands on Today; /desk/<page> is linkable, and
+          ?view=client is preserved by the shell (docs/desk/DESK_FRAME_SPEC.md). */}
+      <Route
+        path="/desk/:page?"
+        element={
+          <ErrorBoundary label="The Desk">
+            <Suspense fallback={null}>
+              <DeskShell />
+            </Suspense>
+          </ErrorBoundary>
+        }
+      />
       {/* Scratch route: every design-system component with fixture data. */}
       <Route
         path="/kit"

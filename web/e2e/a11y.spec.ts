@@ -162,11 +162,13 @@ for (const slug of PHONE_ROUTES) {
     const list = page.locator("#mobile-nav-list");
     await expect(list).toBeVisible();
     const names: string[] = [];
-    for (let i = 0; i < TABS.length + 3; i++) {
+    // desk/frame §1 added the Analyst Workspace row after Methodology (the top
+    // bar's entry link hides below 860); desk/integration adds it here.
+    const expected = [...TABS.map((t) => new RegExp(`^${t.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)), /^Methodology\b/, /^Analyst Workspace\b/, /^Jump to a section\b/, /^Watchlist/];
+    for (let i = 0; i < expected.length; i++) {
       await page.keyboard.press("Tab");
       names.push((await active(page))?.name ?? "");
     }
-    const expected = [...TABS.map((t) => new RegExp(`^${t.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)), /^Methodology\b/, /^Jump to a section\b/, /^Watchlist/];
     expected.forEach((re, i) => expect(names[i], `MobileNav stop ${i + 1}`).toMatch(re));
     // The Watchlist disclosure opens on Enter; the rows answer Alt+ArrowDown and Delete.
     await page.keyboard.press("Enter");

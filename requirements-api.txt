@@ -27,3 +27,7 @@ scikit-learn
 riskfolio-lib==7.3.*
 # POST /api/assistant/ask (api/chat.py) drives src/analytics/chat.py's agent:
 anthropic
+
+# desk/event-study (2026-09-21, review R-04/R-02): the NYSE session calendar for the whole study
+# history, sessions and early closes included; the engine never derives a calendar from stored rows.
+exchange_calendars==4.13.2

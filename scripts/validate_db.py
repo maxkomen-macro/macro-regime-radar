@@ -55,6 +55,8 @@ DATE_COLUMNS = {
     "backtest_results": "date",
     # fix/prelaunch-1: allocation's price histories, stored by the full refresh
     "asset_prices": "date",
+    # desk/event-study: the Desk's daily series (src/market_data/desk_history.py)
+    "desk_series": "date",
 }
 # Rolling-window tables shrink by design (intraday trimmed to 30 days, news
 # aged out); their freshness is judged by max date, never by row count.
@@ -68,7 +70,7 @@ FORWARD_TABLES = {"event_calendar"}
 # publish its rows or the next run (which downloads the published DB) forgets
 # the spend, so new ledger rows count as a change in the modes that enrich.
 MODE_TABLES = {
-    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger", "asset_prices"],
+    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger", "asset_prices", "desk_series"],
     "news-only": ["news_feed", "ai_spend_ledger"],
     "market-only": ["market_daily", "market_intraday", "source_watermarks"],
     # B6 (2026-09-18): intraday runs also capture the official close after the
@@ -77,7 +79,7 @@ MODE_TABLES = {
     "verify-only": [],
 }
 MODE_FEEDS = {
-    "full": {"regime", "signals", "market_daily", "news", "fred:INDPRO", "fred:CPIAUCSL", "fred:UNRATE", "fred:DGS10", "fred:DGS2", "fred:VIXCLS", "asset_prices"},
+    "full": {"regime", "signals", "market_daily", "news", "fred:INDPRO", "fred:CPIAUCSL", "fred:UNRATE", "fred:DGS10", "fred:DGS2", "fred:VIXCLS", "asset_prices", "desk_series"},
     "news-only": {"news"},
     "market-only": {"market_daily", "market_intraday"},
     "intraday": {"market_intraday"},
@@ -95,11 +97,13 @@ FINGERPRINT_SQL = {
     "source_watermarks": "SELECT source, last_obs, last_value FROM source_watermarks ORDER BY source",
     # Adjusted closes are restated back through history after every dividend.
     "asset_prices": "SELECT symbol, interval, date, close FROM asset_prices ORDER BY symbol, interval, date",
+    # FRED revises a daily observation in place (desk/event-study).
+    "desk_series": "SELECT series_id, date, value FROM desk_series ORDER BY series_id, date",
 }
 # Feeds whose "checked this run, not advancing" is a source outage (a warning)
 # rather than a missed cycle (a failure): the FRED series and, since
 # fix/prelaunch-1, the stored asset histories.
-OUTAGE_FEEDS = ("fred:", "asset_prices")
+OUTAGE_FEEDS = ("fred:", "asset_prices", "desk_series")
 # A FRED series fetched within this window but not advancing is a source
 # outage (a warning); one not checked at all means the refresh missed cycles.
 OUTAGE_WINDOW = timedelta(hours=3)
@@ -199,12 +203,25 @@ def inspect(path: Path) -> dict:
             "news_published_at": out["tables"].get("news_feed", {}).get("max"),
             "raw_series_date": out["tables"].get("raw_series", {}).get("max"),
             "asset_prices_date": None,
+            "desk_series_date": None,
+            "desk_series_latest": None,
         }
         if "asset_prices" in out["tables"]:
             try:
                 out["fresh"]["asset_prices_date"] = conn.execute(
                     "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM asset_prices WHERE interval = '1d' GROUP BY symbol)"
                 ).fetchone()[0]
+            except sqlite3.Error:
+                pass
+        if "desk_series" in out["tables"]:
+            # desk/event-study: the oldest newest observation across the stored series
+            try:
+                out["fresh"]["desk_series_date"] = conn.execute(
+                    "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM desk_series GROUP BY series_id)"
+                ).fetchone()[0]
+                # desk/integration (verifier V-06): per series, as api/db.freshness reports them
+                out["fresh"]["desk_series_latest"] = dict(conn.execute(
+                    "SELECT series_id, MAX(date) FROM desk_series GROUP BY series_id").fetchall())
             except sqlite3.Error:
                 pass
     finally:
@@ -238,6 +255,16 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             failures.append("asset_prices: missing; the full refresh stores allocation's price histories (src/market_data/asset_history.py)")
         elif cur["tables"]["asset_prices"]["rows"] == 0:
             failures.append("asset_prices: table is empty")
+        # desk/event-study (2026-09-21): the full refresh also stores the Desk's
+        # daily series; a series the source served short of its declared start,
+        # or that failed this run, is reported, never blocking.
+        if "desk_series" not in cur["tables"]:
+            failures.append("desk_series: missing; the full refresh stores the Desk's daily series (src/market_data/desk_history.py)")
+        elif cur["tables"]["desk_series"]["rows"] == 0:
+            failures.append("desk_series: table is empty")
+        for src, wm in sorted((cur.get("watermarks") or {}).items()):
+            if src.startswith("desk:") and wm.get("status") in ("short", "error"):
+                warnings.append(f"{src} {wm['status']}: {wm.get('detail')}")
 
     # Stamps ahead of the clock are a fault, never freshness (review P2-3).
     horizon = (now + timedelta(days=1)).strftime("%Y-%m-%d")

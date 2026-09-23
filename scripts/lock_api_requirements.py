@@ -38,6 +38,9 @@ ROOTS: list[tuple[str, set[str]]] = [
     ("scikit-learn", set()),
     ("riskfolio-lib", set()),
     ("anthropic", set()),
+    # desk/event-study: the XNYS session calendar src/desk/event_study.py imports
+    # at module load (tests/test_api_lock.py pins these roots to the txt file).
+    ("exchange-calendars", set()),
 ]
 
 
