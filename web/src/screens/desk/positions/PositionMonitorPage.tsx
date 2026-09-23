@@ -218,7 +218,8 @@ function PromoteForm({ onSaved }: { onSaved: (p: Position, persisted: boolean) =
   );
 }
 
-export function MonitoredRow({ p, reading, isClient, onRemove }: { p: Position; reading: ReadingState; isClient: boolean; onRemove?: (id: string) => void }) {
+/** `compact` (the Today strip) leaves out the thesis line. */
+export function MonitoredRow({ p, reading, isClient, onRemove, compact = false }: { p: Position; reading: ReadingState; isClient: boolean; onRemove?: (id: string) => void; compact?: boolean }) {
   const ref = seriesRef(p.falsification.series);
   const s = reading.data ? distanceSentence(ref, reading.data, p.falsification) : null;
   return (
@@ -248,7 +249,7 @@ export function MonitoredRow({ p, reading, isClient, onRemove }: { p: Position; 
           </div>
         )}
       </div>
-      {!isClient ? (
+      {!isClient && !compact ? (
         <div className="mrr-desk-row-sub" style={{ gridColumn: "1 / -1" }}>
           <strong style={{ color: "var(--text-2)", fontWeight: 500 }}>Variant view.</strong> {p.variant_view} <strong style={{ color: "var(--text-2)", fontWeight: 500 }}>Pre-mortem.</strong> {p.pre_mortem}
         </div>

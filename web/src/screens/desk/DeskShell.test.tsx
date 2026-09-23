@@ -4,8 +4,10 @@
  * Discipline card, the wordmark points at the dashboard, the Desk / Client
  * toggle lives in the URL and hides the query builder, every page carries a
  * status badge, and the discipline gate holds against the keyboard and the
- * URL. stubFetch answers the stored endpoints with minimal bodies; the
- * event-study engine answers 404 (absent), as it does until Stream A lands.
+ * URL. stubFetch answers the stored endpoints with minimal bodies and the
+ * event-study engine with its real saved payloads (__fixtures__), so every
+ * state the engine answers (ready, 202 computing, 429 busy, 422, awaiting the
+ * first refresh, 404 absent) is driven through the page (DESK_FRAME2_SPEC §1).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -14,6 +16,12 @@ import DeskShell from "./DeskShell";
 import { DESK_GROUPS, HOUSE_DISCIPLINE } from "./desk-sections";
 import { POSITIONS_KEY, resetPositionsForTests } from "./positions/store";
 import { renderWithProviders, stubFetch } from "../../test/utils";
+import engineAssets from "./event-study/__fixtures__/engine-assets.json";
+import engineStudies from "./event-study/__fixtures__/engine-studies.json";
+
+type Answer = { status: number; body: unknown };
+/** The engine's answer per slug for one test; unlisted slugs answer the preset. */
+let engine: Record<string, Answer> = {};
 
 const MONTH = "2026-08-01";
 const DAILY = "2026-09-18";
@@ -46,6 +54,13 @@ function fresh() {
 
 function stub() {
   return stubFetch({
+    "/api/desk/event-study/assets": () => engineAssets,
+    "/api/desk/event-study": (url) => {
+      const slug = url.searchParams.get("study") ?? "";
+      if (engine[slug]) return engine[slug];
+      if (slug === "spx-golden-cross" || slug === "spx-death-cross") return engineStudies.cross;
+      return engineStudies.preset;
+    },
     "/api/freshness": fresh,
     "/api/regime/latest": () => ({ date: MONTH, label: "Goldilocks", confidence: 0.71, growth_trend: 0.4, inflation_trend: -0.2, prob_goldilocks: 0.62, prob_overheating: 0.18, prob_stagflation: 0.12, prob_recession: 0.08 }),
     "/api/recession/probability": () => ({ probability_source: "recession_model", recession_prob: 11.6, recession_label: "Low Risk", recession_color: "g", yield_curve_spread: 0.3, yield_curve_pct_rank: 40, inversion_duration_months: 0, is_inverted: false, divergence_score: 0, divergence_label: "Aligned", divergence_color: "g", recession_prob_series: [], yield_curve_series: [], usrec_series: [], n_training_samples: 281, model_features: ["yield_curve"], feature_coefficients: {}, data_as_of: DAILY, curve_shape: {}, current_inputs: {}, freshness: null }),
@@ -69,6 +84,7 @@ function renderDesk(route: string) {
 }
 
 beforeEach(() => {
+  engine = {};
   window.localStorage.clear();
   resetPositionsForTests();
   stub();
@@ -78,13 +94,21 @@ afterEach(() => {
 });
 
 describe("Desk shell", () => {
-  it("lands /desk on Today, names the document and shows the regime as the answer", async () => {
+  it("lands /desk on Today, names the document and shows the strip", async () => {
     renderDesk("/desk");
     expect(await screen.findByTestId("loc")).toHaveTextContent("/desk/today");
     await waitFor(() => expect(document.title).toBe("Today · Desk · Macro Regime Radar"));
-    const h1 = await screen.findByRole("heading", { level: 1 });
-    await waitFor(() => expect(h1).toHaveTextContent("Goldilocks"));
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Today");
     expect(document.querySelectorAll("h1")).toHaveLength(1);
+    await waitFor(() => expect(screen.getByTestId("today-regime")).toHaveTextContent("Goldilocks"));
+    // The recession figure is the logistic model's, labelled as such; the regime odds are not printed.
+    await waitFor(() => expect(screen.getByTestId("today-recession")).toHaveTextContent("11.6%"));
+    expect(screen.getByText("Recession probability (logistic model)")).toBeTruthy();
+    expect(screen.getByTestId("today-strip")).not.toHaveTextContent("8%");
+    // Presets: each preset's newest served event, against the last five sessions the engine read.
+    await waitFor(() => expect(screen.getByTestId("today-fired")).toHaveTextContent(/fired/));
+    const newest = (engineStudies.preset as { recent_events: { date: string }[] }).recent_events[0].date;
+    expect(screen.getByLabelText("Presets and their newest event")).toHaveTextContent(new RegExp(newest.slice(0, 4)));
   });
 
   it("the sidebar carries the three groups in order, the House Discipline card, and the wordmark points at the dashboard", async () => {
@@ -129,12 +153,97 @@ describe("Desk shell", () => {
     expect(screen.getByTestId("loc")).not.toHaveTextContent("view=client");
   });
 
-  it("a study slug in the URL selects the preset and the fixture is labelled, not passed off as data", async () => {
+  it("a study slug reads the engine: its verdict, its facts line and the Live badge from provenance, no fixture", async () => {
     renderDesk("/desk/event-study?study=gold-2sigma-spx-weak");
     await screen.findByRole("heading", { level: 2, name: /^Verdict/ });
-    expect(screen.getAllByText("Fixture").length).toBeGreaterThan(0);
+    const raw = engineStudies.preset as { verdict: { text: string }; provenance: { n_events: number; sample_start: string; as_of: string } };
+    expect(screen.getByText(raw.verdict.text)).toBeTruthy();
+    expect(document.body).toHaveTextContent(`n ${raw.provenance.n_events} · blocks`);
+    expect(document.body).toHaveTextContent(`Sample: ${raw.provenance.sample_start} to`);
+    expect(screen.queryByText("Fixture")).toBeNull();
     const badges = screen.getAllByTestId("desk-badge");
-    expect(badges.some((b) => b.textContent === "Designed")).toBe(true);
+    expect(badges.every((b) => b.getAttribute("data-state") === "live")).toBe(true);
+    expect(badges[0]).toHaveTextContent(/Live.*event-study engine.*as of/);
+    // The sentence query and the presets as chips.
+    const sentence = screen.getByTestId("es-sentence");
+    const controls = [...sentence.querySelectorAll("select, [role=group]")].map((el) => el.getAttribute("aria-label"));
+    expect(controls).toEqual(["Shock asset", "Threshold", "Direction", "Window in sessions", "Co-condition", "Target", "Regime filter"]);
+    for (const word of ["When", "moves", "over", "sessions", "while", "what did", "do next", "in"]) expect(sentence.textContent).toContain(word);
+    expect(screen.getByRole("button", { name: /S&P golden cross/ })).toHaveAttribute("aria-pressed", "false");
+    // The by-regime table: one horizon at a time, 20 by default, n<10 where suppressed, the Unlabeled flag.
+    expect(within(screen.getByRole("group", { name: "Horizon" })).getByRole("button", { name: "20d" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByText("n<10").length).toBeGreaterThan(0);
+    expect(screen.getByText("outside the totals")).toBeTruthy();
+  });
+
+  it("a horizon cell expands to the events behind it and says how many the response carries", async () => {
+    renderDesk("/desk/event-study");
+    const cell = await screen.findByRole("button", { name: /^20d n \d+/ });
+    fireEvent.click(cell);
+    expect(cell).toHaveAttribute("aria-expanded", "true");
+    const region = screen.getByRole("region", { name: "Events behind 20 sessions" });
+    expect(region).toHaveTextContent(/The response carries the last 10 of \d+ events|All \d+ of this cell's events are listed/);
+    expect(within(region).getAllByRole("row").length).toBeGreaterThan(1);
+  });
+
+  it("Run writes the sentence's slug into ?study=", async () => {
+    renderDesk("/desk/event-study");
+    await screen.findByTestId("es-sentence");
+    fireEvent.change(screen.getByLabelText("Window in sessions"), { target: { value: "5" } });
+    fireEvent.click(screen.getByTestId("es-run"));
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("study=gold-w5-z2.0-up-spx_below_50dma-spx"));
+  });
+
+  it("202 computing is a quiet status line, 429 a plain busy line, 422 the engine's reason under the query", async () => {
+    engine = {
+      "gold-w5-z2.0-up-none-spx": { status: 202, body: engineStudies.computing },
+      "gold-w60-z2.0-up-none-spx": { status: 429, body: { status: "busy", detail: "4 studies are computing; retry in 3 seconds." } },
+      "gold-w5-z1.5-up-none-spx": { status: 422, body: { detail: "cond_value must be a finite number" } },
+    };
+    const { unmount } = renderDesk("/desk/event-study?study=gold-w5-z2.0-up-none-spx");
+    expect(await screen.findByText(/Computing this study/)).toBeTruthy();
+    expect(document.querySelector("[data-chart]")).toBeNull();
+    unmount();
+    const b = renderDesk("/desk/event-study?study=gold-w60-z2.0-up-none-spx");
+    expect(await screen.findByText(/The engine is busy with other studies; try again/)).toBeTruthy();
+    b.unmount();
+    renderDesk("/desk/event-study?study=gold-w5-z1.5-up-none-spx");
+    expect(await screen.findByTestId("es-refusal")).toHaveTextContent("The engine could not run this query: cond_value must be a finite number");
+  });
+
+  it("awaiting the first refresh is a sentence, never an empty chart; a server without the engine says so", async () => {
+    engine = { "vix-w5-z2.0-up-none-spx": { status: 200, body: engineStudies.awaiting_refresh } };
+    const a = renderDesk("/desk/event-study?study=vix-w5-z2.0-up-none-spx");
+    expect(await screen.findByText("Awaiting the first full refresh.")).toBeTruthy();
+    expect(document.querySelector("[data-chart]")).toBeNull();
+    a.unmount();
+    engine = { "gold-2sigma-spx-weak": { status: 404, body: { detail: "Not Found" } } };
+    renderDesk("/desk/event-study");
+    expect(await screen.findByText("This server does not run the event-study engine.")).toBeTruthy();
+    expect(document.querySelector("[data-chart]")).toBeNull();
+  });
+
+  it("client view: the verdict in words, the simple chart and a source line; no query, no facts line", async () => {
+    renderDesk("/desk/event-study?study=spx-golden-cross&view=client");
+    const verdict = await screen.findByText(/ran higher than usual after these events/);
+    expect(verdict.closest("[data-register]")).toHaveAttribute("data-register", "client");
+    expect(document.body).not.toHaveTextContent(/n = \d+|blocks|Monte Carlo/);
+    expect(screen.queryByTestId("es-sentence")).toBeNull();
+    expect(screen.getByTestId("es-source")).toHaveTextContent(/^Source: Macro Regime Radar event-study engine/);
+    expect(document.querySelector("[data-interval]")).toBeNull();
+  });
+
+  it("S&P Internals states which cross reads the engine establishes, in its words, and keeps breadth and sectors Designed", async () => {
+    renderDesk("/desk/sp-internals");
+    const reads = await screen.findAllByTestId("internals-read");
+    await waitFor(() => expect(reads[0]).toHaveTextContent(/Golden cross: established at 20 sessions/));
+    const raw = engineStudies.cross as { verdict: { sentences: string[] } };
+    expect(reads[0]).toHaveTextContent(raw.verdict.sentences[0]);
+    for (const id of ["breadth", "sector-rotation"]) {
+      const panel = document.getElementById(id)!;
+      expect(within(panel).getByTestId("desk-badge")).toHaveAttribute("data-state", "designed");
+      expect(panel.textContent).not.toMatch(/\d+(\.\d+)?%/);
+    }
   });
 });
 

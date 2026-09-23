@@ -74,17 +74,44 @@ describe("a study: the engine's payload in the page's terms", () => {
     expect(page.recent_events[0].z).toBe(raw.recent_events[0].z);
     expect(page.verdict).toEqual({ text: raw.verdict.text, points: raw.verdict.sentences });
     expect(page.provenance).toMatchObject({ as_of: raw.provenance.as_of, n_events: raw.provenance.n_events, cooldown: 20, seed: raw.provenance.seed, inputs_hash: raw.provenance.inputs_hash, n_boot: 10000 });
-    expect(page.distribution ?? null).toBeNull();
+    expect(h.baseline_p25).toBeCloseTo((r.baseline_p25 as number) * 100, 10);
+    expect(h.baseline_p75).toBeCloseTo((r.baseline_p75 as number) * 100, 10);
+    expect(h.exclusion).toBe(r.exclusion);
+    expect("distribution" in page).toBe(false);
   });
 
-  it("reads the regime split with its suppressed reads and the Unlabeled row outside the totals", () => {
+  it("carries the provenance the facts line, the sample line and the badge read, as served", () => {
     const { page, raw } = ready(studies.preset);
-    expect(page.regime_split.map((r) => r.regime)).toEqual(raw.regimes.map((r) => (r.excluded_from_totals ? `${r.regime} (outside the totals)` : r.regime)));
+    const p = raw.provenance;
+    expect(page.provenance.sample_start).toBe(p.sample_start);
+    expect(page.provenance.sample_end).toBe(p.sample_end);
+    expect(page.provenance.n_blocks_by_h).toEqual(p.n_blocks_by_h);
+    expect(page.provenance.entry_same_session).toBe(p.entry_same_session);
+    expect(page.provenance.entry_rule).toBe(p.entry_rule);
+    expect(page.provenance.cooldown_rule).toBe(p.cooldown);
+    expect(page.provenance.regime_lag_months).toBe(p.regime_lag_months);
+    expect(page.provenance.z_window).toBe(p.z_window);
+    expect(page.provenance.as_of_by_series).toEqual(p.as_of_by_series);
+    expect(page.provenance.inputs.map((i) => [i.key, i.table, i.history_from])).toEqual((p.inputs ?? []).map((i) => [i.key, i.table, i.history_from]));
+    expect(page.recent_events[0]).toMatchObject({ entry_date: raw.recent_events[0].entry_date, same_session: raw.recent_events[0].same_session });
+  });
+
+  it("reads the regime split with its suppressed reads and the Unlabeled row flagged outside the totals", () => {
+    const { page, raw } = ready(studies.preset);
+    expect(page.regime_split.map((r) => [r.regime, r.excluded_from_totals])).toEqual(raw.regimes.map((r) => [r.regime, r.excluded_from_totals]));
+    expect(page.regime_split.some((r) => r.regime === "Unlabeled" && r.excluded_from_totals)).toBe(true);
     for (const [i, r] of raw.regimes.entries()) {
       const row = page.regime_split[i];
       expect(row.n).toBe(r.n_events);
       expect(row.suppressed).toBe(r.horizons.every((x) => x.median == null));
-      for (const x of r.horizons) expect(row.by_horizon[String(x.h)]).toEqual({ hit_rate: x.hit_rate, median: x.median == null ? null : x.median * 100 });
+      for (const x of r.horizons)
+        expect(row.by_horizon[String(x.h)]).toEqual({
+          n: x.n,
+          hit_rate: x.hit_rate,
+          median: x.median == null ? null : x.median * 100,
+          baseline_median: x.baseline_median == null ? null : x.baseline_median * 100,
+          note: x.note ?? null,
+        });
     }
   });
 
@@ -104,8 +131,8 @@ describe("a study: the engine's payload in the page's terms", () => {
     expect(page.horizons[1].ci90).toEqual(raw.horizons[1].ci90);
   });
 
-  it("carries the two states that are not a study", () => {
-    expect(toStudyResult(studies.computing)).toEqual({ state: "computing", slug: "vix-w5-z2.0-up-none-spx", detail: expect.stringContaining("computing") });
+  it("carries the two states that are not a study, the computing one with the engine's Retry-After", () => {
+    expect(toStudyResult(studies.computing)).toEqual({ state: "computing", slug: "vix-w5-z2.0-up-none-spx", detail: expect.stringContaining("computing"), retry_after: 3 });
     const w = toStudyResult(studies.awaiting_refresh);
     expect(w).toEqual({ state: "awaiting_refresh", slug: "vix-w5-z2.0-up-none-spx", series: "vix", detail: expect.stringContaining("first full refresh") });
   });

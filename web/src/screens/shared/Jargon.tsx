@@ -73,8 +73,10 @@ const DEFS: Record<string, string> = {
   alpha: "Annualized return left over after the factor exposures are paid: the part the factors can't explain.",
 };
 
-export default function Jargon({ term, children }: { term: keyof typeof DEFS | string; children?: React.ReactNode }) {
-  const def = DEFS[term];
+/** `def` supplies a definition the table does not carry (the Desk's query
+ * sentence moves its helper text here); without it the table decides. */
+export default function Jargon({ term, children, def: own }: { term: keyof typeof DEFS | string; children?: React.ReactNode; def?: string }) {
+  const def = own ?? DEFS[term];
   const id = useId();
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);

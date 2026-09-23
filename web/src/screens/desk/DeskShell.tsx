@@ -22,6 +22,7 @@ import "../../styles/desk.css";
 
 const TodayPage = lazy(() => import("./today/TodayPage"));
 const EventStudyPage = lazy(() => import("./event-study/EventStudyPage"));
+const InternalsPage = lazy(() => import("./internals/InternalsPage"));
 const PositionMonitorPage = lazy(() => import("./positions/PositionMonitorPage"));
 const DataPipelinePage = lazy(() => import("./pipeline/DataPipelinePage"));
 const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
@@ -59,6 +60,9 @@ export default function DeskShell() {
       break;
     case "event-study":
       body = <EventStudyPage page={page} />;
+      break;
+    case "sp-internals":
+      body = <InternalsPage page={page} />;
       break;
     case "position-monitor":
       body = <PositionMonitorPage page={page} />;

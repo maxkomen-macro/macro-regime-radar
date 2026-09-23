@@ -148,4 +148,72 @@ test.describe("desk frame", () => {
       }
     }
   });
+
+  /* ── desk/frame-2 (DESK_FRAME2_SPEC §1 to §5) ─────────────────────────── */
+
+  test("event study: five numbers on screen trace to the API's JSON for the same study", async ({ page }) => {
+    await open(page, "/desk/event-study?study=gold-2sigma-spx-weak");
+    const res = await page.request.get("/api/desk/event-study?study=gold-2sigma-spx-weak");
+    expect(res.status()).toBe(200);
+    const api = await res.json();
+    expect(api.status).toBe("ready");
+    const p = api.provenance;
+    const h20 = api.horizons.find((h: { h: number }) => h.h === 20);
+    const pct = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x * 100).toFixed(1)}%`;
+    const body = page.locator("main");
+    // 1. The engine's verdict, verbatim.
+    await expect(body).toContainText(api.verdict.text);
+    // 2. The facts line: n, blocks at 20 sessions, the sample, the cooldown.
+    await expect(body).toContainText(`n ${p.n_events} · blocks ${p.n_blocks_by_h["20"]} at 20d · sample ${p.sample_start}–${p.sample_end} · cooldown ${p.cooldown_sessions}`);
+    // 3. The 20-session median beside the baseline median, in the horizon cell.
+    const cell = page.getByRole("button", { name: /^20d n \d+/ });
+    await expect(cell).toContainText(`${pct(h20.median)} vs ${pct(h20.baseline_median)}`);
+    // 4. The 90% interval on Δ as served.
+    await expect(cell).toContainText(`${pct(h20.ci90[0])} to ${pct(h20.ci90[1])}`);
+    // 5. The newest event's date and its 20-session move.
+    const ev = api.recent_events[0];
+    const row = page.getByRole("table", { name: "The last ten events with their forward moves" }).getByRole("row").nth(1);
+    await expect(row).toContainText(pct(ev.moves["20"]));
+    // The badge is the Live badge, stamped from provenance.
+    await expect(page.getByTestId("desk-badge").first()).toContainText("Live");
+    await expect(page.getByTestId("desk-badge").first()).toContainText("event-study engine");
+  });
+
+  test("event study: a horizon cell opens its events from the keyboard; Run writes ?study=", async ({ page }) => {
+    await open(page, "/desk/event-study");
+    const cell = page.getByRole("button", { name: /^20d n \d+/ });
+    await cell.focus();
+    await page.keyboard.press("Enter");
+    await expect(cell).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("region", { name: "Events behind 20 sessions" })).toBeVisible();
+    await page.getByLabel("Window in sessions").selectOption("5");
+    await page.getByTestId("es-run").press("Enter");
+    await expect(page).toHaveURL(/study=gold-w5-z2\.0-up-spx_below_50dma-spx/);
+    // A free-form query computes on request: computing, then ready, never an empty chart in between.
+    await expect(page.locator("[data-state='computing'], [data-chart='horizons']").first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("[data-chart='horizons']")).toBeVisible({ timeout: 60_000 });
+  });
+
+  test("S&P Internals states the engine's established reads, and breadth and sectors stay Designed", async ({ page }) => {
+    await open(page, "/desk/sp-internals");
+    for (const slug of ["spx-golden-cross", "spx-death-cross"]) {
+      const api = await (await page.request.get(`/api/desk/event-study?study=${slug}`)).json();
+      const est = api.horizons.filter((h: { exclusion: string }) => h.exclusion === "established").map((h: { h: number }) => h.h);
+      const name = slug === "spx-golden-cross" ? "Golden cross" : "Death cross";
+      await expect(page.getByTestId("internals-read").filter({ hasText: name })).toContainText(est.length ? `${name}: established at ${est.join(", ")} sessions` : `${name}: established at no horizon`);
+    }
+    for (const id of ["breadth", "sector-rotation"]) await expect(page.locator(`#${id}`).getByTestId("desk-badge")).toHaveText("Designed");
+  });
+
+  test("390 and reduced motion: frame-2 pages fit the phone and nothing animates", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const route of ["/desk/today", "/desk/event-study", "/desk/sp-internals", "/desk/event-study?view=client", "/desk/build-notes"]) {
+      await open(page, route);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, route).toBeLessThanOrEqual(1);
+      const animated = await page.evaluate(() => [...document.querySelectorAll("*")].filter((el) => getComputedStyle(el).animationName !== "none").length);
+      expect(animated, route).toBe(0);
+    }
+  });
 });

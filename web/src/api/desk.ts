@@ -5,11 +5,12 @@
  *   series[] joined with each source's provider and readers. Same states as
  *   /api/freshness, so a Data Pipeline row and a status badge never disagree.
  * - `/api/desk/event-study` and `/api/desk/event-study/assets` (the engine,
- *   docs/desk/EVENT_STUDY_REPORT.md §5). The frame typed the panel from the
- *   spec before the engine landed; since desk/integration the engine's real
- *   payloads (Engine* below) are adapted to the page's types here, in one
- *   place, and a 404 (a server without the engine) still shows the labelled
- *   fixture, never silently.
+ *   docs/desk/EVENT_STUDY_REPORT.md §5). The engine's real payloads
+ *   (Engine* below) are adapted to the page's types here, in one place.
+ *   Since desk/frame-2 there is no fixture: a server without the engine
+ *   answers 404 and the page says so in a sentence (DESK_FRAME2_SPEC §1).
+ *   The adapter only renames and scales (a return × 100 into percent);
+ *   every number on screen is a served field.
  *
  * Kept apart from api/queries.ts: the hook-coverage suite scans that file
  * for the redesign's parity list, and these hooks belong to the Desk.
@@ -61,9 +62,8 @@ export interface EventStudyAsset {
   id: string;
   label: string;
   shock_unit: ShockUnit;
-  /** First date with history, YYYY-MM-DD. Lists warn when it is after 1990. */
+  /** First date with history, YYYY-MM-DD. */
   history_from: string;
-  /** Short series: selectable, with the warning shown (spec §3). */
   warn?: boolean;
   /** The engine's status: stored, or awaiting the first full refresh. */
   status?: string;
@@ -82,6 +82,11 @@ export interface EventStudyAssets {
   presets?: { slug: string; label: string }[];
   /** Labels of the series a study cannot read until the full refresh stores them. */
   awaiting?: string[];
+  /** Months between an event and the regime label it reads (the engine's lag). */
+  regime_lag_months: number | null;
+  /** Series the engine registers but a study cannot read yet (planned or
+   * deferred), as served: what a Designed panel names as its future input. */
+  registered: { id: string; label: string; status: string }[];
 }
 
 /** A study in the page's terms. `cond` is "none", a condition key, or a key
@@ -99,6 +104,9 @@ export interface EventStudyParams {
   target: string;
 }
 
+/** The engine's verdict on zero per horizon (EVENT_STUDY_REPORT §9, R-18). */
+export type Exclusion = "established" | "not established" | "included";
+
 export interface EventStudyHorizon {
   h: number;
   n: number;
@@ -110,20 +118,33 @@ export interface EventStudyHorizon {
   p75: number | null;
   baseline_median: number | null;
   baseline_hit_rate: number | null;
-  /** median − baseline median. */
+  baseline_p25: number | null;
+  baseline_p75: number | null;
+  /** median − baseline median, as served. */
   delta: number | null;
   /** 90% cluster-bootstrap interval on delta, [low, high]; null below five blocks. */
   ci90: [number, number] | null;
-  n_blocks?: number | null;
-  exclusion?: string | null;
-  note?: string | null;
+  n_blocks: number | null;
+  exclusion: Exclusion | null;
+  note: string | null;
+}
+
+export interface EventStudyRegimeCell {
+  n: number;
+  hit_rate: number | null;
+  median: number | null;
+  /** The baseline inside this regime, as served. */
+  baseline_median: number | null;
+  /** "n<10" where the engine suppressed the read. */
+  note: string | null;
 }
 
 export interface EventStudyRegimeRow {
   regime: string;
   n: number;
-  /** Per horizon; null where the engine suppressed the read (N < 10). */
-  by_horizon: Record<string, { hit_rate: number | null; median: number | null }>;
+  /** The Unlabeled row: events before the first stored label, outside the totals. */
+  excluded_from_totals: boolean;
+  by_horizon: Record<string, EventStudyRegimeCell>;
   suppressed: boolean;
 }
 
@@ -132,56 +153,70 @@ export interface EventStudyEvent {
   regime: string;
   /** The shock's z at the event; null for a cross. */
   z: number | null;
-  entry_date?: string;
+  entry_date: string | null;
+  same_session: boolean;
   /** Forward move per horizon, in the target's display unit; null when the window is incomplete. */
   forward: Record<string, number | null>;
 }
 
+export interface EventStudyInput {
+  key: string;
+  label: string;
+  table: string;
+  history_from: string;
+  last: string | null;
+}
+
 export interface EventStudyProvenance {
   as_of: string;
+  as_of_by_series: Record<string, string>;
+  data_start: string | null;
   sample_start: string;
   sample_end: string;
   n_events: number;
+  n_unlabeled: number;
   /** Cooldown in sessions; null for a cross (it cannot recur before the opposite cross). */
   cooldown: number | null;
+  /** The engine's cooldown words ("20 sessions on the session calendar"). */
+  cooldown_rule: string | null;
   seed: number;
   inputs_hash: string;
-  n_boot?: number;
-  bootstrap?: string;
-}
-
-export interface EventStudyDistribution {
-  /** The horizon the bins describe. */
-  h: number;
-  /** Bin edges in the target's unit (length = counts + 1). */
-  edges: number[];
-  conditional: number[];
-  baseline: number[];
+  n_boot: number | null;
+  bootstrap: string | null;
+  n_blocks_by_h: Record<string, number>;
+  entry_rule: string | null;
+  entry_same_session: boolean | null;
+  regime_lag_months: number | null;
+  regime_rule: string | null;
+  hit_rate_rule: string | null;
+  warnings: string[];
+  inputs: EventStudyInput[];
+  /** Sessions in the trailing window the shock's z is scored against. */
+  z_window: number | null;
 }
 
 export interface EventStudyResponse {
   slug: string;
-  kind?: "shock" | "cross";
+  kind: "shock" | "cross";
   /** The engine's own one-line name for the study. */
-  label?: string;
+  label: string;
   params: EventStudyParams;
   shock: { label: string; unit: ShockUnit };
   target: { label: string; unit: ShockUnit };
   condition: { label: string } | null;
   horizons: EventStudyHorizon[];
   regime_split: EventStudyRegimeRow[];
+  /** The last ten events the engine serves, newest first (n_events can be larger). */
   recent_events: EventStudyEvent[];
   verdict: { text: string; points: string[] };
   provenance: EventStudyProvenance;
-  /** The engine serves no histogram bins; the panel prints "not served" when absent. */
-  distribution?: EventStudyDistribution | null;
 }
 
 /** What one request for a study can answer (EVENT_STUDY_REPORT §5, plus
  * desk/integration's awaiting state). 429 busy, 422 and 503 arrive as ApiError. */
 export type EventStudyResult =
   | { state: "ready"; study: EventStudyResponse }
-  | { state: "computing"; slug: string; detail: string }
+  | { state: "computing"; slug: string; detail: string; retry_after: number | null }
   | { state: "awaiting_refresh"; slug: string; series: string | null; detail: string };
 
 /* ── Event study: the engine's payloads (src/desk/event_study.py) ─────────── */
@@ -207,6 +242,7 @@ export interface EngineAssets {
   regimes: string[];
   presets: { slug: string; kind: string }[];
   awaiting_refresh?: string[];
+  regime_lag_months?: number;
   [more: string]: unknown;
 }
 
@@ -220,10 +256,12 @@ interface EngineHorizon {
   p75: number | null;
   baseline_median: number | null;
   baseline_hit_rate: number | null;
+  baseline_p25?: number | null;
+  baseline_p75?: number | null;
   delta: number | null;
   ci90: [number, number] | null;
   n_blocks: number | null;
-  exclusion: string | null;
+  exclusion: Exclusion | null;
   note: string | null;
 }
 
@@ -240,6 +278,41 @@ interface EngineQuery {
   cross: "golden" | "death" | null;
 }
 
+interface EngineRegimeHorizon {
+  h: number;
+  n?: number;
+  hit_rate: number | null;
+  median: number | null;
+  baseline_median?: number | null;
+  note?: string | null;
+}
+
+interface EngineProvenance {
+  as_of: string;
+  as_of_by_series?: Record<string, string>;
+  data_start?: string;
+  sample_start: string;
+  sample_end: string;
+  n_events: number;
+  n_unlabeled?: number;
+  cooldown?: string;
+  cooldown_sessions: number | null;
+  seed: number;
+  n_boot?: number;
+  bootstrap?: string;
+  inputs_hash: string;
+  n_blocks_by_h?: Record<string, number>;
+  entry_rule?: string;
+  entry_same_session?: boolean;
+  regime_lag_months?: number;
+  regime_rule?: string;
+  hit_rate_rule?: string;
+  warnings?: string[];
+  z_window?: number;
+  inputs?: { key: string; label: string; table: string; history_from: string; last: string | null; [more: string]: unknown }[];
+  [more: string]: unknown;
+}
+
 export type EngineAnswer =
   | {
       status: "ready";
@@ -253,12 +326,12 @@ export type EngineAnswer =
         target: { key: string; label: string; unit: ShockUnit; format: "pct" | "bp" };
       };
       horizons: EngineHorizon[];
-      regimes: { regime: string; n_events: number; excluded_from_totals: boolean; horizons: { h: number; hit_rate: number | null; median: number | null }[] }[];
-      recent_events: { date: string; z: number | null; regime: string; entry_date: string; moves: Record<string, number | null> }[];
+      regimes: { regime: string; n_events: number; excluded_from_totals: boolean; horizons: EngineRegimeHorizon[] }[];
+      recent_events: { date: string; z: number | null; regime: string; entry_date: string | null; same_session?: boolean; moves: Record<string, number | null> }[];
       verdict: { text: string; sentences: string[] };
-      provenance: { as_of: string; sample_start: string; sample_end: string; n_events: number; cooldown_sessions: number | null; seed: number; n_boot: number; bootstrap: string; inputs_hash: string; [more: string]: unknown };
+      provenance: EngineProvenance;
     }
-  | { status: "computing"; slug: string; retry_after: number; detail: string }
+  | { status: "computing"; slug: string; retry_after?: number; detail: string }
   | { status: "awaiting_refresh"; slug: string; series: string | null; detail: string };
 
 /* ── Event study: the adapter ─────────────────────────────────────────────── */
@@ -266,13 +339,13 @@ export type EngineAnswer =
 export const REGIME_ID: Record<string, string> = { Goldilocks: "goldilocks", Overheating: "overheating", Stagflation: "stagflation", "Recession Risk": "recession_risk" };
 
 /** The value the builder offers for a condition that takes one: VIX above 20,
- * HY OAS up more than 25 bp over 20 sessions (the frame's fixture values). */
+ * HY OAS up more than 25 bp over 20 sessions. */
 const COND_VALUE: Record<"level" | "bp", number> = { level: 20, bp: 25 };
 
-const PRESET_LABEL: Record<string, string> = {
-  "gold-2sigma-spx-weak": "Gold ≥ +2σ while the S&P 500 is below its 50-day average",
-  "spx-golden-cross": "S&P 500 golden cross",
-  "spx-death-cross": "S&P 500 death cross",
+export const PRESET_LABEL: Record<string, string> = {
+  "gold-2sigma-spx-weak": "Gold up 2σ, S&P below its 50-day",
+  "spx-golden-cross": "S&P golden cross",
+  "spx-death-cross": "S&P death cross",
 };
 
 /** Python's repr for the builder's numbers (studies.ts carries the same rule). */
@@ -310,6 +383,8 @@ export function toPageAssets(a: EngineAssets): EventStudyAssets {
     signs: a.signs,
     presets: a.presets.map((p) => ({ slug: p.slug, label: PRESET_LABEL[p.slug] ?? p.slug })),
     awaiting: (a.awaiting_refresh ?? []).map((k) => labelOf.get(k) ?? k),
+    regime_lag_months: typeof a.regime_lag_months === "number" ? a.regime_lag_months : null,
+    registered: a.shocks.filter((x) => x.status === "planned" || x.status === "deferred").map((x) => ({ id: x.key, label: x.label, status: x.status })),
   };
 }
 
@@ -322,11 +397,13 @@ function toPageParams(q: EngineQuery): EventStudyParams {
 }
 
 export function toStudyResult(a: EngineAnswer): EventStudyResult {
-  if (a.status === "computing") return { state: "computing", slug: a.slug, detail: a.detail };
+  if (a.status === "computing") return { state: "computing", slug: a.slug, detail: a.detail, retry_after: typeof a.retry_after === "number" ? a.retry_after : null };
   if (a.status === "awaiting_refresh") return { state: "awaiting_refresh", slug: a.slug, series: a.series, detail: a.detail };
-  // The engine serves a return or a VIX change as a fraction and a yield or spread in bp.
+  // The engine serves a return or a VIX change as a fraction and a yield or
+  // spread in bp: the one scaling the page does, so a move prints in % or bp.
   const k = a.study.target.format === "bp" ? 1 : 100;
   const m = (x: number | null | undefined): number | null => (x == null ? null : x * k);
+  const p = a.provenance;
   const study: EventStudyResponse = {
     slug: a.study.slug,
     kind: a.study.kind,
@@ -345,38 +422,56 @@ export function toStudyResult(a: EngineAnswer): EventStudyResult {
       p75: m(h.p75),
       baseline_median: m(h.baseline_median),
       baseline_hit_rate: h.baseline_hit_rate,
+      baseline_p25: m(h.baseline_p25),
+      baseline_p75: m(h.baseline_p75),
       delta: m(h.delta),
       ci90: h.ci90 ? [h.ci90[0] * k, h.ci90[1] * k] : null,
       n_blocks: h.n_blocks,
-      exclusion: h.exclusion,
-      note: h.note,
+      exclusion: h.exclusion ?? null,
+      note: h.note ?? null,
     })),
     regime_split: a.regimes.map((r) => ({
-      regime: r.excluded_from_totals ? `${r.regime} (outside the totals)` : r.regime,
+      regime: r.regime,
       n: r.n_events,
+      excluded_from_totals: r.excluded_from_totals,
       suppressed: r.horizons.every((x) => x.median == null),
-      by_horizon: Object.fromEntries(r.horizons.map((x) => [String(x.h), { hit_rate: x.hit_rate, median: m(x.median) }])),
+      by_horizon: Object.fromEntries(
+        r.horizons.map((x) => [String(x.h), { n: x.n ?? r.n_events, hit_rate: x.hit_rate, median: m(x.median), baseline_median: m(x.baseline_median), note: x.note ?? null }]),
+      ),
     })),
     recent_events: a.recent_events.map((e) => ({
       date: e.date,
       regime: e.regime,
       z: e.z,
-      entry_date: e.entry_date,
+      entry_date: e.entry_date ?? null,
+      same_session: Boolean(e.same_session),
       forward: Object.fromEntries(Object.entries(e.moves).map(([h, v]) => [h, m(v)])),
     })),
     verdict: { text: a.verdict.text, points: a.verdict.sentences },
     provenance: {
-      as_of: a.provenance.as_of,
-      sample_start: a.provenance.sample_start,
-      sample_end: a.provenance.sample_end,
-      n_events: a.provenance.n_events,
-      cooldown: a.provenance.cooldown_sessions,
-      seed: a.provenance.seed,
-      inputs_hash: a.provenance.inputs_hash,
-      n_boot: a.provenance.n_boot,
-      bootstrap: a.provenance.bootstrap,
+      as_of: p.as_of,
+      as_of_by_series: p.as_of_by_series ?? {},
+      data_start: p.data_start ?? null,
+      sample_start: p.sample_start,
+      sample_end: p.sample_end,
+      n_events: p.n_events,
+      n_unlabeled: p.n_unlabeled ?? 0,
+      cooldown: p.cooldown_sessions,
+      cooldown_rule: p.cooldown ?? null,
+      seed: p.seed,
+      inputs_hash: p.inputs_hash,
+      n_boot: p.n_boot ?? null,
+      bootstrap: p.bootstrap ?? null,
+      n_blocks_by_h: p.n_blocks_by_h ?? {},
+      entry_rule: p.entry_rule ?? null,
+      entry_same_session: typeof p.entry_same_session === "boolean" ? p.entry_same_session : null,
+      regime_lag_months: typeof p.regime_lag_months === "number" ? p.regime_lag_months : null,
+      regime_rule: p.regime_rule ?? null,
+      hit_rate_rule: p.hit_rate_rule ?? null,
+      warnings: p.warnings ?? [],
+      inputs: (p.inputs ?? []).map((x) => ({ key: x.key, label: x.label, table: x.table, history_from: x.history_from, last: x.last ?? null })),
+      z_window: typeof p.z_window === "number" ? p.z_window : null,
     },
-    distribution: null,
   };
   return { state: "ready", study };
 }
@@ -405,17 +500,24 @@ export function useEventStudyAssets() {
   });
 }
 
-/** One study by its engine slug. A 202 `computing` is polled every 3 s (the
- * engine's Retry-After) until it is ready; a retryable error (429 busy, 503
- * warming, a timeout) is retried a few times; 422 and 503 not_stored surface
- * as errors with the engine's reason. */
+/** How long to wait before asking again for a study the engine is computing:
+ * the engine's own Retry-After, else three seconds. */
+export function pollInterval(r: EventStudyResult | undefined): number | false {
+  if (r?.state !== "computing") return false;
+  return Math.max(1, r.retry_after ?? 3) * 1000;
+}
+
+/** One study by its engine slug. A 202 `computing` is polled at the engine's
+ * Retry-After until it is ready; a retryable error (429 busy, 503 warming, a
+ * timeout) is retried a few times; 422 and 503 not_stored surface as errors
+ * with the engine's reason. */
 export function useEventStudy(slug: string | null) {
   return useQuery({
     queryKey: ["desk", "event-study", slug],
     queryFn: async () => toStudyResult(await getJson<EngineAnswer>("/api/desk/event-study", slug ? { study: slug } : undefined)),
     enabled: slug != null,
     staleTime: 15 * MINUTE,
-    refetchInterval: (q) => (q.state.data?.state === "computing" ? 3_000 : false),
+    refetchInterval: (q) => pollInterval(q.state.data),
     retry: deskRetry,
     retryDelay: 3_000,
   });
