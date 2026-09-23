@@ -232,7 +232,15 @@ function PromoteForm({ onSaved, signal }: { onSaved: (p: Position, persisted: bo
             </optgroup>
           </select>
           <p className="mrr-desk-hint" role="status">
-            {!ref ? "The level is judged against this series' live reading." : reading.data ? `Now ${fmtValue(ref, reading.data.value)} (${readingDate(reading.data)}).` : reading.isError ? "The live reading did not answer." : "Reading the series…"}
+            {!ref
+              ? "The level is judged against this series' live reading."
+              : reading.awaitingRefresh
+                ? "Awaiting refresh: the reading and its date did not come from one data generation."
+                : reading.data
+                  ? `Now ${fmtValue(ref, reading.data.value)} (${readingDate(reading.data)}).`
+                  : reading.isError
+                    ? "The live reading did not answer."
+                    : "Reading the series…"}
           </p>
         </div>
         <div className="mrr-desk-field">
@@ -308,7 +316,7 @@ export function MonitoredRow({ p, reading, isClient, onRemove, compact = false }
           </>
         ) : (
           <div className="mrr-desk-row-sub" role="status">
-            {reading.isError ? "Live reading unavailable." : "Reading the series…"}
+            {reading.awaitingRefresh ? "Awaiting refresh." : reading.isError ? "Live reading unavailable." : "Reading the series…"}
           </div>
         )}
       </div>

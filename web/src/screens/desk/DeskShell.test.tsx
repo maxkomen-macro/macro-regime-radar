@@ -600,3 +600,44 @@ describe("R-12: Presets fired dates itself by the earliest cutoff", () => {
   });
 });
 
+describe("R-07, fourth round: the generation identity is id, build stamp and as_of together", () => {
+  it("a worker restart (id 1 again, a new build stamp) never dates a new value by the old generation; a repeated split reads awaiting refresh", async () => {
+    // Every freshness read reports id 1 with a later build stamp and a later
+    // observation date: no two reads share an identity, so no pair can be made.
+    let reads = 0;
+    stub({
+      "/api/freshness": () => {
+        reads += 1;
+        const day = String(16 + reads).padStart(2, "0");
+        return { ...fresh(), generation: { id: 1, built_at: `2026-09-${day}T23:10:00Z`, source: "macro_radar.db" }, series: fresh().series.map((x) => (x.id === "DGS10" ? { ...x, as_of: `2026-09-${day}` } : x)) };
+      },
+      "/series/DGS10/latest": () => ({ series_id: "DGS10", date: "2026-09-01", value: 4.25 }),
+    });
+    window.localStorage.setItem(
+      POSITIONS_KEY,
+      JSON.stringify({ version: 1, positions: [{ id: "p1", instrument: "TLT", direction: "long", size: "", horizon: "3 months", variant_view: "Duration is likely to cheapen.", pre_mortem: "The curve steepened.", falsification: { series: "DGS10", level: 3.8, direction: "below" }, created_at: "2026-09-20T14:00:00Z" }] }),
+    );
+    renderDesk("/desk/position-monitor");
+    const row = await screen.findByTestId("desk-position");
+    await waitFor(() => expect(row).toHaveTextContent("Awaiting refresh."));
+    expect(row).not.toHaveTextContent("4.25");
+    expect(row).not.toHaveTextContent(/now \(/);
+  });
+});
+
+describe("R-08, fourth round: no window reads open without the engine's per-event flag", () => {
+  it("the events table prints 'no observation' for the Oct 27, 2025 event's missing 10-session return", async () => {
+    const { toStudyResult } = await import("../../api/desk");
+    const { EventsCard } = await import("./event-study/results");
+    const raw = structuredClone(engineStudies.preset) as { horizons: { h: number; n_incomplete: number }[]; recent_events: { date: string; moves: Record<string, number | null> }[] };
+    raw.horizons.find((h) => h.h === 10)!.n_incomplete = 2;
+    raw.recent_events[0] = { ...raw.recent_events[0], date: "2025-10-27", moves: { "5": 0.004, "10": null, "20": 0.021, "60": 0.05 } };
+    const r = toStudyResult(raw as never);
+    if (r.state !== "ready") throw new Error("not ready");
+    renderWithProviders(<EventsCard study={r.study} />, { route: "/desk/event-study" });
+    const row = screen.getByText("Oct 27, 2025").closest("tr")!;
+    expect(row).toHaveTextContent("no observation");
+    expect(document.body).not.toHaveTextContent("window open");
+  });
+});
+

@@ -60,8 +60,8 @@ function current(study: EventStudyResponse, b: Behind | null): (Behind & { n: nu
   return n == null ? null : { ...b, n };
 }
 
-function Missing({ study, e, h }: { study: EventStudyResponse; e: EventStudyEvent; h: number }) {
-  return <span style={{ color: "var(--text-3)" }}>{missingForwardWord(study.recent_events, study.horizons, e.date, h)}</span>;
+function Missing({ e, h }: { e: EventStudyEvent; h: number }) {
+  return <span style={{ color: "var(--text-3)" }}>{missingForwardWord(e, h)}</span>;
 }
 
 /** The events the response carries behind one cell, with the count stated. */
@@ -84,7 +84,7 @@ export function EventsBehind({ study, behind, unit, onClose, id }: { study: Even
       label: h === behind.h ? `▸ +${h}d` : `+${h}d`,
       mono: true,
       align: "right" as const,
-      render: (e: Ev) => (e.forward[String(h)] == null ? <Missing study={study} e={e} h={h} /> : fmtMove(e.forward[String(h)], unit)),
+      render: (e: Ev) => (e.forward[String(h)] == null ? <Missing e={e} h={h} /> : fmtMove(e.forward[String(h)], unit)),
     })),
   ];
   return (
@@ -270,7 +270,7 @@ export function EventsCard({ study, id = "events", title = "Recent events" }: { 
     { key: "date", label: "Event date", mono: true, render: (e: Ev) => fmtDate(e.date) },
     { key: "regime", label: "Regime" },
     ...(study.kind === "cross" ? [] : [{ key: "z", label: <Jargon term="z-score">z</Jargon>, mono: true, align: "right" as const, render: (e: Ev) => fmtZ(e.z) }]),
-    ...hs.map((h) => ({ key: `f${h}`, label: `+${h}d`, mono: true, align: "right" as const, render: (e: Ev) => (e.forward[String(h)] == null ? <Missing study={study} e={e} h={h} /> : fmtMove(e.forward[String(h)], unit)) })),
+    ...hs.map((h) => ({ key: `f${h}`, label: `+${h}d`, mono: true, align: "right" as const, render: (e: Ev) => (e.forward[String(h)] == null ? <Missing e={e} h={h} /> : fmtMove(e.forward[String(h)], unit)) })),
   ];
   return (
     <Panel id={id} title={title} description={`The last ${rows.length} of ${study.provenance.n_events} events, newest first${study.condition ? `, while ${study.condition.label}` : ""}.`} badge={<StudyBadge study={study} />}>

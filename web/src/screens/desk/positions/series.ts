@@ -86,8 +86,24 @@ export interface Reading {
   date: string | null;
   /** A monthly series: the date names a month. */
   monthly?: boolean;
-  /** The data generation both halves of a FRED pair came from. */
-  generation?: number | null;
+  /** The data generation both halves of a FRED pair came from: its id and
+   * build stamp together (an id alone restarts at 1 with the worker). */
+  generation?: { id: number | null; built_at: string | null } | null;
+}
+
+/** A FRED value that could not be paired with its date inside one generation,
+ * twice: the page shows "awaiting refresh" in place of any value (review R-07,
+ * fourth round), never a value with another generation's date. */
+export class GenerationSplit extends Error {
+  readonly awaitingRefresh = true;
+  constructor(seriesId: string) {
+    super(`The ${seriesId} reading and its observation date came from different data generations twice; awaiting a refresh.`);
+    this.name = "GenerationSplit";
+  }
+}
+
+export function isGenerationSplit(e: unknown): boolean {
+  return e instanceof GenerationSplit || (typeof e === "object" && e != null && (e as { awaitingRefresh?: unknown }).awaitingRefresh === true);
 }
 
 /** "Sep 17, 2026", "Aug 2026" for a monthly series, or "date unknown". */
@@ -99,30 +115,45 @@ export function readingDate(r: Pick<Reading, "date" | "monthly">): string {
 /** The parts of /api/freshness a FRED pair reads. */
 type FreshnessLite = Pick<Freshness, "series" | "generation">;
 
+/** The identity of the generation a freshness report was served from, with
+ * the series' own observation date in it: the generation id, its build stamp
+ * and the as_of. The id alone is a process-local counter that restarts at 1
+ * when the worker restarts, so it is never compared by itself (review R-07,
+ * fourth round). */
+export function generationIdentity(f: FreshnessLite, seriesId: string): { id: number | null; built_at: string | null; as_of: string | null } {
+  const s = f.series?.find((x) => x.id === seriesId);
+  return { id: f.generation?.id ?? null, built_at: f.generation?.built_at ?? null, as_of: s?.as_of ?? null };
+}
+
+function sameIdentity(a: ReturnType<typeof generationIdentity>, b: ReturnType<typeof generationIdentity>): boolean {
+  return a.id === b.id && a.built_at === b.built_at && a.as_of === b.as_of;
+}
+
 /** A FRED value and its observation date as one pair from one data generation
  * (review R-07). /series/{id}/latest carries no generation, so the value is
- * read between two freshness reads: generations only advance, so when both
- * name the same generation the value was served by it too, and that report's
- * observation date belongs to that value. Another generation published in
- * between: read the pair again, once; still split, refuse (the caller shows
- * the old pair it holds, or "unavailable"). A report without generations
- * (an older API) gives the value with no date ("date unknown"). The pair is
- * cached as one object, so a refetch that fails keeps the old value with its
- * old date, and a newer date is never attached to a cached value. */
+ * read between two freshness reads and paired with that report's observation
+ * date only when the two reads carry the same full identity: generation id,
+ * build stamp and the series' as_of. Generations only advance, so a value
+ * read between two identical identities was served by that generation. A
+ * mismatch: read the pair again, once; a second mismatch throws
+ * GenerationSplit and the page shows "awaiting refresh" rather than any
+ * value. A report with no generation at all (an older API) gives the value
+ * with no date ("date unknown"). The pair is cached as one object, so a
+ * refetch that fails for another reason keeps the old value with its old date,
+ * and a newer date is never attached to a cached value. */
 export async function fetchFredPair(ref: SeriesRef, get: typeof getJson = getJson): Promise<Reading> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const before = await get<FreshnessLite>("/api/freshness");
     const p = await get<{ series_id: string; date: string; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
     const after = await get<FreshnessLite>("/api/freshness");
-    const g1 = before.generation?.id ?? null;
-    const g2 = after.generation?.id ?? null;
-    if (g1 == null && g2 == null) return { value: p.value, date: null, generation: null };
-    if (g1 != null && g1 === g2) {
-      const s = before.series?.find((x) => x.id === ref.id);
-      return { value: p.value, date: s?.as_of ? s.as_of.slice(0, 10) : null, monthly: s?.cadence === "monthly", generation: g1 };
-    }
+    const g1 = generationIdentity(before, ref.id);
+    const g2 = generationIdentity(after, ref.id);
+    if (!sameIdentity(g1, g2)) continue;
+    if (g1.id == null && g1.built_at == null) return { value: p.value, date: null, generation: null };
+    const s = before.series?.find((x) => x.id === ref.id);
+    return { value: p.value, date: g1.as_of ? g1.as_of.slice(0, 10) : null, monthly: s?.cadence === "monthly", generation: { id: g1.id, built_at: g1.built_at } };
   }
-  throw new Error(`The ${ref.id} reading and its date came from different data generations twice; not shown.`);
+  throw new GenerationSplit(ref.id);
 }
 
 const MINUTE = 60_000;
@@ -146,18 +177,23 @@ function readingOptions(ref: SeriesRef | undefined) {
     queryFn: (): Promise<Reading> => (ref ? fetchReading(ref) : Promise.reject(new Error("No series chosen."))),
     enabled: ref != null,
     staleTime: 5 * MINUTE,
-    retry: 1,
+    // A split pair is already retried once inside fetchFredPair; other failures once here.
+    retry: (failures: number, e: unknown) => !isGenerationSplit(e) && failures < 1,
   };
 }
 
 export function useReading(id: string | null | undefined) {
-  return useQuery<Reading, Error, Reading, ReadingKey>(readingOptions(seriesRef(id)));
+  const q = useQuery<Reading, Error, Reading, ReadingKey>(readingOptions(seriesRef(id)));
+  const split = isGenerationSplit(q.error);
+  return { ...q, data: split ? undefined : q.data, awaitingRefresh: split };
 }
 
 export interface ReadingState {
   data?: Reading;
   isLoading: boolean;
   isError: boolean;
+  /** The pair split across generations twice: show "awaiting refresh", no value. */
+  awaitingRefresh?: boolean;
 }
 
 /** One reading per position, keyed by the position id. */
@@ -165,7 +201,8 @@ export function useReadings(positions: readonly Position[]): Record<string, Read
   const results = useQueries({ queries: positions.map((p) => readingOptions(seriesRef(p.falsification.series))) });
   const out: Record<string, ReadingState> = {};
   positions.forEach((p, i) => {
-    out[p.id] = { data: results[i]?.data, isLoading: Boolean(results[i]?.isLoading), isError: Boolean(results[i]?.isError) };
+    const split = isGenerationSplit(results[i]?.error);
+    out[p.id] = { data: split ? undefined : results[i]?.data, isLoading: Boolean(results[i]?.isLoading), isError: Boolean(results[i]?.isError), awaitingRefresh: split };
   });
   return out;
 }

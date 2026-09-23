@@ -127,8 +127,6 @@ export interface EventStudyHorizon {
   n_blocks: number | null;
   exclusion: Exclusion | null;
   note: string | null;
-  /** Events at this horizon whose window the engine marks incomplete (review R-08). */
-  n_incomplete: number | null;
 }
 
 export interface EventStudyRegimeCell {
@@ -158,6 +156,10 @@ export interface EventStudyEvent {
   same_session: boolean;
   /** Forward move per horizon, in the target's display unit; null when the window is incomplete. */
   forward: Record<string, number | null>;
+  /** Per horizon, true only where the engine says this event's window is still
+   * open (entry session + h past the as_of session). The engine does not serve
+   * it yet (review R-08, deferred): absent, no window reads as open. */
+  window_open: Record<string, boolean>;
 }
 
 export interface EventStudyInput {
@@ -329,7 +331,7 @@ export type EngineAnswer =
       };
       horizons: EngineHorizon[];
       regimes: { regime: string; n_events: number; excluded_from_totals: boolean; horizons: EngineRegimeHorizon[] }[];
-      recent_events: { date: string; z: number | null; regime: string; entry_date: string | null; same_session?: boolean; moves: Record<string, number | null> }[];
+      recent_events: { date: string; z: number | null; regime: string; entry_date: string | null; same_session?: boolean; moves: Record<string, number | null>; window_open?: Record<string, boolean> }[];
       verdict: { text: string; sentences: string[] };
       provenance: EngineProvenance;
     }
@@ -431,7 +433,6 @@ export function toStudyResult(a: EngineAnswer): EventStudyResult {
       n_blocks: h.n_blocks,
       exclusion: h.exclusion ?? null,
       note: h.note ?? null,
-      n_incomplete: typeof h.n_incomplete === "number" ? h.n_incomplete : null,
     })),
     regime_split: a.regimes.map((r) => ({
       regime: r.regime,
@@ -448,6 +449,7 @@ export function toStudyResult(a: EngineAnswer): EventStudyResult {
       entry_date: e.entry_date ?? null,
       same_session: Boolean(e.same_session),
       forward: Object.fromEntries(Object.entries(e.moves).map(([h, v]) => [h, m(v)])),
+      window_open: Object.fromEntries(Object.entries(e.window_open ?? {}).filter(([, v]) => v === true)),
     })),
     verdict: { text: a.verdict.text, points: a.verdict.sentences },
     provenance: {

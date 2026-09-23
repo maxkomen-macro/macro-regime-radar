@@ -14,7 +14,7 @@ import studiesJson from "./__fixtures__/engine-studies.json";
 import { EXCLUSION_CLIENT, EXCLUSION_CLIENT_SHORT, eventsBehind, factsLine, fmtInterval, fmtMove, fmtZ, historyLine, missingForwardWord, sampleLine } from "./format";
 import { sourceLine, titleFor } from "./EventStudyPage";
 import { behindCount } from "./results";
-import { fetchFredPair, readingDate, seriesRef } from "../positions/series";
+import { GenerationSplit, fetchFredPair, readingDate, seriesRef } from "../positions/series";
 import { niceTicks } from "./HorizonChart";
 import { cutoffs, studiesSource, studySource, studyVerdict } from "./StudyBadge";
 
@@ -168,51 +168,68 @@ describe("review round (R-01, R-04, R-07, R-08)", () => {
     expect(titleFor(cross, true)).toContain("counting only events in Goldilocks");
   });
 
-  it("R-08: 'window open' only where the response marks the horizon incomplete; every other gap is 'no observation'", () => {
-    const ev = (date: string, v: number | null) => ({ date, regime: "Goldilocks", z: null, entry_date: date, same_session: true, forward: { "60": v, "20": v } });
-    const events = [ev("2026-09-10", null), ev("2026-07-01", null), ev("2026-03-01", 1.2), ev("2025-11-01", null), ev("2025-06-01", 2.0)];
-    const marked = [{ h: 60, n_incomplete: 2 }, { h: 20, n_incomplete: 0 }];
-    expect(missingForwardWord(events, marked, "2026-09-10", 60)).toBe("window open");
-    expect(missingForwardWord(events, marked, "2026-07-01", 60)).toBe("window open");
-    // Below a closed newer window: a gap, even at a marked horizon.
-    expect(missingForwardWord(events, marked, "2025-11-01", 60)).toBe("no observation");
-    // A horizon the response does not mark incomplete: never "window open".
-    expect(missingForwardWord(events, marked, "2026-09-10", 20)).toBe("no observation");
-    expect(missingForwardWord(events, [{ h: 60, n_incomplete: null }], "2026-09-10", 60)).toBe("no observation");
-    expect(missingForwardWord(events, [], "2026-09-10", 60)).toBe("no observation");
+  it("R-08: the Oct 27, 2025 case: a lapsed 10-session window with a missing return reads 'no observation'", () => {
+    // A saved engine payload with its newest event made the reviewer's case:
+    // 2025-10-27, the 10-session return missing, 20 and 60 present, and the
+    // horizon's n_incomplete at 2 (an aggregate over every event).
+    const raw = structuredClone(studiesJson.preset) as unknown as EngineAnswer & { horizons: { h: number; n_incomplete: number }[]; recent_events: { date: string; moves: Record<string, number | null> }[] };
+    raw.horizons.find((h) => h.h === 10)!.n_incomplete = 2;
+    raw.recent_events[0] = { ...raw.recent_events[0], date: "2025-10-27", moves: { "5": 0.004, "10": null, "20": 0.021, "60": 0.05 } };
+    const s = page(raw);
+    const oct = s.recent_events[0];
+    expect(oct.date).toBe("2025-10-27");
+    expect(oct.forward["10"]).toBeNull();
+    expect(missingForwardWord(oct, 10)).toBe("no observation");
+    // With the engine's flag the word follows it, and only it (the engine does not serve it yet).
+    expect(missingForwardWord({ window_open: { "60": true } }, 60)).toBe("window open");
+    expect(missingForwardWord({ window_open: { "60": false } }, 60)).toBe("no observation");
+    expect(missingForwardWord({ window_open: {} }, 60)).toBe("no observation");
+    // Excluded from N as before: the horizon's n is the engine's, untouched.
+    expect(s.horizons.find((h) => h.h === 10)!.n).toBe((raw.horizons as { h: number; n: number }[]).find((h) => h.h === 10)!.n);
   });
 
-  it("R-08: the adapter carries each horizon's n_incomplete as served", () => {
-    const raw = studiesJson.preset as unknown as { horizons: { h: number; n_incomplete: number }[] };
-    expect(gold.horizons.map((h) => [h.h, h.n_incomplete])).toEqual(raw.horizons.map((h) => [h.h, h.n_incomplete]));
+  it("R-08: the adapter keeps only true window_open flags an engine serves, and none when it serves none", () => {
+    const raw = structuredClone(studiesJson.preset) as unknown as EngineAnswer & { recent_events: Record<string, unknown>[] };
+    expect(page(raw).recent_events.every((e) => Object.keys(e.window_open).length === 0)).toBe(true);
+    raw.recent_events[0] = { ...raw.recent_events[0], window_open: { "5": false, "60": true } };
+    expect(page(raw).recent_events[0].window_open).toEqual({ "60": true });
   });
 
-  it("R-07: a FRED value and its date are one pair from one generation", async () => {
-    // A scripted API: freshness reports (generation + DGS10's observation date) and the value.
-    const run = async (gens: number[], value = 4.12, asOf = "2026-09-17") => {
+  it("R-07: a FRED value and its date are one pair from one generation identity", async () => {
+    type Gen = { id: number | null; built_at: string | null; as_of: string };
+    // A scripted API: each /api/freshness read answers the next identity in `gens`.
+    const run = async (gens: Gen[], value = 4.12) => {
       const calls: string[] = [];
       let f = 0;
       const get = (async (path: string) => {
         calls.push(path);
         if (path === "/api/freshness") {
-          const id = gens[f++] ?? gens.at(-1);
-          return { generation: { id }, series: [{ id: "DGS10", as_of: asOf, cadence: "daily" }, { id: "UNRATE", as_of: "2026-08-01", cadence: "monthly" }] };
+          const g = gens[Math.min(f++, gens.length - 1)];
+          return { generation: { id: g.id, built_at: g.built_at, source: "macro_radar.db" }, series: [{ id: "DGS10", as_of: g.as_of, cadence: "daily" }] };
         }
         return { series_id: "DGS10", date: "2026-09-01", value };
       }) as never;
       return { reading: await fetchFredPair(seriesRef("DGS10")!, get), calls };
     };
-    // One generation around the value: the pair is that generation's value and date.
-    const same = await run([1, 1]);
-    expect(same.reading).toEqual({ value: 4.12, date: "2026-09-17", monthly: false, generation: 1 });
-    expect(readingDate(same.reading)).toBe("Sep 17, 2026");
+    const g17: Gen = { id: 1, built_at: "2026-09-17T23:10:00Z", as_of: "2026-09-17" };
+    const g18: Gen = { id: 1, built_at: "2026-09-18T23:10:00Z", as_of: "2026-09-18" };
+    const g19: Gen = { id: 1, built_at: "2026-09-19T23:10:00Z", as_of: "2026-09-19" };
+    // One identity around the value: the pair is that generation's value and date.
+    const same = await run([g17, g17]);
+    expect(same.reading).toEqual({ value: 4.12, date: "2026-09-17", monthly: false, generation: { id: 1, built_at: g17.built_at } });
     expect(same.calls).toEqual(["/api/freshness", "/series/DGS10/latest", "/api/freshness"]);
-    // A generation published mid-read: read again, and pair within the new one.
-    const moved = await run([1, 2, 2, 2]);
-    expect(moved.reading.generation).toBe(2);
-    expect(moved.calls).toHaveLength(6);
-    // Split twice: refuse rather than guess.
-    await expect(run([1, 2, 3, 4])).rejects.toThrow(/different data generations/);
+    // Codex's repro: the worker restarted, so the id is 1 on both sides while the
+    // build stamp moved from Sep 17 to Sep 18 and the value is Sep 18's 4.25. The
+    // old check (id only) printed "4.25% now (Sep 17, 2026)". Now it reads again;
+    // the second read is one identity (Sep 18), so 4.25 is paired with Sep 18.
+    const restarted = await run([g17, g18, g18, g18], 4.25);
+    expect(restarted.reading).toMatchObject({ value: 4.25, date: "2026-09-18" });
+    expect(restarted.reading.date).not.toBe("2026-09-17");
+    expect(restarted.calls).toHaveLength(6);
+    // Identical ids, a different build stamp on every read: the misdated value is rejected.
+    await expect(run([g17, g18, g18, g19], 4.25)).rejects.toThrow(GenerationSplit);
+    // The same id and build stamp but a moved observation date is a different identity too.
+    await expect(run([g17, { ...g17, as_of: "2026-09-18" }, g17, { ...g17, as_of: "2026-09-18" }])).rejects.toThrow(/awaiting a refresh/);
     // A monthly series names its month; an API without generations gives no date.
     expect(readingDate({ date: "2026-08-01", monthly: true })).toBe("Aug 2026");
     const old = (async (path: string) => (path === "/api/freshness" ? { series: [{ id: "DGS10", as_of: "2026-09-17" }] } : { value: 4.12 })) as never;

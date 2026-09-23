@@ -78,18 +78,14 @@ export function eventsBehind(events: EventStudyEvent[], h: number, regime?: stri
   return events.filter((e) => e.forward[String(h)] != null && (regime == null || e.regime === regime));
 }
 
-/** Why a forward move is missing (review R-08, third round). "window open"
- * only when the response itself marks that horizon incomplete (the horizon's
- * `n_incomplete` above zero) and no newer event has a closed window at it
- * (events come newest first, so an older gap cannot be an open window). Every
- * other missing return reads "no observation". Reads served fields only. */
-export function missingForwardWord(events: readonly EventStudyEvent[], horizons: readonly Pick<EventStudyHorizon, "h" | "n_incomplete">[], date: string, h: number): "window open" | "no observation" {
-  const marked = (horizons.find((x) => x.h === h)?.n_incomplete ?? 0) > 0;
-  if (!marked) return "no observation";
-  const key = String(h);
-  const i = events.findIndex((e) => e.date === date);
-  const newerClosed = events.slice(0, i < 0 ? 0 : i).some((e) => e.forward[key] != null);
-  return newerClosed ? "no observation" : "window open";
+/** Why a forward move is missing (review R-08, fourth round). "window open"
+ * only when the event itself carries an explicit `window_open` flag for that
+ * horizon; a horizon's `n_incomplete` counts every incomplete window across
+ * all events, so it cannot say which one is still open. The engine does not
+ * serve the per-event flag yet (deferred by decision, report §8), so today
+ * every missing return reads "no observation". */
+export function missingForwardWord(e: Pick<EventStudyEvent, "window_open">, h: number): "window open" | "no observation" {
+  return e.window_open?.[String(h)] === true ? "window open" : "no observation";
 }
 
 /** The facts line under the verdict (spec §3):
