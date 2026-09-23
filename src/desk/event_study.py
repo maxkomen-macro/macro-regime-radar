@@ -336,7 +336,7 @@ def not_stored(spec: registry.DeskSeries, *, table_missing: bool) -> NotStored:
                f"{name} is awaiting the next full refresh: this database has no {spec.series_id} rows in {spec.table} yet.")
         return NotStored(msg, series=spec.key, awaiting_refresh=True)
     return NotStored(f"{name} is not stored in this database: it is a tier {spec.tier} series, and the full refresh "
-                     f"stores tier {registry.REFRESH_TIER} only.", series=spec.key)
+                     f"stores tiers up to {registry.REFRESH_TIER} only.", series=spec.key)
 
 
 def load_regimes(conn: sqlite3.Connection) -> pd.Series:

@@ -708,12 +708,14 @@ def test_not_stored_is_typed(tmp_path):
     assert es.run(es.PRESETS["gold-2sigma-spx-weak"], db)["provenance"]["n_events"] >= 0
 
 
-def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp_path):
+def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp_path, monkeypatch):
     """desk/integration, Step 4: the deployed database has no desk_series table
     until the first full refresh after the merge. A study on a series that
     refresh stores says so (awaiting_refresh, never the raw sqlite error); a
-    series no refresh stores yet (tier 2) stays not-stored and says why. The
-    flag survives copy.copy, which is how the worker re-raises a stored error."""
+    series no refresh stores yet stays not-stored and says why. The flag
+    survives copy.copy, which is how the worker re-raises a stored error.
+    desk/hardening: the refresh stores tier 2, so the Nasdaq 100 is awaiting it
+    too; the planned path is pinned with the refresh tier set back to 1."""
     import copy
 
     db = _synthetic_db(tmp_path / "s.db")
@@ -724,19 +726,29 @@ def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp
     assert "first full refresh" in str(awaiting.value) and "no such table" not in str(awaiting.value)
     again = copy.copy(awaiting.value)
     assert again.awaiting_refresh is True and again.series == "us10y" and str(again) == str(awaiting.value)
-    with pytest.raises(es.NotStored) as planned:
+    with pytest.raises(es.NotStored) as tier2:
         es.run(es.Query(shock="ndx", target="spx"), db)
-    assert planned.value.awaiting_refresh is False and "tier 2" in str(planned.value) and "^NDX" in str(planned.value)
+    assert tier2.value.awaiting_refresh is True and tier2.value.series == "ndx" and "first full refresh" in str(tier2.value)
 
     a = es.assets_with_coverage(db)
     by = {x["key"]: x for x in a["shocks"]}
-    tier1 = [s.key for s in registry.fetched(registry.REFRESH_TIER)]
-    assert tier1 == ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas"]
-    assert set(tier1) <= set(a["awaiting_refresh"])
+    stored_by_refresh = [s.key for s in registry.fetched(registry.REFRESH_TIER)]
+    assert stored_by_refresh == ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "wti", "ndx", "dxy", "usdjpy"]
+    assert set(stored_by_refresh) <= set(a["awaiting_refresh"])
     for k in a["awaiting_refresh"]:
         assert by[k]["status"] == "awaiting_refresh" and registry.stored_by_refresh(registry.get(k)), k
-    assert by["ndx"]["status"] == "planned" and by["wti"]["status"] == "planned" and by["spx"]["status"] == "stored"
-    assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["rut"]  # ^RUT is not in the synthetic store
+    assert by["ndx"]["status"] == "awaiting_refresh" and by["wti"]["status"] == "awaiting_refresh" and by["spx"]["status"] == "stored"
+    # ^RUT is not in the synthetic store, nor are the four tier-2 desk_series series
+    assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["wti", "ndx", "rut", "dxy", "usdjpy"]
+
+    # A tier the refresh does not store is planned: not stored, and it says why.
+    monkeypatch.setattr(registry, "REFRESH_TIER", 1)
+    with pytest.raises(es.NotStored) as planned:
+        es.run(es.Query(shock="ndx", target="spx"), db)
+    assert planned.value.awaiting_refresh is False and "tier 2" in str(planned.value) and "^NDX" in str(planned.value)
+    assert "stores tiers up to 1 only" in str(planned.value)
+    by = {x["key"]: x for x in es.assets_with_coverage(db)["shocks"]}
+    assert by["ndx"]["status"] == "planned" and by["wti"]["status"] == "planned" and by["us10y"]["status"] == "awaiting_refresh"
 
 
 def test_the_web_slug_fixture_is_the_engines():
@@ -803,7 +815,7 @@ def test_assets_from_the_registry_with_stored_coverage(synth):
     by = {x["key"]: x for x in a["shocks"]}
     assert by["spx"]["status"] == "stored" and by["spx"]["history_from"] == "1995-01-02" and by["spx"]["warn"]
     assert by["gold"]["status"] == "stored" and by["gold"]["defer_as_target"] and by["gold"]["known"] == "17:00 ET clock"
-    assert by["us10y"]["known"] == "next session open" and by["wti"]["status"] == "planned" and by["copper"]["status"] == "deferred"
+    assert by["us10y"]["known"] == "next session open" and by["wti"]["status"] == "awaiting_refresh" and by["copper"]["status"] == "deferred"
     assert "gold_lbma" not in by and a["unavailable"][0]["key"] == "gold_lbma"
     assert {t["key"] for t in a["targets"]} <= set(by) and [p["slug"] for p in a["presets"]] == list(es.PRESETS)
     assert a["regime_lag_months"] == 2 and a["history_bar"] == "1990-12-31" and a["master_calendar"]
@@ -1027,9 +1039,43 @@ def test_scratch_assets_gaps_and_timing():
         es.run(es.PRESETS[name], SCRATCH)
     assert time.perf_counter() - t < 8.0
     by = {x["key"]: x for x in a["shocks"]}
-    assert by["hy_oas"]["history_from"] == "2023-09-22" and by["hy_oas"]["warn"]
+    # desk/hardening: HY OAS starts where FRED's rolling three-year window stood
+    # when this copy was first filled (2023-09-22 for the owner's 2026-09-21
+    # copy, 2023-09-25 for one filled from 2026-09-22), never after the declaration.
+    hy_first = _read("SELECT date, value FROM desk_series WHERE series_id = ? ORDER BY date", "BAMLH0A0HYM2").index[0].strftime("%Y-%m-%d")
+    assert by["hy_oas"]["history_from"] == hy_first <= registry.get("hy_oas").history_from and by["hy_oas"]["warn"]
     assert by["gold"]["history_from"] == "2000-08-30" and by["spx"]["history_from"] == "1990-01-02" and not by["spx"]["warn"]
     r = es.run(es.Query(shock="us10y", w=20, z=2.0, sign="+", target="spx"), SCRATCH)
     p = r["provenance"]
     assert p["exclusions"]["us10y"]["off_session"] > 0, "Treasury prints on NYSE holidays are dropped"
     assert p["n_events"] > 0 and p["entry_same_session"] is False, "R-01: known at the next open"
+
+
+@scratch
+def test_scratch_tier2_series_are_stored_and_studied():
+    """desk/hardening: the full refresh stores tier 2. Against a copy filled by
+    `desk_history --tier 2`, each tier-2 series is stored from its declared
+    start or earlier and a study reads it: WTI's one settlement below zero
+    (2020-04-20) is an exclusion with its reason, never a log of a negative;
+    a USD/JPY shock enters a dollar-index target the next session (its bar
+    is read at 20:00 ET, after the index's 17:00 fixing); a Nasdaq 100 shock
+    enters the S&P the same session (both at the close)."""
+    c = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    stored = {r[0] for r in c.execute("SELECT DISTINCT series_id FROM desk_series")}
+    c.close()
+    tier2 = [s for s in registry.fetched(registry.REFRESH_TIER) if s.tier == 2]
+    if not {s.series_id for s in tier2} <= stored:
+        pytest.skip("the scratch copy predates the tier-2 store: run `desk_history --tier 2` against it")
+    by = {x["key"]: x for x in es.assets_with_coverage(SCRATCH)["shocks"]}
+    for spec in tier2:
+        row = by[spec.key]
+        assert row["status"] == "stored" and row["shock_unit"] == "log_return" and row["rows"] > 5000, row
+        assert row["history_from"] <= spec.history_from, row
+
+    wti = es.run(es.Query(shock="wti", w=5, z=2.0, sign="-", target="spx"), SCRATCH)["provenance"]
+    assert wti["exclusions"]["wti"]["invalid_values"] >= 1 and "non-positive" in wti["exclusions"]["wti"]["invalid_reason"]
+    assert wti["n_events"] > 0 and wti["entry_same_session"] is False, "WTI is known at the next open"
+    fx = es.run(es.Query(shock="usdjpy", w=5, z=2.0, sign="+", target="dxy"), SCRATCH)["provenance"]
+    assert fx["n_events"] > 0 and fx["entry_same_session"] is False
+    ndx = es.run(es.Query(shock="ndx", w=5, z=2.0, sign="-", target="spx"), SCRATCH)["provenance"]
+    assert ndx["n_events"] > 0 and ndx["entry_same_session"] is True

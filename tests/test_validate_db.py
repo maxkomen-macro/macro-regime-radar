@@ -319,3 +319,95 @@ def test_summary_shows_the_watermark_table(tmp_path):
     _add_watermarks(cur)
     md = v.summary_markdown(v.validate(cur, prev, "full", now=NOW))
     assert "Source watermarks" in md and "| fred:DGS10 | 2026-09-04 |" in md
+
+
+# ── desk/hardening (2026-09-23): tier-2 Desk series warn, never block ────────
+
+TIER1_DESK = ("DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2")
+
+
+def _desk_rows(path, series: dict[str, tuple[str, str, int]], watermarks: dict[str, tuple[str, str]] = {}):
+    """Replace desk_series with `series` (id → (provider, last date, row count),
+    consecutive weekdays back from the last) and add per-series watermarks
+    (id → (status, detail))."""
+    from datetime import date as _date, timedelta as _td
+
+    conn = sqlite3.connect(path)
+    conn.execute("DELETE FROM desk_series")
+    for sid, (provider, last, n) in series.items():
+        d, days = _date.fromisoformat(last), []
+        while len(days) < n:
+            if d.weekday() < 5:
+                days.append(d.isoformat())
+            d -= _td(days=1)
+        conn.executemany("INSERT INTO desk_series VALUES (?,?,?,?)", [(sid, day, 100.0, provider) for day in days])
+    for sid, (status, detail) in watermarks.items():
+        conn.execute("INSERT OR REPLACE INTO source_watermarks VALUES (?,?,?,?,?,?,?)",
+                     (f"desk:{sid}", series.get(sid, (None, None, 0))[1], None, "2026-09-05T21:00:00Z", "2026-09-05T21:00:00Z", status, detail))
+    conn.commit()
+    conn.close()
+
+
+def test_a_missing_short_or_behind_tier2_desk_series_warns_and_never_blocks_the_publish(tmp_path):
+    """The goal's rule: in scripts/validate_db.py tier-2 Desk series are
+    warnings only. Every way a tier-2 series can go wrong in one snapshot: one
+    missing with a failed fetch (USD/JPY), one served short and newer-dated
+    earlier (Nasdaq 100), one that lost most of its rows (dollar index), one
+    weeks behind (WTI). The table's newest date moves earlier because of them,
+    which failed the run before this branch; now it publishes, and each
+    problem is named in the warnings."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev)
+    _make(cur, rows_news=60)
+    # FRED posts next day: tier 1 ends Thu 09-03, the market series the session
+    # before NOW (Sat 2026-09-05), Fri 09-04, and hold the table's newest date.
+    tier1 = {sid: ("fred", "2026-09-03", 30) for sid in TIER1_DESK}
+    _desk_rows(prev, {**tier1, "DCOILWTICO": ("fred", "2026-09-03", 30), "^NDX": ("yfinance", "2026-09-04", 30),
+                      "DX-Y.NYB": ("yfinance", "2026-09-04", 30), "JPY=X": ("yfinance", "2026-09-04", 30)})
+    _desk_rows(cur, {**tier1, "DCOILWTICO": ("fred", "2026-08-14", 30), "^NDX": ("yfinance", "2026-09-03", 30),
+                     "DX-Y.NYB": ("yfinance", "2026-09-03", 10)},
+               watermarks={"^NDX": ("short", "yfinance; served from 2001-01-02; stored from 2001-01-02; 30 rows; declared 1985-10-01"),
+                           "DCOILWTICO": ("short", "fred; served from 2001-01-02; stored from 2001-01-02; 30 rows; declared 1986-01-02"),
+                           "JPY=X": ("error", "unavailable")})
+    before = v.inspect(prev)["tables"]["desk_series"]
+    after = v.inspect(cur)["tables"]["desk_series"]
+    assert after["max"] < before["max"], "the table's newest date moved earlier: a failure before tier 2 was judged apart"
+
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert rep["upload"] is True and rep["failures"] == []
+    desk = next(r for r in rep["sla_all"] if r["feed"] == "desk_series")
+    assert desk["verdict"] == "current", desk
+    assert "Tier 2, reported and not judged" in desk["reason"] and "WTI crude" in desk["reason"]
+    joined = "\n".join(rep["warnings"])
+    for needle in ("desk:JPY=X error: unavailable", "desk:^NDX short", "desk:DX-Y.NYB: rows fell 30 → 10",
+                   "desk:DX-Y.NYB: newest date moved earlier", "desk:^NDX: newest date moved earlier",
+                   "desk:DCOILWTICO short", "desk:DCOILWTICO stale"):  # short and behind: both said (verifier V-11)
+        assert needle in joined, (needle, rep["warnings"])
+    desk_warnings = [w for w in rep["warnings"] if w.startswith("desk:")]
+    assert desk_warnings and all("tier 2, reported, never blocking" in w for w in desk_warnings), desk_warnings
+
+    # A tier-2 series never stored at all (the database before the first tier-2
+    # refresh) is the same: named, not judged.
+    only1 = tmp_path / "only1.db"
+    _make(only1, rows_news=60)
+    _desk_rows(only1, tier1)
+    rep = v.validate(only1, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    for sid in ("DCOILWTICO", "^NDX", "DX-Y.NYB", "JPY=X"):
+        assert any(w.startswith(f"desk:{sid}") and "tier 2" in w for w in rep["warnings"]), (sid, rep["warnings"])
+
+
+def test_the_same_faults_on_a_tier1_desk_series_still_fail(tmp_path):
+    """Tier 1 keeps its teeth: its newest date moving earlier, or a fifth of
+    its rows lost, blocks the publish as before."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev)
+    _make(cur, rows_news=60)
+    _desk_rows(prev, {sid: ("fred", "2026-09-04", 30) for sid in TIER1_DESK})
+    _desk_rows(cur, {sid: ("fred", "2026-09-03", 30) for sid in TIER1_DESK})
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "fail" and any(f.startswith("desk_series: max date regressed 2026-09-04 → 2026-09-03") for f in rep["failures"]), rep["failures"]
+    _desk_rows(cur, {**{sid: ("fred", "2026-09-04", 30) for sid in TIER1_DESK}, "DGS10": ("fred", "2026-09-04", 2), "DGS2": ("fred", "2026-09-04", 2)})
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "fail" and any(f.startswith("desk_series: rows fell 150 → 94") for f in rep["failures"]), rep["failures"]

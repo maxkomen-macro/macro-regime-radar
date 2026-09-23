@@ -33,8 +33,12 @@ targets; FRED daily Treasury values (DGS10, DGS2, T10Y2Y) are read ~30 min
 before the close and known at the next session open (review R-01: a FRED
 daily value is never same-day); ICE BofA OAS is priced an hour before the
 close and known at the next session open (R-01); VIX settles 15 min after
-the close; the ICE dollar index and FX daily bars close at 17:00 ET; WTI spot
-(EIA) settles 14:30 and is known at the next session open.
+the close; the ICE dollar index closes at 17:00 ET; WTI spot (EIA) settles
+14:30 and is known at the next session open. USD/JPY is read at 20:00 ET
+(desk/hardening, 2026-09-23): Yahoo dates an FX daily bar by its London day
+and EODHD by its UTC day, so the bar closes 19:00 to 20:00 New York time, not
+at the 17:00 New York close; the later reading keeps a same-session entry from
+reading a value that was not yet printed.
 """
 
 from __future__ import annotations
@@ -43,10 +47,12 @@ from dataclasses import dataclass
 
 HISTORY_BAR = "1990-12-31"  # default lists carry only series with history from 1990 or earlier (the year, not the day)
 # The tier the full refresh stores (refresh-data.yml's "Store Desk daily series"
-# step runs `desk_history --tier 1`; pinned by tests/test_desk_api.py). A series
+# step runs `desk_history --tier 2`; pinned by tests/test_desk_api.py). A series
 # at or below it that a database lacks is awaiting that refresh; one above it is
 # planned and no refresh will store it until the step changes (desk/integration).
-REFRESH_TIER = 1
+# Tier 2 since desk/hardening (2026-09-23): WTI, the Nasdaq 100, the dollar index
+# and USD/JPY. scripts/validate_db.py judges tier 1 and only warns on tier 2.
+REFRESH_TIER = 2
 UNITS =("log_return", "bp", "log_change")
 SOURCES = ("fred", "market", "asset_prices")
 ROLES = ("shock", "condition", "target")
@@ -123,18 +129,22 @@ SERIES: tuple[DeskSeries, ...] = (
     DeskSeries("curve_2s10s", "2s10s curve", "fred", "T10Y2Y", "bp", 100.0, "1976-06-01", 1, _SC, fixed=("close", -30), known=NEXT_OPEN),
     DeskSeries("vix", "VIX", "fred", "VIXCLS", "log_change", 1.0, "1990-01-02", 1, _ALL, fixed=("close", 15), known=("close", 15),
                note="CBOE close via FRED VIXCLS; settles 16:15 ET, so a VIX-dated event enters the target the next session."),
-    DeskSeries("hy_oas", "US HY OAS", "fred", "BAMLH0A0HYM2", "bp", 100.0, "2023-09-22", 1, _ALL, fixed=("close", -60), known=NEXT_OPEN,
+    # desk/hardening (2026-09-23): FRED's three-year window starts 2023-09-25 since
+    # 2026-09-22, the day the deployed store's first full refresh ran; a store filled
+    # earlier holds 2023-09-22 on, which is inside the declaration.
+    DeskSeries("hy_oas", "US HY OAS", "fred", "BAMLH0A0HYM2", "bp", 100.0, "2023-09-25", 1, _ALL, fixed=("close", -60), known=NEXT_OPEN,
                note="ICE BofA index OAS, published the next morning. FRED serves a rolling three years only "
-                    "(since April 2026); the store keeps every observation it has been served, from 2023-09-22."),
+                    "(since April 2026); the store keeps every observation it has been served, from 2023-09-25."),
     # ── tier 2 ────────────────────────────────────────────────────────────
     DeskSeries("wti", "WTI crude", "fred", "DCOILWTICO", "log_return", 1.0, "1986-01-02", 2, _SC, fixed=clock(14, 30), known=NEXT_OPEN,
-               note="EIA spot price via FRED, published after the day."),
+               note="EIA spot price via FRED, which EIA publishes weekly, so the newest print can be a week old. "
+                    "Settled at −$36.98 on 2020-04-20: a price at or below zero has no log return, and the study counts it as an exclusion."),
     DeskSeries("ndx", "Nasdaq 100", "market", "^NDX", "log_return", 1.0, "1985-10-01", 2, _ALL, eodhd="NDX.INDX"),
     DeskSeries("rut", "Russell 2000", "asset_prices", "^RUT", "log_return", 1.0, "1990-01-02", 2, _SC,
                note="Stored from 1990 by the allocation refresh (asset_prices)."),
     DeskSeries("dxy", "US Dollar Index", "market", "DX-Y.NYB", "log_return", 1.0, "1971-01-04", 2, _ALL, eodhd="DXY.INDX", fixed=clock(17, 0), known=clock(17, 0)),
-    DeskSeries("usdjpy", "USD/JPY", "market", "JPY=X", "log_return", 1.0, "1996-10-30", 2, _SC, eodhd="USDJPY.FOREX", fixed=clock(17, 0), known=clock(17, 0),
-               note="Yahoo history starts 1996-10-30."),
+    DeskSeries("usdjpy", "USD/JPY", "market", "JPY=X", "log_return", 1.0, "1996-10-30", 2, _SC, eodhd="USDJPY.FOREX", fixed=clock(20, 0), known=clock(20, 0),
+               note="Yahoo history starts 1996-10-30. The daily bar closes 19:00 to 20:00 ET (London or UTC day), read at 20:00 ET."),
     # ── tier 3 (deferred) ─────────────────────────────────────────────────
     DeskSeries("copper", "Copper", "market", "HG=F", "log_return", 1.0, "2000-08-30", 3, _SC, fixed=clock(17, 0), known=clock(17, 0), defer_as_target=True,
                note="Front-month futures; history from 2000-08-30."),

@@ -17,6 +17,14 @@ decides. Checks, in order:
      running API reports — scoped to the mode (news-only judges news; full
      judges everything).
 
+The Desk's daily series (desk_series) are judged by tier (desk/hardening,
+2026-09-23): tier 1 blocks as before (the table must exist and hold rows, and
+its date and row checks against the previous snapshot run over the tier-1
+series); a tier-2 series that is missing, short, failed, behind, or that lost
+rows or moved its newest date earlier is a warning, never a failure, so it can
+never hold the full refresh's publish back. The tiers are the registry's, read
+through api/freshness.DESK_REFRESH_SERIES (this script stays stdlib + api/).
+
 Output: a JSON report (--json), a GitHub Step Summary table (--summary, or
 $GITHUB_STEP_SUMMARY), and exit 0 only when the verdict is "pass". A stale
 verdict fails the run unless --allow-stale REASON documents why, in which
@@ -222,11 +230,49 @@ def inspect(path: Path) -> dict:
                 # desk/integration (verifier V-06): per series, as api/db.freshness reports them
                 out["fresh"]["desk_series_latest"] = dict(conn.execute(
                     "SELECT series_id, MAX(date) FROM desk_series GROUP BY series_id").fetchall())
+                # desk/hardening: rows and dates per series, so the snapshot
+                # comparison can judge tier 1 and only report tier 2
+                out["desk_series_by_id"] = {sid: {"rows": int(n), "max": mx} for sid, n, mx in conn.execute(
+                    "SELECT series_id, COUNT(*), MAX(date) FROM desk_series GROUP BY series_id")}
             except sqlite3.Error:
                 pass
     finally:
         conn.close()
     return out
+
+
+def _desk_tier(series_id: str) -> int | None:
+    meta = freshness_mod.DESK_REFRESH_SERIES.get(series_id)
+    return int(meta.get("tier", 1)) if meta else None
+
+
+def _desk_tier_note(series_id: str) -> str:
+    tier = _desk_tier(series_id)
+    if tier == 1:
+        return "tier 1"
+    return f"tier {tier}, reported, never blocking" if tier else "not in the refresh set, reported, never blocking"
+
+
+def _desk_series_judged(cur: dict[str, dict], prev: dict[str, dict]) -> tuple[dict, dict, list[str]]:
+    """desk_series against the previous snapshot (desk/hardening): the table's
+    date and row checks run over the tier-1 series only, and every other series
+    that lost rows or moved its newest date earlier is a warning."""
+
+    def judged(by_id: dict[str, dict]) -> dict:
+        rows = [v for sid, v in by_id.items() if _desk_tier(sid) == 1]
+        return {"rows": sum(v["rows"] for v in rows), "max": max((v["max"] for v in rows if v["max"]), default=None)}
+
+    notes: list[str] = []
+    for sid in sorted(sid for sid in prev if _desk_tier(sid) != 1):
+        was, now_ = prev[sid], cur.get(sid)
+        if now_ is None:
+            notes.append(f"desk:{sid}: no rows in this snapshot, {was['rows']} before ({_desk_tier_note(sid)})")
+            continue
+        if was["max"] and now_["max"] and str(now_["max"]) < str(was["max"]):
+            notes.append(f"desk:{sid}: newest date moved earlier {was['max']} → {now_['max']} ({_desk_tier_note(sid)})")
+        if was["rows"] > 20 and now_["rows"] < 0.8 * was["rows"]:
+            notes.append(f"desk:{sid}: rows fell {was['rows']} → {now_['rows']} ({_desk_tier_note(sid)})")
+    return judged(cur), judged(prev), notes
 
 
 def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: str = "", now: datetime | None = None) -> dict:
@@ -262,9 +308,21 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             failures.append("desk_series: missing; the full refresh stores the Desk's daily series (src/market_data/desk_history.py)")
         elif cur["tables"]["desk_series"]["rows"] == 0:
             failures.append("desk_series: table is empty")
+        reported: set[str] = set()
         for src, wm in sorted((cur.get("watermarks") or {}).items()):
             if src.startswith("desk:") and wm.get("status") in ("short", "error"):
-                warnings.append(f"{src} {wm['status']}: {wm.get('detail')}")
+                warnings.append(f"{src} {wm['status']}: {wm.get('detail')} ({_desk_tier_note(src[5:])})")
+                reported.add(src)
+        # desk/hardening: a tier-2 series missing or behind is reported by
+        # name, never judged (the desk_series verdict below reads tier 1 only).
+        if "desk_series" in cur["tables"]:
+            optional = [sp for sp in freshness_mod.desk_refresh_specs() if sp.get("tier", 1) > 1]
+            for st in freshness_mod.desk_series_states(stored=cur["fresh"].get("desk_series_latest") or {}, specs=optional,
+                                                        watermarks=cur.get("watermarks"), now=now):
+                # a series the watermark already named as failed and never stored says
+                # nothing new as `unknown`; a stale one says it is behind (V-11)
+                if st["state"] != "close" and not (st["state"] == "unknown" and st["id"] in reported):
+                    warnings.append(f"{st['id']} {st['state']}: {st['reason']} ({_desk_tier_note(st['id'][5:])})")
 
     # Stamps ahead of the clock are a fault, never freshness (review P2-3).
     horizon = (now + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -306,13 +364,17 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
                 if info["rows"] > 0:
                     changed_tables.append(t)  # a new, populated table is new content
                 continue
-            if info["max"] and p["max"] and str(info["max"]) < str(p["max"]):
+            judged, judged_prev = info, p
+            if t == "desk_series" and "desk_series_by_id" in cur and "desk_series_by_id" in prev:
+                judged, judged_prev, notes = _desk_series_judged(cur["desk_series_by_id"], prev["desk_series_by_id"])
+                warnings.extend(notes)
+            if judged["max"] and judged_prev["max"] and str(judged["max"]) < str(judged_prev["max"]):
                 if t in FORWARD_TABLES:
                     warnings.append(f"{t}: max date moved earlier {p['max']} → {info['max']} (a scheduled event was rescheduled)")
                 else:
-                    failures.append(f"{t}: max date regressed {p['max']} → {info['max']}")
-            if t not in TRIMMED_TABLES and p["rows"] > 20 and info["rows"] < 0.8 * p["rows"]:
-                failures.append(f"{t}: rows fell {p['rows']} → {info['rows']} (more than a fifth)")
+                    failures.append(f"{t}: max date regressed {judged_prev['max']} → {judged['max']}")
+            if t not in TRIMMED_TABLES and judged_prev["rows"] > 20 and judged["rows"] < 0.8 * judged_prev["rows"]:
+                failures.append(f"{t}: rows fell {judged_prev['rows']} → {judged['rows']} (more than a fifth)")
             fp_cur = (cur.get("fingerprints") or {}).get(t)
             fp_prev = (prev.get("fingerprints") or {}).get(t)
             if info["rows"] != p["rows"] or str(info["max"]) != str(p["max"]) or (fp_cur and fp_prev and fp_cur != fp_prev):

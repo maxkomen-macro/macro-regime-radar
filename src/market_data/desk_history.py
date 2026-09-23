@@ -15,8 +15,11 @@ calls Yahoo, so the market series come through the same EODHD-first /
 Yahoo-fallback path the allocation refresh uses (api/providers/market
 .daily_history with allow_yahoo=True), which only ever runs in the GitHub
 Actions full refresh or on an owner's laptop; FRED pulls run in the same step.
-A market bar is stored only once its session is complete (B6); a FRED
-observation is an official value and is stored as dated. A market series is
+A market bar is stored only once its session is complete (B6), and a bar
+for a series fixed on the clock after the close (the dollar index at 17:00 ET,
+USD/JPY at 20:00 ET) only once that time has passed (verifier V-07,
+desk/hardening); a FRED observation is an official value and is stored as
+dated. A market series is
 replaced whole on every run (adjusted closes restate through history); a FRED
 series is merged, because FRED now serves the ICE BofA OAS series as a rolling
 three-year window ("Starting in April 2026, this series will only include 3
@@ -27,9 +30,17 @@ watermark status `short` and is named in the table's detail. A provider error
 keeps the previous rows and says so in the watermark, and the step never fails
 the refresh: scripts/validate_db.py judges the table.
 
-Run:  python -m src.market_data.desk_history [--db data/macro_radar.db] [--tier 1]
+Run:  python -m src.market_data.desk_history [--db data/macro_radar.db] [--tier 2]
 Needs FRED_API_KEY (env or repo-root .env) for the FRED series; the market
 series use EODHD_API_TOKEN when present and Yahoo, disclosed, when not.
+
+Calls per run (desk/hardening, 2026-09-23). Tier 1: five FRED requests, no
+provider-layer call. Tier 2, the full refresh's tier: six FRED requests (the
+five plus DCOILWTICO) and one daily-history request per market series (^NDX,
+DX-Y.NYB, JPY=X): three EODHD requests with a token (one unit each), each
+retried at most twice on a timeout, a 429 or a 5xx, and one Yahoo download
+per series EODHD cannot answer. The Actions workflow carries no EODHD token, so there the three go to
+Yahoo and EODHD sees none. A FRED request is retried at most twice.
 """
 
 from __future__ import annotations
@@ -38,7 +49,7 @@ import argparse
 import sqlite3
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,7 +66,7 @@ from src.desk import series as registry  # noqa: E402
 DB_PATH = ROOT / "data" / "macro_radar.db"
 WATERMARK = "desk_series"          # the table's summary: as-of = the oldest newest observation
 SERIES_WATERMARK = "desk:{}"       # one per series_id, so freshness can name the laggard
-DEFAULT_TIER = 1
+DEFAULT_TIER = 2  # registry.REFRESH_TIER, the tier the full refresh stores (tests/test_desk_api.py pins them equal)
 
 DDL = """
 CREATE TABLE IF NOT EXISTS desk_series (
@@ -114,6 +125,18 @@ def write_series(conn: sqlite3.Connection, series_id: str, rows: list[tuple[str,
     return len(kept)
 
 
+def fixed_by(spec: registry.DeskSeries, session: str, now: datetime) -> bool:
+    """Whether a market series' value for `session` is determined at `now`:
+    one fixed on the clock (registry `fixed`, New York time) prints its bar
+    for that date only then, and before it the provider's bar is still moving
+    (V-07). One fixed at the session close is complete with the session."""
+    anchor, minutes = spec.fixed
+    if anchor != "clock":
+        return True
+    d = date.fromisoformat(session)
+    return now >= datetime(d.year, d.month, d.day, minutes // 60, minutes % 60, tzinfo=cal.NY)
+
+
 def _wait_for_upstream_budget(timeout: float = 30.0) -> None:
     deadline = time.monotonic() + timeout
     while not eod._bucket.available() and time.monotonic() < deadline:
@@ -154,7 +177,8 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, tier:
                     if spec.eodhd:
                         _wait_for_upstream_budget()
                     env = market.daily_history(spec.eodhd, spec.series_id, spec.history_from, None, allow_yahoo=True)
-                    rows = [r for r in env["rows"] if r[0] <= last_session]
+                    rows = [r for r in env["rows"]
+                            if r[0] < last_session or (r[0] == last_session and fixed_by(spec, last_session, now))]
                     provider = env["provider"]
             except ProviderError as exc:
                 failed[spec.series_id] = exc.kind
@@ -220,7 +244,7 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, tier:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Store the Desk's daily series (full refresh).")
     ap.add_argument("--db", default=str(DB_PATH))
-    ap.add_argument("--tier", type=int, default=DEFAULT_TIER, help="fetch registry tiers up to this (1 or 2)")
+    ap.add_argument("--tier", type=int, default=DEFAULT_TIER, help="fetch registry tiers up to this (1 or 2; the full refresh runs 2)")
     a = ap.parse_args(argv)
     s = refresh(Path(a.db), tier=a.tier)
     print(

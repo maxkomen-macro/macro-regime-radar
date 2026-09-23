@@ -68,9 +68,15 @@ def test_assets_is_a_worker_item_with_stored_coverage(served):
     by = {x["key"]: x for x in a["shocks"]}
     assert by["gold"]["history_from"] == "2000-08-30" and by["gold"]["shock_unit"] == "log_return" and by["gold"]["warn"]
     assert by["spx"]["status"] == "stored" and by["spx"]["default"]
-    assert by["hy_oas"]["history_from"] == "2023-09-22" and by["hy_oas"]["known_by"] == "after_close"
+    # HY OAS: where FRED's rolling window stood when the copy was filled (desk/hardening)
+    assert "2023-09-22" <= by["hy_oas"]["history_from"] <= by["hy_oas"]["history_declared"] == "2023-09-25"
+    assert by["hy_oas"]["known_by"] == "after_close"
     assert by["hy_oas"]["known"] == "next session open" and by["gold"]["defer_as_target"] is True  # R-01, R-03
-    assert by["copper"]["status"] == "deferred" and by["ndx"]["status"] == "planned"
+    # desk/hardening: the full refresh stores tier 2
+    assert by["copper"]["status"] == "deferred"
+    for key in ("wti", "ndx", "dxy", "usdjpy"):
+        assert by[key]["status"] == "stored" and by[key]["tier"] == 2 and by[key]["shock_unit"] == "log_return", by[key]
+    assert by["usdjpy"]["known"] == "20:00 ET clock" and by["dxy"]["fixed"] == "17:00 ET clock"
     assert a["unavailable"][0]["key"] == "gold_lbma" and "GC=F" in a["unavailable"][0]["reason"]
     assert {t["key"] for t in a["targets"]} == {"spx", "gold", "us10y", "vix", "hy_oas", "ndx", "dxy"}
     assert [p["slug"] for p in a["presets"]] == ["gold-2sigma-spx-weak", "spx-golden-cross", "spx-death-cross"]
@@ -203,10 +209,21 @@ def test_a_full_queue_answers_429_with_retry_after(served, monkeypatch):
     assert again.status_code == 200 and again.json()["status"] == "ready"
 
 
-def test_planned_series_answer_not_stored(served):
-    r = client.get("/api/desk/event-study", params={"shock": "ndx", "target": "spx"})
-    assert r.status_code == 503, r.text
-    assert r.json()["kind"] == "not_stored" and "^NDX" in r.json()["detail"]
+def test_a_tier2_series_is_studied_from_the_store(served):
+    """desk/hardening: the Nasdaq 100 answered 503 not_stored while tier 2 was
+    planned; the full refresh stores it now. (A planned tier still answers 503:
+    test_before_the_first_refresh_the_event_study_says_it_is_awaiting_it.)"""
+    client.get("/api/desk/event-study", params={"shock": "ndx", "target": "spx"})  # may answer 202 computing first
+    deadline = time.monotonic() + 60
+    while True:
+        r = client.get("/api/desk/event-study", params={"shock": "ndx", "target": "spx"})
+        if r.status_code != 202 or time.monotonic() > deadline:
+            break
+        time.sleep(0.5)
+    assert r.status_code == 200 and r.json()["status"] == "ready", r.text[:300]
+    body = r.json()
+    assert body["study"]["shock"]["key"] == "ndx" and body["provenance"]["entry_same_session"] is True
+    assert body["provenance"]["inputs"][0]["series_id"] == "^NDX"
 
 
 def test_a_job_whose_generation_expired_is_cancelled_and_the_client_gets_a_fresh_202(served, monkeypatch):
@@ -409,7 +426,8 @@ def test_pipeline_inventory_matches_freshness_report():
 
 # ── desk/integration: the desk_series rows in the inventory (Step 3) ────────
 
-REFRESH_IDS = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2"]
+REFRESH_IDS = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DCOILWTICO", "^NDX", "DX-Y.NYB", "JPY=X"]
+MARKET_IDS = {"^NDX", "DX-Y.NYB", "JPY=X"}  # desk/hardening: tier 2, EODHD first, Yahoo disclosed fallback
 NOW = datetime(2026, 9, 22, 20, 0, tzinfo=timezone.utc)  # Tue 2026-09-22 16:00 ET, a bond and NYSE session
 
 
@@ -435,14 +453,15 @@ def test_desk_series_states_before_the_table_exists():
     for r in rows:
         assert r["state"] == "unknown" and r["as_of"] is None and r["stale"] is False, r
         assert "first full refresh" in r["reason"], r["reason"]
-        assert r["cadence"] == "daily" and r["kind"] == "fred"
+        assert r["cadence"] == "daily" and r["kind"] == ("market" if r["id"][5:] in MARKET_IDS else "fred"), r
 
 
 def test_desk_series_states_judge_each_stored_series():
     from api import calendar as cal
     from api import freshness as freshness_mod
 
-    stored = {"DGS10": "2026-09-21", "DGS2": "2026-09-14", "T10Y2Y": "2026-09-21", "VIXCLS": "2026-09-21", "^NDX": "2026-09-21"}
+    stored = {"DGS10": "2026-09-21", "DGS2": "2026-09-14", "T10Y2Y": "2026-09-21", "VIXCLS": "2026-09-21", "^NDX": "2026-09-21",
+              "DCOILWTICO": "2026-09-15", "JPY=X": "2026-08-31", "SOMETHING": "2026-09-21"}
     marks = {
         "desk:BAMLH0A0HYM2": {"source": "desk:BAMLH0A0HYM2", "last_obs": None, "status": "error", "detail": "ConnectionError"},
         "desk:T10Y2Y": {"source": "desk:T10Y2Y", "last_obs": "2026-09-21", "status": "short",
@@ -451,7 +470,7 @@ def test_desk_series_states_judge_each_stored_series():
     rows = freshness_mod.desk_series_states(stored=stored, specs=desk_mod.desk_series_specs(stored=stored), watermarks=marks, now=NOW)
     by = {r["id"]: r for r in rows}
     # the refresh set in registry order, then any other stored series
-    assert list(by) == [f"desk:{sid}" for sid in REFRESH_IDS] + ["desk:^NDX"]
+    assert list(by) == [f"desk:{sid}" for sid in REFRESH_IDS] + ["desk:SOMETHING"]
     assert by["desk:DGS10"]["as_of"] == "2026-09-21" and by["desk:DGS10"]["state"] == "close" and by["desk:DGS10"]["cycles_behind"] == 0
     lag = cal.bond_business_days_between(date(2026, 9, 14), date(2026, 9, 21))
     assert by["desk:DGS2"]["state"] == "stale" and by["desk:DGS2"]["stale"] is True and by["desk:DGS2"]["cycles_behind"] == lag > freshness_mod.DAILY_TOLERANCE
@@ -460,6 +479,14 @@ def test_desk_series_states_judge_each_stored_series():
     assert by["desk:BAMLH0A0HYM2"]["state"] == "unknown" and by["desk:BAMLH0A0HYM2"]["as_of"] is None
     assert "ConnectionError" in by["desk:BAMLH0A0HYM2"]["reason"]
     assert by["desk:^NDX"]["kind"] == "market" and by["desk:^NDX"]["state"] == "close"
+    # desk/hardening: EIA publishes WTI weekly, so four business days back is current
+    # (the FRED daily rule would read it stale); a month back is not
+    wti = by["desk:DCOILWTICO"]
+    assert wti["state"] == "close" and wti["cycles_behind"] == 4 > freshness_mod.DAILY_TOLERANCE and "EIA publishes it weekly" in wti["reason"]
+    old = freshness_mod.desk_series_states(stored={**stored, "DCOILWTICO": "2026-08-31"}, specs=desk_mod.desk_series_specs(stored=stored),
+                                           watermarks=marks, now=NOW)
+    assert next(r for r in old if r["id"] == "desk:DCOILWTICO")["state"] == "stale"
+    assert by["desk:JPY=X"]["state"] == "stale" and by["desk:DX-Y.NYB"]["state"] == "unknown" and "not stored yet" in by["desk:DX-Y.NYB"]["reason"]
 
 
 def test_inventory_lists_the_desk_series_rows_with_their_freshness(served):
@@ -483,7 +510,10 @@ def test_inventory_lists_the_desk_series_rows_with_their_freshness(served):
         assert s["as_of"] == stored[sid], s
         assert s["state"] in ("close", "stale") and s["cadence"] == "daily", s
         assert s["source_id"] == sid and s["feeds"] == [desk_mod.DESK_EVENT_STUDY], s
-        assert s["source"].startswith("FRED") and s["kind"] == "fred", s
+        if sid in MARKET_IDS:  # desk/hardening: tier 2's market series
+            assert s["source"].startswith("EODHD first, Yahoo disclosed fallback") and s["kind"] == "market", s
+        else:
+            assert s["source"].startswith("FRED") and s["kind"] == "fred", s
     ap = next(s for s in series if s["id"] == "asset_prices")
     assert desk_mod.DESK_EVENT_STUDY in ap["feeds"], "the engine reads ^GSPC and GC=F from asset_prices"
 
@@ -507,17 +537,125 @@ def test_desk_router_is_get_only():
 # asset_prices either). The API must boot and serve every route, and the
 # event study must say "awaiting the first full refresh", never an error.
 
-TIER1_KEYS = ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas"]
-POSTS = {
-    "/api/regime/scenario": {"scenario_key": "rate_shock"},
-    "/api/recession/scenario": {"yield_curve_bps": 50, "unemployment": 4.3, "hy_oas_bps": 350, "indpro_yoy": 1.0, "lei": 0.0},
-    "/api/lbo/run": {"ebitda": 100.0, "ebitda_growth_rate": 5.0, "entry_multiple": 8.0, "exit_multiple": 9.0, "hold_period": 5,
-                     "leverage_ratio": 4.5, "interest_rate": 9.0, "amortization_rate": 5.0, "mgmt_fee_pct": 1.5},
+REFRESH_KEYS = ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "wti", "ndx", "dxy", "usdjpy"]  # tiers 1 and 2 (desk/hardening)
+# Review R-03 (desk/hardening): the route inventory, kept by hand and never read
+# from the app under test. One entry per route the API serves: the request that
+# exercises it and the status it answers on a database that predates the first
+# full refresh (the scratch copy without desk_series), with the provider layer
+# tokenless (a typed 503, never a network call) and the assistant switched off
+# (503, never a model call). A route the app drops fails as a 404; one the app
+# adds without an entry here fails the inventory check.
+LBO_BODY = {"ebitda": 100.0, "ebitda_growth_rate": 5.0, "entry_multiple": 8.0, "exit_multiple": 9.0, "hold_period": 5,
+            "leverage_ratio": 4.5, "interest_rate": 9.0, "amortization_rate": 5.0, "mgmt_fee_pct": 1.5}
+ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
+    # Atlas's frozen, unprefixed contract
+    ("GET", "/health"): ("/health", 200, None),
+    ("GET", "/regime/latest"): ("/regime/latest", 200, None),
+    ("GET", "/signals/latest"): ("/signals/latest", 200, None),
+    ("GET", "/series"): ("/series", 200, None),
+    ("GET", "/series/latest"): ("/series/latest", 200, None),
+    ("GET", "/series/{series_id}/latest"): ("/series/DGS10/latest", 200, None),
+    # stored tables
+    ("GET", "/api/regime/latest"): ("/api/regime/latest", 200, None),
+    ("GET", "/api/regime/history"): ("/api/regime/history", 200, None),
+    ("GET", "/api/signals/latest"): ("/api/signals/latest", 200, None),
+    ("GET", "/api/priced"): ("/api/priced", 200, None),
+    ("GET", "/api/surprises"): ("/api/surprises", 200, None),
+    ("GET", "/api/alerts"): ("/api/alerts", 200, None),
+    ("GET", "/api/news"): ("/api/news", 200, None),
+    ("GET", "/api/news/latest"): ("/api/news/latest", 200, None),
+    ("GET", "/api/market/daily"): ("/api/market/daily", 200, None),
+    ("GET", "/api/market/intraday"): ("/api/market/intraday", 200, None),
+    ("GET", "/api/calendar"): ("/api/calendar", 200, None),
+    ("GET", "/api/calendar/recent"): ("/api/calendar/recent", 200, None),
+    ("GET", "/api/backtests"): ("/api/backtests", 200, None),
+    # the widest window, so the answer never depends on how old the copy is
+    ("GET", "/api/credit/oas"): ("/api/credit/oas?days=3650", 200, None),
+    ("GET", "/api/freshness"): ("/api/freshness", 200, None),
+    # worker results
+    ("GET", "/api/credit/metrics"): ("/api/credit/metrics", 200, None),
+    ("GET", "/api/recession/probability"): ("/api/recession/probability", 200, None),
+    ("GET", "/api/regime/intelligence"): ("/api/regime/intelligence", 200, None),
+    ("GET", "/api/regime/playbooks"): ("/api/regime/playbooks", 200, None),
+    ("GET", "/api/regime/duration"): ("/api/regime/duration", 200, None),
+    ("GET", "/api/regime/transitions"): ("/api/regime/transitions", 200, None),
+    ("GET", "/api/regime/analogues"): ("/api/regime/analogues", 200, None),
+    ("GET", "/api/regime/scenarios"): ("/api/regime/scenarios", 200, None),
+    ("GET", "/api/lbo/defaults"): ("/api/lbo/defaults", 200, None),
+    ("GET", "/api/allocation"): ("/api/allocation", 200, None),  # the copy keeps asset_prices
+    # calculators over stored data
+    ("POST", "/api/regime/scenario"): ("/api/regime/scenario", 200, {"scenario_key": "rate_shock"}),
+    ("POST", "/api/recession/scenario"): ("/api/recession/scenario", 200,
+                                          {"yield_curve_bps": 50, "unemployment": 4.3, "hy_oas_bps": 350, "indpro_yoy": 1.0, "lei": 0.0}),
+    ("POST", "/api/lbo/run"): ("/api/lbo/run", 200, LBO_BODY),
+    # the on-demand symbol layer, tokenless: typed 503 missing_token
+    ("GET", "/api/market/search"): ("/api/market/search?q=SPY", 503, None),
+    ("GET", "/api/market/profile/{symbol}"): ("/api/market/profile/SPY", 503, None),
+    ("GET", "/api/market/candles/{symbol}"): ("/api/market/candles/SPY", 503, None),
+    ("GET", "/api/market/actions/{symbol}"): ("/api/market/actions/SPY", 503, None),
+    ("GET", "/api/market/options/{symbol}/expirations"): ("/api/market/options/SPY/expirations", 503, None),
+    ("GET", "/api/market/options/{symbol}"): ("/api/market/options/SPY?expiration=2026-10-16", 503, None),
+    ("GET", "/api/market/ticks/{symbol}"): ("/api/market/ticks/SPY", 503, None),
+    ("GET", "/api/providers/status"): ("/api/providers/status", 200, None),
+    # the assistant, switched off for the sweep (its status follows the mode)
+    ("POST", "/api/assistant/ask"): ("/api/assistant/ask", 503, {"message": "What is driving the current regime?"}),
+    ("GET", "/api/assistant/status"): ("/api/assistant/status", 503, None),
+    # the Desk (the default study reads asset_prices and regimes only: ready)
+    ("GET", "/api/desk/event-study/assets"): ("/api/desk/event-study/assets", 200, None),
+    ("GET", "/api/desk/event-study"): ("/api/desk/event-study", 200, None),
+    ("GET", "/api/desk/pipeline/inventory"): ("/api/desk/pipeline/inventory", 200, None),
+    # diagnostics, open in development (no DEPLOY_PUBLIC, no CORS_ORIGINS)
+    ("GET", "/api/ops/whoami"): ("/api/ops/whoami", 200, None),
+    ("GET", "/api/stream/debug"): ("/api/stream/debug", 200, None),
+    ("GET", "/health/live"): ("/health/live", 200, None),
+    ("GET", "/health/ready"): ("/health/ready", 200, None),
 }
-# The on-demand symbol layer calls EODHD; a checkout with a token must not make
-# network calls from the suite, and without one these answer a typed 503.
-PROVIDER_PATHS = ("/api/market/search", "/api/market/profile/", "/api/market/candles/", "/api/market/actions/",
-                  "/api/market/options/", "/api/market/ticks/")
+
+
+def served_routes() -> set[tuple[str, str]]:
+    """(method, path) for every operation the app serves (FastAPI 0.141 keeps an
+    included router as one entry in app.routes, so read the schema)."""
+    return {(m.upper(), path) for path, ops in app.openapi()["paths"].items() for m in ops}
+
+
+def route_sweep_failures(tc: TestClient, routes: dict[tuple[str, str], tuple[str, int, dict | None]]) -> dict[str, tuple]:
+    """Every inventory entry that does not answer its expected status; a 404 is
+    always a failure, whatever the entry expects. The provider layer's cached
+    entitlement verdicts are cleared before each request, so an entry answers
+    on its own and never on the one before it (a tokenless options call caches
+    `missing_token` for the family, and the next options route read it as 403)."""
+    from api.providers import entitlements
+
+    failed: dict[str, tuple] = {}
+    for (method, template), (url, expected, body) in routes.items():
+        entitlements.reset_for_tests()
+        r = tc.get(url) if method == "GET" else tc.post(url, json=body)
+        if r.status_code == 404:
+            failed[f"{method} {template}"] = (404, "not served", r.text[:200])
+        elif r.status_code != expected:
+            failed[f"{method} {template}"] = (r.status_code, f"expected {expected}", r.text[:200])
+    return failed
+
+
+@pytest.fixture()
+def hermetic_edges(monkeypatch):
+    """No provider token, no assistant, the development posture: every edge
+    route answers without the network, deterministically."""
+    from api.providers import entitlements
+    from api.providers import eodhd as eod
+    from api.providers import finnhub as fh
+    from api.providers import market
+
+    monkeypatch.setattr(market, "_client", eod.EodhdClient(None))
+    monkeypatch.setattr(fh, "_client", fh.FinnhubClient(None))
+    market.clear_caches()
+    entitlements.reset_for_tests()
+    monkeypatch.setenv("ASSISTANT_ACCESS", "off")
+    for var in ("DEPLOY_PUBLIC", "CORS_ORIGINS", "OPS_ACCESS_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    yield
+    market.clear_caches()
+    entitlements.reset_for_tests()
 
 
 def _serve_copy(tmp_path, install_worker, monkeypatch, drop: tuple[str, ...]):
@@ -560,34 +698,46 @@ def served_before_histories(tmp_path, install_worker, monkeypatch):
     return _serve_copy(tmp_path, install_worker, monkeypatch, drop=("desk_series", "asset_prices"))
 
 
-def test_before_the_first_refresh_every_route_answers(served_before_refresh):
+def test_the_route_inventory_is_the_apps_exactly():
+    """R-03: the hand-kept inventory and the served routes are the same set,
+    so a dropped endpoint and an unlisted new one both fail here."""
+    served = served_routes()
+    assert set(ROUTES) - served == set(), "listed but not served"
+    assert served - set(ROUTES) == set(), "served but not in the inventory: add it with its expected status"
+    assert ("GET", "/api/desk/event-study") in ROUTES and ("GET", "/api/allocation") in ROUTES
+
+
+def test_before_the_first_refresh_every_route_answers_its_expected_status(served_before_refresh, hermetic_edges):
+    """R-03: each route answers the status the inventory states, and none 404s."""
     tc = TestClient(app, raise_server_exceptions=False)
-    paths = [p.replace("{series_id}", "DGS10") for p, ops in app.openapi()["paths"].items() if "get" in ops]
-    assert "/api/desk/event-study" in paths and "/api/desk/pipeline/inventory" in paths and "/api/allocation" in paths
-    failed = {}
-    for path in paths:
-        if path.startswith(PROVIDER_PATHS):
-            continue
-        r = tc.get(path)
-        if r.status_code >= 500:
-            failed[path] = (r.status_code, r.text[:200])
-    for path, body in POSTS.items():
-        r = tc.post(path, json=body)
-        if r.status_code != 200:
-            failed[path] = (r.status_code, r.text[:200])
+    failed = route_sweep_failures(tc, ROUTES)
     assert failed == {}, failed
     ready = tc.get("/health/ready")
     assert ready.status_code == 200 and ready.json()["status"] == "ready"
 
 
-def test_before_the_first_refresh_the_event_study_says_it_is_awaiting_it(served_before_refresh):
+def test_the_route_sweep_fails_on_a_missing_endpoint_and_on_a_wrong_status(served_before_refresh, hermetic_edges):
+    """The sweep itself: an endpoint that is not served is a failure even where
+    404 is what the entry says, and any other status than the stated one is."""
+    tc = TestClient(app, raise_server_exceptions=False)
+    failed = route_sweep_failures(tc, {
+        ("GET", "/api/desk/positions"): ("/api/desk/positions", 404, None),
+        ("GET", "/api/desk/event-study/assets"): ("/api/desk/event-study/assets", 503, None),
+        ("GET", "/health"): ("/health", 200, None),
+    })
+    assert failed["GET /api/desk/positions"][:2] == (404, "not served")
+    assert failed["GET /api/desk/event-study/assets"][:2] == (200, "expected 503")
+    assert "GET /health" not in failed
+
+
+def test_before_the_first_refresh_the_event_study_says_it_is_awaiting_it(served_before_refresh, monkeypatch):
     assets = client.get("/api/desk/event-study/assets")
     assert assets.status_code == 200, assets.text
     a = assets.json()
-    assert a["awaiting_refresh"] == TIER1_KEYS
+    assert a["awaiting_refresh"] == REFRESH_KEYS
     by = {x["key"]: x for x in a["shocks"]}
-    assert all(by[k]["status"] == "awaiting_refresh" for k in TIER1_KEYS)
-    assert by["spx"]["status"] == "stored" and by["gold"]["status"] == "stored" and by["ndx"]["status"] == "planned"
+    assert all(by[k]["status"] == "awaiting_refresh" for k in REFRESH_KEYS if k in by)
+    assert by["spx"]["status"] == "stored" and by["gold"]["status"] == "stored" and by["ndx"]["status"] == "awaiting_refresh"
 
     r = client.get("/api/desk/event-study", params={"shock": "vix", "w": 5, "z": 2.0, "sign": "+", "target": "spx"})
     assert r.status_code == 200, r.text
@@ -608,14 +758,24 @@ def test_before_the_first_refresh_the_event_study_says_it_is_awaiting_it(served_
         r = client.get("/api/desk/event-study", params={"study": slug})
         assert r.status_code == 200 and r.json()["status"] == "ready", (slug, r.text[:200])
 
-    # A planned series is not stored and no refresh will store it yet: still 503, with the reason.
+    # desk/hardening: a tier-2 series is awaiting the same refresh.
     r = client.get("/api/desk/event-study", params={"shock": "ndx", "target": "spx"})
-    assert r.status_code == 503 and r.json()["kind"] == "not_stored" and "tier 2" in r.json()["detail"]
+    assert r.status_code == 200 and r.json()["status"] == "awaiting_refresh" and r.json()["series"] == "ndx", r.text[:200]
 
     inv = client.get("/api/desk/pipeline/inventory").json()
     rows = [s for s in inv["series"] if s["id"].startswith("desk:")]
     assert [s["id"] for s in rows] == [f"desk:{sid}" for sid in REFRESH_IDS]
     assert all(s["state"] == "unknown" and "first full refresh" in s["reason"] for s in rows), rows
+
+    # A planned series is not stored and no refresh will store it yet: still 503, with the reason.
+    # (Every available series is stored by the refresh since desk/hardening; the path is
+    # pinned with the refresh tier set back to 1, which makes tier 2 planned again.)
+    from src.desk import series as registry
+
+    monkeypatch.setattr(registry, "REFRESH_TIER", 1)
+    r = client.get("/api/desk/event-study", params={"shock": "ndx", "target": "spx"})
+    assert r.status_code == 503 and r.json()["kind"] == "not_stored" and "tier 2" in r.json()["detail"], r.text[:200]
+    assert "^NDX" in r.json()["detail"]
 
 
 def test_before_the_histories_the_presets_say_they_are_awaiting_the_first_refresh(served_before_histories):
@@ -713,7 +873,7 @@ def test_the_drawer_verdict_follows_the_series_the_refresh_stores():
             "market_intraday_ts": None, "news_published_at": None, "raw_series_date": "2026-10-01", "asset_prices_date": "2026-10-13"}
     now = datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc)
     latest = {"DGS10": "2026-10-09", "DGS2": "2026-10-09", "T10Y2Y": "2026-10-09", "BAMLH0A0HYM2": "2026-10-09", "VIXCLS": "2026-10-13",
-              "^NDX": "2026-09-21"}  # a tier-2 series fetched by hand, weeks old
+              "^NDX": "2026-09-21"}  # a tier-2 series weeks old; the other three tier-2 series not stored at all
 
     def verdict(latest_by_id):
         fresh = {**base, "desk_series_date": min(latest_by_id.values()) if latest_by_id else None, "desk_series_latest": latest_by_id}
@@ -723,7 +883,11 @@ def test_the_drawer_verdict_follows_the_series_the_refresh_stores():
     row = verdict(latest)
     assert row["verdict"] == "current", row
     states = freshness_mod.desk_series_states(stored=latest, specs=desk_mod.desk_series_specs(stored=latest), watermarks={}, now=now)
-    assert all(s["state"] == "close" for s in states if s["id"] != "desk:^NDX")
+    tier1 = {f"desk:{sid}" for sid in REFRESH_IDS[:5]}
+    assert all(s["state"] == "close" for s in states if s["id"] in tier1)
+    # desk/hardening: tier 2 is named in the reason and never turns the verdict
+    assert {s["id"] for s in states if s["state"] != "close"} == {f"desk:{sid}" for sid in REFRESH_IDS[5:]}
+    assert "Tier 2, reported and not judged" in row["reason"] and "Nasdaq 100" in row["reason"], row
     lagging = verdict({**latest, "DGS2": "2026-09-14"})
     assert lagging["verdict"] == "stale" and "2Y Treasury" in lagging["reason"], lagging
     missing = verdict(None)
@@ -809,3 +973,73 @@ def test_a_preset_lookup_never_waits_behind_the_study_ceiling():
         assert get(b"shock=gold&w=20&z=2&sign=%2B&cond=spx_below_50dma&target=spx") == 429
     finally:
         mw.desk_study.release()
+
+
+# ── desk/hardening, review R-01: a transient first import of the engine ─────
+
+def test_a_failed_first_import_of_the_engine_recovers_by_rebuilding_the_same_file(install_worker, monkeypatch):
+    """R-01: the first import of src.desk.event_study fails once (a one-shot
+    ImportError from the import system, as a half-copied module or an import
+    race gives). The generation publishes with desk_assets as that error, and
+    the file's key never moves, so before this branch nothing rebuilt it: the
+    assets endpoint and every free-form study answered 500 until a refresh or
+    a restart. The worker now rebuilds the same file, whole, after a short
+    wait; the rebuilt generation answers everything and replaces the first."""
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    import importlib.abc
+    import sys
+
+    import src.desk
+    from api import analytics_cache
+    from api import worker as worker_mod
+
+    raised: list[str] = []
+
+    class OneShotImportFailure(importlib.abc.MetaPathFinder):
+        def find_spec(self, fullname, path, target=None):
+            if fullname == "src.desk.event_study" and not raised:
+                raised.append(fullname)
+                raise ImportError("probe: a transient first import failure", name=fullname)
+            return None
+
+    # A fresh import, as at a cold start: the module leaves sys.modules and the
+    # package (monkeypatch puts the original back, so the rest of the suite keeps it).
+    monkeypatch.delitem(sys.modules, "src.desk.event_study")
+    monkeypatch.delattr(src.desk, "event_study")
+    monkeypatch.setattr(sys, "meta_path", [OneShotImportFailure(), *sys.meta_path])
+    monkeypatch.setattr(db, "DB_PATH", SCRATCH)
+    db.reset_connections_for_tests()
+    items = [(n, fn) for n, fn in analytics_cache.ITEMS if n.startswith("desk")]
+    assert [n for n, _ in items][0] == "desk_assets" and len(items) == 1 + len(analytics_cache.DESK_PRESETS)
+    w = install_worker(worker_mod.AnalyticsWorker(items=items, poll_s=0.05))
+    w.import_retry_s = 1.5
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    first = w.current
+    assert raised == ["src.desk.event_study"], "the one-shot failure fired on the first import"
+    assert isinstance(first.errors.get("desk_assets"), ImportError), first.errors
+    assert all(f"desk_preset:{n}" in first.results for n in analytics_cache.DESK_PRESETS), "the next import succeeded"
+    tc = TestClient(app, raise_server_exceptions=False)
+    assert tc.get("/api/desk/event-study/assets").status_code == 500, "the failure is served until the rebuild lands"
+    status = w.status()
+    assert status["rebuild"] == {"items": ["desk_assets"], "done": 0, "of": worker_mod.IMPORT_RETRY_ATTEMPTS}, status
+
+    assert w.wait_published(min_id=first.id + 1, timeout=180), "the same file was rebuilt and published"
+    second = w.current
+    assert second.key == first.key and second.id > first.id and second.errors == {}
+    assert "desk_assets" in second.results
+    for name in analytics_cache.DESK_PRESETS:  # rebuilt whole from the new copy, nothing carried over
+        assert second.results[f"desk_preset:{name}"] is not first.results[f"desk_preset:{name}"]
+    st = w.status()
+    assert st["rebuild"] is None and st["last_error"] is None, st
+    desk_mod.clear_cache()
+    r = tc.get("/api/desk/event-study/assets")
+    assert r.status_code == 200 and {x["key"] for x in r.json()["shocks"]} >= {"spx", "gold", "ndx"}, r.text[:200]
+    deadline = time.monotonic() + 60
+    while True:  # a free-form study, which waited on desk_assets and answered 500 before
+        r = tc.get("/api/desk/event-study", params={"shock": "vix", "w": 5, "z": 2.0, "sign": "+", "target": "spx"})
+        if r.status_code != 202 or time.monotonic() > deadline:
+            break
+        time.sleep(0.5)
+    assert r.status_code == 200 and r.json()["status"] == "ready", r.text[:200]
