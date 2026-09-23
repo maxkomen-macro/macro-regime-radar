@@ -37,11 +37,12 @@ describe("formatting prints served values only", () => {
     expect(fmtInterval(null, "%")).toBeNull();
   });
 
-  it("interval bounds round outward, so a bound just below zero never prints as 0.0 (V-02)", () => {
-    expect(fmtInterval([-1.6236, 4.0989], "%")).toBe("−1.7% to +4.1%");
-    expect(fmtInterval([-0.0395, 3.71], "%")).toBe("−0.1% to +3.8%");
+  it("interval bounds print as the engine prints them: the sign always kept (V-02, N-1)", () => {
+    expect(fmtInterval([-1.6236, 4.0989], "%")).toBe("−1.6% to +4.1%");
+    expect(fmtInterval([-0.0395, 3.71], "%")).toBe("−0.0% to +3.7%");
+    expect(fmtInterval([0.082, 2.2], "%")).toBe("+0.1% to +2.2%");
     expect(fmtInterval([-34, -1], "bp")).toBe("−34 bp to −1 bp");
-    expect(fmtInterval([-33.2, -0.4], "bp")).toBe("−34 bp to 0 bp");
+    expect(fmtInterval([-33.2, -0.4], "bp")).toBe("−33 bp to −0 bp");
     expect(fmtZ(-2.656)).toBe("−2.66");
   });
 

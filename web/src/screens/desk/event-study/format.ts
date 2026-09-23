@@ -27,20 +27,18 @@ export function fmtShare(x: number | null | undefined): string {
   return x == null || !Number.isFinite(x) ? "—" : fmtWholePct(x);
 }
 
-/** One interval bound at display precision, rounded outward (the low bound
- * down, the high bound up) as the engine rounds its own bounds, so the printed
- * interval always contains the served one and a bound just below zero never
- * prints as 0.0 (verifier V-02). Rounding is the only thing done to it. */
-export function fmtBound(x: number, unit: MoveUnit, side: "low" | "high"): string {
-  const k = unit === "%" ? 10 : 1;
-  const r = side === "low" ? Math.floor(x * k + 1e-9) / k : Math.ceil(x * k - 1e-9) / k;
-  if (r === 0) return side === "low" && x < 0 ? (unit === "%" ? "−0.0%" : "−0 bp") : fmtMove(0, unit);
-  return fmtMove(r, unit);
+/** One interval bound exactly as the engine prints it (`fmt_move`: `+.1f`
+ * percent, `+.0f` bp): ordinary rounding with the sign always kept, so a bound
+ * just below zero reads "−0.0%" (verifier V-02) and the cell agrees with the
+ * engine's own sentence on the same screen (N-1). The minus is U+2212. */
+export function fmtBound(x: number, unit: MoveUnit): string {
+  const body = Math.abs(x).toFixed(unit === "%" ? 1 : 0);
+  return `${x < 0 ? "−" : "+"}${body}${unit === "%" ? "%" : " bp"}`;
 }
 
-/** The 90% interval on Δ as served, bounds rounded outward: "−1.7% to +4.1%". */
+/** The 90% interval on Δ as served: "−1.6% to +4.1%". */
 export function fmtInterval(ci: [number, number] | null, unit: MoveUnit): string | null {
-  return ci ? `${fmtBound(ci[0], unit, "low")} to ${fmtBound(ci[1], unit, "high")}` : null;
+  return ci ? `${fmtBound(ci[0], unit)} to ${fmtBound(ci[1], unit)}` : null;
 }
 
 /** A z-score with a true minus sign. */

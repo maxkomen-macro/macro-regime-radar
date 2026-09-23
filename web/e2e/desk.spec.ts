@@ -160,9 +160,8 @@ test.describe("desk frame", () => {
     const p = api.provenance;
     const h20 = api.horizons.find((h: { h: number }) => h.h === 20);
     const pct = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x * 100).toFixed(1)}%`;
-    // Interval bounds print rounded outward (the low one down, the high one up).
-    const lo = (x: number) => pct(Math.floor(x * 1000 + 1e-9) / 1000);
-    const hi = (x: number) => pct(Math.ceil(x * 1000 - 1e-9) / 1000);
+    // Interval bounds print as the engine's fmt_move does: the sign always kept.
+    const bound = (x: number) => `${x < 0 ? "−" : "+"}${Math.abs(x * 100).toFixed(1)}%`;
     const body = page.locator("main");
     // 1. The engine's verdict, verbatim.
     await expect(body).toContainText(api.verdict.text);
@@ -173,7 +172,7 @@ test.describe("desk frame", () => {
     const cell = page.getByRole("button", { name: /^20d n \d+/ });
     await expect(cell).toContainText(`${pct(h20.median)} vs ${pct(h20.baseline_median)}`);
     // 4. The 90% interval on Δ as served.
-    await expect(cell).toContainText(`${lo(h20.ci90[0])} to ${hi(h20.ci90[1])}`);
+    await expect(cell).toContainText(`${bound(h20.ci90[0])} to ${bound(h20.ci90[1])}`);
     // 5. The newest event's date and its 20-session move.
     const ev = api.recent_events[0];
     const row = page.getByRole("table", { name: "The last ten events with their forward moves" }).getByRole("row").nth(1);

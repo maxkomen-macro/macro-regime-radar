@@ -1422,3 +1422,23 @@ select.mrr-desk-input {
 .mrr-desk-badge[data-state="pending"] {
   color: var(--text-3);
 }
+/* A pending badge holds the width of the Live badge that replaces it, so the
+   swap when a study lands moves nothing (verifier N-3). */
+@media (min-width: 768px) {
+  .mrr-desk-badge[data-state="pending"] {
+    min-width: 32.5em;
+  }
+}
+.mrr-desk[data-view="client"] .mrr-desk-reserve-col {
+  min-height: 820px;
+}
+/* The Reads card keeps one height from wait to answer (N-3): the waiting
+   line and the loaded list share a floor sized to the loaded content. */
+.mrr-desk-quiet[data-reserve="reads"],
+.mrr-desk-reads {
+  min-height: 136px;
+}
+.mrr-desk[data-view="client"] .mrr-desk-quiet[data-reserve="reads"],
+.mrr-desk[data-view="client"] .mrr-desk-reads {
+  min-height: 48px;
+}

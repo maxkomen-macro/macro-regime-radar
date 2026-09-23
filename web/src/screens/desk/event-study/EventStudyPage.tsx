@@ -49,7 +49,7 @@ export function titleFor(study: EventStudyResponse, isClient: boolean): string {
 export function sourceLine(study: EventStudyResponse): string {
   const p = study.provenance;
   const inputs = p.inputs.map((i) => i.label).join(" and ");
-  return `Source: Macro Regime Radar event-study engine${inputs ? `, reading ${inputs} daily closes` : ""}; as of ${fmtDate(p.as_of)}; sample ${p.sample_start} to ${p.sample_end}.`;
+  return `Source: Macro Regime Radar event-study engine${inputs ? `, reading ${inputs} daily closes` : ""}; as of ${fmtDate(p.as_of)}; sample ${p.data_start ?? p.sample_start} to ${p.sample_end}.`;
 }
 
 /** The results area when there is no study to print: one sentence per state. */
