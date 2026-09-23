@@ -5,8 +5,10 @@ only: `web/`. The engine (`src/desk/event_study.py`), the daily store and every 
 untouched; no endpoint was added (§7). Nothing pushed, `main` untouched, no `.db` or `data/` file
 staged. **Stops at the gate: waiting for `PUSH OK desk/frame-2`.**
 
-Status: §1 to §5 built (`f4806e9`), verified in two rounds (fixes `fffe9c1`, `9c693fa`). §6 and §7
-follow below.
+Status: **complete.** §1 to §5 built (`f4806e9`) and verified in two rounds (fixes `fffe9c1`,
+`9c693fa`); report after §5 (`b2f538a`); §6 built after that (`ca39d21`); §7 needed nothing; the final
+verifier pass over the branch returned PASS WITH FINDINGS, fixed in `21ee29f`. Open for the owner:
+V-07 (Build Notes prose vs the ban list) and the follow-ups in §4.
 
 ## Decisions taken unattended
 
@@ -31,8 +33,12 @@ keeps the deliverable honest was taken and recorded here.
 | D14 | §4 | S&P Internals keeps its slug `sp-internals`; `desk-sections.ts` marks it live. Breadth and sector rotation are Designed; the sector panel lists the nine sector ETFs the engine registers as deferred, from the assets endpoint. | No constituent or sector series is in the Desk's daily store. |
 | D15 | §5 Today | The frame's "Signals fired" panel (the alert feed) is replaced by the spec's "presets that fired". | The strip names four items; the alert feed is not one of them. |
 | D16 | §7 | No endpoint added. | Every screen reads `/api/desk/event-study`, `/api/desk/event-study/assets`, `/api/regime/latest`, `/api/recession/probability`, `/api/freshness` and the stored series the Position Monitor already read. |
+| D17 | §6 step 3 | The caption reads "Promoting a signal: the gate **does not** save without a falsification level." (the spec: "will not"). | §8's ban list covers every string under `desk/`, "will" included; the sentence means the same. |
+| D18 | §6 routes | The spec's short paths (`/desk/internals`, `/desk/monitor`, `/desk/pipeline`, `/desk/notes`) are inbound aliases: DeskShell replaces them with the page's slug (`sp-internals`, `position-monitor`, `data-pipeline`, `build-notes`), query and hash kept, so every step link in the spec works as written. The strip's own Back and Next go straight to the slug (after R3-01, a redirect dropped focus). | Renaming four slugs would move every existing link, test and e2e route of the frame; an alias keeps both. |
+| D19 | §6 step 3 pre-fill | `?from=<study slug>` fills **the instrument** from the engine's answer for that study (its target's label) and quotes the engine's first verdict sentence above the form. Direction, size, horizon, series, variant view, pre-mortem and the level stay the analyst's; the gate row names what is missing and Save stays disabled. A slug the engine cannot read fills nothing and says so; no other URL text reaches the form. | Writing a thesis or picking a direction or level from a study that established nothing would put words and numbers in the analyst's mouth. The target (^GSPC) has no exact series in the Monitor's catalogue (SPY is a fund), so no series is chosen either. |
+| D20 | §6 keyboard | ArrowLeft/ArrowRight move steps unless the key belongs to a control (a field, a select, a segmented group, a tablist); Escape closes, after any open jargon tooltip. Opening from the header puts focus on Next; closing returns it to the header control; at a disabled end, focus moves to the neighbouring button first. The strip is hidden in print and the page keeps room for it. | The Desk's segmented toggles use the arrows for focus; Escape already closes jargon tooltips. |
 
-## 1. What was built (§1 to §5)
+## 1. What was built (§1 to §7)
 
 | § | Item | Where |
 |---|---|---|
@@ -50,20 +56,25 @@ keeps the deliverable honest was taken and recorded here.
 | 5 | Build Notes verbatim (D9) | `content/desk/BUILD_NOTES.md`, `notes/BuildNotesPage.tsx` |
 | 8 | Ban-list scan (D10) | `desk-language.test.ts`; `content/desk/schema.md`, `pipeline/Lineage.tsx` reworded |
 
-## 2. Verification of §1 to §5 (mine)
+| 6 | The Walkthrough control in the Desk header; the bottom strip (counter, caption, Back, Next, Close); six steps on the spec's routes with `?tour=N` (links resolve to the page slugs; the short paths open inbound); keyboard; focus; print | `tour/tour.ts`, `tour/TourStrip.tsx`, `DeskTopBar.tsx`, `DeskShell.tsx`, `desk.css` |
+| 6 | Step 3: `?from=<study>` promotes a signal (D19) | `positions/PositionMonitorPage.tsx` (`useSignal`, `SignalNote`, `draftFromSignal`) |
+| 7 | No endpoint: `git diff a57f9bf.. --stat -- api src` is empty | — |
+
+## 2. Verification (mine)
 
 | Check | Result |
 |---|---|
 | `npx tsc -b --noEmit` | clean |
-| `npx vitest run` | 101 files, **1,125 passed** (Desk: 73, of which new: `frame2.test.ts` 11, `desk-language.test.ts` 3, seven new shell tests covering ready / 202 / 429 / 422 / awaiting / 404 / client / Internals / Run / expand) |
+| `npx vitest run` | after §5: 101 files, 1,125 passed; **after §6: 102 files, 1,136 passed** (Desk 84: `frame2.test.ts` 13, `desk-language.test.ts` 3, `tour/tour.test.ts` 5, shell tests for ready / 202 / 429 / 422 / awaiting / 404 / client / Internals / Run / expand / the walkthrough / the signal pre-fill) |
 | `npx vite build` | built (to the job's scratch directory) |
 | `pytest tests/test_desk_api.py tests/test_event_study.py -k "fixtures or desk"` | 54 passed (the refreshed `engine-studies.json` passes the engine key pin) |
-| `playwright test e2e/desk.spec.ts` (E2E_BASE_URL :5197) | **12 passed**: the frame's 8 plus four for frame-2: five on-screen numbers traced to the API JSON (verdict text, facts line, the 20-session medians, the 20-session interval, the newest event's move), keyboard expand + Run writes `?study=` then computing → ready, Internals reads vs the API's exclusions + Designed shells, 390 overflow and reduced motion on five routes |
+| `playwright test e2e/desk.spec.ts` (E2E_BASE_URL :5197), at `21ee29f` | **14 passed**: the frame's 8; four for §1 to §5 (five on-screen numbers traced to the API JSON: the verdict text, the facts line, the 20-session medians, the 20-session interval, the newest event's move; keyboard expand + Run writes `?study=` then computing → ready; Internals reads vs the API's exclusions + Designed shells; 390 and reduced motion on five routes); two for §6 (the six steps by Enter on Next with a real-state check on each and focus kept on Next, no autoplay, ArrowLeft, Escape closing where it is with focus back on the control; step 3 as a link at 390 with ringed Back / Next / Close) |
+| Shared-shell e2e sample (`a11y`, `shell`, `sections`) | 39 passed (tab walks, jargon keyboard, reduced motion, overflow at 1672) |
 | Ban list | scan green; five strings reworded (D10) |
 | Main dashboard | outside `desk/` the only changed file is `screens/shared/Jargon.tsx` (an optional `def` prop, default unchanged; `Jargon.test.tsx` green); `dashboard-1440.png` / `dashboard-390.png` captured |
-| Screenshots (`proposals/desk-frame2/`, gitignored) | today, event-study, sp-internals, build-notes, position-monitor, data-pipeline at 1440 and 390; client views of event-study, sp-internals, today at 1440 and 390; the print one-pager for event-study and sp-internals; the Distribution toggle; an expanded horizon cell; the light-scheme emulation. No horizontal overflow on any; CLS ≤ 0.016 on the frame-2 pages after reserving loading heights (Internals was 0.54 before) |
+| Screenshots (`proposals/desk-frame2/`, gitignored) | today, event-study, sp-internals, build-notes, position-monitor, data-pipeline at 1440 and 390; client views of event-study, sp-internals, today at 1440 and 390; the print one-pager for event-study and sp-internals; the Distribution toggle; an expanded horizon cell; the light-scheme emulation; the dashboard at 1440 and 390; walkthrough step 3 at 1440 and step 1 at 390. No horizontal overflow on any. CLS after the round-2 fixes: Internals 0.024 (desk) / 0.039 (client), Event Study ≤ 0.015, Today 0.011 |
 
-## 3. Verifier (§1 to §5)
+## 3. Verifier
 
 An independent general-purpose agent that wrote none of the code verified `f4806e9` against the
 spec (84 tool calls, read-only, evidence under the job's scratch `verifier/`). **Round 1: PASS WITH
@@ -103,6 +114,24 @@ or S1 remaining**: V-01 to V-06 and V-08 to V-12 confirmed fixed; three new find
 
 With round 2 the verifier's condition for §1 to §5 is met; §6 was built after it.
 
+**Final pass** (the same verifier on `ca39d21`, the whole branch): **PASS WITH FINDINGS**, nothing
+blocking. It accepted D17 ("does not save"), D18 (the short paths as inbound aliases: both addresses
+work as links and history Back steps through the tour) and D19 (the step-3 pre-fill: "honest";
+filling a direction from an "included" read would not be). It confirmed N-1 to N-3 fixed, every
+step's real state, no autoplay, arrows and Escape (a jargon tooltip first), closing that keeps
+`?study=…&view=client` and returns focus, one h1 and no overflow at 390 on every step, print hiding
+the strip and the control; `tsc` clean, vitest 102 files / 1,136, `e2e/desk.spec.ts` 14/14; `git diff
+a57f9bf..ca39d21 --stat -- api src scripts .github data` empty. Fixed in `21ee29f`:
+
+| # | Sev | Finding | Disposition |
+|---|---|---|---|
+| R3-01 | S2 | Next or Back into a short-path step (2, 3, 4, 6) passed through the alias redirect, which remounted the strip and dropped keyboard focus to the page. | Fixed: step links resolve the short path to the page slug (`/desk/sp-internals?tour=2`); the short paths still open inbound. The e2e now presses Enter on Next through all six steps and asserts Next keeps focus. |
+| R3-02 | S3 | The Walkthrough control carried `aria-pressed` but restarts the tour rather than closing it. | Fixed: a plain button; mid-tour its title says it starts again from step 1. |
+| R3-03 | S3 | Step 3's default "Long" and "3 months" sat beside the signal and could read as its call. | Fixed: the signal note says only the instrument is filled in, and that direction and horizon are the form's defaults, not a call from the signal. |
+| R3-04 | S3 | `toFixed` rounds an exact tie away from zero; Python's `format` rounds half-to-even (no served value hit it). | Fixed: an exact binary tie rounds to even; test added. |
+
+After `21ee29f`: vitest 102 files / 1,136 passed, the build is clean, `e2e/desk.spec.ts` 14/14.
+
 ## 4. Follow-ups (not in scope, recorded)
 
 - **Engine (deferred, D1 and D2):** serve histogram bins per horizon, and the full event list (or a
@@ -112,3 +141,14 @@ With round 2 the verifier's condition for §1 to §5 is met; §6 was built after
 - V-13: the Position Monitor's "now" line dates a FRED daily reading by its month stamp; the true
   observation date is in `/api/freshness` `series[].as_of` (CLAUDE.md, B6).
 - V-07: Build Notes carries "will" and "model" in the owner's prose; Max decides whether to edit it.
+
+## 5. After `PUSH OK desk/frame-2`
+
+```
+git push -u origin desk/frame-2
+```
+
+Nothing else: no merge, no deploy. The servers this run started (API on :8781 from the job's
+scratch export, Vite on :5197) belong to the job and stop with it; the repo's `data/` was never
+written (the API read a scratch copy).
+
