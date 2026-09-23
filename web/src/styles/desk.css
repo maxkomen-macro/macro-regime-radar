@@ -1442,3 +1442,87 @@ select.mrr-desk-input {
 .mrr-desk[data-view="client"] .mrr-desk-reads {
   min-height: 48px;
 }
+
+/* The walkthrough strip (frame-2 §6): fixed at the bottom of the Desk's main
+   column; the page keeps room for it so nothing hides under it. */
+.mrr-desk[data-tour] main {
+  padding-bottom: 104px;
+}
+.mrr-desk-tour {
+  position: fixed;
+  left: var(--sidebar-w, 196px);
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 12px 22px;
+  background: var(--strip-grad);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+}
+.mrr-desk-tour-count {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-eyebrow-sm, 11px);
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-eyebrow, var(--text-2));
+  white-space: nowrap;
+}
+.mrr-desk-tour-caption {
+  flex: 1 1 280px;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-kv, 13.5px);
+  line-height: 1.45;
+  color: var(--text);
+}
+.mrr-desk-tour-actions {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 859.98px) {
+  .mrr-desk-tour {
+    left: 0;
+    padding: 10px 16px;
+  }
+}
+@media print {
+  .mrr-desk-tour {
+    display: none !important;
+  }
+  .mrr-desk[data-tour] main {
+    padding-bottom: 0;
+  }
+}
+
+/* Position Monitor: the signal a promotion starts from (frame-2 §6). */
+.mrr-desk-signal {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--link);
+  border-radius: var(--r-tile, 9px);
+  background: var(--tile);
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption, 13px);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.mrr-desk-signal p {
+  margin: 0;
+}
+.mrr-desk-signal strong {
+  font-weight: 500;
+  color: var(--text);
+}
+.mrr-desk-signal blockquote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--text);
+}

@@ -315,3 +315,59 @@ describe("Position Monitor gate", () => {
     expect(screen.getByText(/No positions saved on this device/)).toBeTruthy();
   });
 });
+
+describe("Walkthrough (DESK_FRAME2_SPEC §6)", () => {
+  it("the header control opens step 1 on its real route; Next and Back move; nothing autoplays", async () => {
+    renderDesk("/desk/today");
+    fireEvent.click(await screen.findByTestId("desk-walkthrough"));
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/desk/event-study?study=gold-2sigma-spx-weak&tour=1"));
+    const strip = await screen.findByTestId("desk-tour");
+    expect(strip).toHaveTextContent("Step 1 of 6");
+    expect(strip).toHaveTextContent("The setup you described, on live data since 2000.");
+    expect(within(strip).getByRole("button", { name: "Back" })).toBeDisabled();
+    fireEvent.click(within(strip).getByRole("button", { name: "Next" }));
+    // The spec's short path resolves to the page with the step kept.
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/desk/sp-internals?tour=2"));
+    expect(screen.getByTestId("desk-tour")).toHaveTextContent("The 50/200 cross, scored the same way.");
+    fireEvent.click(within(screen.getByTestId("desk-tour")).getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("tour=1"));
+  });
+
+  it("arrows move steps, not when a control owns them; Escape closes and leaves the page where it is", async () => {
+    renderDesk("/desk/pipeline?tour=4");
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/desk/data-pipeline?tour=4"));
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/desk/event-study?study=gold-2sigma-spx-weak&view=client&tour=5"));
+    // An arrow in a segmented toggle stays with the toggle.
+    const toggle = within(screen.getByRole("group", { name: "View" })).getByRole("button", { name: "Client" });
+    fireEvent.keyDown(toggle, { key: "ArrowLeft" });
+    expect(screen.getByTestId("loc")).toHaveTextContent("tour=5");
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/desk/event-study?study=gold-2sigma-spx-weak&view=client"));
+    expect(screen.getByTestId("loc")).not.toHaveTextContent("tour");
+    expect(screen.queryByTestId("desk-tour")).toBeNull();
+  });
+
+  it("step 3 promotes the signal: the instrument from the engine, Save still disabled", async () => {
+    renderDesk("/desk/monitor?from=gold-2sigma-spx-weak&tour=3");
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/desk/position-monitor?from=gold-2sigma-spx-weak&tour=3"));
+    await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
+    expect(await screen.findByTestId("desk-signal")).toHaveTextContent(/From the signal:/);
+    expect(screen.getByTestId("desk-save-position")).toBeDisabled();
+    expect(screen.getByText(/Save is blocked/)).toHaveTextContent(/set a numeric falsification level|tie the falsification level to a series/);
+    expect(screen.getByLabelText("Variant view")).toHaveValue("");
+    expect(screen.getByLabelText(/^Falsification level/)).toHaveValue("");
+  });
+
+  it("no other URL text reaches the form, and a slug the engine cannot read fills nothing", async () => {
+    const a = renderDesk("/desk/position-monitor?from=not-a-study&instrument=TLT");
+    expect(await screen.findByText(/not a study the engine can read; nothing was filled in/)).toBeTruthy();
+    expect(screen.getByLabelText("Instrument")).toHaveValue("");
+    a.unmount();
+    renderDesk("/desk/position-monitor?from=gold-2sigma-spx-weak&instrument=TLT&falsification_level=3.8");
+    await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
+    expect(screen.getByLabelText(/^Falsification level/)).toHaveValue("");
+    expect(window.localStorage.getItem(POSITIONS_KEY)).toBeNull();
+  });
+});
+

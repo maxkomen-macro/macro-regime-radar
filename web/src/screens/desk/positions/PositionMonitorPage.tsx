@@ -8,11 +8,18 @@
  * keyboard nor the URL can get round it (gate.ts, store.ts). Right: the
  * monitored list, "saved on this device", each position with its distance to
  * falsification from the live series (series.ts). Client view hides the form
- * and prints the distances in words.
+ * and prints the distances in words. `?from=<study slug>` (frame-2 §6)
+ * promotes a signal: the engine's answer for that study fills in the
+ * instrument and is quoted above the form; the gate still holds Save until the
+ * analyst writes the variant view, the pre-mortem and a falsification level.
+ * No other URL text reaches the form.
  */
 
-import { useId, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Segmented, Tag } from "../../../components";
+import { useEventStudy, type EventStudyResponse } from "../../../api/desk";
+import { paramsFor } from "../event-study/studies";
 import { fmtDate } from "../../../lib/format";
 import { Caption } from "../../shared/screen-ui";
 import DeskPageHead from "../DeskPageHead";
@@ -22,7 +29,7 @@ import { SOURCES } from "../badge-sources";
 import type { DeskPage } from "../desk-sections";
 import { GATES } from "../desk-sections";
 import { EmptyState, Panel } from "../desk-ui";
-import { useDeskView } from "../desk-view";
+import { useDeskView, withView } from "../desk-view";
 import { EMPTY_DRAFT, applyRewrite, gateStatus, type Draft, type Flag, type ThesisField } from "./gate";
 import { FRED_SERIES, MARKET_SERIES, distanceInWords, distanceSentence, fmtValue, seriesRef, useReading, useReadings, type ReadingState } from "./series";
 import { usePositions, type Position } from "./store";
@@ -80,10 +87,64 @@ function ThesisField({
   );
 }
 
-function PromoteForm({ onSaved }: { onSaved: (p: Position, persisted: boolean) => void }) {
+/** What a signal fills in (frame-2 §6, step 3): the instrument, as the study's
+ * target. The direction, horizon, thesis, pre-mortem and falsification level
+ * stay the analyst's to write, so the gate still holds Save. */
+export function draftFromSignal(study: EventStudyResponse): Partial<Draft> {
+  return { instrument: study.target.label };
+}
+
+/** The signal a `?from=<study slug>` names, when the engine answers it. The
+ * address carries only the slug; every word filled in comes from the engine. */
+function useSignal(): { slug: string | null; valid: boolean; study: EventStudyResponse | null; loading: boolean; failed: boolean } {
+  const [params] = useSearchParams();
+  const slug = params.get("from");
+  const valid = slug != null && paramsFor(slug) != null;
+  const q = useEventStudy(valid ? slug : null);
+  const study = q.data?.state === "ready" ? q.data.study : null;
+  return { slug, valid, study, loading: valid && !study && !q.isError && q.data?.state !== "awaiting_refresh", failed: valid && (q.isError || q.data?.state === "awaiting_refresh") };
+}
+
+function SignalNote({ signal }: { signal: ReturnType<typeof useSignal> }) {
+  const { view } = useDeskView();
+  if (!signal.slug) return null;
+  if (!signal.valid)
+    return (
+      <p className="mrr-desk-signal" role="status">
+        The signal in the address is not a study the engine can read; nothing was filled in.
+      </p>
+    );
+  if (!signal.study)
+    return (
+      <p className="mrr-desk-signal" role="status">
+        {signal.failed ? "The engine did not answer for this signal; nothing was filled in." : "Reading the signal from the engine…"}
+      </p>
+    );
+  const s = signal.study;
+  return (
+    <div className="mrr-desk-signal" role="status" data-testid="desk-signal">
+      <p>
+        <strong>From the signal:</strong> {s.label}, as of {fmtDate(s.provenance.as_of)}.{" "}
+        <Link to={withView(`/desk/event-study?study=${s.slug}`, view)}>Open the study</Link>
+      </p>
+      {s.verdict.points[0] ? <blockquote>{s.verdict.points[0]}</blockquote> : null}
+      <p className="mrr-desk-hint">The instrument is filled in from the study. The variant view, the pre-mortem and the falsification level are yours to write; Save waits for all three.</p>
+    </div>
+  );
+}
+
+function PromoteForm({ onSaved, signal }: { onSaved: (p: Position, persisted: boolean) => void; signal?: EventStudyResponse | null }) {
   const uid = useId();
   const { add } = usePositions();
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  // A signal fills in once, and only a field the analyst has not typed in.
+  const filled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!signal || filled.current === signal.slug) return;
+    filled.current = signal.slug;
+    const from = draftFromSignal(signal);
+    setDraft((d) => ({ ...d, instrument: d.instrument.trim() ? d.instrument : (from.instrument ?? d.instrument) }));
+  }, [signal]);
   const [notice, setNotice] = useState<string>("");
   const gate = useMemo(() => gateStatus(draft), [draft]);
   const ref = seriesRef(draft.falsification_series);
@@ -267,6 +328,7 @@ export function MonitoredRow({ p, reading, isClient, onRemove, compact = false }
 
 export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const { isClient } = useDeskView();
+  const signal = useSignal();
   const { positions, remove, storageAvailable } = usePositions();
   const readings = useReadings(positions);
   const [lastSaved, setLastSaved] = useState<string>("");
@@ -281,7 +343,8 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
       <div className={isClient ? undefined : "mrr-desk-main-side"}>
         {!isClient ? (
           <Panel id="promote" title="Promote to position" description="Four facts, then the three gates. Nothing saves until every gate is met." badge={<Tag tone="reference">Saved on this device</Tag>}>
-            <PromoteForm onSaved={(p) => setLastSaved(p.id)} />
+            <SignalNote signal={signal} />
+            <PromoteForm onSaved={(p) => setLastSaved(p.id)} signal={signal.study} />
           </Panel>
         ) : null}
         <Panel

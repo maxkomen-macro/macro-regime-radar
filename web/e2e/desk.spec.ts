@@ -219,4 +219,58 @@ test.describe("desk frame", () => {
       expect(animated, route).toBe(0);
     }
   });
+
+  /* ── desk/frame-2 §6: the walkthrough ─────────────────────────────────── */
+
+  test("walkthrough: six real steps by Next, each with its own state; Escape closes where it is", async ({ page }) => {
+    await open(page, "/desk/today");
+    await page.getByTestId("desk-walkthrough").click();
+    const strip = page.getByTestId("desk-tour");
+    const next = strip.getByRole("button", { name: "Next" });
+    const checks: [RegExp, string, () => Promise<void>][] = [
+      [/\/desk\/event-study\?study=gold-2sigma-spx-weak&tour=1$/, "The setup you described", async () => expect(page.locator("[data-chart='horizons']")).toBeVisible()],
+      [/\/desk\/sp-internals\?tour=2$/, "The 50/200 cross", async () => expect(page.getByTestId("internals-read").first()).toContainText("established")],
+      [/\/desk\/position-monitor\?from=gold-2sigma-spx-weak&tour=3$/, "Promoting a signal", async () => {
+        await expect(page.getByRole("textbox", { name: "Instrument" })).toHaveValue("S&P 500");
+        await expect(page.getByTestId("desk-save-position")).toBeDisabled();
+      }],
+      [/\/desk\/data-pipeline\?tour=4$/, "Where every number comes from", async () => expect(page.getByRole("heading", { level: 1 })).toHaveText("Data Pipeline")],
+      [/\/desk\/event-study\?study=gold-2sigma-spx-weak&view=client&tour=5$/, "as a client would read it", async () => expect(page.getByTestId("es-source")).toBeVisible()],
+      [/\/desk\/build-notes\?tour=6$/, "How it was built", async () => expect(page.getByRole("heading", { level: 1 })).toHaveText("Build Notes")],
+    ];
+    for (const [i, [url, caption, state]] of checks.entries()) {
+      await expect(page).toHaveURL(url);
+      await expect(strip).toContainText(`Step ${i + 1} of 6`);
+      await expect(strip).toContainText(caption);
+      await state();
+      if (i < checks.length - 1) await next.click();
+    }
+    await expect(next).toBeDisabled();
+    // Nothing autoplays: a wait leaves the step where it is.
+    await page.waitForTimeout(1500);
+    await expect(page).toHaveURL(/tour=6$/);
+    await page.keyboard.press("ArrowLeft");
+    await expect(page).toHaveURL(/tour=5$/);
+    await page.keyboard.press("Escape");
+    await expect(page).toHaveURL(/\/desk\/event-study\?study=gold-2sigma-spx-weak&view=client$/);
+    await expect(strip).toHaveCount(0);
+    await expect(page.getByTestId("desk-walkthrough")).toBeFocused();
+  });
+
+  test("walkthrough: any step is a link, the strip fits a phone and every control is a ringed stop", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, "/desk/monitor?from=gold-2sigma-spx-weak&tour=3");
+    await expect(page).toHaveURL(/\/desk\/position-monitor\?from=gold-2sigma-spx-weak&tour=3$/);
+    const strip = page.getByTestId("desk-tour");
+    await expect(strip).toContainText("Step 3 of 6");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    const box = await strip.boundingBox();
+    expect(box && box.y + box.height).toBeLessThanOrEqual(845);
+    for (const name of ["Back", "Next", "Close the walkthrough"]) {
+      const b = strip.getByRole("button", { name });
+      await b.focus();
+      expect(await b.evaluate((el) => { const cs = getComputedStyle(el); return cs.outlineStyle !== "none" || cs.boxShadow !== "none"; })).toBe(true);
+    }
+  });
 });
