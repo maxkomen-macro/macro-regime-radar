@@ -12,7 +12,7 @@ The other thing I took seriously was the House Discipline box in his mock. Varia
 
 Live, on pipeline data, as of the date shown on each panel: the conditional event study and its presets, the 50/200 cross study, the S&P Internals page built on it, the Position Monitor and its discipline gate, the Data Pipeline page, the Today strip, and the Desk/Client toggle.
 
-Designed, with real layouts and no numbers: Basket Builder, Hedge Simulator, Red Team, Pitch Evaluation, Launchpad, and the breadth and sector-rotation panels inside Internals. Each says what it will read once it's wired.
+Designed, with real layouts and no numbers: Basket Builder, Hedge Simulator, Red Team, Pitch Evaluation, Launchpad, and the breadth and sector-rotation panels inside Internals. Each says what it reads once wired.
 
 What the engine says about John's setup: gold up two sigma over 20 sessions with the S&P below its 50-day has happened 18 times since 2000. A month later the S&P's median move was about 1.8 points better than baseline, so it leans positive, but the 90% interval includes zero at every horizon. Suggestive, not established. The cross study is the more interesting result: the golden cross at 20 sessions and the death cross at 60 both clear the bar the engine sets for an established read. The live page carries the numbers; I don't repeat them here because they refresh nightly.
 

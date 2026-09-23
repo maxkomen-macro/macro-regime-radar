@@ -7,6 +7,11 @@
  *   engine's regime_lag_months).
  * - Recession probability (logistic model): /api/recession/probability,
  *   probability_source recession_model, the only recession number on the Desk.
+ *   The card dates its number by the reading it is: the last point of the
+ *   served recession_prob_series, which the server cuts at today and whose
+ *   value is the headline. Never `data_as_of`: that is the month-end label of
+ *   the newest input bucket (a partial month, e.g. "2026-09-30" on Sep 23), a
+ *   day in the future the displayed number does not even read.
  * - Presets fired: each engine preset's newest event date, from its own
  *   response, against the last five sessions the engine has read (the
  *   window ends at the studies' as_of, so a stale store never reads as quiet).
@@ -40,7 +45,15 @@ import { oddsInWords } from "../words";
 export const RECESSION_LABEL = "Recession probability (logistic model)";
 
 const RECESSION_DEF =
-  "A logistic regression on the yield curve, unemployment, the high-yield spread, industrial production and the 10Y − 5Y breakeven spread, fit to the NBER recession dates: the probability of a recession within 12 months. A separate read from the regime classifier.";
+  "A logistic regression on the yield curve, unemployment, the high-yield spread, industrial production and the 10Y − 5Y breakeven spread, fit to the NBER recession dates: the probability of a recession within 12 months. Each monthly reading uses its inputs lagged three months, so a reading is dated by its month, not by the newest input; the badge dates the input series themselves. A separate read from the regime classifier.";
+
+/** Pure: the month the card's number is, from the served series (its last
+ * point, when that point is the headline value); null when they disagree or
+ * the series is empty, so the card prints no date rather than a wrong one. */
+export function recessionReadingDate(rec: { recession_prob: number | null; recession_prob_series: { date: string; value: number | null }[] | null }): string | null {
+  const last = rec.recession_prob_series?.at(-1);
+  return last && rec.recession_prob != null && last.value === rec.recession_prob ? last.date : null;
+}
 
 /** Five sessions: the last session and the four weekdays before it
  * (exchange holidays are not known here; the card prints the exact dates). */
@@ -109,6 +122,7 @@ function RecessionCard({ isClient }: { isClient: boolean }) {
   const recession = useRecessionProbability();
   const rec = recession.data;
   const pct = rec?.probability_source === "recession_model" ? rec.recession_prob : null;
+  const reading = rec ? recessionReadingDate(rec) : null;
   return (
     <Panel id="recession" title="Recession" badge={<StatusBadge source={{ ...SOURCES.recession, block: rec?.freshness ?? null }} />} className="mrr-desk-strip-card">
       {rec ? (
@@ -121,8 +135,9 @@ function RecessionCard({ isClient }: { isClient: boolean }) {
           <div className="mrr-desk-strip-value" style={numStyle} data-testid="today-recession">
             {isClient ? oddsInWords(pct != null ? pct / 100 : null) : fmtProb(pct, "percent", 1)}
           </div>
-          <p className="mrr-desk-strip-sub">
-            {rec.recession_label} · inputs through {fmtMonYr(rec.data_as_of)}
+          <p className="mrr-desk-strip-sub" data-testid="today-recession-sub">
+            {rec.recession_label}
+            {reading ? ` · the ${fmtMonYr(reading)} reading` : ""}
           </p>
         </>
       ) : (

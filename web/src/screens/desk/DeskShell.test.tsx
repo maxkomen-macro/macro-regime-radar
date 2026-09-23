@@ -9,7 +9,7 @@
  * state the engine answers (ready, 202 computing, 429 busy, 422, awaiting the
  * first refresh, 404 absent) is driven through the page (DESK_FRAME2_SPEC §1).
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes, useLocation } from "react-router-dom";
 import DeskShell from "./DeskShell";
@@ -52,7 +52,11 @@ function fresh() {
   };
 }
 
-function stub() {
+type Route = Parameters<typeof stubFetch>[0][string];
+
+/** The stored endpoints' minimal bodies; `over` replaces a route by its key
+ * (an existing key keeps its place, so prefix order holds). */
+function stub(over: Record<string, Route> = {}) {
   return stubFetch({
     "/api/desk/event-study/assets": () => engineAssets,
     "/api/desk/event-study": (url) => {
@@ -68,6 +72,7 @@ function stub() {
     "/api/signals/latest": () => ({ date: MONTH, signals: [], freshness: null }),
     "/api/desk/pipeline/inventory": () => ({ generated_at: `${DAILY}T20:05:00Z`, overall: "current", regimes_date: MONTH, signals_date: MONTH, market_daily_date: DAILY, market_intraday_ts: null, news_published_at: null, raw_series_date: DAILY, series: fresh().series.map((s) => ({ ...s, source: "FRED", source_id: s.id, feeds: ["Regime classifier"] })) }),
     "/series/DGS10/latest": () => ({ series_id: "DGS10", date: DAILY, value: 4.12 }),
+    ...over,
   });
 }
 
@@ -368,6 +373,99 @@ describe("Walkthrough (DESK_FRAME2_SPEC §6)", () => {
     await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
     expect(screen.getByLabelText(/^Falsification level/)).toHaveValue("");
     expect(window.localStorage.getItem(POSITIONS_KEY)).toBeNull();
+  });
+});
+
+/* ── Today never prints a date later than today (frame-2 follow-up) ─────── */
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Every date a text prints, as the first day it can mean: "Sep 30, 2026" and
+ * "2026-09-30" the day; "Sep 17" the day in `year`; "Aug 2026" the month's
+ * first day (a month is not later than today while today is in it). */
+export function datesIn(text: string, year: number): { raw: string; day: string }[] {
+  const out: { raw: string; day: string }[] = [];
+  const iso = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const re = new RegExp(String.raw`\b(${MON.join("|")}) (\d{1,2}), (\d{4})\b|\b(${MON.join("|")}) (\d{4})\b|\b(${MON.join("|")}) (\d{1,2})\b|\b(\d{4})-(\d{2})-(\d{2})\b`, "g");
+  for (const m of text.matchAll(re)) {
+    if (m[1]) out.push({ raw: m[0], day: iso(Number(m[3]), MON.indexOf(m[1]) + 1, Number(m[2])) });
+    else if (m[4]) out.push({ raw: m[0], day: iso(Number(m[5]), MON.indexOf(m[4]) + 1, 1) });
+    else if (m[6]) out.push({ raw: m[0], day: iso(year, MON.indexOf(m[6]) + 1, Number(m[7])) });
+    else out.push({ raw: m[0], day: iso(Number(m[8]), Number(m[9]), Number(m[10])) });
+  }
+  return out;
+}
+
+describe("Today strip dates", () => {
+  const TODAY = "2026-09-23";
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(`${TODAY}T15:00:00Z`));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("the date reader sees every form the strip prints", () => {
+    expect(datesIn("inputs as of Sep 30, 2026 · as of Sep 17 · Aug 2026 · 2026-10-01", 2026).map((d) => d.day)).toEqual(["2026-09-30", "2026-09-17", "2026-08-01", "2026-10-01"]);
+  });
+
+  it("never prints a date later than today, even when the recession payload's input stamp is a future month-end", async () => {
+    // The payload as served on 2026-09-23: data_as_of is the month-end label of
+    // September's partial bucket; the headline is the series' last point (Aug 31).
+    stub({
+      "/api/recession/probability": () => ({
+        probability_source: "recession_model",
+        recession_prob: 11.644,
+        recession_label: "Low Risk",
+        recession_color: "g",
+        yield_curve_spread: 0.52,
+        yield_curve_pct_rank: 42,
+        inversion_duration_months: 0,
+        is_inverted: false,
+        divergence_score: 2.4,
+        divergence_label: "Aligned",
+        divergence_color: "g",
+        recession_prob_series: [
+          { date: "2026-07-31", value: 14.463 },
+          { date: "2026-08-31", value: 11.644 },
+        ],
+        yield_curve_series: [],
+        usrec_series: [],
+        n_training_samples: 281,
+        model_features: ["yield_curve"],
+        feature_coefficients: {},
+        data_as_of: "2026-09-30",
+        curve_shape: {},
+        current_inputs: {},
+        freshness: null,
+      }),
+    });
+    window.localStorage.setItem(
+      POSITIONS_KEY,
+      JSON.stringify({ version: 1, positions: [{ id: "p1", instrument: "TLT", direction: "long", size: "", horizon: "3 months", variant_view: "v", pre_mortem: "p", falsification: { series: "DGS10", level: 3.8, direction: "above" }, created_at: `${TODAY}T14:00:00Z` }] }),
+    );
+    renderDesk("/desk/today");
+    await waitFor(() => expect(screen.getByTestId("today-recession")).toHaveTextContent("11.6%"));
+    await waitFor(() => expect(screen.getByTestId("today-fired")).toHaveTextContent(/fired/));
+    await waitFor(() => expect(screen.getByTestId("today-regime")).toHaveTextContent("Goldilocks"));
+    await waitFor(() => expect(screen.getAllByTestId("desk-position").length).toBe(1));
+    // The card dates its number by the reading it is, as a month, never by the input stamp.
+    expect(screen.getByTestId("today-recession-sub")).toHaveTextContent("Low Risk · the Aug 2026 reading");
+    const strip = screen.getByTestId("today-strip");
+    expect(strip).not.toHaveTextContent(/Sep 30/);
+    const dates = datesIn(strip.textContent ?? "", 2026);
+    expect(dates.length).toBeGreaterThan(3);
+    const later = dates.filter((d) => d.day > TODAY);
+    expect(later, `dates after ${TODAY}: ${later.map((d) => d.raw).join(", ")}`).toEqual([]);
+  });
+
+  it("prints no reading date rather than a wrong one when the series and the headline disagree", async () => {
+    const { recessionReadingDate } = await import("./today/TodayPage");
+    expect(recessionReadingDate({ recession_prob: 11.6, recession_prob_series: [{ date: "2026-08-31", value: 11.6 }] })).toBe("2026-08-31");
+    expect(recessionReadingDate({ recession_prob: 11.6, recession_prob_series: [{ date: "2026-09-30", value: 9.1 }] })).toBeNull();
+    expect(recessionReadingDate({ recession_prob: 11.6, recession_prob_series: [] })).toBeNull();
   });
 });
 

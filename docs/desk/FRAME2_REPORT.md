@@ -142,7 +142,31 @@ After `21ee29f`: vitest 102 files / 1,136 passed, the build is clean, `e2e/desk.
   observation date is in `/api/freshness` `series[].as_of` (CLAUDE.md, B6).
 - V-07: Build Notes carries "will" and "model" in the owner's prose; Max decides whether to edit it.
 
-## 5. After `PUSH OK desk/frame-2`
+## 5. Owner edits after the final pass (2026-09-23)
+
+- **Build Notes:** "what it will read once it's wired" → "what it reads once wired", in both
+  `docs/desk/BUILD_NOTES.md` and `web/src/content/desk/BUILD_NOTES.md` (still byte-identical). That
+  takes "will" out of the file; "model" remains in the owner's prose (V-07).
+- **Today's recession date.** The frame printed `data_as_of` ("inputs as of Sep 30, 2026" on Sep 23).
+  That field is the month-end label of the newest monthly bucket across the inputs
+  (`src/analytics/recession.py`: the features are resampled to month-end; September's bucket holds
+  daily values only through Sep 17). The number on the card is not that bucket: it is the last point
+  of the served `recession_prob_series`, which the server cuts at today (`2026-08-31`, the Aug 2026
+  reading), and that reading reads its features three months back (May 2026 values; checked against
+  the feature frame on the scratch database). The card now dates its number by the reading it is,
+  as a month: "Low Risk · the Aug 2026 reading", taken from the series' last point when it equals the
+  headline (else no date). Nothing is computed in the browser. The badge beside it dates the input
+  series themselves ("as of Sep 17 · 3 days behind"). The two agree: the reading's month is not
+  later than the badge date, and neither is later than today. The lag is stated in the label's tooltip.
+- **Tests:** a Today test fixes the clock at 2026-09-23 and serves `data_as_of: "2026-09-30"`. It
+  reads every date the strip prints ("Sep 30, 2026", "Sep 17", "Aug 2026", ISO) and fails on any date
+  after today. It failed on the old line and passes now. An e2e test does the same against the real
+  API. vitest 102 files / 1,139, `e2e/desk.spec.ts` 15/15, build clean.
+- **Follow-up:** the main Recession screen still prints `data_as_of` as a month ("Sep 2026"). An API
+  field for the reading's month and its input month would let every screen say both without the
+  browser knowing the lag.
+
+## 6. After `PUSH OK desk/frame-2`
 
 ```
 git push -u origin desk/frame-2

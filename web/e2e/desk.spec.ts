@@ -279,4 +279,37 @@ test.describe("desk frame", () => {
       expect(await b.evaluate((el) => { const cs = getComputedStyle(el); return cs.outlineStyle !== "none" || cs.boxShadow !== "none"; })).toBe(true);
     }
   });
+
+  test("Today prints no date later than today; the recession card is dated by its reading", async ({ page }) => {
+    await open(page, "/desk/today");
+    await expect(page.getByTestId("today-recession")).toContainText("%");
+    const api = await (await page.request.get("/api/recession/probability")).json();
+    const last = api.recession_prob_series.at(-1);
+    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    if (last && last.value === api.recession_prob) {
+      const [y, m] = last.date.split("-").map(Number);
+      await expect(page.getByTestId("today-recession-sub")).toContainText(`the ${MON[m - 1]} ${y} reading`);
+    }
+    const { text, today } = await page.evaluate(() => {
+      const d = new Date();
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      return { text: document.querySelector("[data-testid='today-strip']")?.textContent ?? "", today: iso };
+    });
+    const year = Number(today.slice(0, 4));
+    const iso = (yy: number, mm: number, dd: number) => `${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+    const re = new RegExp(String.raw`\b(${MON.join("|")}) (\d{1,2}), (\d{4})\b|\b(${MON.join("|")}) (\d{4})\b|\b(${MON.join("|")}) (\d{1,2})\b|\b(\d{4})-(\d{2})-(\d{2})\b`, "g");
+    const later: string[] = [];
+    for (const mt of text.matchAll(re)) {
+      const day = mt[1]
+        ? iso(Number(mt[3]), MON.indexOf(mt[1]) + 1, Number(mt[2]))
+        : mt[4]
+          ? iso(Number(mt[5]), MON.indexOf(mt[4]) + 1, 1)
+          : mt[6]
+            ? iso(year, MON.indexOf(mt[6]) + 1, Number(mt[7]))
+            : iso(Number(mt[8]), Number(mt[9]), Number(mt[10]));
+      if (day > today) later.push(mt[0]);
+    }
+    expect(later, `dates after ${today}`).toEqual([]);
+  });
 });
+
