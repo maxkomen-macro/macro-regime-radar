@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline"];
+const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline", "build-notes"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -255,6 +255,58 @@ test.describe("desk v2", () => {
     await expect(page.locator(".pl-group-meta").first()).toBeVisible();
     await expect(page.getByTestId("pl-badge-inline")).toBeVisible();
     expect(await page.locator(".dk-crumb").evaluate((e) => e.scrollWidth <= e.clientWidth + 1)).toBe(true);
+  });
+
+  test("Build Notes: the contents mark follows the scroll, a jump and an arrival by #section", async ({ page }) => {
+    // Its own notes, served in place of the file's module (the file is Max's and may change):
+    // long sections, a short and a tiny one, and a last one too low to reach the top.
+    const para = (n: number) => Array.from({ length: n }, () => "The desk reads the store and prints what it finds, dated.").join(" ");
+    const notes = `# Synthetic notes\n\n${para(3)}\n\n## Long A\n\n${para(24)}\n\n## Short\n\n${para(1)}\n\n## Tiny\n\nOne line.\n\n## Long B\n\n${para(24)}\n\n${para(24)}\n\n## Long C\n\n${para(24)}\n\n## Last\n\n${para(4)}\n`;
+    await page.route(/BUILD_NOTES\.md\?import&raw/, (r) => r.fulfill({ status: 200, contentType: "application/javascript", body: `export default ${JSON.stringify(notes)};` }));
+    const marked = page.locator('.bn-toc a[aria-current="location"]');
+    const toc = page.getByRole("navigation", { name: "Contents" });
+    const titles = ["Long A", "Short", "Tiny", "Long B", "Long C", "Last"];
+    await open(page, "/desk/build-notes");
+    await expect(page.getByRole("heading", { level: 2, name: "Synthetic notes" })).toBeVisible();
+    await expect(toc.getByRole("link")).toHaveText(titles);
+    await expect(marked).toHaveText("Long A");
+    // Scrolling down marks every section in turn, the last at the foot.
+    const seen = await page.evaluate(async () => {
+      const out: string[] = [];
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      for (let y = 0; y <= max + 20; y += 20) {
+        window.scrollTo(0, y);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const t = document.querySelector('.bn-toc a[aria-current="location"]')?.textContent ?? "";
+        if (out[out.length - 1] !== t) out.push(t);
+      }
+      return out;
+    });
+    expect(seen).toEqual(titles);
+    // A click keeps its mark, even for a section too low to reach the top or too short to hold the line.
+    for (const t of ["Tiny", "Long B", "Last", "Short"]) {
+      await toc.getByRole("link", { name: t, exact: true }).click();
+      await settle(page, 300);
+      await expect(marked).toHaveText(t);
+    }
+    // Arriving fresh on #section, the lazy page scrolls there itself; a malformed escape is no section.
+    await page.goto("about:blank");
+    await page.goto("/desk/build-notes#bn-tiny", { waitUntil: "domcontentloaded" });
+    await settle(page, 500);
+    await expect(marked).toHaveText("Tiny");
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    // A same-page #section: the browser scrolls, the page follows.
+    await page.evaluate(() => {
+      window.location.hash = "#bn-short";
+    });
+    await expect(marked).toHaveText("Short");
+    await page.mouse.wheel(0, -20000);
+    await expect(marked).toHaveText("Long A");
+    await page.goto("about:blank");
+    await page.goto("/desk/build-notes#%E0%A4%A", { waitUntil: "domcontentloaded" });
+    await settle(page, 500);
+    await expect(page.getByRole("heading", { level: 2, name: "Synthetic notes" })).toBeVisible();
+    await expect(marked).toHaveText("Long A");
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

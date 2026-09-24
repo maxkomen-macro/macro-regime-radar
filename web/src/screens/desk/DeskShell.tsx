@@ -31,6 +31,7 @@ const SectorsPage = lazy(() => import("./sectors/SectorsPage"));
 const LedgerPage = lazy(() => import("./ledger/LedgerPage"));
 const PositionMonitorPage = lazy(() => import("./positions/PositionMonitorPage"));
 const PipelinePage = lazy(() => import("./pipeline/PipelinePage"));
+const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
 
 function PageLoading({ label }: { label: string }) {
   return (
@@ -96,6 +97,7 @@ export default function DeskShell() {
   else if (page.slug === "signal-ledger") body = <LedgerPage page={page} />;
   else if (page.slug === "position-monitor") body = <PositionMonitorPage page={page} />;
   else if (page.slug === "data-pipeline") body = <PipelinePage page={page} />;
+  else if (page.slug === "build-notes") body = <BuildNotesPage page={page} />;
   else body = <NotBuilt page={page} />;
 
   return (

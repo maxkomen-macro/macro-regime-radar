@@ -1064,6 +1064,173 @@ confirmed. Dispositions:
   one that failed; the download's type check and its 15 s limit
   (`kit/download.test.ts`).
 
+### 10. Build Notes — `frame-3: build-notes`
+
+Built: the Build Notes tab on `/build-notes` (§11), a render of
+`docs/desk/BUILD_NOTES.md` read at build time through
+`import.meta.glob(…, { query: "?raw" })`; the dev server's allow list gains
+that one file. The contents list is the file's own `##` sections (a `##`
+inside a code fence is code). It marks the section being read with
+`aria-current="location"`: the last one whose top has passed a read line
+120 px down, a line that moves to the foot of the window over the last
+screen of scroll, so every section is marked on the way down. A jump (a
+click, `#…` on arrival, a same-page `#…`) keeps its mark while its section is
+on screen, until the reader scrolls by wheel, touch or key. A malformed
+`#…` is no section. The card carries the file's `#` title (the tab's name when
+the file has none), §11's byline "Max Komen · September 2026", the lead and
+each section through the app's Markdown renderer, restyled in the Desk's
+tokens for what the file may carry later (a `###` heading, code, a rule, a
+link). The column ends with "Rendered from docs/desk/BUILD_NOTES.md · same
+file in the repo". The page adds nothing else except the hold markers below
+and, when a build has no file, "Awaiting the notes file:
+docs/desk/BUILD_NOTES.md is not in this build."
+
+**A conflict for Max:** the owner's rule says "established" and
+"significant" never appear, and the file uses "established" twice. This
+session may not edit that file. Both uses are in the gold paragraph under
+"What is live and what is designed" (line 17). The page holds every
+sentence that carries one of the two words. A paragraph is held whole
+across its wrapped lines, and a list item across its continuation lines
+(joined into the item). A heading is held in place and keeps its section.
+Held sentences are replaced by a marker, and a run of them becomes one
+counted marker. Emphasis in a paragraph with a hold is dropped, so a span
+the hold cuts in two prints no asterisks. The two sentences held today,
+verbatim:
+
+> Suggestive, not established.
+>
+> The cross study is the more interesting result: the golden cross at 20
+> sessions and the death cross at 60 both clear the bar the engine sets for
+> an established read.
+
+They sit side by side, so the page prints "(two sentences held: they use a
+word the Desk does not print)" in their place. The second is the notes'
+only statement of the cross-study result, so the page currently drops it.
+A rewording in the Desk's own terms would clear both markers with no code
+change. For example: "Suggestive: don't size on it." and "… both clear the
+bar the engine sets for a Reliable read." A unit test pins the count at
+two, so any change to the file's holds, in either direction, fails it
+until this section and the count are updated.
+
+**An owner action outside `web/` (B-1):** the image build copies only
+`web/` (`Dockerfile`, stage 1) and `.dockerignore` excludes `docs` and
+`*.md`. The page no longer breaks that build: the glob finds nothing and
+the page says the file is not in this build. A `web/`-only copy was built
+this session with `tsc -b` and `vite build`: both pass, and the chunk
+carries the awaiting line. For the deployed page to show the notes, add
+`COPY docs/desk/BUILD_NOTES.md /build/docs/desk/BUILD_NOTES.md` before
+`RUN npm run build`, and `!docs/desk/BUILD_NOTES.md` after the `*.md` line
+in `.dockerignore`. On Vercel (Root Directory `web`), confirm that the
+project setting that includes files outside the root directory in the
+build is on.
+
+Compare: `docs/desk/screens/compare/11-build-notes.png` (build alone:
+`11-build-notes.build.png`). Matched on the first pass in structure: the
+contents column, the card, the title and byline, section headings and body
+at the PNG's sizes. The words differ because the file does. The PNG shows
+the frame-3 notes (§11's sections "What the engine does", "Review log",
+"Known limits"… and the "[N] findings across [R] rounds" placeholder). The
+repo's file is frame-2's ("What is live and what is designed",
+"Architecture", "Pre-mortem of this tool", "First 90 days on the desk"), so
+the contents list and the page's height follow the file (1,613 px against
+1,040). When Max writes the frame-3 notes into the file, the page shows them
+with no code change. That includes hard-wrapped list items, which the page
+joins before the shared renderer sees them (round 2 tested the PNG's copy,
+wrapped). The frame-3 heading "What is a model and what isn't" and the copy's
+"always" would fail the language scan (B-5 below).
+
+Verifier round 1: **FAIL** on one blocking finding. The
+page itself passed every rendering check: all 24 blocks match the file in
+order, no banned word is printed, 11 computed colors all come from §1.3,
+there is no sideways scroll from 1440 down to 390, the keyboard stops have
+rings, and the geometry matches the PNG. The compare shots of the nine
+other built tabs were pixel-identical. Findings and what was done:
+- B-1 (blocking) the Docker web build failed: the page imported a file
+  outside `web/`. **Fixed inside `web/`** with the glob and the "not in
+  this build" state; the Dockerfile lines are the owner action above.
+- B-2 the contents mark ignored clicks, scrolling and `#…`. **Fixed**: the
+  mark now follows the positions and the jumps described above. A browser
+  test covers a fresh arrival on `#…`, a same-page `#…`, a click on a
+  section too low to reach the top, scrolling to the foot and back, and a
+  click. It is written against positions, not titles, because the file's
+  headings are Max's.
+- B-3 the hold held too little (`_established_`, the start of a wrapped
+  sentence) and too much (a whole `##` heading and its section, a bullet's
+  marker, the sentence after a closing quote or bold, text split at "e.g." or
+  "U.S."). **Fixed** in `notes.ts`: letters and digits bound the word, the
+  file is split into title and sections before holding, and holding goes
+  paragraph by paragraph and item by item. Every case is pinned, negatives
+  included ("insignificant", "establishment", "significantly", "1.8").
+- B-4 a `###` heading, code, a rule and a link fell back to the analyst
+  panel's styles. **Fixed**: set in the Desk's tokens in `notes.css`
+  (completed in round 2, R2-4).
+- B-5 the language gate no longer covered Build Notes. **Fixed**:
+  `desk-language.test.ts` scans the file as the page prints it (after the
+  holds), under the full list and the recession allowance. Line 29 ("The
+  recession probability is a model, … a logistic regression …") passes on
+  that allowance. Settle with Max whether his own prose should be exempt
+  from the frame-2 list: the PNG's frame-3 copy uses "always" ("always gives
+  the same answer") and "model" ("a rule, not a model"), and both would fail
+  the scan once written into the file.
+- B-6 adjacent holds printed two markers. **Fixed**: one counted marker.
+- B-7 this section did not quote the held sentences, overstated the mark,
+  and left out B-1. **Fixed** above.
+- B-8 the dev server allowed all of `docs/desk`. **Fixed**: the one file.
+- B-9 an empty or missing file gave a blank page with no explanation.
+  **Fixed**: the awaiting line. The contents list and the "Rendered from"
+  line are omitted.
+- B-10 tests were thin. **Fixed**: `BuildNotesPage.test.tsx` checks, by
+  substring and in the file's order, every block without a held word, using
+  a parse independent of `notes.ts`. It pins the hold count and covers the
+  edge cases, the missing file, a file with no title, and the mark on click
+  and on `#…`. The browser test serves its own notes in place of the file
+  (long, short and tiny sections), so it does not depend on Max's text. It
+  checks the scroll sweep, clicks, a fresh and a same-page `#…`, the wheel,
+  and a malformed `#…`.
+
+Verifier round 2: **FAIL** on one blocking finding. Every round-1 fix was
+confirmed: the `web/`-only build, the mark on click, Back, Forward and Enter,
+every hold case, the language scan, the counted marker, the dev allow list
+and the empty file. The gates and the compare shots were also confirmed.
+Findings and what was done:
+- R2-1 (blocking) a malformed escape in `#…` (`#%`) crashed the tab.
+  **Fixed**: the fragment is decoded under try/catch, and a unit test and
+  the browser test cover it.
+- R2-2 a jump to a short section marked the next one. **Fixed**: a jump
+  keeps its mark while its section is on screen, until a reader-started
+  scroll.
+- R2-3 scrolling skipped sections (Architecture and Pre-mortem never
+  marked). **Fixed** by the moving read line. On the repo file at 1440×1040,
+  1440×960, 1100×900, 1440×700 and 390×844, a sweep marks all five sections
+  in order.
+- R2-4 a rule kept the browser's gray, and a `#` heading in the lead kept
+  the app's color. **Fixed** in `notes.css`.
+- R2-5 wrapped list items split the list, and the hold missed their
+  continuation. The fidelity test's parse also broke on `*x*`, and the
+  browser test depended on the file's length. **Fixed**: continuation lines
+  are joined into their item. The parse strips emphasis and links, and the
+  browser test serves its own notes.
+- R2-6 an abbreviation at a sentence's end swallowed the next sentence.
+  **Fixed**: a piece runs on after an abbreviation only when it starts in
+  lower case or with a digit, and after a name's middle initial only when
+  it starts in upper case.
+- R2-7 a hold inside an emphasis span printed asterisks. **Fixed** as
+  above.
+- R2-8 a section id could collide with the page's fixed ids. **Fixed**: the
+  card title's id is `bnx-title`, and heading ids end in `--h`, which no
+  section slug can.
+- R2-9 a `##` inside a code fence started a section. **Fixed**.
+- R2-10 all emphasis rendered gray. **Fixed**: emphasis keeps the body
+  color, the hold marker included.
+- R2-11 a jump landed flush at the window's top. **Fixed**: the scroll
+  margin sits on the section.
+- R2-12 this section overstated: B-4, "ten other shots", the fidelity
+  test, the hold cap, list items, "no code change", and the source line in
+  the missing state. **Fixed** above.
+
+The round-2 fixes were checked by the gates and the new unit and browser
+tests, not by a third verifier round.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -1081,3 +1248,4 @@ tests against the fixture dev server.
 | frame-3: signal-ledger | clean | 111 / 1,244 | ok | 23 / 23 |
 | frame-3: position-monitor | clean | 110 / 1,253 | ok | 25 / 25 |
 | frame-3: data-pipeline | clean | 109 / 1,259 | ok | 27 / 27 |
+| frame-3: build-notes | clean | 110 / 1,274 | ok | 29 / 29 |

@@ -9,7 +9,9 @@
  * "established" and "significant", which never appear anywhere (§1.5).
  *
  * Parsed with the TypeScript compiler, so comments never count and every
- * string does. Build Notes is scanned like every other file (review R-10).
+ * string does. Build Notes is scanned as the page prints it: the words of
+ * docs/desk/BUILD_NOTES.md after the page's holds (./notes/notes.ts), under
+ * the same list and the same recession allowance (review R-10, verifier B-5).
  * Not scanned: tests and saved engine payloads (they carry the words on
  * purpose, as inputs to the gate or as the engine's own text); in gate.ts,
  * the ban list's own entries (a list of the words is the words). "model"
@@ -18,6 +20,7 @@
  */
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { readNotes } from "./notes/notes";
 
 const BANNED = /\b(will|predicts|proves|guaranteed|always|never|obviously|models?|established|significant)\b/gi;
 /** Frame-3's two words (§1.5). */
@@ -42,6 +45,7 @@ const BOARD_FILES = ["/src/screens/desk/pipeline/PipelinePage.tsx", "/src/fixtur
 // the scan needs no Node types and sees exactly the files the build sees.
 const SOURCES = import.meta.glob<string>(["/src/**/desk/**/*.{ts,tsx,md}", "/src/api/desk.ts"], { query: "?raw", import: "default", eager: true });
 const FIXTURES = import.meta.glob<unknown>("/src/fixtures/desk/*.json", { import: "default", eager: true });
+const NOTES = import.meta.glob<string>("../../../../docs/desk/BUILD_NOTES.md", { query: "?raw", import: "default", eager: true });
 
 /** Every string value in a JSON document, keys excluded. */
 export function jsonStrings(v: unknown): string[] {
@@ -126,6 +130,18 @@ describe("the Desk's language ban list", () => {
   it("no string a fixture serves uses a banned word", () => {
     const hits: string[] = [];
     for (const [f, doc] of Object.entries(FIXTURES)) for (const str of jsonStrings(doc)) if (offending(f, str).length) hits.push(`${f}: ${str.slice(0, 120)}`);
+    expect(hits).toEqual([]);
+  });
+
+  it("Build Notes prints no banned word: the file as the page renders it", () => {
+    const md = Object.values(NOTES)[0];
+    expect(md, "docs/desk/BUILD_NOTES.md").toBeTruthy();
+    const n = readNotes(md);
+    const hits = [n.title ?? "", n.lead, ...n.sections.flatMap((x) => [x.title, x.body])]
+      .flatMap((t) => t.split(/\n\s*\n/))
+      .map((para) => para.replace(/\s*\n\s*/g, " "))
+      .filter((para) => offending("/docs/desk/BUILD_NOTES.md", para).length)
+      .map((para) => `[${offending("/docs/desk/BUILD_NOTES.md", para).join(", ")}] ${para.slice(0, 120)}`);
     expect(hits).toEqual([]);
   });
 

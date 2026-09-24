@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { execSync } from "node:child_process";
-import { defineConfig, type Plugin } from "vite";
+import { fileURLToPath } from "node:url";
+import { defineConfig, searchForWorkspaceRoot, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { deskFixture } from "./src/fixtures/desk/index";
 
@@ -93,6 +94,9 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // Build Notes renders docs/desk/BUILD_NOTES.md (DESK_FRAME3_SPEC §11), outside web/:
+    // the dev server may read that one file besides its own root.
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), fileURLToPath(new URL("../docs/desk/BUILD_NOTES.md", import.meta.url))] },
     proxy: {
       // ws: true upgrades /api/stream/ws to the FastAPI relay alongside plain GETs.
       "/api": { target: API_TARGET, changeOrigin: true, ws: true },
