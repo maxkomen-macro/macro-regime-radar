@@ -1,0 +1,197 @@
+/* Overview (DESK_FRAME3_SPEC §2; geometry from screens/01-overview.png at 1440). */
+.ov {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+}
+.ov .dk-title {
+  margin-bottom: -2px;
+}
+.ov-since {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: 30px;
+  padding: 2px 13px;
+  background: var(--dk-card-2);
+  border: 1px solid var(--dk-border);
+  border-radius: 7px;
+  font-size: 13.5px;
+  color: var(--dk-t1);
+}
+.ov-since-label {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+  margin-right: 12px;
+  white-space: nowrap;
+}
+.ov-since-item {
+  white-space: nowrap;
+}
+.ov-since-sep {
+  color: var(--dk-t4);
+  margin: 0 11px;
+}
+
+.ov-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--dk-gap);
+}
+.ov-tile {
+  background: var(--dk-card);
+  border: 1px solid var(--dk-border);
+  border-radius: 10px;
+  padding: 7px 16px 14px;
+  min-height: 115px;
+  min-width: 0;
+}
+.ov-tile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ov-tile-label {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-tile-value {
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 29px;
+  line-height: 1.2;
+  margin-top: 3px;
+  color: var(--dk-t1);
+  white-space: nowrap;
+}
+.ov-tile-sub {
+  font-size: 13.5px;
+  line-height: 17px;
+  color: var(--dk-t2);
+  margin-top: 3px;
+}
+
+.ov-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
+  gap: var(--dk-gap);
+  align-items: stretch;
+  margin-top: 2px;
+}
+.ov-signals {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.ov-signal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 352px) auto;
+  align-items: center;
+  column-gap: 20px;
+  min-height: 54px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--dk-row);
+}
+.ov-signal:last-child {
+  border-bottom: 0;
+}
+.ov-signal-name b {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--dk-t1);
+}
+.ov-signal-name span {
+  display: block;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t3);
+  margin-top: 1px;
+}
+.ov-signal-text {
+  font-size: 14px;
+  line-height: 17px;
+  color: var(--dk-t2);
+}
+.ov-signal-text b {
+  color: var(--dk-t1);
+  font-weight: 700;
+}
+.ov-active-foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dk-border);
+}
+.ov-active-foot .dk-defs {
+  flex: 1;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.9fr);
+}
+.ov-ledger-link {
+  white-space: nowrap;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+.ov-monitored .dk-mon-list {
+  margin-top: 4px;
+}
+.ov-mon-note {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--dk-t4);
+  margin-top: 10px;
+}
+.ov-mon-act {
+  margin-top: auto;
+  padding-top: 16px;
+}
+.ov-mon-act .dk-btn {
+  height: 30px;
+  font-size: 14px;
+}
+@media (max-width: 1100px) {
+  .ov-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ov-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 700px) {
+  .ov-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ov-signal {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 4px;
+  }
+  .ov-signal-text {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .dk-defs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ov-since {
+    padding: 6px 12px;
+  }
+  .ov-since-item {
+    white-space: normal;
+  }
+}

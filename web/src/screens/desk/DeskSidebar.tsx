@@ -1,104 +1,154 @@
 /**
- * The Desk sidebar (docs/desk/DESK_FRAME_SPEC.md §2): the wordmark linking
- * back to the dashboard (§1), the "Analyst Workspace · Desk" title, three
- * groups in the spec's order (SURVEY, ACT, TOOLS) as 36px link rows, and the
- * House Discipline card pinned at the foot. The same `.mrr-side` column as
- * the app shell; the groups, the marks and the card are the Desk's own
- * classes in desk.css. A designed shell carries a ◇ in its right gutter and
- * the external Dashboard entry an arrow, so the list states which pages are
- * wired without a legend.
+ * The Desk v2 sidebar (DESK_FRAME3_SPEC §1.1), the only navigation: the
+ * `← MACRO REGIME RADAR` link back to the Radar, `Desk` over `ANALYST
+ * WORKSPACE`, the three groups (SURVEY · ACT · TOOLS), and two stacked cards
+ * at the foot: TODAY (the regime from /overview, the S&P's day from
+ * /technicals, the data word from /overview) and HOUSE DISCIPLINE, whose
+ * click opens the gate text the Promote form enforces (§9).
  */
 
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Wordmark } from "../shell/Sidebar";
-import { DESK_GROUPS, GATES, HOUSE_DISCIPLINE, type DeskPage } from "./desk-sections";
-import { Seals } from "./Seals";
+import { useOverview, useTechnicals } from "./data/api";
+import { DESK_GROUPS, GATES } from "./desk-sections";
+import { dayShort, pct } from "./kit/format";
 
-const VERSION: string = typeof __MRR_VERSION__ === "string" ? __MRR_VERSION__ : "0.0.0";
+export const DESK_SIDEBAR_ID = "dk-sidebar";
 
-export const DESK_SIDEBAR_ID = "mrr-desk-sidebar";
-
-export function DeskTitle() {
-  return (
-    <div className="mrr-desk-title">
-      <p className="mrr-desk-eyebrow">Analyst Workspace</p>
-      <strong>Desk</strong>
-    </div>
-  );
+/** Today's date in New York, where the S&P closes ("2026-09-24"). */
+export function nyToday(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
-/** The mark in a row's right gutter: what the row is, in one glyph. */
-export function NavMark({ page }: { page: DeskPage }) {
-  if (page.href) {
-    return (
-      <span className="mrr-desk-nav-mark" aria-hidden="true">
-        →
-      </span>
-    );
-  }
-  if (page.status === "designed") {
-    return (
-      <span className="mrr-desk-nav-mark" title="Designed shell: real layout, no data source yet" aria-label="designed shell">
-        ◇
-      </span>
-    );
-  }
-  return null;
+/** "S&P today" only when the served session is today in New York; otherwise
+ * the session's own day ("S&P Sep 22"), so a weekend never reads as today. */
+export function spxDayLabel(asOf: string, today = nyToday()): string {
+  return asOf === today ? "S&P today" : `S&P ${dayShort(asOf)}`;
 }
 
-/** The footer card: "House Discipline · Enforced", the seals, the four rules. */
-export function HouseDiscipline({ version = VERSION }: { version?: string }) {
+function TodayCard() {
+  const ov = useOverview();
+  const tech = useTechnicals();
+  const regime = ov.data?.tiles?.regime;
+  const idle = (q: { isError: boolean; data: unknown }) => (q.isError ? "Awaiting" : "");
   return (
-    <div className="mrr-desk-house" data-testid="desk-house">
-      <p className="mrr-desk-house-title">
-        <span>
-          House Discipline <span aria-hidden="true">·</span> <b>Enforced</b>
-        </span>
-        <Seals states={GATES.map(() => "met")} label="Every position passes three gates: variant view, pre-mortem, falsification." />
+    <section className="dk-side-card" aria-label="Today" data-testid="dk-today">
+      <p className="dk-eyebrow">Today</p>
+      {regime ? (
+        <>
+          <p className="dk-today-regime" data-regime={regime.label}>
+            {regime.label}
+          </p>
+          <p className="dk-today-sub">regime · {regime.print} print</p>
+        </>
+      ) : ov.isError || ov.data ? (
+        <p className="dk-today-sub" style={{ marginTop: 8 }}>
+          Regime awaiting refresh
+        </p>
+      ) : (
+        <p className="dk-today-sub" style={{ marginTop: 8 }} aria-busy="true" />
+      )}
+      <p className="dk-today-kv">
+        <span>{tech.data ? spxDayLabel(tech.data.as_of) : "S&P today"}</span>
+        {tech.data ? <span data-tone={tech.data.chg_1d > 0 ? "up" : tech.data.chg_1d < 0 ? "down" : "flat"}>{pct(tech.data.chg_1d)}</span> : <span>{idle(tech)}</span>}
       </p>
-      <ul>
-        {HOUSE_DISCIPLINE.map((rule) => (
-          <li key={rule}>
-            <span aria-hidden="true">▸</span>
-            <span>{rule}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="ver">v{version}</div>
-    </div>
+      <p className="dk-today-kv">
+        <span>Data</span>
+        {ov.data?.data_status ? (
+          <span data-tone={ov.data.data_status === "current" ? "up" : "amber"} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span className="dk-dot" aria-hidden="true" />
+            {ov.data.data_status}
+          </span>
+        ) : (
+          <span>{ov.data ? "Awaiting" : idle(ov)}</span>
+        )}
+      </p>
+    </section>
   );
 }
 
-export default function DeskSidebar({ activeSlug, pathTo }: { activeSlug: string; pathTo: (slug: string) => string }) {
+/** HOUSE DISCIPLINE ▸ / Gate ● on. The click opens the gate text. */
+function HouseDiscipline() {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const btn = useRef<HTMLButtonElement | null>(null);
+  const pop = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        btn.current?.focus();
+      }
+    };
+    const onDown = (e: MouseEvent) => {
+      if (!pop.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [open]);
   return (
-    <aside id={DESK_SIDEBAR_ID} className="mrr-side" aria-label="Sidebar">
-      <div className="mrr-desk-side-head">
-        <Wordmark to="/app/dashboard" title="Macro Regime Radar · back to the dashboard" />
-        <DeskTitle />
+    <>
+      <button type="button" ref={btn} className="dk-house" aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)} data-testid="dk-house">
+        <span className="dk-eyebrow">House discipline {open ? "▾" : "▸"}</span>
+        <span className="dk-today-kv">
+          <span>Gate</span>
+          <span className="dk-on" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span className="dk-dot" aria-hidden="true" />
+            on
+          </span>
+        </span>
+      </button>
+      {open ? (
+        <div className="dk-house-pop" id={id} ref={pop} role="dialog" aria-label="The discipline gate">
+          <p>
+            <b>The gate is on.</b> A position saves only after three short answers, and certainty words block until they are rewritten.
+          </p>
+          <ol>
+            {GATES.map((g) => (
+              <li key={g.id}>
+                <b>{g.label}.</b> {g.prompt}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export default function DeskSidebar({ activeSlug, pathTo, onNavigate }: { activeSlug: string; pathTo: (slug: string) => string; onNavigate?: () => void }) {
+  return (
+    <aside id={DESK_SIDEBAR_ID} className="dk-side" aria-label="Sidebar">
+      <Link to="/app/dashboard" className="dk-back" title="Back to Macro Regime Radar">
+        ← Macro Regime Radar
+      </Link>
+      <div className="dk-brand">
+        <strong>Desk</strong>
+        <span>Analyst workspace</span>
       </div>
-      <nav className="mrr-desk-nav" aria-label="Primary">
+      <nav className="dk-nav" aria-label="Primary">
         {DESK_GROUPS.map((g) => (
-          <div key={g.id} role="group" aria-labelledby={`desk-group-${g.id}`} style={{ display: "contents" }}>
-            <p id={`desk-group-${g.id}`} className="mrr-desk-group mrr-desk-eyebrow" data-size="sm">
+          <div key={g.id} role="group" aria-labelledby={`dk-group-${g.id}`}>
+            <p id={`dk-group-${g.id}`} className="dk-nav-group">
               {g.label}
             </p>
-            {g.pages.map((p) =>
-              p.href ? (
-                <Link key={p.slug} to={p.href} title="Back to the main terminal">
-                  <span>{p.label}</span>
-                  <NavMark page={p} />
-                </Link>
-              ) : (
-                <Link key={p.slug} to={pathTo(p.slug)} aria-current={p.slug === activeSlug ? "page" : undefined}>
-                  <span>{p.label}</span>
-                  <NavMark page={p} />
-                </Link>
-              ),
-            )}
+            {g.pages.map((p) => (
+              <Link key={p.slug} to={pathTo(p.slug)} aria-current={p.slug === activeSlug ? "page" : undefined} onClick={onNavigate}>
+                {p.label}
+              </Link>
+            ))}
           </div>
         ))}
       </nav>
-      <HouseDiscipline />
+      <div className="dk-side-foot">
+        <TodayCard />
+        <HouseDiscipline />
+      </div>
     </aside>
   );
 }

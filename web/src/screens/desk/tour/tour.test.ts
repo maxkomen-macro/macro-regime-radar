@@ -8,36 +8,35 @@ import { DESK_ALIASES, TOUR_STEPS, keyBelongsToControl, parseTour, tourHref, wit
 import { DESK_PAGES } from "../desk-sections";
 
 describe("walkthrough steps", () => {
-  it("are the spec's six routes, in order", () => {
+  it("are six routes on the v2 tabs, in order", () => {
     expect(TOUR_STEPS.map((s) => s.route)).toEqual([
-      "/desk/event-study?study=gold-2sigma-spx-weak",
-      "/desk/internals",
-      "/desk/monitor?from=gold-2sigma-spx-weak",
-      "/desk/pipeline",
-      "/desk/event-study?study=gold-2sigma-spx-weak&view=client",
-      "/desk/notes",
+      "/desk/event-study?preset=gold-2sigma-spx-weak",
+      "/desk/technicals",
+      "/desk/position-monitor?from=gold-2sigma-spx-weak",
+      "/desk/data-pipeline",
+      "/desk/event-study?preset=gold-2sigma-spx-weak&view=client",
+      "/desk/build-notes",
     ]);
     for (const s of TOUR_STEPS) expect(s.caption.length).toBeGreaterThan(10);
   });
 
   it("every short path opens a real Desk page", () => {
-    for (const slug of Object.values(DESK_ALIASES)) expect(DESK_PAGES.some((p) => p.slug === slug && !p.href)).toBe(true);
+    for (const slug of Object.values(DESK_ALIASES)) expect(DESK_PAGES.some((p) => p.slug === slug)).toBe(true);
   });
 
   it("carries the step in the URL, strictly", () => {
-    expect(tourHref(1)).toBe("/desk/event-study?study=gold-2sigma-spx-weak&tour=1");
-    // Links resolve the spec's short paths to the page slugs (no redirect on Next, R3-01).
-    expect(tourHref(2)).toBe("/desk/sp-internals?tour=2");
+    expect(tourHref(1)).toBe("/desk/event-study?preset=gold-2sigma-spx-weak&tour=1");
+    expect(tourHref(2)).toBe("/desk/technicals?tour=2");
     expect(tourHref(3)).toBe("/desk/position-monitor?from=gold-2sigma-spx-weak&tour=3");
     expect(tourHref(4)).toBe("/desk/data-pipeline?tour=4");
     expect(tourHref(6)).toBe("/desk/build-notes?tour=6");
-    expect(tourHref(5)).toBe("/desk/event-study?study=gold-2sigma-spx-weak&view=client&tour=5");
+    expect(tourHref(5)).toBe("/desk/event-study?preset=gold-2sigma-spx-weak&view=client&tour=5");
     for (let n = 1; n <= 6; n++) expect(parseTour(tourHref(n).split("?")[1])).toBe(n);
     for (const bad of ["tour=0", "tour=7", "tour=abc", "tour=1.5", "tour=", ""]) expect(parseTour(bad)).toBeNull();
   });
 
   it("closing clears the tour and keeps the rest of the query", () => {
-    expect(withoutTour("study=gold-2sigma-spx-weak&view=client&tour=5").toString()).toBe("study=gold-2sigma-spx-weak&view=client");
+    expect(withoutTour("preset=gold-2sigma-spx-weak&view=client&tour=5").toString()).toBe("preset=gold-2sigma-spx-weak&view=client");
   });
 
   it("leaves the arrow keys to fields, selects and segmented toggles", () => {

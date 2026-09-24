@@ -1,48 +1,64 @@
 /**
- * The Desk shell (docs/desk/DESK_FRAME_SPEC.md §1, §2, §4): a top-level
- * section at /desk, titled "Desk", eyebrow "Analyst Workspace". The same grid
- * as the app shell (.mrr-app: sidebar beside a main column; MobileNav below
- * 860 px), with the Desk's own sidebar, top bar and pages. /desk lands on
- * Today; an unknown page does too. ?view=client is the client view and every
- * Desk link keeps it (desk-view.ts). Each page mounts inside its own
+ * The Desk v2 shell (docs/desk/DESK_FRAME3_SPEC.md §1): the sidebar (the only
+ * navigation) beside the page, the header with the breadcrumb, the Desk /
+ * Client toggle and the tab's one action, and the tab itself. /desk lands on
+ * Overview; an unknown page does too; an old frame-1/frame-2 slug redirects
+ * to the tab that replaced it with its query kept. ?view=client is carried
+ * by every Desk link (desk-view.ts). Each tab mounts inside its own
  * ErrorBoundary keyed by route, behind Suspense; document.title names the
- * page; navigation resets scroll unless the URL carries an anchor.
+ * tab; navigation resets scroll unless the URL carries an anchor.
  */
 
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
-import { useBreakpoint } from "../../lib/useBreakpoint";
 import ErrorBoundary from "../shared/ErrorBoundary";
-import DeskMobileNav from "./DeskMobileNav";
 import DeskSidebar from "./DeskSidebar";
-import DeskTopBar from "./DeskTopBar";
-import { DESK_HOME, deskPageBySlug } from "./desk-sections";
+import DeskTopBar, { PageTitle } from "./DeskTopBar";
+import { DESK_ALIASES, DESK_HOME, deskPageBySlug, type DeskPage } from "./desk-sections";
 import { useDeskView, withView } from "./desk-view";
 import TourStrip from "./tour/TourStrip";
-import { DESK_ALIASES, parseTour } from "./tour/tour";
+import { parseTour } from "./tour/tour";
 import "../../styles/desk.css";
+import "../../styles/desk2.css";
 
-const TodayPage = lazy(() => import("./today/TodayPage"));
-const EventStudyPage = lazy(() => import("./event-study/EventStudyPage"));
-const InternalsPage = lazy(() => import("./internals/InternalsPage"));
-const PositionMonitorPage = lazy(() => import("./positions/PositionMonitorPage"));
-const DataPipelinePage = lazy(() => import("./pipeline/DataPipelinePage"));
-const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
-const DesignedShellPage = lazy(() => import("./shells/DesignedShellPage"));
+const OverviewPage = lazy(() => import("./overview/OverviewPage"));
 
 function PageLoading({ label }: { label: string }) {
   return (
-    <div role="status" aria-live="polite" style={{ padding: "24px 0", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-3)" }}>
+    <p role="status" aria-live="polite" className="dk-await">
       Loading {label}…
-    </div>
+    </p>
+  );
+}
+
+/** A tab frame-3 has not built yet: its title row and one line, nothing else. */
+function NotBuilt({ page }: { page: DeskPage }) {
+  return (
+    <>
+      <PageTitle page={page} />
+      <p className="dk-await" role="status">
+        This tab is being rebuilt for Desk v2.
+      </p>
+    </>
+  );
+}
+
+function ClientPending({ page }: { page: DeskPage }) {
+  return (
+    <>
+      <PageTitle page={page} />
+      <p className="dk-await" role="status">
+        The client view is being rebuilt for Desk v2. Switch back to Desk to read this tab.
+      </p>
+    </>
   );
 }
 
 export default function DeskShell() {
   const { page: slug } = useParams();
   const location = useLocation();
-  const { shellCompact } = useBreakpoint();
   const { view, setView, pathTo } = useDeskView();
+  const [menu, setMenu] = useState(false);
   const page = deskPageBySlug(slug);
   const tour = parseTour(location.search);
 
@@ -52,51 +68,31 @@ export default function DeskShell() {
 
   useEffect(() => {
     if (!location.hash && (window.scrollY > 0 || window.scrollX > 0)) window.scrollTo({ top: 0, left: 0 });
+    setMenu(false);
   }, [location.pathname, location.hash]);
 
-  // The walkthrough's short paths (§6) open their pages with the query kept.
   const alias = slug ? DESK_ALIASES[slug] : undefined;
   if (alias) return <Navigate to={{ pathname: `/desk/${alias}`, search: location.search, hash: location.hash }} replace />;
   if (!page) return <Navigate to={withView(`/desk/${DESK_HOME}`, view)} replace />;
 
+  const client = view === "client" && page.toggle !== false;
   let body;
-  switch (page.slug) {
-    case "today":
-      body = <TodayPage page={page} />;
-      break;
-    case "event-study":
-      body = <EventStudyPage page={page} />;
-      break;
-    case "sp-internals":
-      body = <InternalsPage page={page} />;
-      break;
-    case "position-monitor":
-      body = <PositionMonitorPage page={page} />;
-      break;
-    case "data-pipeline":
-      body = <DataPipelinePage page={page} />;
-      break;
-    case "build-notes":
-      body = <BuildNotesPage page={page} />;
-      break;
-    default:
-      body = <DesignedShellPage page={page} />;
-  }
+  if (client) body = <ClientPending page={page} />;
+  else if (page.slug === "overview") body = <OverviewPage page={page} />;
+  else body = <NotBuilt page={page} />;
 
   return (
-    <div className="mrr-app mrr-desk" data-view={view} data-tour={tour ?? undefined} data-testid="desk-shell">
+    <div className="dk" data-view={view} data-menu={menu ? "open" : undefined} data-tour={tour ?? undefined} data-testid="desk-shell">
       <a href="#main-content" className="mrr-skip">
         Skip to content
       </a>
-      {shellCompact ? null : <DeskSidebar activeSlug={page.slug} pathTo={pathTo} />}
-      <div className="mrr-main">
-        {shellCompact ? <DeskMobileNav activeSlug={page.slug} pathTo={pathTo} /> : null}
-        <DeskTopBar view={view} onChangeView={setView} />
-        <main id="main-content" tabIndex={-1} style={{ outline: "none" }}>
-          <ErrorBoundary key={page.slug} label="This Desk page">
+      <DeskSidebar activeSlug={page.slug} pathTo={pathTo} onNavigate={() => setMenu(false)} />
+      <div className="dk-main">
+        <DeskTopBar page={page} view={view} onChangeView={setView} pathTo={pathTo} onMenu={() => setMenu((m) => !m)} menuOpen={menu} />
+        <main id="main-content" className="dk-page" tabIndex={-1} style={{ outline: "none" }} data-slug={page.slug}>
+          <ErrorBoundary key={page.slug} label="This Desk tab">
             <Suspense fallback={<PageLoading label={page.label} />}>{body}</Suspense>
           </ErrorBoundary>
-          <p className="mrr-desk-print-only">Automated briefing from Macro Regime Radar. Not investment advice.</p>
         </main>
         {tour ? <TourStrip step={tour} /> : null}
       </div>

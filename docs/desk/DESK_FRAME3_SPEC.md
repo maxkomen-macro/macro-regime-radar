@@ -566,6 +566,7 @@ value at the series' frequency. Errors are `{ "error": string }` with 4xx/5xx.
   "monitored": [ /* Position rows (12.7 compact) */ ]
 }
 ```
+PROPOSED additions to this response: §12.13 (`tiles.vol.band`, `tiles.trend.date`, `data_status`, `sample_start` on the rows).
 
 ### 12.2 `GET /study` — the event study
 Params: `shock`, `window` (5|10|20|60), `move` (up2s|down2s|cross_above|cross_below),
@@ -673,6 +674,44 @@ Signals rows come from `/ledger` filtered to `group:"spx"`.
 Series inventory grouped, from the pipeline config: `{"last_refresh_utc","validation":"passed","groups":[{"name":"Rates","source":"FRED","freq":"daily","status":"current","series":[{"label","id","from","as_of","feeds":[],"status","note"}]}]}`. Plus `GET /pipeline/ddl` (text) and `GET /study/events` CSV for the two buttons.
 
 ### 12.12 `GET /basket/:id`, `POST /basket/price`, `GET /hedge?…` — only if Basket & Hedge ships. Shapes to be added to this file before B touches them.
+
+### 12.13 PROPOSED additions (session A, desk/frame-3)
+
+Fields the approved screens need that §12 above does not carry. Each is
+marked **PROPOSED**; the fixtures under `web/src/fixtures/desk/` carry them and
+the build reads them. Session B: accept, rename or refuse each here before
+building it; the web side follows whatever this section ends up saying.
+
+**Overview (§2, §1.1 sidebar)**
+- **PROPOSED** `ledger.signals[].sample_start` (ISO day), carried by every
+  ledger-shaped row, including `overview.active_signals[]`: the first session
+  of the signal's sample, for "Fired 31× since 1990" / "since 2000". §12.4's
+  row has no sample start; the year differs by signal (gold from 2000).
+- **PROPOSED** `overview.tiles.vol.band` (string, e.g. `"calm"`): the word the
+  VIX tile prints before its sub-line ("Calm · protection costs …"). The band
+  is a judgment on the level, so the server names it; the browser does not
+  threshold the VIX.
+- **PROPOSED** `overview.data_status` (`"current"` | `"stale"` | `"unknown"`):
+  the sidebar TODAY card's `Data ● current` line on every tab.
+- **PROPOSED** `overview.tiles.trend.date` (ISO day): the session the trend
+  is read at, which dates the S&P trend tile's `● Live · Sep 22` badge, as
+  `tiles.vol.date` dates the VIX tile (§1.7: a value is dated only by a date
+  served beside it). The envelope's `as_of` is the engine's date, not the
+  tile's.
+- **PROPOSED** `technicals.series.{6m,1y,3y}[]` point shape
+  `{"date","close","ma50","ma200"}`: §12.10 leaves the points as `[…]`. The
+  sidebar's `S&P today +0.4%` reads the existing `technicals.chg_1d`.
+
+Notes for B (not new fields):
+- The mockup's Overview rows label two signals differently from the Ledger
+  (§2 "Gold +2σ while S&P < 50d", "VIX +2σ in 5 days"; §8 "Gold +2σ while S&P
+  weak", "VIX spike +2σ, 5 days"). Each fixture keeps its own section's label;
+  the API should serve one label per slug.
+- The mockup's five Overview rows do not satisfy §12.1's own filter
+  (`firing_now` OR top 5 by `last_fired`): Dollar −2σ is firing and absent,
+  golden cross is older than five others. The fixture carries the mockup's
+  rows; the client renders `active_signals` in served order and never
+  re-filters.
 
 ---
 

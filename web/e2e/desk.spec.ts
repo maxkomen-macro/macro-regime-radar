@@ -1,315 +1,128 @@
 /**
- * Desk frame (docs/desk/DESK_FRAME_SPEC.md §8), driven in a real browser
- * against the running Vite dev server on :5173 with the API on :8000 (never
- * started here). Keyboard: every control on the Position Monitor is a Tab
- * stop with a ring and a name; the discipline gate holds against Enter and
- * against URL parameters; the Desk / Client toggle works from the keyboard
- * and lives in the URL; reduced motion leaves nothing animating; at 390 the
- * mobile nav carries the Desk; the main dashboard keeps one h1 and gains the
- * entry link at desk width and the MobileNav row on a phone; every Desk page
- * carries a status badge.
+ * Desk v2 in a real browser (DESK_FRAME3_SPEC §1, §13), every request
+ * answered from the §12 fixtures (e2e/lib/desk-fixtures.ts), so the specs
+ * need only a dev server (never an API) and assert the build's own rules:
+ * the sidebar is the only navigation; every computed color on a tab is a
+ * §1.3 color; no banned word renders; every card that reads live data
+ * carries its badge; every Tab stop has a name and a ring; nothing animates
+ * under reduced motion; a phone gets the sidebar from a Menu button with no
+ * sideways scroll; a failed endpoint leaves labels and "Awaiting refresh".
+ *
+ * Run against a dev server: E2E_BASE_URL=http://127.0.0.1:5193 npx playwright test e2e/desk.spec.ts
  */
 import { test, expect, type Page } from "@playwright/test";
 import { hasRing, tabWalk } from "./lib/a11y";
 import { settle } from "./lib/drive";
+import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures";
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
-const KEY = "mrr.desk.positions.v1";
+/** The v2 tabs built so far; each later tab adds itself here. */
+const BUILT = ["overview"];
 
-async function open(page: Page, route: string): Promise<void> {
+async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
+  await routeDesk(page, over);
   await page.goto(route, { waitUntil: "domcontentloaded" });
-  await settle(page, 900);
+  await settle(page, 500);
 }
 
-test.describe("desk frame", () => {
-  /** Open a route with no saved positions: the key is cleared after the first
-   * load and the page reloaded, so a later reload in the test keeps its data. */
-  async function openClean(page: Page, route: string): Promise<void> {
-    await open(page, route);
-    await page.evaluate((k) => localStorage.removeItem(k), KEY);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await settle(page, 900);
+test.describe("desk v2", () => {
+  test.use({ viewport: { width: 1440, height: 960 } });
+
+  test("the sidebar is the only navigation: three groups, eleven tabs, no tab strip", async ({ page }) => {
+    await open(page, "/desk/overview");
+    const side = page.getByRole("complementary", { name: "Sidebar" });
+    await expect(side).toBeVisible();
+    for (const g of DESK_GROUPS) for (const p of g.pages) await expect(side.getByRole("link", { name: p.label, exact: true })).toBeVisible();
+    await expect(page.getByRole("tablist")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(1);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    await expect(page).toHaveTitle("Overview · Desk · Macro Regime Radar");
+  });
+
+  for (const slug of BUILT) {
+    test(`${slug}: every color is a §1.3 color, and no banned word renders`, async ({ page }) => {
+      await open(page, `/desk/${slug}`);
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await bannedWordsOnPage(page)).toEqual([]);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow).toBeLessThanOrEqual(1);
+    });
   }
 
-  test("Position Monitor: every stop has a ring and a name; the disabled Save is not a stop", async ({ page }) => {
-    await openClean(page, "/desk/position-monitor");
+  test("overview: the four tiles carry their Live badges and read the fixture", async ({ page }) => {
+    await open(page, "/desk/overview");
+    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Aug print");
+    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Overheating");
+    await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("12%");
+    await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Live · Sep 22");
+    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("16.2");
+    await expect(page.getByTestId("dk-live")).toHaveCount(4);
+    await expect(page.getByTestId("ov-since")).toContainText("2s10s still firing, day 10");
+    // Tones render (verifier V-1): Overheating amber, room amber under 30% and green at 50% or more.
+    await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-value")).toHaveCSS("color", "rgb(232, 180, 71)");
+    const rows = page.getByTestId("dk-mon-row");
+    await expect(rows.nth(0).locator(".dk-mon-room")).toHaveCSS("color", "rgb(232, 180, 71)");
+    await expect(rows.nth(2).locator(".dk-mon-room")).toHaveCSS("color", "rgb(38, 220, 160)");
+    await expect(rows.nth(0).locator(".dk-mon-dim")).toHaveCSS("color", "rgb(139, 146, 158)");
+  });
+
+  test("the walkthrough strip is in the v2 palette", async ({ page }) => {
+    await open(page, "/desk/overview?tour=2");
+    await expect(page.getByTestId("desk-tour")).toBeVisible();
+    expect(await auditPalette(page)).toEqual([]);
+  });
+
+  test("overview: a failed /overview keeps every label and says Awaiting refresh", async ({ page }) => {
+    await open(page, "/desk/overview", { "/api/desk/overview": { status: 503, body: { error: "generation warming" } } });
+    for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) await expect(page.getByRole("region", { name })).toContainText("Awaiting refresh");
+    await expect(page.getByText("Overheating")).toHaveCount(0);
+    await expect(page.getByTestId("dk-live")).toHaveCount(0);
+  });
+
+  test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {
+    await open(page, "/desk/overview");
     const stops = await tabWalk(page);
-    expect(stops.length).toBeGreaterThan(20);
+    expect(stops.length).toBeGreaterThan(15);
     expect(stops[0].name).toMatch(/skip to content/i);
-    const nameless = stops.filter((s) => !s.name.trim());
-    expect(nameless.map((s) => `${s.tag}#${s.id}.${s.className}`), "nameless stops").toEqual([]);
-    const ringless = stops.filter((s) => !hasRing(s));
-    expect(ringless.map((s) => `${s.tag}#${s.id}.${s.className}`), "stops without a focus ring").toEqual([]);
-    expect(stops.some((s) => /save position/i.test(s.name))).toBe(false);
-    // The Desk / Client toggle, the wordmark, the three groups' pages and the form's fields are all stops.
-    for (const g of DESK_GROUPS) for (const p of g.pages) expect(stops.some((s) => s.name.startsWith(p.label)), p.label).toBe(true);
-    expect(stops.some((s) => s.name === "Client")).toBe(true);
-    expect(stops.some((s) => /Variant view/.test(s.name))).toBe(true);
+    expect(stops.filter((s) => !s.name.trim()).map((s) => `${s.tag}.${s.className}`)).toEqual([]);
+    expect(stops.filter((s) => !hasRing(s)).map((s) => `${s.tag}.${s.className}`)).toEqual([]);
+    for (const name of ["Desk", "Client", "Walkthrough", "Overview", "Build Notes"]) expect(stops.some((s) => s.name.trim() === name), name).toBe(true);
   });
 
-  test("the gate holds against Enter in a field and against URL parameters", async ({ page }) => {
-    await openClean(page, "/desk/position-monitor?instrument=TLT&variant_view=x&pre_mortem=y&falsification_series=DGS10&falsification_level=3.8&save=1");
-    await expect(page.getByRole("textbox", { name: "Instrument" })).toHaveValue("");
-    await expect(page.getByTestId("desk-save-position")).toBeDisabled();
-    await page.getByRole("textbox", { name: "Instrument" }).fill("TLT");
-    await page.getByRole("textbox", { name: "Variant view" }).fill("This will definitely work.");
-    await expect(page.getByRole("button", { name: "Replace" })).toHaveCount(2);
-    // Enter in a field: the browser's implicit submission is suppressed while
-    // the form's only submit button is disabled, and the gate row says why.
-    await page.getByRole("textbox", { name: "Instrument" }).press("Enter");
-    await settle(page, 300);
-    expect(await page.evaluate((k) => localStorage.getItem(k), KEY)).toBeNull();
-    await expect(page.getByTestId("desk-save-position")).toBeDisabled();
-    await expect(page.getByText(/Save is blocked/)).toBeVisible();
-    await expect(page.getByTestId("desk-position")).toHaveCount(0);
-    // Every other gate met but one word still flagged: still no save.
-    await page.getByRole("textbox", { name: "Pre-mortem" }).fill("Growth cracked through my level.");
-    await page.getByLabel("Falsification series").selectOption("DGS10");
-    await page.getByLabel(/^Falsification level/).fill("3.80");
-    await expect(page.getByTestId("desk-save-position")).toBeDisabled();
-    await page.getByLabel(/^Falsification level/).press("Enter");
-    await settle(page, 300);
-    expect(await page.evaluate((k) => localStorage.getItem(k), KEY)).toBeNull();
-    await expect(page.getByTestId("desk-position")).toHaveCount(0);
-  });
-
-  test("a passing draft saves from the keyboard, appears with its live distance, and survives a reload", async ({ page }) => {
-    await openClean(page, "/desk/position-monitor");
-    await page.getByRole("textbox", { name: "Instrument" }).fill("TLT");
-    await page.getByRole("textbox", { name: "Variant view" }).fill("The market prices three cuts; the data supports one.");
-    await page.getByRole("textbox", { name: "Pre-mortem" }).fill("Growth cracked and the curve steepened through my level.");
-    await page.getByLabel("Falsification series").selectOption("DGS10");
-    await page.getByLabel(/^Falsification level/).fill("3.80");
-    await expect(page.getByTestId("desk-save-position")).toBeEnabled();
-    await page.getByLabel(/^Falsification level/).press("Enter");
-    const row = page.getByTestId("desk-position").first();
-    await expect(row).toContainText("TLT");
-    await expect(row).toContainText(/away|Falsified|Reading the series|unavailable/);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await settle(page, 900);
-    await expect(page.getByTestId("desk-position")).toHaveCount(1);
-  });
-
-  test("Desk / Client toggle is keyboard-operable, lives in the URL and hides the query builder", async ({ page }) => {
-    await open(page, "/desk/event-study");
-    await expect(page.getByRole("heading", { level: 2, name: /^Query/ })).toBeVisible();
+  test("the Client toggle works from the keyboard and lives in the URL", async ({ page }) => {
+    await open(page, "/desk/overview");
     await page.getByRole("button", { name: "Client" }).focus();
     await page.keyboard.press("Space");
     await expect(page).toHaveURL(/view=client/);
-    await expect(page.getByRole("heading", { level: 2, name: /^Query/ })).toHaveCount(0);
-    await expect(page.getByTestId("desk-export")).toBeVisible();
-    await expect(page.getByRole("complementary", { name: "Sidebar" }).getByRole("link", { name: /^Today/ })).toHaveAttribute("href", "/desk/today?view=client");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole("complementary", { name: "Sidebar" }).getByRole("link", { name: "Regime", exact: true })).toHaveAttribute("href", "/desk/regime?view=client");
   });
 
   test("reduced motion: nothing on the Desk animates", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await open(page, "/desk/today");
-    const animated = await page.evaluate(() => [...document.querySelectorAll("*")].filter((el) => getComputedStyle(el).animationName !== "none").map((el) => el.className));
+    await open(page, "/desk/overview");
+    const animated = await page.evaluate(() => [...document.querySelectorAll(".dk *")].filter((el) => getComputedStyle(el).animationName !== "none").map((el) => el.className));
     expect(animated).toEqual([]);
   });
 
-  test("390: the mobile nav carries every Desk page and the sidebar is gone", async ({ page }) => {
+  test("390: the sidebar opens from Menu, the page never scrolls sideways", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await open(page, "/desk/today");
-    await expect(page.getByRole("complementary", { name: "Sidebar" })).toHaveCount(0);
-    const nav = page.getByRole("navigation", { name: "Primary" });
-    await nav.getByRole("button", { name: /Menu/ }).click();
-    for (const g of DESK_GROUPS) for (const p of g.pages) await expect(nav.getByRole("link", { name: new RegExp(`^${p.label.replace(/[/&]/g, (c) => `\\${c}`)}`) })).toBeVisible();
-    await expect(nav.getByRole("link", { name: /^Dashboard/ })).toHaveAttribute("href", "/app/dashboard");
+    await open(page, "/desk/overview");
+    const side = page.getByRole("complementary", { name: "Sidebar" });
+    await expect(side).toBeHidden();
+    await page.getByRole("button", { name: "Menu" }).click();
+    await expect(side).toBeVisible();
+    await side.getByRole("link", { name: "Regime", exact: true }).click();
+    await expect(page).toHaveURL(/\/desk\/regime$/);
+    await expect(side).toBeHidden();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
 
-  test("main dashboard: one h1, the entry link at desk width, the MobileNav row at 390", async ({ page }) => {
-    await open(page, "/app/dashboard");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
-    const entry = page.locator("header").first().getByRole("link", { name: /Analyst Workspace/ });
-    await expect(entry).toBeVisible();
-    await expect(entry).toHaveAttribute("href", "/desk");
-    await page.setViewportSize({ width: 390, height: 844 });
-    await settle(page, 400);
-    await expect(entry).toBeHidden();
-    const nav = page.getByRole("navigation", { name: "Primary" });
-    await nav.getByRole("button", { name: /Menu/ }).click();
-    await expect(nav.getByRole("link", { name: /Analyst Workspace/ })).toBeVisible();
-  });
-
-  test("every Desk page carries a status badge and names the document", async ({ page }) => {
-    for (const g of DESK_GROUPS) {
-      for (const p of g.pages) {
-        if (p.href) continue;
-        await open(page, `/desk/${p.slug}`);
-        await expect(page.getByTestId("desk-badge").first()).toBeVisible();
-        await expect(page).toHaveTitle(`${p.label} · Desk · Macro Regime Radar`);
-        await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
-        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-        expect(overflow, p.slug).toBeLessThanOrEqual(1);
-      }
-    }
-  });
-
-  /* ── desk/frame-2 (DESK_FRAME2_SPEC §1 to §5) ─────────────────────────── */
-
-  test("event study: five numbers on screen trace to the API's JSON for the same study", async ({ page }) => {
-    await open(page, "/desk/event-study?study=gold-2sigma-spx-weak");
-    const res = await page.request.get("/api/desk/event-study?study=gold-2sigma-spx-weak");
-    expect(res.status()).toBe(200);
-    const api = await res.json();
-    expect(api.status).toBe("ready");
-    const p = api.provenance;
-    const h20 = api.horizons.find((h: { h: number }) => h.h === 20);
-    const pct = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x * 100).toFixed(1)}%`;
-    // Interval bounds print as the engine's fmt_move does: the sign always kept.
-    const bound = (x: number) => `${x < 0 ? "−" : "+"}${Math.abs(x * 100).toFixed(1)}%`;
-    const body = page.locator("main");
-    // 1. The engine's verdict, verbatim.
-    await expect(body).toContainText(api.verdict.text);
-    // 2. The facts line: n, blocks at 20 sessions, the sample, the cooldown.
-    await expect(body).toContainText(`n ${p.n_events} · blocks ${p.n_blocks_by_h["20"]} at 20d · sample ${p.data_start}–${p.sample_end} · cooldown ${p.cooldown_sessions}`);
-    await expect(page.getByTestId("es-sample")).toContainText(`Sample: ${p.data_start} to ${p.sample_end}`);
-    // 3. The 20-session median beside the baseline median, in the horizon cell.
-    const cell = page.getByRole("button", { name: /^20d n \d+/ });
-    await expect(cell).toContainText(`${pct(h20.median)} vs ${pct(h20.baseline_median)}`);
-    // 4. The 90% interval on Δ as served.
-    await expect(cell).toContainText(`${bound(h20.ci90[0])} to ${bound(h20.ci90[1])}`);
-    // 5. The newest event's date and its 20-session move.
-    const ev = api.recent_events[0];
-    const row = page.getByRole("table", { name: "The last ten events with their forward moves" }).getByRole("row").nth(1);
-    await expect(row).toContainText(pct(ev.moves["20"]));
-    // The badge is the Live badge, stamped from provenance.
-    await expect(page.getByTestId("desk-badge").first()).toContainText("Live");
-    await expect(page.getByTestId("desk-badge").first()).toContainText("event-study engine");
-  });
-
-  test("event study: a horizon cell opens its events from the keyboard; Run writes ?study=", async ({ page }) => {
-    await open(page, "/desk/event-study");
-    const cell = page.getByRole("button", { name: /^20d n \d+/ });
-    await cell.focus();
-    await page.keyboard.press("Enter");
-    await expect(cell).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByRole("region", { name: "Events behind 20 sessions" })).toBeVisible();
-    await page.getByLabel("Window in sessions").selectOption("5");
-    await page.getByTestId("es-run").press("Enter");
-    await expect(page).toHaveURL(/study=gold-w5-z2\.0-up-spx_below_50dma-spx/);
-    // A free-form query computes on request: computing, then ready, never an empty chart in between.
-    await expect(page.locator("[data-state='computing'], [data-chart='horizons']").first()).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator("[data-chart='horizons']")).toBeVisible({ timeout: 60_000 });
-  });
-
-  test("S&P Internals states the engine's established reads, and breadth and sectors stay Designed", async ({ page }) => {
-    await open(page, "/desk/sp-internals");
-    for (const slug of ["spx-golden-cross", "spx-death-cross"]) {
-      const api = await (await page.request.get(`/api/desk/event-study?study=${slug}`)).json();
-      const est = api.horizons.filter((h: { exclusion: string }) => h.exclusion === "established").map((h: { h: number }) => h.h);
-      const name = slug === "spx-golden-cross" ? "Golden cross" : "Death cross";
-      await expect(page.getByTestId("internals-read").filter({ hasText: name })).toContainText(est.length ? `${name}: established at ${est.join(", ")} sessions` : `${name}: established at no horizon`);
-    }
-    for (const id of ["breadth", "sector-rotation"]) await expect(page.locator(`#${id}`).getByTestId("desk-badge")).toHaveText("Designed");
-  });
-
-  test("390 and reduced motion: frame-2 pages fit the phone and nothing animates", async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width: 390, height: 844 });
-    for (const route of ["/desk/today", "/desk/event-study", "/desk/sp-internals", "/desk/event-study?view=client", "/desk/build-notes"]) {
-      await open(page, route);
-      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-      expect(overflow, route).toBeLessThanOrEqual(1);
-      const animated = await page.evaluate(() => [...document.querySelectorAll("*")].filter((el) => getComputedStyle(el).animationName !== "none").length);
-      expect(animated, route).toBe(0);
-    }
-  });
-
-  /* ── desk/frame-2 §6: the walkthrough ─────────────────────────────────── */
-
-  test("walkthrough: six real steps by Next, each with its own state; Escape closes where it is", async ({ page }) => {
-    await open(page, "/desk/today");
-    await page.getByTestId("desk-walkthrough").click();
-    const strip = page.getByTestId("desk-tour");
-    const next = strip.getByRole("button", { name: "Next" });
-    const checks: [RegExp, string, () => Promise<void>][] = [
-      [/\/desk\/event-study\?study=gold-2sigma-spx-weak&tour=1$/, "The setup you described", async () => expect(page.locator("[data-chart='horizons']")).toBeVisible()],
-      [/\/desk\/sp-internals\?tour=2$/, "The 50/200 cross", async () => expect(page.getByTestId("internals-read").first()).toContainText("established")],
-      [/\/desk\/position-monitor\?from=gold-2sigma-spx-weak&tour=3$/, "Promoting a signal", async () => {
-        await expect(page.getByRole("textbox", { name: "Instrument" })).toHaveValue("S&P 500");
-        await expect(page.getByTestId("desk-save-position")).toBeDisabled();
-      }],
-      [/\/desk\/data-pipeline\?tour=4$/, "Where every number comes from", async () => expect(page.getByRole("heading", { level: 1 })).toHaveText("Data Pipeline")],
-      [/\/desk\/event-study\?study=gold-2sigma-spx-weak&view=client&tour=5$/, "as a client would read it", async () => expect(page.getByTestId("es-source")).toBeVisible()],
-      [/\/desk\/build-notes\?tour=6$/, "How it was built", async () => expect(page.getByRole("heading", { level: 1 })).toHaveText("Build Notes")],
-    ];
-    for (const [i, [url, caption, state]] of checks.entries()) {
-      await expect(page).toHaveURL(url);
-      await expect(strip).toContainText(`Step ${i + 1} of 6`);
-      await expect(strip).toContainText(caption);
-      await state();
-      if (i < checks.length - 1) {
-        // Keyboard: Enter on a focused Next, and focus stays on Next across every step (R3-01).
-        await next.focus();
-        await page.keyboard.press("Enter");
-        await expect(page).toHaveURL(checks[i + 1][0]);
-        if (i + 1 < checks.length - 1) await expect(next).toBeFocused();
-      }
-    }
-    await expect(next).toBeDisabled();
-    // Nothing autoplays: a wait leaves the step where it is.
-    await page.waitForTimeout(1500);
-    await expect(page).toHaveURL(/tour=6$/);
-    await page.keyboard.press("ArrowLeft");
-    await expect(page).toHaveURL(/tour=5$/);
+  test("House Discipline opens the gate text", async ({ page }) => {
+    await open(page, "/desk/overview");
+    await page.getByTestId("dk-house").click();
+    await expect(page.getByRole("dialog", { name: "The discipline gate" })).toContainText("Variant view");
     await page.keyboard.press("Escape");
-    await expect(page).toHaveURL(/\/desk\/event-study\?study=gold-2sigma-spx-weak&view=client$/);
-    await expect(strip).toHaveCount(0);
-    await expect(page.getByTestId("desk-walkthrough")).toBeFocused();
-  });
-
-  test("walkthrough: any step is a link, the strip fits a phone and every control is a ringed stop", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await open(page, "/desk/monitor?from=gold-2sigma-spx-weak&tour=3");
-    await expect(page).toHaveURL(/\/desk\/position-monitor\?from=gold-2sigma-spx-weak&tour=3$/);
-    const strip = page.getByTestId("desk-tour");
-    await expect(strip).toContainText("Step 3 of 6");
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    expect(overflow).toBeLessThanOrEqual(1);
-    const box = await strip.boundingBox();
-    expect(box && box.y + box.height).toBeLessThanOrEqual(845);
-    for (const name of ["Back", "Next", "Close the walkthrough"]) {
-      const b = strip.getByRole("button", { name });
-      await b.focus();
-      expect(await b.evaluate((el) => { const cs = getComputedStyle(el); return cs.outlineStyle !== "none" || cs.boxShadow !== "none"; })).toBe(true);
-    }
-  });
-
-  test("Today prints no date later than today; the recession card is dated by its reading", async ({ page }) => {
-    await open(page, "/desk/today");
-    await expect(page.getByTestId("today-recession")).toContainText("%");
-    const api = await (await page.request.get("/api/recession/probability")).json();
-    const last = api.recession_prob_series.at(-1);
-    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    if (last && last.value === api.recession_prob) {
-      const [y, m] = last.date.split("-").map(Number);
-      await expect(page.getByTestId("today-recession-sub")).toContainText(`the ${MON[m - 1]} ${y} reading`);
-    }
-    const { text, today } = await page.evaluate(() => {
-      const d = new Date();
-      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      return { text: document.querySelector("[data-testid='today-strip']")?.textContent ?? "", today: iso };
-    });
-    const year = Number(today.slice(0, 4));
-    const iso = (yy: number, mm: number, dd: number) => `${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
-    const re = new RegExp(String.raw`\b(${MON.join("|")}) (\d{1,2}), (\d{4})\b|\b(${MON.join("|")}) (\d{4})\b|\b(${MON.join("|")}) (\d{1,2})\b|\b(\d{4})-(\d{2})-(\d{2})\b`, "g");
-    const later: string[] = [];
-    for (const mt of text.matchAll(re)) {
-      const day = mt[1]
-        ? iso(Number(mt[3]), MON.indexOf(mt[1]) + 1, Number(mt[2]))
-        : mt[4]
-          ? iso(Number(mt[5]), MON.indexOf(mt[4]) + 1, 1)
-          : mt[6]
-            ? iso(year, MON.indexOf(mt[6]) + 1, Number(mt[7]))
-            : iso(Number(mt[8]), Number(mt[9]), Number(mt[10]));
-      if (day > today) later.push(mt[0]);
-    }
-    expect(later, `dates after ${today}`).toEqual([]);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 });
-

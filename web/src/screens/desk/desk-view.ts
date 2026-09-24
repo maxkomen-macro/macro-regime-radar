@@ -61,3 +61,12 @@ export function useDeskView(): DeskViewState {
   const pathTo = useCallback((slug: string, hash?: string) => withView(`/desk/${slug}${hash ? `#${hash}` : ""}`, view), [view]);
   return useMemo(() => ({ view, isClient: view === "client", setView, pathTo }), [view, setView, pathTo]);
 }
+
+/** Pure: `path` with one query parameter set (the view and the rest kept). */
+export function withParam(path: string, key: string, value: string): string {
+  const [base, hash = ""] = path.split("#");
+  const [pathname, query = ""] = base.split("?");
+  const params = new URLSearchParams(query);
+  params.set(key, value);
+  return `${pathname}?${params.toString()}${hash ? `#${hash}` : ""}`;
+}

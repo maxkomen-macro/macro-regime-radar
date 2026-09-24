@@ -1,0 +1,170 @@
+{
+ "as_of": "2026-09-22",
+ "generation_id": "gen-fixture-2026-09-22",
+ "since_last_close": {
+  "new_fires": [
+   {
+    "slug": "dollar-2sigma-20d",
+    "label": "Dollar −2σ fired"
+   }
+  ],
+  "still_firing": [
+   {
+    "slug": "2s10s-2sigma-steepening",
+    "label": "2s10s still firing",
+    "day": 10
+   }
+  ],
+  "vol_change_pts": 0.8,
+  "skew_direction": "steeper",
+  "regime_changed": false,
+  "regime_from": null,
+  "regime_to": null,
+  "refreshed_at_utc": "2026-09-22T00:23:00Z"
+ },
+ "tiles": {
+  "regime": {
+   "label": "Overheating",
+   "print": "Aug",
+   "growth": "rising",
+   "inflation": "rising",
+   "months_in": 3
+  },
+  "recession": {
+   "prob": 0.12,
+   "band": "low",
+   "inputs_through": "2026-05"
+  },
+  "trend": {
+   "above_50": true,
+   "above_200": true,
+   "since": "2025-07-01",
+   "since_signal": "golden-cross",
+   "since_verdict": "reliable",
+   "date": "2026-09-22"
+  },
+  "vol": {
+   "vix": 16.2,
+   "date": "2026-09-22",
+   "realized_20d": 11.9,
+   "gap_pts": 4.3,
+   "band": "calm"
+  }
+ },
+ "active_signals": [
+  {
+   "slug": "golden-cross",
+   "label": "S&P golden cross",
+   "group": "spx",
+   "last_fired": "2025-07-01",
+   "n": 31,
+   "up_pct": 0.68,
+   "median": 0.027,
+   "vs_normal_pts": 1.4,
+   "verdict": "reliable",
+   "firing_now": false,
+   "sample_start": "1990-01-02"
+  },
+  {
+   "slug": "death-cross",
+   "label": "S&P death cross",
+   "group": "spx",
+   "last_fired": "2025-04-14",
+   "n": 29,
+   "up_pct": 0.52,
+   "median": 0.009,
+   "vs_normal_pts": -0.4,
+   "verdict": "no_edge",
+   "firing_now": false,
+   "sample_start": "1990-01-02"
+  },
+  {
+   "slug": "gold-2sigma-spx-weak",
+   "label": "Gold +2σ while S&P < 50d",
+   "group": "cross",
+   "last_fired": "2025-04-16",
+   "n": 18,
+   "up_pct": 0.67,
+   "median": 0.031,
+   "vs_normal_pts": 1.8,
+   "verdict": "suggestive",
+   "firing_now": false,
+   "sample_start": "2000-01-03"
+  },
+  {
+   "slug": "vix-spike-2sigma-5d",
+   "label": "VIX +2σ in 5 days",
+   "group": "cross",
+   "last_fired": "2024-08-05",
+   "n": 41,
+   "up_pct": 0.71,
+   "median": 0.022,
+   "vs_normal_pts": 0.9,
+   "verdict": "reliable",
+   "firing_now": false,
+   "sample_start": "1990-01-02"
+  },
+  {
+   "slug": "2s10s-2sigma-steepening",
+   "label": "2s10s +2σ steepening",
+   "group": "cross",
+   "last_fired": "2026-09-09",
+   "n": 22,
+   "up_pct": 0.45,
+   "median": -0.006,
+   "vs_normal_pts": -1.9,
+   "verdict": "no_edge",
+   "firing_now": true,
+   "firing_day": 10,
+   "sample_start": "1990-01-02"
+  }
+ ],
+ "monitored": [
+  {
+   "id": "ndx-vs-spx",
+   "name": "Long NDX vs SPX",
+   "instrument": "NDX vs SPX",
+   "direction": "long",
+   "size_nav": 0.04,
+   "room_pct": 0.68,
+   "to_level": {
+    "value": 3.4,
+    "unit": "%"
+   },
+   "opened": "2026-08-24",
+   "horizon_days": 60,
+   "day": 21
+  },
+  {
+   "id": "2s10s-steepener",
+   "name": "2s10s steepener",
+   "instrument": "2s10s",
+   "direction": "long",
+   "size_nav": 0.02,
+   "room_pct": 0.22,
+   "to_level": {
+    "value": 3,
+    "unit": "bp"
+   },
+   "opened": "2026-09-02",
+   "horizon_days": 20,
+   "day": 14
+  },
+  {
+   "id": "ai-infra-hedged",
+   "name": "AI-infra basket, hedged",
+   "instrument": "AI infrastructure basket vs 1.6 × NDX",
+   "direction": "long",
+   "size_nav": 0.06,
+   "room_pct": 0.52,
+   "to_level": {
+    "value": 2.1,
+    "unit": "%"
+   },
+   "opened": "2026-08-10",
+   "horizon_days": 60,
+   "day": 31
+  }
+ ],
+ "data_status": "current"
+}

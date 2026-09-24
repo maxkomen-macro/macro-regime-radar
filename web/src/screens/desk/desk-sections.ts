@@ -1,25 +1,27 @@
 /**
- * Desk navigation registry (docs/desk/DESK_FRAME_SPEC.md §2): three groups in
- * this order, SURVEY · ACT · TOOLS, each page with the build status its
- * status badge and its sidebar mark read. `status` is the page's wiring:
- * `live` pages read the API (their badges still take every freshness word
- * from /api/freshness, never from here); `designed` pages are real UI with
- * no data source and declare `Designed` (§3, §6). Dashboard is the one
- * external entry, linking back to the main app.
+ * Desk v2 navigation (docs/desk/DESK_FRAME3_SPEC.md §1.1): the sidebar is the
+ * only navigation, three groups in this order, eleven tabs. Each tab carries
+ * its title-row subtitle (from its approved PNG), the one action button its
+ * header may show (§2–§11) and whether the Desk / Client toggle appears
+ * (every tab but Position Monitor, and not on Data Pipeline, whose header
+ * carries the refresh badge instead, as its PNG draws it).
+ *
+ * Old frame-1/frame-2 slugs and the walkthrough's short paths are aliases:
+ * a saved link still lands on the page that replaced it.
  */
 
-export type DeskStatus = "live" | "designed";
+export type DeskAction = "walkthrough" | "act" | "send";
 
 export interface DeskPage {
   slug: string;
   label: string;
-  status: DeskStatus;
-  /** One sentence under the page title. */
+  /** The page title when it differs from the nav label. */
+  title?: string;
+  /** One line beside the page title. */
   blurb: string;
-  /** Designed shells: what the page reads once live (§6, one line). */
-  reads?: string;
-  /** An external destination instead of /desk/<slug>. */
-  href?: string;
+  action?: DeskAction;
+  /** false: no Desk / Client toggle in this tab's header. */
+  toggle?: boolean;
 }
 
 export interface DeskGroup {
@@ -28,108 +30,83 @@ export interface DeskGroup {
   pages: DeskPage[];
 }
 
-export const DESK_HOME = "today";
+export const DESK_HOME = "overview";
 
 export const DESK_GROUPS: DeskGroup[] = [
   {
     id: "survey",
     label: "Survey",
     pages: [
-      { slug: DESK_HOME, label: "Today", status: "live", blurb: "The regime, the recession read, what fired, and the positions closest to being wrong." },
-      {
-        slug: "launchpad",
-        label: "Launchpad",
-        status: "designed",
-        blurb: "The morning route through the desk: what to read first and which studies to rerun.",
-        reads: "Reads the freshness report, the alert feed and the saved studies once live.",
-      },
-      { slug: "dashboard", label: "Dashboard", status: "live", blurb: "The main terminal.", href: "/app/dashboard" },
+      { slug: "overview", label: "Overview", blurb: "Where the tape is, what fired, what's closest to being wrong.", action: "walkthrough" },
+      { slug: "technicals", label: "Technicals", blurb: "S&P 500 · every marker is scored by the event-study engine", action: "act" },
+      { slug: "regime", label: "Regime", blurb: "where the economy sits, what it has meant for equities and vol, and what would change it" },
+      { slug: "macro", label: "Macro & Correlations", blurb: "the rate backdrop, credit, and whether your hedges are hedging" },
+      { slug: "sectors", label: "Sectors", blurb: "who is leading, and whether the rally is wide or narrow" },
     ],
   },
   {
     id: "act",
     label: "Act",
     pages: [
-      { slug: "event-study", label: "Event Study", status: "live", blurb: "After a defined shock in one asset, while a condition holds, what did the target do over the next sessions?" },
-      {
-        slug: "sp-internals",
-        label: "S&P Internals",
-        status: "live",
-        blurb: "The S&P 500's 50/200-day crosses scored by the event-study engine, each with its verdict, horizons, regime split and events.",
-      },
-      { slug: "position-monitor", label: "Position Monitor", status: "live", blurb: "Promote an idea to a position only through the discipline gate; then watch its distance to falsification." },
-      {
-        slug: "pitch-evaluation",
-        label: "Pitch Evaluation",
-        status: "designed",
-        blurb: "Score a pitch on variant view, base rates, falsifiability and calibration before it reaches the book.",
-        reads: "Reads saved positions and the event-study base rates once live.",
-      },
-      {
-        slug: "red-team",
-        label: "Red Team",
-        status: "designed",
-        blurb: "The strongest case against an open position, argued from the same data.",
-        reads: "Reads saved positions, the regime odds and the analogue set once live.",
-      },
-      {
-        slug: "macro-regime",
-        label: "Macro / Regime",
-        status: "designed",
-        blurb: "The classifier's odds, its inputs and their release calendar, on one desk page.",
-        reads: "Reads /api/regime/latest, /api/regime/transitions and the regime freshness block once live.",
-      },
+      { slug: "event-study", label: "Event Study", blurb: "Ask what the market did after a defined shock. Get a scored answer, not an opinion.", action: "act" },
+      { slug: "signal-ledger", label: "Signal Ledger", blurb: "every signal the engine scores, on one page · click a row to open it in Event Study" },
+      { slug: "position-monitor", label: "Position Monitor", title: "Promote to position", blurb: "", toggle: false },
     ],
   },
   {
     id: "tools",
     label: "Tools",
     pages: [
+      { slug: "basket-hedge", label: "Basket & Hedge", blurb: "build the exposure, then price the cheapest way to own it", action: "send" },
       {
-        slug: "basket-builder",
-        label: "Basket Builder",
-        status: "designed",
-        blurb: "Compose a basket from the stored universe and read its regime-split history.",
-        reads: "Reads stored daily bars and the regime history once live.",
+        slug: "data-pipeline",
+        label: "Data Pipeline",
+        title: "Where every number comes from",
+        blurb: "Every panel in Desk resolves to a row here. Nothing is synthetic; nothing is re-derived in the browser.",
+        toggle: false,
       },
-      {
-        slug: "hedge-simulator",
-        label: "Hedge Simulator",
-        status: "designed",
-        blurb: "Size a hedge against a saved position and see the residual across regimes.",
-        reads: "Reads saved positions, stored bars and the transition odds once live.",
-      },
-      { slug: "data-pipeline", label: "Data Pipeline", status: "live", blurb: "Where every number comes from: lineage, the series inventory and the store's schema." },
-      { slug: "build-notes", label: "Build Notes", status: "designed", blurb: "What this is, what is live, how it is built, and how it could fail." },
+      { slug: "build-notes", label: "Build Notes", blurb: "what this is, how it was checked, and what I would do next" },
     ],
   },
 ];
 
 export const DESK_PAGES: DeskPage[] = DESK_GROUPS.flatMap((g) => g.pages);
 
-/** The page for a route slug; undefined for an unknown or external slug. */
+/** Old slugs (frame-1, frame-2) and the walkthrough's short paths → the v2 tab. */
+export const DESK_ALIASES: Readonly<Record<string, string>> = {
+  today: "overview",
+  launchpad: "overview",
+  dashboard: "overview",
+  internals: "technicals",
+  "sp-internals": "technicals",
+  "macro-regime": "regime",
+  ledger: "signal-ledger",
+  monitor: "position-monitor",
+  "pitch-evaluation": "position-monitor",
+  "red-team": "position-monitor",
+  "basket-builder": "basket-hedge",
+  "hedge-simulator": "basket-hedge",
+  pipeline: "data-pipeline",
+  notes: "build-notes",
+};
+
 export function deskPageBySlug(slug: string | undefined): DeskPage | undefined {
-  return DESK_PAGES.find((p) => p.slug === slug && !p.href);
+  return DESK_PAGES.find((p) => p.slug === slug);
 }
 
 export function deskGroupOf(slug: string): DeskGroup | undefined {
   return DESK_GROUPS.find((g) => g.pages.some((p) => p.slug === slug));
 }
 
-/** The sidebar footer card (§2): four rules, one line each. */
-export const HOUSE_DISCIPLINE: readonly string[] = [
-  "Variant view first.",
-  "Pre-mortem before defense.",
-  "Falsification required.",
-  "Calibrated language only.",
-];
+/** The survey tabs (§11: the Client toggle on a Survey tab swaps the page for the client summary). */
+export const SURVEY_SLUGS: readonly string[] = DESK_GROUPS[0].pages.map((p) => p.slug);
 
-/** The three gates a position passes (Position Monitor §5); the seals the
- * sidebar footer and the form both draw. */
+/** The three gate steps a position passes (§9), which the sidebar's House
+ * Discipline card opens and the Promote form enforces. */
 export const GATES = [
-  { id: "variant", label: "Variant view" },
-  { id: "premortem", label: "Pre-mortem" },
-  { id: "falsification", label: "Falsification" },
+  { id: "variant", label: "Variant view", prompt: "Finish the sentence: “The market thinks ___, I think ___, because ___.”" },
+  { id: "premortem", label: "Pre-mortem", prompt: "Finish the sentence: “It lost money because ___.”" },
+  { id: "level", label: "Wrong if", prompt: "Pick the level where the idea is wrong, suggested from live levels for the instrument." },
 ] as const;
 
 export type GateId = (typeof GATES)[number]["id"];
