@@ -12,10 +12,11 @@
 import type { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { DeskPage } from "./desk-sections";
-import type { DeskView } from "./desk-view";
+import { withParam, type DeskView } from "./desk-view";
 import { DESK_SIDEBAR_ID } from "./DeskSidebar";
 import { TOUR_BUTTON_ID, TOUR_STRIP_ID } from "./tour/TourStrip";
 import { parseTour, tourHref } from "./tour/tour";
+import { askFromSearch, askParams } from "./event-study/question";
 
 export function ViewToggle({ view, onChange, labels = ["Desk", "Client"] }: { view: DeskView; onChange: (v: DeskView) => void; labels?: [string, string] }) {
   return (
@@ -32,7 +33,11 @@ export function ViewToggle({ view, onChange, labels = ["Desk", "Client"] }: { vi
 
 function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => string }) {
   const navigate = useNavigate();
-  const touring = parseTour(useLocation().search) != null;
+  const location = useLocation();
+  const touring = parseTour(location.search) != null;
+  // From Event Study the action carries the question on screen, preset or six
+  // slots (§9: "Carried in from Event Study · any study can be carried in").
+  const monitor = page.slug === "event-study" ? askParams(askFromSearch(location.search)).reduce((href, [k, v]) => withParam(href, k === "preset" ? "from" : k, v), pathTo("position-monitor")) : pathTo("position-monitor");
   if (page.action === "walkthrough")
     return (
       <button type="button" id={TOUR_BUTTON_ID} className="dk-btn" aria-controls={touring ? TOUR_STRIP_ID : undefined} onClick={() => navigate(tourHref(1))} data-testid="dk-walkthrough">
@@ -41,7 +46,7 @@ function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => st
     );
   if (page.action === "act")
     return (
-      <Link className="dk-btn" data-kind="light" to={pathTo("position-monitor")} data-testid="dk-act">
+      <Link className="dk-btn" data-kind="light" to={monitor} data-testid="dk-act">
         Act on this → Position Monitor
       </Link>
     );

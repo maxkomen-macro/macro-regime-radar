@@ -739,6 +739,32 @@ building it; the web side follows whatever this section ends up saying.
 - `vol` also carries `generation_id`, which §12's header puts on every
   response; §12.9's inline list omits it.
 
+**Event Study (§4)**
+- **PROPOSED** `study.verdict_line` (e.g. "Lean, don't size.") and
+  `study.what_to_do` (the call-spread sentence): the verdict box prints
+  `verdict_line`, then `why`, then `what_to_do`, then `Price it →`. §12.2
+  carries `headline` and `why` only.
+- **PROPOSED** `study.series` (`[{"key","label"}]`, the 12 series every slot
+  lists, in order). The slots need the list and the labels; the fixture uses
+  the Desk registry's keys (`spx`, `gold`, `us10y`, `us2y`, `curve_2s10s`,
+  `vix`, `hy_oas`, `wti`, `ndx`, `rut`, `dxy`, `usdjpy`), which are also what
+  `question.shock` / `question.target` carry.
+- **PROPOSED** §12.3's shape: `GET /study/events` with the /study parameters
+  answers `{"as_of","generation_id","slug","events":[{"date","regime",
+  "ret_5","ret_10","ret_20","ret_60"}]}`, newest first, every event of the
+  study (not only the last five); with `Accept: text/csv` the same rows as
+  CSV with the header `date,regime,ret_5,ret_10,ret_20,ret_60` (the Export
+  link's download).
+- The page's address mirrors §12.2's parameters: `?preset=<slug>` or the six
+  slots (`shock`, `window`, `move`, `while`, `target`, `horizon`), plus
+  `confidence` when it is not 0.90. `regime:<name>` uses the regime's label
+  (`regime:Recession Risk`).
+- The Advanced panel also reads the frame-2 engine
+  (`/api/desk/event-study?study=<engine slug>`) for the same question when
+  the engine can ask it (its windows 5/20/60, the S&P-below-50-day or regime
+  conditions, crosses of the target's own averages), mapped with the engine's
+  slug grammar; no new field.
+
 Notes for B (not new fields):
 - The mockup's Overview rows label two signals differently from the Ledger
   (§2 "Gold +2σ while S&P < 50d", "VIX +2σ in 5 days"; §8 "Gold +2σ while S&P

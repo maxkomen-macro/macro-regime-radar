@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals"];
+const BUILT = ["overview", "technicals", "event-study"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -108,6 +108,34 @@ test.describe("desk v2", () => {
     await expect(vol).toContainText("Awaiting refresh");
     await expect(vol).toContainText("PUTS vs CALLS · 1 MONTH OUT");
     await expect(vol).not.toContainText("6.8");
+  });
+
+  test("event study: Advanced opens the events and the engine's panel, all in the palette, no banned word", async ({ page }) => {
+    await open(page, "/desk/event-study");
+    await expect(page.getByRole("region", { name: "The answer" })).toContainText("Leans positive a month out");
+    await page.getByRole("complementary", { name: "Verdict and detail" }).getByTestId("dk-advanced").click();
+    const adv = page.getByRole("region", { name: "Advanced" });
+    await expect(adv).toContainText("All 18 events");
+    await expect(adv).toContainText("By horizon, as the engine scores it");
+    expect(await auditPalette(page)).toEqual([]);
+    expect(await bannedWordsOnPage(page)).toEqual([]);
+  });
+
+  test("event study: Export downloads the events as CSV; a confidence chip re-asks", async ({ page }) => {
+    const calls = await routeDesk(page);
+    await page.goto("/desk/event-study", { waitUntil: "domcontentloaded" });
+    await settle(page, 500);
+    const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("es-export").click()]);
+    expect(download.suggestedFilename()).toBe("gold-2sigma-spx-weak-events.csv");
+    const csv = await (await download.createReadStream())?.toArray();
+    const text = Buffer.concat((csv ?? []) as Buffer[]).toString("utf8");
+    expect(text.split("\n")[0]).toBe("date,regime,ret_5,ret_10,ret_20,ret_60");
+    expect(text.trim().split("\n")).toHaveLength(19);
+    await page.getByRole("group", { name: "Confidence" }).getByRole("button", { name: "80%" }).click();
+    await expect(page).toHaveURL(/confidence=0\.8/);
+    await expect.poll(() => calls.some((c) => c.includes("/api/desk/study?preset=gold-2sigma-spx-weak&confidence=0.8"))).toBe(true);
+    // "Act on this" carries the question to the Position Monitor.
+    await expect(page.getByTestId("dk-act")).toHaveAttribute("href", "/desk/position-monitor?from=gold-2sigma-spx-weak");
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

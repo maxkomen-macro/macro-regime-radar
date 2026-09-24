@@ -157,6 +157,70 @@ export interface TechnicalsResponse extends Envelope {
   series: { "6m": PricePoint[]; "1y": PricePoint[]; "3y": PricePoint[] };
 }
 
+// ── §12.2 /study ──────────────────────────────────────────────────────────
+
+export type Move = "up2s" | "down2s" | "cross_above" | "cross_below";
+
+/** The six slots (§4, §12.2): `while` is none | spx_below_50 | spx_above_50 | regime:<name>. */
+export interface Question {
+  shock: string;
+  window: number;
+  move: Move;
+  while: string;
+  target: string;
+  horizon: number;
+}
+
+export interface StudyHorizon {
+  h: number;
+  label: string;
+  up_pct: number;
+  up_n?: number;
+  median: number;
+  baseline_median: number;
+  ci_lo_pts: number;
+  ci_hi_pts: number;
+  verdict: Verdict;
+  worst?: { ret: number; date: string };
+  best?: { ret: number; date: string };
+}
+
+export interface StudyResponse extends Envelope {
+  inputs_hash: string;
+  served_from_cache: boolean;
+  elapsed_ms: number;
+  slug: string | null;
+  question: Question;
+  n_events: number;
+  sample_start: string;
+  firing_now: boolean;
+  last_event: string | null;
+  verdict: Verdict;
+  headline: string;
+  why: string;
+  /** PROPOSED (§12.13): the verdict box's bold line ("Lean, don't size."). */
+  verdict_line: string;
+  /** PROPOSED (§12.13): the verdict box's "what to do" sentence. */
+  what_to_do: string;
+  horizons: StudyHorizon[];
+  confidence: number;
+  confidence_note: string;
+  by_regime: { regime: string; n: number; up_pct: number | null; median: number | null }[];
+  last_events: { date: string; regime: string; ret_20: number }[];
+  without_condition: { n_events: number; up_pct: number; median: number; verdict: Verdict } | null;
+  provenance: { bootstrap: number; entry: string; cooldown: number; series_start: Record<string, string> };
+  warnings: string[];
+  empty_state?: { sentence: string; fixes: string[] };
+  /** PROPOSED (§12.13): the 12 series every slot lists, key and label. */
+  series: { key: string; label: string }[];
+}
+
+/** §12.3 /study/events (PROPOSED shape, §12.13); CSV with `Accept: text/csv`. */
+export interface StudyEventsResponse extends Envelope {
+  slug: string | null;
+  events: { date: string; regime: string; ret_5: number | null; ret_10: number | null; ret_20: number | null; ret_60: number | null }[];
+}
+
 // ── §12.9 /vol ────────────────────────────────────────────────────────────
 
 export interface VolResponse extends Envelope {

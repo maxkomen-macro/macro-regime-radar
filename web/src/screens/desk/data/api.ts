@@ -8,8 +8,8 @@
  * card ever prints a number it was not served. 4xx answers are not retried.
  */
 
-import { useQuery } from "@tanstack/react-query";
-import type { DeskErrorBody, LedgerResponse, OverviewResponse, SectorsResponse, TechnicalsResponse, VolResponse } from "./types";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import type { DeskErrorBody, LedgerResponse, OverviewResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -90,3 +90,17 @@ export const useLedger = () => useDesk<LedgerResponse>("/ledger");
 export const useTechnicals = () => useDesk<TechnicalsResponse>("/technicals");
 export const useVol = () => useDesk<VolResponse>("/vol");
 export const useSectors = () => useDesk<SectorsResponse>("/sectors");
+
+/** §12.2: one study; the previous answer stays on screen while the next is asked. */
+export function useStudy(params: Params) {
+  return useQuery<StudyResponse, DeskApiError>({
+    queryKey: ["desk-v2", "/study", params],
+    queryFn: () => deskGet<StudyResponse>("/study", params),
+    staleTime: 60_000,
+    retry,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** §12.3: the events behind a study (the Advanced panel). */
+export const useStudyEvents = (params: Params) => useDesk<StudyEventsResponse>("/study/events", params);

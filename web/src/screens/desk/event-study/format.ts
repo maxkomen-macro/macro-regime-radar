@@ -5,14 +5,10 @@
  * Pure, no React.
  */
 
-import type { EventStudyEvent, EventStudyHorizon, EventStudyResponse, Exclusion, ShockUnit } from "../../../api/desk";
+import type { EventStudyEvent, EventStudyResponse } from "../../../api/desk";
 import { isNegative, pyFixed, pySigned } from "../pyformat";
 
 export type MoveUnit = "%" | "bp";
-
-export function unitWord(u: ShockUnit): MoveUnit {
-  return u === "bp" ? "bp" : "%";
-}
 
 /** A signed move in its unit exactly as the engine's `fmt_move` prints it
  * (`+.1f` percent, `+.0f` bp, the sign always kept, Python's rounding; review
@@ -20,11 +16,6 @@ export function unitWord(u: ShockUnit): MoveUnit {
 export function fmtMove(x: number | null | undefined, unit: MoveUnit): string {
   if (x == null || !Number.isFinite(x)) return "—";
   return `${pySigned(x, unit === "%" ? 1 : 0)}${unit === "%" ? "%" : " bp"}`;
-}
-
-/** An axis tick: a round number, unsigned at zero ("0.0%", "+5.0%"). */
-export function fmtTick(x: number, unit: MoveUnit): string {
-  return x === 0 ? (unit === "%" ? "0.0%" : "0") : fmtMove(x, unit).replace(" bp", "");
 }
 
 /** A share as a whole percent, Python's rounding: 0.555… → "56%". */
@@ -49,34 +40,6 @@ export function fmtZ(z: number | null | undefined): string {
   return z == null || !Number.isFinite(z) ? "—" : `${isNegative(z) ? "−" : ""}${pyFixed(z, 2)}`;
 }
 
-/** The engine's exclusion verdict, or its note when it gives none. */
-export function exclusionWord(h: Pick<EventStudyHorizon, "exclusion" | "note">): string {
-  return h.exclusion ?? h.note ?? "no verdict";
-}
-
-/** The same verdict in the client register: the engine's own categories, in
- * words. The engine judges the median against the baseline median, never a
- * range of outcomes, so the words say "differs from an ordinary stretch" and
- * "not distinguishable from an ordinary stretch" (verifier V-01). */
-export const EXCLUSION_CLIENT: Record<Exclusion, string> = {
-  established: "differs from an ordinary stretch",
-  "not established": "difference not established",
-  included: "not distinguishable from an ordinary stretch",
-};
-
-/** The short forms under a chart's horizons; the legend spells them out. */
-export const EXCLUSION_CLIENT_SHORT: Record<Exclusion, string> = {
-  established: "differs",
-  "not established": "not established",
-  included: "not distinguishable",
-};
-
-/** The events the response carries behind one cell: every carried event with a
- * complete window at `h`, narrowed to one regime when given. The engine serves
- * the last ten events, so a cell can have more events than the list holds. */
-export function eventsBehind(events: EventStudyEvent[], h: number, regime?: string): EventStudyEvent[] {
-  return events.filter((e) => e.forward[String(h)] != null && (regime == null || e.regime === regime));
-}
 
 /** Why a forward move is missing (review R-08, fourth round). "window open"
  * only when the event itself carries an explicit `window_open` flag for that
@@ -102,12 +65,6 @@ export function factsLine(s: EventStudyResponse): string {
   return `n ${p.n_events} · blocks ${blocks} · sample ${p.data_start ?? p.sample_start}–${p.sample_end} · cooldown ${cooldown} · entry ${entry}`;
 }
 
-/** "Sample: {start} to {end}" under the sentence (§2): the start is where the
- * shock asset's and the target's histories both begin (the engine's
- * data_start, the later history_from), the end the newest session read. */
-export function sampleLine(s: EventStudyResponse): string {
-  return `Sample: ${s.provenance.data_start ?? s.provenance.sample_start} to ${s.provenance.sample_end}`;
-}
 
 /** Each input's history as the engine serves it, and where events become
  * evaluable, for the sample line's tooltip. */

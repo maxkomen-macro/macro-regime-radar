@@ -25,7 +25,7 @@ const FRAME3 = /^(established|significant)$/i;
 /** Frame-2 files that v2 has not rebuilt or retired yet: they keep the frame-2
  * list; frame-3's two words are checked on them when their tab lands
  * (FRAME3_REPORT.md tracks this list until it is empty). */
-export const LEGACY_FRAME2 = ["/src/api/desk.ts", "/src/screens/desk/event-study/", "/src/screens/desk/words.ts", "/src/screens/desk/positions/", "/src/screens/desk/pipeline/", "/src/screens/desk/StatusBadge", "/src/screens/desk/badge-sources", "/src/screens/desk/DeskPageHead", "/src/screens/desk/desk-ui", "/src/screens/desk/Seals", "/src/screens/desk/pyformat"];
+export const LEGACY_FRAME2 = ["/src/screens/desk/positions/", "/src/screens/desk/pipeline/", "/src/screens/desk/StatusBadge", "/src/screens/desk/badge-sources", "/src/screens/desk/DeskPageHead", "/src/screens/desk/desk-ui", "/src/screens/desk/Seals", "/src/screens/desk/pyformat"];
 const legacy = (file: string) => LEGACY_FRAME2.some((p) => file.startsWith(p));
 /** A sentence about the recession regression, the one thing the Desk calls a model. */
 const RECESSION_SENTENCE = /recession probability|logistic regression|logistic model/i;
@@ -57,6 +57,18 @@ export function stringsOf(file: string, text: string): string[] {
   const out: string[] = [];
   const visit = (n: ts.Node) => {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) return;
+    // Data keys, never printed: a literal type, a case label, an operand of
+    // === / !==, an object key or an index (the engine's "established" value
+    // is compared and mapped, then printed in §1.5's words).
+    if (ts.isLiteralTypeNode(n)) return;
+    if (ts.isCaseClause(n)) return void n.statements.forEach(visit);
+    if (ts.isBinaryExpression(n) && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(n.operatorToken.kind)) {
+      // Only a literal operand is a data key; anything else is still scanned (verifier E-11).
+      for (const side of [n.left, n.right]) if (!ts.isStringLiteral(side) && !ts.isNoSubstitutionTemplateLiteral(side)) visit(side);
+      return;
+    }
+    if (ts.isPropertyAssignment(n) && ts.isStringLiteral(n.name)) return visit(n.initializer);
+    if (ts.isElementAccessExpression(n)) return visit(n.expression);
     if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) out.push(n.text);
     else if (ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) out.push(n.text);
     else if (ts.isJsxText(n)) out.push(n.text);
@@ -100,6 +112,12 @@ describe("the Desk's language ban list", () => {
     const hits: string[] = [];
     for (const [f, doc] of Object.entries(FIXTURES)) for (const str of jsonStrings(doc)) if (offending(f, str).length) hits.push(`${f}: ${str.slice(0, 120)}`);
     expect(hits).toEqual([]);
+  });
+
+  it("the scanner skips data keys: literal types, case labels, comparisons, object keys", () => {
+    const src = `type E = "established"; if (e === "established") x(); if (t("always") === k) y(); switch (e) { case "significant": say("never"); break; } const m = { "established": "Reliable" }; const v = m["established"];`;
+    const got = stringsOf("x.ts", src);
+    expect(got).toEqual(["always", "never", "Reliable"]);
   });
 
   it("the scanner sees strings and JSX text, never comments", () => {

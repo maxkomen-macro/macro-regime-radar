@@ -1,258 +1,218 @@
 /**
- * Event Study (DESK_FRAME2_SPEC §1 to §3). The panel reads the engine only:
- * /api/desk/event-study/assets for the sentence's lists and
- * /api/desk/event-study?study=<slug> for the study, adapted in api/desk.ts.
- * No fixture: every number on screen is a served field, formatted.
+ * Event Study (DESK_FRAME3_SPEC §4, screens/03-event-study.png): ask what the
+ * market did after a defined shock and get a scored answer. The address is
+ * the question (`?preset=<slug>` or the six slots, plus `confidence`), and the
+ * page asks GET /api/desk/study with the same parameters (§12.2). Row 1 picks
+ * and spells out the question; the answer card and the rail read the one
+ * response; Advanced opens the full detail under the grid; Export downloads
+ * the events as CSV (§12.3). The page never scores anything itself.
  *
- * The address names the study (?study=<the engine's slug>; the gold preset
- * when absent). Presets sit above the query as chips; Run writes the
- * sentence's slug. Every state the API answers has its own words: 202
- * computing is a quiet status line while the page asks again at the engine's
- * Retry-After; 429 is a plain "busy, try again" line; 422 and a not_stored
- * 503 print the engine's reason under the query; "awaiting the first full
- * refresh" is a sentence, never an empty chart; a server without the engine
- * (404) says so.
- *
- * Results: the horizon chart beside the verdict, then the by-regime table
- * and the recent events (results.tsx). One badge per card, the study's Live
- * badge. Client view: the verdict in the client register, the chart in its
- * simple form and a source line; the query and the working detail are hidden.
+ * The slots show exactly what is asked: the served question once it answers,
+ * the address's own question while it is on its way or when it fails, and
+ * your edits until you run them (a confidence change keeps them). While a new
+ * answer is on its way the previous one stays, dimmed and marked busy.
  */
 
-import { useMemo } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ApiError } from "../../../api/client";
-import { isEngineAbsent, useEventStudy, useEventStudyAssets, type EventStudyResponse } from "../../../api/desk";
-import { fmtDate } from "../../../lib/format";
-import { Caption, StateNote } from "../../shared/screen-ui";
-import DeskPageHead from "../DeskPageHead";
+import { deskUrl, useOverview, useStudy } from "../data/api";
+import type { Question } from "../data/types";
+import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { EmptyState, Panel } from "../desk-ui";
-import { useDeskView } from "../desk-view";
-import { listWords } from "../words";
-import QuerySentence, { REGIME_WORD } from "./QuerySentence";
-import StudyBadge, { type StudyWait } from "./StudyBadge";
-import { EventsCard, HorizonCard, RegimeCard, VerdictCard } from "./results";
-import { PRESET, PRESET_SLUG, paramsFor } from "./studies";
+import { useDeskView, withParam } from "../desk-view";
+import { dayShort, grouped, year } from "../kit/format";
+import AnswerCard from "./AnswerCard";
+import EngineDetail from "./EngineDetail";
+import QueryCard, { type Mode } from "./QueryCard";
+import StudyRail, { RailPlaceholder } from "./StudyRail";
+import { WINDOWS, apiParams, askFromSearch, askParams, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, withSaved, writeSaved, type Ask, type SavedQuestion } from "./question";
+import "./study.css";
 
-/** The regime a study is restricted to, in words; null for all regimes (review R-04). */
-export function regimeRestriction(study: EventStudyResponse): string | null {
-  const r = study.params.regime;
-  return r && r !== "all" ? (REGIME_WORD[r] ?? r) : null;
+/** The provenance line under the grid (§4). */
+export function provenanceLine(s: { as_of: string; slug: string | null; provenance: { bootstrap: number; entry: string; cooldown: number; series_start: Record<string, string> } }, label: (k: string) => string): string {
+  const p = s.provenance;
+  const hist = Object.entries(p.series_start ?? {}).map(([k, v]) => `${label(k)} history from ${year(v)}`);
+  return [`Engine as of ${dayShort(s.as_of)}`, typeof p.bootstrap === "number" ? `cluster bootstrap ${grouped(p.bootstrap)}` : null, p.entry ? `entry ${p.entry}` : null, typeof p.cooldown === "number" ? `cooldown ${p.cooldown}` : null, ...hist, s.slug ? `slug ${s.slug}` : null]
+    .filter(Boolean)
+    .join(" · ");
 }
 
-export function titleFor(study: EventStudyResponse, isClient: boolean): string {
-  const p = study.params;
-  const regime = regimeRestriction(study);
-  const only = regime ? `, counting only events in ${regime}` : "";
-  if (p.kind === "cross") {
-    const across = p.cross === "death" ? "below" : "above";
-    return isClient ? `What the ${study.target.label} did after its 50-day average crossed ${across} the 200-day${only}` : `${study.target.label} ${p.cross === "death" ? "death" : "golden"} cross (50-day ${across} 200-day)${regime ? `, ${regime} only` : ""}`;
+/** A fix from the empty state (§1.7) applied to the question; null when it changes nothing. */
+export function applyFix(q: Question, fix: string): Question | null {
+  if (fix === "drop_condition") return q.while === "none" ? null : { ...q, while: "none" };
+  if (fix === "widen_window") {
+    const w = WINDOWS.find((x) => x > q.window);
+    return w ? { ...q, window: w } : null;
   }
-  const move = p.sign === "+" ? "rise" : p.sign === "-" ? "fall" : "move";
-  return `What the ${study.target.label} did after an unusually large ${p.w}-session ${move} in ${study.shock.label}${study.condition ? `, with ${study.condition.label}` : ""}${only}`;
+  return null;
 }
 
-/** The source line the client view and the one-pager print (§5), naming the
- * regime restriction when one is set (review R-04). */
-export function sourceLine(study: EventStudyResponse): string {
-  const p = study.provenance;
-  const inputs = p.inputs.map((i) => i.label).join(" and ");
-  const regime = regimeRestriction(study);
-  return `Source: Macro Regime Radar event-study engine${inputs ? `, reading ${inputs} daily closes` : ""}; as of ${fmtDate(p.as_of)}; sample ${p.data_start ?? p.sample_start} to ${p.sample_end}${regime ? `; events in ${regime} only, by the regime classifier's label` : ""}.`;
-}
-
-/** The results area when there is no study to print: one sentence per state. */
-export function StudyState({
-  slug,
-  loading,
-  computing,
-  busy,
-  awaiting,
-  refusal,
-  absent,
-  error,
-  onPreset,
-  onRetry,
-}: {
-  slug: string;
-  loading: boolean;
-  computing: string | null;
-  busy: string | null;
-  awaiting: string | null;
-  refusal: string | null;
-  absent: boolean;
-  error: string | null;
-  /** Offered as a way back to the gold preset; absent where no preset applies. */
-  onPreset?: (slug: string) => void;
-  onRetry: () => void;
-}) {
-  const presetButton =
-    onPreset && slug !== PRESET_SLUG ? (
-      <button type="button" className="mrr-btn" style={{ marginTop: 10 }} onClick={() => onPreset(PRESET_SLUG)}>
-        Load the gold preset
-      </button>
-    ) : null;
-  if (busy)
-    return (
-      <p className="mrr-desk-quiet" role="status" data-state="busy">
-        The engine is busy with other studies; try again in a few seconds.{" "}
-        <button type="button" className="mrr-btn" onClick={onRetry}>
-          Try again
-        </button>
-      </p>
-    );
-  if (computing)
-    return (
-      <p className="mrr-desk-quiet" role="status" data-state="computing">
-        <span className="mrr-desk-quiet-dot" aria-hidden="true" /> Computing this study; the page asks again in a few seconds.
-      </p>
-    );
-  if (loading)
-    return (
-      <p className="mrr-desk-quiet" role="status" data-state="loading">
-        Requesting the study…
-      </p>
-    );
-  if (awaiting)
-    return (
-      <EmptyState title="Awaiting the first full refresh.">
-        {awaiting}
-        {presetButton}
-      </EmptyState>
-    );
-  if (refusal)
-    return (
-      <EmptyState title="No study to show for this query.">
-        The engine's reason is printed under the query.
-        {presetButton}
-      </EmptyState>
-    );
-  if (absent)
-    return (
-      <EmptyState title="This server does not run the event-study engine.">
-        The Desk reads studies only from the engine; nothing is shown in their place.
-      </EmptyState>
-    );
-  return (
-    <EmptyState title="The engine did not answer.">
-      {error ?? "No reply."} Reload the page to ask again.
-      {presetButton}
-    </EmptyState>
-  );
-}
+/** The ask's identity without its confidence: a confidence change keeps the question. */
+const askKey = (a: Ask) => searchFor({ ...a, confidence: undefined });
 
 export default function EventStudyPage({ page }: { page: DeskPage }) {
-  const { isClient } = useDeskView();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const slugParam = searchParams.get("study");
-  // A slug the address carries but the engine's grammar does not read: the preset shows, and the page says so.
-  const unknownSlug = slugParam != null && paramsFor(slugParam) == null ? slugParam : null;
-  const slug = slugParam != null && !unknownSlug ? slugParam : PRESET_SLUG;
-  const params = useMemo(() => paramsFor(slug) ?? PRESET, [slug]);
-  const assetsQ = useEventStudyAssets();
-  const studyQ = useEventStudy(slug);
+  const { pathTo } = useDeskView();
+  const [search, setSearch] = useSearchParams();
+  const ask: Ask = useMemo(() => askFromSearch(search), [search]);
+  const key = askKey(ask);
+  const q = useStudy(apiParams(ask));
+  const ov = useOverview();
+  const placeholder = q.isPlaceholderData;
+  const study = q.isError ? undefined : q.data;
+  const [saved, setSaved] = useState<SavedQuestion[]>(() => loadSaved());
+  const [draft, setDraft] = useState<Question | null>("question" in ask ? ask.question : null);
+  const [dirty, setDirty] = useState(false);
+  const [mode, setMode] = useState<Mode>("preset" in ask ? "common" : "build");
+  const [adv, setAdv] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState("");
+  const advId = useId();
 
-  const result = studyQ.data;
-  const study = result?.state === "ready" ? result.study : null;
-  const err = studyQ.error instanceof ApiError ? studyQ.error : null;
-  const failure = studyQ.failureReason instanceof ApiError ? studyQ.failureReason : null;
-  const absent = (studyQ.isError && isEngineAbsent(studyQ.error)) || (assetsQ.isError && isEngineAbsent(assetsQ.error));
-  const refusal = err && (err.status === 422 || (err.status === 503 && err.kind === "not_stored")) ? err.message : null;
-  const busy = !study && failure?.status === 429 ? failure.message : null;
+  // The served question fills the slots once it answers, unless you are editing.
+  const served = !placeholder && study ? study.question : null;
+  const servedKey = served ? searchFor({ question: served }) : null;
+  // A new question in the address: the slots show it (or its answer, when that
+  // is already here) and the edits are done with.
+  useEffect(() => {
+    setDirty(false);
+    setDraft("question" in ask ? ask.question : served);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  useEffect(() => {
+    if (served && !dirty) setDraft(served);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servedKey]);
 
-  const go = (next: string) => {
-    setSearchParams(
-      (prev) => {
-        const q = new URLSearchParams(prev);
-        q.set("study", next);
-        return q;
-      },
-      { replace: false },
-    );
+  const seriesList = Array.isArray(study?.series) ? study.series : null;
+  const label = (k: string) => seriesList?.find((s) => s.key === k)?.label ?? k;
+  const go = (next: Ask) => {
+    const nextSearch = searchFor(next, search);
+    if (nextSearch === search.toString()) return void q.refetch();
+    setSearch(new URLSearchParams(nextSearch), { replace: false });
   };
 
-  const pending = result?.state === "computing" ? "The engine is computing this study." : result?.state === "awaiting_refresh" ? result.detail : "The study has not answered yet.";
-  const wait: StudyWait = study
-    ? "waiting"
-    : absent
-      ? "not on this server"
-      : busy
-        ? "busy"
-        : result?.state === "computing"
-          ? "computing"
-          : result?.state === "awaiting_refresh"
-            ? "awaiting refresh"
-            : refusal
-              ? "refused"
-              : studyQ.isError
-                ? "no answer"
-                : "waiting";
-  const badge = <StudyBadge study={study} pending={pending} wait={wait} />;
+  const onPreset = (slug: string) => {
+    setMode("common");
+    if ("preset" in ask && ask.preset === slug) {
+      setDirty(false);
+      if (study?.question) setDraft(study.question);
+      return;
+    }
+    go({ preset: slug, confidence: ask.confidence });
+  };
+  const onRun = () => {
+    if (!draft) return;
+    if ("preset" in ask && study && sameQuestion(draft, study.question)) {
+      setDirty(false);
+      return void q.refetch();
+    }
+    go({ question: draft, confidence: ask.confidence });
+  };
+  const onSave = () => {
+    if (!draft) return;
+    const next = withSaved(saved, draft, questionWords(draft, label));
+    setSaved(next);
+    writeSaved(next);
+    setMode("saved");
+  };
+  const onPickSaved = (s: SavedQuestion) => go({ question: s.question, confidence: ask.confidence });
+  const onFix = (fix: string) => {
+    const base = study?.question ?? draft;
+    const next = base ? applyFix(base, fix) : null;
+    if (next) go({ question: next, confidence: ask.confidence });
+  };
+  const onConfidence = (c: number) => go({ ...ask, confidence: c });
+  const onExport = async () => {
+    setExporting(true);
+    setExportNote("");
+    try {
+      const params = Object.fromEntries(Object.entries(apiParams(ask)).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
+      const res = await fetch(deskUrl("/study/events", params), { headers: { Accept: "text/csv" } });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = new Blob([await res.text()], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${study?.slug ?? "event-study"}-events.csv`;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch {
+      setExportNote("The event list did not answer; nothing was downloaded.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const activePreset = "preset" in ask && !dirty ? ask.preset : null;
+  // A frame-2 link the six slots cannot ask opens the default question, and says so.
+  const oldLink = search.get("study");
+  const unreadLink = oldLink && !search.get("preset") && !questionFromEngine(oldLink) ? oldLink : null;
+  const engineSlug = study?.question ? engineSlugFor(study.question) : null;
+  const priceHref = askParams(ask).reduce((href, [k, v]) => withParam(href, k === "preset" ? "study" : k, v), withParam(pathTo("basket-hedge"), "mode", "express"));
+  const scored = !!study && study.verdict !== "insufficient" && study.n_events >= 10;
+  const askedHorizon = "question" in ask ? ask.question.horizon : study?.question?.horizon;
 
   return (
-    <div className="mrr-desk-page">
-      <DeskPageHead
-        page={page}
-        title={isClient && study ? titleFor(study, true) : page.label}
-        description={study ? (isClient ? `How the ${study.target.label} moved over the next ${listWords(study.horizons.map((h) => h.h))} sessions, against an ordinary stretch of the same length.` : study.label) : page.blurb}
-        badge={badge}
+    <div className="es">
+      <PageTitle page={page} />
+      <QueryCard
+        mode={mode}
+        onMode={setMode}
+        activePreset={activePreset}
+        onPreset={onPreset}
+        saved={saved}
+        onSavedChange={(list) => {
+          setSaved(list);
+          writeSaved(list);
+        }}
+        onPickSaved={onPickSaved}
+        draft={draft}
+        onDraft={(d) => {
+          setDraft(d);
+          setDirty(true);
+          setMode("build");
+        }}
+        series={seriesList}
+        seriesFailed={!!study && !seriesList}
+        onRun={onRun}
+        onSave={onSave}
+        running={q.isFetching}
       />
-
-      {unknownSlug ? <StateNote live>{`The study "${unknownSlug}" in the address is not one the engine can read; the gold preset is shown. Run a query to write an address the page can read back.`}</StateNote> : null}
-
-      {!isClient ? (
-        <Panel id="query" title="Query" badge={badge}>
-          {assetsQ.data ? (
-            <QuerySentence assets={assetsQ.data} params={params} slug={slug} study={study} refusal={refusal} onRun={go} />
-          ) : assetsQ.isError ? (
-            <EmptyState title="The engine's asset lists did not load.">{`${assetsQ.error instanceof Error ? assetsQ.error.message : "No reply."} The query returns when they do; reload to ask again.`}</EmptyState>
-          ) : (
-            <p className="mrr-desk-quiet" role="status" data-reserve="query">
-              Reading the engine's asset lists…
-            </p>
-          )}
-        </Panel>
+      {unreadLink ? (
+        <p className="es-note" role="status">
+          The link asked for the engine study {unreadLink}, which the six slots cannot ask; this is the default question instead.
+        </p>
       ) : null}
-
-      {!study ? (
-        <Panel id="results" title="Results" badge={badge} className={studyQ.isLoading || result?.state === "computing" ? "mrr-desk-reserve-results" : undefined}>
-          <StudyState
-            slug={slug}
-            loading={studyQ.isLoading}
-            computing={result?.state === "computing" ? result.detail : null}
-            busy={busy}
-            awaiting={result?.state === "awaiting_refresh" ? result.detail : null}
-            refusal={refusal}
-            absent={absent}
-            error={err?.message ?? null}
-            onPreset={go}
-            onRetry={() => void studyQ.refetch()}
-          />
-        </Panel>
-      ) : isClient ? (
-        <>
-          <VerdictCard study={study} isClient />
-          <HorizonCard study={study} isClient title="After these events" />
-          <p className="mrr-desk-source" data-testid="es-source">
-            {sourceLine(study)}
-          </p>
-        </>
-      ) : (
-        <>
-          <div className="mrr-desk-main-side mrr-desk-results">
-            <HorizonCard study={study} isClient={false} />
-            <VerdictCard study={study} isClient={false} />
-          </div>
-          <div className="mrr-desk-2">
-            <RegimeCard study={study} />
-            <EventsCard study={study} />
-          </div>
-          <Caption mono>
-            {`as of ${study.provenance.as_of} · ${study.provenance.cooldown_rule ?? "cooldown not stated"} · ${study.provenance.bootstrap ? "cluster bootstrap" : "no bootstrap"}${study.provenance.n_boot ? `, ${study.provenance.n_boot.toLocaleString("en-US")} draws` : ""}, seed ${study.provenance.seed} · inputs ${study.provenance.inputs_hash} · slug ${study.slug}${study.provenance.warnings.length ? ` · ${study.provenance.warnings.join(" ")}` : ""}`}
-          </Caption>
-        </>
-      )}
+      <div className="es-grid" data-busy={placeholder || undefined}>
+        <AnswerCard study={study} failed={q.isError} busy={placeholder} label={label} onFix={onFix} horizon={askedHorizon} />
+        <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
+          {scored && study ? (
+            <StudyRail
+              study={study}
+              todayRegime={ov.data?.tiles?.regime?.label ?? null}
+              confidence={study.confidence}
+              onConfidence={onConfidence}
+              priceHref={priceHref}
+              advOpen={adv}
+              onAdvanced={() => setAdv((o) => !o)}
+              advId={advId}
+              onExport={onExport}
+              exporting={exporting}
+              busy={placeholder}
+            />
+          ) : q.isError ? (
+            <RailPlaceholder reason="awaiting" />
+          ) : study ? (
+            <RailPlaceholder reason="too-few" />
+          ) : null}
+        </aside>
+      </div>
+      {exportNote ? (
+        <p className="es-note" role="status">
+          {exportNote}
+        </p>
+      ) : null}
+      {study ? <p className="es-provenance">{provenanceLine(study, label)}</p> : null}
+      {study && scored && adv ? <EngineDetail id={advId} study={study} ask={ask} engineSlug={engineSlug} label={label} /> : null}
     </div>
   );
 }

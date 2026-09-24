@@ -1,0 +1,196 @@
+{
+ "as_of": "2026-09-22",
+ "generation_id": "gen-fixture-2026-09-22",
+ "inputs_hash": "f80f53b8d728b86c",
+ "served_from_cache": true,
+ "elapsed_ms": 300,
+ "slug": "gold-2sigma-spx-weak",
+ "question": {
+  "shock": "gold",
+  "window": 20,
+  "move": "up2s",
+  "while": "spx_below_50",
+  "target": "spx",
+  "horizon": 20
+ },
+ "n_events": 18,
+ "sample_start": "2000-01-03",
+ "firing_now": false,
+ "last_event": "2025-04-16",
+ "verdict": "suggestive",
+ "headline": "Leans positive a month out, but not something to size on.",
+ "why": "18 events clears the floor, but the resampled range still crosses zero at every horizon — about 9% of resamples come out negative at a month, against a 3% bar.",
+ "verdict_line": "Lean, don't size.",
+ "what_to_do": "If you express it, a 1-month call spread is the cheap way in: vol is rich and skew is steep, so the upside wing you sell pays for the entry.",
+ "horizons": [
+  {
+   "h": 5,
+   "label": "1 week",
+   "up_pct": 0.61,
+   "median": 0.012,
+   "baseline_median": 0.003,
+   "ci_lo_pts": -0.8,
+   "ci_hi_pts": 2.4,
+   "verdict": "suggestive"
+  },
+  {
+   "h": 10,
+   "label": "2 weeks",
+   "up_pct": 0.61,
+   "median": 0.016,
+   "baseline_median": 0.006,
+   "ci_lo_pts": -0.6,
+   "ci_hi_pts": 2.9,
+   "verdict": "suggestive"
+  },
+  {
+   "h": 20,
+   "label": "1 month",
+   "up_pct": 0.67,
+   "up_n": 12,
+   "median": 0.031,
+   "baseline_median": 0.013,
+   "ci_lo_pts": -1.6,
+   "ci_hi_pts": 4.1,
+   "verdict": "suggestive",
+   "worst": {
+    "ret": -0.094,
+    "date": "2020-03-09"
+   },
+   "best": {
+    "ret": 0.12,
+    "date": "2025-04-16"
+   }
+  },
+  {
+   "h": 60,
+   "label": "3 months",
+   "up_pct": 0.56,
+   "median": 0.029,
+   "baseline_median": 0.036,
+   "ci_lo_pts": -3.9,
+   "ci_hi_pts": 2.6,
+   "verdict": "no_edge"
+  }
+ ],
+ "confidence": 0.9,
+ "confidence_note": "All four include zero at 90%. At 80% the 1-month range clears zero; at 95% none do.",
+ "by_regime": [
+  {
+   "regime": "Goldilocks",
+   "n": 5,
+   "up_pct": 0.8,
+   "median": 0.042
+  },
+  {
+   "regime": "Overheating",
+   "n": 6,
+   "up_pct": 0.67,
+   "median": 0.028
+  },
+  {
+   "regime": "Stagflation",
+   "n": 5,
+   "up_pct": 0.6,
+   "median": 0.019
+  },
+  {
+   "regime": "Recession Risk",
+   "n": 2,
+   "up_pct": null,
+   "median": null
+  }
+ ],
+ "last_events": [
+  {
+   "date": "2025-04-16",
+   "regime": "Overheating",
+   "ret_20": 0.12
+  },
+  {
+   "date": "2023-10-27",
+   "regime": "Stagflation",
+   "ret_20": 0.081
+  },
+  {
+   "date": "2023-03-09",
+   "regime": "Stagflation",
+   "ret_20": 0.034
+  },
+  {
+   "date": "2022-09-27",
+   "regime": "Stagflation",
+   "ret_20": -0.022
+  },
+  {
+   "date": "2022-03-04",
+   "regime": "Overheating",
+   "ret_20": -0.008
+  }
+ ],
+ "without_condition": {
+  "n_events": 41,
+  "up_pct": 0.58,
+  "median": 0.016,
+  "verdict": "no_edge"
+ },
+ "provenance": {
+  "bootstrap": 10000,
+  "entry": "next session",
+  "cooldown": 20,
+  "series_start": {
+   "gold": "2000-01-03"
+  }
+ },
+ "warnings": [],
+ "series": [
+  {
+   "key": "spx",
+   "label": "S&P 500"
+  },
+  {
+   "key": "gold",
+   "label": "Gold"
+  },
+  {
+   "key": "us10y",
+   "label": "10-year Treasury"
+  },
+  {
+   "key": "us2y",
+   "label": "2-year Treasury"
+  },
+  {
+   "key": "curve_2s10s",
+   "label": "2s10s curve"
+  },
+  {
+   "key": "vix",
+   "label": "VIX"
+  },
+  {
+   "key": "hy_oas",
+   "label": "High-yield spread"
+  },
+  {
+   "key": "wti",
+   "label": "Oil (WTI)"
+  },
+  {
+   "key": "ndx",
+   "label": "Nasdaq 100"
+  },
+  {
+   "key": "rut",
+   "label": "Russell 2000"
+  },
+  {
+   "key": "dxy",
+   "label": "Dollar index"
+  },
+  {
+   "key": "usdjpy",
+   "label": "USD/JPY"
+  }
+ ]
+}

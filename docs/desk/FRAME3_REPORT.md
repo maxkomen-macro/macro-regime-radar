@@ -278,6 +278,154 @@ T-1, T-4, T-5, T-7, T-9, T-10, T-12 confirmed, T-6 accepted as recorded.
 
 Gates at commit: see the gate summary at the end of this report.
 
+### 3. Event Study — `frame-3: event-study`
+
+Built: the Event Study on `/study` and `/study/events`: row 1 (the
+three-way switch, the nine preset chips, saved questions under "Yours" with
+Export / Import JSON in this browser per §1.8, the six labeled slots with
+their two tooltips, Run and Save), the answer card (serif headline, the
+firing and served-from-cache pills, four stats, the horizon bar chart with
+the range whisker, its legend, the line without the condition), the rail
+(verdict box with `Price it →` to Basket & Hedge in Express mode, by regime
+with `n<5`, today's-regime note from `/overview`, last five events, the range
+against normal at 80 / 90 / 95% re-asked with `confidence`, the served note,
+`Advanced ▸` and `Export →`), the provenance line under the grid, and the
+Advanced panel (all events, resampling detail, entry rules, provenance, and
+the frame-2 engine's own tables for the same question). Fewer than 10
+events renders one sentence and the two fixes (§1.7), which re-ask with a
+wider window or no condition. The page's address is the question. The
+header's "Act on this → Position Monitor" carries the preset
+(`?from=<slug>`), which the walkthrough's step 3 reads. Fixtures:
+`study.json` (§12.2's gold example, complete) and `study-events.json` (the
+18 events, solved so every number the tab prints agrees: 12 of 18 up with a
++3.1% median at a month, the worst and best on their dates, each regime's
+count, ups and median, and the 1-week, 2-week and 3-month up-shares and
+medians). Frame-2's page components (the chart, the quartile chart, the
+sentence builder, the badge, the results cards, the client-verdict words)
+left with this commit; its engine adapter, slug grammar and formatters stay
+and keep their tests.
+
+Compare: `docs/desk/screens/compare/03-event-study.png` (build alone:
+`03-event-study.build.png`). Matched on the second pass (the first ran 58 px
+tall: the rail's section spacing; now 1,086 px against 1,080). Deviations,
+each deliberate:
+- **The event bars are blue** (§4: "after the event, blue"); the PNG draws
+  them green. The whisker and the value labels take the bar's color.
+- **The Advanced panel shows the frame-2 engine's parameters and tables in
+  the v2 style and words,** not the frame-2 components as they were: those
+  printed the engine's "established / not established" (banned by frame-3)
+  and used app colors outside §1.3. The engine's per-horizon result is
+  printed as the engine's own fact about zero ("clears zero on 10+ blocks,
+  under 3% adverse", "clears zero, below that bar", "includes zero", "too
+  few blocks to say"), never as a §1.5 pill: §1.5 verdicts come only from
+  `/study`, so the panel cannot disagree with the rail (verifier E-1). The
+  engine answers only questions it can ask (windows 5/20/60, the
+  S&P-below-50-day or regime conditions, crosses of the target's own
+  averages, the shocks and targets its asset list names); for any other the
+  panel says so in one sentence, and a 422 or `not_stored` answer prints the
+  engine's reason. A note above the tables says its sample and dates are the
+  engine's own: in fixture mode the frame-2 engine fixture's events (Mar 23
+  2023, Mar 1 2022, Apr 9 2020), sample (from Aug 30 2000) and as-of (Sep 18)
+  differ from `/study`'s, because the two are different saved payloads; with
+  one server they read one generation.
+- **The line without the condition** judges the condition from the two
+  served verdicts: better than without → "The condition earns its place." (§4's
+  words); otherwise "The condition does not improve the read." (not in the
+  spec).
+- **The confidence chips show the served confidence as pressed.** The
+  fixture carries 0.90 whatever is asked, so in fixture mode choosing 80%
+  re-asks (the address and the request carry `confidence=0.8`) and the chips
+  stay on 90%; against the API they follow its answer.
+- **"My saved questions · 0"** where the PNG shows 3: saved questions live in
+  the browser (§1.8) and the fixture browser has none.
+- **The rail's heading reads "Last five events · S&P 500 a month later"**
+  (the target's served label); §4 writes "S&P".
+- **The confidence note is §12.2's served string.** §4 and the PNG add "—
+  that is why this is Suggestive."; the page prints what the server says and
+  adds nothing.
+- **"Today is Overheating: six events, too few to read alone."** The "too
+  few" clause uses §1.5's 10-episode floor on that regime's `n`; §4 shows
+  the sentence without a rule.
+- **Series names keep their served case** in running text ("Gold history
+  from 2000", "— Gold +2σ on its own —"); §4 and the PNG write "gold".
+  Lowercasing a served label turns "S&P 500" into "s&p 500" and "VIX" into
+  "vix" (verifier E-7), so the page prints labels as served.
+- **By regime and the last five events are "a month later"** whatever the
+  horizon asked: §4's label is fixed and §12.2 serves `by_regime` and
+  `last_events[].ret_20` at 20 sessions.
+
+PROPOSED (spec §12.13): `verdict_line`, `what_to_do`, `series`, and §12.3's
+events shape (JSON and CSV).
+
+Verifier, round 1: **FAIL** (one blocking finding). Dispositions:
+- E-1 (blocking) the Advanced panel's engine rows carried a §1.5 pill mapped
+  from the engine's exclusion field ("included" → No edge) where the rail
+  prints Suggestive for the same range, and this report called that mapping
+  §1.5's rule, which it is not: **fixed**, the rows state the engine's fact
+  about zero in words (above), and the unit test checks no pill is printed.
+- E-2 the links between Event Study and Position Monitor: **fixed on this
+  side**: "Act on this" and "Price it →" carry the question as the page's
+  own parameters (`from=<preset>` for a preset, the six slots for a custom
+  question), and the page reads a frame-2 `?study=<engine slug>` as the same
+  six slots. Position Monitor (§9) is built later in this run and reads
+  both.
+- E-3 the rail was an empty card on an error and under 10 events: **fixed**,
+  it keeps its four section labels with "Awaiting refresh" or "Not scored:
+  too few events" (§1.7); a failed answer card keeps the asked horizon's
+  labels ("Up a month later").
+- E-4 without the PROPOSED `series` list: **fixed**, the Shock and Target
+  slots are held and say the list is awaiting refresh; no hard-coded count
+  remains; labels fall back to the key only where no list exists.
+- E-5 state: **fixed**. Clicking the pressed preset puts the served
+  question back; a confidence change keeps the edits; Run on an unchanged
+  question refetches instead of pushing a duplicate history entry; "Widen
+  the window" is offered only when a wider window exists.
+- E-6 the previous answer under a new chip: **fixed**, it stays but dims and
+  is marked busy (`aria-busy`) until the new answer lands; the slots show
+  the address's own question while it is on its way or when it fails.
+- E-7 wording: **fixed** (labels keep their served case, "crossing above
+  its average on its own", "over a normal three months", `n<5` only when
+  n < 5, "—" for a null value). The "too few to read alone" rule and the
+  fixed "a month later" label are recorded above.
+- E-8 deviations: recorded above (confidence note, engine sample); the bar
+  chart fills its box (measured width and height, no 70 px gap). The
+  Worst · best overflow was not fixed in round 1 (see R2-2).
+- E-9 the engine panel for questions the engine cannot run: **fixed**, it
+  checks the shock and target against the engine's asset list and prints a
+  422 or `not_stored` reason; a missing forward return uses frame-2's
+  `missingForwardWord`.
+- E-10 accessibility and export: **fixed**. The ⓘ tips are focusable
+  buttons whose text shows on focus; the chart's label carries each
+  horizon's median against normal; the download's object URL is revoked a
+  second after the click; an answer under 100 ms reads in milliseconds.
+- E-11 the language scanner skips only literal operands of `===`/`!==`, so
+  printed text inside a comparison is scanned; `format.ts` lost
+  `sampleLine` and `eventsBehind` (see R2-6 for the rest).
+
+Verifier, round 2: **PASS WITH FINDINGS**, nothing blocking; E-1, E-3 to
+E-7, E-9 to E-11 and the links confirmed. Dispositions:
+- R2-1 (a regression from the E-5 fix) the slots went blank when a preset
+  whose answer was still cached resolved to the question already shown:
+  **fixed**, a new address fills the slots from a served answer that is
+  already here; a unit test with the app's cache times fails without the
+  fix.
+- R2-2 the Worst · best value still ran 7.5 px past its column (the "date"
+  stat size is the same 24 px): **fixed**, it prints at 20 px (the PNG's
+  size) and wraps at " / "; measured inside the card's content edge at
+  1440, 1300, 1200 and 1110 px wide (one line at 1440).
+- R2-3 an old engine link at another z or for one regime opened the 2σ,
+  all-regime question: **fixed**, such a link is not read as the six slots,
+  and the page says it opened the default question instead.
+- R2-4 the served label's case: recorded above.
+- R2-5 the engine refusal names the series by their served labels.
+- R2-6 `unitWord` and `fmtTick` removed; `fmtShare` and `fmtBound` stay,
+  pinned by the Python-parity test (`pyformat.test.ts`).
+- R2-7 the report now says 100 ms, as the code does.
+- R2-8 when neither fix applies, one sentence replaces the empty group.
+- R2-9 the placeholder keeps "vs" lowercase.
+- R2-10 Export is off while a new answer is on its way, so it cannot save
+  one question's events under another's name.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -288,3 +436,4 @@ tests against the fixture dev server.
 |---|---|---|---|---|
 | frame-3: overview | clean | 105 / 1,156 | ok | 10 / 10 |
 | frame-3: technicals | clean | 106 / 1,171 | ok | 13 / 13 |
+| frame-3: event-study | clean | 106 / 1,176 | ok | 16 / 16 |

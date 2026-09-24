@@ -54,6 +54,26 @@ export interface LineChartProps {
   xEnds?: [string, string];
 }
 
+/** The width and height of a container, measured (fallbacks before layout and in tests). */
+export function useBox<T extends HTMLElement>(fallbackW = 420, fallbackH = 200): [RefObject<T>, number, number] {
+  const ref = useRef<T>(null);
+  const [box, setBox] = useState<[number, number]>([fallbackW, fallbackH]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) setBox([Math.round(r.width), Math.round(r.height)]);
+    };
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, box[0], box[1]];
+}
+
 /** The width of a container, measured (a fallback before layout and in tests). */
 export function useWidth<T extends HTMLElement>(fallback = 420): [RefObject<T>, number] {
   const ref = useRef<T>(null);
