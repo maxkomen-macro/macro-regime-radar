@@ -570,17 +570,23 @@ describe("R-07, round 4: a reading is dated only by its own response", () => {
     await waitFor(() => expect(screen.getByText(/^Now 4\.12%/)).toHaveTextContent(/^Now 4\.12%\.$/));
   });
 
-  it("a value response with a date renders that date and no other", async () => {
-    stub({ "/api/freshness": report, "/series/DGS10/latest": () => ({ series_id: "DGS10", date: "2026-08-01", value: 4.12 }) });
+  it("V5-06: a daily series shows a day or no date, never a month stamp", async () => {
+    // A daily FRED series: the row's date is a month stamp, so no date is shown.
+    stub({ "/api/freshness": report, "/series/DGS10/latest": () => ({ series_id: "DGS10", date: "2026-09-01", value: 4.12 }) });
     seed("DGS10");
     const a = renderDesk("/desk/position-monitor");
     const row = await screen.findByTestId("desk-position");
-    await waitFor(() => expect(row).toHaveTextContent("4.12% now (Aug 2026)"));
-    expect(row).not.toHaveTextContent("Sep 17");
-    // The form's hint for the same series: that month, and no other date (V5-03).
+    await waitFor(() => expect(row).toHaveTextContent("4.12% now · falsified below"));
+    expect(row).not.toHaveTextContent(/Sep 2026|Sep 01|Sep 17/);
     fireEvent.change(screen.getByLabelText("Falsification series"), { target: { value: "DGS10" } });
-    await waitFor(() => expect(screen.getByText(/^Now 4\.12%/)).toHaveTextContent(/^Now 4\.12% \(Aug 2026\)\.$/));
+    await waitFor(() => expect(screen.getByText(/^Now 4\.12%/)).toHaveTextContent(/^Now 4\.12%\.$/));
     a.unmount();
+    // A daily series whose response carries the observation's day shows that day.
+    stub({ "/api/freshness": report, "/series/DGS10/latest": () => ({ series_id: "DGS10", date: "2026-09-01", as_of: "2026-09-17", value: 4.12 }) });
+    const b2 = renderDesk("/desk/position-monitor");
+    await waitFor(() => expect(screen.getByTestId("desk-position")).toHaveTextContent("4.12% now (Sep 17, 2026)"));
+    b2.unmount();
+    // A stored daily bar: its own day, and no other date.
     stub({ "/api/freshness": report, "/api/market/daily": () => [{ symbol: "SPY", date: "2026-09-18", open: 1, high: 1, low: 1, close: 600, volume: 1 }] });
     seed("SPY");
     renderDesk("/desk/position-monitor");
@@ -589,28 +595,39 @@ describe("R-07, round 4: a reading is dated only by its own response", () => {
     expect(bar).not.toHaveTextContent("Sep 16");
   });
 
+  it("V5-06: a monthly series shows its month, and no other date", async () => {
+    stub({ "/api/freshness": report, "/series/UNRATE/latest": () => ({ series_id: "UNRATE", date: "2026-08-01", value: 4.1 }) });
+    seed("UNRATE");
+    renderDesk("/desk/position-monitor");
+    const row = await screen.findByTestId("desk-position");
+    await waitFor(() => expect(row).toHaveTextContent("4.1% now (Aug 2026)"));
+    expect(row).not.toHaveTextContent(/Aug 01|Sep 17/);
+    fireEvent.change(screen.getByLabelText("Falsification series"), { target: { value: "UNRATE" } });
+    await waitFor(() => expect(screen.getByText(/^Now 4\.1%/)).toHaveTextContent(/^Now 4\.1% \(Aug 2026\)\.$/));
+  });
+
   it("a failed refetch keeps the old value with its own date; a failed fetch with nothing held reads awaiting refresh", async () => {
     let down = false;
-    stub({ "/api/freshness": report, "/series/DGS10/latest": () => (down ? { status: 503, body: { detail: "warming", kind: "warming", retryable: true } } : { series_id: "DGS10", date: "2026-09-01", value: 4.12 }) });
-    seed("DGS10");
+    stub({ "/api/freshness": report, "/series/UNRATE/latest": () => (down ? { status: 503, body: { detail: "warming", kind: "warming", retryable: true } } : { series_id: "UNRATE", date: "2026-08-01", value: 4.1 }) });
+    seed("UNRATE");
     const { client, unmount } = renderDesk("/desk/position-monitor");
     const row = await screen.findByTestId("desk-position");
-    await waitFor(() => expect(row).toHaveTextContent("4.12% now (Sep 2026)"));
+    await waitFor(() => expect(row).toHaveTextContent("4.1% now (Aug 2026)"));
     down = true;
     await client.refetchQueries();
     // Wait until the query holds the error (after its one retry), then let React
     // render it, and only then read the row (V5-01: asserting earlier proved nothing).
-    await waitFor(() => expect(client.getQueryState(["desk", "reading", "fred", "DGS10"])?.status).toBe("error"), { timeout: 5000 });
+    await waitFor(() => expect(client.getQueryState(["desk", "reading", "fred", "UNRATE"])?.status).toBe("error"), { timeout: 5000 });
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50));
     });
-    expect(screen.getByTestId("desk-position")).toHaveTextContent("4.12% now (Sep 2026)");
+    expect(screen.getByTestId("desk-position")).toHaveTextContent("4.1% now (Aug 2026)");
     expect(screen.getByTestId("desk-position")).not.toHaveTextContent("Sep 17");
     expect(screen.getByTestId("desk-position")).not.toHaveTextContent("Awaiting refresh");
     unmount();
     renderDesk("/desk/position-monitor");
     await waitFor(() => expect(screen.getByTestId("desk-position")).toHaveTextContent("Awaiting refresh."), { timeout: 4000 });
-    expect(screen.getByTestId("desk-position")).not.toHaveTextContent("4.12");
+    expect(screen.getByTestId("desk-position")).not.toHaveTextContent("4.1%");
   });
 });
 

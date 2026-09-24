@@ -195,20 +195,27 @@ describe("review round (R-01, R-04, R-07, R-08)", () => {
     expect(page(raw).recent_events[0].window_open).toEqual({ "60": true });
   });
 
-  it("R-07 (round 4): a reading is dated only by a date in its own response", async () => {
+  it("R-07 (round 4), V5-06: a reading is dated only by its own response, at the series' frequency", async () => {
     const calls: string[] = [];
     const answer = (body: unknown) => (async (path: string) => (calls.push(path), body)) as never;
-    // A FRED value response with no date: the value, no date, one request.
+    // A daily FRED series with no date: the value, no date, one request.
     const bare = await fetchReading(seriesRef("DGS10")!, answer({ series_id: "DGS10", value: 4.12 }));
     expect(bare).toEqual({ value: 4.12, date: null, monthly: false });
     expect(readingDate(bare)).toBeNull();
     expect(calls).toEqual(["/series/DGS10/latest"]);
-    // A FRED value response with its month stamp: that month, and nothing else.
-    const stamped = await fetchReading(seriesRef("DGS10")!, answer({ series_id: "DGS10", date: "2026-09-01", value: 5.19 }));
-    expect(readingDate(stamped)).toBe("Sep 2026");
-    // A stored bar: its own date.
+    // A daily FRED series with the row's month stamp: never shown for a daily series.
+    expect(readingDate(await fetchReading(seriesRef("DGS10")!, answer({ series_id: "DGS10", date: "2026-09-01", value: 5.19 })))).toBeNull();
+    // A daily FRED series whose response carries the observation's day: that day.
+    expect(readingDate(await fetchReading(seriesRef("DGS10")!, answer({ series_id: "DGS10", date: "2026-09-01", as_of: "2026-09-17", value: 5.19 })))).toBe("Sep 17, 2026");
+    // A monthly FRED series: its month.
+    expect(readingDate(await fetchReading(seriesRef("CPIAUCSL")!, answer({ series_id: "CPIAUCSL", date: "2026-08-01", value: 330.1 })))).toBe("Aug 2026");
+    expect(readingDate(await fetchReading(seriesRef("INDPRO")!, answer({ series_id: "INDPRO", value: 104.2 })))).toBeNull();
+    // A stored daily bar: its own day.
     const bar = await fetchReading(seriesRef("SPY")!, answer([{ symbol: "SPY", date: "2026-09-18", close: 600 }]));
     expect(readingDate(bar)).toBe("Sep 18, 2026");
+    // Every catalogue series declares its frequency; the monthly ones are the monthly FRED series.
+    expect(["UNRATE", "CPIAUCSL", "INDPRO", "FEDFUNDS"].every((id) => seriesRef(id)?.freq === "monthly")).toBe(true);
+    expect(["DGS10", "DGS2", "BAMLH0A0HYM2", "VIXCLS", "SOFR", "SPY", "UUP"].every((id) => seriesRef(id)?.freq === "daily")).toBe(true);
   });
 });
 

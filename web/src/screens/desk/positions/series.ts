@@ -22,10 +22,12 @@ export interface SeriesRef {
   /** Printed after the value: "%", "bp", "" (an index), "$". */
   unit: string;
   dp: number;
+  /** How often the series is observed; a reading is dated at this frequency or not at all (V5-06). */
+  freq: "daily" | "monthly";
 }
 
-const fred = (id: string, label: string, unit: string, dp: number): SeriesRef => ({ id, label, kind: "fred", unit, dp });
-const market = (id: string, label: string): SeriesRef => ({ id, label, kind: "market", unit: "$", dp: 2 });
+const fred = (id: string, label: string, unit: string, dp: number, freq: SeriesRef["freq"] = "daily"): SeriesRef => ({ id, label, kind: "fred", unit, dp, freq });
+const market = (id: string, label: string): SeriesRef => ({ id, label, kind: "market", unit: "$", dp: 2, freq: "daily" });
 
 export const FRED_SERIES: SeriesRef[] = [
   fred("DGS10", "10-year Treasury yield", "%", 2),
@@ -35,10 +37,10 @@ export const FRED_SERIES: SeriesRef[] = [
   fred("VIXCLS", "VIX close", "", 2),
   fred("T10YIE", "10-year breakeven inflation", "%", 2),
   fred("T5YIE", "5-year breakeven inflation", "%", 2),
-  fred("UNRATE", "Unemployment rate", "%", 1),
-  fred("CPIAUCSL", "CPI (index)", "", 1),
-  fred("INDPRO", "Industrial production (index)", "", 1),
-  fred("FEDFUNDS", "Fed funds (effective)", "%", 2),
+  fred("UNRATE", "Unemployment rate", "%", 1, "monthly"),
+  fred("CPIAUCSL", "CPI (index)", "", 1, "monthly"),
+  fred("INDPRO", "Industrial production (index)", "", 1, "monthly"),
+  fred("FEDFUNDS", "Fed funds (effective)", "%", 2, "monthly"),
   fred("SOFR", "SOFR", "%", 2),
   fred("DFII10", "10-year TIPS yield", "%", 2),
   fred("DFII5", "5-year TIPS yield", "%", 2),
@@ -78,13 +80,14 @@ export function seriesRef(id: string | null | undefined): SeriesRef | undefined 
 
 export interface Reading {
   value: number;
-  /** The date that came in the same response as the value, and only that
-   * (review R-07, round 4): a stored bar's date, or the FRED row's month
-   * stamp. Null when the response carries none; then the value is shown with
-   * no date and the page's badge dates the source on its own. */
+  /** The date that came in the same response as the value, at the series'
+   * own frequency, and only that (review R-07 round 4, V5-06): a stored bar's
+   * day; a monthly FRED series' month; a daily FRED series' day only when the
+   * response carries one (the row's month stamp is never shown for it). Null
+   * otherwise: the value is shown with no date and the page's badge dates the
+   * source on its own. */
   date: string | null;
-  /** The date names a month: FRED rows are stored one per month, dated the
-   * 1st, holding the newest in-month value (CLAUDE.md, B6). */
+  /** The date names a month (a monthly series). */
   monthly?: boolean;
 }
 
@@ -106,10 +109,21 @@ export async function fetchReading(ref: SeriesRef, get: typeof getJson = getJson
     const bars = await get<DailyBar[]>("/api/market/daily", { symbols: ref.id, days: 45 });
     const last = [...bars].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).at(-1);
     if (!last || last.close == null) throw new Error(`No stored bars for ${ref.id}.`);
-    return { value: last.close, date: last.date ?? null };
+    return { value: last.close, date: isDay(last.date) ? last.date.slice(0, 10) : null, monthly: false };
   }
-  const p = await get<{ series_id: string; date?: string | null; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
-  return { value: p.value, date: p.date ?? null, monthly: p.date != null };
+  const p = await get<{ series_id: string; date?: string | null; as_of?: string | null; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
+  // A monthly series is stored by its month: the row's date is that month (V5-06).
+  if (ref.freq === "monthly") return { value: p.value, date: p.date ?? null, monthly: true };
+  // A daily series shows a day or no date. The row's `date` is a month stamp
+  // (one row per month, CLAUDE.md B6), never a day, so it is not shown; a day
+  // is shown only when the response itself carries the observation's day
+  // (`as_of`, the frame-3 API work).
+  return { value: p.value, date: isDay(p.as_of) ? p.as_of.slice(0, 10) : null, monthly: false };
+}
+
+/** A calendar day ("2026-09-17", or an ISO instant on that day). */
+function isDay(x: string | null | undefined): x is string {
+  return typeof x === "string" && /^\d{4}-\d{2}-\d{2}/.test(x);
 }
 
 type ReadingKey = readonly ["desk", "reading", string, string];
@@ -176,9 +190,10 @@ export function distanceOf(reading: Reading, level: number, direction: "above" |
   return { falsified, gap, pct };
 }
 
-/** "4.12% now (Sep 2026) · falsified below 3.80% · 0.32% away (7.8% of current)":
- * the date is the one the reading's own response carried, at its precision,
- * and no date at all when the response carried none. */
+/** "4.12% now · falsified below 3.80% · 0.32% away (7.8% of current)", or
+ * "4.1% now (Aug 2026) · …" for a monthly series: the date is the one the
+ * reading's own response carried, at the series' frequency, and no date at
+ * all otherwise. */
 export function distanceSentence(ref: SeriesRef | undefined, reading: Reading, f: { level: number; direction: "above" | "below" }): { now: string; rule: string; distance: string; falsified: boolean } {
   const d = distanceOf(reading, f.level, f.direction);
   const when = readingDate(reading);
