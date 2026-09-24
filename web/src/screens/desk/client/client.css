@@ -1,0 +1,217 @@
+/* Client view (DESK_FRAME3_SPEC §11; geometry from screens/12-client-view.png). */
+.cv {
+  padding-top: 8px;
+}
+.cv-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+.cv-headline {
+  margin-top: 10px;
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 38px;
+  line-height: 1.12;
+  color: var(--dk-t1);
+}
+.cv-summary {
+  margin-top: 22px;
+  font-size: 15.5px;
+  line-height: 24px;
+  color: var(--dk-t1);
+}
+.cv-stats {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.28fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 26px;
+}
+.cv-stat {
+  padding: 15px 18px 13px;
+}
+.cv-stat-value {
+  margin-top: 6px;
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 32px;
+  line-height: 1.05;
+  color: var(--dk-t1);
+}
+.cv-stat-value[data-tone="green"] {
+  color: var(--dk-green);
+}
+.cv-stat-sub {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--dk-t3);
+}
+.cv-stat-thin,
+.cv-thin {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--dk-t3);
+}
+.cv-summary-await {
+  margin-top: 22px;
+}
+.cv-source {
+  margin-top: 22px;
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  line-height: 13px;
+  color: var(--dk-t4);
+}
+/* The card runs down the window as in the PNG (624 px of its 760). */
+.cv-card {
+  min-height: calc(100vh - 136px);
+  padding: 18px 22px 26px;
+}
+.cv-card .dk-card-title {
+  font-size: 16px;
+}
+.cv-card-sub {
+  margin-top: 8px;
+  font-size: 13.5px;
+  color: var(--dk-t3);
+}
+.cv-bars {
+  list-style: none;
+  margin: 35px 0 0;
+  padding: 0 0 0 8px;
+}
+.cv-bars li {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  min-height: 60px;
+}
+.cv-regime {
+  font-family: var(--dk-serif);
+  font-size: 13px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+  color: var(--dk-t1);
+}
+.cv-bars li[data-none] .cv-regime {
+  color: var(--dk-t3);
+}
+/* The track: zero at --cv-zero, bars and values placed on one scale (ClientView.barGeometry). */
+.cv-track {
+  position: relative;
+  height: 22px;
+}
+.cv-track::before {
+  content: "";
+  position: absolute;
+  left: var(--cv-zero);
+  top: -19px;
+  bottom: -19px;
+  width: 1px;
+  background: var(--dk-box);
+}
+.cv-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+}
+.cv-bar[data-tone="green"] {
+  background: var(--dk-green);
+}
+.cv-bar[data-tone="red"] {
+  background: var(--dk-red);
+}
+.cv-val {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--dk-serif);
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--dk-t2);
+}
+.cv-bars li[data-none] .cv-val {
+  color: var(--dk-t3);
+}
+/* A null row's words wrap inside the track rather than run past the card. */
+.cv-val.cv-none {
+  white-space: normal;
+  line-height: 15px;
+}
+@media (max-width: 1100px) {
+  .cv-card {
+    min-height: 0;
+  }
+  .cv-grid,
+  .cv-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cv-headline {
+    font-size: 30px;
+  }
+}
+
+/* The one-pager (Export one-pager, §11): the client page alone, on paper.
+   Scoped to the client view, so printing any other tab is unchanged. */
+@media print {
+  .dk[data-client] {
+    display: block;
+    min-height: 0;
+    --dk-page: #ffffff;
+    --dk-card: #ffffff;
+    --dk-card-2: #ffffff;
+    --dk-border: #c9cdd3;
+    --dk-box: #c9cdd3;
+    --dk-t1: #0c0e11;
+    --dk-t2: #1c2027;
+    --dk-t3: #6b7280;
+    --dk-t4: #6b7280;
+    background: #ffffff;
+  }
+  .dk[data-client] .dk-side,
+  .dk[data-client] .dk-top,
+  .dk[data-client] .mrr-desk-tour,
+  .dk[data-client] [data-print-hide] {
+    display: none !important;
+  }
+  .dk[data-client] .dk-main,
+  .dk[data-client] .dk-page {
+    display: block;
+    padding: 0;
+    min-height: 0;
+  }
+  .dk[data-client] .cv-grid,
+  .dk[data-client] .cv-stats {
+    display: grid;
+    gap: 12px;
+  }
+  .dk[data-client] .cv-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .dk[data-client] .cv-stats {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.28fr) minmax(0, 1fr);
+  }
+  .dk[data-client] .cv-headline {
+    font-size: 28px;
+  }
+  .dk[data-client] .cv-card {
+    min-height: 0;
+    break-inside: avoid;
+  }
+  /* On paper the numbers are ink (green text on white is faint); the bars keep their color. */
+  .dk[data-client] .cv-stat-value,
+  .dk[data-client] .cv-stat-value .dk-signed {
+    color: var(--dk-t1);
+  }
+  .dk[data-client] .cv-bar,
+  .dk[data-client] .cv-track::before,
+  .dk[data-client] .cv-stat-value,
+  .dk[data-client] .dk-signed {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

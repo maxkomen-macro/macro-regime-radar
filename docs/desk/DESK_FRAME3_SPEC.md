@@ -896,6 +896,32 @@ building it; the web side follows whatever this section ends up saying.
   last study Event Study answered in this browser (kept in local storage),
   else the gold preset.
 
+**Client view (§11)**
+- **PROPOSED** `study.client` (`{"headline","summary"}`): the question and
+  the paragraph the client view prints in plain words (the mockup's "When
+  gold jumps and stocks are already soft, what has the S&P done next?" and
+  its "Looking at … episodes since …" paragraph). §12.2 carries the desk's
+  `headline` and `why`, which are desk language; the client copy is written
+  by the engine, never composed on the page.
+- **PROPOSED** `study.horizons[].baseline_up_pct` (fraction): the share of
+  ordinary stretches of the same length that ended up, the "vs 58% in an
+  ordinary month" under "Higher a month later" (the mockup's number; the
+  fixture serves 0.62 at a month). §12.2 carries the baseline's median
+  only.
+- The view reads the study in the address on Event Study and, on every
+  other tab, the last study Event Study answered in this browser, else the
+  gold preset (the same rule as the bridge's export). The three numbers are
+  §12.2's `n_events`/`sample_start` and the one-month horizon's `up_pct`
+  and `median` against `baseline_up_pct` and `baseline_median`; the bars
+  are `by_regime[].median`, null printing "too few cases to say". The view
+  asks without `confidence` (the served default, 0.90), whatever the desk's
+  slider says. "Setup · <day>" is `last_event` when `firing_now`, else
+  "Setup last seen · <last_event>".
+- An insufficient study (§12.2's `empty_state`) may come without `client`:
+  the view then prints the `empty_state.sentence` in the paragraph's place
+  and in the backdrop card, "too few cases to say" in the month's two
+  stats, and never "Awaiting refresh".
+
 Notes for B (not new fields):
 - §11 fixes the inventory at 26 series in five groups, but Desk also reads
   series that are not among them: the eleven sector ETFs, RSP's partner IWM

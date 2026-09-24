@@ -232,6 +232,8 @@ export interface StudyHorizon {
   up_n?: number;
   median: number;
   baseline_median: number;
+  /** PROPOSED (§12.13): the share of ordinary stretches of this length that ended up (the Client view's "vs 62% in an ordinary month"). */
+  baseline_up_pct?: number;
   ci_lo_pts: number;
   ci_hi_pts: number;
   verdict: Verdict;
@@ -267,6 +269,8 @@ export interface StudyResponse extends Envelope {
   empty_state?: { sentence: string; fixes: string[] };
   /** PROPOSED (§12.13): the 12 series every slot lists, key and label. */
   series: { key: string; label: string }[];
+  /** PROPOSED (§12.13): the Client view's question and paragraph, in plain words. */
+  client?: { headline: string; summary: string };
 }
 
 /** §12.3 /study/events (PROPOSED shape, §12.13); CSV with `Accept: text/csv`. */

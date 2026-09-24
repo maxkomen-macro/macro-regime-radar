@@ -1231,6 +1231,166 @@ Findings and what was done:
 The round-2 fixes were checked by the gates and the new unit and browser
 tests, not by a third verifier round.
 
+### 11. Client view — `frame-3: client-toggle`
+
+Built: the Desk / Client toggle's client view (§11,
+`screens/12-client-view.png`). On a tab that carries the toggle, Client
+replaces the tab's body with a client-safe read of one study. Event Study
+uses the study in its address; every other tab uses the last study Event
+Study answered in this browser, else the gold preset (the bridge export's
+rule). The view asks at the served confidence, never the desk's slider.
+
+Left column: "Setup · <day>" (the last event, while the setup is firing;
+"Setup last seen · <day>" when it is not), the served question as the
+page's h1, the served paragraph, three stat cards and §11's source line.
+The cards are Episodes, with "since <year>"; Higher a month later, against
+an ordinary month, in green only when it beats that month; and Typical
+move, against "ordinary". Right column: the card "A month later, by
+economic backdrop" / "Typical S&P move after the setup" with the regime
+bars. Every bar is drawn on one scale, so equal moves are equal lengths
+whatever their sign. A null median prints "too few cases to say".
+
+Every label and the card's title stay while the study loads. A study that
+does not answer says "Awaiting refresh". A study too thin to score prints
+the engine's own sentence in the paragraph's place (when no client
+paragraph is served) and in the backdrop card, and "too few cases to say"
+in the month's two stats. A null regime row's words wrap inside the track:
+after zero, or ending before it when zero sits right of the middle. No verdict
+pill, no σ, no desk wording. The sidebar stays (the only navigation) but
+loses the TODAY and HOUSE DISCIPLINE cards.
+
+The header's action gives way to "Export one-pager (PDF)", which prints the
+page. The print style applies to the client view only. It hides the
+sidebar, the header, the walkthrough and the button, sets the page in one
+column on white paper tokens, prints the numbers in ink and keeps the
+bars' colors (`print-color-adjust: exact`), and fits one page on Letter,
+A4 and landscape Letter. A browser
+test counts the PDF's pages. Printing any other tab is unchanged.
+
+PROPOSED fields (added to the spec's §12.13 before use): `study.client`
+(`headline`, `summary`), the question and paragraph in plain words, written
+by the engine and never composed on the page; and
+`study.horizons[].baseline_up_pct`, the "vs 62% in an ordinary month"
+(§12.2 carries only the baseline median). The block also records the
+confidence rule, the setup's date and the insufficient-study rule.
+
+Deviations from the PNG, each with its reason:
+- The sidebar stays and the header keeps the breadcrumb. The PNG's client
+  view has no sidebar and a "Desk · Client view · internals hidden" bar.
+  The owner's rule is that the sidebar is the only navigation, so it stays
+  on screen, without the desk's two internal cards. It is hidden in print,
+  so the exported one-pager has none. The toggle reads "Desk / Client" as
+  on every other tab's PNG, not "Desk view / Client view".
+- §11 calls the view "a one-card client-safe summary". The PNG shows the
+  question, the paragraph and three stat cards beside that card. The build
+  follows the PNG, and the one card §11 lists is its right column, word for
+  word.
+- The source line follows §11's text ("Radar · FRED, Yahoo Finance · as of
+  Sep 22, 2026 · Past patterns do not guarantee future results."), not the
+  PNG's "Source: Macro Regime Radar · …". The spec is the contract for
+  labels.
+- The PNG draws Stagflation's +1.9% as a red bar to the left. The build
+  draws it green to the right, because §1.3 says red is only ever a down or
+  negative number.
+- The PNG dates the setup "Sep 21, 2026", the day before its source line.
+  The fixture's setup is not firing (`firing_now` false, `last_event`
+  2025-04-16), so the build prints "Setup last seen · Apr 16, 2025".
+- The numbers are the fixture's study (18 episodes since 2000, 67%, +3.1%
+  against +1.3%), not the PNG's illustrative ones (41 since 1990, 63%,
+  +1.8%). The PNG itself is marked "MOCKUP · values illustrative".
+
+Compare: `docs/desk/screens/compare/12-client-view.png` (build alone:
+`12-client-view.build.png`), shot at
+`/desk/event-study?preset=gold-2sigma-spx-weak&view=client`. It matched on
+the second attempt. In the first shot the bars' zero line sat mid-track,
+with a 118 px value column, so the longest bar was a quarter of the PNG's.
+The bars were redrawn to the PNG's geometry: the zero line 142 px from
+where the labels start, 60 px rows, 22 px bars, the value 9 px after the
+bar's end, and the offset below the title. The card's run down the window,
+the stat cards' 105 px height (PNG 103) and the card title's size were
+matched too. The bars are to scale; the PNG's are not (its 2.8% bar is
+half its 4.2%).
+
+Verifier round 1: **FAIL** on two blocking findings. It confirmed the
+geometry against the PNG (card 461×624, zero line 173 px from the card's
+edge, bars 22 px on a 60 px pitch) and the study selection across presets,
+six slots, garbage storage, 503, 422, a network abort, a 202 and non-JSON.
+It also confirmed the toggle on every tab that carries it, the keyboard,
+reduced motion, the palette, the wording and the gates. The ten other
+compare shots were pixel-identical. Findings and what was done:
+- C-1 (blocking) the one-pager printed as a 189 px column over three
+  landscape pages, and two portrait pages. The print tokens stayed dark,
+  and the print rule leaked into other tabs once loaded. **Fixed** as
+  described above, scoped to `.dk[data-client]`. A browser test counts one
+  page on Letter, A4 and landscape Letter, a full-width main, the bars'
+  color kept, and another tab's sidebar still printing.
+- C-2 (blocking) mixed signs were drawn on two scales (−3% twice as long as
+  +3%). **Fixed**: `barGeometry` puts every bar on one px-per-point. A unit
+  test pins equal lengths for ±x, and a browser test checks them at
+  1440/1101/760/390.
+- C-3 an all-negative set pushed the values past the card. **Fixed**: the
+  value room is always kept on the right; the browser test checks it at
+  every width (for a null row's words, completed in round 2, R2-1).
+- C-4 a study too thin to score printed "Awaiting refresh". **Fixed**: the
+  engine's `empty_state.sentence` (tested; without a client paragraph,
+  completed in round 2, R2-2).
+- C-5 the setup was dated with `as_of`. **Fixed**: `last_event`, with
+  `firing_now` (tested); the deviation above is corrected.
+- C-6 the Export button was the light one. **Fixed**: the dark button, bold,
+  as the PNG draws it.
+- C-7 the tests did not pin the behavior. **Fixed**: Event Study's own
+  address (a preset other than the fallback), the stored study on another
+  tab, mixed, negative and null bars with their tones, the thin study,
+  Export calling `print()`, the loading state and a tab without the toggle.
+- C-8 while loading only "Setup" and the tab's name showed. **Fixed**: every
+  label and the card's title render in every state. The fallback h1 reads
+  "A past pattern, in plain words".
+- C-9 the green tone came from a 50% threshold. **Fixed**: green only when
+  the setup beat the ordinary month's share (both served numbers), never
+  red.
+- C-10 the stat cards ran 115 px against 103 and the card title was small.
+  **Fixed** (105 px; 16 px title, 277 px wide against 294). The toggle labels are listed above.
+- C-11 the desk's internal cards showed in the client view. **Fixed**
+  (hidden on screen and in print).
+- C-12 internal wording in the awaiting line, a nowrap label that could run
+  over the bars, the confidence rule unstated, 58% against 62%. **Fixed**:
+  a plain "Awaiting refresh", labels that wrap in a 96 px column, and both
+  rules and both numbers stated in the spec.
+
+Verifier round 2: **PASS**, no blocking finding. It confirmed every
+round-1 fix. The one-pager printed on one page on Letter, landscape Letter,
+A4, landscape A4 and Legal, from 1440 and 390 viewports, with and without
+background graphics. Other tabs printed identically before and after a
+visit to the client view. Equal moves drew equal lengths at every width,
+and no calc() string went invalid across twelve bar variants. The eleven
+compare shots were identical. Findings and what was done:
+- R2-1 "too few cases to say" ran past the card when zero sat at the right
+  (all negative plus a null row). **Fixed**: `barGeometry` places a null
+  row's words after zero, or ending before it when zero is right of the
+  middle, wrapping inside the track. The browser test adds that case and a
+  mixed one, checking every value inside the card and no clipped words at
+  four widths.
+- R2-2 a thin study without a client paragraph still printed "Awaiting
+  refresh". **Fixed**: the sentence takes the paragraph's place. The test
+  now deletes `client`.
+- R2-3 this section overclaimed C-3, C-4 and the card height. **Fixed**
+  above.
+- R2-4 green numbers on paper were faint (1.8:1). **Fixed**: in ink on
+  paper; the bars keep their green and red.
+- R2-5 the fallback h1 described the page, not the reader's question, and
+  a thin study's sentence printed three times. **Fixed**: "What has
+  happened after this setup"; the sentence prints once in the card and
+  once in the paragraph's place, with "too few cases to say" in the stats.
+- R2-6 a label of four lines outgrew its row; a median that rounds to 0.0%
+  drew a sliver; Export is hidden at 560 px and below (as every header
+  action is); A5 prints two pages. **Fixed**: rows grow with their label,
+  and no bar is drawn for a move that rounds to zero. The phone header and
+  A5 are left as they are: the header's actions are hidden on phones on
+  every tab, and Letter, A4 and Legal print on one page.
+
+The round-2 fixes were checked by the gates and the tests above, not by a
+third verifier round.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -1249,3 +1409,4 @@ tests against the fixture dev server.
 | frame-3: position-monitor | clean | 110 / 1,253 | ok | 25 / 25 |
 | frame-3: data-pipeline | clean | 109 / 1,259 | ok | 27 / 27 |
 | frame-3: build-notes | clean | 110 / 1,274 | ok | 29 / 29 |
+| frame-3: client-toggle | clean | 111 / 1,285 | ok | 32 / 32 |

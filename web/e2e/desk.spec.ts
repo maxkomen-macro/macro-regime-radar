@@ -14,6 +14,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { hasRing, tabWalk } from "./lib/a11y";
 import { settle } from "./lib/drive";
 import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures";
+import { deskFixture } from "../src/fixtures/desk/index";
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
@@ -325,6 +326,67 @@ test.describe("desk v2", () => {
     await page.keyboard.press("Space");
     await expect(page).toHaveURL(/view=client/);
     await expect(page.getByRole("complementary", { name: "Sidebar" }).getByRole("link", { name: "Regime", exact: true })).toHaveAttribute("href", "/desk/regime?view=client");
+  });
+
+  test("the client view: the study in plain words, §1.3 colors, no banned word, no verdict pill; back to Desk", async ({ page }) => {
+    for (const route of ["/desk/overview?view=client", "/desk/event-study?preset=gold-2sigma-spx-weak&view=client"]) {
+      await open(page, route);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText("When gold jumps and stocks are already soft, what has the S&P done next?");
+      await expect(page.getByRole("region", { name: "A month later, by economic backdrop" }).getByRole("listitem")).toHaveCount(4);
+      await expect(page.getByRole("main")).toContainText("Radar · FRED, Yahoo Finance · as of Sep 22, 2026 · Past patterns do not guarantee future results.");
+      await expect(page.locator("main .dk-pill")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Export one-pager (PDF)" })).toBeVisible();
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await bannedWordsOnPage(page)).toEqual([]);
+    }
+    await page.getByRole("button", { name: "Desk", exact: true }).click();
+    await expect(page).not.toHaveURL(/view=client/);
+    await expect(page.getByRole("button", { name: "Export one-pager (PDF)" })).toHaveCount(0);
+  });
+
+  test("the client view prints as one page, full width, the bars kept; another tab prints as before", async ({ page }) => {
+    const pages = (pdf: Buffer) => (pdf.toString("latin1").match(/\/Type\s*\/Page(?!s)/g) ?? []).length;
+    await open(page, "/desk/overview?view=client");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/When gold jumps/);
+    await page.emulateMedia({ media: "print" });
+    await expect(page.getByRole("complementary", { name: "Sidebar" })).toBeHidden();
+    await expect(page.getByRole("button", { name: "Export one-pager (PDF)" })).toBeHidden();
+    expect(await page.locator("main").evaluate((e) => e.getBoundingClientRect().width)).toBeGreaterThan(600);
+    expect(await page.locator(".cv-bar").first().evaluate((e) => getComputedStyle(e).printColorAdjust)).toBe("exact");
+    expect(pages(await page.pdf({ format: "Letter" }))).toBe(1);
+    expect(pages(await page.pdf({ format: "A4" }))).toBe(1);
+    expect(pages(await page.pdf({ format: "Letter", landscape: true }))).toBe(1);
+    await page.emulateMedia({ media: "screen" });
+    await page.getByRole("button", { name: "Desk", exact: true }).click();
+    await expect(page).not.toHaveURL(/view=client/);
+    await page.emulateMedia({ media: "print" });
+    await expect(page.getByRole("complementary", { name: "Sidebar" })).toBeVisible();
+    await page.emulateMedia({ media: "screen" });
+  });
+
+  test("the client view's bars keep one scale and stay in the card at every width", async ({ page }) => {
+    const study = JSON.parse(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!.body) as Record<string, unknown>;
+    for (const by_regime of [
+      [{ regime: "Goldilocks", n: 5, up_pct: 0.4, median: -0.121 }, { regime: "Overheating", n: 6, up_pct: 0.3, median: -0.05 }, { regime: "Recession Risk", n: 2, up_pct: null, median: null }],
+      [{ regime: "Goldilocks", n: 5, up_pct: 0.4, median: -0.1 }, { regime: "Overheating", n: 6, up_pct: 0.6, median: 0.01 }, { regime: "Stagflation", n: 2, up_pct: null, median: null }, { regime: "Recession Risk", n: 5, up_pct: 0.5, median: 0.005 }],
+      [{ regime: "Goldilocks", n: 5, up_pct: 0.8, median: 0.03 }, { regime: "Stagflation", n: 5, up_pct: 0.4, median: -0.03 }, { regime: "Recession Risk", n: 2, up_pct: null, median: null }],
+    ]) {
+      await open(page, "/desk/overview?view=client", { "/api/desk/study": { status: 200, body: { ...study, by_regime } } });
+      for (const width of [1440, 1101, 760, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await settle(page, 150);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `overflow at ${width}`).toBeLessThanOrEqual(1);
+        const card = await page.locator(".cv-card").evaluate((e) => e.getBoundingClientRect().right);
+        const vals = await page.locator(".cv-val").evaluateAll((els) => els.map((e) => ({ r: e.getBoundingClientRect().right, over: e.scrollWidth > e.clientWidth + 1 })));
+        for (const v of vals) {
+          expect(v.r, `value inside the card at ${width}`).toBeLessThanOrEqual(card);
+          expect(v.over, `words not cut at ${width}`).toBe(false);
+        }
+        const widths = await page.locator(".cv-bar").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
+        if (by_regime.length === 3 && by_regime[0].median === 0.03) expect(Math.abs(widths[0] - widths[1]), `±3% at ${width}`).toBeLessThanOrEqual(1);
+      }
+      await page.setViewportSize({ width: 1440, height: 960 });
+    }
   });
 
   test("reduced motion: nothing on the Desk animates", async ({ page }) => {

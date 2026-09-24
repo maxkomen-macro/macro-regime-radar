@@ -339,6 +339,15 @@
 .dk-btn:hover {
   border-color: var(--dk-t4);
 }
+/* The client view keeps the sidebar (the only navigation) but not the desk's
+   internals: the TODAY and HOUSE DISCIPLINE cards (the PNG: "internals hidden"). */
+.dk[data-client] .dk-side-foot {
+  display: none;
+}
+/* The client view's Export one-pager: the dark button, bold (screens/12-client-view.png). */
+.dk-btn[data-strong] {
+  font-weight: 600;
+}
 .dk-btn[data-kind="light"] {
   background: var(--dk-t1);
   border-color: var(--dk-t1);

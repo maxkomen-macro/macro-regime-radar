@@ -97,7 +97,14 @@ export default function DeskTopBar({
       </div>
       <div className="dk-top-r">
         {right ?? (page.toggle === false ? null : <ViewToggle view={view} onChange={onChangeView} />)}
-        <Action page={page} pathTo={pathTo} />
+        {/* In the client view the tab's own action gives way to the one-pager (§11, the PNG). */}
+        {view === "client" && page.toggle !== false ? (
+          <button type="button" className="dk-btn" data-strong data-print-hide onClick={() => window.print()}>
+            Export one-pager (PDF)
+          </button>
+        ) : (
+          <Action page={page} pathTo={pathTo} />
+        )}
       </div>
     </header>
   );

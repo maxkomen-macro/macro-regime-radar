@@ -32,6 +32,7 @@ const LedgerPage = lazy(() => import("./ledger/LedgerPage"));
 const PositionMonitorPage = lazy(() => import("./positions/PositionMonitorPage"));
 const PipelinePage = lazy(() => import("./pipeline/PipelinePage"));
 const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
+const ClientView = lazy(() => import("./client/ClientView"));
 
 function PageLoading({ label }: { label: string }) {
   return (
@@ -48,17 +49,6 @@ function NotBuilt({ page }: { page: DeskPage }) {
       <PageTitle page={page} />
       <p className="dk-await" role="status">
         This tab is being rebuilt for Desk v2.
-      </p>
-    </>
-  );
-}
-
-function ClientPending({ page }: { page: DeskPage }) {
-  return (
-    <>
-      <PageTitle page={page} />
-      <p className="dk-await" role="status">
-        The client view is being rebuilt for Desk v2. Switch back to Desk to read this tab.
       </p>
     </>
   );
@@ -87,7 +77,7 @@ export default function DeskShell() {
 
   const client = view === "client" && page.toggle !== false;
   let body;
-  if (client) body = <ClientPending page={page} />;
+  if (client) body = <ClientView page={page} />;
   else if (page.slug === "overview") body = <OverviewPage page={page} />;
   else if (page.slug === "technicals") body = <TechnicalsPage page={page} />;
   else if (page.slug === "event-study") body = <EventStudyPage page={page} />;
@@ -101,7 +91,7 @@ export default function DeskShell() {
   else body = <NotBuilt page={page} />;
 
   return (
-    <div className="dk" data-view={view} data-menu={menu ? "open" : undefined} data-tour={tour ?? undefined} data-testid="desk-shell">
+    <div className="dk" data-view={view} data-client={client || undefined} data-menu={menu ? "open" : undefined} data-tour={tour ?? undefined} data-testid="desk-shell">
       <a href="#main-content" className="mrr-skip">
         Skip to content
       </a>
