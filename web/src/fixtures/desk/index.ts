@@ -14,6 +14,8 @@ import engineStudies from "../../screens/desk/event-study/__fixtures__/engine-st
 import ledger from "./ledger.json" with { type: "json" };
 import macro from "./macro.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
+import pipeline from "./pipeline.json" with { type: "json" };
+import { PIPELINE_DDL } from "./pipeline-ddl";
 import positions from "./positions.json" with { type: "json" };
 import regime from "./regime.json" with { type: "json" };
 import sectors from "./sectors.json" with { type: "json" };
@@ -37,6 +39,7 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
   "/sectors": sectors,
   "/regime": regime,
   "/macro": macro,
+  "/pipeline": pipeline,
 };
 
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
@@ -146,5 +149,7 @@ export function deskFixture(method: string, url: string, _body?: string, accept?
     const answer = slug === "gold-2sigma-spx-weak" ? engineStudies.preset : slug === "spx-golden-cross" ? engineStudies.cross : null;
     return answer ? json(200, answer) : json(404, { error: "no fixture for this engine study" });
   }
+  // §12.11: the Snowflake DDL, as text.
+  if (method.toUpperCase() === "GET" && path === "/pipeline/ddl") return { status: 200, contentType: "text/plain", body: PIPELINE_DDL };
   return json(404, { error: `no fixture for ${method.toUpperCase()} /api/desk${path}` });
 }

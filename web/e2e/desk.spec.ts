@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor"];
+const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -217,6 +217,44 @@ test.describe("desk v2", () => {
       expect(cramped.chips).toBe(0);
       expect(cramped.own).toBeGreaterThan(120);
     }
+  });
+
+  test("data pipeline: the badge, a search that opens its group, the group's own scroll; no sideways scroll at 390", async ({ page }) => {
+    await open(page, "/desk/data-pipeline");
+    await expect(page.getByTestId("pl-badge")).toContainText("validation passed");
+    await page.getByLabel("Find a series").fill("DGS10");
+    const rates = page.getByRole("region", { name: "Rates series" });
+    await expect(rates).toBeVisible();
+    await expect(rates.locator("tr[data-hit]")).toContainText("DGS10");
+    expect(await auditPalette(page)).toEqual([]);
+    expect(await bannedWordsOnPage(page)).toEqual([]);
+    // At every width the served text stays in view: each open table fits its region, no group
+    // line is cut, and the breadcrumb is whole (R2-1 to R2-3).
+    for (const width of [1440, 1280, 1101, 900, 760, 601]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const name of ["Rates", "Equities & vol", "FX & commodities"]) {
+        const head = page.getByRole("button", { name: new RegExp(`^${name.replace(/[&]/g, "\\$&")}`) });
+        if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+        await settle(page, 120);
+        const fits = await page.locator(".pl-rows").evaluate((e) => e.scrollWidth <= e.clientWidth + 1);
+        expect(fits, `${name} at ${width}`).toBe(true);
+      }
+      const cut = await page.locator(".pl-group-meta").evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
+      expect(cut, `group lines at ${width}`).toBe(0);
+      expect(await page.locator(".dk-crumb").evaluate((e) => e.scrollWidth <= e.clientWidth + 1), `breadcrumb at ${width}`).toBe(true);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
+    // A six-series group scrolls inside itself; the page does not grow.
+    await page.getByRole("button", { name: /^Equities & vol/ }).click();
+    const eq = page.getByRole("region", { name: "Equities & vol series" });
+    expect(await eq.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await settle(page, 250);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    // On a phone the group's line wraps under its name and the badge moves under the title.
+    await expect(page.locator(".pl-group-meta").first()).toBeVisible();
+    await expect(page.getByTestId("pl-badge-inline")).toBeVisible();
+    expect(await page.locator(".dk-crumb").evaluate((e) => e.scrollWidth <= e.clientWidth + 1)).toBe(true);
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

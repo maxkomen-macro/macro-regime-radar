@@ -1,9 +1,8 @@
 /**
- * Desk data hooks (desk/frame, docs/desk/DESK_FRAME_SPEC.md). Two contracts:
+ * Desk data hooks (desk/frame, docs/desk/DESK_FRAME_SPEC.md). Since frame-3
+ * the pipeline inventory is Desk v2's `/api/desk/pipeline` (screens/desk/data);
+ * this file keeps the engine's contract:
  *
- * - `/api/desk/pipeline/inventory` (§7, this branch): the freshness report's
- *   series[] joined with each source's provider and readers. Same states as
- *   /api/freshness, so a Data Pipeline row and a status badge never disagree.
  * - `/api/desk/event-study` and `/api/desk/event-study/assets` (the engine,
  *   docs/desk/EVENT_STUDY_REPORT.md §5). The engine's real payloads
  *   (Engine* below) are adapted to the page's types here, in one place.
@@ -18,41 +17,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ApiError, getJson } from "./client";
-import type { SeriesState } from "./types";
 
 const MINUTE = 60_000;
-
-/* ── Pipeline inventory ──────────────────────────────────────────────────── */
-
-export interface InventoryRow extends SeriesState {
-  /** The provider in reader words: "FRED", "yfinance (stored daily bars)", "EODHD relay". */
-  source: string;
-  /** The provider's own id for the series (FRED ids), else null. */
-  source_id: string | null;
-  /** The modules that read it, in reader words. */
-  feeds: string[];
-}
-
-export interface PipelineInventory {
-  generated_at: string | null;
-  overall: "current" | "delayed" | "stale" | "unavailable" | null;
-  regimes_date: string | null;
-  signals_date: string | null;
-  market_daily_date: string | null;
-  market_intraday_ts: string | null;
-  news_published_at: string | null;
-  raw_series_date: string | null;
-  series: InventoryRow[];
-}
-
-export function useDeskInventory() {
-  return useQuery({
-    queryKey: ["desk", "pipeline", "inventory"],
-    queryFn: () => getJson<PipelineInventory>("/api/desk/pipeline/inventory"),
-    staleTime: 30_000,
-    refetchInterval: MINUTE,
-  });
-}
 
 /* ── Event study: the page's types ───────────────────────────────────────── */
 

@@ -100,6 +100,38 @@ export interface PositionsResponse extends Envelope {
   closed_90d: { falsified: number; expired: number; premortem_right: [number, number] };
 }
 
+// ── §12.11 /pipeline ──────────────────────────────────────────────────────
+
+export interface PipelineSeries {
+  label: string;
+  id: string;
+  /** First month stored ("2023-09"). */
+  from: string;
+  /** Newest observation: a day for a daily series, a month for a monthly one. */
+  as_of: string;
+  feeds: string[];
+  status: string;
+  note: string | null;
+}
+
+export interface PipelineGroup {
+  name: string;
+  source: string;
+  freq: string;
+  status: string;
+  /** PROPOSED (§12.13): the group's state in words ("all current", "Aug print in"). */
+  status_text?: string;
+  /** PROPOSED (§12.13): the group's note ("HY OAS history from 2023"). */
+  note?: string | null;
+  series: PipelineSeries[];
+}
+
+export interface PipelineResponse extends Envelope {
+  last_refresh_utc: string;
+  validation: string;
+  groups: PipelineGroup[];
+}
+
 // ── §12.1 /overview ───────────────────────────────────────────────────────
 
 export interface SinceLastClose {

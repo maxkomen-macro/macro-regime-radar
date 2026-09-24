@@ -9,7 +9,7 @@
  */
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
+import type { DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -107,6 +107,9 @@ export function useStudy(params: Params, opts: { enabled?: boolean } = {}) {
 
 /** §12.8: the open positions and the last 90 days' closed ones. */
 export const usePositions = () => useDesk<PositionsResponse>("/positions");
+
+/** §12.11: the series inventory, grouped, from the pipeline config. */
+export const usePipeline = () => useDesk<PipelineResponse>("/pipeline");
 
 /** §12.3: the events behind a study (the Advanced panel). */
 export const useStudyEvents = (params: Params) => useDesk<StudyEventsResponse>("/study/events", params);

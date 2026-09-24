@@ -1152,3 +1152,18 @@
   background: var(--dk-rel-bg);
   color: var(--dk-green);
 }
+
+/* Below the shell's menu width Data Pipeline's badge moves under the title (its page renders
+   the copy): the top bar keeps the breadcrumb. Here, not in the page's sheet, so it holds before
+   the page's chunk lands (R2-2, R2-5). */
+@media (max-width: 900px) {
+  .dk .dk-top .pl-badge {
+    display: none;
+  }
+}
+/* Data Pipeline's top-bar badge when the last refresh did not validate (§11). */
+.pl-badge[data-tone="amber"] {
+  border-color: var(--dk-sug-bd);
+  background: var(--dk-sug-bg);
+  color: var(--dk-amber);
+}

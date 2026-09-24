@@ -25,7 +25,8 @@ import AnswerCard from "./AnswerCard";
 import EngineDetail from "./EngineDetail";
 import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
-import { WINDOWS, apiParams, askFromSearch, askParams, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, withSaved, writeSaved, type Ask, type SavedQuestion } from "./question";
+import { WINDOWS, apiParams, askFromSearch, askParams, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, withSaved, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
+import { saveServed } from "../kit/download";
 import "./study.css";
 
 /** The provenance line under the grid (§4). */
@@ -80,6 +81,8 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   }, [key]);
   useEffect(() => {
     if (served && !dirty) setDraft(served);
+    // The study this browser last saw answered is Data Pipeline's "current study".
+    if (served) writeLastStudy(key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servedKey]);
 
@@ -127,14 +130,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     setExportNote("");
     try {
       const params = Object.fromEntries(Object.entries(apiParams(ask)).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
-      const res = await fetch(deskUrl("/study/events", params), { headers: { Accept: "text/csv" } });
-      if (!res.ok) throw new Error(String(res.status));
-      const blob = new Blob([await res.text()], { type: "text/csv" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${study?.slug ?? "event-study"}-events.csv`;
-      a.click();
-      window.setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      await saveServed(deskUrl("/study/events", params), "text/csv", `${study?.slug ?? "event-study"}-events.csv`);
     } catch {
       setExportNote("The event list did not answer; nothing was downloaded.");
     } finally {

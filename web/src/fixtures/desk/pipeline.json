@@ -1,0 +1,361 @@
+{
+ "as_of": "2026-09-22",
+ "generation_id": "gen-fixture-2026-09-22",
+ "last_refresh_utc": "2026-09-22T00:23:00Z",
+ "validation": "passed",
+ "groups": [
+  {
+   "name": "Rates",
+   "source": "FRED",
+   "freq": "daily",
+   "status": "current",
+   "status_text": "all current",
+   "note": null,
+   "series": [
+    {
+     "label": "3-month Treasury",
+     "id": "DGS3MO",
+     "from": "1990-01",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "2-year Treasury",
+     "id": "DGS2",
+     "from": "1990-01",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Macro",
+      "Regime",
+      "Ledger"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "5-year Treasury",
+     "id": "DGS5",
+     "from": "1990-01",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "10-year Treasury",
+     "id": "DGS10",
+     "from": "1990-01",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Macro",
+      "Regime",
+      "Event Study",
+      "Ledger"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "30-year Treasury",
+     "id": "DGS30",
+     "from": "1990-01",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": null
+    }
+   ]
+  },
+  {
+   "name": "Credit",
+   "source": "FRED",
+   "freq": "daily",
+   "status": "current",
+   "status_text": "all current",
+   "note": "HY OAS history from 2023",
+   "series": [
+    {
+     "label": "High-yield OAS",
+     "id": "BAMLH0A0HYM2",
+     "from": "2023-09",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Event Study",
+      "Ledger"
+     ],
+     "status": "current",
+     "note": "from 2023"
+    },
+    {
+     "label": "Investment-grade OAS",
+     "id": "BAMLC0A0CM",
+     "from": "1996-12",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "BB OAS",
+     "id": "BAMLH0A1HYBB",
+     "from": "1996-12",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Single-B OAS",
+     "id": "BAMLH0A2HYB",
+     "from": "1996-12",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "CCC OAS",
+     "id": "BAMLH0A3HYC",
+     "from": "1996-12",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    }
+   ]
+  },
+  {
+   "name": "Equities & vol",
+   "source": "Yahoo / FRED",
+   "freq": "daily",
+   "status": "current",
+   "status_text": "all current",
+   "note": null,
+   "series": [
+    {
+     "label": "S&P 500",
+     "id": "^GSPC",
+     "from": "1990-01",
+     "as_of": "2026-09-22",
+     "feeds": [
+      "Overview",
+      "Technicals",
+      "Event Study",
+      "Ledger",
+      "Regime",
+      "Macro",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Nasdaq 100",
+     "id": "^NDX",
+     "from": "1990-01",
+     "as_of": "2026-09-22",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Russell 2000",
+     "id": "^RUT",
+     "from": "1990-01",
+     "as_of": "2026-09-22",
+     "feeds": [
+      "Sectors"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "S&P 500 equal weight",
+     "id": "RSP",
+     "from": "2003-05",
+     "as_of": "2026-09-22",
+     "feeds": [
+      "Sectors"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "VIX",
+     "id": "VIXCLS",
+     "from": "1990-01",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Overview",
+      "Technicals",
+      "Ledger"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "VIX 3-month",
+     "id": "VXVCLS",
+     "from": "2007-12",
+     "as_of": "2026-09-21",
+     "feeds": [
+      "Technicals"
+     ],
+     "status": "current",
+     "note": null
+    }
+   ]
+  },
+  {
+   "name": "FX & commodities",
+   "source": "Yahoo / FRED",
+   "freq": "daily",
+   "status": "current",
+   "status_text": "all current",
+   "note": "WTI published weekly",
+   "series": [
+    {
+     "label": "Dollar index",
+     "id": "DX-Y.NYB",
+     "from": "1990-01",
+     "as_of": "2026-09-22",
+     "feeds": [
+      "Macro",
+      "Ledger"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Dollar–yen",
+     "id": "DEXJPUS",
+     "from": "1990-01",
+     "as_of": "2026-09-18",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Gold",
+     "id": "GC=F",
+     "from": "2000-08",
+     "as_of": "2026-09-22",
+     "feeds": [
+      "Event Study",
+      "Macro"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "WTI crude",
+     "id": "WCOILWTICO",
+     "from": "1990-01",
+     "as_of": "2026-09-18",
+     "feeds": [
+      "Macro",
+      "Ledger"
+     ],
+     "status": "current",
+     "note": "published weekly"
+    }
+   ]
+  },
+  {
+   "name": "Macro (monthly)",
+   "source": "FRED",
+   "freq": "monthly",
+   "status": "current",
+   "status_text": "Aug print in",
+   "note": null,
+   "series": [
+    {
+     "label": "CPI",
+     "id": "CPIAUCSL",
+     "from": "1990-01",
+     "as_of": "2026-08",
+     "feeds": [
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Industrial production",
+     "id": "INDPRO",
+     "from": "1990-01",
+     "as_of": "2026-08",
+     "feeds": [
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Unemployment rate",
+     "id": "UNRATE",
+     "from": "1990-01",
+     "as_of": "2026-08",
+     "feeds": [
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Payrolls",
+     "id": "PAYEMS",
+     "from": "1990-01",
+     "as_of": "2026-08",
+     "feeds": [
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Retail sales",
+     "id": "RSAFS",
+     "from": "1992-01",
+     "as_of": "2026-08",
+     "feeds": [
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "Fed funds rate",
+     "id": "FEDFUNDS",
+     "from": "1990-01",
+     "as_of": "2026-08",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": null
+    }
+   ]
+  }
+ ]
+}

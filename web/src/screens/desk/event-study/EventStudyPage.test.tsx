@@ -13,11 +13,11 @@ import { QueryClient } from "@tanstack/react-query";
 import DeskShell from "../DeskShell";
 import study from "../../../fixtures/desk/study.json";
 import { renderWithProviders } from "../../../test/utils";
-import { stubDesk } from "../../../test/desk";
+import { deskError, stubDesk } from "../../../test/desk";
 import type { Question } from "../data/types";
 import { applyFix, provenanceLine } from "./EventStudyPage";
 import { barTicks, horizonPhrase, servedWords } from "./AnswerCard";
-import { SAVED_KEY, askFromSearch, engineSlugFor, exportSaved, importSaved, questionFromEngine, searchFor, withSaved } from "./question";
+import { LAST_STUDY_KEY, SAVED_KEY, askFromSearch, engineSlugFor, exportSaved, importSaved, questionFromEngine, searchFor, withSaved } from "./question";
 
 const GOLD: Question = { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 };
 
@@ -203,6 +203,18 @@ describe("Event Study tab", () => {
     expect(await screen.findByText(/which the six slots cannot ask; this is the default question instead/)).toBeInTheDocument();
   });
 
+  it("keeps the last study it answered for Data Pipeline's export, never one that failed", async () => {
+    renderTab("/desk/event-study?preset=gold-2sigma-spx-weak");
+    await waitFor(() => expect(localStorage.getItem(LAST_STUDY_KEY)).toBe("preset=gold-2sigma-spx-weak"));
+    localStorage.removeItem(LAST_STUDY_KEY);
+  });
+  it("a question that fails is not kept as the last study", async () => {
+    localStorage.removeItem(LAST_STUDY_KEY);
+    stubDesk({ "/api/desk/study": deskError(503, "warming") });
+    renderTab("/desk/event-study?preset=spx-golden-cross");
+    await waitFor(() => expect(screen.getAllByText(/Awaiting refresh/).length).toBeGreaterThan(0));
+    expect(localStorage.getItem(LAST_STUDY_KEY)).toBeNull();
+  });
   it("without the served series list the two series slots are held and say so", async () => {
     const { series: _s, ...rest } = study;
     void _s;

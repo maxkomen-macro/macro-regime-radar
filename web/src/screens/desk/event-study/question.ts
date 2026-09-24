@@ -171,6 +171,27 @@ export interface SavedQuestion {
   saved_at: string;
 }
 
+/** The last question Event Study answered in this browser (Data Pipeline's "current study"). */
+export const LAST_STUDY_KEY = "mrr.desk.last-study.v1";
+
+/** The last study's query string, or null when none is kept (or storage is off). */
+export function readLastStudy(storage: Pick<Storage, "getItem"> | null = safeStorage()): string | null {
+  try {
+    const v = storage?.getItem(LAST_STUDY_KEY);
+    return typeof v === "string" && v ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeLastStudy(search: string, storage: Pick<Storage, "setItem"> | null = safeStorage()): void {
+  try {
+    storage?.setItem(LAST_STUDY_KEY, search);
+  } catch {
+    // A private window or blocked storage: the export falls back to the default study.
+  }
+}
+
 export const SAVED_KEY = "mrr.desk.saved-questions.v1";
 
 function isQuestion(v: unknown): v is Question {

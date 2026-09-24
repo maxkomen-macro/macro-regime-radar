@@ -882,7 +882,26 @@ building it; the web side follows whatever this section ends up saying.
   bar empty; the footer's deployed share is printed only when every row has
   a size.
 
+**Data Pipeline (§11)**
+- **PROPOSED** `pipeline.groups[].status_text` (the group's state in words:
+  "all current", "Aug print in") and `pipeline.groups[].note` ("HY OAS
+  history from 2023", "WTI published weekly"): each group's summary line.
+  §12.11 carries `status` and the series only.
+- `pipeline` also carries `as_of` and `generation_id` (§12's header).
+- `GET /pipeline/ddl` answers `text/plain`: the CREATE statements for the
+  RAW, CUR and MART schemas the bridge card draws; the page saves it as
+  `macro-regime-radar-desk.sql`. The card's schema block is §11's board
+  copy, fixed in the page.
+- "Export current study → CSV" asks §12.3's `/study/events` (CSV) for the
+  last study Event Study answered in this browser (kept in local storage),
+  else the gold preset.
+
 Notes for B (not new fields):
+- §11 fixes the inventory at 26 series in five groups, but Desk also reads
+  series that are not among them: the eleven sector ETFs, RSP's partner IWM
+  (Sectors), and T10YIE / T5YIE (the recession model's breakeven input).
+  "Every panel in Desk resolves to a row here" holds once they are listed;
+  the fixture keeps §11's counts.
 - The mockup's 2s10s steepening row is "No edge" with −1.9 points against a
   normal month, the widest gap on the Ledger; §1.5 defines No edge as "about
   the same as any month". The verdict is the engine's and the fixture keeps

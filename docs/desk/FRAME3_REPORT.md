@@ -963,6 +963,107 @@ regression. Nits, all **fixed**: the select and the typed level stack up to
 are sizes; the R2-1 test's name says what it asserts and checks that
 switching back brings nothing back.
 
+### 9. Data Pipeline — `frame-3: data-pipeline`
+
+Built: the Data Pipeline on `/data-pipeline` (§11, §12.11), no Client
+toggle; the top bar carries `● Last full refresh Sep 22, 00:23 UTC ·
+validation passed` from `/pipeline` (amber when validation did not pass).
+The title "Where every number comes from" with its line; the lineage strip
+(§11's six steps, fixed copy, the last one green); the **series inventory**
+read from `/pipeline`: 26 series in five groups, each a button that opens
+its table (SERIES / ID / FROM / AS OF / FEEDS / STATUS) in a region that
+scrolls inside the group, `?group=` opening one from a link, and a search
+that jumps to a series by name, id or note and opens its group (or says
+nothing matches); the **Snowflake bridge**: the board's three-layer schema,
+its note, "Export current study → CSV" (§12.3's events for the last study
+Event Study answered in this browser, else the gold preset) and "Generate
+Snowflake DDL" (`/pipeline/ddl`, saved as a .sql file). Frame-2's pipeline
+page (its lineage, inventory grouping and schema parser), the status badge
+and its sources, the page head and the frame-2 UI helpers retire with this
+commit. Fixtures: `pipeline.json` (§12.11 plus the PROPOSED group fields;
+26 series) and `pipeline-ddl.ts` (the DDL text).
+
+Compare: `docs/desk/screens/compare/10-data-pipeline.png` (build alone:
+`10-data-pipeline.build.png`), shot with Credit open as the PNG has it.
+Matched on the second pass: the first set the title at the kit's size on
+one line with its subtitle and cut the table's STATUS column; now the
+title is the PNG's 36 px over its line and the table fits. Deviations:
+- **The schema block quotes the board, "never" included** ("never edited",
+  "never patched"): the frame-2 ban list flags "never", and the Desk's
+  language test and browser scan allow exactly those two lines (anchored),
+  in the block marked as board copy, and nothing else in it.
+- **No group is open by default;** the PNG shows Credit open. A link opens
+  one (`?group=credit`), as a search does.
+- **The "current study"** is the last one Event Study answered in this
+  browser (§11 does not say which); a six-slot study saves as
+  `event-study-events.csv` (the page asks only for the events, whose CSV
+  carries no slug), and the events do not depend on the confidence.
+- **Geometry the PNG draws differently:** its top bar is 55 px against the
+  shell's 47.5 (so content starts 16 px higher here), its gutter is 217 px
+  against 211, the inventory and bridge cards run 14 and 22 px shorter, and
+  "Series inventory" wraps onto two lines there.
+- **Below the shell's 900 px menu width the badge sits under the title**
+  (the top bar keeps the breadcrumb); a group's line wraps under its name
+  when it does not fit beside it; below 1250 px the bridge sits under the
+  inventory; on a phone a table scrolls inside its group.
+- **The feeds use the tabs' short names,** "Ledger" and "Macro" as the PNG
+  writes them, for Signal Ledger and Macro & Correlations.
+
+PROPOSED (spec §12.13): `groups[].status_text`, `groups[].note`; notes on the
+envelope, the DDL answer and the export's study, and a note for B on the
+series Desk reads that §11's 26 leave out.
+
+Verifier, round 1: **PASS WITH FINDINGS**, nothing blocking (the schema
+block matches the PNG line for line; every committed compare shot
+pixel-identical). Dispositions:
+- D-1 a group without `status_text` showed no state: **fixed**, the served
+  `status` prints; tested.
+- D-2 a missing refresh time hid a failed validation: **fixed**, the badge
+  reads "Last full refresh — · validation failed" in amber; tested.
+- D-3 on a phone the group lines vanished and the badge squeezed the
+  breadcrumb: **fixed** (recorded above); the browser test checks both.
+- D-4 the column headers sat 5 px right of their cells: **fixed** (the
+  padding rules' order).
+- D-5 the sticky header covered the rows region's ring: **fixed**, the ring
+  sits outside the region.
+- D-6 the downloads could hang or save a JSON answer as .csv: **fixed** with
+  one kit helper (`kit/download.ts`: 15 s at most, the type checked) that
+  Event Study's Export uses too; tested.
+- D-7 geometry and details: the caret is the PNG's size and green when open,
+  no separator before the status dot, the search box shows its whole
+  placeholder; the rest is recorded above.
+- D-8 an empty group says "No series in this group yet."; no groups shows no
+  count; tested.
+- D-9 the search hit is marked with the row color and a blue edge.
+- D-10 a group shows its header and five whole rows before it scrolls.
+- D-11 the board-line allowance is anchored, in the unit scan and the
+  browser scan (which now strips only those two lines).
+- D-12 the frame-2 inventory hook and types in `src/api/desk.ts` are gone,
+  and the badge's amber rule lives once, in the kit.
+- D-13 the fixture's feeds name their real readers (the short names are
+  recorded above); the series §11 leaves out are a note for B in §12.13.
+- D-14 tests added (Data Pipeline now 13 unit tests; the browser test checks
+  the group's own scroll, the phone layout and the breadcrumb).
+
+Verifier, round 2: **PASS WITH FINDINGS**, nothing blocking; D-1 to D-14
+confirmed. Dispositions:
+- R2-1 (a regression from D-13's longer feed lists) three tables were wider
+  than their groups at 1440, STATUS out of view: **fixed**, the feeds use
+  the PNG's short names and a long reader list, a status with its note or
+  a long series name wraps inside its cell; the browser test checks every
+  open table at 1440, 1280, 1101, 900, 760 and 601.
+- R2-2 the breadcrumb was cut between 601 and about 750 px: **fixed**, the
+  badge moves under the title below the shell's 900 px menu width; checked
+  at the same widths.
+- R2-3 served group notes were cut with an ellipsis: **fixed**, a group's
+  line wraps under its name when it does not fit; checked.
+- R2-4 the caret was about 70% of the PNG's: **fixed** (14 px).
+- R2-5 the rule that hides the top-bar badge lives in `desk2.css` now, so it
+  holds before the page's chunk loads.
+- R2-6 tests added: Event Study keeps the last study it answered and never
+  one that failed; the download's type check and its 15 s limit
+  (`kit/download.test.ts`).
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -979,3 +1080,4 @@ tests against the fixture dev server.
 | frame-3: sectors | clean | 110 / 1,230 | ok | 21 / 21 |
 | frame-3: signal-ledger | clean | 111 / 1,244 | ok | 23 / 23 |
 | frame-3: position-monitor | clean | 110 / 1,253 | ok | 25 / 25 |
+| frame-3: data-pipeline | clean | 109 / 1,259 | ok | 27 / 27 |

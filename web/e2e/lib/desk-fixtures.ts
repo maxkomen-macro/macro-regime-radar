@@ -78,10 +78,19 @@ export async function auditPalette(page: Page): Promise<ColorOffender[]> {
 
 /** Frame-3's two words (§1.5) and frame-2's ban list, over the rendered text. */
 export async function bannedWordsOnPage(page: Page): Promise<string[]> {
-  // The gate's own list of the words it blocks (§9) is the one place they are printed.
+  // The gate's own list of the words it blocks (§9) is the one place they are printed; the
+  // Snowflake bridge's schema quotes the board (§11): its two lines "-- RAW: … never edited"
+  // and "-- MART: … never patched." are left out, and nothing else in the block.
   const text = await page.evaluate(() => {
     const root = document.querySelector(".dk")?.cloneNode(true) as HTMLElement | undefined;
     root?.querySelectorAll("[data-gate-words], textarea, input").forEach((n) => n.remove());
+    const board = [/^-- RAW: exact copy of source, never edited$/, /^-- MART: what Desk reads\. Rebuilt, never patched\.$/];
+    root?.querySelectorAll("[data-board-copy]").forEach((n) => {
+      n.textContent = (n.textContent ?? "")
+        .split("\n")
+        .filter((l) => !board.some((r) => r.test(l.trim())))
+        .join("\n");
+    });
     return root?.textContent ?? "";
   });
   return [...text.matchAll(/\b(established|significant|will|predicts|proves|guaranteed|always|never|obviously)\b/gi)].map((m) => m[0]);

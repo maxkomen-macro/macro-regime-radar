@@ -14,6 +14,7 @@ import { Navigate, useLocation, useParams } from "react-router-dom";
 import ErrorBoundary from "../shared/ErrorBoundary";
 import DeskSidebar from "./DeskSidebar";
 import DeskTopBar, { PageTitle } from "./DeskTopBar";
+import { PipelineBadge } from "./pipeline/badge";
 import { DESK_ALIASES, DESK_HOME, deskPageBySlug, type DeskPage } from "./desk-sections";
 import { useDeskView, withView } from "./desk-view";
 import TourStrip from "./tour/TourStrip";
@@ -29,6 +30,7 @@ const MacroPage = lazy(() => import("./macro/MacroPage"));
 const SectorsPage = lazy(() => import("./sectors/SectorsPage"));
 const LedgerPage = lazy(() => import("./ledger/LedgerPage"));
 const PositionMonitorPage = lazy(() => import("./positions/PositionMonitorPage"));
+const PipelinePage = lazy(() => import("./pipeline/PipelinePage"));
 
 function PageLoading({ label }: { label: string }) {
   return (
@@ -93,6 +95,7 @@ export default function DeskShell() {
   else if (page.slug === "sectors") body = <SectorsPage page={page} />;
   else if (page.slug === "signal-ledger") body = <LedgerPage page={page} />;
   else if (page.slug === "position-monitor") body = <PositionMonitorPage page={page} />;
+  else if (page.slug === "data-pipeline") body = <PipelinePage page={page} />;
   else body = <NotBuilt page={page} />;
 
   return (
@@ -102,7 +105,7 @@ export default function DeskShell() {
       </a>
       <DeskSidebar activeSlug={page.slug} pathTo={pathTo} onNavigate={() => setMenu(false)} />
       <div className="dk-main">
-        <DeskTopBar page={page} view={view} onChangeView={setView} pathTo={pathTo} onMenu={() => setMenu((m) => !m)} menuOpen={menu} />
+        <DeskTopBar page={page} view={view} onChangeView={setView} pathTo={pathTo} onMenu={() => setMenu((m) => !m)} menuOpen={menu} right={page.slug === "data-pipeline" ? <PipelineBadge /> : undefined} />
         <main id="main-content" className="dk-page" tabIndex={-1} style={{ outline: "none" }} data-slug={page.slug}>
           <ErrorBoundary key={page.slug} label="This Desk tab">
             <Suspense fallback={<PageLoading label={page.label} />}>{body}</Suspense>
