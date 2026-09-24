@@ -159,3 +159,132 @@ V-10 confirmed fixed (colors sampled from the new shot). Its three nits:
 
 Gates at commit: typecheck clean; unit 105 files, 1,156 tests; build ok;
 Desk browser tests 10 of 10.
+
+### 2. Technicals — `frame-3: technicals`
+
+Built: the Technicals tab on `/technicals`, `/vol`, `/sectors` and the
+Ledger's S&P group: the vol column (three readings, the skew gauge, the
+source line), the price card with its 6M / 1Y / 3Y range and the cross
+callout, the Signals card with the in-regime note, seven sector bars (all
+eleven under Advanced), the RSI card with its gauge and two matched notes.
+New kit pieces: an SVG line chart (`kit/LineChart.tsx`), a band gauge
+(`kit/Gauge.tsx`), ranked bars (`kit/RankBars.tsx`) and an Advanced panel
+that says in one sentence what the API does not serve yet, so an expander
+never opens onto nothing. Fixtures: `vol.json`, `sectors.json`, and
+`technicals.json` regenerated (verifier V-6 from the Overview): the price
+path now runs on NYSE sessions (exchange_calendars XNYS) and the 50/200-day
+crossings fall exactly on 2025-04-14 (death) and 2025-07-01 (golden), with
+the end values exact (6,412 · 6,280 · 5,910, +14.2% on the year, +0.4% on
+the day). The path is shaped for the chart; the served statistics
+(`move_20d_sigma`, RSI) are the fixture's scalars, not recomputed from it.
+
+Compare: `docs/desk/screens/compare/02-technicals.png` (build alone:
+`02-technicals.build.png`). Matched on the second pass (the first ran 89 px
+tall; the Signals rows and the chart height were tightened). Deviations,
+each deliberate:
+- **Six signal rows, not five.** §12.10 says the rows are `/ledger` filtered
+  to `group: "spx"`, which yields six (the S&P 20-day move is an S&P
+  signal); the PNG draws five. The rows keep the Ledger's order (firing,
+  then verdict, then served order: §12.4 names no third key).
+- **The 50-day line and its number are green** (§3 names it green); the PNG
+  draws them amber.
+- **Gauge ends are amber, not red** (D12: red means down or negative only):
+  Expensive, Overbought, and "last above 70".
+- **The term-structure numbers are white**, not green: §1.3 gives green no
+  job that fits them.
+- **The skew gauge's label is §3's** ("SKEW · WHERE IT SITS"), not the PNG's
+  longer one. The RSI notes are §3's two matched boxes (above 70 / below 30
+  from the Ledger), not the PNG's "Past year" and "What it has meant" boxes,
+  which need fields §12 does not have.
+- **The y axis encloses the data in round thousands** (5,000 / 6,000 /
+  7,000, as §3 lists); with the fixture's path the line sits in the middle
+  band, where the mockup's hand-drawn line spans more of it.
+- **A white dot marks the last price** (§3); the PNG has none. The cross
+  marker shows when its date is in range (on 3Y, not on 1Y: the cross is
+  Jul 2025, the 1Y view starts Sep 2025), where the mockup drew a crossing
+  inside the 1Y window that its own dates contradict.
+- **Bars are drawn as the PNGs draw them:** from the left, length ranked on
+  the served value (lowest 22%, highest 78% of the track), color by §3's
+  ±1% rule; the printed number carries the value.
+
+PROPOSED (spec §12.13): the shared `reads` shape; `vs_ma50`/`vs_ma200`,
+`rsi_direction`, `cross.in_regime`; `vol.skew_band_edges`, `vol.reads`;
+`sectors.leadership[].short`, `sectors.reads`, the small-vs-large point
+shape.
+
+Verifier, round 1: **FAIL** (one blocking finding). Dispositions:
+- T-1 (blocking) the `Advanced ▸` links rendered gray: the `.dk button`
+  reset out-ranked `.dk-link`, the V-1 class of bug again. **Fixed** for the
+  whole kit: the button reset has zero specificity (`:where`), links keep a
+  scoped reset, `.dk .dk-link` wins both; the browser test checks the color.
+- T-2 "Awaiting refresh" while loading: **fixed**, each card is quiet while
+  its first answer is on its way and says "Awaiting refresh" only on an
+  error or a missing block (D14).
+- T-3 null or absent values (a §12.9 `/vol` without the PROPOSED reads, a
+  null `cross`, `rsi_last_*`, `vs_ma*`, `up_pct`, `ma200`): **fixed**, each is
+  guarded and its phrase left out; the chart's extent ignores non-finite
+  points.
+- T-4 "Apr 8, 2025" ran past its column: **fixed**, date stats print at 24 px.
+- T-5 "+0.4% today" beside the sidebar's "S&P Sep 22": **fixed**, D13 applies
+  ("+0.4% on Sep 22" until the session is New York's today).
+- T-6 judgments in the browser: "no extreme move" and the RSI word now come
+  from the Ledger's own signals (`spx-20d-2sigma`, `rsi-above-70`,
+  `rsi-below-30`, `firing_now`); "too few to trust" is §1.5's 10-episode
+  floor; the skew reading is amber when puts cost more than calls (a sign
+  rule: demand for protection is §1.3's caution). Recorded.
+- T-7 the averages tied at the fixture's precision on both cross dates:
+  **fixed**, the crossings are decisive (≥ 0.2 point either side).
+- T-8 the drawn path against the served scalars: **mostly fixed**. The path
+  was searched (seeded) so the 20-session returns after Apr 8 2025 and Jun 12
+  2026 are within 0.1 point of the served +9.4% and +1.1%, the last month is
+  0.65σ (served 0.6σ), its RSI(14) ends at 56 (served 58) and never falls
+  under 30 after Apr 8. One residual, recorded: its own RSI(14) is above 70
+  again on Jul 9, Aug 17 to Sep 3 and Sep 14 to 16, 2026 (79.7 at the Sep 16
+  high of 6,519, four sessions before the as-of), where the served "last
+  above 70" is Jun 12. RSI is not drawn on this chart; the served number is
+  the engine's.
+- T-9 holidays in the sector series: **fixed**, 252 NYSE sessions ending
+  Sep 22. The Ledger's "S&P 5-day move over 2σ, last fired Aug 2, 2026" is a
+  Sunday; the fixture uses Friday Jul 31, 2026 (the Ledger PNG prints Aug 2).
+- T-10 layout nits: the TREND line and the RSI caption now match; the bar
+  names are the one four-letter `short` both PNGs need (this PNG spells
+  "Indust", "Energy", "Health", "Staples"; the Sectors dots use "Ind",
+  "Enrg", "Hlth", "Stpl"), and ticker and name sit in their own columns.
+  The page is 1,067 px tall against 1,060. Recorded.
+- T-11 the gauge caption near the ends and over the 30/70 ticks: **fixed**,
+  the caption stays inside the track, a tick it would cover is left out, and
+  unsorted band edges cannot give negative widths.
+- T-12 code nits: **fixed** (death-cross marker red, the chart's label names
+  the cross, month labels never repeat, right-end labels stay inside the
+  plot, `quarterOf` and an unknown verdict are guarded, the RSI footer
+  string, one accent table, `aria-controls` only while the panel is open, the
+  skew gauge names its band).
+
+Verifier, round 2: **FAIL** on one regression the round-1 fix introduced;
+T-1, T-4, T-5, T-7, T-9, T-10, T-12 confirmed, T-6 accepted as recorded.
+- R2-1 (blocking) the link reset's `:hover` rule out-ranked the light
+  buttons' own color, so their text vanished on hover: **fixed**, the reset
+  sets no hover color; the browser test hovers "Act on this" and checks it.
+- R2-2 the back link rendered light where the PNG is gray (the `.dk a` reset
+  out-ranked `.dk-back`): **fixed**, checked at rest and on hover.
+- R2-3 the walkthrough strip's buttons took the app's weight and line
+  height: **fixed** in the Desk rule.
+- T-2 gap: a 200 answer without its block (`{"error": …}` from `/sectors`, a
+  ledger without `signals`) threw: **fixed**, the block check is a boolean,
+  and tests pin both the quiet loading state and the missing block.
+- T-3 gap: a null `n` and a missing `normal_month`: **fixed**.
+- T-8 wording: corrected above.
+- T-11 gap: the caption's clamp now uses its measured width.
+
+Gates at commit: see the gate summary at the end of this report.
+
+## Gate log
+
+Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
+`vitest run` (the whole web suite), `npm run build`, and the Desk browser
+tests against the fixture dev server.
+
+| Commit | Typecheck | Unit (files / tests) | Build | Desk browser |
+|---|---|---|---|---|
+| frame-3: overview | clean | 105 / 1,156 | ok | 10 / 10 |
+| frame-3: technicals | clean | 106 / 1,171 | ok | 13 / 13 |

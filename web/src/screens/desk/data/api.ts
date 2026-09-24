@@ -9,7 +9,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import type { DeskErrorBody, LedgerResponse, OverviewResponse, TechnicalsResponse } from "./types";
+import type { DeskErrorBody, LedgerResponse, OverviewResponse, SectorsResponse, TechnicalsResponse, VolResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -88,3 +88,5 @@ function useDesk<T>(path: string, params?: Params) {
 export const useOverview = () => useDesk<OverviewResponse>("/overview");
 export const useLedger = () => useDesk<LedgerResponse>("/ledger");
 export const useTechnicals = () => useDesk<TechnicalsResponse>("/technicals");
+export const useVol = () => useDesk<VolResponse>("/vol");
+export const useSectors = () => useDesk<SectorsResponse>("/sectors");

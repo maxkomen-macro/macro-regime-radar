@@ -56,3 +56,17 @@ describe("monitored rows", () => {
     expect(sortByRoom([{ room_pct: 0.68 }, { room_pct: 0.22 }, { room_pct: 0.52 }]).map((r) => r.room_pct)).toEqual([0.22, 0.52, 0.68]);
   });
 });
+
+import { extentTicks, niceTicks, spreadLabels } from "./LineChart";
+
+describe("chart ticks", () => {
+  it("encloses the price range in at most three round ticks (§3: 5,000 / 6,000 / 7,000)", () => {
+    expect(extentTicks(5480, 6420, 3)).toEqual([5000, 6000, 7000]);
+    expect(extentTicks(4100, 6420, 4)).toEqual([4000, 5000, 6000, 7000]);
+    expect(extentTicks(3.8, 4.62, 4)).toEqual([3.5, 4, 4.5, 5]);
+  });
+  it("keeps right-end labels 14 px apart", () => {
+    expect(spreadLabels([100, 105, 200])).toEqual([100, 114, 200]);
+    expect(niceTicks(0, 10, 4)).toEqual([0, 2.5, 5, 7.5, 10]);
+  });
+});

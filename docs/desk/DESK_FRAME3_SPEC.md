@@ -702,6 +702,43 @@ building it; the web side follows whatever this section ends up saying.
   `{"date","close","ma50","ma200"}`: §12.10 leaves the points as `[…]`. The
   sidebar's `S&P today +0.4%` reads the existing `technicals.chg_1d`.
 
+**One shape for the cards' sentences (used by every tab below)**
+- **PROPOSED** `reads: { <card>: { "label": "Read" | "Read for the desk" | null,
+  "text": string, "tone": "normal" | "warning" } }` on a response whose
+  cards print an interpretive sentence (§1.4's boxed read, or an inline
+  line). The sentences state things about live data ("the front end has come
+  down more than the long end"), so the server writes them with the numbers
+  they describe; the browser prints them and never composes a judgment.
+  `label: null` is an inline sentence; `tone: "warning"` is the amber box.
+
+**Technicals (§3)**
+- **PROPOSED** `technicals.vs_ma50`, `technicals.vs_ma200` (fractions,
+  0.021 = 2.1% above): "price is 2.1% above" under each average, and the
+  TREND stat's "above both averages". Served so the browser does not divide.
+- **PROPOSED** `technicals.rsi_direction` (`"rising"` | `"falling"` |
+  `"flat"`): the RSI stat's "neutral, rising".
+- **PROPOSED** `technicals.cross.in_regime` (`{"regime","n"}`): the note
+  "In this regime (Overheating): golden cross has fired only 9 times".
+- **PROPOSED** `vol.skew_band_edges` (`[0.25, 0.70]`): the skew percentile
+  edges between Cheap | Typical | Expensive on the gauge.
+- **PROPOSED** `vol.reads` with `skew`, `iv_rv`, `term_meaning`, `term`,
+  `gauge` (the §3 context sentences: "Investors are paying up for downside
+  cover.", "Protection costs about 3.5 points more than recent moves
+  justify.", "Longer-dated protection costs slightly more than near-dated.",
+  "That is the normal shape. …", the gauge caption). The first line of each
+  reading ("Puts are 6.8 vol points more expensive than calls.", "Options
+  price 15.4% annual movement; …") is spelled by the browser from the served
+  numbers.
+- **PROPOSED** `sectors.leadership[].short` (four letters: Tech, Ind, Fin,
+  Comm, Disc, Enrg, Mat, RE, Hlth, Stpl, Util): the Technicals bars and the
+  Sectors dots.
+- **PROPOSED** `sectors.reads` with `leadership_brief` (the Technicals
+  line), `leadership` and `breadth` (the Sectors reads), and the
+  `small_vs_large_series` point shape `{"date","rel"}` (same as
+  `eqw_vs_cap_series`).
+- `vol` also carries `generation_id`, which §12's header puts on every
+  response; §12.9's inline list omits it.
+
 Notes for B (not new fields):
 - The mockup's Overview rows label two signals differently from the Ledger
   (§2 "Gold +2σ while S&P < 50d", "VIX +2σ in 5 days"; §8 "Gold +2σ while S&P

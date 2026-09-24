@@ -1,0 +1,47 @@
+{
+ "as_of": "2026-09-22",
+ "generation_id": "gen-fixture-2026-09-22",
+ "source": "eodhd",
+ "skew_25d_1m_pts": 6.8,
+ "skew_pct_2y": 0.74,
+ "skew_trend": "rising since June",
+ "atm_iv_1m": 15.4,
+ "realized_20d": 11.9,
+ "term": {
+  "1m": 15.4,
+  "3m": 16.8,
+  "6m": 17.5
+ },
+ "history_from": "2023-10",
+ "skew_band_edges": [
+  0.25,
+  0.7
+ ],
+ "reads": {
+  "skew": {
+   "label": null,
+   "text": "Investors are paying up for downside cover.",
+   "tone": "normal"
+  },
+  "iv_rv": {
+   "label": null,
+   "text": "Protection costs about 3.5 points more than recent moves justify.",
+   "tone": "normal"
+  },
+  "term": {
+   "label": null,
+   "text": "That is the normal shape. No near-term event is being priced in.",
+   "tone": "normal"
+  },
+  "term_meaning": {
+   "label": null,
+   "text": "Longer-dated protection costs slightly more than near-dated.",
+   "tone": "normal"
+  },
+  "gauge": {
+   "label": null,
+   "text": "74th percentile of a calm two years, so \"expensive\" here is relative. Six months ago it sat in the typical band.",
+   "tone": "normal"
+  }
+ }
+}

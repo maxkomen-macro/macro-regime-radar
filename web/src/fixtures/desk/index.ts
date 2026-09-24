@@ -11,7 +11,9 @@
 
 import ledger from "./ledger.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
+import sectors from "./sectors.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
+import vol from "./vol.json" with { type: "json" };
 
 export interface FixtureReply {
   status: number;
@@ -24,6 +26,8 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
   "/overview": overview,
   "/ledger": ledger,
   "/technicals": technicals,
+  "/vol": vol,
+  "/sectors": sectors,
 };
 
 const json = (status: number, body: unknown): FixtureReply => ({ status, contentType: "application/json", body: JSON.stringify(body) });

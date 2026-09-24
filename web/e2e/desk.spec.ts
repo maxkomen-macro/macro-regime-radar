@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview"];
+const BUILT = ["overview", "technicals"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -77,6 +77,37 @@ test.describe("desk v2", () => {
     for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) await expect(page.getByRole("region", { name })).toContainText("Awaiting refresh");
     await expect(page.getByText("Overheating")).toHaveCount(0);
     await expect(page.getByTestId("dk-live")).toHaveCount(0);
+  });
+
+  test("technicals: the page badge, the range chips redraw the chart, the 5,000 / 6,000 / 7,000 axis", async ({ page }) => {
+    await open(page, "/desk/technicals");
+    await expect(page.getByTestId("dk-live").first()).toContainText("Live · Yahoo/FRED · as of Sep 22, 2026");
+    const price = page.getByRole("region", { name: /S&P 500 price/ });
+    await expect(price.getByRole("img", { name: /1Y/ })).toBeVisible();
+    await expect(price.locator(".dk-chart-axis")).toContainText(["5,000", "6,000", "7,000", "Oct 25", "Apr 26", "Sep 26"]);
+    await price.getByRole("button", { name: "3Y" }).click();
+    await expect(price.getByRole("img", { name: /3Y/ })).toBeVisible();
+    await expect(page.getByRole("region", { name: /^Signals/ }).getByRole("listitem")).toHaveCount(6);
+    await expect(page.getByRole("region", { name: /Momentum · RSI/ }).getByRole("img", { name: "RSI 58, neutral" })).toBeVisible();
+    // §1.4: Advanced is a blue link (verifier T-1: a reset once turned it gray).
+    await expect(page.getByTestId("dk-advanced").first()).toHaveCSS("color", "rgb(88, 184, 230)");
+    // A light action button keeps its dark text on hover (verifier R2-1).
+    const act = page.getByTestId("dk-act");
+    await act.hover();
+    await expect(act).toHaveCSS("color", "rgb(12, 14, 17)");
+    // The back link is gray at rest and light on hover (R2-2).
+    const back = page.getByRole("link", { name: /Macro Regime Radar/ });
+    await expect(back).toHaveCSS("color", "rgb(139, 146, 158)");
+    await back.hover();
+    await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
+  });
+
+  test("technicals: an unwired /vol (§12.9) keeps its labels and says Awaiting refresh", async ({ page }) => {
+    await open(page, "/desk/technicals", { "/api/desk/vol": { status: 503, body: { error: "vol not wired" } } });
+    const vol = page.getByRole("region", { name: "What protection costs right now" });
+    await expect(vol).toContainText("Awaiting refresh");
+    await expect(vol).toContainText("PUTS vs CALLS · 1 MONTH OUT");
+    await expect(vol).not.toContainText("6.8");
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

@@ -152,7 +152,7 @@
    "slug": "spx-5d-2sigma",
    "label": "S&P 5-day move over 2σ",
    "group": "spx",
-   "last_fired": "2026-08-02",
+   "last_fired": "2026-07-31",
    "n": 88,
    "up_pct": 0.55,
    "median": 0.006,

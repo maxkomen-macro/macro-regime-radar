@@ -98,7 +98,7 @@ export function Stat({
   value?: ReactNode;
   sub?: ReactNode;
   tone?: Tone;
-  size?: "lg" | "md" | "sm";
+  size?: "xl" | "lg" | "md" | "sm" | "date";
   /** No value served: the label stays, no number (§1.7). */
   awaiting?: boolean;
 }) {
@@ -140,7 +140,7 @@ export function ReadBox({ label = "Read", warn = false, children, className }: {
 export function Advanced({ items, open, onToggle, controls }: { items: string; open?: boolean; onToggle?: () => void; controls?: string }) {
   return (
     <p className="dk-adv">
-      <button type="button" className="dk-link" aria-expanded={onToggle ? Boolean(open) : undefined} aria-controls={controls} onClick={onToggle} data-testid="dk-advanced">
+      <button type="button" className="dk-link" aria-expanded={onToggle ? Boolean(open) : undefined} aria-controls={open ? controls : undefined} onClick={onToggle} data-testid="dk-advanced">
         Advanced {open ? "▾" : "▸"}
       </button>{" "}
       <span>{items}</span>
@@ -153,6 +153,23 @@ export function useAdvanced(): { open: boolean; toggle: () => void; id: string }
   const [open, setOpen] = useState(false);
   const id = useId();
   return { open, toggle: () => setOpen((o) => !o), id };
+}
+
+/** `Advanced ▸` with the panel it opens under the card's body: what is
+ * served goes in `children`; `missing` says in one sentence what the API does
+ * not serve yet, so an expander never opens onto nothing. */
+export function AdvancedPanel({ adv, items, missing, children }: { adv: { open: boolean; toggle: () => void; id: string }; items: string; missing?: string; children?: ReactNode }) {
+  return (
+    <>
+      <Advanced items={items} open={adv.open} onToggle={adv.toggle} controls={adv.id} />
+      {adv.open ? (
+        <div className="dk-adv-panel" id={adv.id}>
+          {children}
+          {missing ? <p className="dk-adv-missing">{missing}</p> : null}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /** A card body with nothing served (§1.7): gray words, no number. */

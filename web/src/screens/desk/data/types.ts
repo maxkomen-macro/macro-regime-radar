@@ -19,6 +19,15 @@ export interface Envelope {
   generation_id: string;
 }
 
+/** PROPOSED (§12.13): an interpretive sentence the server writes for a card.
+ * `label` is the boxed read's lead ("Read", "Read for the desk") or null for
+ * an inline sentence; `tone: "warning"` draws the amber-bordered box (§1.4). */
+export interface Read {
+  label: string | null;
+  text: string;
+  tone: "normal" | "warning";
+}
+
 /** §12 errors: `{ "error": string }` with a 4xx/5xx status. */
 export interface DeskErrorBody {
   error: string;
@@ -115,6 +124,7 @@ export interface OverviewResponse extends Envelope {
 
 // ── §12.10 /technicals ────────────────────────────────────────────────────
 
+/** PROPOSED (§12.13): §12.10 leaves the series points as `[…]`. */
 export interface PricePoint {
   date: string;
   close: number;
@@ -127,12 +137,70 @@ export interface TechnicalsResponse extends Envelope {
   chg_1d: number;
   ma50: number;
   ma200: number;
+  /** PROPOSED (§12.13): price against each average, as fractions (0.021 = 2.1% above). */
+  vs_ma50: number;
+  vs_ma200: number;
   ret_1y: number;
   trend: string;
   move_20d_sigma: number;
   rsi: number;
+  /** PROPOSED (§12.13): "rising" | "falling" | "flat". */
+  rsi_direction: string;
   rsi_last_above_70: { date: string; spx_1m: number };
   rsi_last_below_30: { date: string; spx_1m: number };
-  cross: { kind: "golden" | "death"; date: string };
+  cross: {
+    kind: "golden" | "death";
+    date: string;
+    /** PROPOSED (§12.13): how often this cross fired in today's regime. */
+    in_regime?: { regime: string; n: number };
+  };
   series: { "6m": PricePoint[]; "1y": PricePoint[]; "3y": PricePoint[] };
+}
+
+// ── §12.9 /vol ────────────────────────────────────────────────────────────
+
+export interface VolResponse extends Envelope {
+  source: string;
+  skew_25d_1m_pts: number;
+  skew_pct_2y: number;
+  skew_trend: string;
+  atm_iv_1m: number;
+  realized_20d: number;
+  term: { "1m": number; "3m": number; "6m": number };
+  history_from: string;
+  /** PROPOSED (§12.13): the percentile edges between Cheap | Typical | Expensive. */
+  skew_band_edges: [number, number];
+  /** PROPOSED (§12.13): the card's sentences. */
+  reads: { skew: Read; iv_rv: Read; term_meaning: Read; term: Read; gauge: Read };
+}
+
+// ── §12.7 /sectors ────────────────────────────────────────────────────────
+
+export interface SectorRow {
+  etf: string;
+  name: string;
+  /** PROPOSED (§12.13): a four-letter name for the bars and dots ("Tech", "Stpl"). */
+  short: string;
+  rel_ret: number;
+}
+
+export interface RelPoint {
+  date: string;
+  rel: number;
+}
+
+export interface SectorsResponse extends Envelope {
+  window_months: number;
+  leadership: SectorRow[];
+  pattern: string;
+  breadth: {
+    above_50: { n: number; of: number; month_ago: number; by_etf: Record<string, boolean> };
+    above_200: { n: number; of: number; by_etf: Record<string, boolean> };
+    eqw_vs_cap_3m: number;
+    eqw_vs_cap_series: RelPoint[];
+    /** PROPOSED (§12.13) point shape: §12.7 leaves it as `["… 252"]`. */
+    small_vs_large_series: RelPoint[];
+  };
+  /** PROPOSED (§12.13): the cards' sentences. */
+  reads: { leadership_brief: Read; leadership: Read; breadth: Read };
 }

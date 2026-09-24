@@ -61,12 +61,20 @@
 :where(.dk h1, .dk h2, .dk h3, .dk p, .dk ul, .dk ol, .dk dl, .dk dd, .dk figure) {
   margin: 0;
 }
-.dk button {
+:where(.dk button) {
   font: inherit;
   color: inherit;
 }
+/* Links inherit their color and never underline unless a class says so;
+   the reset sets no hover color, so a class's own color (a light button's
+   dark text) holds on hover (verifier R2-1). Declared after the app's global
+   `a` and `a:hover`, so it wins their ties. */
 .dk a {
   color: inherit;
+  text-decoration: none;
+}
+.dk a:hover {
+  text-decoration: none;
 }
 .dk :focus-visible {
   outline: 2px solid var(--dk-blue);
@@ -85,7 +93,7 @@
   padding: 16px 16px 21px;
   overflow-y: auto;
 }
-.dk-back {
+.dk .dk-back {
   display: inline-block;
   font-family: var(--dk-mono);
   font-size: 12px;
@@ -96,7 +104,7 @@
   padding-top: 3px;
   white-space: nowrap;
 }
-.dk-back:hover {
+.dk .dk-back:hover {
   color: var(--dk-t1);
 }
 .dk-brand {
@@ -576,7 +584,9 @@
   font-weight: 700;
 }
 
-.dk-link {
+.dk .dk-link,
+.dk a.dk-link,
+.dk a.dk-link:hover {
   background: none;
   border: 0;
   padding: 0;
@@ -586,8 +596,9 @@
   cursor: pointer;
   font: inherit;
 }
-a.dk-link {
-  color: var(--dk-blue);
+.dk .dk-link:disabled {
+  color: var(--dk-t4);
+  cursor: default;
 }
 .dk-adv {
   font-size: 13.5px;
@@ -800,6 +811,8 @@ a.dk-link {
   color: var(--dk-t1);
 }
 .dk .mrr-desk-tour .mrr-btn {
+  font-weight: 400;
+  line-height: 1.35;
   border: 1px solid var(--dk-box);
   background: var(--dk-card-2);
   color: var(--dk-t1);
@@ -831,4 +844,214 @@ a.dk-link {
   .dk .mrr-desk-tour {
     left: 0;
   }
+}
+
+/* ── Charts (kit/LineChart.tsx) ───────────────────────────────────────── */
+.dk-chart {
+  width: 100%;
+  min-width: 0;
+  position: relative;
+}
+.dk-chart svg {
+  display: block;
+  overflow: visible;
+  fill: none;
+}
+.dk-chart-grid {
+  stroke: var(--dk-row);
+  stroke-width: 1;
+}
+.dk-chart-zero {
+  stroke: var(--dk-box);
+  stroke-width: 1;
+}
+.dk-chart-axis {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  fill: var(--dk-t4);
+}
+.dk-chart-end {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+}
+.dk-chart-point {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  fill: var(--dk-t2);
+}
+.dk-chart-band {
+  font-family: var(--dk-sans);
+  font-size: 12px;
+  fill: var(--dk-t3);
+}
+
+/* ── Band gauge (kit/Gauge.tsx) ───────────────────────────────────────── */
+.dk-gauge {
+  position: relative;
+}
+.dk-gauge-names {
+  display: flex;
+  font-size: 13.5px;
+  line-height: 18px;
+  color: var(--dk-t3);
+}
+.dk-gauge-thick .dk-gauge-names {
+  font-size: 15px;
+}
+.dk-gauge-names [data-tone="green"] {
+  color: var(--dk-green);
+  font-weight: 700;
+}
+.dk-gauge-names [data-tone="amber"] {
+  color: var(--dk-amber);
+  font-weight: 700;
+}
+.dk-gauge-track {
+  position: relative;
+  display: flex;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 999px;
+  overflow: visible;
+}
+.dk-gauge-thick .dk-gauge-track {
+  height: 21px;
+  margin-top: 8px;
+}
+.dk-gauge-track > span[data-tone] {
+  height: 100%;
+}
+.dk-gauge-track > span[data-tone]:first-child {
+  border-radius: 999px 0 0 999px;
+}
+.dk-gauge-track > span[data-tone]:nth-last-child(2) {
+  border-radius: 0 999px 999px 0;
+}
+.dk-gauge-track > span[data-tone="green"] {
+  background: rgba(38, 220, 160, 0.55);
+}
+.dk-gauge-track > span[data-tone="amber"] {
+  background: rgba(232, 180, 71, 0.55);
+}
+.dk-gauge-track > span[data-tone="neutral"] {
+  background: var(--dk-border);
+}
+.dk-gauge-needle {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: #ffffff;
+}
+.dk-gauge-under {
+  position: relative;
+  height: 34px;
+}
+.dk-gauge-tick {
+  position: absolute;
+  top: 7px;
+  transform: translateX(-50%);
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t4);
+}
+.dk-gauge-tick[data-edge="start"] {
+  transform: none;
+}
+.dk-gauge-tick[data-edge="end"] {
+  transform: translateX(-100%);
+}
+.dk-gauge-caption {
+  position: absolute;
+  top: 7px;
+  transform: translateX(-50%);
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--dk-t1);
+  white-space: nowrap;
+}
+.dk-gauge-thick .dk-gauge-under {
+  height: 40px;
+}
+.dk-gauge-thick .dk-gauge-caption {
+  top: 10px;
+  font-size: 26px;
+}
+
+
+/* ── Ranked bars (kit/RankBars.tsx) ───────────────────────────────────── */
+.dk-rank {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.dk-rank li {
+  display: grid;
+  grid-template-columns: 38px 52px minmax(0, 1fr) 52px;
+  align-items: center;
+  column-gap: 8px;
+  height: 45px;
+}
+.dk-rank-ticker,
+.dk-rank-name,
+.dk-rank-value {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  color: var(--dk-t1);
+  white-space: nowrap;
+}
+.dk-rank-value {
+  text-align: right;
+  color: var(--dk-t3);
+}
+.dk-rank-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--dk-row);
+  overflow: hidden;
+}
+.dk-rank-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--dk-box);
+}
+.dk-rank-track span[data-tone="green"] {
+  background: var(--dk-green);
+}
+.dk-rank-track span[data-tone="red"] {
+  background: var(--dk-red);
+}
+.dk-rank-track span[data-tone="gray"] {
+  background: rgba(139, 146, 158, 0.4);
+}
+
+/* ── Advanced panel (kit/ui.tsx) ──────────────────────────────────────── */
+.dk-adv-panel {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  background: var(--dk-card-2);
+  font-size: 13px;
+  color: var(--dk-t2);
+}
+.dk-adv-missing {
+  color: var(--dk-t3);
+}
+.dk-lc {
+  text-transform: none;
+}
+.dk-stat[data-size="date"] .dk-stat-value {
+  font-size: 24px;
+}
+.dk-stat[data-size="xl"] .dk-stat-value {
+  font-size: 35px;
+  line-height: 1.12;
 }
