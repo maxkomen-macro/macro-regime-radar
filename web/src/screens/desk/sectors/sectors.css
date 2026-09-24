@@ -1,0 +1,164 @@
+/* Sectors (DESK_FRAME3_SPEC §7; geometry from screens/06-sectors.png at 1440). */
+.sc {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+/* One row as tall as the taller card; the cards never stretch to the window (S-2). */
+.sc-grid {
+  display: grid;
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--dk-gap);
+}
+.sc-card {
+  padding: 11px 17px 10px;
+}
+.sc-card .dk-stats {
+  margin-top: 5.5px;
+}
+/* Measured on the PNG: stat values 23 px, their notes 12.5 px on a 14 px
+   line, the reads 13.5 px on a 17 px line (as on Regime and Macro). */
+.sc-card .dk-stat-value {
+  font-size: 23px;
+  margin-top: 1px;
+}
+.sc-card .dk-stat-sub {
+  font-size: 12.5px;
+  line-height: 1.12;
+}
+/* Long labels wrap rather than push the page sideways at narrow widths (S-1). */
+.sc-card .dk-stat-label {
+  white-space: normal;
+}
+.sc-note {
+  margin-top: auto;
+  font-size: 13.5px;
+  line-height: 17px;
+}
+.sc-card .dk-rank {
+  margin-top: 36px;
+}
+.sc-card .dk-rank li {
+  grid-template-columns: 46px 107px minmax(0, 1fr) 52px;
+  height: 43.2px;
+}
+.sc-card .dk-rank-ticker {
+  color: var(--dk-t3);
+}
+.sc-card .dk-rank-name {
+  font-family: var(--dk-sans);
+  font-size: 14px;
+}
+.sc-key {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--dk-t2);
+  margin: 18.5px 0 7px;
+}
+.sc-key i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  background: rgba(139, 146, 158, 0.4);
+}
+.sc-key i[data-tone="green"] {
+  background: var(--dk-green);
+}
+.sc-key i[data-tone="red"] {
+  background: var(--dk-red);
+}
+.sc-card .dk-read {
+  margin-top: auto;
+  padding: 8px 13px 9px;
+  font-size: 13.5px;
+  line-height: 17px;
+}
+.sc-gray {
+  color: var(--dk-t3);
+}
+.sc-card .dk-card-foot {
+  margin-top: 5.5px;
+  padding-top: 7px;
+  border-top-color: var(--dk-border);
+}
+.sc-rel {
+  margin-top: 14px;
+}
+.sc-card .dk-stats + .sc-rel {
+  margin-top: 8.5px;
+}
+.sc-rel .dk-chart {
+  margin-top: 6px;
+}
+.sc-dots-wrap {
+  margin-top: 1px;
+}
+.sc-dots {
+  list-style: none;
+  margin: 7px 0 0;
+  padding: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+}
+.sc-dots li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  color: var(--dk-t4);
+}
+.sc-dots li[data-state="on"] {
+  color: var(--dk-t2);
+}
+.sc-dots i {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--dk-border);
+}
+.sc-dots li[data-state="on"] i {
+  background: var(--dk-green);
+}
+/* Not served: an unlit ring, not the gray of "below" (S-7). */
+.sc-dots li[data-state="unknown"] i {
+  background: transparent;
+  border: 1.5px solid var(--dk-box);
+}
+@media (max-width: 1000px) {
+  .sc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .sc-card .dk-rank li {
+    grid-template-columns: 44px minmax(0, 1fr) 52px;
+  }
+  /* The names leave the row visually but stay for screen readers (S-13). */
+  .sc-card .dk-rank-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .sc-card .dk-rank-await {
+    grid-column: 2 / -1;
+  }
+  .sc-dots {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .sc-dots li {
+    width: calc((100% - 20px) / 6);
+  }
+}

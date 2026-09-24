@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals", "event-study", "regime", "macro"];
+const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -157,6 +157,19 @@ test.describe("desk v2", () => {
     await page.setViewportSize({ width: 1440, height: 960 });
     await settle(page, 300);
     await expect(tight).toBeVisible();
+  });
+
+  test("sectors: no sideways scroll at 390 or 1100, and the cards never stretch to a tall window", async ({ page }) => {
+    await open(page, "/desk/sectors");
+    const h = await page.locator("section.sc-card").first().evaluate((e) => Math.round(e.getBoundingClientRect().height));
+    await page.setViewportSize({ width: 1440, height: 1600 });
+    await settle(page, 200);
+    expect(await page.locator("section.sc-card").first().evaluate((e) => Math.round(e.getBoundingClientRect().height))).toBe(h);
+    for (const width of [1100, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await settle(page, 300);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

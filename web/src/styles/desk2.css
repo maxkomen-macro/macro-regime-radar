@@ -1010,6 +1010,18 @@
   text-align: right;
   color: var(--dk-t3);
 }
+/* Text for screen readers only (every tab: the Event Study bars, the Sectors dots). */
+.dk-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.dk-rank-await {
+  grid-column: 3 / -1;
+}
 .dk-rank-track {
   height: 8px;
   border-radius: 999px;

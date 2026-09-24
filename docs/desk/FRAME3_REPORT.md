@@ -657,6 +657,102 @@ pixel-identical to their committed shots). Dispositions:
   flat ticks, label placement, and the browser test (equal rows at 960 and
   1500 tall, the band name and the caption across a resize).
 
+### 6. Sectors — `frame-3: sectors`
+
+Built: the Sectors tab on `/sectors` (§7, §12.7), two columns, no action
+button, the `● Live · Yahoo · Sep 22` badge. **Sector leadership**: LEADING /
+LAGGING / PATTERN, the eleven ranked bars (ticker, name, bar, value; §3's
+±1% colors), the key, the read. **Breadth**: ABOVE 50-DAY / ABOVE 200-DAY /
+EQUAL vs CAP WEIGHT, the average stock against the index over a year, the
+two rows of dots (which sectors are above their 50-day and 200-day), small
+caps against large, the amber read with §7's gray note. Until the sector
+ETFs are ingested (§12.7's `series not ingested`) both cards keep their
+labels and say why. Every value keeps its label and says "Awaiting refresh"
+when it is not served (the Regime and Macro reviews' lessons, applied before
+review). Fixture: `sectors.json` (§12.7, complete; the two series are the
+last 252 NYSE sessions).
+
+Compare: `docs/desk/screens/compare/06-sectors.png` (build alone:
+`06-sectors.build.png`). Matched on the second pass. The first ran 951 px
+against 900: the dots printed their screen-reader words ("above", "below")
+because the visually-hidden rule lived only in the Event Study's
+stylesheet (now in the kit), and the stats and reads used the kit's sizes
+where this PNG uses Regime's and Macro's (23 px values, 12.5 px notes, reads
+on a 17 px line). Now 900 px; the cards run 113 → 876 against the PNG's
+111.5 → 881. Event Study is pixel-identical after the rule moved.
+Deviations, each deliberate:
+- **ABOVE 50-DAY's note reads "was 10 a month ago"**, where §7 and the PNG
+  write "was 10 in July": §12.7 serves the count a month earlier, not a
+  month's name. The longer note wraps to a second line.
+- **The pattern note, the 200-day note and the equal-weight note are
+  served** (PROPOSED `words`), and ABOVE 200-DAY's green is the served
+  `broad` call; ABOVE 50-DAY is amber when fewer sectors are above than a
+  month ago (§7's "narrowing"), green when more (§1.3 up).
+- **The ranked values keep §7's ±1% key** (green ahead, gray within,
+  red behind), as the Technicals PNG draws them; this PNG colors +0.4% and
+  −0.6% by sign. LAGGING's note is red when negative (§1.3) while its name
+  follows the key, so a laggard within 1% has a plain name and a red note.
+- **The second chart keeps §7's tinted bands** ("same y, bands") where the
+  PNG leaves it untinted with its lower label under the plot; it has no
+  date row, as in the PNG. The charts' right ends name the served day
+  ("Sep 22"), not "today" (D13); Macro's two charts now do the same, and its
+  compare shot is regenerated.
+- **No MOCKUP badge** (as on every tab).
+
+PROPOSED (spec §12.13): `words`, `breadth.above_200.broad`; the existing
+`leadership[].short`, `reads` and the series point shape; notes on nulls and
+the not-ingested answer, the served order, what the series' `rel` is, and
+`generation_id`.
+
+Verifier, round 1: **PASS WITH FINDINGS**, nothing blocking. Dispositions:
+- S-1 sideways scroll at 390, 360 and 1001–1100 px: **fixed**, stat labels
+  wrap here and a chart band label too long for a narrow plot wraps at its
+  " · " (kit); a browser test checks 1100 and 390.
+- S-2 the cards stretched to the window: **fixed** (no flex stretch); the
+  browser test checks a 1600 px tall window.
+- S-3 a missing `leadership` hid served breadth: **fixed**, any answer
+  without `error` is served and each card judges its own block; the dots
+  fall back to the map's keys; tested.
+- S-4 the browser picked the leader around a null: **fixed**, the served
+  order is kept (first row leads, last lags, a null says Awaiting refresh
+  in place); Technicals' "all eleven" under Advanced keeps a null row too;
+  tested.
+- S-5 "today" for a Sep 22 value: **fixed** with D13's rule in the kit
+  (`endDay`), here and on Macro.
+- S-6 the equal-weight window: **fixed**, always "3 months"; tested.
+- S-7 an unserved dot looked like "below": **fixed**, an unlit ring; tested.
+- S-8 layout: **fixed** where it moved the page: the stats 4 px up, the
+  ranked rows and the key to the PNG's rows (within 2 px), the name column
+  to the PNG's track start, the first chart's gaps and plot (round 2), the
+  dots' spacing and span, "vs" lowercase. Recorded: the
+  value colors (above), the second chart's tint, the 50-day note's wrap.
+  The cards run 113 → 877 against the PNG's 111.5 → 881.
+- S-9 ABOVE 50-DAY green when rising: recorded (§1.3 up).
+- S-10 recorded above.
+- S-11 the gray note stays without the read; tested.
+- S-12 the types admit nulls; §12.13 adds `generation_id` and what `rel` is.
+- S-13 the second dot list is named "Which sectors are above their
+  200-day"; under 600 px the sector names are hidden visually, not from
+  screen readers.
+- S-14 the wrong date: corrected above.
+- S-15 tests added (Sectors now 16 unit tests, and the browser test).
+
+Verifier, round 2: **PASS WITH FINDINGS**, nothing blocking; S-1 to S-15
+confirmed (no sideways scroll on any Desk tab at 1440 to 360 px; the stats,
+rows and key within 1 px; Technicals, Event Study and Regime
+pixel-identical; Macro differs only in its two end captions). Dispositions:
+- R2-1 the dot rows crowded their labels: **fixed**, the PNG's 9 px gap with
+  the totals unchanged.
+- R2-2 under 600 px a null row's words squeezed into the value column:
+  **fixed**, they take the name's place.
+- R2-3 the first chart's plot was 99 px against about 105.5: **fixed**
+  (7 px taller); the report's "within 1 px" claim is withdrawn.
+- R2-4 the page ran 1 px past 900: **fixed** (the ranked rows are 43.2 px).
+- R2-5 at 390 px the line crosses the wrapped band labels on the short
+  small-caps chart: recorded; the labels stay readable.
+- R2-6 tests for `endDay` and the band-label wrap: added.
+- R2-7 the spec names the green too.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -670,3 +766,4 @@ tests against the fixture dev server.
 | frame-3: event-study | clean | 106 / 1,176 | ok | 16 / 16 |
 | frame-3: regime | clean | 107 / 1,192 | ok | 17 / 17 |
 | frame-3: macro | clean | 108 / 1,211 | ok | 19 / 19 |
+| frame-3: sectors | clean | 110 / 1,230 | ok | 21 / 21 |

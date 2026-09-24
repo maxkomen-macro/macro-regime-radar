@@ -353,8 +353,10 @@ export function sevenOf<T>(sorted: readonly T[]): T[] {
 
 function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardState }) {
   const adv = useAdvanced();
-  const rows = Array.isArray(s?.leadership) ? [...s.leadership].filter((r) => fin(r.rel_ret)).sort((a, b) => b.rel_ret - a.rel_ret) : [];
-  const toRow = (r: SectorsResponse["leadership"][number]) => ({ key: r.etf, ticker: r.etf, name: r.short ?? "", value: r.rel_ret });
+  const served = Array.isArray(s?.leadership) ? s.leadership : [];
+  type Valued = SectorsResponse["leadership"][number] & { rel_ret: number };
+  const rows = served.filter((r): r is Valued => fin(r.rel_ret)).sort((a, b) => b.rel_ret - a.rel_ret);
+  const toRow = (r: SectorsResponse["leadership"][number]) => ({ key: r.etf, ticker: r.etf, name: r.short ?? "", value: fin(r.rel_ret) ? r.rel_ret : null });
   const lo = rows.length ? rows[rows.length - 1].rel_ret : 0;
   const hi = rows.length ? rows[0].rel_ret : 0;
   return (
@@ -374,7 +376,7 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
       )}
       <div className="te-foot">
         <AdvancedPanel adv={adv} items="all 11 · rotation over time · by regime" missing="Rotation over time and leadership by regime are not served yet.">
-          {rows.length ? <RankBars label="All eleven sector ETFs against the S&P" rows={rows.map(toRow)} lo={lo} hi={hi} /> : null}
+          {rows.length ? <RankBars label="All eleven sector ETFs against the S&P" rows={served.map(toRow)} lo={lo} hi={hi} /> : null}
         </AdvancedPanel>
       </div>
     </section>

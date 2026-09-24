@@ -11,14 +11,11 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOverview, useTechnicals } from "./data/api";
 import { DESK_GROUPS, GATES } from "./desk-sections";
-import { dayShort, pct } from "./kit/format";
+import { dayShort, nyToday, pct } from "./kit/format";
 
 export const DESK_SIDEBAR_ID = "dk-sidebar";
 
-/** Today's date in New York, where the S&P closes ("2026-09-24"). */
-export function nyToday(now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-}
+export { nyToday };
 
 /** "S&P today" only when the served session is today in New York; otherwise
  * the session's own day ("S&P Sep 22"), so a weekend never reads as today. */

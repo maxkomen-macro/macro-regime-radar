@@ -312,13 +312,13 @@ export interface SectorRow {
   etf: string;
   name: string;
   /** PROPOSED (§12.13): a four-letter name for the bars and dots ("Tech", "Stpl"). */
-  short: string;
-  rel_ret: number;
+  short?: string;
+  rel_ret: number | null;
 }
 
 export interface RelPoint {
   date: string;
-  rel: number;
+  rel: number | null;
 }
 
 export interface SectorsResponse extends Envelope {
@@ -326,13 +326,16 @@ export interface SectorsResponse extends Envelope {
   leadership: SectorRow[];
   pattern: string;
   breadth: {
-    above_50: { n: number; of: number; month_ago: number; by_etf: Record<string, boolean> };
-    above_200: { n: number; of: number; by_etf: Record<string, boolean> };
-    eqw_vs_cap_3m: number;
+    above_50: { n: number | null; of: number | null; month_ago: number | null; by_etf?: Record<string, boolean> };
+    /** `broad` is PROPOSED (§12.13): the engine's call that the 200-day trend is broad (the value is green). */
+    above_200: { n: number | null; of: number | null; by_etf?: Record<string, boolean>; broad?: boolean };
+    eqw_vs_cap_3m: number | null;
     eqw_vs_cap_series: RelPoint[];
     /** PROPOSED (§12.13) point shape: §12.7 leaves it as `["… 252"]`. */
     small_vs_large_series: RelPoint[];
   };
   /** PROPOSED (§12.13): the cards' sentences. */
   reads: { leadership_brief: Read; leadership: Read; breadth: Read };
+  /** PROPOSED (§12.13): the stat notes the engine words ("growth sectors over defensives", "trend still broad", "big names carrying it"). */
+  words?: { pattern?: string; above_200?: string; eqw?: string };
 }

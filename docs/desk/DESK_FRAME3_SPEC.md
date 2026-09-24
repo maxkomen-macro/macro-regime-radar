@@ -812,6 +812,29 @@ building it; the web side follows whatever this section ends up saying.
   sessions ending Sep 22 2026; the fixture dates the peak Mar 10 2026, inside
   the last twelve months, where the mockup draws it.
 
+**Sectors (§7)**
+- **PROPOSED** `sectors.words` (`{"pattern","above_200","eqw"}`: "growth
+  sectors over defensives", "trend still broad", "big names carrying it"):
+  the PATTERN, ABOVE 200-DAY and EQUAL vs CAP notes. The page does not map
+  `pattern` or a sign to words of its own.
+- **PROPOSED** `sectors.breadth.above_200.broad` (boolean, the engine's call
+  that the 200-day trend is broad): ABOVE 200-DAY is green when true (§7).
+  ABOVE 50-DAY's amber is §7's "narrowing" read straight from the served
+  counts (`n` below `month_ago`); more sectors above than a month ago is
+  green (§1.3 up), the same count is plain.
+- A sector whose `rel_ret` is null keeps its row (ticker and name, "Awaiting
+  refresh"); a missing `by_etf` map or an empty series keeps its label and
+  says Awaiting refresh.
+- The not-ingested answer (`{"error":"series not ingested","missing":[…]}`)
+  may come with an error status or a 200; both cards say why.
+- `leadership` is served sorted, best first (§12.7), and the page keeps that
+  order: LEADING is the first row and LAGGING the last, each Awaiting
+  refresh when its value is null.
+- `eqw_vs_cap_series[].rel` and `small_vs_large_series[].rel` are the
+  rolling 3-month relative returns (the last `eqw` point equals
+  `eqw_vs_cap_3m`).
+- `sectors` also carries `generation_id` (§12's header).
+
 Notes for B (not new fields):
 - The mockup's Overview rows label two signals differently from the Ledger
   (§2 "Gold +2σ while S&P < 50d", "VIX +2σ in 5 days"; §8 "Gold +2σ while S&P

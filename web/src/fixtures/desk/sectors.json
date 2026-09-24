@@ -105,7 +105,8 @@
     "XLV": true,
     "XLP": false,
     "XLU": false
-   }
+   },
+   "broad": true
   },
   "eqw_vs_cap_3m": -0.024,
   "eqw_vs_cap_series": [
@@ -2145,5 +2146,10 @@
    "text": "narrowing. The index is up on a shrinking group of names — seven of eleven sectors above their 50-day, down from ten. Not a sell signal on its own, but it is the first thing to watch if the vol card starts flagging.",
    "tone": "warning"
   }
+ },
+ "words": {
+  "pattern": "growth sectors over defensives",
+  "above_200": "trend still broad",
+  "eqw": "big names carrying it"
  }
 }

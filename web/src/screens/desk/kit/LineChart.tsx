@@ -197,12 +197,21 @@ export default function LineChart(props: LineChartProps) {
         {bands.map((b, k) => {
           const y1 = y(Math.min(hi, Math.max(b.from, b.to)));
           const y2 = y(Math.max(lo, Math.min(b.from, b.to)));
+          // A label wider than the plot (about 6.1 px a character at 12 px) wraps at its " · ".
+          const lines = b.label && b.label.length * 6.1 > pw - 16 && b.label.includes(" · ") ? b.label.split(" · ") : b.label ? [b.label] : [];
+          const top = b.labelAt === "bottom" ? y2 - 8 - (lines.length - 1) * 13 : y1 + 15;
           return (
             <g key={`b${k}`}>
               <rect x={pad.l} y={y1} width={pw} height={Math.max(0, y2 - y1)} fill={b.fill} />
-              {b.label ? (
-                <text className="dk-chart-band" x={pad.l + 8} y={b.labelAt === "bottom" ? y2 - 8 : y1 + 15} style={b.labelColor ? { fill: b.labelColor } : undefined}>
-                  {b.label}
+              {lines.length ? (
+                <text className="dk-chart-band" x={pad.l + 8} y={top} style={b.labelColor ? { fill: b.labelColor } : undefined}>
+                  {lines.length === 1
+                    ? lines[0]
+                    : lines.map((l, i) => (
+                        <tspan key={i} x={pad.l + 8} dy={i === 0 ? 0 : 13}>
+                          {i < lines.length - 1 ? `${l} ·` : l}
+                        </tspan>
+                      ))}
                 </text>
               ) : null}
             </g>

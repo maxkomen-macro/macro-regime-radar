@@ -6,14 +6,6 @@
   flex: 1;
   min-height: 0;
 }
-.dk-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
 
 /* Row 1: the question */
 .es-query {

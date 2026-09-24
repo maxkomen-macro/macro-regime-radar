@@ -15,7 +15,7 @@ import { useMacro } from "../data/api";
 import type { MacroResponse, Read } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { dayShort, monthYear, num, ordinal } from "../kit/format";
+import { dayShort, endDay, monthYear, num, ordinal } from "../kit/format";
 import Gauge from "../kit/Gauge";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
@@ -206,7 +206,7 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
               ]}
               series={[{ key: "corr", values: series.map((p) => (fin(p.corr) ? p.corr : null)), color: DESK_ACCENTS.blue, width: 2 }]}
               endDot="corr"
-              xEnds={["a year ago", "today"]}
+              xEnds={["a year ago", endDay([...series].reverse().find((p) => fin(p.corr))?.date)]}
               pad={{ l: 34, r: 16, t: 6, b: 22 }}
             />
           ) : (
@@ -275,8 +275,8 @@ function Credit({ m, state }: { m: MacroResponse | undefined; state: State }) {
               yTicks={ticks.map((t) => ({ v: t.v, text: `${t.text}%` }))}
               series={[{ key: "hy", values: series.map((p) => (fin(p.hy) ? p.hy : null)), color: DESK_ACCENTS.blue, width: 2 }]}
               endDot="hy"
+              xEnds={["a year ago", endDay([...series].reverse().find((p) => fin(p.hy))?.date)]}
               pointLabels={peak && peakI >= 0 ? [{ i: peakI, v: peak.hy, text: `${monthYear(peak.date).split(" ")[0]} peak · ${num(peak.hy)}%`, color: DESK_ACCENTS.gray, dy: -7 }] : []}
-              xEnds={["a year ago", "today"]}
               pad={{ l: 34, r: 16, t: 14, b: 20 }}
             />
           ) : (

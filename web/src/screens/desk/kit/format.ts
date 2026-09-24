@@ -141,3 +141,14 @@ export const VERDICT_RANK: Record<Verdict, number> = { reliable: 0, suggestive: 
 export function toneOf(x: number): "up" | "down" | "flat" {
   return x > 0 ? "up" : x < 0 ? "down" : "flat";
 }
+
+/** Today's date in New York, where the S&P closes ("2026-09-24"). */
+export function nyToday(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+/** A chart's right-end caption (D13): "today" only when the served day is today in New York, else the day ("Sep 22"). */
+export function endDay(date: string | undefined | null, today = nyToday()): string {
+  if (!date) return "latest";
+  return date === today ? "today" : dayShort(date);
+}

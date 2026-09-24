@@ -70,3 +70,12 @@ describe("chart ticks", () => {
     expect(niceTicks(0, 10, 4)).toEqual([0, 2.5, 5, 7.5, 10]);
   });
 });
+
+describe("endDay (D13)", () => {
+  it("says today only for New York's today, else the day, and 'latest' without a date", async () => {
+    const { endDay } = await import("./format");
+    expect(endDay("2026-09-24", "2026-09-24")).toBe("today");
+    expect(endDay("2026-09-22", "2026-09-24")).toBe("Sep 22");
+    expect(endDay(undefined, "2026-09-24")).toBe("latest");
+  });
+});
