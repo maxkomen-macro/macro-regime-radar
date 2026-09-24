@@ -235,12 +235,10 @@ function PromoteForm({ onSaved, signal }: { onSaved: (p: Position, persisted: bo
             {!ref
               ? "The level is judged against this series' live reading."
               : reading.awaitingRefresh
-                ? "Awaiting refresh: the reading and its date did not come from one data generation."
+                ? "Awaiting refresh: the live reading did not answer."
                 : reading.data
-                  ? `Now ${fmtValue(ref, reading.data.value)} (${readingDate(reading.data)}).`
-                  : reading.isError
-                    ? "The live reading did not answer."
-                    : "Reading the series…"}
+                  ? `Now ${fmtValue(ref, reading.data.value)}${readingDate(reading.data) ? ` (${readingDate(reading.data)})` : ""}.`
+                  : "Reading the series…"}
           </p>
         </div>
         <div className="mrr-desk-field">

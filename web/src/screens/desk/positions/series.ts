@@ -12,7 +12,6 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { getJson } from "../../../api/client";
 import type { DailyBar } from "../../../api/types";
 import { fmtDate, fmtMonYr } from "../../../lib/format";
-import type { Freshness } from "../../../api/types";
 import { pyFixed, pyGrouped, pyRound } from "../pyformat";
 import type { Position } from "./store";
 
@@ -79,94 +78,38 @@ export function seriesRef(id: string | null | undefined): SeriesRef | undefined 
 
 export interface Reading {
   value: number;
-  /** The observation's own date: a stored bar's date, or for a FRED series
-   * the freshness report's observation date served by the same data
-   * generation as the value (review R-07); null when that cannot be shown.
-   * Never the month stamp /series/{id}/latest carries. */
+  /** The date that came in the same response as the value, and only that
+   * (review R-07, round 4): a stored bar's date, or the FRED row's month
+   * stamp. Null when the response carries none; then the value is shown with
+   * no date and the page's badge dates the source on its own. */
   date: string | null;
-  /** A monthly series: the date names a month. */
+  /** The date names a month: FRED rows are stored one per month, dated the
+   * 1st, holding the newest in-month value (CLAUDE.md, B6). */
   monthly?: boolean;
-  /** The data generation both halves of a FRED pair came from: its id and
-   * build stamp together (an id alone restarts at 1 with the worker). */
-  generation?: { id: number | null; built_at: string | null } | null;
 }
 
-/** A FRED value that could not be paired with its date inside one generation,
- * twice: the page shows "awaiting refresh" in place of any value (review R-07,
- * fourth round), never a value with another generation's date. */
-export class GenerationSplit extends Error {
-  readonly awaitingRefresh = true;
-  constructor(seriesId: string) {
-    super(`The ${seriesId} reading and its observation date came from different data generations twice; awaiting a refresh.`);
-    this.name = "GenerationSplit";
-  }
-}
-
-export function isGenerationSplit(e: unknown): boolean {
-  return e instanceof GenerationSplit || (typeof e === "object" && e != null && (e as { awaitingRefresh?: unknown }).awaitingRefresh === true);
-}
-
-/** "Sep 17, 2026", "Aug 2026" for a monthly series, or "date unknown". */
-export function readingDate(r: Pick<Reading, "date" | "monthly">): string {
-  if (!r.date) return "date unknown";
+/** The date a reading's own response carried, as it reads on the page:
+ * "Sep 18, 2026" for a bar, "Sep 2026" for a FRED month stamp; null when the
+ * response carried none (no attribution is printed). */
+export function readingDate(r: Pick<Reading, "date" | "monthly">): string | null {
+  if (!r.date) return null;
   return r.monthly ? fmtMonYr(r.date) : fmtDate(r.date);
-}
-
-/** The parts of /api/freshness a FRED pair reads. */
-type FreshnessLite = Pick<Freshness, "series" | "generation">;
-
-/** The identity of the generation a freshness report was served from, with
- * the series' own observation date in it: the generation id, its build stamp
- * and the as_of. The id alone is a process-local counter that restarts at 1
- * when the worker restarts, so it is never compared by itself (review R-07,
- * fourth round). */
-export function generationIdentity(f: FreshnessLite, seriesId: string): { id: number | null; built_at: string | null; as_of: string | null } {
-  const s = f.series?.find((x) => x.id === seriesId);
-  return { id: f.generation?.id ?? null, built_at: f.generation?.built_at ?? null, as_of: s?.as_of ?? null };
-}
-
-function sameIdentity(a: ReturnType<typeof generationIdentity>, b: ReturnType<typeof generationIdentity>): boolean {
-  return a.id === b.id && a.built_at === b.built_at && a.as_of === b.as_of;
-}
-
-/** A FRED value and its observation date as one pair from one data generation
- * (review R-07). /series/{id}/latest carries no generation, so the value is
- * read between two freshness reads and paired with that report's observation
- * date only when the two reads carry the same full identity: generation id,
- * build stamp and the series' as_of. Generations only advance, so a value
- * read between two identical identities was served by that generation. A
- * mismatch: read the pair again, once; a second mismatch throws
- * GenerationSplit and the page shows "awaiting refresh" rather than any
- * value. A report with no generation at all (an older API) gives the value
- * with no date ("date unknown"). The pair is cached as one object, so a
- * refetch that fails for another reason keeps the old value with its old date,
- * and a newer date is never attached to a cached value. */
-export async function fetchFredPair(ref: SeriesRef, get: typeof getJson = getJson): Promise<Reading> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const before = await get<FreshnessLite>("/api/freshness");
-    const p = await get<{ series_id: string; date: string; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
-    const after = await get<FreshnessLite>("/api/freshness");
-    const g1 = generationIdentity(before, ref.id);
-    const g2 = generationIdentity(after, ref.id);
-    if (!sameIdentity(g1, g2)) continue;
-    if (g1.id == null && g1.built_at == null) return { value: p.value, date: null, generation: null };
-    const s = before.series?.find((x) => x.id === ref.id);
-    return { value: p.value, date: g1.as_of ? g1.as_of.slice(0, 10) : null, monthly: s?.cadence === "monthly", generation: { id: g1.id, built_at: g1.built_at } };
-  }
-  throw new GenerationSplit(ref.id);
 }
 
 const MINUTE = 60_000;
 
-async function fetchReading(ref: SeriesRef): Promise<Reading> {
+/** One reading from one response. The value and whatever date that response
+ * carries travel together; nothing is joined from another request. */
+export async function fetchReading(ref: SeriesRef, get: typeof getJson = getJson): Promise<Reading> {
   if (ref.kind === "market") {
     // The stored universe's newest bar; a wide window so a stale store still answers.
-    const bars = await getJson<DailyBar[]>("/api/market/daily", { symbols: ref.id, days: 45 });
+    const bars = await get<DailyBar[]>("/api/market/daily", { symbols: ref.id, days: 45 });
     const last = [...bars].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).at(-1);
     if (!last || last.close == null) throw new Error(`No stored bars for ${ref.id}.`);
-    return { value: last.close, date: last.date };
+    return { value: last.close, date: last.date ?? null };
   }
-  return fetchFredPair(ref);
+  const p = await get<{ series_id: string; date?: string | null; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
+  return { value: p.value, date: p.date ?? null, monthly: p.date != null };
 }
 
 type ReadingKey = readonly ["desk", "reading", string, string];
@@ -177,22 +120,22 @@ function readingOptions(ref: SeriesRef | undefined) {
     queryFn: (): Promise<Reading> => (ref ? fetchReading(ref) : Promise.reject(new Error("No series chosen."))),
     enabled: ref != null,
     staleTime: 5 * MINUTE,
-    // A split pair is already retried once inside fetchFredPair; other failures once here.
-    retry: (failures: number, e: unknown) => !isGenerationSplit(e) && failures < 1,
+    retry: 1,
   };
 }
 
+/** A failed fetch with no reading held reads "awaiting refresh"; a failed
+ * refetch keeps the reading it holds, with that reading's own date. */
 export function useReading(id: string | null | undefined) {
   const q = useQuery<Reading, Error, Reading, ReadingKey>(readingOptions(seriesRef(id)));
-  const split = isGenerationSplit(q.error);
-  return { ...q, data: split ? undefined : q.data, awaitingRefresh: split };
+  return { ...q, awaitingRefresh: q.isError && q.data == null };
 }
 
 export interface ReadingState {
   data?: Reading;
   isLoading: boolean;
   isError: boolean;
-  /** The pair split across generations twice: show "awaiting refresh", no value. */
+  /** The fetch failed and no reading is held: show "awaiting refresh". */
   awaitingRefresh?: boolean;
 }
 
@@ -201,8 +144,8 @@ export function useReadings(positions: readonly Position[]): Record<string, Read
   const results = useQueries({ queries: positions.map((p) => readingOptions(seriesRef(p.falsification.series))) });
   const out: Record<string, ReadingState> = {};
   positions.forEach((p, i) => {
-    const split = isGenerationSplit(results[i]?.error);
-    out[p.id] = { data: split ? undefined : results[i]?.data, isLoading: Boolean(results[i]?.isLoading), isError: Boolean(results[i]?.isError), awaitingRefresh: split };
+    const r = results[i];
+    out[p.id] = { data: r?.data, isLoading: Boolean(r?.isLoading), isError: Boolean(r?.isError), awaitingRefresh: Boolean(r?.isError) && r?.data == null };
   });
   return out;
 }
@@ -236,7 +179,8 @@ export function distanceOf(reading: Reading, level: number, direction: "above" |
 /** "4.12% now (Sep 18) · falsified below 3.80% · 0.32% away (7.8% of current)". */
 export function distanceSentence(ref: SeriesRef | undefined, reading: Reading, f: { level: number; direction: "above" | "below" }): { now: string; rule: string; distance: string; falsified: boolean } {
   const d = distanceOf(reading, f.level, f.direction);
-  const now = `${fmtValue(ref, reading.value)} now (${readingDate(reading)})`;
+  const when = readingDate(reading);
+  const now = `${fmtValue(ref, reading.value)} now${when ? ` (${when})` : ""}`;
   const rule = `falsified ${f.direction} ${fmtValue(ref, f.level)}`;
   const pct = d.pct != null ? ` (${pyFixed(d.pct * 100, 1)}% of current)` : "";
   const distance = d.falsified ? `Falsified: ${fmtValue(ref, reading.value)} is ${f.direction === "below" ? "at or under" : "at or over"} ${fmtValue(ref, f.level)}` : `${fmtValue(ref, Math.abs(d.gap))} away${pct}`;

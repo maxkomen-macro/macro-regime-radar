@@ -14,7 +14,7 @@ import studiesJson from "./__fixtures__/engine-studies.json";
 import { EXCLUSION_CLIENT, EXCLUSION_CLIENT_SHORT, eventsBehind, factsLine, fmtInterval, fmtMove, fmtZ, historyLine, missingForwardWord, sampleLine } from "./format";
 import { sourceLine, titleFor } from "./EventStudyPage";
 import { behindCount } from "./results";
-import { GenerationSplit, fetchFredPair, readingDate, seriesRef } from "../positions/series";
+import { fetchReading, readingDate, seriesRef } from "../positions/series";
 import { niceTicks } from "./HorizonChart";
 import { cutoffs, studiesSource, studySource, studyVerdict } from "./StudyBadge";
 
@@ -195,49 +195,20 @@ describe("review round (R-01, R-04, R-07, R-08)", () => {
     expect(page(raw).recent_events[0].window_open).toEqual({ "60": true });
   });
 
-  it("R-07: a FRED value and its date are one pair from one generation identity", async () => {
-    type Gen = { id: number | null; built_at: string | null; as_of: string };
-    // A scripted API: each /api/freshness read answers the next identity in `gens`.
-    const run = async (gens: Gen[], value = 4.12) => {
-      const calls: string[] = [];
-      let f = 0;
-      const get = (async (path: string) => {
-        calls.push(path);
-        if (path === "/api/freshness") {
-          const g = gens[Math.min(f++, gens.length - 1)];
-          return { generation: { id: g.id, built_at: g.built_at, source: "macro_radar.db" }, series: [{ id: "DGS10", as_of: g.as_of, cadence: "daily" }] };
-        }
-        return { series_id: "DGS10", date: "2026-09-01", value };
-      }) as never;
-      return { reading: await fetchFredPair(seriesRef("DGS10")!, get), calls };
-    };
-    const g17: Gen = { id: 1, built_at: "2026-09-17T23:10:00Z", as_of: "2026-09-17" };
-    const g18: Gen = { id: 1, built_at: "2026-09-18T23:10:00Z", as_of: "2026-09-18" };
-    const g19: Gen = { id: 1, built_at: "2026-09-19T23:10:00Z", as_of: "2026-09-19" };
-    // One identity around the value: the pair is that generation's value and date.
-    const same = await run([g17, g17]);
-    expect(same.reading).toEqual({ value: 4.12, date: "2026-09-17", monthly: false, generation: { id: 1, built_at: g17.built_at } });
-    expect(same.calls).toEqual(["/api/freshness", "/series/DGS10/latest", "/api/freshness"]);
-    // Codex's repro: the worker restarted, so the id is 1 on both sides while the
-    // build stamp moved from Sep 17 to Sep 18 and the value is Sep 18's 4.25. The
-    // old check (id only) printed "4.25% now (Sep 17, 2026)". Now it reads again;
-    // the second read is one identity (Sep 18), so 4.25 is paired with Sep 18.
-    const restarted = await run([g17, g18, g18, g18], 4.25);
-    expect(restarted.reading).toMatchObject({ value: 4.25, date: "2026-09-18" });
-    expect(restarted.reading.date).not.toBe("2026-09-17");
-    expect(restarted.calls).toHaveLength(6);
-    // Identical ids, a different build stamp on every read: the misdated value is rejected.
-    await expect(run([g17, g18, g18, g19], 4.25)).rejects.toThrow(GenerationSplit);
-    // Only the build stamp moves (same id, same as_of): a different identity, rejected (V4-01).
-    const restamped = { ...g17, built_at: g18.built_at };
-    await expect(run([g17, restamped, g17, restamped])).rejects.toThrow(GenerationSplit);
-    // The same id and build stamp but a moved observation date is a different identity too.
-    await expect(run([g17, { ...g17, as_of: "2026-09-18" }, g17, { ...g17, as_of: "2026-09-18" }])).rejects.toThrow(/awaiting a refresh/);
-    // A monthly series names its month; an API without generations gives no date.
-    expect(readingDate({ date: "2026-08-01", monthly: true })).toBe("Aug 2026");
-    const old = (async (path: string) => (path === "/api/freshness" ? { series: [{ id: "DGS10", as_of: "2026-09-17" }] } : { value: 4.12 })) as never;
-    expect(await fetchFredPair(seriesRef("DGS10")!, old)).toEqual({ value: 4.12, date: null, generation: null });
-    expect(readingDate({ date: null })).toBe("date unknown");
+  it("R-07 (round 4): a reading is dated only by a date in its own response", async () => {
+    const calls: string[] = [];
+    const answer = (body: unknown) => (async (path: string) => (calls.push(path), body)) as never;
+    // A FRED value response with no date: the value, no date, one request.
+    const bare = await fetchReading(seriesRef("DGS10")!, answer({ series_id: "DGS10", value: 4.12 }));
+    expect(bare).toEqual({ value: 4.12, date: null, monthly: false });
+    expect(readingDate(bare)).toBeNull();
+    expect(calls).toEqual(["/series/DGS10/latest"]);
+    // A FRED value response with its month stamp: that month, and nothing else.
+    const stamped = await fetchReading(seriesRef("DGS10")!, answer({ series_id: "DGS10", date: "2026-09-01", value: 5.19 }));
+    expect(readingDate(stamped)).toBe("Sep 2026");
+    // A stored bar: its own date.
+    const bar = await fetchReading(seriesRef("SPY")!, answer([{ symbol: "SPY", date: "2026-09-18", close: 600 }]));
+    expect(readingDate(bar)).toBe("Sep 18, 2026");
   });
 });
 
