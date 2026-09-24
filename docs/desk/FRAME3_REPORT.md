@@ -753,6 +753,99 @@ pixel-identical; Macro differs only in its two end captions). Dispositions:
 - R2-6 tests for `endDay` and the band-label wrap: added.
 - R2-7 the spec names the green too.
 
+### 7. Signal Ledger — `frame-3: signal-ledger`
+
+Built: the Signal Ledger on `/signal-ledger` (§8, §12.4): no action button,
+the `● Live · engine as of Sep 22` badge; the four stats (SIGNALS SCORED
+with "since 1990 where history allows", FIRING NOW and RELIABLE with their
+short names, NO EDGE); the five filter chips; one table with fixed columns
+in two groups (FIRING NOW, green-tinted, then QUIET · SORTED BY VERDICT:
+Reliable, Suggestive, No edge, served order within a verdict, §12.4 making
+the sort the client's); the verdict pill and `● Firing` / `○ Quiet`; the
+three verdict definitions and the note in the footer. A row opens its study
+in Event Study (`?preset=<slug>`), by click, Enter or Space; against the
+fixtures only the gold study answers, so the other rows land on Event
+Study's "Awaiting refresh" (§12.13 records the six slugs `/study` must add).
+The table keeps its columns at every width and scrolls inside its own named
+region below 960 px. Fixture: `ledger.json` (§12.4, complete).
+
+Compare: `docs/desk/screens/compare/07-signal-ledger.png` (build alone:
+`07-signal-ledger.build.png`). Matched on the second pass. The first ran
+927 px against 880: the stats at the kit's sizes (this PNG uses 23 px values
+and 12.5 px notes, as Regime to Sectors do), 11 px more under the chips and
+3 px more in the header. Every row now sits within 2 px of the PNG; the page
+is 901 px, the difference being the definitions' third line (below).
+Deviations, each deliberate:
+- **The verdict definitions keep the kit's one wording** (the Overview's):
+  "the edge survives resampling: 10+ independent episodes and fewer than 3%
+  of resamples go the other way", where this PNG writes the shorter "10+
+  independent episodes, fewer than 3% of resamples go the other way". §8
+  asks for "the three verdict definitions"; one wording on every tab is
+  worth the extra line (16 px).
+- **S&P 5-day move over 2σ last fired Jul 31, 2026** where the PNG prints
+  Aug 2 (a Sunday; T-9).
+- **FIRING NOW and RELIABLE are green only when their count is above
+  zero.**
+- **Negative medians and "vs normal" values are red** (§1.3, D12); the PNG
+  sets them amber.
+- **The Ledger keeps the served order inside the firing group** (as the
+  PNG: 2s10s, then the dollar), where Technicals' signal list sorts firing
+  rows by verdict; §12.4 says only "firing first, then verdict order".
+  One shared order is a follow-up.
+- **No MOCKUP badge** (as on every tab).
+
+PROPOSED (spec §12.13): `signals[].short` (and on the Overview's rows);
+notes on null cells, on what the stats count, and that every ledger slug is
+a study preset.
+
+Verifier, round 1: **PASS WITH FINDINGS**, nothing blocking (the twelve rows
+match §8, vs normal is median − 1.3 on every row, every Reliable has n ≥ 10,
+every date is an NYSE session). Dispositions:
+- L-1 names were cut below about 1280 px: **fixed**, the table keeps a
+  960 px floor and scrolls in its own region; a browser test checks 1101,
+  1200 and 390.
+- L-2 half the rows open studies §12.2 cannot answer: recorded above and as
+  PROPOSED in §12.13 (with the RSI note for B).
+- L-3 an unknown verdict drew an empty pill: **fixed** ("—"); tested.
+- L-4 the columns sat left of the PNG's: **fixed**, the PNG's pitches, no
+  right padding, the VERDICT header and pill right-aligned, top-aligned
+  headers; every column's right edge now equals the PNG's (818, 900, 1002,
+  1094, 1195, 1308, 1400) and every row sits within 2 px.
+- L-5 the chips: **fixed** (12.5 px, 10 px padding, the card's own shade,
+  the secondary text color); within 3 px of the PNG's widths.
+- L-6 the note: **fixed** (top-aligned, 280 px, "normal month +1.3%" kept
+  together).
+- L-7 the firing tint: **fixed**, §1.3's Reliable tint, kept on hover; LAST
+  FIRED in the tertiary gray.
+- L-8 a missing `as_of`: **fixed**, the badge and the note's date are left
+  out; tested.
+- L-9 names fall back to the slug, an unknown firing state prints "—", no
+  "since the start" or "not served" phrases. The shared row type still
+  declares the five values non-null (Overview and Technicals read it); the
+  Ledger guards them at run time.
+- L-10 the chips wait for the table and the card is busy while loading.
+- L-11 only the table scrolls, inside a focusable named region with a ring.
+- L-12 recorded above (the order) and in §12.13's notes (the 2s10s verdict
+  is served, as the mockup has it).
+- L-13 tests added (Ledger now 14 unit tests and one browser test).
+
+Verifier, round 2: **PASS WITH FINDINGS**, nothing blocking; L-1 to L-13
+confirmed (column edges exactly the PNG's, rows within about 1 px, no name
+cut from 360 to 1440). Dispositions:
+- R2-1 (a regression from L-11) the scroll region clipped the rows' focus
+  ring to its top and bottom lines: **fixed**, rows inside the region draw
+  their ring inside.
+- R2-2 the note broke before a separator: **fixed**, a line breaks only
+  after one.
+- R2-3 disabled chips kept the pointer and the hover border: **fixed**.
+- R2-4 no sub-line without a served sample start; the region's ring sits
+  inside it (clear of the chips); the region is a Tab stop only while it
+  scrolls; an inherited key is not a verdict.
+- R2-5 the page height above is corrected.
+- Overview's compare shot is regenerated with this commit: its only change
+  is the sidebar's "← Macro Regime Radar" link, gray since the Technicals
+  review's R2-2 (the PNG's color).
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -767,3 +860,4 @@ tests against the fixture dev server.
 | frame-3: regime | clean | 107 / 1,192 | ok | 17 / 17 |
 | frame-3: macro | clean | 108 / 1,211 | ok | 19 / 19 |
 | frame-3: sectors | clean | 110 / 1,230 | ok | 21 / 21 |
+| frame-3: signal-ledger | clean | 111 / 1,244 | ok | 23 / 23 |

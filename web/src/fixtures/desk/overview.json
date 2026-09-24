@@ -63,7 +63,8 @@
    "vs_normal_pts": 1.4,
    "verdict": "reliable",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "golden cross"
   },
   {
    "slug": "death-cross",
@@ -76,7 +77,8 @@
    "vs_normal_pts": -0.4,
    "verdict": "no_edge",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "death cross"
   },
   {
    "slug": "gold-2sigma-spx-weak",
@@ -89,7 +91,8 @@
    "vs_normal_pts": 1.8,
    "verdict": "suggestive",
    "firing_now": false,
-   "sample_start": "2000-01-03"
+   "sample_start": "2000-01-03",
+   "short": "gold while S&P weak"
   },
   {
    "slug": "vix-spike-2sigma-5d",
@@ -102,7 +105,8 @@
    "vs_normal_pts": 0.9,
    "verdict": "reliable",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "VIX spike"
   },
   {
    "slug": "2s10s-2sigma-steepening",
@@ -116,7 +120,8 @@
    "verdict": "no_edge",
    "firing_now": true,
    "firing_day": 10,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "2s10s steepening"
   }
  ],
  "monitored": [

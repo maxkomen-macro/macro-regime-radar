@@ -835,7 +835,28 @@ building it; the web side follows whatever this section ends up saying.
   `eqw_vs_cap_3m`).
 - `sectors` also carries `generation_id` (§12's header).
 
+**Signal Ledger (§8)**
+- **PROPOSED** `ledger.signals[].short` (and on the Overview's
+  `active_signals`, which carry the same rows): the short name the FIRING
+  NOW and RELIABLE stats list ("2s10s steepening · dollar weak", "golden
+  cross · RSI < 30 · VIX spike"). §12.4 carries only the table's `label`.
+- A row's `last_fired`, `n`, `up_pct`, `median` or `vs_normal_pts` may be
+  null: the cell prints "—". The four stats are counts of the served rows
+  (firing, Reliable, No edge) and the earliest `sample_start` ("since
+  1990"); the page ranks nothing else.
+- **PROPOSED** every `/ledger` slug is a `/study` preset: a row opens
+  Event Study with `?preset=<slug>`, so §12.2's preset list gains the six
+  ledger slugs it lacks (`2s10s-2sigma-steepening`, `rsi-below-30`,
+  `spx-20d-2sigma`, `rsi-above-70`, `oil-2sigma-20d`, `spx-5d-2sigma`).
+  Note for B: the two RSI studies cannot be spelled in §12.2's six slots
+  (`move` has no RSI value); `/study` answers them by preset and serves a
+  `question` the slots can show only once `move` gains RSI values.
+
 Notes for B (not new fields):
+- The mockup's 2s10s steepening row is "No edge" with −1.9 points against a
+  normal month, the widest gap on the Ledger; §1.5 defines No edge as "about
+  the same as any month". The verdict is the engine's and the fixture keeps
+  the mockup's; worth a look when the engine scores it.
 - The mockup's Overview rows label two signals differently from the Ledger
   (§2 "Gold +2σ while S&P < 50d", "VIX +2σ in 5 days"; §8 "Gold +2σ while S&P
   weak", "VIX spike +2σ, 5 days"). Each fixture keeps its own section's label;

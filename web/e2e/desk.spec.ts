@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors"];
+const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -170,6 +170,27 @@ test.describe("desk v2", () => {
       await settle(page, 300);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }
+  });
+
+  test("ledger: no name is cut at 1101, 1200 or 390; the table scrolls in its own region; the card never stretches", async ({ page }) => {
+    await open(page, "/desk/signal-ledger");
+    const h = await page.locator("section.lg-card").evaluate((e) => Math.round(e.getBoundingClientRect().height));
+    await page.setViewportSize({ width: 1440, height: 1600 });
+    await settle(page, 200);
+    expect(await page.locator("section.lg-card").evaluate((e) => Math.round(e.getBoundingClientRect().height))).toBe(h);
+    for (const width of [1101, 1200, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await settle(page, 250);
+      const cut = await page.locator(".lg-table th[scope=row]").evaluateAll((ths) => ths.filter((th) => th.scrollWidth > th.clientWidth).length);
+      expect(cut).toBe(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+    // Reached from the keyboard, the scroll region shows its ring.
+    const region = page.getByRole("region", { name: "The signals table" });
+    await region.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    expect(await region.evaluate((e) => document.activeElement === e && getComputedStyle(e).outlineStyle !== "none" && parseFloat(getComputedStyle(e).outlineWidth) >= 1)).toBe(true);
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

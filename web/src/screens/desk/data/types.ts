@@ -51,6 +51,8 @@ export interface LedgerRow {
   firing_day?: number;
   /** PROPOSED (§12.13): first session of the signal's sample, for "since 1990" / "since 2000". */
   sample_start: string;
+  /** PROPOSED (§12.13): a short name for lists ("golden cross", "RSI < 30"). */
+  short?: string;
 }
 
 export interface LedgerResponse extends Envelope {

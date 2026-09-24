@@ -27,6 +27,7 @@ const EventStudyPage = lazy(() => import("./event-study/EventStudyPage"));
 const RegimePage = lazy(() => import("./regime/RegimePage"));
 const MacroPage = lazy(() => import("./macro/MacroPage"));
 const SectorsPage = lazy(() => import("./sectors/SectorsPage"));
+const LedgerPage = lazy(() => import("./ledger/LedgerPage"));
 
 function PageLoading({ label }: { label: string }) {
   return (
@@ -89,6 +90,7 @@ export default function DeskShell() {
   else if (page.slug === "regime") body = <RegimePage page={page} />;
   else if (page.slug === "macro") body = <MacroPage page={page} />;
   else if (page.slug === "sectors") body = <SectorsPage page={page} />;
+  else if (page.slug === "signal-ledger") body = <LedgerPage page={page} />;
   else body = <NotBuilt page={page} />;
 
   return (

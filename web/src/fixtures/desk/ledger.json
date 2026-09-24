@@ -15,7 +15,8 @@
    "verdict": "no_edge",
    "firing_now": true,
    "firing_day": 10,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "2s10s steepening"
   },
   {
    "slug": "dollar-2sigma-20d",
@@ -29,7 +30,8 @@
    "verdict": "suggestive",
    "firing_now": true,
    "firing_day": 6,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "dollar weak"
   },
   {
    "slug": "golden-cross",
@@ -42,7 +44,8 @@
    "vs_normal_pts": 1.4,
    "verdict": "reliable",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "golden cross"
   },
   {
    "slug": "rsi-below-30",
@@ -55,7 +58,8 @@
    "vs_normal_pts": 2.1,
    "verdict": "reliable",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "RSI < 30"
   },
   {
    "slug": "vix-spike-2sigma-5d",
@@ -68,7 +72,8 @@
    "vs_normal_pts": 0.9,
    "verdict": "reliable",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "VIX spike"
   },
   {
    "slug": "gold-2sigma-spx-weak",
@@ -81,7 +86,8 @@
    "vs_normal_pts": 1.8,
    "verdict": "suggestive",
    "firing_now": false,
-   "sample_start": "2000-01-03"
+   "sample_start": "2000-01-03",
+   "short": "gold while S&P weak"
   },
   {
    "slug": "hy-2sigma-20d",
@@ -94,7 +100,8 @@
    "vs_normal_pts": 1.6,
    "verdict": "suggestive",
    "firing_now": false,
-   "sample_start": "2023-09-22"
+   "sample_start": "2023-09-22",
+   "short": "HY spreads widening"
   },
   {
    "slug": "spx-20d-2sigma",
@@ -107,7 +114,8 @@
    "vs_normal_pts": 1.1,
    "verdict": "suggestive",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "S&P 20-day move"
   },
   {
    "slug": "death-cross",
@@ -120,7 +128,8 @@
    "vs_normal_pts": -0.4,
    "verdict": "no_edge",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "death cross"
   },
   {
    "slug": "rsi-above-70",
@@ -133,7 +142,8 @@
    "vs_normal_pts": -0.2,
    "verdict": "no_edge",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "RSI > 70"
   },
   {
    "slug": "oil-2sigma-20d",
@@ -146,7 +156,8 @@
    "vs_normal_pts": -0.9,
    "verdict": "no_edge",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "oil spike"
   },
   {
    "slug": "spx-5d-2sigma",
@@ -159,7 +170,8 @@
    "vs_normal_pts": -0.7,
    "verdict": "no_edge",
    "firing_now": false,
-   "sample_start": "1990-01-02"
+   "sample_start": "1990-01-02",
+   "short": "S&P 5-day move"
   }
  ]
 }

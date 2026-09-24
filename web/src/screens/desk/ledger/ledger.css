@@ -1,0 +1,169 @@
+/* Signal Ledger (DESK_FRAME3_SPEC §8; geometry from screens/07-signal-ledger.png at 1440). */
+.lg {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.lg-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  padding: 6.5px 0 2px;
+}
+/* Measured on the PNG: stat values 23 px, their notes 12.5 px (as on Regime, Macro, Sectors). */
+.lg-stats .dk-stat-value {
+  font-size: 23px;
+  margin-top: 1px;
+}
+.lg-stats .dk-stat-sub {
+  font-size: 12.5px;
+  line-height: 1.12;
+}
+/* The card is as tall as its table; it never stretches to the window. */
+.lg-card {
+  padding: 11px 17px 14px;
+}
+.lg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lg-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin-top: 2px;
+}
+.lg-table thead th {
+  height: 31px;
+  padding: 10px 0 0;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+  text-align: right;
+  vertical-align: top;
+  border-bottom: 1px solid var(--dk-border);
+}
+.lg-table thead th:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+.lg-table .lg-verdict {
+  text-align: right;
+}
+.lg-group th {
+  height: 18px;
+  padding: 1px 0 0;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+  text-align: left;
+}
+/* The second group sits a little further from the rows above it, as in the PNG. */
+.lg-table tbody + tbody .lg-group th {
+  height: 23px;
+  padding-top: 6px;
+}
+.lg-table tbody tr:not(.lg-group) {
+  height: 39px;
+  border-bottom: 1px solid var(--dk-row);
+  cursor: pointer;
+}
+.lg-table tbody tr:not(.lg-group):hover {
+  background: var(--dk-card-2);
+}
+/* Firing rows: the Reliable tint (§1.3), kept under the pointer (L-7). */
+.lg-table tbody tr[data-firing],
+.lg-table tbody tr[data-firing]:hover {
+  background: var(--dk-rel-bg);
+}
+.lg-table tbody th[scope="row"] {
+  text-align: left;
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--dk-t1);
+  padding: 0 8px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lg-table td {
+  padding: 0;
+  text-align: right;
+  color: var(--dk-t1);
+  white-space: nowrap;
+}
+.lg-mono {
+  font-family: var(--dk-mono);
+  font-size: 13px;
+}
+.lg-table td:nth-child(2) {
+  color: var(--dk-t3);
+}
+.lg-pill {
+  width: 92px;
+}
+.lg-now {
+  font-family: var(--dk-mono);
+  font-size: 12.5px;
+}
+.lg-empty {
+  text-align: left !important;
+  color: var(--dk-t3);
+  padding: 12px 0 !important;
+}
+.lg-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--dk-border);
+}
+.lg-card > .lg-scroll + .lg-foot,
+.lg-card > .dk-await + .lg-foot {
+  margin-top: 18px;
+}
+.lg-foot .dk-defs {
+  flex: 1;
+}
+.lg-note {
+  width: 280px;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dk-t4);
+}
+/* The table keeps its columns at every width (names never cut); narrower than 960 px it scrolls
+   inside its own named region, never the chips or the footer (L-1, L-11). */
+.lg-scroll {
+  overflow-x: auto;
+}
+.lg-scroll:focus-visible {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: -2px;
+}
+/* Inside the scroll region a ring drawn outside the row is clipped: draw it inside (R2-1). */
+.lg-table tbody tr:focus-visible {
+  outline-offset: -2px;
+}
+.lg-table {
+  min-width: 960px;
+}
+@media (max-width: 1100px) {
+  .lg-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lg-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

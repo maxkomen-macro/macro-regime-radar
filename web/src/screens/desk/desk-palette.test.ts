@@ -14,7 +14,7 @@ const ALLOWED = new Set<string>([...DESK_PALETTE, "#fff"]);
 const RGB_OK = paletteRgb();
 
 const CSS = import.meta.glob<string>(["/src/styles/desk2.css", "/src/screens/desk/**/*.css"], { query: "?raw", import: "default", eager: true });
-const TSX = import.meta.glob<string>(["/src/screens/desk/{kit,data,overview,technicals,event-study,regime,macro,sectors}/**/*.tsx", "/src/screens/desk/*.tsx"], { query: "?raw", import: "default", eager: true });
+const TSX = import.meta.glob<string>(["/src/screens/desk/{kit,data,overview,technicals,event-study,regime,macro,sectors,ledger}/**/*.tsx", "/src/screens/desk/*.tsx"], { query: "?raw", import: "default", eager: true });
 
 /** Every hex or rgb()/rgba() color in a text, comments stripped. */
 export function colorsIn(text: string): string[] {

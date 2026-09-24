@@ -1092,3 +1092,27 @@
   font-size: 15px;
   line-height: 18px;
 }
+
+/* ── Chips (the Ledger's filters and any pill-shaped choice) ─────────── */
+.dk-chip {
+  height: 25px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--dk-box);
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--dk-t2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dk-chip:hover:not(:disabled) {
+  border-color: var(--dk-t4);
+}
+.dk-chip:disabled {
+  cursor: default;
+}
+.dk-chip[aria-pressed="true"] {
+  border-color: var(--dk-rel-bd);
+  background: var(--dk-rel-bg);
+  color: var(--dk-green);
+}
