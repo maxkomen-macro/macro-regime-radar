@@ -33,7 +33,7 @@ function Slot({ label, tip, value, options, onChange, disabled, awaiting }: { la
         </span>
       ) : null}
       {awaiting ? <span className="dk-sr">The series list is awaiting refresh.</span> : null}
-      <div className="es-select">
+      <div className="dk-select">
         <select id={id} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} aria-describedby={tip ? tipId : undefined}>
           {known ? null : <option value={value}>{value}</option>}
           {options.map((o) => (

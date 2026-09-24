@@ -660,13 +660,6 @@
   .dk-top-r .dk-btn {
     display: none;
   }
-  .dk-mon-row {
-    grid-template-columns: auto minmax(0, 1fr) 14px;
-    grid-template-areas: "name name caret" "nav room caret" "bar bar caret";
-  }
-  .dk-mon-room {
-    white-space: normal;
-  }
   .dk-stats {
     grid-auto-flow: row;
     grid-template-columns: minmax(0, 1fr) !important;
@@ -765,6 +758,18 @@
   font-size: 10px;
   color: var(--dk-t3);
   text-align: right;
+}
+
+/* Narrow rows: the room words on their own line with the bar under them. After the base
+   rules above, so it wins (verifier P-9: placed before them, it never applied). */
+@media (max-width: 560px) {
+  .dk-mon-row {
+    grid-template-columns: auto minmax(0, 1fr) 14px;
+    grid-template-areas: "name name caret" "nav room caret" "bar bar caret";
+  }
+  .dk-mon-room {
+    white-space: normal;
+  }
 }
 
 /* ── Verdict definitions (§1.5) ───────────────────────────────────────── */
@@ -1009,6 +1014,37 @@
 .dk-rank-value {
   text-align: right;
   color: var(--dk-t3);
+}
+/* A labelled select with the Desk's chevron (Event Study's slots, the Position Monitor's fields). */
+.dk-select {
+  position: relative;
+}
+.dk-select::after {
+  content: "▾";
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--dk-t3);
+  pointer-events: none;
+}
+.dk-select select {
+  appearance: none;
+  width: 100%;
+  height: 32px;
+  padding: 0 26px 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--dk-box);
+  background: var(--dk-card-2);
+  color: var(--dk-t1);
+  font-family: var(--dk-sans);
+  font-size: 14px;
+  cursor: pointer;
+}
+.dk-select select:disabled {
+  color: var(--dk-t4);
+  cursor: default;
 }
 /* Text for screen readers only (every tab: the Event Study bars, the Sectors dots). */
 .dk-sr {

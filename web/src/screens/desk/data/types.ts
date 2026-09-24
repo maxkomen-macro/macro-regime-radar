@@ -72,12 +72,32 @@ export interface PositionCompact {
   name: string;
   instrument: string;
   direction: "long" | "short";
-  size_nav: number;
-  room_pct: number;
-  to_level: ToLevel;
+  /** Null when not served (a position saved without a size); the row prints "—". */
+  size_nav: number | null;
+  room_pct: number | null;
+  to_level: ToLevel | null;
   opened: string;
   horizon_days: number;
   day: number;
+}
+
+/** §12.8's expanded row: the compact row plus the gate text and the level. */
+export interface PositionExpanded extends PositionCompact {
+  /** PROPOSED (§12.13) shape: the level that falsifies the idea, in words and number. */
+  falsifies_at: { label: string; value: number | null; unit: string | null } | null;
+  /** PROPOSED (§12.13) shape: the level's series today, dated at its own frequency. */
+  now: { value: number; unit: string; date: string } | null;
+  dv01: number | null;
+  variant: string;
+  pre_mortem: string;
+  red_team: string;
+  study_slug: string | null;
+}
+
+/** GET /positions (PROPOSED shape, §12.13). */
+export interface PositionsResponse extends Envelope {
+  positions: PositionExpanded[];
+  closed_90d: { falsified: number; expired: number; premortem_right: [number, number] };
 }
 
 // ── §12.1 /overview ───────────────────────────────────────────────────────

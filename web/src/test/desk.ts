@@ -4,11 +4,12 @@
  * (src/fixtures/desk), unless a test overrides the path. Anything else
  * answers 404. Returns the list of requested paths.
  */
-import { deskFixture } from "../fixtures/desk";
+import { deskFixture, resetDeskFixtureState } from "../fixtures/desk";
 
 export type DeskOverride = (url: URL, init?: RequestInit) => { status: number; body: unknown } | unknown;
 
 export function stubDesk(over: Record<string, DeskOverride> = {}) {
+  resetDeskFixtureState();
   const calls: string[] = [];
   const fn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "http://localhost");

@@ -130,36 +130,6 @@
   letter-spacing: 0;
   white-space: normal;
 }
-.es-select {
-  position: relative;
-}
-.es-select::after {
-  content: "▾";
-  position: absolute;
-  right: 11px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 10px;
-  color: var(--dk-t3);
-  pointer-events: none;
-}
-.es-select select {
-  appearance: none;
-  width: 100%;
-  height: 32px;
-  padding: 0 26px 0 12px;
-  border-radius: 6px;
-  border: 1px solid var(--dk-box);
-  background: var(--dk-card-2);
-  color: var(--dk-t1);
-  font-family: var(--dk-sans);
-  font-size: 14px;
-  cursor: pointer;
-}
-.es-select select:disabled {
-  color: var(--dk-t4);
-  cursor: default;
-}
 .es-run,
 .es-save {
   height: 32px;

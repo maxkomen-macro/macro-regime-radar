@@ -852,6 +852,36 @@ building it; the web side follows whatever this section ends up saying.
   (`move` has no RSI value); `/study` answers them by preset and serves a
   `question` the slots can show only once `move` gains RSI values.
 
+**Position Monitor (§9)**
+- **PROPOSED** `GET /positions` answers `{"as_of","generation_id",
+  "positions":[…expanded rows…],"closed_90d":{…}}`: every row carries the
+  expanded fields, so a row opens without a second request.
+- **PROPOSED** shapes for two expanded fields §12.8 names only:
+  `falsifies_at: {"label","value","unit"}` ("2s10s below +38 bp", 38, "bp")
+  and `now: {"value","unit","date"}` (the level's series today, dated at its
+  own frequency).
+- **PROPOSED** the POST body: `{"instrument","direction":"long"|"short",
+  "size_nav" (a fraction, or null),"horizon_days","variant","pre_mortem",
+  "wrong_if":{"id","label"},"study_slug"|null}`; a saved position answers
+  201 with its row. The refusals are §12.8's (`wording` with `words`,
+  `gate` with `missing`).
+- A study carried in arrives as `?from=<preset>` or as Event Study's six
+  slots; the page asks `/study` with the same parameters and fills the
+  instrument (the study's target) and the horizon, nothing in the gate.
+- **PROPOSED** `wrong_if.id` values: for a long `below_50d`, `falls_2s_5d`,
+  `below_200d`, `entry_minus_3`, `entry_minus_5`, `lower_low_20`,
+  `rsi_below_40`, `vix_above_25`, `hy_widen_2s`; for a short their mirror
+  `above_50d`, `rises_2s_5d`, `above_200d`, `entry_plus_3`, `entry_plus_5`,
+  `higher_high_20`, `rsi_above_60`, `vix_below_15`, `hy_tighten_2s`; for
+  either `regime_changes`, `signal_reverses` (offered only with a carried
+  study; the server binds it to `study_slug`) and `custom` (the typed
+  label). §9 lists the long's eight; the short's are the page's mirror.
+- A row's `size_nav`, `room_pct` and `to_level` may be null (a position
+  saved without a size, or one the server has not measured yet), and
+  `falsifies_at.value` / `.unit` likewise: the row prints "—" and leaves its
+  bar empty; the footer's deployed share is printed only when every row has
+  a size.
+
 Notes for B (not new fields):
 - The mockup's 2s10s steepening row is "No edge" with −1.9 points against a
   normal month, the widest gap on the Ledger; §1.5 defines No edge as "about

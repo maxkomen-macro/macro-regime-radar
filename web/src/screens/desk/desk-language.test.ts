@@ -25,7 +25,7 @@ const FRAME3 = /^(established|significant)$/i;
 /** Frame-2 files that v2 has not rebuilt or retired yet: they keep the frame-2
  * list; frame-3's two words are checked on them when their tab lands
  * (FRAME3_REPORT.md tracks this list until it is empty). */
-export const LEGACY_FRAME2 = ["/src/screens/desk/positions/", "/src/screens/desk/pipeline/", "/src/screens/desk/StatusBadge", "/src/screens/desk/badge-sources", "/src/screens/desk/DeskPageHead", "/src/screens/desk/desk-ui", "/src/screens/desk/Seals", "/src/screens/desk/pyformat"];
+export const LEGACY_FRAME2 = ["/src/screens/desk/pipeline/", "/src/screens/desk/StatusBadge", "/src/screens/desk/badge-sources", "/src/screens/desk/DeskPageHead", "/src/screens/desk/desk-ui", "/src/screens/desk/pyformat"];
 const legacy = (file: string) => LEGACY_FRAME2.some((p) => file.startsWith(p));
 /** A sentence about the recession regression, the one thing the Desk calls a model. */
 const RECESSION_SENTENCE = /recession probability|logistic regression|logistic model/i;
@@ -88,8 +88,8 @@ function offending(file: string, s: string): string[] {
     .flatMap((sentence) =>
       [...sentence.matchAll(BANNED)].map((m) => m[0]).filter((w) => !(/^models?$/i.test(w) && (RECESSION_SENTENCE.test(sentence) || (file.endsWith("/regime/RegimePage.tsx") && SPEC_MODEL_SENTENCES.some((r) => r.test(sentence.trim())))))),
     );
-  // gate.ts: the ban list's entries are the words themselves.
-  if (file.endsWith("/positions/gate.ts") && /^[a-z]+$/.test(s.trim()) && words.length === 1) return [];
+  // wording.ts: the certainty list's entries are the words themselves (§9).
+  if (file.endsWith("/positions/wording.ts") && /^[a-z]+$/.test(s.trim()) && words.length === 1) return [];
   return words;
 }
 

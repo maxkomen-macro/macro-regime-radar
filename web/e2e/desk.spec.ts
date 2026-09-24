@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger"];
+const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -191,6 +191,32 @@ test.describe("desk v2", () => {
     await page.keyboard.press("Shift+Tab");
     await page.keyboard.press("Tab");
     expect(await region.evaluate((e) => document.activeElement === e && getComputedStyle(e).outlineStyle !== "none" && parseFloat(getComputedStyle(e).outlineWidth) >= 1)).toBe(true);
+  });
+
+  test("position monitor: the flagged and expanded states stay in the palette; no sideways scroll; no stretch in a tall window", async ({ page }) => {
+    await open(page, "/desk/position-monitor?from=gold-2sigma-spx-weak&open=2s10s-steepener");
+    await page.getByLabel(/Variant view/).fill("The market thinks gold will keep falling.");
+    await expect(page.getByRole("group", { name: "Wording" })).toContainText("1 to fix, one click");
+    await page.getByRole("button", { name: /closes below its 50-day/ }).click();
+    expect(await auditPalette(page)).toEqual([]);
+    const gate = page.locator("section.pm-gate");
+    const h = await gate.evaluate((e) => Math.round(e.getBoundingClientRect().height));
+    await page.setViewportSize({ width: 1440, height: 2400 });
+    await settle(page, 200);
+    expect(await gate.evaluate((e) => Math.round(e.getBoundingClientRect().height))).toBeLessThanOrEqual(h);
+    for (const width of [1300, 1200, 1101, 1100, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await settle(page, 250);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+      // The wrong-if column holds together: no pill's text outgrows it, the typed level stays usable (R2-4).
+      const cramped = await page.evaluate(() => {
+        const chips = [...document.querySelectorAll<HTMLElement>(".pm-chip")].filter((c) => c.scrollHeight > c.clientHeight + 1 || c.scrollWidth > c.clientWidth + 1).length;
+        const own = document.querySelector<HTMLElement>(".pm-own")?.getBoundingClientRect().width ?? 0;
+        return { chips, own: Math.round(own) };
+      });
+      expect(cramped.chips).toBe(0);
+      expect(cramped.own).toBeGreaterThan(120);
+    }
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

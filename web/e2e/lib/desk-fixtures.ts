@@ -78,6 +78,11 @@ export async function auditPalette(page: Page): Promise<ColorOffender[]> {
 
 /** Frame-3's two words (§1.5) and frame-2's ban list, over the rendered text. */
 export async function bannedWordsOnPage(page: Page): Promise<string[]> {
-  const text = await page.evaluate(() => document.querySelector(".dk")?.textContent ?? "");
+  // The gate's own list of the words it blocks (§9) is the one place they are printed.
+  const text = await page.evaluate(() => {
+    const root = document.querySelector(".dk")?.cloneNode(true) as HTMLElement | undefined;
+    root?.querySelectorAll("[data-gate-words], textarea, input").forEach((n) => n.remove());
+    return root?.textContent ?? "";
+  });
   return [...text.matchAll(/\b(established|significant|will|predicts|proves|guaranteed|always|never|obviously)\b/gi)].map((m) => m[0]);
 }

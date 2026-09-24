@@ -1,0 +1,100 @@
+{
+ "as_of": "2026-09-22",
+ "generation_id": "gen-fixture-2026-09-22",
+ "positions": [
+  {
+   "id": "ndx-vs-spx",
+   "name": "Long NDX vs SPX",
+   "instrument": "NDX vs SPX",
+   "direction": "long",
+   "size_nav": 0.04,
+   "room_pct": 0.68,
+   "to_level": {
+    "value": 3.4,
+    "unit": "%"
+   },
+   "opened": "2026-08-24",
+   "horizon_days": 60,
+   "day": 21,
+   "falsifies_at": {
+    "label": "NDX gives back 3.4% against SPX from here",
+    "value": -3.4,
+    "unit": "%"
+   },
+   "now": null,
+   "dv01": null,
+   "study_slug": null,
+   "variant": "TODO(Max): the variant view for Long NDX vs SPX, in your words.",
+   "pre_mortem": "TODO(Max): the pre-mortem for Long NDX vs SPX.",
+   "red_team": "TODO(Max): the strongest case against Long NDX vs SPX."
+  },
+  {
+   "id": "2s10s-steepener",
+   "name": "2s10s steepener",
+   "instrument": "2s10s",
+   "direction": "long",
+   "size_nav": 0.02,
+   "room_pct": 0.22,
+   "to_level": {
+    "value": 3,
+    "unit": "bp"
+   },
+   "opened": "2026-09-02",
+   "horizon_days": 20,
+   "day": 14,
+   "falsifies_at": {
+    "label": "2s10s below +38 bp",
+    "value": 38,
+    "unit": "bp"
+   },
+   "now": {
+    "value": 41,
+    "unit": "bp",
+    "date": "2026-09-22"
+   },
+   "dv01": 1400,
+   "study_slug": "2s10s-2sigma-steepening",
+   "variant": "TODO(Max): the variant view for 2s10s steepener, in your words.",
+   "pre_mortem": "TODO(Max): the pre-mortem for 2s10s steepener.",
+   "red_team": "TODO(Max): the strongest case against 2s10s steepener."
+  },
+  {
+   "id": "ai-infra-hedged",
+   "name": "AI-infra basket, hedged",
+   "instrument": "AI infrastructure basket vs 1.6 × NDX",
+   "direction": "long",
+   "size_nav": 0.06,
+   "room_pct": 0.52,
+   "to_level": {
+    "value": 2.1,
+    "unit": "%"
+   },
+   "opened": "2026-08-10",
+   "horizon_days": 60,
+   "day": 31,
+   "falsifies_at": {
+    "label": "basket minus 1.6 × NDX below −4%",
+    "value": -4,
+    "unit": "%"
+   },
+   "now": {
+    "value": -1.9,
+    "unit": "%",
+    "date": "2026-09-22"
+   },
+   "dv01": null,
+   "study_slug": null,
+   "variant": "TODO(Max): the variant view for AI-infra basket, hedged, in your words.",
+   "pre_mortem": "TODO(Max): the pre-mortem for AI-infra basket, hedged.",
+   "red_team": "TODO(Max): the strongest case against AI-infra basket, hedged."
+  }
+ ],
+ "closed_90d": {
+  "falsified": 4,
+  "expired": 6,
+  "premortem_right": [
+   2,
+   4
+  ]
+ }
+}

@@ -14,6 +14,7 @@ import engineStudies from "../../screens/desk/event-study/__fixtures__/engine-st
 import ledger from "./ledger.json" with { type: "json" };
 import macro from "./macro.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
+import positions from "./positions.json" with { type: "json" };
 import regime from "./regime.json" with { type: "json" };
 import sectors from "./sectors.json" with { type: "json" };
 import studyEvents from "./study-events.json" with { type: "json" };
@@ -48,6 +49,67 @@ function asksFixtureStudy(u: URL): boolean {
   return Object.entries(STUDY_Q).every(([k, v]) => u.searchParams.get(k) === String(v));
 }
 
+// ── /positions (§12.8): the server keeps positions; the fixture keeps the
+// ones posted during this dev-server or test session, in memory. ──────────
+
+let posted: Record<string, unknown>[] = [];
+
+/** Forget what was posted (tests call this between cases). */
+export function resetDeskFixtureState(): void {
+  posted = [];
+}
+
+const CERTAINTY = /\b(will|always|never|proves|guaranteed)\b/gi;
+
+function positionsReply(method: string, body: string | undefined): FixtureReply {
+  if (method.toUpperCase() === "GET") {
+    const base = positions as { positions: Record<string, unknown>[] };
+    return json(200, { ...base, positions: [...base.positions, ...posted] });
+  }
+  if (method.toUpperCase() !== "POST") return json(405, { error: "method not allowed" });
+  let b: Record<string, unknown>;
+  try {
+    b = JSON.parse(body ?? "{}") as Record<string, unknown>;
+  } catch {
+    return json(400, { error: "not JSON" });
+  }
+  const text = `${String(b.variant ?? "")} ${String(b.pre_mortem ?? "")}`;
+  const words = [...new Set([...text.matchAll(CERTAINTY)].map((m) => m[0].toLowerCase()))];
+  if (words.length) return json(422, { error: "wording", words });
+  const wrongIf = b.wrong_if as { label?: string } | undefined;
+  const missing = [
+    !String(b.instrument ?? "").trim() && "instrument",
+    !String(b.variant ?? "").trim() && "variant",
+    !String(b.pre_mortem ?? "").trim() && "pre_mortem",
+    !String(wrongIf?.label ?? "").trim() && "level",
+  ].filter(Boolean);
+  if (missing.length) return json(422, { error: "gate", missing });
+  const id = `p${posted.length + 1}`;
+  const row = {
+    id,
+    name: `${b.direction === "short" ? "Short" : "Long"} ${String(b.instrument)}`,
+    instrument: String(b.instrument),
+    direction: b.direction === "short" ? "short" : "long",
+    // The fixture measures nothing: what a real server would compute from market data (room, the
+    // distance to the level, the level's value) stays null; the day it opened is today, day 1.
+    size_nav: typeof b.size_nav === "number" ? b.size_nav : null,
+    room_pct: null,
+    to_level: null,
+    opened: (positions as { as_of: string }).as_of,
+    horizon_days: typeof b.horizon_days === "number" ? b.horizon_days : 20,
+    day: 1,
+    falsifies_at: { label: String(wrongIf?.label ?? ""), value: null, unit: null },
+    now: null,
+    dv01: null,
+    variant: String(b.variant),
+    pre_mortem: String(b.pre_mortem),
+    red_team: "",
+    study_slug: typeof b.study_slug === "string" ? b.study_slug : null,
+  };
+  posted = [...posted, row];
+  return json(201, row);
+}
+
 /** §12.3's CSV: one row per event, the JSON's columns in order. */
 export function eventsCsv(doc: { events: Record<string, unknown>[] }): string {
   const cols = ["date", "regime", "ret_5", "ret_10", "ret_20", "ret_60"];
@@ -65,6 +127,7 @@ export function deskFixture(method: string, url: string, _body?: string, accept?
   const m = /^\/api\/desk(\/.*)$/.exec(u.pathname);
   if (!m) return null;
   const path = m[1].replace(/\/+$/, "");
+  if (path === "/positions") return positionsReply(method, _body);
   if (method.toUpperCase() === "GET" && path in DESK_JSON_FIXTURES) return json(200, DESK_JSON_FIXTURES[path]);
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {
     // The fixtures carry one study; any other question has no fixture (the page

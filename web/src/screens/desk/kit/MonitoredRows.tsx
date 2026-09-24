@@ -9,23 +9,28 @@
 
 import type { ReactNode } from "react";
 import type { PositionCompact, ToLevel } from "../data/types";
-import { pctPlain } from "./format";
+import { num, pctPlain } from "./format";
 import { cx } from "./ui";
 
-export function roomTone(room: number): "green" | "amber" | undefined {
+const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+
+export function roomTone(room: number | null | undefined): "green" | "amber" | undefined {
+  if (!fin(room)) return undefined;
   if (room >= 0.5) return "green";
   if (room < 0.3) return "amber";
   return undefined;
 }
 
-/** "3.4%" / "3 bp": the distance to the level in its own unit. */
-export function levelText(t: ToLevel): string {
-  const v = Number.isInteger(t.value) ? String(t.value) : t.value.toFixed(1);
+/** "3.4%" / "3 bp" / "−2 bp": the distance to the level in its own unit; empty when not served. */
+export function levelText(t: ToLevel | null | undefined): string {
+  if (!t || !fin(t.value) || typeof t.unit !== "string") return "";
+  const v = num(t.value, Number.isInteger(t.value) ? 0 : 1);
   return t.unit === "%" ? `${v}%` : `${v} ${t.unit}`;
 }
 
-export function sortByRoom<T extends { room_pct: number }>(rows: readonly T[]): T[] {
-  return [...rows].sort((a, b) => a.room_pct - b.room_pct);
+/** Least room first; a row without a served room goes last. */
+export function sortByRoom<T extends { room_pct: number | null }>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => (fin(a.room_pct) ? a.room_pct : Infinity) - (fin(b.room_pct) ? b.room_pct : Infinity));
 }
 
 export function MonitoredRow({
@@ -42,16 +47,18 @@ export function MonitoredRow({
   children?: ReactNode;
 }) {
   const tone = roomTone(row.room_pct);
+  const level = levelText(row.to_level);
   return (
     <li className={cx("dk-mon", open && "dk-mon-open")} data-testid="dk-mon-row" data-id={row.id}>
       <button type="button" className="dk-mon-row" onClick={onClick} aria-expanded={children !== undefined ? Boolean(open) : undefined} aria-controls={controls}>
         <span className="dk-mon-name">{row.name}</span>
-        <span className="dk-mon-nav">{pctPlain(row.size_nav)} NAV</span>
+        <span className="dk-mon-nav">{fin(row.size_nav) ? pctPlain(row.size_nav) : "—"} NAV</span>
         <span className="dk-mon-room" data-tone={tone}>
-          {pctPlain(row.room_pct)} room <span className="dk-mon-dim">· {levelText(row.to_level)} to level</span>
+          {fin(row.room_pct) ? `${pctPlain(row.room_pct)} room` : "room —"}
+          {level ? <span className="dk-mon-dim"> · {level} to level</span> : null}
         </span>
         <span className="dk-mon-bar" aria-hidden="true">
-          <span data-tone={tone} style={{ width: `${Math.max(0, Math.min(1, row.room_pct)) * 100}%` }} />
+          {fin(row.room_pct) ? <span data-tone={tone} style={{ width: `${Math.max(0, Math.min(1, row.room_pct)) * 100}%` }} /> : null}
         </span>
         <span className="dk-mon-caret" aria-hidden="true">
           {open ? "▼" : "▶"}

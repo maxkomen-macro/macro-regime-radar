@@ -846,6 +846,123 @@ cut from 360 to 1440). Dispositions:
   is the sidebar's "← Macro Regime Radar" link, gray since the Technicals
   review's R2-2 (the PNG's color).
 
+### 8. Position Monitor — `frame-3: position-monitor`
+
+Built: the Position Monitor on `/position-monitor` (§9, §12.8), desk-only
+(no Client toggle), two columns. **Promote to position**: the subtitle
+names the study carried in from Event Study (`?from=<preset>` or the six
+slots), which fills the instrument with the study's target and the horizon,
+nothing else; INSTRUMENT, DIRECTION, SIZE · % NAV, HORIZON. **Discipline
+gate**: the progress line, VARIANT VIEW and PRE-MORTEM (empty), WRONG IF
+with three levels suggested from the served S&P averages and eight more,
+or your own; the WORDING check, where only the five certainty words block,
+each with two one-click replacements; Save, off until the gate is complete,
+naming what is left. Save posts to `/positions`; the fixture server applies
+the same rules and keeps posted positions for the session. **Monitored**:
+the Overview's rows sorted by room left; a row opens to FALSIFIES AT, SIZE ·
+HORIZON, the gate text and the two links, and `?open=<id>` opens one; the
+footer; **Closed · last 90d**. Frame-2's page, its local store, its gate and
+seals, and its series reader leave with this commit (and their styles in
+`desk.css`). Fixture: `positions.json` (three positions as the mockup has
+them, every gate text a `TODO(Max)` marker).
+
+Compare: `docs/desk/screens/compare/08-position-monitor.png` (build alone:
+`08-position-monitor.build.png`), shot carried in from the gold study as the
+PNG is. Matched on the second pass: the first drew the three selects as
+small native controls, because their style lived only in the Event Study's
+stylesheet (now the kit's `.dk-select`, Event Study pixel-identical). Now
+1,040 px as the PNG. Deviations, each deliberate:
+- **The gate fields ship empty** (§9 and the owner's rule), so the page
+  shows "Three things left" and three open circles where the PNG shows its
+  illustrative answers.
+- **DIRECTION and HORIZON are dropdowns,** as the PNG draws them; §9's text
+  says "Long / Short segmented" and "HORIZON chips".
+- **The monitored rows take the Overview's two lines** (D4); the PNG's
+  one-line rows overlap their own text.
+- **Everything sits about 14 px lower in the PNG,** whose top bar is 55 px
+  tall against the shell's 47 (as Macro's PNG differs the other way).
+- **The suggested level keeps the served case**, "(Gold gives back its
+  move)", where the PNG writes "gold" (as on Event Study).
+- **The subtitle spells the carried question in the Event Study's words**
+  ("… → S&P 500 over the next 1 month"), where §9 writes "Gold ≥ +2σ (20d)
+  AND SPX below 50d MA · 20 trading days".
+- **The suggested levels follow the direction:** §9 lists a long's; a short
+  gets their mirror (a rally proves a short wrong), and the signal's own
+  reversal is offered only when a study was carried in.
+- **The first "Use …" button and a pressed level are green-filled,** as the
+  PNG draws them (an action, a second job for green; D12 would make them
+  neutral).
+- **No MOCKUP badge** (as on every tab).
+
+PROPOSED (spec §12.13): the `/positions` envelope, the `falsifies_at` and
+`now` shapes, the POST body and its 201 answer, the `wrong_if` ids; notes
+on how a study is carried in and on null row values.
+
+Verifier, round 1: **FAIL** (three blocking findings). Dispositions:
+- P-1 (blocking) a saved position showed numbers the fixture made up (0%
+  NAV, 100% room, 0% to level): **fixed**, the fixture replies null for what
+  it does not measure, and the row types admit it (§12.13).
+- P-2 (blocking) a null `to_level` crashed the tab and a null room or size
+  printed 0%: **fixed** in the kit's rows (Overview too): "—", an empty
+  bar, nulls sorted last, the house minus; tested.
+- P-3 (blocking) refusals rendered green: **fixed**, the status carries its
+  own tone (a refusal amber, a save plain); tested.
+- P-4 the suggestions ignored direction: **fixed** (recorded above).
+- P-5 a pair or a stray "es" matched the S&P: **fixed**; tested.
+- P-6 an unanswerable carried study vanished: **fixed**, the subtitle says it
+  is awaiting refresh and `study_slug` is only the served study's; tested.
+- P-7 refusal wording: **fixed** (the gate's own words, an empty list, no
+  answer at all); tested.
+- P-8 a size like "4%" posted null: **fixed**, "4%" reads as 4 and anything
+  else keeps Save off with a sentence; tested.
+- P-9 the room words ran under the bar: **fixed**, the bar has its own line
+  in this column, and the kit's narrow-row rule now comes after the base
+  rules so it applies (Overview at phone width too).
+- P-10 cards stretched in a tall window: **fixed** above 1100 px tall; the
+  browser test checks 2400 px.
+- P-11 the deployed share counted a missing size as 0: **fixed**, printed
+  only when every row has a size; tested.
+- P-12 the `wrong_if` ids are in §12.13.
+- P-13 a typed level stayed beside a picked one: **fixed**; tested.
+- P-14 focus fell to the page after a save: **fixed**, the status line takes
+  it.
+- Nits: a replacement keeps a leading capital, the quote keeps punctuation
+  against its word, counts are words ("fix two words above"), unfinished
+  steps are all amber, the signal chip needs a carried study, the Closed
+  strip keeps its label while loading and a malformed count prints "—", a
+  200 without positions says Awaiting refresh, the progress line's ignored
+  `aria-label` is gone, the house minus in levels, the "More levels" select
+  is wide enough for its label.
+- Tests: Position Monitor now 20 unit tests and one browser test (flagged
+  and expanded states in the palette, 1100 and 390 px, a tall window).
+- Overview's compare shot is regenerated: its rows' "·" moved inside the
+  dimmed span (a sub-pixel change).
+
+Verifier, round 2: **FAIL** (one blocking finding); P-1 to P-14 confirmed
+apart from the network wording. Dispositions:
+- R2-1 (blocking) a picked level outlived a change of instrument or
+  direction: the S&P's "(6,280)" label was saved for TLT, and a long's level
+  kept the gate complete for a short. **Fixed**: the draft keeps only the
+  level's id, its label is read from the current suggestions at render and
+  at save, and an id they no longer offer is dropped, so the gate reopens;
+  tested for both changes.
+- R2-2 a bad size was appended outside the count ("One thing left: …; and
+  enter the size"): **fixed**, the size is one of the gate's items.
+- R2-3 a failed request still read "did not accept": **fixed**, status 0
+  (how the client reports no answer) reads "did not answer"; tested.
+- R2-4 the wrong-if column broke between 1101 and 1200 px: **fixed**, the
+  select and the typed level stack below 1250 px and a long level wraps
+  inside its pill; the browser test checks 1200, 1101, 1100 and 390.
+- Nits: a size is a plain decimal from 0 to 100; the fixture's saved row
+  keeps its opening day (today, day 1) and leaves what it would measure
+  null.
+
+Verifier, round 3: **PASS WITH FINDINGS**, R2-1 to R2-4 confirmed with no
+regression. Nits, all **fixed**: the select and the typed level stack up to
+1340 px so the typed box stays readable (checked at 1300 too); ".5" and "4."
+are sizes; the R2-1 test's name says what it asserts and checks that
+switching back brings nothing back.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -861,3 +978,4 @@ tests against the fixture dev server.
 | frame-3: macro | clean | 108 / 1,211 | ok | 19 / 19 |
 | frame-3: sectors | clean | 110 / 1,230 | ok | 21 / 21 |
 | frame-3: signal-ledger | clean | 111 / 1,244 | ok | 23 / 23 |
+| frame-3: position-monitor | clean | 110 / 1,253 | ok | 25 / 25 |

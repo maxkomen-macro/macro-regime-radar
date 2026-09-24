@@ -9,7 +9,7 @@
  */
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
+import type { DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -94,15 +94,19 @@ export const useRegime = () => useDesk<RegimeResponse>("/regime");
 export const useMacro = () => useDesk<MacroResponse>("/macro");
 
 /** §12.2: one study; the previous answer stays on screen while the next is asked. */
-export function useStudy(params: Params) {
+export function useStudy(params: Params, opts: { enabled?: boolean } = {}) {
   return useQuery<StudyResponse, DeskApiError>({
     queryKey: ["desk-v2", "/study", params],
     queryFn: () => deskGet<StudyResponse>("/study", params),
     staleTime: 60_000,
     retry,
     placeholderData: keepPreviousData,
+    enabled: opts.enabled ?? true,
   });
 }
+
+/** §12.8: the open positions and the last 90 days' closed ones. */
+export const usePositions = () => useDesk<PositionsResponse>("/positions");
 
 /** §12.3: the events behind a study (the Advanced panel). */
 export const useStudyEvents = (params: Params) => useDesk<StudyEventsResponse>("/study/events", params);
