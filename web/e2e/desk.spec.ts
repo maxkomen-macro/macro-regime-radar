@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals", "event-study", "regime"];
+const BUILT = ["overview", "technicals", "event-study", "regime", "macro"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -136,6 +136,27 @@ test.describe("desk v2", () => {
     await expect.poll(() => calls.some((c) => c.includes("/api/desk/study?preset=gold-2sigma-spx-weak&confidence=0.8"))).toBe(true);
     // "Act on this" carries the question to the Position Monitor.
     await expect(page.getByTestId("dk-act")).toHaveAttribute("href", "/desk/position-monitor?from=gold-2sigma-spx-weak");
+  });
+
+  test("macro: the two rows are equal and sized to their cards; the gauge's caption gives way to a band name and follows a resize", async ({ page }) => {
+    await open(page, "/desk/macro");
+    const heights = await page.locator("section.dk-card.mc-card").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
+    expect(heights).toHaveLength(4);
+    expect(new Set(heights).size).toBe(1);
+    // Taller viewport, same cards: they never stretch to the window.
+    await page.setViewportSize({ width: 1440, height: 1500 });
+    await settle(page, 200);
+    expect(await page.locator("section.dk-card.mc-card").first().evaluate((e) => Math.round(e.getBoundingClientRect().height))).toBe(heights[0]);
+    const tight = page.locator(".mc-card .dk-gauge-names > span > span", { hasText: "Tight" });
+    await expect(tight).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 900 });
+    await settle(page, 300);
+    await expect(tight).toBeHidden();
+    const [needle, cap] = await Promise.all([page.locator(".mc-card .dk-gauge-needle").boundingBox(), page.locator(".mc-card .dk-gauge-caption").boundingBox()]);
+    expect(Math.abs(cap!.x + cap!.width / 2 - (needle!.x + needle!.width / 2))).toBeLessThanOrEqual(Math.max(2, cap!.width / 2));
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await settle(page, 300);
+    await expect(tight).toBeVisible();
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

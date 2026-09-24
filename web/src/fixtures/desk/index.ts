@@ -12,6 +12,7 @@
 import engineAssets from "../../screens/desk/event-study/__fixtures__/engine-assets.json" with { type: "json" };
 import engineStudies from "../../screens/desk/event-study/__fixtures__/engine-studies.json" with { type: "json" };
 import ledger from "./ledger.json" with { type: "json" };
+import macro from "./macro.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
 import regime from "./regime.json" with { type: "json" };
 import sectors from "./sectors.json" with { type: "json" };
@@ -34,6 +35,7 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
   "/vol": vol,
   "/sectors": sectors,
   "/regime": regime,
+  "/macro": macro,
 };
 
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */

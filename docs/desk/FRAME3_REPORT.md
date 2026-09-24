@@ -534,6 +534,129 @@ within 3 px, Technicals pixel-identical to its committed shot). Dispositions:
   8 px: **fixed**, with the band names and the stats set to the PNG's
   spacing (every row of that card within 1.5 px).
 
+### 5. Macro & Correlations — `frame-3: macro`
+
+Built: the Macro & Correlations tab on `/macro` (§6, §12.6), a 2×2 with no
+action button and the `● Live · FRED / Yahoo · Sep 22` badge. **Yield
+curve**: 10-YEAR / 2s10s / FRONT END, today's curve (blue, with the tenor
+values) against a month ago (gray dashed) on 3m…30y, both labelled at the
+right end, the read. **Do bonds still hedge stocks?**: TODAY / A YEAR AGO /
+FLIPPED, the year of the 60-day correlation between the amber "with" band
+and the green "against" band, the amber read. **Credit**: HY SPREAD /
+3-YEAR RANGE / INVESTMENT GRADE, the Tight / Normal / Wide gauge with the
+percentile on the names' row at the needle, the last twelve months (blue, §1.3's main
+line) with the peak labelled, the read. **What moves with the S&P**: the against / with
+header, six rows (name, centered bar green left and amber right, value,
+served meaning), the read, and the 12-asset matrix under Advanced (plain
+numbers, a focusable region). Each block, and each value inside it, keeps
+its label and says "Awaiting refresh" when it is not served. Fixture:
+`macro.json` (§12.6, complete; 252-session series ending Sep 22 2026; the
+matrix a valid correlation matrix whose S&P row is the six correlations).
+
+Compare: `docs/desk/screens/compare/05-macro-correlations.png` (build alone:
+`05-macro-correlations.build.png`). Matched on the second pass. The first
+ran 1,102 px against 1,060: the kit's 27 px stat values, 14 px notes and a
+19.6 px read line, the 8 px gauge with its caption on a row of its own, and
+charts 200 / 170 / 112 px tall. Set to the PNG's measures (the same stat
+and read sizes as Regime, the names-under gauge now a kit rule with the
+caption on the names' row, charts 148 / 132 / 100 px, correlation rows 27 px
+with the PNG's columns). After review the grid's two rows are equal and as
+tall as their content (they had stretched to the viewport): cards 389 px
+against the PNG's 393.5, the lower edge within 1 px. Regime is
+pixel-identical after both changes. Deviations, each deliberate:
+- **Everything sits 7.5 px lower than in this PNG,** whose header rule is at
+  41 px; every other PNG and the shared shell put it at 47.
+- **The colors follow §1.3's jobs where the PNG gives an accent a second
+  job (D12):** the credit line is blue (the chart's main line; the PNG draws
+  it amber), the FRONT END value and the HY and IG values are plain (the PNG
+  sets them blue and green), A YEAR AGO's −0.24 is plain (green in the PNG).
+  TODAY is amber when the served `hedging` is false (§6 names the amber);
+  2s10s is green or red by the month's served change (§1.3 up / down).
+- **The credit gauge's track is 11 px** (this PNG) where Regime's is 14.
+- **The lower-right card holds its own read and footer.** In the PNG the
+  correlations card ends after the six rows and its read and `Advanced ▸`
+  spill below the grid (the read as a loose box, the footer under the Credit
+  card); §1's card skeleton and §6's 2×2 put them inside the card. The PNG's
+  stray "−0.31 bonds partly offset" line under the Treasury row is not a
+  §6 row and is not built.
+- **The two curves are labelled at their right ends** (§6), where the PNG
+  draws a legend under the chart.
+- **Every correlation bar is green left of zero and amber right** (§6), where
+  the PNG grays the three weak ones; the served meaning ("weak", "no
+  relationship") says it.
+- **The credit peak reads "Mar peak · 4.6%"**, not §6's "Mar scare": nothing
+  served names the episode, and the page does not name market events.
+- **"positive" in the amber read is not colored** (as on Regime).
+- **The page spells only the 2s10s direction** ("steepening", "flattening"
+  or "unchanged", from the served change) and "unchanged on the month" for a
+  zero 10-year change; the stock–bond notes and whether bonds hedge are
+  served (PROPOSED).
+- The gauge rules the Regime review removed as unused (G-9) are back in the
+  kit with their consumer, the credit gauge.
+
+PROPOSED (spec §12.13): `credit.band_edges`, `credit.words`,
+`stock_bond.hedging`, `stock_bond.words`, `matrix.labels`, `reads`, and
+`generation_id`; also noted there: `flipped: null`, nulls inside blocks, the
+asset label and matrix order, the example peak date.
+
+Verifier, round 1: **FAIL** (two blocking findings). Dispositions:
+- M-1 (blocking) the curve's y labels printed a 0.25 step at one decimal
+  (3.75 read "3.8%"): **fixed**, ticks on a 1 / 2 / 5 step carry the
+  decimals their step needs (3.8 … 4.8 at 0.2; credit 3 / 4 / 5); a unit
+  test checks every label against its value.
+- M-2 (blocking) a null value inside a block dropped a row, the gauge or a
+  chart silently, or printed a zero never served ("0.0 – 5.9%", "Mar peak ·
+  0.0%"): **fixed**, each value is guarded; a null correlation keeps its row
+  with "Awaiting refresh", a missing gauge or chart says so under its label;
+  tested.
+- M-3 zero and sign wording: **fixed** ("unchanged on the month", "unchanged
+  · 0 bp", served bp with their decimals); the stock–bond sentences are
+  served now (M-4).
+- M-4 judgments in the browser: **fixed** with PROPOSED `stock_bond.hedging`
+  and `stock_bond.words`; the credit colors no longer match served words.
+- M-5 the chart's band and peak labels lost their colors to the class fill:
+  **fixed** in the kit (a passed color is a style); tested.
+- M-6 the caption overprinted band names: **fixed**, a name the caption
+  would touch is left out, and the gauge's accessible name carries the
+  served word ("…18th percentile of three years, tight"); at 390 px "Tight"
+  gives way to "18th pct".
+- M-7 the cards stretched to the viewport: **fixed** (equal rows as tall as
+  their content, here and on Regime); the header offset and the 11 px track
+  are recorded above.
+- M-8 color jobs: **fixed** to §1.3, recorded above.
+- M-9 the matrix: a focusable, named region with the assets' names
+  (PROPOSED `matrix.labels`) and an empty corner cell.
+- M-10 a card's read printed under an absent block: **fixed**; tested.
+- M-11 the fixture: **fixed** (Mar 10 is the year's peak; the matrix is
+  valid and ordered as §12.6 begins); the label and order notes are in
+  §12.13.
+- M-12: `flipped: null` defined (§12.13); the chart's name drops a missing
+  date; one null no longer blanks a card; the types admit nulls; the curve's
+  value labels are placed clear of the lines (round 2, N-4).
+- M-13 tests: added (Macro now 19 unit tests and one browser test).
+
+Verifier, round 2: **PASS WITH FINDINGS**, nothing blocking; M-1 to M-13
+confirmed, no regression (Regime, Technicals and Event Study
+pixel-identical to their committed shots). Dispositions:
+- N-1 the gauge's caption and the hidden name did not follow a resize:
+  **fixed** in the kit (the track's width is observed); the browser test
+  resizes 1440 → 390 → 1440 and checks the caption over the needle and the
+  name hidden, then shown. The caption part also serves Technicals.
+- N-2 the accessible name did not carry the hidden band: **fixed** (the
+  served word is appended).
+- N-3 a flat series printed six decimals: **fixed**, one round unit either
+  side and at most four decimals; tested.
+- N-4 value labels still met today's own line: **fixed** in the chart kit:
+  a label marked `avoid` takes the nearest place above or below its point
+  where no line and no other label crosses it (tested; checked at 1440 and
+  390).
+- N-5 the list's read printed over six unserved rows, and the chart's name
+  said "against a month ago" without that line: **fixed**; tested.
+- N-6 a malformed `flipped` is not served (Awaiting refresh); tested.
+- N-7 tests added: TODAY amber from the served call, 2s10s up and down,
+  flat ticks, label placement, and the browser test (equal rows at 960 and
+  1500 tall, the band name and the caption across a resize).
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -546,3 +669,4 @@ tests against the fixture dev server.
 | frame-3: technicals | clean | 106 / 1,171 | ok | 13 / 13 |
 | frame-3: event-study | clean | 106 / 1,176 | ok | 16 / 16 |
 | frame-3: regime | clean | 107 / 1,192 | ok | 17 / 17 |
+| frame-3: macro | clean | 108 / 1,211 | ok | 19 / 19 |

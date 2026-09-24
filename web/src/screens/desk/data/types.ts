@@ -246,6 +246,49 @@ export interface RegimeResponse extends Envelope {
   reads: { stats?: Read; changes?: Read; year_ago?: Read };
 }
 
+// ── §12.6 /macro ──────────────────────────────────────────────────────────
+
+export interface CurvePoint {
+  "3m": number | null;
+  "2y": number | null;
+  "5y": number | null;
+  "10y": number | null;
+  "30y": number | null;
+  date: string;
+}
+
+export interface MacroResponse extends Envelope {
+  curve: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null };
+  stock_bond: {
+    today: number | null;
+    year_ago: number | null;
+    /** The month the sign last changed; null when it has not changed within the served year (§12.13). */
+    flipped: string | null;
+    /** PROPOSED (§12.13): the engine's call, whether bonds hedge stocks today (TODAY is amber when they do not). */
+    hedging: boolean | null;
+    /** PROPOSED (§12.13): the three stat notes. */
+    words: { today?: string; year_ago?: string; flipped?: string };
+    series: { date: string; corr: number | null }[];
+  };
+  credit: {
+    hy: number | null;
+    hy_pct_3y: number | null;
+    hy_range_3y: [number | null, number | null] | null;
+    ig: number | null;
+    series: { date: string; hy: number | null }[];
+    peak_12m: { date: string; hy: number | null } | null;
+    /** PROPOSED (§12.13): the 3-year percentile edges between Tight | Normal | Wide. */
+    band_edges: [number, number] | null;
+    /** PROPOSED (§12.13): the stat words ("tight", "also tight", "today near the low"). */
+    words: { hy?: string; ig?: string; range?: string };
+  };
+  correlations: { asset: string; corr: number | null; meaning: string }[];
+  /** `labels` is PROPOSED (§12.13): the assets' names, in `assets` order. */
+  matrix: { assets: string[]; labels?: string[]; window: number; values: (number | null)[][] };
+  /** PROPOSED (§12.13): the cards' sentences. */
+  reads: { curve?: Read; front_end?: Read; stock_bond?: Read; credit?: Read; correlations?: Read };
+}
+
 // ── §12.9 /vol ────────────────────────────────────────────────────────────
 
 export interface VolResponse extends Envelope {

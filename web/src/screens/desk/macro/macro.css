@@ -1,0 +1,178 @@
+/* Macro & Correlations (DESK_FRAME3_SPEC §6; geometry from screens/05-macro-correlations.png at 1440). */
+.mc {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+/* Two rows of equal height, each as tall as the taller content needs; the
+   cards never stretch to the viewport (verifier M-7). */
+.mc-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 13px var(--dk-gap);
+}
+.mc-card {
+  padding: 11px 17px 10px;
+}
+.mc-card .dk-stats {
+  margin-top: 7px;
+}
+/* Measured on the PNG: stat values 23 px, their notes 12.5 px on a 14 px
+   line, every box 13.5 px on a 17 px line (as on Regime). */
+.mc-card .dk-stat-value {
+  font-size: 23px;
+  margin-top: 1px;
+}
+.mc-card .dk-stat-sub {
+  font-size: 12.5px;
+  line-height: 1.12;
+}
+.mc-card .dk-chart {
+  margin-top: 10px;
+}
+.mc-card .dk-read {
+  margin-top: auto;
+  padding: 8px 13px 9px;
+  font-size: 13.5px;
+  line-height: 17px;
+}
+.mc-card .dk-card-foot {
+  margin-top: 5.5px;
+  padding-top: 7px;
+  border-top-color: var(--dk-border);
+}
+.mc-card .dk-gauge {
+  margin-top: 4.5px;
+}
+.mc-sub-h {
+  margin-top: 8.5px;
+}
+.mc-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin: 10px 0 2px;
+  padding-left: 140px;
+}
+.mc-corr {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.mc-corr li {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) 52px 136px;
+  align-items: center;
+  column-gap: 10px;
+  min-height: 27px;
+  border-bottom: 1px solid var(--dk-row);
+  font-size: 14px;
+}
+.mc-corr li:last-child {
+  border-bottom: 0;
+}
+.mc-asset {
+  color: var(--dk-t1);
+  line-height: 1.2;
+}
+.mc-bar {
+  position: relative;
+  height: 12px;
+}
+.mc-bar::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--dk-box);
+}
+.mc-bar span {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--dk-gray);
+}
+.mc-bar span[data-tone="green"] {
+  background: var(--dk-green);
+}
+.mc-bar span[data-tone="amber"] {
+  background: var(--dk-amber);
+}
+.mc-val {
+  font-family: var(--dk-mono);
+  font-size: 13px;
+  text-align: right;
+}
+.mc-meaning {
+  font-size: 12.5px;
+  color: var(--dk-t3);
+}
+.mc-matrix-wrap {
+  overflow-x: auto;
+}
+.mc-matrix {
+  border-collapse: collapse;
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+}
+.mc-matrix caption {
+  text-align: left;
+  margin-bottom: 6px;
+}
+.mc-matrix th,
+.mc-matrix td {
+  padding: 3px 6px;
+  text-align: right;
+  font-weight: 400;
+  color: var(--dk-t2);
+  border-bottom: 1px solid var(--dk-row);
+}
+.mc-matrix thead th {
+  color: var(--dk-t4);
+}
+@media (max-width: 1000px) {
+  .mc-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: auto;
+  }
+}
+@media (max-width: 600px) {
+  .mc-axis {
+    padding-left: 0;
+  }
+  .mc-corr li {
+    grid-template-columns: minmax(0, 1fr) 52px;
+    row-gap: 2px;
+    padding: 4px 0;
+  }
+  .mc-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .mc-meaning {
+    grid-column: 1 / -1;
+  }
+}
+
+/* The PNG's credit gauge: an 11 px track, the needle still 30 px. */
+.mc-card .dk-gauge-under-names .dk-gauge-track {
+  height: 11px;
+}
+.mc-card .dk-gauge-under-names .dk-gauge-needle {
+  top: -9.5px;
+  bottom: -9.5px;
+}
+/* A correlation not served: its name stays, the rest of the row says so. */
+.mc-row-await {
+  grid-column: 2 / -1;
+}
+.mc-matrix-wrap:focus-visible {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: 2px;
+}

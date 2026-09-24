@@ -37,7 +37,7 @@ export default function Gauge({
   caption?: ReactNode;
   ticks?: number[];
   thick?: boolean;
-  /** Band names under the track (the Regime gauge), not over it. */
+  /** Band names under the track (the Regime and Macro gauges), not over it; the caption then sits on their row. */
   under?: boolean;
   /** The gauge's accessible description. */
   label: string;
@@ -56,20 +56,53 @@ export default function Gauge({
   const at = frac(value);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const capRef = useRef<HTMLSpanElement | null>(null);
+  const nameRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const [capLeft, setCapLeft] = useState<string>(pos(value));
+  const [covered, setCovered] = useState<boolean[]>([]);
+  // The track's width: the caption and the names it covers follow a resize (verifier N-1).
+  const [trackW, setTrackW] = useState(0);
   useLayoutEffect(() => {
-    const W = trackRef.current?.getBoundingClientRect().width ?? 0;
+    const el = trackRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setTrackW(Math.round(el.getBoundingClientRect().width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const track = trackRef.current?.getBoundingClientRect();
+    const W = track?.width ?? 0;
     const w = capRef.current?.getBoundingClientRect().width ?? 0;
-    if (!W || !w) return setCapLeft(pos(value));
+    if (!track || !W || !w) {
+      setCapLeft(pos(value));
+      setCovered([]);
+      return;
+    }
     const x = Math.min(W - w / 2, Math.max(w / 2, at * W));
     setCapLeft(`${x}px`);
-  }, [at, value, caption]);
+    // Under the track the caption shares the names' row: a name it would touch is left out (verifier M-6).
+    if (!under) return setCovered([]);
+    const lo = track.left + x - w / 2 - 8;
+    const hi = track.left + x + w / 2 + 8;
+    setCovered(
+      nameRefs.current.map((el) => {
+        const r = el?.getBoundingClientRect();
+        return !!r && r.width > 0 && r.right > lo && r.left < hi;
+      }),
+    );
+  }, [at, value, caption, under, trackW]);
   const shown = (ticks ?? []).filter((t) => !caption || Math.abs(frac(t) - at) > 0.08);
   const names = (
     <div className="dk-gauge-names" aria-hidden="true">
       {segs.map((s, i) => (
         <span key={i} data-tone={s.tone} style={{ width: `${s.width}%`, textAlign: i === 0 ? "left" : i === segs.length - 1 ? "right" : "center" }}>
-          {s.label}
+          <span
+            ref={(el) => {
+              nameRefs.current[i] = el;
+            }}
+            style={covered[i] ? { visibility: "hidden" } : undefined}
+          >
+            {s.label}
+          </span>
         </span>
       ))}
     </div>

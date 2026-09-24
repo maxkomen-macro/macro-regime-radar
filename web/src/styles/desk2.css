@@ -1062,3 +1062,21 @@
 .dk-gauge-under-names .dk-gauge-names [data-tone] {
   font-weight: 400;
 }
+/* The Regime and Macro PNGs: a 14 px track, a 30 px needle, and the
+   caption on the band names' row at the needle. */
+.dk-gauge-under-names .dk-gauge-track {
+  height: 14px;
+}
+.dk-gauge-under-names .dk-gauge-needle {
+  top: -8px;
+  bottom: -8px;
+}
+.dk-gauge-under-names .dk-gauge-under {
+  margin-top: -18px;
+  height: 18px;
+}
+.dk-gauge-under-names .dk-gauge-caption {
+  top: 0;
+  font-size: 15px;
+  line-height: 18px;
+}

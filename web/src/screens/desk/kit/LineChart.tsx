@@ -45,8 +45,9 @@ export interface LineChartProps {
   endDot?: string;
   /** Point markers; name what they mark in `ariaLabel`, the chart's one accessible name. */
   markers?: { i: number; v: number; color: string; r?: number }[];
-  /** Small labels at points (the yield curve's values, a peak's name). */
-  pointLabels?: { i: number; v: number; text: string; color?: string; dy?: number; anchor?: "start" | "middle" | "end" }[];
+  /** Small labels at points (the yield curve's values, a peak's name). With `avoid`, the label takes the
+   * nearest place above or below its point where no line and no other label crosses it. */
+  pointLabels?: { i: number; v: number; text: string; color?: string; dy?: number; anchor?: "start" | "middle" | "end"; avoid?: boolean }[];
   pad?: { l: number; r: number; t: number; b: number };
   /** Draw horizontal grid lines at the y ticks. */
   grid?: boolean;
@@ -94,6 +95,41 @@ export function useWidth<T extends HTMLElement>(fallback = 420): [RefObject<T>, 
   return [ref, w];
 }
 
+type Box = { x0: number; x1: number; y0: number; y1: number };
+
+/** Whether a line segment passes through a box. */
+function segmentHits(b: Box, ax: number, ay: number, bx: number, by: number): boolean {
+  const lo = Math.max(b.x0, Math.min(ax, bx));
+  const hi = Math.min(b.x1, Math.max(ax, bx));
+  if (lo > hi) return false;
+  const at = (xx: number) => (ax === bx ? ay : ay + ((by - ay) * (xx - ax)) / (bx - ax));
+  const ya = at(lo);
+  const yb = at(hi);
+  return Math.max(ya, yb) >= b.y0 && Math.min(ya, yb) <= b.y1;
+}
+
+/** The offsets a point label tries, nearest first: above, below, then further out on each side. */
+export const LABEL_OFFSETS = [-8, 15, -20, 27, -32, 39];
+
+/**
+ * Where an `avoid` label goes: the first offset whose text box (a mono
+ * 10.5 px run, 6.4 px a character) stays inside the plot and meets no line
+ * segment and no label already placed; the first offset when none is free.
+ */
+export function placeLabel(px: number, py: number, text: string, anchor: "start" | "middle" | "end", lines: [number, number, number, number][], taken: Box[], plot: { top: number; bottom: number }, offsets = LABEL_OFFSETS): { dy: number; box: Box } {
+  const w = text.length * 6.4;
+  const x0 = anchor === "start" ? px : anchor === "end" ? px - w : px - w / 2;
+  const boxAt = (dy: number): Box => ({ x0, x1: x0 + w, y0: py + dy - 8.5, y1: py + dy + 2 });
+  for (const dy of offsets) {
+    const b = boxAt(dy);
+    if (b.y0 < plot.top - 6 || b.y1 > plot.bottom + 2) continue;
+    if (lines.some(([ax, ay, bx, by]) => segmentHits(b, ax, ay, bx, by))) continue;
+    if (taken.some((t) => t.x0 < b.x1 && b.x0 < t.x1 && t.y0 < b.y1 && b.y0 < t.y1)) continue;
+    return { dy, box: b };
+  }
+  return { dy: offsets[0], box: boxAt(offsets[0]) };
+}
+
 /** Right-end labels pushed apart vertically so none overlap (14 px apart),
  * and kept above `bottom`: a run pushed past it moves back up as a block. */
 export function spreadLabels(ys: number[], gap = 14, bottom = Infinity): number[] {
@@ -139,6 +175,21 @@ export default function LineChart(props: LineChartProps) {
     pad.t + ph,
   );
   const dot = endDot ? series.findIndex((s) => s.key === endDot) : -1;
+  // The drawn lines as segments, for labels that keep clear of them.
+  const lines: [number, number, number, number][] = [];
+  if (pointLabels.some((p) => p.avoid))
+    for (const s of series)
+      s.values.forEach((v, i) => {
+        const w = s.values[i + 1];
+        if (v != null && w != null && Number.isFinite(v) && Number.isFinite(w)) lines.push([x(i), y(v), x(i + 1), y(w)]);
+      });
+  const taken: Box[] = [];
+  const placed = pointLabels.map((p) => {
+    if (!p.avoid) return p.dy ?? -8;
+    const { dy, box } = placeLabel(x(p.i), y(p.v), p.text, p.anchor ?? "middle", lines, taken, { top: pad.t, bottom: pad.t + ph });
+    taken.push(box);
+    return dy;
+  });
 
   return (
     <div ref={ref} className="dk-chart" style={{ height }}>
@@ -150,7 +201,7 @@ export default function LineChart(props: LineChartProps) {
             <g key={`b${k}`}>
               <rect x={pad.l} y={y1} width={pw} height={Math.max(0, y2 - y1)} fill={b.fill} />
               {b.label ? (
-                <text className="dk-chart-band" x={pad.l + 8} y={b.labelAt === "bottom" ? y2 - 8 : y1 + 15} fill={b.labelColor}>
+                <text className="dk-chart-band" x={pad.l + 8} y={b.labelAt === "bottom" ? y2 - 8 : y1 + 15} style={b.labelColor ? { fill: b.labelColor } : undefined}>
                   {b.label}
                 </text>
               ) : null}
@@ -192,7 +243,7 @@ export default function LineChart(props: LineChartProps) {
           ) : null,
         )}
         {pointLabels.map((p, k) => (
-          <text key={`p${k}`} className="dk-chart-point" x={x(p.i)} y={y(p.v) + (p.dy ?? -8)} textAnchor={p.anchor ?? "middle"} fill={p.color}>
+          <text key={`p${k}`} className="dk-chart-point" x={x(p.i)} y={y(p.v) + placed[k]} textAnchor={p.anchor ?? "middle"} style={p.color ? { fill: p.color } : undefined}>
             {p.text}
           </text>
         ))}

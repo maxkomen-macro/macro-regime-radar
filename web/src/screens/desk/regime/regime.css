@@ -1,7 +1,7 @@
 /* Regime (DESK_FRAME3_SPEC §5; geometry measured on screens/04-regime.png at
-   1440): stat values 23 px with 12.5 px notes on a 14 px line, the recession
-   gauge's track 14 px with a 30 px needle, every box 13.5 px on a 17 px line,
-   the table's columns at the PNG's right edges. */
+   1440): stat values 23 px with 12.5 px notes on a 14 px line, every box
+   13.5 px on a 17 px line, the table's columns at the PNG's right edges; the
+   recession gauge is the kit's names-under gauge (desk2.css). */
 .rg {
   display: flex;
   flex-direction: column;
@@ -9,11 +9,12 @@
   flex: 1;
   min-height: 0;
 }
+/* Two rows of equal height, each as tall as the taller content needs; the
+   cards never stretch to the viewport (verifier M-7). */
 .rg-grid {
-  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-auto-rows: 1fr;
   gap: 13px var(--dk-gap);
 }
 .rg-card {
@@ -72,16 +73,6 @@
 }
 .rg-card .dk-gauge {
   margin-top: 6px;
-}
-.rg-card .dk-gauge-track {
-  height: 14px;
-}
-.rg-card .dk-gauge-needle {
-  top: -8px;
-  bottom: -8px;
-}
-.rg-card .dk-gauge-under-names .dk-gauge-names {
-  margin-top: 5px;
 }
 /* The PNG leaves 32 px from the band names to the stat labels. */
 .rg-card .dk-gauge + .dk-stats {
@@ -267,6 +258,6 @@
 @media (max-width: 1000px) {
   .rg-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto;
+    grid-auto-rows: auto;
   }
 }

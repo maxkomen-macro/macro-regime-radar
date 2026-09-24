@@ -9,7 +9,7 @@
  */
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { DeskErrorBody, LedgerResponse, OverviewResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
+import type { DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -91,6 +91,7 @@ export const useTechnicals = () => useDesk<TechnicalsResponse>("/technicals");
 export const useVol = () => useDesk<VolResponse>("/vol");
 export const useSectors = () => useDesk<SectorsResponse>("/sectors");
 export const useRegime = () => useDesk<RegimeResponse>("/regime");
+export const useMacro = () => useDesk<MacroResponse>("/macro");
 
 /** §12.2: one study; the previous answer stays on screen while the next is asked. */
 export function useStudy(params: Params) {

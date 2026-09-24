@@ -778,6 +778,40 @@ building it; the web side follows whatever this section ends up saying.
 - `regime` also carries `generation_id` (§12's header); §12.5's inline shape
   omits it.
 
+**Macro & Correlations (§6)**
+- **PROPOSED** `macro.credit.band_edges` (`[0.3, 0.7]`, the three-year
+  percentiles between Tight | Normal | Wide) and `macro.credit.words`
+  (`{"hy","ig","range"}`: "tight", "also tight", "today near the low"): the
+  gauge's bands and the three stat notes. §12.6 serves the percentile and the
+  range, not where the bands fall or what they mean.
+- **PROPOSED** `macro.reads` (`{"curve","front_end","stock_bond","credit",
+  "correlations"}`, the shared `reads` shape): the four card reads and the
+  FRONT END note ("market leans to cuts").
+- **PROPOSED** `macro.stock_bond.hedging` (boolean, the engine's call on
+  today's correlation: do bonds hedge stocks) and `macro.stock_bond.words`
+  (`{"today","year_ago","flipped"}`: "positive · bonds not hedging", "was
+  working", "six months positive"). TODAY is amber when `hedging` is false
+  (§6); the page no longer reads a sign to decide it, since only the engine
+  knows where "no relationship" ends (it serves +0.12 as "no relationship").
+- `macro.stock_bond.flipped` is `null` when the sign has not changed within
+  the served year (the page prints "None" with the served note); an absent
+  key means not served (Awaiting refresh).
+- **PROPOSED** `macro.matrix.labels` (the assets' names, in `assets` order):
+  the matrix's headers under Advanced. The fixture orders the twelve assets
+  as §12.6's example begins (`spx, ndx, 10y, gold, dxy, wti, hy, vix`) and
+  adds `2y, ig, rut, usdjpy`; the values form a valid correlation matrix whose
+  `spx` row equals the six correlations.
+- The correlation rows' `asset` follows §6's names ("10-year Treasury
+  (price)"); §12.6's example writes "10y Treasury (price)". One of the two
+  should change; the fixture follows the tab's text.
+- Any value inside a block may be null (a tenor, `hy_pct_3y`, a range end,
+  `peak_12m.hy`, a correlation): the page keeps that value's label and says
+  Awaiting refresh; it never prints a number that was not served.
+- `macro` also carries `generation_id` (§12's header).
+- §12.6's example `peak_12m.date` (`2025-03-12`) falls outside its own 252
+  sessions ending Sep 22 2026; the fixture dates the peak Mar 10 2026, inside
+  the last twelve months, where the mockup draws it.
+
 Notes for B (not new fields):
 - The mockup's Overview rows label two signals differently from the Ledger
   (§2 "Gold +2σ while S&P < 50d", "VIX +2σ in 5 days"; §8 "Gold +2σ while S&P
