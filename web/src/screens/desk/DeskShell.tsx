@@ -24,6 +24,7 @@ import "../../styles/desk2.css";
 const OverviewPage = lazy(() => import("./overview/OverviewPage"));
 const TechnicalsPage = lazy(() => import("./technicals/TechnicalsPage"));
 const EventStudyPage = lazy(() => import("./event-study/EventStudyPage"));
+const RegimePage = lazy(() => import("./regime/RegimePage"));
 
 function PageLoading({ label }: { label: string }) {
   return (
@@ -83,6 +84,7 @@ export default function DeskShell() {
   else if (page.slug === "overview") body = <OverviewPage page={page} />;
   else if (page.slug === "technicals") body = <TechnicalsPage page={page} />;
   else if (page.slug === "event-study") body = <EventStudyPage page={page} />;
+  else if (page.slug === "regime") body = <RegimePage page={page} />;
   else body = <NotBuilt page={page} />;
 
   return (

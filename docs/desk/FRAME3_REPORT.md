@@ -426,6 +426,114 @@ E-7, E-9 to E-11 and the links confirmed. Dispositions:
 - R2-10 Export is off while a new answer is on its way, so it cannot save
   one question's events under another's name.
 
+### 4. Regime — `frame-3: regime`
+
+Built: the Regime tab on `/regime` (§5, §12.5), a symmetric 2×2 with no
+action button and the `● Live · Aug print · Sep 22` badge. **Where we are**:
+the amber serif label, the sentence spelled from `current` ("Growth rising
+and inflation rising. Third month in a row."), GROWTH / INFLATION / IN THIS
+REGIME, the last-five-years strip from `history` (one segment per run, ticks
+2021…2025 and `today`), the key, the "How it's decided" box. **Recession
+probability** (labelled as the logistic model): the number, its band word and
+one-in-N phrase, the Low / Watch / Elevated gauge with the names under the
+track, INPUTS THROUGH / A YEAR AGO / PEAK LAST CYCLE, the "What it is" box.
+**What each regime has meant**: the §5 table with the current regime's row
+bold, the amber read. **What would change it**: NEXT CPI / NEXT INDPRO with
+the flip sentence spelled from the served threshold and target regime, the
+last five changes with the S&P a month later, the read. Each card keeps its
+labels and says "Awaiting refresh" on a failed or absent block, block by
+block; its Advanced footer names what is not served yet. Fixture:
+`regime.json` (§12.5, complete). Its 68 months of history (Jan 2021 to Aug
+2026) were built from the served list of the last five changes, so the strip
+agrees with the list; the PNG's own strip does not (its last Overheating run
+is about seven months against "Jun 2026"), so the segment proportions differ
+from the drawing on purpose.
+
+Compare: `docs/desk/screens/compare/04-regime.png` (build alone:
+`04-regime.build.png`). Matched on the second pass. The first ran 1,059 px
+against 960: stat values at the kit's 27 px, the recession gauge's track at
+8 px against the PNG's 14, and the reads on a 21 px line where the PNG sets
+13.5 px type on a 17 px line (the lower-right read took four lines against
+three). Measured and set per card; now 967 px. Deviations, each deliberate:
+- **Stagflation is red in the key, the strip and the table** (§5 names it
+  red; the PNG draws it gray; D12).
+- **The amber read's "positive" is not colored.** The PNG sets the word in
+  amber; the served read is plain text (the shared `reads` shape has no
+  emphasis), and the page does not pick words to color.
+- **The lower-right footer reads "all regime changes since 1996"** where the
+  PNG writes "all 34 changes": §12.5 serves the last five changes and no
+  count.
+- **The two model sentences are §5's own words** ("No model, no fitting.",
+  "a fitted model — five monthly indicators …"). The Desk's language test
+  bans "model" outside the recession model; it now allows those two
+  sentences, quoted from §5, on this page only.
+- **No MOCKUP badge** (as on every tab).
+- **Colors the page chooses to follow the PNG, for Max to accept:** a NEXT
+  date takes the color of the regime it would flip to, with red read as
+  caution (amber: "Oct 17" → Stagflation is amber, as in the PNG) and gray
+  as none; GROWTH rising is green and falling red, INFLATION rising amber
+  and falling green; the STOCK–BOND column is green below zero (bonds hedge)
+  and amber above (they do not), as §6 reads the sign; zero is plain. Green
+  here means "favorable", the PNG's sense, which is wider than §1.3's list
+  for green (up · Reliable · firing · current); making the falling-inflation
+  and negative stock–bond cells plain is the alternative.
+- **VIX AVG 24 and 29 are plain,** where the PNG sets them in amber: nothing
+  served says which averages are high, and the page does not set a
+  threshold.
+
+PROPOSED (spec §12.13): `recession.band`, `recession.band_edges`, `reads`
+(`stats`, `changes`, `year_ago`), and `generation_id` on the response.
+
+Verifier, round 1: **FAIL** (two blocking findings). Dispositions:
+- G-1 (blocking) an absent block lost its labels: the Recession body went
+  blank without `recession`, the strip hid inside `current`, null trends
+  printed "Growth and inflation .", and the lower cards dropped their labels
+  on a failed answer. **Fixed**: each block decides for itself (present →
+  shown; absent and not loading → its labels with "Awaiting refresh"), the
+  strip stands on `history` alone, and a unit test covers each absent block,
+  null trends, a null probability, and the loading state (busy, no
+  "Awaiting refresh", D14).
+- G-2 (blocking) the flip sentence assumed a rising trend: **fixed**. A
+  rising trend flips on a print below the threshold ("a soft print
+  (<0.2% m/m)", "a negative print"), a falling one on a print above it ("a
+  hot print (>0.4% m/m)", "a positive print"); the threshold prints to the
+  served precision (0.0015 → 0.15%); no threshold or no trend → the stat
+  says Awaiting refresh. The test that pinned the wrong text is corrected.
+- G-3 card names ran title and subtitle together: **fixed** ("Where we are
+  rule-based · two-month lag"), pinned by an exact-name test.
+- G-4 the table: **fixed**, the header rule is back (only the body's last
+  row drops its rule) and the columns end at the PNG's right edges (fixed
+  layout, widths as shares of the table, a 6 px gutter so cells never touch
+  at narrow widths).
+- G-5 colors: "Oct 17" is amber, the rule and the stock–bond and trend rules
+  are recorded above, VIX stays plain (recorded); "Watch" is centered under
+  its band as in the PNG.
+- G-6 tests: added (states, falling and null flips, bands from
+  `band_edges`, a null band word, strip tones, widths and ticks, a moved
+  current row, exact names).
+- G-7 the strip's Recession Risk segment is the key's gray.
+- G-8 the trend colors follow the trend (above).
+- G-9 the gauge rules with no consumer are removed.
+- G-10 recorded above; "Overheating" is 38.5 px, the PNG's size.
+- G-11 the stylesheet is one set of rules.
+
+Verifier, round 2: **PASS WITH FINDINGS**, nothing blocking; G-1 to G-11
+confirmed (the table's columns within 5 px of the PNG's, "Overheating"
+within 3 px, Technicals pixel-identical to its committed shot). Dispositions:
+- R-1 a null `flips_to` printed "→ null": **fixed**, the stat says Awaiting
+  refresh; tested.
+- R-2 `current` without its `label` hid the headline silently: **fixed**,
+  "Awaiting refresh · the regime label"; tested.
+- R-3 the fixed table layout wrapped names at 1100 and 390: **fixed**, the
+  columns size to their contents below 1300 px and a regime name never
+  wraps; no sideways scroll at 1440, 1100 or 390.
+- R-4 the color wording: reworded above as a choice that follows the PNG.
+- R-5 a threshold under 0.005% printed "<0%": **fixed**, more digits until
+  one shows; tested.
+- R-6 the 12% took the label's tighter line and lifted the recession stats
+  8 px: **fixed**, with the band names and the stats set to the PNG's
+  spacing (every row of that card within 1.5 px).
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -437,3 +545,4 @@ tests against the fixture dev server.
 | frame-3: overview | clean | 105 / 1,156 | ok | 10 / 10 |
 | frame-3: technicals | clean | 106 / 1,171 | ok | 13 / 13 |
 | frame-3: event-study | clean | 106 / 1,176 | ok | 16 / 16 |
+| frame-3: regime | clean | 107 / 1,192 | ok | 17 / 17 |

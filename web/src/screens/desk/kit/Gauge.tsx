@@ -26,6 +26,7 @@ export default function Gauge({
   caption,
   ticks,
   thick = false,
+  under = false,
   label,
 }: {
   min: number;
@@ -36,6 +37,8 @@ export default function Gauge({
   caption?: ReactNode;
   ticks?: number[];
   thick?: boolean;
+  /** Band names under the track (the Regime gauge), not over it. */
+  under?: boolean;
   /** The gauge's accessible description. */
   label: string;
 }) {
@@ -62,21 +65,25 @@ export default function Gauge({
     setCapLeft(`${x}px`);
   }, [at, value, caption]);
   const shown = (ticks ?? []).filter((t) => !caption || Math.abs(frac(t) - at) > 0.08);
+  const names = (
+    <div className="dk-gauge-names" aria-hidden="true">
+      {segs.map((s, i) => (
+        <span key={i} data-tone={s.tone} style={{ width: `${s.width}%`, textAlign: i === 0 ? "left" : i === segs.length - 1 ? "right" : "center" }}>
+          {s.label}
+        </span>
+      ))}
+    </div>
+  );
   return (
-    <div className={cx("dk-gauge", thick && "dk-gauge-thick")} role="img" aria-label={label}>
-      <div className="dk-gauge-names" aria-hidden="true">
-        {segs.map((s, i) => (
-          <span key={i} data-tone={s.tone} style={{ width: `${s.width}%`, textAlign: i === 0 ? "left" : i === segs.length - 1 ? "right" : "center" }}>
-            {s.label}
-          </span>
-        ))}
-      </div>
+    <div className={cx("dk-gauge", thick && "dk-gauge-thick", under && "dk-gauge-under-names")} role="img" aria-label={label}>
+      {under ? null : names}
       <div className="dk-gauge-track" aria-hidden="true" ref={trackRef}>
         {segs.map((s, i) => (
           <span key={i} data-tone={s.tone} style={{ width: `${s.width}%` }} />
         ))}
         <span className="dk-gauge-needle" style={{ left: pos(value) }} />
       </div>
+      {under ? names : null}
       {ticks?.length || caption ? (
         <div className="dk-gauge-under" aria-hidden="true">
           {shown.map((t) => (

@@ -765,6 +765,19 @@ building it; the web side follows whatever this section ends up saying.
   conditions, crosses of the target's own averages), mapped with the engine's
   slug grammar; no new field.
 
+**Regime (§5)**
+- **PROPOSED** `regime.recession.band` (`"low"`, the Overview tile's own
+  `band` word) and `regime.recession.band_edges` (`[0.25, 0.5]`, the
+  probabilities between Low | Watch | Elevated): the sentence's first word
+  ("Low.") and the gauge's three bands. §12.5 carries the probability only;
+  the page does not pick a band from it.
+- **PROPOSED** `regime.reads` (`{"stats","changes","year_ago"}`, each the
+  shared `reads` shape `{"label","text","tone"}`): the amber "Read for the
+  desk" under the table, the "Read" under the last five changes, and the A
+  YEAR AGO note ("rising slowly, still low"). §12.5 carries no sentences.
+- `regime` also carries `generation_id` (§12's header); §12.5's inline shape
+  omits it.
+
 Notes for B (not new fields):
 - The mockup's Overview rows label two signals differently from the Ledger
   (§2 "Gold +2σ while S&P < 50d", "VIX +2σ in 5 days"; §8 "Gold +2σ while S&P

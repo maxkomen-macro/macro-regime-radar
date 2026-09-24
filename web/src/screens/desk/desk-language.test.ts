@@ -29,6 +29,10 @@ export const LEGACY_FRAME2 = ["/src/screens/desk/positions/", "/src/screens/desk
 const legacy = (file: string) => LEGACY_FRAME2.some((p) => file.startsWith(p));
 /** A sentence about the recession regression, the one thing the Desk calls a model. */
 const RECESSION_SENTENCE = /recession probability|logistic regression|logistic model/i;
+/** The two Regime boxes, verbatim from DESK_FRAME3_SPEC §5: the one that says
+ * the regime rule is not a model, and the one that says the recession
+ * probability is the site's one fitted model. */
+const SPEC_MODEL_SENTENCES = [/^No model, no fitting\.$/, /^a fitted model — five monthly indicators against NBER recession dates since 1970\.$/];
 
 // Read through Vite's import.meta.glob (raw, eager), as hook-coverage does, so
 // the scan needs no Node types and sees exactly the files the build sees.
@@ -81,7 +85,9 @@ export function stringsOf(file: string, text: string): string[] {
 function offending(file: string, s: string): string[] {
   const words = s
     .split(/(?<=[.!?])\s+/)
-    .flatMap((sentence) => [...sentence.matchAll(BANNED)].map((m) => m[0]).filter((w) => !(/^models?$/i.test(w) && RECESSION_SENTENCE.test(sentence))));
+    .flatMap((sentence) =>
+      [...sentence.matchAll(BANNED)].map((m) => m[0]).filter((w) => !(/^models?$/i.test(w) && (RECESSION_SENTENCE.test(sentence) || (file.endsWith("/regime/RegimePage.tsx") && SPEC_MODEL_SENTENCES.some((r) => r.test(sentence.trim())))))),
+    );
   // gate.ts: the ban list's entries are the words themselves.
   if (file.endsWith("/positions/gate.ts") && /^[a-z]+$/.test(s.trim()) && words.length === 1) return [];
   return words;

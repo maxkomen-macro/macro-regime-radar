@@ -1055,3 +1055,10 @@
   font-size: 35px;
   line-height: 1.12;
 }
+
+.dk-gauge-under-names .dk-gauge-names {
+  margin-top: 5px;
+}
+.dk-gauge-under-names .dk-gauge-names [data-tone] {
+  font-weight: 400;
+}

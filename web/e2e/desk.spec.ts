@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals", "event-study"];
+const BUILT = ["overview", "technicals", "event-study", "regime"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);

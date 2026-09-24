@@ -221,6 +221,31 @@ export interface StudyEventsResponse extends Envelope {
   events: { date: string; regime: string; ret_5: number | null; ret_10: number | null; ret_20: number | null; ret_60: number | null }[];
 }
 
+// ── §12.5 /regime ─────────────────────────────────────────────────────────
+
+export interface RegimeResponse extends Envelope {
+  current: { label: string; print: string; growth: string; inflation: string; months_in: number; since: string };
+  history: { month: string; regime: string }[];
+  recession: {
+    prob: number;
+    inputs_through: string;
+    year_ago: number;
+    peak: { prob: number; month: string };
+    /** PROPOSED (§12.13): the band word ("low"), as the Overview tile's `band`. */
+    band: string;
+    /** PROPOSED (§12.13): the probability edges between Low | Watch | Elevated. */
+    band_edges: [number, number];
+  };
+  stats: { regime: string; months: number; spx_mo: number; up_pct: number; vix_avg: number; stock_bond_corr: number }[];
+  next_prints: {
+    cpi: { date: string; flip_threshold_mom: number; flips_to: string };
+    indpro: { date: string; flip_threshold_mom: number; flips_to: string };
+  };
+  changes: { month: string; from: string; to: string; spx_1m: number }[];
+  /** PROPOSED (§12.13): the cards' sentences (`stats`, `changes`, `year_ago`). */
+  reads: { stats?: Read; changes?: Read; year_ago?: Read };
+}
+
 // ── §12.9 /vol ────────────────────────────────────────────────────────────
 
 export interface VolResponse extends Envelope {
