@@ -9,7 +9,7 @@
  */
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
+import type { BasketPriceResponse, BasketResponse, DeskErrorBody, HedgeResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -110,6 +110,39 @@ export const usePositions = () => useDesk<PositionsResponse>("/positions");
 
 /** §12.11: the series inventory, grouped, from the pipeline config. */
 export const usePipeline = () => useDesk<PipelineResponse>("/pipeline");
+
+/** §12.12: one basket the server keeps (PROPOSED shape, §12.13). */
+export function useBasket(id: string, opts: { enabled?: boolean } = {}) {
+  return useQuery<BasketResponse, DeskApiError>({
+    queryKey: ["desk-v2", "/basket", id],
+    queryFn: () => deskGet<BasketResponse>(`/basket/${encodeURIComponent(id)}`),
+    staleTime: 60_000,
+    retry,
+    enabled: opts.enabled ?? true,
+  });
+}
+
+/** §12.12: a set of legs priced without saving (POST, but it writes nothing, so it is read as a query). */
+export function useBasketPrice(legs: { symbol: string; weight: number }[] | null) {
+  return useQuery<BasketPriceResponse, DeskApiError>({
+    queryKey: ["desk-v2", "/basket/price", legs],
+    queryFn: () => deskPost<BasketPriceResponse>("/basket/price", { legs }),
+    staleTime: 60_000,
+    retry,
+    enabled: !!legs,
+  });
+}
+
+/** §12.12: the hedge for a basket, a set of legs, a position or a study. */
+export function useHedge(params: Params, opts: { enabled?: boolean } = {}) {
+  return useQuery<HedgeResponse, DeskApiError>({
+    queryKey: ["desk-v2", "/hedge", params],
+    queryFn: () => deskGet<HedgeResponse>("/hedge", params),
+    staleTime: 60_000,
+    retry,
+    enabled: opts.enabled ?? true,
+  });
+}
 
 /** §12.3: the events behind a study (the Advanced panel). */
 export const useStudyEvents = (params: Params) => useDesk<StudyEventsResponse>("/study/events", params);

@@ -18,7 +18,7 @@ import { deskFixture } from "../src/fixtures/desk/index";
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline", "build-notes"];
+const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline", "build-notes", "basket-hedge"];
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -308,6 +308,71 @@ test.describe("desk v2", () => {
     await settle(page, 500);
     await expect(page.getByRole("heading", { level: 2, name: "Synthetic notes" })).toBeVisible();
     await expect(marked).toHaveText("Long A");
+  });
+
+  test("basket & hedge: the basket, a picked structure, typed weights, a save, the hand-off; phone width", async ({ page }) => {
+    await open(page, "/desk/basket-hedge");
+    const basket = page.getByRole("region", { name: "Basket" });
+    const hedge = page.getByRole("region", { name: /^Hedge · express or protect/ });
+    await expect(basket).toContainText("+12.7%");
+    await expect(hedge).toContainText("$62 per $100");
+    await expect(page.getByTestId("dk-live")).toHaveText("Live · prices Sep 22 · options via EODHD");
+    await expect(basket.getByRole("img")).toBeVisible();
+    // The keyboard picks a structure: its numbers follow.
+    await hedge.getByRole("radio").nth(1).focus();
+    await page.keyboard.press("Space");
+    await expect(hedge.getByRole("radio").nth(1)).toBeChecked();
+    await expect(hedge).toContainText("costs 0.2% of basket");
+    await expect(hedge.getByRole("table")).toContainText("−23%");
+    expect(await auditPalette(page)).toEqual([]);
+    // Weights as typed.
+    await basket.getByLabel("Weight of SMCI, percent").fill("8");
+    await expect(basket).toContainText("total 96%");
+    await basket.getByRole("button", { name: "Normalize to 100%" }).click();
+    await expect(basket).toContainText("total 100%");
+    await basket.getByRole("button", { name: "Save basket" }).click();
+    await expect(basket).toContainText("Saved in this browser.");
+    // The hand-off: Position Monitor reads the basket.
+    await page.getByTestId("dk-act").click();
+    await expect(page).toHaveURL(/\/desk\/position-monitor\?basket=ai-infra$/);
+    await expect(page.getByRole("textbox", { name: "Instrument" })).toHaveValue("AI infrastructure basket vs 1.6 × NDX");
+    // A phone gets both cards, one under the other, and never scrolls sideways.
+    // (The save above lives in this browser; a fresh one reads the served basket.)
+    await page.evaluate(() => localStorage.clear());
+    for (const width of [1440, 1200, 1101, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/basket-hedge");
+      await expect(page.getByRole("region", { name: /^Hedge · express or protect/ })).toContainText("$62 per $100");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `overflow at ${width}`).toBeLessThanOrEqual(1);
+      // Nothing in the basket's header is cut: the title, and the selector at its basket's width.
+      const head = await page.evaluate(() => {
+        const title = document.querySelector<HTMLElement>(".bh-card .dk-card-title")!;
+        const sel = document.querySelector<HTMLSelectElement>(".bh-select select")!;
+        const cs = getComputedStyle(sel);
+        const ctx = document.createElement("canvas").getContext("2d")!;
+        ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const text = ctx.measureText(sel.selectedOptions[0]?.textContent ?? "").width;
+        return { titleCut: title.scrollWidth > title.clientWidth + 1, room: sel.clientWidth - text };
+      });
+      expect(head.titleCut, `title at ${width}`).toBe(false);
+      expect(head.room, `selector at ${width}`).toBeGreaterThan(16);
+      // The falsification band holds its label, and the label clears the x captions.
+      const band = await page.evaluate(() => {
+        const t = [...document.querySelectorAll<SVGTextElement>(".bh-card .dk-chart-band")].find((e) => /comes off/.test(e.textContent ?? ""))!;
+        const r = t.parentElement!.querySelector("rect")!.getBoundingClientRect();
+        const b = t.getBoundingClientRect();
+        const caps = [...document.querySelectorAll<SVGTextElement>(".bh-card .dk-chart-axis")].filter((e) => /sessions ago|today|Sep/.test(e.textContent ?? "")).map((e) => e.getBoundingClientRect().top);
+        return { inside: b.top >= r.top - 1 && b.bottom <= r.bottom + 1, clear: caps.every((c) => b.bottom <= c + 1) };
+      });
+      expect(band.inside, `band label inside at ${width}`).toBe(true);
+      expect(band.clear, `band label clear of captions at ${width}`).toBe(true);
+      expect(await auditPalette(page)).toEqual([]);
+    }
+    // Nothing on the tab animates under reduced motion.
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await open(page, "/desk/basket-hedge");
+    expect(await page.evaluate(() => [...document.querySelectorAll(".dk *")].filter((el) => getComputedStyle(el).animationName !== "none").length)).toBe(0);
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

@@ -21,7 +21,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { DeskApiError, deskPost, usePositions, useStudy, useTechnicals } from "../data/api";
+import { DeskApiError, deskPost, useBasket, usePositions, useStudy, useTechnicals } from "../data/api";
 import type { PositionExpanded, PositionsResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
@@ -30,6 +30,7 @@ import { dayShort, grouped, pctPlain, signed } from "../kit/format";
 import { MonitoredRow, sortByRoom } from "../kit/MonitoredRows";
 import { Awaiting } from "../kit/ui";
 import { apiParams, askFromSearch, questionWords, type Ask } from "../event-study/question";
+import { readSaved } from "../basket/weights";
 import { suggestions, underlyingName } from "./levels";
 import { CERTAINTY_WORDS, REPLACEMENTS, context, gateState, replaceFlag, type Flag } from "./wording";
 import "./positions.css";
@@ -246,6 +247,11 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const from = search.get("from");
   const carriedAsk: Ask | null = from ? { preset: from } : search.get("shock") ? askFromSearch(search) : null;
   const study = useStudy(carriedAsk ? apiParams(carriedAsk) : {}, { enabled: !!carriedAsk });
+  // A basket sent from Basket & Hedge (`?basket=`): the server's instrument words, or a basket saved in this browser.
+  const basketId = search.get("basket");
+  const basket = useBasket(basketId ?? "", { enabled: !!basketId && !basketId.startsWith("local-") });
+  const localBasket = basketId ? (readSaved().find((b) => b.id === basketId) ?? null) : null;
+  const sent = basketId ? (basket.data ? { name: basket.data.name, instrument: basket.data.instrument } : localBasket ? { name: localBasket.name, instrument: `${localBasket.name} basket` } : null) : null;
   const tech = useTechnicals();
   const pos = usePositions();
   const client = useQueryClient();
@@ -266,6 +272,12 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     const target = carried.series?.find((s) => s.key === carried.question.target)?.label ?? carried.question.target;
     setDraft((d) => (d.instrument ? d : { ...d, instrument: target, horizon: HORIZONS.includes(carried.question.horizon) ? carried.question.horizon : d.horizon }));
   }, [carried]);
+
+  useEffect(() => {
+    if (!sent || carriedAsk) return;
+    setDraft((d) => (d.instrument ? d : { ...d, instrument: sent.instrument }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sent?.instrument]);
 
   const label = (k: string) => carried?.series?.find((s) => s.key === k)?.label ?? k;
   const signalWords = carried ? `${label(carried.question.shock)} gives back its move` : null;
@@ -335,6 +347,10 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
 
   const sub = carried
     ? `Carried in from Event Study · ${questionWords(carried.question, label)} · any study can be carried in`
+    : sent && !carriedAsk
+      ? `Sent from Basket & Hedge · ${sent.name} · the gate is the same for every position.`
+      : basketId && !carriedAsk && (basket.isError || (basketId.startsWith("local-") && !localBasket))
+        ? `The basket sent from Basket & Hedge (${basketId}) ${basketId.startsWith("local-") ? "is not saved in this browser" : "is awaiting refresh"}; the gate is the same for every position.`
     : carriedFailed
       ? `The study carried in from Event Study (${from ?? "the question in the address"}) is awaiting refresh; the gate is the same for every position.`
       : "Any study can be carried in from Event Study; the gate is the same for every position.";

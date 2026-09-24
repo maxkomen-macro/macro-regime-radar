@@ -1,0 +1,309 @@
+{
+ "as_of": "2026-09-22",
+ "generation_id": "gen-fixture-2026-09-22",
+ "legs": [
+  {
+   "symbol": "NVDA",
+   "name": "Nvidia",
+   "weight": 22
+  },
+  {
+   "symbol": "AVGO",
+   "name": "Broadcom",
+   "weight": 16
+  },
+  {
+   "symbol": "VRT",
+   "name": "Vertiv",
+   "weight": 14
+  },
+  {
+   "symbol": "CRWV",
+   "name": "CoreWeave",
+   "weight": 12
+  },
+  {
+   "symbol": "ANET",
+   "name": "Arista",
+   "weight": 12
+  },
+  {
+   "symbol": "CEG",
+   "name": "Constellation",
+   "weight": 12
+  },
+  {
+   "symbol": "SMCI",
+   "name": "Supermicro",
+   "weight": 12
+  }
+ ],
+ "benchmark": {
+  "symbol": "NDX",
+  "label": "Nasdaq"
+ },
+ "ret_3m": 0.127,
+ "bench_ret_3m": 0.091,
+ "residual": -0.019,
+ "residual_window": 60,
+ "falsifies_at": -0.04,
+ "month_ago": 0.008,
+ "vol": 0.41,
+ "bench_vol": 0.24,
+ "vol_ratio": 1.7,
+ "beta": 1.6,
+ "series": [
+  {
+   "date": "2026-06-29",
+   "value": 0.004
+  },
+  {
+   "date": "2026-06-30",
+   "value": 0.0038
+  },
+  {
+   "date": "2026-07-01",
+   "value": 0.0037
+  },
+  {
+   "date": "2026-07-02",
+   "value": 0.0052
+  },
+  {
+   "date": "2026-07-06",
+   "value": 0.0041
+  },
+  {
+   "date": "2026-07-07",
+   "value": 0.0054
+  },
+  {
+   "date": "2026-07-08",
+   "value": 0.0053
+  },
+  {
+   "date": "2026-07-09",
+   "value": 0.0048
+  },
+  {
+   "date": "2026-07-10",
+   "value": 0.0062
+  },
+  {
+   "date": "2026-07-13",
+   "value": 0.0053
+  },
+  {
+   "date": "2026-07-14",
+   "value": 0.0066
+  },
+  {
+   "date": "2026-07-15",
+   "value": 0.006
+  },
+  {
+   "date": "2026-07-16",
+   "value": 0.0063
+  },
+  {
+   "date": "2026-07-17",
+   "value": 0.0074
+  },
+  {
+   "date": "2026-07-20",
+   "value": 0.0086
+  },
+  {
+   "date": "2026-07-21",
+   "value": 0.0072
+  },
+  {
+   "date": "2026-07-22",
+   "value": 0.0077
+  },
+  {
+   "date": "2026-07-23",
+   "value": 0.0089
+  },
+  {
+   "date": "2026-07-24",
+   "value": 0.01
+  },
+  {
+   "date": "2026-07-27",
+   "value": 0.0094
+  },
+  {
+   "date": "2026-07-28",
+   "value": 0.0092
+  },
+  {
+   "date": "2026-07-29",
+   "value": 0.0109
+  },
+  {
+   "date": "2026-07-30",
+   "value": 0.0089
+  },
+  {
+   "date": "2026-07-31",
+   "value": 0.0107
+  },
+  {
+   "date": "2026-08-03",
+   "value": 0.0093
+  },
+  {
+   "date": "2026-08-04",
+   "value": 0.0088
+  },
+  {
+   "date": "2026-08-05",
+   "value": 0.0086
+  },
+  {
+   "date": "2026-08-06",
+   "value": 0.009
+  },
+  {
+   "date": "2026-08-07",
+   "value": 0.0101
+  },
+  {
+   "date": "2026-08-10",
+   "value": 0.0084
+  },
+  {
+   "date": "2026-08-11",
+   "value": 0.0093
+  },
+  {
+   "date": "2026-08-12",
+   "value": 0.0093
+  },
+  {
+   "date": "2026-08-13",
+   "value": 0.0085
+  },
+  {
+   "date": "2026-08-14",
+   "value": 0.0088
+  },
+  {
+   "date": "2026-08-17",
+   "value": 0.0075
+  },
+  {
+   "date": "2026-08-18",
+   "value": 0.0074
+  },
+  {
+   "date": "2026-08-19",
+   "value": 0.0076
+  },
+  {
+   "date": "2026-08-20",
+   "value": 0.0087
+  },
+  {
+   "date": "2026-08-21",
+   "value": 0.0079
+  },
+  {
+   "date": "2026-08-24",
+   "value": 0.008
+  },
+  {
+   "date": "2026-08-25",
+   "value": 0.0062
+  },
+  {
+   "date": "2026-08-26",
+   "value": 0.0055
+  },
+  {
+   "date": "2026-08-27",
+   "value": 0.0038
+  },
+  {
+   "date": "2026-08-28",
+   "value": 0.0021
+  },
+  {
+   "date": "2026-08-31",
+   "value": 0.002
+  },
+  {
+   "date": "2026-09-01",
+   "value": 0.0004
+  },
+  {
+   "date": "2026-09-02",
+   "value": -0.0021
+  },
+  {
+   "date": "2026-09-03",
+   "value": -0.0026
+  },
+  {
+   "date": "2026-09-04",
+   "value": -0.0041
+  },
+  {
+   "date": "2026-09-08",
+   "value": -0.0046
+  },
+  {
+   "date": "2026-09-09",
+   "value": -0.0063
+  },
+  {
+   "date": "2026-09-10",
+   "value": -0.0087
+  },
+  {
+   "date": "2026-09-11",
+   "value": -0.0084
+  },
+  {
+   "date": "2026-09-14",
+   "value": -0.0118
+  },
+  {
+   "date": "2026-09-15",
+   "value": -0.0124
+  },
+  {
+   "date": "2026-09-16",
+   "value": -0.013
+  },
+  {
+   "date": "2026-09-17",
+   "value": -0.0158
+  },
+  {
+   "date": "2026-09-18",
+   "value": -0.0163
+  },
+  {
+   "date": "2026-09-21",
+   "value": -0.0188
+  },
+  {
+   "date": "2026-09-22",
+   "value": -0.019
+  }
+ ],
+ "reads": {
+  "chart": {
+   "label": null,
+   "text": "Slipped from +0.8% to −1.9% over the month: still 2.1 points above the line, but drifting toward it. Same number the Position Monitor watches.",
+   "tone": "normal"
+  },
+  "beta": {
+   "label": "Beta to NDX",
+   "text": "1.6. Half of this basket's move is just Nasdaq. Hedge that half and what's left is the actual AI-infra bet.",
+   "tone": "normal"
+  }
+ }
+}

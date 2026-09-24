@@ -1,0 +1,149 @@
+{
+ "as_of": "2026-09-22",
+ "generation_id": "gen-fixture-2026-09-22",
+ "mode": "protect",
+ "subject": {
+  "kind": "basket",
+  "id": "ai-infra",
+  "label": "AI infrastructure basket"
+ },
+ "surface": "SPY / QQQ",
+ "surface_as_of": "2026-09-22",
+ "provider": "EODHD",
+ "beta": 1.6,
+ "options": [
+  {
+   "id": "put_spread",
+   "label": "Put spread on QQQ · 1 month · 5% / 10% down",
+   "underlying": "QQQ",
+   "cost_pct": 0.011,
+   "breakeven": -0.061,
+   "max_loss": 0.011,
+   "note": "Cheapest cover for a 5–10% drawdown. Skew is steep, so the lower put you sell pays for a lot of the upper one.",
+   "hedge_per_100": 62,
+   "delta": 0.39,
+   "theta_pct_week": -0.0009,
+   "roll": {
+    "date": "2026-10-17",
+    "days": 30,
+    "at_dte": 10
+   },
+   "scenarios": [
+    {
+     "ndx": -0.2,
+     "basket": -0.32,
+     "hedged": -0.3
+    },
+    {
+     "ndx": -0.1,
+     "basket": -0.16,
+     "hedged": -0.14
+    },
+    {
+     "ndx": 0,
+     "basket": 0,
+     "hedged": -0.011
+    },
+    {
+     "ndx": 0.1,
+     "basket": 0.16,
+     "hedged": 0.15
+    }
+   ],
+   "scenario_note": "Basket moves 1.6× NDX. The spread pays at most 3.1% of the basket (5 points × $62 notional), so it softens a drawdown rather than stopping it; below −10% you are long the basket again."
+  },
+  {
+   "id": "collar",
+   "label": "Collar on QQQ · 1 month · sell 5% up, buy 5% down",
+   "underlying": "QQQ",
+   "cost_pct": 0.002,
+   "breakeven": -0.052,
+   "max_loss": 0.052,
+   "note": "Near-free, but you give up upside above +5%. Wrong tool while the basket is running.",
+   "hedge_per_100": 62,
+   "delta": 0.39,
+   "theta_pct_week": -0.0001,
+   "roll": {
+    "date": "2026-10-17",
+    "days": 30,
+    "at_dte": 10
+   },
+   "scenarios": [
+    {
+     "ndx": -0.2,
+     "basket": -0.32,
+     "hedged": -0.23
+    },
+    {
+     "ndx": -0.1,
+     "basket": -0.16,
+     "hedged": -0.13
+    },
+    {
+     "ndx": 0,
+     "basket": 0,
+     "hedged": -0.002
+    },
+    {
+     "ndx": 0.1,
+     "basket": 0.16,
+     "hedged": 0.13
+    }
+   ],
+   "scenario_note": "Basket moves 1.6× NDX. The put pays 0.62% of the basket for each point NDX falls below −5%, and the call you sold takes the same off each point above +5%: a drawdown is cut by about a quarter, a rally capped by about a fifth."
+  },
+  {
+   "id": "outright_puts",
+   "label": "Outright QQQ puts · 1 month · 5% down",
+   "underlying": "QQQ",
+   "cost_pct": 0.024,
+   "breakeven": -0.074,
+   "max_loss": 0.024,
+   "note": "Simplest, and twice the price. Vol is rich right now; you're paying for it.",
+   "hedge_per_100": 62,
+   "delta": 0.39,
+   "theta_pct_week": -0.0021,
+   "roll": {
+    "date": "2026-10-17",
+    "days": 30,
+    "at_dte": 10
+   },
+   "scenarios": [
+    {
+     "ndx": -0.2,
+     "basket": -0.32,
+     "hedged": -0.25
+    },
+    {
+     "ndx": -0.1,
+     "basket": -0.16,
+     "hedged": -0.15
+    },
+    {
+     "ndx": 0,
+     "basket": 0,
+     "hedged": -0.024
+    },
+    {
+     "ndx": 0.1,
+     "basket": 0.16,
+     "hedged": 0.14
+    }
+   ],
+   "scenario_note": "Basket moves 1.6× NDX. The puts pay 0.62% of the basket for each point NDX falls below −5%, with no cap, but they cost 2.4% up front: they only beat the spread in a drop past about −12%."
+  }
+ ],
+ "recommended": "put_spread",
+ "reads": {
+  "why_index": {
+   "label": "Why index options, not the names",
+   "text": "puts on NVDA and AVGO would cover what QQQ can't, a basket-specific selloff, but single-name vol runs 1.7× the index, so the same protection costs about 3.8%. The index hedge is the cheap one; it leaves the idiosyncratic leg open on purpose.",
+   "tone": "normal"
+  },
+  "recommendation": {
+   "label": "Recommendation",
+   "text": "the put spread. It hedges the NDX half of the book for about a percent, and it's the one that reads right against today's vol card: rich implied, steep skew. Sell the wing, don't buy the outright.",
+   "tone": "normal"
+  }
+ }
+}

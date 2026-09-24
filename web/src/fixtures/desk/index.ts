@@ -11,6 +11,9 @@
 
 import engineAssets from "../../screens/desk/event-study/__fixtures__/engine-assets.json" with { type: "json" };
 import engineStudies from "../../screens/desk/event-study/__fixtures__/engine-studies.json" with { type: "json" };
+import basketPrice from "./basket-price.json" with { type: "json" };
+import basket from "./basket.json" with { type: "json" };
+import hedge from "./hedge.json" with { type: "json" };
 import ledger from "./ledger.json" with { type: "json" };
 import macro from "./macro.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
@@ -113,6 +116,36 @@ function positionsReply(method: string, body: string | undefined): FixtureReply 
   return json(201, row);
 }
 
+// ── Basket & Hedge (§12.12): the fixtures carry one basket, its price and
+// one hedge (Protect, for that basket, as a basket, as its legs, or as the
+// position that holds it), as they carry one study. Other weights, baskets,
+// modes and subjects have no fixture: the page shows what the API would on an
+// error, Awaiting refresh. ─────────────────────────────────────────────────
+
+const B = basket as { id: string; legs: { symbol: string; weight: number }[] };
+const legsKey = (legs: { symbol: string; weight: number }[]) => legs.map((l) => `${l.symbol}:${l.weight}`).join(",");
+const BASKET_LEGS = legsKey(B.legs);
+/** The position on the fixture's Position Monitor that holds the basket. */
+const BASKET_POSITION = "ai-infra-hedged";
+
+function basketPriceReply(body: string | undefined): FixtureReply {
+  let legs: { symbol: string; weight: number }[] = [];
+  try {
+    legs = ((JSON.parse(body ?? "{}") as { legs?: unknown }).legs as typeof legs) ?? [];
+  } catch {
+    return json(400, { error: "not JSON" });
+  }
+  if (!Array.isArray(legs) || legsKey(legs) !== BASKET_LEGS) return json(404, { error: "no fixture for these legs" });
+  return json(200, basketPrice);
+}
+
+function hedgeReply(u: URL): FixtureReply {
+  const q = u.searchParams;
+  const ours = q.get("basket") === B.id || q.get("position") === BASKET_POSITION || q.get("legs") === BASKET_LEGS;
+  if (q.get("mode") !== "protect" || !ours) return json(404, { error: "no fixture for this hedge" });
+  return json(200, hedge);
+}
+
 /** §12.3's CSV: one row per event, the JSON's columns in order. */
 export function eventsCsv(doc: { events: Record<string, unknown>[] }): string {
   const cols = ["date", "regime", "ret_5", "ret_10", "ret_20", "ret_60"];
@@ -149,6 +182,9 @@ export function deskFixture(method: string, url: string, _body?: string, accept?
     const answer = slug === "gold-2sigma-spx-weak" ? engineStudies.preset : slug === "spx-golden-cross" ? engineStudies.cross : null;
     return answer ? json(200, answer) : json(404, { error: "no fixture for this engine study" });
   }
+  if (method.toUpperCase() === "GET" && path.startsWith("/basket/")) return path === `/basket/${B.id}` ? json(200, basket) : json(404, { error: `no fixture for basket ${path.slice(8)}` });
+  if (path === "/basket/price") return method.toUpperCase() === "POST" ? basketPriceReply(_body) : json(405, { error: "method not allowed" });
+  if (method.toUpperCase() === "GET" && path === "/hedge") return hedgeReply(u);
   // §12.11: the Snowflake DDL, as text.
   if (method.toUpperCase() === "GET" && path === "/pipeline/ddl") return { status: 200, contentType: "text/plain", body: PIPELINE_DDL };
   return json(404, { error: `no fixture for ${method.toUpperCase()} /api/desk${path}` });

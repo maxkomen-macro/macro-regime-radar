@@ -397,3 +397,91 @@ export interface SectorsResponse extends Envelope {
   /** PROPOSED (§12.13): the stat notes the engine words ("growth sectors over defensives", "trend still broad", "big names carrying it"). */
   words?: { pattern?: string; above_200?: string; eqw?: string };
 }
+
+// ── §12.12 /basket/:id, POST /basket/price, /hedge (PROPOSED shapes, §12.13) ──
+
+export interface BasketLeg {
+  symbol: string;
+  /** The listing's name; null when the API has none for the ticker. */
+  name: string | null;
+  /** Percent of the basket (22 is 22%). */
+  weight: number;
+}
+
+/** What a price of a set of legs carries: the stats row, the residual chart and its reads. */
+export interface BasketPriced {
+  benchmark: { symbol: string; label: string };
+  ret_3m: number | null;
+  bench_ret_3m: number | null;
+  /** Basket minus beta × benchmark over `residual_window` sessions. */
+  residual: number | null;
+  residual_window: number | null;
+  /** The residual at which the position comes off. */
+  falsifies_at: number | null;
+  /** The residual 20 sessions ago. */
+  month_ago: number | null;
+  vol: number | null;
+  bench_vol: number | null;
+  vol_ratio: number | null;
+  beta: number | null;
+  series: { date: string; value: number }[];
+  reads: { chart: Read | null; beta: Read | null };
+}
+
+export interface BasketResponse extends Envelope, BasketPriced {
+  id: string;
+  name: string;
+  /** The basket in two or three words ("AI-infra"), for the chart's question. */
+  short: string;
+  /** What Position Monitor's instrument field reads ("AI infrastructure basket vs 1.6 × NDX"). */
+  instrument: string;
+  rebalance: string;
+  prices_as_of: string;
+  /** The baskets the server keeps, for the selector. */
+  baskets: { id: string; name: string }[];
+  legs: BasketLeg[];
+}
+
+export interface BasketPriceResponse extends Envelope, BasketPriced {
+  /** The posted legs, with the names the API resolved. */
+  legs: BasketLeg[];
+}
+
+export type HedgeMode = "protect" | "express" | "neutralize";
+
+export interface HedgeScenario {
+  /** The benchmark's move over the month. */
+  ndx: number;
+  basket: number;
+  hedged: number;
+}
+
+export interface HedgeOption {
+  id: string;
+  label: string;
+  underlying: string;
+  cost_pct: number;
+  breakeven: number;
+  max_loss: number;
+  note: string;
+  /** Dollars of the underlying's notional per $100 of basket. */
+  hedge_per_100: number;
+  delta: number;
+  theta_pct_week: number;
+  roll: { date: string; days: number; at_dte: number };
+  scenarios: HedgeScenario[];
+  scenario_note: string;
+}
+
+export interface HedgeResponse extends Envelope {
+  mode: HedgeMode;
+  subject: { kind: "basket" | "legs" | "position" | "study"; id: string | null; label: string };
+  /** The option surface the prices come off ("SPY / QQQ"). */
+  surface: string;
+  surface_as_of: string;
+  provider: string;
+  beta: number | null;
+  options: HedgeOption[];
+  recommended: string | null;
+  reads: { why_index: Read | null; recommendation: Read | null };
+}

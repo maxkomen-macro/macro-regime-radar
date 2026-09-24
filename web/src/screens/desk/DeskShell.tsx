@@ -13,9 +13,9 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
 import ErrorBoundary from "../shared/ErrorBoundary";
 import DeskSidebar from "./DeskSidebar";
-import DeskTopBar, { PageTitle } from "./DeskTopBar";
+import DeskTopBar from "./DeskTopBar";
 import { PipelineBadge } from "./pipeline/badge";
-import { DESK_ALIASES, DESK_HOME, deskPageBySlug, type DeskPage } from "./desk-sections";
+import { DESK_ALIASES, DESK_HOME, deskPageBySlug } from "./desk-sections";
 import { useDeskView, withView } from "./desk-view";
 import TourStrip from "./tour/TourStrip";
 import { parseTour } from "./tour/tour";
@@ -32,6 +32,7 @@ const LedgerPage = lazy(() => import("./ledger/LedgerPage"));
 const PositionMonitorPage = lazy(() => import("./positions/PositionMonitorPage"));
 const PipelinePage = lazy(() => import("./pipeline/PipelinePage"));
 const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
+const BasketHedgePage = lazy(() => import("./basket/BasketHedgePage"));
 const ClientView = lazy(() => import("./client/ClientView"));
 
 function PageLoading({ label }: { label: string }) {
@@ -39,18 +40,6 @@ function PageLoading({ label }: { label: string }) {
     <p role="status" aria-live="polite" className="dk-await">
       Loading {label}…
     </p>
-  );
-}
-
-/** A tab frame-3 has not built yet: its title row and one line, nothing else. */
-function NotBuilt({ page }: { page: DeskPage }) {
-  return (
-    <>
-      <PageTitle page={page} />
-      <p className="dk-await" role="status">
-        This tab is being rebuilt for Desk v2.
-      </p>
-    </>
   );
 }
 
@@ -88,7 +77,7 @@ export default function DeskShell() {
   else if (page.slug === "position-monitor") body = <PositionMonitorPage page={page} />;
   else if (page.slug === "data-pipeline") body = <PipelinePage page={page} />;
   else if (page.slug === "build-notes") body = <BuildNotesPage page={page} />;
-  else body = <NotBuilt page={page} />;
+  else body = <BasketHedgePage page={page} />;
 
   return (
     <div className="dk" data-view={view} data-client={client || undefined} data-menu={menu ? "open" : undefined} data-tour={tour ?? undefined} data-testid="desk-shell">

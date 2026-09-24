@@ -674,6 +674,7 @@ Signals rows come from `/ledger` filtered to `group:"spx"`.
 Series inventory grouped, from the pipeline config: `{"last_refresh_utc","validation":"passed","groups":[{"name":"Rates","source":"FRED","freq":"daily","status":"current","series":[{"label","id","from","as_of","feeds":[],"status","note"}]}]}`. Plus `GET /pipeline/ddl` (text) and `GET /study/events` CSV for the two buttons.
 
 ### 12.12 `GET /basket/:id`, `POST /basket/price`, `GET /hedge?…` — only if Basket & Hedge ships. Shapes to be added to this file before B touches them.
+Shapes: §12.13, "Basket & Hedge (§10)" (PROPOSED, session A).
 
 ### 12.13 PROPOSED additions (session A, desk/frame-3)
 
@@ -921,6 +922,57 @@ building it; the web side follows whatever this section ends up saying.
   the view then prints the `empty_state.sentence` in the paragraph's place
   and in the backdrop card, "too few cases to say" in the month's two
   stats, and never "Awaiting refresh".
+
+**Basket & Hedge (§10)**
+- **PROPOSED** `GET /basket/:id` answers `{"as_of","generation_id","id",
+  "name","short","instrument","rebalance","prices_as_of","baskets",
+  "legs", …the priced fields below}`: `short` is the basket in two or
+  three words ("AI-infra", the chart's question), `instrument` what Position
+  Monitor's instrument field reads ("AI infrastructure basket vs 1.6 × NDX"),
+  `baskets` the `[{"id","name"}]` the server keeps (the selector), `legs`
+  `[{"symbol","name","weight"}]` with `weight` in percent (22 is 22%) and
+  `name` null when the API has none.
+- **PROPOSED** the priced fields, the same on `GET /basket/:id` and
+  `POST /basket/price`: `benchmark` (`{"symbol":"NDX","label":"Nasdaq"}`),
+  `ret_3m`, `bench_ret_3m`, `residual` (basket minus `beta` × benchmark over
+  `residual_window` sessions), `residual_window` (60), `falsifies_at`
+  (−0.04, where the position comes off), `month_ago` (the residual 20
+  sessions ago), `vol`, `bench_vol`, `vol_ratio`, `beta`, `series`
+  (`[{"date","value"}]`, the residual over the window) and `reads`
+  (`{"chart","beta"}`, each a §12.13 read or null). Fractions stay
+  fractions; any of the numbers may be null.
+- **PROPOSED** `POST /basket/price` takes `{"legs":[{"symbol","weight"}]}`
+  (weights adding to 100) and answers the priced fields plus `legs` with
+  the names it resolved; it writes nothing. The page asks it while the
+  typed weights differ from the served ones; Save basket keeps the weights
+  in the browser (like Event Study's saved questions, §1.8), never on the
+  server.
+- **PROPOSED** `GET /hedge?mode=protect|express|neutralize` with one
+  subject: `basket=<id>`, `legs=NVDA:22,AVGO:16,…` (a basket saved in the
+  browser), `position=<id>` (from Position Monitor's "Price a hedge"), or
+  for `express` the study's own parameters (`preset=` or the six slots).
+  It answers `{"as_of","generation_id","mode","subject":{"kind","id",
+  "label"},"surface":"SPY / QQQ","surface_as_of","provider":"EODHD",
+  "beta","options","recommended","reads":{"why_index","recommendation"}}`.
+  Each of `options[]` is `{"id","label","underlying","cost_pct",
+  "breakeven","max_loss","note","hedge_per_100","delta","theta_pct_week",
+  "roll":{"date","days","at_dte"},"scenarios":[{"ndx","basket","hedged"}],
+  "scenario_note"}`: the stats row, the scenario table and its note belong
+  to the structure picked, so every structure carries its own.
+  `recommended` is the id picked when the page opens. §10's `breakeven`
+  figures are the put strike's distance plus the structure's cost (−5% −
+  1.1% = −6.1%; −5.2%; −7.4%), a rule of thumb rather than the move at
+  which the hedged book is flat. Its `max_loss` figures are the premium
+  for the put spread and the outright puts, but the strike's distance plus
+  the cost for the collar (5.2%). Session B should settle one definition
+  of each and serve it.
+- With no `?basket=` the page asks `/basket/ai-infra`, the one basket the
+  mockup draws, and reads the selector's list from that answer's
+  `baskets` whichever basket is open. The default is fixed on the page; a
+  served default would need its own field.
+- The header's "Send to Position Monitor →" carries `?basket=<id>`;
+  Position Monitor fills its instrument field from that basket's
+  `instrument` (or a basket saved in the browser: its name and "basket").
 
 Notes for B (not new fields):
 - §11 fixes the inventory at 26 series in five groups, but Desk also reads

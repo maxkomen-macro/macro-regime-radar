@@ -46,7 +46,8 @@ Nothing pushed; no `.db`, `data/`, secrets, `api/`, `src/` or `scripts/`.
   PNG with Plex / Source Serif 4: body ≈ 14 px, mono labels ≈ 11.5–12 px with
   almost no extra tracking, serif values ≈ 29 px, page title 28 px, sidebar
   189 px wide including its border (§1.1 says 176). Fonts are the spec's.
-- **D2. Unbuilt tabs show a one-line placeholder** until their commit; the
+- **D2. Unbuilt tabs showed a one-line placeholder** until their commit (the
+  last one went with Basket & Hedge); the
   frame-2 pages they replace are removed with the commit that replaces them
   (Today, S&P Internals, the designed shells, the mobile nav and the Build
   Notes copy went with Overview). Old slugs redirect to the v2 tab
@@ -1391,6 +1392,262 @@ compare shots were identical. Findings and what was done:
 The round-2 fixes were checked by the gates and the tests above, not by a
 third verifier round.
 
+### 12. Basket & Hedge — `frame-3: basket-hedge`
+
+Built last, after every other tab was committed with its gates green (§13).
+The Basket & Hedge tab (§10, `screens/09-basket-hedge.png`) has two
+columns.
+
+**Basket.** A basket the server keeps (`?basket=`, `GET /basket/:id`) or one
+saved in this browser, picked from the selector, with "+ New basket" to
+start an empty one. Its stats row: 3-month against NDX, the residual against
+NDX with "last 60 sessions · falsifies at −4%", and basket vol against NDX
+with the "× as jumpy" ratio. Its legs are typed weights: Equal-weight,
+Normalize to 100%, × to drop a name, and a ticker to add at 0%, whose name
+arrives with the next price. The total shows beside them, amber when it is
+off 100%.
+
+While the typed weights differ from the served ones, `POST /basket/price`
+prices them (it writes nothing). A total off 100% says so instead of
+pricing. Then the residual chart: its question from the served `short`,
+`beta` and window; one blue line, the dashed amber line where the position
+comes off, green above zero and amber below the line, the end value by the
+white dot. Then the served sentence and the served "Beta to NDX" read.
+Save basket keeps the weights in this browser (as Event Study keeps its
+saved questions, §1.8). The hedge on the right then prices the saved
+weights. A served basket keeps the server's name, short name and rebalance
+rule whatever weights this browser keeps for it, and the Advanced panel
+offers "Revert to the served weights". A basket of this browser's own can
+be deleted there. The panel's "export" is Export / Import JSON of the saved
+baskets. An import never replaces a basket: one already here (same name
+and legs) is skipped, and one whose number is taken here by a different
+basket, including this browser's own weights for a served basket, gets a
+fresh `local-<n>`. "+ New
+basket" reuses an empty one rather than adding another. The selector lists
+the server's baskets (from the default basket's answer) whichever basket
+is open, and a save in another window reaches the card as well as the
+hedge.
+A basket that did not come, or one not saved in this browser, says which.
+"Awaiting refresh" is only ever an answer that did not come (§1.7). While
+the basket or a price is on its way, and while the analyst's own weights
+cannot be priced (a total off 100%, a weight that is not a number), the
+stats show their labels alone and the reason is given in words ("Add a
+ticker to price the basket" for an empty one).
+
+**Hedge.** Three modes in the address (`?mode=`): Protect the basket,
+Express the S&P lean, and Neutralize NDX beta. `GET /hedge` prices one
+subject:
+- the saved basket, by id or, for weights saved in this browser, as its
+  legs;
+- the position Position Monitor's "Price a hedge →" carries (`?position=`);
+- for Express, the study carried in from Event Study (`?study=` or the six
+  slots its "price it" link sends), else the last one it answered, else the
+  gold preset.
+
+The served subject's label is printed ("Priced for AI infrastructure
+basket"). Picking a basket drops a position carried in, and a mode once
+picked is always written to the address. The three structures are radios,
+each named by its label and described by its numbers and note, with the
+served recommendation picked first. The picked one's hedge ratio, cost of waiting and roll, its month of
+scenarios and its note follow the pick. Then the served "Why index options,
+not the names" and Recommendation reads. The title row carries "● Live ·
+prices <day> · options via <provider>" from the two answers. The header's
+"Send to Position Monitor →" carries `?basket=`, and Position Monitor fills
+its instrument field from that basket's served `instrument` and says "Sent
+from Basket & Hedge · <name>". Nothing about the basket or the hedge is
+priced on the page. The page only tidies the analyst's own weights
+(equal-weight, normalize).
+
+PROPOSED (the spec's §12.12 left the shapes to be written first; they are
+in §12.13, "Basket & Hedge (§10)"): `GET /basket/:id`, the priced fields
+shared with `POST /basket/price`, `GET /hedge` with its subjects and its
+per-structure numbers, and the `?basket=` hand-off. Fixtures, one file per
+endpoint: `basket.json`, `basket-price.json` and `hedge.json`. They carry
+one basket, its price and one hedge (Protect, for that basket as a basket,
+as its legs, or as the position that holds it), as the fixtures carry one
+study. Other weights, baskets, modes and subjects answer 404 in fixture
+mode, and the page shows Awaiting refresh with its labels kept. The
+collar's and the outright puts' numbers are the fixture's own, worked from
+their payoffs on $62 of QQQ per $100 (e.g. the collar at −20%: −32 + 9.3 −
+0.2 = −23%). The residual path runs from +0.8% twenty sessions ago to −1.9%
+today, as the served sentence says.
+
+Deviations from the PNG, each with its reason:
+- The "MOCKUP · values illustrative" chip is not drawn (as on every tab).
+- The active mode and the picked structure are drawn with the neutral
+  active fill and a gray border, not green. §1.3 gives green to up,
+  Reliable, firing and current, and "selected" is none of them. For the
+  same reason, the Recommendation box is the ordinary read box, not
+  green-bordered.
+- Basket vol 41% is in the body color, not red. Red is only a down or
+  negative number, and a volatility is neither.
+- The chart's right end reads "Sep 22", not "today", because the fixture's
+  day is not New York's today (D13, as on every chart).
+- The reads drop the PNG's em-dash asides ("… can't, a basket-specific
+  selloff, but …"; "… steep skew. Sell the wing, don't buy the outright.").
+  The fixture writes them in the owner's house style.
+- Picking the collar or the outright puts changes the stats row, the
+  scenario table and its note. The PNG shows the put spread's only.
+- A "Priced for <subject>" line under the modes names what the hedge
+  prices (the served `subject.label`). The PNG has no such line; without
+  it a hedge carried in from a position or a study would not say what it
+  is for.
+- The scenario table's flat-row "0%" is in the neutral color, not green:
+  zero is neither up nor down (§1.3).
+- The chart's end value is the chart kit's point label (mono, gray, placed
+  clear of the line), as on every Desk chart, not white above the dot.
+- The residual line is the fixture's path, which the served sentence
+  describes (+0.8% twenty sessions ago, −1.9% today). The PNG's drawing
+  sits near −1.2% a month back.
+
+Compare: `docs/desk/screens/compare/09-basket-hedge.png` (build alone:
+`09-basket-hedge.build.png`). It matched on the second attempt. In the
+first shot the stat numbers used the 31 px step (the design's are 23 px on
+the basket side and 21 px on the hedge side), the card titles were 15 px
+(17), the chart was 230 px tall (165), and the scenario table carried its
+question as a caption row above the header row. All four were set to the
+design's. After the verifier's round 1, the build is 1,040 px tall, as the
+design is. The measures, build against PNG:
+- the three structure rows: 88 / 72 / 72 against 84 / 71 / 71;
+- scenario rows: 25 px, the same;
+- the ticker column: 11.5 px;
+- Equal-weight and Normalize: 22 px tall;
+- the modes row: 11 px below the title;
+- the Beta and Recommendation reads: at their cards' feet.
+
+Verifier round 1: **FAIL** on one blocking finding. It confirmed:
+- every copy line against the PNG and §10;
+- the six deviations listed then;
+- the fixtures' arithmetic, down to all twelve scenario cells from $62 of
+  QQQ per $100;
+- the contract, field for field;
+- the palette in every state, the 27 keyboard stops, and no sideways
+  scroll at seven widths;
+- the failures on every call.
+
+The other compare shots were identical. Findings and what was done:
+- B-1 (blocking) arriving from Event Study's "price it" with `?study=`,
+  Protect could not be picked: the page inferred Express from the study
+  whenever `mode` was absent, and Protect removed `mode`. **Fixed**: a mode
+  once picked is always written. A unit test starts from
+  `?mode=express&study=…` and picks Protect.
+- B-2 the falsification band was 0.6 points deep, so its label hung onto
+  the x captions and, at 390, "−4%" sat on "60 sessions ago". **Fixed**: the
+  band runs 1.45 points (the PNG's depth), and a narrow chart takes one-line
+  labels. The browser test checks the label inside the band and clear of
+  the captions at 1440, 1200, 1101 and 390.
+- B-3 "Awaiting refresh" showed while the basket or a price was loading and
+  for the analyst's own off-100 total. **Fixed** as described above, with
+  tests for a basket that never answers and for a 96% total.
+- B-4 the collar's sub-line read "1.6 × 0.45 delta" under "$62 per $100".
+  **Fixed**: the fixture's collar delta is 0.39, and all three rows agree.
+  The block also records that `max_loss` means the premium for two rows
+  and the move to the strike plus the cost for the collar, as §10's figures
+  do, for session B to settle.
+- B-5 saving the served basket shadowed its name, short name and rebalance
+  rule for good, with no revert; empty new baskets piled up; no export.
+  **Fixed** as described above.
+- B-6 a malformed or null answer could break the tab or print "last null
+  sessions" and "0.0%". **Fixed**: every list is checked and every printed
+  number is finite or the stat says Awaiting refresh; `residual_window` may
+  be null. Tested with unreadable basket, price and hedge answers.
+- B-7 the served subject was ignored, and "+ New basket" kept a position
+  carried in. **Fixed** (tested).
+- B-8 Position Monitor said nothing when a sent basket did not come.
+  **Fixed**: it names the basket and says it is awaiting refresh, or not
+  saved in this browser (tested).
+- B-9 the selector cut "AI infrastructure" from 1101 to 1250 px, and the
+  title read "Baske" at 390. **Fixed**: neither shrinks and the header
+  wraps. The browser test measures the selected name against the
+  selector's width at four widths.
+- B-10 the measures above. **Fixed**, and the old line about 29 px spread
+  through both columns is gone.
+- B-11 unlisted deviations. **Listed** above; "+ New basket" is no longer
+  underlined.
+- B-12 copy. **Fixed**: a refused price ("has no price for these
+  weights"), an unreadable one, and a failed one each have their own
+  words; storage off and storage full differ; an empty basket asks for a
+  ticker.
+- B-13 the legs note followed into another basket. **Fixed**: the legs
+  reset with the basket.
+- B-14 served facts written into the page ("AI infrastructure" while
+  loading, "60 sessions against Nasdaq", `|| 60`). **Fixed**. The fixed
+  default basket is recorded in the PROPOSED block.
+- B-15 a mouse click drew the focus ring on a structure, and each radio's
+  name was the whole row. **Fixed**: `:has(:focus-visible)`, the label as
+  the name, and the numbers and note as its description.
+
+Verifier round 2: **FAIL** on one blocking finding the round-1 fixes
+introduced. It confirmed all fifteen round-1 fixes by probe: Protect from
+every Express address, the band label inside its band at seven widths, the
+quiet and awaiting states, the collar's delta, save/override/Revert/Export/
+Delete, nulls, the subject line, Position Monitor's three cases, nothing
+cut at seven widths, and the measures. The twelve compare shots were
+identical. Findings and what was done:
+- R2-1 (blocking) on a basket of this browser's, the selector listed only
+  this browser's baskets: the served list came from the open basket's
+  answer, which a `local-` basket never asks for. **Fixed**: the list comes
+  from the default basket's answer whichever basket is open (tested:
+  a local basket lists "AI infrastructure" and can pick it).
+- R2-2 a save in another window reached the hedge but not the card.
+  **Fixed**: the card rereads its saved baskets on `storage` (tested).
+- R2-3 an import overwrote a different basket with the same `local-<n>`,
+  and accepted ids that are neither local nor served. **Fixed**: those get
+  a fresh number, and the status says so (tested in the weights and on the
+  page).
+- R2-4 a served leg with a text weight, or a price with a null leg, broke
+  the tab. **Fixed**: an answer counts as readable only when every leg is a
+  ticker and a finite weight (tested). B-6's "every list is checked" now
+  holds.
+- R2-5 the spec's breakeven definition fitted none of §10's figures, and
+  its default-basket sentence described nothing built. **Fixed**: the block
+  states the rule the figures follow (strike plus cost) for session B to
+  settle, and that the default is fixed on the page.
+- R2-6 an empty basket sat quiet with no reason. **Fixed**: "Add a ticker
+  to price the basket." (tested).
+- R2-7 "+ New basket" on an empty stored basket with typed legs said it was
+  empty. **Fixed** in round 3 (R3-3).
+- R2-8 the raw id stood in for a missing name ("IS THE LOCAL-9 BET
+  WORKING?"). **Fixed**: "Is the bet working?", and a neutral option
+  label.
+- R2-9 the chart had lost its space under the question. **Fixed**: 32 px
+  on the chart's own wrapper (after round 3), so the question sits 42 px
+  above the band as in the PNG.
+- R2-10 a non-JSON price read "did not answer". **Fixed**: "could not be
+  read" (tested).
+- R2-11 the wrapped header indented the selector row. **Fixed**: the
+  header's gap replaces the margin.
+- R2-12 the "Priced for" line (24 px) moves the hedge's middle about 35 px
+  below the PNG's and shrinks the PNG's gap above Recommendation to 14 px.
+  **Listed** here; the line stays, for the reason given in the deviations.
+- R2-13 the missing tests. **Added** as noted above.
+
+Verifier round 3: **PASS**, nothing blocking. It confirmed every round-2
+fix by probe. The selector on a local basket lists and picks the served
+one from one shared request, and the page stays correct when that request
+is slow or fails. A save in one window reaches the other's card and hedge,
+with no race. Renumbered imports, unreadable legs and every price-error
+wording checked out. Nothing was cut and nothing scrolled sideways at
+seven widths. The twelve compare shots were identical. Its six small
+findings were then handled:
+- R3-1 an import could replace this browser's own weights for a served
+  basket. **Fixed**: they are kept, and the imported weights come in as a
+  new basket of this browser's (tested).
+- R3-2 importing the same file twice doubled the renumbered baskets.
+  **Fixed**: a basket already here, by name and legs, is skipped and
+  counted ("already here") (tested).
+- R3-3 "+ New basket" dropped typed legs unseen. **Fixed**: while the open
+  basket has unsaved weights it says to save them or put them back, and
+  stays (tested). Picking another basket in the selector still drops
+  unsaved weights; the "unsaved weights" note under Save warns of it.
+- R3-4 with the default basket's answer failed, an override for another
+  served basket in a file comes in as a basket of this browser's. Left as
+  is: nothing is lost, and the basket is kept under its name.
+- R3-5 the question sat 30 px above the band against the PNG's 42.5.
+  **Fixed** (32 px margin); the page is still 1,040 px tall.
+- R3-6 the add row's hint was cut from 1101 to about 1350 px. **Fixed**: it
+  wraps under the input.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -1410,3 +1667,50 @@ tests against the fixture dev server.
 | frame-3: data-pipeline | clean | 109 / 1,259 | ok | 27 / 27 |
 | frame-3: build-notes | clean | 110 / 1,274 | ok | 29 / 29 |
 | frame-3: client-toggle | clean | 111 / 1,285 | ok | 32 / 32 |
+| frame-3: basket-hedge | clean | 113 / 1,312 | ok | 34 / 34 |
+
+## Finish
+
+Every tab in §13's order is committed, each after its compare shot, its
+verifier rounds and the four gates. Basket & Hedge came last, once every
+other tab was committed and green. No tab was stopped on a mismatch.
+Overview and Build Notes matched on their first pass, and every other tab
+matched on its second. Each tab's Compare line says what its first pass
+missed.
+
+Tip: the commit that carries this report, `frame-3: basket-hedge`, on
+`desk/frame-3` (parent `cff06a1 frame-3: client-toggle`), local only. Nothing
+is pushed. No `.db`, `data/`, secret, `api/`, `src/` or `scripts/` file was
+touched. The spec's changes are its PROPOSED additions in §12.13 and the
+pointer under §12.12.
+
+Gate summary at the tip: typecheck clean; unit 113 files / 1,312 tests;
+build ok; Desk browser tests 34 / 34. The per-commit rows are in the gate log above.
+
+For Max:
+- **BUILD_NOTES.md** uses "established" twice (§10 quotes both sentences);
+  the page holds them until the file is reworded. The frame-3 notes in the
+  PNG also use "always" and "model", which the language scan would stop
+  once they are written into the file (§10, B-5).
+- **The Docker image** needs `docs/desk/BUILD_NOTES.md` copied in for Build
+  Notes to show the notes in a deployed build (§10, B-1: one `COPY` line and
+  one `.dockerignore` negation). Until then the page says the file is not in
+  that build. On Vercel, confirm the setting that includes files outside the
+  root directory.
+- **Position Monitor's gate fields ship empty;** the monitored positions'
+  variant, pre-mortem and red-team texts in `positions.json` (all three
+  rows the mockup draws) carry `TODO(Max)` for Max's own words.
+- **PROPOSED fields** for session B are listed in the spec's §12.13, tab by
+  tab, with the notes for B at its end.
+
+Follow-ups (not done here):
+- `LEGACY_FRAME2` in `desk-language.test.ts` now lists one file,
+  `src/screens/desk/pyformat.ts`. It is the frame-2 number formatter that
+  Event Study's engine panel still uses (`event-study/format.ts`), so it
+  keeps the frame-2 list only.
+- `web/src/styles/desk.css` (1,502 lines, frame-2) is still imported by the
+  shell, but only its walkthrough-strip rules (`.mrr-desk-tour*`) style
+  anything the v2 Desk renders. Cutting it down to those is a follow-up.
+- The fixtures carry one study and one hedge. Every other question, weight
+  set, mode or subject answers 404 in fixture mode, and the pages show
+  their awaiting states until session B serves them.

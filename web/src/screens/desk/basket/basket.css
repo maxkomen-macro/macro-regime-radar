@@ -1,0 +1,421 @@
+/* Basket & Hedge (DESK_FRAME3_SPEC §10; geometry from screens/09-basket-hedge.png at 1440). */
+.bh {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bh-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 13px;
+  align-items: stretch;
+}
+.bh-card .dk-card-body {
+  display: flex;
+  flex-direction: column;
+}
+.bh-card .dk-card-head {
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.bh-card .dk-card-title {
+  font-size: 17px;
+}
+/* The basket's title never gives way to its selector (verifier B-9). */
+.bh-basket .dk-card-title {
+  flex-shrink: 0;
+}
+.bh-card .dk-stat-sub {
+  font-size: 13px;
+}
+/* The hedge's three numbers run a size under the basket's (the PNG). */
+.bh-hedge .dk-stat .dk-stat-value {
+  font-size: 21px;
+}
+
+/* ── Basket ── */
+.bh-head-extra {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+/* The selector never shrinks under its basket's name (verifier B-9). */
+.bh-select {
+  flex-shrink: 0;
+}
+.bh-select select {
+  font-size: 13px;
+}
+.bh-meta {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+.dk .bh-new {
+  margin-left: auto;
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.bh-why,
+.bh-status,
+.bh-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+.bh-status:empty,
+.bh-note:empty {
+  display: none;
+}
+.bh-legs {
+  margin-top: 16px;
+}
+.bh-legs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bh-hint {
+  margin-left: 6px;
+  font-size: 11.5px;
+  color: var(--dk-t3);
+}
+.bh-legs-tools {
+  display: flex;
+  gap: 8px;
+}
+.bh-legs-tools .dk-btn {
+  height: 22px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.bh-table {
+  width: 100%;
+  margin-top: 6px;
+  border-collapse: collapse;
+}
+.bh-table td {
+  height: 35px;
+  border-bottom: 1px solid var(--dk-row);
+  font-size: 14px;
+}
+.bh-table .bh-sym {
+  width: 68px;
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  color: var(--dk-t3);
+}
+.bh-name {
+  color: var(--dk-t1);
+}
+.bh-w {
+  width: 104px;
+  text-align: right;
+  white-space: nowrap;
+}
+.bh-w span {
+  margin-left: 6px;
+  font-size: 11.5px;
+  color: var(--dk-t4);
+}
+.bh-input {
+  width: 54px;
+  padding: 3px 7px;
+  border: 1px solid var(--dk-box);
+  border-radius: 4px;
+  background: var(--dk-card-2);
+  color: var(--dk-t1);
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  text-align: right;
+}
+.bh-input[aria-invalid] {
+  border-color: var(--dk-amber);
+}
+.bh-x {
+  width: 30px;
+  text-align: right;
+}
+.bh-drop {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--dk-t3);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.bh-drop:hover {
+  color: var(--dk-t1);
+}
+.bh-add-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.bh-add {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 2px;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 10px;
+  border: 1px dashed var(--dk-box);
+  border-radius: 6px;
+}
+.bh-add-plus {
+  color: var(--dk-t3);
+}
+.bh-add-input {
+  flex: 1 1 110px;
+  min-width: 80px;
+  border: 0;
+  background: none;
+  color: var(--dk-t1);
+  font-size: 13px;
+}
+.bh-add-input::placeholder {
+  color: var(--dk-t3);
+}
+/* The hint wraps under the input when the row is narrow, never cut (verifier R3-6). */
+.bh-add-hint {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  color: var(--dk-t4);
+}
+.bh-total {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t3);
+  white-space: nowrap;
+}
+.bh-total b {
+  color: var(--dk-t1);
+}
+.bh-total b[data-off] {
+  color: var(--dk-amber);
+}
+.bh-chart-title {
+  margin-top: 18px;
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+}
+.bh-chart,
+.bh-chart-title + .dk-await,
+.bh-chart-quiet {
+  margin-top: 32px;
+}
+.bh-sentence {
+  margin: 6px 0 16px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dk-t2);
+}
+/* The Beta read sits at the card's foot, as in the PNG (verifier B-10). */
+.bh-card .bh-beta {
+  margin-top: auto;
+}
+.bh-chart-quiet {
+  margin-bottom: 16px;
+}
+.bh-adv-row {
+  font-size: 12.5px;
+  color: var(--dk-t3);
+}
+.bh-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.bh-save {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bh-save-hint {
+  max-width: 190px;
+  font-size: 12px;
+  line-height: 14px;
+  color: var(--dk-t3);
+}
+.bh-foot .dk-adv {
+  flex: 1 1 200px;
+  margin: 0;
+}
+
+/* ── Hedge ── */
+.bh-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 11px;
+}
+.bh-modes button {
+  padding: 5px 11px;
+  border: 1px solid var(--dk-box);
+  border-radius: 6px;
+  background: none;
+  color: var(--dk-t2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.bh-modes button:hover {
+  color: var(--dk-t1);
+}
+.bh-modes button[aria-pressed="true"] {
+  border-color: var(--dk-t3);
+  background: var(--dk-active);
+  color: #ffffff;
+}
+.bh-subject {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--dk-t2);
+}
+.bh-hedge-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.bh-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.bh-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 13px 9px;
+  border: 1px solid var(--dk-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.bh-opt:hover {
+  border-color: var(--dk-box);
+}
+.bh-opt-on,
+.bh-opt-on:hover {
+  border-color: var(--dk-t3);
+  background: var(--dk-card-2);
+}
+.bh-opt:has(:focus-visible) {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: 2px;
+}
+.bh-opt-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 18px;
+  color: var(--dk-t1);
+}
+.bh-opt-cost {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  color: var(--dk-t3);
+  white-space: nowrap;
+}
+.bh-opt-on .bh-opt-cost {
+  color: var(--dk-t1);
+}
+.bh-opt-sub {
+  display: block;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dk-t3);
+}
+.bh-opt-note {
+  display: block;
+  font-size: 12.5px;
+  line-height: 16.5px;
+  color: var(--dk-t2);
+}
+.bh-opts + .dk-stats {
+  margin-top: 16px;
+}
+.bh-scen {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.bh-scen th,
+.bh-scen td {
+  height: 25px;
+  border-bottom: 1px solid var(--dk-row);
+  font-weight: 400;
+}
+.bh-scen thead th:first-child {
+  text-align: left;
+}
+.bh-scen thead th {
+  height: 24px;
+  font-family: var(--dk-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+  text-align: right;
+}
+.bh-scen tbody th {
+  text-align: left;
+  color: var(--dk-t1);
+}
+.bh-scen td {
+  width: 110px;
+  text-align: right;
+  font-family: var(--dk-mono);
+  font-size: 12px;
+}
+.bh-scen-note {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dk-t3);
+}
+.bh-hedge .dk-read {
+  font-size: 13.5px;
+  line-height: 18.5px;
+}
+.bh-why-box {
+  margin: 14px 0;
+}
+/* The Recommendation sits at the card's foot, as in the PNG. */
+.bh-hedge .bh-rec {
+  margin-top: auto;
+}
+
+@media (max-width: 1100px) {
+  .bh-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .bh-head-extra {
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+  .bh-add-hint {
+    display: none;
+  }
+  .bh-scen td {
+    width: 76px;
+  }
+}
