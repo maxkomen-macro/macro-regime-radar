@@ -10,7 +10,7 @@
  * first refresh, 404 absent) is driven through the page (DESK_FRAME2_SPEC §1).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes, useLocation } from "react-router-dom";
 import DeskShell from "./DeskShell";
 import { DESK_GROUPS, HOUSE_DISCIPLINE } from "./desk-sections";
@@ -565,6 +565,9 @@ describe("R-07, round 4: a reading is dated only by its own response", () => {
     await waitFor(() => expect(row).toHaveTextContent("4.12% now · falsified below"));
     expect(row).not.toHaveTextContent(/now \(/);
     expect(row).not.toHaveTextContent("Sep 17");
+    // The form's hint for the same series: the value, no date (V5-03).
+    fireEvent.change(screen.getByLabelText("Falsification series"), { target: { value: "DGS10" } });
+    await waitFor(() => expect(screen.getByText(/^Now 4\.12%/)).toHaveTextContent(/^Now 4\.12%\.$/));
   });
 
   it("a value response with a date renders that date and no other", async () => {
@@ -574,6 +577,9 @@ describe("R-07, round 4: a reading is dated only by its own response", () => {
     const row = await screen.findByTestId("desk-position");
     await waitFor(() => expect(row).toHaveTextContent("4.12% now (Aug 2026)"));
     expect(row).not.toHaveTextContent("Sep 17");
+    // The form's hint for the same series: that month, and no other date (V5-03).
+    fireEvent.change(screen.getByLabelText("Falsification series"), { target: { value: "DGS10" } });
+    await waitFor(() => expect(screen.getByText(/^Now 4\.12%/)).toHaveTextContent(/^Now 4\.12% \(Aug 2026\)\.$/));
     a.unmount();
     stub({ "/api/freshness": report, "/api/market/daily": () => [{ symbol: "SPY", date: "2026-09-18", open: 1, high: 1, low: 1, close: 600, volume: 1 }] });
     seed("SPY");
@@ -592,8 +598,15 @@ describe("R-07, round 4: a reading is dated only by its own response", () => {
     await waitFor(() => expect(row).toHaveTextContent("4.12% now (Sep 2026)"));
     down = true;
     await client.refetchQueries();
+    // Wait until the query holds the error (after its one retry), then let React
+    // render it, and only then read the row (V5-01: asserting earlier proved nothing).
+    await waitFor(() => expect(client.getQueryState(["desk", "reading", "fred", "DGS10"])?.status).toBe("error"), { timeout: 5000 });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
     expect(screen.getByTestId("desk-position")).toHaveTextContent("4.12% now (Sep 2026)");
     expect(screen.getByTestId("desk-position")).not.toHaveTextContent("Sep 17");
+    expect(screen.getByTestId("desk-position")).not.toHaveTextContent("Awaiting refresh");
     unmount();
     renderDesk("/desk/position-monitor");
     await waitFor(() => expect(screen.getByTestId("desk-position")).toHaveTextContent("Awaiting refresh."), { timeout: 4000 });
@@ -617,3 +630,25 @@ describe("R-08, fourth round: no window reads open without the engine's per-even
   });
 });
 
+describe("R-12: Presets fired dates itself by the earliest cutoff", () => {
+  it("the badge shows the earliest as_of, its tooltip each study's own, and the body says cutoffs differ", async () => {
+    const death = structuredClone(engineStudies.cross) as { study: { slug: string }; provenance: { as_of: string } };
+    death.study.slug = "spx-death-cross";
+    death.provenance.as_of = "2026-09-11";
+    engine = { "spx-death-cross": { status: 200, body: death } };
+    renderDesk("/desk/today");
+    await waitFor(() => expect(screen.getByTestId("today-fired")).toHaveAttribute("data-complete", "true"));
+    const card = document.getElementById("fired")!;
+    const badge = within(card).getByTestId("desk-badge");
+    expect(badge).toHaveTextContent("as of Sep 11, 2026");
+    expect(badge.getAttribute("title")).toMatch(/S&P death cross as of 2026-09-11/);
+    expect(badge.getAttribute("title")).toMatch(/S&P golden cross as of \d{4}-\d{2}-\d{2}/);
+    expect(within(card).getByTestId("today-cutoffs")).toHaveTextContent(/^Cutoffs differ: .*S&P death cross Sep 11, 2026/);
+  });
+
+  it("with one cutoff the body says nothing about cutoffs", async () => {
+    renderDesk("/desk/today");
+    await waitFor(() => expect(screen.getByTestId("today-fired")).toHaveAttribute("data-complete", "true"));
+    expect(screen.queryByTestId("today-cutoffs")).toBeNull();
+  });
+});

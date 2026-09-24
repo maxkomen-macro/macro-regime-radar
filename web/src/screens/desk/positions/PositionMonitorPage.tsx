@@ -314,7 +314,7 @@ export function MonitoredRow({ p, reading, isClient, onRemove, compact = false }
           </>
         ) : (
           <div className="mrr-desk-row-sub" role="status">
-            {reading.awaitingRefresh ? "Awaiting refresh." : reading.isError ? "Live reading unavailable." : "Reading the series…"}
+            {reading.awaitingRefresh ? "Awaiting refresh." : "Reading the series…"}
           </div>
         )}
       </div>

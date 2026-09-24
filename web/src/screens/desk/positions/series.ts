@@ -176,7 +176,9 @@ export function distanceOf(reading: Reading, level: number, direction: "above" |
   return { falsified, gap, pct };
 }
 
-/** "4.12% now (Sep 18) · falsified below 3.80% · 0.32% away (7.8% of current)". */
+/** "4.12% now (Sep 2026) · falsified below 3.80% · 0.32% away (7.8% of current)":
+ * the date is the one the reading's own response carried, at its precision,
+ * and no date at all when the response carried none. */
 export function distanceSentence(ref: SeriesRef | undefined, reading: Reading, f: { level: number; direction: "above" | "below" }): { now: string; rule: string; distance: string; falsified: boolean } {
   const d = distanceOf(reading, f.level, f.direction);
   const when = readingDate(reading);
