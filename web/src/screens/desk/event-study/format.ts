@@ -81,9 +81,11 @@ export function eventsBehind(events: EventStudyEvent[], h: number, regime?: stri
 /** Why a forward move is missing (review R-08, fourth round). "window open"
  * only when the event itself carries an explicit `window_open` flag for that
  * horizon; a horizon's `n_incomplete` counts every incomplete window across
- * all events, so it cannot say which one is still open. The engine does not
- * serve the per-event flag yet (deferred by decision, report §8), so today
- * every missing return reads "no observation". */
+ * all events, so it cannot say which one is still open. The flag's rule is
+ * judged against the target's own last observation, and an elapsed window
+ * with a missing endpoint is a data gap (R-13, EVENT_STUDY_SPEC §7). The
+ * engine does not serve the flag yet (deferred by decision, report §8), so
+ * today every missing return reads "no observation". */
 export function missingForwardWord(e: Pick<EventStudyEvent, "window_open">, h: number): "window open" | "no observation" {
   return e.window_open?.[String(h)] === true ? "window open" : "no observation";
 }

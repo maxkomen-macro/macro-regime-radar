@@ -157,8 +157,11 @@ export interface EventStudyEvent {
   /** Forward move per horizon, in the target's display unit; null when the window is incomplete. */
   forward: Record<string, number | null>;
   /** Per horizon, true only where the engine says this event's window is still
-   * open (entry session + h past the as_of session). The engine does not serve
-   * it yet (review R-08, deferred): absent, no window reads as open. */
+   * open: entry session + h sessions on the XNYS calendar lands after the
+   * target series' own last observation (not the study-wide as_of); an elapsed
+   * window with a missing endpoint is a data gap (R-13, EVENT_STUDY_SPEC §7).
+   * The engine does not serve it yet (R-08, deferred): absent, no window reads
+   * as open. */
   window_open: Record<string, boolean>;
 }
 
