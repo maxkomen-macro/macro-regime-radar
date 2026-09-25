@@ -186,7 +186,7 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Live · Sep 22");
     await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("16.2");
     await expect(page.getByTestId("dk-live")).toHaveCount(4);
-    await expect(page.getByTestId("ov-since")).toContainText("2s10s still firing, day 10");
+    await expect(page.getByTestId("ov-since")).toContainText("2s10s steepening still firing, day 10");
     // Tones render (verifier V-1): Overheating amber, room amber under 30% and green at 50% or more.
     await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-value")).toHaveCSS("color", "rgb(232, 180, 71)");
     const rows = page.getByTestId("dk-mon-row");
@@ -390,6 +390,9 @@ test.describe("desk v2", () => {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/signal-ledger");
       await expect(page.locator(".lg-stats")).toContainText("8 scored · 4 not yet served");
+      // NOW's words are whole, never cut (§8).
+      const cutNow = await page.locator(".lg-table td.lg-now").evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
+      expect(cutNow, `NOW cells whole at ${width}`).toBe(0);
       const oil = page.locator(".lg-table tr[data-unavailable]", { hasText: "Oil" });
       await expect(oil).toContainText("WTI crude (DCOILWTICO) is not stored in this database");
       await expect(oil.locator(".dk-pill")).toHaveCount(0);

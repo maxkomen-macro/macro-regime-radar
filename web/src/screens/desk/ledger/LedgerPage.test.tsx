@@ -175,6 +175,26 @@ describe("Signal Ledger tab", () => {
     expect(row).not.toHaveAttribute("data-firing");
     expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/);
   });
+  it("NOW reads '—' when the state is not served, even served stale with no session (§8)", async () => {
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => (r.slug === "2s10s-2sigma-steepening" ? { ...r, firing_now: null, firing_day: null, evaluated_on: null, stale: true } : r)) }) });
+    renderTab();
+    const table = await screen.findByRole("table");
+    const row = within(table).getByRole("row", { name: /2s10s/ }) as HTMLTableRowElement;
+    const now = row.cells[row.cells.length - 1];
+    expect(now.textContent).toBe("—");
+    expect(now).not.toHaveAttribute("title");
+    expect(now).not.toHaveAttribute("data-tone");
+  });
+  it("NOW reads '● Firing · day <n>' and its tooltip names the session each row was evaluated on (§8, §12.5)", async () => {
+    renderTab();
+    const table = await screen.findByRole("table");
+    const firing = within(table).getByRole("row", { name: /2s10s/ }) as HTMLTableRowElement;
+    const now = firing.cells[firing.cells.length - 1];
+    expect(now.textContent).toBe("● Firing · day 10");
+    expect(now).toHaveAttribute("title", "evaluated on Sep 22, 2026");
+    const quiet = within(table).getByRole("row", { name: /S&P golden cross/ }) as HTMLTableRowElement;
+    expect(quiet.cells[quiet.cells.length - 1]).toHaveAttribute("title", "evaluated on Sep 22, 2026");
+  });
   it("Space opens a row too; a chip shows it is pressed", async () => {
     renderTab();
     await screen.findByRole("table");

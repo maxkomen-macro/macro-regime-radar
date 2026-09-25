@@ -2,18 +2,21 @@
  "as_of": "2026-09-22",
  "generation_id": "gen-fixture-2026-09-22",
  "since_last_close": {
+  "comparison_session": "2026-09-22",
+  "prev_session": "2026-09-21",
   "new_fires": [],
   "still_firing": [
    {
     "slug": "2s10s-2sigma-steepening",
-    "label": "2s10s still firing",
-    "day": 10
+    "label": "2s10s +2σ steepening",
+    "short": "2s10s steepening",
+    "firing_day": 10
    }
   ],
   "vol_change_pts": 0.8,
-  "regime_changed": false,
   "regime_from": null,
   "regime_to": null,
+  "regime_changed": false,
   "refreshed_at_utc": "2026-09-22T00:23:00Z"
  },
  "tiles": {
@@ -70,6 +73,9 @@
    "display_unit": "percent",
    "verdict": "reliable",
    "firing_now": false,
+   "firing_day": null,
+   "evaluated_on": "2026-09-22",
+   "stale": false,
    "sample_start": "1990-01-02",
    "short": "golden cross"
   },
@@ -88,6 +94,9 @@
    "display_unit": "percent",
    "verdict": "no_edge",
    "firing_now": false,
+   "firing_day": null,
+   "evaluated_on": "2026-09-22",
+   "stale": false,
    "sample_start": "1990-01-02",
    "short": "death cross"
   },
@@ -106,6 +115,9 @@
    "display_unit": "percent",
    "verdict": "suggestive",
    "firing_now": false,
+   "firing_day": null,
+   "evaluated_on": "2026-09-22",
+   "stale": false,
    "sample_start": "2000-01-03",
    "short": "gold while S&P weak"
   },
@@ -124,6 +136,9 @@
    "display_unit": "percent",
    "verdict": "reliable",
    "firing_now": false,
+   "firing_day": null,
+   "evaluated_on": "2026-09-22",
+   "stale": false,
    "sample_start": "1990-01-02",
    "short": "VIX spike"
   },
@@ -143,6 +158,8 @@
    "verdict": "no_edge",
    "firing_now": true,
    "firing_day": 10,
+   "evaluated_on": "2026-09-22",
+   "stale": false,
    "sample_start": "1990-01-02",
    "short": "2s10s steepening"
   }

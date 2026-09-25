@@ -31,10 +31,11 @@ export function sourceLine(asOf: string | null | undefined): string {
 }
 
 /** "Setup · <day>" while the setup is on (it fired on its last session), else when it was last seen. */
-export function setupLabel(s: Pick<StudyResponse, "firing_now" | "last_event"> | undefined): string {
+export function setupLabel(s: Pick<StudyResponse, "firing_now" | "last_event" | "stale"> | undefined): string {
   const d = dayLong(s?.last_event);
   if (!s || !d) return "Setup";
-  return s.firing_now ? `Setup · ${d}` : `Setup last seen · ${d}`;
+  // §11: "Setup · <last_event>" only when firing and not stale.
+  return s.firing_now === true && s.stale !== true ? `Setup · ${d}` : `Setup last seen · ${d}`;
 }
 
 /** Room right of the drawable track for each bar's value, left of it before the first bar, and before zero when nothing is negative (the PNG's geometry). */

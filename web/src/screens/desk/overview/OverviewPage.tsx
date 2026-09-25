@@ -28,8 +28,9 @@ import "./overview.css";
  * rounds to 0.0 reads "unchanged". */
 export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?: string }[] {
   const out: { key: string; text: string; tag?: string }[] = [];
-  for (const f of s.new_fires ?? []) out.push({ key: `new-${f.slug}`, text: f.label, tag: "(new)" });
-  for (const f of s.still_firing ?? []) out.push({ key: `still-${f.slug}`, text: fin(f.day) ? `${f.label}, day ${f.day}` : f.label });
+  // §2, §12.1: each new fire with (new); each signal still firing with its `firing_day`.
+  for (const f of s.new_fires ?? []) out.push({ key: `new-${f.slug}`, text: `${f.short || f.label} fired`, tag: "(new)" });
+  for (const f of s.still_firing ?? []) out.push({ key: `still-${f.slug}`, text: `${f.short || f.label} still firing${fin(f.firing_day) ? `, day ${f.firing_day}` : ""}` });
   const v = s.vol_change_pts;
   if (fin(v)) {
     const dir = v >= 0.05 ? "up" : v <= -0.05 ? "down" : "unchanged";
@@ -46,7 +47,10 @@ export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?
 function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefined; failed: boolean; unserved: Unavailable | null }) {
   return (
     <div className="ov-since" data-testid="ov-since" aria-busy={!data && !failed && !unserved}>
-      <span className="ov-since-label">Since last close</span>
+      {/* §12.1 (B-05): the two sessions compared, named by their served dates (§1.10). */}
+      <span className="ov-since-label" title={data?.comparison_session && data.prev_session ? `the ${dayShort(data.comparison_session)} close against ${dayShort(data.prev_session)}` : undefined}>
+        Since last close
+      </span>
       {unserved ? (
         // §1.0.2: served awaiting, the line keeps its label and prints the reason.
         <span className="ov-since-item dk-unserved-inline">{unserved.reason}</span>
@@ -243,7 +247,7 @@ function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | unde
           rows.length ? (
             <ul className="ov-signals">
               {rows.map((r) => (
-                <li key={r.slug} className="ov-signal" data-firing={r.firing_now || undefined}>
+                <li key={r.slug} className="ov-signal" data-firing={(r.firing_now === true && r.stale !== true) || undefined}>
                   <div className="ov-signal-name">
                     <b>{r.label}</b>
                     {dayLong(r.last_fired) ? <span>last fired {dayLong(r.last_fired)}</span> : null}

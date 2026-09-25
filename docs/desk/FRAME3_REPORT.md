@@ -2943,6 +2943,85 @@ rule requires.
 The fixes were checked by the four gates and the tests above; the compare
 shot was re-shot after them.
 
+### Phase 2, item 9: the firing state — `frame-3: align 9 firing`
+
+**What changed.** Firing is read against one pair of sessions (v4 B-05).
+`/overview`'s `since_last_close` is §12.1's: `comparison_session` and
+`prev_session`, `new_fires` as `{slug, label, short}`, `still_firing` with
+`firing_day`, a nullable `regime_changed` and `refreshed_at_utc`. The line
+prints each new fire as "<short> fired (new)" and each signal still firing
+as "<short> still firing, day <firing_day>", and its label's tooltip names
+the two sessions compared ("the Sep 22 close against Sep 21", §1.10). Which
+signals appear is the server's rule (only those evaluated on
+`comparison_session`); the page invents none, and the fixture test checks
+that every fire is a Ledger row firing on that session and not stale. The
+Ledger's NOW reads "● Firing · day <n>", "○ Quiet" or "○ Stale ·
+<evaluated_on>", its tooltip "evaluated on <evaluated_on>" on every row
+served with one (§8); its column widens to hold those words whole. The
+Event Study's pill is §4's: "● Firing today · day <firing_day>", "○ Not
+firing today · last <last_event>", "○ Stale · <evaluated_on>" (never firing
+today), or no pill when the state is not served; `/study` serves
+`firing_day`, `evaluated_on`, `comparison_session` and `stale` (§12.2).
+The Client view says "Setup · <last_event>" only for a study firing and not
+stale (§11), and the Overview marks an active row firing (`data-firing`,
+untinted, as §2 and the PNG draw it) only when it is firing and not stale.
+A state that cannot be evaluated (`firing_now` null, served stale with no
+session) prints no pill and a "—" NOW, never "Stale · —". The Overview's
+`active_signals` carry the Ledger row's `firing_day`, `evaluated_on` and
+`stale` (§12.1: "array of Ledger rows"), and the fixtures serve `firing_day`
+null on every row that is not firing (§12.5: "required, nullable").
+
+**Tests.** `consistency.test.ts` (fires are Ledger rows firing on the
+comparison session and not stale; `firing_day` agrees; the three answers
+share the sessions; no firing day on a row that is not firing);
+`OverviewPage.test.tsx` (the items' words, the sessions' tooltip);
+`LedgerPage.test.tsx` (the day, the tooltips, stale, "—" for a state not
+served); `EventStudyPage.test.tsx` (firing with its day, stale, no state,
+no pill for a stale state with no session); `ClientView.test.tsx` (the
+setup label). The consistency test also holds each Overview row's firing
+state to its Ledger row's, and the study's to the gold row's. Browser: NOW's words never cut at 1440 and 390.
+
+**Against the PNGs.**
+- 01 Overview, the since-last-close line: "2s10s still firing, day 10" is
+  now "2s10s steepening still firing, day 10" (the served `short`). §2:
+  "each signal still firing with its `firing_day`"; §12.1 `still_firing`
+  "array of `{slug, label, short, firing_day}`".
+- 07 Signal Ledger, NOW: "● Firing" is now "● Firing · day 10", in a wider
+  column (148px against 92; VERDICT gives 12px of it, its 92px pill still
+  whole, and LAST FIRED to VS NORMAL sit 44px left of the PNG's). §8: "NOW: `● Firing · day <n>` (green text), `○ Quiet` (gray), or
+  `○ Stale · <evaluated_on>`".
+
+Verifier (one round): **PASS**, with two should-fix findings and four nits.
+It probed stale, null, day-less, day-123, new-fire and null-regime cases at
+1440, 1101 and 390 through `page.route`, and found no clipped NOW cell, no
+overflow, no palette or banned-word hit.
+- V9-1 (should-fix) a state that cannot be evaluated, served
+  `firing_now: null` and `stale: true`, printed "○ Stale · —" in the pill
+  and the Ledger. §4: "nothing when `firing_now` is null". **Fixed:** the
+  null state is read first.
+- V9-2 (should-fix) the Overview's active rows carried no `evaluated_on`
+  or `stale`, and the fixture test compared numbers only. §12.1:
+  "`active_signals` | array of Ledger rows (§12.5)". **Fixed:** the rows
+  carry them and the test compares the firing state; the study's firing
+  state is held to its Ledger row's.
+- V9-3 (nit) a redundant comment. **Fixed.**
+- V9-4 (nit) "● Firing · day 10" sat 8px from the VERDICT pill. **Fixed:**
+  NOW takes 12px from VERDICT; no other column moves.
+- V9-5 (nit) this section said the Overview tints active rows; it marks
+  them untinted. **Fixed** above.
+- V9-6 (nit) a stale row sits under "Quiet · sorted by verdict". Left for
+  item 12, which sets the Ledger's grouping and fixed order (v3 §2).
+
+Your edit to `docs/desk/BUILD_NOTES.md` (uncommitted, 17:42 on
+2026-09-25) and the five new SVGs under `docs/desk/screens/` are left
+untouched and out of this commit. On the working tree they fail three
+Build Notes unit tests (the ban list, the held-sentence count, the block
+order) and two Build Notes browser tests; item 13 takes them up. This
+item's gates ran on a scratch worktree holding exactly this commit.
+
+The fixes were checked by the four gates and the tests above; the compare
+shots were re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2976,6 +3055,7 @@ tests against the fixture dev server.
 | frame-3: align 6 regime-recession | clean | 118 / 1,428 | ok | 54 / 54 |
 | frame-3: align 7 unavailable | clean | 118 / 1,431 | ok | 55 / 55 |
 | frame-3: align 8 slots | clean | 119 / 1,445 | ok | 56 / 56 |
+| frame-3: align 9 firing | clean | 119 / 1,450 | ok | 56 / 56 |
 
 ## Finish
 

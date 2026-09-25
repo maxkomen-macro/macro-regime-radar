@@ -42,6 +42,11 @@ const backdrop = () => screen.getByRole("region", { name: "A month later, by eco
 const withRegimes = (by_regime: { regime: string; n: number; up_pct: number | null; median: number | null }[]) => () => ({ ...study, by_regime });
 
 describe("Client view words and geometry", () => {
+  it("says 'Setup' only for a study firing and not stale (§11)", () => {
+    expect(setupLabel({ firing_now: true, last_event: "2026-09-22", stale: false })).toBe("Setup · Sep 22, 2026");
+    expect(setupLabel({ firing_now: true, last_event: "2026-09-22", stale: true })).toBe("Setup last seen · Sep 22, 2026");
+    expect(setupLabel({ firing_now: null, last_event: "2026-09-22" })).toBe("Setup last seen · Sep 22, 2026");
+  });
   it("words the source line and the setup's date", () => {
     expect(sourceLine("2026-09-22")).toBe("Radar · FRED, Yahoo Finance · as of Sep 22, 2026 · Past patterns do not guarantee future results.");
     expect(setupLabel({ firing_now: true, last_event: "2026-09-21" })).toBe("Setup · Sep 21, 2026");

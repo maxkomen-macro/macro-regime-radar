@@ -160,11 +160,17 @@ describe("the hedge's numbers are its structures' payoffs (Codex R-06)", () => {
 });
 
 describe("Ledger rows and their baselines (§4.1, v3 §6)", () => {
-  it("every row's vs normal is its own excess over its own baseline; an Overview row is its Ledger row", () => {
+  it("every row's vs normal is its own excess over its own baseline; an Overview row is its Ledger row, firing state included", () => {
     for (const r of ledger.signals) if (r.median != null) expect(r.vs_normal).toBeCloseTo(100 * (r.median - r.baseline_median), 6);
     const bySlug = new Map(ledger.signals.map((r) => [r.slug, r]));
-    const nums = (r: Record<string, unknown> | undefined) => r && { n: r.n, up_pct: r.up_pct, median: r.median, baseline_median: r.baseline_median, vs_normal: r.vs_normal, target_unit: r.target_unit, horizon: r.horizon };
+    // §12.1: active_signals are Ledger rows (§12.5), so their firing state is the Ledger's too.
+    const nums = (r: Record<string, unknown> | undefined) =>
+      r && { n: r.n, up_pct: r.up_pct, median: r.median, baseline_median: r.baseline_median, vs_normal: r.vs_normal, target_unit: r.target_unit, horizon: r.horizon, firing_now: r.firing_now, firing_day: r.firing_day, evaluated_on: r.evaluated_on, stale: r.stale };
     for (const r of overview.active_signals) expect(nums(r)).toEqual(nums(bySlug.get(r.slug)));
+    // The study's firing state is its Ledger row's (§12.2, §12.5).
+    const row = bySlug.get(study.slug) as Record<string, unknown>;
+    const s = study as Record<string, unknown>;
+    expect([s.firing_now, s.firing_day ?? null, s.evaluated_on, s.stale]).toEqual([row.firing_now, row.firing_day ?? null, row.evaluated_on, row.stale]);
     expect("normal_month" in ledger).toBe(false);
     // One study, one baseline: the gold Ledger row is the study's own h = 20 row (§4.1).
     const gold = bySlug.get("gold-2sigma-spx-weak")!;
@@ -192,5 +198,21 @@ describe("the regime row governing today and the recession score (§5, §12.1, �
     const band = r.score < r.band_edges[0] ? "low" : r.score < r.band_edges[1] ? "elevated" : "high_risk";
     expect(r.band).toBe(band);
     expect(r.band_edges).toEqual([0.2, 0.4]);
+  });
+});
+
+describe("the firing state (§12.1, §12.5, v4 B-05)", () => {
+  it("every since-last-close fire is a Ledger row firing on the comparison session, not stale; the three answers share the sessions", () => {
+    const sl = overview.since_last_close;
+    const bySlug = new Map(ledger.signals.map((r) => [r.slug, r]));
+    for (const f of [...sl.new_fires, ...sl.still_firing]) {
+      const r = bySlug.get(f.slug)!;
+      expect([f.slug, r.firing_now, r.stale, r.evaluated_on]).toEqual([f.slug, true, false, sl.comparison_session]);
+    }
+    for (const f of sl.still_firing) expect(f.firing_day).toBe(bySlug.get(f.slug)!.firing_day);
+    expect([ledger.comparison_session, ledger.prev_session]).toEqual([sl.comparison_session, sl.prev_session]);
+    expect(study.comparison_session).toBe(sl.comparison_session);
+    // A row that is not firing has no firing day (B-05).
+    for (const r of ledger.signals) if (r.firing_now !== true) expect(r.firing_day ?? null).toBeNull();
   });
 });

@@ -111,9 +111,13 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
         )}
       </td>
       <td className="lg-verdict">{knownVerdict(r.verdict) ? <VerdictPill verdict={r.verdict} className="lg-pill" /> : "—"}</td>
-      {/* §8: "○ Stale · <evaluated_on>" when the row's last evaluable session is not the comparison session (v3 §3). */}
-      <td className="lg-now" data-tone={r.stale ? "gray" : r.firing_now === true ? "green" : r.firing_now === false ? "gray" : undefined}>
-        {r.stale ? `○ Stale · ${dayShort(r.evaluated_on) || "—"}` : r.firing_now === true ? "● Firing" : r.firing_now === false ? "○ Quiet" : "—"}
+      {/* §8: "● Firing · day <n>", "○ Quiet", or "○ Stale · <evaluated_on>" (v3 §3), "—" when the state is not served; the tooltip names the session the row was evaluated on. */}
+      <td
+        className="lg-now"
+        title={r.evaluated_on ? `evaluated on ${dayLong(r.evaluated_on)}` : undefined}
+        data-tone={r.firing_now == null ? undefined : r.stale ? "gray" : r.firing_now ? "green" : "gray"}
+      >
+        {r.firing_now == null ? "—" : r.stale ? `○ Stale · ${dayShort(r.evaluated_on) || "—"}` : r.firing_now ? `● Firing${fin(r.firing_day) ? ` · day ${r.firing_day}` : ""}` : "○ Quiet"}
       </td>
     </tr>
   );
@@ -177,8 +181,9 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
                 <col style={{ width: 102 }} />
                 <col style={{ width: 92 }} />
                 <col style={{ width: 101 }} />
-                <col style={{ width: 113 }} />
-                <col style={{ width: 92 }} />
+                <col style={{ width: 101 }} />
+                {/* NOW holds "● Firing · day 10" and "○ Stale · Sep 19" whole (§8), with air before it: 12px taken from VERDICT's 92px pill column, no other column moved. */}
+                <col style={{ width: 148 }} />
               </colgroup>
               <thead>
                 <tr>

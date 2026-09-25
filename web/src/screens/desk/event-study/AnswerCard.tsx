@@ -249,10 +249,16 @@ export default function AnswerCard({
     <section className="dk-card es-answer" aria-label="The answer" aria-busy={busy || undefined} data-busy={busy || undefined}>
       <h2 className="es-headline">{study.headline}</h2>
       <div className="es-pills">
-        <span className="es-pill" data-on={study.firing_now || undefined}>
-          {study.firing_now ? "● Firing today" : "○ Not firing today"}
-          {study.last_event ? ` · last ${dayLong(study.last_event)}` : ""}
-        </span>
+        {/* §4: nothing when the state is not served (a stale study with no evaluable session included); stale is never "firing today"; a firing study counts its days. */}
+        {study.firing_now == null ? null : study.stale ? (
+          <span className="es-pill">○ Stale · {dayLong(study.evaluated_on) || "—"}</span>
+        ) : study.firing_now === true ? (
+          <span className="es-pill" data-on>
+            ● Firing today{fin(study.firing_day) ? ` · day ${study.firing_day}` : ""}
+          </span>
+        ) : study.firing_now === false ? (
+          <span className="es-pill">○ Not firing today{study.last_event ? ` · last ${dayLong(study.last_event)}` : ""}</span>
+        ) : null}
         <span className="es-pill" data-live>
           {["● Live", servedWords(study)].filter(Boolean).join(" · ")}
         </span>

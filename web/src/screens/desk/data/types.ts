@@ -175,15 +175,18 @@ export interface PipelineResponse extends Envelope {
 
 // ── §12.1 /overview ───────────────────────────────────────────────────────
 
+/** §12.1: what changed between the two XNYS sessions (B-05); only signals evaluated on `comparison_session` appear. */
 export interface SinceLastClose {
-  new_fires?: { slug: string; label: string }[];
-  still_firing?: { slug: string; label: string; day: number | null }[];
+  comparison_session?: string | null;
+  prev_session?: string | null;
+  new_fires?: { slug: string; label: string; short?: string }[];
+  still_firing?: { slug: string; label: string; short?: string; firing_day: number | null }[];
   vol_change_pts: number | null;
-  /** Absent when not served: the line says nothing about the regime. */
-  regime_changed?: boolean;
+  /** Null or absent when not served: the line says nothing about the regime. */
+  regime_changed?: boolean | null;
   regime_from: string | null;
   regime_to: string | null;
-  refreshed_at_utc: string;
+  refreshed_at_utc: string | null;
 }
 
 /** A regime row as served (§12.1, §12.6): the stored row stamped K−2 for the current session month K
@@ -345,7 +348,12 @@ export interface StudyResponse extends Envelope {
   /** The horizon the verdict, headline, why, counts and empty state are for (§1.5, v4 B-01). */
   selected_horizon?: number | null;
   sample_start: string | null;
-  firing_now: boolean;
+  /** §12.2 firing state, on `evaluated_on`; null when not evaluable. A stale study is never firing today (v3 §3). */
+  firing_now: boolean | null;
+  firing_day?: number | null;
+  evaluated_on?: string | null;
+  comparison_session?: string | null;
+  stale?: boolean;
   last_event: string | null;
   /** The selected horizon's verdict (§1.5, B-01). Absent when not served or not known: the verdict box says Awaiting refresh. */
   verdict?: Verdict;

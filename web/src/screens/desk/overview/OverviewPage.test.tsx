@@ -37,14 +37,15 @@ describe("Overview words", () => {
   it("spells the since-last-close items in the spec's order", () => {
     // The dollar study is unavailable (DXY not stored, §1.0), so it cannot fire; no skew is served (§1.0).
     expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual([
-      "2s10s still firing, day 10",
+      "2s10s steepening still firing, day 10",
       "vol up 0.8 pts",
       "regime unchanged",
       "data refreshed 00:23 UTC",
     ]);
     expect(sinceItems({ ...fixture.since_last_close!, regime_changed: true, regime_from: "Goldilocks", regime_to: "Overheating", vol_change_pts: -1.2 }).map((i) => i.text)).toContain("regime changed → Overheating");
     expect(sinceItems({ ...fixture.since_last_close!, vol_change_pts: -1.2 }).find((i) => i.key === "vol")?.text).toBe("vol down 1.2 pts");
-    expect(sinceItems({ ...fixture.since_last_close!, new_fires: [{ slug: "golden-cross", label: "Golden cross fired" }] })[0]).toEqual({ key: "new-golden-cross", text: "Golden cross fired", tag: "(new)" });
+    // §2: each new fire with (new); its served short name.
+    expect(sinceItems({ ...fixture.since_last_close!, new_fires: [{ slug: "golden-cross", label: "S&P golden cross", short: "golden cross" }] })[0]).toEqual({ key: "new-golden-cross", text: "golden cross fired", tag: "(new)" });
   });
 
   it("names the trend from the two served flags", () => {
@@ -59,7 +60,9 @@ describe("Overview tab", () => {
   it("prints the since-last-close line and the four tiles from /overview", async () => {
     renderOverview();
     const since = await screen.findByTestId("ov-since");
-    await waitFor(() => expect(since).toHaveTextContent("2s10s still firing, day 10"));
+    await waitFor(() => expect(since).toHaveTextContent("2s10s steepening still firing, day 10"));
+    // §12.1 (B-05): the two sessions compared, by their dates.
+    expect(within(since).getByText("Since last close")).toHaveAttribute("title", "the Sep 22 close against Sep 21");
     expect(since).not.toHaveTextContent("Dollar");
     expect(since.textContent).toContain("data refreshed 00:23 UTC");
     const regime = screen.getByRole("region", { name: "Regime" });

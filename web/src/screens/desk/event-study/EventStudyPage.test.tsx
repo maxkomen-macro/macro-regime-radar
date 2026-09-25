@@ -365,6 +365,31 @@ describe("a study with a block missing (Codex R-10)", () => {
   });
 });
 
+describe("the study's firing pill (§4, v3 §3)", () => {
+  const pill = () => screen.getByRole("region", { name: "The answer" }).querySelector(".es-pills")!;
+  it("firing today counts its day; stale is never firing today; an unknown state prints no pill", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, firing_now: true, firing_day: 3 }) });
+    const a = renderTab();
+    await waitFor(() => expect(pill()).toHaveTextContent("● Firing today · day 3"));
+    a.unmount();
+    stubDesk({ "/api/desk/study": () => ({ ...study, firing_now: true, firing_day: 3, stale: true, evaluated_on: "2026-09-19" }) });
+    const b = renderTab();
+    await waitFor(() => expect(pill()).toHaveTextContent("○ Stale · Sep 19, 2026"));
+    expect(pill()).not.toHaveTextContent("Firing today");
+    b.unmount();
+    stubDesk({ "/api/desk/study": () => ({ ...study, firing_now: null }) });
+    const c = renderTab();
+    await waitFor(() => expect(pill()).toHaveTextContent("● Live"));
+    expect(pill()).not.toHaveTextContent(/firing/i);
+    c.unmount();
+    // A state that cannot be evaluated is served stale with no session: still no pill, never "Stale · —" (§4).
+    stubDesk({ "/api/desk/study": () => ({ ...study, firing_now: null, firing_day: null, evaluated_on: null, stale: true }) });
+    renderTab();
+    await waitFor(() => expect(pill()).toHaveTextContent("● Live"));
+    expect(pill()).not.toHaveTextContent(/stale|firing/i);
+  });
+});
+
 describe("the catalog drives the chips and the slots (§4, §12.3)", () => {
   it("each chip is its catalog label; a study not stored is disabled with its reason", async () => {
     renderTab();

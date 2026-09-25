@@ -272,13 +272,15 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/overview": o({
     ...envelope,
     since_last_close: o({
-      new_fires: l(o({ slug: "s!", label: "s!" })),
-      still_firing: l(o({ slug: "s!", label: "s!", day: "n" })),
+      comparison_session: "s?",
+      prev_session: "s?",
+      new_fires: l(o({ slug: "s!", label: "s!", short: "s" })),
+      still_firing: l(o({ slug: "s!", label: "s!", short: "s", firing_day: "n" })),
       vol_change_pts: "n",
-      regime_changed: "b",
+      regime_changed: "b?",
       regime_from: "s?",
       regime_to: "s?",
-      refreshed_at_utc: "s",
+      refreshed_at_utc: "s?",
     }),
     tiles: o({
       regime: regimeTrend,
@@ -369,7 +371,11 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     matched_n: "n",
     selected_horizon: "n",
     sample_start: "s?",
-    firing_now: "b",
+    firing_now: "b?",
+    firing_day: "n",
+    evaluated_on: "s?",
+    comparison_session: "s?",
+    stale: "b",
     last_event: "s?",
     // The verdict box says Awaiting refresh on its own; the numbers still stand.
     verdict: e(VERDICTS),
