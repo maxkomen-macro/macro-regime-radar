@@ -2308,7 +2308,8 @@ Verifier (one round): **PASS**, with one should-fix and five nits:
   numbers in words with no tooltip. **Fixed:** a log study's `why` and
   summary carry it.
 - V2-2 "vs normal" and "normal month" ignore the row's unit: **left for
-  item 5**, which replaces them with each row's served baseline.
+  item 5**, which replaces them with each row's served baseline (closed
+  there).
 - V2-3 `diffText` untested. **Fixed:** tested ("+1.8 pts", "+6 bp").
 - V2-4 the axis's zero and the engine table's dashes carried the tooltip.
   **Fixed.**
@@ -2527,6 +2528,85 @@ and all four horizons Suggestive under v1 and in the engine.
 The fixes were checked by the four gates and the tests above; the changed
 compare shots were re-shot after them.
 
+### Phase 2, item 5: baselines — `frame-3: align 5 baseline`
+
+**What changed.** There is no universal normal month (§1.5, §4.1). Every
+Ledger row, and so every Overview active signal and Technicals row, serves
+its own study's `baseline_median` at h = 20 and `vs_normal` = 100 ×
+(median − baseline_median) in log percentage points, or the native
+difference in bp (§1.9, §12.5, v3 §6). The Ledger's VS NORMAL column and
+the Overview's "(+D vs normal)" print the served `vs_normal` in the row's
+own unit ("+1.8 pts" with the "log return, ×100" tooltip, "+6 bp" for a bp
+target) through the kit's `vsNormalText`. The withdrawn `normal_month`
+("+1.3%") is gone from the contract, the fixtures and all three pages: the
+Ledger's footer now reads "vs normal compares each study to its own
+baseline over its own sample." above "a month = 20 sessions · engine as of
+<as_of>" (§8), and Technicals' Signals note box is §3's same sentence,
+replacing "A normal month is +1.3%; "Reliable" means the edge over that
+survives resampling" and the in-regime count, which read `cross.in_regime`,
+a field the folded §12.7 does not serve (`cross` is `{kind, date}`).
+
+The rows' baselines are each study's own: for the eight studies the store
+can run, the engine's h = 20 `baseline_median` from the same read-only run
+on a scratch copy of the owner's database (the S&P rows between +1.30% and
++1.31% over their own samples, HY spreads' +1.48% over its three years);
+the four rows item 7 makes unavailable (the dollar, oil and the two RSI
+rows) carry an illustrative +1.3% until then. The rows' medians stay the
+fixture's until item 12, so a row's vs normal moves only where its own
+baseline differs (HY spreads: +1.6 pts under the old normal month, +1.4
+pts against its own). The gold study's h = 20 baseline in the study
+fixture is the same 0.013136 its Ledger row serves: one study, one
+baseline. The only "+1.3%" left on the Desk is that study's own served
+baseline on Event Study and the Client view. This closes V2-2 (item 2's
+note that "vs normal" ignored the row's unit).
+
+**Tests.** `consistency.test.ts` (every row's `vs_normal` is 100 ×
+(median − baseline_median); the baselines differ by row; an Overview row's
+numbers are its Ledger row's; the gold row is the study's own h = 20 row;
+no `normal_month`); `kit/units.test.ts`
+(`vsNormalText` in pts and bp); `LedgerPage.test.tsx` (the footer word for
+word with no "normal month", the date kept on one line; a bp row prints
+"+12.5 bp" and "+6 bp"; HY's own "+1.4 pts" with its tooltip);
+`OverviewPage.test.tsx` (a bp row reads "+12.5 bp (+6 bp vs normal)" with
+no log tooltip); `TechnicalsPage.test.tsx` (the note box is §3's sentence
+and nothing of the normal month survives). Browser: no "normal month" or
+"+1.3%" renders on the Overview, Technicals or the Ledger.
+
+**Against the PNGs.**
+- 07 Signal Ledger, the footer: the PNG's "normal month +1.3%" is gone and
+  "vs normal compares each study to its own baseline over its own sample."
+  stands above the facts. §8: "Footer: the four §1.5 definitions + "vs
+  normal compares each study to its own baseline over its own sample." +
+  `a month = 20 sessions · engine as of <as_of>`"; §1.5: "there is no
+  universal normal month."
+- 07 Signal Ledger, VS NORMAL: HY spreads reads +1.4 pts against its own
+  baseline. §1.9: "`vs_normal` = `100 × (median − baseline_median)`".
+- 02 Technicals, the Signals note box: the PNG's in-regime count and "A
+  normal month is +1.3%" sentence are now §3's sentence. §3: "Note box: "vs
+  normal compares each study to its own baseline over its own sample.""
+- 03 Event Study: the 1-month gray bar moves by a fraction of a pixel
+  (its baseline is 0.013136, the study's own, where it was 0.013).
+- 01 Overview: no visible change (the numbers print as before; the "vs
+  normal" figure is now its own element for its tooltip).
+
+Verifier (one round): **PASS**, no blocking or should-fix finding. It
+re-ran the engine on its own copy of the database (all eight baselines
+match to six places), checked `vs_normal` on all twelve rows, the bp path
+in the browser, and the Technicals price-card callout, which §3 keeps and
+this item leaves alone. Nits, all taken:
+- V5-1 the gold study's h = 20 baseline was 0.013 in the study fixture and
+  0.013136 on its Ledger row. **Fixed**, with a test that pins them.
+- V5-2 the Overview had no bp test for "(+D vs normal)". **Added.**
+- V5-3 nothing in the browser suite kept the normal month off the three
+  tabs. **Added.**
+- V5-4 this section and V2-2's closure. **Done.**
+- Noted for item 12: HY spreads' row pairs a fixture median with its real
+  baseline; on the store the study has two events at a month and would
+  read Too few. For item 7: the four unavailable rows' illustrative values.
+
+The fixes were checked by the four gates and the tests above; the compare
+shots were re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2556,6 +2636,7 @@ tests against the fixture dev server.
 | frame-3: align 2 units | clean | 118 / 1,409 | ok | 51 / 51 |
 | frame-3: align 3 counts-horizon | clean | 118 / 1,417 | ok | 52 / 52 |
 | frame-3: align 4 verdicts | clean | 118 / 1,420 | ok | 53 / 53 |
+| frame-3: align 5 baseline | clean | 118 / 1,424 | ok | 53 / 53 |
 
 ## Finish
 

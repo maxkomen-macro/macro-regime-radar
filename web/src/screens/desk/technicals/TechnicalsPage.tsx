@@ -283,7 +283,6 @@ const bySlug = (ledger: LedgerResponse | undefined, slug: string) => (Array.isAr
 
 function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | undefined; tState: CardState; ledger: LedgerResponse | undefined; lState: CardState }) {
   const rows = Array.isArray(ledger?.signals) ? ledgerOrder(ledger.signals.filter((s) => s.group === "spx" && fin(s.n))) : [];
-  const inRegime = t?.cross?.in_regime;
   const ready = tState === "ready" && !!t;
   const aw = tState === "awaiting";
   const unserved = useUnserved();
@@ -336,18 +335,8 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
       ) : lState === "awaiting" ? (
         <Awaiting />
       ) : null}
-      {ready && t.cross && ledger && inRegime && fin(inRegime.n) ? (
-        <div className="dk-read te-note">
-          <b>In this regime ({inRegime.regime}):</b> {t.cross.kind} cross has fired {inRegime.n < 10 ? "only " : ""}
-          {inRegime.n} times{inRegime.n < 10 ? " — too few to trust" : ""}.
-          {fin(ledger.normal_month) ? (
-            <>
-              {" "}
-              A normal month is <b>{pct(ledger.normal_month)}</b>; &quot;Reliable&quot; means the edge over that survives resampling.
-            </>
-          ) : null}
-        </div>
-      ) : null}
+      {/* §3's note box: there is no universal normal month (§1.5). */}
+      {lState === "ready" ? <div className="dk-read te-note">vs normal compares each study to its own baseline over its own sample.</div> : null}
     </section>
   );
 }

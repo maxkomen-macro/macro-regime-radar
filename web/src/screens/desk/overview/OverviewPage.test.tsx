@@ -91,6 +91,16 @@ describe("Overview tab", () => {
     expect(pill).toHaveAttribute("data-verdict", "insufficient");
   });
 
+  it("a bp row's median and vs normal read in bp, with no log tooltip (§1.9)", async () => {
+    stubDesk({ "/api/desk/overview": () => ({ ...overview, active_signals: overview.active_signals.map((r, i) => (i === 0 ? { ...r, median: 12.5, baseline_median: 6.5, vs_normal: 6, target_unit: "bp", display_unit: "bp" } : r)) }) });
+    renderOverview();
+    const card = await screen.findByRole("region", { name: /Active signals/ });
+    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(5));
+    const row = within(card).getAllByRole("listitem")[0];
+    expect(row.textContent?.replace(/\s+/g, " ")).toContain("20-day median +12.5 bp (+6 bp vs normal)");
+    expect(row.querySelector('[title="log return, ×100"]')).toBeNull();
+  });
+
   it("lists the active signals as served, each with its sentence and verdict", async () => {
     renderOverview();
     const card = await screen.findByRole("region", { name: /Active signals/ });

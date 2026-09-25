@@ -17,11 +17,11 @@ import type { LedgerRow, OverviewResponse, OverviewTiles, PositionCompact, Since
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { capitalize, dayLong, dayShort, isFiniteNumber as fin, monthShort, monthYear, num, oneIn, pctPlain, pts, utcTime, year } from "../kit/format";
+import { capitalize, dayLong, dayShort, isFiniteNumber as fin, monthShort, monthYear, num, oneIn, pctPlain, utcTime, year } from "../kit/format";
 import { Awaiting, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
-import { moveText, tipOf } from "../kit/units";
+import { moveText, tipOf, vsNormalText } from "../kit/units";
 import "./overview.css";
 
 /** The since-last-close items (§2), in the spec's order. A vol change that
@@ -210,7 +210,12 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
           <Signed value={row.median} bold title={tipOf(row.target_unit ?? undefined)}>
             {moveText(row.median, row.target_unit ?? undefined)}
           </Signed>
-          {ok(row.vs_normal_pts) ? ` (${pts(row.vs_normal_pts)} vs normal)` : ""}
+          {/* The row's own excess over its own baseline (§1.9), never a universal normal month. */}
+          {ok(row.vs_normal) && vsNormalText(row.vs_normal, row.target_unit ?? undefined) ? (
+            <>
+              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> vs normal)
+            </>
+          ) : null}
         </>
       ) : null}
     </>

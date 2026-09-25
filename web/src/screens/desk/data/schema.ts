@@ -168,7 +168,8 @@ const ledgerRow = o({
   median: "n",
   target_unit: e(["log_return", "log_change", "bp"]),
   display_unit: e(["percent", "bp"]),
-  vs_normal_pts: "n",
+  baseline_median: "n",
+  vs_normal: "n",
   // An unknown verdict is left out; the row stays and its pill says "—" (L-3).
   verdict: e(VERDICTS),
   firing_now: "b",
@@ -252,7 +253,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     monitored: l(o(positionCompact)),
     data_status: "s",
   }),
-  "/ledger": o({ ...envelope, verdict_rule: "s", horizon: "n", normal_month: "n", signals: l(ledgerRow) }),
+  "/ledger": o({ ...envelope, verdict_rule: "s", horizon: "n", signals: l(ledgerRow) }),
   "/technicals": o({
     ...envelope,
     instrument: o({ symbol: "s!", label: "s!" }),
@@ -272,7 +273,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     rsi_last_above_70: o({ date: "s!", spx_1m: "n" }, { nul: true }),
     rsi_last_below_30: o({ date: "s!", spx_1m: "n" }, { nul: true }),
     // A cross without its kind and day claims nothing (Codex G1-9).
-    cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!", in_regime: o({ regime: "s!", n: "n" }) }, { nul: true }),
+    cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),
     series: o({ "6m": l(pricePoint), "1y": l(pricePoint), "3y": l(pricePoint) }),
   }),
   "/vol": o({

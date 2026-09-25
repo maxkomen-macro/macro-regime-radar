@@ -70,7 +70,12 @@ describe("Signal Ledger tab", () => {
     expect(groups[1]).toHaveTextContent("Quiet · sorted by verdict");
     const first = within(groups[1]).getAllByRole("row")[1];
     expect(first.textContent).toBe("S&P golden crossJul 1, 20253168%+2.7%+1.4 ptsReliable○ Quiet");
-    expect(screen.getByText("a month = 20 sessions · normal month +1.3% · engine as of Sep 22")).toBeInTheDocument();
+    // §8's footer: no universal normal month; each row is against its own baseline.
+    const note = document.querySelector(".lg-note")!;
+    expect(note.textContent?.replace(/\u00a0/g, " ")).toBe("vs normal compares each study to its own baseline over its own sample. a month = 20 sessions · engine as of Sep 22");
+    // The date never breaks across lines.
+    expect(note.textContent).toContain("engine\u00a0as\u00a0of\u00a0Sep\u00a022");
+    expect(document.body.textContent).not.toContain("normal month");
   });
   it("a filter narrows the table; a row opens its study in Event Study", async () => {
     renderTab();
@@ -101,7 +106,7 @@ describe("Signal Ledger tab", () => {
     expect(screen.getByText("No signal matches this filter.")).toBeInTheDocument();
   });
   it("a signal's missing values print a dash, never 'null' or a zero", async () => {
-    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r, i) => (i === 2 ? { ...r, n: null, last_fired: null, up_pct: null, median: null, vs_normal_pts: null } : r)) }) });
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r, i) => (i === 2 ? { ...r, n: null, last_fired: null, up_pct: null, median: null, vs_normal: null } : r)) }) });
     renderTab();
     const table = await screen.findByRole("table");
     const row = within(table).getByRole("row", { name: /S&P golden cross/ });
@@ -137,6 +142,20 @@ describe("Signal Ledger tab", () => {
       "No edge — at least ten completed outcomes at this horizon, without Reliable evidence or a consistent nonzero excess-median sign across 5, 10 and 20 sessions.",
       "Too few — fewer than ten completed outcomes at this horizon.",
     ]);
+  });
+  it("vs normal is each row's own served excess over its own baseline, in its own unit (§1.9, v3 §6)", async () => {
+    // Every row served: vs_normal = 100 × (median − baseline_median) for a log target.
+    for (const r of rows) if (r.median != null && r.baseline_median != null && r.vs_normal != null) expect(r.vs_normal).toBeCloseTo(100 * (r.median - r.baseline_median), 6);
+    // No two ways of saying normal: the rows' baselines differ (HY's short sample most of all).
+    expect(new Set(rows.map((r) => r.baseline_median)).size).toBeGreaterThan(1);
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r, i) => (i === 0 ? { ...r, median: 12.5, baseline_median: 6.5, vs_normal: 6, target_unit: "bp", display_unit: "bp" } : r)) }) });
+    renderTab();
+    const table = await screen.findByRole("table");
+    const bp = within(table).getByRole("row", { name: /2s10s \+2σ steepening/ }) as HTMLTableRowElement;
+    expect([bp.cells[4].textContent, bp.cells[5].textContent]).toEqual(["+12.5 bp", "+6 bp"]);
+    const hy = within(table).getByRole("row", { name: /HY spreads/ }) as HTMLTableRowElement;
+    expect(hy.cells[5].textContent).toBe("+1.4 pts");
+    expect(hy.cells[5].querySelector("[title]")?.getAttribute("title")).toBe("log return, ×100");
   });
   it("Space opens a row too; a chip shows it is pressed", async () => {
     renderTab();
@@ -176,7 +195,7 @@ describe("Signal Ledger tab", () => {
     stubDesk({ "/api/desk/ledger": () => ({ status: "ready", generation_id: "g", as_of: null, engine_version: "fixture", data: payload, unavailable: null, error: null }) });
     renderTab();
     await screen.findByRole("table");
-    expect(screen.getByText(/^a month = 20 sessions/).textContent).toBe("a month = 20 sessions\u00a0· normal month\u00a0+1.3%");
+    expect(document.querySelector(".lg-note")?.textContent?.replace(/\u00a0/g, " ")).toBe("vs normal compares each study to its own baseline over its own sample. a month = 20 sessions");
     expect(screen.queryByText(/engine as of/)).toBeNull();
   });
   it("the chips wait for the table", async () => {

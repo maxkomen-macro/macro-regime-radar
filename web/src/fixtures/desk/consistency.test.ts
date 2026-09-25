@@ -8,6 +8,8 @@
  */
 import { describe, expect, it } from "vitest";
 import hedge from "./hedge.json";
+import ledger from "./ledger.json";
+import overview from "./overview.json";
 import record from "./regime-record.json";
 import regime from "./regime.json";
 import studyEvents from "./study-events.json";
@@ -152,5 +154,19 @@ describe("the hedge's numbers are its structures' payoffs (Codex R-06)", () => {
     expect(outright.scenario_note).toContain("past about −12%");
     expect(hedge.reads.recommendation.text).toContain(`For ${pct1(spread.cost_pct as number)}% of the basket it pays up to ${pct1(most)}%`);
     expect(hedge.reads.why_index.text).toContain(`about ${pct1(1.7 * (outright.cost_pct as number))}% (1.7 × ${pct1(outright.cost_pct as number)}%)`);
+  });
+});
+
+describe("Ledger rows and their baselines (§4.1, v3 §6)", () => {
+  it("every row's vs normal is its own excess over its own baseline; an Overview row is its Ledger row", () => {
+    for (const r of ledger.signals) if (r.median != null) expect(r.vs_normal).toBeCloseTo(100 * (r.median - r.baseline_median), 6);
+    const bySlug = new Map(ledger.signals.map((r) => [r.slug, r]));
+    const nums = (r: Record<string, unknown> | undefined) => r && { n: r.n, up_pct: r.up_pct, median: r.median, baseline_median: r.baseline_median, vs_normal: r.vs_normal, target_unit: r.target_unit, horizon: r.horizon };
+    for (const r of overview.active_signals) expect(nums(r)).toEqual(nums(bySlug.get(r.slug)));
+    expect("normal_month" in ledger).toBe(false);
+    // One study, one baseline: the gold Ledger row is the study's own h = 20 row (§4.1).
+    const gold = bySlug.get("gold-2sigma-spx-weak")!;
+    const h20 = study.horizons.find((h) => h.h === 20)!;
+    expect([gold.median, gold.baseline_median]).toEqual([h20.median, h20.baseline_median]);
   });
 });

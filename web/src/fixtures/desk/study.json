@@ -86,7 +86,7 @@
    "up_pct": 0.67,
    "up_n": 12,
    "median": 0.031,
-   "baseline_median": 0.013,
+   "baseline_median": 0.013136,
    "ci_lo": -0.016,
    "ci_hi": 0.041,
    "n_blocks": 18,

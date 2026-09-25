@@ -56,6 +56,13 @@ export function diffText(v: number | null | undefined, unit: TargetUnit | undefi
   return `${signed(shown, digitsFor(unit, shown))} ${isLog(unit) ? "pts" : "bp"}`;
 }
 
+/** A served vs normal, already in display units (§1.9, v3 §6: 100 × (median − baseline_median) for a log
+ * unit, the native difference in bp): "+1.8 pts", "+6 bp"; null when the unit or the value was not served. */
+export function vsNormalText(v: number | null | undefined, unit: TargetUnit | undefined): string | null {
+  if (!isUnit(unit) || !isFiniteNumber(v)) return null;
+  return `${signed(v, digitsFor(unit, v))} ${isLog(unit) ? "pts" : "bp"}`;
+}
+
 /** An interval on Δ, native in: "−1.6 to +4.1 pts", "−10 to +40 bp". */
 export function rangeText(lo: number | null | undefined, hi: number | null | undefined, unit: TargetUnit | undefined): string | null {
   if (!isUnit(unit) || !isFiniteNumber(lo) || !isFiniteNumber(hi)) return null;

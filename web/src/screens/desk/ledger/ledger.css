@@ -135,6 +135,15 @@
 .lg-foot .dk-defs {
   flex: 1;
 }
+/* The sentence is words: sans, on its own line above the mono facts. */
+.lg-note-read {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--dk-sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dk-t3);
+}
 .lg-note {
   width: 280px;
   font-family: var(--dk-mono);

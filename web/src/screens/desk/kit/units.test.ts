@@ -1,6 +1,6 @@
 /** A study's target moves in the target's own unit (kit/units.ts; DESK_FRAME3_SPEC §1.9). */
 import { describe, expect, it } from "vitest";
-import { diffText, isLog, isUnit, LOG_TIP, moveText, rangeText, scaleOf, tickText, tipOf, whisker } from "./units";
+import { diffText, isLog, vsNormalText, isUnit, LOG_TIP, moveText, rangeText, scaleOf, tickText, tipOf, whisker } from "./units";
 
 describe("units (§1.9)", () => {
   it("prints a log return as 100 × native with a % sign, never exponentiated", () => {
@@ -21,6 +21,13 @@ describe("units (§1.9)", () => {
     expect(diffText(6, "bp")).toBe("+6 bp");
     expect(diffText(-2.5, "bp")).toBe("−2.5 bp");
     expect(diffText(0.01, undefined)).toBeNull();
+  });
+  it("prints a served vs normal as it is served, already in display units (v3 §6)", () => {
+    expect(vsNormalText(1.7864, "log_return")).toBe("+1.8 pts");
+    expect(vsNormalText(-0.4064, "log_return")).toBe("−0.4 pts");
+    expect(vsNormalText(6, "bp")).toBe("+6 bp");
+    expect(vsNormalText(6, undefined)).toBeNull();
+    expect(vsNormalText(null, "bp")).toBeNull();
   });
   it("prints basis points unchanged, never as a percent", () => {
     expect(moveText(25, "bp")).toBe("+25 bp");

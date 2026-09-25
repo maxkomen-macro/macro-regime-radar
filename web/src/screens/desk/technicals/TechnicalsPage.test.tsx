@@ -86,7 +86,7 @@ describe("Technicals tab", () => {
     expect(within(card).getByRole("img", { name: /3Y/ })).toBeInTheDocument();
   });
 
-  it("lists the Ledger's S&P signals with the in-regime note", async () => {
+  it("lists the Ledger's S&P signals with §3's note: vs normal is each study against its own baseline", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /^Signals/ });
     await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(6));
@@ -96,7 +96,8 @@ describe("Technicals tab", () => {
     expect(card).toHaveTextContent("above both averages");
     expect(card).toHaveTextContent("+0.6σ");
     expect(card).toHaveTextContent("no extreme move");
-    expect(card.textContent?.replace(/\s+/g, " ")).toContain("In this regime (Overheating): golden cross has fired only 9 times — too few to trust. A normal month is +1.3%");
+    expect(card.querySelector(".te-note")?.textContent).toBe("vs normal compares each study to its own baseline over its own sample.");
+    expect(card.textContent).not.toMatch(/normal month|A normal month|survives resampling/);
   });
 
   it("reads what protection costs from /vol, with its source line", async () => {

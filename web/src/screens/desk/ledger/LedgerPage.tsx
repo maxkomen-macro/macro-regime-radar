@@ -15,8 +15,8 @@ import type { LedgerRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { dayLong, dayShort, pct, pctPlain, pts, VERDICT_LABEL, VERDICT_RANK } from "../kit/format";
-import { moveText, tipOf } from "../kit/units";
+import { dayLong, dayShort, pctPlain, VERDICT_LABEL, VERDICT_RANK } from "../kit/format";
+import { moveText, tipOf, vsNormalText } from "../kit/units";
 import { Awaiting, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
@@ -84,7 +84,16 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
           "—"
         )}
       </td>
-      <td className="lg-mono">{fin(r.vs_normal_pts) ? <Signed value={r.vs_normal_pts}>{pts(r.vs_normal_pts)}</Signed> : "—"}</td>
+      {/* The row's own excess over its own baseline (§1.9, §4.1), in its own unit. */}
+      <td className="lg-mono">
+        {fin(r.vs_normal) && vsNormalText(r.vs_normal, r.target_unit ?? undefined) ? (
+          <Signed value={r.vs_normal} title={tipOf(r.target_unit ?? undefined)}>
+            {vsNormalText(r.vs_normal, r.target_unit ?? undefined)}
+          </Signed>
+        ) : (
+          "—"
+        )}
+      </td>
       <td className="lg-verdict">{knownVerdict(r.verdict) ? <VerdictPill verdict={r.verdict} className="lg-pill" /> : "—"}</td>
       <td className="lg-now" data-tone={r.firing_now === true ? "green" : r.firing_now === false ? "gray" : undefined}>
         {r.firing_now === true ? "● Firing" : r.firing_now === false ? "○ Quiet" : "—"}
@@ -205,8 +214,9 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
           <div className="lg-foot">
             <VerdictDefinitions />
             <p className="lg-note">
-              {/* A line may break after a separator, never before one (R2-2). */}
-              {["a month = 20 sessions", l && fin(l.normal_month) ? `normal month\u00a0${pct(l.normal_month)}` : null, l && dayShort(l.as_of) ? `engine as of\u00a0${dayShort(l.as_of)}` : null].filter(Boolean).join("\u00a0· ")}
+              {/* §8: there is no universal normal month; a line may break after a separator, never before one (R2-2). */}
+              <span className="lg-note-read">vs normal compares each study to its own baseline over its own sample.</span>{" "}
+              {["a month = 20 sessions".replace(/ /g, "\u00a0"), l && dayShort(l.as_of) ? `engine as of ${dayShort(l.as_of)}`.replace(/ /g, "\u00a0") : null].filter(Boolean).join("\u00a0· ")}
             </p>
           </div>
         </section>

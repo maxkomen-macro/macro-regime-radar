@@ -67,7 +67,10 @@ export interface LedgerRow {
   /** The unit `median` is served in, and how it displays (§1.9, §12.5); absent, the median prints "—". */
   target_unit?: TargetUnit | null;
   display_unit?: DisplayUnit | null;
-  vs_normal_pts: number | null;
+  /** The study's own baseline at h = 20 (§4.1: every Ledger row carries its own; there is no universal normal month). */
+  baseline_median?: number | null;
+  /** 100 × (median − baseline_median) in log percentage points, or the native difference in bp (§1.9, v3 §6). */
+  vs_normal?: number | null;
   /** Absent when the server sent a verdict the Desk does not know (the pill prints "—"). */
   verdict?: Verdict;
   /** Absent when not served: the row claims neither firing nor quiet. */
@@ -84,7 +87,6 @@ export interface LedgerResponse extends Envelope {
   verdict_rule?: string | null;
   /** Every Ledger number is at h = 20 (§12.5, v4 B-01). */
   horizon?: number | null;
-  normal_month: number | null;
   signals?: LedgerRow[];
 }
 
@@ -240,8 +242,6 @@ export interface TechnicalsResponse extends Envelope {
   cross: {
     kind: "golden" | "death";
     date: string;
-    /** PROPOSED (§12.13): how often this cross fired in today's regime. */
-    in_regime?: { regime: string; n: number | null };
   } | null;
   series?: { "6m"?: PricePoint[]; "1y"?: PricePoint[]; "3y"?: PricePoint[] };
 }

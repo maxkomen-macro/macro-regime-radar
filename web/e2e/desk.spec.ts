@@ -54,6 +54,11 @@ test.describe("desk v2", () => {
       expect(await bannedWordsOnPage(page)).toEqual([]);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow).toBeLessThanOrEqual(1);
+      // §1.5: there is no universal normal month (the tabs that read Ledger rows).
+      if (["overview", "technicals", "signal-ledger"].includes(slug)) {
+        const text = (await page.locator("main").textContent()) ?? "";
+        expect(text).not.toMatch(/normal month|\+1\.3%/);
+      }
     });
   }
 
