@@ -13,6 +13,11 @@ WORKDIR /build/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
+# The Desk's Build Notes page renders docs/desk/BUILD_NOTES.md (frame-3,
+# R-15): the file lives outside web/, so it is copied to where the page's
+# relative import finds it (/build/web/../docs/desk). .dockerignore lets
+# this one file through its docs and *.md exclusions.
+COPY docs/desk/BUILD_NOTES.md /build/docs/desk/BUILD_NOTES.md
 # tsc -b && vite build (web/package.json). No VITE_API_BASE here on purpose:
 # the bundle calls the API same-origin (web/src/api/client.ts defaults to "").
 RUN npm run build

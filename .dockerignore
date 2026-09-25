@@ -28,3 +28,5 @@ tests
 .claude
 scripts
 *.md
+# ...except the one document the web stage builds in (Desk Build Notes):
+!docs/desk/BUILD_NOTES.md
