@@ -147,6 +147,18 @@ describe("the response boundary", () => {
     for (const u of ["pct", "bp", "px"]) expect((tryRead({ ...study, question: { ...study.question, target_unit: u } }, "/study") as { question: { target_unit: string } }).question.target_unit).toBe(u);
   });
 
+  it("a hedge structure's legs are one fact, and its range needs both ends (Codex R-06)", () => {
+    const [o] = hedge.options;
+    const read = (x: Record<string, unknown>) => (tryRead({ ...hedge, options: [{ ...o, ...x }] }, "/hedge") as { options: Record<string, unknown>[] }).options[0];
+    expect(read({}).legs).toEqual(o.legs);
+    expect("legs" in read({ legs: [o.legs[0], { right: "straddle", strike: -0.1, qty: -1 }] })).toBe(false);
+    expect("legs" in read({ legs: [o.legs[0], { right: "put", strike: null, qty: -1 }] })).toBe(false);
+    expect(read({ protected_range: { ndx_from: -0.05, ndx_to: null, basis: "strikes" } }).protected_range).toBeNull();
+    expect(read({ protected_range: { ndx_from: -0.05, ndx_to: -0.1 } }).protected_range).toBeNull();
+    expect(read({ protected_range: { ndx_from: -0.05, ndx_to: -0.1, basis: "wide" } }).protected_range).toBeNull();
+    expect(read({ protected_range: { ndx_from: -0.05, ndx_to: -0.1, basis: "strikes" } }).protected_range).toEqual({ ndx_from: -0.05, ndx_to: -0.1, basis: "strikes" });
+  });
+
   it("a statistic that is not finite is null, 1e999 included (G1-4)", () => {
     const pos = tryRead(JSON.parse('{"closed_90d":{"falsified":1e999,"expired":"4","premortem_right":[1e999,4]}}'), "/positions") as { closed_90d: Record<string, unknown> };
     expect(pos.closed_90d).toEqual({ falsified: null, expired: null, premortem_right: [null, 4] });

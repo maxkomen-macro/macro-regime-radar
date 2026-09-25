@@ -89,26 +89,26 @@
   {
    "regime": "Goldilocks",
    "n": 5,
-   "up_pct": 0.8,
-   "median": 0.042
-  },
-  {
-   "regime": "Overheating",
-   "n": 6,
-   "up_pct": 0.67,
+   "up_pct": 0.6,
    "median": 0.028
   },
   {
-   "regime": "Stagflation",
-   "n": 5,
-   "up_pct": 0.6,
-   "median": 0.019
+   "regime": "Overheating",
+   "n": 4,
+   "up_pct": null,
+   "median": null
   },
   {
-   "regime": "Recession Risk",
+   "regime": "Stagflation",
    "n": 2,
    "up_pct": null,
    "median": null
+  },
+  {
+   "regime": "Recession Risk",
+   "n": 7,
+   "up_pct": 0.86,
+   "median": 0.035
   }
  ],
  "last_events": [
@@ -119,12 +119,12 @@
   },
   {
    "date": "2023-10-27",
-   "regime": "Stagflation",
+   "regime": "Recession Risk",
    "ret_20": 0.081
   },
   {
    "date": "2023-03-09",
-   "regime": "Stagflation",
+   "regime": "Recession Risk",
    "ret_20": 0.034
   },
   {
@@ -207,6 +207,6 @@
  ],
  "client": {
   "headline": "When gold jumps and stocks are already soft, what has the S&P done next?",
-  "summary": "Looking at 18 such episodes since 2000, the S&P 500 was higher a month later about two times in three, with a typical gain of about 3%. That is better than an ordinary month, but the spread of outcomes is wide. The pattern has been strongest in a Goldilocks economy and softest in stagflation. We would treat it as a reason to lean in with a defined-risk structure, not as a standalone call."
+  "summary": "Looking at 18 such episodes since 2000, the S&P 500 was higher a month later about two times in three, with a typical gain of about 3%. That is better than an ordinary month, but the spread of outcomes is wide. Split by economic backdrop, only Goldilocks and recession-risk months have enough episodes to read, and the S&P was higher a month later more often than not in both. We would treat it as a reason to lean in with a defined-risk structure, not as a standalone call."
  }
 }

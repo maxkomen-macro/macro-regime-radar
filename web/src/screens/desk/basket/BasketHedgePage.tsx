@@ -47,7 +47,8 @@ import {
   readSaved,
   removeSaved,
   toWork,
-  total,
+  sumsToHundred,
+  totalText,
   writeAllSaved,
   writeSaved,
   type SaveResult,
@@ -65,7 +66,9 @@ export const MODES: { id: HedgeMode; label: string }[] = [
 const CHART_H = 165;
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 /** A total of typed weights: "100%", "96.5%". */
-const totalWords = (t: number) => `${num(t, Number.isInteger(t) ? 0 : 1)}%`;
+/** A total as printed: its exact digits ("100%", "96.5%", "99.97%", "99.99999%"), so the words never
+ * say 100% of weights that do not add to it (Codex R-14). */
+const totalWords = (t: string) => `${t}%`;
 /** A served basket or price we can read: legs as a list of legs, each a ticker and a finite weight. */
 const readable = <T extends { legs?: unknown }>(d: T | undefined): T | undefined =>
   d && Array.isArray(d.legs) && d.legs.every((l) => !!l && typeof (l as { symbol?: unknown }).symbol === "string" && fin((l as { weight?: unknown }).weight)) ? d : undefined;
@@ -169,7 +172,7 @@ function Legs({ legs, onChange, empty }: { legs: WorkLeg[] | null; onChange: (le
   const uid = useId();
   const [ticker, setTicker] = useState("");
   const [note, setNote] = useState("");
-  const tot = legs ? total(legs) : null;
+  const tot = legs ? totalText(legs) : null;
   const add = () => {
     const t = parseTicker(ticker);
     if (!legs) return;
@@ -251,7 +254,7 @@ function Legs({ legs, onChange, empty }: { legs: WorkLeg[] | null; onChange: (le
           <span className="bh-add-hint">any US-listed name · price history pulled on add</span>
         </form>
         <p className="bh-total">
-          total <b data-off={tot == null || Math.abs(tot - 100) > 0.05 || undefined}>{tot == null ? "—" : totalWords(tot)}</b>
+          total <b data-off={tot !== "100" || undefined}>{tot == null ? "—" : totalWords(tot)}</b>
         </p>
       </div>
       <p className="bh-note" role="status">
@@ -297,8 +300,8 @@ function BasketCard({ basketId, onSelect, onSaved }: { basketId: string; onSelec
   const key = legs ? legsKey(apiLegs(legs)) : "";
   const baseKey = base ? legsKey(apiLegs(base)) : "";
   const servedKey = sb ? legsKey(sb.legs) : null;
-  const tot = legs ? total(legs) : null;
-  const priceable = !!legs?.length && tot != null && Math.abs(tot - 100) < 0.05;
+  const tot = legs ? totalText(legs) : null;
+  const priceable = !!legs?.length && tot === "100";
   // The served numbers answer the served weights; any other weights are priced by POST /basket/price.
   const needPrice = !!legs && key !== servedKey;
   const settled = useSettled(needPrice && priceable ? key : null);
@@ -476,10 +479,22 @@ function BasketCard({ basketId, onSelect, onSaved }: { basketId: string; onSelec
   );
 }
 
+/** The structure's worst outcome over its own range, per $100 of basket (§12.13, Codex R-06),
+ * with the range and what bounds it: "max loss $14.0 per $100 of basket, NDX −5% to −10%
+ * (its strikes)"; a structure with no sold put is bounded by the table's lowest move. A loss
+ * without its range, or its basis, says nothing it cannot back. */
+export function maxLossWords(o: Pick<HedgeOption, "max_loss" | "protected_range">): string | null {
+  const r = o.protected_range;
+  if (!fin(o.max_loss)) return null;
+  if (!r || !fin(r.ndx_from) || !fin(r.ndx_to) || !r.basis) return "max loss awaiting refresh";
+  const range = `NDX ${pct(r.ndx_from, 0)} to ${pct(r.ndx_to, 0)} (${r.basis === "strikes" ? "its strikes" : "table floor"})`;
+  return o.max_loss < 0 ? `max loss $${num(-o.max_loss * 100, 1)} per $100 of basket, ${range}` : `no loss from ${range}`;
+}
+
 function OptionRow({ o, picked, name, onPick }: { o: HedgeOption; picked: boolean; name: string; onPick: () => void }) {
   const noteId = useId();
   const cost = fin(o.cost_pct) ? `costs ${pctPlain(o.cost_pct, 1)}${picked ? " of basket" : ""}` : null;
-  const sub = [fin(o.breakeven) ? `breakeven ${pct(o.breakeven)}` : null, fin(o.max_loss) ? `max loss ${pctPlain(o.max_loss, 1)}` : null].filter(Boolean).join(" · ");
+  const sub = [fin(o.breakeven) ? `breaks even at basket ${pct(o.breakeven)}` : null, maxLossWords(o)].filter(Boolean).join(" · ");
   return (
     <label className={cx("bh-opt", picked && "bh-opt-on")}>
       <input type="radio" className="dk-sr" name={name} checked={picked} onChange={onPick} aria-label={o.label} aria-describedby={noteId} />
@@ -536,7 +551,7 @@ function HedgeStats({ o, h, show }: { o: HedgeOption | undefined; h: HedgeRespon
   const ratioSub = [o.underlying ? `${o.underlying} notional` : null, fin(h.beta) && fin(o.delta) ? `beta-adjusted, ${num(h.beta)} × ${num(o.delta, 2)} delta` : null].filter(Boolean).join(" · ") || undefined;
   return (
     <StatRow cols={3}>
-      {fin(o.hedge_per_100) ? <Stat label={labels[0]} value={`$${num(o.hedge_per_100, 0)} per $100`} sub={ratioSub} size="sm" /> : <Stat label={labels[0]} awaiting />}
+      {fin(o.hedge_per_100) ? <Stat label={labels[0]} value={`$${num(o.hedge_per_100, Number.isInteger(o.hedge_per_100) ? 0 : 1)} per $100`} sub={ratioSub} size="sm" /> : <Stat label={labels[0]} awaiting />}
       {fin(o.theta_pct_week) ? <Stat label={labels[1]} value={<Signed value={o.theta_pct_week}>{`${pct(o.theta_pct_week, 2)} / wk`}</Signed>} sub="theta if nothing moves" size="sm" /> : <Stat label={labels[1]} awaiting />}
       {o.roll?.date && dayShort(o.roll.date) ? <Stat label={labels[2]} value={dayShort(o.roll.date)} sub={fin(o.roll.days) && fin(o.roll.at_dte) ? `${o.roll.days} days · roll at ${o.roll.at_dte} DTE` : undefined} size="sm" /> : <Stat label={labels[2]} awaiting />}
     </StatRow>
@@ -665,13 +680,12 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
   }, []);
   const sb = served.isError ? undefined : readable(served.data);
   const savedLegs = local?.legs ?? sb?.legs ?? null;
-  const savedTotal = savedLegs ? Math.round(savedLegs.reduce((a, l) => a + (fin(l.weight) ? l.weight : 0), 0) * 10) / 10 : null;
   const basketFailed = !local && !basketId.startsWith("local-") && (served.isError || (served.isSuccess && !sb));
   let params: Params | null = null;
   let reason: string | null = null;
   if (mode === "express") params = { mode, ...apiParams(expressAsk(search)) };
   else if (position) params = { mode, position };
-  else if (savedLegs && savedLegs.length && savedTotal != null && Math.abs(savedTotal - 100) < 0.05) {
+  else if (savedLegs && savedLegs.length && sumsToHundred(savedLegs)) {
     const servedKey = sb ? legsKey(sb.legs) : null;
     params = local && legsKey(local.legs) !== servedKey ? { mode, legs: legsKey(local.legs) } : { mode, basket: basketId };
   } else if (savedLegs || (basketId.startsWith("local-") && !local)) reason = "The hedge prices the basket's saved weights once they add to 100%; save a basket to price it.";

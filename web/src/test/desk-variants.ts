@@ -18,7 +18,7 @@ export function bpStudy(): Record<string, unknown> {
     ...study,
     question: { ...study.question, target: "us10y", target_unit: "bp", target_label: "10-year Treasury yield" },
     horizons: study.horizons.map((h) => ({ ...h, ...bpH[h.h], ...(h.h === 20 ? { worst: { ret: -30, date: "2020-03-09" }, best: { ret: 60, date: "2025-04-16" } } : {}) })),
-    by_regime: study.by_regime.map((r, i) => ({ ...r, median: r.median == null ? null : [12, 8, -4][i] })),
+    by_regime: study.by_regime.map((r) => ({ ...r, median: r.median == null ? null : ({ Goldilocks: 12, "Recession Risk": 20 } as Record<string, number>)[r.regime] })),
     last_events: study.last_events.map((e, i) => ({ ...e, ret_20: [30, -15, 22, 5, 18][i] ?? 10 })),
     without_condition: { ...study.without_condition, median: 9 },
     client: {

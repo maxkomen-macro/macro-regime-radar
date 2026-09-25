@@ -1894,6 +1894,111 @@ text run) and the Client view's, whose backdrop subtitle reads the served
 target name, "Typical S&P 500 move after the setup", where the mockup's
 fixed copy read "S&P"; both are regenerated.
 
+### Group 3: fixtures and units (R-05, R-06, R-14) — `frame-3: codex-3 fixtures`
+
+- **R-05: the study's regimes contradicted the regime fixture.** Two 2023
+  events were labelled Stagflation where `/regime`'s history, read at the
+  engine's two-month lag, says Recession Risk, and `/regime` only reaches
+  back to 2021 (the Regime tab's last five years), so thirteen of the
+  eighteen events had no row to check against. **Fix:**
+  `fixtures/desk/regime-record.json`, the fixtures' monthly regime record
+  from 1996-05, which no endpoint serves. Its last 68 rows are `/regime`'s
+  history exactly. Its earlier rows follow each period's growth and
+  inflation direction (the 2001 and 2008 recessions, the 2008 and 2011 oil
+  spikes, the 2014–16 industrial slowdown), drawn without regard to the
+  events. Its months by regime are now `/regime`'s `stats[].months` (154,
+  88, 46, 76 since 1996, where the mockup had 142, 88, 61, 54). Every event
+  takes the row stamped two months before its own month; nine events
+  changed label. `by_regime` is recomputed from the events: Goldilocks 5,
+  up 60%, +2.8%; Recession Risk 7, up 86%, +3.5%; Overheating 4 and
+  Stagflation 2 print n<5 (§4). `last_events` follows, and so does the
+  rail's note ("Today is Overheating: four events, too few to read
+  alone."). The client summary no longer ranks backdrops; it says only
+  Goldilocks and recession-risk months have enough episodes to read.
+  **Test:** `fixtures/desk/consistency.test.ts`: the record is one row a
+  month from 1996; its tail is the history; its counts are the stats;
+  every event's regime is its K−2 row; `by_regime` and `last_events` are
+  the events recomputed (n<5 rule included).
+- **R-06: breakeven and max loss had no single definition, and the rows,
+  the ratio line and the table disagreed.** The put spread's "max loss
+  1.1%" sat beside a table losing 14% at NDX −10%. The breakevens were
+  strike plus cost, and the ratio line's 1.6 × 0.39 is 62.4, not the 62 the
+  table used. **Fix:** defined once in §12.13, per $100 of basket over the
+  month at expiry. Each structure serves PROPOSED `legs` (strikes as NDX
+  moves, +1 bought, −1 sold) and PROPOSED `protected_range` (`ndx_from`,
+  `ndx_to`, `basis`). The notional is `beta × delta × 100` = 62.4, printed
+  "$62.4 per $100". A scenario's hedged book is beta × x + notional/100 ×
+  payoff − cost, unrounded (+14.9% at NDX +10%, where the mockup rounded
+  to +15%). Breakeven is the basket move where that book is zero (+1.1%,
+  +0.2%, +2.4%: the basket must earn back the cost). Max loss is the worst
+  of that book over the structure's own range: between the strikes for
+  the spread, "max loss $14.0 per $100 of basket, NDX −5% to −10% (its
+  strikes)"; to the table's lowest move for the collar and the outright
+  puts, which have no sold put ("… NDX −5% to −20% (table floor)"). The
+  prose that quotes the payoffs is restated from them: the collar's "loses
+  22.8% instead of 32%", the recommendation's "for 1.1% of the basket it
+  pays up to 3.1%", and the why-index cost of 4.1% (1.7 × the outright's
+  2.4%), where "about 3.8%" matched nothing. A max loss served without its
+  range or basis prints "max loss awaiting refresh". **Tests:**
+  `consistency.test.ts` recomputes, from the served legs, every scenario,
+  each breakeven (the one crossing), each max loss and its range, the
+  ratio line, and every number in the prose; `maxLossWords`; the boundary
+  (a bad leg drops the legs, a range without both ends or its basis is
+  null); the card's rows and table.
+- **R-14: weights were rounded to a tenth.** 22.11 was not a weight (one
+  decimal at most), a served 22.11 showed as 22.1, and 22.11/77.89 and
+  22.14/77.86 both keyed as `22.1/77.9`. **Fix:** a weight keeps every
+  digit, in the input, the basket's key, `POST /basket/price`, `/hedge?legs=`
+  and the saved basket, written in decimal (a served 1e-7 is 0.0000001,
+  never exponent notation). The total is summed digit by digit and counts
+  as 100% only when it is exactly 100; the page prints it with every digit
+  ("total 99.97%"), so it never says 100% of weights that do not add to
+  it. Normalize leaves weights that add to 100 as they are and otherwise
+  writes weights no coarser than the ones typed (22.11 and 77.86 become
+  22.12 and 77.88); Equal-weight writes tenths. **Tests:** `weights.test.ts`
+  (the two baskets' keys and legs, exact totals such as 99.9999999999 and
+  0.1 + 0.2 + 99.7, normalize's precision, decimal output); a page test in
+  which a served 22.11/77.89 basket is typed to 22.14/77.86, priced once at
+  exactly those weights and shown at its own price; 22.11/77.86 prints
+  99.97% and is not priced; saved, the hedge asks
+  `legs=NVDA:22.14,AVGO:77.86`; reverted, the served basket.
+
+Verifier (one round): **FAIL**, on should-fix items; no blocker, gates
+green, the hedge math exact. All taken except G3-11:
+- G3-1 the first record contradicted `/regime`'s stats (it could not
+  produce 88 Overheating months), and its earlier rows had been written to
+  fit the events' old labels. **Fixed** by the record above: drawn on its
+  own, its counts are the stats, the events follow it.
+- G3-2 the client summary ranked Goldilocks (n=5) above Overheating (n=6).
+  **Fixed:** it ranks nothing.
+- G3-3 a total rounded to print said "100%" of 99.99999. **Fixed:** exact
+  digits.
+- G3-4 Normalize rounded working weights to a tenth. **Fixed:** never
+  coarser than typed.
+- G3-5 a weight under 1e-6 was written as 1e-7 and then unreadable.
+  **Fixed.**
+- G3-6 a 1e-9 tolerance let 99.9999999999 count as 100. **Fixed:** exact.
+- G3-7 the max losses cover different ranges, and "per $100" never said of
+  what. **Fixed:** "per $100 of basket", and each row names its range and
+  what bounds it; §12.13 says the three are not one comparison.
+- G3-8 the new page test found the card before the lazy page loaded, and
+  the exact-100 rule was not pinned on the page. **Fixed:** it waits, and
+  99.97% is pinned.
+- G3-9 the why-index 3.8% could not be derived; the ratio line said $62
+  beside the note's $62.4. **Fixed** (above).
+- G3-10 §10 still gave the mockup's hedge figures without a pointer, and
+  the consistency test checked two prose numbers. **Fixed:** §10 points to
+  §12.13; the test checks every prose number.
+- G3-11 (not changed) the weight input shows about five characters, so
+  21.99999 scrolls inside its field; the value is kept whole. Widening it
+  is a layout change to an approved screen.
+
+The fixes were checked by the four gates, not by a second verifier round.
+Compare shots: Event Study (the rail's by-regime table, last five labels
+and note), Regime (the months column), Basket & Hedge (the rows, the ratio
+line, the table) and the Client view (the backdrop bars, the summary)
+changed with their data and are regenerated; the rest re-shot identical.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -1916,6 +2021,7 @@ tests against the fixture dev server.
 | frame-3: basket-hedge | clean | 113 / 1,312 | ok | 34 / 34 |
 | frame-3: codex-1 robustness | clean | 115 / 1,332 | ok | 45 / 45 |
 | frame-3: codex-2 contract | clean | 116 / 1,352 | ok | 46 / 46 |
+| frame-3: codex-3 fixtures | clean | 117 / 1,368 | ok | 46 / 46 |
 
 ## Finish
 

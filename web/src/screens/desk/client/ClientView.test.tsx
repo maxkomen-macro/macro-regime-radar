@@ -83,8 +83,8 @@ describe("Client view", () => {
     expect(main).toHaveTextContent(/Higher a month later\s*67%\s*vs 62% in an ordinary month/);
     expect(main.querySelector(".cv-stat-value[data-tone='green']")).toHaveTextContent("67%");
     expect(main).toHaveTextContent(/Typical move\s*\+3\.1%\s*vs \+1\.3% ordinary/);
-    expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+4.2%", "Overheating+2.8%", "Stagflation+1.9%", "Recession Risktoo few cases to say"]);
-    expect([...backdrop().querySelectorAll(".cv-bar")].map((b) => b.getAttribute("data-tone"))).toEqual(["green", "green", "green"]);
+    expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+2.8%", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risk+3.5%"]);
+    expect([...backdrop().querySelectorAll(".cv-bar")].map((b) => b.getAttribute("data-tone"))).toEqual(["green", "green"]);
     expect(main).toHaveTextContent("Radar · FRED, Yahoo Finance · as of Sep 22, 2026 · Past patterns do not guarantee future results.");
     // No verdict pills, no σ.
     expect(main.querySelector(".dk-pill")).toBeNull();
@@ -98,7 +98,7 @@ describe("Client view", () => {
     stubDesk({ "/api/desk/study": bpStudy });
     renderTab("/desk/overview?view=client");
     await waitFor(() => expect(backdrop()).toHaveTextContent("Typical 10-year Treasury yield move after the setup"));
-    expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+12 bp", "Overheating+8 bp", "Stagflation−4 bp", "Recession Risktoo few cases to say"]);
+    expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+12 bp", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risk+20 bp"]);
     expect(screen.getByRole("main")).toHaveTextContent(/Typical move\s*\+25 bp\s*vs \+5 bp ordinary/);
     expect(backdrop().textContent).not.toMatch(/%/);
   });

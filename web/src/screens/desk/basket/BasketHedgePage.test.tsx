@@ -12,9 +12,11 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes, useLocation } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
+import basket from "../../../fixtures/desk/basket.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
 import { SAVED_BASKETS_KEY } from "./weights";
+import { maxLossWords } from "./BasketHedgePage";
 
 function LocationSpy() {
   const l = useLocation();
@@ -51,6 +53,17 @@ const loaded = async () => {
   return basketCard();
 };
 
+describe("the hedge's words (Codex R-06)", () => {
+  it("max loss states its own range and what bounds it, per $100 of basket; without them it says nothing it cannot back", () => {
+    expect(maxLossWords({ max_loss: -0.1398, protected_range: { ndx_from: -0.05, ndx_to: -0.1, basis: "strikes" } })).toBe("max loss $14.0 per $100 of basket, NDX −5% to −10% (its strikes)");
+    expect(maxLossWords({ max_loss: -0.2284, protected_range: { ndx_from: -0.05, ndx_to: -0.2, basis: "table_floor" } })).toBe("max loss $22.8 per $100 of basket, NDX −5% to −20% (table floor)");
+    expect(maxLossWords({ max_loss: 0.004, protected_range: { ndx_from: -0.05, ndx_to: -0.1, basis: "strikes" } })).toBe("no loss from NDX −5% to −10% (its strikes)");
+    expect(maxLossWords({ max_loss: -0.14, protected_range: undefined })).toBe("max loss awaiting refresh");
+    expect(maxLossWords({ max_loss: -0.14, protected_range: { ndx_from: -0.05, ndx_to: -0.1 } })).toBe("max loss awaiting refresh");
+    expect(maxLossWords({ max_loss: null, protected_range: { ndx_from: -0.05, ndx_to: -0.1, basis: "strikes" } })).toBeNull();
+  });
+});
+
 describe("Basket & Hedge tab", () => {
   it("the basket: stats, seven legs at 100%, the residual chart and its reads", async () => {
     renderTab();
@@ -74,7 +87,7 @@ describe("Basket & Hedge tab", () => {
   it("the hedge: Protect by default, the served recommendation picked, its numbers and scenarios, the subject named", async () => {
     const { calls } = stubDesk();
     renderTab();
-    await waitFor(() => expect(hedgeCard()).toHaveTextContent("$62 per $100"));
+    await waitFor(() => expect(hedgeCard()).toHaveTextContent("$62.4 per $100"));
     const h = hedgeCard();
     expect(calls).toContain("GET /api/desk/hedge?mode=protect&basket=ai-infra");
     expect(h).toHaveTextContent("priced off the live SPY / QQQ surface");
@@ -84,19 +97,21 @@ describe("Basket & Hedge tab", () => {
     expect(radios.map((r) => r.getAttribute("aria-label"))).toEqual(["Put spread on QQQ · 1 month · 5% / 10% down", "Collar on QQQ · 1 month · sell 5% up, buy 5% down", "Outright QQQ puts · 1 month · 5% down"]);
     expect(radios[0]).toBeChecked();
     expect(h).toHaveTextContent("costs 1.1% of basket");
-    expect(h).toHaveTextContent("breakeven −6.1% · max loss 1.1%");
-    expect(h).toHaveTextContent(/Hedge ratio\s*\$62 per \$100\s*QQQ notional · beta-adjusted, 1\.6 × 0\.39 delta/);
+    // Breakeven and max loss as §12.13 defines them, from the structure's payoffs (Codex R-06).
+    expect(h).toHaveTextContent("breaks even at basket +1.1% · max loss $14.0 per $100 of basket, NDX −5% to −10% (its strikes)");
+    expect(h).toHaveTextContent(/Hedge ratio\s*\$62.4 per \$100\s*QQQ notional · beta-adjusted, 1\.6 × 0\.39 delta/);
     expect(h).toHaveTextContent(/Cost of waiting\s*−0\.09% \/ wk\s*theta if nothing moves/);
     expect(h).toHaveTextContent(/Roll\s*Oct 17\s*30 days · roll at 10 DTE/);
     const scen = within(h).getByRole("table", { name: "If NDX moves · over the month" });
-    expect(within(scen).getAllByRole("row").slice(1).map((r) => r.textContent)).toEqual(["−20%−32%−30%", "−10%−16%−14%", "flat0%−1.1%", "+10%+16%+15%"]);
+    expect(within(scen).getAllByRole("row").slice(1).map((r) => r.textContent)).toEqual(["−20%−32%−30%", "−10%−16%−14%", "flat0%−1.1%", "+10%+16%+14.9%"]);
     expect(h).toHaveTextContent("Why index options, not the names:");
     expect(h).toHaveTextContent("Recommendation: the put spread.");
     fireEvent.click(radios[1]);
     expect(h).toHaveTextContent("costs 0.2% of basket");
     expect(h).toHaveTextContent(/Cost of waiting\s*−0\.01% \/ wk/);
     expect(h).toHaveTextContent("beta-adjusted, 1.6 × 0.39 delta");
-    expect(within(scen).getAllByRole("row")[1]).toHaveTextContent("−20%−32%−23%");
+    expect(within(scen).getAllByRole("row")[1]).toHaveTextContent("−20%−32%−22.8%");
+    expect(h).toHaveTextContent("breaks even at basket +0.2% · max loss $22.8 per $100 of basket, NDX −5% to −20% (table floor)");
   });
 
   it("weights as typed: an off total says why and asks nothing; normalize prices them; a ticker added and one dropped", async () => {
@@ -147,6 +162,54 @@ describe("Basket & Hedge tab", () => {
     await waitFor(() => expect(within(within(b).getByRole("table")).getAllByRole("row").at(-1)).toHaveTextContent("MSFTMicrosoft"));
   });
 
+  it("22.11/77.89 and 22.14/77.86 are two baskets: each is priced at its own weights (Codex R-14)", async () => {
+    const two = { ...basket, legs: [{ symbol: "NVDA", name: "Nvidia", weight: 22.11 }, { symbol: "AVGO", name: "Broadcom", weight: 77.89 }] };
+    const bodies: { symbol: string; weight: number }[][] = [];
+    const { calls } = stubDesk({
+      "/api/desk/basket/ai-infra": () => two,
+      "/api/desk/basket/price": (_u, init) => {
+        const legs = (JSON.parse(String(init?.body)) as { legs: { symbol: string; weight: number }[] }).legs;
+        bodies.push(legs);
+        // A price of its own for each set of weights: 3-month +14.2% at 22.14.
+        return { ...basketPrice, ret_3m: legs[0].weight === 22.14 ? 0.142 : 0.131, legs: legs.map((l) => ({ ...l, name: null })) };
+      },
+    });
+    renderTab();
+    const b = await waitFor(() => basketCard());
+    await waitFor(() => expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("22.11"));
+    expect(within(b).getByLabelText("Weight of AVGO, percent")).toHaveValue("77.89");
+    await waitFor(() => expect(b).toHaveTextContent("+12.7%"));
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "22.14" } });
+    // 22.14 + 77.89 is 100.03: not 100%, so nothing is asked.
+    expect(b).toHaveTextContent("total 100.03%");
+    fireEvent.change(within(b).getByLabelText("Weight of AVGO, percent"), { target: { value: "77.86" } });
+    await waitFor(() => expect(b).toHaveTextContent("+14.2%"));
+    expect(bodies).toEqual([
+      [
+        { symbol: "NVDA", weight: 22.14 },
+        { symbol: "AVGO", weight: 77.86 },
+      ],
+    ]);
+    // Saved, the hedge prices these weights, every digit in its key.
+    fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
+    expect(JSON.parse(localStorage.getItem(SAVED_BASKETS_KEY) ?? "[]")[0].legs.map((l: { weight: number }) => l.weight)).toEqual([22.14, 77.86]);
+    await waitFor(() => expect(calls).toContain("GET /api/desk/hedge?mode=protect&legs=NVDA%3A22.14%2CAVGO%3A77.86"));
+    fireEvent.click(within(b).getByTestId("dk-advanced"));
+    fireEvent.click(within(b).getByRole("button", { name: "Revert to the served weights" }));
+    await waitFor(() => expect(calls).toContain("GET /api/desk/hedge?mode=protect&basket=ai-infra"));
+    // 22.11 + 77.86 is 99.97%: printed as it is, and never priced (G3-3, G3-6).
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "22.11" } });
+    fireEvent.change(within(b).getByLabelText("Weight of AVGO, percent"), { target: { value: "77.86" } });
+    expect(b).toHaveTextContent("total 99.97%");
+    expect(b).toHaveTextContent("The weights add to 99.97%: normalize to 100% to price them.");
+    // Back to the served weights: the served numbers, no second price asked.
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "22.11" } });
+    fireEvent.change(within(b).getByLabelText("Weight of AVGO, percent"), { target: { value: "77.89" } });
+    await waitFor(() => expect(b).toHaveTextContent("+12.7%"));
+    expect(bodies).toHaveLength(1);
+    expect(calls.filter((c) => c === "POST /api/desk/basket/price")).toHaveLength(1);
+  });
+
   it("a price answer that cannot be read, or refused, says so; nothing breaks", async () => {
     stubDesk({ "/api/desk/basket/price": () => ({}) });
     const { unmount } = renderTab();
@@ -185,7 +248,7 @@ describe("Basket & Hedge tab", () => {
     fireEvent.click(within(b).getByRole("button", { name: "Revert to the served weights" }));
     expect(b).toHaveTextContent("Back to the served weights.");
     expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("22");
-    await waitFor(() => expect(hedgeCard()).toHaveTextContent("$62 per $100"));
+    await waitFor(() => expect(hedgeCard()).toHaveTextContent("$62.4 per $100"));
   });
 
   it("storage that is off or full says so, and nothing is kept", async () => {
@@ -208,7 +271,7 @@ describe("Basket & Hedge tab", () => {
     fireEvent.click(within(hedgeCard()).getByRole("button", { name: "Protect the basket" }));
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?mode=protect&study=spx-golden-cross"));
     expect(within(hedgeCard()).getByRole("button", { name: "Protect the basket" })).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(hedgeCard()).toHaveTextContent("$62 per $100"));
+    await waitFor(() => expect(hedgeCard()).toHaveTextContent("$62.4 per $100"));
     expect(calls).toContain("GET /api/desk/hedge?mode=protect&basket=ai-infra");
   });
 
@@ -227,7 +290,7 @@ describe("Basket & Hedge tab", () => {
   it("a position from Position Monitor is the hedge's subject until a basket is picked", async () => {
     const { calls } = stubDesk();
     renderTab("/desk/basket-hedge?position=ai-infra-hedged");
-    await waitFor(() => expect(hedgeCard()).toHaveTextContent("$62 per $100"));
+    await waitFor(() => expect(hedgeCard()).toHaveTextContent("$62.4 per $100"));
     expect(calls).toContain("GET /api/desk/hedge?mode=protect&position=ai-infra-hedged");
     fireEvent.click(within(await loaded()).getByRole("button", { name: "+ New basket" }));
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-1"));

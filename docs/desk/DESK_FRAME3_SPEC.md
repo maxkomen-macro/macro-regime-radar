@@ -500,6 +500,10 @@ table IF NDX MOVES · OVER THE MONTH: NDX / BASKET / + HEDGE: −20% / −32% /
 $62 notional), so it softens a drawdown rather than stopping it; below −10%
 you are long the basket again." Box "Why index options, not the names: …
 single-name vol runs 1.7× the index …". Recommendation box at bottom.
+(The rows' breakeven and max loss, the ratio line's $62 and the table's
+figures above are the mockup's. The served figures follow §12.13, "Codex
+round 1": breakeven +1.1%, max loss $14.0 per $100 of basket between the
+strikes, $62.4 per $100, +14.9% at NDX +10%.)
 
 ---
 
@@ -961,13 +965,10 @@ building it; the web side follows whatever this section ends up saying.
   "roll":{"date","days","at_dte"},"scenarios":[{"ndx","basket","hedged"}],
   "scenario_note"}`: the stats row, the scenario table and its note belong
   to the structure picked, so every structure carries its own.
-  `recommended` is the id picked when the page opens. §10's `breakeven`
-  figures are the put strike's distance plus the structure's cost (−5% −
-  1.1% = −6.1%; −5.2%; −7.4%), a rule of thumb rather than the move at
-  which the hedged book is flat. Its `max_loss` figures are the premium
-  for the put spread and the outright puts, but the strike's distance plus
-  the cost for the collar (5.2%). Session B should settle one definition
-  of each and serve it.
+  `recommended` is the id picked when the page opens. `breakeven` and
+  `max_loss` have one definition each, in "Codex round 1" below (§10's
+  figures mixed a rule of thumb, the strike's distance plus the cost, with
+  the premium).
 - With no `?basket=` the page asks `/basket/ai-infra`, the one basket the
   mockup draws, and reads the selector's list from that answer's
   `baskets` whichever basket is open. The default is fixed on the page; a
@@ -1064,6 +1065,60 @@ number). The page never computes the judgment in its place.
   Reason (R-11): a free-form study has no slug, so the saved position named
   no study and "the signal reverses" pointed at nothing. The page offers
   that level only when it can send one identifier or the other.
+
+- **PROPOSED** the hedge's numbers, defined once (R-06), each per $100 of
+  basket over the month, at expiry, with QQQ taken to move as NDX:
+  ```json
+  {"id":"put_spread","cost_pct":0.011,"breakeven":0.011,"max_loss":-0.1398,
+   "protected_range":{"ndx_from":-0.05,"ndx_to":-0.1,"basis":"strikes"},
+   "hedge_per_100":62.4,"delta":0.39,
+   "legs":[{"right":"put","strike":-0.05,"qty":1},
+           {"right":"put","strike":-0.1,"qty":-1}],
+   "scenarios":[{"ndx":-0.2,"basket":-0.32,"hedged":-0.2998}, …]}
+  ```
+  `legs` is the structure per $1 of notional (strikes as NDX moves from
+  today, `qty` +1 bought, −1 sold), so its payoff at an NDX move x is
+  Σ qty × max(strike − x, 0) for a put, max(x − strike, 0) for a call.
+  `hedge_per_100` is the notional per $100 of basket, beta × delta × 100
+  (the Hedge ratio line says "beta-adjusted, 1.6 × 0.39 delta" and prints
+  "$62.4 per $100"). A scenario's `basket` is beta × x and its `hedged` is beta × x +
+  `hedge_per_100` / 100 × payoff(x) − `cost_pct`, unrounded (the page rounds
+  to print). `breakeven` is the basket move at which basket P&L + hedge
+  payoff − cost = 0 (for these three, the basket has to rise by the cost:
+  +1.1%, +0.2%, +2.4%). `max_loss` is the worst of basket + hedge payoff −
+  cost over `protected_range`, a fraction of the basket (−0.1398 prints
+  "max loss $14.0 per $100 of basket, NDX −5% to −10% (its strikes)"): the
+  range runs from the bought put's strike to the sold put's
+  (`basis: "strikes"`), or, with no sold put, to the scenario table's
+  lowest move (`basis: "table_floor"`, printed "(table floor)"),
+  because a structure without a sold put protects without end and its
+  worst case needs a stated bound. Each row states its own range, so the
+  three rows are not one comparison: the spread's $14.0 stops at its lower
+  strike, while the table shows it at −30% at NDX −20%. A `max_loss`
+  without its range or basis prints "max loss awaiting refresh". Reason (R-06): the rows, the ratio line and the table were
+  three sets of numbers (a put spread's "max loss 1.1%" beside a table
+  losing 14% at NDX −10%). The prose that quotes a payoff (the scenario
+  notes, the recommendation, the "why index" read's single-name cost of
+  1.7 × the outright's 2.4%) is restated from these numbers.
+- The study fixtures' regimes (R-05): each event in
+  `web/src/fixtures/desk/study-events.json` carries the regime row stamped
+  two months before its own month (the engine's `REGIME_LAG_MONTHS`), read
+  from `web/src/fixtures/desk/regime-record.json`, the fixtures' monthly
+  record from 1996-05 (no endpoint serves it). The record's last rows are
+  `/regime`'s `history` exactly, its months by regime are `/regime`'s
+  `stats[].months`, and its earlier rows follow each period's growth and
+  inflation direction, drawn without regard to the events. The events take
+  their labels from it; `study.by_regime`, `last_events` and the client
+  summary (which ranks no backdrop) are recomputed from those events. No new
+  field.
+- Basket weights keep every digit (R-14): a weight is any number from 0 to
+  100 (22.11, not 22.1), `POST /basket/price` and `/hedge?legs=` carry it as
+  typed (`NVDA:22.11,AVGO:77.89`), never in exponent notation, and a total
+  is summed digit by digit and counts as 100% only when it is exactly 100
+  (99.97 is not, nor is 99.9999999999); the page prints a total with every
+  digit it has. Normalize leaves weights that add to 100 as they are and
+  otherwise writes new ones no coarser than the ones typed (at least a
+  tenth); Equal-weight writes tenths. No new field.
 
 Notes for B (not new fields):
 - §11 fixes the inventory at 26 series in five groups, but Desk also reads

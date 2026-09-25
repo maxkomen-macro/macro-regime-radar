@@ -500,12 +500,19 @@ export interface HedgeOption {
   label: string;
   underlying: string;
   cost_pct: number | null;
+  /** The basket move at which basket + hedge payoff − cost = 0, per $100 of basket (§12.13, Codex R-06). */
   breakeven: number | null;
+  /** The worst basket + hedge payoff − cost over `protected_range`, per $100 of basket (a fraction, negative for a loss). */
   max_loss: number | null;
+  /** The NDX moves `max_loss` is the worst over: the bought put's strike down to the sold put's
+   * (`basis: "strikes"`), else to the scenario table's lowest move (`"table_floor"`). */
+  protected_range?: { ndx_from: number; ndx_to: number; basis?: "strikes" | "table_floor" } | null;
   note: string;
-  /** Dollars of the underlying's notional per $100 of basket. */
+  /** Dollars of the underlying's notional per $100 of basket: beta × delta × 100. */
   hedge_per_100: number | null;
   delta: number | null;
+  /** The structure, per $1 of notional: strikes as NDX moves from today, +1 bought, −1 sold. */
+  legs?: { right: "put" | "call"; strike: number; qty: number }[];
   theta_pct_week: number | null;
   roll: { date: string; days: number | null; at_dte: number | null } | null;
   scenarios?: HedgeScenario[];

@@ -13,7 +13,7 @@
   },
   {
    "date": "2023-10-27",
-   "regime": "Stagflation",
+   "regime": "Recession Risk",
    "ret_5": 0.02,
    "ret_10": 0.045,
    "ret_20": 0.081,
@@ -21,7 +21,7 @@
   },
   {
    "date": "2023-03-09",
-   "regime": "Stagflation",
+   "regime": "Recession Risk",
    "ret_5": -0.04,
    "ret_10": 0.002,
    "ret_20": 0.034,
@@ -53,7 +53,7 @@
   },
   {
    "date": "2019-08-07",
-   "regime": "Goldilocks",
+   "regime": "Recession Risk",
    "ret_5": 0.011,
    "ret_10": 0.017,
    "ret_20": 0.042,
@@ -77,7 +77,7 @@
   },
   {
    "date": "2015-08-24",
-   "regime": "Stagflation",
+   "regime": "Recession Risk",
    "ret_5": 0.013,
    "ret_10": 0.028,
    "ret_20": 0.019,
@@ -93,7 +93,7 @@
   },
   {
    "date": "2011-08-08",
-   "regime": "Overheating",
+   "regime": "Stagflation",
    "ret_5": 0.043,
    "ret_10": 0.08,
    "ret_20": 0.028,
@@ -117,7 +117,7 @@
   },
   {
    "date": "2007-08-16",
-   "regime": "Overheating",
+   "regime": "Goldilocks",
    "ret_5": 0.033,
    "ret_10": 0.063,
    "ret_20": 0.028,
@@ -125,7 +125,7 @@
   },
   {
    "date": "2006-05-22",
-   "regime": "Goldilocks",
+   "regime": "Overheating",
    "ret_5": -0.027,
    "ret_10": -0.042,
    "ret_20": 0.038,
@@ -133,7 +133,7 @@
   },
   {
    "date": "2003-03-11",
-   "regime": "Stagflation",
+   "regime": "Goldilocks",
    "ret_5": -0.065,
    "ret_10": -0.022,
    "ret_20": -0.035,
@@ -141,7 +141,7 @@
   },
   {
    "date": "2001-09-21",
-   "regime": "Overheating",
+   "regime": "Recession Risk",
    "ret_5": 0.052,
    "ret_10": 0.089,
    "ret_20": 0.074,

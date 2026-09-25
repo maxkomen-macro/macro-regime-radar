@@ -126,8 +126,10 @@ describe("Event Study tab", () => {
     expect(rail).toHaveTextContent("Lean, don't size.");
     expect(within(rail).getByRole("link", { name: "Price it →" })).toHaveAttribute("href", "/desk/basket-hedge?mode=express&study=gold-2sigma-spx-weak");
     const rows = within(rail).getAllByRole("row");
-    expect(rows.map((r) => r.textContent)).toContain("Recession Risk2n<5n<5");
-    expect(rail).toHaveTextContent("Today is Overheating: six events, too few to read alone.");
+    // By regime from the events at their K−2 rows of the regime record (Codex R-05).
+    expect(rows.map((r) => r.textContent)).toEqual(expect.arrayContaining(["Goldilocks560%+2.8%", "Overheating4n<5n<5", "Stagflation2n<5n<5", "Recession Risk786%+3.5%"]));
+    expect(rail).toHaveTextContent("Oct 27, 2023Recession Risk+8.1%");
+    expect(rail).toHaveTextContent("Today is Overheating: four events, too few to read alone.");
     expect(rail).toHaveTextContent("Apr 16, 2025Overheating+12.0%");
     expect(rail).toHaveTextContent("−1.6 to +4.1 pts");
     expect(within(within(rail).getByRole("group", { name: "Confidence" })).getByRole("button", { name: "90%" })).toHaveAttribute("aria-pressed", "true");
@@ -340,7 +342,8 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     const chart = screen.getByRole("img", { name: /1 month \+25 bp against \+5 bp/ });
     expect(chart).toHaveTextContent("bp");
     expect(chart.textContent).not.toMatch(/%/);
-    expect(rail()).toHaveTextContent(/Goldilocks\s*5\s*80%\s*\+12 bp/);
+    expect(rail()).toHaveTextContent(/Goldilocks\s*5\s*60%\s*\+12 bp/);
+    expect(rail()).toHaveTextContent(/Recession Risk\s*7\s*86%\s*\+20 bp/);
     expect(rail()).toHaveTextContent("Last five events · 10-year Treasury yield a month later");
     expect(rail()).toHaveTextContent(/Apr 16, 2025\s*Overheating\s*\+30 bp/);
     expect(rail()).toHaveTextContent(/1 month\s*−10 to \+40 bp/);

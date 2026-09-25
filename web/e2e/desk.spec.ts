@@ -367,7 +367,7 @@ test.describe("desk v2", () => {
     const basket = page.getByRole("region", { name: "Basket" });
     const hedge = page.getByRole("region", { name: /^Hedge · express or protect/ });
     await expect(basket).toContainText("+12.7%");
-    await expect(hedge).toContainText("$62 per $100");
+    await expect(hedge).toContainText("$62.4 per $100");
     await expect(page.getByTestId("dk-live")).toHaveText("Live · prices Sep 22 · options via EODHD");
     await expect(basket.getByRole("img")).toBeVisible();
     // The keyboard picks a structure: its numbers follow.
@@ -375,7 +375,7 @@ test.describe("desk v2", () => {
     await page.keyboard.press("Space");
     await expect(hedge.getByRole("radio").nth(1)).toBeChecked();
     await expect(hedge).toContainText("costs 0.2% of basket");
-    await expect(hedge.getByRole("table")).toContainText("−23%");
+    await expect(hedge.getByRole("table")).toContainText("−22.8%");
     expect(await auditPalette(page)).toEqual([]);
     // Weights as typed.
     await basket.getByLabel("Weight of SMCI, percent").fill("8");
@@ -394,7 +394,7 @@ test.describe("desk v2", () => {
     for (const width of [1440, 1200, 1101, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/basket-hedge");
-      await expect(page.getByRole("region", { name: /^Hedge · express or protect/ })).toContainText("$62 per $100");
+      await expect(page.getByRole("region", { name: /^Hedge · express or protect/ })).toContainText("$62.4 per $100");
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `overflow at ${width}`).toBeLessThanOrEqual(1);
       // Nothing in the basket's header is cut: the title, and the selector at its basket's width.
       const head = await page.evaluate(() => {

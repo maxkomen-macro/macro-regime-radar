@@ -25,52 +25,86 @@ export interface SavedBasket {
 export const DEFAULT_BASKET = "ai-infra";
 export const SAVED_BASKETS_KEY = "mrr.desk.baskets.v1";
 
-/** A weight as typed: a number from 0 to 100, at most one decimal; null otherwise. */
+/** A weight as typed: a number from 0 to 100, to any number of decimals, kept exactly as
+ * typed (Codex R-14: 22.11 is not 22.1); null otherwise. */
 export function parseWeight(s: string): number | null {
   const t = s.trim();
-  if (!/^\d{1,3}(\.\d)?$/.test(t)) return null;
+  if (!/^\d{1,3}(\.\d+)?$/.test(t)) return null;
   const v = Number(t);
   return v >= 0 && v <= 100 ? v : null;
 }
 
-/** The legs' total in percent, to one decimal; null when a weight is not a number. */
-export function total(legs: readonly WorkLeg[]): number | null {
-  let sum = 0;
-  for (const l of legs) {
-    const w = parseWeight(l.weight);
-    if (w == null) return null;
-    sum += w;
-  }
-  return Math.round(sum * 10) / 10;
+/** A weight's decimal digits, never exponent notation (a served 1e-7 is "0.0000001"). */
+export function decimal(w: number): string {
+  const t = String(w);
+  return /e/i.test(t) ? w.toFixed(20).replace(/\.?0+$/, "") : t;
 }
 
-/** Weights that add to exactly 100.0 at one decimal: `raw` scaled, rounded, and the
+const text = (w: string | number) => (typeof w === "number" ? decimal(w) : w.trim());
+
+/** The legs' total as an exact decimal ("100", "99.97", "99.9999999999"), summed digit by
+ * digit so no float noise decides it; null when a weight is not a number (Codex R-14). */
+export function totalText(legs: readonly { weight: string | number }[]): string | null {
+  const parts: [bigint, number][] = [];
+  for (const l of legs) {
+    const t = text(l.weight);
+    if (parseWeight(t) == null) return null;
+    const [i, f = ""] = t.split(".");
+    parts.push([BigInt(i + f), f.length]);
+  }
+  const d = Math.max(0, ...parts.map(([, n]) => n));
+  const sum = parts.reduce((a, [v, n]) => a + v * 10n ** BigInt(d - n), 0n);
+  if (d === 0) return sum.toString();
+  const digits = sum.toString().padStart(d + 1, "0");
+  return `${digits.slice(0, -d)}.${digits.slice(-d)}`.replace(/\.?0+$/, "");
+}
+
+/** The legs' total in percent (the exact total, as a number); null when a weight is not a number. */
+export function total(legs: readonly { weight: string | number }[]): number | null {
+  const t = totalText(legs);
+  return t == null ? null : Number(t);
+}
+
+/** Whether the legs add to exactly 100%: 99.97 does not, nor does 99.9999999999. */
+export const sumsToHundred = (legs: readonly { weight: string | number }[]): boolean => totalText(legs) === "100";
+
+/** Weights that add to exactly 100 at `d` decimals: `raw` scaled, rounded, and the
  * rounding's remainder given to the largest legs first. */
-function toHundred(raw: number[]): number[] {
+function toHundred(raw: number[], d = 1): number[] {
   const sum = raw.reduce((a, b) => a + b, 0);
   if (!raw.length || sum <= 0) return raw.map(() => 0);
-  const tenths = raw.map((w) => (w / sum) * 1000);
-  const floor = tenths.map(Math.floor);
-  let left = 1000 - floor.reduce((a, b) => a + b, 0);
-  const order = tenths.map((t, i) => ({ i, frac: t - Math.floor(t), w: raw[i] })).sort((a, b) => b.frac - a.frac || b.w - a.w);
+  const whole = 100 * 10 ** d;
+  const units = raw.map((w) => (w / sum) * whole);
+  const floor = units.map(Math.floor);
+  let left = whole - floor.reduce((a, b) => a + b, 0);
+  const order = units.map((t, i) => ({ i, frac: t - Math.floor(t), w: raw[i] })).sort((a, b) => b.frac - a.frac || b.w - a.w);
   for (const o of order) {
     if (left <= 0) break;
     floor[o.i] += 1;
     left -= 1;
   }
-  return floor.map((t) => t / 10);
+  return floor.map((t) => Number((t / 10 ** d).toFixed(d)));
 }
 
-const fmt = (w: number) => (Number.isInteger(w) ? String(w) : w.toFixed(1));
+/** A weight as the input shows it: every digit it has (a served 22.11 stays 22.11). */
+const fmt = decimal;
 
+/** Equal weights, new values at a tenth that add to exactly 100. */
 export function equalWeight(legs: readonly WorkLeg[]): WorkLeg[] {
   const w = toHundred(legs.map(() => 1));
   return legs.map((l, i) => ({ ...l, weight: fmt(w[i]) }));
 }
 
-/** Scaled to 100% in proportion; a weight that is not a number counts as zero. */
+/** Scaled to 100% in proportion, never coarser than the weights as typed (at least a tenth:
+ * 22.11 and 77.86 become 22.12 and 77.88); a weight that is not a number counts as zero.
+ * Weights that already add to exactly 100% are left as they are. */
 export function normalize(legs: readonly WorkLeg[]): WorkLeg[] {
-  const w = toHundred(legs.map((l) => parseWeight(l.weight) ?? 0));
+  if (sumsToHundred(legs)) return legs.map((l) => ({ ...l }));
+  const d = Math.max(1, ...legs.map((l) => (parseWeight(l.weight) == null ? 0 : (l.weight.trim().split(".")[1] ?? "").length)));
+  const w = toHundred(
+    legs.map((l) => parseWeight(l.weight) ?? 0),
+    Math.min(d, 12),
+  );
   return legs.map((l, i) => ({ ...l, weight: fmt(w[i]) }));
 }
 

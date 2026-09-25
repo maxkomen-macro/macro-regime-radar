@@ -300,7 +300,7 @@
  "stats": [
   {
    "regime": "Goldilocks",
-   "months": 142,
+   "months": 154,
    "spx_mo": 0.014,
    "up_pct": 0.66,
    "vix_avg": 15,
@@ -316,7 +316,7 @@
   },
   {
    "regime": "Stagflation",
-   "months": 61,
+   "months": 46,
    "spx_mo": -0.002,
    "up_pct": 0.48,
    "vix_avg": 24,
@@ -324,7 +324,7 @@
   },
   {
    "regime": "Recession Risk",
-   "months": 54,
+   "months": 76,
    "spx_mo": -0.006,
    "up_pct": 0.45,
    "vix_avg": 29,
