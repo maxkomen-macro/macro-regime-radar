@@ -148,4 +148,168 @@ test.describe("desk frame", () => {
       }
     }
   });
+
+  /* ── desk/frame-2 (DESK_FRAME2_SPEC §1 to §5) ─────────────────────────── */
+
+  test("event study: five numbers on screen trace to the API's JSON for the same study", async ({ page }) => {
+    await open(page, "/desk/event-study?study=gold-2sigma-spx-weak");
+    const res = await page.request.get("/api/desk/event-study?study=gold-2sigma-spx-weak");
+    expect(res.status()).toBe(200);
+    const api = await res.json();
+    expect(api.status).toBe("ready");
+    const p = api.provenance;
+    const h20 = api.horizons.find((h: { h: number }) => h.h === 20);
+    const pct = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x * 100).toFixed(1)}%`;
+    // Interval bounds print as the engine's fmt_move does: the sign always kept.
+    const bound = (x: number) => `${x < 0 ? "−" : "+"}${Math.abs(x * 100).toFixed(1)}%`;
+    const body = page.locator("main");
+    // 1. The engine's verdict, verbatim.
+    await expect(body).toContainText(api.verdict.text);
+    // 2. The facts line: n, blocks at 20 sessions, the sample, the cooldown.
+    await expect(body).toContainText(`n ${p.n_events} · blocks ${p.n_blocks_by_h["20"]} at 20d · sample ${p.data_start}–${p.sample_end} · cooldown ${p.cooldown_sessions}`);
+    await expect(page.getByTestId("es-sample")).toContainText(`Sample: ${p.data_start} to ${p.sample_end}`);
+    // 3. The 20-session median beside the baseline median, in the horizon cell.
+    const cell = page.getByRole("button", { name: /^20d n \d+/ });
+    await expect(cell).toContainText(`${pct(h20.median)} vs ${pct(h20.baseline_median)}`);
+    // 4. The 90% interval on Δ as served.
+    await expect(cell).toContainText(`${bound(h20.ci90[0])} to ${bound(h20.ci90[1])}`);
+    // 5. The newest event's date and its 20-session move.
+    const ev = api.recent_events[0];
+    const row = page.getByRole("table", { name: "The last ten events with their forward moves" }).getByRole("row").nth(1);
+    await expect(row).toContainText(pct(ev.moves["20"]));
+    // The badge is the Live badge, stamped from provenance.
+    await expect(page.getByTestId("desk-badge").first()).toContainText("Live");
+    await expect(page.getByTestId("desk-badge").first()).toContainText("event-study engine");
+  });
+
+  test("event study: a horizon cell opens its events from the keyboard; Run writes ?study=", async ({ page }) => {
+    await open(page, "/desk/event-study");
+    const cell = page.getByRole("button", { name: /^20d n \d+/ });
+    await cell.focus();
+    await page.keyboard.press("Enter");
+    await expect(cell).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("region", { name: "Events behind 20 sessions" })).toBeVisible();
+    await page.getByLabel("Window in sessions").selectOption("5");
+    await page.getByTestId("es-run").press("Enter");
+    await expect(page).toHaveURL(/study=gold-w5-z2\.0-up-spx_below_50dma-spx/);
+    // A free-form query computes on request: computing, then ready, never an empty chart in between.
+    await expect(page.locator("[data-state='computing'], [data-chart='horizons']").first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("[data-chart='horizons']")).toBeVisible({ timeout: 60_000 });
+  });
+
+  test("S&P Internals states the engine's established reads, and breadth and sectors stay Designed", async ({ page }) => {
+    await open(page, "/desk/sp-internals");
+    for (const slug of ["spx-golden-cross", "spx-death-cross"]) {
+      const api = await (await page.request.get(`/api/desk/event-study?study=${slug}`)).json();
+      const est = api.horizons.filter((h: { exclusion: string }) => h.exclusion === "established").map((h: { h: number }) => h.h);
+      const name = slug === "spx-golden-cross" ? "Golden cross" : "Death cross";
+      await expect(page.getByTestId("internals-read").filter({ hasText: name })).toContainText(est.length ? `${name}: established at ${est.join(", ")} sessions` : `${name}: established at no horizon`);
+    }
+    for (const id of ["breadth", "sector-rotation"]) await expect(page.locator(`#${id}`).getByTestId("desk-badge")).toHaveText("Designed");
+  });
+
+  test("390 and reduced motion: frame-2 pages fit the phone and nothing animates", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const route of ["/desk/today", "/desk/event-study", "/desk/sp-internals", "/desk/event-study?view=client", "/desk/build-notes"]) {
+      await open(page, route);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, route).toBeLessThanOrEqual(1);
+      const animated = await page.evaluate(() => [...document.querySelectorAll("*")].filter((el) => getComputedStyle(el).animationName !== "none").length);
+      expect(animated, route).toBe(0);
+    }
+  });
+
+  /* ── desk/frame-2 §6: the walkthrough ─────────────────────────────────── */
+
+  test("walkthrough: six real steps by Next, each with its own state; Escape closes where it is", async ({ page }) => {
+    await open(page, "/desk/today");
+    await page.getByTestId("desk-walkthrough").click();
+    const strip = page.getByTestId("desk-tour");
+    const next = strip.getByRole("button", { name: "Next" });
+    const checks: [RegExp, string, () => Promise<void>][] = [
+      [/\/desk\/event-study\?study=gold-2sigma-spx-weak&tour=1$/, "The setup you described", async () => expect(page.locator("[data-chart='horizons']")).toBeVisible()],
+      [/\/desk\/sp-internals\?tour=2$/, "The 50/200 cross", async () => expect(page.getByTestId("internals-read").first()).toContainText("established")],
+      [/\/desk\/position-monitor\?from=gold-2sigma-spx-weak&tour=3$/, "Promoting a signal", async () => {
+        await expect(page.getByRole("textbox", { name: "Instrument" })).toHaveValue("S&P 500");
+        await expect(page.getByTestId("desk-save-position")).toBeDisabled();
+      }],
+      [/\/desk\/data-pipeline\?tour=4$/, "Where every number comes from", async () => expect(page.getByRole("heading", { level: 1 })).toHaveText("Data Pipeline")],
+      [/\/desk\/event-study\?study=gold-2sigma-spx-weak&view=client&tour=5$/, "as a client would read it", async () => expect(page.getByTestId("es-source")).toBeVisible()],
+      [/\/desk\/build-notes\?tour=6$/, "How it was built", async () => expect(page.getByRole("heading", { level: 1 })).toHaveText("Build Notes")],
+    ];
+    for (const [i, [url, caption, state]] of checks.entries()) {
+      await expect(page).toHaveURL(url);
+      await expect(strip).toContainText(`Step ${i + 1} of 6`);
+      await expect(strip).toContainText(caption);
+      await state();
+      if (i < checks.length - 1) {
+        // Keyboard: Enter on a focused Next, and focus stays on Next across every step (R3-01).
+        await next.focus();
+        await page.keyboard.press("Enter");
+        await expect(page).toHaveURL(checks[i + 1][0]);
+        if (i + 1 < checks.length - 1) await expect(next).toBeFocused();
+      }
+    }
+    await expect(next).toBeDisabled();
+    // Nothing autoplays: a wait leaves the step where it is.
+    await page.waitForTimeout(1500);
+    await expect(page).toHaveURL(/tour=6$/);
+    await page.keyboard.press("ArrowLeft");
+    await expect(page).toHaveURL(/tour=5$/);
+    await page.keyboard.press("Escape");
+    await expect(page).toHaveURL(/\/desk\/event-study\?study=gold-2sigma-spx-weak&view=client$/);
+    await expect(strip).toHaveCount(0);
+    await expect(page.getByTestId("desk-walkthrough")).toBeFocused();
+  });
+
+  test("walkthrough: any step is a link, the strip fits a phone and every control is a ringed stop", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, "/desk/monitor?from=gold-2sigma-spx-weak&tour=3");
+    await expect(page).toHaveURL(/\/desk\/position-monitor\?from=gold-2sigma-spx-weak&tour=3$/);
+    const strip = page.getByTestId("desk-tour");
+    await expect(strip).toContainText("Step 3 of 6");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    const box = await strip.boundingBox();
+    expect(box && box.y + box.height).toBeLessThanOrEqual(845);
+    for (const name of ["Back", "Next", "Close the walkthrough"]) {
+      const b = strip.getByRole("button", { name });
+      await b.focus();
+      expect(await b.evaluate((el) => { const cs = getComputedStyle(el); return cs.outlineStyle !== "none" || cs.boxShadow !== "none"; })).toBe(true);
+    }
+  });
+
+  test("Today prints no date later than today; the recession card is dated by its reading", async ({ page }) => {
+    await open(page, "/desk/today");
+    await expect(page.getByTestId("today-recession")).toContainText("%");
+    const api = await (await page.request.get("/api/recession/probability")).json();
+    const last = api.recession_prob_series.at(-1);
+    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    if (last && last.value === api.recession_prob) {
+      const [y, m] = last.date.split("-").map(Number);
+      await expect(page.getByTestId("today-recession-sub")).toContainText(`the ${MON[m - 1]} ${y} reading`);
+    }
+    const { text, today } = await page.evaluate(() => {
+      const d = new Date();
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      return { text: document.querySelector("[data-testid='today-strip']")?.textContent ?? "", today: iso };
+    });
+    const year = Number(today.slice(0, 4));
+    const iso = (yy: number, mm: number, dd: number) => `${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+    const re = new RegExp(String.raw`\b(${MON.join("|")}) (\d{1,2}), (\d{4})\b|\b(${MON.join("|")}) (\d{4})\b|\b(${MON.join("|")}) (\d{1,2})\b|\b(\d{4})-(\d{2})-(\d{2})\b`, "g");
+    const later: string[] = [];
+    for (const mt of text.matchAll(re)) {
+      const day = mt[1]
+        ? iso(Number(mt[3]), MON.indexOf(mt[1]) + 1, Number(mt[2]))
+        : mt[4]
+          ? iso(Number(mt[5]), MON.indexOf(mt[4]) + 1, 1)
+          : mt[6]
+            ? iso(year, MON.indexOf(mt[6]) + 1, Number(mt[7]))
+            : iso(Number(mt[8]), Number(mt[9]), Number(mt[10]));
+      if (day > today) later.push(mt[0]);
+    }
+    expect(later, `dates after ${today}`).toEqual([]);
+  });
 });
+

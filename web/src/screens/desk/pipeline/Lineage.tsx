@@ -11,7 +11,7 @@ const STEPS: { title: string; lines: string[] }[] = [
   { title: "Sources", lines: ["FRED (macro, yields, spreads)", "yfinance (stored bars)", "EODHD (relay, on-demand)", "Finnhub · NewsAPI · RSS"] },
   { title: "Fetch", lines: ["fetch_data.py: FRED + watermarks", "fetch_market.py: completed bars", "news.py: headlines, scoring", "GitHub Actions on schedule"] },
   { title: "Validate", lines: ["scripts/validate_db.py", "integrity, counts, max-date", "freshness verdicts by mode", "upload only on pass"] },
-  { title: "Transform", lines: ["4-way regime classifier", "five monitored signals", "NBER-trained recession model", "surprises, AI reads"] },
+  { title: "Transform", lines: ["4-way regime classifier", "five monitored signals", "recession probability (logistic model)", "surprises, AI reads"] },
   { title: "Store", lines: ["SQLite macro_radar.db", "data-latest release asset", "generations in the API worker", "read-only from here on"] },
   { title: "Serve", lines: ["FastAPI api/ (/api/*, freshness)", "React web/ and this Desk", "every number carries its as-of"] },
 ];

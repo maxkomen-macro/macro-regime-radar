@@ -11,6 +11,7 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { localStorageOrNull } from "../../shell/watchlist/storage";
 import { gateStatus, type Draft } from "./gate";
+import { seriesRef } from "./series";
 
 export const POSITIONS_KEY = "mrr.desk.positions.v1";
 
@@ -58,7 +59,32 @@ function isPosition(x: unknown): x is Position {
   );
 }
 
-/** Missing, malformed, wrong version: an empty list, never a throw. */
+/** Why a stored position may not be shown (review R-05): the discipline gate
+ * run on it as if it were a draft (a variant view and a pre-mortem written, no
+ * flagged word, a numeric level tied to a series), and a series the catalogue
+ * knows. Null when it passes. Storage is the visitor's to edit; the list shows
+ * only what the gate would have saved. */
+export function positionProblem(p: Position): string | null {
+  const draft: Draft = {
+    instrument: p.instrument,
+    direction: p.direction,
+    size: p.size,
+    horizon: p.horizon,
+    variant_view: p.variant_view,
+    pre_mortem: p.pre_mortem,
+    falsification_series: p.falsification.series,
+    falsification_level: String(p.falsification.level),
+    falsification_direction: p.falsification.direction,
+  };
+  const gate = gateStatus(draft);
+  if (!gate.ok) return gate.reason;
+  if (!seriesRef(p.falsification.series)) return `the falsification series "${p.falsification.series}" is not one the Desk reads.`;
+  return null;
+}
+
+/** Missing, malformed, wrong version: an empty list, never a throw. A
+ * well-formed entry the gate or the series check refuses is dropped, with a
+ * console note naming it and why. */
 export function parsePositions(raw: string | null): Position[] {
   if (raw == null) return [];
   try {
@@ -66,7 +92,11 @@ export function parsePositions(raw: string | null): Position[] {
     if (!doc || typeof doc !== "object" || Array.isArray(doc)) return [];
     const file = doc as Partial<PositionsFile>;
     if (file.version !== 1 || !Array.isArray(file.positions)) return [];
-    return file.positions.filter(isPosition);
+    return file.positions.filter(isPosition).filter((p) => {
+      const problem = positionProblem(p);
+      if (problem) console.warn(`Desk: a saved position (${p.instrument || p.id}) was not loaded: ${problem}`);
+      return problem == null;
+    });
   } catch {
     return [];
   }

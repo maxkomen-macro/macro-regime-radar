@@ -11,7 +11,8 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { getJson } from "../../../api/client";
 import type { DailyBar } from "../../../api/types";
-import { fmtDate } from "../../../lib/format";
+import { fmtDate, fmtMonYr } from "../../../lib/format";
+import { pyFixed, pyGrouped, pyRound } from "../pyformat";
 import type { Position } from "./store";
 
 export interface SeriesRef {
@@ -21,10 +22,12 @@ export interface SeriesRef {
   /** Printed after the value: "%", "bp", "" (an index), "$". */
   unit: string;
   dp: number;
+  /** How often the series is observed; a reading is dated at this frequency or not at all (V5-06). */
+  freq: "daily" | "monthly";
 }
 
-const fred = (id: string, label: string, unit: string, dp: number): SeriesRef => ({ id, label, kind: "fred", unit, dp });
-const market = (id: string, label: string): SeriesRef => ({ id, label, kind: "market", unit: "$", dp: 2 });
+const fred = (id: string, label: string, unit: string, dp: number, freq: SeriesRef["freq"] = "daily"): SeriesRef => ({ id, label, kind: "fred", unit, dp, freq });
+const market = (id: string, label: string): SeriesRef => ({ id, label, kind: "market", unit: "$", dp: 2, freq: "daily" });
 
 export const FRED_SERIES: SeriesRef[] = [
   fred("DGS10", "10-year Treasury yield", "%", 2),
@@ -34,10 +37,10 @@ export const FRED_SERIES: SeriesRef[] = [
   fred("VIXCLS", "VIX close", "", 2),
   fred("T10YIE", "10-year breakeven inflation", "%", 2),
   fred("T5YIE", "5-year breakeven inflation", "%", 2),
-  fred("UNRATE", "Unemployment rate", "%", 1),
-  fred("CPIAUCSL", "CPI (index)", "", 1),
-  fred("INDPRO", "Industrial production (index)", "", 1),
-  fred("FEDFUNDS", "Fed funds (effective)", "%", 2),
+  fred("UNRATE", "Unemployment rate", "%", 1, "monthly"),
+  fred("CPIAUCSL", "CPI (index)", "", 1, "monthly"),
+  fred("INDPRO", "Industrial production (index)", "", 1, "monthly"),
+  fred("FEDFUNDS", "Fed funds (effective)", "%", 2, "monthly"),
   fred("SOFR", "SOFR", "%", 2),
   fred("DFII10", "10-year TIPS yield", "%", 2),
   fred("DFII5", "5-year TIPS yield", "%", 2),
@@ -77,21 +80,50 @@ export function seriesRef(id: string | null | undefined): SeriesRef | undefined 
 
 export interface Reading {
   value: number;
-  date: string;
+  /** The date that came in the same response as the value, at the series'
+   * own frequency, and only that (review R-07 round 4, V5-06): a stored bar's
+   * day; a monthly FRED series' month; a daily FRED series' day only when the
+   * response carries one (the row's month stamp is never shown for it). Null
+   * otherwise: the value is shown with no date and the page's badge dates the
+   * source on its own. */
+  date: string | null;
+  /** The date names a month (a monthly series). */
+  monthly?: boolean;
+}
+
+/** The date a reading's own response carried, as it reads on the page:
+ * "Sep 18, 2026" for a bar, "Sep 2026" for a FRED month stamp; null when the
+ * response carried none (no attribution is printed). */
+export function readingDate(r: Pick<Reading, "date" | "monthly">): string | null {
+  if (!r.date) return null;
+  return r.monthly ? fmtMonYr(r.date) : fmtDate(r.date);
 }
 
 const MINUTE = 60_000;
 
-async function fetchReading(ref: SeriesRef): Promise<Reading> {
+/** One reading from one response. The value and whatever date that response
+ * carries travel together; nothing is joined from another request. */
+export async function fetchReading(ref: SeriesRef, get: typeof getJson = getJson): Promise<Reading> {
   if (ref.kind === "market") {
     // The stored universe's newest bar; a wide window so a stale store still answers.
-    const bars = await getJson<DailyBar[]>("/api/market/daily", { symbols: ref.id, days: 45 });
+    const bars = await get<DailyBar[]>("/api/market/daily", { symbols: ref.id, days: 45 });
     const last = [...bars].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).at(-1);
     if (!last || last.close == null) throw new Error(`No stored bars for ${ref.id}.`);
-    return { value: last.close, date: last.date };
+    return { value: last.close, date: isDay(last.date) ? last.date.slice(0, 10) : null, monthly: false };
   }
-  const p = await getJson<{ series_id: string; date: string; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
-  return { value: p.value, date: p.date };
+  const p = await get<{ series_id: string; date?: string | null; as_of?: string | null; value: number }>(`/series/${encodeURIComponent(ref.id)}/latest`);
+  // A monthly series is stored by its month: the row's date is that month (V5-06).
+  if (ref.freq === "monthly") return { value: p.value, date: p.date ?? null, monthly: true };
+  // A daily series shows a day or no date. The row's `date` is a month stamp
+  // (one row per month, CLAUDE.md B6), never a day, so it is not shown; a day
+  // is shown only when the response itself carries the observation's day
+  // (`as_of`, the frame-3 API work).
+  return { value: p.value, date: isDay(p.as_of) ? p.as_of.slice(0, 10) : null, monthly: false };
+}
+
+/** A calendar day ("2026-09-17", or an ISO instant on that day). */
+function isDay(x: string | null | undefined): x is string {
+  return typeof x === "string" && /^\d{4}-\d{2}-\d{2}/.test(x);
 }
 
 type ReadingKey = readonly ["desk", "reading", string, string];
@@ -106,14 +138,19 @@ function readingOptions(ref: SeriesRef | undefined) {
   };
 }
 
+/** A failed fetch with no reading held reads "awaiting refresh"; a failed
+ * refetch keeps the reading it holds, with that reading's own date. */
 export function useReading(id: string | null | undefined) {
-  return useQuery<Reading, Error, Reading, ReadingKey>(readingOptions(seriesRef(id)));
+  const q = useQuery<Reading, Error, Reading, ReadingKey>(readingOptions(seriesRef(id)));
+  return { ...q, awaitingRefresh: q.isError && q.data == null };
 }
 
 export interface ReadingState {
   data?: Reading;
   isLoading: boolean;
   isError: boolean;
+  /** The fetch failed and no reading is held: show "awaiting refresh". */
+  awaitingRefresh?: boolean;
 }
 
 /** One reading per position, keyed by the position id. */
@@ -121,7 +158,8 @@ export function useReadings(positions: readonly Position[]): Record<string, Read
   const results = useQueries({ queries: positions.map((p) => readingOptions(seriesRef(p.falsification.series))) });
   const out: Record<string, ReadingState> = {};
   positions.forEach((p, i) => {
-    out[p.id] = { data: results[i]?.data, isLoading: Boolean(results[i]?.isLoading), isError: Boolean(results[i]?.isError) };
+    const r = results[i];
+    out[p.id] = { data: r?.data, isLoading: Boolean(r?.isLoading), isError: Boolean(r?.isError), awaitingRefresh: Boolean(r?.isError) && r?.data == null };
   });
   return out;
 }
@@ -130,7 +168,7 @@ export function useReadings(positions: readonly Position[]): Record<string, Read
 
 export function fmtValue(ref: SeriesRef | undefined, v: number): string {
   const dp = ref?.dp ?? 2;
-  const s = v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  const s = pyGrouped(v, dp);
   if (!ref) return s;
   if (ref.unit === "$") return `$${s}`;
   return ref.unit ? `${s}${ref.unit}` : s;
@@ -152,12 +190,16 @@ export function distanceOf(reading: Reading, level: number, direction: "above" |
   return { falsified, gap, pct };
 }
 
-/** "4.12% now (Sep 18) · falsified below 3.80% · 0.32% away (7.8% of current)". */
+/** "4.12% now · falsified below 3.80% · 0.32% away (7.8% of current)", or
+ * "4.1% now (Aug 2026) · …" for a monthly series: the date is the one the
+ * reading's own response carried, at the series' frequency, and no date at
+ * all otherwise. */
 export function distanceSentence(ref: SeriesRef | undefined, reading: Reading, f: { level: number; direction: "above" | "below" }): { now: string; rule: string; distance: string; falsified: boolean } {
   const d = distanceOf(reading, f.level, f.direction);
-  const now = `${fmtValue(ref, reading.value)} now (${fmtDate(reading.date)})`;
+  const when = readingDate(reading);
+  const now = `${fmtValue(ref, reading.value)} now${when ? ` (${when})` : ""}`;
   const rule = `falsified ${f.direction} ${fmtValue(ref, f.level)}`;
-  const pct = d.pct != null ? ` (${(d.pct * 100).toFixed(1)}% of current)` : "";
+  const pct = d.pct != null ? ` (${pyFixed(d.pct * 100, 1)}% of current)` : "";
   const distance = d.falsified ? `Falsified: ${fmtValue(ref, reading.value)} is ${f.direction === "below" ? "at or under" : "at or over"} ${fmtValue(ref, f.level)}` : `${fmtValue(ref, Math.abs(d.gap))} away${pct}`;
   return { now, rule, distance, falsified: d.falsified };
 }
@@ -169,5 +211,5 @@ export function distanceInWords(reading: Reading, f: { level: number; direction:
   if (d.pct == null) return "distance unknown";
   const pct = d.pct * 100;
   if (pct < 1) return "under one percent from its falsification level";
-  return `about ${Math.round(pct)}% from its falsification level`;
+  return `about ${pyRound(pct)}% from its falsification level`;
 }

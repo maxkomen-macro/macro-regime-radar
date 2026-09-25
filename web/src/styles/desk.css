@@ -998,3 +998,531 @@ select.mrr-desk-input {
     line-height: 1.35;
   }
 }
+
+/* ── Frame-2 (DESK_FRAME2_SPEC): the sentence query, the horizon cells, the
+   events behind a cell, the facts line, quiet states, the Today strip. Tokens
+   only; DESIGN.md wins. ─────────────────────────────────────────────────── */
+
+/* Presets as chips above the sentence. */
+.mrr-desk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.mrr-desk-chip {
+  appearance: none;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill, 999px);
+  background: var(--tile);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.mrr-desk-chip:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.mrr-desk-chip[aria-pressed="true"] {
+  color: var(--text);
+  border-color: rgba(38, 220, 160, 0.5);
+  background: rgba(38, 220, 160, 0.08);
+}
+
+/* The query sentence: body text with the controls inline. */
+.mrr-desk-sentence {
+  margin: 0 0 12px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-lede, 15.5px);
+  line-height: 2.25;
+  color: var(--text-2);
+  max-width: 78ch;
+}
+.mrr-desk-sentence .jargon {
+  color: var(--text);
+}
+.mrr-desk-inline {
+  appearance: none;
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 3px 28px 3px 10px;
+  background: var(--field, #141f29)
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%238f9daa' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M2.5 4.5l3.5 3.5 3.5-3.5'/></svg>")
+    no-repeat right 9px center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--r-ctl, 8px);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.mrr-desk-inline:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.mrr-desk-inline-seg {
+  vertical-align: middle;
+}
+.mrr-desk-refusal {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--amber);
+  background: rgba(245, 181, 46, 0.07);
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption, 13px);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* Quiet states: one line, no empty chart. */
+.mrr-desk-quiet {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption, 13px);
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.mrr-desk-quiet-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+  flex: none;
+}
+
+/* The chart and the verdict side by side: the chart takes the width. */
+.mrr-desk-results {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 400px);
+}
+
+/* Horizon cells under the chart: the keyboard path to the events behind. */
+.mrr-desk-hcells {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.mrr-desk-hcell {
+  appearance: none;
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(150, 175, 200, 0.1);
+  border-radius: var(--r-tile, 9px);
+  background: var(--tile);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.mrr-desk-hcell:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.mrr-desk-hcell[aria-expanded="true"] {
+  border-color: var(--link);
+}
+.mrr-desk-hcell-h {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.mrr-desk-hcell-n {
+  color: var(--text-4);
+  margin-left: 4px;
+}
+.mrr-desk-hcell-v {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.mrr-desk-hcell-base {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.mrr-desk-hcell-ci {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.mrr-desk-hcell-x {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.mrr-desk-hcell[data-exclusion="established"] .mrr-desk-hcell-x {
+  color: var(--mint);
+}
+.mrr-desk-hcell[data-exclusion="not established"] .mrr-desk-hcell-x {
+  color: var(--amber);
+}
+@media (max-width: 767.98px) {
+  .mrr-desk-hcells {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* The events behind a cell. */
+.mrr-desk-behind {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile, 9px);
+  background: var(--tile);
+}
+.mrr-desk-behind-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-kv, 13.5px);
+  color: var(--text);
+}
+.mrr-desk-behind-head strong {
+  font-weight: 500;
+}
+
+/* A by-regime row's toggle and its flag. */
+.mrr-desk-rowbtn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mrr-desk-rowbtn[aria-expanded="true"] {
+  color: var(--link);
+}
+.mrr-desk-flagword {
+  margin-left: 6px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* The verdict's facts line and the client source line. */
+.mrr-desk-facts {
+  margin: 12px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.mrr-desk-source {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption, 13px);
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.mrr-desk-results {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 440px);
+}
+@media (max-width: 1199.98px) {
+  .mrr-desk-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* A card's own controls sit in its body, above what they switch. */
+.mrr-desk-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.mrr-desk-toolbar-label {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+/* S&P Internals: the reads statement and the two cross columns. */
+.mrr-desk-reads {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mrr-desk-reads-plain {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-lede, 15.5px);
+  line-height: 1.55;
+  color: var(--text);
+}
+.mrr-desk-reads-quote {
+  margin: 8px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--line-strong);
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption, 13px);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.mrr-desk-col {
+  display: grid;
+  gap: var(--gap-panel, 14px);
+  align-content: start;
+  min-width: 0;
+}
+.mrr-desk-cols {
+  align-items: start;
+}
+@media (max-width: 1199.98px) {
+  .mrr-desk-cols,
+  .mrr-desk-reads {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Today: one strip of four cards. */
+.mrr-desk-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-panel, 14px);
+  align-items: stretch;
+}
+@media (max-width: 1279.98px) {
+  .mrr-desk-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 767.98px) {
+  .mrr-desk-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mrr-desk-strip-label {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.mrr-desk-strip-value {
+  font-size: 30px;
+  line-height: 1.1;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.mrr-desk-strip-value.mrr-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 34px;
+  letter-spacing: -0.01em;
+}
+.mrr-desk-strip-sub {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.mrr-desk-strip-list {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.mrr-desk-strip-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--text-3);
+}
+.mrr-desk-strip-list li[data-fired="true"] span {
+  color: var(--mint);
+}
+.mrr-desk-strip-card .mrr-desk-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mrr-desk-strip-card .mrr-desk-row-num,
+.mrr-desk-strip-card .mrr-desk-row-meta {
+  text-align: left;
+}
+/* Reserved heights while a study loads: the answer lands where the wait was
+   (a study's cards are taller than one status line). */
+.mrr-desk-quiet[data-reserve="query"] {
+  min-height: 150px;
+  align-items: flex-start;
+}
+.mrr-desk-quiet[data-reserve="reads"] {
+  min-height: 120px;
+  align-items: flex-start;
+}
+.mrr-desk-reserve-results {
+  min-height: 420px;
+}
+.mrr-desk-reserve-col {
+  min-height: 1100px;
+}
+/* Chart legends are prose: the UI face at the 12px floor (V-10). */
+.mrr-desk-legend {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.mrr-desk-flagword {
+  font-size: 12px;
+}
+/* The per-horizon verdict list a chart carries at phone width (V-04). */
+.mrr-desk-hverdicts {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.mrr-desk-hverdicts li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mrr-desk-hverdicts li[data-exclusion="established"] span:last-child {
+  color: var(--mint);
+}
+.mrr-desk-hverdicts li[data-exclusion="not established"] span:last-child {
+  color: var(--amber);
+}
+.mrr-desk-badge[data-state="pending"] {
+  color: var(--text-3);
+}
+/* A pending badge holds the width of the Live badge that replaces it, so the
+   swap when a study lands moves nothing (verifier N-3). */
+@media (min-width: 768px) {
+  .mrr-desk-badge[data-state="pending"] {
+    min-width: 32.5em;
+  }
+}
+.mrr-desk[data-view="client"] .mrr-desk-reserve-col {
+  min-height: 820px;
+}
+/* The Reads card keeps one height from wait to answer (N-3): the waiting
+   line and the loaded list share a floor sized to the loaded content. */
+.mrr-desk-quiet[data-reserve="reads"],
+.mrr-desk-reads {
+  min-height: 136px;
+}
+.mrr-desk[data-view="client"] .mrr-desk-quiet[data-reserve="reads"],
+.mrr-desk[data-view="client"] .mrr-desk-reads {
+  min-height: 48px;
+}
+
+/* The walkthrough strip (frame-2 §6): fixed at the bottom of the Desk's main
+   column; the page keeps room for it so nothing hides under it. */
+.mrr-desk[data-tour] main {
+  padding-bottom: 104px;
+}
+.mrr-desk-tour {
+  position: fixed;
+  left: var(--sidebar-w, 196px);
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 12px 22px;
+  background: var(--strip-grad);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+}
+.mrr-desk-tour-count {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-eyebrow-sm, 11px);
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-eyebrow, var(--text-2));
+  white-space: nowrap;
+}
+.mrr-desk-tour-caption {
+  flex: 1 1 280px;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-kv, 13.5px);
+  line-height: 1.45;
+  color: var(--text);
+}
+.mrr-desk-tour-actions {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 859.98px) {
+  .mrr-desk-tour {
+    left: 0;
+    padding: 10px 16px;
+  }
+}
+@media print {
+  .mrr-desk-tour {
+    display: none !important;
+  }
+  .mrr-desk[data-tour] main {
+    padding-bottom: 0;
+  }
+}
+
+/* Position Monitor: the signal a promotion starts from (frame-2 §6). */
+.mrr-desk-signal {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--link);
+  border-radius: var(--r-tile, 9px);
+  background: var(--tile);
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption, 13px);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.mrr-desk-signal p {
+  margin: 0;
+}
+.mrr-desk-signal strong {
+  font-weight: 500;
+  color: var(--text);
+}
+.mrr-desk-signal blockquote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--text);
+}
