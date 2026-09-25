@@ -47,7 +47,9 @@ function ServedRead({ read }: { read: Read | undefined }) {
   );
 }
 
-function Strip({ history }: { history: RegimeResponse["history"] }) {
+type NextPrintBlock = { date: string; flip_threshold_mom: number | null; flips_to: string | null };
+
+function Strip({ history }: { history: NonNullable<RegimeResponse["history"]> }) {
   const total = history.length;
   const segs = runs(history);
   const first = history[0]?.month;
@@ -175,8 +177,8 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
   const quiet = state === "loading";
   const rec = r?.recession;
   const edges = rec?.band_edges;
-  const hasProb = !!rec && fin(rec.prob);
-  const words = rec && hasProb ? [rec.band ? `${capitalize(rec.band)}.` : "", oneIn(rec.prob) ? `About ${oneIn(rec.prob)} over the next year.` : `${pctPlain(rec.prob)} over the next year.`].filter(Boolean).join(" ") : "";
+  const prob = rec && fin(rec.prob) ? rec.prob : null;
+  const words = rec && prob != null ? [rec.band ? `${capitalize(rec.band)}.` : "", oneIn(prob) ? `About ${oneIn(prob)} over the next year.` : `${pctPlain(prob)} over the next year.`].filter(Boolean).join(" ") : "";
   return (
     <Card
       id="rg-rec"
@@ -185,23 +187,23 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
       busy={quiet}
       footer={<AdvancedPanel adv={adv} items="the five inputs · fit and out-of-sample record · every month since 1970" missing="The logistic model's inputs, its fit record and its monthly history are not served yet." />}
     >
-      {rec && hasProb ? (
+      {rec && prob != null ? (
         <>
           <p className="rg-rec-line">
-            <span className="rg-big rg-rec-big">{pctPlain(rec.prob)}</span>
+            <span className="rg-big rg-rec-big">{pctPlain(prob)}</span>
             <span className="rg-rec-words">{words}</span>
           </p>
           {edges && fin(edges[0]) && fin(edges[1]) ? (
             <Gauge
               min={0}
               max={1}
-              value={rec.prob}
+              value={prob}
               bands={[
                 { label: "Low", to: edges[0], tone: "green" },
                 { label: "Watch", to: edges[1], tone: "neutral" },
                 { label: `Elevated · above ${pctPlain(edges[1])}`, to: 1, tone: "amber" },
               ]}
-              label={`Recession probability ${pctPlain(rec.prob)}${rec.band ? `, ${rec.band}` : ""}`}
+              label={`Recession probability ${pctPlain(prob)}${rec.band ? `, ${rec.band}` : ""}`}
               under
             />
           ) : (
@@ -301,7 +303,7 @@ export function mom(x: number): string {
  * the threshold, a falling one on a print above it. Null when the threshold or
  * the trend is not served (the stat then says Awaiting refresh).
  */
-export function flipWords(kind: "cpi" | "indpro", p: { flip_threshold_mom: number; flips_to: string }, now: unknown): string | null {
+export function flipWords(kind: "cpi" | "indpro", p: { flip_threshold_mom: number | null; flips_to: string | null }, now: unknown): string | null {
   const t = trend(now);
   if (!t || !fin(p.flip_threshold_mom) || typeof p.flips_to !== "string" || !p.flips_to) return null;
   const x = p.flip_threshold_mom;
@@ -328,10 +330,10 @@ export function flipTone(to: string): "green" | "amber" | undefined {
   return k === "green" ? "green" : k === "amber" || k === "red" ? "amber" : undefined;
 }
 
-function NextPrint({ label, kind, p, now }: { label: string; kind: "cpi" | "indpro"; p: { date: string; flip_threshold_mom: number; flips_to: string } | undefined; now: unknown }) {
+function NextPrint({ label, kind, p, now }: { label: string; kind: "cpi" | "indpro"; p: NextPrintBlock | null | undefined; now: unknown }) {
   const words = p ? flipWords(kind, p, now) : null;
   const date = p ? dayShort(p.date) : "";
-  if (!p || !words || !date) return <Stat label={label} awaiting />;
+  if (!p || !words || !date || !p.flips_to) return <Stat label={label} awaiting />;
   return <Stat label={label} value={date} tone={flipTone(p.flips_to)} sub={words} />;
 }
 

@@ -26,7 +26,7 @@ import type { PositionExpanded, PositionsResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { dayShort, grouped, pctPlain, signed } from "../kit/format";
+import { dayShort, grouped, isFiniteNumber, pctPlain, signed } from "../kit/format";
 import { MonitoredRow, sortByRoom } from "../kit/MonitoredRows";
 import { Awaiting } from "../kit/ui";
 import { apiParams, askFromSearch, questionWords, type Ask } from "../event-study/question";
@@ -69,6 +69,8 @@ const MISSING_WORDS: Record<string, string> = { instrument: "the instrument", va
 export function refusalWords(e: unknown): string {
   // deskPost wraps a failed fetch as status 0: the service did not answer (R2-3).
   if (!(e instanceof DeskApiError) || e.status === 0) return "The data service did not answer; nothing was saved.";
+  // The answer came back but could not be read: whether it saved is not known (Codex R-09).
+  if (e.unreadable) return "The data service's answer could not be read; check Monitored before saving again.";
   const body = e.body;
   if (body?.error === "wording") {
     const words = Array.isArray(body.words) ? body.words.filter((w) => typeof w === "string") : [];
@@ -102,7 +104,7 @@ export function sizeLine(p: PositionExpanded): string {
 /** The FALSIFIES AT line: "2s10s below +38 bp · now +41 bp". */
 export function falsifiesLine(p: PositionExpanded): string {
   const v = p.now?.value;
-  const now = p.now && typeof v === "number" ? ` · now ${signed(v, Number.isInteger(v) ? 0 : 1)}${p.now.unit === "%" ? "%" : ` ${p.now.unit}`}` : "";
+  const now = p.now && isFiniteNumber(v) && typeof p.now.unit === "string" ? ` · now ${signed(v, Number.isInteger(v) ? 0 : 1)}${p.now.unit === "%" ? "%" : ` ${p.now.unit}`}` : "";
   return p.falsifies_at?.label ? `${p.falsifies_at.label}${now}` : "—";
 }
 
@@ -189,15 +191,15 @@ function Closed({ data, failed }: { data: PositionsResponse | undefined; failed:
       <dl>
         <div>
           <dt>Falsified on level</dt>
-          <dd>{typeof c.falsified === "number" ? c.falsified : "—"}</dd>
+          <dd>{isFiniteNumber(c.falsified) ? c.falsified : "—"}</dd>
         </div>
         <div>
           <dt>Expired at horizon</dt>
-          <dd>{typeof c.expired === "number" ? c.expired : "—"}</dd>
+          <dd>{isFiniteNumber(c.expired) ? c.expired : "—"}</dd>
         </div>
         <div>
           <dt>Pre-mortem was right</dt>
-          <dd data-tone="amber">{Array.isArray(c.premortem_right) && c.premortem_right.every((x) => typeof x === "number") ? `${c.premortem_right[0]} of ${c.premortem_right[1]}` : "—"}</dd>
+          <dd data-tone="amber">{Array.isArray(c.premortem_right) && c.premortem_right.every(isFiniteNumber) ? `${c.premortem_right[0]} of ${c.premortem_right[1]}` : "—"}</dd>
         </div>
       </dl>
       )}
@@ -275,7 +277,10 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
 
   useEffect(() => {
     if (!sent || carriedAsk) return;
-    setDraft((d) => (d.instrument ? d : { ...d, instrument: sent.instrument }));
+    // A basket served without its instrument words fills nothing (Codex G1-8).
+    const words = sent.instrument;
+    if (typeof words !== "string" || !words.trim()) return;
+    setDraft((d) => (d.instrument ? d : { ...d, instrument: words }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sent?.instrument]);
 
@@ -338,6 +343,8 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
       await client.invalidateQueries({ queryKey: ["desk-v2", "/positions"] });
     } catch (e) {
       setServerNote(refusalWords(e));
+      // An answer that arrived unreadable may have saved: Monitored asks again, so the row shows if it did (Codex G1-7).
+      if (e instanceof DeskApiError && e.unreadable) void client.invalidateQueries({ queryKey: ["desk-v2", "/positions"] });
     } finally {
       setSaving(false);
       // Save turns off after a save; the status line takes the focus (P-14).

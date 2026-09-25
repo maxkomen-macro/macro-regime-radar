@@ -32,7 +32,8 @@ export function applyFilter(rows: readonly LedgerRow[], f: Filter): LedgerRow[] 
 
 /** The quiet rows by verdict, served order within a verdict (a stable sort). */
 export function byVerdict(rows: readonly LedgerRow[]): LedgerRow[] {
-  return [...rows].sort((a, b) => (VERDICT_RANK[a.verdict] ?? 9) - (VERDICT_RANK[b.verdict] ?? 9));
+  const rank = (r: LedgerRow) => (r.verdict ? VERDICT_RANK[r.verdict] : 9) ?? 9;
+  return [...rows].sort((a, b) => rank(a) - rank(b));
 }
 
 /** Whether a box scrolls sideways: the table's region is a Tab stop only then (R2-4). */

@@ -121,7 +121,7 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
           </div>
           <div className="te-vol-sec te-vol-gauge">
             <div className="dk-stat-label">SKEW · WHERE IT SITS</div>
-            {pctile != null && edges && fin(edges[0]) && fin(edges[1]) ? (
+            {pctile != null && fin(vol.skew_pct_2y) && edges && fin(edges[0]) && fin(edges[1]) ? (
               <Gauge
                 thick
                 min={0}
@@ -194,7 +194,8 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
   const hi = all.length ? Math.max(...all) : 1;
   const ticks = extentTicks(lo, hi, range === "3y" ? 4 : 3);
   const domain: [number, number] = [ticks[0], ticks[ticks.length - 1]];
-  const crossI = t?.cross ? pts.findIndex((p) => p.date === t.cross.date) : -1;
+  const served = t?.cross ?? null;
+  const crossI = served ? pts.findIndex((p) => p.date === served.date) : -1;
   const crossWord = t?.cross?.kind === "death" ? "Death" : "Golden";
   const ready = state === "ready" && !!t;
   return (
@@ -241,7 +242,8 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
           <b>
             <span className="dk-dot" aria-hidden="true" /> {dayLong(t.cross.date)} — the 50-day crossed {t.cross.kind === "golden" ? "above" : "below"} the 200-day.
           </b>{" "}
-          This has happened {cross.n} times before{fin(cross.up_pct) ? `; the S&P was higher a month later ${pctPlain(cross.up_pct)} of the time` : ""}. <VerdictWord verdict={cross.verdict} />.
+          {fin(cross.n) ? `This has happened ${cross.n} times before` : "How often this has happened is awaiting refresh"}
+          {fin(cross.up_pct) ? `; the S&P was higher a month later ${pctPlain(cross.up_pct)} of the time` : ""}. <VerdictWord verdict={cross.verdict} />.
         </div>
       ) : null}
     </section>
@@ -254,7 +256,7 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
  * edge; §12.4 names no third key, so rows keep their served order within a
  * group (a stable sort), as the Ledger PNG draws them. */
 export function ledgerOrder(rows: readonly LedgerRow[]): LedgerRow[] {
-  const rank = (r: LedgerRow) => VERDICT_RANK[r.verdict] ?? 9;
+  const rank = (r: LedgerRow) => (r.verdict ? VERDICT_RANK[r.verdict] : 9) ?? 9;
   return [...rows].sort((a, b) => Number(b.firing_now) - Number(a.firing_now) || rank(a) - rank(b));
 }
 
@@ -302,7 +304,8 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
             <li key={r.slug}>
               <b>{spxName(r.label)}</b>
               <span>
-                {r.n}×{year(r.sample_start) ? ` since ${year(r.sample_start)}` : ""}
+                {fin(r.n) ? `${r.n}×` : "—"}
+                {fin(r.n) && year(r.sample_start) ? ` since ${year(r.sample_start)}` : ""}
                 {fin(r.up_pct) ? (
                   <>
                     {" "}
@@ -354,9 +357,10 @@ export function sevenOf<T>(sorted: readonly T[]): T[] {
 function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardState }) {
   const adv = useAdvanced();
   const served = Array.isArray(s?.leadership) ? s.leadership : [];
-  type Valued = SectorsResponse["leadership"][number] & { rel_ret: number };
+  type Row = NonNullable<SectorsResponse["leadership"]>[number];
+  type Valued = Row & { rel_ret: number };
   const rows = served.filter((r): r is Valued => fin(r.rel_ret)).sort((a, b) => b.rel_ret - a.rel_ret);
-  const toRow = (r: SectorsResponse["leadership"][number]) => ({ key: r.etf, ticker: r.etf, name: r.short ?? "", value: fin(r.rel_ret) ? r.rel_ret : null });
+  const toRow = (r: Row) => ({ key: r.etf, ticker: r.etf, name: r.short ?? "", value: fin(r.rel_ret) ? r.rel_ret : null });
   const lo = rows.length ? rows[rows.length - 1].rel_ret : 0;
   const hi = rows.length ? rows[0].rel_ret : 0;
   return (
@@ -403,7 +407,7 @@ function RsiNote({ label, row }: { label: string; row: LedgerRow | undefined }) 
   if (!row) return null;
   return (
     <div className="dk-read te-rsi-note">
-      <b>{label}:</b> fired {row.n}×{year(row.sample_start) ? ` since ${year(row.sample_start)}` : ""}
+      <b>{label}:</b> {fin(row.n) ? `fired ${row.n}×${year(row.sample_start) ? ` since ${year(row.sample_start)}` : ""}` : "times fired awaiting refresh"}
       {fin(row.up_pct) ? `; the S&P was up ${pctPlain(row.up_pct)} of the time a month later` : ""}. <VerdictWord verdict={row.verdict} />.
     </div>
   );
@@ -468,7 +472,7 @@ function RsiCard({ t, state, ledger }: { t: TechnicalsResponse | undefined; stat
         <RsiNote label="Below 30" row={below} />
       </div>
       <div className="te-foot">
-        <AdvancedPanel adv={adv} items={below ? `full RSI line · all ${below.n} oversold events · regime split` : "full RSI line · oversold events · regime split"} missing="The RSI line, the oversold events and the regime split are not served yet." />
+        <AdvancedPanel adv={adv} items={below && fin(below.n) ? `full RSI line · all ${below.n} oversold events · regime split` : "full RSI line · oversold events · regime split"} missing="The RSI line, the oversold events and the regime split are not served yet." />
       </div>
     </section>
   );

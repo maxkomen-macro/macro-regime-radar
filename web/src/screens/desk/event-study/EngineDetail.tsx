@@ -15,8 +15,8 @@ import { ApiError } from "../../../api/client";
 import { isEngineAbsent, useEventStudy, useEventStudyAssets, type EventStudyHorizon, type EventStudyResponse } from "../../../api/desk";
 import { useStudyEvents } from "../data/api";
 import type { Question, StudyResponse } from "../data/types";
-import { dayLong, grouped, pct, pctPlain, VERDICT_LABEL } from "../kit/format";
-import { Awaiting } from "../kit/ui";
+import { dayLong, grouped, isFiniteNumber as fin, pct, pctPlain } from "../kit/format";
+import { Awaiting, verdictLabel } from "../kit/ui";
 import { factsLine, fmtInterval, fmtMove, fmtZ, historyLine, missingForwardWord } from "./format";
 import { apiParams, type Ask } from "./question";
 
@@ -132,7 +132,7 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
     <section className="dk-card es-advanced" id={id} aria-label="Advanced">
       <div className="es-adv-grid">
         <div>
-          <p className="dk-stat-label es-rail-h">All {study.n_events} events</p>
+          <p className="dk-stat-label es-rail-h">{fin(study.n_events) ? `All ${study.n_events} events` : "All events"}</p>
           {list ? (
             <table className="es-table es-wide">
               <thead>
@@ -164,25 +164,33 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
         <div>
           <p className="dk-stat-label es-rail-h">Resampling detail</p>
           <p className="es-note">
-            Cluster bootstrap, {typeof pv.bootstrap === "number" ? grouped(pv.bootstrap) : "an unstated number of"} draws, ranges at {pctPlain(study.confidence)} confidence. A verdict is Reliable when 10 or more independent episodes stand behind it and fewer than 3% of resamples go the other way; Suggestive when it leans but the range crosses zero or there are fewer than 10; No edge when it is about the same as any month.
+            Cluster bootstrap, {pv && fin(pv.bootstrap) ? grouped(pv.bootstrap) : "an unstated number of"} draws, ranges at {fin(study.confidence) ? `${pctPlain(study.confidence)} confidence` : "the served confidence"}. A verdict is Reliable when 10 or more independent episodes stand behind it and fewer than 3% of resamples go the other way; Suggestive when it leans but the range crosses zero or there are fewer than 10; No edge when it is about the same as any month.
           </p>
-          <ul className="es-ranges">
-            {study.horizons.map((h) => (
-              <li key={h.h}>
-                <span>{h.label}</span>
-                <span className="es-range-pts">{h.ci_lo_pts > 0 || h.ci_hi_pts < 0 ? "clears zero" : "includes zero"}</span>
-                <span>{VERDICT_LABEL[h.verdict]}</span>
-              </li>
-            ))}
-          </ul>
+          {Array.isArray(study.horizons) ? (
+            <ul className="es-ranges">
+              {study.horizons.map((h) => (
+                <li key={h.h}>
+                  <span>{h.label}</span>
+                  <span className="es-range-pts">{!fin(h.ci_lo_pts) || !fin(h.ci_hi_pts) ? "Awaiting refresh" : h.ci_lo_pts > 0 || h.ci_hi_pts < 0 ? "clears zero" : "includes zero"}</span>
+                  <span>{verdictLabel(h.verdict)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Awaiting>the study's horizons</Awaiting>
+          )}
           <p className="dk-stat-label es-rail-h">Entry rules</p>
-          <p className="es-note">
-            The condition is checked on the shock day; entry is the {pv.entry}; a new event needs {pv.cooldown} sessions after the last one.
-          </p>
+          {pv ? (
+            <p className="es-note">
+              The condition is checked on the shock day; entry is the {pv.entry || "served entry rule"}; {fin(pv.cooldown) ? `a new event needs ${pv.cooldown} sessions after the last one.` : "the cooldown between events was not served."}
+            </p>
+          ) : (
+            <Awaiting>the study's entry rules</Awaiting>
+          )}
           <p className="dk-stat-label es-rail-h">Provenance</p>
           <p className="es-prov">
             as of {study.as_of} · generation {study.generation_id} · inputs {study.inputs_hash}
-            {Object.entries(pv.series_start ?? {}).map(([k, v]) => ` · ${k} from ${v}`)}
+            {Object.entries(pv?.series_start ?? {}).map(([k, v]) => ` · ${k} from ${v}`)}
           </p>
         </div>
       </div>

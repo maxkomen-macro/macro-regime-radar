@@ -8,6 +8,13 @@
  * Fractions stay fractions (0.12 is 12%); the `_pts` and `_bp` fields are
  * already in points or basis points. Dates are ISO days ("2026-09-22") or
  * months ("2026-05") at the series' own frequency.
+ *
+ * Honest about what can be missing (Codex R-01, R-10): every served
+ * statistic is `number | null`, and every block a panel reads on its own is
+ * optional, so the compiler makes each page check a value is finite before
+ * it formats it and a block is present before it reads it. A null keeps its
+ * label and prints "Awaiting refresh"; a table cell prints "—" (§12.13).
+ * `data/api.ts` checks the top-level shape at the response boundary.
  */
 
 /** §1.5's three verdicts, and §12.2's "insufficient" for fewer than 10 events. */
@@ -41,23 +48,25 @@ export interface LedgerRow {
   slug: string;
   label: string;
   group: "spx" | "cross";
-  last_fired: string;
-  n: number;
-  up_pct: number;
-  median: number;
-  vs_normal_pts: number;
-  verdict: Verdict;
-  firing_now: boolean;
-  firing_day?: number;
+  last_fired: string | null;
+  n: number | null;
+  up_pct: number | null;
+  median: number | null;
+  vs_normal_pts: number | null;
+  /** Absent when the server sent a verdict the Desk does not know (the pill prints "—"). */
+  verdict?: Verdict;
+  /** Absent when not served: the row claims neither firing nor quiet. */
+  firing_now?: boolean;
+  firing_day?: number | null;
   /** PROPOSED (§12.13): first session of the signal's sample, for "since 1990" / "since 2000". */
-  sample_start: string;
+  sample_start: string | null;
   /** PROPOSED (§12.13): a short name for lists ("golden cross", "RSI < 30"). */
   short?: string;
 }
 
 export interface LedgerResponse extends Envelope {
-  normal_month: number;
-  signals: LedgerRow[];
+  normal_month: number | null;
+  signals?: LedgerRow[];
 }
 
 // ── §12.8 /positions ──────────────────────────────────────────────────────
@@ -77,8 +86,8 @@ export interface PositionCompact {
   room_pct: number | null;
   to_level: ToLevel | null;
   opened: string;
-  horizon_days: number;
-  day: number;
+  horizon_days: number | null;
+  day: number | null;
 }
 
 /** §12.8's expanded row: the compact row plus the gate text and the level. */
@@ -86,7 +95,7 @@ export interface PositionExpanded extends PositionCompact {
   /** PROPOSED (§12.13) shape: the level that falsifies the idea, in words and number. */
   falsifies_at: { label: string; value: number | null; unit: string | null } | null;
   /** PROPOSED (§12.13) shape: the level's series today, dated at its own frequency. */
-  now: { value: number; unit: string; date: string } | null;
+  now: { value: number | null; unit: string; date: string } | null;
   dv01: number | null;
   variant: string;
   pre_mortem: string;
@@ -96,8 +105,8 @@ export interface PositionExpanded extends PositionCompact {
 
 /** GET /positions (PROPOSED shape, §12.13). */
 export interface PositionsResponse extends Envelope {
-  positions: PositionExpanded[];
-  closed_90d: { falsified: number; expired: number; premortem_right: [number, number] };
+  positions?: PositionExpanded[];
+  closed_90d?: { falsified: number | null; expired: number | null; premortem_right: [number | null, number | null] | null };
 }
 
 // ── §12.11 /pipeline ──────────────────────────────────────────────────────
@@ -127,28 +136,29 @@ export interface PipelineGroup {
 }
 
 export interface PipelineResponse extends Envelope {
-  last_refresh_utc: string;
+  last_refresh_utc: string | null;
   validation: string;
-  groups: PipelineGroup[];
+  groups?: PipelineGroup[];
 }
 
 // ── §12.1 /overview ───────────────────────────────────────────────────────
 
 export interface SinceLastClose {
-  new_fires: { slug: string; label: string }[];
-  still_firing: { slug: string; label: string; day: number }[];
-  vol_change_pts: number;
+  new_fires?: { slug: string; label: string }[];
+  still_firing?: { slug: string; label: string; day: number | null }[];
+  vol_change_pts: number | null;
   skew_direction: string;
-  regime_changed: boolean;
+  /** Absent when not served: the line says nothing about the regime. */
+  regime_changed?: boolean;
   regime_from: string | null;
   regime_to: string | null;
   refreshed_at_utc: string;
 }
 
 export interface OverviewTiles {
-  regime: { label: string; print: string; growth: string; inflation: string; months_in: number };
-  recession: { prob: number; band: string; inputs_through: string };
-  trend: {
+  regime?: { label: string; print?: string; growth?: string; inflation?: string; months_in: number | null };
+  recession?: { prob: number | null; band: string; inputs_through: string };
+  trend?: {
     above_50: boolean;
     above_200: boolean;
     since: string;
@@ -157,21 +167,21 @@ export interface OverviewTiles {
     /** PROPOSED (§12.13): the session the trend is read at, dating the tile's badge. */
     date: string;
   };
-  vol: {
-    vix: number;
+  vol?: {
+    vix: number | null;
     date: string;
-    realized_20d: number;
-    gap_pts: number;
+    realized_20d: number | null;
+    gap_pts: number | null;
     /** PROPOSED (§12.13): the word for the VIX level ("calm"), set by the server. */
     band: string;
   };
 }
 
 export interface OverviewResponse extends Envelope {
-  since_last_close: SinceLastClose;
-  tiles: OverviewTiles;
-  active_signals: LedgerRow[];
-  monitored: PositionCompact[];
+  since_last_close?: SinceLastClose;
+  tiles?: OverviewTiles;
+  active_signals?: LedgerRow[];
+  monitored?: PositionCompact[];
   /** PROPOSED (§12.13): the sidebar TODAY card's data word ("current" | "stale" | "unknown"). */
   data_status: string;
 }
@@ -181,34 +191,34 @@ export interface OverviewResponse extends Envelope {
 /** PROPOSED (§12.13): §12.10 leaves the series points as `[…]`. */
 export interface PricePoint {
   date: string;
-  close: number;
-  ma50: number;
-  ma200: number;
+  close: number | null;
+  ma50: number | null;
+  ma200: number | null;
 }
 
 export interface TechnicalsResponse extends Envelope {
-  price: number;
-  chg_1d: number;
-  ma50: number;
-  ma200: number;
+  price: number | null;
+  chg_1d: number | null;
+  ma50: number | null;
+  ma200: number | null;
   /** PROPOSED (§12.13): price against each average, as fractions (0.021 = 2.1% above). */
-  vs_ma50: number;
-  vs_ma200: number;
-  ret_1y: number;
+  vs_ma50: number | null;
+  vs_ma200: number | null;
+  ret_1y: number | null;
   trend: string;
-  move_20d_sigma: number;
-  rsi: number;
+  move_20d_sigma: number | null;
+  rsi: number | null;
   /** PROPOSED (§12.13): "rising" | "falling" | "flat". */
   rsi_direction: string;
-  rsi_last_above_70: { date: string; spx_1m: number };
-  rsi_last_below_30: { date: string; spx_1m: number };
+  rsi_last_above_70: { date: string; spx_1m: number | null } | null;
+  rsi_last_below_30: { date: string; spx_1m: number | null } | null;
   cross: {
     kind: "golden" | "death";
     date: string;
     /** PROPOSED (§12.13): how often this cross fired in today's regime. */
-    in_regime?: { regime: string; n: number };
-  };
-  series: { "6m": PricePoint[]; "1y": PricePoint[]; "3y": PricePoint[] };
+    in_regime?: { regime: string; n: number | null };
+  } | null;
+  series?: { "6m"?: PricePoint[]; "1y"?: PricePoint[]; "3y"?: PricePoint[] };
 }
 
 // ── §12.2 /study ──────────────────────────────────────────────────────────
@@ -228,47 +238,48 @@ export interface Question {
 export interface StudyHorizon {
   h: number;
   label: string;
-  up_pct: number;
-  up_n?: number;
-  median: number;
-  baseline_median: number;
+  up_pct: number | null;
+  up_n?: number | null;
+  median: number | null;
+  baseline_median: number | null;
   /** PROPOSED (§12.13): the share of ordinary stretches of this length that ended up (the Client view's "vs 62% in an ordinary month"). */
-  baseline_up_pct?: number;
-  ci_lo_pts: number;
-  ci_hi_pts: number;
-  verdict: Verdict;
-  worst?: { ret: number; date: string };
-  best?: { ret: number; date: string };
+  baseline_up_pct?: number | null;
+  ci_lo_pts: number | null;
+  ci_hi_pts: number | null;
+  verdict?: Verdict;
+  worst?: { ret: number | null; date: string } | null;
+  best?: { ret: number | null; date: string } | null;
 }
 
 export interface StudyResponse extends Envelope {
   inputs_hash: string;
   served_from_cache: boolean;
-  elapsed_ms: number;
+  elapsed_ms: number | null;
   slug: string | null;
   question: Question;
-  n_events: number;
-  sample_start: string;
+  n_events: number | null;
+  sample_start: string | null;
   firing_now: boolean;
   last_event: string | null;
-  verdict: Verdict;
+  /** Absent when not served or not known: the verdict box says Awaiting refresh. */
+  verdict?: Verdict;
   headline: string;
   why: string;
   /** PROPOSED (§12.13): the verdict box's bold line ("Lean, don't size."). */
   verdict_line: string;
   /** PROPOSED (§12.13): the verdict box's "what to do" sentence. */
   what_to_do: string;
-  horizons: StudyHorizon[];
-  confidence: number;
+  horizons?: StudyHorizon[];
+  confidence: number | null;
   confidence_note: string;
-  by_regime: { regime: string; n: number; up_pct: number | null; median: number | null }[];
-  last_events: { date: string; regime: string; ret_20: number }[];
-  without_condition: { n_events: number; up_pct: number; median: number; verdict: Verdict } | null;
-  provenance: { bootstrap: number; entry: string; cooldown: number; series_start: Record<string, string> };
-  warnings: string[];
+  by_regime?: { regime: string; n: number | null; up_pct: number | null; median: number | null }[];
+  last_events?: { date: string; regime: string; ret_20: number | null }[];
+  without_condition?: { n_events: number | null; up_pct: number | null; median: number | null; verdict: Verdict } | null;
+  provenance?: { bootstrap: number | null; entry: string; cooldown: number | null; series_start?: Record<string, string> };
+  warnings?: string[];
   empty_state?: { sentence: string; fixes: string[] };
   /** PROPOSED (§12.13): the 12 series every slot lists, key and label. */
-  series: { key: string; label: string }[];
+  series?: { key: string; label: string }[];
   /** PROPOSED (§12.13): the Client view's question and paragraph, in plain words. */
   client?: { headline: string; summary: string };
 }
@@ -276,32 +287,32 @@ export interface StudyResponse extends Envelope {
 /** §12.3 /study/events (PROPOSED shape, §12.13); CSV with `Accept: text/csv`. */
 export interface StudyEventsResponse extends Envelope {
   slug: string | null;
-  events: { date: string; regime: string; ret_5: number | null; ret_10: number | null; ret_20: number | null; ret_60: number | null }[];
+  events?: { date: string; regime: string; ret_5: number | null; ret_10: number | null; ret_20: number | null; ret_60: number | null }[];
 }
 
 // ── §12.5 /regime ─────────────────────────────────────────────────────────
 
 export interface RegimeResponse extends Envelope {
-  current: { label: string; print: string; growth: string; inflation: string; months_in: number; since: string };
-  history: { month: string; regime: string }[];
-  recession: {
-    prob: number;
+  current?: { label?: string; print: string; growth: string; inflation: string; months_in: number | null; since: string };
+  history?: { month: string; regime: string }[];
+  recession?: {
+    prob: number | null;
     inputs_through: string;
-    year_ago: number;
-    peak: { prob: number; month: string };
+    year_ago: number | null;
+    peak: { prob: number | null; month: string } | null;
     /** PROPOSED (§12.13): the band word ("low"), as the Overview tile's `band`. */
     band: string;
     /** PROPOSED (§12.13): the probability edges between Low | Watch | Elevated. */
-    band_edges: [number, number];
+    band_edges: [number, number] | null;
   };
-  stats: { regime: string; months: number; spx_mo: number; up_pct: number; vix_avg: number; stock_bond_corr: number }[];
-  next_prints: {
-    cpi: { date: string; flip_threshold_mom: number; flips_to: string };
-    indpro: { date: string; flip_threshold_mom: number; flips_to: string };
+  stats?: { regime: string; months: number | null; spx_mo: number | null; up_pct: number | null; vix_avg: number | null; stock_bond_corr: number | null }[];
+  next_prints?: {
+    cpi?: { date: string; flip_threshold_mom: number | null; flips_to: string | null } | null;
+    indpro?: { date: string; flip_threshold_mom: number | null; flips_to: string | null } | null;
   };
-  changes: { month: string; from: string; to: string; spx_1m: number }[];
+  changes?: { month: string; from: string; to: string; spx_1m: number | null }[];
   /** PROPOSED (§12.13): the cards' sentences (`stats`, `changes`, `year_ago`). */
-  reads: { stats?: Read; changes?: Read; year_ago?: Read };
+  reads?: { stats?: Read; changes?: Read; year_ago?: Read };
 }
 
 // ── §12.6 /macro ──────────────────────────────────────────────────────────
@@ -316,8 +327,8 @@ export interface CurvePoint {
 }
 
 export interface MacroResponse extends Envelope {
-  curve: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null };
-  stock_bond: {
+  curve?: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null };
+  stock_bond?: {
     today: number | null;
     year_ago: number | null;
     /** The month the sign last changed; null when it has not changed within the served year (§12.13). */
@@ -328,7 +339,7 @@ export interface MacroResponse extends Envelope {
     words: { today?: string; year_ago?: string; flipped?: string };
     series: { date: string; corr: number | null }[];
   };
-  credit: {
+  credit?: {
     hy: number | null;
     hy_pct_3y: number | null;
     hy_range_3y: [number | null, number | null] | null;
@@ -340,28 +351,28 @@ export interface MacroResponse extends Envelope {
     /** PROPOSED (§12.13): the stat words ("tight", "also tight", "today near the low"). */
     words: { hy?: string; ig?: string; range?: string };
   };
-  correlations: { asset: string; corr: number | null; meaning: string }[];
+  correlations?: { asset: string; corr: number | null; meaning: string }[];
   /** `labels` is PROPOSED (§12.13): the assets' names, in `assets` order. */
-  matrix: { assets: string[]; labels?: string[]; window: number; values: (number | null)[][] };
+  matrix?: { assets: string[]; labels?: string[]; window: number | null; values: (number | null)[][] };
   /** PROPOSED (§12.13): the cards' sentences. */
-  reads: { curve?: Read; front_end?: Read; stock_bond?: Read; credit?: Read; correlations?: Read };
+  reads?: { curve?: Read; front_end?: Read; stock_bond?: Read; credit?: Read; correlations?: Read };
 }
 
 // ── §12.9 /vol ────────────────────────────────────────────────────────────
 
 export interface VolResponse extends Envelope {
   source: string;
-  skew_25d_1m_pts: number;
-  skew_pct_2y: number;
+  skew_25d_1m_pts: number | null;
+  skew_pct_2y: number | null;
   skew_trend: string;
-  atm_iv_1m: number;
-  realized_20d: number;
-  term: { "1m": number; "3m": number; "6m": number };
+  atm_iv_1m: number | null;
+  realized_20d: number | null;
+  term: { "1m": number | null; "3m": number | null; "6m": number | null } | null;
   history_from: string;
   /** PROPOSED (§12.13): the percentile edges between Cheap | Typical | Expensive. */
-  skew_band_edges: [number, number];
+  skew_band_edges: [number, number] | null;
   /** PROPOSED (§12.13): the card's sentences. */
-  reads: { skew: Read; iv_rv: Read; term_meaning: Read; term: Read; gauge: Read };
+  reads?: { skew?: Read; iv_rv?: Read; term_meaning?: Read; term?: Read; gauge?: Read };
 }
 
 // ── §12.7 /sectors ────────────────────────────────────────────────────────
@@ -380,20 +391,20 @@ export interface RelPoint {
 }
 
 export interface SectorsResponse extends Envelope {
-  window_months: number;
-  leadership: SectorRow[];
+  window_months: number | null;
+  leadership?: SectorRow[];
   pattern: string;
-  breadth: {
+  breadth?: {
     above_50: { n: number | null; of: number | null; month_ago: number | null; by_etf?: Record<string, boolean> };
     /** `broad` is PROPOSED (§12.13): the engine's call that the 200-day trend is broad (the value is green). */
     above_200: { n: number | null; of: number | null; by_etf?: Record<string, boolean>; broad?: boolean };
     eqw_vs_cap_3m: number | null;
-    eqw_vs_cap_series: RelPoint[];
+    eqw_vs_cap_series?: RelPoint[];
     /** PROPOSED (§12.13) point shape: §12.7 leaves it as `["… 252"]`. */
-    small_vs_large_series: RelPoint[];
+    small_vs_large_series?: RelPoint[];
   };
   /** PROPOSED (§12.13): the cards' sentences. */
-  reads: { leadership_brief: Read; leadership: Read; breadth: Read };
+  reads?: { leadership_brief?: Read; leadership?: Read; breadth?: Read };
   /** PROPOSED (§12.13): the stat notes the engine words ("growth sectors over defensives", "trend still broad", "big names carrying it"). */
   words?: { pattern?: string; above_200?: string; eqw?: string };
 }
@@ -424,19 +435,19 @@ export interface BasketPriced {
   bench_vol: number | null;
   vol_ratio: number | null;
   beta: number | null;
-  series: { date: string; value: number }[];
-  reads: { chart: Read | null; beta: Read | null };
+  series?: { date: string; value: number | null }[];
+  reads?: { chart?: Read | null; beta?: Read | null };
 }
 
 export interface BasketResponse extends Envelope, BasketPriced {
   id: string;
   name: string;
   /** The basket in two or three words ("AI-infra"), for the chart's question. */
-  short: string;
+  short?: string;
   /** What Position Monitor's instrument field reads ("AI infrastructure basket vs 1.6 × NDX"). */
-  instrument: string;
-  rebalance: string;
-  prices_as_of: string;
+  instrument?: string;
+  rebalance?: string;
+  prices_as_of?: string;
   /** The baskets the server keeps, for the selector. */
   baskets: { id: string; name: string }[];
   legs: BasketLeg[];
@@ -451,25 +462,25 @@ export type HedgeMode = "protect" | "express" | "neutralize";
 
 export interface HedgeScenario {
   /** The benchmark's move over the month. */
-  ndx: number;
-  basket: number;
-  hedged: number;
+  ndx: number | null;
+  basket: number | null;
+  hedged: number | null;
 }
 
 export interface HedgeOption {
   id: string;
   label: string;
   underlying: string;
-  cost_pct: number;
-  breakeven: number;
-  max_loss: number;
+  cost_pct: number | null;
+  breakeven: number | null;
+  max_loss: number | null;
   note: string;
   /** Dollars of the underlying's notional per $100 of basket. */
-  hedge_per_100: number;
-  delta: number;
-  theta_pct_week: number;
-  roll: { date: string; days: number; at_dte: number };
-  scenarios: HedgeScenario[];
+  hedge_per_100: number | null;
+  delta: number | null;
+  theta_pct_week: number | null;
+  roll: { date: string; days: number | null; at_dte: number | null } | null;
+  scenarios?: HedgeScenario[];
   scenario_note: string;
 }
 
@@ -481,7 +492,7 @@ export interface HedgeResponse extends Envelope {
   surface_as_of: string;
   provider: string;
   beta: number | null;
-  options: HedgeOption[];
+  options?: HedgeOption[];
   recommended: string | null;
-  reads: { why_index: Read | null; recommendation: Read | null };
+  reads?: { why_index?: Read | null; recommendation?: Read | null };
 }

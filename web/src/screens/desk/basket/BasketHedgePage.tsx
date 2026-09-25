@@ -88,7 +88,7 @@ function useSettled<T>(value: T, ms = 400): T {
 /** The chart's question and the residual over the served window (§10). */
 function ResidualChart({ p, short }: { p: BasketPriced; short: string }) {
   const [ref, width] = useWidth<HTMLDivElement>(600);
-  const s = Array.isArray(p.series) ? p.series.filter((x) => x && fin(x.value)) : [];
+  const s = Array.isArray(p.series) ? p.series.filter((x): x is { date: string; value: number } => !!x && fin(x.value)) : [];
   const f = fin(p.falsifies_at) ? p.falsifies_at * 100 : null;
   const bench = p.benchmark?.label ?? "the benchmark";
   if (!s.length) return <Awaiting>the residual's recent sessions</Awaiting>;
@@ -263,7 +263,7 @@ function Legs({ legs, onChange, empty }: { legs: WorkLeg[] | null; onChange: (le
 
 /** Why a set of weights has no price, from the pricing answer. */
 function priceWords(err: unknown): string {
-  if (err instanceof DeskApiError) return err.status >= 400 && err.status < 500 ? "The pricing service has no price for these weights." : "The pricing service did not answer for these weights.";
+  if (err instanceof DeskApiError && !err.unreadable) return err.status >= 400 && err.status < 500 ? "The pricing service has no price for these weights." : "The pricing service did not answer for these weights.";
   // An answer that arrived but was not the shape (or not JSON at all).
   return "The pricing service's answer could not be read.";
 }
@@ -496,7 +496,8 @@ function OptionRow({ o, picked, name, onPick }: { o: HedgeOption; picked: boolea
 }
 
 function Scenarios({ o }: { o: HedgeOption }) {
-  const rows = Array.isArray(o.scenarios) ? o.scenarios.filter((r) => r && fin(r.ndx) && fin(r.basket) && fin(r.hedged)) : [];
+  type Row = { ndx: number; basket: number; hedged: number };
+  const rows = Array.isArray(o.scenarios) ? o.scenarios.filter((r): r is Row => !!r && fin(r.ndx) && fin(r.basket) && fin(r.hedged)) : [];
   // Whole points print whole (−32%), others to a tenth (−1.1%).
   const cell = (v: number) => (v === 0 ? <span className="dk-signed" data-tone="flat">0%</span> : <Signed value={v}>{pct(v, Number.isInteger(Math.round(v * 1000) / 10) ? 0 : 1)}</Signed>);
   if (!rows.length) return null;

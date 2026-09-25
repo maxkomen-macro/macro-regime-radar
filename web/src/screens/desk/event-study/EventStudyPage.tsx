@@ -16,11 +16,11 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { deskUrl, useOverview, useStudy } from "../data/api";
-import type { Question } from "../data/types";
+import type { Question, StudyResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { dayShort, grouped, year } from "../kit/format";
+import { dayShort, grouped, isFiniteNumber as fin, year } from "../kit/format";
 import AnswerCard from "./AnswerCard";
 import EngineDetail from "./EngineDetail";
 import QueryCard, { type Mode } from "./QueryCard";
@@ -30,10 +30,10 @@ import { saveServed } from "../kit/download";
 import "./study.css";
 
 /** The provenance line under the grid (§4). */
-export function provenanceLine(s: { as_of: string; slug: string | null; provenance: { bootstrap: number; entry: string; cooldown: number; series_start: Record<string, string> } }, label: (k: string) => string): string {
+export function provenanceLine(s: Pick<StudyResponse, "as_of" | "slug" | "provenance">, label: (k: string) => string): string {
   const p = s.provenance;
-  const hist = Object.entries(p.series_start ?? {}).map(([k, v]) => `${label(k)} history from ${year(v)}`);
-  return [`Engine as of ${dayShort(s.as_of)}`, typeof p.bootstrap === "number" ? `cluster bootstrap ${grouped(p.bootstrap)}` : null, p.entry ? `entry ${p.entry}` : null, typeof p.cooldown === "number" ? `cooldown ${p.cooldown}` : null, ...hist, s.slug ? `slug ${s.slug}` : null]
+  const hist = Object.entries(p?.series_start ?? {}).map(([k, v]) => `${label(k)} history from ${year(v)}`);
+  return [dayShort(s.as_of) ? `Engine as of ${dayShort(s.as_of)}` : null, fin(p?.bootstrap) ? `cluster bootstrap ${grouped(p.bootstrap)}` : null, p?.entry ? `entry ${p.entry}` : null, fin(p?.cooldown) ? `cooldown ${p.cooldown}` : null, ...hist, s.slug ? `slug ${s.slug}` : null]
     .filter(Boolean)
     .join(" · ");
 }
@@ -144,7 +144,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const unreadLink = oldLink && !search.get("preset") && !questionFromEngine(oldLink) ? oldLink : null;
   const engineSlug = study?.question ? engineSlugFor(study.question) : null;
   const priceHref = askParams(ask).reduce((href, [k, v]) => withParam(href, k === "preset" ? "study" : k, v), withParam(pathTo("basket-hedge"), "mode", "express"));
-  const scored = !!study && study.verdict !== "insufficient" && study.n_events >= 10;
+  const scored = !!study && study.verdict !== "insufficient" && !(fin(study.n_events) && study.n_events < 10);
   const askedHorizon = "question" in ask ? ask.question.horizon : study?.question?.horizon;
 
   return (

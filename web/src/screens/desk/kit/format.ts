@@ -3,14 +3,26 @@
  * Negative numbers carry a true minus (U+2212), as the mockups print them;
  * fractions arrive as fractions (0.031) and leave as percents ("+3.1%").
  * Nothing here computes a statistic: it only spells served numbers.
+ *
+ * A number that is not finite (null, undefined, NaN, a string) never prints
+ * as a number: the formatters return "—" (Codex R-01; `Math.abs(null)` is 0,
+ * so an unchecked null used to print "0.0%"). The pages check first and say
+ * "Awaiting refresh" under the stat's label; "—" is the floor under that.
  */
 
 import type { Verdict } from "../data/types";
 
 export const MINUS = "−";
 
+/** What a formatter prints for a value that is not a finite number. */
+export const NOT_SERVED = "—";
+
+/** A served statistic that can be printed. */
+export const isFiniteNumber = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+
 /** A number with a sign: "+2.7", "−0.4", "0.0" for a rounded zero. */
 export function signed(x: number, digits = 1): string {
+  if (!isFiniteNumber(x)) return NOT_SERVED;
   const s = Math.abs(x).toFixed(digits);
   if (Number(s) === 0) return s;
   return `${x < 0 ? MINUS : "+"}${s}`;
@@ -18,27 +30,29 @@ export function signed(x: number, digits = 1): string {
 
 /** A number without a forced plus: "16.2", "−0.24". */
 export function num(x: number, digits = 1): string {
+  if (!isFiniteNumber(x)) return NOT_SERVED;
   const s = Math.abs(x).toFixed(digits);
   return Number(s) === 0 || x >= 0 ? s : `${MINUS}${s}`;
 }
 
 /** A fraction as a signed percent: 0.031 → "+3.1%". */
 export function pct(frac: number, digits = 1): string {
-  return `${signed(frac * 100, digits)}%`;
+  return isFiniteNumber(frac) ? `${signed(frac * 100, digits)}%` : NOT_SERVED;
 }
 
 /** A fraction as an unsigned percent: 0.68 → "68%". */
 export function pctPlain(frac: number, digits = 0): string {
-  return `${num(frac * 100, digits)}%`;
+  return isFiniteNumber(frac) ? `${num(frac * 100, digits)}%` : NOT_SERVED;
 }
 
 /** Points, signed: 1.4 → "+1.4 pts". */
 export function pts(x: number, digits = 1): string {
-  return `${signed(x, digits)} pts`;
+  return isFiniteNumber(x) ? `${signed(x, digits)} pts` : NOT_SERVED;
 }
 
 /** Thousands with a comma: 6412 → "6,412". */
 export function grouped(x: number, digits = 0): string {
+  if (!isFiniteNumber(x)) return NOT_SERVED;
   const s = x.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
   return s.startsWith("-") ? `${MINUS}${s.slice(1)}` : s;
 }

@@ -254,3 +254,70 @@ describe("Event Study tab", () => {
     expect(adv).toHaveTextContent(/includes zero|clears zero/);
   });
 });
+
+describe("a study with a block missing (Codex R-10)", () => {
+  const without = (key: string) => () => {
+    const copy: Record<string, unknown> = { ...study };
+    delete copy[key];
+    return copy;
+  };
+  const rail = () => screen.getByRole("complementary", { name: "Verdict and detail" });
+  const answer = () => screen.getByRole("region", { name: "The answer" });
+
+  it("without horizons: the stats and the chart say Awaiting refresh, the rest stands", async () => {
+    stubDesk({ "/api/desk/study": without("horizons") });
+    renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent("Awaiting refresh · the study's horizons"));
+    expect(answer()).toHaveTextContent(/Events\s*18\s*since 2000/);
+    expect(answer()).toHaveTextContent(/Up a month later\s*Awaiting refresh/);
+    expect(answer()).toHaveTextContent(/Median at a month\s*Awaiting refresh/);
+    expect(rail()).toHaveTextContent(/80%90%95%\s*Awaiting refresh/);
+    expect(rail()).toHaveTextContent(/By regime · a month later.*Goldilocks/);
+  });
+
+  it("without provenance: the line under the grid keeps what was served, the entry rules say Awaiting refresh", async () => {
+    stubDesk({ "/api/desk/study": without("provenance") });
+    renderTab();
+    await waitFor(() => expect(screen.getByText(/^Engine as of Sep 22 · slug gold-2sigma-spx-weak$/)).toBeInTheDocument());
+    fireEvent.click(within(rail()).getByTestId("dk-advanced"));
+    await waitFor(() => expect(document.body).toHaveTextContent(/Entry rules\s*Awaiting refresh · the study's entry rules/));
+    expect(answer()).toHaveTextContent(/Up a month later\s*67%/);
+  });
+
+  it("without by_regime: that block says Awaiting refresh; the answer and the other blocks stand", async () => {
+    stubDesk({ "/api/desk/study": without("by_regime") });
+    renderTab();
+    await waitFor(() => expect(rail()).toHaveTextContent(/By regime · a month later\s*Awaiting refresh/));
+    expect(rail()).not.toHaveTextContent("Today is");
+    expect(rail()).toHaveTextContent(/Last five events.*Apr 16, 2025/);
+    expect(answer()).toHaveTextContent(/Median at a month\s*\+3\.1%/);
+  });
+
+  it("without last_events: that block says Awaiting refresh; the rest stands", async () => {
+    stubDesk({ "/api/desk/study": without("last_events") });
+    renderTab();
+    await waitFor(() => expect(rail()).toHaveTextContent(/Last five events · S&P 500 a month later\s*Awaiting refresh/));
+    expect(rail()).toHaveTextContent(/By regime · a month later.*Goldilocks/);
+    expect(answer()).toHaveTextContent(/Up a month later\s*67%/);
+  });
+
+  it("a statistic served null keeps its label and says Awaiting refresh (Codex R-01)", async () => {
+    const horizons = study.horizons.map((h) => (h.h === 20 ? { ...h, up_pct: null, median: null, worst: null } : h));
+    stubDesk({ "/api/desk/study": () => ({ ...study, n_events: null, horizons }) });
+    renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent(/Events\s*Awaiting refresh/));
+    expect(answer()).toHaveTextContent(/Up a month later\s*Awaiting refresh/);
+    expect(answer()).toHaveTextContent(/Median at a month\s*Awaiting refresh/);
+    expect(answer()).toHaveTextContent(/Worst · best\s*Awaiting refresh/);
+    expect(answer()).not.toHaveTextContent("0.0%");
+    expect(screen.getByRole("img", { name: /1 month awaiting refresh/ })).toBeInTheDocument();
+  });
+
+  it("a study answered null is Awaiting refresh, not loading (Codex R-09)", async () => {
+    stubDesk({ "/api/desk/study": () => null });
+    renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent("Awaiting refresh · the study did not answer"));
+    expect(answer()).toHaveTextContent(/Events\s*Awaiting refresh/);
+    expect(answer()).not.toHaveAttribute("aria-busy", "true");
+  });
+});

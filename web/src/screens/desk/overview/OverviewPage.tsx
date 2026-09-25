@@ -16,7 +16,7 @@ import type { LedgerRow, OverviewResponse, OverviewTiles, PositionCompact, Since
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { capitalize, dayLong, dayShort, monthShort, monthYear, oneIn, pct, pctPlain, pts, utcTime, year } from "../kit/format";
+import { capitalize, dayLong, dayShort, isFiniteNumber as fin, monthShort, monthYear, num, oneIn, pct, pctPlain, pts, utcTime, year } from "../kit/format";
 import { Awaiting, LiveBadge, Signed, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
@@ -27,13 +27,15 @@ import "./overview.css";
 export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?: string }[] {
   const out: { key: string; text: string; tag?: string }[] = [];
   for (const f of s.new_fires ?? []) out.push({ key: `new-${f.slug}`, text: f.label, tag: "(new)" });
-  for (const f of s.still_firing ?? []) out.push({ key: `still-${f.slug}`, text: `${f.label}, day ${f.day}` });
+  for (const f of s.still_firing ?? []) out.push({ key: `still-${f.slug}`, text: fin(f.day) ? `${f.label}, day ${f.day}` : f.label });
   const v = s.vol_change_pts;
-  if (typeof v === "number") {
+  if (fin(v)) {
     const dir = v >= 0.05 ? "up" : v <= -0.05 ? "down" : "unchanged";
     out.push({ key: "vol", text: `vol ${dir}${dir === "unchanged" ? "" : ` ${Math.abs(v).toFixed(1)} pts`}${s.skew_direction ? `, skew ${s.skew_direction}` : ""}` });
   }
-  out.push({ key: "regime", text: s.regime_changed && s.regime_to ? `regime changed → ${s.regime_to}` : "regime unchanged" });
+  // Whether the regime changed is said only when it was served (Codex G1-9).
+  if (s.regime_changed === true) out.push({ key: "regime", text: s.regime_to ? `regime changed → ${s.regime_to}` : "regime changed" });
+  else if (s.regime_changed === false) out.push({ key: "regime", text: "regime unchanged" });
   const at = utcTime(s.refreshed_at_utc);
   if (at) out.push({ key: "refresh", text: `data refreshed ${at}` });
   return out;
@@ -68,7 +70,10 @@ function SinceLine({ data, failed }: { data: SinceLastClose | undefined; failed:
 export const REGIME_TONE: Readonly<Record<string, string>> = { Overheating: "amber" };
 
 /** "Above 50 & 200" and its trend word, from the two served flags. */
-export function trendWords(t: OverviewTiles["trend"]): { value: string; trend: string } {
+type TrendTile = NonNullable<OverviewTiles["trend"]>;
+type RecessionTile = NonNullable<OverviewTiles["recession"]>;
+
+export function trendWords(t: TrendTile): { value: string; trend: string } {
   if (t.above_50 && t.above_200) return { value: "Above 50 & 200", trend: "Uptrend" };
   if (!t.above_50 && !t.above_200) return { value: "Below 50 & 200", trend: "Downtrend" };
   return t.above_200 ? { value: "Above 200, below 50", trend: "Mixed trend" } : { value: "Above 50, below 200", trend: "Mixed trend" };
@@ -82,7 +87,7 @@ const VERDICT_CLAUSE: Record<Verdict, string> = {
 };
 
 /** The trend tile's sub-line from the served block; any missing part is left out. */
-export function trendSub(tr: OverviewTiles["trend"], word: string): string {
+export function trendSub(tr: TrendTile, word: string): string {
   const when = monthYear(tr.since);
   const signal = tr.since_signal ? tr.since_signal.replace(/-/g, " ") : "";
   const since = when ? ` since the ${when}${signal ? ` ${signal}` : ""}` : "";
@@ -98,10 +103,10 @@ export function gapWords(gap: number): string {
 }
 
 /** The recession tile's sub-line: the band, the odds in words where they read true, the input month. */
-export function recessionWords(r: OverviewTiles["recession"]): string {
-  const odds = oneIn(r.prob) ?? pctPlain(r.prob);
+export function recessionWords(r: RecessionTile): string {
+  const odds = fin(r.prob) ? (oneIn(r.prob) ?? pctPlain(r.prob)) : null;
   const through = monthShort(r.inputs_through);
-  return `${capitalize(r.band)} · ${odds} over the next year${through ? `, on data through ${through}` : ""}`;
+  return [capitalize(r.band), odds ? `${odds} over the next year${through ? `, on data through ${through}` : ""}` : through ? `data through ${through}` : null].filter(Boolean).join(" · ");
 }
 
 type TileState = "ready" | "loading" | "awaiting";
@@ -139,9 +144,9 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
         badge={t?.regime ? <LiveBadge parts={[t.regime.print ? `${t.regime.print} print` : null]} /> : null}
         value={t?.regime?.label}
         tone={t?.regime ? REGIME_TONE[t.regime.label] : undefined}
-        sub={t?.regime ? `Growth ${t.regime.growth}, inflation ${t.regime.inflation} · rule-based, two-month lag` : null}
+        sub={t?.regime ? [t.regime.growth && t.regime.inflation ? `Growth ${t.regime.growth}, inflation ${t.regime.inflation}` : null, "rule-based, two-month lag"].filter(Boolean).join(" · ") : null}
       />
-      <Tile label="Recession · logistic model" state={state(t?.recession)} badge={<LiveBadge />} value={t?.recession ? pctPlain(t.recession.prob) : null} sub={t?.recession ? recessionWords(t.recession) : null} />
+      <Tile label="Recession · logistic model" state={state(t?.recession && fin(t.recession.prob) ? t.recession : null)} badge={<LiveBadge />} value={t?.recession && fin(t.recession.prob) ? pctPlain(t.recession.prob) : null} sub={t?.recession ? recessionWords(t.recession) : null} />
       <Tile
         label="S&P 500 · trend"
         state={state(t?.trend)}
@@ -151,10 +156,10 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
       />
       <Tile
         label="Vol · VIX"
-        state={state(typeof t?.vol?.vix === "number" ? t.vol : null)}
+        state={state(fin(t?.vol?.vix) ? t.vol : null)}
         badge={t?.vol ? <LiveBadge parts={[dayShort(t.vol.date) || null]} /> : null}
-        value={typeof t?.vol?.vix === "number" ? t.vol.vix.toFixed(1) : null}
-        sub={t?.vol ? [capitalize(t.vol.band), typeof t.vol.gap_pts === "number" ? gapWords(t.vol.gap_pts) : ""].filter(Boolean).join(" · ") : null}
+        value={t?.vol && fin(t.vol.vix) ? num(t.vol.vix) : null}
+        sub={t?.vol ? [capitalize(t.vol.band), fin(t.vol.gap_pts) ? gapWords(t.vol.gap_pts) : ""].filter(Boolean).join(" · ") : null}
       />
     </div>
   );
@@ -166,8 +171,14 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
   const ok = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
   return (
     <>
-      Fired <b>{row.n}×</b>
-      {since ? ` since ${since}` : ""}
+      {ok(row.n) ? (
+        <>
+          Fired <b>{row.n}×</b>
+          {since ? ` since ${since}` : ""}
+        </>
+      ) : (
+        "Times fired awaiting refresh"
+      )}
       {ok(row.up_pct) ? (
         <>
           {" "}

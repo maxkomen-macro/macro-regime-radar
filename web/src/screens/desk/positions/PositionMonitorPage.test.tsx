@@ -150,6 +150,19 @@ describe("Position Monitor tab", () => {
     expect(screen.getByRole("status")).toHaveAttribute("data-tone", "amber");
   });
 
+  it("a save whose answer cannot be read says so and asks Monitored again (Codex R-09, G1-7)", async () => {
+    const { calls } = stubDesk({ "/api/desk/positions": (_u, init) => (init?.method === "POST" ? null : positions) });
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "TLT" } });
+    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "a" } });
+    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "b" } });
+    fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "TLT below 88" } });
+    await waitFor(() => expect(calls.filter((c) => c === "GET /api/desk/positions")).toHaveLength(1));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("The data service's answer could not be read; check Monitored before saving again."));
+    await waitFor(() => expect(calls.filter((c) => c === "GET /api/desk/positions")).toHaveLength(2));
+  });
+
   it("the monitor: sorted by room, a row opens to its gate text, and ?open= opens one", async () => {
     renderTab("/desk/position-monitor?open=2s10s-steepener");
     const mon = await screen.findByRole("region", { name: /Monitored/ });

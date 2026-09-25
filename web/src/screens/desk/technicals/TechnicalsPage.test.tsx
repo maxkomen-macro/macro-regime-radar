@@ -52,7 +52,7 @@ describe("Technicals words", () => {
   it("takes the RSI's word from the Ledger's own RSI signals", () => {
     const l = ledger as unknown as LedgerResponse;
     expect(rsiWord(l)).toBe("neutral");
-    expect(rsiWord({ ...l, signals: l.signals.map((r) => (r.slug === "rsi-above-70" ? { ...r, firing_now: true } : r)) })).toBe("overbought");
+    expect(rsiWord({ ...l, signals: l.signals!.map((r) => (r.slug === "rsi-above-70" ? { ...r, firing_now: true } : r)) })).toBe("overbought");
     expect(rsiWord({ ...l, signals: [] })).toBeNull();
   });
   it("orders the Ledger's rows firing first, then by verdict, served order within a verdict", () => {

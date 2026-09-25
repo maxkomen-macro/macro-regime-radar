@@ -50,6 +50,43 @@ test.describe("desk v2", () => {
     });
   }
 
+  // Codex R-09: a completed 200 whose body is null is Awaiting refresh on every tab, never a loading state.
+  const NULL_ANSWERS: { slug: string; path: string; labels: string[] }[] = [
+    { slug: "overview", path: "/api/desk/overview", labels: ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX", "Active signals", "Monitored"] },
+    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now"] },
+    { slug: "event-study", path: "/api/desk/study", labels: ["Events", "Up a month later", "Median at a month", "Worst · best"] },
+    { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession probability", "Next CPI", "Next INDPRO"] },
+    { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
+    { slug: "sectors", path: "/api/desk/sectors", labels: ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"] },
+    { slug: "signal-ledger", path: "/api/desk/ledger", labels: ["Signals scored", "Firing now", "Reliable", "No edge"] },
+    { slug: "position-monitor", path: "/api/desk/positions", labels: ["Monitored", "Closed · last 90d"] },
+    { slug: "data-pipeline", path: "/api/desk/pipeline", labels: ["Series inventory"] },
+    { slug: "basket-hedge", path: "/api/desk/basket/ai-infra", labels: ["3-month", "Basket vol", "Hedge ratio", "Cost of waiting", "Roll"] },
+  ];
+  for (const t of NULL_ANSWERS)
+    test(`${t.slug}: a 200 answered null keeps its labels and says Awaiting refresh`, async ({ page }) => {
+      await open(page, `/desk/${t.slug}`, { [t.path]: { status: 200, body: null } });
+      const main = page.getByRole("main");
+      await expect(main.getByText(/Awaiting refresh/).first()).toBeVisible();
+      for (const l of t.labels) await expect(main, l).toContainText(l);
+      await settle(page, 700);
+      // Nothing waits on an answer that has come: no part of the tab stays busy.
+      expect(await main.locator('[aria-busy="true"]').count()).toBe(0);
+      expect(await auditPalette(page)).toEqual([]);
+    });
+
+  test("a study whose question is not six slots is unreadable: Event Study and Position Monitor say so, never crash (Codex G1-1)", async ({ page }) => {
+    const study = JSON.parse(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!.body) as Record<string, unknown>;
+    for (const question of [{}, { ...(study.question as object), while: 5 }]) {
+      await open(page, "/desk/event-study", { "/api/desk/study": { status: 200, body: { ...study, question } } });
+      await expect(page.getByRole("region", { name: "The answer" })).toContainText("Awaiting refresh");
+      await expect(page.getByText(/rendering error/)).toHaveCount(0);
+      await open(page, "/desk/position-monitor?from=gold-2sigma-spx-weak", { "/api/desk/study": { status: 200, body: { ...study, question } } });
+      await expect(page.getByText(/is awaiting refresh; the gate is the same for every position/)).toBeVisible();
+      await expect(page.getByText(/rendering error/)).toHaveCount(0);
+    }
+  });
+
   test("overview: the four tiles carry their Live badges and read the fixture", async ({ page }) => {
     await open(page, "/desk/overview");
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Aug print");

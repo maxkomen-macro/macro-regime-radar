@@ -35,21 +35,21 @@ afterEach(() => {
 
 describe("Overview words", () => {
   it("spells the since-last-close items in the spec's order", () => {
-    expect(sinceItems(fixture.since_last_close).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual([
+    expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual([
       "Dollar −2σ fired (new)",
       "2s10s still firing, day 10",
       "vol up 0.8 pts, skew steeper",
       "regime unchanged",
       "data refreshed 00:23 UTC",
     ]);
-    expect(sinceItems({ ...fixture.since_last_close, regime_changed: true, regime_from: "Goldilocks", regime_to: "Overheating", vol_change_pts: -1.2 }).map((i) => i.text)).toContain("regime changed → Overheating");
-    expect(sinceItems({ ...fixture.since_last_close, vol_change_pts: -1.2 }).find((i) => i.key === "vol")?.text).toBe("vol down 1.2 pts, skew steeper");
+    expect(sinceItems({ ...fixture.since_last_close!, regime_changed: true, regime_from: "Goldilocks", regime_to: "Overheating", vol_change_pts: -1.2 }).map((i) => i.text)).toContain("regime changed → Overheating");
+    expect(sinceItems({ ...fixture.since_last_close!, vol_change_pts: -1.2 }).find((i) => i.key === "vol")?.text).toBe("vol down 1.2 pts, skew steeper");
   });
 
   it("names the trend from the two served flags", () => {
-    expect(trendWords(fixture.tiles.trend)).toEqual({ value: "Above 50 & 200", trend: "Uptrend" });
-    expect(trendWords({ ...fixture.tiles.trend, above_50: false, above_200: false })).toEqual({ value: "Below 50 & 200", trend: "Downtrend" });
-    expect(trendWords({ ...fixture.tiles.trend, above_50: false }).trend).toBe("Mixed trend");
+    expect(trendWords(fixture.tiles!.trend!)).toEqual({ value: "Above 50 & 200", trend: "Uptrend" });
+    expect(trendWords({ ...fixture.tiles!.trend!, above_50: false, above_200: false })).toEqual({ value: "Below 50 & 200", trend: "Downtrend" });
+    expect(trendWords({ ...fixture.tiles!.trend!, above_50: false }).trend).toBe("Mixed trend");
   });
 
   it("rounds the implied-over-realized gap to whole points and keeps its sign", () => {

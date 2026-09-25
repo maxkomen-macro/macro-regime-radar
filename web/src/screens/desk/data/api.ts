@@ -6,9 +6,21 @@
  * Errors follow §12: `{ "error": string }` with a 4xx/5xx status, surfaced as
  * DeskApiError. A screen shows "Awaiting refresh" for any error (§1.7), so no
  * card ever prints a number it was not served. 4xx answers are not retried.
+ *
+ * The response boundary (Codex R-09, R-10). A completed answer whose body is
+ * null, not JSON, or not an object is an error ("unreadable"), so every tab
+ * shows its labels with "Awaiting refresh", never an endless loading state.
+ * Every field of every answer is then checked against its endpoint's schema
+ * (`./schema.ts`): a statistic that is not finite becomes null, a row or
+ * block missing a field it cannot be read without is dropped (its panel says
+ * it is missing), and an answer missing a block it cannot be read without
+ * (the study's six-slot `question`, a basket's legs) is unreadable. Every
+ * panel still guards its own block: the boundary never invents one.
+ * Unreadable answers are not retried.
  */
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { checkAnswer, schemaFor } from "./schema";
 import type { BasketPriceResponse, BasketResponse, DeskErrorBody, HedgeResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
@@ -22,6 +34,37 @@ export class DeskApiError extends Error {
     this.name = "DeskApiError";
     this.status = status;
     this.body = body;
+  }
+  /** The answer arrived but could not be read (null, not JSON, not the endpoint's shape). */
+  get unreadable(): boolean {
+    return this.body?.error === UNREADABLE;
+  }
+}
+
+export const UNREADABLE = "unreadable";
+
+// ── The response boundary ─────────────────────────────────────────────────
+
+function unreadable(status: number): DeskApiError {
+  return new DeskApiError(status, "The answer could not be read.", { error: UNREADABLE });
+}
+
+/** An answer's body read at the boundary against its endpoint's schema
+ * (`./schema.ts`): an object whose every field is of its kind, or unreadable. */
+export function readBody<T>(body: unknown, path: string, status = 200): T {
+  const spec = schemaFor(path);
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw unreadable(status);
+  if (!spec) return body as T;
+  const out = checkAnswer(body, spec);
+  if (!out) throw unreadable(status);
+  return out as T;
+}
+
+async function readJson(res: Response): Promise<unknown> {
+  try {
+    return (await res.json()) as unknown;
+  } catch {
+    throw unreadable(res.status);
   }
 }
 
@@ -60,7 +103,7 @@ export async function deskGet<T>(path: string, params?: Params): Promise<T> {
     throw new DeskApiError(0, "The data service did not answer.");
   }
   if (!res.ok) throw await readError(res);
-  return (await res.json()) as T;
+  return readBody<T>(await readJson(res), path, res.status);
 }
 
 export async function deskPost<T>(path: string, body: unknown): Promise<T> {
@@ -71,10 +114,11 @@ export async function deskPost<T>(path: string, body: unknown): Promise<T> {
     throw new DeskApiError(0, "The data service did not answer.");
   }
   if (!res.ok) throw await readError(res);
-  return (await res.json()) as T;
+  return readBody<T>(await readJson(res), path, res.status);
 }
 
-const retry = (count: number, err: unknown) => count < 1 && !(err instanceof DeskApiError && err.status >= 400 && err.status < 500);
+/** One retry for a failed or 5xx answer; never for a refusal (4xx) or an answer that arrived unreadable. */
+const retry = (count: number, err: unknown) => count < 1 && !(err instanceof DeskApiError && (err.unreadable || (err.status >= 400 && err.status < 500)));
 
 function useDesk<T>(path: string, params?: Params) {
   return useQuery<T, DeskApiError>({

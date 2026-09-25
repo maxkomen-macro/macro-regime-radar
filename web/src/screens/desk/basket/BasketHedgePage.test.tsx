@@ -327,17 +327,19 @@ describe("Basket & Hedge tab", () => {
     expect(JSON.parse(localStorage.getItem(SAVED_BASKETS_KEY) ?? "[]").map((x: { id: string; name: string }) => `${x.id} ${x.name}`)).toEqual(["local-1 Mine", "local-2 Theirs"]);
   });
 
-  it("served legs that are not legs, and a price with a null leg, never break the tab", async () => {
+  it("served legs that are not legs never break the tab; a price's null leg is dropped", async () => {
     stubDesk({ "/api/desk/basket/ai-infra": () => ({ ...basketPrice, id: "ai-infra", name: "AI infrastructure", legs: [{ symbol: "NVDA", name: "Nvidia", weight: "12" }] }) });
     const { unmount } = renderTab();
     await waitFor(() => expect(basketCard()).toHaveTextContent("Awaiting refresh · the basket's legs"));
     unmount();
+    // A null row in the price's legs is dropped at the response boundary (Codex R-10); the served numbers still show.
     stubDesk({ "/api/desk/basket/price": () => ({ ...basketPrice, legs: [null] }) });
     renderTab();
     const b = await loaded();
     fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "26" } });
     fireEvent.change(within(b).getByLabelText("Weight of SMCI, percent"), { target: { value: "8" } });
-    await waitFor(() => expect(b).toHaveTextContent("The pricing service's answer could not be read."));
+    await waitFor(() => expect(b).toHaveTextContent(/3-month\s*\+12\.7%/));
+    expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("26");
   });
 
   it("a price that is not JSON could not be read; an empty basket says to add a ticker", async () => {

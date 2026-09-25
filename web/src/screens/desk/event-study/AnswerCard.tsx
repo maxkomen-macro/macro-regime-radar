@@ -8,7 +8,7 @@
  */
 
 import type { StudyHorizon, StudyResponse } from "../data/types";
-import { dayLong, monthYear, pct, pctPlain, year, VERDICT_RANK } from "../kit/format";
+import { dayLong, isFiniteNumber as fin, monthYear, pct, pctPlain, year, VERDICT_RANK } from "../kit/format";
 import { useBox } from "../kit/LineChart";
 import { Awaiting, Signed, Stat, StatRow, VerdictWord } from "../kit/ui";
 import { WINDOWS, horizonLabel } from "./question";
@@ -44,16 +44,23 @@ export function barTicks(lo: number, hi: number): number[] {
   return [neg, 0, pos];
 }
 
+/** A horizon the chart can draw: its median, baseline and range all served as finite numbers. */
+type Drawn = { h: StudyHorizon; med: number; base: number; lo: number; hi: number };
+function drawn(h: StudyHorizon): Drawn | null {
+  if (!fin(h.median) || !fin(h.baseline_median) || !fin(h.ci_lo_pts) || !fin(h.ci_hi_pts)) return null;
+  const base = h.baseline_median * 100;
+  return { h, med: h.median * 100, base, lo: base + h.ci_lo_pts, hi: base + h.ci_hi_pts };
+}
+
 function Bars({ horizons }: { horizons: StudyHorizon[] }) {
   const [ref, width, boxH] = useBox<HTMLDivElement>(640, 360);
   const height = Math.max(260, boxH);
   const pad = { l: 56, r: 12, t: 28, b: 40 };
-  const pts = horizons.map((h) => {
-    const base = h.baseline_median * 100;
-    return { h, med: h.median * 100, base, lo: base + h.ci_lo_pts, hi: base + h.ci_hi_pts };
-  });
-  const lo = Math.min(0, ...pts.flatMap((p) => [p.med, p.base, p.lo]));
-  const hi = Math.max(0, ...pts.flatMap((p) => [p.med, p.base, p.hi]));
+  // Every horizon keeps its place and label; one whose numbers were not served draws no bar and says so.
+  const pts = horizons.map((h) => ({ h, d: drawn(h) }));
+  const vals = pts.flatMap((p) => (p.d ? [p.d.med, p.d.base, p.d.lo, p.d.hi] : []));
+  const lo = Math.min(0, ...vals);
+  const hi = Math.max(0, ...vals);
   const ticks = barTicks(lo, hi);
   const dLo = Math.min(ticks[0], lo) - 0.6;
   const dHi = Math.max(ticks[2], hi) + 0.9;
@@ -64,7 +71,7 @@ function Bars({ horizons }: { horizons: StudyHorizon[] }) {
   const bw = Math.min(42, group * 0.2);
   return (
     <div ref={ref} className="dk-chart es-bars">
-      <svg width={width} height={height} role="img" aria-label={`The median move after the event against a normal stretch, with its range, at each horizon: ${horizons.map((h) => `${h.label} ${pct(h.median)} against ${pct(h.baseline_median)}`).join("; ")}`}>
+      <svg width={width} height={height} role="img" aria-label={`The median move after the event against a normal stretch, with its range, at each horizon: ${pts.map((p) => (p.d ? `${p.h.label} ${pct(p.d.med / 100)} against ${pct(p.d.base / 100)}` : `${p.h.label} awaiting refresh`)).join("; ")}`}>
         {ticks.map((t) => (
           <g key={t}>
             <line className={t === 0 ? "dk-chart-zero" : "dk-chart-grid"} x1={pad.l} x2={pad.l + pw} y1={y(t)} y2={y(t)} />
@@ -73,22 +80,33 @@ function Bars({ horizons }: { horizons: StudyHorizon[] }) {
             </text>
           </g>
         ))}
-        {pts.map((p, i) => {
+        {pts.map(({ h, d: p }, i) => {
           const cx = pad.l + group * (i + 0.5);
           const ex = cx - bw - 2;
           const bx = cx + 2;
           const top = (v: number) => Math.min(y(v), y(0));
           const hgt = (v: number) => Math.abs(y(v) - y(0));
           const wx = ex + bw / 2;
+          if (!p)
+            return (
+              <g key={h.h}>
+                <text className="es-bar-value" x={cx} y={y(0) - 9} textAnchor="middle">
+                  Awaiting refresh
+                </text>
+                <text className="es-bar-label" x={cx} y={height - 12} textAnchor="middle">
+                  {h.label}
+                </text>
+              </g>
+            );
           return (
-            <g key={p.h.h}>
+            <g key={h.h}>
               <rect x={ex} y={top(p.med)} width={bw} height={Math.max(1, hgt(p.med))} fill={BLUE} />
               <rect x={bx} y={top(p.base)} width={bw} height={Math.max(1, hgt(p.base))} fill={GRAY} fillOpacity={0.35} />
               <line x1={wx} x2={wx} y1={y(p.hi)} y2={y(p.lo)} stroke={BLUE} strokeWidth={2} />
               <line x1={wx - 8} x2={wx + 8} y1={y(p.hi)} y2={y(p.hi)} stroke={BLUE} strokeWidth={2} />
               <line x1={wx - 8} x2={wx + 8} y1={y(p.lo)} y2={y(p.lo)} stroke={BLUE} strokeWidth={2} />
               <text className="es-bar-value" x={wx} y={y(p.hi) - 9} textAnchor="middle">
-                {pct(p.h.median)}
+                {pct(p.med / 100)}
               </text>
               <text className="es-bar-label" x={cx} y={height - 12} textAnchor="middle">
                 {p.h.label}
@@ -103,8 +121,9 @@ function Bars({ horizons }: { horizons: StudyHorizon[] }) {
 
 /** "0.3s, cached" from the served timing (milliseconds under a tenth of a second). */
 export function servedWords(s: Pick<StudyResponse, "elapsed_ms" | "served_from_cache">): string {
-  const t = s.elapsed_ms < 100 ? `${Math.max(0, Math.round(s.elapsed_ms))} ms` : `${(s.elapsed_ms / 1000).toFixed(1)}s`;
-  return `${t}${s.served_from_cache ? ", cached" : ""}`;
+  const ms = s.elapsed_ms;
+  const t = !fin(ms) ? null : ms < 100 ? `${Math.max(0, Math.round(ms))} ms` : `${(ms / 1000).toFixed(1)}s`;
+  return [t, s.served_from_cache ? "cached" : null].filter(Boolean).join(", ");
 }
 
 /** The line on the same question without its condition (§4, `without_condition`). */
@@ -114,10 +133,10 @@ export function WithoutCondition({ study, label }: { study: StudyResponse; label
   if (!w || q.while === "none") return null;
   const cond = q.while.startsWith("regime:") ? "the regime condition" : "the S&P condition";
   const move = q.move === "up2s" ? "+2σ" : q.move === "down2s" ? "−2σ" : q.move === "cross_above" ? "crossing above its average" : "crossing below its average";
-  const better = VERDICT_RANK[study.verdict] < VERDICT_RANK[w.verdict];
+  const better = !!study.verdict && VERDICT_RANK[study.verdict] < VERDICT_RANK[w.verdict];
   return (
     <p className="es-without">
-      <b>Without {cond}</b> — {label(q.shock)} {move} on its own — it&rsquo;s {w.n_events} events, up {pctPlain(w.up_pct)}, median {pct(w.median)}: <VerdictWord verdict={w.verdict} />.{" "}
+      <b>Without {cond}</b> — {label(q.shock)} {move} on its own — it&rsquo;s {[fin(w.n_events) ? `${w.n_events} events` : null, fin(w.up_pct) ? `up ${pctPlain(w.up_pct)}` : null, fin(w.median) ? `median ${pct(w.median)}` : null].filter(Boolean).join(", ") || "awaiting refresh"}: <VerdictWord verdict={w.verdict} />.{" "}
       {better ? "The condition earns its place." : "The condition does not improve the read."}
     </p>
   );
@@ -152,12 +171,14 @@ export default function AnswerCard({
       </section>
     );
   }
-  if (study.verdict === "insufficient" || study.n_events < 10) {
+  const n = study.n_events;
+  if (study.verdict === "insufficient" || (fin(n) && n < 10)) {
     const q = study.question;
-    const fixes = (study.empty_state?.fixes ?? ["widen_window", "drop_condition"]).filter((f) => !q || applies(q, f));
+    const served = Array.isArray(study.empty_state?.fixes) ? study.empty_state.fixes : ["widen_window", "drop_condition"];
+    const fixes = served.filter((f) => !q || applies(q, f));
     return (
       <section className="dk-card es-answer" aria-label="The answer">
-        <p className="es-headline">{study.empty_state?.sentence ?? `Only ${study.n_events} events since ${year(study.sample_start)} — too few to score.`}</p>
+        <p className="es-headline">{study.empty_state?.sentence ?? (fin(n) ? `Only ${n} events${year(study.sample_start) ? ` since ${year(study.sample_start)}` : ""} — too few to score.` : "Too few events to score.")}</p>
         {fixes.length ? (
           <div className="es-fixes" role="group" aria-label="Ways to get enough events">
             {fixes.map((f) => (
@@ -172,7 +193,9 @@ export default function AnswerCard({
       </section>
     );
   }
-  const h = study.horizons.find((x) => x.h === study.question.horizon) ?? study.horizons[0];
+  // Each block guards itself (Codex R-10): no .find on a list that was not served.
+  const horizons = Array.isArray(study.horizons) ? study.horizons : [];
+  const h = horizons.find((x) => x.h === study.question?.horizon) ?? horizons[0];
   const phrase = horizonPhrase(h?.h ?? 20);
   return (
     <section className="dk-card es-answer" aria-label="The answer" aria-busy={busy || undefined} data-busy={busy || undefined}>
@@ -183,14 +206,22 @@ export default function AnswerCard({
           {study.last_event ? ` · last ${dayLong(study.last_event)}` : ""}
         </span>
         <span className="es-pill" data-live>
-          ● Live · {servedWords(study)}
+          {["● Live", servedWords(study)].filter(Boolean).join(" · ")}
         </span>
       </div>
       <StatRow cols={4}>
-        <Stat label="Events" value={String(study.n_events)} sub={`since ${year(study.sample_start)}`} size="md" />
-        <Stat label={`Up ${phrase} later`} value={h ? pctPlain(h.up_pct) : undefined} tone={h && h.up_pct > 0.5 ? "up" : undefined} sub={h?.up_n != null ? `${h.up_n} of ${study.n_events}` : undefined} size="md" />
-        <Stat label={`Median at ${phrase}`} value={h ? pct(h.median) : undefined} tone={h ? (h.median > 0 ? "up" : h.median < 0 ? "down" : undefined) : undefined} sub={h ? `vs ${pct(h.baseline_median)} ${normalStretch(h.h)}` : undefined} size="md" />
-        {h?.worst && h?.best ? (
+        {fin(n) ? <Stat label="Events" value={String(n)} sub={year(study.sample_start) ? `since ${year(study.sample_start)}` : undefined} size="md" /> : <Stat label="Events" awaiting />}
+        {h && fin(h.up_pct) ? (
+          <Stat label={`Up ${phrase} later`} value={pctPlain(h.up_pct)} tone={h.up_pct > 0.5 ? "up" : undefined} sub={fin(h.up_n) && fin(n) ? `${h.up_n} of ${n}` : undefined} size="md" />
+        ) : (
+          <Stat label={`Up ${phrase} later`} awaiting />
+        )}
+        {h && fin(h.median) ? (
+          <Stat label={`Median at ${phrase}`} value={pct(h.median)} tone={h.median > 0 ? "up" : h.median < 0 ? "down" : undefined} sub={fin(h.baseline_median) ? `vs ${pct(h.baseline_median)} ${normalStretch(h.h)}` : undefined} size="md" />
+        ) : (
+          <Stat label={`Median at ${phrase}`} awaiting />
+        )}
+        {h?.worst && h?.best && fin(h.worst.ret) && fin(h.best.ret) ? (
           <Stat
             label="Worst · best"
             size="date"
@@ -205,7 +236,7 @@ export default function AnswerCard({
           <Stat label="Worst · best" awaiting />
         )}
       </StatRow>
-      <Bars horizons={study.horizons} />
+      {horizons.length ? <Bars horizons={horizons} /> : <Awaiting>the study's horizons</Awaiting>}
       <p className="es-legend" aria-hidden="true">
         <span>
           <i style={{ background: BLUE }} /> after the event

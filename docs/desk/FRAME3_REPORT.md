@@ -1648,6 +1648,134 @@ findings were then handled:
 - R3-6 the add row's hint was cut from 1101 to about 1350 px. **Fixed**: it
   wraps under the input.
 
+## Codex round 1
+
+Codex reviewed `desk/frame-3` at `7bb2a3e` and returned fifteen findings,
+R-01 to R-15, with "do not push". Fourteen are fixed on this branch in four
+commits, one per group, each after the four gates and an independent
+verifier; R-15 is outside `web/` and is deferred (below). Where a fix needed
+a field the API does not serve, the field is in the spec's §12.13 as
+PROPOSED with its JSON shape and reason, the fixture carries it, and its
+absence prints "Awaiting refresh"; the browser never computes the judgment.
+
+`docs/desk/SPEC_AMENDMENTS_v2.md` and `SPEC_AMENDMENTS_v3.md` (untracked,
+dated Sep 24, not written by this session) resolve later reviews and say
+they are folded into the spec together, after Codex round 2. It renames some of the fields below (`target_unit`
+becomes `log_return | log_change | bp` with a separate `display_unit`,
+per-horizon `n` and a study-wide `matched_n`, the envelope with `data`), and
+it makes Basket & Hedge unavailable for Monday. This round follows the
+round-1 brief's names; the fold is session A's next step, and the file was
+left untouched and unstaged.
+
+### Group 1: robustness (R-01, R-09, R-10) — `frame-3: codex-1 robustness`
+
+- **R-01: a null statistic printed as a number.** The kit's formatters
+  spelled `null` as "0.0%" (`Math.abs(null)` is 0), and the answer card
+  formatted `up_pct`, `median`, `baseline_median` and the extremes
+  unchecked. **Fix:** every served statistic in `data/types.ts` is now
+  `number | null`, and every block a panel reads on its own is optional,
+  so the compiler lists every place a value is formatted or a list is read
+  without a check. It raised 100 errors in eleven files (nine of them in two
+  test files that read fixture blocks): the answer card, the rail, the
+  engine panel and the page's provenance line on Event Study; the
+  Overview's tiles, since-last-close and signal sentences; Regime's
+  recession card and next prints; the Technicals skew gauge and cross
+  marker; the sidebar's S&P change; and the basket's chart and scenario
+  rows. The compiler does not see a nullable number inside a template
+  string or JSX text, so those were found by a search and by the verifier
+  (Technicals' "N× since", "fired N×", the cross's "N times before" and
+  the RSI footer; the engine panel's "All N events"; the Macro matrix's
+  "N-day"; Position Monitor's Closed strip and FALSIFIES AT line, and the
+  level suggestions, which tested `typeof` and so let Infinity through).
+  Each now checks the value is finite: a stat keeps its label and prints
+  "Awaiting refresh", a table cell prints "—" (§12.13), a horizon row whose
+  numbers are null keeps its place and label in the chart and says
+  "Awaiting refresh". Under the pages, the formatters return "—" for
+  anything not finite, so no path prints a number that was not served. An
+  unknown verdict prints "—" in its pill or word, sorts last, and the
+  rail's verdict box says Awaiting refresh. **Tests:** the formatter floor
+  (`kit/format.test.ts`); a study with `n_events`, the month's `up_pct`,
+  `median` and `worst` served null (`EventStudyPage.test.tsx`).
+- **R-09: a 200 with a null body was a loading state for ever.** **Fix:**
+  once, at the data layer (`data/api.ts`): a completed answer whose body is
+  null, not JSON, or not an object rejects as `unreadable` (a
+  `DeskApiError` carrying the HTTP status), so every hook on every tab
+  reports an error and the page shows its labels with "Awaiting refresh".
+  Unreadable answers are not retried; a 5xx is still retried once. The
+  basket's price line and Position Monitor's save line word an unreadable
+  answer on their own, and after an unreadable save Position Monitor asks
+  `/positions` again, so a save that did land shows in Monitored.
+  **Tests:** `data/api.test.tsx` (null, a list, a number, a string,
+  non-JSON and a refusal, GET and POST; the retry count for a 503, a 404,
+  a null and a non-JSON answer); Position Monitor's unreadable save and its
+  second `/positions`; a browser test that answers each tab's main endpoint
+  with `null` (Overview, Technicals, Event Study, Regime, Macro, Sectors,
+  Signal Ledger, Position Monitor, Data Pipeline, Basket & Hedge) and
+  checks the tab's labels, "Awaiting refresh", nothing left `aria-busy`,
+  and the palette.
+- **R-10: blocks were not validated at the boundary, and panels called
+  `.find`/`.map` on lists that might be absent.** **Fix:** every field of
+  every answer is checked at the boundary against its endpoint's schema
+  (`data/schema.ts`, which mirrors `types.ts` field for field). A statistic
+  that is not finite (1e999 parses to Infinity) becomes null. A row or
+  block missing a field it cannot be read without is dropped (a regime
+  history row without its month, a pipeline group without its name, a
+  ledger row without its slug, a technicals point without its date, a
+  cross without its kind and day, a trend tile without both flags), and
+  its panel says it is missing. Any other field of the wrong kind is
+  removed (a `data_status` object, a numeric `sample_start`, a numeric
+  `vol.source`), so a page never reads a number where it expects words.
+  Two blocks are one fact each: the Macro matrix (its names and every row
+  of values, or nothing) and a served basket's legs (one bad leg and the
+  basket cannot be read as served; a price's bad leg is dropped). A study
+  whose `question` is not its six slots cannot be read at all. Every panel
+  still guards its own block, and the sidebar's TODAY card, which sits
+  outside each tab's own error boundary, has one of its own
+  (`kit/Contain.tsx`). Booleans that were missing no longer print a claim:
+  "regime unchanged" needs `regime_changed`, and the trend tile needs both
+  flags. **Tests:** `data/api.test.tsx` checks every fixture passes its
+  schema unchanged; for each endpoint with a fixture, deletes or malforms
+  every top-level block eight ways and checks only a required one makes
+  the answer unreadable; the six slots of `question`; dropped rows and
+  fields; 1e999; the basket's legs. Event Study with `horizons`,
+  `provenance`, `by_regime` and `last_events` deleted one at a time, each
+  block saying Awaiting refresh on its own while the others stand;
+  `kit/Contain.test.tsx`; a browser test that serves Event Study a
+  `question` of `{}` and one with a numeric `while`, on Event Study and on
+  Position Monitor carried in from it, with no render error.
+
+Verifier (one round, as the brief asks): **FAIL**. It confirmed R-09 on
+every endpoint and tab with null, `[]`, a string, a number, non-JSON and
+`{}` bodies (over 1,400 page loads), the POST cases, the retry counts, the
+top-level blocks, that the new tests fail without the fix, the error
+count, and the compare shots. Its findings, all taken:
+- G1-1 (blocking) `question` was checked as an object, not six slots, so a
+  malformed one still crashed Event Study and Position Monitor. **Fixed**
+  by the schema (tested).
+- G1-2 to G1-4 the matrix's "null-day", the engine panel's "All  events",
+  the Closed strip's Infinity. **Fixed** (above).
+- G1-5 nested lists and row fields were not checked. **Fixed** by the
+  schema, with page guards on the matrix and the empty state's fixes.
+- G1-6 a served basket with a null leg showed as a partial basket.
+  **Fixed**: its legs are one fact.
+- G1-7 Monitored was not asked again after an unreadable save. **Fixed**.
+- G1-8 a wrong-kind string could crash the sidebar, outside the tab's
+  boundary, or print "undefined". **Fixed** by the schema, the TODAY card's
+  own boundary, and guards on the regime words and the sent basket's
+  instrument.
+- G1-9 a missing boolean still printed a claim. **Fixed** (above).
+- G1-10 the retry rule and most of the boundary were untested. **Fixed**
+  (above).
+- G1-11 this section overstated its coverage. **Fixed** in this rewrite.
+
+The fixes were checked by the four gates and the tests above, not by a
+second verifier round (the brief asks for one per group). Every compare
+shot but Event Study's and Technicals' re-shot pixel-identical. Those two
+differ only by sub-pixel glyph placement where a sentence's text runs were
+rejoined around a finite check (Event Study's without-condition sentence;
+Technicals' "N× since" rows, the cross callout and the two RSI notes); the
+words are the same, checked crop by crop, and both are regenerated.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -1668,6 +1796,7 @@ tests against the fixture dev server.
 | frame-3: build-notes | clean | 110 / 1,274 | ok | 29 / 29 |
 | frame-3: client-toggle | clean | 111 / 1,285 | ok | 32 / 32 |
 | frame-3: basket-hedge | clean | 113 / 1,312 | ok | 34 / 34 |
+| frame-3: codex-1 robustness | clean | 115 / 1,332 | ok | 45 / 45 |
 
 ## Finish
 

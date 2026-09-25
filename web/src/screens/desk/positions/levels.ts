@@ -8,7 +8,7 @@
  */
 
 import type { TechnicalsResponse } from "../data/types";
-import { grouped } from "../kit/format";
+import { grouped, isFiniteNumber } from "../kit/format";
 
 export interface LevelChoice {
   id: string;
@@ -40,8 +40,8 @@ export function underlyingName(instrument: string): string {
  */
 export function suggestions(instrument: string, t: TechnicalsResponse | undefined, signalWords: string | null, direction: "long" | "short" = "long"): { top: LevelChoice[]; more: LevelChoice[] } {
   const spx = onSpx(instrument) && t;
-  const ma50 = spx && typeof t.ma50 === "number" ? ` (${grouped(t.ma50)})` : "";
-  const ma200 = spx && typeof t.ma200 === "number" ? ` (${grouped(t.ma200)})` : "";
+  const ma50 = spx && isFiniteNumber(t.ma50) ? ` (${grouped(t.ma50)})` : "";
+  const ma200 = spx && isFiniteNumber(t.ma200) ? ` (${grouped(t.ma200)})` : "";
   const signal: LevelChoice[] = signalWords ? [{ id: "signal_reverses", label: `the signal reverses (${signalWords})` }] : [];
   if (direction === "short")
     return {

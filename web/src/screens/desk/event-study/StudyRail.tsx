@@ -10,8 +10,8 @@
 
 import { Link } from "react-router-dom";
 import type { StudyResponse } from "../data/types";
-import { dayLong, numberWord, pct, pctPlain, signed, VERDICT_LABEL } from "../kit/format";
-import { Advanced, Signed, VerdictWord } from "../kit/ui";
+import { dayLong, isFiniteNumber as fin, numberWord, pct, pctPlain, signed, VERDICT_LABEL } from "../kit/format";
+import { Advanced, Awaiting, Signed, VerdictWord } from "../kit/ui";
 import { CONFIDENCES } from "./question";
 
 /** The rail with no scored answer: its section labels, and why there is nothing under them (§1.7). */
@@ -39,8 +39,8 @@ export function RailPlaceholder({ reason }: { reason: "awaiting" | "too-few" }) 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, string> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
 
-export function rangeWords(lo: number, hi: number): string {
-  return `${signed(lo)} to ${signed(hi)} pts`;
+export function rangeWords(lo: number | null, hi: number | null): string {
+  return fin(lo) && fin(hi) ? `${signed(lo)} to ${signed(hi)} pts` : "Awaiting refresh";
 }
 
 export default function StudyRail({
@@ -58,7 +58,8 @@ export default function StudyRail({
 }: {
   study: StudyResponse;
   todayRegime: string | null;
-  confidence: number;
+  /** The served confidence; null presses no chip. */
+  confidence: number | null;
   onConfidence: (c: number) => void;
   priceHref: string;
   advOpen: boolean;
@@ -70,11 +71,15 @@ export default function StudyRail({
   busy?: boolean;
 }) {
   const verdict = study.verdict;
-  const today = todayRegime ? study.by_regime.find((r) => r.regime === todayRegime) : undefined;
+  // Each block guards itself (Codex R-10): a list that was not served says so under its label.
+  const byRegime = Array.isArray(study.by_regime) ? study.by_regime : null;
+  const lastEvents = Array.isArray(study.last_events) ? study.last_events : null;
+  const horizons = Array.isArray(study.horizons) ? study.horizons : null;
+  const today = todayRegime && byRegime ? byRegime.find((r) => r.regime === todayRegime) : undefined;
   return (
     <>
       <div className="es-verdict" data-verdict={verdict}>
-        <p className="es-verdict-label">Verdict · {VERDICT_LABEL[verdict]}</p>
+        <p className="es-verdict-label">Verdict · {verdict ? VERDICT_LABEL[verdict] : "Awaiting refresh"}</p>
         <p>
           <b>{study.verdict_line}</b> {study.why} {study.what_to_do}{" "}
           <Link className="dk-link" to={priceHref}>
@@ -84,6 +89,7 @@ export default function StudyRail({
       </div>
 
       <p className="dk-stat-label es-rail-h">By regime · a month later</p>
+      {byRegime ? (
       <table className="es-table">
         <thead>
           <tr>
@@ -94,40 +100,46 @@ export default function StudyRail({
           </tr>
         </thead>
         <tbody>
-          {study.by_regime.map((r) => {
-            const few = r.n < 5;
-            const none = !few && (r.up_pct == null || r.median == null);
+          {byRegime.map((r) => {
+            const few = fin(r.n) && r.n < 5;
             return (
               <tr key={r.regime}>
                 <th scope="row">
                   <i className="es-key" data-tone={REGIME_KEY[r.regime] ?? "gray"} aria-hidden="true" />
                   {r.regime}
                 </th>
-                <td>{r.n}</td>
-                <td data-few={few || none || undefined}>{few ? "n<5" : none ? "—" : pctPlain(r.up_pct as number)}</td>
-                <td data-few={few || none || undefined}>{few ? "n<5" : none ? "—" : <Signed value={r.median as number}>{pct(r.median as number)}</Signed>}</td>
+                <td>{fin(r.n) ? r.n : "—"}</td>
+                <td data-few={few || !fin(r.up_pct) || undefined}>{few ? "n<5" : fin(r.up_pct) ? pctPlain(r.up_pct) : "—"}</td>
+                <td data-few={few || !fin(r.median) || undefined}>{few ? "n<5" : fin(r.median) ? <Signed value={r.median}>{pct(r.median)}</Signed> : "—"}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      {today ? (
+      ) : (
+        <Awaiting />
+      )}
+      {today && fin(today.n) ? (
         <p className="es-note">
           Today is {today.regime}: {numberWord(today.n)} event{today.n === 1 ? "" : "s"}
           {today.n < 10 ? ", too few to read alone." : "."}
         </p>
       ) : null}
 
-      <p className="dk-stat-label es-rail-h">Last five events · {study.series?.find((s) => s.key === study.question.target)?.label ?? study.question.target} a month later</p>
-      <ul className="es-events">
-        {study.last_events.map((e) => (
-          <li key={e.date}>
-            <span>{dayLong(e.date)}</span>
-            <span className="es-events-regime">{e.regime}</span>
-            <Signed value={e.ret_20}>{pct(e.ret_20)}</Signed>
-          </li>
-        ))}
-      </ul>
+      <p className="dk-stat-label es-rail-h">Last five events · {(Array.isArray(study.series) ? study.series : []).find((s) => s.key === study.question.target)?.label ?? study.question.target} a month later</p>
+      {lastEvents ? (
+        <ul className="es-events">
+          {lastEvents.map((e) => (
+            <li key={e.date}>
+              <span>{dayLong(e.date)}</span>
+              <span className="es-events-regime">{e.regime}</span>
+              {fin(e.ret_20) ? <Signed value={e.ret_20}>{pct(e.ret_20)}</Signed> : <span className="es-events-none">—</span>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Awaiting />
+      )}
 
       <div className="es-range-head">
         <p className="dk-stat-label">
@@ -136,25 +148,29 @@ export default function StudyRail({
         <div className="es-conf" role="group" aria-label="Confidence">
           <span className="es-conf-word">confidence</span>
           {CONFIDENCES.map((c) => (
-            <button key={c} type="button" aria-pressed={Math.abs(confidence - c) < 1e-9} onClick={() => onConfidence(c)}>
+            <button key={c} type="button" aria-pressed={fin(confidence) && Math.abs(confidence - c) < 1e-9} onClick={() => onConfidence(c)}>
               {Math.round(c * 100)}%
             </button>
           ))}
         </div>
       </div>
-      <ul className="es-ranges">
-        {study.horizons.map((h) => (
-          <li key={h.h}>
-            <span>{h.label}</span>
-            <span className="es-range-pts">{rangeWords(h.ci_lo_pts, h.ci_hi_pts)}</span>
-            <VerdictWord verdict={h.verdict} />
-          </li>
-        ))}
-      </ul>
+      {horizons ? (
+        <ul className="es-ranges">
+          {horizons.map((h) => (
+            <li key={h.h}>
+              <span>{h.label}</span>
+              <span className="es-range-pts">{rangeWords(h.ci_lo_pts, h.ci_hi_pts)}</span>
+              <VerdictWord verdict={h.verdict} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Awaiting />
+      )}
       <p className="es-note">{study.confidence_note}</p>
 
       <div className="es-rail-foot">
-        <Advanced items={`all ${study.n_events} events · resampling detail · entry rules · provenance`} open={advOpen} onToggle={onAdvanced} controls={advId} />
+        <Advanced items={`${fin(study.n_events) ? `all ${study.n_events} events` : "all events"} · resampling detail · entry rules · provenance`} open={advOpen} onToggle={onAdvanced} controls={advId} />
         <button type="button" className="dk-link es-export" onClick={onExport} disabled={exporting || busy} data-testid="es-export">
           Export →
         </button>

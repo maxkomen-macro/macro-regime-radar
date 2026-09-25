@@ -20,6 +20,18 @@ describe("numbers", () => {
     expect(pts(-1.9)).toBe("−1.9 pts");
     expect(grouped(6412)).toBe("6,412");
   });
+  it("never prints a number for a value that is not a finite number (Codex R-01)", () => {
+    const bad = [null, undefined, Number.NaN, Number.POSITIVE_INFINITY, "12"] as unknown as number[];
+    for (const x of bad) {
+      expect(signed(x)).toBe("—");
+      expect(num(x)).toBe("—");
+      expect(pct(x)).toBe("—");
+      expect(pctPlain(x)).toBe("—");
+      expect(pts(x)).toBe("—");
+      expect(grouped(x)).toBe("—");
+    }
+    expect(pct(0)).toBe("0.0%");
+  });
   it("turns a probability into one-in-N and numbers into ordinals", () => {
     expect(oneIn(0.12)).toBe("one-in-eight");
     expect(oneIn(0.5)).toBe("one-in-two");

@@ -11,7 +11,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOverview, useTechnicals } from "./data/api";
 import { DESK_GROUPS, GATES } from "./desk-sections";
-import { dayShort, nyToday, pct } from "./kit/format";
+import { dayShort, isFiniteNumber as fin, nyToday, pct, toneOf } from "./kit/format";
+import Contain from "./kit/Contain";
 
 export const DESK_SIDEBAR_ID = "dk-sidebar";
 
@@ -36,7 +37,7 @@ function TodayCard() {
           <p className="dk-today-regime" data-regime={regime.label}>
             {regime.label}
           </p>
-          <p className="dk-today-sub">regime · {regime.print} print</p>
+          <p className="dk-today-sub">{regime.print ? `regime · ${regime.print} print` : "regime"}</p>
         </>
       ) : ov.isError || ov.data ? (
         <p className="dk-today-sub" style={{ marginTop: 8 }}>
@@ -47,7 +48,13 @@ function TodayCard() {
       )}
       <p className="dk-today-kv">
         <span>{tech.data ? spxDayLabel(tech.data.as_of) : "S&P today"}</span>
-        {tech.data ? <span data-tone={tech.data.chg_1d > 0 ? "up" : tech.data.chg_1d < 0 ? "down" : "flat"}>{pct(tech.data.chg_1d)}</span> : <span>{idle(tech)}</span>}
+        {tech.data && fin(tech.data.chg_1d) ? (
+          <span data-tone={toneOf(tech.data.chg_1d)}>{pct(tech.data.chg_1d)}</span>
+        ) : tech.data ? (
+          <span>Awaiting refresh</span>
+        ) : (
+          <span>{idle(tech)}</span>
+        )}
       </p>
       <p className="dk-today-kv">
         <span>Data</span>
@@ -143,7 +150,19 @@ export default function DeskSidebar({ activeSlug, pathTo, onNavigate }: { active
         ))}
       </nav>
       <div className="dk-side-foot">
-        <TodayCard />
+        <Contain
+          label="The TODAY card"
+          fallback={
+            <section className="dk-side-card" aria-label="Today" data-testid="dk-today">
+              <p className="dk-eyebrow">Today</p>
+              <p className="dk-today-sub" style={{ marginTop: 8 }}>
+                Awaiting refresh
+              </p>
+            </section>
+          }
+        >
+          <TodayCard />
+        </Contain>
         <HouseDiscipline />
       </div>
     </aside>

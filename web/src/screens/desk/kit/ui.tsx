@@ -28,20 +28,25 @@ export function LiveBadge({ parts, boxed = false, className }: { parts?: (string
   );
 }
 
+/** A verdict's label, or "—" for one not served or not known (L-3). */
+export function verdictLabel(verdict: Verdict | undefined): string {
+  return (verdict && VERDICT_LABEL[verdict]) || "—";
+}
+
 /** A verdict pill (§1.5): Reliable green, Suggestive amber, No edge gray. */
-export function VerdictPill({ verdict, className }: { verdict: Verdict; className?: string }) {
+export function VerdictPill({ verdict, className }: { verdict: Verdict | undefined; className?: string }) {
   return (
     <span className={cx("dk-pill", className)} data-verdict={verdict}>
-      {VERDICT_LABEL[verdict]}
+      {verdictLabel(verdict)}
     </span>
   );
 }
 
 /** A verdict as colored words, no pill (tables where the mockup prints text). */
-export function VerdictWord({ verdict }: { verdict: Verdict }) {
+export function VerdictWord({ verdict }: { verdict: Verdict | undefined }) {
   return (
     <span className="dk-verdict-word" data-verdict={verdict}>
-      {VERDICT_LABEL[verdict]}
+      {verdictLabel(verdict)}
     </span>
   );
 }

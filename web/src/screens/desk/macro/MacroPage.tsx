@@ -336,10 +336,10 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
       )}
       <div className="dk-card-foot">
         <AdvancedPanel adv={adv} items="full 12-asset matrix · rolling windows · by regime" missing={mx ? "Rolling windows and the matrix by regime are not served yet." : "The matrix is not served yet."}>
-          {mx?.values?.length ? (
-            <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label={`The ${mx.window}-day correlation matrix, every pair`}>
+          {mx && Array.isArray(mx.values) && mx.values.length && Array.isArray(mx.assets) ? (
+            <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label={fin(mx.window) ? `The ${mx.window}-day correlation matrix, every pair` : "The correlation matrix, every pair"}>
               <table className="mc-matrix">
-                <caption className="dk-stat-label">{mx.window}-day correlation, every pair</caption>
+                <caption className="dk-stat-label">{fin(mx.window) ? `${mx.window}-day correlation, every pair` : "Correlation, every pair"}</caption>
                 <thead>
                   <tr>
                     <td />
