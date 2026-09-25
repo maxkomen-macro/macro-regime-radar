@@ -310,7 +310,7 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
           {rows.map((r) => (
             <li key={r.slug}>
               <b>{spxName(r.label)}</b>
-              <span>
+              <span className="te-sig-text">
                 {fin(r.n) ? `${r.n}×` : "—"}
                 {fin(r.n) && year(r.sample_start) ? ` since ${year(r.sample_start)}` : ""}
                 {fin(r.up_pct) ? (

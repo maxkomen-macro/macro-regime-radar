@@ -181,12 +181,13 @@
   font-size: 14px;
   line-height: 16px;
 }
-.te-sig-list li > span {
+/* The sentence only: the verdict pill keeps the kit's own type and gray (§1.3). */
+.te-sig-list li > .te-sig-text {
   font-size: 13px;
   line-height: 14px;
   color: var(--dk-t2);
 }
-.te-sig-list li > span b {
+.te-sig-list li > .te-sig-text b {
   color: var(--dk-t1);
 }
 .te-signals .dk-stat-sub {
@@ -259,7 +260,7 @@
   .te-sig-list li {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .te-sig-list li > span {
+  .te-sig-list li > .te-sig-text {
     grid-column: 1 / -1;
     grid-row: 2;
   }

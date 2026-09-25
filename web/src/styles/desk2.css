@@ -807,10 +807,11 @@
 }
 
 /* ── Verdict definitions (§1.5) ───────────────────────────────────────── */
+/* Four definitions (§1.5, B-13), two by two. */
 .dk-defs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 22px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 22px;
   margin: 0;
   font-size: 13px;
   line-height: 15.8px;
@@ -818,6 +819,12 @@
 }
 .dk-defs div {
   margin: 0;
+}
+/* One column on a phone, wherever the definitions sit (not only where the Overview's styles have loaded). */
+@media (max-width: 700px) {
+  .dk-defs {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .dk-defs dt {
   display: inline;

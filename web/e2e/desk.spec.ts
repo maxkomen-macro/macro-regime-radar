@@ -167,7 +167,7 @@ test.describe("desk v2", () => {
     const answer = page.getByRole("region", { name: "The answer" });
     await expect(answer).toContainText("+3.1%");
     await expect(answer.locator('[title="log return, ×100"]', { hasText: "+3.1%" })).toHaveCount(1);
-    await expect(page.getByRole("complementary", { name: "Verdict and detail" }).locator('[title="log return, ×100"]', { hasText: "−1.6 to +4.1 pts" })).toHaveCount(1);
+    await expect(page.getByRole("complementary", { name: "Verdict and detail" }).locator('.es-range-pts[title="log return, ×100"]', { hasText: "−1.6 to +4.1 pts" })).toHaveCount(1);
     await open(page, "/desk/signal-ledger");
     await expect(page.getByRole("table").locator('[title="log return, ×100"]').first()).toBeVisible();
   });
@@ -235,7 +235,7 @@ test.describe("desk v2", () => {
 
   test("event study: Advanced opens the events and the engine's panel, all in the palette, no banned word", async ({ page }) => {
     await open(page, "/desk/event-study");
-    await expect(page.getByRole("region", { name: "The answer" })).toContainText("Leans positive a month out");
+    await expect(page.getByRole("region", { name: "The answer" })).toContainText("Suggestive at 1 month: 10+ completed outcomes");
     await page.getByRole("complementary", { name: "Verdict and detail" }).getByTestId("dk-advanced").click();
     const adv = page.getByRole("region", { name: "Advanced" });
     await expect(adv).toContainText("All 18 events");
@@ -293,6 +293,40 @@ test.describe("desk v2", () => {
       await settle(page, 300);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }
+  });
+
+  test("verdicts: a Too few row's pill is dashed gray; both footers carry the four definitions and fit at 1440 and 390 (§1.5, B-13)", async ({ page }) => {
+    const ledger = payloadOf(deskFixture("GET", "/api/desk/ledger")!) as { signals: Record<string, unknown>[] };
+    const signals = ledger.signals.map((r, i) => (i === 0 ? { ...r, verdict: "insufficient", n: 6 } : r));
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/signal-ledger", { "/api/desk/ledger": { status: 200, body: { ...ledger, signals } } });
+      const pill = page.locator(".lg-table .dk-pill[data-verdict=insufficient]");
+      await expect(pill).toHaveText("Too few");
+      expect(await pill.evaluate((e) => getComputedStyle(e).borderTopStyle)).toBe("dashed");
+      await expect(page.locator(".lg-foot .dk-defs > div")).toHaveCount(4);
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+      // One column on a phone however the page was reached (the rule lives with the kit, not the Overview).
+      if (width === 390) expect(await page.locator(".lg-foot .dk-defs").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(1);
+      // Technicals' list: the Too few pill keeps the kit's gray and size, and never covers the sentence.
+      await open(page, "/desk/technicals", { "/api/desk/ledger": { status: 200, body: { ...ledger, signals: ledger.signals.map((r) => (r.slug === "death-cross" ? { ...r, verdict: "insufficient", n: 6 } : r)) } } });
+      const tp = page.locator(".te-sig-list .dk-pill[data-verdict=insufficient]");
+      await expect(tp).toHaveText("Too few");
+      expect(await tp.evaluate((e) => [getComputedStyle(e).borderTopStyle, getComputedStyle(e).fontSize])).toEqual(["dashed", "11.5px"]);
+      const overlap = await page.locator(".te-sig-list li").evaluateAll((lis) =>
+        lis.filter((li) => {
+          const p = li.querySelector(".dk-pill")?.getBoundingClientRect();
+          const t = li.querySelector(".te-sig-text")?.getBoundingClientRect();
+          return !!p && !!t && p.top < t.bottom && t.top < p.bottom && p.left < t.right && t.left < p.right;
+        }).length,
+      );
+      expect(overlap, `pill over the sentence at ${width}`).toBe(0);
+      await open(page, "/desk/overview");
+      await expect(page.locator(".ov-active-foot .dk-defs > div")).toHaveCount(4);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
   });
 
   test("ledger: no name is cut at 1101, 1200 or 390; the table scrolls in its own region; the card never stretches", async ({ page }) => {

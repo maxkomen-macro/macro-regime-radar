@@ -81,6 +81,16 @@ describe("Overview tab", () => {
     expect(vol).toHaveTextContent("Calm · protection costs about 4 pts more than recent moves justify");
   });
 
+  it("a row whose h = 20 study has fewer than ten completed outcomes carries the dashed Too few pill (§1.5)", async () => {
+    stubDesk({ "/api/desk/overview": () => ({ ...overview, active_signals: overview.active_signals.map((r, i) => (i === 1 ? { ...r, verdict: "insufficient", n: 6 } : r)) }) });
+    renderOverview();
+    const card = await screen.findByRole("region", { name: /Active signals/ });
+    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(5));
+    const pill = within(within(card).getAllByRole("listitem")[1]).getByText("Too few");
+    expect(pill).toHaveClass("dk-pill");
+    expect(pill).toHaveAttribute("data-verdict", "insufficient");
+  });
+
   it("lists the active signals as served, each with its sentence and verdict", async () => {
     renderOverview();
     const card = await screen.findByRole("region", { name: /Active signals/ });
@@ -94,9 +104,14 @@ describe("Overview tab", () => {
     expect(within(rows[2]).getByText("Suggestive")).toBeInTheDocument();
     expect(rows[4].textContent?.replace(/\s+/g, " ")).toContain("20-day median −0.6% (−1.9 pts vs normal)");
     expect(within(card).getByRole("link", { name: "Full Signal Ledger →" })).toHaveAttribute("href", "/desk/signal-ledger");
-    // The three verdict definitions sit side by side in the footer.
-    expect(card).toHaveTextContent(/Reliable\s*— the edge survives resampling/);
-    expect(card).toHaveTextContent(/No edge\s*— about the same as any month; shown so you know it was checked/);
+    // The four §1.5 definitions (B-13), word for word.
+    const defs = [...card.querySelectorAll(".dk-defs > div")].map((d) => [...d.children].map((c) => c.textContent?.trim()).join(" "));
+    expect(defs).toEqual([
+      "Reliable — at least ten overlap blocks, with the engine's 90% interval and adverse-share requirements met; zero counts as adverse.",
+      "Suggestive — 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met.",
+      "No edge — at least ten completed outcomes at this horizon, without Reliable evidence or a consistent nonzero excess-median sign across 5, 10 and 20 sessions.",
+      "Too few — fewer than ten completed outcomes at this horizon.",
+    ]);
   });
 
   it("sorts the monitored positions by room left, least first, with size and distance in their units", async () => {

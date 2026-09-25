@@ -128,7 +128,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
           <Stat label="Signals scored" awaiting={state === "awaiting"} value={ready ? String(rows.length) : undefined} sub={ready && earliest ? `since ${earliest.slice(0, 4)} where history allows` : undefined} />
           <Stat label="Firing now" awaiting={state === "awaiting"} value={ready ? String(firing.length) : undefined} tone={firing.length ? "green" : undefined} sub={ready ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
           <Stat label="Reliable" awaiting={state === "awaiting"} value={ready ? String(reliable.length) : undefined} tone={reliable.length ? "green" : undefined} sub={ready ? reliable.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
-          <Stat label="No edge" awaiting={state === "awaiting"} value={ready ? String(noEdge.length) : undefined} sub={ready ? "shown so you know they were checked" : undefined} />
+          <Stat label="No edge" awaiting={state === "awaiting"} value={ready ? String(noEdge.length) : undefined} />
         </div>
         <section className="dk-card lg-card" aria-label="Every scored signal" aria-busy={state === "loading"}>
           <div className="lg-chips" role="group" aria-label="Filter">

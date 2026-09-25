@@ -140,7 +140,6 @@
 }
 .ov-active-foot .dk-defs {
   flex: 1;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.9fr);
 }
 .ov-ledger-link {
   white-space: nowrap;
@@ -184,9 +183,6 @@
   .ov-signal-text {
     grid-column: 1 / -1;
     grid-row: 2;
-  }
-  .dk-defs {
-    grid-template-columns: minmax(0, 1fr);
   }
   .ov-since {
     padding: 6px 12px;

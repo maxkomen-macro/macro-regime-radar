@@ -100,7 +100,9 @@ describe("the question", () => {
     expect(applyFix(GOLD, "widen_window")?.window).toBe(60);
     expect(applyFix({ ...GOLD, window: 60 }, "widen_window")).toBeNull();
     expect(applyFix({ ...GOLD, while: "none" }, "drop_condition")).toBeNull();
-    expect(provenanceLine(study as never, (k) => (k === "gold" ? "Gold" : k))).toBe("Engine as of Sep 22 · cluster bootstrap 10,000 · entry next session · cooldown 20 · Gold history from 2000 · slug gold-2sigma-spx-weak");
+    expect(provenanceLine(study as never, (k) => (k === "gold" ? "Gold" : k))).toBe("Engine as of Sep 22 · cluster bootstrap 10,000 · entry next session · cooldown 20 · Gold history from 2000 · verdict rule v1 at 90% · slug gold-2sigma-spx-weak");
+    // Without the served rule or its level, the line says nothing about them.
+    expect(provenanceLine({ ...study, verdict_rule: undefined } as never, (k) => k)).not.toContain("verdict rule");
   });
 });
 
@@ -108,7 +110,8 @@ describe("Event Study tab", () => {
   it("answers the gold preset: headline, pills, stats, chart, the line without the condition", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: "The answer" });
-    await waitFor(() => expect(card).toHaveTextContent("Leans positive a month out, but not something to size on."));
+    // The served headline: the verdict's label at the selected horizon and its §1.5 definition (§12.2).
+    await waitFor(() => expect(card).toHaveTextContent("Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met."));
     expect(card).toHaveTextContent("○ Not firing today · last Apr 16, 2025");
     expect(card).toHaveTextContent("● Live · 0.3s, cached");
     // EVENTS is the study's size, with the selected horizon's completed count beneath it (C-03).
@@ -125,7 +128,12 @@ describe("Event Study tab", () => {
     renderTab();
     const rail = await screen.findByRole("complementary", { name: "Verdict and detail" });
     await waitFor(() => expect(rail).toHaveTextContent("Verdict · Suggestive"));
-    expect(rail).toHaveTextContent("Lean, don't size.");
+    // §4: the box is the label, the served headline and why, and Price it; nothing else (no advice drawn from a verdict).
+    expect([...rail.querySelectorAll(".es-verdict > p")].map((p) => p.textContent?.replace(/\s+/g, " ").trim()).join(" ")).toBe(
+      "Verdict · Suggestive Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met. 18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −1.6 to +4.1 pts; 14.6% of resampled medians are adverse against a 3% bar. Price it →",
+    );
+    // Rule v1 reads the lean at 5, 10 and 20 sessions whatever the horizon, so 3 months is Suggestive too.
+    expect(rail).toHaveTextContent(/3 months\s*−3\.9 to \+2\.6 pts\s*Suggestive/);
     expect(within(rail).getByRole("link", { name: "Price it →" })).toHaveAttribute("href", "/desk/basket-hedge?mode=express&study=gold-2sigma-spx-weak");
     const rows = within(rail).getAllByRole("row");
     // By regime from the events at their K−2 rows of the regime record (Codex R-05).
@@ -292,7 +300,7 @@ describe("a study with a block missing (Codex R-10)", () => {
   it("without provenance: the line under the grid keeps what was served, the entry rules say Awaiting refresh", async () => {
     stubDesk({ "/api/desk/study": without("provenance") });
     renderTab();
-    await waitFor(() => expect(screen.getByText(/^Engine as of Sep 22 · slug gold-2sigma-spx-weak$/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/^Engine as of Sep 22 · verdict rule v1 at 90% · slug gold-2sigma-spx-weak$/)).toBeInTheDocument());
     fireEvent.click(within(rail()).getByTestId("dk-advanced"));
     await waitFor(() => expect(document.body).toHaveTextContent(/Entry rules\s*Awaiting refresh · the study's entry rules/));
     expect(answer()).toHaveTextContent(/Up a month later\s*67%/);
@@ -353,6 +361,9 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     expect(rail()).toHaveTextContent("Last five events · 10-year Treasury yield a month later");
     expect(rail()).toHaveTextContent(/Apr 16, 2025\s*Overheating\s*\+30 bp/);
     expect(rail()).toHaveTextContent(/1 month\s*−10 to \+40 bp/);
+    // The served why is in the study's own unit too.
+    expect(rail().querySelector(".es-verdict")?.textContent).toContain("runs −10 to +40 bp");
+    expect(rail().querySelector(".es-verdict")?.textContent).not.toContain("pts");
     expect(answer()).toHaveTextContent("median +9 bp");
     // §1.9: the tooltip belongs to log numbers only.
     expect(document.querySelector('[title="log return, ×100"]')).toBeNull();

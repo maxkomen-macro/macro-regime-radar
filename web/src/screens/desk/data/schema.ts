@@ -252,7 +252,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     monitored: l(o(positionCompact)),
     data_status: "s",
   }),
-  "/ledger": o({ ...envelope, horizon: "n", normal_month: "n", signals: l(ledgerRow) }),
+  "/ledger": o({ ...envelope, verdict_rule: "s", horizon: "n", normal_month: "n", signals: l(ledgerRow) }),
   "/technicals": o({
     ...envelope,
     instrument: o({ symbol: "s!", label: "s!" }),
@@ -364,10 +364,10 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     last_event: "s?",
     // The verdict box says Awaiting refresh on its own; the numbers still stand.
     verdict: e(VERDICTS),
+    verdict_rule: "s",
+    verdict_confidence: "n",
     headline: "s",
     why: "s",
-    verdict_line: "s",
-    what_to_do: "s",
     horizons: l(
       o({
         h: "n!",
@@ -380,6 +380,10 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         baseline_up_pct: "n",
         ci_lo: "n",
         ci_hi: "n",
+        n_blocks: "n",
+        adverse_share: "n",
+        draws: "n",
+        method: e(["enumeration", "monte_carlo"]),
         reason: "s?",
         verdict: e(VERDICTS),
         worst: o({ ret: "n", date: "s" }, { nul: true }),

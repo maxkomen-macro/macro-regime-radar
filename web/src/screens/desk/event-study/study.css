@@ -354,6 +354,13 @@
   margin: 0;
   padding: 0;
 }
+/* The Advanced panel's definitions sit between the resampling sentence and the range list. */
+.es-note + .dk-defs {
+  margin-top: 6px;
+}
+.dk-defs + .es-ranges {
+  margin-top: 8px;
+}
 .es-events li,
 .es-ranges li {
   display: grid;

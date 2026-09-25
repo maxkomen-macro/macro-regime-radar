@@ -151,6 +151,11 @@ export const VERDICT_LABEL: Record<Verdict, string> = { reliable: "Reliable", su
 /** The Ledger's verdict order (§12.4): Reliable, Suggestive, No edge (then too few to score). */
 export const VERDICT_RANK: Record<Verdict, number> = { reliable: 0, suggestive: 1, no_edge: 2, insufficient: 3 };
 
+/** "verdict rule v1 at 90%" from a served rule and its fixed level (§4, §1.5); null when either was not served. */
+export function verdictRuleWords(s: { verdict_rule?: string | null; verdict_confidence?: number | null }): string | null {
+  return typeof s.verdict_rule === "string" && s.verdict_rule && isFiniteNumber(s.verdict_confidence) ? `verdict rule ${s.verdict_rule} at ${Math.round(s.verdict_confidence * 100)}%` : null;
+}
+
 /** A signed value's tone: up green, down red, zero neutral (§1.3). */
 export function toneOf(x: number): "up" | "down" | "flat" {
   return x > 0 ? "up" : x < 0 ? "down" : "flat";

@@ -61,7 +61,8 @@ describe("Signal Ledger tab", () => {
     await waitFor(() => expect(screen.getByText("Signals scored").parentElement).toHaveTextContent("12"));
     expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/2\s*2s10s steepening · dollar weak/);
     expect(screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/3\s*golden cross · RSI < 30 · VIX spike/);
-    expect(screen.getByText("No edge", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/5\s*shown so you know they were checked/);
+    // §8: NO EDGE is the count alone; v2 §7's withdrawn "shown so you know it was checked" is gone.
+    expect(screen.getByText("No edge", { selector: ".dk-stat-label" }).parentElement?.textContent).toBe("No edge5");
     const table = screen.getByRole("table");
     const groups = within(table).getAllByRole("rowgroup").slice(1);
     expect(groups[0]).toHaveTextContent("Firing now");
@@ -122,6 +123,20 @@ describe("Signal Ledger tab", () => {
     const gold = within(table).getByRole("row", { name: /Gold \+2σ while S&P weak/ }) as HTMLTableRowElement;
     expect(gold.cells[4].textContent).toBe("+3.1%");
     expect(gold.cells[4].querySelector("[title]")?.getAttribute("title")).toBe("log return, ×100");
+  });
+  it("a Too few row carries the dashed Too few pill; the footer prints the four §1.5 definitions word for word (B-13)", async () => {
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r, i) => (i === 0 ? { ...r, verdict: "insufficient", n: 6 } : r)) }) });
+    renderTab();
+    const table = await screen.findByRole("table");
+    const pill = within(within(table).getByRole("row", { name: /2s10s \+2σ steepening/ })).getByText("Too few");
+    expect(pill).toHaveAttribute("data-verdict", "insufficient");
+    const defs = [...document.querySelectorAll(".lg-foot .dk-defs > div")].map((d) => [...d.children].map((c) => c.textContent?.trim()).join(" "));
+    expect(defs).toEqual([
+      "Reliable — at least ten overlap blocks, with the engine's 90% interval and adverse-share requirements met; zero counts as adverse.",
+      "Suggestive — 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met.",
+      "No edge — at least ten completed outcomes at this horizon, without Reliable evidence or a consistent nonzero excess-median sign across 5, 10 and 20 sessions.",
+      "Too few — fewer than ten completed outcomes at this horizon.",
+    ]);
   });
   it("Space opens a row too; a chip shows it is pressed", async () => {
     renderTab();

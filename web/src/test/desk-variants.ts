@@ -17,6 +17,8 @@ export function bpStudy(): Record<string, unknown> {
   return {
     ...study,
     question: { ...study.question, target: "us10y", target_unit: "bp", display_unit: "bp", target_label: "10-year Treasury yield" },
+    // §12.2's why is a template over horizons[selected]: in bp for a bp target.
+    why: "18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −10 to +40 bp; 14.6% of resampled medians are adverse against a 3% bar.",
     horizons: study.horizons.map((h) => ({ ...h, ...bpH[h.h], ...(h.h === 20 ? { worst: { ret: -30, date: "2020-03-09" }, best: { ret: 60, date: "2025-04-16" } } : {}) })),
     // One regime at ten events (MIN_REGIME_N), so a bp median prints; the rest too few, as served.
     by_regime: study.by_regime.map((r) => (r.regime === "Goldilocks" ? { ...r, n: 10, up_pct: 0.6, median: 12 } : r.regime === "Recession Risk" ? { ...r, n: 2 } : r)),

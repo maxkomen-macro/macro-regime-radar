@@ -80,6 +80,8 @@ export interface LedgerRow {
 }
 
 export interface LedgerResponse extends Envelope {
+  /** The rule every row's verdict follows (§12.5). */
+  verdict_rule?: string | null;
   /** Every Ledger number is at h = 20 (§12.5, v4 B-01). */
   horizon?: number | null;
   normal_month: number | null;
@@ -289,6 +291,11 @@ export interface StudyHorizon {
   /** The interval on Δ = median − baseline_median, native (§1.9); null under five blocks. */
   ci_lo: number | null;
   ci_hi: number | null;
+  /** The resampling behind the interval (§12.2): overlap blocks, the share of resampled medians adverse, draws and method. */
+  n_blocks?: number | null;
+  adverse_share?: number | null;
+  draws?: number | null;
+  method?: "enumeration" | "monte_carlo" | null;
   /** Why a statistic here is null, in words (§12.2: "fewer than five independent blocks" for an interval under five blocks). */
   reason?: string | null;
   verdict?: Verdict;
@@ -309,14 +316,14 @@ export interface StudyResponse extends Envelope {
   sample_start: string | null;
   firing_now: boolean;
   last_event: string | null;
-  /** Absent when not served or not known: the verdict box says Awaiting refresh. */
+  /** The selected horizon's verdict (§1.5, B-01). Absent when not served or not known: the verdict box says Awaiting refresh. */
   verdict?: Verdict;
+  /** The rule every verdict here follows, and its fixed level (§1.5): "v1" at 0.90. */
+  verdict_rule?: string | null;
+  verdict_confidence?: number | null;
+  /** "<verdict label> at <horizon label>: " + the verdict's §1.5 definition (§12.2). */
   headline: string;
   why: string;
-  /** PROPOSED (§12.13): the verdict box's bold line ("Lean, don't size."). */
-  verdict_line: string;
-  /** PROPOSED (§12.13): the verdict box's "what to do" sentence. */
-  what_to_do: string;
   horizons?: StudyHorizon[];
   confidence: number | null;
   confidence_note: string;

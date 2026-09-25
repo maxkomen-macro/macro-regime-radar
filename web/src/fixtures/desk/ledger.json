@@ -1,6 +1,7 @@
 {
  "as_of": "2026-09-22",
  "generation_id": "gen-fixture-2026-09-22",
+ "verdict_rule": "v1",
  "horizon": 20,
  "normal_month": 0.013,
  "signals": [

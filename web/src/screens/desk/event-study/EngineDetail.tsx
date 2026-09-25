@@ -15,8 +15,9 @@ import { ApiError } from "../../../api/client";
 import { isEngineAbsent, useEventStudy, useEventStudyAssets, type EventStudyHorizon, type EventStudyResponse } from "../../../api/desk";
 import { useStudyEvents } from "../data/api";
 import type { Question, StudyResponse } from "../data/types";
-import { dayLong, grouped, isFiniteNumber as fin, pctPlain } from "../kit/format";
-import { Awaiting, verdictLabel } from "../kit/ui";
+import { dayLong, grouped, isFiniteNumber as fin, pctPlain, verdictRuleWords } from "../kit/format";
+import VerdictDefinitions from "../kit/VerdictDefinitions";
+import { Awaiting, VerdictWord } from "../kit/ui";
 import { factsLine, fmtInterval, fmtMove, fmtZ, historyLine, missingForwardWord } from "./format";
 import { apiParams, type Ask } from "./question";
 import { LOG_TIP, moveText, tipOf } from "../kit/units";
@@ -170,8 +171,10 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
         <div>
           <p className="dk-stat-label es-rail-h">Resampling detail</p>
           <p className="es-note">
-            Cluster bootstrap, {pv && fin(pv.bootstrap) ? grouped(pv.bootstrap) : "an unstated number of"} draws, ranges at {fin(study.confidence) ? `${pctPlain(study.confidence)} confidence` : "the served confidence"}. A verdict is Reliable when 10 or more independent episodes stand behind it and fewer than 3% of resamples go the other way; Suggestive when it leans but the range crosses zero or there are fewer than 10; No edge when it is about the same as any month.
+            Cluster bootstrap, {pv && fin(pv.bootstrap) ? grouped(pv.bootstrap) : "an unstated number of"} draws, ranges at {fin(study.confidence) ? `${pctPlain(study.confidence)} confidence` : "the served confidence"}.
+            {verdictRuleWords(study) ? ` Each horizon's verdict follows ${verdictRuleWords(study)}:` : " Each horizon's verdict follows the definitions below."}
           </p>
+          <VerdictDefinitions />
           {Array.isArray(study.horizons) ? (
             <ul className="es-ranges">
               {study.horizons.map((h) => (
@@ -182,7 +185,7 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
                   ) : (
                     <span className="es-range-pts">{h.ci_lo > 0 || h.ci_hi < 0 ? "clears zero" : "includes zero"}</span>
                   )}
-                  <span>{verdictLabel(h.verdict)}</span>
+                  <VerdictWord verdict={h.verdict} />
                 </li>
               ))}
             </ul>

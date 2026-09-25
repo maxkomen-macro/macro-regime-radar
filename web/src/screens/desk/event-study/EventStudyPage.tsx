@@ -20,7 +20,7 @@ import type { Question, StudyResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { dayShort, grouped, isFiniteNumber as fin, year } from "../kit/format";
+import { dayShort, grouped, isFiniteNumber as fin, verdictRuleWords, year } from "../kit/format";
 import AnswerCard from "./AnswerCard";
 import EngineDetail from "./EngineDetail";
 import QueryCard, { type Mode } from "./QueryCard";
@@ -31,10 +31,10 @@ import { Unserved } from "../kit/ui";
 import "./study.css";
 
 /** The provenance line under the grid (§4). */
-export function provenanceLine(s: Pick<StudyResponse, "as_of" | "slug" | "provenance">, label: (k: string) => string): string {
+export function provenanceLine(s: Pick<StudyResponse, "as_of" | "slug" | "provenance" | "verdict_rule" | "verdict_confidence">, label: (k: string) => string): string {
   const p = s.provenance;
   const hist = Object.entries(p?.series_start ?? {}).map(([k, v]) => `${label(k)} history from ${year(v)}`);
-  return [dayShort(s.as_of) ? `Engine as of ${dayShort(s.as_of)}` : null, fin(p?.bootstrap) ? `cluster bootstrap ${grouped(p.bootstrap)}` : null, p?.entry ? `entry ${p.entry}` : null, fin(p?.cooldown) ? `cooldown ${p.cooldown}` : null, ...hist, s.slug ? `slug ${s.slug}` : null]
+  return [dayShort(s.as_of) ? `Engine as of ${dayShort(s.as_of)}` : null, fin(p?.bootstrap) ? `cluster bootstrap ${grouped(p.bootstrap)}` : null, p?.entry ? `entry ${p.entry}` : null, fin(p?.cooldown) ? `cooldown ${p.cooldown}` : null, ...hist, verdictRuleWords(s), s.slug ? `slug ${s.slug}` : null]
     .filter(Boolean)
     .join(" · ");
 }

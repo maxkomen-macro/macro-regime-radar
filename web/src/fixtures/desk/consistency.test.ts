@@ -12,6 +12,8 @@ import record from "./regime-record.json";
 import regime from "./regime.json";
 import studyEvents from "./study-events.json";
 import study from "./study.json";
+import { rangeText } from "../../screens/desk/kit/units";
+import type { TargetUnit } from "../../screens/desk/data/types";
 
 const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
 /** §12.2: a regime with fewer than ten events (the engine's MIN_REGIME_N) serves its count and null cells. */
@@ -61,6 +63,13 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
     });
     expect(study.by_regime).toEqual(want);
     expect(study.by_regime.reduce((a, r) => a + r.n, 0) + study.unlabeled_n).toBe(study.matched_n);
+  });
+
+  it("the served why is §12.2's template over horizons[selected], every number from that row (§13.3)", () => {
+    const h = study.horizons.find((x) => x.h === study.selected_horizon)!;
+    const adverse = `${(Math.round(h.adverse_share * 1000) / 10).toFixed(1)}%`;
+    expect(study.why).toBe(`${h.n} completed outcomes in ${h.n_blocks} overlap blocks; the 90% interval on the excess median runs ${rangeText(h.ci_lo, h.ci_hi, study.question.target_unit as TargetUnit)}; ${adverse} of resampled medians are adverse against a 3% bar.`);
+    expect(study.headline.startsWith(`Suggestive at ${h.label}: `)).toBe(true);
   });
 
   it("each horizon's counts, share up, median and extrema are its own completed outcomes (C-03)", () => {

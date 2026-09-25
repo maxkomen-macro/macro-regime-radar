@@ -2428,6 +2428,105 @@ from the events on its own.
 The fixes were checked by the four gates and the tests above; the two
 changed compare shots were re-shot after them.
 
+### Phase 2, item 4: verdicts — `frame-3: align 4 verdicts`
+
+**What changed.** The Overview's Active signals footer and the Signal
+Ledger's footer print exactly v4 B-13's four definitions (§1.5): Reliable,
+Suggestive, No edge and Too few, each name in its verdict color, two by
+two. Every verdict pill for `insufficient` reads "Too few" with the dashed
+gray border (the Ledger, the Overview's active signals, Technicals' list,
+whose pills now keep the kit's own type and gray);
+the rail's range rows print it as a word. `/study` serves `verdict_rule`
+("v1") and `verdict_confidence` (0.90), and `/ledger` its `verdict_rule`
+(§12.2, §12.5); the Event Study's provenance line ends "verdict rule v1 at
+90% · slug …" when both are served, and the Advanced panel's resampling
+detail states the same rule above the four definitions in place of its old
+verdict sentence. The rail's verdict box is §4's: `VERDICT · <label>`, the
+served headline, the served why and `Price it →`; the withdrawn
+`verdict_line` and `what_to_do` (a verdict turned into trading advice) are
+gone from the contract, the fixtures and the page.
+
+The gold study's fixture serves §12.2's templates: the headline "Suggestive
+at 1 month: 10+ completed outcomes; excess medians lean the same way at 5,
+10 and 20 sessions, but not all Reliable criteria are met." and the why "18
+completed outcomes in 18 overlap blocks; the 90% interval on the excess
+median runs −1.6 to +4.1 pts; 14.6% of resampled medians are adverse
+against a 3% bar." The block count and adverse share are the engine's for
+this study, read by running `src/desk/event_study.py` read-only on a scratch
+copy of the owner's database (18 blocks, `opposite_sign_share` 0.146). Each horizon now serves its `n_blocks`, `adverse_share`, `draws` and
+`method` from the same run, so the why traces to `horizons[selected]`. Rule
+v1 reads the lean at 5, 10 and 20 sessions whatever the horizon, so the
+fixture's 3-month verdict is Suggestive, not No edge. The Ledger's NO EDGE
+card is the count alone (§8); its sub-line repeated the withdrawn
+definition.
+
+**Tests.** `consistency.test.ts` (the why rebuilt from
+`horizons[selected]` word for word); `OverviewPage.test.tsx` (the four definitions word for word; a
+Too few row's dashed pill); `LedgerPage.test.tsx` (the same on the Ledger);
+`EventStudyPage.test.tsx` (the served headline; the verdict box is exactly
+label, headline, why and Price it; 3 months Suggestive under v1; the
+provenance line with and without the served rule). Browser: a Too few pill
+computes a dashed border on the Ledger and on Technicals at 11.5px, never
+over its sentence; both footers carry four definitions at 1440 and 390, one
+column on a phone however the page was reached, with no sideways scroll and
+the palette.
+
+**Against the PNGs.**
+- 01 Overview and 07 Signal Ledger, the footers: the PNGs' three
+  definitions ("the edge survives resampling…", "leans one way but the range
+  still crosses zero; don't size on it", "about the same as any month") are
+  now B-13's four, two by two, which makes both footers taller. §1.5: "The
+  Overview and Ledger footers print exactly:" the four sentences; v4 B-13:
+  "The Overview and Ledger footers use exactly these four sentences."
+- 03 Event Study, the headline: the PNG's "Leans positive a month out, but
+  not something to size on." is now the served template. §12.2: "`headline`:
+  "<verdict label> at <L>: " followed by that verdict's §1.5 definition… It
+  adds no advice; no recommendation is inferred from a verdict (§12.0)."
+- 03 Event Study, the verdict box: the PNG's "Lean, don't size." and the
+  call-spread sentence are gone; the box prints the headline and the why.
+  §4: "VERDICT box (amber border for Suggestive): `VERDICT · <label>` / the
+  served `headline` / `why` / `Price it →`".
+- 03 Event Study, the range rows: 3 months reads Suggestive where the PNG
+  had No edge. §1.5 rule 3: "the finite excess medians (median −
+  baseline_median) at h = 5, 10 and 20 are all strictly positive, or all
+  strictly negative → `suggestive`."
+- 07 Signal Ledger, NO EDGE: the PNG's sub-line "shown so you know they
+  were checked" is gone. §8: "NO EDGE (count)".
+- 02 Technicals, the signal list: the verdict pills print in the kit's
+  11.5px type and No edge in gray, where the build had drawn them in the
+  sentence's 13px light type. §1.3: "gray #8b929e | No edge · Too few".
+- 03 Event Study, the provenance line gains "verdict rule v1 at 90%". §4:
+  "`… · verdict rule v1 at 90% · slug <slug>`".
+
+Verifier (one round): **PASS**, with three should-fix findings and three
+nits. It confirmed the four sentences word for word at 1440, 1101 and 390,
+the rail box, the headline and why against its own read-only engine run,
+and all four horizons Suggestive under v1 and in the engine.
+- V4-1 (should-fix) the phone rule for the definitions lived in the
+  Overview's stylesheet, so the Ledger's footer had one column or two
+  depending on the page loaded first. **Fixed:** the rule lives with the
+  kit's `.dk-defs`.
+- V4-2 (should-fix) the bp test study kept the log study's why. **Fixed:**
+  it serves its own, in bp, and a test says the box has no "pts".
+- V4-3 (should-fix, from the Technicals commit) the list's sentence style
+  also caught the verdict pill, which printed at 13px in light text and, on
+  a phone, lay over the sentence. **Fixed:** the sentence has its own class.
+- V4-4 the served why's numbers were not fields of the response.
+  **Fixed:** `n_blocks`, `adverse_share`, `draws`, `method` per horizon, and
+  a test that rebuilds the why from them.
+- V4-5 the Ledger's NO EDGE sub-line repeated the withdrawn definition.
+  **Fixed:** removed.
+- V4-6 the Advanced panel's definitions sat flush and its verdicts were
+  uncolored. **Fixed.**
+- Noted, outside this item: the Overview's Active signals rows crowd their
+  names at 1101 (the name column shrinks to about 40 px); the Trend tile's
+  "that signal is reliable" reads a non-§12 field; the Technicals note's
+  em-dash aside. The last is item 5's; the first two are left for item 12's
+  labels pass.
+
+The fixes were checked by the four gates and the tests above; the changed
+compare shots were re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2456,6 +2555,7 @@ tests against the fixture dev server.
 | frame-3: align 1 envelope | clean | 118 / 1,403 | ok | 50 / 50 |
 | frame-3: align 2 units | clean | 118 / 1,409 | ok | 51 / 51 |
 | frame-3: align 3 counts-horizon | clean | 118 / 1,417 | ok | 52 / 52 |
+| frame-3: align 4 verdicts | clean | 118 / 1,420 | ok | 53 / 53 |
 
 ## Finish
 

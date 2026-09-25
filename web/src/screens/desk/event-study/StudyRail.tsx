@@ -1,7 +1,7 @@
 /**
  * The Event Study rail (DESK_FRAME3_SPEC §4), top to bottom: the verdict box
- * (amber-bordered for Suggestive) with the verdict's line, why, what to do and
- * `Price it →`; the answer by regime a month later (§4's fixed label: §12.2
+ * (amber-bordered for Suggestive) with the verdict's label, the served
+ * headline and why, and `Price it →`; the answer by regime a month later (§4's fixed label: §12.2
  * serves `by_regime` and `last_events` at 20 sessions; a regime under ten
  * events prints its count and "too few cases to say"); the last five events; the range against a normal stretch at
  * the chosen confidence (80 / 90 / 95%, re-asked with `confidence`), with the
@@ -104,9 +104,10 @@ export default function StudyRail({
     <>
       <div className="es-verdict" data-verdict={verdict}>
         <p className="es-verdict-label">Verdict · {verdict ? VERDICT_LABEL[verdict] : "Awaiting refresh"}</p>
+        {/* §4: VERDICT · <label> / the served headline / why / Price it. The served `why` carries the interval's
+            numbers (§12.2), so a log study's sentence carries the §1.9 tooltip. */}
         <p>
-          {/* The served `why` carries the interval's numbers (§12.2), so a log study's sentence carries the §1.9 tooltip. */}
-          <b>{study.verdict_line}</b> <span title={tip}>{study.why}</span> {study.what_to_do}{" "}
+          {study.headline ? <b>{study.headline}</b> : null} <span title={tip}>{study.why}</span>{" "}
           <Link className="dk-link" to={priceHref}>
             Price it →
           </Link>
