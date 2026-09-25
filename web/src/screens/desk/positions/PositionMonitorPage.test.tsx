@@ -15,12 +15,13 @@ import type { PositionExpanded } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
 import study from "../../../fixtures/desk/study.json";
+import technicals from "../../../fixtures/desk/technicals.json";
 import { deskFixture, resetDeskFixtureState } from "../../../fixtures/desk";
 import { falsifiesLine, parseSize, refusalWords, sizeLine } from "./PositionMonitorPage";
 import { DeskApiError } from "../data/api";
 import { MonitoredRow, levelText, sortByRoom } from "../kit/MonitoredRows";
 import { render } from "@testing-library/react";
-import { onSpx, suggestions } from "./levels";
+import { describes, suggestions, underlyingName } from "./levels";
 import { findFlags, gateState, replaceFlag } from "./wording";
 
 function renderTab(route = "/desk/position-monitor") {
@@ -54,14 +55,13 @@ describe("the gate, pure", () => {
     expect(replaceFlag("Will it rally?", f, "is likely to")).toBe("Is likely to it rally?");
     expect(gateState({ instrument: "x", variant: "it will, it will", pre_mortem: "b", level: "l" }).left).toBe("One thing left: fix two words above");
   });
-  it("suggests the short's wrong-if levels turned over; a pair is not the S&P", () => {
-    const t = { ma50: 6280, ma200: 5910 } as never;
-    expect(suggestions("SPX Dec 26 put spread", t, null, "short").top.map((c) => c.label)).toEqual(["closes above its 50-day (6,280)", "rises 2σ over 5 days"]);
+  it("suggests the short's wrong-if levels turned over; only the served series itself gets its numbers", () => {
+    const t = { instrument: { symbol: "SPX", label: "S&P 500" }, ma50: 6280, ma200: 5910 } as never;
+    expect(suggestions("SPX", t, null, "short").top.map((c) => c.label)).toEqual(["closes above its 50-day (6,280)", "rises 2σ over 5 days"]);
     expect(suggestions("SPX", t, null).top.map((c) => c.id)).toEqual(["below_50d", "falls_2s_5d"]);
-    expect(onSpx("NDX vs SPX")).toBe(false);
-    expect(onSpx("QQQ/SPY")).toBe(false);
-    expect(onSpx("ES Dec 26")).toBe(true);
-    expect(onSpx("Long yes-no basket")).toBe(false);
+    // A pair, an option on the index, a future: the rules without the index's numbers (Codex R-08).
+    for (const i of ["NDX vs SPX", "QQQ/SPY", "ES Dec 26", "SPX Dec 26 put spread", "Long yes-no basket"]) expect(describes(i, t)).toBe(false);
+    expect(suggestions("SPX Dec 26 put spread", t, null, "short").top[0].label).toBe("closes above its 50-day");
   });
   it("reads the size as typed, and words each refusal", () => {
     expect([parseSize(""), parseSize("4"), parseSize(" 4% "), parseSize("0.5")]).toEqual([null, 4, 4, 0.5]);
@@ -92,10 +92,18 @@ describe("the gate, pure", () => {
     expect(gateState({ instrument: "SPX", variant: "gold will", pre_mortem: "b", level: null }).left).toBe("Two things left: pick a “wrong if” level, and fix one word above");
     expect(gateState({ instrument: "SPX", variant: "a", pre_mortem: "b", level: "x" }).ok).toBe(true);
   });
+  it("SPY gets no index numbers: levels carry numbers only for exactly the series /technicals describes (Codex R-08)", () => {
+    const t = { instrument: { symbol: "SPX", label: "S&P 500" }, ma50: 6280, ma200: 5910 } as never;
+    expect(suggestions("SPY", t, null).top[0].label).toBe("closes below its 50-day");
+    expect(suggestions("SPY", t, null).more[0].label).toBe("closes below its 200-day");
+    expect(underlyingName("SPY", t)).toBe("SPY");
+    expect([describes("S&P 500", t), describes(" s&p  500 ", t), describes("spx", t), describes("SPY", t), describes("", t)]).toEqual([true, true, true, false, false]);
+    expect(underlyingName("spx", t)).toBe("S&P 500");
+    // Without the served series, no instrument is it: names only.
+    expect(suggestions("S&P 500", { ma50: 6280, ma200: 5910 } as never, null).top[0].label).toBe("closes below its 50-day");
+  });
   it("suggests levels from the served S&P averages for an S&P instrument only", () => {
-    expect(onSpx("SPX Dec 26 call spread")).toBe(true);
-    expect(onSpx("TLT")).toBe(false);
-    const t = { ma50: 6280, ma200: 5910 } as never;
+    const t = { instrument: { symbol: "SPX", label: "S&P 500" }, ma50: 6280, ma200: 5910 } as never;
     expect(suggestions("S&P 500", t, "Gold gives back its move").top.map((c) => c.label)).toEqual(["closes below its 50-day (6,280)", "falls 2σ over 5 days", "the signal reverses (Gold gives back its move)"]);
     expect(suggestions("TLT", t, null).top[0].label).toBe("closes below its 50-day");
     expect(suggestions("S&P 500", t, null).more).toHaveLength(8);
@@ -120,7 +128,7 @@ describe("Position Monitor tab", () => {
   it("fills, fixes a certainty word in one click, saves to the server and shows the position", async () => {
     const { calls } = stubDesk();
     renderTab();
-    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX Dec 26 call spread" } });
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX" } });
     fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "The market thinks gold will keep falling, I think it bounces, because the study says so." } });
     fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "It lost money because the regime read was stale." } });
     const wording = screen.getByRole("group", { name: "Wording" });
@@ -137,6 +145,26 @@ describe("Position Monitor tab", () => {
     expect(calls.some((c) => c.startsWith("POST /api/desk/positions"))).toBe(true);
     await waitFor(() => expect(screen.getAllByTestId("dk-mon-row")).toHaveLength(4));
     expect(screen.getByLabelText(/Variant view/)).toHaveValue("");
+  });
+
+  it("SPY gets the rules without the index's numbers; the index itself gets them (Codex R-08)", async () => {
+    renderTab();
+    // The index first, so the served numbers are known to have arrived before SPY is judged (G4-5).
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "closes below its 50-day (6,280)" })).toBeInTheDocument());
+    expect(screen.getByText(/suggested for S&P 500/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "SPY" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "closes below its 50-day" })).toBeInTheDocument());
+    expect(screen.getByText(/suggested for SPY/)).toBeInTheDocument();
+    expect(screen.getByRole("main").textContent).not.toMatch(/6,280|5,910/);
+  });
+
+  it("technicals served without its instrument: every level is named, none carries a number (Codex R-08)", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, instrument: undefined }) });
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "closes below its 50-day" })).toBeInTheDocument());
+    expect(screen.getByRole("main").textContent).not.toMatch(/6,280|5,910/);
   });
 
   it("the server's refusal is shown, not hidden", async () => {
@@ -281,7 +309,7 @@ describe("Position Monitor tab", () => {
 
   it("a picked level follows the instrument's label, and lapses when the direction turns it over (R2-1)", async () => {
     renderTab();
-    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX Dec 26 call spread" } });
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX" } });
     fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "a" } });
     fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "b" } });
     await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ })).toBeInTheDocument());

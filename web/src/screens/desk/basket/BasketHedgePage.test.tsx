@@ -15,8 +15,16 @@ import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basket from "../../../fixtures/desk/basket.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
+import { deskFixture } from "../../../fixtures/desk";
+
 import { SAVED_BASKETS_KEY } from "./weights";
 import { maxLossWords } from "./BasketHedgePage";
+
+/** The fixture server's answer for a URL, with some fields replaced. */
+function deskFixtureBody(u: URL, over: Record<string, unknown>) {
+  const r = deskFixture("GET", `${u.pathname}${u.search}`)!;
+  return r.status === 200 ? { ...(JSON.parse(r.body) as object), ...over } : { status: r.status, body: JSON.parse(r.body) };
+}
 
 function LocationSpy() {
   const l = useLocation();
@@ -90,7 +98,7 @@ describe("Basket & Hedge tab", () => {
     await waitFor(() => expect(hedgeCard()).toHaveTextContent("$62.4 per $100"));
     const h = hedgeCard();
     expect(calls).toContain("GET /api/desk/hedge?mode=protect&basket=ai-infra");
-    expect(h).toHaveTextContent("priced off the live SPY / QQQ surface");
+    expect(h).toHaveTextContent("priced off the SPY / QQQ surface of Sep 22");
     expect(h).toHaveTextContent("Priced for AI infrastructure basket");
     expect(within(h).getByRole("button", { name: "Protect the basket" })).toHaveAttribute("aria-pressed", "true");
     const radios = within(h).getAllByRole("radio");
@@ -208,6 +216,59 @@ describe("Basket & Hedge tab", () => {
     await waitFor(() => expect(b).toHaveTextContent("+12.7%"));
     expect(bodies).toHaveLength(1);
     expect(calls.filter((c) => c === "POST /api/desk/basket/price")).toHaveLength(1);
+  });
+
+  it("the badge dates the numbers on show: a reprice dated Sep 24 says Sep 24; the surface keeps its own date (Codex R-04)", async () => {
+    stubDesk({
+      "/api/desk/basket/price": () => ({ ...basketPrice, prices_as_of: "2026-09-24", ret_3m: 0.133 }),
+      "/api/desk/hedge": (u) => deskFixtureBody(u, { surface_as_of: "2026-09-23" }),
+    });
+    renderTab();
+    const b = await loaded();
+    const badge = () => screen.getByTestId("dk-live");
+    await waitFor(() => expect(badge()).toHaveTextContent("Live · prices Sep 22 · options via EODHD"));
+    await waitFor(() => expect(hedgeCard()).toHaveTextContent("priced off the SPY / QQQ surface of Sep 23"));
+    fireEvent.change(within(b).getByLabelText("Weight of SMCI, percent"), { target: { value: "8" } });
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "26" } });
+    await waitFor(() => expect(b).toHaveTextContent("+13.3%"));
+    expect(badge()).toHaveTextContent("Live · prices Sep 24 · options via EODHD");
+    // The hedge still prices the served weights, off its own surface: its date does not move.
+    expect(hedgeCard()).toHaveTextContent("priced off the SPY / QQQ surface of Sep 23");
+    // Back to the served weights: the served basket's numbers and date.
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "22" } });
+    fireEvent.change(within(b).getByLabelText("Weight of SMCI, percent"), { target: { value: "12" } });
+    await waitFor(() => expect(b).toHaveTextContent("+12.7%"));
+    expect(badge()).toHaveTextContent("Live · prices Sep 22 · options via EODHD");
+    // Weights that cannot be priced show no numbers, so nothing is dated.
+    fireEvent.change(within(b).getByLabelText("Weight of SMCI, percent"), { target: { value: "8" } });
+    await waitFor(() => expect(badge()).toHaveTextContent(/^Live · options via EODHD$/));
+  });
+
+  it("a price served without its date says so in the card, never borrowing the served basket's date (Codex R-04, G4-1)", async () => {
+    const { prices_as_of: _d, ...undated } = basketPrice as typeof basketPrice & { prices_as_of?: string };
+    stubDesk({ "/api/desk/basket/price": () => ({ ...undated, ret_3m: 0.133 }) });
+    renderTab();
+    const b = await loaded();
+    fireEvent.change(within(b).getByLabelText("Weight of SMCI, percent"), { target: { value: "8" } });
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "26" } });
+    await waitFor(() => expect(b).toHaveTextContent("+13.3%"));
+    expect(screen.getByTestId("dk-live")).toHaveTextContent(/^Live · options via EODHD$/);
+    expect(b).toHaveTextContent("7 names · rebalanced monthly · prices date awaiting refresh");
+  });
+
+  it("a failed price dates nothing; a surface served without its date says so (Codex G4-5)", async () => {
+    stubDesk({
+      "/api/desk/basket/price": deskError(500, "down"),
+      "/api/desk/hedge": (u) => deskFixtureBody(u, { surface_as_of: null }),
+    });
+    renderTab();
+    const b = await loaded();
+    await waitFor(() => expect(hedgeCard()).toHaveTextContent("priced off the SPY / QQQ surface, its date awaiting refresh"));
+    fireEvent.change(within(b).getByLabelText("Weight of SMCI, percent"), { target: { value: "8" } });
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "26" } });
+    await waitFor(() => expect(b).toHaveTextContent("The pricing service did not answer for these weights."));
+    expect(screen.getByTestId("dk-live")).toHaveTextContent(/^Live · options via EODHD$/);
+    expect(b).not.toHaveTextContent("prices date awaiting refresh");
   });
 
   it("a price answer that cannot be read, or refused, says so; nothing breaks", async () => {

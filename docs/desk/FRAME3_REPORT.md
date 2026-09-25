@@ -1999,6 +1999,99 @@ and note), Regime (the months column), Basket & Hedge (the rows, the ratio
 line, the table) and the Client view (the backdrop bars, the summary)
 changed with their data and are regenerated; the rest re-shot identical.
 
+### Group 4: dates and levels (R-04, R-08) — `frame-3: codex-4 dates-levels`
+
+- **R-04: the badge dated the served basket, whatever numbers were on
+  show.** After a repricing the stats were `POST /basket/price`'s, and the
+  badge still printed `GET /basket`'s day. **Fix:** PROPOSED
+  `prices_as_of` joins the priced fields, so a price answer carries its
+  own day. The basket card reports the day of the answer whose numbers it
+  shows, and the page's badge prints it: "Live · prices Sep 24 · options
+  via EODHD" after a reprice dated Sep 24, the served day again after a
+  revert. Weights that cannot be priced show no numbers and date none. When
+  the numbers on show are undated, the card's own line says "prices date
+  awaiting refresh", never borrowing the served day. The day is reported
+  before paint, so no frame pairs one answer's day with another's numbers. The options surface is dated on its own, on
+  the hedge card where its prices are: "priced off the SPY / QQQ surface
+  of Sep 22", from `hedge.surface_as_of`. The mockup's "live" there is
+  dropped, since the day now says how live it is (§12.13 records it).
+  **Tests:** a reprice dated Sep 24 moves the badge to Sep 24 while the
+  hedge card keeps its surface's Sep 23; revert brings back Sep 22;
+  unpriceable weights and a failed price date nothing; an undated price
+  says so in the card; an undated surface says so; the boundary keeps
+  `prices_as_of` only as text; browser tests reprice at Sep 24 and read
+  the badge, and serve an undated basket at 390 px with no sideways
+  scroll.
+- **R-08: any S&P-looking instrument got the index's levels.** SPY, an ES
+  future, an SPX option and "S&P" in any phrasing were offered "closes
+  below its 50-day (6,280)", though SPY trades near a tenth of the index.
+  **Fix:** PROPOSED `technicals.instrument` (`{"symbol":"SPX","label":"S&P
+  500"}`) names the one series every number in `/technicals` describes. A
+  level carries its number only when the instrument is exactly that
+  series, by label or symbol (case and spacing aside). Every other
+  instrument gets the same rules named without a number, and "suggested
+  for …" names what was typed. Matching ignores case, spaces at either end
+  and repeated spaces, nothing more: "S&P500" and "S&P 500 index" are not
+  the series, a conservative miss. `/technicals` served without `instrument`
+  gives numbers to nothing. The S&P-guessing `onSpx` is gone. **Tests:**
+  `describes`/`suggestions` units (SPY, a pair, an option, a future, a
+  basket, the label and symbol in any case); Position Monitor with SPY (no
+  6,280 or 5,910 anywhere on the page) then S&P 500 (the number back); the
+  page with `/technicals` served without its instrument; the boundary
+  takes the instrument whole or not at all; the same browser test types
+  S&P 500 and then SPY (the index first, so the numbers are known to have
+  arrived). The two page tests that typed an SPX option to reach the
+  numbers now type the index itself.
+
+Verifier (one round): **PASS**, one should-fix and nits, all weighed.
+It drove every path by which the card shows numbers in a browser (a
+served GET, a delayed reprice, a failed price, an undated price, save and
+reload, a save in another window, a local-only basket, a basket switch
+during a reprice, Express mode) and each dated exactly the answer on show.
+- G4-1 the undated badge ("Live · prices date awaiting refresh · options
+  via EODHD", 446 px, never wrapping) pushed a 390 px page 71 px sideways.
+  **Fixed:** those words live in the card's line; the badge drops the
+  prices part.
+- G4-2 the day was reported after paint, so one frame could pair the old
+  day with the new numbers. **Fixed:** reported before paint.
+- G4-3 Technicals and the sidebar name the S&P from their own copy, not
+  from `technicals.instrument`. **Not changed:** `/technicals` is the
+  S&P's by §12.10. §12.13 now says the field is what a page reads when it
+  must decide whether a typed instrument is that series.
+- G4-4 the spec said "spacing and case aside", but "S&P500" does not
+  match. **Fixed:** the spec says exactly what is ignored.
+- G4-5 no test for the undated surface, for a failed price's badge, or for
+  the SPY assertion when the numbers might not have arrived yet, and a
+  helper sat between imports. **Fixed** (above).
+- G4-6 §10's "live" subtitle and §9's "(6,280)" on an SPX option are the
+  mockup's without a pointer. **Fixed:** both point to §12.13.
+- While checking against HEAD, the verifier's second Vite server shared
+  `node_modules/.vite` through a symlink and removed cached files the
+  running fixture server used. It rebuilt them and the fixture server
+  served every chunk again; nothing in the tree changed.
+
+The fixes were checked by the four gates, not by a second verifier round.
+Compare shots: only Basket & Hedge's hedge subtitle changed (the surface's
+day); it is regenerated, and the rest re-shot identical.
+
+### R-15: deferred to the API branch
+
+R-15 (Build Notes renders nothing in the Docker image) is outside `web/`
+and `docs/desk/`, so it is not fixed here. The image's web stage copies
+only `web/`, and `.dockerignore` excludes both `docs` and `*.md`. The
+page's glob finds nothing there and says the notes are not in the build.
+The two lines for the API branch, exactly:
+
+- `Dockerfile`, before `RUN npm run build` in the `webbuild` stage:
+  `COPY docs/desk/BUILD_NOTES.md /build/docs/desk/BUILD_NOTES.md`
+- `.dockerignore`, after the `*.md` line:
+  `!docs/desk/BUILD_NOTES.md`
+
+The glob in `BuildNotesPage.tsx` resolves from `/build/web/src/screens/desk/notes`
+to `/build/docs/desk/BUILD_NOTES.md`, which is where the `COPY` puts the
+file. Docker's exception pattern re-includes a file inside an excluded
+directory, so the one negation clears both `docs` and `*.md`.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2022,6 +2115,7 @@ tests against the fixture dev server.
 | frame-3: codex-1 robustness | clean | 115 / 1,332 | ok | 45 / 45 |
 | frame-3: codex-2 contract | clean | 116 / 1,352 | ok | 46 / 46 |
 | frame-3: codex-3 fixtures | clean | 117 / 1,368 | ok | 46 / 46 |
+| frame-3: codex-4 dates-levels | clean | 117 / 1,375 | ok | 48 / 48 |
 
 ## Finish
 
@@ -2041,6 +2135,13 @@ pointer under §12.12.
 Gate summary at the tip: typecheck clean; unit 113 files / 1,312 tests;
 build ok; Desk browser tests 34 / 34. The per-commit rows are in the gate log above.
 
+After Codex round 1 (above): the tip is the commit that carries this
+report, `frame-3: codex-4 dates-levels` (parent `dd5e69e frame-3: codex-3
+fixtures`, after `f3c182a` and `7166f1c`), local only. Nothing is pushed.
+The round touched `web/` and `docs/desk/` only. R-15 is deferred to the
+API branch with its two lines. Gate summary at that tip: typecheck clean;
+unit 117 files / 1,375 tests; build ok; Desk browser tests 48 / 48.
+
 For Max:
 - **BUILD_NOTES.md** uses "established" twice (§10 quotes both sentences);
   the page holds them until the file is reworded. The frame-3 notes in the
@@ -2048,8 +2149,8 @@ For Max:
   once they are written into the file (§10, B-5).
 - **The Docker image** needs `docs/desk/BUILD_NOTES.md` copied in for Build
   Notes to show the notes in a deployed build (§10, B-1: one `COPY` line and
-  one `.dockerignore` negation). Until then the page says the file is not in
-  that build. On Vercel, confirm the setting that includes files outside the
+  one `.dockerignore` negation; Codex round 1's R-15 gives the two lines).
+  Until then the page says the file is not in that build. On Vercel, confirm the setting that includes files outside the
   root directory.
 - **Position Monitor's gate fields ship empty;** the monitored positions'
   variant, pre-mortem and red-team texts in `positions.json` (all three

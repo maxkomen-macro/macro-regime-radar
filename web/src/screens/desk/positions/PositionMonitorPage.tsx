@@ -450,7 +450,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
             <div className="pm-row3">
               <div className="pm-wrong" role="group" aria-labelledby={`${uid}-wrong`}>
                 <p className="pm-step-label" id={`${uid}-wrong`} data-tone={gate.level ? "green" : "amber"}>
-                  3 · Wrong if <span className="pm-step-hint">· suggested for {underlyingName(draft.instrument)} · changes with the instrument</span>
+                  3 · Wrong if <span className="pm-step-hint">· suggested for {underlyingName(draft.instrument, tech.data)} · changes with the instrument</span>
                 </p>
                 <div className="pm-chips">
                   {sug.top.map((c) => (
@@ -462,14 +462,14 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
                 <div className="pm-more">
                   <div className="dk-select">
                     <select
-                      aria-label={`More levels for ${underlyingName(draft.instrument)}`}
+                      aria-label={`More levels for ${underlyingName(draft.instrument, tech.data)}`}
                       value={picked && sug.more.some((m) => m.id === picked.id) ? picked.id : ""}
                       onChange={(e) => {
                         const c = sug.more.find((m) => m.id === e.target.value);
                         pickLevel(c ?? null);
                       }}
                     >
-                      <option value="">More levels for {underlyingName(draft.instrument)}…</option>
+                      <option value="">More levels for {underlyingName(draft.instrument, tech.data)}…</option>
                       {sug.more.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.label}

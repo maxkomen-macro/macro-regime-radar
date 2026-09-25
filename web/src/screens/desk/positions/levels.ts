@@ -1,10 +1,12 @@
 /**
  * WRONG IF suggestions (DESK_FRAME3_SPEC §9): three chips and eight more
  * levels "computed from live levels" for the instrument. The live levels the
- * API serves are the S&P 500's (/technicals: the 50- and 200-day averages),
- * so an instrument on the S&P gets them with their numbers; any other
- * instrument gets the same rules without a number to fill (the rule still
- * names the level; the server resolves it). Pure.
+ * API serves are one series' (/technicals: its 50- and 200-day averages,
+ * named by `technicals.instrument`, §12.13), so only an instrument that is
+ * exactly that series, by its name or its symbol, gets them with their
+ * numbers (Codex R-08). Any other instrument, SPY or an ES future or an SPX
+ * option included, gets the same rules without a number (the rule still
+ * names the level; the server resolves it against the instrument). Pure.
  */
 
 import type { TechnicalsResponse } from "../data/types";
@@ -15,20 +17,20 @@ export interface LevelChoice {
   label: string;
 }
 
-/**
- * Whether an instrument's text names the S&P 500 outright (SPX, SPY, "S&P",
- * an ES future when it leads): never a pair ("NDX vs SPX", "QQQ/SPY"), whose
- * levels are the spread's, not the index's.
- */
-export function onSpx(instrument: string): boolean {
-  const t = instrument.trim();
-  if (/\bvs\.?\b|\//i.test(t)) return false;
-  return /(^|\s)(spx|spy)\b/i.test(t) || /\bs&p\b|\bs&p ?500\b|\bsp ?500\b/i.test(t) || /^es\b/i.test(t);
+const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
+/** Whether the instrument is exactly the series /technicals describes ("S&P 500" or "SPX"
+ * for the fixture), never one that only resembles it: SPY trades near a tenth of the index,
+ * so the index's 6,280 is not its level. */
+export function describes(instrument: string, t: Pick<TechnicalsResponse, "instrument"> | undefined): boolean {
+  const s = t?.instrument;
+  const typed = norm(instrument);
+  return !!s && !!typed && (norm(s.label) === typed || norm(s.symbol) === typed);
 }
 
-/** The underlying's name the chips are suggested for. */
-export function underlyingName(instrument: string): string {
-  return onSpx(instrument) ? "S&P 500" : instrument.trim() || "the instrument";
+/** The underlying's name the chips are suggested for: the served series' name when it is that series. */
+export function underlyingName(instrument: string, t?: Pick<TechnicalsResponse, "instrument">): string {
+  return describes(instrument, t) && t?.instrument ? t.instrument.label : instrument.trim() || "the instrument";
 }
 
 /**
@@ -39,9 +41,9 @@ export function underlyingName(instrument: string): string {
  * is offered only when a study was carried in.
  */
 export function suggestions(instrument: string, t: TechnicalsResponse | undefined, signalWords: string | null, direction: "long" | "short" = "long"): { top: LevelChoice[]; more: LevelChoice[] } {
-  const spx = onSpx(instrument) && t;
-  const ma50 = spx && isFiniteNumber(t.ma50) ? ` (${grouped(t.ma50)})` : "";
-  const ma200 = spx && isFiniteNumber(t.ma200) ? ` (${grouped(t.ma200)})` : "";
+  const same = describes(instrument, t) && t;
+  const ma50 = same && isFiniteNumber(t.ma50) ? ` (${grouped(t.ma50)})` : "";
+  const ma200 = same && isFiniteNumber(t.ma200) ? ` (${grouped(t.ma200)})` : "";
   const signal: LevelChoice[] = signalWords ? [{ id: "signal_reverses", label: `the signal reverses (${signalWords})` }] : [];
   if (direction === "short")
     return {

@@ -437,7 +437,10 @@ in". Fields: INSTRUMENT (text) · DIRECTION (Long / Short segmented) · SIZE ·
    50-day (6,280)`, `falls 2σ over 5 days`, `the signal reverses`) and a
    `More levels for <instrument>…` expander with eight more (200-day, entry
    −3%, entry −5%, lower low than last 20 days, RSI < 40, VIX > 25, regime
-   label changes, HY spreads widen 2σ).
+   label changes, HY spreads widen 2σ). A chip carries a number only for the
+   exact series `/technicals` describes, so the mockup's "SPX Dec 26 call
+   spread" gets `closes below its 50-day` without the 6,280 (§12.13, Codex
+   round 1, R-08).
 WORDING check: certainty words (will, always, never, proves, guaranteed)
 highlighted amber with one-click replacements ("is likely to", "tends to").
 Only those block; nothing else is edited. **Save position** button disabled
@@ -482,7 +485,9 @@ basket's move is just Nasdaq. Hedge that half and what's left is the actual
 AI-infra bet." **Save basket** button. Footer `Advanced ▸ rebalance rule ·
 index since inception · export`.
 
-**Hedge · express or protect** (`priced off the live SPY / QQQ surface`).
+**Hedge · express or protect** (`priced off the live SPY / QQQ surface`;
+served, `priced off the SPY / QQQ surface of Sep 22`, §12.13, Codex round 1,
+R-04).
 Three-way switch: Protect the basket / Express the S&P lean / Neutralize NDX
 beta. Three option rows (radio; put spread selected): Put spread on QQQ · 1
 month · 5% / 10% down — costs 1.1% of basket — breakeven −6.1% · max loss
@@ -939,7 +944,8 @@ building it; the web side follows whatever this section ends up saying.
   `[{"symbol","name","weight"}]` with `weight` in percent (22 is 22%) and
   `name` null when the API has none.
 - **PROPOSED** the priced fields, the same on `GET /basket/:id` and
-  `POST /basket/price`: `benchmark` (`{"symbol":"NDX","label":"Nasdaq"}`),
+  `POST /basket/price`: `prices_as_of` (the session whose closes priced
+  them; Codex round 1, R-04), `benchmark` (`{"symbol":"NDX","label":"Nasdaq"}`),
   `ret_3m`, `bench_ret_3m`, `residual` (basket minus `beta` × benchmark over
   `residual_window` sessions), `residual_window` (60), `falsifies_at`
   (−0.04, where the position comes off), `month_ago` (the residual 20
@@ -1119,6 +1125,44 @@ number). The page never computes the judgment in its place.
   digit it has. Normalize leaves weights that add to 100 as they are and
   otherwise writes new ones no coarser than the ones typed (at least a
   tenth); Equal-weight writes tenths. No new field.
+
+- **PROPOSED** `prices_as_of` on `POST /basket/price` as on
+  `GET /basket/:id` (R-04): the session whose closes priced the numbers.
+  ```json
+  {"as_of":"2026-09-24","generation_id":"…","prices_as_of":"2026-09-24",
+   "benchmark":{"symbol":"NDX","label":"Nasdaq"},"ret_3m":0.133, …,
+   "legs":[{"symbol":"NVDA","name":"Nvidia","weight":26}, …]}
+  ```
+  The page's badge ("Live · prices Sep 24 · options via EODHD") dates the
+  basket's numbers from the answer that supplied the numbers on show: the
+  served basket's, or a repricing's. Weights that cannot be priced show no
+  numbers and date none; a price answered without `prices_as_of` reads
+  "prices date awaiting refresh" in the basket card's own line (the badge
+  never wraps, and those words would push a phone's page sideways), never
+  the served basket's day. The options surface is dated on the hedge card,
+  from `hedge.surface_as_of` ("priced off the SPY / QQQ surface of Sep 22";
+  the mockup's "live" is dropped, since the day now says how live it is;
+  without the day, "its date awaiting refresh"). Reason (R-04): the badge
+  printed the served basket's day beside a repricing's numbers.
+- **PROPOSED** `technicals.instrument` (`{"symbol","label"}`): the one
+  series every number in `/technicals` describes.
+  ```json
+  {"as_of":"2026-09-22","instrument":{"symbol":"SPX","label":"S&P 500"},
+   "price":6412,"ma50":6280,"ma200":5910, …}
+  ```
+  Position Monitor attaches a level's number ("closes below its 50-day
+  (6,280)") only when the instrument typed is exactly that series, by its
+  label or its symbol, ignoring case, spaces at either end and repeated
+  spaces; "S&P500", "^GSPC" and "S&P 500 index" are not it. Every other instrument,
+  SPY, an ES future, an SPX option or a pair, gets the same rules named
+  without a number ("closes below its 50-day"), and the server resolves
+  the level against the instrument. Without `instrument`, no instrument
+  gets numbers. Reason (R-08): the page matched anything that looked like
+  the S&P, so SPY, which trades near a tenth of the index, was offered the
+  index's 6,280. `/technicals` is the S&P 500's by §12.10, and Technicals
+  and the sidebar name it from their own copy (§3, §1.1). `instrument` is
+  what a page reads when it has to decide whether an instrument someone
+  typed is that series.
 
 Notes for B (not new fields):
 - §11 fixes the inventory at 26 series in five groups, but Desk also reads

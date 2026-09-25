@@ -197,6 +197,8 @@ export interface PricePoint {
 }
 
 export interface TechnicalsResponse extends Envelope {
+  /** PROPOSED (§12.13, Codex R-08): the one series every level here describes. */
+  instrument?: { symbol: string; label: string };
   price: number | null;
   chg_1d: number | null;
   ma50: number | null;
@@ -449,6 +451,9 @@ export interface BasketLeg {
 
 /** What a price of a set of legs carries: the stats row, the residual chart and its reads. */
 export interface BasketPriced {
+  /** The session whose closes priced these numbers (§12.13, Codex R-04): the basket's date badge
+   * reads it from whichever answer, GET /basket or POST /basket/price, supplied the numbers shown. */
+  prices_as_of?: string;
   benchmark: { symbol: string; label: string };
   ret_3m: number | null;
   bench_ret_3m: number | null;
@@ -475,7 +480,6 @@ export interface BasketResponse extends Envelope, BasketPriced {
   /** What Position Monitor's instrument field reads ("AI infrastructure basket vs 1.6 × NDX"). */
   instrument?: string;
   rebalance?: string;
-  prices_as_of?: string;
   /** The baskets the server keeps, for the selector. */
   baskets: { id: string; name: string }[];
   legs: BasketLeg[];

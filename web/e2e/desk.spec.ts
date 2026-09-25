@@ -362,6 +362,33 @@ test.describe("desk v2", () => {
     await expect(marked).toHaveText("Long A");
   });
 
+  test("the badge dates the basket's numbers from the answer that gave them; SPY gets no index numbers (Codex R-04, R-08)", async ({ page }) => {
+    const price = JSON.parse(deskFixture("POST", "/api/desk/basket/price", JSON.stringify({ legs: [{ symbol: "NVDA", weight: 22 }, { symbol: "AVGO", weight: 16 }, { symbol: "VRT", weight: 14 }, { symbol: "CRWV", weight: 12 }, { symbol: "ANET", weight: 12 }, { symbol: "CEG", weight: 12 }, { symbol: "SMCI", weight: 12 }] }))!.body) as Record<string, unknown>;
+    await open(page, "/desk/basket-hedge", { "/api/desk/basket/price": { status: 200, body: { ...price, prices_as_of: "2026-09-24", ret_3m: 0.133 } } });
+    const basket = page.getByRole("region", { name: "Basket" });
+    await expect(page.getByTestId("dk-live")).toHaveText("Live · prices Sep 22 · options via EODHD");
+    await expect(page.getByRole("region", { name: /^Hedge · express or protect/ })).toContainText("priced off the SPY / QQQ surface of Sep 22");
+    await basket.getByLabel("Weight of SMCI, percent").fill("8");
+    await basket.getByLabel("Weight of NVDA, percent").fill("26");
+    await expect(basket).toContainText("+13.3%");
+    await expect(page.getByTestId("dk-live")).toHaveText("Live · prices Sep 24 · options via EODHD");
+    await open(page, "/desk/position-monitor");
+    await page.getByLabel("Instrument", { exact: true }).fill("S&P 500");
+    await expect(page.getByRole("button", { name: "closes below its 50-day (6,280)" })).toBeVisible();
+    await page.getByLabel("Instrument", { exact: true }).fill("SPY");
+    await expect(page.getByRole("button", { name: "closes below its 50-day", exact: true })).toBeVisible();
+    await expect(page.getByRole("main")).not.toContainText("6,280");
+  });
+
+  test("numbers shown undated say so in the card, and the badge never pushes a phone's page sideways (Codex G4-1)", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const served = JSON.parse(deskFixture("GET", "/api/desk/basket/ai-infra")!.body) as Record<string, unknown>;
+    await open(page, "/desk/basket-hedge", { "/api/desk/basket/ai-infra": { status: 200, body: { ...served, prices_as_of: undefined } } });
+    await expect(page.getByRole("region", { name: "Basket" })).toContainText("prices date awaiting refresh");
+    await expect(page.getByTestId("dk-live")).toHaveText("Live · options via EODHD");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  });
+
   test("basket & hedge: the basket, a picked structure, typed weights, a save, the hand-off; phone width", async ({ page }) => {
     await open(page, "/desk/basket-hedge");
     const basket = page.getByRole("region", { name: "Basket" });

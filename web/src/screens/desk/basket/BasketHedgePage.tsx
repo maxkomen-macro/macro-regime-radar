@@ -21,7 +21,7 @@
  * "Awaiting refresh" is only ever an answer that did not come (§1.7).
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { DeskApiError, useBasket, useBasketPrice, useHedge, type Params } from "../data/api";
@@ -271,7 +271,18 @@ function priceWords(err: unknown): string {
   return "The pricing service's answer could not be read.";
 }
 
-function BasketCard({ basketId, onSelect, onSaved }: { basketId: string; onSelect: (id: string) => void; onSaved: () => void }) {
+function BasketCard({
+  basketId,
+  onSelect,
+  onSaved,
+  onPrices,
+}: {
+  basketId: string;
+  onSelect: (id: string) => void;
+  onSaved: () => void;
+  /** The date of the answer whose numbers the card shows (null: shown but undated), or undefined: none shown. */
+  onPrices: (date: string | null | undefined) => void;
+}) {
   const uid = useId();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [saved, setSaved] = useState<SavedBasket[]>(() => readSaved());
@@ -311,6 +322,11 @@ function BasketCard({ basketId, onSelect, onSaved }: { basketId: string; onSelec
   const pricedBad = asking && (priced.isError || (priced.isSuccess && !pricedOk));
   const p: BasketPriced | undefined = !legs ? undefined : !needPrice ? sb : asking ? pricedOk : undefined;
   const show: Show = p ? "value" : servedBad && !local ? "awaiting" : pricedBad ? "awaiting" : "quiet";
+  // The page's badge dates the numbers on show, from the answer that supplied them: the served
+  // basket's, or a repricing's (Codex R-04); nothing shown, nothing dated.
+  const shownDate = p ? (typeof p.prices_as_of === "string" && dayShort(p.prices_as_of) ? p.prices_as_of : null) : undefined;
+  // Before paint, so no frame pairs one answer's day with another's numbers (Codex G4-2).
+  useLayoutEffect(() => onPrices(shownDate), [shownDate, onPrices]);
   // Names the price answer resolved fill the rows that have none (a ticker just added).
   useEffect(() => {
     if (!pricedOk || !work) return;
@@ -409,7 +425,9 @@ function BasketCard({ basketId, onSelect, onSaved }: { basketId: string; onSelec
               ))}
             </select>
           </span>
-          <span className="bh-meta">{[legs ? `${legs.length} names` : null, sb?.rebalance ? `rebalanced ${sb.rebalance}` : null, override ? "your weights, saved in this browser" : !servedId && local ? "saved in this browser" : null].filter(Boolean).join(" · ")}</span>
+          <span className="bh-meta">
+            {[legs ? `${legs.length} names` : null, sb?.rebalance ? `rebalanced ${sb.rebalance}` : null, override ? "your weights, saved in this browser" : !servedId && local ? "saved in this browser" : null, shownDate === null ? "prices date awaiting refresh" : null].filter(Boolean).join(" · ")}
+          </span>
           <button type="button" className="dk-link bh-new" onClick={newBasket}>
             + New basket
           </button>
@@ -595,7 +613,7 @@ function HedgeCard({
     <Card
       className="bh-card bh-hedge"
       title="Hedge · express or protect"
-      sub={h?.surface ? `priced off the live ${h.surface} surface` : undefined}
+      sub={h?.surface ? (h.surface_as_of && dayShort(h.surface_as_of) ? `priced off the ${h.surface} surface of ${dayShort(h.surface_as_of)}` : `priced off the ${h.surface} surface, its date awaiting refresh`) : undefined}
       footer={<AdvancedPanel adv={adv} items="full chain · greeks · roll dates · what the hedge does under −10% / −20%" missing="The API serves the three structures above, each with its cost, carry, roll and a month of scenarios; the full chain and the greeks are not served yet." />}
     >
       <div className="bh-modes" role="group" aria-label="Hedge mode">
@@ -671,6 +689,7 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
   // The hedge prices the saved basket (the server's, or this browser's), a position, or a study.
   const served = useBasket(basketId, { enabled: !basketId.startsWith("local-") });
   const [savedTick, setSavedTick] = useState(0);
+  const [shownPrices, setShownPrices] = useState<string | null | undefined>(undefined);
   const local = useMemo(() => readSaved().find((b) => b.id === basketId) ?? null, [basketId, savedTick]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     // A basket saved in another window of this browser.
@@ -691,10 +710,15 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
   } else if (savedLegs || (basketId.startsWith("local-") && !local)) reason = "The hedge prices the basket's saved weights once they add to 100%; save a basket to price it.";
   const hedge = useHedge(params ?? {}, { enabled: !!params });
   const hd = hedge.isError || !params ? undefined : hedge.data;
-  const liveParts = [sb?.prices_as_of ? `prices ${dayShort(sb.prices_as_of)}` : null, hd?.provider ? `options via ${hd.provider}` : null];
+  // "prices <day>" dates the basket's numbers on show (whichever answer supplied them); the options
+  // surface is dated on the hedge card, where its prices are.
+  // Numbers shown undated say so in the card's own line: the badge never wraps, and at a phone's
+  // width the words would push the page sideways (Codex G4-1).
+  const pricesPart = shownPrices ? `prices ${dayShort(shownPrices)}` : null;
+  const liveParts = [pricesPart, hd?.provider ? `options via ${hd.provider}` : null];
   return (
     <div className="bh">
-      <PageTitle page={page} badge={sb?.prices_as_of || hd?.provider ? <LiveBadge parts={liveParts} boxed /> : null} />
+      <PageTitle page={page} badge={liveParts.some(Boolean) ? <LiveBadge parts={liveParts} boxed /> : null} />
       <div className="bh-grid">
         <BasketCard
           basketId={basketId}
@@ -704,6 +728,7 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
             setSavedTick((t) => t + 1);
           }}
           onSaved={() => setSavedTick((t) => t + 1)}
+          onPrices={setShownPrices}
         />
         <HedgeCard mode={mode} params={params} q={hedge} onMode={(v) => set({ mode: v })} failed={basketFailed && !params && mode !== "express" && !position} reason={reason} what={mode === "express" ? "this study" : position ? "this position" : "these weights"} />
       </div>

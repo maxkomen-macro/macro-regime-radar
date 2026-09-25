@@ -159,6 +159,14 @@ describe("the response boundary", () => {
     expect(read({ protected_range: { ndx_from: -0.05, ndx_to: -0.1, basis: "strikes" } }).protected_range).toEqual({ ndx_from: -0.05, ndx_to: -0.1, basis: "strikes" });
   });
 
+  it("a price keeps its own date, and technicals names its series whole or not at all (Codex R-04, R-08)", () => {
+    expect((tryRead({ ...basketPrice, prices_as_of: "2026-09-24" }, "/basket/price") as Record<string, unknown>).prices_as_of).toBe("2026-09-24");
+    expect("prices_as_of" in (tryRead({ ...basketPrice, prices_as_of: 20260924 }, "/basket/price") as object)).toBe(false);
+    expect((tryRead(technicals, "/technicals") as Record<string, unknown>).instrument).toEqual({ symbol: "SPX", label: "S&P 500" });
+    expect("instrument" in (tryRead({ ...technicals, instrument: { symbol: "SPX" } }, "/technicals") as object)).toBe(false);
+    expect("instrument" in (tryRead({ ...technicals, instrument: "S&P 500" }, "/technicals") as object)).toBe(false);
+  });
+
   it("a statistic that is not finite is null, 1e999 included (G1-4)", () => {
     const pos = tryRead(JSON.parse('{"closed_90d":{"falsified":1e999,"expired":"4","premortem_right":[1e999,4]}}'), "/positions") as { closed_90d: Record<string, unknown> };
     expect(pos.closed_90d).toEqual({ falsified: null, expired: null, premortem_right: [null, 4] });

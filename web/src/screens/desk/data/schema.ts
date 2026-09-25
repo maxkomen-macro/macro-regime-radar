@@ -208,6 +208,7 @@ const nextPrint = o({ date: "s!", flip_threshold_mom: "n", flips_to: "s?" }, { n
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s" });
 const basketLeg = o({ symbol: "s!", name: "s?", weight: "n!" });
 const priced = {
+  prices_as_of: "s",
   benchmark: o({ symbol: "s!", label: "s!" }),
   ret_3m: "n",
   bench_ret_3m: "n",
@@ -250,6 +251,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/ledger": o({ ...envelope, normal_month: "n", signals: l(ledgerRow) }),
   "/technicals": o({
     ...envelope,
+    instrument: o({ symbol: "s!", label: "s!" }),
     price: "n",
     chg_1d: "n",
     ma50: "n",
@@ -430,7 +432,6 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     short: "s",
     instrument: "s",
     rebalance: "s",
-    prices_as_of: "s",
     baskets: l(o({ id: "s!", name: "s!" })),
     // A basket's legs are its composition: one bad leg and the basket cannot be read as served (Codex G1-6).
     legs: l(basketLeg, { req: true, strict: true }),
