@@ -2709,6 +2709,154 @@ store.
 The fixes were checked by the four gates and the tests above; the compare
 shots were re-shot after them.
 
+### Phase 2, item 7: the unavailable states — `frame-3: align 7 unavailable`
+
+**What changed.** Every block §1.0 marks UNAVAILABLE now arrives and renders
+as unavailable (§1.0.2): its card keeps its title, subtitle and stat labels,
+prints the served reason once, reads "○ Not yet served", shows no number,
+chart or gauge, and its Advanced control is disabled with "not yet served".
+
+- **Overview.** The VIX tile prints the level and its day ("VIX 16.2 · Sep
+  22", §2) and, for its unserved half, §1.0's reason ("The gap to realized
+  and the band word: realized-volatility method not specified."); `tiles.vol` serves `vix`, `date`, `freq`, `source` only
+  (§12.1). The since-last-close line loses the skew (no vol surface is
+  served) and the dollar's new fire (its study cannot run while DXY is not
+  stored).
+- **Technicals.** The vol column and the sector bars read `/technicals`'
+  own `vol` and `sectors` blocks (§3, §12.7), served awaiting with §12.7's
+  reasons; the page no longer asks the deferred `/vol` and `/sectors` stubs.
+  The RSI card has no served envelope, so it prints §1.0's reason; the RSI
+  fields are gone from the contract, and the Signals list omits the RSI
+  rows while they are unavailable.
+- **Event Study.** §12.2 has no `confidence` parameter: the page never
+  sends one, an old address's is ignored, and the rail's 80 / 90 / 95%
+  chips render disabled with "not yet served", 90% marked as the engine's
+  level (`verdict_confidence`), and, since they have no envelope, the rail
+  prints §1.0's reason beneath them ("Confidence levels other than 90%:
+  interval projection at other quantiles is new plumbing."); the served
+  confidence note is gone. The line
+  without the condition prints its block's reason ("conditional-versus-
+  unconditional comparison is not defined", C-01); its ready form, a
+  deferred shape, is no longer read.
+- **Regime.** "What each regime has meant" and the last five changes are
+  served awaiting ("regime statistics not yet defined in the engine.").
+- **Macro.** Stock–bond, what moves with the S&P and the matrix are served
+  awaiting ("Treasury and credit price-return series not ingested."); the
+  matrix's Advanced opens only once the matrix is served; with them gone, the
+  page badge reads "FRED" (§6).
+- **Sectors.** `/sectors` is a deferred stub answering the awaiting
+  envelope; both cards print §7's reason.
+- **Signal Ledger.** The dollar, oil and two RSI rows are unavailable
+  (`available: false`, the engine's `not_stored` reason for the two tier-2
+  series, §1.0's for RSI): each keeps its label and prints its reason across
+  the value columns, with no pill, and opens nothing. SIGNALS SCORED is
+  `scored_n` with "8 scored · 4 not yet served" (v4 B-02); FIRING NOW,
+  RELIABLE, NO EDGE and the filters count available rows only. NOW reads
+  "○ Stale · <evaluated_on>" when a row's last evaluable session is not the
+  comparison session, and a stale row is never firing or tinted (v3 §3).
+- **Advanced controls (§1.4).** The kit's `AdvancedPanel` is disabled with
+  "not yet served" unless it opens something real: Event Study's (the
+  study's `/study/events`), Macro's matrix and Technicals' sectors once
+  their blocks are served. Basket's export, import, revert and delete are
+  the card's own local controls (§1.8, §10), so they move out of Advanced to
+  sit with Save, and its Advanced is disabled like the rest.
+- **Reads (§1.4).** No `reads` are served on Monday; the fixtures drop them
+  and their boxes go.
+- The deferred shapes stay as samples for the unit tests that render their
+  cards once served: `vol.json`, `sectors.json`, and the new
+  `deferred-macro.json` and `deferred-regime.json` (without reads: the
+  deferred shapes carry none). The schema gains
+  nullable enums, since §12.5 serves a row's verdict, units and firing state
+  null when the row is unavailable.
+- A kit fix found by the compare shot: a `StatRow` with `cols` now flows by
+  row, so the vol column's four labels stack instead of overlapping.
+
+**Tests.** Unit: each tab's Monday state from the fixture as served (the
+three Technicals cards, Sectors, Macro's three blocks, Regime's two, the
+line without the condition, the VIX tile, the Ledger's header, rows,
+filters and stale NOW, the confidence chips asking nothing); the deferred
+cards against the served samples; the deferred shapes against their
+schemas, as stubs and as `/technicals` blocks; `StatRow`'s flow. Browser:
+the Technicals cards and the Ledger's unavailable rows at 1440 and 390 in
+the palette with no sideways scroll; the chips disabled, nothing asking with
+a confidence; Event Study's Advanced still a blue link.
+
+**Against the PNGs.** Each difference below is the unavailable state
+§1.0.2 describes, on the block §1.0's table names:
+- 01 Overview: the VIX tile's "Calm · protection costs about 4 pts more
+  than recent moves justify" is now "VIX 16.2 · Sep 22" and "The gap to
+  realized and the band word: realized-volatility method not specified." (§1.0: "Overview: VIX
+  "gap vs realized" and the vol band word | UNAVAILABLE"; §2: "VIX <level>
+  · <date> (the gap to realized and the band word are unavailable, §1.0)");
+  the since-last-close line loses "Dollar −2σ fired (new)" and ", skew
+  steeper" (§1.0: the Ledger's WTI and DXY rows unavailable; the vol column
+  unavailable).
+- 02 Technicals: the vol column, the sector bars and the RSI card are
+  unavailable cards (§3: "What protection costs right now … UNAVAILABLE",
+  "Sector leadership … UNAVAILABLE", "Momentum · RSI: UNAVAILABLE (§1.0;
+  no served envelope, §1.0.2)"); the Signals list has four rows (§3: "the
+  RSI rows are omitted while unavailable").
+- 03 Event Study: the confidence chips are disabled with "not yet served",
+  §1.0's reason sits beneath them (§1.0.2: "A block that is unavailable by
+  §1.0 but has no served envelope (the RSI card, the confidence chips) prints
+  the reason in §1.0's table"), and the confidence note is gone (§4: "Confidence chips 80% / 90% / 95%
+  render disabled with "not yet served"; 90% is the served level"); the line
+  without the condition prints its reason (§4: "Comparison line: the
+  `without_condition` block, UNAVAILABLE (§1.0, reason
+  "conditional-versus-unconditional comparison is not defined")").
+- 04 Regime: "What each regime has meant" and the last five changes are
+  unavailable (§5: "What each regime has meant: UNAVAILABLE"; "LAST FIVE
+  REGIME CHANGES · S&P A MONTH LATER: UNAVAILABLE"); the "Read for the
+  desk" boxes are gone (§1.4: "No read is served on Monday; the box is
+  omitted"); every card's Advanced is disabled (§5: "Footer `Advanced ▸`
+  disabled, "not yet served"").
+- 05 Macro & Correlations: "Do bonds still hedge stocks?" and "What moves
+  with the S&P" are unavailable, the curve's front-end words and the reads
+  are gone, the Advanced controls are disabled, and the badge reads "FRED"
+  (§6: "Badge `● Live · FRED · <date>`") (§6, §12.8: "awaiting:
+  "Treasury and credit price-return series not ingested.""; §1.4).
+- 06 Sectors: both cards are unavailable (§7: "`/sectors` answers the
+  awaiting envelope (reason "sector ETFs, RSP and IWM not ingested.")").
+- 07 Signal Ledger: SIGNALS SCORED reads 8 with "8 scored · 4 not yet
+  served", FIRING NOW 1, RELIABLE 2, NO EDGE 3; the dollar, oil and RSI rows
+  print their reasons with no pill (§8: "SIGNALS SCORED `scored_n`
+  ("<scored_n> scored · <unavailable_n> not yet served", v4 B-02) …
+  Unavailable rows are excluded from every count but the first"; "An
+  unavailable row keeps its label and prints its reason across the value
+  columns, with no pill").
+- 09 Basket & Hedge: both cards' Advanced controls are disabled, and the
+  basket's Export, Import, Revert and Delete sit under Save basket (§1.4:
+  "An Advanced control is enabled only when the endpoint it opens exists in
+  §12"; §1.8: "an Export / Import JSON control"); item 11 makes the rest of
+  the tab unavailable.
+
+Verifier (one round): **FAIL**, one blocking finding, two should-fix and
+five nits, all taken but one. It walked §1.0's table row by row (no
+unavailable block shows data, no live block is disabled), every Advanced
+control, the Ledger's header, counts, unavailable rows and stale NOW, and
+that nothing sends `confidence`, at 1440, 1101 and 390 on eight tabs.
+- V7-1 (blocking) the confidence chips did not print §1.0's reason, which
+  §1.0.2 requires of a block with no envelope. **Fixed.**
+- V7-2 (should-fix) the VIX tile printed a sentence of its own instead of
+  §1.0's reason, and "VIX level" where §2 has the level. **Fixed.**
+- V7-3 (should-fix) Basket's Advanced was the one enabled control opening
+  no endpoint, and its sentence claimed stats Monday does not serve.
+  **Fixed:** the local controls sit with Save; Advanced is disabled.
+- V7-4 unavailable and stale rows sit under "Quiet · sorted by verdict":
+  **left for item 12**, whose fixed order replaces the grouping.
+- V7-5 the disabled chips looked enabled; the note was 11px. **Fixed.**
+- V7-6 the vol card's badge squeezed its title. **Fixed.**
+- V7-7 Macro's badge still said Yahoo. **Fixed.**
+- V7-8 `useVol` was dead and the deferred samples carried reads. **Fixed.**
+- Noted, outside this item: `Price it →` stays a live link (item 11); the
+  Technicals list's order (item 12); the dollar and oil preset chips
+  (item 8); the Ledger's "day n" and tooltip (item 9).
+
+One unit run in this item failed the Macro curve test on a timing flake
+under full-suite load; it passed alone and on every full run after. The
+fixes were checked by the four gates and the tests above; the changed
+compare shots were re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2740,6 +2888,7 @@ tests against the fixture dev server.
 | frame-3: align 4 verdicts | clean | 118 / 1,420 | ok | 53 / 53 |
 | frame-3: align 5 baseline | clean | 118 / 1,424 | ok | 53 / 53 |
 | frame-3: align 6 regime-recession | clean | 118 / 1,428 | ok | 54 / 54 |
+| frame-3: align 7 unavailable | clean | 118 / 1,431 | ok | 55 / 55 |
 
 ## Finish
 

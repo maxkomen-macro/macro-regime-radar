@@ -4,8 +4,8 @@
  * headline and why, and `Price it →`; the answer by regime a month later (§4's fixed label: §12.2
  * serves `by_regime` and `last_events` at 20 sessions; a regime under ten
  * events prints its count and "too few cases to say"); the last five events; the range against a normal stretch at
- * the chosen confidence (80 / 90 / 95%, re-asked with `confidence`), with the
- * served note; and the footer: Advanced and Export.
+ * the engine's 90% (the 80% and 95% chips disabled, "not yet served"); and the
+ * footer: Advanced and Export.
  */
 
 import { Link } from "react-router-dom";
@@ -58,6 +58,9 @@ export const REGIME_FLOOR = 10;
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, string> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
 
+/** §1.0: why the 80% and 95% chips are not served (they have no envelope of their own, §1.0.2). */
+export const CONFIDENCE_UNAVAILABLE = "Confidence levels other than 90%: interval projection at other quantiles is new plumbing.";
+
 /** A horizon's interval on Δ, native in, in the target's display unit (§1.9): "−1.6 to +4.1 pts", "−10 to +40 bp". */
 export function rangeWords(lo: number | null, hi: number | null, unit: TargetUnit | undefined): string {
   return rangeText(lo, hi, unit) ?? "Awaiting refresh";
@@ -66,8 +69,6 @@ export function rangeWords(lo: number | null, hi: number | null, unit: TargetUni
 export default function StudyRail({
   study,
   todayRegime,
-  confidence,
-  onConfidence,
   priceHref,
   advOpen,
   onAdvanced,
@@ -78,9 +79,6 @@ export default function StudyRail({
 }: {
   study: StudyResponse;
   todayRegime: string | null;
-  /** The served confidence; null presses no chip. */
-  confidence: number | null;
-  onConfidence: (c: number) => void;
   priceHref: string;
   advOpen: boolean;
   onAdvanced: () => void;
@@ -187,15 +185,19 @@ export default function StudyRail({
         <p className="dk-stat-label">
           Range <span className="dk-lc">vs</span> normal
         </p>
+        {/* §4: the chips render disabled, "not yet served"; the engine's 90% (`verdict_confidence`) is the level shown. */}
         <div className="es-conf" role="group" aria-label="Confidence">
           <span className="es-conf-word">confidence</span>
           {CONFIDENCES.map((c) => (
-            <button key={c} type="button" aria-pressed={fin(confidence) && Math.abs(confidence - c) < 1e-9} onClick={() => onConfidence(c)}>
+            <button key={c} type="button" disabled aria-pressed={fin(study.verdict_confidence) && Math.abs(study.verdict_confidence - c) < 1e-9}>
               {Math.round(c * 100)}%
             </button>
           ))}
+          <span className="es-conf-off">not yet served</span>
         </div>
       </div>
+      {/* §1.0.2: the chips have no served envelope, so the rail prints §1.0's reason for them. */}
+      <p className="es-conf-why dk-unserved-inline">{CONFIDENCE_UNAVAILABLE}</p>
       {horizons ? (
         <ul className="es-ranges">
           {horizons.map((h) => (
@@ -216,7 +218,6 @@ export default function StudyRail({
       ) : (
         <Awaiting />
       )}
-      <p className="es-note">{study.confidence_note}</p>
 
       <div className="es-rail-foot">
         <Advanced items={`${fin(study.matched_n) ? `all ${study.matched_n} events` : "all events"} · resampling detail · entry rules · provenance`} open={advOpen} onToggle={onAdvanced} controls={advId} />

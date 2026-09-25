@@ -2,12 +2,7 @@
  "as_of": "2026-09-22",
  "generation_id": "gen-fixture-2026-09-22",
  "since_last_close": {
-  "new_fires": [
-   {
-    "slug": "dollar-2sigma-20d",
-    "label": "Dollar −2σ fired"
-   }
-  ],
+  "new_fires": [],
   "still_firing": [
    {
     "slug": "2s10s-2sigma-steepening",
@@ -16,7 +11,6 @@
    }
   ],
   "vol_change_pts": 0.8,
-  "skew_direction": "steeper",
   "regime_changed": false,
   "regime_from": null,
   "regime_to": null,
@@ -56,9 +50,8 @@
   "vol": {
    "vix": 16.2,
    "date": "2026-09-22",
-   "realized_20d": 11.9,
-   "gap_pts": 4.3,
-   "band": "calm"
+   "freq": "daily",
+   "source": "FRED VIXCLS (desk_series)"
   }
  },
  "active_signals": [

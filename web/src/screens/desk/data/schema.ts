@@ -42,6 +42,8 @@ interface Enum {
   k: "enum";
   of: readonly string[];
   req?: boolean;
+  /** Served null on purpose (§12.5: "null when unavailable"): null passes, and a bad value becomes null. */
+  nul?: boolean;
 }
 interface Tuple {
   k: "tuple";
@@ -54,7 +56,7 @@ export type Spec = Leaf | Obj | List | MapOf | Enum | Tuple;
 export const o = (fields: Record<string, Spec>, opts: { req?: boolean; nul?: boolean } = {}): Obj => ({ k: "obj", fields, ...opts });
 export const l = (of: Spec, opts: { req?: boolean; strict?: boolean } = {}): List => ({ k: "list", of, ...opts });
 export const m = (of: Spec, opts: { req?: boolean } = {}): MapOf => ({ k: "map", of, ...opts });
-export const e = (of: readonly string[], opts: { req?: boolean } = {}): Enum => ({ k: "enum", of, ...opts });
+export const e = (of: readonly string[], opts: { req?: boolean; nul?: boolean } = {}): Enum => ({ k: "enum", of, ...opts });
 export const t = (of: Spec[], opts: { req?: boolean; nul?: boolean } = {}): Tuple => ({ k: "tuple", of, ...opts });
 
 const INVALID = Symbol("invalid");
@@ -70,7 +72,7 @@ function required(spec: Spec): boolean {
 /** What a bad optional value becomes: null for a statistic or a nullable leaf, else removed. */
 function fallback(spec: Spec): null | typeof INVALID {
   if (spec === "n" || spec === "s?" || spec === "b?") return null;
-  if (typeof spec !== "string" && (spec.k === "obj" || spec.k === "tuple") && spec.nul) return null;
+  if (typeof spec !== "string" && (spec.k === "obj" || spec.k === "tuple" || spec.k === "enum") && spec.nul) return null;
   return INVALID;
 }
 
@@ -97,6 +99,7 @@ export function check(v: unknown, spec: Spec): Checked {
   }
   switch (spec.k) {
     case "enum":
+      if (v === null && spec.nul) return null;
       return typeof v === "string" && spec.of.includes(v) ? v : INVALID;
     case "tuple": {
       if (v === null && spec.nul) return null;
@@ -152,7 +155,6 @@ export function checkAnswer(body: unknown, spec: Obj): Record<string, unknown> |
 // ── The shapes (§12, §12.13) ──────────────────────────────────────────────
 
 const VERDICTS = ["reliable", "suggestive", "no_edge", "insufficient"] as const;
-const verdict = e(VERDICTS, { req: true });
 const read = o({ label: "s?", text: "s!", tone: "s" });
 const reads = (keys: string[]) => o(Object.fromEntries(keys.map((key) => [key, { ...read, nul: true }])));
 const envelope = { as_of: "s", generation_id: "s" } as const;
@@ -161,18 +163,22 @@ const ledgerRow = o({
   slug: "s!",
   label: "s!",
   group: "s",
+  available: "b",
+  unavailable: o({ reason: "s!", until: "s?" }, { nul: true }),
+  evaluated_on: "s?",
+  stale: "b",
   last_fired: "s?",
   horizon: "n",
   n: "n",
   up_pct: "n",
   median: "n",
-  target_unit: e(["log_return", "log_change", "bp"]),
-  display_unit: e(["percent", "bp"]),
+  // §12.5: each "required, nullable (null when unavailable)"; an unknown value reads as null (the pill says "—", L-3).
+  target_unit: e(["log_return", "log_change", "bp"], { nul: true }),
+  display_unit: e(["percent", "bp"], { nul: true }),
   baseline_median: "n",
   vs_normal: "n",
-  // An unknown verdict is left out; the row stays and its pill says "—" (L-3).
-  verdict: e(VERDICTS),
-  firing_now: "b",
+  verdict: e(VERDICTS, { nul: true }),
+  firing_now: "b?",
   firing_day: "n",
   sample_start: "s?",
   short: "s",
@@ -231,6 +237,36 @@ const priced = {
   reads: reads(["chart", "beta"]),
 } as const;
 
+/** The deferred vol and sectors shapes (§12.13), served as `/technicals` blocks and as their own stubs. */
+const VOL = {
+  source: "s",
+  skew_25d_1m_pts: "n",
+  skew_pct_2y: "n",
+  skew_trend: "s",
+  atm_iv_1m: "n",
+  realized_20d: "n",
+  term: o({ "1m": "n", "3m": "n", "6m": "n" }, { nul: true }),
+  history_from: "s",
+  skew_band_edges: t(["n!", "n!"], { nul: true }),
+  reads: reads(["skew", "iv_rv", "term_meaning", "term", "gauge"]),
+} as const;
+const SECTORS = {
+  window_months: "n",
+  leadership: l(o({ etf: "s!", name: "s!", short: "s", rel_ret: "n" })),
+  pattern: "s",
+  breadth: o({
+    above_50: o({ n: "n", of: "n", month_ago: "n", by_etf: m("b") }),
+    above_200: o({ n: "n", of: "n", by_etf: m("b"), broad: "b" }),
+    eqw_vs_cap_3m: "n",
+    eqw_vs_cap_series: l(relPoint),
+    small_vs_large_series: l(relPoint),
+  }),
+  reads: reads(["leadership_brief", "leadership", "breadth"]),
+  words: o({ pattern: "s", above_200: "s", eqw: "s" }),
+  error: "s",
+  missing: l("s"),
+} as const;
+
 export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/overview": o({
     ...envelope,
@@ -238,7 +274,6 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       new_fires: l(o({ slug: "s!", label: "s!" })),
       still_firing: l(o({ slug: "s!", label: "s!", day: "n" })),
       vol_change_pts: "n",
-      skew_direction: "s",
       regime_changed: "b",
       regime_from: "s?",
       regime_to: "s?",
@@ -249,13 +284,13 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       recession: o({ ...recessionScore }),
       // The trend tile names the trend from its two flags: without both it says nothing (Codex G1-9).
       trend: o({ above_50: "b!", above_200: "b!", since: "s", since_signal: "s", since_verdict: e(VERDICTS), date: "s" }),
-      vol: o({ vix: "n", date: "s", realized_20d: "n", gap_pts: "n", band: "s" }),
+      vol: o({ vix: "n", date: "s", freq: "s", source: "s" }),
     }),
     active_signals: l(ledgerRow),
     monitored: l(o(positionCompact)),
     data_status: "s",
   }),
-  "/ledger": o({ ...envelope, verdict_rule: "s", horizon: "n", signals: l(ledgerRow) }),
+  "/ledger": o({ ...envelope, verdict_rule: "s", horizon: "n", comparison_session: "s?", prev_session: "s?", scored_n: "n", unavailable_n: "n", signals: l(ledgerRow) }),
   "/technicals": o({
     ...envelope,
     instrument: o({ symbol: "s!", label: "s!" }),
@@ -269,45 +304,15 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     trend: "s",
     move_20d_sigma: "n",
     move_20d_word: "s",
-    rsi: "n",
-    rsi_word: e(["oversold", "neutral", "overbought"]),
-    rsi_direction: "s",
-    rsi_last_above_70: o({ date: "s!", spx_1m: "n" }, { nul: true }),
-    rsi_last_below_30: o({ date: "s!", spx_1m: "n" }, { nul: true }),
     // A cross without its kind and day claims nothing (Codex G1-9).
     cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),
     series: o({ "6m": l(pricePoint), "1y": l(pricePoint), "3y": l(pricePoint) }),
+    // §12.7: two block envelopes, awaiting on Monday; their data, once ready, is the deferred shape.
+    vol: o({ ...VOL }),
+    sectors: o({ ...SECTORS }),
   }),
-  "/vol": o({
-    ...envelope,
-    source: "s",
-    skew_25d_1m_pts: "n",
-    skew_pct_2y: "n",
-    skew_trend: "s",
-    atm_iv_1m: "n",
-    realized_20d: "n",
-    term: o({ "1m": "n", "3m": "n", "6m": "n" }, { nul: true }),
-    history_from: "s",
-    skew_band_edges: t(["n!", "n!"], { nul: true }),
-    reads: reads(["skew", "iv_rv", "term_meaning", "term", "gauge"]),
-  }),
-  "/sectors": o({
-    ...envelope,
-    window_months: "n",
-    leadership: l(o({ etf: "s!", name: "s!", short: "s", rel_ret: "n" })),
-    pattern: "s",
-    breadth: o({
-      above_50: o({ n: "n", of: "n", month_ago: "n", by_etf: m("b") }),
-      above_200: o({ n: "n", of: "n", by_etf: m("b"), broad: "b" }),
-      eqw_vs_cap_3m: "n",
-      eqw_vs_cap_series: l(relPoint),
-      small_vs_large_series: l(relPoint),
-    }),
-    reads: reads(["leadership_brief", "leadership", "breadth"]),
-    words: o({ pattern: "s", above_200: "s", eqw: "s" }),
-    error: "s",
-    missing: l("s"),
-  }),
+  "/vol": o({ ...envelope, ...VOL }),
+  "/sectors": o({ ...envelope, ...SECTORS }),
   "/regime": o({
     ...envelope,
     // The page words a missing label on its own (Regime R-2); the rest of the block still reads.
@@ -393,12 +398,9 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         best: o({ ret: "n", date: "s" }, { nul: true }),
       }),
     ),
-    confidence: "n",
-    confidence_note: "s",
     by_regime: l(o({ h: "n", regime: "s!", n: "n", up_pct: "n", median: "n" })),
     unlabeled_n: "n",
     last_events: l(o({ date: "s!", regime: "s", ret_20: "n" })),
-    without_condition: o({ n_events: "n", up_pct: "n", median: "n", verdict, comparison: e(["improves", "no_improvement", "insufficient"]), comparison_note: "s" }, { nul: true }),
     provenance: o({ bootstrap: "n", entry: "s", cooldown: "n", series_start: m("s!") }),
     warnings: l("s!"),
     empty_state: o({ horizon: "n", sentence: "s", fixes: l("s!") }, { nul: true }),

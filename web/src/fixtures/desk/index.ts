@@ -21,13 +21,11 @@ import pipeline from "./pipeline.json" with { type: "json" };
 import { PIPELINE_DDL } from "./pipeline-ddl";
 import positions from "./positions.json" with { type: "json" };
 import regime from "./regime.json" with { type: "json" };
-import sectors from "./sectors.json" with { type: "json" };
 import studyEvents from "./study-events.json" with { type: "json" };
 import study from "./study.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
-import vol from "./vol.json" with { type: "json" };
 import { isQuestion } from "../../screens/desk/event-study/question";
-import { onTheWire, routeOf, type EnvelopeMeta } from "../../screens/desk/data/envelope";
+import { awaitingEnvelope, onTheWire, routeOf, type EnvelopeMeta } from "../../screens/desk/data/envelope";
 
 /** The envelope's fields for every fixture answer (§12.0); a payload's own `as_of` and `generation_id` win. */
 export const FIXTURE_META: EnvelopeMeta = { generation_id: "gen-fixture-2026-09-22", as_of: "2026-09-22", engine_version: "fixture" };
@@ -55,11 +53,17 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
   "/overview": overview,
   "/ledger": ledger,
   "/technicals": technicals,
-  "/vol": vol,
-  "/sectors": sectors,
   "/regime": regime,
   "/macro": macro,
   "/pipeline": pipeline,
+};
+
+/** The deferred resources of §12.13 that are GET-only stubs on Monday (§12.0): each answers the awaiting
+ * envelope with §1.0's reason. Their deferred shapes (vol.json, sectors.json) stay for the unit tests
+ * that render a block once it is served. */
+const DEFERRED: Readonly<Record<string, string>> = {
+  "/vol": "needs stored SPY option snapshots and a versioned skew method.",
+  "/sectors": "sector ETFs, RSP and IWM not ingested.",
 };
 
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
@@ -204,10 +208,10 @@ export function deskFixture(method: string, url: string, _body?: string, accept?
 function rawReply(method: string, u: URL, path: string, _body?: string, accept?: string): FixtureReply {
   if (path === "/positions") return positionsReply(method, _body);
   if (method.toUpperCase() === "GET" && path in DESK_JSON_FIXTURES) return json(200, DESK_JSON_FIXTURES[path]);
+  if (method.toUpperCase() === "GET" && path in DEFERRED) return json(200, awaitingEnvelope({ reason: DEFERRED[path], until: null }, FIXTURE_META));
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {
     // The fixtures carry one study; any other question has no fixture (the page
-    // shows what the API would: its error state), and `confidence` is served as
-    // the fixture states it (0.90), whatever was asked.
+    // shows what the API would: its error state).
     if (!asksFixtureStudy(u)) return json(404, { error: "no fixture for this question" });
     if (path === "/study") return json(200, study);
     if (/text\/csv/.test(accept ?? "")) return { status: 200, contentType: "text/csv", body: eventsCsv(studyEvents as { events: Record<string, unknown>[] }) };

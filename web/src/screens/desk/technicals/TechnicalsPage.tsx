@@ -14,7 +14,7 @@
  */
 
 import { useState } from "react";
-import { unavailableOf, useLedger, useSectors, useTechnicals, useVol } from "../data/api";
+import { unavailableOf, useLedger, useTechnicals } from "../data/api";
 import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, VolResponse } from "../data/types";
 import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
@@ -282,7 +282,8 @@ export function trendSub(t: Pick<TechnicalsResponse, "vs_ma50" | "vs_ma200">): s
 const bySlug = (ledger: LedgerResponse | undefined, slug: string) => (Array.isArray(ledger?.signals) ? ledger.signals.find((r) => r.slug === slug && fin(r.n)) : undefined);
 
 function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | undefined; tState: CardState; ledger: LedgerResponse | undefined; lState: CardState }) {
-  const rows = Array.isArray(ledger?.signals) ? ledgerOrder(ledger.signals.filter((s) => s.group === "spx" && fin(s.n))) : [];
+  // §3: the S&P rows the Ledger scores; the RSI rows are omitted while unavailable.
+  const rows = Array.isArray(ledger?.signals) ? ledgerOrder(ledger.signals.filter((s) => s.group === "spx" && s.available !== false && fin(s.n))) : [];
   const ready = tState === "ready" && !!t;
   const aw = tState === "awaiting";
   const unserved = useUnserved();
@@ -377,7 +378,8 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
         <Awaiting>the sector ETFs are not ingested yet</Awaiting>
       )}
       <div className="te-foot">
-        <AdvancedPanel adv={adv} items="all 11 · rotation over time · by regime" missing="Rotation over time and leadership by regime are not served yet.">
+        {/* All eleven come from the sectors block once served; until then the control is disabled (§1.4). */}
+        <AdvancedPanel enabled={rows.length > 0} adv={adv} items="all 11 · rotation over time · by regime" missing="Rotation over time and leadership by regime are not served yet.">
           {rows.length ? <RankBars label="All eleven sector ETFs against the S&P" rows={served.map(toRow)} lo={lo} hi={hi} /> : null}
         </AdvancedPanel>
       </div>
@@ -393,114 +395,38 @@ export function dayInYear(iso: string | null | undefined, asOf: string): string 
   return iso.slice(0, 4) === asOf.slice(0, 4) ? dayShort(iso) : dayLong(iso);
 }
 
-/** The RSI's word, as served (Codex R-13): oversold, neutral or overbought; null when not served. */
-export function rsiWord(t: TechnicalsResponse | undefined): string | null {
-  const w = t?.rsi_word;
-  return w === "oversold" || w === "neutral" || w === "overbought" ? w : null;
-}
+/** §1.0: RSI is not computed, and the card has no served envelope, so it prints §1.0's reason (§1.0.2). */
+export const RSI_UNAVAILABLE = { reason: "RSI is not computed in src/desk/ or api/; adding it is a new calculation outside Monday's scope.", until: null } as const;
 
-function RsiNote({ label, row }: { label: string; row: LedgerRow | undefined }) {
-  if (!row) return null;
-  return (
-    <div className="dk-read te-rsi-note">
-      <b>{label}:</b> {fin(row.n) ? `fired ${row.n}×${year(row.sample_start) ? ` since ${year(row.sample_start)}` : ""}` : "times fired awaiting refresh"}
-      {fin(row.up_pct) ? `; the S&P was up ${pctPlain(row.up_pct)} of the time a month later` : ""}. <VerdictWord verdict={row.verdict} />.
-    </div>
-  );
-}
-
-function RsiCard({ t, state, ledger }: { t: TechnicalsResponse | undefined; state: CardState; ledger: LedgerResponse | undefined }) {
-  const adv = useAdvanced();
-  const above = bySlug(ledger, "rsi-above-70");
-  const below = bySlug(ledger, "rsi-below-30");
-  const word = rsiWord(t);
-  const ready = state === "ready" && !!t;
-  const aw = state === "awaiting";
-  const last = (x: TechnicalsResponse["rsi_last_above_70"] | null | undefined) => (ready && x?.date ? dayInYear(x.date, t.as_of) : "");
-  const unserved = useUnserved();
-  if (unserved) return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub="is the S&P stretched, either way?" labels={["Now", "Last above 70", "Last below 30"]} block={unserved} advanced />;
-  return (
-    <section className="dk-card te-rsi" aria-labelledby="te-rsi-title" aria-busy={state === "loading"}>
-      <div className="dk-card-head">
-        <h2 className="dk-card-title" id="te-rsi-title">
-          Momentum · RSI<span className="dk-card-sub"> is the S&amp;P stretched, either way?</span>
-        </h2>
-      </div>
-      <StatRow cols={3}>
-        <Stat label="Now" awaiting={aw || (ready && !fin(t.rsi))} value={ready && fin(t.rsi) ? String(t.rsi) : undefined} sub={ready ? [word, t.rsi_direction].filter(Boolean).join(", ") || undefined : undefined} />
-        <Stat
-          label="Last above 70"
-          size="date"
-          awaiting={aw || (ready && !last(t.rsi_last_above_70))}
-          tone="amber"
-          value={last(t?.rsi_last_above_70) || undefined}
-          sub={ready && fin(t.rsi_last_above_70?.spx_1m) ? `S&P ${pct(t.rsi_last_above_70.spx_1m)} a month later` : undefined}
-        />
-        <Stat
-          label="Last below 30"
-          size="date"
-          awaiting={aw || (ready && !last(t.rsi_last_below_30))}
-          tone="green"
-          value={last(t?.rsi_last_below_30) || undefined}
-          sub={ready && fin(t.rsi_last_below_30?.spx_1m) ? `S&P ${pct(t.rsi_last_below_30.spx_1m)} a month later` : undefined}
-        />
-      </StatRow>
-      <div className="te-rsi-gauge">
-        {ready && fin(t.rsi) ? (
-          <Gauge
-            thick
-            min={0}
-            max={100}
-            value={t.rsi}
-            ticks={[0, 30, 70, 100]}
-            bands={[
-              { label: "Oversold", to: 30, tone: "green" },
-              { label: "Neutral", to: 70, tone: "neutral" },
-              { label: "Overbought", to: 100, tone: "amber" },
-            ]}
-            caption={String(t.rsi)}
-            label={`RSI ${t.rsi}${word ? `, ${word}` : ""}`}
-          />
-        ) : aw ? (
-          <Awaiting />
-        ) : null}
-      </div>
-      <div className="te-rsi-notes">
-        <RsiNote label="Above 70" row={above} />
-        <RsiNote label="Below 30" row={below} />
-      </div>
-      <div className="te-foot">
-        <AdvancedPanel adv={adv} items={below && fin(below.n) ? `full RSI line · all ${below.n} oversold events · regime split` : "full RSI line · oversold events · regime split"} missing="The RSI line, the oversold events and the regime split are not served yet." />
-      </div>
-    </section>
-  );
+function RsiCard() {
+  return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub="is the S&P stretched, either way?" labels={["Now", "Last above 70", "Last below 30"]} block={RSI_UNAVAILABLE} advanced />;
 }
 
 export default function TechnicalsPage({ page }: { page: DeskPage }) {
   const tq = useTechnicals();
-  const vq = useVol();
-  const sq = useSectors();
   const lq = useLedger();
   const t = tq.data;
+  // §3, §12.7: the vol column and the sector bars are `/technicals` blocks, served awaiting on Monday.
+  const routeOff = unavailableOf(tq.error);
+  const volOff = routeOff ?? t?._blocks?.vol ?? null;
+  const sectorsOff = routeOff ?? t?._blocks?.sectors ?? null;
   const cross = t?.cross ? bySlug(lq.data, t.cross.kind === "death" ? "death-cross" : "golden-cross") : undefined;
   return (
     <div className="te">
       <PageTitle page={page} badge={unavailableOf(tq.error) ? <NotServedBadge boxed /> : t ? <LiveBadge boxed parts={["Yahoo/FRED", `as of ${dayLong(t.as_of)}`]} /> : null} />
       <div className="te-grid">
         {/* §12.0: a card whose answer is served awaiting keeps its labels and prints the reason (§1.0.2). */}
-        <Unserved block={unavailableOf(vq.error)}>
-          <VolCard vol={vq.data} state={stateOf(vq)} />
+        <Unserved block={volOff}>
+          <VolCard vol={t?.vol} state={stateOf(tq, !!t?.vol)} />
         </Unserved>
         <Unserved block={unavailableOf(tq.error)}>
           <PriceCard t={t} state={stateOf(tq)} cross={cross} />
           <SignalsCard t={t} tState={stateOf(tq)} ledger={lq.data} lState={stateOf(lq, Array.isArray(lq.data?.signals))} />
         </Unserved>
-        <Unserved block={unavailableOf(sq.error)}>
-          <SectorCard s={sq.data} state={stateOf(sq, Array.isArray(sq.data?.leadership))} />
+        <Unserved block={sectorsOff}>
+          <SectorCard s={t?.sectors} state={stateOf(tq, Array.isArray(t?.sectors?.leadership))} />
         </Unserved>
-        <Unserved block={unavailableOf(tq.error)}>
-          <RsiCard t={t} state={stateOf(tq)} ledger={lq.data} />
-        </Unserved>
+        <RsiCard />
       </div>
     </div>
   );

@@ -61,6 +61,16 @@ describe("the response boundary", () => {
     for (const body of [null, [], [1, 2], 3, "text", undefined]) expect(tryRead(body, "/study")).toBe("unreadable");
   });
 
+  it("the deferred shapes (§12.13) pass their schemas unchanged, as a stub and as a /technicals block", () => {
+    const { as_of: _va, generation_id: _vg, ...v } = vol;
+    const { as_of: _sa, generation_id: _sg, ...s } = sectors;
+    void [_va, _vg, _sa, _sg];
+    expect(readBody(vol, "/vol")).toEqual(vol);
+    expect(readBody(sectors, "/sectors")).toEqual(sectors);
+    const t = { ...technicals, vol: v, sectors: s };
+    expect(readBody(t, "/technicals")).toEqual(t);
+  });
+
   it("every fixture passes its own schema unchanged", () => {
     for (const path of Object.keys(SCHEMAS)) {
       const url = path === "/basket" ? "/api/desk/basket/ai-infra" : `/api/desk${path}${path === "/study" || path === "/study/events" ? "?preset=gold-2sigma-spx-weak" : path === "/hedge" ? "?mode=protect&basket=ai-infra" : ""}`;
@@ -69,6 +79,8 @@ describe("the response boundary", () => {
       // On the wire every fixture is an envelope (§12.0); its payload, blocks taken apart, passes its schema unchanged.
       const env = JSON.parse(reply.body) as unknown;
       expect(isEnvelope(env), path).toBe(true);
+      // A deferred stub (§12.0: /vol, /sectors) answers awaiting, with no payload; its shape is checked below.
+      if ((env as { status: string }).status === "awaiting") continue;
       const { data } = unwrapBlocks(routeOf(path), (env as { data: Record<string, unknown> }).data);
       expect(readBody(data, path === "/basket" ? "/basket/ai-infra" : path), path).toEqual(data);
     }
@@ -127,7 +139,8 @@ describe("the response boundary", () => {
     expect("regime" in o.tiles).toBe(false);
     expect("trend" in o.tiles).toBe(false);
     const ledgerRows = tryRead({ signals: [{}, { slug: "a", label: "A", sample_start: 1990, n: "12", verdict: "great" }] }, "/ledger") as { signals: Record<string, unknown>[] };
-    expect(ledgerRows.signals).toEqual([{ slug: "a", label: "A", sample_start: null, n: null }]);
+    // §12.5 serves verdict nullable: an unknown verdict reads as null (its pill says "—").
+    expect(ledgerRows.signals).toEqual([{ slug: "a", label: "A", sample_start: null, n: null, verdict: null }]);
   });
 
   it("the contract's served words and counts are checked by kind; a wrong kind is removed (Codex round 1, group 2)", () => {
@@ -136,17 +149,13 @@ describe("the response boundary", () => {
         ...study,
         question: { ...study.question, target_unit: "percent", target_label: 42 },
         horizons: study.horizons.map((h) => ({ ...h, n: "18" })),
-        without_condition: { ...study.without_condition, comparison: "better", comparison_note: 7 },
       },
       "/study",
-    ) as { question: Record<string, unknown>; horizons: Record<string, unknown>[]; without_condition: Record<string, unknown> };
+    ) as { question: Record<string, unknown>; horizons: Record<string, unknown>[] };
     expect("target_unit" in s.question).toBe(false);
     expect("target_label" in s.question).toBe(false);
     expect(s.horizons.map((h) => h.n)).toEqual([null, null, null, null]);
-    expect("comparison" in s.without_condition).toBe(false);
-    expect("comparison_note" in s.without_condition).toBe(false);
-    const t = tryRead({ ...technicals, rsi_word: "extreme", move_20d_word: 3 }, "/technicals") as Record<string, unknown>;
-    expect("rsi_word" in t).toBe(false);
+    const t = tryRead({ ...technicals, move_20d_word: 3 }, "/technicals") as Record<string, unknown>;
     expect("move_20d_word" in t).toBe(false);
     // §1.9: the three native units and the two display units pass; frame-3's old "pct" and "px" are removed.
     for (const u of ["log_return", "log_change", "bp"]) expect((tryRead({ ...study, question: { ...study.question, target_unit: u } }, "/study") as { question: { target_unit: string } }).question.target_unit).toBe(u);
@@ -330,7 +339,8 @@ describe("the envelope (§12.0)", () => {
     const env = ready("/technicals", { ...technicals, vol: { status: "awaiting", data: null, unavailable: null } });
     const t = readAnswer<Record<string, unknown>>(env, "/technicals");
     expect("vol" in t).toBe(false);
-    expect(t._blocks).toEqual({});
+    // Only the sectors block, served awaiting with its reason, is recorded.
+    expect(t._blocks).toEqual({ sectors: { reason: "sector ETFs, RSP and IWM not ingested.", until: null } });
   });
 
   it("an error served with a 2xx is not retried; a 5xx once; no answer once (I1-10)", () => {

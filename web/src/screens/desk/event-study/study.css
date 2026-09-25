@@ -417,6 +417,28 @@
   background: var(--dk-rel-bg);
   color: var(--dk-green);
 }
+/* §4: disabled until other levels are served; the served 90% stays marked. */
+.es-range-head,
+.es-conf {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.es-conf button:disabled {
+  cursor: default;
+}
+/* The unserved levels look it: dimmed; the served 90% keeps its mark. */
+.es-conf button:disabled:not([aria-pressed="true"]) {
+  color: var(--dk-t4);
+  border-color: var(--dk-row);
+}
+.es-conf-off {
+  font-size: 12px;
+  color: var(--dk-t4);
+}
+.es-conf-why {
+  display: block;
+  margin: 4px 0 2px;
+}
 .es-range-pts {
   font-family: var(--dk-mono);
   font-size: 13px;

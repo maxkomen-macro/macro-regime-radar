@@ -12,6 +12,7 @@ import ledger from "./ledger.json";
 import overview from "./overview.json";
 import record from "./regime-record.json";
 import regime from "./regime.json";
+import deferredRegime from "./deferred-regime.json";
 import studyEvents from "./study-events.json";
 import study from "./study.json";
 import { rangeText } from "../../screens/desk/kit/units";
@@ -37,9 +38,10 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
   const months = record.months;
   const byMonth = new Map(months.map((r) => [r.month, r.regime]));
 
-  it("the record's months by regime are /regime's stats (What each regime has meant · since 1996)", () => {
+  it("the record's months by regime are the deferred stats' months (What each regime has meant · since 1996); Monday serves the block awaiting", () => {
     expect(months[0].month.startsWith("1996")).toBe(true);
-    for (const row of regime.stats) expect([row.regime, row.months]).toEqual([row.regime, months.filter((m) => m.regime === row.regime).length]);
+    for (const row of deferredRegime.stats) expect([row.regime, row.months]).toEqual([row.regime, months.filter((m) => m.regime === row.regime).length]);
+    expect(regime.stats).toEqual({ status: "awaiting", data: null, unavailable: { reason: "regime statistics not yet defined in the engine.", until: null } });
   });
 
   it("the record is one row a month, and its last rows are /regime's history exactly", () => {

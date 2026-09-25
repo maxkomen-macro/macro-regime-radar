@@ -24,13 +24,21 @@ function renderTab() {
 
 const realFetch = globalThis.fetch;
 beforeEach(() => {
-  stubDesk();
+  // The card tests render /sectors served (§12.13's deferred shape); Monday serves it awaiting (tested below).
+  stubDesk({ "/api/desk/sectors": () => sectors });
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
 describe("Sectors tab", () => {
+  it("Monday's /sectors answers the awaiting envelope: both cards keep their labels and each prints §7's reason once (§1.0)", async () => {
+    stubDesk();
+    renderTab();
+    const why = "sector ETFs, RSP and IWM not ingested.";
+    await waitFor(() => expect(screen.getAllByText(why)).toHaveLength(2));
+    for (const l of ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"]) expect(document.body).toHaveTextContent(l);
+  });
   it("leadership: all eleven, ranked, with the leader, the laggard and the pattern", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Sector leadership/ });

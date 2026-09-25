@@ -191,3 +191,8 @@
     white-space: normal;
   }
 }
+/* §1.0: the VIX tile's unserved half, on its own line under the level. */
+.ov-vol-off {
+  display: block;
+  margin-top: 2px;
+}

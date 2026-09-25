@@ -216,10 +216,8 @@ test.describe("desk v2", () => {
     await expect(price.locator(".dk-chart-axis")).toContainText(["5,000", "6,000", "7,000", "Oct 25", "Apr 26", "Sep 26"]);
     await price.getByRole("button", { name: "3Y" }).click();
     await expect(price.getByRole("img", { name: /3Y/ })).toBeVisible();
-    await expect(page.getByRole("region", { name: /^Signals/ }).getByRole("listitem")).toHaveCount(6);
-    await expect(page.getByRole("region", { name: /Momentum · RSI/ }).getByRole("img", { name: "RSI 58, neutral" })).toBeVisible();
-    // §1.4: Advanced is a blue link (verifier T-1: a reset once turned it gray).
-    await expect(page.getByTestId("dk-advanced").first()).toHaveCSS("color", "rgb(88, 184, 230)");
+    // §3: the S&P rows the Ledger scores; the RSI rows are omitted while unavailable.
+    await expect(page.getByRole("region", { name: /^Signals/ }).getByRole("listitem")).toHaveCount(4);
     // A light action button keeps its dark text on hover (verifier R2-1).
     const act = page.getByTestId("dk-act");
     await act.hover();
@@ -231,18 +229,36 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: an unwired /vol (§12.9) keeps its labels and says Awaiting refresh", async ({ page }) => {
-    await open(page, "/desk/technicals", { "/api/desk/vol": { status: 503, body: { error: "vol not wired" } } });
-    const vol = page.getByRole("region", { name: "What protection costs right now" });
-    await expect(vol).toContainText("Awaiting refresh");
-    await expect(vol).toContainText("PUTS vs CALLS · 1 MONTH OUT");
-    await expect(vol).not.toContainText("6.8");
+  test("technicals: Monday's vol and sectors blocks and the RSI card keep their labels, print their reasons and say Not yet served (§1.0, §12.7)", async ({ page }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/technicals");
+      const cards: [RegExp, string, string][] = [
+        [/^What protection costs right now/, "needs stored SPY option snapshots and a versioned skew method.", "PUTS vs CALLS · 1 MONTH OUT"],
+        [/^Sector leadership/, "sector ETFs, RSP and IWM not ingested.", "Sector leadership"],
+        [/^Momentum · RSI/, "RSI is not computed in src/desk/ or api/; adding it is a new calculation outside Monday's scope.", "Last below 30"],
+      ];
+      for (const [name, reason, label] of cards) {
+        const card = page.getByRole("region", { name });
+        await expect(card).toContainText(reason);
+        await expect(card).toContainText(label);
+        await expect(card.getByTestId("dk-live")).toContainText("Not yet served");
+        await expect(card.getByTestId("dk-advanced")).toBeDisabled();
+        await expect(card.getByRole("img")).toHaveCount(0);
+      }
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
   });
 
   test("event study: Advanced opens the events and the engine's panel, all in the palette, no banned word", async ({ page }) => {
     await open(page, "/desk/event-study");
     await expect(page.getByRole("region", { name: "The answer" })).toContainText("Suggestive at 1 month: 10+ completed outcomes");
-    await page.getByRole("complementary", { name: "Verdict and detail" }).getByTestId("dk-advanced").click();
+    const toggle = page.getByRole("complementary", { name: "Verdict and detail" }).getByTestId("dk-advanced");
+    // §1.4: an Advanced control that opens a served endpoint is a blue link (verifier T-1: a reset once turned it gray).
+    await expect(toggle).toHaveCSS("color", "rgb(88, 184, 230)");
+    await toggle.click();
     const adv = page.getByRole("region", { name: "Advanced" });
     await expect(adv).toContainText("All 18 events");
     await expect(adv).toContainText("By horizon, as the engine scores it");
@@ -250,7 +266,7 @@ test.describe("desk v2", () => {
     expect(await bannedWordsOnPage(page)).toEqual([]);
   });
 
-  test("event study: Export downloads the events as CSV; a confidence chip re-asks", async ({ page }) => {
+  test("event study: Export downloads the events as CSV; the confidence chips are disabled and ask nothing (§4, §12.2)", async ({ page }) => {
     const calls = await routeDesk(page);
     await page.goto("/desk/event-study", { waitUntil: "domcontentloaded" });
     await settle(page, 500);
@@ -260,9 +276,13 @@ test.describe("desk v2", () => {
     const text = Buffer.concat((csv ?? []) as Buffer[]).toString("utf8");
     expect(text.split("\n")[0]).toBe("date,regime,ret_5,ret_10,ret_20,ret_60");
     expect(text.trim().split("\n")).toHaveLength(19);
-    await page.getByRole("group", { name: "Confidence" }).getByRole("button", { name: "80%" }).click();
-    await expect(page).toHaveURL(/confidence=0\.8/);
-    await expect.poll(() => calls.some((c) => c.includes("/api/desk/study?preset=gold-2sigma-spx-weak&confidence=0.8"))).toBe(true);
+    const chips = page.getByRole("group", { name: "Confidence" });
+    await expect(chips.getByRole("button", { name: "80%" })).toBeDisabled();
+    await expect(chips.getByRole("button", { name: "90%" })).toHaveAttribute("aria-pressed", "true");
+    await expect(chips).toContainText("not yet served");
+    await expect(page.getByRole("complementary", { name: "Verdict and detail" })).toContainText("Confidence levels other than 90%: interval projection at other quantiles is new plumbing.");
+    expect(calls.some((c) => c.includes("confidence"))).toBe(false);
+    await expect(page).not.toHaveURL(/confidence/);
     // "Act on this" carries the question to the Position Monitor.
     await expect(page.getByTestId("dk-act")).toHaveAttribute("href", "/desk/position-monitor?from=gold-2sigma-spx-weak");
   });
@@ -347,6 +367,21 @@ test.describe("desk v2", () => {
       expect(overlap, `pill over the sentence at ${width}`).toBe(0);
       await open(page, "/desk/overview");
       await expect(page.locator(".ov-active-foot .dk-defs > div")).toHaveCount(4);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
+  });
+
+  test("ledger: the header counts scored and unavailable rows; an unavailable row prints its reason across the value columns, no pill (§8, v4 B-02)", async ({ page }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/signal-ledger");
+      await expect(page.locator(".lg-stats")).toContainText("8 scored · 4 not yet served");
+      const oil = page.locator(".lg-table tr[data-unavailable]", { hasText: "Oil" });
+      await expect(oil).toContainText("WTI crude (DCOILWTICO) is not stored in this database");
+      await expect(oil.locator(".dk-pill")).toHaveCount(0);
+      await expect(page.locator(".lg-table tr[data-unavailable]")).toHaveCount(4);
+      expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }
     await page.setViewportSize({ width: 1440, height: 960 });

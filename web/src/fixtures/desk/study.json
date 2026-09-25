@@ -132,8 +132,6 @@
    }
   }
  ],
- "confidence": 0.9,
- "confidence_note": "All four include zero at 90%. At 80% the 1-month range clears zero; at 95% none do.",
  "by_regime": [
   {
    "h": 20,
@@ -193,12 +191,12 @@
   }
  ],
  "without_condition": {
-  "n_events": 41,
-  "up_pct": 0.58,
-  "median": 0.016,
-  "verdict": "no_edge",
-  "comparison": "improves",
-  "comparison_note": "The condition earns its place."
+  "status": "awaiting",
+  "data": null,
+  "unavailable": {
+   "reason": "conditional-versus-unconditional comparison is not defined",
+   "until": null
+  }
  },
  "provenance": {
   "bootstrap": 10000,

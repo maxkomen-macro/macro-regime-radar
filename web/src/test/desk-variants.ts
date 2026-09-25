@@ -3,7 +3,14 @@
  * study with a basis-point target, so every page that prints a target move
  * can be checked in a unit that is not a percent.
  */
+import deferredMacro from "../fixtures/desk/deferred-macro.json" with { type: "json" };
+import deferredRegime from "../fixtures/desk/deferred-regime.json" with { type: "json" };
+import macro from "../fixtures/desk/macro.json" with { type: "json" };
+import regime from "../fixtures/desk/regime.json" with { type: "json" };
+import sectors from "../fixtures/desk/sectors.json" with { type: "json" };
 import study from "../fixtures/desk/study.json" with { type: "json" };
+import technicals from "../fixtures/desk/technicals.json" with { type: "json" };
+import vol from "../fixtures/desk/vol.json" with { type: "json" };
 import studyEvents from "../fixtures/desk/study-events.json" with { type: "json" };
 
 /** The gold study re-served with the 10-year yield as its target, every move in basis points. */
@@ -34,4 +41,29 @@ export function bpStudy(): Record<string, unknown> {
 /** The same study's event list, every move in basis points (a 1-month move of 8, a 3-month move of null). */
 export function bpEvents(): Record<string, unknown> {
   return { ...studyEvents, events: studyEvents.events.map((e, i) => ({ ...e, ret_5: i === 0 ? 8 : 3, ret_10: 12, ret_20: 25, ret_60: i === 0 ? null : 30 })) };
+}
+
+// ── Deferred blocks served (§12.13): Monday serves them awaiting; these render the cards built for them. ──
+
+/** /macro with its stock–bond, correlations and matrix blocks served (the deferred shapes, the mockup's values). */
+export function servedMacro(): Record<string, unknown> {
+  return { ...macro, stock_bond: deferredMacro.stock_bond, correlations: deferredMacro.correlations, matrix: deferredMacro.matrix };
+}
+
+/** /regime with its stats and changes blocks served. */
+export function servedRegime(): Record<string, unknown> {
+  return { ...regime, stats: deferredRegime.stats, changes: deferredRegime.changes };
+}
+
+/** /technicals with its vol and sectors blocks served (the /vol and /sectors deferred shapes). */
+export function servedTechnicals(): Record<string, unknown> {
+  const { as_of: _va, generation_id: _vg, ...v } = vol;
+  const { as_of: _sa, generation_id: _sg, ...s } = sectors;
+  void [_va, _vg, _sa, _sg];
+  return { ...technicals, vol: v, sectors: s };
+}
+
+/** The deferred /sectors shape, as a served answer. */
+export function servedSectors(): Record<string, unknown> {
+  return { ...sectors };
 }

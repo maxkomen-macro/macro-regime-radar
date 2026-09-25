@@ -115,6 +115,14 @@
   font-family: var(--dk-mono);
   font-size: 12.5px;
 }
+/* §8: an unavailable row's reason runs across the value columns, in words. */
+.lg-table td.lg-unavailable {
+  text-align: left;
+  white-space: normal;
+  font-size: 12.5px;
+  color: var(--dk-t3);
+  padding-left: 16px;
+}
 .lg-empty {
   text-align: left !important;
   color: var(--dk-t3);

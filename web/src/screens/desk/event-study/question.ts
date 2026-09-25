@@ -2,7 +2,7 @@
  * The Event Study's question (DESK_FRAME3_SPEC §4, §12.2), pure: the nine
  * presets, the six slots' fixed options, the URL that addresses a question
  * (the page's address mirrors the API's parameters: `?preset=<slug>` or the
- * six slots, plus `confidence`), the question in words, the engine study a
+ * six slots; §12.2 has no `confidence` parameter), the question in words, the engine study a
  * question maps onto (for the Advanced panel's frame-2 detail), and the saved
  * questions kept in this browser (§1.8) with their JSON export and import.
  */
@@ -49,10 +49,11 @@ export const HORIZONS: readonly { h: number; label: string }[] = [
   { h: 60, label: "3 months" },
 ];
 
+/** The rail's confidence chips (§4): shown, disabled, "not yet served"; 90% is the engine's served level. */
 export const CONFIDENCES: readonly number[] = [0.8, 0.9, 0.95];
 
-/** The address of what the page asks: a preset, or the six slots. */
-export type Ask = { preset: string; confidence?: number } | { question: Question; confidence?: number };
+/** The address of what the page asks: a preset, or the six slots (§12.2: no `confidence`). */
+export type Ask = { preset: string } | { question: Question };
 
 const MOVE_IDS = new Set(MOVES.map((m) => m.id));
 const WHILE_IDS = new Set(WHILES.map((w) => w.id));
@@ -60,14 +61,12 @@ const WHILE_IDS = new Set(WHILES.map((w) => w.id));
 /** The ask a query string names; the gold preset when it names nothing usable. */
 export function askFromSearch(search: string | URLSearchParams): Ask {
   const p = typeof search === "string" ? new URLSearchParams(search) : search;
-  const c = Number(p.get("confidence"));
-  const confidence = CONFIDENCES.includes(c) ? c : undefined;
   // A preset is any study slug: the nine chips, or a Ledger row's (§8: a row opens its study).
   const preset = p.get("preset");
-  if (preset && /^[a-z0-9][a-z0-9-]{0,80}$/.test(preset)) return { preset, confidence };
+  if (preset && /^[a-z0-9][a-z0-9-]{0,80}$/.test(preset)) return { preset };
   // A frame-2 link (?study=<engine slug>) opens the same question when the six slots can ask it.
   const fromEngine = questionFromEngine(p.get("study"));
-  if (fromEngine) return { question: fromEngine, confidence };
+  if (fromEngine) return { question: fromEngine };
   const window = Number(p.get("window"));
   const horizon = Number(p.get("horizon"));
   const move = p.get("move") as Move | null;
@@ -75,8 +74,8 @@ export function askFromSearch(search: string | URLSearchParams): Ask {
   const shock = p.get("shock");
   const target = p.get("target");
   if (shock && target && move && MOVE_IDS.has(move) && WINDOWS.includes(window) && HORIZONS.some((h) => h.h === horizon) && WHILE_IDS.has(wh))
-    return { question: { shock, window, move, while: wh, target, horizon }, confidence };
-  return { preset: PRESET_CHIPS[0].slug, confidence };
+    return { question: { shock, window, move, while: wh, target, horizon } };
+  return { preset: PRESET_CHIPS[0].slug };
 }
 
 /** The query string for an ask, with the Desk / Client view and the tour kept from `keep`. */
@@ -96,16 +95,14 @@ export function searchFor(ask: Ask, keep?: URLSearchParams): string {
     p.set("target", q.target);
     p.set("horizon", String(q.horizon));
   }
-  if (ask.confidence != null && ask.confidence !== 0.9) p.set("confidence", String(ask.confidence));
   return p.toString();
 }
 
 /** The API parameters for an ask (§12.2). */
 export function apiParams(ask: Ask): Record<string, string | number | undefined> {
-  const confidence = ask.confidence;
-  if ("preset" in ask) return { preset: ask.preset, confidence };
+  if ("preset" in ask) return { preset: ask.preset };
   const q = ask.question;
-  return { shock: q.shock, window: q.window, move: q.move, while: q.while, target: q.target, horizon: q.horizon, confidence };
+  return { shock: q.shock, window: q.window, move: q.move, while: q.while, target: q.target, horizon: q.horizon };
 }
 
 /** The same ask at h = 20 (v4 B-01: the Client view reads the month, whatever horizon the desk has
@@ -166,7 +163,7 @@ export function questionFromEngine(slug: string | null): Question | null {
 
 /** The address of an ask (preset or the six slots) as query parameters, for a link that carries it. */
 export function askParams(ask: Ask): [string, string][] {
-  return [...new URLSearchParams(searchFor({ ...ask, confidence: undefined })).entries()];
+  return [...new URLSearchParams(searchFor(ask)).entries()];
 }
 
 export function engineSlugFor(q: Question): string | null {

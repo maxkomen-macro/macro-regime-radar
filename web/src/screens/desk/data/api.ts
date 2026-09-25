@@ -31,7 +31,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
-import type { BasketPriceResponse, BasketResponse, DeskErrorBody, HedgeResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse, VolResponse } from "./types";
+import type { BasketPriceResponse, BasketResponse, DeskErrorBody, HedgeResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -240,7 +240,6 @@ function useDesk<T>(path: string, params?: Params) {
 export const useOverview = () => useDesk<OverviewResponse>("/overview");
 export const useLedger = () => useDesk<LedgerResponse>("/ledger");
 export const useTechnicals = () => useDesk<TechnicalsResponse>("/technicals");
-export const useVol = () => useDesk<VolResponse>("/vol");
 export const useSectors = () => useDesk<SectorsResponse>("/sectors");
 export const useRegime = () => useDesk<RegimeResponse>("/regime");
 export const useMacro = () => useDesk<MacroResponse>("/macro");

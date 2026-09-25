@@ -17,7 +17,7 @@ import type { LedgerRow, OverviewResponse, OverviewTiles, PositionCompact, Since
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { bandWord, capitalize, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
+import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
 import { Awaiting, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
@@ -33,7 +33,7 @@ export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?
   const v = s.vol_change_pts;
   if (fin(v)) {
     const dir = v >= 0.05 ? "up" : v <= -0.05 ? "down" : "unchanged";
-    out.push({ key: "vol", text: `vol ${dir}${dir === "unchanged" ? "" : ` ${Math.abs(v).toFixed(1)} pts`}${s.skew_direction ? `, skew ${s.skew_direction}` : ""}` });
+    out.push({ key: "vol", text: `vol ${dir}${dir === "unchanged" ? "" : ` ${Math.abs(v).toFixed(1)} pts`}` });
   }
   // Whether the regime changed is said only when it was served (Codex G1-9).
   if (s.regime_changed === true) out.push({ key: "regime", text: s.regime_to ? `regime changed → ${s.regime_to}` : "regime changed" });
@@ -98,13 +98,6 @@ export function trendSub(tr: TrendTile, word: string): string {
   const since = when ? ` since the ${when}${signal ? ` ${signal}` : ""}` : "";
   const clause = VERDICT_CLAUSE[tr.since_verdict];
   return `${word}${since}${clause ? ` · ${clause}` : ""}`;
-}
-
-/** "protection costs about 4 pts more than recent moves justify" from gap_pts. */
-export function gapWords(gap: number): string {
-  const n = Math.round(Math.abs(gap));
-  if (n === 0) return "protection costs about what recent moves justify";
-  return `protection costs about ${n} pts ${gap > 0 ? "more" : "less"} than recent moves justify`;
 }
 
 /** The recession tile's sub-line (§2): "<band> · score for <probability_month> · inputs through <inputs_through>". */
@@ -178,7 +171,15 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
         state={state(fin(t?.vol?.vix) ? t.vol : null)}
         badge={t?.vol ? <LiveBadge parts={[dayShort(t.vol.date) || null]} /> : null}
         value={t?.vol && fin(t.vol.vix) ? num(t.vol.vix) : null}
-        sub={t?.vol ? [capitalize(t.vol.band), fin(t.vol.gap_pts) ? gapWords(t.vol.gap_pts) : ""].filter(Boolean).join(" · ") : null}
+        sub={
+          t?.vol ? (
+            <>
+              {/* §2: "VIX <level> · <date>"; the gap to realized and the band word print §1.0's reason (§1.0.2). */}
+              {[fin(t.vol.vix) ? `VIX ${num(t.vol.vix)}` : "VIX", dayShort(t.vol.date) || null].filter(Boolean).join(" · ")}
+              <span className="dk-unserved-inline ov-vol-off">The gap to realized and the band word: realized-volatility method not specified.</span>
+            </>
+          ) : null
+        }
       />
     </div>
   );

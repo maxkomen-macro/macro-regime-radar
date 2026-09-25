@@ -156,10 +156,9 @@ function StatCard({ label, children, state }: { label: string; children?: ReactN
 export default function ClientView({ page }: { page: DeskPage }) {
   const location = useLocation();
   const ask = page.slug === "event-study" ? askFromSearch(location.search) : askFromSearch(readLastStudy() ?? "");
-  // The client view asks the study at the served confidence (§12.2's default), never the desk's slider,
-  // and at h = 20 (v4 B-01): its counts, its sentence and its empty state are the month's, whatever
-  // horizon the desk has selected.
-  const q = useStudy(apiParams(atMonth({ ...ask, confidence: undefined })));
+  // The client view asks the study at h = 20 (v4 B-01): its counts, its sentence and its empty state are
+  // the month's, whatever horizon the desk has selected.
+  const q = useStudy(apiParams(atMonth(ask)));
   const s = q.isError ? undefined : q.data;
   const failed = q.isError;
   const month = s && Array.isArray(s.horizons) ? s.horizons.find((h) => h.h === 20) : undefined;

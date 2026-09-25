@@ -1,0 +1,69 @@
+{
+ "note": "The deferred shapes of /regime's stats and changes blocks (§12.13), with the mockup's values. Monday serves both awaiting; the unit tests render the two cards from this when they test them served.",
+ "stats": [
+  {
+   "regime": "Goldilocks",
+   "months": 154,
+   "spx_mo": 0.014,
+   "up_pct": 0.66,
+   "vix_avg": 15,
+   "stock_bond_corr": -0.2
+  },
+  {
+   "regime": "Overheating",
+   "months": 88,
+   "spx_mo": 0.009,
+   "up_pct": 0.59,
+   "vix_avg": 17,
+   "stock_bond_corr": 0.3
+  },
+  {
+   "regime": "Stagflation",
+   "months": 46,
+   "spx_mo": -0.002,
+   "up_pct": 0.48,
+   "vix_avg": 24,
+   "stock_bond_corr": 0.4
+  },
+  {
+   "regime": "Recession Risk",
+   "months": 76,
+   "spx_mo": -0.006,
+   "up_pct": 0.45,
+   "vix_avg": 29,
+   "stock_bond_corr": -0.5
+  }
+ ],
+ "changes": [
+  {
+   "month": "2026-06",
+   "from": "Goldilocks",
+   "to": "Overheating",
+   "spx_1m": 0.021
+  },
+  {
+   "month": "2025-10",
+   "from": "Stagflation",
+   "to": "Goldilocks",
+   "spx_1m": 0.038
+  },
+  {
+   "month": "2025-03",
+   "from": "Overheating",
+   "to": "Stagflation",
+   "spx_1m": -0.042
+  },
+  {
+   "month": "2024-08",
+   "from": "Goldilocks",
+   "to": "Overheating",
+   "spx_1m": 0.011
+  },
+  {
+   "month": "2024-01",
+   "from": "Recession Risk",
+   "to": "Goldilocks",
+   "spx_1m": 0.053
+  }
+ ]
+}

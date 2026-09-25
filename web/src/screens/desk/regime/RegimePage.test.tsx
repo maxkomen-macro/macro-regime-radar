@@ -12,6 +12,7 @@ import DeskShell from "../DeskShell";
 import regime from "../../../fixtures/desk/regime.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
+import { servedRegime } from "../../../test/desk-variants";
 import { flipTone, flipWords, mom, runs, stockBondTone, trendTone } from "./RegimePage";
 
 type Over = Record<string, unknown>;
@@ -127,15 +128,18 @@ describe("Regime tab", () => {
     expect(card).toHaveTextContent(/A year ago\s*—/);
     expect(card).not.toHaveTextContent(/A year ago\s*Awaiting refresh/);
   });
-  it("what each regime has meant: the table with the current row marked, and the desk's read", async () => {
+  it("what each regime has meant, served (§12.13's deferred shape): the table with the current row marked", async () => {
+    stubDesk({ "/api/desk/regime": servedRegime });
     renderTab();
     const card = await screen.findByRole("region", { name: /What each regime has meant/ });
     await waitFor(() => expect(within(card).getAllByRole("row")).toHaveLength(5));
     const cur = within(card).getAllByRole("row").find((r) => r.getAttribute("aria-current") === "true");
     expect(cur?.textContent).toContain("Overheating88+0.9%59%17+0.3");
-    expect(card).toHaveTextContent("Read for the desk: Overheating has been fine for equities");
+    // §12.13's deferred shape carries no read (§1.4: no read is served).
+    expect(card).not.toHaveTextContent("Read for the desk");
   });
-  it("what would change it: the next prints and the last five changes", async () => {
+  it("what would change it: the next prints, and the last five changes once served", async () => {
+    stubDesk({ "/api/desk/regime": servedRegime });
     renderTab();
     const card = await screen.findByRole("region", { name: /What would change it/ });
     await waitFor(() => expect(card).toHaveTextContent("Oct 14"));
@@ -158,7 +162,7 @@ describe("Regime tab", () => {
   });
 
   it("a different current regime moves the marked row", async () => {
-    stubDesk({ "/api/desk/regime": () => served({ current: { ...regime.current, label: "Goldilocks" } }) });
+    stubDesk({ "/api/desk/regime": () => ({ ...servedRegime(), current: { ...regime.current, label: "Goldilocks" } }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /What each regime has meant/ });
     await waitFor(() => expect(within(card).getAllByRole("row").find((r) => r.getAttribute("aria-current") === "true")?.textContent).toContain("Goldilocks"));
@@ -227,9 +231,9 @@ describe("Regime tab", () => {
 });
 
 describe("blocks served awaiting inside a ready answer (§12.6, §1.0.2)", () => {
-  const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
   it("the statistics card keeps its labels, prints its reason once and says Not yet served; the next prints stand beside the changes' reason", async () => {
-    stubDesk({ "/api/desk/regime": () => ({ ...regime, stats: off("regime statistics not yet defined in the engine."), changes: off("regime statistics not yet defined in the engine.") }) });
+    // Monday's /regime as the fixture serves it (§1.0, §12.6): stats and changes awaiting.
+    stubDesk();
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: /^What each regime has meant/ })).toHaveTextContent("regime statistics not yet defined in the engine."));
     const meant = screen.getByRole("region", { name: /^What each regime has meant/ });

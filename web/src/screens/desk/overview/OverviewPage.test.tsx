@@ -12,7 +12,7 @@ import overview from "../../../fixtures/desk/overview.json";
 import type { OverviewResponse } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { gapWords, sinceItems, trendWords } from "./OverviewPage";
+import { sinceItems, trendWords } from "./OverviewPage";
 
 const fixture = overview as unknown as OverviewResponse;
 
@@ -35,15 +35,16 @@ afterEach(() => {
 
 describe("Overview words", () => {
   it("spells the since-last-close items in the spec's order", () => {
+    // The dollar study is unavailable (DXY not stored, §1.0), so it cannot fire; no skew is served (§1.0).
     expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual([
-      "Dollar −2σ fired (new)",
       "2s10s still firing, day 10",
-      "vol up 0.8 pts, skew steeper",
+      "vol up 0.8 pts",
       "regime unchanged",
       "data refreshed 00:23 UTC",
     ]);
     expect(sinceItems({ ...fixture.since_last_close!, regime_changed: true, regime_from: "Goldilocks", regime_to: "Overheating", vol_change_pts: -1.2 }).map((i) => i.text)).toContain("regime changed → Overheating");
-    expect(sinceItems({ ...fixture.since_last_close!, vol_change_pts: -1.2 }).find((i) => i.key === "vol")?.text).toBe("vol down 1.2 pts, skew steeper");
+    expect(sinceItems({ ...fixture.since_last_close!, vol_change_pts: -1.2 }).find((i) => i.key === "vol")?.text).toBe("vol down 1.2 pts");
+    expect(sinceItems({ ...fixture.since_last_close!, new_fires: [{ slug: "golden-cross", label: "Golden cross fired" }] })[0]).toEqual({ key: "new-golden-cross", text: "Golden cross fired", tag: "(new)" });
   });
 
   it("names the trend from the two served flags", () => {
@@ -52,18 +53,14 @@ describe("Overview words", () => {
     expect(trendWords({ ...fixture.tiles!.trend!, above_50: false }).trend).toBe("Mixed trend");
   });
 
-  it("rounds the implied-over-realized gap to whole points and keeps its sign", () => {
-    expect(gapWords(4.3)).toBe("protection costs about 4 pts more than recent moves justify");
-    expect(gapWords(-2.6)).toBe("protection costs about 3 pts less than recent moves justify");
-    expect(gapWords(0.2)).toBe("protection costs about what recent moves justify");
-  });
 });
 
 describe("Overview tab", () => {
   it("prints the since-last-close line and the four tiles from /overview", async () => {
     renderOverview();
     const since = await screen.findByTestId("ov-since");
-    await waitFor(() => expect(since).toHaveTextContent("Dollar −2σ fired (new)"));
+    await waitFor(() => expect(since).toHaveTextContent("2s10s still firing, day 10"));
+    expect(since).not.toHaveTextContent("Dollar");
     expect(since.textContent).toContain("data refreshed 00:23 UTC");
     const regime = screen.getByRole("region", { name: "Regime" });
     // §2: the K−2 row governing today (a September session reads the July row).
@@ -81,7 +78,11 @@ describe("Overview tab", () => {
     expect(trend).toHaveTextContent("Uptrend since the Jul 2025 golden cross · that signal is reliable");
     const vol = screen.getByRole("region", { name: "Vol · VIX" });
     expect(vol).toHaveTextContent("16.2");
-    expect(vol).toHaveTextContent("Calm · protection costs about 4 pts more than recent moves justify");
+    // §2: the level and its day; the gap to realized and the band word are unavailable (§1.0).
+    expect(vol).toHaveTextContent("VIX 16.2 · Sep 22");
+    // §1.0.2: no envelope of its own, so the unserved half prints §1.0's reason.
+    expect(vol).toHaveTextContent("The gap to realized and the band word: realized-volatility method not specified.");
+    expect(vol).not.toHaveTextContent(/Calm|protection costs/);
   });
 
   it("a row whose h = 20 study has fewer than ten completed outcomes carries the dashed Too few pill (§1.5)", async () => {

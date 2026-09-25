@@ -350,7 +350,8 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
       )}
       <div className="dk-card-foot">
         <Unserved block={matrixOff}>
-          <AdvancedPanel adv={adv} items="full 12-asset matrix · rolling windows · by regime" missing={mx ? "Rolling windows and the matrix by regime are not served yet." : "The matrix is not served yet."}>
+          {/* §6: the matrix block opens here once served; awaiting on Monday, so the control is disabled (§1.4). */}
+          <AdvancedPanel enabled={!!mx} adv={adv} items="full 12-asset matrix · rolling windows · by regime" missing={mx ? "Rolling windows and the matrix by regime are not served yet." : "The matrix is not served yet."}>
             {mx && Array.isArray(mx.values) && mx.values.length && Array.isArray(mx.assets) ? (
               <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label={fin(mx.window) ? `The ${mx.window}-day correlation matrix, every pair` : "The correlation matrix, every pair"}>
                 <table className="mc-matrix">
@@ -393,7 +394,7 @@ export default function MacroPage({ page }: { page: DeskPage }) {
   const unserved = unavailableOf(q.error);
   return (
     <div className="mc">
-      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : m ? <LiveBadge boxed parts={["FRED / Yahoo", dayShort(m.as_of)]} /> : null} />
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : m ? <LiveBadge boxed parts={["FRED", dayShort(m.as_of)]} /> : null} />
       <Unserved block={unserved}>
         <div className="mc-grid">
           <Curve m={m} state={state} />

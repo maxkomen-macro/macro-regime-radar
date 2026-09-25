@@ -23,9 +23,14 @@ import "./ledger.css";
 
 export type Filter = "all" | "firing" | "reliable" | "spx" | "cross";
 
+/** A row whose study can run (§12.5 `available`); an unavailable row is left out of every count but the header's. */
+export const isAvailable = (r: LedgerRow) => r.available !== false;
+/** Firing today: firing on the comparison session; a stale row is never called firing today (v3 §3). */
+export const firingToday = (r: LedgerRow) => isAvailable(r) && r.firing_now === true && r.stale !== true;
+
 export function applyFilter(rows: readonly LedgerRow[], f: Filter): LedgerRow[] {
-  if (f === "firing") return rows.filter((r) => r.firing_now);
-  if (f === "reliable") return rows.filter((r) => r.verdict === "reliable");
+  if (f === "firing") return rows.filter(firingToday);
+  if (f === "reliable") return rows.filter((r) => isAvailable(r) && r.verdict === "reliable");
   if (f === "spx") return rows.filter((r) => r.group === "spx");
   if (f === "cross") return rows.filter((r) => r.group === "cross");
   return [...rows];
@@ -62,6 +67,17 @@ const titleOf = (r: LedgerRow) => r.label || r.short || r.slug;
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 
 function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
+  // §8: an unavailable row keeps its label and prints its reason across the value columns, with no pill;
+  // its study cannot run, so it opens nothing.
+  if (!isAvailable(r))
+    return (
+      <tr data-unavailable>
+        <th scope="row">{titleOf(r)}</th>
+        <td colSpan={7} className="lg-unavailable">
+          {r.unavailable?.reason ?? "not yet served"}
+        </td>
+      </tr>
+    );
   const key = (e: KeyboardEvent<HTMLTableRowElement>) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -69,7 +85,7 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
     }
   };
   return (
-    <tr data-firing={r.firing_now === true || undefined} tabIndex={0} onClick={() => onOpen(r.slug)} onKeyDown={key} aria-label={`${titleOf(r)}: open in Event Study`}>
+    <tr data-firing={firingToday(r) || undefined} tabIndex={0} onClick={() => onOpen(r.slug)} onKeyDown={key} aria-label={`${titleOf(r)}: open in Event Study`}>
       <th scope="row">{titleOf(r)}</th>
       <td className="lg-mono">{typeof r.last_fired === "string" && dayLong(r.last_fired) ? dayLong(r.last_fired) : "—"}</td>
       <td className="lg-mono">{fin(r.n) ? r.n : "—"}</td>
@@ -95,8 +111,9 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
         )}
       </td>
       <td className="lg-verdict">{knownVerdict(r.verdict) ? <VerdictPill verdict={r.verdict} className="lg-pill" /> : "—"}</td>
-      <td className="lg-now" data-tone={r.firing_now === true ? "green" : r.firing_now === false ? "gray" : undefined}>
-        {r.firing_now === true ? "● Firing" : r.firing_now === false ? "○ Quiet" : "—"}
+      {/* §8: "○ Stale · <evaluated_on>" when the row's last evaluable session is not the comparison session (v3 §3). */}
+      <td className="lg-now" data-tone={r.stale ? "gray" : r.firing_now === true ? "green" : r.firing_now === false ? "gray" : undefined}>
+        {r.stale ? `○ Stale · ${dayShort(r.evaluated_on) || "—"}` : r.firing_now === true ? "● Firing" : r.firing_now === false ? "○ Quiet" : "—"}
       </td>
     </tr>
   );
@@ -114,14 +131,16 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   const rows = Array.isArray(l?.signals) ? l.signals : [];
   const ready = rows.length > 0;
   const state = ready ? "ready" : q.isError || l ? "awaiting" : "loading";
-  const firing = rows.filter((r) => r.firing_now === true);
-  const reliable = rows.filter((r) => r.verdict === "reliable");
-  const noEdge = rows.filter((r) => r.verdict === "no_edge");
+  // §8, v4 B-02: unavailable rows are left out of every count but the header's.
+  const firing = rows.filter(firingToday);
+  const reliable = rows.filter((r) => isAvailable(r) && r.verdict === "reliable");
+  const noEdge = rows.filter((r) => isAvailable(r) && r.verdict === "no_edge");
+  const scored = fin(l?.scored_n) ? l.scored_n : rows.filter(isAvailable).length;
+  const off = fin(l?.unavailable_n) ? l.unavailable_n : rows.length - scored;
   const shown = applyFilter(rows, filter);
-  const shownFiring = shown.filter((r) => r.firing_now === true);
-  const shownQuiet = byVerdict(shown.filter((r) => r.firing_now !== true));
+  const shownFiring = shown.filter(firingToday);
+  const shownQuiet = byVerdict(shown.filter((r) => !firingToday(r)));
   const open = (slug: string) => navigate(withParam(pathTo("event-study"), "preset", slug));
-  const earliest = rows.map((r) => r.sample_start).filter(Boolean).sort()[0];
   const chips: { id: Filter; label: string }[] = [
     { id: "all", label: `All ${rows.length || ""}`.trim() },
     { id: "firing", label: "Firing now" },
@@ -134,7 +153,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : l && dayShort(l.as_of) ? <LiveBadge boxed parts={[`engine as of ${dayShort(l.as_of)}`]} /> : null} />
       <Unserved block={unserved}>
         <div className="lg-stats" aria-busy={state === "loading"}>
-          <Stat label="Signals scored" awaiting={state === "awaiting"} value={ready ? String(rows.length) : undefined} sub={ready && earliest ? `since ${earliest.slice(0, 4)} where history allows` : undefined} />
+          <Stat label="Signals scored" awaiting={state === "awaiting"} value={ready ? String(scored) : undefined} sub={ready ? `${scored} scored · ${off} not yet served` : undefined} />
           <Stat label="Firing now" awaiting={state === "awaiting"} value={ready ? String(firing.length) : undefined} tone={firing.length ? "green" : undefined} sub={ready ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
           <Stat label="Reliable" awaiting={state === "awaiting"} value={ready ? String(reliable.length) : undefined} tone={reliable.length ? "green" : undefined} sub={ready ? reliable.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
           <Stat label="No edge" awaiting={state === "awaiting"} value={ready ? String(noEdge.length) : undefined} />

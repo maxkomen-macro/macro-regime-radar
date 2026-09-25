@@ -255,6 +255,11 @@
   flex: 1 1 200px;
   margin: 0;
 }
+/* The basket's local controls, on their own line under Save (§1.8). */
+.bh-local {
+  flex: 1 1 100%;
+  margin: 0;
+}
 
 /* ── Hedge ── */
 .bh-modes {

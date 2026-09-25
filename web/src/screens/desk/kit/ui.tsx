@@ -274,7 +274,8 @@ export function Stat({
 
 export function StatRow({ children, cols }: { children: ReactNode; cols?: number }) {
   return (
-    <div className="dk-stats" style={cols ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` } : undefined}>
+    // With `cols`, the stats fill rows of that many columns (a column-flowing grid would spill into new ones).
+    <div className="dk-stats" style={cols ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoFlow: "row" } : undefined}>
       {children}
     </div>
   );
@@ -290,8 +291,9 @@ export function ReadBox({ label = "Read", warn = false, children, className }: {
 }
 
 /** `Advanced ▸` (blue link) plus the gray list of what expands (§1.4 item 5). */
-export function Advanced({ items, open, onToggle, controls }: { items: string; open?: boolean; onToggle?: () => void; controls?: string }) {
-  if (useUnserved())
+export function Advanced({ items, open, onToggle, controls, served = true }: { items: string; open?: boolean; onToggle?: () => void; controls?: string; served?: boolean }) {
+  // §1.4: enabled only when the endpoint it opens exists in §12; otherwise disabled, "not yet served".
+  if (useUnserved() || !served)
     return (
       <p className="dk-adv">
         <button type="button" className="dk-link" disabled data-testid="dk-advanced">
@@ -319,13 +321,16 @@ export function useAdvanced(): { open: boolean; toggle: () => void; id: string }
 
 /** `Advanced ▸` with the panel it opens under the card's body: what is
  * served goes in `children`; `missing` says in one sentence what the API does
- * not serve yet, so an expander never opens onto nothing. */
-export function AdvancedPanel({ adv, items, missing, children }: { adv: { open: boolean; toggle: () => void; id: string }; items: string; missing?: string; children?: ReactNode }) {
+ * not serve yet, so an expander never opens onto nothing. §1.4: a control
+ * whose panel reads no §12 endpoint is disabled and says "not yet served";
+ * `enabled` marks one that opens something real (a served endpoint, or
+ * controls this browser holds, §1.0's local basket editing). */
+export function AdvancedPanel({ adv, items, missing, children, enabled = false }: { adv: { open: boolean; toggle: () => void; id: string }; items: string; missing?: string; children?: ReactNode; enabled?: boolean }) {
   const unserved = useUnserved();
   return (
     <>
-      <Advanced items={items} open={adv.open} onToggle={adv.toggle} controls={adv.id} />
-      {adv.open && !unserved ? (
+      <Advanced items={items} open={adv.open} onToggle={adv.toggle} controls={adv.id} served={enabled} />
+      {adv.open && !unserved && enabled ? (
         <div className="dk-adv-panel" id={adv.id}>
           {children}
           {missing ? <p className="dk-adv-missing">{missing}</p> : null}

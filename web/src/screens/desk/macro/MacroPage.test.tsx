@@ -10,11 +10,13 @@ import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
-import macro from "../../../fixtures/desk/macro.json";
+import { servedMacro } from "../../../test/desk-variants";
 import { bpText, corrText, coverTicks } from "./MacroPage";
 import { placeLabel } from "../kit/LineChart";
 
 type Block = Record<string, unknown>;
+/** The card tests render /macro with its three deferred blocks served (§12.13); Monday serves them awaiting (tested below). */
+const macro = servedMacro() as Record<string, Block> & { correlations: Block[] };
 /** The fixture with one block's fields replaced. */
 function withBlock(key: "curve" | "stock_bond" | "credit", over: Block) {
   return { ...macro, [key]: { ...(macro[key] as Block), ...over } };
@@ -38,7 +40,7 @@ function renderTab() {
 
 const realFetch = globalThis.fetch;
 beforeEach(() => {
-  stubDesk();
+  stubDesk({ "/api/desk/macro": () => macro });
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
@@ -82,18 +84,21 @@ describe("Macro tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("4.21%"));
     expect(card).toHaveTextContent(/10-year\s*4\.21%\s*−6 bp on the month/);
     expect(card).toHaveTextContent(/2s10s\s*\+41 bp\s*steepening · \+9 bp/);
-    expect(card).toHaveTextContent(/Front end\s*3m 4\.05%\s*market leans to cuts/);
+    // The front end's words were a served read; none is served on Monday (§1.4).
+    expect(card).toHaveTextContent(/Front end\s*3m 4\.05%/);
+    expect(card).not.toHaveTextContent("market leans to cuts");
     expect(within(card).getByRole("img", { name: /Treasury yields by tenor on Sep 22, against a month ago \(Aug 21\)/ })).toBeInTheDocument();
-    expect(card).toHaveTextContent("Read: the front end has come down more than the long end");
+    // §1.4: no read is served on Monday, so the box is omitted.
+    expect(card).not.toHaveTextContent("Read:");
   });
-  it("stock–bond: today, a year ago, when it flipped, and the warning read", async () => {
+  it("stock–bond, served (§12.13's deferred shape): today, a year ago, when it flipped; no read is served", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Do bonds still hedge stocks/ });
     await waitFor(() => expect(card).toHaveTextContent("+0.31"));
     expect(card).toHaveTextContent("positive · bonds not hedging");
     expect(card).toHaveTextContent(/A year ago\s*−0\.24\s*was working/);
     expect(card).toHaveTextContent(/Flipped\s*Mar 2026\s*six months positive/);
-    expect(card).toHaveTextContent("Read for the desk: with correlation positive");
+    expect(card).not.toHaveTextContent("Read for the desk");
   });
   it("credit: the spread, its three-year range, IG, the gauge and the year", async () => {
     renderTab();
@@ -252,8 +257,9 @@ describe("a route served awaiting (§12.0, §1.0.2)", () => {
 describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () => {
   const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
   it("stock–bond and the correlations say Not yet served with the reason once; the matrix's Advanced says not yet served; the curve and credit stand", async () => {
+    // Monday's /macro as the fixture serves it (§1.0, §12.8): the three blocks awaiting.
     const why = "Treasury and credit price-return series not ingested.";
-    stubDesk({ "/api/desk/macro": () => ({ ...macro, stock_bond: off(why), correlations: off(why), matrix: off(why) }) });
+    stubDesk();
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent(why));
     for (const name of [/^Do bonds still hedge stocks/, /^What moves with the S&P/]) {

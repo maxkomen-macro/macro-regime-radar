@@ -441,34 +441,35 @@ function BasketCard({
             </button>
             <span className="bh-save-hint">{dirty ? "unsaved weights · saving re-prices the hedge on the right" : "changes re-price the hedge on the right"}</span>
           </div>
-          <AdvancedPanel adv={adv} items="rebalance rule · index since inception · export" missing="The API serves the basket's legs, its recent sessions against its benchmark and the stats above; the rebalance rule and the index since inception are not served yet.">
-            <p className="bh-adv-row">
-              <button type="button" className="dk-link" onClick={download} disabled={!saved.length}>
-                Export saved baskets (JSON)
-              </button>
-              {" · "}
-              <button type="button" className="dk-link" onClick={() => fileRef.current?.click()}>
-                Import JSON
-              </button>
-              <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={upload} aria-label="Import saved baskets" />
-              {override ? (
-                <>
-                  {" · "}
-                  <button type="button" className="dk-link" onClick={revert}>
-                    Revert to the served weights
-                  </button>
-                </>
-              ) : null}
-              {!servedId && local ? (
-                <>
-                  {" · "}
-                  <button type="button" className="dk-link" onClick={remove}>
-                    Delete this basket
-                  </button>
-                </>
-              ) : null}
-            </p>
-          </AdvancedPanel>
+          {/* §1.8, §10: the basket's own local controls (export, import, revert, delete) sit with Save; they need no endpoint. */}
+          <p className="bh-adv-row bh-local">
+            <button type="button" className="dk-link" onClick={download} disabled={!saved.length}>
+              Export saved baskets (JSON)
+            </button>
+            {" · "}
+            <button type="button" className="dk-link" onClick={() => fileRef.current?.click()}>
+              Import JSON
+            </button>
+            <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={upload} aria-label="Import saved baskets" />
+            {override ? (
+              <>
+                {" · "}
+                <button type="button" className="dk-link" onClick={revert}>
+                  Revert to the served weights
+                </button>
+              </>
+            ) : null}
+            {!servedId && local ? (
+              <>
+                {" · "}
+                <button type="button" className="dk-link" onClick={remove}>
+                  Delete this basket
+                </button>
+              </>
+            ) : null}
+          </p>
+          {/* §1.4: what Advanced promises (the rebalance rule, the index since inception) is not in §12: disabled. */}
+          <AdvancedPanel adv={adv} items="rebalance rule · index since inception" missing="The rebalance rule and the index since inception are not served yet." />
         </div>
       }
     >

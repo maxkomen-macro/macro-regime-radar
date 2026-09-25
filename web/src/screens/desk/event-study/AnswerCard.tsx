@@ -11,7 +11,7 @@
 import type { StudyHorizon, StudyResponse, TargetUnit } from "../data/types";
 import { dayLong, isFiniteNumber as fin, monthYear, pctPlain, year } from "../kit/format";
 import { useBox } from "../kit/LineChart";
-import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved, VerdictWord } from "../kit/ui";
+import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved } from "../kit/ui";
 import { WINDOWS, horizonLabel } from "./question";
 import { isLog, isUnit, moveText, scaleOf, tickText, tipOf, whisker } from "../kit/units";
 
@@ -146,37 +146,17 @@ export function servedWords(s: Pick<StudyResponse, "elapsed_ms" | "served_from_c
   return [t, s.served_from_cache ? "cached" : null].filter(Boolean).join(", ");
 }
 
-/** The line on the same question without its condition (§4, `without_condition`). */
-export function WithoutCondition({ study, label }: { study: StudyResponse; label: (k: string) => string }) {
-  const w = study.without_condition;
+/** The line on the same question without its condition (§4): the `without_condition` block, unavailable on
+ * Monday (§1.0, C-01), so it prints its served reason; a block that did not arrive is Awaiting refresh. The
+ * comparison's shape, once defined, is §12.13's. */
+export function WithoutCondition({ study }: { study: StudyResponse }) {
   const q = study.question;
-  // The block is its own envelope (§12.2, C-01): served awaiting, the line keeps its lead and prints the reason.
   const off = useBlockUnserved(study, "without_condition");
   if (q.while === "none") return null;
   const cond = q.while.startsWith("regime:") ? "the regime condition" : "the S&P condition";
-  if (off)
-    return (
-      <p className="es-without">
-        <b>Without {cond}</b>: <span className="dk-unserved-inline">{off.reason}</span>
-      </p>
-    );
-  if (!w) return null;
-  const move = q.move === "up2s" ? "+2σ" : q.move === "down2s" ? "−2σ" : q.move === "cross_above" ? "crossing above its average" : "crossing below its average";
-  const median = moveText(w.median, q.target_unit);
-  const tip = tipOf(q.target_unit);
-  const facts = [fin(w.n_events) ? `${w.n_events} events` : null, fin(w.up_pct) ? `up ${pctPlain(w.up_pct)}` : null].filter(Boolean).join(", ");
-  // Whether the condition helps is the engine's call, served as its sentence (Codex R-12); the page ranks nothing.
-  const note = typeof w.comparison_note === "string" && w.comparison_note ? w.comparison_note : null;
   return (
     <p className="es-without">
-      <b>Without {cond}</b> — {label(q.shock)} {move} on its own — it&rsquo;s {facts || (median ? null : "awaiting refresh")}
-      {median ? (
-        <>
-          {facts ? ", " : null}median <span title={tip}>{median}</span>
-        </>
-      ) : null}
-      : <VerdictWord verdict={w.verdict} />.{" "}
-      {note ?? <span className="es-without-await">Whether the condition helps is awaiting refresh.</span>}
+      <b>Without {cond}</b>: {off ? <span className="dk-unserved-inline">{off.reason}</span> : <span className="es-without-await">Awaiting refresh</span>}
     </p>
   );
 }
@@ -185,14 +165,12 @@ export default function AnswerCard({
   study,
   failed,
   busy = false,
-  label,
   onFix,
   horizon,
 }: {
   study: StudyResponse | undefined;
   failed: boolean;
   busy?: boolean;
-  label: (k: string) => string;
   onFix: (fix: string) => void;
   /** The asked horizon, for the stat labels before an answer. */
   horizon?: number;
@@ -328,7 +306,7 @@ export default function AnswerCard({
           <b style={{ color: BLUE }}>┬</b> range the answer could fall in
         </span>
       </p>
-      <WithoutCondition study={study} label={label} />
+      <WithoutCondition study={study} />
     </section>
   );
 }

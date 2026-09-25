@@ -1,7 +1,7 @@
 /**
  * Event Study (DESK_FRAME3_SPEC §4, screens/03-event-study.png): ask what the
  * market did after a defined shock and get a scored answer. The address is
- * the question (`?preset=<slug>` or the six slots, plus `confidence`), and the
+ * the question (`?preset=<slug>` or the six slots), and the
  * page asks GET /api/desk/study with the same parameters (§12.2). Row 1 picks
  * and spells out the question; the answer card and the rail read the one
  * response; Advanced opens the full detail under the grid; Export downloads
@@ -9,7 +9,7 @@
  *
  * The slots show exactly what is asked: the served question once it answers,
  * the address's own question while it is on its way or when it fails, and
- * your edits until you run them (a confidence change keeps them). While a new
+ * your edits until you run them. While a new
  * answer is on its way the previous one stays, dimmed and marked busy.
  */
 
@@ -49,8 +49,8 @@ export function applyFix(q: Question, fix: string): Question | null {
   return null;
 }
 
-/** The ask's identity without its confidence: a confidence change keeps the question. */
-const askKey = (a: Ask) => searchFor({ ...a, confidence: undefined });
+/** The ask's identity: the address's question. */
+const askKey = (a: Ask) => searchFor(a);
 
 export default function EventStudyPage({ page }: { page: DeskPage }) {
   const { pathTo } = useDeskView();
@@ -103,7 +103,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
       if (study?.question) setDraft(slotsOf(study.question));
       return;
     }
-    go({ preset: slug, confidence: ask.confidence });
+    go({ preset: slug });
   };
   const onRun = () => {
     if (!draft) return;
@@ -111,7 +111,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
       setDirty(false);
       return void q.refetch();
     }
-    go({ question: draft, confidence: ask.confidence });
+    go({ question: draft });
   };
   const onSave = () => {
     if (!draft) return;
@@ -120,13 +120,12 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     writeSaved(next);
     setMode("saved");
   };
-  const onPickSaved = (s: SavedQuestion) => go({ question: s.question, confidence: ask.confidence });
+  const onPickSaved = (s: SavedQuestion) => go({ question: s.question });
   const onFix = (fix: string) => {
     const base = study?.question ?? draft;
     const next = base ? applyFix(base, fix) : null;
-    if (next) go({ question: next, confidence: ask.confidence });
+    if (next) go({ question: next });
   };
-  const onConfidence = (c: number) => go({ ...ask, confidence: c });
   const onExport = async () => {
     setExporting(true);
     setExportNote("");
@@ -183,14 +182,12 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
       {/* §12.0: a study served awaiting (an input not stored) keeps the labels and prints its reason (§1.0.2). */}
       <Unserved block={unavailableOf(q.error)}>
         <div className="es-grid" data-busy={placeholder || undefined}>
-          <AnswerCard study={study} failed={q.isError} busy={placeholder} label={label} onFix={onFix} horizon={askedHorizon} />
+          <AnswerCard study={study} failed={q.isError} busy={placeholder} onFix={onFix} horizon={askedHorizon} />
           <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
             {study ? (
               <StudyRail
                 study={study}
                 todayRegime={ov.data?.tiles?.regime?.label ?? null}
-                confidence={study.confidence}
-                onConfidence={onConfidence}
                 priceHref={priceHref}
                 advOpen={adv}
                 onAdvanced={() => setAdv((o) => !o)}

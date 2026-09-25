@@ -57,6 +57,12 @@ export interface LedgerRow {
   slug: string;
   label: string;
   group: "spx" | "cross";
+  /** §12.5: false for a row whose study cannot run (not stored, or RSI); it keeps its label and prints `unavailable.reason`. */
+  available?: boolean;
+  unavailable?: Unavailable | null;
+  /** The row's own latest evaluable session, and whether that is not the comparison session (§12.5, v3 §3). */
+  evaluated_on?: string | null;
+  stale?: boolean;
   last_fired: string | null;
   /** h = 20 (§12.5). */
   horizon?: number | null;
@@ -85,6 +91,11 @@ export interface LedgerRow {
 export interface LedgerResponse extends Envelope {
   /** The rule every row's verdict follows (§12.5). */
   verdict_rule?: string | null;
+  comparison_session?: string | null;
+  prev_session?: string | null;
+  /** Rows whose study completed (Too few counts as scored), and the rest of the twelve (v4 B-02). */
+  scored_n?: number | null;
+  unavailable_n?: number | null;
   /** Every Ledger number is at h = 20 (§12.5, v4 B-01). */
   horizon?: number | null;
   signals?: LedgerRow[];
@@ -168,7 +179,6 @@ export interface SinceLastClose {
   new_fires?: { slug: string; label: string }[];
   still_firing?: { slug: string; label: string; day: number | null }[];
   vol_change_pts: number | null;
-  skew_direction: string;
   /** Absent when not served: the line says nothing about the regime. */
   regime_changed?: boolean;
   regime_from: string | null;
@@ -214,13 +224,12 @@ export interface OverviewTiles {
     /** PROPOSED (§12.13): the session the trend is read at, dating the tile's badge. */
     date: string;
   };
+  /** §12.1: the VIX level and its day; the gap to realized and the band word are unavailable (§1.0). */
   vol?: {
     vix: number | null;
     date: string;
-    realized_20d: number | null;
-    gap_pts: number | null;
-    /** PROPOSED (§12.13): the word for the VIX level ("calm"), set by the server. */
-    band: string;
+    freq?: string;
+    source?: string;
   };
 }
 
@@ -258,18 +267,14 @@ export interface TechnicalsResponse extends Envelope {
   move_20d_sigma: number | null;
   /** PROPOSED (§12.13, Codex R-13): the engine's word for the last 20 days' move ("no extreme move"). */
   move_20d_word?: string;
-  rsi: number | null;
-  /** PROPOSED (§12.13, Codex R-13): the engine's word for the RSI. */
-  rsi_word?: "oversold" | "neutral" | "overbought";
-  /** PROPOSED (§12.13): "rising" | "falling" | "flat". */
-  rsi_direction: string;
-  rsi_last_above_70: { date: string; spx_1m: number | null } | null;
-  rsi_last_below_30: { date: string; spx_1m: number | null } | null;
   cross: {
     kind: "golden" | "death";
     date: string;
   } | null;
   series?: { "6m"?: PricePoint[]; "1y"?: PricePoint[]; "3y"?: PricePoint[] };
+  /** §12.7: block envelopes, awaiting on Monday (the unwrapped data, once ready, is the deferred shape of §12.13). */
+  vol?: VolResponse;
+  sectors?: SectorsResponse;
 }
 
 // ── §12.2 /study ──────────────────────────────────────────────────────────
@@ -351,22 +356,13 @@ export interface StudyResponse extends Envelope {
   headline: string;
   why: string;
   horizons?: StudyHorizon[];
-  confidence: number | null;
-  confidence_note: string;
   /** At h = 20 (§12.2); `up_pct` and `median` null under ten events (MIN_REGIME_N). */
   by_regime?: { h?: number | null; regime: string; n: number | null; up_pct: number | null; median: number | null }[];
   /** Events before the first labelled month (§4 rail). */
   unlabeled_n?: number | null;
   last_events?: { date: string; regime: string; ret_20: number | null }[];
-  without_condition?: {
-    n_events: number | null;
-    up_pct: number | null;
-    median: number | null;
-    verdict: Verdict;
-    /** PROPOSED (§12.13, Codex R-12): the engine's call on whether the condition helps, and its sentence (the page prints the sentence). */
-    comparison?: "improves" | "no_improvement" | "insufficient";
-    comparison_note?: string;
-  } | null;
+  /** §12.2: a block envelope, awaiting on Monday (C-01); its shape once defined is §12.13's. */
+  without_condition?: unknown;
   provenance?: { bootstrap: number | null; entry: string; cooldown: number | null; series_start?: Record<string, string> };
   warnings?: string[];
   /** Served iff the selected horizon has fewer than ten completed outcomes (§1.7, §12.2). */

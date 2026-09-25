@@ -87,3 +87,16 @@ describe("the unavailable state (§1.0.2)", () => {
     expect(screen.getByRole("region", { name: "Served" })).toHaveTextContent("58");
   });
 });
+
+describe("StatRow", () => {
+  it("with cols, the stats fill rows of that many columns: a one-column card stacks its labels, never spills sideways", () => {
+    const { container } = render(
+      <StatRow cols={1}>
+        <Stat label="A" awaiting />
+        <Stat label="B" awaiting />
+      </StatRow>,
+    );
+    const row = container.querySelector(".dk-stats") as HTMLElement;
+    expect([row.style.gridTemplateColumns, row.style.gridAutoFlow]).toEqual(["repeat(1, minmax(0, 1fr))", "row"]);
+  });
+});

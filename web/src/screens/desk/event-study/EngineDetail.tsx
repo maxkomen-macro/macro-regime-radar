@@ -171,7 +171,7 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
         <div>
           <p className="dk-stat-label es-rail-h">Resampling detail</p>
           <p className="es-note">
-            Cluster bootstrap, {pv && fin(pv.bootstrap) ? grouped(pv.bootstrap) : "an unstated number of"} draws, ranges at {fin(study.confidence) ? `${pctPlain(study.confidence)} confidence` : "the served confidence"}.
+            Cluster bootstrap, {pv && fin(pv.bootstrap) ? grouped(pv.bootstrap) : "an unstated number of"} draws, ranges at {fin(study.verdict_confidence) ? `the engine's ${pctPlain(study.verdict_confidence)}` : "the engine's served level"}.
             {verdictRuleWords(study) ? ` Each horizon's verdict follows ${verdictRuleWords(study)}:` : " Each horizon's verdict follows the definitions below."}
           </p>
           <VerdictDefinitions />

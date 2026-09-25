@@ -41,32 +41,41 @@ afterEach(() => {
 });
 
 describe("Ledger order and filters", () => {
-  it("sorts the quiet rows by verdict and keeps the served order within one", () => {
+  it("sorts the quiet rows by verdict and keeps the served order within one; unavailable rows have no verdict and go last", () => {
     expect(byVerdict(rows.filter((r) => !r.firing_now)).map((r) => r.slug)).toEqual([
-      "golden-cross", "rsi-below-30", "vix-spike-2sigma-5d", "gold-2sigma-spx-weak", "hy-2sigma-20d", "spx-20d-2sigma", "death-cross", "rsi-above-70", "oil-2sigma-20d", "spx-5d-2sigma",
+      "golden-cross", "vix-spike-2sigma-5d", "gold-2sigma-spx-weak", "hy-2sigma-20d", "spx-20d-2sigma", "death-cross", "spx-5d-2sigma", "dollar-2sigma-20d", "rsi-below-30", "rsi-above-70", "oil-2sigma-20d",
     ]);
   });
-  it("filters by firing, verdict and group", () => {
-    expect(applyFilter(rows, "firing")).toHaveLength(2);
-    expect(applyFilter(rows, "reliable")).toHaveLength(3);
+  it("filters by firing, verdict and group; an unavailable row never counts as firing or Reliable (§8, v4 B-02)", () => {
+    expect(applyFilter(rows, "firing").map((r) => r.slug)).toEqual(["2s10s-2sigma-steepening"]);
+    expect(applyFilter(rows, "reliable").map((r) => r.slug)).toEqual(["golden-cross", "vix-spike-2sigma-5d"]);
     expect(applyFilter(rows, "spx")).toHaveLength(6);
     expect(applyFilter(rows, "cross")).toHaveLength(6);
     expect(applyFilter(rows, "all")).toHaveLength(12);
+    // A stale row is never called firing today (v3 §3).
+    expect(applyFilter(rows.map((r) => ({ ...r, stale: true })), "firing")).toHaveLength(0);
   });
 });
 
 describe("Signal Ledger tab", () => {
   it("the four counts and the grouped table", async () => {
     renderTab();
-    await waitFor(() => expect(screen.getByText("Signals scored").parentElement).toHaveTextContent("12"));
-    expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/2\s*2s10s steepening · dollar weak/);
-    expect(screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/3\s*golden cross · RSI < 30 · VIX spike/);
+    // §8, v4 B-02: SIGNALS SCORED is scored_n, "<scored_n> scored · <unavailable_n> not yet served"; the rest count available rows only.
+    await waitFor(() => expect(screen.getByText("Signals scored").parentElement?.textContent).toBe("Signals scored88 scored · 4 not yet served"));
+    expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/1\s*2s10s steepening/);
+    expect(screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/2\s*golden cross · VIX spike/);
     // §8: NO EDGE is the count alone; v2 §7's withdrawn "shown so you know it was checked" is gone.
-    expect(screen.getByText("No edge", { selector: ".dk-stat-label" }).parentElement?.textContent).toBe("No edge5");
+    expect(screen.getByText("No edge", { selector: ".dk-stat-label" }).parentElement?.textContent).toBe("No edge3");
     const table = screen.getByRole("table");
     const groups = within(table).getAllByRole("rowgroup").slice(1);
     expect(groups[0]).toHaveTextContent("Firing now");
-    expect(within(groups[0]).getAllByRole("row").slice(1).map((r) => r.querySelector("th")?.textContent)).toEqual(["2s10s +2σ steepening", "Dollar −2σ, 20 days"]);
+    expect(within(groups[0]).getAllByRole("row").slice(1).map((r) => r.querySelector("th")?.textContent)).toEqual(["2s10s +2σ steepening"]);
+    // An unavailable row keeps its label and prints its reason across the value columns, with no pill (§8).
+    const dollar = within(table).getAllByRole("row").find((r) => r.querySelector("th")?.textContent === "Dollar −2σ, 20 days")!;
+    expect(dollar.textContent).toBe("Dollar −2σ, 20 daysUS Dollar Index (DX-Y.NYB) is not stored in this database: it is a tier 2 series, and the full refresh stores tier 1 only.");
+    expect(dollar.querySelector("td")?.getAttribute("colspan")).toBe("7");
+    expect(dollar.querySelector(".dk-pill")).toBeNull();
+    expect(dollar).not.toHaveAttribute("tabindex");
     expect(groups[1]).toHaveTextContent("Quiet · sorted by verdict");
     const first = within(groups[1]).getAllByRole("row")[1];
     expect(first.textContent).toBe("S&P golden crossJul 1, 20253168%+2.7%+1.4 ptsReliable○ Quiet");
@@ -83,9 +92,9 @@ describe("Signal Ledger tab", () => {
     const group = screen.getByRole("group", { name: "Filter" });
     fireEvent.click(within(group).getByRole("button", { name: "Reliable only" }));
     const table = screen.getByRole("table");
-    expect(within(table).getAllByRole("row").filter((r) => r.querySelector("th[scope=row]"))).toHaveLength(3);
-    fireEvent.click(within(table).getByRole("row", { name: /RSI below 30/ }));
-    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?preset=rsi-below-30"));
+    expect(within(table).getAllByRole("row").filter((r) => r.querySelector("th[scope=row]"))).toHaveLength(2);
+    fireEvent.click(within(table).getByRole("row", { name: /VIX spike/ }));
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?preset=vix-spike-2sigma-5d"));
   });
   it("a row opens from the keyboard too (Enter)", async () => {
     renderTab();
@@ -157,6 +166,15 @@ describe("Signal Ledger tab", () => {
     expect(hy.cells[5].textContent).toBe("+1.4 pts");
     expect(hy.cells[5].querySelector("[title]")?.getAttribute("title")).toBe("log return, ×100");
   });
+  it("NOW reads '○ Stale · <evaluated_on>' when a row's last evaluable session is not the comparison session, never Firing (§8, v3 §3)", async () => {
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => (r.slug === "2s10s-2sigma-steepening" ? { ...r, stale: true, evaluated_on: "2026-09-19" } : r)) }) });
+    renderTab();
+    const table = await screen.findByRole("table");
+    const row = within(table).getByRole("row", { name: /2s10s/ }) as HTMLTableRowElement;
+    expect(row.cells[row.cells.length - 1].textContent).toBe("○ Stale · Sep 19");
+    expect(row).not.toHaveAttribute("data-firing");
+    expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/);
+  });
   it("Space opens a row too; a chip shows it is pressed", async () => {
     renderTab();
     await screen.findByRole("table");
@@ -170,17 +188,17 @@ describe("Signal Ledger tab", () => {
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?preset=death-cross"));
   });
   it("an unknown verdict prints a dash, not an empty pill; an unknown firing state is not 'Quiet' (L-3, L-9)", async () => {
-    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r, i) => (i === 3 ? { ...r, verdict: "strong", firing_now: null } : r)) }) });
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r, i) => (i === 4 ? { ...r, verdict: "strong", firing_now: null } : r)) }) });
     renderTab();
     const table = await screen.findByRole("table");
-    const row = within(table).getByRole("row", { name: /RSI below 30/ });
+    const row = within(table).getByRole("row", { name: /VIX spike/ });
     expect(row.querySelector(".dk-pill")).toBeNull();
-    expect(row.textContent).toBe("RSI below 30Apr 8, 20252273%+3.4%+2.1 pts——");
+    expect(row.textContent).toBe("VIX spike +2σ, 5 daysAug 5, 20244171%+2.2%+0.9 pts——");
   });
-  it("counts are green only above zero; the sample year follows the earliest served start", async () => {
-    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => ({ ...r, sample_start: "2000-01-03", verdict: r.verdict === "reliable" ? "suggestive" : r.verdict })) }) });
+  it("counts are green only above zero", async () => {
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => ({ ...r, verdict: r.verdict === "reliable" ? "suggestive" : r.verdict })) }) });
     renderTab();
-    await waitFor(() => expect(screen.getByText("Signals scored").parentElement).toHaveTextContent("since 2000 where history allows"));
+    await waitFor(() => expect(screen.getByText("Signals scored").parentElement).toHaveTextContent("8 scored"));
     const reliable = screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement;
     expect(reliable).toHaveTextContent(/0\s*none/);
     expect(reliable?.querySelector(".dk-stat-value")).not.toHaveAttribute("data-tone", "green");

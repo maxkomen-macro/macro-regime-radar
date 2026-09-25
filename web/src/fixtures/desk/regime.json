@@ -319,40 +319,14 @@
   "freq": "monthly",
   "source": "recession model (src/analytics/recession.py)"
  },
- "stats": [
-  {
-   "regime": "Goldilocks",
-   "months": 154,
-   "spx_mo": 0.014,
-   "up_pct": 0.66,
-   "vix_avg": 15,
-   "stock_bond_corr": -0.2
-  },
-  {
-   "regime": "Overheating",
-   "months": 88,
-   "spx_mo": 0.009,
-   "up_pct": 0.59,
-   "vix_avg": 17,
-   "stock_bond_corr": 0.3
-  },
-  {
-   "regime": "Stagflation",
-   "months": 46,
-   "spx_mo": -0.002,
-   "up_pct": 0.48,
-   "vix_avg": 24,
-   "stock_bond_corr": 0.4
-  },
-  {
-   "regime": "Recession Risk",
-   "months": 76,
-   "spx_mo": -0.006,
-   "up_pct": 0.45,
-   "vix_avg": 29,
-   "stock_bond_corr": -0.5
+ "stats": {
+  "status": "awaiting",
+  "data": null,
+  "unavailable": {
+   "reason": "regime statistics not yet defined in the engine.",
+   "until": null
   }
- ],
+ },
  "next_prints": {
   "cpi": {
    "date": "2026-10-14",
@@ -365,48 +339,12 @@
    "flips_to": "Stagflation"
   }
  },
- "changes": [
-  {
-   "month": "2026-06",
-   "from": "Goldilocks",
-   "to": "Overheating",
-   "spx_1m": 0.021
-  },
-  {
-   "month": "2025-10",
-   "from": "Stagflation",
-   "to": "Goldilocks",
-   "spx_1m": 0.038
-  },
-  {
-   "month": "2025-03",
-   "from": "Overheating",
-   "to": "Stagflation",
-   "spx_1m": -0.042
-  },
-  {
-   "month": "2024-08",
-   "from": "Goldilocks",
-   "to": "Overheating",
-   "spx_1m": 0.011
-  },
-  {
-   "month": "2024-01",
-   "from": "Recession Risk",
-   "to": "Goldilocks",
-   "spx_1m": 0.053
-  }
- ],
- "reads": {
-  "stats": {
-   "label": "Read for the desk",
-   "text": "Overheating has been fine for equities but vol runs a little higher than Goldilocks, and stock–bond correlation is positive — Treasuries stop hedging. That argues for owning protection through options rather than duration, which is the case the Technicals vol card makes today.",
-   "tone": "warning"
-  },
-  "changes": {
-   "label": "Read",
-   "text": "regime changes have not been sell signals on their own; the one negative was the move into Stagflation. The label lags two months, so the market usually knows before the label does — which is why the Ledger scores signals, not regimes.",
-   "tone": "normal"
+ "changes": {
+  "status": "awaiting",
+  "data": null,
+  "unavailable": {
+   "reason": "regime statistics not yet defined in the engine.",
+   "until": null
   }
  }
 }

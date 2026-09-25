@@ -50,22 +50,23 @@ afterEach(() => {
 
 describe("the question", () => {
   it("reads a preset or six slots from the address, and writes them back", () => {
-    expect(askFromSearch("")).toEqual({ preset: "gold-2sigma-spx-weak", confidence: undefined });
-    expect(askFromSearch("preset=golden-cross&confidence=0.8")).toEqual({ preset: "golden-cross", confidence: 0.8 });
-    expect(askFromSearch("shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20")).toEqual({ question: GOLD, confidence: undefined });
-    expect(askFromSearch("shock=gold&window=7&move=up2s&while=none&target=spx&horizon=20")).toEqual({ preset: "gold-2sigma-spx-weak", confidence: undefined });
-    expect(searchFor({ question: GOLD, confidence: 0.95 }, new URLSearchParams("view=client&x=1"))).toBe("view=client&shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20&confidence=0.95");
+    expect(askFromSearch("")).toEqual({ preset: "gold-2sigma-spx-weak" });
+    // §12.2 has no `confidence` parameter: an old address's is ignored and never written back.
+    expect(askFromSearch("preset=golden-cross&confidence=0.8")).toEqual({ preset: "golden-cross" });
+    expect(askFromSearch("shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20")).toEqual({ question: GOLD });
+    expect(askFromSearch("shock=gold&window=7&move=up2s&while=none&target=spx&horizon=20")).toEqual({ preset: "gold-2sigma-spx-weak" });
+    expect(searchFor({ question: GOLD }, new URLSearchParams("view=client&x=1&confidence=0.95"))).toBe("view=client&shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20");
   });
   it("opens an old frame-2 link (?study=<engine slug>) as the same six slots", () => {
-    expect(askFromSearch("study=gold-2sigma-spx-weak")).toEqual({ question: GOLD, confidence: undefined });
-    expect(askFromSearch("study=spx-golden-cross")).toEqual({ question: { shock: "spx", window: 20, move: "cross_above", while: "none", target: "spx", horizon: 20 }, confidence: undefined });
-    expect(askFromSearch("preset=rsi-below-30")).toEqual({ preset: "rsi-below-30", confidence: undefined });
+    expect(askFromSearch("study=gold-2sigma-spx-weak")).toEqual({ question: GOLD });
+    expect(askFromSearch("study=spx-golden-cross")).toEqual({ question: { shock: "spx", window: 20, move: "cross_above", while: "none", target: "spx", horizon: 20 } });
+    expect(askFromSearch("preset=rsi-below-30")).toEqual({ preset: "rsi-below-30" });
   });
 
   it("an engine link at another z or for one regime is not read as the 2σ, all-regime question", () => {
     expect(questionFromEngine("gold-w20-z2.0-up-spx_below_50dma-spx-goldilocks")).toBeNull();
     expect(questionFromEngine("gold-w5-z2.5-down-none-us10y")).toBeNull();
-    expect(askFromSearch("study=gold-w5-z2.5-down-none-us10y")).toEqual({ preset: "gold-2sigma-spx-weak", confidence: undefined });
+    expect(askFromSearch("study=gold-w5-z2.5-down-none-us10y")).toEqual({ preset: "gold-2sigma-spx-weak" });
   });
 
   it("maps a question onto the engine's own study when the engine can ask it", () => {
@@ -121,7 +122,8 @@ describe("Event Study tab", () => {
     expect(card).toHaveTextContent("−9.4% / +12.0%");
     expect(card).toHaveTextContent("Mar 2020 · Apr 2025");
     expect(within(card).getByRole("img", { name: /median move after the event/ })).toBeInTheDocument();
-    expect(card.textContent?.replace(/\s+/g, " ")).toContain("Without the S&P condition — Gold +2σ on its own — it’s 41 events, up 58%, median +1.6%: No edge. The condition earns its place.");
+    // §4, C-01: the line without the condition is unavailable; it keeps its lead and prints the served reason.
+    expect(card.textContent?.replace(/\s+/g, " ")).toContain("Without the S&P condition: conditional-versus-unconditional comparison is not defined");
   });
 
   it("the rail: verdict, by regime under ten events as too few, today's regime note, last five, ranges at the served confidence", async () => {
@@ -146,7 +148,8 @@ describe("Event Study tab", () => {
     expect(rail).toHaveTextContent("Apr 16, 2025Overheating+12.0%");
     expect(rail).toHaveTextContent("−1.6 to +4.1 pts");
     expect(within(within(rail).getByRole("group", { name: "Confidence" })).getByRole("button", { name: "90%" })).toHaveAttribute("aria-pressed", "true");
-    expect(rail).toHaveTextContent("All four include zero at 90%. At 80% the 1-month range clears zero; at 95% none do.");
+    // §12.2 serves no confidence note; the chips say not yet served.
+    expect(rail).not.toHaveTextContent("All four include zero");
   });
 
   it("the slots show the served question; a changed slot is your own and Run writes the address", async () => {
@@ -161,13 +164,22 @@ describe("Event Study tab", () => {
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=60"));
   });
 
-  it("a confidence chip re-asks with confidence", async () => {
+  it("the confidence chips are disabled, not yet served; 90% is marked as the engine's level, and nothing asks with a confidence (§4, §12.2)", async () => {
     const { calls } = stubDesk();
     renderTab();
     const rail = await screen.findByRole("complementary", { name: "Verdict and detail" });
     await waitFor(() => expect(rail).toHaveTextContent("Verdict"));
-    fireEvent.click(within(rail).getByRole("button", { name: "80%" }));
-    await waitFor(() => expect(calls.some((c) => c.includes("/api/desk/study?preset=gold-2sigma-spx-weak&confidence=0.8"))).toBe(true));
+    const chips = within(within(rail).getByRole("group", { name: "Confidence" })).getAllByRole("button");
+    expect(chips.map((c) => [c.textContent, (c as HTMLButtonElement).disabled, c.getAttribute("aria-pressed")])).toEqual([
+      ["80%", true, "false"],
+      ["90%", true, "true"],
+      ["95%", true, "false"],
+    ]);
+    expect(within(rail).getByRole("group", { name: "Confidence" })).toHaveTextContent("not yet served");
+    // §1.0.2: no envelope of their own, so the rail prints §1.0's reason for them.
+    expect(rail).toHaveTextContent("Confidence levels other than 90%: interval projection at other quantiles is new plumbing.");
+    fireEvent.click(chips[0]);
+    expect(calls.some((c) => c.includes("confidence"))).toBe(false);
   });
 
   it("Save keeps the question in this browser and lists it under My saved questions", async () => {
@@ -190,13 +202,11 @@ describe("Event Study tab", () => {
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toContain("while=none"));
   });
 
-  it("edits survive a confidence change; clicking the pressed preset puts the served question back", async () => {
+  it("an edited slot stays until run; clicking the pressed preset puts the served question back", async () => {
     renderTab();
     const rail = await screen.findByRole("complementary", { name: "Verdict and detail" });
     await waitFor(() => expect(rail).toHaveTextContent("Verdict"));
     fireEvent.change(screen.getByLabelText("Over the next"), { target: { value: "60" } });
-    fireEvent.click(within(rail).getByRole("button", { name: "80%" }));
-    await waitFor(() => expect(screen.getByTestId("loc").textContent).toContain("confidence=0.8"));
     expect(screen.getByLabelText("Over the next")).toHaveValue("60");
     fireEvent.click(screen.getByRole("button", { name: "Common questions" }));
     fireEvent.click(screen.getByRole("button", { name: "Gold +2σ while S&P weak" }));
@@ -293,7 +303,7 @@ describe("a study with a block missing (Codex R-10)", () => {
     expect(answer()).toHaveTextContent(/Events\s*18\s*count awaiting refresh/);
     expect(answer()).toHaveTextContent(/Up a month later\s*Awaiting refresh/);
     expect(answer()).toHaveTextContent(/Median at a month\s*Awaiting refresh/);
-    expect(rail()).toHaveTextContent(/80%90%95%\s*Awaiting refresh/);
+    expect(rail()).toHaveTextContent(/80%90%95%\s*not yet served\s*Confidence levels other than 90%: interval projection at other quantiles is new plumbing\.\s*Awaiting refresh/);
     expect(rail()).toHaveTextContent(/By regime · a month later.*Goldilocks/);
   });
 
@@ -364,7 +374,8 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     // The served why is in the study's own unit too.
     expect(rail().querySelector(".es-verdict")?.textContent).toContain("runs −10 to +40 bp");
     expect(rail().querySelector(".es-verdict")?.textContent).not.toContain("pts");
-    expect(answer()).toHaveTextContent("median +9 bp");
+    // No target move prints as a percent (shares like 67% are not moves).
+    expect(answer()).not.toHaveTextContent(/[+−]\d+(\.\d)?%/);
     // §1.9: the tooltip belongs to log numbers only.
     expect(document.querySelector('[title="log return, ×100"]')).toBeNull();
   });
@@ -495,15 +506,13 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     expect(Object.keys(kept.question).sort()).toEqual(["horizon", "move", "shock", "target", "while", "window"]);
   });
 
-  it("the line without the condition prints the served note, whatever the verdicts rank (R-12)", async () => {
-    stubDesk({ "/api/desk/study": () => ({ ...study, without_condition: { ...study.without_condition, comparison: "no_improvement", comparison_note: "The condition does not improve the read." } }) });
-    const { unmount } = renderTab();
-    await waitFor(() => expect(answer()).toHaveTextContent("No edge. The condition does not improve the read."));
-    expect(answer()).not.toHaveTextContent("earns its place");
-    unmount();
-    stubDesk({ "/api/desk/study": () => ({ ...study, without_condition: { ...study.without_condition, comparison_note: undefined } }) });
+  it("the line without the condition ranks nothing: served ready (not Monday's contract) or absent, it says Awaiting refresh (C-01)", async () => {
+    const { without_condition: _w, ...absent } = study;
+    void _w;
+    stubDesk({ "/api/desk/study": () => absent });
     renderTab();
-    await waitFor(() => expect(answer()).toHaveTextContent("Whether the condition helps is awaiting refresh."));
+    await waitFor(() => expect(answer()).toHaveTextContent("Without the S&P condition: Awaiting refresh"));
+    expect(answer()).not.toHaveTextContent(/earns its place|No edge\./);
   });
 });
 
@@ -524,7 +533,6 @@ describe("a study served awaiting (§12.0, v4 B-07)", () => {
   });
 
   it("the line without the condition, served awaiting, keeps its lead and prints the reason (C-01)", async () => {
-    stubDesk({ "/api/desk/study": () => ({ ...study, without_condition: { status: "awaiting", data: null, unavailable: { reason: "conditional-versus-unconditional comparison is not defined", until: null } } }) });
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: "The answer" })).toHaveTextContent("Without the S&P condition: conditional-versus-unconditional comparison is not defined"));
   });
