@@ -12,11 +12,11 @@
 
 import type { ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { useStudy } from "../data/api";
+import { unavailableOf, useStudy } from "../data/api";
 import type { StudyResponse } from "../data/types";
 import type { DeskPage } from "../desk-sections";
 import { dayLong, pctPlain, year } from "../kit/format";
-import { Awaiting, Signed } from "../kit/ui";
+import { Awaiting, Signed, Unserved, useUnserved } from "../kit/ui";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { isUnit, moveText, scaleOf } from "../event-study/units";
 import "./client.css";
@@ -121,10 +121,22 @@ function Backdrop({ s, failed }: { s: StudyResponse | undefined; failed: boolean
 }
 
 function StatCard({ label, children, state }: { label: string; children?: ReactNode; state: "value" | "loading" | "awaiting" | string }) {
+  // §1.0.2: a study served awaiting keeps the label and prints no number; the reason is printed once above.
+  const unserved = useUnserved();
   return (
     <div className="dk-card cv-stat">
       <p className="dk-stat-label">{label}</p>
-      {state === "value" ? children : state === "loading" ? null : state === "awaiting" ? <p className="dk-stat-await">Awaiting refresh</p> : <p className="cv-stat-thin">{state}</p>}
+      {unserved ? (
+        <p className="dk-stat-await" aria-hidden="true">
+          —
+        </p>
+      ) : state === "value" ? (
+        children
+      ) : state === "loading" ? null : state === "awaiting" ? (
+        <p className="dk-stat-await">Awaiting refresh</p>
+      ) : (
+        <p className="cv-stat-thin">{state}</p>
+      )}
     </div>
   );
 }
@@ -143,42 +155,44 @@ export default function ClientView({ page }: { page: DeskPage }) {
   const state = (ok: boolean) => (ok ? "value" : !s && !failed ? "loading" : thin ? "too few cases to say" : "awaiting");
   return (
     <div className="cv" aria-busy={(!s && !failed) || undefined}>
-      <div className="cv-grid">
-        <div className="cv-main">
-          <p className="dk-stat-label">{setupLabel(s)}</p>
-          <h1 className="cv-headline">{s?.client?.headline ?? "What has happened after this setup"}</h1>
-          {s?.client?.summary ? <p className="cv-summary">{s.client.summary}</p> : thin ? <p className="cv-summary">{thin}</p> : s || failed ? <Awaiting className="cv-summary-await" /> : null}
-          <div className="cv-stats">
-            <StatCard label="Episodes" state={state(!!s && fin(s.n_events))}>
-              <p className="cv-stat-value">{s?.n_events}</p>
-              <p className="cv-stat-sub">{year(s?.sample_start) ? `since ${year(s?.sample_start)}` : ""}</p>
-            </StatCard>
-            <StatCard label="Higher a month later" state={state(!!month && fin(month.up_pct))}>
-              {month && fin(month.up_pct) ? (
-                <>
-                  {/* Green when the setup ended up more often than an ordinary month did (§1.3: green means up). */}
-                  <p className="cv-stat-value" data-tone={fin(month.baseline_up_pct) && month.up_pct > month.baseline_up_pct ? "green" : undefined}>
-                    {pctPlain(month.up_pct)}
-                  </p>
-                  <p className="cv-stat-sub">{fin(month.baseline_up_pct) ? `vs ${pctPlain(month.baseline_up_pct)} in an ordinary month` : ""}</p>
-                </>
-              ) : null}
-            </StatCard>
-            <StatCard label="Typical move" state={state(!!month && fin(month.median) && !!moveText(month.median, s?.question?.target_unit))}>
-              {month && fin(month.median) ? (
-                <>
-                  <p className="cv-stat-value">
-                    <Signed value={month.median}>{moveText(month.median, s?.question?.target_unit)}</Signed>
-                  </p>
-                  <p className="cv-stat-sub">{moveText(month.baseline_median, s?.question?.target_unit) ? `vs ${moveText(month.baseline_median, s?.question?.target_unit)} ordinary` : ""}</p>
-                </>
-              ) : null}
-            </StatCard>
+      <Unserved block={unavailableOf(q.error)}>
+        <div className="cv-grid">
+          <div className="cv-main">
+            <p className="dk-stat-label">{setupLabel(s)}</p>
+            <h1 className="cv-headline">{s?.client?.headline ?? "What has happened after this setup"}</h1>
+            {s?.client?.summary ? <p className="cv-summary">{s.client.summary}</p> : thin ? <p className="cv-summary">{thin}</p> : s || failed ? <Awaiting className="cv-summary-await" /> : null}
+            <div className="cv-stats">
+              <StatCard label="Episodes" state={state(!!s && fin(s.n_events))}>
+                <p className="cv-stat-value">{s?.n_events}</p>
+                <p className="cv-stat-sub">{year(s?.sample_start) ? `since ${year(s?.sample_start)}` : ""}</p>
+              </StatCard>
+              <StatCard label="Higher a month later" state={state(!!month && fin(month.up_pct))}>
+                {month && fin(month.up_pct) ? (
+                  <>
+                    {/* Green when the setup ended up more often than an ordinary month did (§1.3: green means up). */}
+                    <p className="cv-stat-value" data-tone={fin(month.baseline_up_pct) && month.up_pct > month.baseline_up_pct ? "green" : undefined}>
+                      {pctPlain(month.up_pct)}
+                    </p>
+                    <p className="cv-stat-sub">{fin(month.baseline_up_pct) ? `vs ${pctPlain(month.baseline_up_pct)} in an ordinary month` : ""}</p>
+                  </>
+                ) : null}
+              </StatCard>
+              <StatCard label="Typical move" state={state(!!month && fin(month.median) && !!moveText(month.median, s?.question?.target_unit))}>
+                {month && fin(month.median) ? (
+                  <>
+                    <p className="cv-stat-value">
+                      <Signed value={month.median}>{moveText(month.median, s?.question?.target_unit)}</Signed>
+                    </p>
+                    <p className="cv-stat-sub">{moveText(month.baseline_median, s?.question?.target_unit) ? `vs ${moveText(month.baseline_median, s?.question?.target_unit)} ordinary` : ""}</p>
+                  </>
+                ) : null}
+              </StatCard>
+            </div>
+            <p className="cv-source">{sourceLine(s?.as_of)}</p>
           </div>
-          <p className="cv-source">{sourceLine(s?.as_of)}</p>
+          <Backdrop s={s} failed={failed} />
         </div>
-        <Backdrop s={s} failed={failed} />
-      </div>
+      </Unserved>
     </div>
   );
 }

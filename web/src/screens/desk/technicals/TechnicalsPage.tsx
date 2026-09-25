@@ -14,7 +14,7 @@
  */
 
 import { useState } from "react";
-import { useLedger, useSectors, useTechnicals, useVol } from "../data/api";
+import { unavailableOf, useLedger, useSectors, useTechnicals, useVol } from "../data/api";
 import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, VolResponse } from "../data/types";
 import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
@@ -24,7 +24,7 @@ import Gauge from "../kit/Gauge";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, LiveBadge, Signed, Stat, StatRow, VerdictPill, VerdictWord, useAdvanced } from "../kit/ui";
+import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
 import "./technicals.css";
 
 type CardState = "loading" | "awaiting" | "ready";
@@ -61,6 +61,8 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
   const r = vol?.reads;
   const edges = vol?.skew_band_edges;
   const pctile = fin(vol?.skew_pct_2y) ? Math.round(vol.skew_pct_2y * 100) : null;
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-vol-title" className="te-vol" title="What protection costs right now" sub="S&P 500 options, read from the SPY chain at last close." labels={[...VOL_LABELS, "Skew · where it sits"]} cols={1} block={unserved} advanced />;
   return (
     <section className="dk-card te-vol" aria-labelledby="te-vol-title" aria-busy={state === "loading"}>
       <div className="te-vol-head">
@@ -199,6 +201,8 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
   const crossI = served ? pts.findIndex((p) => p.date === served.date) : -1;
   const crossWord = t?.cross?.kind === "death" ? "Death" : "Golden";
   const ready = state === "ready" && !!t;
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-price-title" className="te-price" title="S&P 500" sub="price and its two trend lines" labels={["Price", "50-day average", "200-day average"]} block={unserved} />;
   return (
     <section className="dk-card te-price" aria-labelledby="te-price-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
@@ -281,6 +285,8 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
   const inRegime = t?.cross?.in_regime;
   const ready = tState === "ready" && !!t;
   const aw = tState === "awaiting";
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-sig-title" className="te-signals" title="Signals" sub="what fired, and what usually follows" labels={["1-year return", "Trend", "Last 20 days"]} block={unserved} />;
   return (
     <section className="dk-card te-signals" aria-labelledby="te-sig-title" aria-busy={tState === "loading" || lState === "loading"}>
       <div className="dk-card-head">
@@ -363,6 +369,8 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
   const toRow = (r: Row) => ({ key: r.etf, ticker: r.etf, name: r.short ?? "", value: fin(r.rel_ret) ? r.rel_ret : null });
   const lo = rows.length ? rows[rows.length - 1].rel_ret : 0;
   const hi = rows.length ? rows[0].rel_ret : 0;
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-sect-title" className="te-sectors" title="Sector leadership · 3-month relative strength vs S&P" block={unserved} advanced />;
   return (
     <section className="dk-card te-sectors" aria-labelledby="te-sect-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
@@ -419,6 +427,8 @@ function RsiCard({ t, state, ledger }: { t: TechnicalsResponse | undefined; stat
   const ready = state === "ready" && !!t;
   const aw = state === "awaiting";
   const last = (x: TechnicalsResponse["rsi_last_above_70"] | null | undefined) => (ready && x?.date ? dayInYear(x.date, t.as_of) : "");
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub="is the S&P stretched, either way?" labels={["Now", "Last above 70", "Last below 30"]} block={unserved} advanced />;
   return (
     <section className="dk-card te-rsi" aria-labelledby="te-rsi-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
@@ -485,13 +495,22 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
   const cross = t?.cross ? bySlug(lq.data, t.cross.kind === "death" ? "death-cross" : "golden-cross") : undefined;
   return (
     <div className="te">
-      <PageTitle page={page} badge={t ? <LiveBadge boxed parts={["Yahoo/FRED", `as of ${dayLong(t.as_of)}`]} /> : null} />
+      <PageTitle page={page} badge={unavailableOf(tq.error) ? <NotServedBadge boxed /> : t ? <LiveBadge boxed parts={["Yahoo/FRED", `as of ${dayLong(t.as_of)}`]} /> : null} />
       <div className="te-grid">
-        <VolCard vol={vq.data} state={stateOf(vq)} />
-        <PriceCard t={t} state={stateOf(tq)} cross={cross} />
-        <SignalsCard t={t} tState={stateOf(tq)} ledger={lq.data} lState={stateOf(lq, Array.isArray(lq.data?.signals))} />
-        <SectorCard s={sq.data} state={stateOf(sq, Array.isArray(sq.data?.leadership))} />
-        <RsiCard t={t} state={stateOf(tq)} ledger={lq.data} />
+        {/* §12.0: a card whose answer is served awaiting keeps its labels and prints the reason (§1.0.2). */}
+        <Unserved block={unavailableOf(vq.error)}>
+          <VolCard vol={vq.data} state={stateOf(vq)} />
+        </Unserved>
+        <Unserved block={unavailableOf(tq.error)}>
+          <PriceCard t={t} state={stateOf(tq)} cross={cross} />
+          <SignalsCard t={t} tState={stateOf(tq)} ledger={lq.data} lState={stateOf(lq, Array.isArray(lq.data?.signals))} />
+        </Unserved>
+        <Unserved block={unavailableOf(sq.error)}>
+          <SectorCard s={sq.data} state={stateOf(sq, Array.isArray(sq.data?.leadership))} />
+        </Unserved>
+        <Unserved block={unavailableOf(tq.error)}>
+          <RsiCard t={t} state={stateOf(tq)} ledger={lq.data} />
+        </Unserved>
       </div>
     </div>
   );

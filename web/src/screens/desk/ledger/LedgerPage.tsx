@@ -10,13 +10,13 @@
 
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLedger } from "../data/api";
+import { unavailableOf, useLedger } from "../data/api";
 import type { LedgerRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { dayLong, dayShort, pct, pctPlain, pts, VERDICT_LABEL, VERDICT_RANK } from "../kit/format";
-import { Awaiting, LiveBadge, Signed, Stat, VerdictPill } from "../kit/ui";
+import { Awaiting, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
 
@@ -87,6 +87,8 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   const { pathTo } = useDeskView();
   const navigate = useNavigate();
   const q = useLedger();
+  // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
+  const unserved = unavailableOf(q.error);
   const [scrollRef, scrolls] = useOverflows<HTMLDivElement>();
   const [filter, setFilter] = useState<Filter>("all");
   const l = q.data;
@@ -110,93 +112,95 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   ];
   return (
     <div className="lg">
-      <PageTitle page={page} badge={l && dayShort(l.as_of) ? <LiveBadge boxed parts={[`engine as of ${dayShort(l.as_of)}`]} /> : null} />
-      <div className="lg-stats" aria-busy={state === "loading"}>
-        <Stat label="Signals scored" awaiting={state === "awaiting"} value={ready ? String(rows.length) : undefined} sub={ready && earliest ? `since ${earliest.slice(0, 4)} where history allows` : undefined} />
-        <Stat label="Firing now" awaiting={state === "awaiting"} value={ready ? String(firing.length) : undefined} tone={firing.length ? "green" : undefined} sub={ready ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
-        <Stat label="Reliable" awaiting={state === "awaiting"} value={ready ? String(reliable.length) : undefined} tone={reliable.length ? "green" : undefined} sub={ready ? reliable.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
-        <Stat label="No edge" awaiting={state === "awaiting"} value={ready ? String(noEdge.length) : undefined} sub={ready ? "shown so you know they were checked" : undefined} />
-      </div>
-      <section className="dk-card lg-card" aria-label="Every scored signal" aria-busy={state === "loading"}>
-        <div className="lg-chips" role="group" aria-label="Filter">
-          {chips.map((c) => (
-            <button key={c.id} type="button" className="dk-chip" aria-pressed={filter === c.id} disabled={!ready} onClick={() => setFilter(c.id)}>
-              {c.label}
-            </button>
-          ))}
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : l && dayShort(l.as_of) ? <LiveBadge boxed parts={[`engine as of ${dayShort(l.as_of)}`]} /> : null} />
+      <Unserved block={unserved}>
+        <div className="lg-stats" aria-busy={state === "loading"}>
+          <Stat label="Signals scored" awaiting={state === "awaiting"} value={ready ? String(rows.length) : undefined} sub={ready && earliest ? `since ${earliest.slice(0, 4)} where history allows` : undefined} />
+          <Stat label="Firing now" awaiting={state === "awaiting"} value={ready ? String(firing.length) : undefined} tone={firing.length ? "green" : undefined} sub={ready ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
+          <Stat label="Reliable" awaiting={state === "awaiting"} value={ready ? String(reliable.length) : undefined} tone={reliable.length ? "green" : undefined} sub={ready ? reliable.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
+          <Stat label="No edge" awaiting={state === "awaiting"} value={ready ? String(noEdge.length) : undefined} sub={ready ? "shown so you know they were checked" : undefined} />
         </div>
-        {ready ? (
-          // The table keeps its columns at every width; narrower than that, it scrolls inside this region (L-1, L-11).
-          <div className="lg-scroll" ref={scrollRef} tabIndex={scrolls ? 0 : undefined} role="region" aria-label="The signals table">
-          <table className="lg-table">
-            <colgroup>
-              <col />
-              <col style={{ width: 128 }} />
-              <col style={{ width: 82 }} />
-              <col style={{ width: 102 }} />
-              <col style={{ width: 92 }} />
-              <col style={{ width: 101 }} />
-              <col style={{ width: 113 }} />
-              <col style={{ width: 92 }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th scope="col">Signal</th>
-                <th scope="col">Last fired</th>
-                <th scope="col">Times</th>
-                <th scope="col">Up a month later</th>
-                <th scope="col">Median</th>
-                <th scope="col">Vs normal</th>
-                <th scope="col">Verdict</th>
-                <th scope="col">Now</th>
-              </tr>
-            </thead>
-            {shownFiring.length ? (
-              <tbody>
-                <tr className="lg-group">
-                  <th scope="rowgroup" colSpan={8}>
-                    Firing now
-                  </th>
-                </tr>
-                {shownFiring.map((r) => (
-                  <Row key={r.slug} r={r} onOpen={open} />
-                ))}
-              </tbody>
-            ) : null}
-            {shownQuiet.length ? (
-              <tbody>
-                <tr className="lg-group">
-                  <th scope="rowgroup" colSpan={8}>
-                    Quiet · sorted by verdict
-                  </th>
-                </tr>
-                {shownQuiet.map((r) => (
-                  <Row key={r.slug} r={r} onOpen={open} />
-                ))}
-              </tbody>
-            ) : null}
-            {!shownFiring.length && !shownQuiet.length ? (
-              <tbody>
-                <tr>
-                  <td colSpan={8} className="lg-empty">
-                    No signal matches this filter.
-                  </td>
-                </tr>
-              </tbody>
-            ) : null}
-          </table>
+        <section className="dk-card lg-card" aria-label="Every scored signal" aria-busy={state === "loading"}>
+          <div className="lg-chips" role="group" aria-label="Filter">
+            {chips.map((c) => (
+              <button key={c.id} type="button" className="dk-chip" aria-pressed={filter === c.id} disabled={!ready} onClick={() => setFilter(c.id)}>
+                {c.label}
+              </button>
+            ))}
           </div>
-        ) : state === "awaiting" ? (
-          <Awaiting />
-        ) : null}
-        <div className="lg-foot">
-          <VerdictDefinitions />
-          <p className="lg-note">
-            {/* A line may break after a separator, never before one (R2-2). */}
-            {["a month = 20 sessions", l && fin(l.normal_month) ? `normal month\u00a0${pct(l.normal_month)}` : null, l && dayShort(l.as_of) ? `engine as of\u00a0${dayShort(l.as_of)}` : null].filter(Boolean).join("\u00a0· ")}
-          </p>
-        </div>
-      </section>
+          {ready ? (
+            // The table keeps its columns at every width; narrower than that, it scrolls inside this region (L-1, L-11).
+            <div className="lg-scroll" ref={scrollRef} tabIndex={scrolls ? 0 : undefined} role="region" aria-label="The signals table">
+            <table className="lg-table">
+              <colgroup>
+                <col />
+                <col style={{ width: 128 }} />
+                <col style={{ width: 82 }} />
+                <col style={{ width: 102 }} />
+                <col style={{ width: 92 }} />
+                <col style={{ width: 101 }} />
+                <col style={{ width: 113 }} />
+                <col style={{ width: 92 }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">Signal</th>
+                  <th scope="col">Last fired</th>
+                  <th scope="col">Times</th>
+                  <th scope="col">Up a month later</th>
+                  <th scope="col">Median</th>
+                  <th scope="col">Vs normal</th>
+                  <th scope="col">Verdict</th>
+                  <th scope="col">Now</th>
+                </tr>
+              </thead>
+              {shownFiring.length ? (
+                <tbody>
+                  <tr className="lg-group">
+                    <th scope="rowgroup" colSpan={8}>
+                      Firing now
+                    </th>
+                  </tr>
+                  {shownFiring.map((r) => (
+                    <Row key={r.slug} r={r} onOpen={open} />
+                  ))}
+                </tbody>
+              ) : null}
+              {shownQuiet.length ? (
+                <tbody>
+                  <tr className="lg-group">
+                    <th scope="rowgroup" colSpan={8}>
+                      Quiet · sorted by verdict
+                    </th>
+                  </tr>
+                  {shownQuiet.map((r) => (
+                    <Row key={r.slug} r={r} onOpen={open} />
+                  ))}
+                </tbody>
+              ) : null}
+              {!shownFiring.length && !shownQuiet.length ? (
+                <tbody>
+                  <tr>
+                    <td colSpan={8} className="lg-empty">
+                      No signal matches this filter.
+                    </td>
+                  </tr>
+                </tbody>
+              ) : null}
+            </table>
+            </div>
+          ) : state === "awaiting" ? (
+            <Awaiting />
+          ) : null}
+          <div className="lg-foot">
+            <VerdictDefinitions />
+            <p className="lg-note">
+              {/* A line may break after a separator, never before one (R2-2). */}
+              {["a month = 20 sessions", l && fin(l.normal_month) ? `normal month\u00a0${pct(l.normal_month)}` : null, l && dayShort(l.as_of) ? `engine as of\u00a0${dayShort(l.as_of)}` : null].filter(Boolean).join("\u00a0· ")}
+            </p>
+          </div>
+        </section>
+      </Unserved>
     </div>
   );
 }

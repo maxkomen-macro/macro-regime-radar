@@ -27,6 +27,22 @@ import study from "./study.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
 import vol from "./vol.json" with { type: "json" };
 import { isQuestion } from "../../screens/desk/event-study/question";
+import { onTheWire, routeOf, type EnvelopeMeta } from "../../screens/desk/data/envelope";
+
+/** The envelope's fields for every fixture answer (§12.0); a payload's own `as_of` and `generation_id` win. */
+export const FIXTURE_META: EnvelopeMeta = { generation_id: "gen-fixture-2026-09-22", as_of: "2026-09-22", engine_version: "fixture" };
+
+/** A reply as the wire carries it (§12.0): a JSON body on an enveloped route in its envelope. */
+export function wireReply(path: string, reply: FixtureReply): FixtureReply {
+  if (!/json/.test(reply.contentType)) return reply;
+  let body: unknown;
+  try {
+    body = JSON.parse(reply.body);
+  } catch {
+    return reply;
+  }
+  return { ...reply, body: JSON.stringify(onTheWire(routeOf(path), reply.status, body, FIXTURE_META)) };
+}
 
 export interface FixtureReply {
   status: number;
@@ -173,12 +189,19 @@ const json = (status: number, body: unknown): FixtureReply => ({ status, content
 
 /** The fixture reply for a request, or null when the path is not under /api/desk.
  * An /api/desk path with no fixture answers 404 in the §12 error shape, so a
- * test never falls through to whatever API happens to be running. */
+ * test never falls through to whatever API happens to be running. Every JSON
+ * answer on a §12.0 route goes out in its envelope. */
 export function deskFixture(method: string, url: string, _body?: string, accept?: string): FixtureReply | null {
   const u = new URL(url, "http://fixture.local");
   const m = /^\/api\/desk(\/.*)$/.exec(u.pathname);
   if (!m) return null;
   const path = m[1].replace(/\/+$/, "");
+  const reply = rawReply(method, u, path, _body, accept);
+  return wireReply(path, reply);
+}
+
+/** The fixture's answer before it is put on the wire: a payload or a `{error}` body. */
+function rawReply(method: string, u: URL, path: string, _body?: string, accept?: string): FixtureReply {
   if (path === "/positions") return positionsReply(method, _body);
   if (method.toUpperCase() === "GET" && path in DESK_JSON_FIXTURES) return json(200, DESK_JSON_FIXTURES[path]);
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {

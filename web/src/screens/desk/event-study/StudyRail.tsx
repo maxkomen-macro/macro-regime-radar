@@ -11,14 +11,27 @@
 import { Link } from "react-router-dom";
 import type { StudyResponse } from "../data/types";
 import { dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
-import { Advanced, Awaiting, Signed, VerdictWord } from "../kit/ui";
+import { Advanced, Awaiting, Signed, UnservedLine, useUnserved, VerdictWord } from "../kit/ui";
 import { CONFIDENCES } from "./question";
 import { isUnit, moveText, rangeText } from "./units";
 import type { TargetUnit } from "../data/types";
 
 /** The rail with no scored answer: its section labels, and why there is nothing under them (§1.7). */
 export function RailPlaceholder({ reason }: { reason: "awaiting" | "too-few" }) {
+  // §1.0.2: a study served awaiting keeps the rail's four labels and prints its reason once, after them.
+  const unserved = useUnserved();
   const why = reason === "awaiting" ? "Awaiting refresh" : "Not scored: too few events";
+  if (unserved)
+    return (
+      <>
+        {["Verdict", "By regime · a month later", "Last five events", "Range vs normal"].map((l) => (
+          <div key={l} className="es-rail-empty">
+            <p className="dk-stat-label">{l}</p>
+          </div>
+        ))}
+        <UnservedLine block={unserved} />
+      </>
+    );
   return (
     <>
       {[

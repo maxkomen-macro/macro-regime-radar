@@ -13,7 +13,7 @@ import ledger from "../../../fixtures/desk/ledger.json";
 import technicals from "../../../fixtures/desk/technicals.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
-import { deskError, stubDesk } from "../../../test/desk";
+import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { aboveBelow, dayInYear, dayMove, ledgerOrder, monthTicks, quarterOf, rsiWord, sevenOf, spxName, trendSub } from "./TechnicalsPage";
 import type { TechnicalsResponse } from "../data/types";
 
@@ -183,5 +183,28 @@ describe("Technicals tab", () => {
     const sect = screen.getByRole("region", { name: /Sector leadership/ });
     await waitFor(() => expect(sect).toHaveTextContent("Awaiting refresh"));
     expect(sect).not.toHaveTextContent("XLK");
+  });
+});
+
+describe("routes served awaiting (§12.0, §1.0.2)", () => {
+  it("the vol card keeps its labels, prints the reason once and says Not yet served", async () => {
+    stubDesk({ "/api/desk/vol": deskAwaiting("needs stored SPY option snapshots and a versioned skew method.") });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveTextContent("needs stored SPY option snapshots"));
+    const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
+    expect(within(vol).getAllByText(/needs stored SPY option snapshots/)).toHaveLength(1);
+    expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(vol).not.toHaveTextContent("Awaiting refresh");
+  });
+  it("technicals served awaiting: the page badge and its three cards say Not yet served, no Ledger number beside them", async () => {
+    stubDesk({ "/api/desk/technicals": deskAwaiting("no generation stored yet.") });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Signals/ })).toHaveTextContent("no generation stored yet."));
+    for (const name of [/^S&P 500/, /^Signals/, /^Momentum · RSI/]) {
+      const card = screen.getByRole("region", { name });
+      expect(within(card).getAllByText("no generation stored yet.")).toHaveLength(1);
+      expect(card.textContent).not.toMatch(/\d+×|Reliable|No edge/);
+    }
+    expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Not yet served");
   });
 });

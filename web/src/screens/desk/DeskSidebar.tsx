@@ -9,7 +9,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useOverview, useTechnicals } from "./data/api";
+import { unavailableOf, useOverview, useTechnicals } from "./data/api";
 import { DESK_GROUPS, GATES } from "./desk-sections";
 import { dayShort, isFiniteNumber as fin, nyToday, pct, toneOf } from "./kit/format";
 import Contain from "./kit/Contain";
@@ -28,6 +28,11 @@ function TodayCard() {
   const ov = useOverview();
   const tech = useTechnicals();
   const regime = ov.data?.tiles?.regime;
+  // §1.0.2: a block (or the whole answer) served awaiting reads "not yet served", never "Awaiting".
+  const ovOff = unavailableOf(ov.error);
+  const regimeOff = ovOff ?? ov.data?._blocks?.["tiles.regime"] ?? null;
+  const statusOff = ovOff ?? ov.data?._blocks?.data_status ?? null;
+  const techOff = unavailableOf(tech.error);
   const idle = (q: { isError: boolean; data: unknown }) => (q.isError ? "Awaiting" : "");
   return (
     <section className="dk-side-card" aria-label="Today" data-testid="dk-today">
@@ -39,6 +44,10 @@ function TodayCard() {
           </p>
           <p className="dk-today-sub">{regime.print ? `regime · ${regime.print} print` : "regime"}</p>
         </>
+      ) : regimeOff ? (
+        <p className="dk-today-sub" style={{ marginTop: 8 }}>
+          Regime not yet served
+        </p>
       ) : ov.isError || ov.data ? (
         <p className="dk-today-sub" style={{ marginTop: 8 }}>
           Regime awaiting refresh
@@ -50,6 +59,8 @@ function TodayCard() {
         <span>{tech.data ? spxDayLabel(tech.data.as_of) : "S&P today"}</span>
         {tech.data && fin(tech.data.chg_1d) ? (
           <span data-tone={toneOf(tech.data.chg_1d)}>{pct(tech.data.chg_1d)}</span>
+        ) : techOff ? (
+          <span>not yet served</span>
         ) : tech.data ? (
           <span>Awaiting refresh</span>
         ) : (
@@ -63,6 +74,8 @@ function TodayCard() {
             <span className="dk-dot" aria-hidden="true" />
             {ov.data.data_status}
           </span>
+        ) : statusOff ? (
+          <span>not yet served</span>
         ) : (
           <span>{ov.data ? "Awaiting" : idle(ov)}</span>
         )}

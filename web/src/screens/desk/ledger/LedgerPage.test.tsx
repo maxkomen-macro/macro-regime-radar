@@ -138,7 +138,10 @@ describe("Signal Ledger tab", () => {
   it("without an as-of, the badge and the note's date are left out (L-8)", async () => {
     const { as_of: _a, ...rest } = ledger;
     void _a;
-    stubDesk({ "/api/desk/ledger": () => rest });
+    // §12.0: `as_of` lives on the envelope; this answer's is null.
+    const { generation_id: _g, ...payload } = rest;
+    void _g;
+    stubDesk({ "/api/desk/ledger": () => ({ status: "ready", generation_id: "g", as_of: null, engine_version: "fixture", data: payload, unavailable: null, error: null }) });
     renderTab();
     await screen.findByRole("table");
     expect(screen.getByText(/^a month = 20 sessions/).textContent).toBe("a month = 20 sessions\u00a0· normal month\u00a0+1.3%");

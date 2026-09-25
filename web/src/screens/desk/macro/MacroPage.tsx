@@ -11,7 +11,7 @@
  * it is not served (§1.7); nothing prints a number that was not served.
  */
 
-import { useMacro } from "../data/api";
+import { unavailableOf, useMacro } from "../data/api";
 import type { MacroResponse, Read } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
@@ -19,7 +19,7 @@ import { dayShort, endDay, monthYear, num, ordinal } from "../kit/format";
 import Gauge from "../kit/Gauge";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
-import { AdvancedPanel, Awaiting, LiveBadge, ReadBox, Stat, StatRow, useAdvanced } from "../kit/ui";
+import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved } from "../kit/ui";
 import "./macro.css";
 
 type State = "loading" | "awaiting" | "ready";
@@ -105,6 +105,7 @@ export function coverTicks(lo: number, hi: number, max: number): { v: number; te
 function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
+  const unserved = useBlockUnserved(m, "curve");
   const c = m?.curve;
   const today = c?.today;
   const ago = c?.month_ago;
@@ -117,6 +118,8 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const sc = c?.["2s10s_chg_bp"];
   const drawn = TENORS.filter((t) => fin(today?.[t])).length > 1;
   const agoDrawn = TENORS.filter((t) => fin(ago?.[t])).length > 1;
+  // §1.0.2: the block, or the whole answer, served awaiting.
+  if (unserved) return <UnservedCard headingId="mc-curve" className="mc-card" title="Yield curve" sub="today against a month ago" labels={["10-year", "2s10s", "Front end"]} block={unserved} advanced />;
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-curve" aria-busy={quiet}>
       <CardHead id="mc-curve" title="Yield curve" sub="today against a month ago" />
@@ -172,11 +175,14 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
 function StockBond({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
+  const unserved = useBlockUnserved(m, "stock_bond");
   const sb = m?.stock_bond;
   const series = Array.isArray(sb?.series) ? sb.series : [];
   const drawn = series.filter((p) => fin(p.corr)).length > 1;
   // `flipped: null` is served as "no change of sign within the year"; an absent key is not served (§12.13).
   const flipServed = !!sb && "flipped" in sb && (sb.flipped === null || (typeof sb.flipped === "string" && /^\d{4}-\d{2}$/.test(sb.flipped)));
+  // §1.0.2: the block, or the whole answer, served awaiting.
+  if (unserved) return <UnservedCard headingId="mc-sb" className="mc-card" title="Do bonds still hedge stocks?" sub="60-day correlation of daily returns, one year" labels={["Today", "A year ago", "Flipped"]} block={unserved} advanced />;
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-sb" aria-busy={quiet}>
       <CardHead id="mc-sb" title="Do bonds still hedge stocks?" sub="60-day correlation of daily returns, one year" />
@@ -227,6 +233,7 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
 function Credit({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
+  const unserved = useBlockUnserved(m, "credit");
   const c = m?.credit;
   const series = Array.isArray(c?.series) ? c.series : [];
   const vals = series.map((p) => p.hy).filter(fin);
@@ -238,6 +245,8 @@ function Credit({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const lo = Array.isArray(range) ? range[0] : null;
   const hi = Array.isArray(range) ? range[1] : null;
   const pctile = c?.hy_pct_3y;
+  // §1.0.2: the block, or the whole answer, served awaiting.
+  if (unserved) return <UnservedCard headingId="mc-credit" className="mc-card" title="Credit" sub="high-yield spread over Treasuries" labels={["HY spread", "3-year range", "Investment grade"]} block={unserved} advanced />;
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-credit" aria-busy={quiet}>
       <CardHead id="mc-credit" title="Credit" sub="high-yield spread over Treasuries" />
@@ -297,9 +306,14 @@ function Credit({ m, state }: { m: MacroResponse | undefined; state: State }) {
 function Correlations({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
+  const unserved = useBlockUnserved(m, "correlations");
   const rows = Array.isArray(m?.correlations) ? m.correlations : [];
   const mx = m?.matrix;
+  // The matrix under Advanced is its own block (§12.8): served awaiting, its control says "not yet served".
+  const matrixOff = useBlockUnserved(m, "matrix");
   const name = (i: number) => mx?.labels?.[i] ?? mx?.assets[i] ?? "";
+  // §1.0.2: the block, or the whole answer, served awaiting.
+  if (unserved) return <UnservedCard headingId="mc-corr" className="mc-card" title="What moves with the S&P" sub="60-day correlation · each asset against the index" labels={[]} block={unserved} advanced />;
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-corr" aria-busy={quiet}>
       <CardHead id="mc-corr" title="What moves with the S&P" sub="60-day correlation · each asset against the index" />
@@ -335,35 +349,37 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
         <Awaiting>the correlations</Awaiting>
       )}
       <div className="dk-card-foot">
-        <AdvancedPanel adv={adv} items="full 12-asset matrix · rolling windows · by regime" missing={mx ? "Rolling windows and the matrix by regime are not served yet." : "The matrix is not served yet."}>
-          {mx && Array.isArray(mx.values) && mx.values.length && Array.isArray(mx.assets) ? (
-            <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label={fin(mx.window) ? `The ${mx.window}-day correlation matrix, every pair` : "The correlation matrix, every pair"}>
-              <table className="mc-matrix">
-                <caption className="dk-stat-label">{fin(mx.window) ? `${mx.window}-day correlation, every pair` : "Correlation, every pair"}</caption>
-                <thead>
-                  <tr>
-                    <td />
-                    {mx.assets.map((a, i) => (
-                      <th key={a} scope="col">
-                        {name(i)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {mx.assets.map((a, i) => (
-                    <tr key={a}>
-                      <th scope="row">{name(i)}</th>
-                      {mx.values[i]?.map((v, j) => (
-                        <td key={j}>{i === j ? "·" : fin(v) ? num(v, 2) : "—"}</td>
+        <Unserved block={matrixOff}>
+          <AdvancedPanel adv={adv} items="full 12-asset matrix · rolling windows · by regime" missing={mx ? "Rolling windows and the matrix by regime are not served yet." : "The matrix is not served yet."}>
+            {mx && Array.isArray(mx.values) && mx.values.length && Array.isArray(mx.assets) ? (
+              <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label={fin(mx.window) ? `The ${mx.window}-day correlation matrix, every pair` : "The correlation matrix, every pair"}>
+                <table className="mc-matrix">
+                  <caption className="dk-stat-label">{fin(mx.window) ? `${mx.window}-day correlation, every pair` : "Correlation, every pair"}</caption>
+                  <thead>
+                    <tr>
+                      <td />
+                      {mx.assets.map((a, i) => (
+                        <th key={a} scope="col">
+                          {name(i)}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </AdvancedPanel>
+                  </thead>
+                  <tbody>
+                    {mx.assets.map((a, i) => (
+                      <tr key={a}>
+                        <th scope="row">{name(i)}</th>
+                        {mx.values[i]?.map((v, j) => (
+                          <td key={j}>{i === j ? "·" : fin(v) ? num(v, 2) : "—"}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </AdvancedPanel>
+        </Unserved>
       </div>
     </section>
   );
@@ -373,15 +389,19 @@ export default function MacroPage({ page }: { page: DeskPage }) {
   const q = useMacro();
   const m = q.data;
   const state: State = m ? "ready" : q.isError ? "awaiting" : "loading";
+  // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
+  const unserved = unavailableOf(q.error);
   return (
     <div className="mc">
-      <PageTitle page={page} badge={m ? <LiveBadge boxed parts={["FRED / Yahoo", dayShort(m.as_of)]} /> : null} />
-      <div className="mc-grid">
-        <Curve m={m} state={state} />
-        <StockBond m={m} state={state} />
-        <Credit m={m} state={state} />
-        <Correlations m={m} state={state} />
-      </div>
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : m ? <LiveBadge boxed parts={["FRED / Yahoo", dayShort(m.as_of)]} /> : null} />
+      <Unserved block={unserved}>
+        <div className="mc-grid">
+          <Curve m={m} state={state} />
+          <StockBond m={m} state={state} />
+          <Credit m={m} state={state} />
+          <Correlations m={m} state={state} />
+        </div>
+      </Unserved>
     </div>
   );
 }

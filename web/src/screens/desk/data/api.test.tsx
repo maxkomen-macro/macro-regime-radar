@@ -12,7 +12,8 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "../../../test/utils";
-import { DeskApiError, deskGet, deskPost, readBody, useOverview } from "./api";
+import { DeskApiError, MAX_POLLS, deskGet, deskPost, readAnswer, readBody, retry, retryAfterMs, unavailableOf, useOverview } from "./api";
+import { NESTED_PATHS, awaitingEnvelope, errorEnvelope, isEnvelope, readyEnvelope, routeOf, unwrapBlocks } from "./envelope";
 import { SCHEMAS, schemaFor } from "./schema";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basket from "../../../fixtures/desk/basket.json";
@@ -28,7 +29,7 @@ import studyEvents from "../../../fixtures/desk/study-events.json";
 import study from "../../../fixtures/desk/study.json";
 import technicals from "../../../fixtures/desk/technicals.json";
 import vol from "../../../fixtures/desk/vol.json";
-import { deskFixture } from "../../../fixtures/desk";
+import { FIXTURE_META, deskFixture } from "../../../fixtures/desk";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -65,8 +66,11 @@ describe("the response boundary", () => {
       const url = path === "/basket" ? "/api/desk/basket/ai-infra" : `/api/desk${path}${path === "/study" || path === "/study/events" ? "?preset=gold-2sigma-spx-weak" : path === "/hedge" ? "?mode=protect&basket=ai-infra" : ""}`;
       const reply = path === "/basket/price" ? deskFixture("POST", url, JSON.stringify({ legs: basket.legs.map((x) => ({ symbol: x.symbol, weight: x.weight })) })) : deskFixture("GET", url);
       if (!reply || reply.contentType !== "application/json" || reply.status !== 200) continue;
-      const body = JSON.parse(reply.body) as unknown;
-      expect(readBody(body, path === "/basket" ? "/basket/ai-infra" : path), path).toEqual(body);
+      // On the wire every fixture is an envelope (§12.0); its payload, blocks taken apart, passes its schema unchanged.
+      const env = JSON.parse(reply.body) as unknown;
+      expect(isEnvelope(env), path).toBe(true);
+      const { data } = unwrapBlocks(routeOf(path), (env as { data: Record<string, unknown> }).data);
+      expect(readBody(data, path === "/basket" ? "/basket/ai-infra" : path), path).toEqual(data);
     }
   });
 
@@ -191,7 +195,7 @@ describe("the response boundary", () => {
     await expect(deskGet("/regime")).rejects.toSatisfy(unreadable);
     answer("[]");
     await expect(deskPost("/basket/price", { legs: [] })).rejects.toSatisfy(unreadable);
-    answer(JSON.stringify({ ...study, horizons: "x" }));
+    answer(JSON.stringify(readyEnvelope("/study", { ...study, horizons: "x" }, FIXTURE_META)));
     const s = (await deskGet("/study")) as Record<string, unknown>;
     expect("horizons" in s).toBe(false);
   });
@@ -220,5 +224,123 @@ describe("the retry rule (G1-10)", () => {
       expect(calls(), `${status} ${body}`).toBe(times);
       unmount();
     }
+  });
+});
+
+/** Answers in order, each a [status, body, headers?]; the last one repeats. */
+function answers(...list: [number, unknown, Record<string, string>?][]) {
+  const seen: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    seen.push(String(input));
+    const [status, body, headers] = list[Math.min(seen.length - 1, list.length - 1)];
+    return new Response(typeof body === "string" ? body : JSON.stringify(body), { status, headers: { "content-type": "application/json", ...(headers ?? {}) } });
+  }) as typeof fetch;
+  return seen;
+}
+
+const wrap = () => ({ children }: { children: ReactNode }) => <QueryClientProvider client={makeClient()}>{children}</QueryClientProvider>;
+
+describe("the envelope (§12.0)", () => {
+  const ready = (route: string, payload: unknown) => readyEnvelope(route, payload, FIXTURE_META);
+  const awaiting = { reason: "sector ETFs, RSP and IWM not ingested.", until: null };
+
+  it("a ready answer is its data, dated by the envelope, with every block envelope taken apart", async () => {
+    answers([200, { ...ready("/overview", overview), as_of: "2026-09-24", generation_id: "gen-7", engine_version: "e1" }]);
+    const o = (await deskGet("/overview")) as Record<string, unknown> & { tiles: Record<string, unknown> };
+    expect([o.as_of, o.generation_id, o.engine_version]).toEqual(["2026-09-24", "gen-7", "e1"]);
+    expect(o.tiles.vol).toEqual(overview.tiles.vol);
+    expect(o._blocks).toEqual({});
+  });
+
+  it("an awaiting block is removed and its reason kept under its path; its neighbours stand", () => {
+    const env = ready("/technicals", { ...technicals, vol: { status: "awaiting", data: null, unavailable: awaiting }, sectors: { status: "ready", data: { a: 1 }, unavailable: null } });
+    const t = readAnswer<Record<string, unknown>>(env, "/technicals");
+    expect("vol" in t).toBe(false);
+    expect(t.sectors).toEqual({ a: 1 });
+    expect(t._blocks).toEqual({ vol: awaiting });
+    expect(t.price).toBe(technicals.price);
+  });
+
+  it("block envelopes are read at exactly the listed paths: the same shape elsewhere is ordinary payload", () => {
+    expect(NESTED_PATHS["/study"]).toEqual(["without_condition"]);
+    const look = { status: "ready", data: { x: 1 }, unavailable: null };
+    const env = ready("/study", { ...study, provenance: { ...study.provenance, extra: look } });
+    const s = readAnswer<{ provenance: Record<string, unknown> }>(env, "/study");
+    expect(s.provenance.extra).toEqual(look);
+  });
+
+  it("a value at a listed path that is not a block envelope is removed, with no reason (Awaiting refresh)", () => {
+    const env = { status: "ready", ...FIXTURE_META, data: { ...overview, tiles: { ...overview.tiles, vol: overview.tiles.vol } }, unavailable: null, error: null };
+    const o = readAnswer<{ tiles: Record<string, unknown>; _blocks: Record<string, unknown> }>(env, "/overview");
+    // The unwrapped payload here is plain at every listed path: none is a block envelope, so every one goes.
+    expect(Object.keys(o.tiles)).toEqual([]);
+    expect(o._blocks).toEqual({});
+  });
+
+  it("an awaiting answer throws its served reason, is not retried, and the page reads it with unavailableOf", async () => {
+    const seen = answers([200, awaitingEnvelope(awaiting, FIXTURE_META)]);
+    const e = await deskGet("/sectors").catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(DeskApiError);
+    expect((e as DeskApiError).awaiting).toBe(true);
+    expect(unavailableOf(e)).toEqual(awaiting);
+    expect((e as DeskApiError).message).toBe(awaiting.reason);
+    const { result } = renderHook(() => useOverview(), { wrapper: wrap() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(seen.length).toBe(2); // one for deskGet, one for the hook: no retry
+  });
+
+  it("an error answer carries the served code, message and the refusal's fields", async () => {
+    answers([422, errorEnvelope("unsupported", "a window of 10 sessions is not in the catalog", FIXTURE_META, { missing: ["window"] })]);
+    const e = (await deskGet("/study").catch((x: unknown) => x)) as DeskApiError;
+    expect([e.status, e.body?.error, e.message, e.body?.missing]).toEqual([422, "unsupported", "a window of 10 sessions is not in the catalog", ["window"]]);
+    expect(e.unreadable).toBe(false);
+    expect(e.awaiting).toBe(false);
+  });
+
+  it("computing (202) is asked again after the served Retry-After, until the answer is ready", async () => {
+    const seen = answers([202, { status: "computing", ...FIXTURE_META, data: null, unavailable: null, error: null }, { "Retry-After": "0" }], [202, { status: "computing", ...FIXTURE_META, data: null, unavailable: null, error: null }, { "Retry-After": "0" }], [200, ready("/study", study)]);
+    const s = (await deskGet("/study", { preset: "gold-2sigma-spx-weak" })) as { slug: string };
+    expect(s.slug).toBe(study.slug);
+    expect(seen).toHaveLength(3);
+    expect(new Set(seen).size).toBe(1); // the same URL each time
+  });
+
+  it("computing past the poll limit is an answer that did not come; an abort stops the polling", async () => {
+    const seen = answers([202, { status: "computing", ...FIXTURE_META, data: null, unavailable: null, error: null }, { "Retry-After": "0" }]);
+    const e = (await deskGet("/study").catch((x: unknown) => x)) as DeskApiError;
+    expect(e.status).toBe(202);
+    expect(seen).toHaveLength(MAX_POLLS + 1);
+    answers([202, { status: "computing", ...FIXTURE_META, data: null, unavailable: null, error: null }, { "Retry-After": "5" }]);
+    const ctl = new AbortController();
+    const p = deskGet("/study", undefined, { signal: ctl.signal });
+    ctl.abort();
+    await expect(p).rejects.toBeTruthy();
+  });
+
+  it("Retry-After: absent or empty waits 2 s, not zero; a number its seconds up to 30 (I1-7)", () => {
+    const h = (v: string | null) => retryAfterMs({ headers: new Headers(v === null ? {} : { "Retry-After": v }) });
+    expect([h(null), h(""), h("  "), h("x"), h("-1"), h("0"), h("3"), h("600")]).toEqual([2000, 2000, 2000, 2000, 2000, 0, 3000, 30000]);
+  });
+
+  it("an awaiting block served without a reason did not arrive: removed, with no reason recorded (I1-9)", () => {
+    const env = ready("/technicals", { ...technicals, vol: { status: "awaiting", data: null, unavailable: null } });
+    const t = readAnswer<Record<string, unknown>>(env, "/technicals");
+    expect("vol" in t).toBe(false);
+    expect(t._blocks).toEqual({});
+  });
+
+  it("an error served with a 2xx is not retried; a 5xx once; no answer once (I1-10)", () => {
+    expect(retry(0, new DeskApiError(200, "x", { error: "unsupported" }))).toBe(false);
+    expect(retry(0, new DeskApiError(503, "x", { error: "warming" }))).toBe(true);
+    expect(retry(1, new DeskApiError(503, "x", { error: "warming" }))).toBe(false);
+    expect(retry(0, new DeskApiError(0, "x"))).toBe(true);
+    expect(retry(0, new DeskApiError(202, "x", { error: "computing" }))).toBe(false);
+  });
+
+  it("a body that is not an envelope is unreadable; an envelope whose data is not an object too", () => {
+    expect(() => readAnswer(overview, "/overview")).toThrow(DeskApiError);
+    expect(() => readAnswer({ status: "ready", ...FIXTURE_META, data: [1], unavailable: null, error: null }, "/overview")).toThrow("could not be read");
+    expect(() => readAnswer({ status: "awaiting", ...FIXTURE_META, data: null, unavailable: { reason: "" }, error: null }, "/overview")).toThrow("could not be read");
+    expect(routeOf("/basket/ai-infra")).toBe("/basket");
   });
 });

@@ -15,7 +15,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { deskUrl, useOverview, useStudy } from "../data/api";
+import { deskUrl, unavailableOf, useOverview, useStudy } from "../data/api";
 import type { Question, StudyResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
@@ -27,6 +27,7 @@ import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
 import { WINDOWS, apiParams, askFromSearch, askParams, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, withSaved, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
+import { Unserved } from "../kit/ui";
 import "./study.css";
 
 /** The provenance line under the grid (§4). */
@@ -179,30 +180,33 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
           The link asked for the engine study {unreadLink}, which the six slots cannot ask; this is the default question instead.
         </p>
       ) : null}
-      <div className="es-grid" data-busy={placeholder || undefined}>
-        <AnswerCard study={study} failed={q.isError} busy={placeholder} label={label} onFix={onFix} horizon={askedHorizon} />
-        <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
-          {scored && study ? (
-            <StudyRail
-              study={study}
-              todayRegime={ov.data?.tiles?.regime?.label ?? null}
-              confidence={study.confidence}
-              onConfidence={onConfidence}
-              priceHref={priceHref}
-              advOpen={adv}
-              onAdvanced={() => setAdv((o) => !o)}
-              advId={advId}
-              onExport={onExport}
-              exporting={exporting}
-              busy={placeholder}
-            />
-          ) : q.isError ? (
-            <RailPlaceholder reason="awaiting" />
-          ) : study ? (
-            <RailPlaceholder reason="too-few" />
-          ) : null}
-        </aside>
-      </div>
+      {/* §12.0: a study served awaiting (an input not stored) keeps the labels and prints its reason (§1.0.2). */}
+      <Unserved block={unavailableOf(q.error)}>
+        <div className="es-grid" data-busy={placeholder || undefined}>
+          <AnswerCard study={study} failed={q.isError} busy={placeholder} label={label} onFix={onFix} horizon={askedHorizon} />
+          <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
+            {scored && study ? (
+              <StudyRail
+                study={study}
+                todayRegime={ov.data?.tiles?.regime?.label ?? null}
+                confidence={study.confidence}
+                onConfidence={onConfidence}
+                priceHref={priceHref}
+                advOpen={adv}
+                onAdvanced={() => setAdv((o) => !o)}
+                advId={advId}
+                onExport={onExport}
+                exporting={exporting}
+                busy={placeholder}
+              />
+            ) : q.isError ? (
+              <RailPlaceholder reason="awaiting" />
+            ) : study ? (
+              <RailPlaceholder reason="too-few" />
+            ) : null}
+          </aside>
+        </div>
+      </Unserved>
       {exportNote ? (
         <p className="es-note" role="status">
           {exportNote}

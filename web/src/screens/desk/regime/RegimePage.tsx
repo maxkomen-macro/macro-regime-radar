@@ -10,13 +10,13 @@
  */
 
 import type { ReactNode } from "react";
-import { useRegime } from "../data/api";
+import { unavailableOf, useRegime } from "../data/api";
 import type { Read, RegimeResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { capitalize, dayShort, monthLong, monthShort, monthYear, num, oneIn, ordinalWord, pct, pctPlain, year } from "../kit/format";
 import Gauge from "../kit/Gauge";
-import { AdvancedPanel, Awaiting, LiveBadge, ReadBox, Signed, Stat, StatRow, useAdvanced } from "../kit/ui";
+import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved } from "../kit/ui";
 import "./regime.css";
 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
@@ -128,6 +128,8 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
   const g = trend(c?.growth);
   const i = trend(c?.inflation);
   const history = Array.isArray(r?.history) ? r.history : [];
+  const unserved = useBlockUnserved(r, "current");
+  if (unserved) return <UnservedCard headingId="rg-where" className="rg-card" title="Where we are" sub="rule-based · two-month lag" labels={["Growth", "Inflation", "In this regime"]} block={unserved} advanced />;
   return (
     <Card
       id="rg-where"
@@ -177,8 +179,10 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
   const quiet = state === "loading";
   const rec = r?.recession;
   const edges = rec?.band_edges;
+  const unserved = useBlockUnserved(r, "recession");
   const prob = rec && fin(rec.prob) ? rec.prob : null;
   const words = rec && prob != null ? [rec.band ? `${capitalize(rec.band)}.` : "", oneIn(prob) ? `About ${oneIn(prob)} over the next year.` : `${pctPlain(prob)} over the next year.`].filter(Boolean).join(" ") : "";
+  if (unserved) return <UnservedCard headingId="rg-rec" className="rg-card" title="Recession probability" sub="logistic model · five monthly inputs, lagged three months" labels={["Inputs through", "A year ago", "Peak last cycle"]} block={unserved} advanced />;
   return (
     <Card
       id="rg-rec"
@@ -239,6 +243,8 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
   const quiet = state === "loading";
   const current = r?.current?.label;
   const stats = Array.isArray(r?.stats) ? r.stats : [];
+  const unserved = useBlockUnserved(r, "stats");
+  if (unserved) return <UnservedCard headingId="rg-meant" className="rg-card" title="What each regime has meant" sub="since 1996 · why a derivatives desk cares" labels={["Regime", "Months", "S&P / mo", "Up", "VIX avg"]} block={unserved} advanced />;
   return (
     <Card
       id="rg-meant"
@@ -342,6 +348,11 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
   const quiet = state === "loading";
   const np = r?.next_prints;
   const changes = Array.isArray(r?.changes) ? r.changes : [];
+  // Two blocks in one card: the next prints and the last five changes, each served on its own (§12.6).
+  const whole = useUnserved();
+  const npOff = useBlockUnserved(r, "next_prints");
+  const chOff = useBlockUnserved(r, "changes");
+  if (whole) return <UnservedCard headingId="rg-change" className="rg-card" title="What would change it" sub="the next two prints, and the last five changes" labels={["Next CPI", "Next INDPRO"]} block={whole} advanced />;
   return (
     <Card
       id="rg-change"
@@ -352,12 +363,24 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
     >
       {quiet ? null : (
         <>
-          <StatRow cols={2}>
-            <NextPrint label="Next CPI" kind="cpi" p={np?.cpi} now={r?.current?.inflation} />
-            <NextPrint label="Next INDPRO" kind="indpro" p={np?.indpro} now={r?.current?.growth} />
-          </StatRow>
+          {npOff ? (
+            <Unserved block={npOff}>
+              <StatRow cols={2}>
+                <Stat label="Next CPI" awaiting />
+                <Stat label="Next INDPRO" awaiting />
+              </StatRow>
+              <UnservedLine block={npOff} />
+            </Unserved>
+          ) : (
+            <StatRow cols={2}>
+              <NextPrint label="Next CPI" kind="cpi" p={np?.cpi} now={r?.current?.inflation} />
+              <NextPrint label="Next INDPRO" kind="indpro" p={np?.indpro} now={r?.current?.growth} />
+            </StatRow>
+          )}
           <p className="dk-stat-label rg-changes-h">Last five regime changes · S&amp;P a month later</p>
-          {changes.length ? (
+          {chOff ? (
+            <UnservedLine block={chOff} />
+          ) : changes.length ? (
             <ul className="rg-changes">
               {changes.map((c) => (
                 <li key={c.month}>
@@ -386,15 +409,19 @@ export default function RegimePage({ page }: { page: DeskPage }) {
   const r = q.data;
   const state: State = r ? "ready" : q.isError ? "awaiting" : "loading";
   const print = r?.current?.print ? `${monthShort(r.current.print)} print` : null;
+  // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
+  const unserved = unavailableOf(q.error);
   return (
     <div className="rg">
-      <PageTitle page={page} badge={r ? <LiveBadge boxed parts={[print, dayShort(r.as_of)]} /> : null} />
-      <div className="rg-grid">
-        <WhereWeAre r={r} state={state} />
-        <Recession r={r} state={state} />
-        <Meant r={r} state={state} />
-        <WouldChange r={r} state={state} />
-      </div>
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : r ? <LiveBadge boxed parts={[print, dayShort(r.as_of)]} /> : null} />
+      <Unserved block={unserved}>
+        <div className="rg-grid">
+          <WhereWeAre r={r} state={state} />
+          <Recession r={r} state={state} />
+          <Meant r={r} state={state} />
+          <WouldChange r={r} state={state} />
+        </div>
+      </Unserved>
     </div>
   );
 }

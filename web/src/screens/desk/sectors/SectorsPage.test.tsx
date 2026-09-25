@@ -10,7 +10,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
-import { deskError, stubDesk } from "../../../test/desk";
+import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import sectors from "../../../fixtures/desk/sectors.json";
 
 function renderTab() {
@@ -184,5 +184,24 @@ describe("Sectors tab", () => {
     const cards = await screen.findAllByRole("region");
     await waitFor(() => expect(cards.filter((c) => c.getAttribute("aria-busy") === "true")).toHaveLength(2));
     expect(document.querySelector(".sc")?.textContent).not.toContain("Awaiting refresh");
+  });
+});
+
+describe("a route served awaiting (§12.0, §1.0.2)", () => {
+  it("both cards keep their labels, print the served reason once each, and say Not yet served", async () => {
+    stubDesk({ "/api/desk/sectors": deskAwaiting("sector ETFs, RSP and IWM not ingested.") });
+    renderTab();
+    const lead = await screen.findByRole("region", { name: /^Sector leadership/ });
+    await waitFor(() => expect(lead).toHaveTextContent("sector ETFs, RSP and IWM not ingested."));
+    const breadth = screen.getByRole("region", { name: /^Breadth/ });
+    for (const [card, labels] of [
+      [lead, ["Leading", "Lagging", "Pattern"]],
+      [breadth, ["Above 50-day", "Above 200-day", "Equal vs cap weight"]],
+    ] as const) {
+      for (const l of labels) expect(card).toHaveTextContent(new RegExp(l, "i"));
+      expect(within(card).getAllByText("sector ETFs, RSP and IWM not ingested.")).toHaveLength(1);
+      expect(card).not.toHaveTextContent("Awaiting refresh");
+    }
+    expect(screen.getAllByTestId("dk-live").map((b) => b.textContent)).toContain("Not yet served");
   });
 });

@@ -9,7 +9,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
-import { deskError, stubDesk } from "../../../test/desk";
+import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import macro from "../../../fixtures/desk/macro.json";
 import { bpText, corrText, coverTicks } from "./MacroPage";
 import { placeLabel } from "../kit/LineChart";
@@ -230,5 +230,47 @@ describe("Macro tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("Awaiting refresh"));
     expect(card).toHaveTextContent("10-year");
     expect(card).not.toHaveTextContent("4.21");
+  });
+});
+
+describe("a route served awaiting (§12.0, §1.0.2)", () => {
+  it("every card keeps its title and labels and prints the served reason once, with its badge", async () => {
+    stubDesk({ "/api/desk/macro": deskAwaiting("no generation stored yet.", "the first full refresh") });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Yield curve/ })).toHaveTextContent("no generation stored yet. Until: the first full refresh."));
+    const curve = screen.getByRole("region", { name: /^Yield curve/ });
+    for (const name of [/^Yield curve/, /^Do bonds still hedge stocks/, /^Credit/, /^What moves with the S&P/]) {
+      const card = screen.getByRole("region", { name });
+      expect(within(card).getAllByText(/no generation stored yet\./)).toHaveLength(1);
+      expect(card).not.toHaveTextContent("Awaiting refresh");
+    }
+    expect(curve).toHaveTextContent(/10-year/i);
+    expect(screen.getAllByTestId("dk-live").every((b) => b.textContent === "Not yet served")).toBe(true);
+  });
+});
+
+describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () => {
+  const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
+  it("stock–bond and the correlations say Not yet served with the reason once; the matrix's Advanced says not yet served; the curve and credit stand", async () => {
+    const why = "Treasury and credit price-return series not ingested.";
+    stubDesk({ "/api/desk/macro": () => ({ ...macro, stock_bond: off(why), correlations: off(why), matrix: off(why) }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent(why));
+    for (const name of [/^Do bonds still hedge stocks/, /^What moves with the S&P/]) {
+      const card = screen.getByRole("region", { name });
+      expect(within(card).getAllByText(why)).toHaveLength(1);
+      expect(within(card).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+      expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
+    }
+    expect(screen.getByRole("region", { name: /^Yield curve/ })).toHaveTextContent("4.21%");
+    expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent("3.12%");
+  });
+  it("the matrix alone served awaiting disables its Advanced with not yet served; the six rows stand", async () => {
+    stubDesk({ "/api/desk/macro": () => ({ ...macro, matrix: off("not ingested.") }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.92"));
+    const card = screen.getByRole("region", { name: /^What moves with the S&P/ });
+    expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
+    expect(card).toHaveTextContent("Advanced ▸ not yet served");
   });
 });

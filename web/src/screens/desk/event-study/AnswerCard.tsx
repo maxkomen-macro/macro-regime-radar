@@ -10,7 +10,7 @@
 import type { StudyHorizon, StudyResponse, TargetUnit } from "../data/types";
 import { dayLong, isFiniteNumber as fin, monthYear, pctPlain, year } from "../kit/format";
 import { useBox } from "../kit/LineChart";
-import { Awaiting, Signed, Stat, StatRow, VerdictWord } from "../kit/ui";
+import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved, VerdictWord } from "../kit/ui";
 import { WINDOWS, horizonLabel } from "./question";
 import { isUnit, moveText, scaleOf, tickText } from "./units";
 
@@ -144,8 +144,17 @@ export function servedWords(s: Pick<StudyResponse, "elapsed_ms" | "served_from_c
 export function WithoutCondition({ study, label }: { study: StudyResponse; label: (k: string) => string }) {
   const w = study.without_condition;
   const q = study.question;
-  if (!w || q.while === "none") return null;
+  // The block is its own envelope (§12.2, C-01): served awaiting, the line keeps its lead and prints the reason.
+  const off = useBlockUnserved(study, "without_condition");
+  if (q.while === "none") return null;
   const cond = q.while.startsWith("regime:") ? "the regime condition" : "the S&P condition";
+  if (off)
+    return (
+      <p className="es-without">
+        <b>Without {cond}</b>: <span className="dk-unserved-inline">{off.reason}</span>
+      </p>
+    );
+  if (!w) return null;
   const move = q.move === "up2s" ? "+2σ" : q.move === "down2s" ? "−2σ" : q.move === "cross_above" ? "crossing above its average" : "crossing below its average";
   const median = moveText(w.median, q.target_unit);
   // Whether the condition helps is the engine's call, served as its sentence (Codex R-12); the page ranks nothing.
@@ -174,10 +183,16 @@ export default function AnswerCard({
   /** The asked horizon, for the stat labels before an answer. */
   horizon?: number;
 }) {
+  const unserved = useUnserved();
   if (!study) {
     const p = horizonPhrase(horizon ?? 20);
     return (
-      <section className="dk-card es-answer" aria-label="The answer" aria-busy={!failed}>
+      <section className="dk-card es-answer" aria-label="The answer" aria-busy={!failed && !unserved}>
+        {unserved ? (
+          <div className="es-pills">
+            <NotServedBadge />
+          </div>
+        ) : null}
         <StatRow cols={4}>
           {["Events", `Up ${p} later`, `Median at ${p}`, "Worst · best"].map((l) => (
             <Stat key={l} label={l} awaiting={failed} />

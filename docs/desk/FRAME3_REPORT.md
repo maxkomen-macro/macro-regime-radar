@@ -2175,6 +2175,88 @@ all taken:
 The fixes were checked by reading the file against the amendments, not by a
 second verifier round.
 
+### Phase 2, item 1: the envelope — `frame-3: align 1 envelope`
+
+**What changed.** The data layer reads the §12.0 envelope
+(`web/src/screens/desk/data/envelope.ts`, `data/api.ts`). A `ready` answer's
+`data` is read with its block envelopes taken apart at exactly the paths
+§12.0 lists (and only there). A block served awaiting inside a ready answer
+is removed and its reason kept under `_blocks[path]`; one served without a
+reason did not arrive ("Awaiting refresh"). The envelope's `as_of`,
+`generation_id` and `engine_version` go beside the data. A `computing` answer
+(202) is asked again at the same URL after its `Retry-After` (2 s when
+absent, at most 30 s, 60 polls), and an unmounted page stops the polling. An
+`awaiting` answer is a `DeskApiError` carrying the served `unavailable`,
+never retried. An `error` answer carries the served code, message and the
+refusal's fields. Only an answer that did not come (no answer, or a 5xx) is
+retried, once.
+
+The kit draws the unavailable state (§1.0.2) once for every card
+(`kit/ui.tsx`): `Unserved` scopes a page or a card to a route served
+awaiting, `useBlockUnserved` reads a card's own block, and `UnservedCard`
+draws the card: its title and subtitle, "○ Not yet served", its stat labels
+with no number, the served reason once ("Until: …" when served), and its
+Advanced control disabled with "not yet served". Every Desk card honours a
+route and its own block served awaiting: the Overview's since-last-close
+line, four tiles and two cards; Technicals' five cards and page badge; the
+Event Study's answer card, rail and the line without the condition; the
+Regime's four cards (the next prints and the last five changes each on its
+own); Macro's four cards and the matrix under Advanced; Sectors, the
+Ledger, the Data Pipeline and the Client view; the sidebar's TODAY card.
+
+The fixture files keep their payloads; the fixture resolver and the test
+helpers (`src/test/desk.ts`, `e2e/lib/desk-fixtures.ts`) put every answer on
+an enveloped route in its envelope on the way out, a ready block wrapped as
+one. The existing endpoints under `/api/desk` (the frame-2 engine's
+`/event-study`, `/pipeline/inventory`) and the text answers are not
+enveloped.
+
+**Tests.** `data/api.test.tsx` (every envelope state; a ready answer dated by
+its envelope; a block served awaiting kept by path and its neighbours
+standing; the listed paths only, a look-alike elsewhere left alone; a plain
+object at a listed path dropped; 202 polled at the same URL after
+`Retry-After`, the poll limit, an abort; `Retry-After` absent or odd; the
+retry rule), `kit/Unserved.test.tsx`, and page tests for a route served
+awaiting (Sectors, Macro, Event Study with its rail, the Client view,
+Technicals) and for blocks served awaiting inside a ready answer (Regime's
+statistics and changes, Macro's stock–bond, correlations and matrix, the
+Overview's VIX tile and since-last-close line, the line without the
+condition). Browser tests: Sectors served awaiting, and blocks served
+awaiting on Regime and Macro, each at 1440 and 390 with the palette and no
+sideways scroll.
+
+**Against the PNGs.** No change: the fixtures still serve every block ready,
+and all twelve compare shots are pixel-identical to the previous commit.
+Items 7, 10 and 11 switch Monday's unavailable blocks on.
+
+Verifier (one round): **FAIL**, taken. It confirmed the data layer (every
+§12.0 rule, the non-enveloped routes, the retries, an unmount during a poll
+with no unhandled rejection, the computing flow in a browser), and that six
+mutations each fail a new test. Findings:
+- I1-1 (blocking) nothing read a block served awaiting inside a ready
+  answer. **Fixed:** every card reads its own block.
+- I1-2 (blocking) Technicals' hand-built cards printed the reason zero or two
+  times with no badge, and listed Ledger numbers under an unavailable
+  answer. **Fixed** with `UnservedCard` and the page badge.
+- I1-3, I1-4, I1-5, I1-6 the Event Study rail, the Client view's stats, the
+  Overview's since line and tiles, and Regime's cards printed "Awaiting
+  refresh" or the reason twice, or no badge. **Fixed.**
+- I1-7 a 202 without `Retry-After` was asked again at once. **Fixed** (2 s).
+- I1-8 Position Monitor and Basket & Hedge are not wrapped: **left**, since
+  items 10 and 11 replace what those pages ask for (the browser's position
+  store, and Basket & Hedge's unavailable state).
+- I1-9 a block served awaiting without a reason got an invented one.
+  **Fixed:** it did not arrive.
+- I1-10 the abort listener outlived a finished wait, a 2xx error was
+  retried, the 15 s timeout was lost without `AbortSignal.any`. **Fixed.**
+  Left: in development React's StrictMode sends each first request twice
+  (the first is aborted); an awaiting answer to the CSV export reads as a
+  failed download, as before.
+- I1-11 duplicated comments and an import order. **Fixed.**
+
+The fixes were checked by the four gates and the tests above, not by a
+second verifier round.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2199,6 +2281,8 @@ tests against the fixture dev server.
 | frame-3: codex-2 contract | clean | 116 / 1,352 | ok | 46 / 46 |
 | frame-3: codex-3 fixtures | clean | 117 / 1,368 | ok | 46 / 46 |
 | frame-3: codex-4 dates-levels | clean | 117 / 1,375 | ok | 48 / 48 |
+| frame-3: spec fold v2–v4 | docs only | — | — | — |
+| frame-3: align 1 envelope | clean | 118 / 1,403 | ok | 50 / 50 |
 
 ## Finish
 

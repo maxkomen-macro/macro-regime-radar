@@ -13,7 +13,7 @@ import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import study from "../../../fixtures/desk/study.json";
 import { renderWithProviders } from "../../../test/utils";
-import { deskError, stubDesk } from "../../../test/desk";
+import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { bpStudy } from "../../../test/desk-variants";
 import { barGeometry, setupLabel, sourceLine } from "./ClientView";
 import { LAST_STUDY_KEY } from "../event-study/question";
@@ -195,5 +195,16 @@ describe("Client view", () => {
     await screen.findByRole("navigation", { name: "Breadcrumb" });
     expect(screen.getByTestId("desk-shell")).not.toHaveAttribute("data-client");
     expect(screen.queryByRole("button", { name: "Export one-pager (PDF)" })).toBeNull();
+  });
+});
+
+describe("a study served awaiting (§12.0, §1.0.2)", () => {
+  it("the three stats keep their labels with no number and no Awaiting refresh", async () => {
+    stubDesk({ "/api/desk/study": deskAwaiting("US Dollar Index (DX-Y.NYB) is not stored in this database.") });
+    renderTab("/desk/overview?view=client");
+    await waitFor(() => expect(screen.getByRole("main")).toHaveTextContent("US Dollar Index (DX-Y.NYB) is not stored in this database."));
+    const main = screen.getByRole("main");
+    for (const l of ["Episodes", "Higher a month later", "Typical move"]) expect(main).toHaveTextContent(l);
+    expect(main).not.toHaveTextContent("Awaiting refresh");
   });
 });

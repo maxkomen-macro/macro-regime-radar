@@ -127,3 +127,19 @@ describe("Overview tab", () => {
     expect(screen.queryByText("Overheating")).toBeNull();
   });
 });
+
+describe("blocks served awaiting inside a ready answer (§12.1, §1.0.2)", () => {
+  const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
+  it("a tile keeps its label, says Not yet served and prints its reason; the since line prints its reason; the rest stands", async () => {
+    stubDesk({ "/api/desk/overview": () => ({ ...overview, tiles: { ...overview.tiles, vol: off("realized-volatility method not specified.") }, since_last_close: off("no previous generation to compare.") }) });
+    renderOverview();
+    await waitFor(() => expect(screen.getByRole("region", { name: "Vol · VIX" })).toHaveTextContent("realized-volatility method not specified."));
+    const vol = screen.getByRole("region", { name: "Vol · VIX" });
+    expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(vol).not.toHaveTextContent("16.2");
+    expect(screen.getByTestId("ov-since")).toHaveTextContent("Since last close");
+    expect(screen.getByTestId("ov-since")).toHaveTextContent("no previous generation to compare.");
+    expect(screen.getByTestId("ov-since")).not.toHaveTextContent("Awaiting refresh");
+    expect(screen.getByRole("region", { name: "Regime" })).toHaveTextContent("Overheating");
+  });
+});

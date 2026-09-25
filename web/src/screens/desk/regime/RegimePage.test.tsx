@@ -203,3 +203,22 @@ describe("Regime tab", () => {
     expect(screen.getByRole("region", { name: /What each regime has meant/ })).toHaveTextContent(/Regime\s*Months/);
   });
 });
+
+describe("blocks served awaiting inside a ready answer (§12.6, §1.0.2)", () => {
+  const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
+  it("the statistics card keeps its labels, prints its reason once and says Not yet served; the next prints stand beside the changes' reason", async () => {
+    stubDesk({ "/api/desk/regime": () => ({ ...regime, stats: off("regime statistics not yet defined in the engine."), changes: off("regime statistics not yet defined in the engine.") }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What each regime has meant/ })).toHaveTextContent("regime statistics not yet defined in the engine."));
+    const meant = screen.getByRole("region", { name: /^What each regime has meant/ });
+    for (const l of ["Regime", "Months", "Up", "VIX avg"]) expect(meant).toHaveTextContent(new RegExp(l, "i"));
+    expect(within(meant).getAllByText("regime statistics not yet defined in the engine.")).toHaveLength(1);
+    expect(within(meant).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(within(meant).getByTestId("dk-advanced")).toBeDisabled();
+    expect(meant).not.toHaveTextContent("Awaiting refresh");
+    const change = screen.getByRole("region", { name: /^What would change it/ });
+    expect(change).toHaveTextContent("Oct 14");
+    expect(within(change).getAllByText("regime statistics not yet defined in the engine.")).toHaveLength(1);
+    expect(change).not.toHaveTextContent("Awaiting refresh");
+  });
+});

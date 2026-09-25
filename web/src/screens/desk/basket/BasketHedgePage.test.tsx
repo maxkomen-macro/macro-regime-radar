@@ -23,7 +23,8 @@ import { maxLossWords } from "./BasketHedgePage";
 /** The fixture server's answer for a URL, with some fields replaced. */
 function deskFixtureBody(u: URL, over: Record<string, unknown>) {
   const r = deskFixture("GET", `${u.pathname}${u.search}`)!;
-  return r.status === 200 ? { ...(JSON.parse(r.body) as object), ...over } : { status: r.status, body: JSON.parse(r.body) };
+  const env = JSON.parse(r.body) as { data: Record<string, unknown> };
+  return r.status === 200 ? { ...env, data: { ...env.data, ...over } } : { status: r.status, body: env };
 }
 
 function LocationSpy() {

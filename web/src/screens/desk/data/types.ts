@@ -17,13 +17,20 @@
  * `data/api.ts` checks the top-level shape at the response boundary.
  */
 
+import type { Unavailable } from "./envelope";
+
 /** §1.5's three verdicts, and §12.2's "insufficient" for fewer than 10 events. */
 export type Verdict = "reliable" | "suggestive" | "no_edge" | "insufficient";
 
-/** Every response carries the engine date and the generation it was read from. */
+/** What the client keeps of the §12.0 envelope beside a ready answer's data
+ * (`data/api.ts` `readAnswer`): its dates and engine, and the reasons of the
+ * blocks served awaiting, by path ("tiles.vol", "without_condition"). */
 export interface Envelope {
   as_of: string;
   generation_id: string;
+  engine_version?: string;
+  /** Blocks the answer serves awaiting (§1.0.2), by their §12.0 path; absent blocks with no entry did not arrive. */
+  _blocks?: Record<string, Unavailable>;
 }
 
 /** PROPOSED (§12.13): an interpretive sentence the server writes for a card.
@@ -37,7 +44,9 @@ export interface Read {
 
 /** §12 errors: `{ "error": string }` with a 4xx/5xx status. */
 export interface DeskErrorBody {
+  /** The served `error.code` (or a bare `{error}` body's string). */
   error: string;
+  message?: string;
   missing?: string[];
   words?: string[];
 }

@@ -12,11 +12,11 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { deskUrl, usePipeline } from "../data/api";
+import { deskUrl, unavailableOf, usePipeline } from "../data/api";
 import type { PipelineGroup } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { Awaiting } from "../kit/ui";
+import { Awaiting, Unserved } from "../kit/ui";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { saveServed } from "../kit/download";
 import { PipelineBadge } from "./badge";
@@ -228,56 +228,60 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
         { replace: true },
       );
   };
+  // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
+  const unserved = unavailableOf(q.error);
   return (
     <div className="pl">
       <PageTitle page={page} />
-      <div className="pl-badge-inline">
-        <PipelineBadge testId="pl-badge-inline" />
-      </div>
-      <section className="dk-card pl-lineage" aria-labelledby="pl-lineage-title">
-        <h2 className="dk-card-title" id="pl-lineage-title">
-          Lineage
-        </h2>
-        <ol className="pl-steps">
-          {LINEAGE.map((s, i) => (
-            <li key={s.step} data-serve={i === LINEAGE.length - 1 || undefined}>
-              <p className="dk-stat-label">
-                {i + 1} · {s.step}
-              </p>
-              {s.lines.map((l) => (
-                <p key={l}>{l}</p>
-              ))}
-            </li>
-          ))}
-        </ol>
-      </section>
-      <div className="pl-grid">
-        <section className="dk-card pl-inventory" aria-labelledby="pl-inv-title" aria-busy={!p && !q.isError}>
-          <div className="pl-card-head">
-            <h2 className="dk-card-title" id="pl-inv-title">
-              Series inventory
-            </h2>
-            <p className="pl-head-sub">{total ? `${total} series · grouped · read from the pipeline config` : "grouped · read from the pipeline config"}</p>
-            <input className="pl-search" type="search" aria-label="Find a series" placeholder="Find a series… (VIX, DGS10, gold)" value={text} onChange={(e) => onSearch(e.target.value)} disabled={!groups.length} />
-          </div>
-          {text.trim() && !hit ? (
-            <p className="pl-miss" role="status">
-              No series matches &ldquo;{text.trim()}&rdquo;.
-            </p>
-          ) : null}
-          {groups.length ? (
-            <div className="pl-groups">
-              {groups.map((g) => (
-                <Group key={g.name} g={g} open={opened === slugOf(g.name)} onToggle={() => toggle(g.name)} hit={hit && hit.group === g.name ? hit.id : null} />
-              ))}
-            </div>
-          ) : q.isError || p ? (
-            <Awaiting>the pipeline config</Awaiting>
-          ) : null}
-          <p className="pl-mono-note">Click a group to expand · search jumps to a series and opens its group · new series land in a group automatically</p>
+      <Unserved block={unserved}>
+        <div className="pl-badge-inline">
+          <PipelineBadge testId="pl-badge-inline" />
+        </div>
+        <section className="dk-card pl-lineage" aria-labelledby="pl-lineage-title">
+          <h2 className="dk-card-title" id="pl-lineage-title">
+            Lineage
+          </h2>
+          <ol className="pl-steps">
+            {LINEAGE.map((s, i) => (
+              <li key={s.step} data-serve={i === LINEAGE.length - 1 || undefined}>
+                <p className="dk-stat-label">
+                  {i + 1} · {s.step}
+                </p>
+                {s.lines.map((l) => (
+                  <p key={l}>{l}</p>
+                ))}
+              </li>
+            ))}
+          </ol>
         </section>
-        <Bridge />
-      </div>
+        <div className="pl-grid">
+          <section className="dk-card pl-inventory" aria-labelledby="pl-inv-title" aria-busy={!p && !q.isError}>
+            <div className="pl-card-head">
+              <h2 className="dk-card-title" id="pl-inv-title">
+                Series inventory
+              </h2>
+              <p className="pl-head-sub">{total ? `${total} series · grouped · read from the pipeline config` : "grouped · read from the pipeline config"}</p>
+              <input className="pl-search" type="search" aria-label="Find a series" placeholder="Find a series… (VIX, DGS10, gold)" value={text} onChange={(e) => onSearch(e.target.value)} disabled={!groups.length} />
+            </div>
+            {text.trim() && !hit ? (
+              <p className="pl-miss" role="status">
+                No series matches &ldquo;{text.trim()}&rdquo;.
+              </p>
+            ) : null}
+            {groups.length ? (
+              <div className="pl-groups">
+                {groups.map((g) => (
+                  <Group key={g.name} g={g} open={opened === slugOf(g.name)} onToggle={() => toggle(g.name)} hit={hit && hit.group === g.name ? hit.id : null} />
+                ))}
+              </div>
+            ) : q.isError || p ? (
+              <Awaiting>the pipeline config</Awaiting>
+            ) : null}
+            <p className="pl-mono-note">Click a group to expand · search jumps to a series and opens its group · new series land in a group automatically</p>
+          </section>
+          <Bridge />
+        </div>
+      </Unserved>
     </div>
   );
 }

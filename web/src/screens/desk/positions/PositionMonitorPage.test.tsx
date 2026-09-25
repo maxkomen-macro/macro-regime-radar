@@ -16,7 +16,8 @@ import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
 import study from "../../../fixtures/desk/study.json";
 import technicals from "../../../fixtures/desk/technicals.json";
-import { deskFixture, resetDeskFixtureState } from "../../../fixtures/desk";
+import { FIXTURE_META, deskFixture, resetDeskFixtureState } from "../../../fixtures/desk";
+import { errorEnvelope } from "../data/envelope";
 import { falsifiesLine, parseSize, refusalWords, sizeLine } from "./PositionMonitorPage";
 import { DeskApiError } from "../data/api";
 import { MonitoredRow, levelText, sortByRoom } from "../kit/MonitoredRows";
@@ -290,7 +291,7 @@ describe("Position Monitor tab", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day/ })).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: /the signal reverses/ })).toBeNull();
     const body = { instrument: "S&P 500", direction: "long", size_nav: null, horizon_days: 20, variant: "a", pre_mortem: "b", wrong_if: { id: "signal_reverses", label: "the signal reverses" }, study_slug: null };
-    const refused = { status: 422, body: JSON.stringify({ error: "gate", missing: ["study"] }) };
+    const refused = { status: 422, body: JSON.stringify(errorEnvelope("gate", "gate", FIXTURE_META, { missing: ["study"] })) };
     const post = (extra: Record<string, unknown>) => deskFixture("POST", "/api/desk/positions", JSON.stringify({ ...body, ...extra }));
     const six = { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 };
     expect(post({})).toMatchObject(refused);

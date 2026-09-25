@@ -9,7 +9,7 @@
  */
 
 import type { ReactNode } from "react";
-import { useSectors } from "../data/api";
+import { unavailableOf, useSectors } from "../data/api";
 import type { Read, RelPoint, SectorsResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
@@ -17,7 +17,7 @@ import { dayShort, endDay, pct } from "../kit/format";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars, { relTone } from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, LiveBadge, ReadBox, Stat, StatRow, useAdvanced } from "../kit/ui";
+import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, useAdvanced } from "../kit/ui";
 import "./sectors.css";
 
 type State = "loading" | "awaiting" | "ready";
@@ -269,13 +269,17 @@ export default function SectorsPage({ page }: { page: DeskPage }) {
   const ok = !!s && !bodyError;
   const state: State = ok ? "ready" : q.isError || s ? "awaiting" : "loading";
   const why = errorWord === "series not ingested" ? "the sector ETFs are not ingested yet" : null;
+  // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
+  const unserved = unavailableOf(q.error);
   return (
     <div className="sc">
-      <PageTitle page={page} badge={ok && s.as_of ? <LiveBadge boxed parts={["Yahoo", dayShort(s.as_of)]} /> : null} />
-      <div className="sc-grid">
-        <Leadership s={ok ? s : undefined} state={state} why={why} />
-        <Breadth s={ok ? s : undefined} state={state} why={why} />
-      </div>
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : ok && s.as_of ? <LiveBadge boxed parts={["Yahoo", dayShort(s.as_of)]} /> : null} />
+      <Unserved block={unserved}>
+        <div className="sc-grid">
+          <Leadership s={ok ? s : undefined} state={state} why={why} />
+          <Breadth s={ok ? s : undefined} state={state} why={why} />
+        </div>
+      </Unserved>
     </div>
   );
 }

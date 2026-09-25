@@ -13,7 +13,7 @@ import { QueryClient } from "@tanstack/react-query";
 import DeskShell from "../DeskShell";
 import study from "../../../fixtures/desk/study.json";
 import { renderWithProviders } from "../../../test/utils";
-import { deskError, stubDesk } from "../../../test/desk";
+import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { bpEvents, bpStudy } from "../../../test/desk-variants";
 import type { Question } from "../data/types";
 import { applyFix, provenanceLine } from "./EventStudyPage";
@@ -402,5 +402,28 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     stubDesk({ "/api/desk/study": () => ({ ...study, without_condition: { ...study.without_condition, comparison_note: undefined } }) });
     renderTab();
     await waitFor(() => expect(answer()).toHaveTextContent("Whether the condition helps is awaiting refresh."));
+  });
+});
+
+describe("a study served awaiting (§12.0, v4 B-07)", () => {
+  it("the answer and the rail keep their labels and print the served reason, never a number", async () => {
+    stubDesk({ "/api/desk/study": deskAwaiting("US Dollar Index (DX-Y.NYB) is not stored in this database: it is a tier 2 series, and the full refresh stores tier 1 only.") });
+    renderTab("/desk/event-study?preset=dollar-2sigma-20d");
+    const answer = await screen.findByRole("region", { name: "The answer" });
+    await waitFor(() => expect(answer).toHaveTextContent("US Dollar Index (DX-Y.NYB) is not stored in this database"));
+    expect(answer).toHaveTextContent(/Events/i);
+    expect(answer).not.toHaveTextContent("Awaiting refresh");
+    expect(answer.textContent).not.toMatch(/[+−]\d/);
+    expect(within(answer).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    const rail = screen.getByRole("complementary", { name: "Verdict and detail" });
+    for (const l of ["Verdict", "By regime · a month later", "Last five events"]) expect(rail).toHaveTextContent(l);
+    expect(within(rail).getAllByText(/US Dollar Index \(DX-Y\.NYB\) is not stored/)).toHaveLength(1);
+    expect(rail).not.toHaveTextContent("Awaiting refresh");
+  });
+
+  it("the line without the condition, served awaiting, keeps its lead and prints the reason (C-01)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, without_condition: { status: "awaiting", data: null, unavailable: { reason: "conditional-versus-unconditional comparison is not defined", until: null } } }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: "The answer" })).toHaveTextContent("Without the S&P condition: conditional-versus-unconditional comparison is not defined"));
   });
 });

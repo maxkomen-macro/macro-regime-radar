@@ -9,7 +9,8 @@
  * rendered element's computed colors, and the banned words over the page text.
  */
 import type { Page } from "@playwright/test";
-import { deskFixture } from "../../src/fixtures/desk/index";
+import { FIXTURE_META, deskFixture } from "../../src/fixtures/desk/index";
+import { onTheWire, routeOf } from "../../src/screens/desk/data/envelope";
 import { paletteRgb } from "../../src/screens/desk/kit/palette";
 
 export type Override = { status: number; body: unknown };
@@ -21,7 +22,9 @@ export async function routeDesk(page: Page, over: Record<string, Override> = {})
     const url = new URL(req.url());
     calls.push(`${req.method()} ${url.pathname}${url.search}`);
     const o = over[url.pathname];
-    if (o) return route.fulfill({ status: o.status, contentType: "application/json", body: JSON.stringify(o.body) });
+    // An override is put on the wire as the fixtures are (§12.0): a payload or `{error}` in its envelope.
+    const onWire = (body: unknown) => (url.pathname.startsWith("/api/desk/") ? onTheWire(routeOf(url.pathname.slice("/api/desk".length)), o!.status, body, FIXTURE_META) : body);
+    if (o) return route.fulfill({ status: o.status, contentType: "application/json", body: JSON.stringify(onWire(o.body)) });
     const reply = deskFixture(req.method(), `${url.pathname}${url.search}`, req.postData() ?? undefined, req.headers()["accept"] ?? "");
     if (reply) return route.fulfill({ status: reply.status, contentType: reply.contentType, body: reply.body });
     return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "not served in the Desk browser tests" }) });

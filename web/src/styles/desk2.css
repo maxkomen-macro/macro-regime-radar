@@ -470,6 +470,18 @@
   background: currentColor;
   flex: none;
 }
+/* §1.0.2: an unavailable card's badge, "○ Not yet served", gray with a hollow dot. */
+.dk-live-off {
+  color: var(--dk-t3);
+}
+.dk-live-off.dk-live-boxed {
+  border-color: var(--dk-box);
+  background: transparent;
+}
+.dk-dot-off {
+  background: transparent;
+  border: 1px solid currentColor;
+}
 
 .dk-pill {
   display: inline-flex;
@@ -552,6 +564,19 @@
 }
 .dk-await-why {
   color: var(--dk-t4);
+}
+/* §1.0.2: the served reason an unavailable block prints, once. */
+.dk-unserved {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--dk-t3);
+  margin-top: 10px;
+}
+.dk-unserved-until {
+  color: var(--dk-t4);
+}
+.dk-unserved-inline {
+  color: var(--dk-t3);
 }
 /* Tones (§1.3) are scoped under .dk so they outrank any element's own
    default color (verifier V-1: a later single-class rule used to win). */

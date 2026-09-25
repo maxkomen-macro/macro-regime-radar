@@ -9,15 +9,16 @@
  * while the first answer is on its way the tiles stay quiet.
  */
 
+import type { Unavailable } from "../data/envelope";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useOverview } from "../data/api";
+import { unavailableOf, useOverview } from "../data/api";
 import type { LedgerRow, OverviewResponse, OverviewTiles, PositionCompact, SinceLastClose, Verdict } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { capitalize, dayLong, dayShort, isFiniteNumber as fin, monthShort, monthYear, num, oneIn, pct, pctPlain, pts, utcTime, year } from "../kit/format";
-import { Awaiting, LiveBadge, Signed, VerdictPill } from "../kit/ui";
+import { Awaiting, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
 import "./overview.css";
@@ -41,11 +42,14 @@ export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?
   return out;
 }
 
-function SinceLine({ data, failed }: { data: SinceLastClose | undefined; failed: boolean }) {
+function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefined; failed: boolean; unserved: Unavailable | null }) {
   return (
-    <div className="ov-since" data-testid="ov-since" aria-busy={!data && !failed}>
+    <div className="ov-since" data-testid="ov-since" aria-busy={!data && !failed && !unserved}>
       <span className="ov-since-label">Since last close</span>
-      {data ? (
+      {unserved ? (
+        // §1.0.2: served awaiting, the line keeps its label and prints the reason.
+        <span className="ov-since-item dk-unserved-inline">{unserved.reason}</span>
+      ) : data ? (
         sinceItems(data).map((it, i) => (
           <span key={it.key} className="ov-since-item">
             {i > 0 ? (
@@ -111,14 +115,17 @@ export function recessionWords(r: RecessionTile): string {
 
 type TileState = "ready" | "loading" | "awaiting";
 
-function Tile({ label, state, badge, value, tone, sub }: { label: string; state: TileState; badge?: ReactNode; value?: ReactNode; tone?: string; sub?: ReactNode }) {
+function Tile({ label, state, badge, value, tone, sub, unserved }: { label: string; state: TileState; badge?: ReactNode; value?: ReactNode; tone?: string; sub?: ReactNode; unserved?: Unavailable | null }) {
   return (
-    <section className="ov-tile" aria-label={label} aria-busy={state === "loading"}>
+    <section className="ov-tile" aria-label={label} aria-busy={state === "loading" && !unserved} data-unserved={unserved ? "" : undefined}>
       <div className="ov-tile-head">
         <span className="ov-tile-label">{label}</span>
-        {state === "ready" ? badge : null}
+        {unserved ? <NotServedBadge /> : state === "ready" ? badge : null}
       </div>
-      {state === "ready" ? (
+      {unserved ? (
+        // §1.0.2: the tile keeps its label, prints the served reason, and no number.
+        <UnservedLine block={unserved} className="ov-tile-unserved" />
+      ) : state === "ready" ? (
         <>
           <p className="ov-tile-value" data-tone={tone}>
             {value}
@@ -134,21 +141,30 @@ function Tile({ label, state, badge, value, tone, sub }: { label: string; state:
 
 function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: boolean }) {
   const t = data?.tiles;
+  // Each tile is its own block (§12.1); the whole answer served awaiting makes every tile unavailable.
+  const off = {
+    regime: useBlockUnserved(data, "tiles.regime"),
+    recession: useBlockUnserved(data, "tiles.recession"),
+    trend: useBlockUnserved(data, "tiles.trend"),
+    vol: useBlockUnserved(data, "tiles.vol"),
+  };
   const state = (block: unknown): TileState => (block ? "ready" : failed || data ? "awaiting" : "loading");
   const trend = t?.trend ? trendWords(t.trend) : null;
   return (
     <div className="ov-tiles">
       <Tile
         label="Regime"
+        unserved={off.regime}
         state={state(t?.regime)}
         badge={t?.regime ? <LiveBadge parts={[t.regime.print ? `${t.regime.print} print` : null]} /> : null}
         value={t?.regime?.label}
         tone={t?.regime ? REGIME_TONE[t.regime.label] : undefined}
         sub={t?.regime ? [t.regime.growth && t.regime.inflation ? `Growth ${t.regime.growth}, inflation ${t.regime.inflation}` : null, "rule-based, two-month lag"].filter(Boolean).join(" · ") : null}
       />
-      <Tile label="Recession · logistic model" state={state(t?.recession && fin(t.recession.prob) ? t.recession : null)} badge={<LiveBadge />} value={t?.recession && fin(t.recession.prob) ? pctPlain(t.recession.prob) : null} sub={t?.recession ? recessionWords(t.recession) : null} />
+      <Tile label="Recession · logistic model" unserved={off.recession} state={state(t?.recession && fin(t.recession.prob) ? t.recession : null)} badge={<LiveBadge />} value={t?.recession && fin(t.recession.prob) ? pctPlain(t.recession.prob) : null} sub={t?.recession ? recessionWords(t.recession) : null} />
       <Tile
         label="S&P 500 · trend"
+        unserved={off.trend}
         state={state(t?.trend)}
         badge={t?.trend ? <LiveBadge parts={[dayShort(t.trend.date) || null]} /> : null}
         value={trend?.value}
@@ -156,6 +172,7 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
       />
       <Tile
         label="Vol · VIX"
+        unserved={off.vol}
         state={state(fin(t?.vol?.vix) ? t.vol : null)}
         badge={t?.vol ? <LiveBadge parts={[dayShort(t.vol.date) || null]} /> : null}
         value={t?.vol && fin(t.vol.vix) ? num(t.vol.vix) : null}
@@ -201,6 +218,8 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
 
 function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | undefined; failed: boolean; pathTo: (slug: string) => string }) {
   const rows = data?.active_signals;
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="ov-active-title" className="ov-active" title="Active signals" sub="what fired, how it has played out before" block={unserved} />;
   return (
     <section className="dk-card ov-active" aria-labelledby="ov-active-title">
       <div className="dk-card-head">
@@ -250,6 +269,8 @@ export const MONITORED_NOTE = ["Sorted by room left", "same scale for every trad
 
 function Monitored({ rows, failed, pathTo }: { rows: PositionCompact[] | undefined; failed: boolean; pathTo: (slug: string) => string }) {
   const navigate = useNavigate();
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="ov-mon-title" className="ov-monitored" title="Monitored" sub="how far each is from being wrong · live" block={unserved} />;
   return (
     <section className="dk-card ov-monitored" aria-labelledby="ov-mon-title">
       <div className="dk-card-head">
@@ -284,15 +305,19 @@ export default function OverviewPage({ page }: { page: DeskPage }) {
   const q = useOverview();
   const data = q.data;
   const failed = q.isError;
+  // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
+  const unserved = unavailableOf(q.error);
   return (
     <div className="ov">
       <PageTitle page={page} />
-      <SinceLine data={data?.since_last_close} failed={failed || (!!data && !data.since_last_close)} />
-      <Tiles data={data} failed={failed} />
-      <div className="ov-grid">
-        <ActiveSignals data={data} failed={failed} pathTo={pathTo} />
-        <Monitored rows={data?.monitored} failed={failed || (!!data && !data.monitored)} pathTo={pathTo} />
-      </div>
+      <Unserved block={unserved}>
+        <SinceLine data={data?.since_last_close} failed={failed || (!!data && !data.since_last_close)} unserved={unserved ?? data?._blocks?.since_last_close ?? null} />
+        <Tiles data={data} failed={failed} />
+        <div className="ov-grid">
+          <ActiveSignals data={data} failed={failed} pathTo={pathTo} />
+          <Monitored rows={data?.monitored} failed={failed || (!!data && !data.monitored)} pathTo={pathTo} />
+        </div>
+      </Unserved>
     </div>
   );
 }

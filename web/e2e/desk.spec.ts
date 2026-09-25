@@ -14,9 +14,15 @@ import { test, expect, type Page } from "@playwright/test";
 import { hasRing, tabWalk } from "./lib/a11y";
 import { settle } from "./lib/drive";
 import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures";
-import { deskFixture } from "../src/fixtures/desk/index";
+import { FIXTURE_META, deskFixture } from "../src/fixtures/desk/index";
+import { awaitingEnvelope } from "../src/screens/desk/data/envelope";
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 import { bpStudy } from "../src/test/desk-variants";
+
+/** A fixture answer's payload: the envelope's `data` (§12.0), for an override to change and serve again. */
+function payloadOf(reply: { body: string }): Record<string, unknown> {
+  return (JSON.parse(reply.body) as { data: Record<string, unknown> }).data;
+}
 
 /** The v2 tabs built so far; each later tab adds itself here. */
 const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline", "build-notes", "basket-hedge"];
@@ -76,8 +82,45 @@ test.describe("desk v2", () => {
       expect(await auditPalette(page)).toEqual([]);
     });
 
+  test("a route served awaiting keeps its labels, prints the served reason and says Not yet served (§12.0, §1.0.2)", async ({ page }) => {
+    const awaiting = awaitingEnvelope({ reason: "sector ETFs, RSP and IWM not ingested.", until: null }, FIXTURE_META);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/sectors", { "/api/desk/sectors": { status: 200, body: awaiting } });
+      const main = page.getByRole("main");
+      await expect(main.getByText("sector ETFs, RSP and IWM not ingested.")).toHaveCount(2);
+      for (const l of ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"]) await expect(main).toContainText(l);
+      await expect(main).not.toContainText("Awaiting refresh");
+      await expect(page.getByTestId("dk-live").first()).toHaveText("Not yet served");
+      await expect(main.getByTestId("dk-advanced").first()).toBeDisabled();
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("blocks served awaiting inside a ready answer: each card says why, the rest stands (§12.0 nested blocks)", async ({ page }) => {
+    const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
+    const regime = payloadOf(deskFixture("GET", "/api/desk/regime")!);
+    const macro = payloadOf(deskFixture("GET", "/api/desk/macro")!);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/regime", { "/api/desk/regime": { status: 200, body: { ...regime, stats: off("regime statistics not yet defined in the engine."), changes: off("regime statistics not yet defined in the engine.") } } });
+      const meant = page.getByRole("region", { name: /^What each regime has meant/ });
+      await expect(meant).toContainText("regime statistics not yet defined in the engine.");
+      await expect(meant.getByTestId("dk-live")).toHaveText("Not yet served");
+      await expect(page.getByRole("region", { name: /^Where we are/ })).toContainText("Overheating");
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+      await open(page, "/desk/macro", { "/api/desk/macro": { status: 200, body: { ...macro, stock_bond: off("Treasury and credit price-return series not ingested."), correlations: off("Treasury and credit price-return series not ingested."), matrix: off("Treasury and credit price-return series not ingested.") } } });
+      await expect(page.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toContainText("not ingested");
+      await expect(page.getByRole("region", { name: /^Credit/ })).toContainText("%");
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+  });
+
   test("a study whose question is not six slots is unreadable: Event Study and Position Monitor say so, never crash (Codex G1-1)", async ({ page }) => {
-    const study = JSON.parse(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!.body) as Record<string, unknown>;
+    const study = payloadOf(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!);
     for (const question of [{}, { ...(study.question as object), while: 5 }]) {
       await open(page, "/desk/event-study", { "/api/desk/study": { status: 200, body: { ...study, question } } });
       await expect(page.getByRole("region", { name: "The answer" })).toContainText("Awaiting refresh");
@@ -363,7 +406,7 @@ test.describe("desk v2", () => {
   });
 
   test("the badge dates the basket's numbers from the answer that gave them; SPY gets no index numbers (Codex R-04, R-08)", async ({ page }) => {
-    const price = JSON.parse(deskFixture("POST", "/api/desk/basket/price", JSON.stringify({ legs: [{ symbol: "NVDA", weight: 22 }, { symbol: "AVGO", weight: 16 }, { symbol: "VRT", weight: 14 }, { symbol: "CRWV", weight: 12 }, { symbol: "ANET", weight: 12 }, { symbol: "CEG", weight: 12 }, { symbol: "SMCI", weight: 12 }] }))!.body) as Record<string, unknown>;
+    const price = payloadOf(deskFixture("POST", "/api/desk/basket/price", JSON.stringify({ legs: [{ symbol: "NVDA", weight: 22 }, { symbol: "AVGO", weight: 16 }, { symbol: "VRT", weight: 14 }, { symbol: "CRWV", weight: 12 }, { symbol: "ANET", weight: 12 }, { symbol: "CEG", weight: 12 }, { symbol: "SMCI", weight: 12 }] }))!);
     await open(page, "/desk/basket-hedge", { "/api/desk/basket/price": { status: 200, body: { ...price, prices_as_of: "2026-09-24", ret_3m: 0.133 } } });
     const basket = page.getByRole("region", { name: "Basket" });
     await expect(page.getByTestId("dk-live")).toHaveText("Live · prices Sep 22 · options via EODHD");
@@ -382,7 +425,7 @@ test.describe("desk v2", () => {
 
   test("numbers shown undated say so in the card, and the badge never pushes a phone's page sideways (Codex G4-1)", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    const served = JSON.parse(deskFixture("GET", "/api/desk/basket/ai-infra")!.body) as Record<string, unknown>;
+    const served = payloadOf(deskFixture("GET", "/api/desk/basket/ai-infra")!);
     await open(page, "/desk/basket-hedge", { "/api/desk/basket/ai-infra": { status: 200, body: { ...served, prices_as_of: undefined } } });
     await expect(page.getByRole("region", { name: "Basket" })).toContainText("prices date awaiting refresh");
     await expect(page.getByTestId("dk-live")).toHaveText("Live · options via EODHD");
@@ -509,7 +552,7 @@ test.describe("desk v2", () => {
   });
 
   test("the client view's bars keep one scale and stay in the card at every width", async ({ page }) => {
-    const study = JSON.parse(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!.body) as Record<string, unknown>;
+    const study = payloadOf(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!);
     for (const by_regime of [
       [{ regime: "Goldilocks", n: 5, up_pct: 0.4, median: -0.121 }, { regime: "Overheating", n: 6, up_pct: 0.3, median: -0.05 }, { regime: "Recession Risk", n: 2, up_pct: null, median: null }],
       [{ regime: "Goldilocks", n: 5, up_pct: 0.4, median: -0.1 }, { regime: "Overheating", n: 6, up_pct: 0.6, median: 0.01 }, { regime: "Stagflation", n: 2, up_pct: null, median: null }, { regime: "Recession Risk", n: 5, up_pct: 0.5, median: 0.005 }],
