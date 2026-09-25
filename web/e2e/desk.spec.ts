@@ -252,6 +252,19 @@ test.describe("desk v2", () => {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
 
+  test("event study: the catalog drives the chips and the slots; a question outside it is refused with the served message (§4, §12.2, §12.3)", async ({ page }) => {
+    await open(page, "/desk/event-study");
+    const chips = page.getByRole("group", { name: "Common questions" });
+    await expect(chips.getByRole("button", { name: "S&P golden cross" })).toBeEnabled();
+    await expect(chips.getByRole("button", { name: "Dollar −2σ, 20 days" })).toBeDisabled();
+    await expect(page.getByLabel("Shock")).toHaveValue("gold");
+    await expect.poll(() => page.getByLabel("Window").locator("option:not([disabled])").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))).toEqual(["20"]);
+    await open(page, "/desk/event-study?shock=gold&window=60&move=up2s&while=none&target=spx&horizon=20");
+    // §12.0: the refusal names what is not supported.
+    await expect(page.getByRole("region", { name: "The answer" })).toContainText("No study in the catalog asks shock gold, window 60, move up2s, while none, target spx, horizon 20.");
+    expect(await auditPalette(page)).toEqual([]);
+  });
+
   test("event study: Advanced opens the events and the engine's panel, all in the palette, no banned word", async ({ page }) => {
     await open(page, "/desk/event-study");
     await expect(page.getByRole("region", { name: "The answer" })).toContainText("Suggestive at 1 month: 10+ completed outcomes");

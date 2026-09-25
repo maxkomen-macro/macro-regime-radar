@@ -2857,6 +2857,92 @@ under full-suite load; it passed alone and on every full run after. The
 fixes were checked by the four gates and the tests above; the changed
 compare shots were re-shot after them.
 
+### Phase 2, item 8: the study slots — `frame-3: align 8 slots`
+
+**What changed.** The Event Study asks only what the catalog serves (§4,
+§12.2, §12.3). `/study/catalog` answers §12.3's fifteen studies (the
+fixture carries the table: each slug's label, short name, availability with
+the reason, its five slots or none, and its allowed horizons), read by a new
+`useStudyCatalog` and a pure `event-study/catalog.ts`: a question is
+answerable only as an available catalog study at an allowed horizon, and a
+slot's option is enabled only when, with the other slots as they are, it
+leads to one. The nine chips are their catalog labels ("S&P golden cross",
+"VIX spike +2σ, 5 days", "HY spreads +2σ, 20 days"), and a chip whose study
+is unavailable (the dollar, oil → gold) is disabled, with its reason printed
+under the chips (and as its tooltip). The slots lose window 10 and "S&P above its 50-day"; a cross has no
+window (§12.2: "omitted for a cross"), so `question.window` is nullable
+through the address, the request, saved questions, the words and the
+engine mapping, and the window slot offers "none (a cross)" (and is blank, like the others,
+before anything is asked). A preset with no answer (served awaiting, or
+refused) still spells out its question: the slots take it from the
+catalog. The WHILE
+tooltip is §4's ("Entry at the event close when every input is available by
+then; otherwise the next close."). A request the server refuses (422
+`unsupported`, and only that code) prints the served message in the answer
+card and in the Client view, with the labels kept and no "Awaiting
+refresh". An address asking a withdrawn value (window 10, the S&P above its
+50-day) opens the default question and says so (§12.0: never a silent
+parameter drop). Saved questions are never dropped (§1.8): an old cross
+saved with a 20-day window reads with none, on load and on import, and a
+withdrawn one stays in storage, counted under My saved questions. The fixture answers `/study` from the
+catalog the same way: 422 with a message naming the combination it refuses, the awaiting envelope
+with the reason for a study not stored, 404 for a catalog study it carries
+no answer for.
+
+**Tests.** `catalog.test.ts` (the fifteen rows and the nine chips' labels;
+answerable only when available at an allowed horizon; the enabled options
+from the gold study, the VIX spike and the golden cross);
+`EventStudyPage.test.tsx` (windows and WHILE values, a cross without a
+window through the address and the words, withdrawn values opening the
+default question; the chips' labels and disabled reasons; the slots'
+enabled options; a 422's message); `api.test.tsx` (the catalog passes its
+schema; a null window reads for a cross and only for one); and the fixes
+below (the chips' reasons in words, the blank window before anything is
+asked, the dollar preset's slots, the withdrawn-address note, saved
+questions kept and normalised, only `unsupported` a refusal, the Client
+view's refusal). Browser: the chips and the window
+slot from the fixture's catalog, and a real 422 from an address outside it.
+
+**Against the PNGs.**
+- 03 Event Study, the chips: each reads its catalog label, so the row wraps
+  to two lines, and the dollar and oil → gold chips are dimmed and disabled,
+  their reasons printed beneath.
+  §4: "Nine preset chips, each the catalog `label` of: …"; "A chip whose
+  study is unavailable is disabled with its reason."
+- 03 Event Study, the slots: the window list is 5, 20, 60 and "none (a
+  cross)", WHILE has no S&P-above option, and options that lead to no
+  catalog study are disabled (not visible in the closed dropdowns). §4:
+  "WINDOW (5 / 20 / 60 sessions; none for a cross) … Every option that does
+  not lead to a catalog study (§12.3), given the other slots, is disabled".
+
+Verifier (one round): **PASS**, with four should-fix findings and five
+nits, all taken. It checked the enabled options from seven starting studies
+against sets it computed from §12.3's table, crosses without a window in
+the address, the request, saved questions and the engine slug, the catalog
+failing or slow, and the layout at three widths. On its two questions: the
+catalog check subsumes `series[]` roles and ops (v3 §2: "Capability
+metadata (/study/catalog) enumerates the complete allowed combinations"),
+and the gold study's slots being fixed but for the horizon is what §12.3's
+rule requires.
+- V8-1 (should-fix) the chips' reasons were tooltip-only. **Fixed.**
+- V8-2 (should-fix, regression) the window slot showed "none (a cross)"
+  before anything was asked. **Fixed:** its own value, "none".
+- V8-3 (should-fix, regression) old saved crosses and withdrawn questions
+  were dropped, then erased on the next save. **Fixed:** normalised or
+  kept, never dropped.
+- V8-4 (should-fix) old addresses were replaced silently. **Fixed:** a
+  note.
+- V8-5 any 422 counted as a refusal. **Fixed:** `unsupported` only.
+- V8-6 a refused or awaiting preset left the slots blank. **Fixed:** the
+  catalog spells out a preset's question.
+- V8-7 the Client view of a refused question said Awaiting refresh.
+  **Fixed.**
+- V8-8 the fixture's refusal named nothing. **Fixed.**
+- V8-9 a null window read for any move. **Fixed:** a cross's only.
+
+The fixes were checked by the four gates and the tests above; the compare
+shot was re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2889,6 +2975,7 @@ tests against the fixture dev server.
 | frame-3: align 5 baseline | clean | 118 / 1,424 | ok | 53 / 53 |
 | frame-3: align 6 regime-recession | clean | 118 / 1,428 | ok | 54 / 54 |
 | frame-3: align 7 unavailable | clean | 118 / 1,431 | ok | 55 / 55 |
+| frame-3: align 8 slots | clean | 119 / 1,445 | ok | 56 / 56 |
 
 ## Finish
 

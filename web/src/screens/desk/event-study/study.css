@@ -58,6 +58,12 @@
   background: var(--dk-rel-bg);
   color: var(--dk-green);
 }
+/* §4: a chip whose study is unavailable is disabled (its reason is its tooltip). */
+.es-chip:disabled {
+  color: var(--dk-t4);
+  border-color: var(--dk-row);
+  cursor: default;
+}
 .es-yours {
   font-family: var(--dk-mono);
   font-size: 11.5px;
@@ -540,4 +546,17 @@
 .es-answer .dk-stat[data-size="date"] .dk-stat-value {
   font-size: 20px;
   white-space: normal;
+}
+/* §4: a refused request prints the served message in words. */
+.es-refused {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dk-t2);
+}
+/* The reason under an unavailable chip, on its own line. */
+.es-chip-why {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 12px;
 }

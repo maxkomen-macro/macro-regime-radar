@@ -17,7 +17,7 @@ import { isLog, isUnit, moveText, scaleOf, tickText, tipOf, whisker } from "../k
 
 /** Whether a fix from the empty state changes the question (no wider window than 60, no condition to drop). */
 function applies(q: StudyResponse["question"], fix: string): boolean {
-  if (fix === "widen_window") return WINDOWS.some((w) => w > q.window);
+  if (fix === "widen_window") return q.window != null && WINDOWS.some((w) => w > (q.window as number));
   if (fix === "drop_condition") return q.while !== "none";
   return true;
 }
@@ -164,12 +164,15 @@ export function WithoutCondition({ study }: { study: StudyResponse }) {
 export default function AnswerCard({
   study,
   failed,
+  refusal = null,
   busy = false,
   onFix,
   horizon,
 }: {
   study: StudyResponse | undefined;
   failed: boolean;
+  /** The served message of a refused request (§4: 422 `unsupported`). */
+  refusal?: string | null;
   busy?: boolean;
   onFix: (fix: string) => void;
   /** The asked horizon, for the stat labels before an answer. */
@@ -186,11 +189,18 @@ export default function AnswerCard({
           </div>
         ) : null}
         <StatRow cols={4}>
+          {/* A refused question is not awaiting anything: its labels stay, with no word under them. */}
           {["Events", `Up ${p} later`, `Median at ${p}`, "Worst · best"].map((l) => (
-            <Stat key={l} label={l} awaiting={failed} />
+            <Stat key={l} label={l} awaiting={failed && !refusal} />
           ))}
         </StatRow>
-        {failed ? <Awaiting>the study did not answer</Awaiting> : null}
+        {refusal ? (
+          <p className="es-refused" role="status">
+            {refusal}
+          </p>
+        ) : failed ? (
+          <Awaiting>the study did not answer</Awaiting>
+        ) : null}
       </section>
     );
   }

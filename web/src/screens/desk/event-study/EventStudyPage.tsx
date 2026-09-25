@@ -15,7 +15,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { deskUrl, unavailableOf, useOverview, useStudy } from "../data/api";
+import { DeskApiError, deskUrl, unavailableOf, useOverview, useStudy, useStudyCatalog } from "../data/api";
 import type { Question, StudyResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
@@ -25,7 +25,7 @@ import AnswerCard from "./AnswerCard";
 import EngineDetail from "./EngineDetail";
 import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
-import { WINDOWS, apiParams, askFromSearch, askParams, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, withSaved, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
+import { WINDOWS, apiParams, askFromSearch, askParams, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
 import { Unserved } from "../kit/ui";
 import "./study.css";
@@ -43,7 +43,8 @@ export function provenanceLine(s: Pick<StudyResponse, "as_of" | "slug" | "proven
 export function applyFix(q: Question, fix: string): Question | null {
   if (fix === "drop_condition") return q.while === "none" ? null : { ...q, while: "none" };
   if (fix === "widen_window") {
-    const w = WINDOWS.find((x) => x > q.window);
+    if (q.window == null) return null;
+    const w = WINDOWS.find((x) => x > (q.window as number));
     return w ? { ...q, window: w } : null;
   }
   return null;
@@ -59,9 +60,14 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const key = askKey(ask);
   const q = useStudy(apiParams(ask));
   const ov = useOverview();
+  const cq = useStudyCatalog();
+  const catalog = Array.isArray(cq.data?.studies) ? cq.data.studies : null;
+  // §4: a request the server refuses (422 `unsupported`) prints the served message.
+  const refusal = q.error instanceof DeskApiError && q.error.status === 422 && q.error.body?.error === "unsupported" ? q.error.message : null;
   const placeholder = q.isPlaceholderData;
   const study = q.isError ? undefined : q.data;
   const [saved, setSaved] = useState<SavedQuestion[]>(() => loadSaved());
+  const [unreadable] = useState(() => unreadableSaved().length);
   const [draft, setDraft] = useState<Question | null>("question" in ask ? ask.question : null);
   const [dirty, setDirty] = useState(false);
   const [mode, setMode] = useState<Mode>("preset" in ask ? "common" : "build");
@@ -81,6 +87,12 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     setDraft("question" in ask ? ask.question : served);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+  // A preset with no answer (awaiting, or refused) still spells out its question: the catalog carries it (§12.3).
+  const catalogQ = "preset" in ask ? catalog?.find((c) => c.slug === ask.preset)?.question : null;
+  useEffect(() => {
+    if (!draft && !served && catalogQ) setDraft({ ...catalogQ, horizon: 20 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, catalogQ, served]);
   useEffect(() => {
     if (served && !dirty) setDraft(served);
     // The study this browser last saw answered is Data Pipeline's "current study".
@@ -143,6 +155,8 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   // A frame-2 link the six slots cannot ask opens the default question, and says so.
   const oldLink = search.get("study");
   const unreadLink = oldLink && !search.get("preset") && !questionFromEngine(oldLink) ? oldLink : null;
+  // §12.0: never a silent parameter drop. An address asking what §12.2 no longer serves opens the default question, and says so.
+  const withdrawn = !search.get("preset") && !oldLink ? withdrawnIn(search) : null;
   const engineSlug = study?.question ? engineSlugFor(study.question) : null;
   const priceHref = askParams(ask).reduce((href, [k, v]) => withParam(href, k === "preset" ? "study" : k, v), withParam(pathTo("basket-hedge"), "mode", "express"));
   // A served study is scored at its selected horizon, Too few included (v4 B-02): the rail reads it either way.
@@ -157,12 +171,14 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         activePreset={activePreset}
         onPreset={onPreset}
         saved={saved}
+        unreadable={unreadable}
         onSavedChange={(list) => {
           setSaved(list);
           writeSaved(list);
         }}
         onPickSaved={onPickSaved}
         draft={draft}
+        catalog={catalog}
         onDraft={(d) => {
           setDraft(d);
           setDirty(true);
@@ -179,10 +195,15 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
           The link asked for the engine study {unreadLink}, which the six slots cannot ask; this is the default question instead.
         </p>
       ) : null}
+      {withdrawn ? (
+        <p className="es-note" role="status">
+          The link asked for {withdrawn}, which the Event Study no longer asks; this is the default question instead.
+        </p>
+      ) : null}
       {/* §12.0: a study served awaiting (an input not stored) keeps the labels and prints its reason (§1.0.2). */}
       <Unserved block={unavailableOf(q.error)}>
         <div className="es-grid" data-busy={placeholder || undefined}>
-          <AnswerCard study={study} failed={q.isError} busy={placeholder} onFix={onFix} horizon={askedHorizon} />
+          <AnswerCard study={study} failed={q.isError} refusal={refusal} busy={placeholder} onFix={onFix} horizon={askedHorizon} />
           <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
             {study ? (
               <StudyRail
@@ -196,7 +217,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
                 exporting={exporting}
                 busy={placeholder}
               />
-            ) : q.isError ? (
+            ) : q.isError && !refusal ? (
               <RailPlaceholder />
             ) : null}
           </aside>

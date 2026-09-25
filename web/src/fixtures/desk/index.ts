@@ -21,10 +21,13 @@ import pipeline from "./pipeline.json" with { type: "json" };
 import { PIPELINE_DDL } from "./pipeline-ddl";
 import positions from "./positions.json" with { type: "json" };
 import regime from "./regime.json" with { type: "json" };
+import studyCatalog from "./study-catalog.json" with { type: "json" };
 import studyEvents from "./study-events.json" with { type: "json" };
 import study from "./study.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
 import { isQuestion } from "../../screens/desk/event-study/question";
+import { isAnswerable, studyFor } from "../../screens/desk/event-study/catalog";
+import type { CatalogStudy, Question } from "../../screens/desk/data/types";
 import { awaitingEnvelope, onTheWire, routeOf, type EnvelopeMeta } from "../../screens/desk/data/envelope";
 
 /** The envelope's fields for every fixture answer (§12.0); a payload's own `as_of` and `generation_id` win. */
@@ -56,7 +59,28 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
   "/regime": regime,
   "/macro": macro,
   "/pipeline": pipeline,
+  "/study/catalog": studyCatalog,
 };
+
+const CATALOG = (studyCatalog as { studies: CatalogStudy[] }).studies;
+
+/** The catalog study a /study request names (§12.2): its preset, or its six slots; the question too, for the horizon check. */
+function catalogAsk(u: URL): { study: CatalogStudy | null; question: Question | null } {
+  const preset = u.searchParams.get("preset");
+  if (preset) return { study: CATALOG.find((s) => s.slug === preset) ?? null, question: null };
+  const move = u.searchParams.get("move");
+  const cross = move === "cross_above" || move === "cross_below";
+  const q = {
+    shock: u.searchParams.get("shock"),
+    window: cross || !u.searchParams.has("window") ? null : Number(u.searchParams.get("window")),
+    move,
+    while: u.searchParams.get("while") ?? "none",
+    target: u.searchParams.get("target"),
+    horizon: u.searchParams.has("horizon") ? Number(u.searchParams.get("horizon")) : 20,
+  };
+  if (!isQuestion(q)) return { study: null, question: null };
+  return { study: studyFor(CATALOG, q), question: q };
+}
 
 /** The deferred resources of §12.13 that are GET-only stubs on Monday (§12.0): each answers the awaiting
  * envelope with §1.0's reason. Their deferred shapes (vol.json, sectors.json) stay for the unit tests
@@ -210,8 +234,16 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
   if (method.toUpperCase() === "GET" && path in DESK_JSON_FIXTURES) return json(200, DESK_JSON_FIXTURES[path]);
   if (method.toUpperCase() === "GET" && path in DEFERRED) return json(200, awaitingEnvelope({ reason: DEFERRED[path], until: null }, FIXTURE_META));
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {
-    // The fixtures carry one study; any other question has no fixture (the page
-    // shows what the API would: its error state).
+    // §12.2: a request must normalize to one catalog study at an allowed horizon, else 422 `unsupported`;
+    // a catalog study whose inputs are not stored answers awaiting with its reason (B-07).
+    const { study: c, question } = catalogAsk(u);
+    if (!c || (question && c.available && !isAnswerable(CATALOG, question))) {
+      // §12.0: the refusal names what is not supported.
+      const asked = question ? [`shock ${question.shock}`, question.window == null ? "no window" : `window ${question.window}`, `move ${question.move}`, `while ${question.while}`, `target ${question.target}`, `horizon ${question.horizon}`].join(", ") : `preset ${u.searchParams.get("preset") ?? "(none)"}`;
+      return json(422, { error: "unsupported", message: `No study in the catalog asks ${asked}.` });
+    }
+    if (!c.available) return json(200, awaitingEnvelope({ reason: c.unavailable?.reason ?? "not yet served", until: c.unavailable?.until ?? null }, FIXTURE_META));
+    // The fixtures carry one study (the gold preset); another catalog study has no fixture.
     if (!asksFixtureStudy(u)) return json(404, { error: "no fixture for this question" });
     if (path === "/study") return json(200, study);
     if (/text\/csv/.test(accept ?? "")) return { status: 200, contentType: "text/csv", body: eventsCsv(studyEvents as { events: Record<string, unknown>[] }) };

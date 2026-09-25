@@ -200,7 +200,8 @@ const positionCompact = {
 const question = o(
   {
     shock: "s!",
-    window: "n!",
+    // §12.2: null for a cross.
+    window: "n",
     move: e(["up2s", "down2s", "cross_above", "cross_below"], { req: true }),
     while: "s!",
     target: "s!",
@@ -404,8 +405,22 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     provenance: o({ bootstrap: "n", entry: "s", cooldown: "n", series_start: m("s!") }),
     warnings: l("s!"),
     empty_state: o({ horizon: "n", sentence: "s", fixes: l("s!") }, { nul: true }),
-    series: l(o({ key: "s!", label: "s!" })),
+    series: l(o({ key: "s!", label: "s!", roles: l("s!"), ops: l("s!"), unit: "s" })),
     client: o({ horizon: "n", headline: "s!", summary: "s!" }, { nul: true }),
+  }),
+  "/study/catalog": o({
+    ...envelope,
+    studies: l(
+      o({
+        slug: "s!",
+        label: "s!",
+        short: "s",
+        available: "b!",
+        unavailable: o({ reason: "s!", until: "s?" }, { nul: true }),
+        question: o({ shock: "s!", window: "n", move: e(["up2s", "down2s", "cross_above", "cross_below"], { req: true }), while: "s!", target: "s!" }, { nul: true }),
+        allowed_horizons: l("n!"),
+      }),
+    ),
   }),
   "/study/events": o({ ...envelope, slug: "s?", events: l(o({ date: "s!", regime: "s", ret_5: "n", ret_10: "n", ret_20: "n", ret_60: "n" })) }),
   "/positions": o({

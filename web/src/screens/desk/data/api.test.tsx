@@ -25,6 +25,7 @@ import pipeline from "../../../fixtures/desk/pipeline.json";
 import positions from "../../../fixtures/desk/positions.json";
 import regime from "../../../fixtures/desk/regime.json";
 import sectors from "../../../fixtures/desk/sectors.json";
+import studyCatalog from "../../../fixtures/desk/study-catalog.json";
 import studyEvents from "../../../fixtures/desk/study-events.json";
 import study from "../../../fixtures/desk/study.json";
 import technicals from "../../../fixtures/desk/technicals.json";
@@ -87,7 +88,11 @@ describe("the response boundary", () => {
   });
 
   it("a study's question must be its six slots, or nothing in it can be read (G1-1)", () => {
-    for (const q of [{}, { ...study.question, while: undefined }, { ...study.question, move: "sideways" }, { ...study.question, while: 5 }, { ...study.question, window: null }, "gold"]) expect(tryRead({ ...study, question: q }, "/study")).toBe("unreadable");
+    // §12.2: `window` is nullable (a cross has none), so a null window reads; a missing slot does not.
+    for (const q of [{}, { ...study.question, while: undefined }, { ...study.question, move: "sideways" }, { ...study.question, while: 5 }, { ...study.question, shock: undefined }, "gold"]) expect(tryRead({ ...study, question: q }, "/study")).toBe("unreadable");
+    expect(tryRead({ ...study, question: { ...study.question, move: "cross_above", window: null } }, "/study")).not.toBe("unreadable");
+    // …and only for a cross (§12.2: "null for a cross").
+    expect(tryRead({ ...study, question: { ...study.question, window: null } }, "/study")).toBe("unreadable");
     expect(tryRead({ ...study }, "/study")).not.toBe("unreadable");
   });
 
@@ -102,6 +107,7 @@ describe("the response boundary", () => {
       "/macro": macro,
       "/study": study,
       "/study/events": studyEvents,
+      "/study/catalog": studyCatalog,
       "/positions": positions,
       "/pipeline": pipeline,
       "/basket/ai-infra": basket,

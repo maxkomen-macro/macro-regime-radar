@@ -281,10 +281,10 @@ export interface TechnicalsResponse extends Envelope {
 
 export type Move = "up2s" | "down2s" | "cross_above" | "cross_below";
 
-/** The six slots (§4, §12.2): `while` is none | spx_below_50 | spx_above_50 | regime:<name>. */
+/** The six slots (§4, §12.2): `while` is none | spx_below_50 | regime:<name>; `window` is 5 | 20 | 60, null for a cross. */
 export interface Question {
   shock: string;
-  window: number;
+  window: number | null;
   move: Move;
   while: string;
   target: string;
@@ -368,9 +368,26 @@ export interface StudyResponse extends Envelope {
   /** Served iff the selected horizon has fewer than ten completed outcomes (§1.7, §12.2). */
   empty_state?: { horizon?: number | null; sentence: string; fixes: string[] } | null;
   /** PROPOSED (§12.13): the 12 series every slot lists, key and label. */
-  series?: { key: string; label: string }[];
+  /** §12.2: every series the slots list, with the roles and moves the catalog allows it. */
+  series?: { key: string; label: string; roles?: string[]; ops?: string[]; unit?: string }[];
   /** The Client view's question and paragraph, in plain words, at h = 20 (§12.2). */
   client?: { horizon?: number | null; headline: string; summary: string } | null;
+}
+
+/** §12.3 /study/catalog: the fifteen studies every slot and chip is drawn from. */
+export interface CatalogStudy {
+  slug: string;
+  label: string;
+  short: string;
+  available: boolean;
+  unavailable: Unavailable | null;
+  /** The five non-horizon slots; null for a definition with no question yet (the RSI rows). */
+  question: { shock: string; window: number | null; move: Move; while: string; target: string } | null;
+  allowed_horizons: number[];
+}
+
+export interface StudyCatalogResponse extends Envelope {
+  studies?: CatalogStudy[];
 }
 
 /** §12.3 /study/events (PROPOSED shape, §12.13); CSV with `Accept: text/csv`. */

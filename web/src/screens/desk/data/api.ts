@@ -31,7 +31,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
-import type { BasketPriceResponse, BasketResponse, DeskErrorBody, HedgeResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { BasketPriceResponse, BasketResponse, DeskErrorBody, HedgeResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -79,6 +79,9 @@ export function readBody<T>(body: unknown, path: string, status = 200): T {
   if (!spec) return body as T;
   const out = checkAnswer(body, spec);
   if (!out) throw unreadable(status);
+  // §12.2: `question.window` is null for a cross, and only for one; a study asking a 2σ move with no window cannot be labelled.
+  const q = (out as { question?: { window?: unknown; move?: unknown } }).question;
+  if (path === "/study" && q && q.window === null && q.move !== "cross_above" && q.move !== "cross_below") throw unreadable(status);
   return out as T;
 }
 
@@ -294,6 +297,9 @@ export function useHedge(params: Params, opts: { enabled?: boolean } = {}) {
     enabled: opts.enabled ?? true,
   });
 }
+
+/** §12.3: the fifteen catalog studies the slots and chips are drawn from. */
+export const useStudyCatalog = () => useDesk<StudyCatalogResponse>("/study/catalog");
 
 /** §12.3: the events behind a study (the Advanced panel). */
 export const useStudyEvents = (params: Params) => useDesk<StudyEventsResponse>("/study/events", params);

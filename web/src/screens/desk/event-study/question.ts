@@ -11,20 +11,24 @@ import type { EventStudyParams } from "../../../api/desk";
 import type { Move, Question } from "../data/types";
 import { paramsFor, slugFor } from "./studies";
 
-/** §4's nine chips, in the spec's order, on §12.2's slugs. */
+/** §4's nine chips, in the spec's order, each its catalog label (§12.3); the served catalog's label and availability win. */
 export const PRESET_CHIPS: readonly { slug: string; label: string }[] = [
   { slug: "gold-2sigma-spx-weak", label: "Gold +2σ while S&P weak" },
-  { slug: "golden-cross", label: "Golden cross" },
-  { slug: "death-cross", label: "Death cross" },
-  { slug: "vix-spike-2sigma-5d", label: "VIX spike" },
-  { slug: "hy-2sigma-20d", label: "Credit spreads +2σ" },
-  { slug: "10y-2sigma-20d", label: "10y yield +2σ" },
-  { slug: "dollar-2sigma-20d", label: "Dollar −2σ" },
+  { slug: "golden-cross", label: "S&P golden cross" },
+  { slug: "death-cross", label: "S&P death cross" },
+  { slug: "vix-spike-2sigma-5d", label: "VIX spike +2σ, 5 days" },
+  { slug: "hy-2sigma-20d", label: "HY spreads +2σ, 20 days" },
+  { slug: "10y-2sigma-20d", label: "10y yield +2σ, 20 days" },
+  { slug: "dollar-2sigma-20d", label: "Dollar −2σ, 20 days" },
   { slug: "oil-2sigma-gold", label: "Oil +2σ → gold" },
   { slug: "spx-2sigma-10y", label: "S&P −2σ → 10y" },
 ];
 
-export const WINDOWS: readonly number[] = [5, 10, 20, 60];
+/** §12.2: 5 | 20 | 60 sessions; a cross has none. */
+export const WINDOWS: readonly number[] = [5, 20, 60];
+
+/** A cross is the S&P's own 50/200-day averages crossing: it has no window (§4, §12.2). */
+export const isCross = (m: Move) => m === "cross_above" || m === "cross_below";
 
 export const MOVES: readonly { id: Move; label: string }[] = [
   { id: "up2s", label: "up 2σ or more" },
@@ -38,7 +42,6 @@ export const REGIMES: readonly string[] = ["Goldilocks", "Overheating", "Stagfla
 export const WHILES: readonly { id: string; label: string }[] = [
   { id: "none", label: "none" },
   { id: "spx_below_50", label: "S&P below its 50-day" },
-  { id: "spx_above_50", label: "S&P above its 50-day" },
   ...REGIMES.map((r) => ({ id: `regime:${r}`, label: `regime = ${r}` })),
 ];
 
@@ -58,6 +61,14 @@ export type Ask = { preset: string } | { question: Question };
 const MOVE_IDS = new Set(MOVES.map((m) => m.id));
 const WHILE_IDS = new Set(WHILES.map((w) => w.id));
 
+/** What an address asks that §12.2 no longer serves (window 10, the S&P above its 50-day), in words; null when nothing.
+ * The page says so when it opens the default question instead (§12.0: never a silent parameter drop). */
+export function withdrawnIn(search: string | URLSearchParams): string | null {
+  const p = typeof search === "string" ? new URLSearchParams(search) : search;
+  const out = [p.get("window") === "10" ? "a 10-day window" : null, p.get("while") === "spx_above_50" ? "the S&P above its 50-day" : null].filter(Boolean);
+  return out.length ? out.join(" and ") : null;
+}
+
 /** The ask a query string names; the gold preset when it names nothing usable. */
 export function askFromSearch(search: string | URLSearchParams): Ask {
   const p = typeof search === "string" ? new URLSearchParams(search) : search;
@@ -67,14 +78,15 @@ export function askFromSearch(search: string | URLSearchParams): Ask {
   // A frame-2 link (?study=<engine slug>) opens the same question when the six slots can ask it.
   const fromEngine = questionFromEngine(p.get("study"));
   if (fromEngine) return { question: fromEngine };
-  const window = Number(p.get("window"));
   const horizon = Number(p.get("horizon"));
   const move = p.get("move") as Move | null;
+  // A cross has no window (§12.2: omitted for a cross); any other move needs one of 5, 20, 60.
+  const window = move && isCross(move) ? null : Number(p.get("window"));
   const wh = p.get("while") ?? "none";
   const shock = p.get("shock");
   const target = p.get("target");
-  if (shock && target && move && MOVE_IDS.has(move) && WINDOWS.includes(window) && HORIZONS.some((h) => h.h === horizon) && WHILE_IDS.has(wh))
-    return { question: { shock, window, move, while: wh, target, horizon } };
+  const q = shock && target && move ? { shock, window, move, while: wh, target, horizon } : null;
+  if (q && isQuestion(q)) return { question: q };
   return { preset: PRESET_CHIPS[0].slug };
 }
 
@@ -89,7 +101,7 @@ export function searchFor(ask: Ask, keep?: URLSearchParams): string {
   else {
     const q = ask.question;
     p.set("shock", q.shock);
-    p.set("window", String(q.window));
+    if (q.window != null) p.set("window", String(q.window));
     p.set("move", q.move);
     p.set("while", q.while);
     p.set("target", q.target);
@@ -102,7 +114,7 @@ export function searchFor(ask: Ask, keep?: URLSearchParams): string {
 export function apiParams(ask: Ask): Record<string, string | number | undefined> {
   if ("preset" in ask) return { preset: ask.preset };
   const q = ask.question;
-  return { shock: q.shock, window: q.window, move: q.move, while: q.while, target: q.target, horizon: q.horizon };
+  return { shock: q.shock, window: q.window ?? undefined, move: q.move, while: q.while, target: q.target, horizon: q.horizon };
 }
 
 /** The same ask at h = 20 (v4 B-01: the Client view reads the month, whatever horizon the desk has
@@ -128,7 +140,8 @@ export const horizonLabel = (h: number) => HORIZONS.find((x) => x.h === h)?.labe
 /** The question in one line, from the series' served labels. */
 export function questionWords(q: Question, label: (key: string) => string): string {
   const cond = q.while === "none" ? "" : ` while ${whileLabel(q.while)}`;
-  return `${label(q.shock)} ${moveLabel(q.move)} over ${q.window} days${cond} → ${label(q.target)} over the next ${horizonLabel(q.horizon)}`;
+  const over = q.window == null ? "" : ` over ${q.window} days`;
+  return `${label(q.shock)} ${moveLabel(q.move)}${over}${cond} → ${label(q.target)} over the next ${horizonLabel(q.horizon)}`;
 }
 
 /** The engine study a question maps onto (the frame-2 panel under Advanced),
@@ -140,7 +153,7 @@ export function engineParamsFor(q: Question): EventStudyParams | null {
     if (q.shock !== q.target || q.while !== "none") return null;
     return { kind: "cross", cross: q.move === "cross_above" ? "golden" : "death", shock: q.target, w: 20, z: 2, sign: "+", cond: "none", regime: "all", target: q.target };
   }
-  if (![5, 20, 60].includes(q.window)) return null;
+  if (q.window == null || ![5, 20, 60].includes(q.window)) return null;
   let cond = "none";
   if (q.while === "spx_below_50") cond = "spx_below_50dma";
   else if (q.while.startsWith("regime:")) cond = `regime=${q.while.slice(7).toLowerCase().replace(/ /g, "_")}`;
@@ -153,7 +166,7 @@ export function questionFromEngine(slug: string | null): Question | null {
   const e = paramsFor(slug);
   // The six slots ask 2σ moves over every regime; any other engine study is a different question.
   if (!e || e.z !== 2 || e.regime !== "all") return null;
-  if (e.kind === "cross") return { shock: e.target, window: 20, move: e.cross === "death" ? "cross_below" : "cross_above", while: "none", target: e.target, horizon: 20 };
+  if (e.kind === "cross") return { shock: e.target, window: null, move: e.cross === "death" ? "cross_below" : "cross_above", while: "none", target: e.target, horizon: 20 };
   if (e.sign === "both" || !WINDOWS.includes(e.w)) return null;
   const regime = e.cond.startsWith("regime=") ? REGIMES.find((r) => r.toLowerCase().replace(/ /g, "_") === e.cond.slice(7)) : undefined;
   const wh = e.cond === "none" ? "none" : e.cond === "spx_below_50dma" ? "spx_below_50" : regime ? `regime:${regime}` : null;
@@ -206,7 +219,10 @@ export const SAVED_KEY = "mrr.desk.saved-questions.v1";
 /** A question the slots can ask: six known values (extra fields are the caller's to refuse). */
 export function isQuestion(v: unknown): v is Question {
   const q = v as Question;
-  return !!q && typeof q.shock === "string" && typeof q.target === "string" && MOVE_IDS.has(q.move) && WINDOWS.includes(q.window) && HORIZONS.some((h) => h.h === q.horizon) && WHILE_IDS.has(q.while);
+  if (!q || typeof q.shock !== "string" || typeof q.target !== "string" || !MOVE_IDS.has(q.move)) return false;
+  // A cross has no window; every other move has one of 5, 20, 60 (§12.2).
+  const windowOk = isCross(q.move) ? q.window === null : typeof q.window === "number" && WINDOWS.includes(q.window);
+  return windowOk && HORIZONS.some((h) => h.h === q.horizon) && WHILE_IDS.has(q.while);
 }
 
 function isSaved(v: unknown): v is SavedQuestion {
@@ -214,19 +230,41 @@ function isSaved(v: unknown): v is SavedQuestion {
   return !!s && typeof s.id === "string" && typeof s.name === "string" && typeof s.saved_at === "string" && isQuestion(s.question);
 }
 
+/** A saved question as this page reads it: a cross saved by the old slots (window 20) has no window (§12.2). */
+function normalized(v: unknown): unknown {
+  const s = v as SavedQuestion;
+  if (!s || typeof s !== "object" || !s.question || typeof s.question !== "object") return v;
+  return isCross(s.question.move) && s.question.window != null ? { ...s, question: { ...s.question, window: null } } : v;
+}
+
+function readRaw(storage: Pick<Storage, "getItem"> | null): unknown[] {
+  const raw = storage?.getItem(SAVED_KEY);
+  const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 export function loadSaved(storage: Pick<Storage, "getItem"> | null = safeStorage()): SavedQuestion[] {
   try {
-    const raw = storage?.getItem(SAVED_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed) ? parsed.filter(isSaved) : [];
+    return readRaw(storage).map(normalized).filter(isSaved);
   } catch {
     return [];
   }
 }
 
-export function writeSaved(list: SavedQuestion[], storage: Pick<Storage, "setItem"> | null = safeStorage()): void {
+/** Saved questions this page can no longer ask (a 10-day window, the S&P above its 50-day): kept in storage, counted, never dropped (§1.8). */
+export function unreadableSaved(storage: Pick<Storage, "getItem"> | null = safeStorage()): unknown[] {
   try {
-    storage?.setItem(SAVED_KEY, JSON.stringify(list));
+    return readRaw(storage).map(normalized).filter((x) => !isSaved(x));
+  } catch {
+    return [];
+  }
+}
+
+/** The list written back with every entry this page cannot read kept as it was (§1.8: never dropped). */
+export function writeSaved(list: SavedQuestion[], storage: (Pick<Storage, "setItem"> & Partial<Pick<Storage, "getItem">>) | null = safeStorage()): void {
+  try {
+    const kept = storage && "getItem" in storage && storage.getItem ? unreadableSaved(storage as Pick<Storage, "getItem">) : [];
+    storage?.setItem(SAVED_KEY, JSON.stringify([...list, ...kept]));
   } catch {
     /* storage full or blocked: the list lives for this page only */
   }
@@ -263,7 +301,8 @@ export function importSaved(list: SavedQuestion[], text: string): { list: SavedQ
   let out = list;
   let added = 0;
   let rejected = 0;
-  for (const it of items) {
+  for (const raw of items) {
+    const it = normalized(raw);
     if (!isSaved(it)) {
       rejected += 1;
       continue;

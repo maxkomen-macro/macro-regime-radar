@@ -18,7 +18,7 @@ import { bpEvents, bpStudy } from "../../../test/desk-variants";
 import type { Question } from "../data/types";
 import { applyFix, provenanceLine } from "./EventStudyPage";
 import { barTicks, horizonPhrase, servedWords } from "./AnswerCard";
-import { LAST_STUDY_KEY, SAVED_KEY, askFromSearch, engineSlugFor, exportSaved, importSaved, questionFromEngine, searchFor, withSaved } from "./question";
+import { LAST_STUDY_KEY, SAVED_KEY, WHILES, WINDOWS, askFromSearch, engineSlugFor, exportSaved, importSaved, loadSaved, questionFromEngine, questionWords, searchFor, unreadableSaved, withSaved, withdrawnIn, writeSaved } from "./question";
 
 const GOLD: Question = { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 };
 
@@ -57,9 +57,20 @@ describe("the question", () => {
     expect(askFromSearch("shock=gold&window=7&move=up2s&while=none&target=spx&horizon=20")).toEqual({ preset: "gold-2sigma-spx-weak" });
     expect(searchFor({ question: GOLD }, new URLSearchParams("view=client&x=1&confidence=0.95"))).toBe("view=client&shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20");
   });
+  it("asks only what §12.2 serves: windows 5, 20, 60 (none for a cross), no S&P-above condition", () => {
+    expect(WINDOWS).toEqual([5, 20, 60]);
+    expect(WHILES.map((w) => w.id)).not.toContain("spx_above_50");
+    expect(askFromSearch("shock=spx&move=cross_above&while=none&target=spx&horizon=20")).toEqual({ question: { shock: "spx", window: null, move: "cross_above", while: "none", target: "spx", horizon: 20 } });
+    expect(searchFor({ question: { shock: "spx", window: null, move: "cross_below", while: "none", target: "spx", horizon: 20 } })).toBe("shock=spx&move=cross_below&while=none&target=spx&horizon=20");
+    // A withdrawn value opens the default question instead of an unanswerable one.
+    expect(askFromSearch("shock=gold&window=10&move=up2s&while=none&target=spx&horizon=20")).toEqual({ preset: "gold-2sigma-spx-weak" });
+    expect(askFromSearch("shock=gold&window=20&move=up2s&while=spx_above_50&target=spx&horizon=20")).toEqual({ preset: "gold-2sigma-spx-weak" });
+    expect(questionWords({ shock: "spx", window: null, move: "cross_above", while: "none", target: "spx", horizon: 20 }, (k) => k)).toBe("spx crosses above MA → spx over the next 1 month");
+  });
   it("opens an old frame-2 link (?study=<engine slug>) as the same six slots", () => {
     expect(askFromSearch("study=gold-2sigma-spx-weak")).toEqual({ question: GOLD });
-    expect(askFromSearch("study=spx-golden-cross")).toEqual({ question: { shock: "spx", window: 20, move: "cross_above", while: "none", target: "spx", horizon: 20 } });
+    // A cross has no window (§12.2).
+    expect(askFromSearch("study=spx-golden-cross")).toEqual({ question: { shock: "spx", window: null, move: "cross_above", while: "none", target: "spx", horizon: 20 } });
     expect(askFromSearch("preset=rsi-below-30")).toEqual({ preset: "rsi-below-30" });
   });
 
@@ -351,6 +362,89 @@ describe("a study with a block missing (Codex R-10)", () => {
     await waitFor(() => expect(answer()).toHaveTextContent("Awaiting refresh · the study did not answer"));
     expect(answer()).toHaveTextContent(/Events\s*Awaiting refresh/);
     expect(answer()).not.toHaveAttribute("aria-busy", "true");
+  });
+});
+
+describe("the catalog drives the chips and the slots (§4, §12.3)", () => {
+  it("each chip is its catalog label; a study not stored is disabled with its reason", async () => {
+    renderTab();
+    const chips = await screen.findByRole("group", { name: "Common questions" });
+    await waitFor(() => expect(within(chips).getByRole("button", { name: "S&P golden cross" })).toBeInTheDocument());
+    const dollar = within(chips).getByRole("button", { name: "Dollar −2σ, 20 days" });
+    expect(dollar).toBeDisabled();
+    expect(dollar).toHaveAttribute("title", "US Dollar Index (DX-Y.NYB) is not stored in this database: it is a tier 2 series, and the full refresh stores tier 1 only.");
+    expect(within(chips).getByRole("button", { name: "Oil +2σ → gold" })).toBeDisabled();
+    expect(within(chips).getByRole("button", { name: "HY spreads +2σ, 20 days" })).toBeEnabled();
+  });
+
+  it("a slot's option is disabled unless, with the others as they are, it leads to an available catalog study", async () => {
+    renderTab();
+    await waitFor(() => expect(screen.getByLabelText("Shock")).toHaveValue("gold"));
+    const enabled = (label: string) => [...(screen.getByLabelText(label) as HTMLSelectElement).options].filter((o) => !o.disabled).map((o) => o.value);
+    await waitFor(() => expect(enabled("Shock")).toEqual(["gold"]));
+    expect(enabled("Window")).toEqual(["20"]);
+    expect(enabled("While")).toEqual(["spx_below_50"]);
+    expect(enabled("Over the next")).toEqual(["5", "10", "20", "60"]);
+    expect([...(screen.getByLabelText("Window") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["5", "20", "60", "none"]);
+  });
+
+  it("an unavailable chip's reason is printed, not only a tooltip: a disabled chip takes no focus and a phone shows no tooltip", async () => {
+    renderTab();
+    const chips = await screen.findByRole("group", { name: "Common questions" });
+    await waitFor(() => expect(chips).toHaveTextContent("Dollar −2σ, 20 days: US Dollar Index (DX-Y.NYB) is not stored in this database"));
+    expect(chips).toHaveTextContent("Oil +2σ → gold: WTI crude (DCOILWTICO) is not stored in this database");
+  });
+
+  it("before anything is asked the window slot is blank, never 'none (a cross)'", async () => {
+    stubDesk({ "/api/desk/study": () => new Promise(() => {}), "/api/desk/study/catalog": () => new Promise(() => {}) });
+    renderTab("/desk/event-study?preset=hy-2sigma-20d");
+    const w = (await screen.findByLabelText("Window")) as HTMLSelectElement;
+    expect(w.value).toBe("");
+    expect(w.selectedOptions[0]?.textContent).toBe("");
+  });
+
+  it("a preset with no answer still spells out its question from the catalog (the dollar, served awaiting)", async () => {
+    stubDesk({ "/api/desk/study": deskAwaiting("US Dollar Index (DX-Y.NYB) is not stored in this database: it is a tier 2 series, and the full refresh stores tier 1 only.") });
+    renderTab("/desk/event-study?preset=dollar-2sigma-20d");
+    await waitFor(() => expect(screen.getByLabelText("Window")).toHaveValue("20"));
+    expect(screen.getByLabelText("Move")).toHaveValue("down2s");
+    expect(screen.getByLabelText("While")).toHaveValue("none");
+  });
+
+  it("an address asking what §12.2 no longer serves opens the default question and says so (§12.0: never a silent drop)", async () => {
+    expect(withdrawnIn("shock=gold&window=10&move=up2s&while=spx_above_50&target=spx&horizon=20")).toBe("a 10-day window and the S&P above its 50-day");
+    expect(withdrawnIn("preset=gold-2sigma-spx-weak")).toBeNull();
+    renderTab("/desk/event-study?shock=gold&window=10&move=up2s&while=none&target=spx&horizon=20");
+    expect(await screen.findByText("The link asked for a 10-day window, which the Event Study no longer asks; this is the default question instead.")).toBeInTheDocument();
+  });
+
+  it("saved questions are never dropped: an old cross reads with no window; a withdrawn one is kept, counted and written back (§1.8)", async () => {
+    const cross = { id: "a", name: "golden", saved_at: "2026-09-01", question: { shock: "spx", window: 20, move: "cross_above", while: "none", target: "spx", horizon: 20 } };
+    const ten = { id: "b", name: "ten", saved_at: "2026-09-01", question: { shock: "gold", window: 10, move: "up2s", while: "none", target: "spx", horizon: 20 } };
+    localStorage.setItem(SAVED_KEY, JSON.stringify([cross, ten]));
+    expect(loadSaved().map((x) => [x.id, x.question.window])).toEqual([["a", null]]);
+    expect(unreadableSaved()).toEqual([ten]);
+    writeSaved(loadSaved());
+    expect(JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]").map((x: { id: string }) => x.id)).toEqual(["a", "b"]);
+    renderTab();
+    fireEvent.click(await screen.findByRole("button", { name: /My saved questions · 1/ }));
+    expect(screen.getByRole("group", { name: "My saved questions" })).toHaveTextContent("1 saved question asks what the Event Study no longer asks");
+    // An import reads an old export's cross the same way.
+    expect(importSaved([], JSON.stringify({ questions: [cross, ten] }))).toMatchObject({ added: 1, rejected: 1 });
+  });
+
+  it("only a 422 `unsupported` is a refusal; any other failure is Awaiting refresh", async () => {
+    stubDesk({ "/api/desk/study": deskError(422, "validation", { message: "Unprocessable Entity" }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: "The answer" })).toHaveTextContent("Awaiting refresh"));
+    expect(screen.getByRole("region", { name: "The answer" })).not.toHaveTextContent("Unprocessable Entity");
+  });
+
+  it("a question the server refuses prints the served message (§4: 422 unsupported)", async () => {
+    stubDesk({ "/api/desk/study": deskError(422, "unsupported", { message: "No study in the catalog asks this question." }) });
+    renderTab("/desk/event-study?shock=gold&window=60&move=up2s&while=none&target=spx&horizon=20");
+    await waitFor(() => expect(screen.getByRole("region", { name: "The answer" })).toHaveTextContent("No study in the catalog asks this question."));
+    expect(screen.getByRole("region", { name: "The answer" })).not.toHaveTextContent("Awaiting refresh");
   });
 });
 

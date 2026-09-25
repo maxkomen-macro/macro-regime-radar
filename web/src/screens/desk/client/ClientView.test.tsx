@@ -128,9 +128,10 @@ describe("Client view", () => {
 
   it("on Event Study it reads the study in the address", async () => {
     const { calls } = stubDesk();
-    renderTab("/desk/event-study?preset=spx-golden-cross&view=client");
-    await waitFor(() => expect(calls).toContain("GET /api/desk/study?preset=spx-golden-cross"));
-    expect(calls.some((c) => c.startsWith("GET /api/desk/study?preset=gold"))).toBe(false);
+    // A catalog study the fixtures carry no answer for (§12.3's golden cross).
+    renderTab("/desk/event-study?preset=golden-cross&view=client");
+    await waitFor(() => expect(calls).toContain("GET /api/desk/study?preset=golden-cross"));
+    expect(calls.some((c) => c.startsWith("GET /api/desk/study?preset=gold-2sigma-spx-weak"))).toBe(false);
     await waitFor(() => expect(screen.getByRole("main")).toHaveTextContent(/Episodes\s*Awaiting refresh/));
   });
 
@@ -183,6 +184,13 @@ describe("Client view", () => {
     expect(backdrop()).toHaveTextContent(sentence);
     expect(main).not.toHaveTextContent("Awaiting refresh");
     expect(main.textContent).not.toMatch(/verdict|Too few/);
+  });
+
+  it("a question the server refuses prints its message in plain words; nothing says Awaiting refresh (§4)", async () => {
+    stubDesk({ "/api/desk/study": deskError(422, "unsupported", { message: "No study in the catalog asks this question." }) });
+    renderTab("/desk/event-study?shock=gold&window=60&move=up2s&while=none&target=spx&horizon=20&view=client");
+    await waitFor(() => expect(screen.getByRole("main")).toHaveTextContent("No study in the catalog asks this question."));
+    expect(screen.getByRole("main")).not.toHaveTextContent("Awaiting refresh");
   });
 
   it("a study that does not answer keeps the labels and says Awaiting refresh", async () => {

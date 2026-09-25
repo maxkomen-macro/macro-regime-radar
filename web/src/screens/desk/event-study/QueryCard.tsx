@@ -4,16 +4,22 @@
  * My saved questions · N / Build your own), the nine preset chips or the
  * saved ones under "Yours" (with Export / Import JSON, §1.8), and six labeled
  * dropdowns that always show exactly what is asked. Changing a slot makes the
- * question your own; Run asks it; Save keeps it in this browser.
+ * question your own; Run asks it; Save keeps it in this browser. The catalog
+ * (§12.3) decides what can be asked: a chip whose study is unavailable is
+ * disabled with its reason, and a slot's option is enabled only when, with the
+ * other slots as they are, it leads to an available catalog study (§4).
  */
 
 import { useId, useRef, useState, type ChangeEvent } from "react";
-import type { Move, Question } from "../data/types";
+import type { CatalogStudy, Move, Question } from "../data/types";
+import { leadsToStudy, type Slot as SlotKey } from "./catalog";
 import { HORIZONS, MOVES, PRESET_CHIPS, WHILES, WINDOWS, exportSaved, importSaved, type SavedQuestion } from "./question";
 
 export type Mode = "common" | "saved" | "build";
 
-function Slot({ label, tip, value, options, onChange, disabled, awaiting }: { label: string; tip?: string; value: string; options: { id: string; label: string }[]; onChange: (v: string) => void; disabled?: boolean; awaiting?: boolean }) {
+type Option = { id: string; label: string; off?: boolean };
+
+function Slot({ label, tip, value, options, onChange, disabled, awaiting }: { label: string; tip?: string; value: string; options: Option[]; onChange: (v: string) => void; disabled?: boolean; awaiting?: boolean }) {
   const id = useId();
   const tipId = useId();
   const known = options.some((o) => o.id === value);
@@ -37,7 +43,7 @@ function Slot({ label, tip, value, options, onChange, disabled, awaiting }: { la
         <select id={id} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} aria-describedby={tip ? tipId : undefined}>
           {known ? null : <option value={value}>{value}</option>}
           {options.map((o) => (
-            <option key={o.id} value={o.id}>
+            <option key={o.id} value={o.id} disabled={o.off}>
               {o.label}
             </option>
           ))}
@@ -53,10 +59,12 @@ export default function QueryCard({
   activePreset,
   onPreset,
   saved,
+  unreadable = 0,
   onSavedChange,
   onPickSaved,
   draft,
   onDraft,
+  catalog,
   series,
   seriesFailed = false,
   onRun,
@@ -68,10 +76,14 @@ export default function QueryCard({
   activePreset: string | null;
   onPreset: (slug: string) => void;
   saved: SavedQuestion[];
+  /** Saved questions kept in this browser that ask what §12.2 no longer serves (§1.8: counted, never dropped). */
+  unreadable?: number;
   onSavedChange: (list: SavedQuestion[], note: string) => void;
   onPickSaved: (s: SavedQuestion) => void;
   draft: Question | null;
   onDraft: (q: Question) => void;
+  /** §12.3's catalog; null until served (every option then stays open). */
+  catalog: CatalogStudy[] | null;
   /** The 12 series the slots list; null until served (§12.13 PROPOSED `series`). */
   series: { key: string; label: string }[] | null;
   seriesFailed?: boolean;
@@ -81,12 +93,17 @@ export default function QueryCard({
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [note, setNote] = useState("");
+  // The window slot's "none (a cross)" is its own value, never the blank shown before anything is asked.
+  const parse = (k: SlotKey, v: string): Question[SlotKey] => (k === "window" ? (v === "none" ? null : Number(v)) : k === "horizon" ? Number(v) : v);
   const set = <K extends keyof Question>(k: K) => (v: string) => {
     if (!draft) return;
-    const val = k === "window" || k === "horizon" ? Number(v) : v;
-    onDraft({ ...draft, [k]: val } as Question);
+    onDraft({ ...draft, [k]: parse(k, v) } as Question);
   };
-  const seriesOptions = (series ?? []).map((s) => ({ id: s.key, label: s.label }));
+  // §4: an option that does not lead to a catalog study, given the other slots, is disabled.
+  const off = (k: SlotKey, id: string) => !!catalog && !!draft && !leadsToStudy(catalog, draft, k, parse(k, id));
+  const opts = (k: SlotKey, list: { id: string; label: string }[]): Option[] => list.map((o) => ({ ...o, off: off(k, o.id) }));
+  const seriesList = (series ?? []).map((s) => ({ id: s.key, label: s.label }));
+  const byChip = new Map((catalog ?? []).map((c) => [c.slug, c]));
   const download = () => {
     const blob = new Blob([exportSaved(saved)], { type: "application/json" });
     const a = document.createElement("a");
@@ -123,11 +140,24 @@ export default function QueryCard({
       </div>
       {mode === "common" ? (
         <div className="es-chips" role="group" aria-label="Common questions">
-          {PRESET_CHIPS.map((p) => (
-            <button key={p.slug} type="button" className="es-chip" aria-pressed={activePreset === p.slug} onClick={() => onPreset(p.slug)}>
-              {p.label}
-            </button>
-          ))}
+          {PRESET_CHIPS.map((p) => {
+            const c = byChip.get(p.slug);
+            // §4: the catalog's label; a study that is unavailable is disabled with its reason.
+            const why = c && !c.available ? (c.unavailable?.reason ?? "not yet served") : null;
+            return (
+              <button key={p.slug} type="button" className="es-chip" aria-pressed={activePreset === p.slug} onClick={() => onPreset(p.slug)} disabled={!!why} title={why ?? undefined} aria-description={why ?? undefined}>
+                {c?.label ?? p.label}
+              </button>
+            );
+          })}
+          {/* The reason, in words, for every reader: a disabled chip takes no focus and a phone shows no tooltip. */}
+          {PRESET_CHIPS.map((p) => byChip.get(p.slug))
+            .filter((c): c is CatalogStudy => !!c && !c.available)
+            .map((c) => (
+              <p key={c.slug} className="es-chip-why dk-unserved-inline">
+                {c.label}: {c.unavailable?.reason ?? "not yet served"}
+              </p>
+            ))}
         </div>
       ) : mode === "saved" ? (
         <div className="es-chips" role="group" aria-label="My saved questions">
@@ -155,6 +185,11 @@ export default function QueryCard({
               {note}
             </span>
           ) : null}
+          {unreadable ? (
+            <span className="es-hint">
+              {unreadable} saved {unreadable === 1 ? "question asks" : "questions ask"} what the Event Study no longer asks (a 10-day window, or the S&amp;P above its 50-day); kept in this browser, not shown.
+            </span>
+          ) : null}
         </div>
       ) : (
         <div className="es-chips">
@@ -166,12 +201,12 @@ export default function QueryCard({
         <span className="es-hint">change any slot and it becomes your own · {series ? `every slot lists the same ${series.length} series` : seriesFailed ? "the series list is awaiting refresh" : "every slot lists the same series"}</span>
       </p>
       <div className="es-slots">
-        <Slot label="Shock" value={draft?.shock ?? ""} options={seriesOptions} onChange={set("shock")} disabled={!draft || !series} awaiting={seriesFailed} />
-        <Slot label="Window" value={String(draft?.window ?? "")} options={WINDOWS.map((w) => ({ id: String(w), label: `${w} days` }))} onChange={set("window")} disabled={!draft} />
-        <Slot label="Move" tip="σ measured over the last 252 sessions" value={draft?.move ?? ""} options={MOVES.map((m) => ({ id: m.id as Move, label: m.label }))} onChange={set("move")} disabled={!draft} />
-        <Slot label="While" tip="condition checked on the shock day, entry next session" value={draft?.while ?? ""} options={[...WHILES]} onChange={set("while")} disabled={!draft} />
-        <Slot label="What happens to" value={draft?.target ?? ""} options={seriesOptions} onChange={set("target")} disabled={!draft || !series} awaiting={seriesFailed} />
-        <Slot label="Over the next" value={String(draft?.horizon ?? "")} options={HORIZONS.map((h) => ({ id: String(h.h), label: h.label }))} onChange={set("horizon")} disabled={!draft} />
+        <Slot label="Shock" value={draft?.shock ?? ""} options={opts("shock", seriesList)} onChange={set("shock")} disabled={!draft || !series} awaiting={seriesFailed} />
+        <Slot label="Window" value={!draft ? "" : draft.window == null ? "none" : String(draft.window)} options={opts("window", [...WINDOWS.map((w) => ({ id: String(w), label: `${w} days` })), { id: "none", label: "none (a cross)" }])} onChange={set("window")} disabled={!draft} />
+        <Slot label="Move" tip="σ measured over the last 252 sessions" value={draft?.move ?? ""} options={opts("move", MOVES.map((m) => ({ id: m.id as Move, label: m.label })))} onChange={set("move")} disabled={!draft} />
+        <Slot label="While" tip="Entry at the event close when every input is available by then; otherwise the next close." value={draft?.while ?? ""} options={opts("while", [...WHILES])} onChange={set("while")} disabled={!draft} />
+        <Slot label="What happens to" value={draft?.target ?? ""} options={opts("target", seriesList)} onChange={set("target")} disabled={!draft || !series} awaiting={seriesFailed} />
+        <Slot label="Over the next" value={String(draft?.horizon ?? "")} options={opts("horizon", HORIZONS.map((h) => ({ id: String(h.h), label: h.label })))} onChange={set("horizon")} disabled={!draft} />
         <button type="button" className="dk-btn es-run" data-kind="primary" onClick={onRun} disabled={!draft || running} data-testid="es-run">
           Run
         </button>

@@ -13,7 +13,7 @@
 
 import type { ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { unavailableOf, useStudy } from "../data/api";
+import { DeskApiError, unavailableOf, useStudy } from "../data/api";
 import type { StudyResponse } from "../data/types";
 import type { DeskPage } from "../desk-sections";
 import { dayLong, pctPlain, year } from "../kit/format";
@@ -161,11 +161,13 @@ export default function ClientView({ page }: { page: DeskPage }) {
   const q = useStudy(apiParams(atMonth(ask)));
   const s = q.isError ? undefined : q.data;
   const failed = q.isError;
+  // §4: a question the server refuses (422 `unsupported`) prints the served message; nothing is awaited.
+  const refusal = q.error instanceof DeskApiError && q.error.status === 422 && q.error.body?.error === "unsupported" ? q.error.message : null;
   const month = s && Array.isArray(s.horizons) ? s.horizons.find((h) => h.h === 20) : undefined;
   // A study too thin to read at a month answered: a plain sentence stands where the numbers would.
   const thin = thinWords(s);
   // Once, in the backdrop card (and in the summary's place when no client paragraph is served); the month's two stats read like a null regime row.
-  const state = (ok: boolean) => (ok ? "value" : !s && !failed ? "loading" : thin ? "too few cases to say" : "awaiting");
+  const state = (ok: boolean) => (ok ? "value" : (!s && !failed) || refusal ? "loading" : thin ? "too few cases to say" : "awaiting");
   return (
     <div className="cv" aria-busy={(!s && !failed) || undefined}>
       <Unserved block={unavailableOf(q.error)}>
@@ -178,7 +180,7 @@ export default function ClientView({ page }: { page: DeskPage }) {
               <p className="cv-summary" title={tipOf(s.question?.target_unit)}>
                 {s.client.summary}
               </p>
-            ) : thin ? <p className="cv-summary">{thin}</p> : s || failed ? <Awaiting className="cv-summary-await" /> : null}
+            ) : thin ? <p className="cv-summary">{thin}</p> : refusal ? <p className="cv-summary">{refusal}</p> : s || failed ? <Awaiting className="cv-summary-await" /> : null}
             <div className="cv-stats">
               <StatCard label="Episodes" state={state(!!s && fin(s.matched_n))}>
                 <p className="cv-stat-value">{s?.matched_n}</p>
@@ -216,7 +218,7 @@ export default function ClientView({ page }: { page: DeskPage }) {
             </div>
             <p className="cv-source">{sourceLine(s?.as_of)}</p>
           </div>
-          <Backdrop s={s} failed={failed} />
+          <Backdrop s={s} failed={failed && !refusal} />
         </div>
       </Unserved>
     </div>
