@@ -26,6 +26,7 @@ import studyEvents from "./study-events.json" with { type: "json" };
 import study from "./study.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
 import vol from "./vol.json" with { type: "json" };
+import { isQuestion } from "../../screens/desk/event-study/question";
 
 export interface FixtureReply {
   status: number;
@@ -47,12 +48,25 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
 
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
 const STUDY_Q = (study as { question: Record<string, string | number> }).question;
+/** The six slots a question is asked by (the served question also carries its target's unit and label). */
+const SLOTS = ["shock", "window", "move", "while", "target", "horizon"] as const;
 
 /** Whether a /study request asks the fixture's question: its preset, or its six slots. */
 function asksFixtureStudy(u: URL): boolean {
   const preset = u.searchParams.get("preset");
   if (preset) return preset === (study as { slug: string }).slug;
-  return Object.entries(STUDY_Q).every(([k, v]) => u.searchParams.get(k) === String(v));
+  return SLOTS.every((k) => u.searchParams.get(k) === String(STUDY_Q[k]));
+}
+
+/** Whether a POST body names the study a "signal reverses" level binds to (Codex R-11): a
+ * slug, or `question` as exactly the six slots, each one the slots can ask. Anything else,
+ * a blank slug, a seventh key, a slot of the wrong kind, names no study. */
+function namesStudy(b: Record<string, unknown>): boolean {
+  if (typeof b.study_slug === "string" && b.study_slug.trim()) return true;
+  const q = b.question;
+  if (!q || typeof q !== "object" || Array.isArray(q)) return false;
+  const keys = Object.keys(q);
+  return keys.length === SLOTS.length && SLOTS.every((k) => keys.includes(k)) && isQuestion(q);
 }
 
 // ── /positions (§12.8): the server keeps positions; the fixture keeps the
@@ -90,6 +104,8 @@ function positionsReply(method: string, body: string | undefined): FixtureReply 
     !String(wrongIf?.label ?? "").trim() && "level",
   ].filter(Boolean);
   if (missing.length) return json(422, { error: "gate", missing });
+  // The signal's own reversal is a level only against the study it comes from (Codex R-11).
+  if ((b.wrong_if as { id?: unknown } | undefined)?.id === "signal_reverses" && !namesStudy(b)) return json(422, { error: "gate", missing: ["study"] });
   const id = `p${posted.length + 1}`;
   const row = {
     id,

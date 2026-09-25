@@ -16,6 +16,7 @@ import { settle } from "./lib/drive";
 import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures";
 import { deskFixture } from "../src/fixtures/desk/index";
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
+import { bpStudy } from "../src/test/desk-variants";
 
 /** The v2 tabs built so far; each later tab adds itself here. */
 const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline", "build-notes", "basket-hedge"];
@@ -85,6 +86,20 @@ test.describe("desk v2", () => {
       await expect(page.getByText(/is awaiting refresh; the gate is the same for every position/)).toBeVisible();
       await expect(page.getByText(/rendering error/)).toHaveCount(0);
     }
+  });
+
+  test("a basis-point study reads in bp on Event Study and the Client view, never a percent (Codex R-02)", async ({ page }) => {
+    await open(page, "/desk/event-study?preset=gold-2sigma-spx-weak", { "/api/desk/study": { status: 200, body: bpStudy() } });
+    const answer = page.getByRole("region", { name: "The answer" });
+    await expect(answer).toContainText("+25 bp");
+    await expect(answer).toContainText("+5 bp");
+    await expect(answer).not.toContainText(/[+−]\d+(\.\d)?%/);
+    await expect(page.getByRole("main")).toContainText("10-year Treasury yield a month later");
+    expect(await auditPalette(page)).toEqual([]);
+    await open(page, "/desk/event-study?preset=gold-2sigma-spx-weak&view=client", { "/api/desk/study": { status: 200, body: bpStudy() } });
+    const backdrop = page.getByRole("region", { name: "A month later, by economic backdrop" });
+    await expect(backdrop).toContainText("Typical 10-year Treasury yield move after the setup");
+    await expect(backdrop).toContainText("+12 bp");
   });
 
   test("overview: the four tiles carry their Live badges and read the fixture", async ({ page }) => {

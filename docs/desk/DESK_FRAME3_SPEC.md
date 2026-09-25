@@ -863,9 +863,10 @@ building it; the web side follows whatever this section ends up saying.
   own frequency).
 - **PROPOSED** the POST body: `{"instrument","direction":"long"|"short",
   "size_nav" (a fraction, or null),"horizon_days","variant","pre_mortem",
-  "wrong_if":{"id","label"},"study_slug"|null}`; a saved position answers
-  201 with its row. The refusals are §12.8's (`wording` with `words`,
-  `gate` with `missing`).
+  "wrong_if":{"id","label"},"study_slug"|null}`, plus `question` (the six
+  slots) whenever `study_slug` is null and a study was carried in (Codex
+  round 1, below); a saved position answers 201 with its row. The refusals
+  are §12.8's (`wording` with `words`, `gate` with `missing`).
 - A study carried in arrives as `?from=<preset>` or as Event Study's six
   slots; the page asks `/study` with the same parameters and fills the
   instrument (the study's target) and the horizon, nothing in the gate.
@@ -875,8 +876,9 @@ building it; the web side follows whatever this section ends up saying.
   `above_50d`, `rises_2s_5d`, `above_200d`, `entry_plus_3`, `entry_plus_5`,
   `higher_high_20`, `rsi_above_60`, `vix_below_15`, `hy_tighten_2s`; for
   either `regime_changes`, `signal_reverses` (offered only with a carried
-  study; the server binds it to `study_slug`) and `custom` (the typed
-  label). §9 lists the long's eight; the short's are the page's mirror.
+  study that the POST can name, by `study_slug` or by `question`; the
+  server binds it to that study and refuses it without one) and `custom`
+  (the typed label). §9 lists the long's eight; the short's are the page's mirror.
 - A row's `size_nav`, `room_pct` and `to_level` may be null (a position
   saved without a size, or one the server has not measured yet), and
   `falsifies_at.value` / `.unit` likewise: the row prints "—" and leaves its
@@ -973,6 +975,95 @@ building it; the web side follows whatever this section ends up saying.
 - The header's "Send to Position Monitor →" carries `?basket=<id>`;
   Position Monitor fills its instrument field from that basket's
   `instrument` (or a basket saved in the browser: its name and "basket").
+
+**Codex round 1 (desk/frame-3, 2026-09-24)**
+
+The review of `7bb2a3e` found judgments the page was making for itself and
+contract gaps the page papered over. Each field below is served by the
+engine; the fixtures carry it; a response without it keeps its labels and
+prints "Awaiting refresh" (or, for a word, drops the word and keeps the
+number). The page never computes the judgment in its place.
+
+- **PROPOSED** `study.question.target_unit` (`"pct"` | `"bp"` | `"px"`) and
+  `study.question.target_label` (string), served in the answer's `question`
+  beside the six slots (the request never carries them):
+  ```json
+  "question":{"shock":"gold","window":20,"move":"up2s","while":"spx_below_50",
+    "target":"spx","horizon":20,"target_unit":"pct","target_label":"S&P 500"}
+  ```
+  `pct`: `median`, `baseline_median`, `worst.ret`, `best.ret`,
+  `by_regime[].median`, `last_events[].ret_20` and
+  `without_condition.median` are fractions (0.031 prints "+3.1%") and
+  `ci_lo_pts` / `ci_hi_pts` percentage points; `bp`: every one of them in
+  basis points as served (25 prints "+25 bp", never a percent), the
+  interval too; `px`: the target's own points. §12.3's `/study/events`
+  rows (`ret_5` … `ret_60`) are in the unit of the `/study` answer for the
+  same parameters; the events response carries no unit of its own. The
+  chart's ticks carry the unit ("+50 bp", "+5%"). `target_label` names the
+  target wherever the page says what moved: the last-five heading, the
+  Client view backdrop ("Typical 10-year Treasury yield move after the
+  setup"), Position Monitor's carried-study subtitle and its instrument
+  prefill. Without it those places leave the target unnamed ("Typical move
+  after the setup", "the study's target") and the instrument field empty. Reason (R-02, R-03): the engine measures a yield or a
+  spread in bp and a price in log returns (`src/desk/series.py`), and the
+  page printed every target as a percent and named it from the slot's key.
+  A study without `target_unit` prints no move at all: the page never
+  guesses a unit from a series key.
+- **PROPOSED** `study.horizons[].n_complete` (integer): the events whose
+  forward window at that horizon is complete, the denominator of that
+  horizon's `up_pct` and of "12 of N":
+  ```json
+  {"h":20,"label":"1 month","n_complete":18,"up_pct":0.67,"up_n":12, …}
+  ```
+  `n_events` counts every event: it is the study's size (the EVENTS stat,
+  "all 18 events", the Client view's episodes) and never a horizon's
+  denominator. Reason (R-07): a recent event has no three-month move yet, so each
+  horizon has its own count; "12 of 18" against `n_events` is wrong the day
+  an event is younger than the horizon. Absent, the stat keeps `up_pct` and
+  says the count is awaiting refresh.
+- **PROPOSED** `study.without_condition.comparison` (`"improves"` |
+  `"no_improvement"` | `"insufficient"`) and
+  `study.without_condition.comparison_note` (string), the engine's call on
+  whether the condition earns its place and the sentence that says so:
+  ```json
+  "without_condition":{"n_events":41,"up_pct":0.58,"median":0.016,
+    "verdict":"no_edge","comparison":"improves",
+    "comparison_note":"The condition earns its place."}
+  ```
+  Reason (R-12): the page ranked the two verdicts against each other and
+  wrote its own sentence; ranking is a judgment and the two samples differ
+  in size. The page prints `comparison_note`; absent, "Whether the
+  condition helps is awaiting refresh."
+- **PROPOSED** `technicals.rsi_word` (`"oversold"` | `"neutral"` |
+  `"overbought"`) and `technicals.move_20d_word` (string, e.g.
+  `"no extreme move"`, `"an extreme move"`):
+  ```json
+  {"rsi":58,"rsi_direction":"rising","rsi_word":"neutral",
+   "move_20d_sigma":0.6,"move_20d_word":"no extreme move", …}
+  ```
+  Reason (R-13): the page took both words from whether a Ledger row was
+  firing, a second response dated separately; the word judges the level
+  the technicals response serves, so it comes with it. Absent, the stat
+  keeps its number and drops the word.
+- **PROPOSED** `POST /positions` carries `question` (exactly the six slots,
+  `{"shock","window","move","while","target","horizon"}`) whenever
+  `study_slug` is null and a study was carried in (the served
+  `target_unit` and `target_label` are the answer's, never sent back);
+  `wrong_if.id: "signal_reverses"` needs a non-blank `study_slug` or a
+  `question` of exactly the six slots, each a value the slots can ask, and
+  otherwise (neither, a blank slug, a seventh key, a slot of the wrong kind)
+  the server answers 422 `{"error":"gate","missing":["study"]}`:
+  ```json
+  {"instrument":"S&P 500","direction":"long","size_nav":0.04,
+   "horizon_days":20,"variant":"…","pre_mortem":"…",
+   "wrong_if":{"id":"signal_reverses","label":"the signal reverses"},
+   "study_slug":null,
+   "question":{"shock":"gold","window":20,"move":"up2s",
+     "while":"spx_below_50","target":"spx","horizon":20}}
+  ```
+  Reason (R-11): a free-form study has no slug, so the saved position named
+  no study and "the signal reverses" pointed at nothing. The page offers
+  that level only when it can send one identifier or the other.
 
 Notes for B (not new fields):
 - §11 fixes the inventory at 26 series in five groups, but Desk also reads

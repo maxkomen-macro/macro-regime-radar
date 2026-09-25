@@ -126,6 +126,27 @@ describe("the response boundary", () => {
     expect(ledgerRows.signals).toEqual([{ slug: "a", label: "A", sample_start: null, n: null }]);
   });
 
+  it("the contract's served words and counts are checked by kind; a wrong kind is removed (Codex round 1, group 2)", () => {
+    const s = tryRead(
+      {
+        ...study,
+        question: { ...study.question, target_unit: "percent", target_label: 42 },
+        horizons: study.horizons.map((h) => ({ ...h, n_complete: "18" })),
+        without_condition: { ...study.without_condition, comparison: "better", comparison_note: 7 },
+      },
+      "/study",
+    ) as { question: Record<string, unknown>; horizons: Record<string, unknown>[]; without_condition: Record<string, unknown> };
+    expect("target_unit" in s.question).toBe(false);
+    expect("target_label" in s.question).toBe(false);
+    expect(s.horizons.map((h) => h.n_complete)).toEqual([null, null, null, null]);
+    expect("comparison" in s.without_condition).toBe(false);
+    expect("comparison_note" in s.without_condition).toBe(false);
+    const t = tryRead({ ...technicals, rsi_word: "extreme", move_20d_word: 3 }, "/technicals") as Record<string, unknown>;
+    expect("rsi_word" in t).toBe(false);
+    expect("move_20d_word" in t).toBe(false);
+    for (const u of ["pct", "bp", "px"]) expect((tryRead({ ...study, question: { ...study.question, target_unit: u } }, "/study") as { question: { target_unit: string } }).question.target_unit).toBe(u);
+  });
+
   it("a statistic that is not finite is null, 1e999 included (G1-4)", () => {
     const pos = tryRead(JSON.parse('{"closed_90d":{"falsified":1e999,"expired":"4","premortem_right":[1e999,4]}}'), "/positions") as { closed_90d: Record<string, unknown> };
     expect(pos.closed_90d).toEqual({ falsified: null, expired: null, premortem_right: [null, 4] });

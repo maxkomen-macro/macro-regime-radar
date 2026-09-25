@@ -25,7 +25,7 @@ import AnswerCard from "./AnswerCard";
 import EngineDetail from "./EngineDetail";
 import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
-import { WINDOWS, apiParams, askFromSearch, askParams, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, withSaved, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
+import { WINDOWS, apiParams, askFromSearch, askParams, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, withSaved, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
 import "./study.css";
 
@@ -70,7 +70,8 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const advId = useId();
 
   // The served question fills the slots once it answers, unless you are editing.
-  const served = !placeholder && study ? study.question : null;
+  // Only the six slots: the served unit and name are the answer's, so they are never saved with a question.
+  const served = !placeholder && study ? slotsOf(study.question) : null;
   const servedKey = served ? searchFor({ question: served }) : null;
   // A new question in the address: the slots show it (or its answer, when that
   // is already here) and the edits are done with.
@@ -98,7 +99,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     setMode("common");
     if ("preset" in ask && ask.preset === slug) {
       setDirty(false);
-      if (study?.question) setDraft(study.question);
+      if (study?.question) setDraft(slotsOf(study.question));
       return;
     }
     go({ preset: slug, confidence: ask.confidence });

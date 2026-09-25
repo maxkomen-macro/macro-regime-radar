@@ -10,11 +10,12 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import ledger from "../../../fixtures/desk/ledger.json";
+import technicals from "../../../fixtures/desk/technicals.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
 import { aboveBelow, dayInYear, dayMove, ledgerOrder, monthTicks, quarterOf, rsiWord, sevenOf, spxName, trendSub } from "./TechnicalsPage";
-import type { LedgerResponse } from "../data/types";
+import type { TechnicalsResponse } from "../data/types";
 
 function renderTab() {
   return renderWithProviders(
@@ -49,11 +50,12 @@ describe("Technicals words", () => {
     expect(trendSub({ vs_ma50: 0.021, vs_ma200: 0.085 })).toBe("above both averages");
     expect(trendSub({ vs_ma50: Number.NaN, vs_ma200: 0.085 })).toBeNull();
   });
-  it("takes the RSI's word from the Ledger's own RSI signals", () => {
-    const l = ledger as unknown as LedgerResponse;
-    expect(rsiWord(l)).toBe("neutral");
-    expect(rsiWord({ ...l, signals: l.signals!.map((r) => (r.slug === "rsi-above-70" ? { ...r, firing_now: true } : r)) })).toBe("overbought");
-    expect(rsiWord({ ...l, signals: [] })).toBeNull();
+  it("takes the RSI's word as served, never from the Ledger's rows (Codex R-13)", () => {
+    const t = technicals as unknown as TechnicalsResponse;
+    expect(rsiWord(t)).toBe("neutral");
+    expect(rsiWord({ ...t, rsi_word: "overbought" })).toBe("overbought");
+    expect(rsiWord({ ...t, rsi_word: undefined })).toBeNull();
+    expect(rsiWord(undefined)).toBeNull();
   });
   it("orders the Ledger's rows firing first, then by verdict, served order within a verdict", () => {
     const order = ledgerOrder((ledger.signals as LedgerRow[]).filter((r) => r.group === "spx")).map((r) => r.slug);
@@ -129,6 +131,27 @@ describe("Technicals tab", () => {
     expect(within(card).getByRole("img", { name: "RSI 58, neutral" })).toBeInTheDocument();
     expect(card.textContent?.replace(/\s+/g, " ")).toContain("Above 70: fired 64× since 1990; the S&P was up 59% of the time a month later. No edge.");
     expect(card.textContent?.replace(/\s+/g, " ")).toContain("Below 30: fired 22× since 1990; the S&P was up 73% of the time a month later. Reliable.");
+  });
+
+  it("the words that judge a level are the served ones; unserved, the number stays and the word goes (Codex R-13)", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, move_20d_word: "an extreme move", rsi_word: "overbought" }) });
+    const first = renderTab();
+    const signals = await screen.findByRole("region", { name: /^Signals/ });
+    await waitFor(() => expect(signals).toHaveTextContent("an extreme move"));
+    const rsi = screen.getByRole("region", { name: /Momentum · RSI/ });
+    expect(rsi).toHaveTextContent("overbought, rising");
+    expect(within(rsi).getByRole("img", { name: "RSI 58, overbought" })).toBeInTheDocument();
+    first.unmount();
+
+    const { move_20d_word: _m, rsi_word: _r, ...bare } = technicals;
+    stubDesk({ "/api/desk/technicals": () => bare });
+    renderTab();
+    const s2 = await screen.findByRole("region", { name: /^Signals/ });
+    await waitFor(() => expect(s2).toHaveTextContent("+0.6σ"));
+    expect(s2).not.toHaveTextContent(/extreme move/);
+    const r2 = screen.getByRole("region", { name: /Momentum · RSI/ });
+    expect(r2.textContent).toContain("Now58risingLast above 70");
+    expect(within(r2).getByRole("img", { name: "RSI 58" })).toBeInTheDocument();
   });
 
   it("stays quiet while the first answers are on their way", async () => {

@@ -108,6 +108,12 @@ export function apiParams(ask: Ask): Record<string, string | number | undefined>
   return { shock: q.shock, window: q.window, move: q.move, while: q.while, target: q.target, horizon: q.horizon, confidence };
 }
 
+/** The six slots and nothing else: a served question also carries its target's unit and name
+ * (§12.13), which are the answer's, never the question's (Codex R-11). */
+export function slotsOf(q: Question): Question {
+  return { shock: q.shock, window: q.window, move: q.move, while: q.while, target: q.target, horizon: q.horizon };
+}
+
 export function sameQuestion(a: Question | null | undefined, b: Question | null | undefined): boolean {
   return !!a && !!b && a.shock === b.shock && a.window === b.window && a.move === b.move && a.while === b.while && a.target === b.target && a.horizon === b.horizon;
 }
@@ -194,7 +200,8 @@ export function writeLastStudy(search: string, storage: Pick<Storage, "setItem">
 
 export const SAVED_KEY = "mrr.desk.saved-questions.v1";
 
-function isQuestion(v: unknown): v is Question {
+/** A question the slots can ask: six known values (extra fields are the caller's to refuse). */
+export function isQuestion(v: unknown): v is Question {
   const q = v as Question;
   return !!q && typeof q.shock === "string" && typeof q.target === "string" && MOVE_IDS.has(q.move) && WINDOWS.includes(q.window) && HORIZONS.some((h) => h.h === q.horizon) && WHILE_IDS.has(q.while);
 }

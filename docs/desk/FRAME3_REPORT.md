@@ -1776,6 +1776,124 @@ rejoined around a finite check (Event Study's without-condition sentence;
 Technicals' "N× since" rows, the cross callout and the two RSI notes); the
 words are the same, checked crop by crop, and both are regenerated.
 
+### Group 2: contract gaps (R-02, R-03, R-07, R-12, R-13, R-11) — `frame-3: codex-2 contract`
+
+Each fix reads a field the API does not serve yet. The fields are in the
+spec's §12.13 under "Codex round 1" with their JSON shapes and reasons,
+the fixtures carry them, the response boundary checks their kinds
+(`data/schema.ts`), and a response without one keeps its labels and says
+the value is awaiting refresh; the page never works the judgment out.
+
+- **R-02: every target move printed as a percent.** A study on the 10-year
+  yield or on HY OAS moves in basis points, and the page spelled its
+  median, baseline, interval, extremes and chart axis as a percent. **Fix:**
+  PROPOSED `study.question.target_unit` (`pct` | `bp` | `px`). One module,
+  `event-study/units.ts`, spells a move, an interval and a chart tick from
+  it: `pct` a fraction ("+3.1%", intervals in points), `bp` as served ("+25
+  bp", never a percent), `px` the target's points. Every place a target
+  move is printed reads it: the answer card's stats, chart ticks, bars and
+  range labels; the rail's range rows, by-regime medians and last five
+  events; the engine panel's events table; the without-condition line;
+  the Client view's typical move and backdrop bars. The chart's ticks step
+  by 1, 2 or 5 × 10ⁿ in bp or points ("−30 bp / 0 / +50 bp"), where a
+  percent keeps §4's 5, 1 or a half. A study without the unit prints no
+  move at all and says so; the page never guesses a unit from the series
+  key. **Tests:** `units.test.ts`; the ticks; Event Study, its Advanced
+  events table and the Client view with a bp study
+  (`test/desk-variants.ts`, `bpStudy`, `bpEvents`) and with the unit
+  removed; a browser test that serves a bp study to Event Study and the
+  Client view and finds "+25 bp" and no signed percent.
+- **R-03: the target named from the slot's key.** **Fix:** PROPOSED
+  `study.question.target_label` names the target on the chart axis, the
+  last-five heading, the Client view's backdrop subtitle ("Typical S&P 500
+  move after the setup", which was fixed copy reading "S&P") and Position
+  Monitor's carried-study subtitle and instrument prefill. Without it the
+  heading and subtitle drop the name and the instrument field is left for
+  the analyst. **Tests:** Event Study and Client view with the bp study
+  ("10-year Treasury yield"); Position Monitor with a served
+  `target_label` of "S&P 500 index" fills the field and the subtitle.
+- **R-07: "12 of 18" divided by every event.** A recent event has no
+  three-month move yet, so each horizon has its own count. **Fix:**
+  PROPOSED `study.horizons[].n_complete`; the "Up a month later" stat
+  prints `up_n` of `n_complete`, and says the count is awaiting refresh
+  when `n_complete` is not served. `n_events` is printed only as the Events
+  stat and the study's other counts ("all 18 events", the Client view's
+  episodes), never as a horizon's denominator. **Tests:** a month with
+  `n_complete` 17 prints "12 of 17"; one without it prints the awaiting
+  line.
+- **R-12: the page ranked two verdicts.** The without-condition sentence
+  compared the two verdicts' ranks and wrote "The condition earns its
+  place." itself. **Fix:** the ranking is deleted; PROPOSED
+  `study.without_condition.comparison` (`improves` | `no_improvement` |
+  `insufficient`) and `comparison_note`, and the page prints the served
+  note, or "Whether the condition helps is awaiting refresh."
+  **Tests:** a served note is printed verbatim whatever the two verdicts
+  are; without it the awaiting sentence.
+- **R-13: Technicals judged the level from the Ledger.** "an extreme move"
+  and the RSI's neutral / overbought / oversold came from whether a Ledger
+  row was firing, a second response dated on its own. **Fix:** PROPOSED
+  `technicals.move_20d_word` and `technicals.rsi_word`, printed as served;
+  absent, the stat keeps its number and drops the word (the RSI's Now stat
+  still says "rising", the gauge's name is "RSI 58"). **Tests:** `rsiWord`
+  unit; a page test with served words ("an extreme move", "overbought")
+  and one with both removed.
+- **R-11: a free-form study saved no identity.** A study without a slug was
+  saved with `study_slug: null`, so "the signal reverses" pointed at
+  nothing. **Fix:** the POST carries PROPOSED `question`, exactly the six
+  slots, whenever the served study has no slug; the reversal is offered
+  only when the position can name its study (a slug or the six slots),
+  so never without a carried study; the fixture server answers 422
+  `{"error":"gate","missing":["study"]}` to a reversal without either, and
+  the page words it ("the study the signal comes from"). §12.13's POST
+  body and `wrong_if` entries say the same. The six slots are also all a
+  saved Event Study question keeps: the served unit and name belong to the
+  answer. **Tests:** a slug-less study's POST carries the six slots and
+  nothing else in `question`; with no study carried the reversal is not
+  offered; the fixture server refuses a reversal without a study, with a
+  blank slug, with the served eight-key question, a seventh key, slots of
+  the wrong kind or a window the slots cannot ask, and takes the six slots
+  or a slug; a saved question holds six keys.
+
+Verifier (one round): **PASS**, with should-fix items and nits, all
+weighed:
+- G2-1, G2-2 the Advanced events table's unit and the Client view's
+  unit-less guard were untested (reverting either passed every test).
+  **Fixed:** tests above.
+- G2-3 the fixture server's gate took any value in each slot, a seventh
+  key and a blank slug, and a test posted the served eight-key question.
+  **Fixed:** the gate mirrors Event Study's own `isQuestion` and wants
+  exactly the six keys; the test posts the six slots (above).
+- G2-4 the spec named a chart axis the chart does not draw, said
+  `n_events` prints only as EVENTS, and left the events rows' unit
+  unstated. **Fixed** in §12.13.
+- G2-5 the chart's ticks were tuned to percent ("−33 bp / +55 bp").
+  **Fixed** (above).
+- G2-8 saved questions kept the served unit and name. **Fixed:** the draft
+  is the six slots (`slotsOf`).
+- G2-9 Position Monitor named an unlabelled target from the series list
+  while the other places left it unnamed. **Fixed** (above).
+- G2-10 (older than this round) while the next carried study loaded, the
+  previous answer stood in for it, so a save could bind to it. **Fixed:**
+  a placeholder answer is not carried. **Test:** moving from one carried
+  study to one still loading drops the subtitle and the reversal.
+- G2-11 no schema test for the new fields, no test for the missing
+  `n_complete`, and the bp variant kept the S&P's client paragraph.
+  **Fixed:** `data/api.test.tsx` checks each new field's kind is removed
+  when wrong; the missing-count test; `bpStudy` carries a bp paragraph.
+- G2-6 (not changed) a by-regime or last-five cell without a unit prints
+  "—", the table cell convention of §12.13, while a range row, a stat,
+  says Awaiting refresh.
+- G2-7 (not changed) "pts" is percentage points on a `pct` interval (§4's
+  "−1.6 to +4.1 pts") and the target's own points on a `px` one; a
+  study has one unit, so the two never share a page.
+
+The fixes were checked by the four gates and the tests above, not by a
+second verifier round. The compare shots are pixel-identical except
+Event Study's (sub-pixel glyph placement in the last-five heading, now one
+text run) and the Client view's, whose backdrop subtitle reads the served
+target name, "Typical S&P 500 move after the setup", where the mockup's
+fixed copy read "S&P"; both are regenerated.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -1797,6 +1915,7 @@ tests against the fixture dev server.
 | frame-3: client-toggle | clean | 111 / 1,285 | ok | 32 / 32 |
 | frame-3: basket-hedge | clean | 113 / 1,312 | ok | 34 / 34 |
 | frame-3: codex-1 robustness | clean | 115 / 1,332 | ok | 45 / 45 |
+| frame-3: codex-2 contract | clean | 116 / 1,352 | ok | 46 / 46 |
 
 ## Finish
 

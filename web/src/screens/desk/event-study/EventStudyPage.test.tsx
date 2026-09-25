@@ -14,6 +14,7 @@ import DeskShell from "../DeskShell";
 import study from "../../../fixtures/desk/study.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
+import { bpEvents, bpStudy } from "../../../test/desk-variants";
 import type { Question } from "../data/types";
 import { applyFix, provenanceLine } from "./EventStudyPage";
 import { barTicks, horizonPhrase, servedWords } from "./AnswerCard";
@@ -89,6 +90,11 @@ describe("the question", () => {
     expect(horizonPhrase(60)).toBe("3 months");
     expect(servedWords({ elapsed_ms: 300, served_from_cache: true })).toBe("0.3s, cached");
     expect(barTicks(-0.5, 6.2)).toEqual([-3, 0, 5]);
+    // Basis points and price points step by 1, 2 or 5 × 10ⁿ, never by a percent's 5 (Codex G2-5).
+    expect(barTicks(-13, 57, "bp")).toEqual([-30, 0, 50]);
+    expect(barTicks(-80, 57, "bp")).toEqual([-100, 0, 50]);
+    expect(barTicks(-2, 14, "px")).toEqual([-6, 0, 10]);
+    expect(barTicks(-0.5, 2.4, "bp")).toEqual([-1.2, 0, 2]);
     expect(applyFix(GOLD, "drop_condition")?.while).toBe("none");
     expect(applyFix(GOLD, "widen_window")?.window).toBe(60);
     expect(applyFix({ ...GOLD, window: 60 }, "widen_window")).toBeNull();
@@ -319,5 +325,79 @@ describe("a study with a block missing (Codex R-10)", () => {
     await waitFor(() => expect(answer()).toHaveTextContent("Awaiting refresh · the study did not answer"));
     expect(answer()).toHaveTextContent(/Events\s*Awaiting refresh/);
     expect(answer()).not.toHaveAttribute("aria-busy", "true");
+  });
+});
+
+describe("the study's served contract (Codex round 1, group 2)", () => {
+  const rail = () => screen.getByRole("complementary", { name: "Verdict and detail" });
+  const answer = () => screen.getByRole("region", { name: "The answer" });
+
+  it("a basis-point target prints every move in bp, never a percent (R-02)", async () => {
+    stubDesk({ "/api/desk/study": bpStudy });
+    renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent(/Median at a month\s*\+25 bp\s*vs \+5 bp in a normal month/));
+    expect(answer()).toHaveTextContent(/Worst · best\s*−30 bp \/ \+60 bp/);
+    const chart = screen.getByRole("img", { name: /1 month \+25 bp against \+5 bp/ });
+    expect(chart).toHaveTextContent("bp");
+    expect(chart.textContent).not.toMatch(/%/);
+    expect(rail()).toHaveTextContent(/Goldilocks\s*5\s*80%\s*\+12 bp/);
+    expect(rail()).toHaveTextContent("Last five events · 10-year Treasury yield a month later");
+    expect(rail()).toHaveTextContent(/Apr 16, 2025\s*Overheating\s*\+30 bp/);
+    expect(rail()).toHaveTextContent(/1 month\s*−10 to \+40 bp/);
+    expect(answer()).toHaveTextContent("median +9 bp");
+  });
+
+  it("a study served without its target's unit prints no move and says so (R-02)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, question: { ...study.question, target_unit: undefined } }) });
+    renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent(/Median at a month\s*Awaiting refresh/));
+    expect(answer()).toHaveTextContent("Awaiting refresh · the unit of the study's target");
+    expect(answer()).toHaveTextContent(/Up a month later\s*67%/);
+    expect(rail()).toHaveTextContent(/1 month\s*Awaiting refresh/);
+  });
+
+  it("the horizon's own count is the denominator; the study-wide count is only EVENTS (R-07)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, horizons: study.horizons.map((h) => (h.h === 20 ? { ...h, n_complete: 17 } : h)) }) });
+    renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent(/Up a month later\s*67%\s*12 of 17/));
+    expect(answer()).toHaveTextContent(/Events\s*18/);
+  });
+
+  it("without a horizon's own count, the share stands and the count says it is awaiting refresh (R-07)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, horizons: study.horizons.map((h) => (h.h === 20 ? { ...h, n_complete: undefined } : h)) }) });
+    renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent(/Up a month later\s*67%\s*count awaiting refresh/));
+    expect(answer()).not.toHaveTextContent("12 of 18");
+  });
+
+  it("Advanced's events table prints each move in the study's unit (R-02)", async () => {
+    stubDesk({ "/api/desk/study": bpStudy, "/api/desk/study/events": bpEvents });
+    renderTab();
+    await waitFor(() => expect(rail()).toHaveTextContent("Verdict"));
+    fireEvent.click(within(rail()).getByTestId("dk-advanced"));
+    const adv = await screen.findByRole("region", { name: "Advanced" });
+    await waitFor(() => expect(within(adv).getAllByRole("row").length).toBeGreaterThan(18));
+    const first = within(adv).getAllByRole("row").find((r) => r.textContent?.startsWith("Apr 16, 2025"))!;
+    expect(first.textContent).toBe("Apr 16, 2025Overheating+8 bp+12 bp+25 bpno observation");
+    expect(within(adv).getByRole("table").textContent).not.toMatch(/%/);
+  });
+
+  it("Save keeps the six slots only: the served unit and name stay with the answer (G2-8)", async () => {
+    renderTab();
+    await waitFor(() => expect(screen.getByLabelText("Shock")).toHaveValue("gold"));
+    fireEvent.click(screen.getByTestId("es-save"));
+    const [kept] = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]") as { question: Record<string, unknown> }[];
+    expect(Object.keys(kept.question).sort()).toEqual(["horizon", "move", "shock", "target", "while", "window"]);
+  });
+
+  it("the line without the condition prints the served note, whatever the verdicts rank (R-12)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, without_condition: { ...study.without_condition, comparison: "no_improvement", comparison_note: "The condition does not improve the read." } }) });
+    const { unmount } = renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent("No edge. The condition does not improve the read."));
+    expect(answer()).not.toHaveTextContent("earns its place");
+    unmount();
+    stubDesk({ "/api/desk/study": () => ({ ...study, without_condition: { ...study.without_condition, comparison_note: undefined } }) });
+    renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent("Whether the condition helps is awaiting refresh."));
   });
 });

@@ -10,9 +10,11 @@
 
 import { Link } from "react-router-dom";
 import type { StudyResponse } from "../data/types";
-import { dayLong, isFiniteNumber as fin, numberWord, pct, pctPlain, signed, VERDICT_LABEL } from "../kit/format";
+import { dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { Advanced, Awaiting, Signed, VerdictWord } from "../kit/ui";
 import { CONFIDENCES } from "./question";
+import { isUnit, moveText, rangeText } from "./units";
+import type { TargetUnit } from "../data/types";
 
 /** The rail with no scored answer: its section labels, and why there is nothing under them (§1.7). */
 export function RailPlaceholder({ reason }: { reason: "awaiting" | "too-few" }) {
@@ -39,8 +41,9 @@ export function RailPlaceholder({ reason }: { reason: "awaiting" | "too-few" }) 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, string> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
 
-export function rangeWords(lo: number | null, hi: number | null): string {
-  return fin(lo) && fin(hi) ? `${signed(lo)} to ${signed(hi)} pts` : "Awaiting refresh";
+/** A horizon's range against normal in the target's unit (Codex R-02): "−1.6 to +4.1 pts", "−10 to +40 bp". */
+export function rangeWords(lo: number | null, hi: number | null, unit: TargetUnit | undefined): string {
+  return rangeText(lo, hi, unit) ?? "Awaiting refresh";
 }
 
 export default function StudyRail({
@@ -76,6 +79,8 @@ export default function StudyRail({
   const lastEvents = Array.isArray(study.last_events) ? study.last_events : null;
   const horizons = Array.isArray(study.horizons) ? study.horizons : null;
   const today = todayRegime && byRegime ? byRegime.find((r) => r.regime === todayRegime) : undefined;
+  const unit = isUnit(study.question.target_unit) ? study.question.target_unit : undefined;
+  const target = study.question.target_label;
   return (
     <>
       <div className="es-verdict" data-verdict={verdict}>
@@ -110,7 +115,7 @@ export default function StudyRail({
                 </th>
                 <td>{fin(r.n) ? r.n : "—"}</td>
                 <td data-few={few || !fin(r.up_pct) || undefined}>{few ? "n<5" : fin(r.up_pct) ? pctPlain(r.up_pct) : "—"}</td>
-                <td data-few={few || !fin(r.median) || undefined}>{few ? "n<5" : fin(r.median) ? <Signed value={r.median}>{pct(r.median)}</Signed> : "—"}</td>
+                <td data-few={few || !moveText(r.median, unit) || undefined}>{few ? "n<5" : fin(r.median) && moveText(r.median, unit) ? <Signed value={r.median}>{moveText(r.median, unit)}</Signed> : "—"}</td>
               </tr>
             );
           })}
@@ -126,14 +131,14 @@ export default function StudyRail({
         </p>
       ) : null}
 
-      <p className="dk-stat-label es-rail-h">Last five events · {(Array.isArray(study.series) ? study.series : []).find((s) => s.key === study.question.target)?.label ?? study.question.target} a month later</p>
+      <p className="dk-stat-label es-rail-h">{target ? `Last five events · ${target} a month later` : "Last five events · a month later"}</p>
       {lastEvents ? (
         <ul className="es-events">
           {lastEvents.map((e) => (
             <li key={e.date}>
               <span>{dayLong(e.date)}</span>
               <span className="es-events-regime">{e.regime}</span>
-              {fin(e.ret_20) ? <Signed value={e.ret_20}>{pct(e.ret_20)}</Signed> : <span className="es-events-none">—</span>}
+              {fin(e.ret_20) && moveText(e.ret_20, unit) ? <Signed value={e.ret_20}>{moveText(e.ret_20, unit)}</Signed> : <span className="es-events-none">—</span>}
             </li>
           ))}
         </ul>
@@ -159,7 +164,7 @@ export default function StudyRail({
           {horizons.map((h) => (
             <li key={h.h}>
               <span>{h.label}</span>
-              <span className="es-range-pts">{rangeWords(h.ci_lo_pts, h.ci_hi_pts)}</span>
+              <span className="es-range-pts">{rangeWords(h.ci_lo_pts, h.ci_hi_pts, unit)}</span>
               <VerdictWord verdict={h.verdict} />
             </li>
           ))}

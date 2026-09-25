@@ -5,8 +5,9 @@
  * (§12.7) and /ledger (§12.4, the S&P group). Grid: the vol card spans the
  * left column; price and signals on top; sector leadership and RSI below.
  * Every number is a served field, formatted; the interpretive sentences are
- * the API's `reads` (§12.13); the words that judge a level come from the
- * Ledger's own signals (an extreme 20-day move, RSI above 70 or below 30).
+ * the API's `reads` (§12.13); the words that judge a level are served too
+ * (`move_20d_word`, `rsi_word`, Codex R-13): a stat without its word keeps
+ * its number and drops the word.
  * A card stays quiet while its first answer is on its way, and keeps its
  * labels with "Awaiting refresh" when its endpoint fails or its block is
  * missing (§1.7).
@@ -278,7 +279,6 @@ const bySlug = (ledger: LedgerResponse | undefined, slug: string) => (Array.isAr
 function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | undefined; tState: CardState; ledger: LedgerResponse | undefined; lState: CardState }) {
   const rows = Array.isArray(ledger?.signals) ? ledgerOrder(ledger.signals.filter((s) => s.group === "spx" && fin(s.n))) : [];
   const inRegime = t?.cross?.in_regime;
-  const move20 = bySlug(ledger, "spx-20d-2sigma");
   const ready = tState === "ready" && !!t;
   const aw = tState === "awaiting";
   return (
@@ -295,7 +295,7 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
           label="Last 20 days"
           awaiting={aw || (ready && !fin(t.move_20d_sigma))}
           value={ready && fin(t.move_20d_sigma) ? `${signed(t.move_20d_sigma)}σ` : undefined}
-          sub={ready && move20 ? (move20.firing_now ? "an extreme move" : "no extreme move") : undefined}
+          sub={ready && typeof t.move_20d_word === "string" && t.move_20d_word ? t.move_20d_word : undefined}
         />
       </StatRow>
       {lState === "ready" ? (
@@ -395,12 +395,10 @@ export function dayInYear(iso: string | null | undefined, asOf: string): string 
   return iso.slice(0, 4) === asOf.slice(0, 4) ? dayShort(iso) : dayLong(iso);
 }
 
-/** The RSI's word from the Ledger's own signals: overbought while "RSI above 70" fires, oversold while "RSI below 30" does, neutral otherwise. */
-export function rsiWord(ledger: LedgerResponse | undefined): string | null {
-  const above = bySlug(ledger, "rsi-above-70");
-  const below = bySlug(ledger, "rsi-below-30");
-  if (!above && !below) return null;
-  return above?.firing_now ? "overbought" : below?.firing_now ? "oversold" : "neutral";
+/** The RSI's word, as served (Codex R-13): oversold, neutral or overbought; null when not served. */
+export function rsiWord(t: TechnicalsResponse | undefined): string | null {
+  const w = t?.rsi_word;
+  return w === "oversold" || w === "neutral" || w === "overbought" ? w : null;
 }
 
 function RsiNote({ label, row }: { label: string; row: LedgerRow | undefined }) {
@@ -417,7 +415,7 @@ function RsiCard({ t, state, ledger }: { t: TechnicalsResponse | undefined; stat
   const adv = useAdvanced();
   const above = bySlug(ledger, "rsi-above-70");
   const below = bySlug(ledger, "rsi-below-30");
-  const word = rsiWord(ledger);
+  const word = rsiWord(t);
   const ready = state === "ready" && !!t;
   const aw = state === "awaiting";
   const last = (x: TechnicalsResponse["rsi_last_above_70"] | null | undefined) => (ready && x?.date ? dayInYear(x.date, t.as_of) : "");

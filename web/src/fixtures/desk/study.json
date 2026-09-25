@@ -11,7 +11,9 @@
   "move": "up2s",
   "while": "spx_below_50",
   "target": "spx",
-  "horizon": 20
+  "horizon": 20,
+  "target_unit": "pct",
+  "target_label": "S&P 500"
  },
  "n_events": 18,
  "sample_start": "2000-01-03",
@@ -32,7 +34,8 @@
    "ci_lo_pts": -0.8,
    "ci_hi_pts": 2.4,
    "verdict": "suggestive",
-   "baseline_up_pct": 0.56
+   "baseline_up_pct": 0.56,
+   "n_complete": 18
   },
   {
    "h": 10,
@@ -43,7 +46,8 @@
    "ci_lo_pts": -0.6,
    "ci_hi_pts": 2.9,
    "verdict": "suggestive",
-   "baseline_up_pct": 0.58
+   "baseline_up_pct": 0.58,
+   "n_complete": 18
   },
   {
    "h": 20,
@@ -63,7 +67,8 @@
     "ret": 0.12,
     "date": "2025-04-16"
    },
-   "baseline_up_pct": 0.62
+   "baseline_up_pct": 0.62,
+   "n_complete": 18
   },
   {
    "h": 60,
@@ -74,7 +79,8 @@
    "ci_lo_pts": -3.9,
    "ci_hi_pts": 2.6,
    "verdict": "no_edge",
-   "baseline_up_pct": 0.66
+   "baseline_up_pct": 0.66,
+   "n_complete": 18
   }
  ],
  "confidence": 0.9,
@@ -136,7 +142,9 @@
   "n_events": 41,
   "up_pct": 0.58,
   "median": 0.016,
-  "verdict": "no_edge"
+  "verdict": "no_edge",
+  "comparison": "improves",
+  "comparison_note": "The condition earns its place."
  },
  "provenance": {
   "bootstrap": 10000,

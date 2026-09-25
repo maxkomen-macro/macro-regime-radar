@@ -8,12 +8,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useNavigate } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import positions from "../../../fixtures/desk/positions.json";
 import type { PositionExpanded } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
+import study from "../../../fixtures/desk/study.json";
+import { deskFixture, resetDeskFixtureState } from "../../../fixtures/desk";
 import { falsifiesLine, parseSize, refusalWords, sizeLine } from "./PositionMonitorPage";
 import { DeskApiError } from "../data/api";
 import { MonitoredRow, levelText, sortByRoom } from "../kit/MonitoredRows";
@@ -197,6 +199,86 @@ describe("Position Monitor tab", () => {
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved."));
     expect(screen.getByRole("status")).not.toHaveAttribute("data-tone", "green");
   });
+  it("the carried study's served target name fills the instrument and the subtitle (Codex R-03)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, question: { ...study.question, target_label: "S&P 500 index" } }) });
+    renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
+    await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500 index"));
+    expect(screen.getByText(/Carried in from Event Study · .*→ S&P 500 index over the next/)).toBeInTheDocument();
+  });
+
+  it("without a served target name the target goes unnamed, in the subtitle and the instrument alike (Codex G2-9)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, question: { ...study.question, target_label: undefined } }) });
+    renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
+    await waitFor(() => expect(screen.getByText(/Carried in from Event Study · .*→ the study's target over the next/)).toBeInTheDocument());
+    expect(screen.getByLabelText("Instrument")).toHaveValue("");
+  });
+
+  it("while the next carried study loads, the previous one is not carried: nothing binds to it (Codex G2-10)", async () => {
+    stubDesk({ "/api/desk/study": (u) => (u.searchParams.get("preset") === "gold-2sigma-spx-weak" ? study : new Promise(() => {})) });
+    const Go = () => {
+      const nav = useNavigate();
+      return (
+        <button type="button" onClick={() => nav("/desk/position-monitor?from=golden-cross")}>
+          next study
+        </button>
+      );
+    };
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/desk/:page?" element={<DeskShell />} />
+        </Routes>
+        <Go />
+      </>,
+      { route: "/desk/position-monitor?from=gold-2sigma-spx-weak" },
+    );
+    await waitFor(() => expect(screen.getByText(/Carried in from Event Study/)).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /the signal reverses/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "next study" }));
+    await waitFor(() => expect(screen.queryByText(/Carried in from Event Study · Gold/)).toBeNull());
+    expect(screen.queryByRole("button", { name: /the signal reverses/ })).toBeNull();
+  });
+
+  it("a study without a slug is saved with its six slots, and its reversal is offered (Codex R-11)", async () => {
+    const posts: Record<string, unknown>[] = [];
+    stubDesk({
+      "/api/desk/study": () => ({ ...study, slug: null }),
+      "/api/desk/positions": (_u, init) => (init?.method === "POST" ? (posts.push(JSON.parse(String(init.body))), { status: 201, body: {} }) : positions),
+    });
+    renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
+    await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
+    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "a" } });
+    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "b" } });
+    fireEvent.click(await screen.findByRole("button", { name: /the signal reverses/ }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toMatchObject({ study_slug: null, wrong_if: { id: "signal_reverses" }, question: { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 } });
+    expect(Object.keys(posts[0].question as object).sort()).toEqual(["horizon", "move", "shock", "target", "while", "window"]);
+  });
+
+  it("with no study carried in, the reversal is not offered; the fixture server refuses it without a study (Codex R-11)", async () => {
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day/ })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /the signal reverses/ })).toBeNull();
+    const body = { instrument: "S&P 500", direction: "long", size_nav: null, horizon_days: 20, variant: "a", pre_mortem: "b", wrong_if: { id: "signal_reverses", label: "the signal reverses" }, study_slug: null };
+    const refused = { status: 422, body: JSON.stringify({ error: "gate", missing: ["study"] }) };
+    const post = (extra: Record<string, unknown>) => deskFixture("POST", "/api/desk/positions", JSON.stringify({ ...body, ...extra }));
+    const six = { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 };
+    expect(post({})).toMatchObject(refused);
+    // Only a slug, or exactly the six slots each of a kind the slots can ask, names a study (Codex G2-3).
+    expect(post({ study_slug: " " })).toMatchObject(refused);
+    expect(post({ question: study.question })).toMatchObject(refused);
+    expect(post({ question: { ...six, extra: 1 } })).toMatchObject(refused);
+    expect(post({ question: { shock: 1, window: "x", move: {}, while: [], target: true, horizon: "abc" } })).toMatchObject(refused);
+    expect(post({ question: { ...six, window: 7 } })).toMatchObject(refused);
+    expect(post({ question: [six] })).toMatchObject(refused);
+    expect(post({ question: six })?.status).toBe(201);
+    expect(post({ study_slug: "gold-2sigma-spx-weak" })?.status).toBe(201);
+    resetDeskFixtureState();
+    expect(refusalWords(new DeskApiError(422, "gate", { error: "gate", missing: ["study"] }))).toBe("The server says the gate is incomplete: the study the signal comes from. Nothing was saved.");
+  });
+
   it("a picked level follows the instrument's label, and lapses when the direction turns it over (R2-1)", async () => {
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX Dec 26 call spread" } });

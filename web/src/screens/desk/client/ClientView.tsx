@@ -15,9 +15,10 @@ import { useLocation } from "react-router-dom";
 import { useStudy } from "../data/api";
 import type { StudyResponse } from "../data/types";
 import type { DeskPage } from "../desk-sections";
-import { dayLong, pct, pctPlain, year } from "../kit/format";
+import { dayLong, pctPlain, year } from "../kit/format";
 import { Awaiting, Signed } from "../kit/ui";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
+import { isUnit, moveText, scaleOf } from "../event-study/units";
 import "./client.css";
 
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -73,7 +74,10 @@ export function barGeometry(vals: readonly (number | null)[]): {
 }
 
 function Backdrop({ s, failed }: { s: StudyResponse | undefined; failed: boolean }) {
-  const rows = s && Array.isArray(s.by_regime) ? s.by_regime : [];
+  // Every move in the study's served unit, named by its served target (Codex R-02, R-03).
+  const unit = isUnit(s?.question?.target_unit) ? s.question.target_unit : undefined;
+  const target = s?.question?.target_label;
+  const rows = s && unit && Array.isArray(s.by_regime) ? s.by_regime : [];
   const g = barGeometry(rows.map((r) => (fin(r.median) ? r.median : null)));
   const thin = s?.empty_state?.sentence;
   return (
@@ -81,7 +85,7 @@ function Backdrop({ s, failed }: { s: StudyResponse | undefined; failed: boolean
       <h2 className="dk-card-title" id="cv-backdrop">
         A month later, by economic backdrop
       </h2>
-      <p className="cv-card-sub">Typical S&amp;P move after the setup</p>
+      <p className="cv-card-sub">{target ? `Typical ${target} move after the setup` : "Typical move after the setup"}</p>
       {rows.length ? (
         <ul className="cv-bars" style={{ ["--cv-zero" as string]: g.zero }}>
           {rows.map((r, i) => {
@@ -91,11 +95,11 @@ function Backdrop({ s, failed }: { s: StudyResponse | undefined; failed: boolean
               <li key={r.regime} data-none={v == null || undefined}>
                 <span className="cv-regime">{r.regime}</span>
                 <span className="cv-track">
-                  {/* A move that rounds to 0.0% draws no sliver of a bar. */}
-                  {b && v && Math.abs(v) >= 0.0005 ? <span className="cv-bar" aria-hidden="true" data-tone={v < 0 ? "red" : "green"} style={{ left: b.left, width: b.width }} /> : null}
+                  {/* A move that rounds to zero in its unit draws no sliver of a bar. */}
+                  {b && v && unit && Math.abs(v * scaleOf(unit)) >= 0.05 ? <span className="cv-bar" aria-hidden="true" data-tone={v < 0 ? "red" : "green"} style={{ left: b.left, width: b.width }} /> : null}
                   {b ? (
                     <span className="cv-val" style={{ left: b.label }}>
-                      {pct(v ?? 0)}
+                      {moveText(v, unit)}
                     </span>
                   ) : (
                     <span className="cv-val cv-none" style={{ left: g.none.left, right: g.none.right, textAlign: g.none.align }}>
@@ -160,13 +164,13 @@ export default function ClientView({ page }: { page: DeskPage }) {
                 </>
               ) : null}
             </StatCard>
-            <StatCard label="Typical move" state={state(!!month && fin(month.median))}>
+            <StatCard label="Typical move" state={state(!!month && fin(month.median) && !!moveText(month.median, s?.question?.target_unit))}>
               {month && fin(month.median) ? (
                 <>
                   <p className="cv-stat-value">
-                    <Signed value={month.median}>{pct(month.median)}</Signed>
+                    <Signed value={month.median}>{moveText(month.median, s?.question?.target_unit)}</Signed>
                   </p>
-                  <p className="cv-stat-sub">{fin(month.baseline_median) ? `vs ${pct(month.baseline_median)} ordinary` : ""}</p>
+                  <p className="cv-stat-sub">{moveText(month.baseline_median, s?.question?.target_unit) ? `vs ${moveText(month.baseline_median, s?.question?.target_unit)} ordinary` : ""}</p>
                 </>
               ) : null}
             </StatCard>

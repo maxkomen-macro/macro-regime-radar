@@ -15,10 +15,11 @@ import { ApiError } from "../../../api/client";
 import { isEngineAbsent, useEventStudy, useEventStudyAssets, type EventStudyHorizon, type EventStudyResponse } from "../../../api/desk";
 import { useStudyEvents } from "../data/api";
 import type { Question, StudyResponse } from "../data/types";
-import { dayLong, grouped, isFiniteNumber as fin, pct, pctPlain } from "../kit/format";
+import { dayLong, grouped, isFiniteNumber as fin, pctPlain } from "../kit/format";
 import { Awaiting, verdictLabel } from "../kit/ui";
 import { factsLine, fmtInterval, fmtMove, fmtZ, historyLine, missingForwardWord } from "./format";
 import { apiParams, type Ask } from "./question";
+import { moveText } from "./units";
 
 /** The engine's per-horizon fact about zero, in words (its exclusion field). */
 export function engineZeroWords(e: EventStudyHorizon["exclusion"]): string {
@@ -151,7 +152,8 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
                     <th scope="row">{dayLong(e.date)}</th>
                     <td>{e.regime}</td>
                     {[e.ret_5, e.ret_10, e.ret_20, e.ret_60].map((v, i) => (
-                      <td key={i}>{typeof v === "number" ? pct(v) : "no observation"}</td>
+                      // Each move in the study's target unit (Codex R-02); none without it.
+                      <td key={i}>{fin(v) ? (moveText(v, study.question.target_unit) ?? "Awaiting refresh") : "no observation"}</td>
                     ))}
                   </tr>
                 ))}

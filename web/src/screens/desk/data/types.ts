@@ -207,7 +207,11 @@ export interface TechnicalsResponse extends Envelope {
   ret_1y: number | null;
   trend: string;
   move_20d_sigma: number | null;
+  /** PROPOSED (§12.13, Codex R-13): the engine's word for the last 20 days' move ("no extreme move"). */
+  move_20d_word?: string;
   rsi: number | null;
+  /** PROPOSED (§12.13, Codex R-13): the engine's word for the RSI. */
+  rsi_word?: "oversold" | "neutral" | "overbought";
   /** PROPOSED (§12.13): "rising" | "falling" | "flat". */
   rsi_direction: string;
   rsi_last_above_70: { date: string; spx_1m: number | null } | null;
@@ -235,11 +239,27 @@ export interface Question {
   horizon: number;
 }
 
+/** PROPOSED (§12.13, Codex R-02): the unit every target move is served in:
+ * `pct` fractions (0.031 is +3.1%, intervals in percentage points), `bp`
+ * basis points (25 is +25 bp, intervals in bp), `px` the target's own price
+ * points (intervals in points). */
+export type TargetUnit = "pct" | "bp" | "px";
+
+/** The question as a study serves it: the six slots, and (PROPOSED, §12.13,
+ * Codex R-02, R-03) its target's unit and name. Absent, every target move
+ * says Awaiting refresh; the page never guesses a unit from the key. */
+export interface ServedQuestion extends Question {
+  target_unit?: TargetUnit;
+  target_label?: string;
+}
+
 export interface StudyHorizon {
   h: number;
   label: string;
   up_pct: number | null;
   up_n?: number | null;
+  /** PROPOSED (§12.13, Codex R-07): the outcomes complete at this horizon, the denominator of `up_pct` and of "12 of N". */
+  n_complete?: number | null;
   median: number | null;
   baseline_median: number | null;
   /** PROPOSED (§12.13): the share of ordinary stretches of this length that ended up (the Client view's "vs 62% in an ordinary month"). */
@@ -256,7 +276,7 @@ export interface StudyResponse extends Envelope {
   served_from_cache: boolean;
   elapsed_ms: number | null;
   slug: string | null;
-  question: Question;
+  question: ServedQuestion;
   n_events: number | null;
   sample_start: string | null;
   firing_now: boolean;
@@ -274,7 +294,15 @@ export interface StudyResponse extends Envelope {
   confidence_note: string;
   by_regime?: { regime: string; n: number | null; up_pct: number | null; median: number | null }[];
   last_events?: { date: string; regime: string; ret_20: number | null }[];
-  without_condition?: { n_events: number | null; up_pct: number | null; median: number | null; verdict: Verdict } | null;
+  without_condition?: {
+    n_events: number | null;
+    up_pct: number | null;
+    median: number | null;
+    verdict: Verdict;
+    /** PROPOSED (§12.13, Codex R-12): the engine's call on whether the condition helps, and its sentence (the page prints the sentence). */
+    comparison?: "improves" | "no_improvement" | "insufficient";
+    comparison_note?: string;
+  } | null;
   provenance?: { bootstrap: number | null; entry: string; cooldown: number | null; series_start?: Record<string, string> };
   warnings?: string[];
   empty_state?: { sentence: string; fixes: string[] };

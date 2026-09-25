@@ -29,7 +29,7 @@ import { useDeskView, withParam } from "../desk-view";
 import { dayShort, grouped, isFiniteNumber, pctPlain, signed } from "../kit/format";
 import { MonitoredRow, sortByRoom } from "../kit/MonitoredRows";
 import { Awaiting } from "../kit/ui";
-import { apiParams, askFromSearch, questionWords, type Ask } from "../event-study/question";
+import { apiParams, askFromSearch, questionWords, slotsOf, type Ask } from "../event-study/question";
 import { readSaved } from "../basket/weights";
 import { suggestions, underlyingName } from "./levels";
 import { CERTAINTY_WORDS, REPLACEMENTS, context, gateState, replaceFlag, type Flag } from "./wording";
@@ -63,7 +63,7 @@ export function parseSize(text: string): number | null {
 }
 
 /** The gate's own words for the fields the server says are missing. */
-const MISSING_WORDS: Record<string, string> = { instrument: "the instrument", variant: "the variant view", pre_mortem: "the pre-mortem", level: "a “wrong if” level" };
+const MISSING_WORDS: Record<string, string> = { instrument: "the instrument", variant: "the variant view", pre_mortem: "the pre-mortem", level: "a “wrong if” level", study: "the study the signal comes from" };
 
 /** The sentence for a refused or failed save (§12.8's refusals, or no answer at all). */
 export function refusalWords(e: unknown): string {
@@ -267,12 +267,14 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const uid = useId();
 
   // The study carried in fills the instrument (its target) and the horizon; the gate stays empty.
-  const carried = carriedAsk && study.data ? study.data : null;
+  // Never the previous study's answer while the next one loads: a save would bind to the wrong study.
+  const carried = carriedAsk && study.data && !study.isPlaceholderData ? study.data : null;
   const carriedFailed = !!carriedAsk && study.isError;
   useEffect(() => {
     if (!carried) return;
-    const target = carried.series?.find((s) => s.key === carried.question.target)?.label ?? carried.question.target;
-    setDraft((d) => (d.instrument ? d : { ...d, instrument: target, horizon: HORIZONS.includes(carried.question.horizon) ? carried.question.horizon : d.horizon }));
+    // The instrument is the study's served target name (Codex R-03); without it the field is left for the analyst.
+    const target = carried.question.target_label;
+    setDraft((d) => (d.instrument ? d : { ...d, instrument: typeof target === "string" ? target : "", horizon: HORIZONS.includes(carried.question.horizon) ? carried.question.horizon : d.horizon }));
   }, [carried]);
 
   useEffect(() => {
@@ -284,8 +286,13 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sent?.instrument]);
 
-  const label = (k: string) => carried?.series?.find((s) => s.key === k)?.label ?? k;
-  const signalWords = carried ? `${label(carried.question.shock)} gives back its move` : null;
+  // The target is named by the study's served target_label (Codex R-03); other series by the served list.
+  // Without a served target_label the target goes unnamed here as on every tab, never named from a list.
+  const label = (k: string) => (carried && k === carried.question.target ? (carried.question.target_label || "the study's target") : ((Array.isArray(carried?.series) ? carried.series : []).find((s) => s.key === k)?.label ?? k));
+  // The six slots the study was asked by: what a position records when the study has no slug (Codex R-11).
+  const canonical = carried ? slotsOf(carried.question) : null;
+  // "The signal reverses" is offered only when the position can name its study: a slug, or the six slots.
+  const signalWords = carried && (carried.slug || canonical) ? `${label(carried.question.shock)} gives back its move` : null;
   const sug = useMemo(() => suggestions(draft.instrument, tech.data, signalWords, draft.direction), [draft.instrument, tech.data, signalWords, draft.direction]);
   // A picked level counts only while the current suggestions still offer it.
   const picked = [...sug.top, ...sug.more].find((c) => c.id === draft.levelId) ?? null;
@@ -337,6 +344,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
         pre_mortem: draft.pre_mortem.trim(),
         wrong_if: picked ? { id: picked.id, label: picked.label } : { id: "custom", label: draft.custom.trim() },
         study_slug: carried?.slug ?? null,
+        ...(carried && !carried.slug && canonical ? { question: canonical } : {}),
       });
       setDraft({ ...EMPTY });
       setServerNote("Saved. The position is on the monitor.", "saved");

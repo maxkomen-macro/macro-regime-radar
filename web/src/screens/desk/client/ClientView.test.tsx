@@ -14,6 +14,7 @@ import DeskShell from "../DeskShell";
 import study from "../../../fixtures/desk/study.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
+import { bpStudy } from "../../../test/desk-variants";
 import { barGeometry, setupLabel, sourceLine } from "./ClientView";
 import { LAST_STUDY_KEY } from "../event-study/question";
 
@@ -91,6 +92,26 @@ describe("Client view", () => {
     // The desk's internals leave the sidebar; the navigation stays.
     expect(screen.getByTestId("desk-shell")).toHaveAttribute("data-client");
     expect(within(screen.getByRole("complementary", { name: "Sidebar" })).getByRole("link", { name: "Regime" })).toBeInTheDocument();
+  });
+
+  it("a basis-point study reads in bp, named by its served target (Codex R-02, R-03)", async () => {
+    stubDesk({ "/api/desk/study": bpStudy });
+    renderTab("/desk/overview?view=client");
+    await waitFor(() => expect(backdrop()).toHaveTextContent("Typical 10-year Treasury yield move after the setup"));
+    expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+12 bp", "Overheating+8 bp", "Stagflation−4 bp", "Recession Risktoo few cases to say"]);
+    expect(screen.getByRole("main")).toHaveTextContent(/Typical move\s*\+25 bp\s*vs \+5 bp ordinary/);
+    expect(backdrop().textContent).not.toMatch(/%/);
+  });
+
+  it("a study served without its target's unit prints no move: the stat and the bars say Awaiting refresh (Codex G2-2)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, question: { ...study.question, target_unit: undefined } }) });
+    renderTab("/desk/overview?view=client");
+    const main = screen.getByRole("main");
+    await waitFor(() => expect(main).toHaveTextContent(/Higher a month later\s*67%/));
+    expect(main).toHaveTextContent(/Typical move\s*Awaiting refresh/);
+    expect(backdrop()).toHaveTextContent("Awaiting refresh");
+    expect(within(backdrop()).queryAllByRole("listitem")).toHaveLength(0);
+    expect(backdrop().textContent).not.toMatch(/[+−]\d/);
   });
 
   it("Export one-pager prints the page", async () => {
