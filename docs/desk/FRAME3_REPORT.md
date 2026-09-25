@@ -2092,6 +2092,89 @@ to `/build/docs/desk/BUILD_NOTES.md`, which is where the `COPY` puts the
 file. Docker's exception pattern re-includes a file inside an excluded
 directory, so the one negation clears both `docs` and `*.md`.
 
+## Fold and alignment
+
+The operator adjudicated a spec review in three amendment files,
+`SPEC_AMENDMENTS_v2.md`, `v3.md` and `v4.md` (precedence v4 > v3 > v2), with
+three clarifications from the final review (C-01 to C-03). This section
+records the fold of those files into the spec (phase 1, one commit) and the
+UI's alignment with the folded spec (phase 2, one commit per item). Every
+place the UI now differs from a PNG is listed under its item with the spec
+sentence that requires it.
+
+### Phase 1: the fold — `frame-3: spec fold v2–v4`
+
+`docs/desk/DESK_FRAME3_SPEC.md` is rewritten to v4's fold checklist, and the
+three amendment files move, unedited, to `docs/desk/archive/` in the same
+commit, so the history shows what was folded.
+
+- **§1** carries the scope table (v2 §1 with v3's RSI, confidence and regime
+  statistics unavailable, and the without-condition line unavailable), the
+  "Live / Designed, not yet served" lists Build Notes prints (§1.0.1), the
+  unavailable state (§1.0.2), the regime-color exception and chart colors
+  (v2 D-36), the v1 verdict rule with B-13's four sentences (§1.5), units
+  and display (§1.9, v3 §6, B-04) and dates and samples (§1.10).
+- **§2–§11** follow the deltas: the Overview's since-last-close anchor and
+  its four tiles; Technicals with the vol column, sector bars and RSI
+  unavailable; the Event Study's catalog-only slots, the selected horizon,
+  `matched_n` over the horizon's count (C-03), the disabled confidence chips
+  and the unavailable comparison line (C-01), plus §4.1 for the engine's
+  entry, horizon, cooldown, baseline, count, block and compute rules; the
+  Regime's K−2 print, the recession score wording and the unavailable
+  statistics card; Macro's curve and credit windows; Sectors unavailable;
+  the Ledger's fixed order and header; positions in the browser under the
+  gate rule, with automatic room only for the S&P's 50-day and 2s10s;
+  Basket & Hedge unavailable; the Data Pipeline, Build Notes and the Client
+  view's allowlist.
+- **§12** is the contract for the nine live endpoints: the envelope and HTTP
+  codes, the nested block envelopes at exactly B-08's paths plus the study's
+  `without_condition` (C-01), the CSV columns, and a per-field table for
+  every field with its type, presence, unit, date, frequency and source, and
+  its engine basis: an existing function (E), a projection of the run's full
+  event table (P), an authorized new calculation (N), adapter shaping (A),
+  or a stored read (S). `data_status` contributors carry
+  `observation_date`, `expected_observation_date`, `state` and `reason`
+  (C-02). **§12.13** keeps only the deferred shapes: positions, basket,
+  hedge, vol, sectors, correlations, RSI, confidence and without_condition.
+  **§13** is session B's order, the engine scope allowed for Monday and
+  session A's acceptance.
+- Withdrawn sentences are gone, among them "A normal month is +1.3%",
+  "one-in-eight over the next year", "Peak last cycle", "The condition earns
+  its place", the top-level h = 20 verdict, v2 §19's Ledger sort, the live
+  confidence selector, the old §12 shapes, the POST `/positions` contract
+  and the PROPOSED fields of the earlier §12.13 (Codex round 1's included).
+
+Verifier (one round): **FAIL**, one blocking finding and eight should-fix,
+all taken:
+- F-1 (blocking) the headline templates reused v2 §7's withdrawn definition
+  copy and added "don't size on it", a recommendation drawn from a verdict
+  (v2 §15). **Fixed:** the headline is the verdict's label, its horizon and
+  its §1.5 sentence, nothing more.
+- F-2 an automatic position already through its level would have been saved
+  as manual (v3 §16 rejects it), and the S&P's 200-day read as automatic.
+  **Fixed.**
+- F-3 the `data_status` basis did not cover the two `asset_prices` inputs.
+  **Fixed:** each contributor is judged by its store's existing policy.
+- F-4 several dated blocks served no `freq` or `source`, and the averages no
+  window. **Fixed.**
+- F-5 `client` and `by_regime` did not carry their horizon. **Fixed.**
+- F-6 references to "§3" for the firing state and an undefined basis code.
+  **Fixed** (the S code is defined).
+- F-7 the Build Notes list contradicted the Ledger's fixed twelve and left
+  out the Client view and three Technicals values. **Fixed.**
+- F-8 three engine bases did not match the code (the interval note's words,
+  the recession percent, the pipeline's first date). **Fixed.**
+- F-9 v2 rules no amendment withdrew had been dropped. **Fixed** in §4.1.
+- F-10 `/study` could not say a firing study was stale. **Fixed:**
+  `comparison_session` and `stale`.
+- F-11 and F-12 (nits) the renames are recorded in §12.0; the empty state no
+  longer says "too few to score" (an insufficient study is scored, B-02);
+  the §12.13 number is explained; blank cells, spellings and the
+  existing-endpoints sentence are fixed.
+
+The fixes were checked by reading the file against the amendments, not by a
+second verifier round.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,

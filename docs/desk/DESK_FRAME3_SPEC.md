@@ -1,38 +1,124 @@
 # DESK_FRAME3_SPEC.md — Desk v2 build contract
 
-Status: approved mockups, locked 2026-09-23. This file plus `screens/*.png` is the
-contract. When the spec and a PNG disagree, the PNG wins for layout and the spec
-wins for numbers, labels, and API shape. Every illustrative number below is the
-mockup's; the build renders whatever the API returns.
+Status: approved mockups locked 2026-09-23; the adjudicated amendments v2, v3
+and v4 (2026-09-24/25, precedence v4 > v3 > v2) are folded in here on
+2026-09-25, with the three clarifications of the final review (C-01 to C-03).
+The amendment files are kept, unedited, in `docs/desk/archive/` for the
+history; this file is the only contract. Where a sentence of an amendment was
+withdrawn by a later one, it is not repeated here.
+
+**Governing rule (v2 §0).** The engine wins. §12 describes what
+`src/desk/event_study.py`, `src/regime.py`, `src/analytics/recession.py` and
+`api/` compute today, the projections and new calculations §13 authorizes,
+and the counts, dates and units needed to display them honestly. A field the
+engine cannot produce is served as an explicit **unavailable** state, never as
+an illustrative number, and Build Notes lists it under "Designed, not yet
+served". When this file and a PNG disagree, the PNG wins for layout and this
+file wins for numbers, labels and API shape (v2 §20, D-35). Every
+illustrative number below is the mockup's; the build renders what the API
+returns.
 
 Three sessions consume this file:
-- **A (desk/frame-3, `web/` only)** builds the eleven tabs and the Client toggle.
-- **B (desk/frame-3-api, `api/`, `src/desk/`, `scripts/`)** builds the endpoints in §12.
-- **C (desk/frame-3-docs, `docs/desk/` only)** audits what the store can produce today.
+- **A (desk/frame-3, `web/` and `docs/desk/`)** builds the eleven tabs and the
+  Client toggle against fixtures in the §12 shapes.
+- **B (desk/frame-3-api, `api/`, `src/desk/`, `scripts/`)** builds the nine
+  endpoints in §12, in §13's order.
+- **C (desk/frame-3-docs, `docs/desk/` only)** audits what the store can
+  produce (`FRAME3_DATA_AUDIT.md`).
 
-A builds against the JSON in §12 using fixtures; B makes the real endpoints return
-that JSON. Neither changes §12 without writing the change into this file first.
+Neither A nor B changes §12 without writing the change into this file first.
 
 ---
 
-## 1. Site-wide rules
+## 1. Scope and site-wide rules
+
+### 1.0 Scope for Monday: live and unavailable
+
+| Tab / block | Monday state | Reason |
+|---|---|---|
+| Overview: since-last-close line, regime tile, recession tile, trend tile, VIX level, active signals, data status | LIVE | — |
+| Overview: VIX "gap vs realized" and the vol band word | UNAVAILABLE | realized-volatility method not specified (v2 D-17) |
+| Overview: Monitored rows | LIVE from the browser's position store (§9) | no server position store (v2 D-21) |
+| Technicals: price, 50- and 200-day averages, trend, cross, chart, 1-year return, day change, last 20 days in σ, signals (the §3 allowlist) | LIVE | — |
+| Technicals: vol column ("What protection costs right now") | UNAVAILABLE | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
+| Technicals: sector bars | UNAVAILABLE | sector ETFs, RSP and IWM not ingested (v2 D-19) |
+| Technicals: RSI card | UNAVAILABLE | RSI is not computed in `src/desk/` or `api/`; adding it is a new calculation outside Monday's scope (v3 A-16) |
+| Event Study: studies in the catalog (§4, §12.3) | LIVE when every input's coverage is stored in the current generation; otherwise that study is awaiting with the missing series named | v3 §2 |
+| Event Study: any other combination of slots | refused, 422 `unsupported` | v3 §2 |
+| Event Study: confidence 80% / 95% | UNAVAILABLE; intervals are the engine's 90% | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
+| Event Study: the line without the condition (`without_condition`) | UNAVAILABLE | conditional-versus-unconditional comparison is not defined (v4 B-11, C-01) |
+| Regime: current label, history strip, recession score, next prints | LIVE | — |
+| Regime: "What each regime has meant" table, and the S&P a month after each change | UNAVAILABLE | regime statistics not yet defined in the engine (v3 A-16 withdraws v2 §9.4) |
+| Macro: yield curve | LIVE with 2y, 10y and 2s10s; 3m, 5y and 30y LIVE once DGS3MO, DGS5 and DGS30 are registered (§12.8) | v2 D-16 |
+| Macro: HY and IG levels, HY 3-year range and percentile, HY last 12 months | LIVE (the 3-year figures null, with the reason, while three-year coverage is incomplete) | v3 §12, v4 B-07 |
+| Macro: stock–bond correlation, "What moves with the S&P", the 12-asset matrix | UNAVAILABLE | Treasury and credit price-return series not ingested (v2 D-15) |
+| Sectors | UNAVAILABLE | sector ETFs, RSP and IWM not ingested (v2 D-19) |
+| Signal Ledger | LIVE for the rows whose study completes; the two RSI rows, and any row whose inputs are not stored (WTI, DXY), unavailable | v3 §2, v4 B-02 |
+| Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
+| Basket & Hedge | UNAVAILABLE; local leg editing (legs, weights, save, export) remains | basket pricing and option structures not yet defined in the engine (v2 D-25–D-28) |
+| Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
+| Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
+| Client view | LIVE for Event Study's current study, at h = 20 | — |
+
+#### 1.0.1 The Build Notes list
+
+Build Notes prints these two lists as their own section, word for word.
+
+**Live**
+- Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, active signals, data status.
+- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals.
+- Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
+- Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.
+- Macro & Correlations: the yield curve and the credit spreads.
+- Signal Ledger: the twelve fixed signals, each scored when its study completes.
+- Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.
+- Data Pipeline: the series inventory, generated from the registry.
+- Client view: the current study in plain words, a month out.
+
+**Designed, not yet served**
+- The VIX gap to realized volatility and the vol band word.
+- What protection costs: options skew, implied against realized volatility, the term structure.
+- Sector leadership and breadth.
+- RSI, and the two RSI signals.
+- Confidence levels other than 90%.
+- The comparison with the study's condition dropped.
+- What each regime has meant, and the S&P after each regime change.
+- Stock–bond correlation, what moves with the S&P, the 12-asset matrix.
+- Positions kept on a server, and DV01.
+- Basket pricing, the residual chart and the hedge structures.
+
+#### 1.0.2 The unavailable state
+
+A card whose block is unavailable keeps its title, subtitle and stat labels.
+Its body prints one sentence: the served `unavailable.reason`, and, when
+served, "Until: <`unavailable.until`>". No number, no chart, no gauge. Its
+`Advanced ▸` control is disabled and says "not yet served". Its badge reads
+`○ Not yet served`. A block that is unavailable by §1.0 but has no served
+envelope (the RSI card, the confidence chips) prints the reason in §1.0's
+table.
 
 ### 1.1 Navigation
-- Sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
-- Header of sidebar: `← MACRO REGIME RADAR` (mono, 10px, links to the Radar root),
+- The sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
+- Header of the sidebar: `← MACRO REGIME RADAR` (mono, 10px, links to the Radar root),
   then `Desk` (serif 26px) over `ANALYST WORKSPACE` (mono 9.5px, letter-spaced).
 - Three groups, mono 9.5px uppercase labels:
   - **SURVEY**: Overview, Technicals, Regime, Macro & Correlations, Sectors
   - **ACT**: Event Study, Signal Ledger, Position Monitor
   - **TOOLS**: Basket & Hedge, Data Pipeline, Build Notes
 - Active item: background #1b2027, white text. Others #c9cdd3.
-- Bottom of sidebar, two stacked cards (border #262b33, radius 10px):
-  - **TODAY** card: regime name (serif 18px, amber for Overheating), `regime · Aug
-    print`, then `S&P today +0.4%` (green), `Data ● current` (green dot).
-  - **HOUSE DISCIPLINE ▸** card: `Gate ● on`. Click opens the gate text (§8.3).
+- Bottom of the sidebar, two stacked cards (border #262b33, radius 10px):
+  - **TODAY**: the regime (serif 18px, in its regime color, §1.3) with
+    `regime · <Mon> row` beneath (the K−2 row governing today, §5; e.g.
+    "Overheating · Jul row"); then `S&P <day> +0.4%` from `/technicals`
+    `chg_1d` and its `chg_1d_dates.to` ("today" only when that day is New
+    York's today); then `Data ● <state>` from `/overview` `data_status`.
+  - **HOUSE DISCIPLINE ▸**: `Gate ● on`. Click opens the gate text (§9).
 - Page header, every tab: breadcrumb `Radar › Desk › <Tab>` (mono 11.5px, gray)
-  left; right side has a Desk / Client segmented toggle (Desk active by default)
-  and at most one action button. The action button per tab is listed in §2–§11.
+  left; right side the Desk / Client segmented toggle on the tabs in §11's
+  allowlist, and at most one action button (listed per tab).
+- The page footer shows the one `generation_id` the page's responses share. If
+  two responses on a page carry different ids, the page badge reads "mixed
+  generations · refreshing" and the client refetches once (v3 §18).
 
 ### 1.2 Typography
 - Source Serif 4 for big numbers and card titles' numbers. IBM Plex Sans for prose
@@ -47,150 +133,206 @@ that JSON. Neither changes §12 without writing the change into this file first.
 | green | #26dca0 | up · Reliable · firing · current |
 | red | #e5534b | down / negative numbers |
 | amber | #e8b447 | Suggestive · caution · a limit / falsification line · Overheating |
-| blue | #58b8e6 | the main line on any chart |
-| gray | #8b929e | No edge · quiet · second line · neutral |
+| blue | #58b8e6 | the main line on any chart · event bars |
+| gray | #8b929e | No edge · Too few · quiet · second line · baseline bars · neutral |
 
 Neutrals: page #0c0e11, sidebar #0f1216, card #12161b / #151920, card border
 #262b33, row divider #1c2027, box border #2a3038, text #e8e6e1 / #c9cdd3 /
 #8b929e / #6b7280. Verdict pill tints: Reliable bg #0f1a16 border #1f6b52;
-Suggestive bg #1a160f border #5a4a1e; No edge bg #171a1f border #2a3038.
-No purple. No other accent.
+Suggestive bg #1a160f border #5a4a1e; No edge bg #171a1f border #2a3038; Too
+few the No edge tint with a dashed border. No purple. No other accent.
+
+**The one exception (v2 D-36): regime colors.** Goldilocks green, Overheating
+amber, Stagflation red, Recession Risk gray, wherever a regime is named.
+**Chart colors:** main line blue, 50-day green, 200-day gray dashed, event
+bars blue, baseline bars gray. Positive bars extend right, negative left.
 
 ### 1.4 Card skeleton (every card on every tab follows this)
 1. Title (bold) + subtitle (gray) on one line.
 2. Stat row: 2–4 stats, each = mono label / serif number / gray sub-line.
 3. Body: chart, list, or table.
 4. Boxed read: `Read:` or `Read for the desk:` in a #12161b box with a #2a3038
-   border, 12px, one or two sentences. Amber-bordered box when the read is a warning.
+   border, 12px, one or two sentences, only when a served `reads.<card>`
+   exists (§12.0, v2 §15). Amber-bordered when its `tone` is `warning`. No
+   read is served on Monday; the box is omitted.
 5. Footer: `Advanced ▸` (blue link) + gray list of what expands, and/or an
-   action link `→`.
+   action link `→`. An Advanced control is enabled only when the endpoint it
+   opens exists in §12; otherwise it is disabled and says "not yet served"
+   (v2 D-34). Footer text promises no counts or history ranges.
 
 ### 1.5 Verdicts (never "established", never "significant")
-- **Reliable** (green pill): 10+ independent episodes AND fewer than 3% of
-  resamples go the other way.
-- **Suggestive** (amber pill): leans one way but the resampled range crosses zero
-  or n < 10. Copy: "don't size on it".
-- **No edge** (gray pill): about the same as any month. Copy: "shown so you know
-  it was checked".
-- A normal month = +1.3% (20 sessions). "vs normal" = median − 1.3.
+
+Rule `verdict_rule: "v1"`, fixed at the engine's 90% exclusion
+(`verdict_confidence: 0.90`), evaluated for one horizon h in this order
+(v3 §7):
+1. `n(h) < 10` → `insufficient`.
+2. the engine's exclusion at h is `established` → `reliable`.
+3. the finite excess medians (median − baseline_median) at h = 5, 10 and 20
+   are all strictly positive, or all strictly negative → `suggestive`.
+4. otherwise → `no_edge`.
+
+Any engine result other than `established` counts as not established,
+including `included` and an unavailable exclusion. Zero is not a lean; a
+missing horizon's excess median is not a lean. The confidence selector never
+touches a verdict (§4, §12.13).
+
+Which horizon (v4 B-01): `/study`'s `verdict`, `headline`, `why`, counts and
+`empty_state` are the selected horizon's (`selected_horizon`); the Ledger,
+the Overview's active signals and the Client view use h = 20 explicitly.
+Every summary carries its horizon; a verdict from one horizon never sits
+beside another horizon's statistics.
+
+Pills and copy (v4 B-13). The Overview and Ledger footers print exactly:
+- **Reliable** (green pill) — at least ten overlap blocks, with the engine's
+  90% interval and adverse-share requirements met; zero counts as adverse.
+- **Suggestive** (amber pill) — 10+ completed outcomes; excess medians lean
+  the same way at 5, 10 and 20 sessions, but not all Reliable criteria are
+  met.
+- **No edge** (gray pill) — at least ten completed outcomes at this horizon,
+  without Reliable evidence or a consistent nonzero excess-median sign across
+  5, 10 and 20 sessions.
+- **Too few** (dashed gray pill) — fewer than ten completed outcomes at this
+  horizon.
+
+"vs normal" is each study's own excess over its own baseline (§1.9); there
+is no universal normal month.
 
 ### 1.6 Live badges
-Every card that reads live data carries `● Live · <source> · <date>` (green
-dot, mono 10px) top-right. Sources: `engine as of Sep 22`, `Yahoo/FRED`, `Aug
-print`, `EODHD`. The `MOCKUP · values illustrative` amber badge is NOT built.
+A card that reads live data carries `● Live · <source> · <date>` (green dot,
+mono 10px) top-right, dating only what it covers; a separately dated block
+carries its own date (v2 D-36). An unavailable card carries `○ Not yet
+served`. The `MOCKUP · values illustrative` amber badge is NOT built.
 
-### 1.7 Empty states
-- Study with `n_events < 10`: answer card shows one sentence ("Only N events
-  since <start> — too few to score.") and two fix chips ("Widen the window",
-  "Drop the condition"). No chart.
-- Missing series or endpoint error: card body shows "Awaiting refresh" (gray),
-  keeps its stat labels, no number.
+### 1.7 Empty, busy and awaiting states
+- `computing` (202): the card stays quiet and busy while the client polls.
+- A study whose selected horizon has fewer than ten completed outcomes is
+  `insufficient`: the answer card prints the served `empty_state.sentence`
+  and the served `fixes` as chips (each only when it leads to a catalog
+  study). No chart.
+- A block whose answer failed or did not arrive: "Awaiting refresh" (gray),
+  labels kept, no number.
+- An unavailable block: §1.0.2.
 - A value is rendered with a date only when the date arrives in the same
-  response as the value, at the series' own frequency (frame-2 R-07 rule).
+  response as the value, at the series' own frequency.
 
 ### 1.8 Storage
-Baskets and saved questions live in `localStorage` per browser with an
-Export/Import JSON control. No accounts.
+Saved questions, baskets and positions live in `localStorage` per browser,
+each under a versioned key with an Export / Import JSON control. No accounts.
+Positions are validated on save, on import and on load; a record that fails
+is kept in an "unreadable" list the page shows, never dropped (§9).
+
+### 1.9 Units and display
+- `question.target_unit` ∈ `log_return` | `log_change` | `bp`;
+  `question.display_unit` ∈ `percent` | `bp` (v2 §6).
+- Display (v3 §6, main's `fmt_move`): `log_return` and `log_change` print as
+  `100 × native` with a % sign, labelled as log-return percentages; any such
+  number carries the tooltip "log return, ×100". `bp` prints unchanged. No
+  exponentiation anywhere; simple-return display is a later decision.
+- `vs_normal` = `100 × (median − baseline_median)`, in log percentage points
+  ("+1.8 pts"), or the native difference in bp ("+6 bp").
+- Intervals: `ci_lo` and `ci_hi` bound Δ = event median − baseline median, in
+  native units. The chart's whisker runs from `baseline_median + ci_lo` to
+  `baseline_median + ci_hi`, then takes the same linear display scale.
+- "Up" always means a target change > 0, yields and spreads included.
+- Scope of the log rule (v4 B-04): only fields whose `target_unit` is
+  `log_return` or `log_change`. Technicals' `chg_1d`, `ret_1y`, `vs_ma50` and
+  `vs_ma200` are simple-return or level-ratio fractions and print as
+  fraction × 100.
+- JSON carries full precision; one display-rounding rule lives in the UI kit.
+
+### 1.10 Dates and samples
+- `as_of` dates the calculation and never an observation.
+- Every live block carries `date` (session `YYYY-MM-DD`), `month` (`YYYY-MM`)
+  or `ts` (RFC 3339 with zone) beside its values, plus `freq` ∈ daily |
+  weekly | monthly and `source`. A composite statistic carries `window:
+  {start, end, n}`. A scheduled release is `release_date`, distinct from an
+  observation.
+- Three study dates, never conflated (v2 §10, v3 §10): `data_start` (the
+  latest of the inputs' first stored observations), `sample_start` /
+  `sample_end` (the engine's evaluable boundaries), `first_event` /
+  `last_event` (nullable). Provenance reads "history from <data_start>"; a
+  count reads "<n> events since <sample_start year>". No 1990 or 2000
+  constant appears in the UI.
+- A comparison caption names the served comparison date ("was 10 on
+  <date>"), never a month's name ("in July") (v2 D-35).
 
 ---
 
 ## 2. Overview  (`screens/01-overview.png`, 960px)
 
-Action button: **Walkthrough** (opens the first-visit walkthrough overlay,
-existing from frame-2).
+Action button: **Walkthrough** (the first-visit walkthrough, from frame-2).
 
-**Since-last-close line** (full width, one line under the title, box style):
-`SINCE LAST CLOSE` mono label, then items separated by `·`: new fires with
-`(new)` in green, signals still firing with day count, vol change in pts and
-skew direction, `regime unchanged` / `regime changed → X`, `data refreshed
-00:23 UTC`. From `/api/desk/overview.since_last_close`.
+**Since-last-close line** (full width, box style): `SINCE LAST CLOSE` mono
+label, then, separated by `·`: each new fire with `(new)` in green; each
+signal still firing with its `firing_day`; the VIX change in points
+(`vol_change_pts`); `regime unchanged` or `regime changed → <regime_to>`;
+`data refreshed <time> UTC` (`refreshed_at_utc`). Only signals evaluated on
+`comparison_session` appear (§12.5). From `/overview` `since_last_close`.
 
 **Four tiles** (equal width):
-| Tile | Label | Big value | Sub-line |
+| Tile | Badge | Big value | Sub-line |
 |---|---|---|---|
-| REGIME | `● Live · Aug print` | Overheating (amber serif 26px) | Growth rising, inflation rising · rule-based, two-month lag |
-| RECESSION · LOGISTIC MODEL | `● Live` | 12% | Low · one-in-eight over the next year, on data through May |
-| S&P 500 · TREND | `● Live · Sep 22` | Above 50 & 200 | Uptrend since the Jul 2025 golden cross · that signal is reliable |
-| VOL · VIX | `● Live · Sep 22` | 16.2 | Calm · protection costs about 4 pts more than recent moves justify |
+| REGIME | `● Live · <Mon> row` | Overheating (regime color, serif 26px) | Growth rising, inflation rising · rule-based, two-month lag |
+| RECESSION · LOGISTIC MODEL | `● Live` | 12% | <band> · score for <probability_month> · inputs through <inputs_through> |
+| S&P 500 · TREND | `● Live · <date>` | Above 50 & 200 (from `trend.state`) | since <state_since> · last cross <golden\|death>, <date> |
+| VOL · VIX | `● Live · <date>` | 16.2 | VIX <level> · <date> (the gap to realized and the band word are unavailable, §1.0) |
 
-**Active signals** card (left, ~60% width). Subtitle: `what fired, how it has
-played out before · engine as of Sep 22`. One row per signal in the Ledger
-with `firing_now` OR in the top-5 by recency; row = name (bold) + `last fired
-<date>` under it; sentence `Fired N× since <start> · S&P up P% of the time ·
-20-day median +M% (+D pts vs normal)`; verdict pill right. Mockup rows:
-golden cross (31×, 68%, +2.7%, +1.4, Reliable) · death cross (29×, 52%,
-+0.9%, −0.4, No edge) · Gold +2σ while S&P < 50d (18× since 2000, 67%, +3.1%,
-+1.8, Suggestive) · VIX +2σ in 5 days (41×, 71%, +2.2%, +0.9, Reliable) ·
-2s10s +2σ steepening (22×, 45%, −0.6%, −1.9, No edge). Footer: three verdict
-definitions (§1.5) side by side + `Full Signal Ledger →`.
+**Active signals** (left, ~60%). Subtitle `what fired, how it has played out
+before · engine as of <as_of>`. Rows are `/overview` `active_signals` in the
+served order (§12.1: the deduplicated union of every firing row and the five
+latest non-null `last_fired`, firing first, then `last_fired` descending, then
+slug). Row: `label` (bold) + `last fired <date>`; sentence `Fired N× since
+<sample_start year> · S&P up P% of the time · 20-day median +M% (+D vs
+normal)`; the h = 20 verdict pill right. Footer: the four §1.5 definitions +
+`Full Signal Ledger →`.
 
-**Monitored** card (right). Subtitle `how far each is from being wrong · live`.
-Rows (grid `minmax(0,1fr) 54px auto 64px 14px`): name (nowrap) · `N% NAV`
-(mono gray) · `P% room · X to level` (green if room ≥ 50%, amber if < 30%,
-nowrap) · bar · `▸`. Mockup: Long NDX vs SPX · 4% NAV · 68% room · 3.4% to
-level; 2s10s steepener · 2% NAV · 22% room · 3 bp to level (amber); AI-infra
-basket, hedged · 6% NAV · 52% room · 2.1% to level. Footer sentence: `Sorted
-by room left · same scale for every trade · size as % of NAV · click a row
-for the gate text`. Button bottom-right: **Act on this → Position Monitor**.
+**Monitored** (right). Subtitle `how far each is from being wrong · live`.
+Rows from the browser's position store (§9), sorted by `room_pct` ascending,
+null last, then id; row = name · `N% NAV` · `P% room · X to level` (green if
+room ≥ 50%, amber if < 30%) · bar · `▸`; a manual position prints "manual"
+in the room cell and an empty bar. Footer `Sorted by room left · same scale
+for every trade · size as % of NAV · click a row for the gate text`. Button
+**Act on this → Position Monitor**.
 
 ---
 
 ## 3. Technicals  (`screens/02-technicals.png`, 1060px)
 
-Action button: **Act on this → Position Monitor**. Badge: `● Live ·
-Yahoo/FRED · as of Sep 22, 2026`.
+Action button: **Act on this → Position Monitor**. Badge `● Live · <date>` from
+`/technicals` `date`.
 
-Grid: left column tall (spans two rows) = Vol; top-middle = Price & MAs;
-top-right = Signals; bottom-middle = Sector leadership; bottom-right = RSI.
+Grid: left column (two rows) = the vol column; top-middle = price; top-right =
+Signals; bottom-middle = Sector leadership; bottom-right = RSI.
 
-**What protection costs right now** (Vol column). Subtitle `S&P 500 options,
-read from the SPY chain at last close.` Three readings, each label / number /
-one-line meaning / one-line context:
-- PUTS vs CALLS · 1 MONTH OUT → `+6.8 pts` → "Puts are 6.8 vol points more
-  expensive than calls." → "Rising since June. Investors are paying up for
-  downside cover."
-- WHAT OPTIONS EXPECT vs WHAT HAPPENED → `15.4 vs 11.9` → "Options price 15.4%
-  annual movement; the last 20 days delivered 11.9%." → "Protection costs about
-  3.5 points more than recent moves justify."
-- 1 MONTH · 3 MONTHS · 6 MONTHS → `15.4 · 16.8 · 17.5` → "Longer-dated
-  protection costs slightly more than near-dated." → "That is the normal shape.
-  No near-term event is being priced in."
-Gauge: SKEW · WHERE IT SITS, three bands Cheap / Typical / Expensive, needle
-at `74th pct`, caption "74th percentile of a calm two years, so 'expensive'
-here is relative. Six months ago it sat in the typical band." Footer:
-`Advanced ▸ put IV vs call IV · which side moved · full 2-year skew line ·
-chain provenance` and source line `Source: EODHD options, one pull per close ·
-live read, not scored (history from Q4 2023)`.
+**What protection costs right now** (vol column): UNAVAILABLE (§1.0), from
+`/technicals` `vol` (awaiting). Labels kept: PUTS vs CALLS · 1 MONTH OUT ·
+WHAT OPTIONS EXPECT vs WHAT HAPPENED · 1 MONTH · 3 MONTHS · 6 MONTHS · SKEW ·
+WHERE IT SITS.
 
 **S&P 500 — price and its two trend lines**. Range chips 6M / 1Y / 3Y. Stats:
-PRICE `6,412` (+0.4% today, green) · 50-DAY AVERAGE `6,280` (price is 2.1%
-above) · 200-DAY AVERAGE `5,910` (price is 8.5% above). Chart: price (blue),
-50-day (green), 200-day (gray dashed); y ticks 5,000 / 6,000 / 7,000; x ticks
-Oct 25 / Apr 26 / Sep 26; each line labeled at its right end; white dot at
-last price. Callout box: "Jul 1, 2025 — the 50-day crossed above the 200-day.
-This has happened 31 times before; the S&P was higher a month later 68% of
-the time. Reliable."
+PRICE (`price`; sub `chg_1d` × 100 "on <chg_1d_dates.to>") · 50-DAY AVERAGE
+(`ma50`; "price is <vs_ma50 × 100>% above|below") · 200-DAY AVERAGE (`ma200`;
+same with `vs_ma200`). Chart: close (blue), 50-day (green), 200-day (gray
+dashed) from `series`; y ticks round thousands; each line labelled at its
+right end; a white dot at the last close. Callout: "<cross.date> — the 50-day
+crossed <above|below> the 200-day." followed by the matching Ledger row's
+count, up share and h = 20 verdict.
 
-**Signals** card. Stats: 1-YEAR RETURN `+14.2%` · TREND `Up` (above both
-averages) · LAST 20 DAYS `+0.6σ` (no extreme move). Five rows `name · N×
-since 1990 · up P% · a month later +M% · pill`: Golden cross 31/68/+2.7
-Reliable; Death cross 29/52/+0.9 No edge; RSI above 70 64/59/+1.1 No edge;
-RSI below 30 22/73/+3.4 Reliable; 5-day move over 2σ 88/55/+0.6 No edge.
-Note box: "In this regime (Overheating): golden cross has fired only 9 times —
-too few to trust. A normal month is +1.3%; 'Reliable' means the edge over that
-survives resampling."
+**Signals** card. Stats: 1-YEAR RETURN (`ret_1y` × 100, dated
+`ret_1y_dates`) · TREND (`trend.state` in words: above both / below both /
+mixed; since `state_since`) · LAST 20 DAYS (`move_20d_sigma`σ). Rows: the
+Ledger rows in `signals_allowlist` order — golden-cross, death-cross,
+spx-20d-2sigma, spx-5d-2sigma (the RSI rows are omitted while unavailable) —
+each `label · N× since <sample_start year> · up P% · a month later +M% ·
+pill`. Note box: "vs normal compares each study to its own baseline over its
+own sample."
 
-**Sector leadership · 3-month relative strength vs S&P**. Seven bars shown
-(XLK +6.1, XLI +3.4, XLF +2.2, XLE +0.4, XLV −1.9, XLP −3.6, XLU −4.8);
-green > +1%, gray within ±1%, red < −1%. One sentence: "Tech and Industrials
-leading; Staples and Utilities lagging, consistent with an Overheating read."
-Footer `Advanced ▸ all 11 · rotation over time · by regime`.
+**Sector leadership · 3-month relative strength vs S&P**: UNAVAILABLE (§1.0),
+from `/technicals` `sectors` (awaiting).
 
-**Momentum · RSI**. Stats: NOW `58` (neutral, rising) · LAST ABOVE 70 `Jun 12`
-(S&P +1.1% a month later) · LAST BELOW 30 `Apr 8, 2025` (S&P +9.4% a month
-later). Gauge Oversold / Neutral / Overbought with needle at 58. Two matched
-note boxes (above 70: 64×, 59%, No edge; below 30: 22×, 73%, Reliable).
-Footer `Advanced ▸`.
+**Momentum · RSI**: UNAVAILABLE (§1.0; no served envelope, §1.0.2). Labels
+kept: NOW · LAST ABOVE 70 · LAST BELOW 30. PNG 02's two RSI context boxes are
+the layout once RSI is served (§12.13).
 
 ---
 
@@ -199,1004 +341,968 @@ Footer `Advanced ▸`.
 Action button: **Act on this → Position Monitor**. Subtitle: `Ask what the
 market did after a defined shock. Get a scored answer, not an opinion.`
 
-**Row 1 — Pick a question.** Three-way segmented switch: `Common questions` /
-`My saved questions · N` / `Build your own`. Under it: gray hint "pick one
-below, or build your own in the slots — either way the slots show exactly what
-is being asked". Nine preset chips (slugs in §12.2): Gold +2σ while S&P weak ·
-Golden cross · Death cross · VIX spike · Credit spreads +2σ · 10y yield +2σ ·
-Dollar −2σ · Oil +2σ → gold · S&P −2σ → 10y. Saved questions render as chips
-under a `Yours` label.
+**Row 1 — Pick a question.** Three-way switch: `Common questions` / `My saved
+questions · N` / `Build your own`. Hint "pick one below, or build your own in
+the slots — either way the slots show exactly what is being asked". Nine
+preset chips, each the catalog `label` of: gold-2sigma-spx-weak ·
+golden-cross · death-cross · vix-spike-2sigma-5d · hy-2sigma-20d ·
+10y-2sigma-20d · dollar-2sigma-20d · oil-2sigma-gold · spx-2sigma-10y. A
+chip whose study is unavailable is disabled with its reason. Saved questions
+render as chips under `Yours`.
 
 **Row 2 — THE QUESTION, SPELLED OUT.** Sub-label "change any slot and it
-becomes your own · every slot lists the same 12 series". Six labeled dropdown
-slots: SHOCK (series) · WINDOW (5/10/20/60 days) · MOVE ⓘ (up 2σ or more /
-down 2σ or more / crosses above MA / crosses below MA; tooltip: "σ measured
-over the last 252 sessions") · WHILE ⓘ (none / S&P below its 50-day / above /
-regime = X; tooltip: "condition checked on the shock day, entry next session")
-· WHAT HAPPENS TO (series) · OVER THE NEXT (1 week / 2 weeks / 1 month / 3
-months). Buttons **Run** (primary) and **Save**.
+becomes your own". Six labelled slots: SHOCK (series) · WINDOW (5 / 20 / 60
+sessions; none for a cross) · MOVE ⓘ (up 2σ or more / down 2σ or more /
+50-day crosses above the 200-day / crosses below; tooltip "σ measured over
+the last 252 sessions") · WHILE ⓘ (none / S&P below its 50-day / regime = X;
+tooltip "Entry at the event close when every input is available by then;
+otherwise the next close.") · WHAT HAPPENS TO (series) · OVER THE NEXT (1 week
+/ 2 weeks / 1 month / 3 months). Every option that does not lead to a catalog
+study (§12.3), given the other slots, is disabled; a cross requires shock =
+S&P, target = S&P, while = none and no window. Series labels, roles and ops
+come from `/study` `series[]`. Buttons **Run** (primary) and **Save**. A
+request the server refuses (422 `unsupported`) prints the served message.
 
-**Answer card** (left, ~62%). Headline sentence (serif 17px): e.g. "Leans
-positive a month out, but not something to size on." Under it two pills:
-`○ Not firing today · last Apr 16, 2025` (or `● Firing today`) and `● Live ·
-0.3s, cached` (from `served_from_cache` and `elapsed_ms`). Four stats:
-EVENTS `18` (since 2000) · UP A MONTH LATER `67%` (12 of 18) · MEDIAN AT A
-MONTH `+3.1%` (vs +1.3% in a normal month) · WORST · BEST `−9.4% / +12.0%`
-(Mar 2020 · Apr 2025). Bar chart, four horizons (1 week / 2 weeks / 1 month /
-3 months), two bars each (after the event, blue; a normal stretch, gray) with
-a range whisker on the event bar; y ticks +5% / 0 / −3%; values +1.2 / +1.6 /
-+3.1 / +2.9. Legend: `■ after the event · ■ a normal stretch · ┬ range the
-answer could fall in`. Comparison line: "Without the S&P condition — gold +2σ
-on its own — it's 41 events, up 58%, median +1.6%: No edge. The condition
-earns its place." (from `without_condition`).
+**Answer card** (left, ~62%), all for `selected_horizon` (the OVER THE NEXT
+slot). Headline (serif 17px): the served `headline`. Pills `○ Not firing today
+· last <last_event>` (or `● Firing today · day <firing_day>`; `○ Stale ·
+<evaluated_on>` when `stale`, never "firing today"; nothing when `firing_now`
+is null) and `● Live · <elapsed> <cached>` from
+`served_from_cache` and `elapsed_ms`. Four stats: EVENTS `matched_n` with the
+sub-line "<n> complete at <horizon label>" (C-03) · UP <H> LATER `up_pct`
+("<up_n> of <n>") · MEDIAN AT <H> `median` ("vs <baseline_median> in a normal
+<stretch>") · WORST · BEST (with their `event_date`s). Bar chart, four
+horizons, two bars each (after the event, blue; a normal stretch, gray) with
+the interval whisker on the event bar (§1.9); y ticks carry the display unit.
+Legend: `■ after the event · ■ a normal stretch · ┬ range the answer could
+fall in`. Comparison line: the `without_condition` block, UNAVAILABLE (§1.0,
+reason "conditional-versus-unconditional comparison is not defined").
 
 **Rail** (right, ~38%), top to bottom:
-1. VERDICT box (amber border for Suggestive): `VERDICT · SUGGESTIVE` / bold
-   "Lean, don't size." / why (the 9%-of-resamples sentence) / what to do (the
-   call-spread sentence) / `Price it →` (deep-links Basket & Hedge, Express
-   mode).
-2. BY REGIME · A MONTH LATER table: REGIME / N / UP / MEDIAN, four regimes;
-   n < 5 renders `n<5` in both cells. Note: "Today is Overheating: six events,
-   too few to read alone."
-3. LAST FIVE EVENTS · S&P A MONTH LATER: date · regime · return.
-4. RANGE vs NORMAL with confidence selector 80% / 90% / 95% (re-queries with
-   `confidence`): four rows horizon · range in pts · pill. Note under it:
-   "All four include zero at 90% — that is why this is Suggestive. At 80% the
-   1-month range clears zero; at 95% none do."
-5. `Advanced ▸ all 18 events · resampling detail · entry rules · provenance` ·
-   `Export →` (CSV of events). Provenance line (mono 10px): `Engine as of
-   Sep 22 · cluster bootstrap 10,000 · entry next session · cooldown 20 · gold
-   history from 2000 · slug gold-2sigma-spx-weak`.
+1. VERDICT box (amber border for Suggestive): `VERDICT · <label>` / the served
+   `headline` / `why` / `Price it →`, disabled with "not yet served" while
+   Basket & Hedge is unavailable.
+2. BY REGIME · A MONTH LATER: REGIME / N / UP / MEDIAN, four regimes at
+   h = 20; a regime with n < 10 prints its count and "too few cases to say"
+   (v2 §9.2). Beneath: "Unlabeled: <unlabeled_n> events before the first
+   labelled month" when non-zero; "Today is <regime>: <n> events<, too few to
+   read alone>."
+3. LAST FIVE EVENTS · <target label> A MONTH LATER: event date · regime ·
+   `value_20`.
+4. RANGE vs NORMAL: four rows horizon · interval (§1.9) · that horizon's pill.
+   Confidence chips 80% / 90% / 95% render disabled with "not yet served";
+   90% is the served level (`verdict_confidence`).
+5. `Advanced ▸ all <matched_n> events · resampling detail · entry rules ·
+   provenance` · `Export →` (the CSV of §12.4). Provenance line (mono 10px):
+   `Engine as of <as_of> · <method> <draws> · entry <rule> · cooldown <n |
+   none> · <series> history from <data_start> · verdict rule v1 at 90% · slug
+   <slug>`.
 
-Advanced expander content = the frame-2 parameter panel and tables (already
-built); it opens below the grid.
+The Advanced panel shows the study's own events (`/study/events`), each
+horizon's method, draws, blocks and adverse share, the entry rule and the
+provenance. It requests the identical study, so main and Advanced always
+show the same calculation; the frame-2 engine panel is retired (v2 §8).
+
+### 4.1 The engine's rules behind every answer (v2 §3–§5, §8, D-37)
+
+- **Entry.** Entry follows the engine's declared availability rules: the
+  event session's close when the target's fixing is at or after every input's
+  availability; otherwise the next session's close. Ambiguous target fixings
+  defer. Every event carries `event_date`, `entry_date` and an exit date per
+  horizon.
+- **Horizon.** A forward horizon h runs from the entry close to the close h
+  XNYS sessions later. Baseline observations use the identical rule.
+- **Cooldown.** After every retained threshold hit at session t, sessions t+1
+  … t+w are excluded, even if the condition later fails. Crosses have no
+  window and no cooldown; `provenance.cooldown` is null for them.
+- **Baseline.** Each horizon's baseline is the engine's evaluable baseline for
+  that exact study and horizon: the condition computable on the baseline dates
+  but not required to hold; the same entry and completeness rules; not
+  cooldown-thinned. Every study, horizon and Ledger row carries its own; there
+  is no universal normal month.
+- **Counts.** The hit rate, median, extrema and interval at a horizon use
+  exactly the same `n` completed outcomes. No denominator is ever taken from
+  another horizon; `matched_n` is the study's size only (C-03).
+- **Blocks.** Resampling clusters transitively intersecting inclusive forward
+  windows into blocks and resamples whole blocks; every event observation
+  stays in the reported counts. Under five blocks there is no interval (§12.2);
+  five to seven blocks enumerate Bᴮ draws; above seven, 10,000 Monte Carlo
+  draws with seed 20260921.
+- **Compute.** `/study`, `/study/events`, `/study/catalog` and the presets
+  share the existing single-flight study queue and generation cache; the CSV
+  export reuses the computed study. No new public compute route is added.
 
 ---
 
 ## 5. Regime  (`screens/04-regime.png`, 960px)
 
-No action button. Badge `● Live · Aug print · Sep 22`. Symmetric 2×2.
+No action button. Badge `● Live · <Mon> row · <date>`. Symmetric 2×2.
 
-**Where we are** (`rule-based · two-month lag`). Big `Overheating` (amber
-serif 30px), sentence "Growth rising and inflation rising. Third month in a
-row." Stats: GROWTH `Rising` (industrial production, 3-mo slope) · INFLATION
-`Rising` (CPI, 3-mo slope) · IN THIS REGIME `3 mo` (since the June print).
-LAST FIVE YEARS strip: colored segments by regime, year ticks 2021…2025,
-`today` at right; key ■ Goldilocks (green) ■ Overheating (amber) ■
-Stagflation (red) ■ Recession Risk (gray). Box "How it's decided: two signs —
-growth rising or falling, inflation rising or falling. Four combinations, four
-regimes. No model, no fitting." Footer `Advanced ▸ the two input series ·
-every regime change since 1996 · rule text`.
+**Where we are** (`rule-based · two-month lag`). Big label (regime color,
+serif 30px): `current.label`, the stored row stamped K−2 for the current
+session month K (`current.print`, v2 §9.1). Sentence "Growth <rising|falling>
+and inflation <rising|falling>. <Nth> month in a row." Stats: GROWTH
+(industrial production, 3-mo slope) · INFLATION (CPI, 3-mo slope) · IN THIS
+REGIME `months_in` mo (since the <since> row). Beside the label, separately:
+"Latest print: <latest_print>" (never used to classify). LAST FIVE YEARS
+strip: the last 60 stored monthly rows (`history`), colored by regime, year
+ticks and `today` at the right; key ■ Goldilocks ■ Overheating ■ Stagflation
+■ Recession Risk; note "labels as stored; revisions are not replayed."
+(`history_note`). Box "How it's decided: two signs — growth rising or
+falling, inflation rising or falling. Four combinations, four regimes. No
+model, no fitting." Footer `Advanced ▸` disabled, "not yet served".
 
-**Recession probability** (`logistic model · five monthly inputs, lagged three
-months`). Big `12%`, "Low. About one-in-eight over the next year." Gauge Low /
-Watch / Elevated · above 50%, needle at 12. Stats: INPUTS THROUGH `May`
-(three-month lag by design) · A YEAR AGO `9%` (rising slowly, still low) ·
-PEAK LAST CYCLE `71%` (Mar 2020). Box "What it is: a fitted model — five
-monthly indicators against NBER recession dates since 1970. It is the only
-fitted thing on the site, and it is labeled as one wherever it appears."
-Footer `Advanced ▸ the five inputs · fit and out-of-sample record · every
-month since 1970`.
+**Recession score** (`logistic model, five monthly inputs lagged three
+months`). Big score (`recession.score` × 100 %), then the band word ("Low.",
+"Elevated.", "High risk."). Sub-line "score for <probability_month> · inputs
+through <inputs_through>". Gauge Low / Elevated / High risk with edges at
+20% and 40% (`band_edges`), needle at the score. Stats: INPUTS THROUGH
+`inputs_through` (three-month lag by design) · A YEAR AGO (`year_ago.score`,
+its `probability_month`; "—" when null) · PEAK SINCE 2015 (`peak.score`,
+`peak.probability_month`). Box "What it is: a fitted model — five monthly
+indicators against NBER recession dates, trained <training.start> to
+<training.end>; historical scores are in-sample. It is the only fitted thing
+on the site, and it is labeled as one wherever it appears." Footer
+`Advanced ▸` disabled, "not yet served".
 
-**What each regime has meant** (`since 1996 · why a derivatives desk cares`).
-Table REGIME / MONTHS / S&P / MO / UP / VIX AVG / STOCK–BOND: Goldilocks 142
-+1.4% 66% 15 −0.2 · Overheating 88 +0.9% 59% 17 +0.3 · Stagflation 61 −0.2%
-48% 24 +0.4 · Recession Risk 54 −0.6% 45% 29 −0.5. Current regime row
-highlighted. Amber read: "Overheating has been fine for equities but vol runs
-a little higher than Goldilocks, and stock–bond correlation is positive —
-Treasuries stop hedging. That argues for owning protection through options
-rather than duration, which is the case the Technicals vol card makes today."
-Footer `Advanced ▸ by regime: sector leaders · curve shape · credit spreads ·
-skew (since 2023)`.
+**What each regime has meant**: UNAVAILABLE (§1.0), from `/regime` `stats`
+(awaiting, reason "regime statistics not yet defined in the engine."). Labels
+kept: REGIME / MONTHS / S&P / MO / UP / VIX AVG.
 
-**What would change it** (`the next two prints, and the last five changes`).
-NEXT CPI `Oct 14` — "a soft print (<0.2% m/m) flips inflation to falling →
-Goldilocks"; NEXT INDPRO `Oct 17` — "a negative print flips growth to
-falling → Stagflation". Both thresholds are COMPUTED by the engine (the value
-that flips the 3-month slope), never typed. LAST FIVE REGIME CHANGES · S&P A
-MONTH LATER list: Jun 2026 Goldilocks → Overheating +2.1% · Oct 2025
-Stagflation → Goldilocks +3.8% · Mar 2025 Overheating → Stagflation −4.2% ·
-Aug 2024 Goldilocks → Overheating +1.1% · Jan 2024 Recession Risk →
-Goldilocks +5.3%. Read: "regime changes have not been sell signals on their
-own; the one negative was the move into Stagflation. The label lags two
-months, so the market usually knows before the label does — which is why the
-Ledger scores signals, not regimes."
+**What would change it** (`the next two prints`). NEXT CPI · NEXT INDPRO, each
+`release_date` ("release date unavailable" when null) and the sentence "a
+print <operator> <threshold_mom × 100>% m/m flips <inflation|growth> to
+<falling|rising> → <flips_to>, effective from the <first_effective_month>
+label." (`operator` `<=` flips a rising axis to falling, `>` a falling axis
+to rising; v3 §9.3). LAST FIVE REGIME CHANGES · S&P A MONTH LATER:
+UNAVAILABLE (`/regime` `changes`, awaiting).
 
 ---
 
 ## 6. Macro & Correlations  (`screens/05-macro-correlations.png`, 1060px)
 
-No action button. Badge `● Live · FRED / Yahoo · Sep 22`. 2×2.
+No action button. Badge `● Live · FRED · <date>`. 2×2.
 
-**Yield curve** (`today against a month ago`). Stats: 10-YEAR `4.21%` (−6 bp
-on the month) · 2s10s `+41 bp` (steepening · +9 bp) · FRONT END `3m 4.05%`
-(market leans to cuts). Chart: tenors 3m / 2y / 5y / 10y / 30y on x; today
-(blue solid) 4.05 / 3.80 / 3.95 / 4.21 / 4.62, a month ago (gray dashed); y
-ticks 3.8 / 4.0 / 4.2 / 4.5; both lines labeled at right end. Read: "the
-front end has come down more than the long end — a bull steepener. That is
-the 2s10s trade on the Position Monitor working, and it is the shape that
-usually goes with rate cuts, not stress." Footer `Advanced ▸ 2y · 5y · 10y ·
-30y history · real yields · breakevens · curve by regime`.
+**Yield curve** (`today against a month ago`). Stats: 10-YEAR (`today.10y`, "<10y_chg_bp> bp on the month") · 2s10s (`curve.2s10s_bp` bp,
+"<steepening|flattening|unchanged> · <2s10s_chg_bp> bp") · FRONT END
+(`today.3m`; "Awaiting refresh" until DGS3MO is registered). Chart: tenors
+3m / 2y / 5y / 10y / 30y on x; today (blue solid) and a month ago (gray
+dashed), each labelled at its right end; a tenor not served leaves its point
+out and its label says so. Tenors share one `date` or carry their own and
+the chart labels the mismatch.
 
-**Do bonds still hedge stocks?** (`60-day correlation of daily returns, one
-year`). Stats: TODAY `+0.31` (positive · bonds not hedging, amber) · A YEAR
-AGO `−0.24` (was working) · FLIPPED `Mar 2026` (six months positive). Line
-chart one year, y +1 / 0 / −1, upper band labeled "bonds move WITH stocks · no
-hedge" (amber tint), lower "bonds move AGAINST stocks · hedge works" (green
-tint). Amber read: "with correlation positive, a long-Treasury position does
-not protect an equity book — both sell off on inflation surprises.
-Protection has to come from options. That is why the Technicals vol card and
-the Basket & Hedge tab price puts, not duration." Footer `Advanced ▸ 20 / 60
-/ 250-day · since 1990 · correlation by regime`.
+**Do bonds still hedge stocks?**: UNAVAILABLE (§1.0), from `/macro`
+`stock_bond` (awaiting, reason "Treasury and credit price-return series not
+ingested."). Labels kept: TODAY · A YEAR AGO · FLIPPED.
 
-**Credit** (`high-yield spread over Treasuries`). Stats: HY SPREAD `3.12%`
-(tight) · 3-YEAR RANGE `2.6 – 5.9%` (today near the low) · INVESTMENT GRADE
-`0.94%` (also tight). Gauge Tight / Normal / Wide, needle `18th pct`. LAST 12
-MONTHS line, y 3% / 4% / 5%, peak labeled `Mar scare · 4.6%`. Read: "credit
-is not flagging anything. Spreads near the tight end of three years means the
-bond market sees no default cycle; a +2σ widening over 20 days is a scored
-signal on the Ledger and would be the first warning." Footer `Advanced ▸ IG ·
-BB · B · CCC · spread history · widening as an event`.
+**Credit** (`high-yield spread over Treasuries`). Stats: HY SPREAD (`hy.value`
+%, dated) · 3-YEAR RANGE (`hy_range_3y`, or the served `reason` "coverage
+from <date> only" when null) · INVESTMENT GRADE (`ig.value` %, dated). Gauge
+Tight / Normal / Wide with edges 0.30 and 0.70 of the three-year rank,
+needle at `hy_pct_3y` ("<nth> pct"); no gauge when `hy_pct_3y` is null. LAST
+12 MONTHS line (`series`, blue) with `peak_12m` labelled "<Mon> peak ·
+<hy>%".
 
-**What moves with the S&P** (`60-day correlation · each asset against the
-index`). Header `← moves against · a hedge | moves with · same bet →`. Six
-rows, each = name / centered bar (left = green, right = amber) / value / gray
-meaning: 10-year Treasury (price) +0.31 "moves with · no hedge" · Gold +0.12
-"no relationship" · Dollar −0.22 "weak dollar helps" · Oil +0.18 "weak" ·
-Nasdaq +0.92 "same trade" · High-yield credit +0.64 "risk-on together".
-Read: "nothing on this list reliably moves against the S&P right now — even
-Treasuries are moving with it. Nasdaq and high-yield are the same trade as
-the index; owning them is not diversification." Footer `Advanced ▸ full
-12-asset matrix · rolling windows · by regime`.
+**What moves with the S&P**: UNAVAILABLE (§1.0), from `/macro` `correlations`
+(awaiting). Labels kept; the 12-asset matrix under Advanced is `matrix`
+(awaiting): `Advanced ▸` disabled.
 
 ---
 
 ## 7. Sectors  (`screens/06-sectors.png`, 900px)
 
-No action button. Badge `● Live · Yahoo · Sep 22`. Two columns.
-
-**Sector leadership** (`3-month return relative to the S&P · all eleven`).
-Stats: LEADING `Technology` (green) +6.1% vs the index · LAGGING `Utilities`
-(red) −4.8% vs the index (red) · PATTERN `Cyclical` growth sectors over
-defensives. Eleven rows ticker / name / bar / value: XLK +6.1 · XLI +3.4 ·
-XLF +2.2 · XLC +1.6 · XLY +1.1 · XLE +0.4 · XLB −0.6 · XLRE −1.2 · XLV −1.9 ·
-XLP −3.6 · XLU −4.8. Key: ■ more than 1% ahead (green) ■ within 1% (gray) ■
-more than 1% behind (red). Read: "Tech, Industrials and Financials leading;
-Staples and Utilities lagging. Cyclicals over defensives is the leadership
-you expect in Overheating — the sector tape agrees with the regime label."
-Footer `Advanced ▸ 1 / 3 / 6 / 12 months · rotation over time · leadership by
-regime`.
-
-**Breadth** (`is the rally wide or narrow?`). Stats: ABOVE 50-DAY `7 of 11`
-(amber; sectors · was 10 in July) · ABOVE 200-DAY `9 of 11` (green; sectors ·
-trend still broad) · EQUAL vs CAP WEIGHT `−2.4%` (red; 3 months · big names
-carrying it). Line: AVERAGE STOCK vs THE INDEX · ONE YEAR (RSP/SPY relative),
-y +5 / 0 / −5, bands labeled "average stock beating the index · broad rally"
-(green) and "index beating the average stock · narrow rally" (amber). Dots
-row WHICH SECTORS ARE ABOVE THEIR 50-DAY (eleven, green lit / gray) and …AND
-THEIR 200-DAY. Line: SMALL CAPS vs LARGE · RUSSELL 2000 AGAINST THE S&P · ONE
-YEAR, same y, bands "small caps leading · risk appetite broad" / "large caps
-leading · crowded into the biggest names". Amber read: "narrowing. The index
-is up on a shrinking group of names — seven of eleven sectors above their
-50-day, down from ten. Not a sell signal on its own, but it is the first thing
-to watch if the vol card starts flagging." plus gray note "Measured from
-sector ETFs; stock-level breadth needs constituent data that is not ingested
-yet." Footer `Advanced ▸ all three measures since 2000 · breadth by regime ·
-small caps vs large`.
+UNAVAILABLE (§1.0). No action button. Badge `○ Not yet served`. The route
+`/sectors` answers the awaiting envelope (reason "sector ETFs, RSP and IWM not
+ingested."). Both cards keep their titles, subtitles and stat labels (LEADING
+· LAGGING · PATTERN; ABOVE 50-DAY · ABOVE 200-DAY · EQUAL vs CAP WEIGHT) and
+print the reason. The served shape once ingested is in §12.13.
 
 ---
 
 ## 8. Signal Ledger  (`screens/07-signal-ledger.png`, 880px)
 
-No action button. Badge `● Live · engine as of Sep 22`. Subtitle `every signal
-the engine scores, on one page · click a row to open it in Event Study`.
+No action button. Badge `● Live · engine as of <as_of>`. Subtitle `every
+signal the engine scores, on one page · click a row to open it in Event
+Study`.
 
-Four stat cards: SIGNALS SCORED `12` (since 1990 where history allows) ·
-FIRING NOW `2` (green; names) · RELIABLE `3` (green; names) · NO EDGE `5`
-(shown so you know they were checked).
+Four stat cards: SIGNALS SCORED `scored_n` ("<scored_n> scored · <unavailable_n>
+not yet served", v4 B-02) · FIRING NOW (count of available rows with
+`firing_now` true and not stale; their `short`s) · RELIABLE (count; `short`s)
+· NO EDGE (count). Unavailable rows are excluded from every count but the
+first.
 
 Filter chips: All 12 · Firing now · Reliable only · S&P only · Cross-asset.
 
 Table, fixed column widths: SIGNAL / LAST FIRED / TIMES / UP A MONTH LATER /
-MEDIAN / VS NORMAL / VERDICT (92px pill) / NOW (`● Firing` green or `○ Quiet`
-gray, text not pill). Two groups with mono group headers: FIRING NOW (rows
-green-tinted) then QUIET · SORTED BY VERDICT. Mockup rows in order: 2s10s +2σ
-steepening (Sep 9 2026, 22, 45%, −0.6%, −1.9, No edge, Firing) · Dollar −2σ,
-20 days (Sep 15 2026, 37, 62%, +1.9%, +0.6, Suggestive, Firing) · S&P golden
-cross (Jul 1 2025, 31, 68%, +2.7%, +1.4, Reliable) · RSI below 30 (Apr 8
-2025, 22, 73%, +3.4%, +2.1, Reliable) · VIX spike +2σ, 5 days (Aug 5 2024,
-41, 71%, +2.2%, +0.9, Reliable) · Gold +2σ while S&P weak (Apr 16 2025, 18,
-67%, +3.1%, +1.8, Suggestive) · HY spreads +2σ, 20 days (Mar 12 2025, 24,
-63%, +2.9%, +1.6, Suggestive) · S&P 20-day move over 2σ (Apr 9 2025, 29,
-66%, +2.4%, +1.1, Suggestive) · S&P death cross (Apr 14 2025, 29, 52%,
-+0.9%, −0.4, No edge) · RSI above 70 (Jun 12 2026, 64, 59%, +1.1%, −0.2, No
-edge) · Oil +2σ, 20 days (Jun 18 2026, 44, 49%, +0.4%, −0.9, No edge) · S&P
-5-day move over 2σ (Aug 2 2026, 88, 55%, +0.6%, −0.7, No edge).
+MEDIAN / VS NORMAL / VERDICT (92px pill) / NOW. The twelve rows in exactly
+this order (v3 §2, v4 B-03): 2s10s-2sigma-steepening, dollar-2sigma-20d,
+golden-cross, rsi-below-30, vix-spike-2sigma-5d, gold-2sigma-spx-weak,
+hy-2sigma-20d, spx-20d-2sigma, death-cross, rsi-above-70, oil-2sigma-20d,
+spx-5d-2sigma. A firing row is green-tinted. NOW: `● Firing · day <n>`
+(green text), `○ Quiet` (gray), or `○ Stale · <evaluated_on>` when the row's
+`evaluated_on` is not the comparison session (v3 §3); the NOW cell's tooltip
+reads "evaluated on <evaluated_on>". An unavailable row keeps its label and
+prints its reason across the value columns, with no pill.
 
-Footer: the three verdict definitions + `a month = 20 sessions · normal month
-+1.3% · engine as of Sep 22`.
+Footer: the four §1.5 definitions + "vs normal compares each study to its own
+baseline over its own sample." + `a month = 20 sessions · engine as of
+<as_of>`.
 
 ---
 
 ## 9. Position Monitor  (`screens/08-position-monitor.png`, 1040px)
 
-No Desk/Client toggle on this tab (desk-only). Two columns.
+No Desk/Client toggle (desk-only). Two columns. Positions live in this
+browser (§1.8): there is no server position store and nothing is posted
+(v2 D-21, v3 §16).
 
-**Promote to position** (left). Subtitle "Carried in from Event Study · Gold ≥
-+2σ (20d) AND SPX below 50d MA · 20 trading days · any study can be carried
-in". Fields: INSTRUMENT (text) · DIRECTION (Long / Short segmented) · SIZE ·
-% NAV (number) · HORIZON chips 5 / 10 / 20 / 60 trading days.
+**Promote to position** (left). Subtitle names what was carried in (a study
+from Event Study, a basket from Basket & Hedge) or "any study can be carried
+in". Fields: INSTRUMENT (text) · DIRECTION (Long / Short) · SIZE · % NAV
+(number, optional) · HORIZON 5 / 10 / 20 / 60 trading days.
 
 **Discipline gate** — "three short answers, then Save turns on" with progress
 `✓ variant · ✓ pre-mortem · ○ level`:
 1. VARIANT VIEW — "finish the sentence: 'The market thinks ___, I think ___,
-   because ___.'" (textarea)
+   because ___.'"
 2. PRE-MORTEM — "finish the sentence: 'It lost money because ___.'"
-3. WRONG IF — "suggested for <instrument> · changes with the instrument".
-   Three suggested chips computed from live levels (e.g. `closes below its
-   50-day (6,280)`, `falls 2σ over 5 days`, `the signal reverses`) and a
-   `More levels for <instrument>…` expander with eight more (200-day, entry
-   −3%, entry −5%, lower low than last 20 days, RSI < 40, VIX > 25, regime
-   label changes, HY spreads widen 2σ). A chip carries a number only for the
-   exact series `/technicals` describes, so the mockup's "SPX Dec 26 call
-   spread" gets `closes below its 50-day` without the 6,280 (§12.13, Codex
-   round 1, R-08).
-WORDING check: certainty words (will, always, never, proves, guaranteed)
+3. WRONG IF — "suggested for <instrument> · changes with the instrument". The
+   suggested levels are named rules; a level carries a number only for a
+   subject the store serves (the S&P against `/technicals` `ma50` and
+   `ma200`; 2s10s against `/macro` `curve.2s10s_bp`), and only the S&P's
+   50-day and 2s10s are monitored automatically (below). `the signal
+   reverses` is offered only for a study subject with its full question.
+4. RED TEAM (optional) — "the strongest case against, in your words."
+WORDING check: will, always, never, proves, guaranteed (case-insensitive,
+ASCII word boundaries, in the variant view and the pre-mortem only) are
 highlighted amber with one-click replacements ("is likely to", "tends to").
-Only those block; nothing else is edited. **Save position** button disabled
-until the gate is complete; helper text names what's left.
+Only those block. **Save position** is off until the gate is complete; the
+helper names what's left. The gate in the browser is a workflow check, and
+Build Notes says so.
 
-Placeholder text in the mockup's gate fields is illustrative; the build ships
-the fields empty, and the two live positions' text carries `TODO(Max)`
-markers in the fixture.
+**The gate rule** (published so a future server enforces it identically):
+- required: a trimmed non-empty `instrument`, `variant` and `pre_mortem`, and
+  a `wrong_if` choice; `size_nav` null or finite in [0, 1]; `horizon_days` ∈
+  {5, 10, 20, 60}.
+- subject: `{"kind":"study","question":{the six slots}}`,
+  `{"kind":"basket","legs":[{"symbol","weight"}],"benchmark":string|null}` or
+  `{"kind":"instrument","id":string}`. `signal_reverses` requires
+  `kind: "study"` with the full question.
+- monitoring (v3 §16, v4 B-10): `automatic` when the subject's monitored
+  quantity exactly matches a served series — the instrument `spx` against
+  its 50-day (`/technicals` `ma50`), or the instrument `curve_2s10s` against a
+  bp level (`/macro` `curve.2s10s_bp`). Such a position needs a positive
+  finite `original_room`; zero or negative (already through the level at
+  entry) is rejected with a sentence, never saved as manual. Unserved
+  subjects (NDX vs SPX, a basket) and categorical or custom falsifiers
+  (`regime_changes`, free text, the S&P's 200-day) are saved with
+  `monitoring: "manual"`, `original_room: null`, `room_pct: null`; they stay
+  visible and need an explicit close.
+- persisted at entry: `entry_ts`, `entry_date`, `entry_value`,
+  `trigger: {"series","operator":"below"|"above","threshold","policy":"frozen"}`,
+  its observation date, `original_room` (signed), `evaluation: "close"`.
+- signed distance: for a below-level falsifier `value − threshold`; for an
+  above-level one `threshold − value`; the same orientation at entry and
+  now, the threshold frozen at entry. `room_pct = distance now / original_room`;
+  ≤ 0 when breached; null when the series is not served.
+- `day` counts the entry session as 1 on XNYS. `dv01` is null.
+- closure is an explicit stored event (`{"type":"falsified"|"expired"|"closed","ts"}`);
+  an unobserved interval (the browser closed) closes nothing. The pre-mortem
+  is judged by an explicit stored yes / no at close. `closed_90d` counts the
+  stored close events of the last 90 days.
+- validation runs on Save, on Import and on load; a record that fails is kept
+  in an "unreadable" list the page shows, never dropped. Manual records are
+  valid with null room.
 
-**Monitored** (right). Same row format as Overview §2, click expands a row.
-Expanded row shows: FALSIFIES AT (`2s10s below +38 bp · now +41 bp`) · SIZE ·
-HORIZON (`2% NAV · DV01 $1.4k · 14 of 20 trading days · opened Sep 2`) ·
-VARIANT VIEW · PRE-MORTEM · RED TEAM · STRONGEST CASE AGAINST · links `Open
-the study behind it →` and `Price a hedge →`. Footer: `Sorted by room left ·
-room = distance to the level as a share of the room at entry, same scale for
-every trade · size as % of NAV · 12% deployed, 3 positions · click a row for
-the gate text`. CLOSED · LAST 90D strip: Falsified on level `4` · Expired at
-horizon `6` · Pre-mortem was right `2 of 4`.
+**Monitored** (right). Rows as on the Overview (§2), sorted by `room_pct`
+ascending, null last, then id; click expands a row: FALSIFIES AT
+(`<series> <below|above> <threshold> · now <value>`, or the typed rule for a
+manual row) · SIZE · HORIZON (`<size> NAV · DV01 — · <day> of <horizon>
+trading days · opened <entry_date>`) · VARIANT VIEW · PRE-MORTEM · RED TEAM ·
+links `Open the study behind it →` (a study subject) and **Close…**. Footer
+`Sorted by room left · room = distance to the level as a share of the room at
+entry, same scale for every trade · size as % of NAV · <deployed>% deployed,
+<n> positions · click a row for the gate text`. CLOSED · LAST 90D strip:
+Falsified on level · Expired at horizon · Pre-mortem was right `<yes> of
+<judged>`. Export / Import JSON of the store.
 
 ---
 
-## 10. Basket & Hedge  (`screens/09-basket-hedge.png`, 1040px) — ships if there's time
+## 10. Basket & Hedge  (`screens/09-basket-hedge.png`, 1040px)
 
-Action button: **Send to Position Monitor →**. Badge `● Live · prices Sep 22 ·
-options via EODHD`. Two columns.
+UNAVAILABLE (§1.0): basket pricing and option structures are not yet defined
+in the engine (v2 D-25–D-28). No Desk/Client toggle. Action button **Send to
+Position Monitor →** (a basket subject, monitored manually, §9). Badge `○ Not
+yet served`. Two columns, both kept with their titles and labels.
 
-**Basket**. Selector `AI infrastructure ▾` (7 names · rebalanced monthly) +
-`+ New basket`. Stats: 3-MONTH `+12.7%` (vs NDX +9.1%) · VS NDX · RESIDUAL
-`−1.9%` (last 60 sessions · falsifies at −4%) · BASKET VOL `41%` (vs NDX 24%
-· 1.7× as jumpy). LEGS table ("type a weight, or × to drop a name") with
-buttons Equal-weight / Normalize to 100%: NVDA 22 · AVGO 16 · VRT 14 · CRWV
-12 · ANET 12 · CEG 12 · SMCI 12; `+ Add a ticker…` row (any US-listed name ·
-price history pulled on add); total 100%. Chart: IS THE AI-INFRA BET
-WORKING? · BASKET MINUS 1.6 × NASDAQ, LAST 60 SESSIONS — one blue line, zero
-line, dashed amber line at −4% with the band below tinted, in-chart labels
-"above the line · the bet is paying beyond Nasdaq beta" (green) and "at the
-dashed line the position comes off · −4%" (amber), white dot at −1.9%, x
-labels "60 sessions ago" / "today". Sentence: "Slipped from +0.8% to −1.9%
-over the month: still 2.1 points above the line, but drifting toward it. Same
-number the Position Monitor watches." Box: "Beta to NDX: 1.6. Half of this
-basket's move is just Nasdaq. Hedge that half and what's left is the actual
-AI-infra bet." **Save basket** button. Footer `Advanced ▸ rebalance rule ·
-index since inception · export`.
+**Basket**. The selector of this browser's baskets and `+ New basket`. The
+LEGS table with Equal-weight / Normalize to 100%, typed weights, `+ Add a
+ticker…`, the total, **Save basket** and Export / Import JSON: local editing
+only. A weight keeps every digit it is typed with; a total counts as 100%
+only when it is exactly 100. The stats (3-MONTH, VS NDX · RESIDUAL, BASKET
+VOL), the residual chart and the beta read are unavailable: labels kept,
+the reason printed.
 
-**Hedge · express or protect** (`priced off the live SPY / QQQ surface`;
-served, `priced off the SPY / QQQ surface of Sep 22`, §12.13, Codex round 1,
-R-04).
-Three-way switch: Protect the basket / Express the S&P lean / Neutralize NDX
-beta. Three option rows (radio; put spread selected): Put spread on QQQ · 1
-month · 5% / 10% down — costs 1.1% of basket — breakeven −6.1% · max loss
-1.1% — "Cheapest cover for a 5–10% drawdown. Skew is steep, so the lower put
-you sell pays for a lot of the upper one." · Collar — costs 0.2% — breakeven
-−5.2% · max loss 5.2% — "Near-free, but you give up upside above +5%. Wrong
-tool while the basket is running." · Outright QQQ puts 5% down — costs 2.4% —
-breakeven −7.4% · max loss 2.4% — "Simplest, and twice the price. Vol is rich
-right now; you're paying for it." Then: HEDGE RATIO `$62 per $100` (QQQ
-notional · beta-adjusted, 1.6 × 0.39 delta) · COST OF WAITING `−0.09% / wk`
-(theta if nothing moves) · ROLL `Oct 17` (30 days · roll at 10 DTE). Scenario
-table IF NDX MOVES · OVER THE MONTH: NDX / BASKET / + HEDGE: −20% / −32% /
-−30% · −10% / −16% / −14% · flat / 0% / −1.1% · +10% / +16% / +15%. Note:
-"Basket moves 1.6× NDX. The spread pays at most 3.1% of the basket (5 points ×
-$62 notional), so it softens a drawdown rather than stopping it; below −10%
-you are long the basket again." Box "Why index options, not the names: …
-single-name vol runs 1.7× the index …". Recommendation box at bottom.
-(The rows' breakeven and max loss, the ratio line's $62 and the table's
-figures above are the mockup's. The served figures follow §12.13, "Codex
-round 1": breakeven +1.1%, max loss $14.0 per $100 of basket between the
-strikes, $62.4 per $100, +14.9% at NDX +10%.)
+**Hedge · express or protect**: UNAVAILABLE. Title, subtitle and the three
+mode labels kept; the reason printed; no structures, no ratio, no scenarios.
+The deferred shapes, with the corrections that apply when they are built,
+are in §12.13.
 
 ---
 
 ## 11. Data Pipeline, Build Notes, Client view
 
-**Data Pipeline** (`screens/10-data-pipeline.png`). Header `● Last full
-refresh Sep 22, 00:23 UTC · validation passed`. Title "Where every number
+**Data Pipeline** (`screens/10-data-pipeline.png`). No Desk/Client toggle.
+Header `● Last full refresh <last_refresh_utc> · validation <passed|failed>`,
+or "unknown" for either when not served (v2 D-33). Title "Where every number
 comes from" · "Every panel in Desk resolves to a row here. Nothing is
 synthetic; nothing is re-derived in the browser." Lineage strip: 1 SOURCES
-(FRED API, Yahoo Finance, EODHD) → 2 FETCH (GitHub Actions, daily 00:23 UTC,
-news-only hourly) → 3 VALIDATE (schema + range checks, as-of ≤ today, gap
-detection) → 4 TRANSFORM (z-scores, MAs, regime labels, forward returns) → 5
-STORE (SQLite snapshot, published as release asset, Snowflake-ready schema) →
-6 SERVE (FastAPI · /api/desk/* · one number, one truth). Series inventory:
-groups Rates (5) · Credit (5, "HY OAS history from 2023") · Equities & vol
-(6) · FX & commodities (4, "WTI published weekly") · Macro monthly (6); each
-group expands to a table SERIES / ID / FROM / AS OF / FEEDS / STATUS, scrolls
-inside the group; search jumps to a series. Read from the pipeline config —
-new series appear automatically. Snowflake bridge card with the DDL block
-exactly as on the board, buttons **Export current study → CSV** and
-**Generate Snowflake DDL**.
+(FRED API, Yahoo Finance, EODHD) → 2 FETCH (GitHub Actions) → 3 VALIDATE
+(schema + range checks, as-of ≤ today, gap detection) → 4 TRANSFORM
+(z-scores, MAs, regime labels, forward returns) → 5 STORE (SQLite snapshot,
+published as a release asset) → 6 SERVE (FastAPI · /api/desk/* · one
+number, one truth). Series inventory: generated from the registry and its
+consumers, counts derived; each group expands to a table SERIES / ID / FROM
+/ AS OF / FEEDS / STATUS (provider, `freq`, first and last stored
+observation, feeds), scrolls inside the group; search jumps to a series. WTI
+is the daily `DCOILWTICO`; USD/JPY is the registry's instrument. The bridge
+card is titled "Proposed export schema (not the current SQLite layout)", with
+the DDL block and the buttons **Export current study → CSV** (§12.4) and
+**Generate Snowflake DDL** (`/pipeline/ddl`).
 
-**Build Notes** (`screens/11-build-notes.png`). TOC sidebar (What this is ·
-What the engine does · Where every number comes from · What is a model and
-what isn't · Review log · Known limits · What I'd build next). Rendered from
-`docs/desk/BUILD_NOTES.md` — the page is a markdown render, nothing hardcoded.
-Byline `Max Komen · September 2026`. The `[N] findings across [R] rounds`
-placeholder is filled by Max from C's audit.
+**Build Notes** (`screens/11-build-notes.png`). TOC sidebar from the file's
+sections. Rendered from `docs/desk/BUILD_NOTES.md`, a markdown render,
+nothing hardcoded except §11's byline `Max Komen · September 2026` and the
+section "Live / Designed, not yet served": §1.0.1's two lists, word for word.
+The file is the owner's prose: of the Desk's banned words only "established"
+and "significant" are enforced on it, by the page's existing hold (a sentence
+that carries either is held, FRAME3_REPORT §10). The `[N] findings across [R] rounds` placeholder is filled by
+Max from C's audit.
 
-**Client view** (`screens/12-client-view.png`, 760px). The Desk/Client toggle
-on any Survey tab swaps the page for a one-card client-safe summary: source
-line `Radar · FRED, Yahoo Finance · as of Sep 22, 2026 · Past patterns do not
-guarantee future results.`, title "A month later, by economic backdrop",
-subtitle "Typical S&P move after the setup", four regime rows with median
-(Goldilocks +4.2% · Overheating +2.8% · Stagflation +1.9% · Recession Risk
-"too few cases to say"). No verdict pills, no σ, no jargon.
+**Client view** (`screens/12-client-view.png`, 760px). The Desk / Client toggle
+appears on Overview, Technicals, Regime, Macro & Correlations, Sectors, Event
+Study, Signal Ledger and Build Notes; not on Position Monitor, Data Pipeline
+or Basket & Hedge (v2 D-36). Client swaps the page for PNG 12's two-column
+client-safe summary of one study: Event Study's current study (its address;
+on other tabs the last one Event Study answered in this browser, else the
+gold preset), with the same generation and the h = 20 counts Event Study
+shows. Left: "Setup · <last_event>" when `firing_now` and not `stale`, else "Setup
+last seen · <last_event>"; the served `client.headline` as the title (the catalog
+`label` when `client` is null); the served `client.summary`; three stats
+EPISODES (`matched_n`, "since <sample_start year>") · HIGHER A MONTH LATER
+(h = 20 `up_pct` against `baseline_up_pct`, green only when above) · TYPICAL
+MOVE (h = 20 `median` against `baseline_median`, §1.9); the source line
+`Radar · FRED, Yahoo Finance · as of <as_of> · Past patterns do not guarantee
+future results.` Right: "A month later, by economic backdrop" / "Typical
+<target label> move after the setup", four regime rows with the h = 20
+`by_regime` median on one scale, "too few cases to say" when null. No
+verdict pills, no σ, no jargon.
 
 ---
 
-## 12. API contract
+## 12. API contract — the nine live endpoints
 
-All under `/api/desk/`. Every response carries `as_of` (engine date),
-`generation_id`, and each value that has its own date carries it beside the
-value at the series' frequency. Errors are `{ "error": string }` with 4xx/5xx.
+### 12.0 Transport, envelope, conventions
+
+**Routes.** JSON, GET only, under `/api/desk/`: `/overview`, `/study`,
+`/study/catalog`, `/study/events`, `/ledger`, `/regime`, `/technicals`,
+`/macro`, `/pipeline`. Two text exceptions: `/study/events` with `Accept:
+text/csv` (§12.4) and `/pipeline/ddl` (`text/plain; charset=utf-8`). The
+deferred resources of §12.13 (`/sectors`, `/vol`, `/positions`,
+`/basket/:id`, `/basket/price`, `/hedge`) are GET-only stubs answering the
+awaiting envelope; a removed write (`POST /positions`, `POST /basket/price`)
+answers 405. Every existing endpoint keeps its contract, those under
+`/api/desk/` included (`/api/desk/event-study`, `/api/desk/event-study/assets`,
+`/api/desk/pipeline/inventory`); this envelope applies only to the routes
+above (v3 §18).
+
+**Envelope** (every JSON route above):
+
+| Field | Type | Presence | Meaning |
+|---|---|---|---|
+| `status` | `"ready"` \| `"computing"` \| `"awaiting"` \| `"error"` | required | the response's state |
+| `generation_id` | string | required, nullable | the store generation computed on; null only while awaiting before a generation exists |
+| `as_of` | date | required, nullable | the calculation's date (never an observation's); null as above |
+| `engine_version` | string | required | the engine's version string |
+| `data` | object | required, nullable | the payload; non-null only when `status` is `ready` |
+| `unavailable` | `{reason: string, until: string\|null}` | required, nullable | non-null only when `status` is `awaiting` |
+| `error` | `{code: string, message: string}` | required, nullable | non-null only when `status` is `error` |
+
+HTTP: `ready` 200; `computing` 202 with `Retry-After: 2`, and the client polls
+the same URL; `awaiting` 200 with `data: null`; `error` 4xx/5xx. A study
+outside the catalog is 422 with `error.code: "unsupported"` and a message
+naming what is not supported, never a silent parameter drop. The client
+parses `data` only when `status` is `ready`.
+
+**Nested block envelopes** occur at exactly these paths and nowhere else
+(v4 B-08, C-01):
+- `/overview`: `since_last_close`, `tiles.regime`, `tiles.recession`,
+  `tiles.trend`, `tiles.vol`, `data_status`;
+- `/regime`: `current`, `recession`, `next_prints`, `stats`, `changes`;
+- `/macro`: `curve`, `credit`, `stock_bond`, `correlations`, `matrix`;
+- `/technicals`: `vol`, `sectors`;
+- `/study`: `without_condition`.
+
+A block envelope is `{"status":"ready","data":<the declared object or
+array>,"unavailable":null}` or `{"status":"awaiting","data":null,
+"unavailable":{"reason","until"}}`. Every other object and array is an
+ordinary payload field. The tables below give a nested block's fields as
+`<path>.data.<field>`.
+
+**Values.** Full precision. A missing statistic is null with a reason where
+the table says so, never 0, NaN or Infinity. Dates are sessions
+`YYYY-MM-DD`, months `YYYY-MM`, timestamps RFC 3339 with zone. Every dated
+live block carries `date` | `month` | `ts` with `freq` and `source`; a
+composite statistic carries `window: {start, end, n}` (§1.10).
+
+**Reads** (v2 §15). A card's interpretive sentence is served only as
+`reads.<card>` = `{"label": "Read" | "Read for the desk" | "Beta to NDX" |
+"Why index options, not the names" | "Recommendation" | null, "text": string,
+"tone": "normal"|"warning", "rule": string}`, where `rule` names the rule in
+this contract that produced it (v2 §15 allows `null`; v3 A-14 serves no word
+without its formula, so a read without a named rule is not served). No such rule exists on Monday, so no `reads`
+field is served and no read box is drawn. No recommendation is inferred from
+a verdict, beta, correlation or IV gap alone.
+
+**Categorical words.** A served word (`band`, `trend.state`, a verdict) names
+its formula in this contract or its existing implementation; none is served
+on a version string alone (v3 A-14).
+
+**Consistency.** Every response a page makes shows one `generation_id`
+(§1.1). Hash identity (v4 B-09): `inputs_hash` is the engine's unchanged
+native provenance hash. The native calculation cache keys on the canonical
+engine query and the generation and is shared across selected horizons; the
+adapter response cache adds `selected_horizon`, the `verdict_rule` version and
+the adapter schema version, and an adapter cache key is never served as
+`inputs_hash`.
+
+**Names that differ from the amendments' sketches** (the fold's choices,
+kept consistent everywhere): v3 §3's per-signal `compared` is one pair,
+`comparison_session` and `prev_session`, on `/overview` `since_last_close`,
+on `/ledger` and on `/study`, because B-05 anchors every signal to the same
+two sessions; v2 §21's `data_status {state, worst_series, date}` is
+`{state, contributors[]}` (B-06, C-02); v2 §21's Ledger `unit` is
+`target_unit` with `display_unit` (§1.9).
+
+**Engine basis codes** used in the tables:
+- **E** an existing function or stored table, named;
+- **P** a projection of the engine run's full event table (§13.2);
+- **N** a new calculation §13.2 authorizes, named;
+- **A** adapter shaping over served values (envelope, catalog, labels, the v1
+  verdict rule, fixed templates); no estimator;
+- **S** a stored read (a row, or its date), with no calculation.
 
 ### 12.1 `GET /overview`
-```json
-{
-  "as_of": "2026-09-22", "generation_id": "…",
-  "since_last_close": {
-    "new_fires": [{"slug":"dollar-2sigma-20d","label":"Dollar −2σ fired"}],
-    "still_firing": [{"slug":"2s10s-2sigma-steepening","label":"2s10s still firing","day":10}],
-    "vol_change_pts": 0.8, "skew_direction": "steeper",
-    "regime_changed": false, "regime_from": null, "regime_to": null,
-    "refreshed_at_utc": "2026-09-22T00:23:00Z"
-  },
-  "tiles": {
-    "regime": {"label":"Overheating","print":"Aug","growth":"rising","inflation":"rising","months_in":3},
-    "recession": {"prob":0.12,"band":"low","inputs_through":"2026-05"},
-    "trend": {"above_50":true,"above_200":true,"since":"2025-07-01","since_signal":"golden-cross","since_verdict":"reliable"},
-    "vol": {"vix":16.2,"date":"2026-09-22","realized_20d":11.9,"gap_pts":4.3}
-  },
-  "active_signals": [ /* Ledger rows (12.4) filtered: firing_now OR top 5 by last_fired */ ],
-  "monitored": [ /* Position rows (12.7 compact) */ ]
-}
-```
-PROPOSED additions to this response: §12.13 (`tiles.vol.band`, `tiles.trend.date`, `data_status`, `sample_start` on the rows).
 
-### 12.2 `GET /study` — the event study
-Params: `shock`, `window` (5|10|20|60), `move` (up2s|down2s|cross_above|cross_below),
-`while` (none|spx_below_50|spx_above_50|regime:<name>), `target`, `horizon`
-(5|10|20|60), `confidence` (0.80|0.90|0.95, default 0.90), or `preset=<slug>`.
-Preset slugs: `gold-2sigma-spx-weak`, `golden-cross`, `death-cross`,
-`vix-spike-2sigma-5d`, `hy-2sigma-20d`, `10y-2sigma-20d`, `dollar-2sigma-20d`,
-`oil-2sigma-gold`, `spx-2sigma-10y`.
-```json
-{
-  "as_of":"2026-09-22","generation_id":"…","inputs_hash":"f80f53b8d728b86c",
-  "served_from_cache":true,"elapsed_ms":300,
-  "slug":"gold-2sigma-spx-weak","question":{"shock":"gold","window":20,"move":"up2s","while":"spx_below_50","target":"spx","horizon":20},
-  "n_events":18,"sample_start":"2000-01-03","firing_now":false,"last_event":"2025-04-16",
-  "verdict":"suggestive","headline":"Leans positive a month out, but not something to size on.",
-  "why":"18 events clears the floor, but the resampled range still crosses zero at every horizon — about 9% of resamples come out negative at a month, against a 3% bar.",
-  "horizons":[
-    {"h":5,"label":"1 week","up_pct":0.61,"median":0.012,"baseline_median":0.003,"ci_lo_pts":-0.8,"ci_hi_pts":2.4,"verdict":"suggestive"},
-    {"h":10,"label":"2 weeks","up_pct":0.61,"median":0.016,"baseline_median":0.006,"ci_lo_pts":-0.6,"ci_hi_pts":2.9,"verdict":"suggestive"},
-    {"h":20,"label":"1 month","up_pct":0.67,"up_n":12,"median":0.031,"baseline_median":0.013,"ci_lo_pts":-1.6,"ci_hi_pts":4.1,"verdict":"suggestive","worst":{"ret":-0.094,"date":"2020-03-09"},"best":{"ret":0.120,"date":"2025-04-16"}},
-    {"h":60,"label":"3 months","up_pct":0.56,"median":0.029,"baseline_median":0.036,"ci_lo_pts":-3.9,"ci_hi_pts":2.6,"verdict":"no_edge"}
-  ],
-  "confidence":0.90,
-  "confidence_note":"All four include zero at 90%. At 80% the 1-month range clears zero; at 95% none do.",
-  "by_regime":[{"regime":"Goldilocks","n":5,"up_pct":0.80,"median":0.042},{"regime":"Overheating","n":6,"up_pct":0.67,"median":0.028},{"regime":"Stagflation","n":5,"up_pct":0.60,"median":0.019},{"regime":"Recession Risk","n":2,"up_pct":null,"median":null}],
-  "last_events":[{"date":"2025-04-16","regime":"Overheating","ret_20":0.120},{"date":"2023-10-27","regime":"Stagflation","ret_20":0.081}, "…"],
-  "without_condition":{"n_events":41,"up_pct":0.58,"median":0.016,"verdict":"no_edge"},
-  "provenance":{"bootstrap":10000,"entry":"next session","cooldown":20,"series_start":{"gold":"2000-01-03"}},
-  "warnings":[]
-}
-```
-`n_events < 10` → `verdict:"insufficient"`, `horizons:[]`, and
-`empty_state:{"sentence":"…","fixes":["widen_window","drop_condition"]}`.
-Changing `confidence` recomputes `ci_*`, per-horizon `verdict`, and the
-top-level `verdict`. All nine presets are precomputed on refresh and cached by
-`inputs_hash`; `served_from_cache` reports it.
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `since_last_close` | block envelope | required | — | — | — |
+| `since_last_close.data.comparison_session` | date | required | — | XNYS session | N firing state (§12.5): `api/calendar.last_completed_session` at the response's calculation time (v4 B-05) |
+| `since_last_close.data.prev_session` | date | required | — | XNYS | N: the XNYS session before `comparison_session` (`api/calendar.previous_trading_day`) |
+| `since_last_close.data.new_fires` | array of `{slug, label, short}` | required (may be empty) | — | the two sessions | N firing state: `firing_now` false → true between `prev_session` and `comparison_session`, both evaluated in this generation; a signal whose `evaluated_on` is not `comparison_session`, or whose state is null, is excluded |
+| `since_last_close.data.still_firing` | array of `{slug, label, short, firing_day}` | required (may be empty) | sessions | the two sessions | N firing state: true → true; `firing_day` as §12.5 |
+| `since_last_close.data.vol_change_pts` | number | required, nullable | VIX points | the two sessions · daily · FRED VIXCLS | N (v4 B-12): VIX on `comparison_session` minus VIX on `prev_session`; null if either observation is missing |
+| `since_last_close.data.regime_from` | regime label | required, nullable | — | the K−2 row governing `prev_session` | N (B-12): stored `regimes` row |
+| `since_last_close.data.regime_to` | regime label | required, nullable | — | the K−2 row governing `comparison_session` | N (B-12) |
+| `since_last_close.data.regime_changed` | boolean | required, nullable | — | — | N (B-12): `regime_from ≠ regime_to`; null if either is null |
+| `since_last_close.data.refreshed_at_utc` | ts | required, nullable | — | `source_watermarks` | S: the Desk series' last advance recorded by the refresh; null when not recorded |
+| `tiles.regime` | block envelope | required | — | — | — |
+| `tiles.regime.data.label` | regime label | required | — | the row `print` · monthly · `regimes` | E: `src/regime.py` `classify_regime`, stored row |
+| `tiles.regime.data.print` | month | required | — | K−2 for the month of `comparison_session` | A: `event_study.regime_at` rule (`REGIME_LAG_MONTHS = 2`) |
+| `tiles.regime.data.growth` | `"rising"` \| `"falling"` | required | — | as `print` | E: sign of the stored `growth_trend` (`compute_trends`) |
+| `tiles.regime.data.inflation` | `"rising"` \| `"falling"` | required | — | as `print` | E: sign of the stored `inflation_trend` |
+| `tiles.regime.data.months_in` | integer | required | months | — | A: length of the run of equal stored labels ending at `print` |
+| `tiles.regime.data.since` | month | required | — | — | A: the first row of that run |
+| `tiles.regime.data.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, `"regimes table (src/regime.py)"` |
+| `tiles.recession` | block envelope | required | — | — | — |
+| `tiles.recession.data.score`, `probability_month`, `inputs_through`, `band`, `band_edges`, `freq`, `source` | as the same fields of `/regime` `recession.data` (§12.6) | required | as §12.6 | as §12.6 | as §12.6 |
+| `tiles.trend` | block envelope | required | — | — | — |
+| `tiles.trend.data.state` | `"above_both"` \| `"below_both"` \| `"mixed"` \| `"unavailable"` | required | — | `date` | N MAs and trend (§13.2, v3 §13): price against `ma50` and `ma200`; equality is `mixed`; `unavailable` when either average is null |
+| `tiles.trend.data.above_50` | boolean | required, nullable | — | `date` | N: `price > ma50` |
+| `tiles.trend.data.above_200` | boolean | required, nullable | — | `date` | N: `price > ma200` |
+| `tiles.trend.data.state_since` | date | required, nullable | — | — | N: the first session of the current state |
+| `tiles.trend.data.cross` | `{kind: "golden"\|"death", date}` | required, nullable | — | — | E: `event_study.cross_positions`, the latest strict cross |
+| `tiles.trend.data.date` | date | required | — | daily · `asset_prices` ^GSPC | S: the session the state is read at |
+| `tiles.trend.data.freq`, `.source` | `"daily"`, string | required | — | — | A: `"daily"`, `"asset_prices ^GSPC"` |
+| `tiles.vol` | block envelope | required | — | — | — |
+| `tiles.vol.data.vix` | number | required | index points | `date` · daily · FRED VIXCLS (`desk_series`) | E: newest stored observation |
+| `tiles.vol.data.date` | date | required | — | — | E |
+| `tiles.vol.data.freq`, `.source` | `"daily"`, string | required | — | — | A |
+| `active_signals` | array of Ledger rows (§12.5) | required (may be empty) | — | each row's own | A: the deduplicated union of every row with `firing_now` true and the five rows with the latest non-null `last_fired`, ordered firing first, then `last_fired` descending, then `slug` (v2 §19) |
+| `data_status` | block envelope | required | — | — | — |
+| `data_status.data.state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N data status (v4 B-06): the worst contributor, missing > stale > current |
+| `data_status.data.contributors` | array | required | — | — | N: one per series of the Desk feed set, the tier-1 inputs of the twelve Ledger studies plus DGS2 and DGS10 |
+| `…contributors[].series` | string (series id) | required | — | — | A |
+| `…contributors[].observation_date` | date | required, nullable | — | the series' newest stored observation | S: `desk_series` for the FRED inputs, `asset_prices` for ^GSPC and GC=F (the symbol's own newest row) |
+| `…contributors[].expected_observation_date` | date | required, nullable | — | the observation the series' existing freshness policy expects (C-02); never a publication timestamp | E: for the FRED inputs, `api/freshness._daily_expected_and_lag`'s expected date (bond calendar for rates and spreads, FRED tolerance kept); for ^GSPC and GC=F, the completed session the `asset_prices` rule of `api/freshness.assess` expects, applied to the symbol |
+| `…contributors[].state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N: each series through its existing policy (`desk_series_states` for the FRED inputs, the `asset_prices` rule for the two prices): close/current → `current`, stale or delayed past its window → `stale`, absent/unknown → `missing`; never a bare comparison with the latest XNYS session outside that policy (B-06) |
+| `…contributors[].reason` | string | required | — | — | E: the freshness policy's reason sentence |
 
-### 12.3 `GET /study/events?…` — same params, returns the event list (CSV when `Accept: text/csv`).
+### 12.2 `GET /study`
 
-### 12.4 `GET /ledger`
-```json
-{"as_of":"…","generation_id":"…","normal_month":0.013,
- "signals":[
-  {"slug":"2s10s-2sigma-steepening","label":"2s10s +2σ steepening","group":"cross","last_fired":"2026-09-09","n":22,"up_pct":0.45,"median":-0.006,"vs_normal_pts":-1.9,"verdict":"no_edge","firing_now":true,"firing_day":10},
-  "… all 12"
- ]}
-```
-Sorting is the client's job (firing first, then verdict order Reliable >
-Suggestive > No edge). `group` ∈ `spx` | `cross`.
+Parameters: `preset=<slug>`, or the six slots `shock`, `window` (5 | 20 |
+60; omitted for a cross), `move` (`up2s` | `down2s` | `cross_above` |
+`cross_below`), `while` (`none` | `spx_below_50` | `regime:<Goldilocks |
+Overheating | Stagflation | Recession Risk>`), `target`, `horizon` (5 | 10 |
+20 | 60, default 20). A request must normalize to one catalog study (§12.3);
+`horizon` then selects that study's results. There is no `confidence`
+parameter. Anything else: 422 `unsupported`.
 
-### 12.5 `GET /regime`
-```json
-{"as_of":"…","current":{"label":"Overheating","print":"2026-08","growth":"rising","inflation":"rising","months_in":3,"since":"2026-06"},
- "history":[{"month":"2021-01","regime":"Goldilocks"},"…"],
- "recession":{"prob":0.12,"inputs_through":"2026-05","year_ago":0.09,"peak":{"prob":0.71,"month":"2020-03"}},
- "stats":[{"regime":"Goldilocks","months":142,"spx_mo":0.014,"up_pct":0.66,"vix_avg":15,"stock_bond_corr":-0.2},"…"],
- "next_prints":{"cpi":{"date":"2026-10-14","flip_threshold_mom":0.002,"flips_to":"Goldilocks"},"indpro":{"date":"2026-10-17","flip_threshold_mom":0.0,"flips_to":"Stagflation"}},
- "changes":[{"month":"2026-06","from":"Goldilocks","to":"Overheating","spx_1m":0.021},"… last 5"]}
-```
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `slug` | string | required | — | — | A: the catalog slug the request normalizes to (public aliases; the engine's `slug_for` is unchanged, v3 §2) |
+| `label`, `short` | string | required | — | — | A: catalog (§12.3) |
+| `question.shock` | series key | required | — | — | A → E `Query.shock` |
+| `question.window` | 5 \| 20 \| 60 | required, nullable (null for a cross) | sessions | — | E `Query.w` |
+| `question.move` | `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A → E `Query.sign` / `Query.kind`+`cross` |
+| `question.while` | `none` \| `spx_below_50` \| `regime:<label>` | required | — | — | A → E `Query.cond` (`spx_below_50dma`, `regime`) |
+| `question.target` | series key | required | — | — | E `Query.target` |
+| `question.horizon` | 5 \| 10 \| 20 \| 60 | required | sessions | — | A: the request's horizon |
+| `question.target_unit` | `log_return` \| `log_change` \| `bp` | required | — | — | E: registry `DeskSeries.unit` of the target |
+| `question.display_unit` | `percent` \| `bp` | required | — | — | A: `percent` for `log_return` and `log_change`, `bp` for `bp` |
+| `selected_horizon` | 5 \| 10 \| 20 \| 60 | required | sessions | — | A (v4 B-01) |
+| `matched_n` | integer | required | events | `sample_start`–`sample_end` | E `provenance.n_events`: retained events in the evaluable sample, independent of horizon (C-03) |
+| `data_start` | date | required | — | — | E `provenance.data_start` (= latest of `series_start`) |
+| `sample_start`, `sample_end` | date | required | — | — | E `provenance.sample_start`, `sample_end` |
+| `first_event`, `last_event` | date | required, nullable (null with no retained event) | — | — | P |
+| `firing_now` | boolean | required, nullable | — | `evaluated_on` | N firing state (§12.5) |
+| `firing_day` | integer | required, nullable (null unless `firing_now` is true) | sessions | — | N firing state |
+| `evaluated_on` | date | required, nullable | — | — | N firing state: the study's latest evaluable session |
+| `comparison_session` | date | required | — | XNYS | N firing state: as §12.5 |
+| `stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; a stale study is never called firing today (v3 §3) |
+| `verdict` | `reliable` \| `suggestive` \| `no_edge` \| `insufficient` | required | — | `selected_horizon` | A: `verdict_rule` v1 (§1.5) at `selected_horizon` |
+| `verdict_rule` | `"v1"` | required | — | — | A |
+| `verdict_confidence` | `0.90` | required | — | — | E `CI_LEVEL` |
+| `headline` | string | required | — | `selected_horizon` | A: template by verdict (below) |
+| `why` | string | required | — | `selected_horizon` | A: template over `horizons[selected]` (below) |
+| `horizons` | array, one row each for 5, 10, 20, 60 | required | — | — | E `horizon_stats` |
+| `horizons[].h` | integer | required | sessions | — | E |
+| `horizons[].label` | `"1 week"` \| `"2 weeks"` \| `"1 month"` \| `"3 months"` | required | — | — | A |
+| `horizons[].n` | integer | required | completed outcomes | — | E `n` |
+| `horizons[].up_n` | integer | required | outcomes | — | P |
+| `horizons[].n_incomplete` | integer | required | events | — | E |
+| `horizons[].n_blocks` | integer | required | overlap blocks | — | E |
+| `horizons[].baseline_n` | integer | required | observations | — | E |
+| `horizons[].up_pct` | fraction | required, nullable | — | — | E `hit_rate` (target change > 0) |
+| `horizons[].median` | number | required, nullable | `target_unit` | — | E |
+| `horizons[].baseline_median` | number | required, nullable | `target_unit` | — | E |
+| `horizons[].baseline_up_pct` | fraction | required, nullable | — | — | E `baseline_hit_rate` |
+| `horizons[].ci_lo`, `ci_hi` | number | required, nullable (null under five blocks) | `target_unit`, on Δ | — | E `judge_exclusion` `ci90` |
+| `horizons[].adverse_share` | fraction | required, nullable (null under five blocks) | — | — | E `opposite_sign_share` |
+| `horizons[].draws` | integer | required (0 with no interval) | — | — | E `n_draws` |
+| `horizons[].method` | `enumeration` \| `monte_carlo` | required, nullable | — | — | E `resampling` (engine "exact" → `enumeration`); 5–7 blocks enumerate Bᴮ draws, above 7 10,000 draws, seed 20260921 |
+| `horizons[].reason` | string | required, nullable | — | — | A: the engine's `note` in v3 §8's words ("fewer than five independent blocks" for "too few blocks for an interval (n < 5)") |
+| `horizons[].verdict` | verdict enum | required | — | this `h` | A: v1 at this `h` |
+| `horizons[].worst`, `best` | `{value, event_date, entry_date}` | required, nullable | `target_unit` | — | P: min and max over the `n` completed outcomes |
+| `by_regime` | array of 4 | required | — | h = 20 | E `regime_split` at h = 20 |
+| `by_regime[].h` | `20` | required | sessions | — | A (B-01) |
+| `by_regime[].regime` | regime label | required | — | — | E |
+| `by_regime[].n` | integer | required | events complete at h = 20 | — | E |
+| `by_regime[].up_pct`, `median` | fraction, number | required, nullable (null when n < 10, `MIN_REGIME_N`) | —, `target_unit` | — | E |
+| `unlabeled_n` | integer | required | events | — | E `provenance.n_unlabeled` |
+| `last_events` | array of ≤ 5, newest first | required | — | — | P |
+| `last_events[].event_date`, `entry_date` | date | required | — | — | P |
+| `last_events[].regime` | regime label \| `"Unlabeled"` | required | — | the K−2 row of the event's month | P (regime at K−2, already in the run) |
+| `last_events[].value_20` | number | required, nullable (incomplete) | `target_unit` | — | P |
+| `without_condition` | block envelope | required | — | — | awaiting, reason "conditional-versus-unconditional comparison is not defined" (v4 B-11, C-01); the shape once defined is §12.13 |
+| `provenance.entry_rule` | string | required | — | — | E `provenance.entry_rule` |
+| `provenance.cooldown` | integer | required, nullable (null for a cross) | sessions | — | E `cooldown_sessions` |
+| `provenance.seed` | integer | required | — | — | E |
+| `provenance.engine_version` | string | required | — | — | A |
+| `provenance.series_start` | object, key → date | required | — | each input's first stored observation | E `provenance.inputs` |
+| `warnings` | string[] | required (may be empty) | — | — | E `provenance.warnings` |
+| `series` | array | required | — | — | E registry (`series.with_role`) |
+| `series[].key`, `label` | string | required | — | — | E |
+| `series[].roles` | array of `shock` \| `target` \| `condition` | required | — | — | E registry `roles` |
+| `series[].ops` | array of `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A: the moves the catalog allows for that series as shock |
+| `series[].unit` | `log_return` \| `log_change` \| `bp` | required | — | — | E |
+| `client` | `{horizon, headline, summary}` | required, nullable | — | h = 20 | A: template (below) |
+| `client.horizon` | `20` | required | sessions | — | A (B-01) |
+| `client.headline`, `client.summary` | string | required | — | — | A: templates (below) |
+| `empty_state` | `{horizon, sentence, fixes[]}` | required, nullable (non-null iff `horizons[selected].n < 10`) | — | `selected_horizon` | A: template (below) |
+| `empty_state.horizon` | 5 \| 10 \| 20 \| 60 | required | sessions | — | A: `selected_horizon` |
+| `empty_state.sentence` | string | required | — | — | A: template (below) |
+| `empty_state.fixes[]` | `widen_window` \| `drop_condition` | required (may be empty) | — | — | A: offered only when the result is a catalog study |
+| `inputs_hash` | string | required | — | — | E `provenance.inputs_hash`, native (B-09) |
+| `served_from_cache` | boolean | required | — | — | A |
+| `elapsed_ms` | number | required | ms | — | A |
 
-### 12.6 `GET /macro`
-```json
-{"as_of":"…",
- "curve":{"today":{"3m":4.05,"2y":3.80,"5y":3.95,"10y":4.21,"30y":4.62,"date":"2026-09-22"},"month_ago":{"…":"…"},"2s10s_bp":41,"2s10s_chg_bp":9,"10y_chg_bp":-6},
- "stock_bond":{"today":0.31,"year_ago":-0.24,"flipped":"2026-03","series":[{"date":"…","corr":0.1},"… 252 pts"]},
- "credit":{"hy":3.12,"hy_pct_3y":0.18,"hy_range_3y":[2.6,5.9],"ig":0.94,"series":[{"date":"…","hy":4.6},"… 252 pts"],"peak_12m":{"date":"2025-03-12","hy":4.6}},
- "correlations":[{"asset":"10y Treasury (price)","corr":0.31,"meaning":"moves with · no hedge"},{"asset":"Gold","corr":0.12,"meaning":"no relationship"},"…6 rows"],
- "matrix":{"assets":["spx","ndx","10y","gold","dxy","wti","hy","vix","…12"],"window":60,"values":[[1,0.92,"…"]]}}
-```
+Templates (A, fixed here; `<L>` is the horizon's label, numbers printed by
+§1.9):
+- `headline`: "<verdict label> at <L>: " followed by that verdict's §1.5
+  definition, word for word from its first word after the dash (e.g.
+  "Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same
+  way at 5, 10 and 20 sessions, but not all Reliable criteria are met."). It
+  adds no advice; no recommendation is inferred from a verdict (§12.0).
+- `why`: "<n> completed outcomes in <n_blocks> overlap blocks; the 90%
+  interval on the excess median runs <ci_lo> to <ci_hi>; <adverse_share> of
+  resampled medians are adverse against a 3% bar." With no interval: "<n>
+  completed outcomes in <n_blocks> overlap blocks; <reason>."
+- `empty_state.sentence`: "Only <n> events complete at <L> since
+  <sample_start year>, fewer than the ten a verdict other than Too few
+  needs."
+- `client.headline`: the catalog `label`. `client.summary`: "Looking at
+  <matched_n> episodes since <sample_start year>, the <target label> was
+  higher a month later in <up_n> of <n>, with a typical move of <median>
+  against <baseline_median> in an ordinary month." (h = 20 values.)
 
-### 12.7 `GET /sectors`
-```json
-{"as_of":"…","window_months":3,
- "leadership":[{"etf":"XLK","name":"Technology","rel_ret":0.061},"… 11 sorted desc"],
- "pattern":"cyclical",
- "breadth":{"above_50":{"n":7,"of":11,"month_ago":10,"by_etf":{"XLK":true,"…":false}},"above_200":{"n":9,"of":11,"by_etf":{}},
-            "eqw_vs_cap_3m":-0.024,"eqw_vs_cap_series":[{"date":"…","rel":0.02},"… 252"],"small_vs_large_series":["… 252"]}}
-```
-Requires tier-2 series XLK XLI XLF XLC XLY XLE XLB XLRE XLV XLP XLU RSP IWM
-(Yahoo). Adding them is config in `desk_history.py` — **B does not do this
-overnight**; it is a Thursday task. Until then this endpoint returns
-`{"error":"series not ingested","missing":[...]}` and the tab shows Awaiting
-refresh.
+### 12.3 `GET /study/catalog`
 
-### 12.8 `GET /positions` and `POST /positions`
-Compact row: `{"id","name","instrument","direction","size_nav":0.04,"room_pct":0.68,"to_level":{"value":3.4,"unit":"%"},"opened":"2026-09-02","horizon_days":20,"day":14}`.
-Expanded adds `falsifies_at`, `now`, `dv01`, `variant`, `pre_mortem`,
-`red_team`, `study_slug`. `closed_90d:{"falsified":4,"expired":6,"premortem_right":[2,4]}`.
-POST body = the Promote form; server rejects certainty words with
-`{"error":"wording","words":["will"]}` and an incomplete gate with
-`{"error":"gate","missing":["level"]}`. Positions persist server-side in the
-existing store (positions are not localStorage).
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `studies` | array of 15 | required | — | — | A: the catalog below |
+| `studies[].slug` | string | required | — | — | A |
+| `studies[].label`, `short` | string | required | — | — | A: one canonical label and short per slug, reused by every tab (v2 §19) |
+| `studies[].available` | boolean | required | — | the current generation | A: true when the engine completes on the pinned generation (v4 B-07): every input's coverage stored |
+| `studies[].unavailable` | `{reason, until\|null}` | required, nullable (null when available) | — | — | E: the engine's `not_stored` reason, or the §1.0 reason |
+| `studies[].question` | `{shock, window, move, while, target}` | required, nullable (null for the RSI definitions) | — | — | A |
+| `studies[].allowed_horizons` | subset of [5, 10, 20, 60] | required | sessions | — | A |
 
-### 12.9 `GET /vol` — Technicals vol card
-`{"as_of","source":"eodhd","skew_25d_1m_pts":6.8,"skew_pct_2y":0.74,"skew_trend":"rising since June","atm_iv_1m":15.4,"realized_20d":11.9,"term":{"1m":15.4,"3m":16.8,"6m":17.5},"history_from":"2023-10"}`.
-Depends on the EODHD relay storing skew / ATM IV / put IV / call IV as tier-2
-derived series. Not in B's overnight scope; until wired the card shows
-Awaiting refresh.
+A study is `ready` when the existing engine completes on the pinned
+generation; missing required inputs, or no evaluable history, is `awaiting`
+with the reason; a completed run with zero retained events is `ready` with
+an `insufficient` verdict; short-history warnings alone never make a study
+unavailable (v4 B-07).
 
-### 12.10 `GET /technicals`
-`{"as_of","price":6412,"chg_1d":0.004,"ma50":6280,"ma200":5910,"ret_1y":0.142,"trend":"up","move_20d_sigma":0.6,"rsi":58,"rsi_last_above_70":{"date":"2026-06-12","spx_1m":0.011},"rsi_last_below_30":{"date":"2025-04-08","spx_1m":0.094},"cross":{"kind":"golden","date":"2025-07-01"},"series":{"6m":[…],"1y":[…],"3y":[…]}}`.
-Signals rows come from `/ledger` filtered to `group:"spx"`.
+The catalog (v2 §2, v3 §2; z = 2.0 throughout; every available row allows
+all four horizons):
 
-### 12.11 `GET /pipeline`
-Series inventory grouped, from the pipeline config: `{"last_refresh_utc","validation":"passed","groups":[{"name":"Rates","source":"FRED","freq":"daily","status":"current","series":[{"label","id","from","as_of","feeds":[],"status","note"}]}]}`. Plus `GET /pipeline/ddl` (text) and `GET /study/events` CSV for the two buttons.
+| slug | label | short | shock | window | move | while | target | engine query |
+|---|---|---|---|---|---|---|---|---|
+| gold-2sigma-spx-weak | Gold +2σ while S&P weak | gold while S&P weak | gold | 20 | up2s | spx_below_50 | spx | preset `gold-2sigma-spx-weak` |
+| golden-cross | S&P golden cross | golden cross | spx | — | cross_above | none | spx | preset `spx-golden-cross` |
+| death-cross | S&P death cross | death cross | spx | — | cross_below | none | spx | preset `spx-death-cross` |
+| vix-spike-2sigma-5d | VIX spike +2σ, 5 days | VIX spike | vix | 5 | up2s | none | spx | `vix-w5-z2.0-up-none-spx` |
+| hy-2sigma-20d | HY spreads +2σ, 20 days | HY spreads widening | hy_oas | 20 | up2s | none | spx | `hy_oas-w20-z2.0-up-none-spx` |
+| 10y-2sigma-20d | 10y yield +2σ, 20 days | 10y yield up | us10y | 20 | up2s | none | spx | `us10y-w20-z2.0-up-none-spx` |
+| dollar-2sigma-20d | Dollar −2σ, 20 days | dollar weak | dxy | 20 | down2s | none | spx | `dxy-w20-z2.0-down-none-spx` |
+| oil-2sigma-gold | Oil +2σ → gold | oil → gold | wti | 20 | up2s | none | gold | `wti-w20-z2.0-up-none-gold` |
+| spx-2sigma-10y | S&P −2σ → 10y | S&P drop → 10y | spx | 20 | down2s | none | us10y | `spx-w20-z2.0-down-none-us10y` |
+| spx-20d-2sigma | S&P 20-day move over 2σ | S&P 20-day move | spx | 20 | up2s | none | spx | `spx-w20-z2.0-up-none-spx` |
+| spx-5d-2sigma | S&P 5-day move over 2σ | S&P 5-day move | spx | 5 | up2s | none | spx | `spx-w5-z2.0-up-none-spx` |
+| 2s10s-2sigma-steepening | 2s10s +2σ steepening | 2s10s steepening | curve_2s10s | 20 | up2s | none | spx | `curve_2s10s-w20-z2.0-up-none-spx` |
+| oil-2sigma-20d | Oil +2σ, 20 days | oil spike | wti | 20 | up2s | none | spx | `wti-w20-z2.0-up-none-spx` |
+| rsi-above-70 | RSI above 70 | RSI > 70 | — | — | — | — | — | none: `available: false` (RSI not computed) |
+| rsi-below-30 | RSI below 30 | RSI < 30 | — | — | — | — | — | none: `available: false` |
 
-### 12.12 `GET /basket/:id`, `POST /basket/price`, `GET /hedge?…` — only if Basket & Hedge ships. Shapes to be added to this file before B touches them.
-Shapes: §12.13, "Basket & Hedge (§10)" (PROPOSED, session A).
+The Event Study's slots enable an option only when some available catalog
+row agrees with it and with the other slots' values. WTI (`wti`) and the
+dollar index (`dxy`) are tier 2; the three studies that read them are
+available only when a generation stores their coverage.
 
-### 12.13 PROPOSED additions (session A, desk/frame-3)
+### 12.4 `GET /study/events`
 
-Fields the approved screens need that §12 above does not carry. Each is
-marked **PROPOSED**; the fixtures under `web/src/fixtures/desk/` carry them and
-the build reads them. Session B: accept, rename or refuse each here before
-building it; the web side follows whatever this section ends up saying.
+Parameters as `/study`. `Accept: application/json` answers the envelope;
+`Accept: text/csv` answers the CSV.
 
-**Overview (§2, §1.1 sidebar)**
-- **PROPOSED** `ledger.signals[].sample_start` (ISO day), carried by every
-  ledger-shaped row, including `overview.active_signals[]`: the first session
-  of the signal's sample, for "Fired 31× since 1990" / "since 2000". §12.4's
-  row has no sample start; the year differs by signal (gold from 2000).
-- **PROPOSED** `overview.tiles.vol.band` (string, e.g. `"calm"`): the word the
-  VIX tile prints before its sub-line ("Calm · protection costs …"). The band
-  is a judgment on the level, so the server names it; the browser does not
-  threshold the VIX.
-- **PROPOSED** `overview.data_status` (`"current"` | `"stale"` | `"unknown"`):
-  the sidebar TODAY card's `Data ● current` line on every tab.
-- **PROPOSED** `overview.tiles.trend.date` (ISO day): the session the trend
-  is read at, which dates the S&P trend tile's `● Live · Sep 22` badge, as
-  `tiles.vol.date` dates the VIX tile (§1.7: a value is dated only by a date
-  served beside it). The envelope's `as_of` is the engine's date, not the
-  tile's.
-- **PROPOSED** `technicals.series.{6m,1y,3y}[]` point shape
-  `{"date","close","ma50","ma200"}`: §12.10 leaves the points as `[…]`. The
-  sidebar's `S&P today +0.4%` reads the existing `technicals.chg_1d`.
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `slug` | string | required | — | — | A |
+| `events` | array, newest event first, every retained event | required | — | — | P: the run's full event table |
+| `events[].event_date` | date | required | — | XNYS | P |
+| `events[].entry_date` | date | required | — | XNYS | P (§4.1 entry rule) |
+| `events[].regime` | regime label \| `"Unlabeled"` | required | — | K−2 row | P |
+| `events[].exit_<h>` (h = 5, 10, 20, 60) | date | required, nullable (null when incomplete) | — | XNYS | P |
+| `events[].value_<h>` | number | required, nullable (null when incomplete) | the study's `target_unit`, native | — | P |
+| `events[].complete_<h>` | boolean | required | — | — | P |
 
-**One shape for the cards' sentences (used by every tab below)**
-- **PROPOSED** `reads: { <card>: { "label": "Read" | "Read for the desk" | null,
-  "text": string, "tone": "normal" | "warning" } }` on a response whose
-  cards print an interpretive sentence (§1.4's boxed read, or an inline
-  line). The sentences state things about live data ("the front end has come
-  down more than the long end"), so the server writes them with the numbers
-  they describe; the browser prints them and never composes a judgment.
-  `label: null` is an inline sentence; `tone: "warning"` is the amber box.
+CSV (`text/csv; charset=utf-8`), columns in this order:
+`event_date,entry_date,regime,exit_5,value_5,complete_5,exit_10,value_10,complete_10,exit_20,value_20,complete_20,exit_60,value_60,complete_60`.
+Rows newest event first; values in native study units; nulls are empty
+cells; booleans `true` / `false`.
 
-**Technicals (§3)**
-- **PROPOSED** `technicals.vs_ma50`, `technicals.vs_ma200` (fractions,
-  0.021 = 2.1% above): "price is 2.1% above" under each average, and the
-  TREND stat's "above both averages". Served so the browser does not divide.
-- **PROPOSED** `technicals.rsi_direction` (`"rising"` | `"falling"` |
-  `"flat"`): the RSI stat's "neutral, rising".
-- **PROPOSED** `technicals.cross.in_regime` (`{"regime","n"}`): the note
-  "In this regime (Overheating): golden cross has fired only 9 times".
-- **PROPOSED** `vol.skew_band_edges` (`[0.25, 0.70]`): the skew percentile
-  edges between Cheap | Typical | Expensive on the gauge.
-- **PROPOSED** `vol.reads` with `skew`, `iv_rv`, `term_meaning`, `term`,
-  `gauge` (the §3 context sentences: "Investors are paying up for downside
-  cover.", "Protection costs about 3.5 points more than recent moves
-  justify.", "Longer-dated protection costs slightly more than near-dated.",
-  "That is the normal shape. …", the gauge caption). The first line of each
-  reading ("Puts are 6.8 vol points more expensive than calls.", "Options
-  price 15.4% annual movement; …") is spelled by the browser from the served
-  numbers.
-- **PROPOSED** `sectors.leadership[].short` (four letters: Tech, Ind, Fin,
-  Comm, Disc, Enrg, Mat, RE, Hlth, Stpl, Util): the Technicals bars and the
-  Sectors dots.
-- **PROPOSED** `sectors.reads` with `leadership_brief` (the Technicals
-  line), `leadership` and `breadth` (the Sectors reads), and the
-  `small_vs_large_series` point shape `{"date","rel"}` (same as
-  `eqw_vs_cap_series`).
-- `vol` also carries `generation_id`, which §12's header puts on every
-  response; §12.9's inline list omits it.
+### 12.5 `GET /ledger`
 
-**Event Study (§4)**
-- **PROPOSED** `study.verdict_line` (e.g. "Lean, don't size.") and
-  `study.what_to_do` (the call-spread sentence): the verdict box prints
-  `verdict_line`, then `why`, then `what_to_do`, then `Price it →`. §12.2
-  carries `headline` and `why` only.
-- **PROPOSED** `study.series` (`[{"key","label"}]`, the 12 series every slot
-  lists, in order). The slots need the list and the labels; the fixture uses
-  the Desk registry's keys (`spx`, `gold`, `us10y`, `us2y`, `curve_2s10s`,
-  `vix`, `hy_oas`, `wti`, `ndx`, `rut`, `dxy`, `usdjpy`), which are also what
-  `question.shock` / `question.target` carry.
-- **PROPOSED** §12.3's shape: `GET /study/events` with the /study parameters
-  answers `{"as_of","generation_id","slug","events":[{"date","regime",
-  "ret_5","ret_10","ret_20","ret_60"}]}`, newest first, every event of the
-  study (not only the last five); with `Accept: text/csv` the same rows as
-  CSV with the header `date,regime,ret_5,ret_10,ret_20,ret_60` (the Export
-  link's download).
-- The page's address mirrors §12.2's parameters: `?preset=<slug>` or the six
-  slots (`shock`, `window`, `move`, `while`, `target`, `horizon`), plus
-  `confidence` when it is not 0.90. `regime:<name>` uses the regime's label
-  (`regime:Recession Risk`).
-- The Advanced panel also reads the frame-2 engine
-  (`/api/desk/event-study?study=<engine slug>`) for the same question when
-  the engine can ask it (its windows 5/20/60, the S&P-below-50-day or regime
-  conditions, crosses of the target's own averages), mapped with the engine's
-  slug grammar; no new field.
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `verdict_rule` | `"v1"` | required | — | — | A |
+| `horizon` | `20` | required | sessions | — | A (B-01) |
+| `comparison_session`, `prev_session` | date | required | — | XNYS | N firing state (as §12.1) |
+| `scored_n` | integer | required | rows | — | A: rows whose study completed (an `insufficient` verdict counts as scored) (v4 B-02) |
+| `unavailable_n` | integer | required | rows | — | A: 12 − `scored_n` |
+| `signals` | array of 12, in §8's fixed order | required | — | — | A |
+| `signals[].slug`, `label`, `short` | string | required | — | — | A: catalog |
+| `signals[].group` | `"spx"` \| `"cross"` | required | — | — | A: `spx` for golden-cross, death-cross, spx-20d-2sigma, spx-5d-2sigma, rsi-above-70, rsi-below-30; `cross` for the rest |
+| `signals[].available` | boolean | required | — | — | A (catalog) |
+| `signals[].unavailable` | `{reason, until\|null}` | required, nullable | — | — | as §12.3 |
+| `signals[].horizon` | `20` | required | sessions | — | A |
+| `signals[].last_fired` | date | required, nullable | — | — | P: `last_event` |
+| `signals[].sample_start` | date | required, nullable | — | — | E |
+| `signals[].n` | integer | required, nullable (null when unavailable) | completed outcomes at h = 20 | — | E `horizon_stats` |
+| `signals[].up_n` | integer | required, nullable | — | — | P |
+| `signals[].up_pct` | fraction | required, nullable | — | — | E |
+| `signals[].median`, `baseline_median` | number | required, nullable | `target_unit` | — | E |
+| `signals[].vs_normal` | number | required, nullable | log pp or bp (§1.9) | — | A: v3 §6 formula |
+| `signals[].target_unit`, `display_unit` | as §12.2 | required, nullable (null when unavailable) | — | — | E, A |
+| `signals[].verdict` | verdict enum | required, nullable (null when unavailable) | — | h = 20 | A: v1 |
+| `signals[].firing_now` | boolean | required, nullable | — | `evaluated_on` | N firing state: shocks — the raw trigger and the condition hold on `evaluated_on`, regardless of cooldown; crosses — true only on the strict crossing session |
+| `signals[].firing_day` | integer | required, nullable (null unless `firing_now` is true) | sessions | — | N: consecutive qualifying XNYS sessions including `evaluated_on`, reset after any false or unevaluable session, never bridging a missing session; 1 for a cross |
+| `signals[].evaluated_on` | date | required, nullable | — | — | N: the row's own latest evaluable session |
+| `signals[].stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; a stale row is never called firing today |
 
-**Regime (§5)**
-- **PROPOSED** `regime.recession.band` (`"low"`, the Overview tile's own
-  `band` word) and `regime.recession.band_edges` (`[0.25, 0.5]`, the
-  probabilities between Low | Watch | Elevated): the sentence's first word
-  ("Low.") and the gauge's three bands. §12.5 carries the probability only;
-  the page does not pick a band from it.
-- **PROPOSED** `regime.reads` (`{"stats","changes","year_ago"}`, each the
-  shared `reads` shape `{"label","text","tone"}`): the amber "Read for the
-  desk" under the table, the "Read" under the last five changes, and the A
-  YEAR AGO note ("rising slowly, still low"). §12.5 carries no sentences.
-- `regime` also carries `generation_id` (§12's header); §12.5's inline shape
-  omits it.
+### 12.6 `GET /regime`
 
-**Macro & Correlations (§6)**
-- **PROPOSED** `macro.credit.band_edges` (`[0.3, 0.7]`, the three-year
-  percentiles between Tight | Normal | Wide) and `macro.credit.words`
-  (`{"hy","ig","range"}`: "tight", "also tight", "today near the low"): the
-  gauge's bands and the three stat notes. §12.6 serves the percentile and the
-  range, not where the bands fall or what they mean.
-- **PROPOSED** `macro.reads` (`{"curve","front_end","stock_bond","credit",
-  "correlations"}`, the shared `reads` shape): the four card reads and the
-  FRONT END note ("market leans to cuts").
-- **PROPOSED** `macro.stock_bond.hedging` (boolean, the engine's call on
-  today's correlation: do bonds hedge stocks) and `macro.stock_bond.words`
-  (`{"today","year_ago","flipped"}`: "positive · bonds not hedging", "was
-  working", "six months positive"). TODAY is amber when `hedging` is false
-  (§6); the page no longer reads a sign to decide it, since only the engine
-  knows where "no relationship" ends (it serves +0.12 as "no relationship").
-- `macro.stock_bond.flipped` is `null` when the sign has not changed within
-  the served year (the page prints "None" with the served note); an absent
-  key means not served (Awaiting refresh).
-- **PROPOSED** `macro.matrix.labels` (the assets' names, in `assets` order):
-  the matrix's headers under Advanced. The fixture orders the twelve assets
-  as §12.6's example begins (`spx, ndx, 10y, gold, dxy, wti, hy, vix`) and
-  adds `2y, ig, rut, usdjpy`; the values form a valid correlation matrix whose
-  `spx` row equals the six correlations.
-- The correlation rows' `asset` follows §6's names ("10-year Treasury
-  (price)"); §12.6's example writes "10y Treasury (price)". One of the two
-  should change; the fixture follows the tab's text.
-- Any value inside a block may be null (a tenor, `hy_pct_3y`, a range end,
-  `peak_12m.hy`, a correlation): the page keeps that value's label and says
-  Awaiting refresh; it never prints a number that was not served.
-- `macro` also carries `generation_id` (§12's header).
-- §12.6's example `peak_12m.date` (`2025-03-12`) falls outside its own 252
-  sessions ending Sep 22 2026; the fixture dates the peak Mar 10 2026, inside
-  the last twelve months, where the mockup draws it.
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `current` | block envelope | required | — | — | — |
+| `current.data.label` | regime label | required | — | row `print` · monthly · `regimes` | E stored row (`classify_regime`) |
+| `current.data.print` | month | required | — | K−2 for the current session month | A (v2 §9.1) |
+| `current.data.latest_print` | month | required | — | the newest stored row | E; shown on Regime only, never used to classify |
+| `current.data.growth`, `inflation` | `"rising"` \| `"falling"` | required | — | as `print` | E signs of the stored trends |
+| `current.data.months_in` | integer | required | months | — | A: the run of equal stored labels ending at `print` |
+| `current.data.since` | month | required | — | — | A |
+| `current.data.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, `"regimes table (src/regime.py)"` |
+| `history` | array of 60 `{month, regime}` | required | — | monthly · `regimes` | E: the last 60 stored rows |
+| `history_note` | `"labels as stored; revisions are not replayed."` | required | — | — | A |
+| `history_freq`, `history_source` | `"monthly"`, string | required | — | — | A: as `current` |
+| `recession` | block envelope | required | — | — | — |
+| `recession.data.score` | fraction | required | — | `probability_month` · monthly | E `recession.get_recession_metrics` (`recession_prob`, a percent 0–100, ÷ 100) |
+| `recession.data.probability_month` | month | required | — | the latest valid month this generation produces | N recession provenance (§13.2) |
+| `recession.data.inputs_through` | month | required | — | — | N: the observations the score used (features shifted three months) |
+| `recession.data.feature_months` | object, feature → month | required | — | — | N |
+| `recession.data.band` | `"low"` \| `"elevated"` \| `"high_risk"` | required | — | — | A rule: low < 0.20 ≤ elevated < 0.40 ≤ high_risk (v3 §11) |
+| `recession.data.band_edges` | `[0.20, 0.40]` | required | — | — | A |
+| `recession.data.year_ago` | `{score, probability_month}` | required, nullable (null when that month is absent) | — | twelve months before | E: the served score series |
+| `recession.data.peak` | `{score, probability_month, window: "since 2015"}` | required | — | — | N: the maximum of the served score series since 2015 |
+| `recession.data.training` | `{start, end}` | required | months | — | N: the aligned training rows actually used; never a hard-coded 1970 |
+| `recession.data.methodology` | string | required | — | — | A: "in-sample fitted scores" |
+| `recession.data.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, `"recession model (src/analytics/recession.py)"` |
+| `next_prints` | block envelope | required | — | — | — |
+| `next_prints.data.cpi`, `.indpro` | object | required, nullable | — | — | N next-print thresholds (§13.2) |
+| `next_prints.data.<k>.release_date` | date | required, nullable (null when the calendar has no record) | — | `event_calendar` | E |
+| `next_prints.data.<k>.reference_month` | month | required | — | — | N |
+| `next_prints.data.<k>.series` | `"CPIAUCSL"` \| `"INDPRO"` | required | — | — | A |
+| `next_prints.data.<k>.threshold_mom` | fraction | required, nullable | m/m change | — | N: for latest observed month m, the three-month level-slope boundary x(m+1) = x(m−1), i.e. x(m−1)/x(m) − 1; equality is falling |
+| `next_prints.data.<k>.operator` | `"<="` \| `">"` | required | — | — | N: `<=` flips a rising axis to falling; `>` a falling axis to rising |
+| `next_prints.data.<k>.flips_to` | regime label | required, nullable (null when not evaluable) | — | — | N: from the latest reference row's other-axis sign |
+| `next_prints.data.<k>.first_effective_month` | month | required | — | — | N: `reference_month` + 2 months |
+| `next_prints.data.<k>.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, the FRED series id; the release date's source is `event_calendar` |
+| `stats` | block envelope | required | — | — | awaiting: "regime statistics not yet defined in the engine." |
+| `changes` | block envelope | required | — | — | awaiting: same reason |
 
-**Sectors (§7)**
-- **PROPOSED** `sectors.words` (`{"pattern","above_200","eqw"}`: "growth
-  sectors over defensives", "trend still broad", "big names carrying it"):
-  the PATTERN, ABOVE 200-DAY and EQUAL vs CAP notes. The page does not map
-  `pattern` or a sign to words of its own.
-- **PROPOSED** `sectors.breadth.above_200.broad` (boolean, the engine's call
-  that the 200-day trend is broad): ABOVE 200-DAY is green when true (§7).
-  ABOVE 50-DAY's amber is §7's "narrowing" read straight from the served
-  counts (`n` below `month_ago`); more sectors above than a month ago is
-  green (§1.3 up), the same count is plain.
-- A sector whose `rel_ret` is null keeps its row (ticker and name, "Awaiting
-  refresh"); a missing `by_etf` map or an empty series keeps its label and
-  says Awaiting refresh.
-- The not-ingested answer (`{"error":"series not ingested","missing":[…]}`)
-  may come with an error status or a 200; both cards say why.
-- `leadership` is served sorted, best first (§12.7), and the page keeps that
-  order: LEADING is the first row and LAGGING the last, each Awaiting
-  refresh when its value is null.
-- `eqw_vs_cap_series[].rel` and `small_vs_large_series[].rel` are the
-  rolling 3-month relative returns (the last `eqw` point equals
-  `eqw_vs_cap_3m`).
-- `sectors` also carries `generation_id` (§12's header).
+### 12.7 `GET /technicals`
 
-**Signal Ledger (§8)**
-- **PROPOSED** `ledger.signals[].short` (and on the Overview's
-  `active_signals`, which carry the same rows): the short name the FIRING
-  NOW and RELIABLE stats list ("2s10s steepening · dollar weak", "golden
-  cross · RSI < 30 · VIX spike"). §12.4 carries only the table's `label`.
-- A row's `last_fired`, `n`, `up_pct`, `median` or `vs_normal_pts` may be
-  null: the cell prints "—". The four stats are counts of the served rows
-  (firing, Reliable, No edge) and the earliest `sample_start` ("since
-  1990"); the page ranks nothing else.
-- **PROPOSED** every `/ledger` slug is a `/study` preset: a row opens
-  Event Study with `?preset=<slug>`, so §12.2's preset list gains the six
-  ledger slugs it lacks (`2s10s-2sigma-steepening`, `rsi-below-30`,
-  `spx-20d-2sigma`, `rsi-above-70`, `oil-2sigma-20d`, `spx-5d-2sigma`).
-  Note for B: the two RSI studies cannot be spelled in §12.2's six slots
-  (`move` has no RSI value); `/study` answers them by preset and serves a
-  `question` the slots can show only once `move` gains RSI values.
+Every field describes the registry series `spx` (^GSPC).
 
-**Position Monitor (§9)**
-- **PROPOSED** `GET /positions` answers `{"as_of","generation_id",
-  "positions":[…expanded rows…],"closed_90d":{…}}`: every row carries the
-  expanded fields, so a row opens without a second request.
-- **PROPOSED** shapes for two expanded fields §12.8 names only:
-  `falsifies_at: {"label","value","unit"}` ("2s10s below +38 bp", 38, "bp")
-  and `now: {"value","unit","date"}` (the level's series today, dated at its
-  own frequency).
-- **PROPOSED** the POST body: `{"instrument","direction":"long"|"short",
-  "size_nav" (a fraction, or null),"horizon_days","variant","pre_mortem",
-  "wrong_if":{"id","label"},"study_slug"|null}`, plus `question` (the six
-  slots) whenever `study_slug` is null and a study was carried in (Codex
-  round 1, below); a saved position answers 201 with its row. The refusals
-  are §12.8's (`wording` with `words`, `gate` with `missing`).
-- A study carried in arrives as `?from=<preset>` or as Event Study's six
-  slots; the page asks `/study` with the same parameters and fills the
-  instrument (the study's target) and the horizon, nothing in the gate.
-- **PROPOSED** `wrong_if.id` values: for a long `below_50d`, `falls_2s_5d`,
-  `below_200d`, `entry_minus_3`, `entry_minus_5`, `lower_low_20`,
-  `rsi_below_40`, `vix_above_25`, `hy_widen_2s`; for a short their mirror
-  `above_50d`, `rises_2s_5d`, `above_200d`, `entry_plus_3`, `entry_plus_5`,
-  `higher_high_20`, `rsi_above_60`, `vix_below_15`, `hy_tighten_2s`; for
-  either `regime_changes`, `signal_reverses` (offered only with a carried
-  study that the POST can name, by `study_slug` or by `question`; the
-  server binds it to that study and refuses it without one) and `custom`
-  (the typed label). §9 lists the long's eight; the short's are the page's mirror.
-- A row's `size_nav`, `room_pct` and `to_level` may be null (a position
-  saved without a size, or one the server has not measured yet), and
-  `falsifies_at.value` / `.unit` likewise: the row prints "—" and leaves its
-  bar empty; the footer's deployed share is printed only when every row has
-  a size.
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `price` | number | required, nullable | index points | `date` · daily · `asset_prices` ^GSPC | E `event_study.load_level`, newest session |
+| `date` | date | required | — | — | E |
+| `freq`, `source` | `"daily"`, string | required | — | — | A |
+| `chg_1d` | fraction | required, nullable | simple return | `chg_1d_dates` | N (B-12): close(to) / close(from) − 1 on exact indexed XNYS endpoints |
+| `chg_1d_dates` | `{from, to}` | required | — | — | N |
+| `ret_1y` | fraction | required, nullable | simple return | `ret_1y_dates` | N (B-12): against the close 252 sessions earlier |
+| `ret_1y_dates` | `{from, to}` | required | — | — | N |
+| `ma50`, `ma200` | number | required, nullable (null if any required close is missing) | index points | `date` | N MAs (v3 §13): simple means over the last 50 / 200 XNYS session slots, aligned as the engine aligns, no calendar compression |
+| `ma50_window`, `ma200_window` | `{start, end, n}` | required | sessions | — | N: the slots each average reads (`n` 50 / 200 when complete) |
+| `vs_ma50`, `vs_ma200` | fraction | required, nullable | level ratio | `date` | N (B-12): price / ma − 1 |
+| `trend.state` | as §12.1 `tiles.trend.data.state` | required | — | `date` | N |
+| `trend.state_since` | date | required, nullable | — | — | N |
+| `cross` | `{kind: "golden"\|"death", date}` | required, nullable | — | — | E `cross_positions` |
+| `move_20d_sigma` | number | required, nullable | σ | `move_20d_date` | N firing state: the spx-20d-2sigma study's z (`zscore(move(level, spx, 20))`) on its `evaluated_on` |
+| `move_20d_date` | date | required, nullable | — | — | N |
+| `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13); `ma50`/`ma200` nullable per point |
+| `signals_allowlist` | `["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows are omitted while unavailable) |
+| `vol` | block envelope | required | — | — | awaiting: "needs stored SPY option snapshots and a versioned skew method." |
+| `sectors` | block envelope | required | — | — | awaiting: "sector ETFs, RSP and IWM not ingested." |
 
-**Data Pipeline (§11)**
-- **PROPOSED** `pipeline.groups[].status_text` (the group's state in words:
-  "all current", "Aug print in") and `pipeline.groups[].note` ("HY OAS
-  history from 2023", "WTI published weekly"): each group's summary line.
-  §12.11 carries `status` and the series only.
-- `pipeline` also carries `as_of` and `generation_id` (§12's header).
-- `GET /pipeline/ddl` answers `text/plain`: the CREATE statements for the
-  RAW, CUR and MART schemas the bridge card draws; the page saves it as
-  `macro-regime-radar-desk.sql`. The card's schema block is §11's board
-  copy, fixed in the page.
-- "Export current study → CSV" asks §12.3's `/study/events` (CSV) for the
-  last study Event Study answered in this browser (kept in local storage),
-  else the gold preset.
+### 12.8 `GET /macro`
 
-**Client view (§11)**
-- **PROPOSED** `study.client` (`{"headline","summary"}`): the question and
-  the paragraph the client view prints in plain words (the mockup's "When
-  gold jumps and stocks are already soft, what has the S&P done next?" and
-  its "Looking at … episodes since …" paragraph). §12.2 carries the desk's
-  `headline` and `why`, which are desk language; the client copy is written
-  by the engine, never composed on the page.
-- **PROPOSED** `study.horizons[].baseline_up_pct` (fraction): the share of
-  ordinary stretches of the same length that ended up, the "vs 58% in an
-  ordinary month" under "Higher a month later" (the mockup's number; the
-  fixture serves 0.62 at a month). §12.2 carries the baseline's median
-  only.
-- The view reads the study in the address on Event Study and, on every
-  other tab, the last study Event Study answered in this browser, else the
-  gold preset (the same rule as the bridge's export). The three numbers are
-  §12.2's `n_events`/`sample_start` and the one-month horizon's `up_pct`
-  and `median` against `baseline_up_pct` and `baseline_median`; the bars
-  are `by_regime[].median`, null printing "too few cases to say". The view
-  asks without `confidence` (the served default, 0.90), whatever the desk's
-  slider says. "Setup · <day>" is `last_event` when `firing_now`, else
-  "Setup last seen · <last_event>".
-- An insufficient study (§12.2's `empty_state`) may come without `client`:
-  the view then prints the `empty_state.sentence` in the paragraph's place
-  and in the backdrop card, "too few cases to say" in the month's two
-  stats, and never "Awaiting refresh".
+B registers DGS3MO, DGS5 and DGS30 (FRED daily, tier 1) beside DGS2 and
+DGS10 (v2 §12). Until then those tenors are null.
 
-**Basket & Hedge (§10)**
-- **PROPOSED** `GET /basket/:id` answers `{"as_of","generation_id","id",
-  "name","short","instrument","rebalance","prices_as_of","baskets",
-  "legs", …the priced fields below}`: `short` is the basket in two or
-  three words ("AI-infra", the chart's question), `instrument` what Position
-  Monitor's instrument field reads ("AI infrastructure basket vs 1.6 × NDX"),
-  `baskets` the `[{"id","name"}]` the server keeps (the selector), `legs`
-  `[{"symbol","name","weight"}]` with `weight` in percent (22 is 22%) and
-  `name` null when the API has none.
-- **PROPOSED** the priced fields, the same on `GET /basket/:id` and
-  `POST /basket/price`: `prices_as_of` (the session whose closes priced
-  them; Codex round 1, R-04), `benchmark` (`{"symbol":"NDX","label":"Nasdaq"}`),
-  `ret_3m`, `bench_ret_3m`, `residual` (basket minus `beta` × benchmark over
-  `residual_window` sessions), `residual_window` (60), `falsifies_at`
-  (−0.04, where the position comes off), `month_ago` (the residual 20
-  sessions ago), `vol`, `bench_vol`, `vol_ratio`, `beta`, `series`
-  (`[{"date","value"}]`, the residual over the window) and `reads`
-  (`{"chart","beta"}`, each a §12.13 read or null). Fractions stay
-  fractions; any of the numbers may be null.
-- **PROPOSED** `POST /basket/price` takes `{"legs":[{"symbol","weight"}]}`
-  (weights adding to 100) and answers the priced fields plus `legs` with
-  the names it resolved; it writes nothing. The page asks it while the
-  typed weights differ from the served ones; Save basket keeps the weights
-  in the browser (like Event Study's saved questions, §1.8), never on the
-  server.
-- **PROPOSED** `GET /hedge?mode=protect|express|neutralize` with one
-  subject: `basket=<id>`, `legs=NVDA:22,AVGO:16,…` (a basket saved in the
-  browser), `position=<id>` (from Position Monitor's "Price a hedge"), or
-  for `express` the study's own parameters (`preset=` or the six slots).
-  It answers `{"as_of","generation_id","mode","subject":{"kind","id",
-  "label"},"surface":"SPY / QQQ","surface_as_of","provider":"EODHD",
-  "beta","options","recommended","reads":{"why_index","recommendation"}}`.
-  Each of `options[]` is `{"id","label","underlying","cost_pct",
-  "breakeven","max_loss","note","hedge_per_100","delta","theta_pct_week",
-  "roll":{"date","days","at_dte"},"scenarios":[{"ndx","basket","hedged"}],
-  "scenario_note"}`: the stats row, the scenario table and its note belong
-  to the structure picked, so every structure carries its own.
-  `recommended` is the id picked when the page opens. `breakeven` and
-  `max_loss` have one definition each, in "Codex round 1" below (§10's
-  figures mixed a rule of thumb, the strike's distance plus the cost, with
-  the premium).
-- With no `?basket=` the page asks `/basket/ai-infra`, the one basket the
-  mockup draws, and reads the selector's list from that answer's
-  `baskets` whichever basket is open. The default is fixed on the page; a
-  served default would need its own field.
-- The header's "Send to Position Monitor →" carries `?basket=<id>`;
-  Position Monitor fills its instrument field from that basket's
-  `instrument` (or a basket saved in the browser: its name and "basket").
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `curve` | block envelope | required | — | — | — |
+| `curve.data.today` | `{"3m","2y","5y","10y","30y": number\|null, date, dates}` | required | percent (yield) | `date` shared, or null with per-tenor `dates` · daily · FRED | N curve snapshot alignment (B-12) over stored DGS* |
+| `curve.data.today.dates` | object, tenor → date | required | — | — | N; the UI labels a mismatch |
+| `curve.data.month_ago` | same shape | required | percent | the last observation on or before `today.date` − 1 calendar month | N month-ago selection (B-12) |
+| `curve.data.2s10s_bp` | number | required, nullable | bp | `today.date` | N: (DGS10 − DGS2) × 100 on `today.date` |
+| `curve.data.2s10s_chg_bp`, `10y_chg_bp` | number | required, nullable | bp | the two dates | N dated differences (B-12) |
+| `curve.data.freq`, `source` | `"daily"`, `"FRED"` | required | — | — | A |
+| `credit` | block envelope | required | — | — | — |
+| `credit.data.hy`, `.ig` | `{value, date, freq, source}` | required | percent (OAS) | own `date` · daily · FRED BAMLH0A0HYM2, BAMLC0A0CM | E stored observations (`desk_series`; IG's date from `source_watermarks`) |
+| `credit.data.hy_pct_3y` | fraction | required, nullable | — | `rank_window` | N rolling HY rank (v2 §12, v3 §12): count(values < current) / count(valid) over the closed three-year window ending on the HY date, current included, ties not below |
+| `credit.data.hy_range_3y` | `[lo, hi]` | required, nullable | percent | `rank_window` | N |
+| `credit.data.rank_window` | `{start, end, n, expected_n, valid_n, missing_n, first_obs, last_obs}` | required | — | bond calendar | N: coverage is a finite observation on every expected bond-calendar session (v4 B-07) |
+| `credit.data.reason` | string | required, nullable | — | — | N: non-null exactly when the 3-year figures are null ("coverage from <date> only", or the gap) |
+| `credit.data.band` | `"tight"` \| `"normal"` \| `"wide"` | required, nullable | — | — | A rule: tight < 0.30 ≤ normal < 0.70 ≤ wide on `hy_pct_3y` |
+| `credit.data.band_edges` | `[0.30, 0.70]` | required | — | — | A |
+| `credit.data.series` | array of `{date, hy}` | required | percent | `line_window` | N: the 12-month line window |
+| `credit.data.line_window` | `{start, end, n}` | required | — | — | N: [HY date − 12 months, HY date] |
+| `credit.data.peak_12m` | `{date, hy}` | required, nullable | percent | — | N: in-window maximum, earliest date on ties |
+| `stock_bond`, `correlations`, `matrix` | block envelope | required | — | — | awaiting: "Treasury and credit price-return series not ingested." |
 
-**Codex round 1 (desk/frame-3, 2026-09-24)**
+### 12.9 `GET /pipeline` and `GET /pipeline/ddl`
 
-The review of `7bb2a3e` found judgments the page was making for itself and
-contract gaps the page papered over. Each field below is served by the
-engine; the fixtures carry it; a response without it keeps its labels and
-prints "Awaiting refresh" (or, for a word, drops the word and keeps the
-number). The page never computes the judgment in its place.
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `last_refresh_utc` | ts | required, nullable ("unknown" in the UI when null) | — | the published run artifact | E `source_watermarks` / the run artifact |
+| `validation` | `"pass"` \| `"fail"` | required, nullable | — | the published run artifact | E `scripts/validate_db.py` verdict as published |
+| `groups` | array | required | — | — | E registry and its consumers (`/api/desk/pipeline/inventory`) |
+| `groups[].name` | string | required | — | — | A |
+| `groups[].status` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | A: the worst of its series |
+| `groups[].series` | array | required | — | — | E |
+| `…series[].label`, `id`, `key` | string (`key` nullable for a non-Desk series) | required | — | — | E registry |
+| `…series[].provider` | string | required | — | — | E |
+| `…series[].freq` | `"daily"` \| `"weekly"` \| `"monthly"` | required | — | — | E |
+| `…series[].first`, `last` | date | required, nullable | — | first and last stored observation | S: the series' first and last stored rows |
+| `…series[].feeds` | string[] | required | — | — | E: the Desk tabs that read the series |
+| `…series[].status` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | E `api/freshness` mapped as §12.1 |
+| `…series[].note` | string | required, nullable | — | — | E registry note |
 
-- **PROPOSED** `study.question.target_unit` (`"pct"` | `"bp"` | `"px"`) and
-  `study.question.target_label` (string), served in the answer's `question`
-  beside the six slots (the request never carries them):
-  ```json
-  "question":{"shock":"gold","window":20,"move":"up2s","while":"spx_below_50",
-    "target":"spx","horizon":20,"target_unit":"pct","target_label":"S&P 500"}
-  ```
-  `pct`: `median`, `baseline_median`, `worst.ret`, `best.ret`,
-  `by_regime[].median`, `last_events[].ret_20` and
-  `without_condition.median` are fractions (0.031 prints "+3.1%") and
-  `ci_lo_pts` / `ci_hi_pts` percentage points; `bp`: every one of them in
-  basis points as served (25 prints "+25 bp", never a percent), the
-  interval too; `px`: the target's own points. §12.3's `/study/events`
-  rows (`ret_5` … `ret_60`) are in the unit of the `/study` answer for the
-  same parameters; the events response carries no unit of its own. The
-  chart's ticks carry the unit ("+50 bp", "+5%"). `target_label` names the
-  target wherever the page says what moved: the last-five heading, the
-  Client view backdrop ("Typical 10-year Treasury yield move after the
-  setup"), Position Monitor's carried-study subtitle and its instrument
-  prefill. Without it those places leave the target unnamed ("Typical move
-  after the setup", "the study's target") and the instrument field empty. Reason (R-02, R-03): the engine measures a yield or a
-  spread in bp and a price in log returns (`src/desk/series.py`), and the
-  page printed every target as a percent and named it from the slot's key.
-  A study without `target_unit` prints no move at all: the page never
-  guesses a unit from a series key.
-- **PROPOSED** `study.horizons[].n_complete` (integer): the events whose
-  forward window at that horizon is complete, the denominator of that
-  horizon's `up_pct` and of "12 of N":
-  ```json
-  {"h":20,"label":"1 month","n_complete":18,"up_pct":0.67,"up_n":12, …}
-  ```
-  `n_events` counts every event: it is the study's size (the EVENTS stat,
-  "all 18 events", the Client view's episodes) and never a horizon's
-  denominator. Reason (R-07): a recent event has no three-month move yet, so each
-  horizon has its own count; "12 of 18" against `n_events` is wrong the day
-  an event is younger than the horizon. Absent, the stat keeps `up_pct` and
-  says the count is awaiting refresh.
-- **PROPOSED** `study.without_condition.comparison` (`"improves"` |
-  `"no_improvement"` | `"insufficient"`) and
-  `study.without_condition.comparison_note` (string), the engine's call on
-  whether the condition earns its place and the sentence that says so:
-  ```json
-  "without_condition":{"n_events":41,"up_pct":0.58,"median":0.016,
-    "verdict":"no_edge","comparison":"improves",
-    "comparison_note":"The condition earns its place."}
-  ```
-  Reason (R-12): the page ranked the two verdicts against each other and
-  wrote its own sentence; ranking is a judgment and the two samples differ
-  in size. The page prints `comparison_note`; absent, "Whether the
-  condition helps is awaiting refresh."
-- **PROPOSED** `technicals.rsi_word` (`"oversold"` | `"neutral"` |
-  `"overbought"`) and `technicals.move_20d_word` (string, e.g.
-  `"no extreme move"`, `"an extreme move"`):
-  ```json
-  {"rsi":58,"rsi_direction":"rising","rsi_word":"neutral",
-   "move_20d_sigma":0.6,"move_20d_word":"no extreme move", …}
-  ```
-  Reason (R-13): the page took both words from whether a Ledger row was
-  firing, a second response dated separately; the word judges the level
-  the technicals response serves, so it comes with it. Absent, the stat
-  keeps its number and drops the word.
-- **PROPOSED** `POST /positions` carries `question` (exactly the six slots,
-  `{"shock","window","move","while","target","horizon"}`) whenever
-  `study_slug` is null and a study was carried in (the served
-  `target_unit` and `target_label` are the answer's, never sent back);
-  `wrong_if.id: "signal_reverses"` needs a non-blank `study_slug` or a
-  `question` of exactly the six slots, each a value the slots can ask, and
-  otherwise (neither, a blank slug, a seventh key, a slot of the wrong kind)
-  the server answers 422 `{"error":"gate","missing":["study"]}`:
-  ```json
-  {"instrument":"S&P 500","direction":"long","size_nav":0.04,
-   "horizon_days":20,"variant":"…","pre_mortem":"…",
-   "wrong_if":{"id":"signal_reverses","label":"the signal reverses"},
-   "study_slug":null,
-   "question":{"shock":"gold","window":20,"move":"up2s",
-     "while":"spx_below_50","target":"spx","horizon":20}}
-  ```
-  Reason (R-11): a free-form study has no slug, so the saved position named
-  no study and "the signal reverses" pointed at nothing. The page offers
-  that level only when it can send one identifier or the other.
+`/pipeline/ddl` answers `text/plain; charset=utf-8`: the CREATE statements of
+the proposed export schema (not the current SQLite layout).
 
-- **PROPOSED** the hedge's numbers, defined once (R-06), each per $100 of
-  basket over the month, at expiry, with QQQ taken to move as NDX:
-  ```json
-  {"id":"put_spread","cost_pct":0.011,"breakeven":0.011,"max_loss":-0.1398,
-   "protected_range":{"ndx_from":-0.05,"ndx_to":-0.1,"basis":"strikes"},
-   "hedge_per_100":62.4,"delta":0.39,
-   "legs":[{"right":"put","strike":-0.05,"qty":1},
-           {"right":"put","strike":-0.1,"qty":-1}],
-   "scenarios":[{"ndx":-0.2,"basket":-0.32,"hedged":-0.2998}, …]}
-  ```
-  `legs` is the structure per $1 of notional (strikes as NDX moves from
-  today, `qty` +1 bought, −1 sold), so its payoff at an NDX move x is
-  Σ qty × max(strike − x, 0) for a put, max(x − strike, 0) for a call.
-  `hedge_per_100` is the notional per $100 of basket, beta × delta × 100
-  (the Hedge ratio line says "beta-adjusted, 1.6 × 0.39 delta" and prints
-  "$62.4 per $100"). A scenario's `basket` is beta × x and its `hedged` is beta × x +
-  `hedge_per_100` / 100 × payoff(x) − `cost_pct`, unrounded (the page rounds
-  to print). `breakeven` is the basket move at which basket P&L + hedge
-  payoff − cost = 0 (for these three, the basket has to rise by the cost:
-  +1.1%, +0.2%, +2.4%). `max_loss` is the worst of basket + hedge payoff −
-  cost over `protected_range`, a fraction of the basket (−0.1398 prints
-  "max loss $14.0 per $100 of basket, NDX −5% to −10% (its strikes)"): the
-  range runs from the bought put's strike to the sold put's
-  (`basis: "strikes"`), or, with no sold put, to the scenario table's
-  lowest move (`basis: "table_floor"`, printed "(table floor)"),
-  because a structure without a sold put protects without end and its
-  worst case needs a stated bound. Each row states its own range, so the
-  three rows are not one comparison: the spread's $14.0 stops at its lower
-  strike, while the table shows it at −30% at NDX −20%. A `max_loss`
-  without its range or basis prints "max loss awaiting refresh". Reason (R-06): the rows, the ratio line and the table were
-  three sets of numbers (a put spread's "max loss 1.1%" beside a table
-  losing 14% at NDX −10%). The prose that quotes a payoff (the scenario
-  notes, the recommendation, the "why index" read's single-name cost of
-  1.7 × the outright's 2.4%) is restated from these numbers.
-- The study fixtures' regimes (R-05): each event in
-  `web/src/fixtures/desk/study-events.json` carries the regime row stamped
-  two months before its own month (the engine's `REGIME_LAG_MONTHS`), read
-  from `web/src/fixtures/desk/regime-record.json`, the fixtures' monthly
-  record from 1996-05 (no endpoint serves it). The record's last rows are
-  `/regime`'s `history` exactly, its months by regime are `/regime`'s
-  `stats[].months`, and its earlier rows follow each period's growth and
-  inflation direction, drawn without regard to the events. The events take
-  their labels from it; `study.by_regime`, `last_events` and the client
-  summary (which ranks no backdrop) are recomputed from those events. No new
-  field.
-- Basket weights keep every digit (R-14): a weight is any number from 0 to
-  100 (22.11, not 22.1), `POST /basket/price` and `/hedge?legs=` carry it as
-  typed (`NVDA:22.11,AVGO:77.89`), never in exponent notation, and a total
-  is summed digit by digit and counts as 100% only when it is exactly 100
-  (99.97 is not, nor is 99.9999999999); the page prints a total with every
-  digit it has. Normalize leaves weights that add to 100 as they are and
-  otherwise writes new ones no coarser than the ones typed (at least a
-  tenth); Equal-weight writes tenths. No new field.
+### 12.13 Deferred shapes (`status: deferred`)
 
-- **PROPOSED** `prices_as_of` on `POST /basket/price` as on
-  `GET /basket/:id` (R-04): the session whose closes priced the numbers.
-  ```json
-  {"as_of":"2026-09-24","generation_id":"…","prices_as_of":"2026-09-24",
-   "benchmark":{"symbol":"NDX","label":"Nasdaq"},"ret_3m":0.133, …,
-   "legs":[{"symbol":"NVDA","name":"Nvidia","weight":26}, …]}
-  ```
-  The page's badge ("Live · prices Sep 24 · options via EODHD") dates the
-  basket's numbers from the answer that supplied the numbers on show: the
-  served basket's, or a repricing's. Weights that cannot be priced show no
-  numbers and date none; a price answered without `prices_as_of` reads
-  "prices date awaiting refresh" in the basket card's own line (the badge
-  never wraps, and those words would push a phone's page sideways), never
-  the served basket's day. The options surface is dated on the hedge card,
-  from `hedge.surface_as_of` ("priced off the SPY / QQQ surface of Sep 22";
-  the mockup's "live" is dropped, since the day now says how live it is;
-  without the day, "its date awaiting refresh"). Reason (R-04): the badge
-  printed the served basket's day beside a repricing's numbers.
-- **PROPOSED** `technicals.instrument` (`{"symbol","label"}`): the one
-  series every number in `/technicals` describes.
-  ```json
-  {"as_of":"2026-09-22","instrument":{"symbol":"SPX","label":"S&P 500"},
-   "price":6412,"ma50":6280,"ma200":5910, …}
-  ```
-  Position Monitor attaches a level's number ("closes below its 50-day
-  (6,280)") only when the instrument typed is exactly that series, by its
-  label or its symbol, ignoring case, spaces at either end and repeated
-  spaces; "S&P500", "^GSPC" and "S&P 500 index" are not it. Every other instrument,
-  SPY, an ES future, an SPX option or a pair, gets the same rules named
-  without a number ("closes below its 50-day"), and the server resolves
-  the level against the instrument. Without `instrument`, no instrument
-  gets numbers. Reason (R-08): the page matched anything that looked like
-  the S&P, so SPY, which trades near a tenth of the index, was offered the
-  index's 6,280. `/technicals` is the S&P 500's by §12.10, and Technicals
-  and the sidebar name it from their own copy (§3, §1.1). `instrument` is
-  what a page reads when it has to decide whether an instrument someone
-  typed is that series.
+(§12.10 to §12.12 are retired; the number 12.13 is kept for the history.)
 
-Notes for B (not new fields):
-- §11 fixes the inventory at 26 series in five groups, but Desk also reads
-  series that are not among them: the eleven sector ETFs, RSP's partner IWM
-  (Sectors), and T10YIE / T5YIE (the recession model's breakeven input).
-  "Every panel in Desk resolves to a row here" holds once they are listed;
-  the fixture keeps §11's counts.
-- The mockup's 2s10s steepening row is "No edge" with −1.9 points against a
-  normal month, the widest gap on the Ledger; §1.5 defines No edge as "about
-  the same as any month". The verdict is the engine's and the fixture keeps
-  the mockup's; worth a look when the engine scores it.
-- The mockup's Overview rows label two signals differently from the Ledger
-  (§2 "Gold +2σ while S&P < 50d", "VIX +2σ in 5 days"; §8 "Gold +2σ while S&P
-  weak", "VIX spike +2σ, 5 days"). Each fixture keeps its own section's label;
-  the API should serve one label per slug.
-- The mockup's five Overview rows do not satisfy §12.1's own filter
-  (`firing_now` OR top 5 by `last_fired`): Dollar −2σ is firing and absent,
-  golden cross is older than five others. The fixture carries the mockup's
-  rows; the client renders `active_signals` in served order and never
-  re-filters.
+Each shape below is recorded for when it is built. None is served on
+Monday: its route or block answers the awaiting envelope, and the UI renders
+§1.0.2. The fields keep these names; the corrections listed apply when they
+are built. (The frame-3 fields of the Codex round 1 block, and the other
+PROPOSED fields of the earlier §12.13, are superseded by §12.1–§12.9 and by
+this section.)
+
+**Positions — `status: deferred`** (`GET /positions`; `POST` answers 405).
+The server shape, when one exists, is the browser record of §9: `{id,
+instrument, direction: "long"|"short", size_nav: fraction|null,
+horizon_days, variant, pre_mortem, red_team: string|null, wrong_if: {id,
+label}, subject, monitoring: "automatic"|"manual", entry_ts, entry_date,
+entry_value, trigger: {series, operator, threshold, policy: "frozen",
+observed_on}, original_room, evaluation: "close", closes: [{type, ts,
+premortem_right: boolean|null}]}` and the list's `closed_90d: {falsified,
+expired, premortem_right: [yes, judged]}`. `dv01` is null until a notional
+exists. The gate rule of §9 is the server's rule.
+
+**Basket — `status: deferred`** (`GET /basket/:id`, `POST /basket/price`
+answering 405). `{id, name, short, instrument, rebalance, prices_as_of,
+baskets: [{id, name}], legs: [{symbol, name|null, weight}]}` (weight in
+percent) plus the priced fields `{benchmark: {symbol, label}, ret_3m,
+bench_ret_3m, residual, residual_window, falsifies_at, month_ago, vol,
+bench_vol, vol_ratio, beta, series: [{date, value}]}`, each nullable; the
+price answer carries its own `prices_as_of`.
+
+**Hedge — `status: deferred`** (`GET /hedge?mode=protect|express|neutralize`
+with one subject). `{mode, subject: {kind, id, label}, surface,
+surface_as_of, provider, beta, options: [...], recommended}`. Corrections
+that apply when built (v2 §17): the hedge notional is a selected budget,
+not beta-neutral sizing (neutralize = 100 × beta / |net delta|); breakeven
+and loss are `option_breakeven_underlying_return`, `option_max_loss_nav` and
+`hedged_book_max_loss_nav`, each with its denominator stated; contracts,
+strikes, expiry, quantity, quote timestamps and signed Greeks are served;
+`expiration_date`, `current_dte` and `roll_date` are distinct fields.
+
+**Vol — `status: deferred`** (`/technicals` `vol` block; `GET /vol`).
+`{source: "eodhd", skew_25d_1m_pts, skew_pct_2y, skew_trend,
+atm_iv_1m, realized_20d, term: {"1m","3m","6m"}, history_from}` with each
+value's date. Needs stored SPY option snapshots and a versioned skew
+method; `realized_20d` needs its method specified, and the Overview's
+`tiles.vol` `gap_pts` and `band` wait on it (v2 §13).
+
+**Sectors — `status: deferred`** (`/technicals` `sectors` block; `GET
+/sectors`). `{window_months: 3, leadership: [{etf, name, short, rel_ret}]
+(sorted best first), breadth: {above_50: {n, of, compared_on, by_etf},
+above_200: {n, of, by_etf}, eqw_vs_cap_3m, eqw_vs_cap_series: [{date, rel}],
+small_vs_large_series: [{date, rel}]}}`. When activated: relative return =
+log(P_ETF(t) / P_ETF(t−60)) − log(P_SPY(t) / P_SPY(t−60)) on adjusted closes
+(v3 A-18); the display and the ±1% band are specified at activation;
+breadth serves its comparison date; missing history is "not available",
+never "below".
+
+**Correlations — `status: deferred`** (`/macro` `stock_bond`,
+`correlations`, `matrix`). `stock_bond: {today, year_ago, flipped, series:
+[{date, corr}]}`, `correlations: [{asset, symbol, quantity, transform,
+corr}]`, `matrix: {assets, labels, window, values}`. Each asset declares
+`symbol`, `quantity` and `transform`; Pearson over the same trailing 60 XNYS
+return dates, 60 complete pairs, no forward fill (v2 §12).
+
+**RSI — `status: deferred`** (`/technicals` `rsi`, `rsi_date`, `rsi_prev`;
+the rsi-above-70 and rsi-below-30 studies and Ledger rows). RSI(14) with
+Wilder smoothing, initialized from 14 changes over 15 contiguous valid
+closes; no losses with gains → 100; no gains with losses → 0; both zero →
+50; any gap invalidates it until re-initialized (v3 §13). The card's words
+("rising", "falling") come only from the two served numbers.
+
+**Confidence — `status: deferred`** (`/study?confidence=0.80|0.90|0.95`,
+`confidence_note`). Changes only the interval quantiles, on identical seeded
+draws; never `adverse_share`, the 3% bar or any verdict, which stay at the
+90% exclusion (v2 §8, v3 §8).
+
+**without_condition — `status: deferred`** (`/study` `without_condition`
+block, awaiting on Monday). `{matched_n, n, up_pct, median, baseline_median,
+verdict, comparison: "improves"|"no_improvement"|"insufficient",
+comparison_note}`. Before it is enabled, a later version specifies the
+companion query, the horizon, sample matching, the baseline treatment, the
+direction of improvement and the decision rule (v4 B-11). No improvement
+classification or comparison prose is generated until then.
 
 ---
 
-## 13. Build order and acceptance
+## 13. Build order, engine scope and acceptance
 
-Tab order for A: Overview → Technicals → Event Study → Regime → Macro →
-Sectors → Ledger → Position Monitor → Data Pipeline → Build Notes → Client
-toggle. Basket & Hedge last, only if everything else is green.
+### 13.1 Session B's order
+1. The envelope and `unavailable` on every route (§12.0), the deferred stubs
+   included (GET awaiting, removed writes 405).
+2. `/study` and `/study/catalog` (§12.2, §12.3): catalog normalization, the
+   public aliases (main's engine slugs and legacy URLs unchanged; `slug_for`
+   not modified), presets precomputed and cached. `/study`, `/study/events`,
+   `/study/catalog` and the preset precompute use the existing bounded study
+   concurrency, timeout and single-flight policy of `api/security.py`, added
+   to the middleware's study path list in the same commit that adds the
+   routes; engine aliases, worker precompute and middleware registration
+   change together (v3 §2, §20). Ordinary stored reads stay on their own
+   pool.
+3. `/study/events` and its CSV (§12.4).
+4. `/ledger` (§12.5).
+5. `/technicals` (§12.7).
+6. `/regime` (§12.6).
+7. `/macro` (§12.8), registering DGS3MO, DGS5 and DGS30.
+8. `/overview` (§12.1), composed from the above.
+9. `/pipeline` (§12.9).
 
-Per tab: build from the PNG + this section; run against the fixture for that
-endpoint; screenshot at 1440 wide; compare to the PNG; verifier; commit
-`frame-3: <tab>`. If the screenshot does not match after two attempts, stop
-that tab, write why in `docs/desk/FRAME3_REPORT.md`, and move to the next.
+Each with a fixture-shape test. Regression gate (v3 A-18): for every
+existing query under identical inputs, the native event set, per-horizon
+outcomes, baselines and the engine's 90% exclusion results are unchanged; no
+native result or hash change is permitted, and any that appears is a
+blocking finding. The adapter schema, the public aliases and the v1 verdict
+labels are tested separately as new outputs. No new series beyond the three
+FRED tenors.
 
-Acceptance for the branch: all eleven tabs render from fixtures; every number
-on screen traces to a field in §12; no color outside §1.3; no "established" /
-"significant"; typecheck, unit, build, Desk browser tests green.
+### 13.2 Engine work allowed for Monday (v3 §23, v4 B-12)
+
+**Projections of the existing run** (no change to sample or estimator): an
+immutable full event table retained from the existing `_run` (event index,
+entry index, exit index per horizon, native outcome per horizon, regime at
+K−2); per-horizon counts, extrema, first and last event; the CSV;
+provenance dates. `matched_n`, per-horizon `n`, `up_n`, extrema,
+`first_event`, `last_event`, `last_events` and the CSV are projections of
+that table; nothing is reconstructed from `recent_events` and no
+event-selection logic is copied.
+
+**New calculations allowed:** the firing state (v3 §3, as §12.5 states
+it), with the z of the spx-20d-2sigma study it evaluates served as
+`/technicals` `move_20d_sigma`; the 50- and 200-day averages, trend state and chart series (§12.7);
+`chg_1d`, `ret_1y`, `vs_ma50`, `vs_ma200` on exact XNYS endpoints; the
+next-print inverse thresholds (§12.6); the rolling HY statistics (§12.8);
+the recession provenance extraction (§12.6); the Desk `data_status`
+(§12.1); the curve snapshot alignment, month-ago selection and dated
+differences (§12.8); `vol_change_pts`, `regime_from`, `regime_to` and
+`regime_changed` (§12.1); the three FRED tenor series. These do not
+authorize any conditional-improvement judgment.
+
+**Not allowed for Monday** (the blocks are unavailable): RSI; confidence
+80% / 95%; the regime statistics table and change outcomes; the
+without-condition comparison; everything §1.0 lists as unavailable. No
+implementation may broaden scope to satisfy an illustrative shape.
+
+### 13.3 Session A
+Fixtures under `web/src/fixtures/desk/` in the §12 shapes (envelopes
+included), with the real values of `FRAME3_DATA_AUDIT.md` wherever it marks
+a value COMPUTABLE and illustrative values, marked as such, elsewhere. Per
+tab: build from the PNG and this file; screenshot at 1440 wide; compare with
+the PNG; verifier; commit. Acceptance: every tab renders from fixtures;
+every number on screen traces to a §12 field; no color outside §1.3; no
+"established" or "significant"; typecheck, unit, build and the Desk browser
+tests green.
