@@ -2,7 +2,12 @@
 
 This file lists names only and never values. It says where each variable is set, so a key rotation updates every copy.
 It was taken from the code on 2026-09-24 (main `30515f7`) by grepping `os.environ`, `getenv`, `get_secret`,
-`import.meta.env`, `process.env` and `secrets.*` in the workflows. When the code starts reading a new name, add it here.
+`import.meta.env` and `git grep -n 'process.env' -- web`, and by reading every workflow's `env:` blocks, `secrets.*`
+references and shell `$VAR` reads. When the code starts reading a new name, add it here.
+
+Every name below is marked **secret** or **non-secret**. Shell variables that a workflow step assigns and reads
+within its own script (`MODE`, `ARGS`, `RC`, `COMMIT_MSG`, `OUTPUT`, `MEMO_DATE`, `MEMO_REGIME`, `DOW`, `code`, `i`)
+are not environment inputs and are left out.
 
 The two deploy surfaces are the **API image** (the `Dockerfile`, served on Render) and the **web build**
 (Vercel runs `web/vercel.json`'s build command; the Dockerfile's `webbuild` stage builds the same bundle).
@@ -16,7 +21,7 @@ The two deploy surfaces are the **API image** (the `Dockerfile`, served on Rende
 | `GH_DB_TOKEN` (fine-grained PAT, Contents: Read) | yes | no (workflows use the built-in `GITHUB_TOKEN`) | no | yes | no |
 | `GH_SNAPSHOT_TOKEN` (fine-grained PAT, Contents: Read) | no | no | yes | no | no |
 | `OPS_ACCESS_KEY` | yes | no | no | no | no |
-| `ASSISTANT_ACCESS_KEY` (only when `ASSISTANT_ACCESS=key`) | if used | no | no | no | no |
+| `ASSISTANT_ACCESS_KEY` (only in the assistant's key mode) | if used | no | no | no | no |
 | `ANTHROPIC_API_KEY` | yes | yes (refresh-data, daily-memo) | no | yes | optional |
 | `FINNHUB_API_KEY` | yes | yes (refresh-data) | no | yes (if set) | optional |
 | `FRED_API_KEY` | no | yes (refresh-data, weekly-memo) | no | yes | yes |
@@ -43,7 +48,7 @@ The process never imports `src.config`, so it does not read `FRED_API_KEY` or th
 - `OPS_ACCESS_KEY`: opens the diagnostics views.
 - `ANTHROPIC_API_KEY`: the assistant. `src/analytics/chat.py` looks in the environment, then `st.secrets`, then the repo-root `.env`.
 - `FINNHUB_API_KEY`: fundamentals for the single-name panel.
-- `ASSISTANT_ACCESS_KEY`: used only in `ASSISTANT_ACCESS=key` mode.
+- `ASSISTANT_ACCESS_KEY`: read only when `ASSISTANT_ACCESS` selects the key mode.
 
 **Configuration (not secret)**
 
@@ -58,22 +63,43 @@ The process never imports `src.config`, so it does not read `FRED_API_KEY` or th
 - Container: `PORT` (Render sets it, and the image's CMD reads it). The Dockerfile sets `PYTHONUNBUFFERED` and `PIP_NO_CACHE_DIR` itself.
   **Do not set `WEB_CONCURRENCY`.** The CMD pins `--workers 1` because a second worker would start a second EODHD relay on the same token.
 
-## Web build
+## Web build and test
 
-**Vercel project environment**
+**Vercel project environment (production build)**
 
-- Build command (`web/scripts/fetch-snapshot.mjs`): `GH_SNAPSHOT_TOKEN` (secret; `GH_TOKEN` is the fallback), plus
-  `SNAPSHOT_REPO`, `SNAPSHOT_TAG` and `SNAPSHOT_ASSET`, which are optional and have defaults.
-- Bundle, fixed at build time and public once built: `VITE_API_BASE`, `VITE_WS_BASE`, `VITE_SNAPSHOT_URL`.
-  **Never put a secret in a `VITE_` variable.** Vite inlines every `VITE_` value into the JavaScript that ships to browsers.
-- `VITE_PROXY_TARGET` is read only by `vite.config.ts` for `npm run dev`, and never by a build.
+| Name | Kind | Read by |
+|---|---|---|
+| `GH_SNAPSHOT_TOKEN` | secret | `web/scripts/fetch-snapshot.mjs` (the Vercel build command) |
+| `GH_TOKEN` | secret | `web/scripts/fetch-snapshot.mjs`, used when `GH_SNAPSHOT_TOKEN` is unset |
+| `SNAPSHOT_REPO`, `SNAPSHOT_TAG`, `SNAPSHOT_ASSET` | non-secret | `web/scripts/fetch-snapshot.mjs` (optional, with defaults) |
+| `VITE_API_BASE` | non-secret | `web/src/api/client.ts`, `web/src/screens/shell/AssistantPanel.tsx` |
+| `VITE_WS_BASE` | non-secret | `web/src/live/quotes.ts` |
+| `VITE_SNAPSHOT_URL` | non-secret | `web/src/api/snapshot.ts` |
+| `npm_package_version` | non-secret | `web/vite.config.ts` (the app's version stamp; npm sets it when it runs a script) |
+
+**Never put a secret in a `VITE_` variable.** Vite inlines every `VITE_` value into the JavaScript that ships to browsers,
+so all three are public once built.
+
+**Local development and tests (never set on Vercel)**
+
+| Name | Kind | Read by |
+|---|---|---|
+| `VITE_PROXY_TARGET` | non-secret | `web/vite.config.ts`, only for `npm run dev` |
+| `E2E_BASE_URL` | non-secret | `web/playwright.config.ts` |
+| `BASELINE_DIR`, `ALLOW_BASELINE_OVERWRITE` | non-secret | `web/e2e/baseline-capture.spec.ts` |
+| `BASELINE_LABELS`, `RENAMES` | non-secret | `web/e2e/label-parity.spec.ts` |
+| `CAPTURE_DIR` | non-secret | `web/e2e/lib/drive.ts` and the credit, dashboard, kit, markets, news, recession, regime-lab and tools specs |
+| `CAPTURE_STEP`, `CAPTURE_SIDEBAR` | non-secret | `web/e2e/capture-widths.spec.ts` |
 
 **Dockerfile `webbuild` stage**
 
-This stage reads no variables. It declares no `ARG` or `ENV`, and it runs no snapshot fetch. The bundle it builds
-calls the API on its own origin (`VITE_API_BASE` unset), which is right for the single-image deploy.
+This stage passes no variables of its own. It declares no `ARG` or `ENV`, and it runs no snapshot fetch. Of the names
+above, only `npm_package_version` has a value there, and npm sets it. The bundle it builds calls the API on its own
+origin (`VITE_API_BASE` unset), which is right for the single-image deploy.
 
-## GitHub Actions (repository secrets)
+## GitHub Actions
+
+**Repository secrets, by workflow**
 
 | Workflow | Secrets |
 |---|---|
@@ -82,8 +108,31 @@ calls the API on its own origin (`VITE_API_BASE` unset), which is right for the 
 | `daily-memo.yml` | `ANTHROPIC_API_KEY`, `PERPLEXITY_API_KEY`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, `MEMO_RECIPIENTS`, `GITHUB_TOKEN` (built in) |
 | `weekly-memo.yml` | `FRED_API_KEY`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, `MEMO_RECIPIENTS`, `GITHUB_TOKEN` (built in) |
 
-`GITHUB_TOKEN` is issued for each run and is never rotated by hand. Actions has no `EODHD_API_TOKEN` secret.
-When that token is absent, the refresh pipeline's stored histories fall back to Yahoo and say so.
+The three mail secrets are passed as inputs to the mail action, not as environment variables. `GITHUB_TOKEN` is issued
+for each run and is never rotated by hand. Actions has no `EODHD_API_TOKEN` secret. When that token is absent, the
+refresh pipeline's stored histories fall back to Yahoo and say so.
 
-The pipeline code also reads `POLYGON_API_KEY` (legacy, and nothing sets it), `MARKET_DAILY_BACKFILL_YEARS` (optional),
-and `GITHUB_ACTIONS` and `GITHUB_RUN_ID`, which the Actions runner sets itself.
+**Environment variables the workflow steps read**
+
+| Name | Kind | Set from | Read by |
+|---|---|---|---|
+| `FRED_API_KEY`, `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `NEWS_API_KEY`, `PERPLEXITY_API_KEY` | secret | repository secrets | the pipeline steps (`main.py`, `src/config.py`, `src/daily_memo.py`, `src/events/earnings.py`, `src/memo.py`) |
+| `VERCEL_DEPLOY_HOOK` | secret | repository secret | `refresh-data.yml`'s deploy-hook step |
+| `GH_TOKEN` | secret | the built-in `GITHUB_TOKEN` | the `gh` CLI (release view, create, download and upload; `refresh-data.yml` dispatching the memo workflows) |
+| `EVENT_NAME` | non-secret | `github.event_name` | `refresh-data.yml`, passed to `scripts/workflow_mode.py` |
+| `SCHEDULE` | non-secret | `github.event.schedule` | `refresh-data.yml`, passed to `scripts/workflow_mode.py` |
+| `INPUT_MODE` | non-secret | the dispatch input `mode` | `refresh-data.yml`, passed to `scripts/workflow_mode.py` |
+| `ALLOW_STALE` | non-secret | the dispatch input `allow_stale_reason` | `refresh-data.yml`, passed to `scripts/validate_db.py` |
+| `RUN_ID` | non-secret | `github.run_id` (refresh-data) or the dispatch input `run_id` (the memos) | the memos' check for a validated-db artifact; `refresh-data.yml` passing its run id to the memos it dispatches |
+| `EODHD_PROBE_ON_START` | non-secret | fixed in `refresh-data.yml` | `scripts/build_snapshot.py` |
+| `GITHUB_OUTPUT` | non-secret | the runner | the workflows' shell steps and `scripts/validate_db.py` |
+| `GITHUB_STEP_SUMMARY` | non-secret | the runner | `refresh-data.yml`, `intraday-refresh.yml` and `scripts/validate_db.py` |
+| `GITHUB_ACTIONS`, `GITHUB_RUN_ID` | non-secret | the runner | `src/events/earnings.py`, `src/analytics/ai_spend.py` |
+
+**Read by the pipeline code, but no workflow sets them**
+
+| Name | Kind | Read by |
+|---|---|---|
+| `MARKET_DAILY_BACKFILL_YEARS` | non-secret | `src/config.py`, `src/market_data/fetch_market.py` (optional; the default is 10) |
+| `MRR_DB_PATH` | non-secret | `scripts/build_snapshot.py` (optional database path override) |
+| `POLYGON_API_KEY` | secret | `src/config.py`, `src/market_data/polygon.py` (legacy, and nothing uses it) |
