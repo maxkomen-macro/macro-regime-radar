@@ -124,7 +124,7 @@ refresh pipeline's stored histories fall back to Yahoo and say so.
 | `INPUT_MODE` | non-secret | the dispatch input `mode` | `refresh-data.yml`, passed to `scripts/workflow_mode.py` |
 | `ALLOW_STALE` | non-secret | the dispatch input `allow_stale_reason` | `refresh-data.yml`, passed to `scripts/validate_db.py` |
 | `RUN_ID` | non-secret | `github.run_id` (refresh-data) or the dispatch input `run_id` (the memos) | the memos' check for a validated-db artifact; `refresh-data.yml` passing its run id to the memos it dispatches |
-| `EODHD_PROBE_ON_START` | non-secret | fixed in `refresh-data.yml` | `scripts/build_snapshot.py` |
+| `EODHD_PROBE_ON_START` | non-secret | fixed in `refresh-data.yml` | the API modules `scripts/build_snapshot.py` imports (`api/main.py`); the script only sets a default |
 | `GITHUB_OUTPUT` | non-secret | the runner | the workflows' shell steps and `scripts/validate_db.py` |
 | `GITHUB_STEP_SUMMARY` | non-secret | the runner | `refresh-data.yml`, `intraday-refresh.yml` and `scripts/validate_db.py` |
 | `GITHUB_ACTIONS`, `GITHUB_RUN_ID` | non-secret | the runner | `src/events/earnings.py`, `src/analytics/ai_spend.py` |
@@ -134,5 +134,21 @@ refresh pipeline's stored histories fall back to Yahoo and say so.
 | Name | Kind | Read by |
 |---|---|---|
 | `MARKET_DAILY_BACKFILL_YEARS` | non-secret | `src/config.py`, `src/market_data/fetch_market.py` (optional; the default is 10) |
-| `MRR_DB_PATH` | non-secret | `scripts/build_snapshot.py` (optional database path override) |
 | `POLYGON_API_KEY` | secret | `src/config.py`, `src/market_data/polygon.py` (legacy, and nothing uses it) |
+
+## Local sync (`make sync-data`)
+
+`scripts/sync_data.sh` pulls the published database from the `data-latest` release to a developer machine.
+It runs locally only: no deploy or workflow calls it.
+
+| Name | Kind | Read by |
+|---|---|---|
+| `GH_TOKEN` | secret | the `gh` CLI that `scripts/sync_data.sh` runs (lines 21, 31 and 34); needed only when `gh auth login` has not been done |
+| `MRR_REPO` | non-secret | `scripts/sync_data.sh:12`, the repository that holds the release (optional, with a default) |
+| `MRR_DB_PATH` | non-secret | `scripts/sync_data.sh:13`, the local database path to replace (optional, with a default) |
+| `PYTHON` | non-secret | `scripts/sync_data.sh:14`, the interpreter that runs `scripts/validate_db.py` (optional, with a default) |
+
+`scripts/build_snapshot.py` also sets `MRR_DB_PATH` in its own process when it is given a database path. It writes the
+name and does not read it, and nothing else in the repo reads it.
+
+The script's own shell variables (`REPO`, `TARGET`, `PY`, `NEW`, `TMPDIR_SYNC`) are assigned inside it and are not inputs.
