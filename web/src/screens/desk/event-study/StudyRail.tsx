@@ -2,8 +2,8 @@
  * The Event Study rail (DESK_FRAME3_SPEC §4), top to bottom: the verdict box
  * (amber-bordered for Suggestive) with the verdict's line, why, what to do and
  * `Price it →`; the answer by regime a month later (§4's fixed label: §12.2
- * serves `by_regime` and `last_events` at 20 sessions; n under 5 reads
- * `n<5`); the last five events; the range against a normal stretch at
+ * serves `by_regime` and `last_events` at 20 sessions; a regime under ten
+ * events prints its count and "too few cases to say"); the last five events; the range against a normal stretch at
  * the chosen confidence (80 / 90 / 95%, re-asked with `confidence`), with the
  * served note; and the footer: Advanced and Export.
  */
@@ -16,11 +16,12 @@ import { CONFIDENCES } from "./question";
 import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
 import type { TargetUnit } from "../data/types";
 
-/** The rail with no scored answer: its section labels, and why there is nothing under them (§1.7). */
-export function RailPlaceholder({ reason }: { reason: "awaiting" | "too-few" }) {
+/** The rail with no answer: its section labels, and why there is nothing under them (§1.7). A served
+ * study, Too few included, is scored (v4 B-02) and gets the whole rail. */
+export function RailPlaceholder() {
   // §1.0.2: a study served awaiting keeps the rail's four labels and prints its reason once, after them.
   const unserved = useUnserved();
-  const why = reason === "awaiting" ? "Awaiting refresh" : "Not scored: too few events";
+  const why = "Awaiting refresh";
   if (unserved)
     return (
       <>
@@ -50,6 +51,9 @@ export function RailPlaceholder({ reason }: { reason: "awaiting" | "too-few" }) 
     </>
   );
 }
+
+/** Fewer events than this in a regime and its cells are served null (§12.2, the engine's MIN_REGIME_N). */
+export const REGIME_FLOOR = 10;
 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, string> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
@@ -122,7 +126,8 @@ export default function StudyRail({
         </thead>
         <tbody>
           {byRegime.map((r) => {
-            const few = fin(r.n) && r.n < 5;
+            // §4: a regime with fewer than ten events (the engine's MIN_REGIME_N) prints its count and "too few cases to say".
+            const few = fin(r.n) && r.n < REGIME_FLOOR;
             return (
               <tr key={r.regime}>
                 <th scope="row">
@@ -130,8 +135,16 @@ export default function StudyRail({
                   {r.regime}
                 </th>
                 <td>{fin(r.n) ? r.n : "—"}</td>
-                <td data-few={few || !fin(r.up_pct) || undefined}>{few ? "n<5" : fin(r.up_pct) ? pctPlain(r.up_pct) : "—"}</td>
-                <td data-few={few || !moveText(r.median, unit) || undefined}>{few ? "n<5" : fin(r.median) && moveText(r.median, unit) ? <Signed value={r.median} title={tip}>{moveText(r.median, unit)}</Signed> : "—"}</td>
+                {few ? (
+                  <td colSpan={2} className="es-few" data-few>
+                    too few cases to say
+                  </td>
+                ) : (
+                  <>
+                    <td data-few={!fin(r.up_pct) || undefined}>{fin(r.up_pct) ? pctPlain(r.up_pct) : "—"}</td>
+                    <td data-few={!moveText(r.median, unit) || undefined}>{fin(r.median) && moveText(r.median, unit) ? <Signed value={r.median} title={tip}>{moveText(r.median, unit)}</Signed> : "—"}</td>
+                  </>
+                )}
               </tr>
             );
           })}
@@ -140,15 +153,22 @@ export default function StudyRail({
       ) : (
         <Awaiting />
       )}
+      {fin(study.unlabeled_n) && study.unlabeled_n > 0 ? (
+        <p className="es-note">
+          Unlabeled: {study.unlabeled_n} event{study.unlabeled_n === 1 ? "" : "s"} before the first labelled month
+        </p>
+      ) : null}
       {today && fin(today.n) ? (
         <p className="es-note">
           Today is {today.regime}: {numberWord(today.n)} event{today.n === 1 ? "" : "s"}
-          {today.n < 10 ? ", too few to read alone." : "."}
+          {today.n < REGIME_FLOOR ? ", too few to read alone." : "."}
         </p>
       ) : null}
 
       <p className="dk-stat-label es-rail-h">{target ? `Last five events · ${target} a month later` : "Last five events · a month later"}</p>
-      {lastEvents ? (
+      {lastEvents && !lastEvents.length ? (
+        <p className="es-note">No events</p>
+      ) : lastEvents ? (
         <ul className="es-events">
           {lastEvents.map((e) => (
             <li key={e.date}>
@@ -180,7 +200,14 @@ export default function StudyRail({
           {horizons.map((h) => (
             <li key={h.h}>
               <span>{h.label}</span>
-              <span className="es-range-pts" title={rangeText(h.ci_lo, h.ci_hi, unit) ? tip : undefined}>{rangeWords(h.ci_lo, h.ci_hi, unit)}</span>
+              {/* An interval served null with its reason (under five blocks, §12.2) says why in words; one that did not arrive is Awaiting refresh. */}
+              {!rangeText(h.ci_lo, h.ci_hi, unit) && typeof h.reason === "string" && h.reason ? (
+                <span className="es-range-why">{h.reason}</span>
+              ) : (
+                <span className="es-range-pts" title={rangeText(h.ci_lo, h.ci_hi, unit) ? tip : undefined}>
+                  {rangeWords(h.ci_lo, h.ci_hi, unit)}
+                </span>
+              )}
               <VerdictWord verdict={h.verdict} />
             </li>
           ))}
@@ -191,7 +218,7 @@ export default function StudyRail({
       <p className="es-note">{study.confidence_note}</p>
 
       <div className="es-rail-foot">
-        <Advanced items={`${fin(study.n_events) ? `all ${study.n_events} events` : "all events"} · resampling detail · entry rules · provenance`} open={advOpen} onToggle={onAdvanced} controls={advId} />
+        <Advanced items={`${fin(study.matched_n) ? `all ${study.matched_n} events` : "all events"} · resampling detail · entry rules · provenance`} open={advOpen} onToggle={onAdvanced} controls={advId} />
         <button type="button" className="dk-link es-export" onClick={onExport} disabled={exporting || busy} data-testid="es-export">
           Export →
         </button>

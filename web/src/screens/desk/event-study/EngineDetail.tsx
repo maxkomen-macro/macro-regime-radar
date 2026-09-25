@@ -135,7 +135,7 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
     <section className="dk-card es-advanced" id={id} aria-label="Advanced">
       <div className="es-adv-grid">
         <div>
-          <p className="dk-stat-label es-rail-h">{fin(study.n_events) ? `All ${study.n_events} events` : "All events"}</p>
+          <p className="dk-stat-label es-rail-h">{fin(study.matched_n) ? `All ${study.matched_n} events` : "All events"}</p>
           {list ? (
             <table className="es-table es-wide">
               <thead>
@@ -177,7 +177,11 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
               {study.horizons.map((h) => (
                 <li key={h.h}>
                   <span>{h.label}</span>
-                  <span className="es-range-pts">{!fin(h.ci_lo) || !fin(h.ci_hi) ? "Awaiting refresh" : h.ci_lo > 0 || h.ci_hi < 0 ? "clears zero" : "includes zero"}</span>
+                  {!fin(h.ci_lo) || !fin(h.ci_hi) ? (
+                    <span className="es-range-why">{typeof h.reason === "string" && h.reason ? h.reason : "Awaiting refresh"}</span>
+                  ) : (
+                    <span className="es-range-pts">{h.ci_lo > 0 || h.ci_hi < 0 ? "clears zero" : "includes zero"}</span>
+                  )}
                   <span>{verdictLabel(h.verdict)}</span>
                 </li>
               ))}

@@ -146,6 +146,22 @@ test.describe("desk v2", () => {
     await expect(page.locator('[title="log return, ×100"]')).toHaveCount(0);
   });
 
+  test("counts: EVENTS is the study's size over the selected horizon's count; a regime under ten events reads too few and fits the rail (C-03, §4)", async ({ page }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/event-study?preset=gold-2sigma-spx-weak");
+      const answer = page.getByRole("region", { name: "The answer" });
+      await expect(answer).toContainText("18 complete at 1 month");
+      const rail = page.getByRole("complementary", { name: "Verdict and detail" });
+      await expect(rail.getByText("too few cases to say")).toHaveCount(4);
+      const cut = await rail.locator("td.es-few").evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().height > 40).length);
+      expect(cut, `too-few cells whole on one line at ${width}`).toBe(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+      expect(await auditPalette(page)).toEqual([]);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
+  });
+
   test("a log-return study prints 100 × native, and every such number carries the tooltip \"log return, ×100\" (§1.9)", async ({ page }) => {
     await open(page, "/desk/event-study?preset=gold-2sigma-spx-weak");
     const answer = page.getByRole("region", { name: "The answer" });
@@ -544,7 +560,15 @@ test.describe("desk v2", () => {
 
   test("the client view prints as one page, full width, the bars kept; another tab prints as before", async ({ page }) => {
     const pages = (pdf: Buffer) => (pdf.toString("latin1").match(/\/Type\s*\/Page(?!s)/g) ?? []).length;
-    await open(page, "/desk/overview?view=client");
+    // Two regimes with ten events or more (MIN_REGIME_N), so the backdrop draws bars to print.
+    const study = payloadOf(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!);
+    const by_regime = [
+      { h: 20, regime: "Goldilocks", n: 10, up_pct: 0.6, median: 0.028 },
+      { h: 20, regime: "Overheating", n: 4, up_pct: null, median: null },
+      { h: 20, regime: "Stagflation", n: 2, up_pct: null, median: null },
+      { h: 20, regime: "Recession Risk", n: 12, up_pct: 0.83, median: 0.035 },
+    ];
+    await open(page, "/desk/overview?view=client", { "/api/desk/study": { status: 200, body: { ...study, by_regime } } });
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(/When gold jumps/);
     await page.emulateMedia({ media: "print" });
     await expect(page.getByRole("complementary", { name: "Sidebar" })).toBeHidden();
@@ -565,9 +589,10 @@ test.describe("desk v2", () => {
   test("the client view's bars keep one scale and stay in the card at every width", async ({ page }) => {
     const study = payloadOf(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!);
     for (const by_regime of [
-      [{ regime: "Goldilocks", n: 5, up_pct: 0.4, median: -0.121 }, { regime: "Overheating", n: 6, up_pct: 0.3, median: -0.05 }, { regime: "Recession Risk", n: 2, up_pct: null, median: null }],
-      [{ regime: "Goldilocks", n: 5, up_pct: 0.4, median: -0.1 }, { regime: "Overheating", n: 6, up_pct: 0.6, median: 0.01 }, { regime: "Stagflation", n: 2, up_pct: null, median: null }, { regime: "Recession Risk", n: 5, up_pct: 0.5, median: 0.005 }],
-      [{ regime: "Goldilocks", n: 5, up_pct: 0.8, median: 0.03 }, { regime: "Stagflation", n: 5, up_pct: 0.4, median: -0.03 }, { regime: "Recession Risk", n: 2, up_pct: null, median: null }],
+      // Served cells only at ten events or more (MIN_REGIME_N, §12.2).
+      [{ regime: "Goldilocks", n: 10, up_pct: 0.4, median: -0.121 }, { regime: "Overheating", n: 12, up_pct: 0.3, median: -0.05 }, { regime: "Recession Risk", n: 2, up_pct: null, median: null }],
+      [{ regime: "Goldilocks", n: 10, up_pct: 0.4, median: -0.1 }, { regime: "Overheating", n: 12, up_pct: 0.6, median: 0.01 }, { regime: "Stagflation", n: 2, up_pct: null, median: null }, { regime: "Recession Risk", n: 10, up_pct: 0.5, median: 0.005 }],
+      [{ regime: "Goldilocks", n: 10, up_pct: 0.8, median: 0.03 }, { regime: "Stagflation", n: 10, up_pct: 0.4, median: -0.03 }, { regime: "Recession Risk", n: 2, up_pct: null, median: null }],
     ]) {
       await open(page, "/desk/overview?view=client", { "/api/desk/study": { status: 200, body: { ...study, by_regime } } });
       for (const width of [1440, 1101, 760, 390]) {

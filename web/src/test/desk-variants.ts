@@ -18,12 +18,13 @@ export function bpStudy(): Record<string, unknown> {
     ...study,
     question: { ...study.question, target: "us10y", target_unit: "bp", display_unit: "bp", target_label: "10-year Treasury yield" },
     horizons: study.horizons.map((h) => ({ ...h, ...bpH[h.h], ...(h.h === 20 ? { worst: { ret: -30, date: "2020-03-09" }, best: { ret: 60, date: "2025-04-16" } } : {}) })),
-    by_regime: study.by_regime.map((r) => ({ ...r, median: r.median == null ? null : ({ Goldilocks: 12, "Recession Risk": 20 } as Record<string, number>)[r.regime] })),
+    // One regime at ten events (MIN_REGIME_N), so a bp median prints; the rest too few, as served.
+    by_regime: study.by_regime.map((r) => (r.regime === "Goldilocks" ? { ...r, n: 10, up_pct: 0.6, median: 12 } : r.regime === "Recession Risk" ? { ...r, n: 2 } : r)),
     last_events: study.last_events.map((e, i) => ({ ...e, ret_20: [30, -15, 22, 5, 18][i] ?? 10 })),
     without_condition: { ...study.without_condition, median: 9 },
     client: {
       headline: "When gold jumps and stocks are already soft, what has the 10-year yield done next?",
-      summary: "Looking at 18 such episodes since 2000, the 10-year Treasury yield was higher a month later about two times in three, with a typical rise of about 25 basis points.",
+      summary: "Looking at 18 episodes since 2000, the 10-year Treasury yield was higher a month later in 12 of 18, with a typical move of +25 bp against +5 bp in an ordinary month.",
     },
   };
 }

@@ -14,8 +14,8 @@ import studyEvents from "./study-events.json";
 import study from "./study.json";
 
 const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
-/** §4: a regime with fewer than five events prints n<5 in both cells. */
-const FLOOR = 5;
+/** §12.2: a regime with fewer than ten events (the engine's MIN_REGIME_N) serves its count and null cells. */
+const FLOOR = 10;
 
 function monthBefore(month: string, n: number): string {
   const [y, m] = month.split("-").map(Number);
@@ -46,7 +46,7 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
   });
 
   it("every event's regime is the row stamped K−2, K its own month", () => {
-    expect(studyEvents.events.length).toBe(study.n_events);
+    expect(studyEvents.events.length).toBe(study.matched_n);
     for (const e of studyEvents.events) expect([e.date, e.regime]).toEqual([e.date, byMonth.get(monthBefore(e.date.slice(0, 7), record.lag_months))]);
     const dates = studyEvents.events.map((e) => e.date);
     expect(dates).toEqual([...dates].sort().reverse());
@@ -54,12 +54,27 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
 
   it("by regime is recomputed from those events: n, the share up and the median a month later", () => {
     const want = REGIMES.map((r) => {
-      const rets = studyEvents.events.filter((e) => e.regime === r).map((e) => e.ret_20);
-      if (rets.length < FLOOR) return { regime: r, n: rets.length, up_pct: null, median: null };
-      return { regime: r, n: rets.length, up_pct: Math.round((rets.filter((x) => x > 0).length / rets.length) * 100) / 100, median: Math.round(median(rets) * 1000) / 1000 };
+      // §12.2: `by_regime[].n` counts the regime's events complete at h = 20.
+      const rets = studyEvents.events.filter((e) => e.regime === r && typeof e.ret_20 === "number").map((e) => e.ret_20 as number);
+      if (rets.length < FLOOR) return { h: 20, regime: r, n: rets.length, up_pct: null, median: null };
+      return { h: 20, regime: r, n: rets.length, up_pct: Math.round((rets.filter((x) => x > 0).length / rets.length) * 100) / 100, median: Math.round(median(rets) * 1000) / 1000 };
     });
     expect(study.by_regime).toEqual(want);
-    expect(study.by_regime.reduce((a, r) => a + r.n, 0)).toBe(study.n_events);
+    expect(study.by_regime.reduce((a, r) => a + r.n, 0) + study.unlabeled_n).toBe(study.matched_n);
+  });
+
+  it("each horizon's counts, share up, median and extrema are its own completed outcomes (C-03)", () => {
+    for (const h of study.horizons) {
+      const done = studyEvents.events.filter((e) => typeof e[`ret_${h.h}` as "ret_20"] === "number").map((e) => ({ v: e[`ret_${h.h}` as "ret_20"] as number, date: e.date }));
+      const vals = done.map((d) => d.v);
+      expect([h.h, h.n, h.up_n]).toEqual([h.h, done.length, vals.filter((v) => v > 0).length]);
+      expect(h.up_pct).toBe(Math.round((h.up_n / h.n) * 100) / 100);
+      expect(h.median).toBe(Math.round(median(vals) * 1000) / 1000);
+      const lo = done.reduce((a, b) => (b.v < a.v ? b : a));
+      const hi = done.reduce((a, b) => (b.v > a.v ? b : a));
+      expect([h.worst, h.best]).toEqual([{ ret: lo.v, date: lo.date }, { ret: hi.v, date: hi.date }]);
+    }
+    expect(study.horizons.find((h) => h.h === study.selected_horizon)).toBeDefined();
   });
 
   it("the last five events are the list's first five, with their regimes", () => {

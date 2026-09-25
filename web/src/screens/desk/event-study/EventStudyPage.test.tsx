@@ -111,7 +111,8 @@ describe("Event Study tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("Leans positive a month out, but not something to size on."));
     expect(card).toHaveTextContent("○ Not firing today · last Apr 16, 2025");
     expect(card).toHaveTextContent("● Live · 0.3s, cached");
-    expect(card).toHaveTextContent(/Events\s*18\s*since 2000/);
+    // EVENTS is the study's size, with the selected horizon's completed count beneath it (C-03).
+    expect(card).toHaveTextContent(/Events\s*18\s*18 complete at 1 month/);
     expect(card).toHaveTextContent(/Up a month later\s*67%\s*12 of 18/);
     expect(card).toHaveTextContent(/Median at a month\s*\+3\.1%\s*vs \+1\.3% in a normal month/);
     expect(card).toHaveTextContent("−9.4% / +12.0%");
@@ -120,7 +121,7 @@ describe("Event Study tab", () => {
     expect(card.textContent?.replace(/\s+/g, " ")).toContain("Without the S&P condition — Gold +2σ on its own — it’s 41 events, up 58%, median +1.6%: No edge. The condition earns its place.");
   });
 
-  it("the rail: verdict, by regime with n<5, today's regime note, last five, ranges at the served confidence", async () => {
+  it("the rail: verdict, by regime under ten events as too few, today's regime note, last five, ranges at the served confidence", async () => {
     renderTab();
     const rail = await screen.findByRole("complementary", { name: "Verdict and detail" });
     await waitFor(() => expect(rail).toHaveTextContent("Verdict · Suggestive"));
@@ -128,7 +129,10 @@ describe("Event Study tab", () => {
     expect(within(rail).getByRole("link", { name: "Price it →" })).toHaveAttribute("href", "/desk/basket-hedge?mode=express&study=gold-2sigma-spx-weak");
     const rows = within(rail).getAllByRole("row");
     // By regime from the events at their K−2 rows of the regime record (Codex R-05).
-    expect(rows.map((r) => r.textContent)).toEqual(expect.arrayContaining(["Goldilocks560%+2.8%", "Overheating4n<5n<5", "Stagflation2n<5n<5", "Recession Risk786%+3.5%"]));
+    // §4: a regime under ten events (MIN_REGIME_N) prints its count and "too few cases to say" across Up and Median.
+    expect(rows.map((r) => r.textContent)).toEqual(expect.arrayContaining(["Goldilocks5too few cases to say", "Overheating4too few cases to say", "Stagflation2too few cases to say", "Recession Risk7too few cases to say"]));
+    expect(within(rows.find((r) => r.textContent?.startsWith("Goldilocks"))!).getByText("too few cases to say")).toHaveAttribute("colspan", "2");
+    expect(rail).not.toHaveTextContent("Unlabeled");
     expect(rail).toHaveTextContent("Oct 27, 2023Recession Risk+8.1%");
     expect(rail).toHaveTextContent("Today is Overheating: four events, too few to read alone.");
     expect(rail).toHaveTextContent("Apr 16, 2025Overheating+12.0%");
@@ -168,10 +172,11 @@ describe("Event Study tab", () => {
   });
 
   it("fewer than 10 events: one sentence and two fixes, no chart", async () => {
-    stubDesk({ "/api/desk/study": () => ({ ...study, n_events: 6, verdict: "insufficient", horizons: [], empty_state: { sentence: "Only 6 events since 2000 — too few to score.", fixes: ["widen_window", "drop_condition"] } }) });
+    const sentence = "Only 6 events complete at 1 month since 2000, fewer than the ten a verdict other than Too few needs.";
+    stubDesk({ "/api/desk/study": () => ({ ...study, matched_n: 6, verdict: "insufficient", horizons: [], empty_state: { horizon: 20, sentence, fixes: ["widen_window", "drop_condition"] } }) });
     renderTab();
     const card = await screen.findByRole("region", { name: "The answer" });
-    await waitFor(() => expect(card).toHaveTextContent("Only 6 events since 2000 — too few to score."));
+    await waitFor(() => expect(card).toHaveTextContent(sentence));
     expect(within(card).queryByRole("img")).toBeNull();
     fireEvent.click(within(card).getByRole("button", { name: "Drop the condition" }));
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toContain("while=none"));
@@ -277,7 +282,7 @@ describe("a study with a block missing (Codex R-10)", () => {
     stubDesk({ "/api/desk/study": without("horizons") });
     renderTab();
     await waitFor(() => expect(answer()).toHaveTextContent("Awaiting refresh · the study's horizons"));
-    expect(answer()).toHaveTextContent(/Events\s*18\s*since 2000/);
+    expect(answer()).toHaveTextContent(/Events\s*18\s*count awaiting refresh/);
     expect(answer()).toHaveTextContent(/Up a month later\s*Awaiting refresh/);
     expect(answer()).toHaveTextContent(/Median at a month\s*Awaiting refresh/);
     expect(rail()).toHaveTextContent(/80%90%95%\s*Awaiting refresh/);
@@ -312,7 +317,7 @@ describe("a study with a block missing (Codex R-10)", () => {
 
   it("a statistic served null keeps its label and says Awaiting refresh (Codex R-01)", async () => {
     const horizons = study.horizons.map((h) => (h.h === 20 ? { ...h, up_pct: null, median: null, worst: null } : h));
-    stubDesk({ "/api/desk/study": () => ({ ...study, n_events: null, horizons }) });
+    stubDesk({ "/api/desk/study": () => ({ ...study, matched_n: null, horizons }) });
     renderTab();
     await waitFor(() => expect(answer()).toHaveTextContent(/Events\s*Awaiting refresh/));
     expect(answer()).toHaveTextContent(/Up a month later\s*Awaiting refresh/);
@@ -343,8 +348,8 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     const chart = screen.getByRole("img", { name: /1 month \+25 bp against \+5 bp/ });
     expect(chart).toHaveTextContent("bp");
     expect(chart.textContent).not.toMatch(/%/);
-    expect(rail()).toHaveTextContent(/Goldilocks\s*5\s*60%\s*\+12 bp/);
-    expect(rail()).toHaveTextContent(/Recession Risk\s*7\s*86%\s*\+20 bp/);
+    expect(rail()).toHaveTextContent(/Goldilocks\s*10\s*60%\s*\+12 bp/);
+    expect(rail()).toHaveTextContent(/Recession Risk\s*2\s*too few cases to say/);
     expect(rail()).toHaveTextContent("Last five events · 10-year Treasury yield a month later");
     expect(rail()).toHaveTextContent(/Apr 16, 2025\s*Overheating\s*\+30 bp/);
     expect(rail()).toHaveTextContent(/1 month\s*−10 to \+40 bp/);
@@ -378,15 +383,82 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     expect(rail()).toHaveTextContent(/1 month\s*Awaiting refresh/);
   });
 
-  it("the horizon's own count is the denominator; the study-wide count is only EVENTS (R-07)", async () => {
-    stubDesk({ "/api/desk/study": () => ({ ...study, horizons: study.horizons.map((h) => (h.h === 20 ? { ...h, n_complete: 17 } : h)) }) });
+  it("the horizon's own count is the denominator; the study-wide count is only EVENTS (R-07, C-03)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, horizons: study.horizons.map((h) => (h.h === 20 ? { ...h, n: 17 } : h)) }) });
     renderTab();
     await waitFor(() => expect(answer()).toHaveTextContent(/Up a month later\s*67%\s*12 of 17/));
-    expect(answer()).toHaveTextContent(/Events\s*18/);
+    expect(answer()).toHaveTextContent(/Events\s*18\s*17 complete at 1 month/);
+  });
+
+  it("everything in the answer is the selected horizon's: its counts, share, median and extrema (v4 B-01)", async () => {
+    const at5 = { ...study, selected_horizon: 5, question: { ...study.question, horizon: 5 }, headline: "Suggestive at 1 week: served." };
+    stubDesk({ "/api/desk/study": () => ({ ...at5, horizons: at5.horizons.map((h) => (h.h === 5 ? { ...h, n: 16, up_n: 10 } : h)) }) });
+    renderTab("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=5");
+    await waitFor(() => expect(answer()).toHaveTextContent("Suggestive at 1 week: served."));
+    expect(answer()).toHaveTextContent(/Events\s*18\s*16 complete at 1 week/);
+    expect(answer()).toHaveTextContent(/Up a week later\s*61%\s*10 of 16/);
+    expect(answer()).toHaveTextContent(/Median at a week\s*\+1\.2%\s*vs \+0\.3% in a normal week/);
+    expect(answer()).toHaveTextContent(/Worst · best\s*−7\.8% \/ \+5\.2%\s*Mar 2020 · Sep 2001/);
+  });
+
+  it("no other horizon stands in when the selected one was not served", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, selected_horizon: 5, question: { ...study.question, horizon: 5 }, horizons: study.horizons.filter((h) => h.h !== 5) }) });
+    renderTab("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=5");
+    await waitFor(() => expect(answer()).toHaveTextContent(/Up a week later\s*Awaiting refresh/));
+    expect(answer()).toHaveTextContent(/Events\s*18\s*count awaiting refresh/);
+    expect(answer()).not.toHaveTextContent("12 of 18");
+  });
+
+  it("the selected horizon under ten completed outcomes is Too few: the served sentence and fixes, no chart; the rail still reads the study (§1.7, B-02)", async () => {
+    const sentence = "Only 8 events complete at 3 months since 2000, fewer than the ten a verdict other than Too few needs.";
+    stubDesk({
+      "/api/desk/study": () => ({
+        ...study,
+        selected_horizon: 60,
+        question: { ...study.question, horizon: 60 },
+        verdict: "insufficient",
+        horizons: study.horizons.map((h) => (h.h === 60 ? { ...h, n: 8, up_n: 5, verdict: "insufficient" } : h)),
+        empty_state: { horizon: 60, sentence, fixes: ["drop_condition"] },
+      }),
+    });
+    renderTab("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=60");
+    await waitFor(() => expect(answer()).toHaveTextContent(sentence));
+    expect(within(answer()).queryByRole("img")).toBeNull();
+    expect(within(answer()).getByRole("button", { name: "Drop the condition" })).toBeInTheDocument();
+    expect(rail()).toHaveTextContent(/By regime · a month later/);
+    expect(rail()).not.toHaveTextContent("Not scored");
+  });
+
+  it("without a served sentence, the empty state is §12.2's template on the horizon's own count, and no fix is invented", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, selected_horizon: 60, question: { ...study.question, horizon: 60 }, horizons: study.horizons.map((h) => (h.h === 60 ? { ...h, n: 8 } : h)), empty_state: null }) });
+    renderTab("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=60");
+    await waitFor(() => expect(answer()).toHaveTextContent("Only 8 events complete at 3 months since 2000, fewer than the ten a verdict other than Too few needs."));
+    expect(within(answer()).queryAllByRole("button")).toHaveLength(0);
+    expect(answer()).not.toHaveTextContent("no condition to drop");
+  });
+
+  it("an interval served null under five blocks prints its served reason in words, not Awaiting refresh; an empty event list says No events", async () => {
+    stubDesk({
+      "/api/desk/study": () => ({
+        ...study,
+        last_events: [],
+        horizons: study.horizons.map((h) => (h.h === 60 ? { ...h, ci_lo: null, ci_hi: null, reason: "fewer than five independent blocks" } : h)),
+      }),
+    });
+    renderTab();
+    await waitFor(() => expect(rail()).toHaveTextContent(/3 months\s*fewer than five independent blocks/));
+    expect(within(rail()).getByText("fewer than five independent blocks")).toHaveClass("es-range-why");
+    expect(rail()).toHaveTextContent(/Last five events · S&P 500 a month later\s*No events/);
+  });
+
+  it("a regime's events before the first labelled month are counted under the table", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, unlabeled_n: 3 }) });
+    renderTab();
+    await waitFor(() => expect(rail()).toHaveTextContent("Unlabeled: 3 events before the first labelled month"));
   });
 
   it("without a horizon's own count, the share stands and the count says it is awaiting refresh (R-07)", async () => {
-    stubDesk({ "/api/desk/study": () => ({ ...study, horizons: study.horizons.map((h) => (h.h === 20 ? { ...h, n_complete: undefined } : h)) }) });
+    stubDesk({ "/api/desk/study": () => ({ ...study, horizons: study.horizons.map((h) => (h.h === 20 ? { ...h, n: undefined } : h)) }) });
     renderTab();
     await waitFor(() => expect(answer()).toHaveTextContent(/Up a month later\s*67%\s*count awaiting refresh/));
     expect(answer()).not.toHaveTextContent("12 of 18");

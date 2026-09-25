@@ -5,7 +5,7 @@
  * scale, the source line; no verdict pills, no σ. Event Study reads its own
  * address; other tabs the last study this browser saw, else the gold preset.
  * The labels stay while loading, on an error, and for a study too thin to
- * score (which says so in the engine's sentence).
+ * read at a month (which says so in plain words, never the desk's verdict sentence).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -85,9 +85,10 @@ describe("Client view", () => {
     expect(main).toHaveTextContent(/Typical move\s*\+3\.1%\s*vs \+1\.3% ordinary/);
     // §1.9: every log number carries the tooltip, the backdrop's too.
     // The served summary carries its numbers in words, so the sentence carries the tooltip too.
-    expect([...main.querySelectorAll('[title="log return, ×100"]')].map((e) => e.textContent)).toEqual([expect.stringMatching(/^Looking at 18 such episodes/), "+3.1%", "+1.3%", "+2.8%", "+3.5%"]);
-    expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+2.8%", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risk+3.5%"]);
-    expect([...backdrop().querySelectorAll(".cv-bar")].map((b) => b.getAttribute("data-tone"))).toEqual(["green", "green"]);
+    expect([...main.querySelectorAll('[title="log return, ×100"]')].map((e) => e.textContent)).toEqual([expect.stringMatching(/^Looking at 18 episodes since 2000, the S&P 500 was higher a month later in 12 of 18/), "+3.1%", "+1.3%"]);
+    // Every regime has fewer than ten events, so every row is served null (§12.2, MIN_REGIME_N).
+    expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilockstoo few cases to say", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risktoo few cases to say"]);
+    expect(backdrop().querySelectorAll(".cv-bar")).toHaveLength(0);
     expect(main).toHaveTextContent("Radar · FRED, Yahoo Finance · as of Sep 22, 2026 · Past patterns do not guarantee future results.");
     // No verdict pills, no σ.
     expect(main.querySelector(".dk-pill")).toBeNull();
@@ -101,7 +102,7 @@ describe("Client view", () => {
     stubDesk({ "/api/desk/study": bpStudy });
     renderTab("/desk/overview?view=client");
     await waitFor(() => expect(backdrop()).toHaveTextContent("Typical 10-year Treasury yield move after the setup"));
-    expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+12 bp", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risk+20 bp"]);
+    expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+12 bp", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risktoo few cases to say"]);
     expect(screen.getByRole("main")).toHaveTextContent(/Typical move\s*\+25 bp\s*vs \+5 bp ordinary/);
     expect(backdrop().textContent).not.toMatch(/%/);
     expect(screen.getByRole("main").querySelector("[title]")).toBeNull();
@@ -133,6 +134,14 @@ describe("Client view", () => {
     await waitFor(() => expect(screen.getByRole("main")).toHaveTextContent(/Episodes\s*Awaiting refresh/));
   });
 
+  it("a question the desk asks at another horizon is read at a month: the client view is h = 20 (v4 B-01)", async () => {
+    const { calls } = stubDesk();
+    renderTab("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=5&view=client");
+    await waitFor(() => expect(calls).toContain("GET /api/desk/study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20"));
+    expect(calls.some((c) => c.includes("horizon=5"))).toBe(false);
+    await waitFor(() => expect(screen.getByRole("main")).toHaveTextContent(/Higher a month later\s*67%/));
+  });
+
   it("elsewhere it reads the last study Event Study answered in this browser", async () => {
     localStorage.setItem(LAST_STUDY_KEY, "?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20");
     const { calls } = stubDesk();
@@ -158,9 +167,10 @@ describe("Client view", () => {
     expect(backdrop()).toHaveTextContent("Stagflationtoo few cases to say");
   });
 
-  it("a study too thin to score, served without a client paragraph, says so in the engine's sentence", async () => {
-    const sentence = "Only 6 events since 2000 — too few to score.";
-    const thin: Record<string, unknown> = { ...study, n_events: 6, verdict: "insufficient", horizons: [], by_regime: [], empty_state: { sentence, fixes: [] } };
+  it("a study too thin to read at a month, served without a client paragraph, says so in plain words, not the desk's sentence (§11)", async () => {
+    const desk = "Only 6 events complete at 1 month since 2000, fewer than the ten a verdict other than Too few needs.";
+    const sentence = "Only 6 episodes since 2000: too few to say what usually happens a month later.";
+    const thin: Record<string, unknown> = { ...study, matched_n: 6, verdict: "insufficient", horizons: [], by_regime: [], empty_state: { horizon: 20, sentence: desk, fixes: [] } };
     delete thin.client;
     stubDesk({ "/api/desk/study": () => thin });
     renderTab("/desk/overview?view=client");
@@ -172,6 +182,7 @@ describe("Client view", () => {
     expect(main).toHaveTextContent("Typical movetoo few cases to say");
     expect(backdrop()).toHaveTextContent(sentence);
     expect(main).not.toHaveTextContent("Awaiting refresh");
+    expect(main.textContent).not.toMatch(/verdict|Too few/);
   });
 
   it("a study that does not answer keeps the labels and says Awaiting refresh", async () => {

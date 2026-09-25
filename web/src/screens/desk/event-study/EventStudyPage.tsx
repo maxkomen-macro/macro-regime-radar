@@ -146,8 +146,8 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const unreadLink = oldLink && !search.get("preset") && !questionFromEngine(oldLink) ? oldLink : null;
   const engineSlug = study?.question ? engineSlugFor(study.question) : null;
   const priceHref = askParams(ask).reduce((href, [k, v]) => withParam(href, k === "preset" ? "study" : k, v), withParam(pathTo("basket-hedge"), "mode", "express"));
-  const scored = !!study && study.verdict !== "insufficient" && !(fin(study.n_events) && study.n_events < 10);
-  const askedHorizon = "question" in ask ? ask.question.horizon : study?.question?.horizon;
+  // A served study is scored at its selected horizon, Too few included (v4 B-02): the rail reads it either way.
+  const askedHorizon = "question" in ask ? ask.question.horizon : (study?.selected_horizon ?? study?.question?.horizon ?? undefined);
 
   return (
     <div className="es">
@@ -185,7 +185,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         <div className="es-grid" data-busy={placeholder || undefined}>
           <AnswerCard study={study} failed={q.isError} busy={placeholder} label={label} onFix={onFix} horizon={askedHorizon} />
           <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
-            {scored && study ? (
+            {study ? (
               <StudyRail
                 study={study}
                 todayRegime={ov.data?.tiles?.regime?.label ?? null}
@@ -200,9 +200,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
                 busy={placeholder}
               />
             ) : q.isError ? (
-              <RailPlaceholder reason="awaiting" />
-            ) : study ? (
-              <RailPlaceholder reason="too-few" />
+              <RailPlaceholder />
             ) : null}
           </aside>
         </div>
@@ -213,7 +211,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         </p>
       ) : null}
       {study ? <p className="es-provenance">{provenanceLine(study, label)}</p> : null}
-      {study && scored && adv ? <EngineDetail id={advId} study={study} ask={ask} engineSlug={engineSlug} label={label} /> : null}
+      {study && adv ? <EngineDetail id={advId} study={study} ask={ask} engineSlug={engineSlug} label={label} /> : null}
     </div>
   );
 }

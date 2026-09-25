@@ -58,6 +58,9 @@ export interface LedgerRow {
   label: string;
   group: "spx" | "cross";
   last_fired: string | null;
+  /** h = 20 (§12.5). */
+  horizon?: number | null;
+  /** Completed outcomes at h = 20 (§12.5). */
   n: number | null;
   up_pct: number | null;
   median: number | null;
@@ -77,6 +80,8 @@ export interface LedgerRow {
 }
 
 export interface LedgerResponse extends Envelope {
+  /** Every Ledger number is at h = 20 (§12.5, v4 B-01). */
+  horizon?: number | null;
   normal_month: number | null;
   signals?: LedgerRow[];
 }
@@ -275,8 +280,8 @@ export interface StudyHorizon {
   label: string;
   up_pct: number | null;
   up_n?: number | null;
-  /** PROPOSED (§12.13, Codex R-07): the outcomes complete at this horizon, the denominator of `up_pct` and of "12 of N". */
-  n_complete?: number | null;
+  /** The outcomes complete at this horizon (§12.2, C-03): the one denominator of `up_pct`, the median, the extrema and "12 of N". */
+  n?: number | null;
   median: number | null;
   baseline_median: number | null;
   /** PROPOSED (§12.13): the share of ordinary stretches of this length that ended up (the Client view's "vs 62% in an ordinary month"). */
@@ -284,6 +289,8 @@ export interface StudyHorizon {
   /** The interval on Δ = median − baseline_median, native (§1.9); null under five blocks. */
   ci_lo: number | null;
   ci_hi: number | null;
+  /** Why a statistic here is null, in words (§12.2: "fewer than five independent blocks" for an interval under five blocks). */
+  reason?: string | null;
   verdict?: Verdict;
   worst?: { ret: number | null; date: string } | null;
   best?: { ret: number | null; date: string } | null;
@@ -295,7 +302,10 @@ export interface StudyResponse extends Envelope {
   elapsed_ms: number | null;
   slug: string | null;
   question: ServedQuestion;
-  n_events: number | null;
+  /** The study's size: retained events in the evaluable sample, the same at every horizon (§12.2, C-03). */
+  matched_n?: number | null;
+  /** The horizon the verdict, headline, why, counts and empty state are for (§1.5, v4 B-01). */
+  selected_horizon?: number | null;
   sample_start: string | null;
   firing_now: boolean;
   last_event: string | null;
@@ -310,7 +320,10 @@ export interface StudyResponse extends Envelope {
   horizons?: StudyHorizon[];
   confidence: number | null;
   confidence_note: string;
-  by_regime?: { regime: string; n: number | null; up_pct: number | null; median: number | null }[];
+  /** At h = 20 (§12.2); `up_pct` and `median` null under ten events (MIN_REGIME_N). */
+  by_regime?: { h?: number | null; regime: string; n: number | null; up_pct: number | null; median: number | null }[];
+  /** Events before the first labelled month (§4 rail). */
+  unlabeled_n?: number | null;
   last_events?: { date: string; regime: string; ret_20: number | null }[];
   without_condition?: {
     n_events: number | null;
@@ -323,11 +336,12 @@ export interface StudyResponse extends Envelope {
   } | null;
   provenance?: { bootstrap: number | null; entry: string; cooldown: number | null; series_start?: Record<string, string> };
   warnings?: string[];
-  empty_state?: { sentence: string; fixes: string[] };
+  /** Served iff the selected horizon has fewer than ten completed outcomes (§1.7, §12.2). */
+  empty_state?: { horizon?: number | null; sentence: string; fixes: string[] } | null;
   /** PROPOSED (§12.13): the 12 series every slot lists, key and label. */
   series?: { key: string; label: string }[];
-  /** PROPOSED (§12.13): the Client view's question and paragraph, in plain words. */
-  client?: { headline: string; summary: string };
+  /** The Client view's question and paragraph, in plain words, at h = 20 (§12.2). */
+  client?: { horizon?: number | null; headline: string; summary: string } | null;
 }
 
 /** §12.3 /study/events (PROPOSED shape, §12.13); CSV with `Accept: text/csv`. */

@@ -16,7 +16,8 @@
   "display_unit": "percent",
   "target_label": "S&P 500"
  },
- "n_events": 18,
+ "selected_horizon": 20,
+ "matched_n": 18,
  "sample_start": "2000-01-03",
  "firing_now": false,
  "last_event": "2025-04-16",
@@ -29,30 +30,49 @@
   {
    "h": 5,
    "label": "1 week",
+   "n": 18,
    "up_pct": 0.61,
+   "up_n": 11,
    "median": 0.012,
    "baseline_median": 0.003,
    "ci_lo": -0.008,
    "ci_hi": 0.024,
    "verdict": "suggestive",
    "baseline_up_pct": 0.56,
-   "n_complete": 18
+   "worst": {
+    "ret": -0.078,
+    "date": "2020-03-09"
+   },
+   "best": {
+    "ret": 0.052,
+    "date": "2001-09-21"
+   }
   },
   {
    "h": 10,
    "label": "2 weeks",
+   "n": 18,
    "up_pct": 0.61,
+   "up_n": 11,
    "median": 0.016,
    "baseline_median": 0.006,
    "ci_lo": -0.006,
    "ci_hi": 0.029,
    "verdict": "suggestive",
    "baseline_up_pct": 0.58,
-   "n_complete": 18
+   "worst": {
+    "ret": -0.121,
+    "date": "2020-03-09"
+   },
+   "best": {
+    "ret": 0.089,
+    "date": "2001-09-21"
+   }
   },
   {
    "h": 20,
    "label": "1 month",
+   "n": 18,
    "up_pct": 0.67,
    "up_n": 12,
    "median": 0.031,
@@ -68,50 +88,63 @@
     "ret": 0.12,
     "date": "2025-04-16"
    },
-   "baseline_up_pct": 0.62,
-   "n_complete": 18
+   "baseline_up_pct": 0.62
   },
   {
    "h": 60,
    "label": "3 months",
+   "n": 18,
    "up_pct": 0.56,
+   "up_n": 10,
    "median": 0.029,
    "baseline_median": 0.036,
    "ci_lo": -0.039,
    "ci_hi": 0.026,
    "verdict": "no_edge",
    "baseline_up_pct": 0.66,
-   "n_complete": 18
+   "worst": {
+    "ret": -0.103,
+    "date": "2008-10-10"
+   },
+   "best": {
+    "ret": 0.142,
+    "date": "2003-03-11"
+   }
   }
  ],
  "confidence": 0.9,
  "confidence_note": "All four include zero at 90%. At 80% the 1-month range clears zero; at 95% none do.",
  "by_regime": [
   {
+   "h": 20,
    "regime": "Goldilocks",
    "n": 5,
-   "up_pct": 0.6,
-   "median": 0.028
+   "up_pct": null,
+   "median": null
   },
   {
+   "h": 20,
    "regime": "Overheating",
    "n": 4,
    "up_pct": null,
    "median": null
   },
   {
+   "h": 20,
    "regime": "Stagflation",
    "n": 2,
    "up_pct": null,
    "median": null
   },
   {
+   "h": 20,
    "regime": "Recession Risk",
    "n": 7,
-   "up_pct": 0.86,
-   "median": 0.035
+   "up_pct": null,
+   "median": null
   }
  ],
+ "unlabeled_n": 0,
  "last_events": [
   {
    "date": "2025-04-16",
@@ -207,7 +240,9 @@
   }
  ],
  "client": {
+  "horizon": 20,
   "headline": "When gold jumps and stocks are already soft, what has the S&P done next?",
-  "summary": "Looking at 18 such episodes since 2000, the S&P 500 was higher a month later about two times in three, with a typical gain of about 3%. That is better than an ordinary month, but the spread of outcomes is wide. Split by economic backdrop, only Goldilocks and recession-risk months have enough episodes to read, and the S&P was higher a month later more often than not in both. We would treat it as a reason to lean in with a defined-risk structure, not as a standalone call."
- }
+  "summary": "Looking at 18 episodes since 2000, the S&P 500 was higher a month later in 12 of 18, with a typical move of +3.1% against +1.3% in an ordinary month."
+ },
+ "empty_state": null
 }

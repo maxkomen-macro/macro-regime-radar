@@ -4,7 +4,8 @@
  * horizon chart (the median after the event, blue, beside a normal stretch,
  * gray, with the range the answer could fall in as a whisker on the event
  * bar) and the line on the same question without its condition. Fewer than
- * ten events: one sentence and two fixes, no chart (§1.7).
+ * ten completed outcomes at the selected horizon: the served sentence and
+ * the served fixes, no chart (§1.7).
  */
 
 import type { StudyHorizon, StudyResponse, TargetUnit } from "../data/types";
@@ -215,14 +216,25 @@ export default function AnswerCard({
       </section>
     );
   }
-  const n = study.n_events;
-  if (study.verdict === "insufficient" || (fin(n) && n < 10)) {
+  // Everything here is the selected horizon's (§1.5, v4 B-01): its verdict, counts and empty state.
+  // Each block guards itself (Codex R-10): no .find on a list that was not served; no other horizon stands in.
+  const horizons = Array.isArray(study.horizons) ? study.horizons : [];
+  const sel = fin(study.selected_horizon) ? study.selected_horizon : fin(study.question?.horizon) ? study.question.horizon : null;
+  const h = sel == null ? undefined : horizons.find((x) => x.h === sel);
+  const hLabel = h?.label || horizonLabel(sel ?? 20);
+  if (study.empty_state || study.verdict === "insufficient" || (h && fin(h.n) && h.n < 10)) {
     const q = study.question;
-    const served = Array.isArray(study.empty_state?.fixes) ? study.empty_state.fixes : ["widen_window", "drop_condition"];
+    // Only the served fixes (§1.7: each only when it leads to a catalog study); none is invented.
+    const served = Array.isArray(study.empty_state?.fixes) ? study.empty_state.fixes : [];
     const fixes = served.filter((f) => !q || applies(q, f));
+    const since = year(study.sample_start);
+    // The served sentence; without it, §12.2's template on the selected horizon's own count.
+    const sentence =
+      study.empty_state?.sentence ||
+      (h && fin(h.n) ? `Only ${h.n} events complete at ${hLabel}${since ? ` since ${since}` : ""}, fewer than the ten a verdict other than Too few needs.` : `Fewer than ten events are complete at ${hLabel}; a verdict other than Too few needs ten.`);
     return (
       <section className="dk-card es-answer" aria-label="The answer">
-        <p className="es-headline">{study.empty_state?.sentence ?? (fin(n) ? `Only ${n} events${year(study.sample_start) ? ` since ${year(study.sample_start)}` : ""} — too few to score.` : "Too few events to score.")}</p>
+        <p className="es-headline">{sentence}</p>
         {fixes.length ? (
           <div className="es-fixes" role="group" aria-label="Ways to get enough events">
             {fixes.map((f) => (
@@ -231,16 +243,12 @@ export default function AnswerCard({
               </button>
             ))}
           </div>
-        ) : (
-          <p className="es-note">The window is already the widest the slots ask and there is no condition to drop.</p>
-        )}
+        ) : null}
       </section>
     );
   }
-  // Each block guards itself (Codex R-10): no .find on a list that was not served.
-  const horizons = Array.isArray(study.horizons) ? study.horizons : [];
-  const h = horizons.find((x) => x.h === study.question?.horizon) ?? horizons[0];
-  const phrase = horizonPhrase(h?.h ?? 20);
+  const phrase = horizonPhrase(sel ?? 20);
+  const matched = study.matched_n;
   // Every target move is spelled in the study's served unit (Codex R-02); without it, none is printed.
   const unit = isUnit(study.question?.target_unit) ? study.question.target_unit : undefined;
   const median = h ? moveText(h.median, unit) : null;
@@ -262,10 +270,11 @@ export default function AnswerCard({
         </span>
       </div>
       <StatRow cols={4}>
-        {fin(n) ? <Stat label="Events" value={String(n)} sub={year(study.sample_start) ? `since ${year(study.sample_start)}` : undefined} size="md" /> : <Stat label="Events" awaiting />}
+        {/* EVENTS is the study's size; beneath it, how many are complete at the selected horizon (C-03). */}
+        {fin(matched) ? <Stat label="Events" value={String(matched)} sub={h && fin(h.n) ? `${h.n} complete at ${hLabel}` : "count awaiting refresh"} size="md" /> : <Stat label="Events" awaiting />}
         {h && fin(h.up_pct) ? (
-          // The horizon's own count is the denominator (Codex R-07); the study-wide count is only the EVENTS stat.
-          <Stat label={`Up ${phrase} later`} value={pctPlain(h.up_pct)} tone={h.up_pct > 0.5 ? "up" : undefined} sub={fin(h.up_n) ? (fin(h.n_complete) ? `${h.up_n} of ${h.n_complete}` : "count awaiting refresh") : undefined} size="md" />
+          // The horizon's own count is the denominator (C-03); the study's size is only the EVENTS stat.
+          <Stat label={`Up ${phrase} later`} value={pctPlain(h.up_pct)} tone={h.up_pct > 0.5 ? "up" : undefined} sub={fin(h.up_n) && fin(h.n) ? `${h.up_n} of ${h.n}` : "count awaiting refresh"} size="md" />
         ) : (
           <Stat label={`Up ${phrase} later`} awaiting />
         )}

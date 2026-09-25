@@ -108,6 +108,12 @@ export function apiParams(ask: Ask): Record<string, string | number | undefined>
   return { shock: q.shock, window: q.window, move: q.move, while: q.while, target: q.target, horizon: q.horizon, confidence };
 }
 
+/** The same ask at h = 20 (v4 B-01: the Client view reads the month, whatever horizon the desk has
+ * selected). A preset already asks h = 20, §12.2's default. */
+export function atMonth(ask: Ask): Ask {
+  return "question" in ask ? { ...ask, question: { ...ask.question, horizon: 20 } } : ask;
+}
+
 /** The six slots and nothing else: a served question also carries its target's unit and name
  * (§12.13), which are the answer's, never the question's (Codex R-11). */
 export function slotsOf(q: Question): Question {

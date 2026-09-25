@@ -2322,6 +2322,112 @@ Verifier (one round): **PASS**, with one should-fix and five nits:
 The fixes were checked by the four gates and the tests above; the twelve
 compare shots re-shot after them are identical.
 
+### Phase 2, item 3: counts and horizon — `frame-3: align 3 counts-horizon`
+
+**What changed.** A study serves its size once, `matched_n` (retained
+events, the same at every horizon), and each horizon's own count `n` beside
+its `up_n`, median, extrema and interval (§12.2, C-03). The answer card is
+the selected horizon's (§1.5, v4 B-01): it reads `selected_horizon` (the
+served question's horizon when that is absent) and never borrows another
+horizon's row, so a selected horizon that was not served says Awaiting
+refresh. EVENTS prints `matched_n` with "<n> complete at <horizon label>"
+beneath; UP <H> LATER prints "<up_n> of <n>" from the same horizon; MEDIAN
+and WORST · BEST are that horizon's. The empty state follows the same
+horizon: a served `empty_state`, a Too few verdict, or fewer than ten
+completed outcomes at the selected horizon print the served sentence and
+the served fixes with no chart; without a served sentence the page prints
+§12.2's template on the horizon's own count and offers no fix. A study answered Too few is still
+scored (B-02), so the rail reads it in full; the "Not scored" placeholder
+is gone. The rail's by-regime rows are at h = 20: a regime under ten events
+(the engine's `MIN_REGIME_N`) prints its count and "too few cases to say"
+across Up and Median, and `unlabeled_n`, when above zero, prints "Unlabeled:
+<n> events before the first labelled month". An interval served null
+under five blocks prints its served `reason` in words, not "Awaiting
+refresh", and an empty event list says "No events". Advanced lists "all
+<matched_n> events". The Client view asks the study at h = 20 whatever
+horizon the desk has selected, so its episodes, month statistics and empty
+state are the month's (§11, B-01); a study too thin to read at a month says
+so in plain words there, never in the desk's verdict sentence. Ledger rows and the Ledger carry
+`horizon: 20`.
+
+The fixtures serve the new fields: `matched_n` 18, `selected_horizon` 20,
+every horizon's `n`, `up_n`, worst and best recomputed from the study's
+event list, `by_regime` with `h: 20` and its cells null under ten events,
+`unlabeled_n` 0, `empty_state` null, `client.horizon` 20, and `client.summary`
+in §12.2's template ("Looking at 18 episodes since 2000, the S&P 500 was
+higher a month later in 12 of 18, with a typical move of +3.1% against
++1.3% in an ordinary month."). The consistency
+test recomputes each horizon's counts, share, median and extrema from the
+events and the by-regime rows at the ten-event floor.
+
+**Tests.** `consistency.test.ts` (each horizon's own completed outcomes;
+by regime at ten; the regime counts and `unlabeled_n` sum to `matched_n`);
+`EventStudyPage.test.tsx` (EVENTS over the horizon's count; a changed
+horizon count is the only denominator; a study at 1 week reads the 1-week
+counts, share, median and extrema; a selected horizon not served stands in
+for nothing; Too few at 3 months with the served sentence and fixes, no
+chart, the full rail; the template and no invented fix when no sentence is
+served; an interval's served reason; No events; the Unlabeled line; by-regime rows under ten read too few across both cells);
+`ClientView.test.tsx` (a desk question at 1 week is asked at a month;
+the backdrop reads too few when every regime is under ten; a thin study in
+plain words, with no verdict language); `api.test.tsx` (per-horizon `n` checked by kind). Browser: the
+EVENTS sub-line and the four too-few rows at 1440 and 390, whole on one line,
+no sideways scroll, the palette.
+
+**Against the PNGs.**
+- 03 Event Study, EVENTS: the PNG's sub-line "since 2000" is now "18
+  complete at 1 month". §4: "EVENTS `matched_n` with the sub-line "<n>
+  complete at <horizon label>" (C-03)".
+- 03 Event Study, By regime: the PNG's percentages and medians for regimes
+  of five and six events, and its "n<5" cells, are now each regime's count
+  and "too few cases to say". §4: "a regime with n < 10 prints its count and
+  "too few cases to say" (v2 §9.2)"; §12.2: `by_regime[].up_pct`, `median`
+  "null when n < 10, `MIN_REGIME_N`".
+- 03 Event Study, the rail: "too few cases to say" starts under UP and runs
+  across UP and MEDIAN, where the PNG had a value or "n<5" in each column.
+  Same sentences as above.
+- 12 Client view, the summary: the PNG's paragraph ("about two times in
+  three … a typical gain of about 3% … only Goldilocks and recession-risk
+  months have enough episodes to read") is now §12.2's template. §12.2
+  `client.summary`: "Looking at <matched_n> episodes since <sample_start
+  year>, the <target label> was higher a month later in <up_n> of <n>, with a
+  typical move of <median> against <baseline_median> in an ordinary month."
+- 12 Client view, the backdrop: the PNG's three bars are now four "too few
+  cases to say" rows, because every regime of the fixture's 18 events is
+  under ten (the data audit finds the same for the store today: 2, 6, 9 and
+  1). §11: "four regime rows with the h = 20 `by_regime` median on one
+  scale, "too few cases to say" when null".
+
+Verifier (one round): **PASS**, with two should-fix findings and six nits.
+It agreed with every design decision put to it (the horizon read from
+`selected_horizon` and never from another row, the empty-state trigger, the
+full rail for a Too few study, the ten-event floor by regime, the Client
+view asked at a month) and recomputed every horizon's fixture statistics
+from the events on its own.
+- V3-1 (should-fix) the served Client summary still named two readable
+  regimes beside a backdrop that now reads too few for all four. **Fixed:**
+  the fixture serves §12.2's template.
+- V3-2 (should-fix) a Too few study's rail said "Awaiting refresh", in mono,
+  for an interval served null on purpose. **Fixed:** `horizons[].reason`
+  is read and printed in words.
+- V3-3 the answer card no longer prints the sample's start. **Left:** §4
+  fixes the EVENTS sub-line as "<n> complete at <horizon label>" (C-03); the
+  provenance line under the grid carries each input's history.
+- V3-4 an empty state without served fixes invented two, which lead
+  outside the catalog. **Fixed:** only served fixes, and the note that said
+  "there is no condition to drop" is gone.
+- V3-5 an awkward fallback sentence. **Fixed.**
+- V3-6 the spanned cell sat under MEDIAN. **Fixed:** it starts under UP.
+- V3-7 an empty event list left a bare heading. **Fixed:** "No events".
+- V3-8 the Client view printed the desk's Too few sentence; the fixture
+  test counted incomplete events by regime; two stale comments. **Fixed.**
+- Outside this item, as it noted: the verdict box's `verdict_line` and
+  `what_to_do` (item 4), the unhorizoned line without the condition
+  (item 7), and `Price it →` on a Too few study (item 11).
+
+The fixes were checked by the four gates and the tests above; the two
+changed compare shots were re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2349,6 +2455,7 @@ tests against the fixture dev server.
 | frame-3: spec fold v2–v4 | docs only | — | — | — |
 | frame-3: align 1 envelope | clean | 118 / 1,403 | ok | 50 / 50 |
 | frame-3: align 2 units | clean | 118 / 1,409 | ok | 51 / 51 |
+| frame-3: align 3 counts-horizon | clean | 118 / 1,417 | ok | 52 / 52 |
 
 ## Finish
 

@@ -3,11 +3,12 @@
  * Desk / Client toggle swaps a tab's body for a client-safe read of one
  * study. On Event Study it is the study in the address; elsewhere the last
  * study this browser saw answered (Data Pipeline's "current study"), else the
- * gold preset. The question and the paragraph are served (PROPOSED
- * `study.client`); the three numbers, the backdrop bars and the source line
- * read §12.2's fields at a month. No verdict pills, no σ, no jargon. The
- * labels stay in every state; a study too thin to score says so in the
- * engine's own sentence. The header's Export prints this page alone.
+ * gold preset. The question and the paragraph are served (§12.2 `client`, at
+ * h = 20); the three numbers, the backdrop bars and the source line read
+ * §12.2's fields at a month. No verdict pills, no σ, no jargon. The labels
+ * stay in every state; a study too thin to read at a month says so in plain
+ * words (never the desk's verdict sentence). The header's Export prints this
+ * page alone.
  */
 
 import type { ReactNode } from "react";
@@ -17,7 +18,7 @@ import type { StudyResponse } from "../data/types";
 import type { DeskPage } from "../desk-sections";
 import { dayLong, pctPlain, year } from "../kit/format";
 import { Awaiting, Signed, Unserved, useUnserved } from "../kit/ui";
-import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
+import { apiParams, askFromSearch, atMonth, readLastStudy } from "../event-study/question";
 import { isUnit, moveText, scaleOf, tipOf } from "../kit/units";
 import "./client.css";
 
@@ -73,13 +74,24 @@ export function barGeometry(vals: readonly (number | null)[]): {
   };
 }
 
+/** A study too thin to read at a month, in client words (§11: no jargon), from the month's served count; null when it is not thin. */
+export function thinWords(s: StudyResponse | undefined): string | null {
+  if (!s) return null;
+  const month = Array.isArray(s.horizons) ? s.horizons.find((h) => h.h === 20) : undefined;
+  const served = s.empty_state && (s.empty_state.horizon ?? 20) === 20;
+  if (!served && !(month && fin(month.n) && month.n < 10)) return null;
+  const n = month && fin(month.n) ? month.n : fin(s.matched_n) ? s.matched_n : null;
+  const since = year(s.sample_start);
+  return n != null ? `Only ${n} episode${n === 1 ? "" : "s"}${since ? ` since ${since}` : ""}: too few to say what usually happens a month later.` : "Too few episodes to say what usually happens a month later.";
+}
+
 function Backdrop({ s, failed }: { s: StudyResponse | undefined; failed: boolean }) {
   // Every move in the study's served unit, named by its served target (Codex R-02, R-03).
   const unit = isUnit(s?.question?.target_unit) ? s.question.target_unit : undefined;
   const target = s?.question?.target_label;
   const rows = s && unit && Array.isArray(s.by_regime) ? s.by_regime : [];
   const g = barGeometry(rows.map((r) => (fin(r.median) ? r.median : null)));
-  const thin = s?.empty_state?.sentence;
+  const thin = thinWords(s);
   return (
     <section className="dk-card cv-card" aria-labelledby="cv-backdrop">
       <h2 className="dk-card-title" id="cv-backdrop">
@@ -144,13 +156,15 @@ function StatCard({ label, children, state }: { label: string; children?: ReactN
 export default function ClientView({ page }: { page: DeskPage }) {
   const location = useLocation();
   const ask = page.slug === "event-study" ? askFromSearch(location.search) : askFromSearch(readLastStudy() ?? "");
-  // The client view asks the study at the served confidence (§12.2's default), never the desk's slider.
-  const q = useStudy(apiParams({ ...ask, confidence: undefined }));
+  // The client view asks the study at the served confidence (§12.2's default), never the desk's slider,
+  // and at h = 20 (v4 B-01): its counts, its sentence and its empty state are the month's, whatever
+  // horizon the desk has selected.
+  const q = useStudy(apiParams(atMonth({ ...ask, confidence: undefined })));
   const s = q.isError ? undefined : q.data;
   const failed = q.isError;
   const month = s && Array.isArray(s.horizons) ? s.horizons.find((h) => h.h === 20) : undefined;
-  // A study too thin to score answered: its sentence stands where the numbers would.
-  const thin = s?.empty_state?.sentence ?? null;
+  // A study too thin to read at a month answered: a plain sentence stands where the numbers would.
+  const thin = thinWords(s);
   // Once, in the backdrop card (and in the summary's place when no client paragraph is served); the month's two stats read like a null regime row.
   const state = (ok: boolean) => (ok ? "value" : !s && !failed ? "loading" : thin ? "too few cases to say" : "awaiting");
   return (
@@ -167,8 +181,8 @@ export default function ClientView({ page }: { page: DeskPage }) {
               </p>
             ) : thin ? <p className="cv-summary">{thin}</p> : s || failed ? <Awaiting className="cv-summary-await" /> : null}
             <div className="cv-stats">
-              <StatCard label="Episodes" state={state(!!s && fin(s.n_events))}>
-                <p className="cv-stat-value">{s?.n_events}</p>
+              <StatCard label="Episodes" state={state(!!s && fin(s.matched_n))}>
+                <p className="cv-stat-value">{s?.matched_n}</p>
                 <p className="cv-stat-sub">{year(s?.sample_start) ? `since ${year(s?.sample_start)}` : ""}</p>
               </StatCard>
               <StatCard label="Higher a month later" state={state(!!month && fin(month.up_pct))}>

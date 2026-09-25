@@ -316,6 +316,14 @@
 .es-table td[data-few] {
   color: var(--dk-t4);
 }
+/* "too few cases to say" is words, not a number: sans, not mono, and it
+   starts where the Up column starts, so it reads across both cells. */
+.es-table td.es-few {
+  font-family: var(--dk-sans);
+  font-size: 12px;
+  text-align: left;
+  padding-left: 24px;
+}
 .es-key {
   display: inline-block;
   width: 9px;
@@ -406,6 +414,12 @@
   font-family: var(--dk-mono);
   font-size: 13px;
   color: var(--dk-t1);
+}
+/* A served reason in place of an interval: words, so sans and gray. */
+.es-range-why {
+  font-family: var(--dk-sans);
+  font-size: 12px;
+  color: var(--dk-t4);
 }
 .es-rail-foot {
   margin-top: auto;
