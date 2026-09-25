@@ -208,7 +208,9 @@ const question = o(
 
 const pricePoint = o({ date: "s!", close: "n", ma50: "n", ma200: "n" });
 const relPoint = o({ date: "s!", rel: "n" });
-const regimeTrend = o({ label: "s!", print: "s", growth: "s", inflation: "s", months_in: "n" });
+const regimeTrend = o({ label: "s!", print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", freq: "s", source: "s" });
+const BANDS = ["low", "elevated", "high_risk"] as const;
+const recessionScore = { score: "n", probability_month: "s", inputs_through: "s", band: e(BANDS), band_edges: t(["n!", "n!"], { nul: true }), freq: "s", source: "s" } as const;
 const nextPrint = o({ date: "s!", flip_threshold_mom: "n", flips_to: "s?" }, { nul: true });
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s" });
 const basketLeg = o({ symbol: "s!", name: "s?", weight: "n!" });
@@ -244,7 +246,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     }),
     tiles: o({
       regime: regimeTrend,
-      recession: o({ prob: "n", band: "s", inputs_through: "s" }),
+      recession: o({ ...recessionScore }),
       // The trend tile names the trend from its two flags: without both it says nothing (Codex G1-9).
       trend: o({ above_50: "b!", above_200: "b!", since: "s", since_signal: "s", since_verdict: e(VERDICTS), date: "s" }),
       vol: o({ vix: "n", date: "s", realized_20d: "n", gap_pts: "n", band: "s" }),
@@ -309,20 +311,20 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/regime": o({
     ...envelope,
     // The page words a missing label on its own (Regime R-2); the rest of the block still reads.
-    current: o({ label: "s", print: "s", growth: "s", inflation: "s", months_in: "n", since: "s" }),
+    current: o({ label: "s", print: "s", latest_print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", freq: "s", source: "s" }),
     history: l(o({ month: "s!", regime: "s!" })),
     recession: o({
-      prob: "n",
-      inputs_through: "s",
-      year_ago: "n",
-      peak: o({ prob: "n", month: "s" }, { nul: true }),
-      band: "s",
-      band_edges: t(["n!", "n!"], { nul: true }),
+      ...recessionScore,
+      feature_months: m("s!"),
+      year_ago: o({ score: "n", probability_month: "s" }, { nul: true }),
+      peak: o({ score: "n", probability_month: "s", window: "s" }, { nul: true }),
+      training: o({ start: "s!", end: "s!" }, { nul: true }),
+      methodology: "s",
     }),
     stats: l(o({ regime: "s!", months: "n", spx_mo: "n", up_pct: "n", vix_avg: "n", stock_bond_corr: "n" })),
     next_prints: o({ cpi: nextPrint, indpro: nextPrint }),
     changes: l(o({ month: "s!", from: "s!", to: "s!", spx_1m: "n" })),
-    reads: reads(["stats", "changes", "year_ago"]),
+    reads: reads(["stats", "changes"]),
   }),
   "/macro": o({
     ...envelope,

@@ -133,14 +133,14 @@ export function ordinal(n: number): string {
   return `${n}${suffix}`;
 }
 
-/** A probability as "one-in-N": 0.12 → "one-in-eight" (N = 1/p, rounded).
- * Only for 0 < p ≤ 0.5 with N ≤ 12, where the words read true; null
- * otherwise, and the caller prints the percent instead (verifier V-5). */
-export function oneIn(p: number): string | null {
-  if (!(p > 0 && p <= 0.5)) return null;
-  const n = Math.round(1 / p);
-  return n >= 2 && n <= 12 ? `one-in-${numberWord(n)}` : null;
+/** "Jul row": the stored regime row a label comes from (§5: the K−2 row governing today). */
+export function rowWords(print: string | null | undefined): string {
+  return monthShort(print) ? `${monthShort(print)} row` : "";
 }
+
+/** The recession score's band in words (§5, v3 §11): "Low", "Elevated", "High risk"; "" when not served. */
+export const BAND_WORD: Record<string, string> = { low: "Low", elevated: "Elevated", high_risk: "High risk" };
+export const bandWord = (b: string | null | undefined): string => (b && Object.prototype.hasOwnProperty.call(BAND_WORD, b) ? BAND_WORD[b] : "");
 
 export function capitalize(s: string | null | undefined): string {
   return s ? s[0].toUpperCase() + s.slice(1) : "";

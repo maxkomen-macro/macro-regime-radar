@@ -11,7 +11,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { unavailableOf, useOverview, useTechnicals } from "./data/api";
 import { DESK_GROUPS, GATES } from "./desk-sections";
-import { dayShort, isFiniteNumber as fin, nyToday, pct, toneOf } from "./kit/format";
+import { dayShort, isFiniteNumber as fin, nyToday, pct, rowWords, toneOf } from "./kit/format";
 import Contain from "./kit/Contain";
 
 export const DESK_SIDEBAR_ID = "dk-sidebar";
@@ -42,7 +42,8 @@ function TodayCard() {
           <p className="dk-today-regime" data-regime={regime.label}>
             {regime.label}
           </p>
-          <p className="dk-today-sub">{regime.print ? `regime · ${regime.print} print` : "regime"}</p>
+          {/* §1.1: the K−2 row governing today ("Overheating · Jul row"). */}
+          <p className="dk-today-sub">{rowWords(regime.print) ? `regime · ${rowWords(regime.print)}` : "regime"}</p>
         </>
       ) : regimeOff ? (
         <p className="dk-today-sub" style={{ marginTop: 8 }}>

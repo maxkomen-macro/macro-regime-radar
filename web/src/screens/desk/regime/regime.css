@@ -36,6 +36,17 @@
   color: var(--dk-t1);
   margin-top: 6px;
 }
+/* §5: the label, and beside it (separately) the newest stored row. */
+.rg-label-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 16px;
+}
+.rg-latest {
+  font-size: 13px;
+  color: var(--dk-t3);
+}
 .rg-lede {
   font-size: 14px;
   color: var(--dk-t1);
@@ -70,6 +81,10 @@
 .rg-rec-words {
   font-size: 14px;
   color: var(--dk-t2);
+}
+.rg-rec-for {
+  font-size: 13px;
+  color: var(--dk-t3);
 }
 .rg-card .dk-gauge {
   margin-top: 6px;

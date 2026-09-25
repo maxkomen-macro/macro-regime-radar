@@ -115,7 +115,8 @@ describe("Desk v2 shell", () => {
     renderDesk("/desk/overview");
     const today = await screen.findByTestId("dk-today");
     await waitFor(() => expect(today).toHaveTextContent("Overheating"));
-    expect(today).toHaveTextContent("regime · Aug print");
+    // §1.1: "Overheating · Jul row", the K−2 row governing today.
+    expect(today).toHaveTextContent("regime · Jul row");
     // The fixture's session is Sep 22; "today" only when that is New York's today.
     expect(today).toHaveTextContent(/S&P (today|Sep 22)\s*\+0\.4%/);
     expect(today).toHaveTextContent(/Data\s*current/);

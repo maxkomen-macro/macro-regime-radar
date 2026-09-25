@@ -16,7 +16,8 @@
  * purpose, as inputs to the gate or as the engine's own text); in gate.ts,
  * the ban list's own entries (a list of the words is the words). "model"
  * passes only in a sentence about the recession regression: one that names
- * the recession probability, a logistic regression or the logistic model.
+ * the recession probability, the recession model (the served `source`), a
+ * logistic regression or the logistic model, or §5's two Regime boxes.
  */
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -31,11 +32,16 @@ const FRAME3 = /^(established|significant)$/i;
 export const LEGACY_FRAME2 = ["/src/screens/desk/pyformat"];
 const legacy = (file: string) => LEGACY_FRAME2.some((p) => file.startsWith(p));
 /** A sentence about the recession regression, the one thing the Desk calls a model. */
-const RECESSION_SENTENCE = /recession probability|logistic regression|logistic model/i;
+const RECESSION_SENTENCE = /recession probability|recession model|logistic regression|logistic model/i;
 /** The two Regime boxes, verbatim from DESK_FRAME3_SPEC §5: the one that says
  * the regime rule is not a model, and the one that says the recession
  * probability is the site's one fitted model. */
-const SPEC_MODEL_SENTENCES = [/^No model, no fitting\.$/, /^a fitted model — five monthly indicators against NBER recession dates since 1970\.$/];
+const SPEC_MODEL_SENTENCES = [
+  /^No model, no fitting\.$/,
+  // §5 as folded: "…against NBER recession dates, trained <training.start> to <training.end>; historical scores are in-sample."
+  // In the source the served span is an expression, so the text before it stands alone.
+  /^a fitted model — five monthly indicators against NBER recession dates$/,
+];
 /** The Snowflake bridge's schema, "exactly as on the board" (DESK_FRAME3_SPEC §11): its two
  * lines about the layers ("never edited", "never patched") describe the data, not a forecast. */
 const BOARD_LINES = [/^-- RAW: exact copy of source, never edited$/, /^-- MART: what Desk reads\. Rebuilt, never patched\.$/];

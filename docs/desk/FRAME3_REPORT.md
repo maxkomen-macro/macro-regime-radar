@@ -2607,6 +2607,108 @@ this item leaves alone. Nits, all taken:
 The fixes were checked by the four gates and the tests above; the compare
 shots were re-shot after them.
 
+### Phase 2, item 6: the regime row and the recession score — `frame-3: align 6 regime-recession`
+
+**What changed.** The regime governing today is the stored row stamped
+K−2 for the current session month (§5, v2 §9.1): a September session reads
+the July row. `print` is that row's month ("2026-07"), and every surface
+names it as a row: the Overview's regime tile badge "● Live · Jul row", the
+Regime page's badge "● Live · Jul row · Sep 22", the sidebar's TODAY card
+"regime · Jul row" (§1.1), and IN THIS REGIME "since the June row".
+`/regime` `current` also serves `latest_print`, the newest stored row,
+which the Regime page prints beside the label as "Latest print: Aug 2026"
+and nothing classifies from.
+
+The recession block is §12.6's: `score` (a fraction), `probability_month`,
+`inputs_through`, `feature_months`, `band` (`low` | `elevated` |
+`high_risk`, v3 §11's edges at 0.20 and 0.40), `year_ago` and `peak` as
+`{score, probability_month}` (the peak over "since 2015"), `training`,
+`methodology`, `freq`, `source`. The Overview tile's sub-line is "Low ·
+score for Aug 2026 · inputs through May 2026"; the Regime card is titled
+"Recession score" with §5's subtitle, prints the score and its band word
+("Low.", "Elevated.", "High risk."), the sub-line, a gauge of Low /
+Elevated / High risk at 20% and 40%, and INPUTS THROUGH · A YEAR AGO (its
+month; "—" when served null) · PEAK SINCE 2015 (its month). The "What it
+is" box names the trained span ("trained Apr 2003 to Sep 2026; historical
+scores are in-sample"). Gone: "one-in-eight over the next year", "on data
+through May", the Watch band, "Peak last cycle" and "since 1970" (also in
+the card's Advanced line, which item 7 disables).
+
+The recession fixture serves real values at the engine's full precision
+(§12.0): 0.11644… for Aug 2026 on inputs through May 2026, 0.17172… a year
+before and the 0.95497… peak of Jun 2020 (the data audit's §2.1 and §2.4,
+confirmed by the verifier's own run), and the training span 2003-04 to
+2026-09 (281 rows) from a read-only run of `src/analytics/recession.py` on
+a scratch copy of the owner's database. The withdrawn `reads.year_ago`
+("rising slowly, still low") and the kit's `oneIn` ("one-in-eight") are
+gone. The regime rows come from the fixtures' own
+monthly record, where the July row is Overheating in its second month;
+item 12 moves them to the store's, where the July row is Goldilocks.
+
+The language test allows "model" in a sentence naming the recession model
+(the spec's `source` string) and pins §5's folded "What it is" sentence.
+
+**Tests.** `consistency.test.ts` (both tabs serve the K−2 row, its run and
+the newest row beside it; the tile's recession fields are the Regime tab's;
+the band follows the edges); `RegimePage.test.tsx` (the second month in a
+row since the June row, "Latest print: Aug 2026"; the score line, the
+sub-line, the gauge's three bands at 20/20/60%, the three stats, the
+trained span, no withdrawn phrase; a null year ago prints "—"; Elevated and High risk; no training span, no
+latest print);
+`OverviewPage.test.tsx` and `DeskShell.test.tsx` (the Jul row, the tile's
+sub-line). Browser: the Regime page at 1440 and 390 (the row badge, the
+latest print, the sub-line, the gauge's High risk band, the sidebar), in
+the palette with no sideways scroll.
+
+**Against the PNGs.**
+- Every tab, the sidebar's TODAY card: "regime · Aug print" is now
+  "regime · Jul row". §1.1: "`regime · <Mon> row` beneath (the K−2 row
+  governing today, §5; e.g. "Overheating · Jul row")".
+- 01 Overview, the regime tile's badge "Live · Aug print" is now "Live ·
+  Jul row" (§2: "`● Live · <Mon> row`"); the recession tile's sub-line
+  "Low · one-in-eight over the next year, on data through May" is now "Low
+  · score for Aug 2026 · inputs through May 2026" (§2: "<band> · score for
+  <probability_month> · inputs through <inputs_through>").
+- 04 Regime, the badge reads "Jul row" (§5: "`● Live · <Mon> row ·
+  <date>`"); "Latest print: Aug 2026" sits beside the label (§5:
+  "Beside the label, separately: "Latest print: <latest_print>""); "Second
+  month in a row", "2 mo since the June row", where the PNG counted from the
+  August row (§5: "`current.label`, the stored row stamped K−2").
+- 04 Regime, the recession card: the title "Recession probability" is now
+  "Recession score" with §5's subtitle; "Low. About one-in-eight over the
+  next year." is "Low." with "score for Aug 2026 · inputs through May
+  2026" beneath; the gauge's Low / Watch / Elevated at 25% and 50% is Low /
+  Elevated / High risk at 20% and 40%; A YEAR AGO 17% (Aug 2025) replaces
+  9% and its read; PEAK LAST CYCLE 71% (Mar 2020) is PEAK SINCE 2015 95%
+  (Jun 2020); the box says "trained Apr 2003 to Sep 2026; historical scores
+  are in-sample" where it said "since 1970". §5 (the Recession score
+  paragraph), §12.6 (`band` "A rule: low < 0.20 ≤ elevated < 0.40 ≤
+  high_risk (v3 §11)"; `peak` "the maximum of the served score series since
+  2015"; `training` "never a hard-coded 1970").
+
+Verifier (one round): **PASS**, with two should-fix findings and four
+nits. It confirmed the K−2 row on every surface, that nothing classifies
+from the latest print, every band word and a null year ago in a browser at
+1440, 1101 and 390, and the training span on its own copy of the audit's
+store.
+- V6-1 (should-fix) the peak was served as the audit's rounded 0.955 and
+  printed 96%; the engine's 0.95497… prints 95%. **Fixed:** full
+  precision for the score, a year ago and the peak.
+- V6-2 (should-fix) the fixture still served `reads.year_ago`, now false
+  ("rising slowly" against a fall from 17% to 12%) and read by nothing.
+  **Fixed:** removed from the fixture, the schema and the type.
+- V6-3 the language allowance named "recession score", which no string
+  needs, and a pattern that could never match. **Fixed.**
+- V6-4 the kit's `oneIn` had no caller left. **Removed**, with its test.
+- V6-5 at 1101 the tile split "Aug / 2026". **Fixed:** a month keeps its
+  year on the line, on the tile and the card.
+- V6-6 a stale comment and three untested cases. **Fixed.** It also noted
+  that Build Notes' own prose says "the recession probability is a model";
+  that file is the owner's, and item 13 renders it.
+
+The fixes were checked by the four gates and the tests above; the compare
+shots were re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2637,6 +2739,7 @@ tests against the fixture dev server.
 | frame-3: align 3 counts-horizon | clean | 118 / 1,417 | ok | 52 / 52 |
 | frame-3: align 4 verdicts | clean | 118 / 1,420 | ok | 53 / 53 |
 | frame-3: align 5 baseline | clean | 118 / 1,424 | ok | 53 / 53 |
+| frame-3: align 6 regime-recession | clean | 118 / 1,428 | ok | 54 / 54 |
 
 ## Finish
 

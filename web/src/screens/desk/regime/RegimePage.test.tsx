@@ -82,8 +82,10 @@ describe("Regime tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: "Where we are rule-based · two-month lag" });
     await waitFor(() => expect(card).toHaveTextContent("Overheating"));
-    expect(card).toHaveTextContent("Growth rising and inflation rising. Third month in a row.");
-    expect(card).toHaveTextContent(/In this regime\s*3 mo\s*since the June print/);
+    // §5: the Jul row governs a September session; the newest stored row sits beside it, never classifying.
+    expect(card).toHaveTextContent("Growth rising and inflation rising. Second month in a row.");
+    expect(card).toHaveTextContent(/In this regime\s*2 mo\s*since the June row/);
+    expect(card.querySelector(".rg-latest")?.textContent).toBe("Latest print: Aug 2026");
     const strip = within(card).getByRole("img", { name: /Regime by month from Jan 2021 to Aug 2026/ });
     const segs = [...strip.querySelectorAll("span")];
     expect(segs.map((x) => x.getAttribute("data-tone"))).toEqual(["green", "amber", "red", "gray", "green", "amber", "red", "green", "amber"]);
@@ -92,18 +94,38 @@ describe("Regime tab", () => {
     expect(card.querySelector(".rg-strip-years")?.textContent).toBe("20212022202320242025today");
     expect(card).toHaveTextContent("How it's decided: two signs");
   });
-  it("recession: the model's number, its gauge, the three stats and what it is", async () => {
+  it("recession: the model's score, its band, the month it is for, the gauge, the three stats and what it is (§5)", async () => {
     renderTab();
-    const card = await screen.findByRole("region", { name: /Recession probability/ });
+    const card = await screen.findByRole("region", { name: /Recession score/ });
     await waitFor(() => expect(card).toHaveTextContent("12%"));
-    expect(card).toHaveTextContent("Low. About one-in-eight over the next year.");
-    const gauge = within(card).getByRole("img", { name: "Recession probability 12%, low" });
-    expect(gauge.textContent).toBe("LowWatchElevated · above 50%");
-    expect([...gauge.querySelectorAll(".dk-gauge-track > span[data-tone]")].map((x) => (x as HTMLElement).style.width)).toEqual(["25%", "25%", "50%"]);
+    expect(card.querySelector(".rg-rec-line")?.textContent).toBe("12%Low.");
+    // A month keeps its year on the same line.
+    expect(card.querySelector(".rg-rec-for")?.textContent).toBe("score for Aug\u00a02026 · inputs through May\u00a02026");
+    const gauge = within(card).getByRole("img", { name: "Recession score 12%, low" });
+    expect(gauge.textContent).toBe("LowElevatedHigh risk · above 40%");
+    expect([...gauge.querySelectorAll(".dk-gauge-track > span[data-tone]")].map((x) => (x as HTMLElement).style.width)).toEqual(["20%", "20%", "60%"]);
     expect(card).toHaveTextContent(/Inputs through\s*May/);
-    expect(card).toHaveTextContent(/A year ago\s*9%\s*rising slowly, still low/);
-    expect(card).toHaveTextContent(/Peak last cycle\s*71%\s*Mar 2020/);
-    expect(card).toHaveTextContent("What it is: a fitted model");
+    expect(card).toHaveTextContent(/A year ago\s*17%\s*Aug 2025/);
+    // The engine's full-precision peak, 0.95497…, prints 95% (§12.0: full precision; one rounding rule in the kit).
+    expect(card).toHaveTextContent(/Peak since 2015\s*95%\s*Jun 2020/);
+    expect(card).toHaveTextContent("What it is: a fitted model — five monthly indicators against NBER recession dates, trained Apr 2003 to Sep 2026; historical scores are in-sample.");
+    expect(card.textContent).not.toMatch(/one-in-|over the next year|since 1970|Peak last cycle|Watch/);
+  });
+  it("Elevated is §5's word; without a served training span the box says nothing about one; without a latest print, no line", async () => {
+    stubDesk({ "/api/desk/regime": () => served({ current: { ...regime.current, latest_print: undefined }, recession: { ...regime.recession, band: "elevated", score: 0.27, training: null } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Recession score/ });
+    await waitFor(() => expect(card.querySelector(".rg-rec-line")?.textContent).toBe("27%Elevated."));
+    expect(card).toHaveTextContent("What it is: a fitted model — five monthly indicators against NBER recession dates; historical scores are in-sample.");
+    expect(screen.getByRole("region", { name: /Where we are/ }).querySelector(".rg-latest")).toBeNull();
+  });
+  it("a year ago served null prints a dash, not Awaiting refresh; each band word is §5's", async () => {
+    stubDesk({ "/api/desk/regime": () => served({ recession: { ...regime.recession, year_ago: null, band: "high_risk", score: 0.46 } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Recession score/ });
+    await waitFor(() => expect(card.querySelector(".rg-rec-line")?.textContent).toBe("46%High risk."));
+    expect(card).toHaveTextContent(/A year ago\s*—/);
+    expect(card).not.toHaveTextContent(/A year ago\s*Awaiting refresh/);
   });
   it("what each regime has meant: the table with the current row marked, and the desk's read", async () => {
     renderTab();
@@ -129,10 +151,10 @@ describe("Regime tab", () => {
   it("the bands follow band_edges, and a missing band word is left out", async () => {
     stubDesk({ "/api/desk/regime": () => served({ recession: { ...regime.recession, band: null, band_edges: [0.3, 0.6] } }) });
     renderTab();
-    const card = await screen.findByRole("region", { name: /Recession probability/ });
-    const gauge = await within(card).findByRole("img", { name: "Recession probability 12%" });
-    expect(gauge.textContent).toBe("LowWatchElevated · above 60%");
-    expect(card).toHaveTextContent("12%About one-in-eight over the next year.");
+    const card = await screen.findByRole("region", { name: /Recession score/ });
+    const gauge = await within(card).findByRole("img", { name: "Recession score 12%" });
+    expect(gauge.textContent).toBe("LowElevatedHigh risk · above 60%");
+    expect(card.querySelector(".rg-rec-line")?.textContent).toBe("12%");
   });
 
   it("a different current regime moves the marked row", async () => {
@@ -157,9 +179,9 @@ describe("Regime tab", () => {
     await waitFor(() => expect(where).toHaveTextContent(/Growth\s*Awaiting refresh/));
     expect(where).toHaveTextContent(/Inflation\s*Awaiting refresh/);
     expect(where).toHaveTextContent(/Last five years\s*Awaiting refresh/);
-    const rec = screen.getByRole("region", { name: /Recession probability/ });
+    const rec = screen.getByRole("region", { name: /Recession score/ });
     expect(rec).toHaveTextContent(/Inputs through\s*Awaiting refresh/);
-    expect(rec).toHaveTextContent(/Peak last cycle\s*Awaiting refresh/);
+    expect(rec).toHaveTextContent(/Peak since 2015\s*Awaiting refresh/);
     const meant = screen.getByRole("region", { name: /What each regime has meant/ });
     expect(meant).toHaveTextContent(/Stock–bond/);
     expect(meant).toHaveTextContent("Awaiting refresh");
@@ -170,14 +192,14 @@ describe("Regime tab", () => {
   });
 
   it("null trends and a null probability: no broken sentence, the stats say Awaiting refresh", async () => {
-    stubDesk({ "/api/desk/regime": () => served({ current: { ...regime.current, growth: null, inflation: null }, recession: { ...regime.recession, prob: null } }) });
+    stubDesk({ "/api/desk/regime": () => served({ current: { ...regime.current, growth: null, inflation: null }, recession: { ...regime.recession, score: null } }) });
     renderTab();
     const where = await screen.findByRole("region", { name: /Where we are/ });
     await waitFor(() => expect(where).toHaveTextContent(/Growth\s*Awaiting refresh/));
     expect(where).not.toHaveTextContent("Growth and inflation");
     expect(where).toHaveTextContent("Overheating");
-    const rec = screen.getByRole("region", { name: /Recession probability/ });
-    expect(rec).toHaveTextContent("Awaiting refresh · the recession probability");
+    const rec = screen.getByRole("region", { name: /Recession score/ });
+    expect(rec).toHaveTextContent("Awaiting refresh · the recession score");
     expect(rec).toHaveTextContent(/Inputs through\s*May/);
     const change = screen.getByRole("region", { name: /What would change it/ });
     expect(change).toHaveTextContent(/Next CPI\s*Awaiting refresh/);
@@ -198,7 +220,7 @@ describe("Regime tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("Awaiting refresh"));
     expect(card).toHaveTextContent("Growth");
     expect(card).not.toHaveTextContent("Overheating");
-    expect(screen.getByRole("region", { name: /Recession probability/ })).not.toHaveTextContent("12%");
+    expect(screen.getByRole("region", { name: /Recession score/ })).not.toHaveTextContent("12%");
     expect(screen.getByRole("region", { name: /What would change it/ })).toHaveTextContent(/Next CPI\s*Awaiting refresh/);
     expect(screen.getByRole("region", { name: /What each regime has meant/ })).toHaveTextContent(/Regime\s*Months/);
   });

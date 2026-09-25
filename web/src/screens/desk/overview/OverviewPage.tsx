@@ -17,7 +17,7 @@ import type { LedgerRow, OverviewResponse, OverviewTiles, PositionCompact, Since
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { capitalize, dayLong, dayShort, isFiniteNumber as fin, monthShort, monthYear, num, oneIn, pctPlain, utcTime, year } from "../kit/format";
+import { bandWord, capitalize, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
 import { Awaiting, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
@@ -107,11 +107,12 @@ export function gapWords(gap: number): string {
   return `protection costs about ${n} pts ${gap > 0 ? "more" : "less"} than recent moves justify`;
 }
 
-/** The recession tile's sub-line: the band, the odds in words where they read true, the input month. */
+/** The recession tile's sub-line (§2): "<band> · score for <probability_month> · inputs through <inputs_through>". */
 export function recessionWords(r: RecessionTile): string {
-  const odds = fin(r.prob) ? (oneIn(r.prob) ?? pctPlain(r.prob)) : null;
-  const through = monthShort(r.inputs_through);
-  return [capitalize(r.band), odds ? `${odds} over the next year${through ? `, on data through ${through}` : ""}` : through ? `data through ${through}` : null].filter(Boolean).join(" · ");
+  // A month and its year never part across lines.
+  const scored = monthYear(r.probability_month).replace(" ", "\u00a0");
+  const through = monthYear(r.inputs_through).replace(" ", "\u00a0");
+  return [bandWord(r.band) || null, scored ? `score for ${scored}` : null, through ? `inputs through ${through}` : null].filter(Boolean).join(" · ");
 }
 
 type TileState = "ready" | "loading" | "awaiting";
@@ -157,12 +158,12 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
         label="Regime"
         unserved={off.regime}
         state={state(t?.regime)}
-        badge={t?.regime ? <LiveBadge parts={[t.regime.print ? `${t.regime.print} print` : null]} /> : null}
+        badge={t?.regime ? <LiveBadge parts={[rowWords(t.regime.print) || null]} /> : null}
         value={t?.regime?.label}
         tone={t?.regime ? REGIME_TONE[t.regime.label] : undefined}
         sub={t?.regime ? [t.regime.growth && t.regime.inflation ? `Growth ${t.regime.growth}, inflation ${t.regime.inflation}` : null, "rule-based, two-month lag"].filter(Boolean).join(" · ") : null}
       />
-      <Tile label="Recession · logistic model" unserved={off.recession} state={state(t?.recession && fin(t.recession.prob) ? t.recession : null)} badge={<LiveBadge />} value={t?.recession && fin(t.recession.prob) ? pctPlain(t.recession.prob) : null} sub={t?.recession ? recessionWords(t.recession) : null} />
+      <Tile label="Recession · logistic model" unserved={off.recession} state={state(t?.recession && fin(t.recession.score) ? t.recession : null)} badge={<LiveBadge />} value={t?.recession && fin(t.recession.score) ? pctPlain(t.recession.score) : null} sub={t?.recession ? recessionWords(t.recession) : null} />
       <Tile
         label="S&P 500 · trend"
         unserved={off.trend}

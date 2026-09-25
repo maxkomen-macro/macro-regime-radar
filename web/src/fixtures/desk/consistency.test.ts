@@ -170,3 +170,25 @@ describe("Ledger rows and their baselines (§4.1, v3 §6)", () => {
     expect([gold.median, gold.baseline_median]).toEqual([h20.median, h20.baseline_median]);
   });
 });
+
+describe("the regime row governing today and the recession score (§5, §12.1, §12.6)", () => {
+  it("both tabs serve the stored row stamped K−2 for the session month, its run, and the newest row beside it", () => {
+    const months = record.months;
+    const K = (regime.as_of as string).slice(0, 7);
+    const print = monthBefore(K, record.lag_months);
+    const at = months.findIndex((m) => m.month === print);
+    let start = at;
+    while (start > 0 && months[start - 1].regime === months[at].regime) start--;
+    const want = { label: months[at].regime, print, months_in: at - start + 1, since: months[start].month };
+    for (const row of [overview.tiles.regime, regime.current]) expect({ label: row.label, print: row.print, months_in: row.months_in, since: row.since }).toEqual(want);
+    expect(regime.current.latest_print).toBe(months[months.length - 1].month);
+  });
+  it("the Overview tile's recession fields are the Regime tab's; the band follows v3 §11's edges", () => {
+    const r = regime.recession;
+    const t = overview.tiles.recession;
+    for (const k of ["score", "probability_month", "inputs_through", "band", "band_edges"] as const) expect(t[k]).toEqual(r[k]);
+    const band = r.score < r.band_edges[0] ? "low" : r.score < r.band_edges[1] ? "elevated" : "high_risk";
+    expect(r.band).toBe(band);
+    expect(r.band_edges).toEqual([0.2, 0.4]);
+  });
+});

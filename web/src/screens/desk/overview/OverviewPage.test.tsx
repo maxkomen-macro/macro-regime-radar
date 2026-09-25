@@ -66,12 +66,15 @@ describe("Overview tab", () => {
     await waitFor(() => expect(since).toHaveTextContent("Dollar −2σ fired (new)"));
     expect(since.textContent).toContain("data refreshed 00:23 UTC");
     const regime = screen.getByRole("region", { name: "Regime" });
-    expect(regime).toHaveTextContent("Live · Aug print");
+    // §2: the K−2 row governing today (a September session reads the July row).
+    expect(regime).toHaveTextContent("Live · Jul row");
     expect(regime).toHaveTextContent("Overheating");
     expect(regime).toHaveTextContent("Growth rising, inflation rising · rule-based, two-month lag");
     const rec = screen.getByRole("region", { name: "Recession · logistic model" });
     expect(rec).toHaveTextContent("12%");
-    expect(rec).toHaveTextContent("Low · one-in-eight over the next year, on data through May");
+    // §2: "<band> · score for <probability_month> · inputs through <inputs_through>"; no odds in words.
+    expect(rec).toHaveTextContent("Low · score for Aug 2026 · inputs through May 2026");
+    expect(rec).not.toHaveTextContent("one-in-eight");
     const trend = screen.getByRole("region", { name: "S&P 500 · trend" });
     expect(trend).toHaveTextContent("Live · Sep 22");
     expect(trend).toHaveTextContent("Above 50 & 200");

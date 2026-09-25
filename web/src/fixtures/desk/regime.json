@@ -3,11 +3,14 @@
  "generation_id": "gen-fixture-2026-09-22",
  "current": {
   "label": "Overheating",
-  "print": "2026-08",
+  "print": "2026-07",
+  "latest_print": "2026-08",
   "growth": "rising",
   "inflation": "rising",
-  "months_in": 3,
-  "since": "2026-06"
+  "months_in": 2,
+  "since": "2026-06",
+  "freq": "monthly",
+  "source": "regimes table (src/regime.py)"
  },
  "history": [
   {
@@ -284,18 +287,37 @@
   }
  ],
  "recession": {
-  "prob": 0.12,
+  "score": 0.11644217590049129,
+  "probability_month": "2026-08",
   "inputs_through": "2026-05",
-  "year_ago": 0.09,
-  "peak": {
-   "prob": 0.71,
-   "month": "2020-03"
+  "feature_months": {
+   "yield_curve": "2026-05",
+   "unemployment": "2026-05",
+   "hy_spread": "2026-05",
+   "indpro_yoy": "2026-05",
+   "lei_proxy": "2026-05"
   },
   "band": "low",
   "band_edges": [
-   0.25,
-   0.5
-  ]
+   0.2,
+   0.4
+  ],
+  "year_ago": {
+   "score": 0.1717181912873892,
+   "probability_month": "2025-08"
+  },
+  "peak": {
+   "score": 0.9549742949972719,
+   "probability_month": "2020-06",
+   "window": "since 2015"
+  },
+  "training": {
+   "start": "2003-04",
+   "end": "2026-09"
+  },
+  "methodology": "in-sample fitted scores",
+  "freq": "monthly",
+  "source": "recession model (src/analytics/recession.py)"
  },
  "stats": [
   {
@@ -384,11 +406,6 @@
   "changes": {
    "label": "Read",
    "text": "regime changes have not been sell signals on their own; the one negative was the move into Stagflation. The label lags two months, so the market usually knows before the label does — which is why the Ledger scores signals, not regimes.",
-   "tone": "normal"
-  },
-  "year_ago": {
-   "label": null,
-   "text": "rising slowly, still low",
    "tone": "normal"
   }
  }

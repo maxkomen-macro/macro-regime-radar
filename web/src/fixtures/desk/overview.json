@@ -25,15 +25,25 @@
  "tiles": {
   "regime": {
    "label": "Overheating",
-   "print": "Aug",
+   "print": "2026-07",
    "growth": "rising",
    "inflation": "rising",
-   "months_in": 3
+   "months_in": 2,
+   "since": "2026-06",
+   "freq": "monthly",
+   "source": "regimes table (src/regime.py)"
   },
   "recession": {
-   "prob": 0.12,
+   "score": 0.11644217590049129,
+   "probability_month": "2026-08",
+   "inputs_through": "2026-05",
    "band": "low",
-   "inputs_through": "2026-05"
+   "band_edges": [
+    0.2,
+    0.4
+   ],
+   "freq": "monthly",
+   "source": "recession model (src/analytics/recession.py)"
   },
   "trend": {
    "above_50": true,

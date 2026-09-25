@@ -1,6 +1,6 @@
 /** Desk v2 formatting (kit/format.ts, kit/MonitoredRows.tsx): true minus signs, fractions as percents, served dates at their own frequency. */
 import { describe, expect, it } from "vitest";
-import { dayLong, dayShort, grouped, monthLong, monthShort, monthYear, num, oneIn, ordinal, ordinalWord, pct, pctPlain, pts, signed, utcTime, year } from "./format";
+import { dayLong, dayShort, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, signed, utcTime, year } from "./format";
 import { levelText, roomTone, sortByRoom } from "./MonitoredRows";
 
 describe("numbers", () => {
@@ -32,9 +32,7 @@ describe("numbers", () => {
     }
     expect(pct(0)).toBe("0.0%");
   });
-  it("turns a probability into one-in-N and numbers into ordinals", () => {
-    expect(oneIn(0.12)).toBe("one-in-eight");
-    expect(oneIn(0.5)).toBe("one-in-two");
+  it("turns numbers into ordinals", () => {
     expect(ordinal(74)).toBe("74th");
     expect(ordinal(1)).toBe("1st");
     expect(ordinal(22)).toBe("22nd");

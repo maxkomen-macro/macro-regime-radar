@@ -176,9 +176,35 @@ export interface SinceLastClose {
   refreshed_at_utc: string;
 }
 
+/** A regime row as served (§12.1, §12.6): the stored row stamped K−2 for the current session month K
+ * (`print`, "YYYY-MM"), its trends, and the run of equal labels ending there. */
+export interface RegimeRow {
+  label: string;
+  print?: string;
+  growth?: string;
+  inflation?: string;
+  months_in: number | null;
+  since?: string;
+  freq?: string;
+  source?: string;
+}
+
+/** The recession model's score (§12.6): a fraction for `probability_month`, from inputs through
+ * `inputs_through`; the band by v3 §11's edges (low < 0.20 ≤ elevated < 0.40 ≤ high_risk). */
+export type RecessionBand = "low" | "elevated" | "high_risk";
+export interface RecessionScore {
+  score: number | null;
+  probability_month?: string;
+  inputs_through?: string;
+  band?: RecessionBand;
+  band_edges?: [number, number] | null;
+  freq?: string;
+  source?: string;
+}
+
 export interface OverviewTiles {
-  regime?: { label: string; print?: string; growth?: string; inflation?: string; months_in: number | null };
-  recession?: { prob: number | null; band: string; inputs_through: string };
+  regime?: RegimeRow;
+  recession?: RecessionScore;
   trend?: {
     above_50: boolean;
     above_200: boolean;
@@ -360,17 +386,15 @@ export interface StudyEventsResponse extends Envelope {
 // ── §12.5 /regime ─────────────────────────────────────────────────────────
 
 export interface RegimeResponse extends Envelope {
-  current?: { label?: string; print: string; growth: string; inflation: string; months_in: number | null; since: string };
+  /** The K−2 row governing today, and the newest stored row beside it (`latest_print`, shown, never used to classify). */
+  current?: Partial<RegimeRow> & { latest_print?: string };
   history?: { month: string; regime: string }[];
-  recession?: {
-    prob: number | null;
-    inputs_through: string;
-    year_ago: number | null;
-    peak: { prob: number | null; month: string } | null;
-    /** PROPOSED (§12.13): the band word ("low"), as the Overview tile's `band`. */
-    band: string;
-    /** PROPOSED (§12.13): the probability edges between Low | Watch | Elevated. */
-    band_edges: [number, number] | null;
+  recession?: RecessionScore & {
+    feature_months?: Record<string, string>;
+    year_ago?: { score: number | null; probability_month: string } | null;
+    peak?: { score: number | null; probability_month: string; window?: string } | null;
+    training?: { start: string; end: string } | null;
+    methodology?: string;
   };
   stats?: { regime: string; months: number | null; spx_mo: number | null; up_pct: number | null; vix_avg: number | null; stock_bond_corr: number | null }[];
   next_prints?: {
@@ -378,8 +402,8 @@ export interface RegimeResponse extends Envelope {
     indpro?: { date: string; flip_threshold_mom: number | null; flips_to: string | null } | null;
   };
   changes?: { month: string; from: string; to: string; spx_1m: number | null }[];
-  /** PROPOSED (§12.13): the cards' sentences (`stats`, `changes`, `year_ago`). */
-  reads?: { stats?: Read; changes?: Read; year_ago?: Read };
+  /** PROPOSED (§12.13): the cards' sentences (`stats`, `changes`). */
+  reads?: { stats?: Read; changes?: Read };
 }
 
 // ── §12.6 /macro ──────────────────────────────────────────────────────────

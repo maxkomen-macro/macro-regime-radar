@@ -67,7 +67,7 @@ test.describe("desk v2", () => {
     { slug: "overview", path: "/api/desk/overview", labels: ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX", "Active signals", "Monitored"] },
     { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now"] },
     { slug: "event-study", path: "/api/desk/study", labels: ["Events", "Up a month later", "Median at a month", "Worst · best"] },
-    { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession probability", "Next CPI", "Next INDPRO"] },
+    { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession score", "Next CPI", "Next INDPRO"] },
     { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
     { slug: "sectors", path: "/api/desk/sectors", labels: ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"] },
     { slug: "signal-ledger", path: "/api/desk/ledger", labels: ["Signals scored", "Firing now", "Reliable", "No edge"] },
@@ -179,7 +179,8 @@ test.describe("desk v2", () => {
 
   test("overview: the four tiles carry their Live badges and read the fixture", async ({ page }) => {
     await open(page, "/desk/overview");
-    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Aug print");
+    // §2: the K−2 row governing today (a September session reads the July row).
+    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Jul row");
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Overheating");
     await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("12%");
     await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Live · Sep 22");
@@ -298,6 +299,23 @@ test.describe("desk v2", () => {
       await settle(page, 300);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }
+  });
+
+  test("regime: the July row governs a September session, the latest print sits beside it, the recession score says what month it is for (§5)", async ({ page }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/regime");
+      await expect(page.locator("body")).toContainText("Live · Jul row");
+      const where = page.getByRole("region", { name: /Where we are/ });
+      await expect(where.locator(".rg-latest")).toHaveText("Latest print: Aug 2026");
+      const rec = page.getByRole("region", { name: /Recession score/ });
+      await expect(rec.locator(".rg-rec-for")).toHaveText("score for Aug\u00a02026 · inputs through May\u00a02026");
+      await expect(rec).toContainText("High risk · above 40%");
+      if (width === 1440) await expect(page.getByTestId("dk-today")).toContainText("regime · Jul row");
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
   });
 
   test("verdicts: a Too few row's pill is dashed gray; both footers carry the four definitions and fit at 1440 and 390 (§1.5, B-13)", async ({ page }) => {

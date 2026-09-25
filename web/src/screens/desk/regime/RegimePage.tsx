@@ -1,8 +1,8 @@
 /**
  * Regime (DESK_FRAME3_SPEC §5, screens/04-regime.png), read from
  * GET /api/desk/regime (§12.5): where the economy sits (the rule-based label
- * and its last five years), the recession probability (the one fitted model,
- * labeled as one), what each regime has meant since 1996, and what would
+ * and its last five years, the row governing today beside the latest print),
+ * the recession score (the one fitted model, labeled as one), what each regime has meant since 1996, and what would
  * change the label (the next two prints, whose flip thresholds the engine
  * computes, and the last five changes). A symmetric 2×2; no action button.
  * The method boxes ("How it's decided", "What it is") are fixed text about
@@ -14,7 +14,7 @@ import { unavailableOf, useRegime } from "../data/api";
 import type { Read, RegimeResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { capitalize, dayShort, monthLong, monthShort, monthYear, num, oneIn, ordinalWord, pct, pctPlain, year } from "../kit/format";
+import { bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
 import Gauge from "../kit/Gauge";
 import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved } from "../kit/ui";
 import "./regime.css";
@@ -139,9 +139,13 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
       footer={<AdvancedPanel adv={adv} items="the two input series · every regime change since 1996 · rule text" missing="The two input series and the full list of regime changes are not served yet; the rule is in the box above." />}
     >
       {c?.label ? (
-        <p className="rg-big" data-tone={REGIME_KEY[c.label] === "amber" ? "amber" : undefined}>
-          {c.label}
-        </p>
+        <div className="rg-label-line">
+          <p className="rg-big" data-tone={REGIME_KEY[c.label] === "amber" ? "amber" : undefined}>
+            {c.label}
+          </p>
+          {/* §5: the newest stored row, shown beside the label and never used to classify it. */}
+          {monthYear(c.latest_print) ? <p className="rg-latest">Latest print: {monthYear(c.latest_print)}</p> : null}
+        </div>
       ) : c ? (
         <Awaiting>the regime label</Awaiting>
       ) : null}
@@ -154,7 +158,7 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
         <StatRow cols={3}>
           <Stat label="Growth" value={g ? capitalize(g) : undefined} awaiting={!g} tone={trendTone("growth", g)} sub="industrial production, 3-mo slope" />
           <Stat label="Inflation" value={i ? capitalize(i) : undefined} awaiting={!i} tone={trendTone("inflation", i)} sub="CPI, 3-mo slope" />
-          <Stat label="In this regime" value={fin(c.months_in) ? `${c.months_in} mo` : undefined} awaiting={!fin(c.months_in)} sub={c.since ? `since the ${monthLong(c.since)} print` : undefined} />
+          <Stat label="In this regime" value={fin(c.months_in) ? `${c.months_in} mo` : undefined} awaiting={!fin(c.months_in)} sub={c.since ? `since the ${monthLong(c.since)} row` : undefined} />
         </StatRow>
       ) : (
         <AwaitingStats labels={["Growth", "Inflation", "In this regime"]} quiet={quiet} />
@@ -180,54 +184,60 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
   const rec = r?.recession;
   const edges = rec?.band_edges;
   const unserved = useBlockUnserved(r, "recession");
-  const prob = rec && fin(rec.prob) ? rec.prob : null;
-  const words = rec && prob != null ? [rec.band ? `${capitalize(rec.band)}.` : "", oneIn(prob) ? `About ${oneIn(prob)} over the next year.` : `${pctPlain(prob)} over the next year.`].filter(Boolean).join(" ") : "";
-  if (unserved) return <UnservedCard headingId="rg-rec" className="rg-card" title="Recession probability" sub="logistic model · five monthly inputs, lagged three months" labels={["Inputs through", "A year ago", "Peak last cycle"]} block={unserved} advanced />;
+  const score = rec && fin(rec.score) ? rec.score : null;
+  // §5: the band word, then "score for <probability_month> · inputs through <inputs_through>".
+  const band = bandWord(rec?.band);
+  const my = (m: string | undefined) => monthYear(m).replace(" ", "\u00a0");
+  const scoredFor = [my(rec?.probability_month) ? `score for ${my(rec?.probability_month)}` : null, my(rec?.inputs_through) ? `inputs through ${my(rec?.inputs_through)}` : null].filter(Boolean).join(" · ");
+  const trained = rec?.training && monthYear(rec.training.start) && monthYear(rec.training.end) ? `, trained ${monthYear(rec.training.start)} to ${monthYear(rec.training.end)}` : "";
+  if (unserved) return <UnservedCard headingId="rg-rec" className="rg-card" title="Recession score" sub="logistic model, five monthly inputs lagged three months" labels={["Inputs through", "A year ago", "Peak since 2015"]} block={unserved} advanced />;
   return (
     <Card
       id="rg-rec"
-      title="Recession probability"
-      sub="logistic model · five monthly inputs, lagged three months"
+      title="Recession score"
+      sub="logistic model, five monthly inputs lagged three months"
       busy={quiet}
-      footer={<AdvancedPanel adv={adv} items="the five inputs · fit and out-of-sample record · every month since 1970" missing="The logistic model's inputs, its fit record and its monthly history are not served yet." />}
+      footer={<AdvancedPanel adv={adv} items="the five inputs · fit and out-of-sample record · every month scored" missing="The logistic model's inputs, its fit record and its monthly history are not served yet." />}
     >
-      {rec && prob != null ? (
+      {rec && score != null ? (
         <>
           <p className="rg-rec-line">
-            <span className="rg-big rg-rec-big">{pctPlain(prob)}</span>
-            <span className="rg-rec-words">{words}</span>
+            <span className="rg-big rg-rec-big">{pctPlain(score)}</span>
+            {band ? <span className="rg-rec-words">{band}.</span> : null}
           </p>
+          {scoredFor ? <p className="rg-rec-for">{scoredFor}</p> : null}
           {edges && fin(edges[0]) && fin(edges[1]) ? (
             <Gauge
               min={0}
               max={1}
-              value={prob}
+              value={score}
               bands={[
                 { label: "Low", to: edges[0], tone: "green" },
-                { label: "Watch", to: edges[1], tone: "neutral" },
-                { label: `Elevated · above ${pctPlain(edges[1])}`, to: 1, tone: "amber" },
+                { label: "Elevated", to: edges[1], tone: "neutral" },
+                { label: `High risk · above ${pctPlain(edges[1])}`, to: 1, tone: "amber" },
               ]}
-              label={`Recession probability ${pctPlain(prob)}${rec.band ? `, ${rec.band}` : ""}`}
+              label={`Recession score ${pctPlain(score)}${band ? `, ${band.toLowerCase()}` : ""}`}
               under
             />
           ) : (
-            <Awaiting>the Low, Watch and Elevated bands</Awaiting>
+            <Awaiting>the Low, Elevated and High risk bands</Awaiting>
           )}
         </>
       ) : quiet ? null : (
-        <Awaiting>the recession probability</Awaiting>
+        <Awaiting>the recession score</Awaiting>
       )}
       {rec ? (
         <StatRow cols={3}>
           <Stat label="Inputs through" value={monthShort(rec.inputs_through)} awaiting={!monthShort(rec.inputs_through)} sub="three-month lag by design" />
-          <Stat label="A year ago" value={fin(rec.year_ago) ? pctPlain(rec.year_ago) : undefined} awaiting={!fin(rec.year_ago)} sub={r?.reads?.year_ago?.text} />
-          <Stat label="Peak last cycle" tone="amber" value={rec.peak && fin(rec.peak.prob) ? pctPlain(rec.peak.prob) : undefined} awaiting={!rec.peak || !fin(rec.peak.prob)} sub={rec.peak ? monthYear(rec.peak.month) : undefined} />
+          {/* §5: "—" when a year ago's month is absent (served null), never Awaiting refresh. */}
+          <Stat label="A year ago" value={rec.year_ago && fin(rec.year_ago.score) ? pctPlain(rec.year_ago.score) : "—"} sub={rec.year_ago ? monthYear(rec.year_ago.probability_month) : undefined} />
+          <Stat label="Peak since 2015" tone="amber" value={rec.peak && fin(rec.peak.score) ? pctPlain(rec.peak.score) : undefined} awaiting={!rec.peak || !fin(rec.peak.score)} sub={rec.peak ? monthYear(rec.peak.probability_month) : undefined} />
         </StatRow>
       ) : (
-        <AwaitingStats labels={["Inputs through", "A year ago", "Peak last cycle"]} quiet={quiet} />
+        <AwaitingStats labels={["Inputs through", "A year ago", "Peak since 2015"]} quiet={quiet} />
       )}
       <ReadBox label="What it is" className="rg-method">
-        a fitted model — five monthly indicators against NBER recession dates since 1970. It is the only fitted thing on the site, and it is labeled as one wherever it appears.
+        a fitted model — five monthly indicators against NBER recession dates{trained}; historical scores are in-sample. It is the only fitted thing on the site, and it is labeled as one wherever it appears.
       </ReadBox>
     </Card>
   );
@@ -408,7 +418,7 @@ export default function RegimePage({ page }: { page: DeskPage }) {
   const q = useRegime();
   const r = q.data;
   const state: State = r ? "ready" : q.isError ? "awaiting" : "loading";
-  const print = r?.current?.print ? `${monthShort(r.current.print)} print` : null;
+  const print = rowWords(r?.current?.print) || null;
   // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
   const unserved = unavailableOf(q.error);
   return (
