@@ -20,6 +20,7 @@ import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { capitalize, dayLong, dayShort, grouped, num, ordinal, pct, pctPlain, signed, VERDICT_RANK, year } from "../kit/format";
+import { moveText, tipOf } from "../kit/units";
 import Gauge from "../kit/Gauge";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
@@ -318,12 +319,12 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
                     · up <b>{pctPlain(r.up_pct)}</b>
                   </>
                 ) : null}
-                {fin(r.median) ? (
+                {fin(r.median) && moveText(r.median, r.target_unit ?? undefined) ? (
                   <>
                     {" "}
                     · a month later{" "}
-                    <Signed value={r.median} bold>
-                      {pct(r.median)}
+                    <Signed value={r.median} bold title={tipOf(r.target_unit ?? undefined)}>
+                      {moveText(r.median, r.target_unit ?? undefined)}
                     </Signed>
                   </>
                 ) : null}

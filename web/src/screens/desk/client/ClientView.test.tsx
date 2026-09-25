@@ -83,6 +83,9 @@ describe("Client view", () => {
     expect(main).toHaveTextContent(/Higher a month later\s*67%\s*vs 62% in an ordinary month/);
     expect(main.querySelector(".cv-stat-value[data-tone='green']")).toHaveTextContent("67%");
     expect(main).toHaveTextContent(/Typical move\s*\+3\.1%\s*vs \+1\.3% ordinary/);
+    // §1.9: every log number carries the tooltip, the backdrop's too.
+    // The served summary carries its numbers in words, so the sentence carries the tooltip too.
+    expect([...main.querySelectorAll('[title="log return, ×100"]')].map((e) => e.textContent)).toEqual([expect.stringMatching(/^Looking at 18 such episodes/), "+3.1%", "+1.3%", "+2.8%", "+3.5%"]);
     expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+2.8%", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risk+3.5%"]);
     expect([...backdrop().querySelectorAll(".cv-bar")].map((b) => b.getAttribute("data-tone"))).toEqual(["green", "green"]);
     expect(main).toHaveTextContent("Radar · FRED, Yahoo Finance · as of Sep 22, 2026 · Past patterns do not guarantee future results.");
@@ -101,6 +104,7 @@ describe("Client view", () => {
     expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+12 bp", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risk+20 bp"]);
     expect(screen.getByRole("main")).toHaveTextContent(/Typical move\s*\+25 bp\s*vs \+5 bp ordinary/);
     expect(backdrop().textContent).not.toMatch(/%/);
+    expect(screen.getByRole("main").querySelector("[title]")).toBeNull();
   });
 
   it("a study served without its target's unit prints no move: the stat and the bars say Awaiting refresh (Codex G2-2)", async () => {

@@ -61,6 +61,9 @@ export interface LedgerRow {
   n: number | null;
   up_pct: number | null;
   median: number | null;
+  /** The unit `median` is served in, and how it displays (§1.9, §12.5); absent, the median prints "—". */
+  target_unit?: TargetUnit | null;
+  display_unit?: DisplayUnit | null;
   vs_normal_pts: number | null;
   /** Absent when the server sent a verdict the Desk does not know (the pill prints "—"). */
   verdict?: Verdict;
@@ -250,17 +253,20 @@ export interface Question {
   horizon: number;
 }
 
-/** PROPOSED (§12.13, Codex R-02): the unit every target move is served in:
- * `pct` fractions (0.031 is +3.1%, intervals in percentage points), `bp`
- * basis points (25 is +25 bp, intervals in bp), `px` the target's own price
- * points (intervals in points). */
-export type TargetUnit = "pct" | "bp" | "px";
+/** The unit every target move is served in, native (§1.9, §12.2): a log
+ * return or log change (0.031 displays as +3.1%, 100 × native, "log return,
+ * ×100"), or basis points (25 is +25 bp). */
+export type TargetUnit = "log_return" | "log_change" | "bp";
 
-/** The question as a study serves it: the six slots, and (PROPOSED, §12.13,
- * Codex R-02, R-03) its target's unit and name. Absent, every target move
- * says Awaiting refresh; the page never guesses a unit from the key. */
+/** How a target move displays (§1.9): `percent` for the two log units, `bp` for bp. */
+export type DisplayUnit = "percent" | "bp";
+
+/** The question as a study serves it: the six slots, and its target's unit
+ * and display unit (§12.2), and (Codex R-03) its name. Absent, every target
+ * move says Awaiting refresh; the page never guesses a unit from the key. */
 export interface ServedQuestion extends Question {
   target_unit?: TargetUnit;
+  display_unit?: DisplayUnit;
   target_label?: string;
 }
 
@@ -275,8 +281,9 @@ export interface StudyHorizon {
   baseline_median: number | null;
   /** PROPOSED (§12.13): the share of ordinary stretches of this length that ended up (the Client view's "vs 62% in an ordinary month"). */
   baseline_up_pct?: number | null;
-  ci_lo_pts: number | null;
-  ci_hi_pts: number | null;
+  /** The interval on Δ = median − baseline_median, native (§1.9); null under five blocks. */
+  ci_lo: number | null;
+  ci_hi: number | null;
   verdict?: Verdict;
   worst?: { ret: number | null; date: string } | null;
   best?: { ret: number | null; date: string } | null;

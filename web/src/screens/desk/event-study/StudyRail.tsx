@@ -13,7 +13,7 @@ import type { StudyResponse } from "../data/types";
 import { dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { Advanced, Awaiting, Signed, UnservedLine, useUnserved, VerdictWord } from "../kit/ui";
 import { CONFIDENCES } from "./question";
-import { isUnit, moveText, rangeText } from "./units";
+import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
 import type { TargetUnit } from "../data/types";
 
 /** The rail with no scored answer: its section labels, and why there is nothing under them (§1.7). */
@@ -54,7 +54,7 @@ export function RailPlaceholder({ reason }: { reason: "awaiting" | "too-few" }) 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, string> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
 
-/** A horizon's range against normal in the target's unit (Codex R-02): "−1.6 to +4.1 pts", "−10 to +40 bp". */
+/** A horizon's interval on Δ, native in, in the target's display unit (§1.9): "−1.6 to +4.1 pts", "−10 to +40 bp". */
 export function rangeWords(lo: number | null, hi: number | null, unit: TargetUnit | undefined): string {
   return rangeText(lo, hi, unit) ?? "Awaiting refresh";
 }
@@ -93,13 +93,16 @@ export default function StudyRail({
   const horizons = Array.isArray(study.horizons) ? study.horizons : null;
   const today = todayRegime && byRegime ? byRegime.find((r) => r.regime === todayRegime) : undefined;
   const unit = isUnit(study.question.target_unit) ? study.question.target_unit : undefined;
+  // Every log number carries the §1.9 tooltip; bp numbers none.
+  const tip = tipOf(unit);
   const target = study.question.target_label;
   return (
     <>
       <div className="es-verdict" data-verdict={verdict}>
         <p className="es-verdict-label">Verdict · {verdict ? VERDICT_LABEL[verdict] : "Awaiting refresh"}</p>
         <p>
-          <b>{study.verdict_line}</b> {study.why} {study.what_to_do}{" "}
+          {/* The served `why` carries the interval's numbers (§12.2), so a log study's sentence carries the §1.9 tooltip. */}
+          <b>{study.verdict_line}</b> <span title={tip}>{study.why}</span> {study.what_to_do}{" "}
           <Link className="dk-link" to={priceHref}>
             Price it →
           </Link>
@@ -128,7 +131,7 @@ export default function StudyRail({
                 </th>
                 <td>{fin(r.n) ? r.n : "—"}</td>
                 <td data-few={few || !fin(r.up_pct) || undefined}>{few ? "n<5" : fin(r.up_pct) ? pctPlain(r.up_pct) : "—"}</td>
-                <td data-few={few || !moveText(r.median, unit) || undefined}>{few ? "n<5" : fin(r.median) && moveText(r.median, unit) ? <Signed value={r.median}>{moveText(r.median, unit)}</Signed> : "—"}</td>
+                <td data-few={few || !moveText(r.median, unit) || undefined}>{few ? "n<5" : fin(r.median) && moveText(r.median, unit) ? <Signed value={r.median} title={tip}>{moveText(r.median, unit)}</Signed> : "—"}</td>
               </tr>
             );
           })}
@@ -151,7 +154,7 @@ export default function StudyRail({
             <li key={e.date}>
               <span>{dayLong(e.date)}</span>
               <span className="es-events-regime">{e.regime}</span>
-              {fin(e.ret_20) && moveText(e.ret_20, unit) ? <Signed value={e.ret_20}>{moveText(e.ret_20, unit)}</Signed> : <span className="es-events-none">—</span>}
+              {fin(e.ret_20) && moveText(e.ret_20, unit) ? <Signed value={e.ret_20} title={tip}>{moveText(e.ret_20, unit)}</Signed> : <span className="es-events-none">—</span>}
             </li>
           ))}
         </ul>
@@ -177,7 +180,7 @@ export default function StudyRail({
           {horizons.map((h) => (
             <li key={h.h}>
               <span>{h.label}</span>
-              <span className="es-range-pts">{rangeWords(h.ci_lo_pts, h.ci_hi_pts, unit)}</span>
+              <span className="es-range-pts" title={rangeText(h.ci_lo, h.ci_hi, unit) ? tip : undefined}>{rangeWords(h.ci_lo, h.ci_hi, unit)}</span>
               <VerdictWord verdict={h.verdict} />
             </li>
           ))}

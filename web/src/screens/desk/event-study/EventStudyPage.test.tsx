@@ -90,10 +90,11 @@ describe("the question", () => {
     expect(horizonPhrase(60)).toBe("3 months");
     expect(servedWords({ elapsed_ms: 300, served_from_cache: true })).toBe("0.3s, cached");
     expect(barTicks(-0.5, 6.2)).toEqual([-3, 0, 5]);
-    // Basis points and price points step by 1, 2 or 5 × 10ⁿ, never by a percent's 5 (Codex G2-5).
+    expect(barTicks(-0.5, 6.2, "log_change")).toEqual([-3, 0, 5]);
+    // Basis points step by 1, 2 or 5 × 10ⁿ, never by a percent's 5 (Codex G2-5).
     expect(barTicks(-13, 57, "bp")).toEqual([-30, 0, 50]);
     expect(barTicks(-80, 57, "bp")).toEqual([-100, 0, 50]);
-    expect(barTicks(-2, 14, "px")).toEqual([-6, 0, 10]);
+    expect(barTicks(-2, 14, "bp")).toEqual([-6, 0, 10]);
     expect(barTicks(-0.5, 2.4, "bp")).toEqual([-1.2, 0, 2]);
     expect(applyFix(GOLD, "drop_condition")?.while).toBe("none");
     expect(applyFix(GOLD, "widen_window")?.window).toBe(60);
@@ -348,6 +349,24 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     expect(rail()).toHaveTextContent(/Apr 16, 2025\s*Overheating\s*\+30 bp/);
     expect(rail()).toHaveTextContent(/1 month\s*−10 to \+40 bp/);
     expect(answer()).toHaveTextContent("median +9 bp");
+    // §1.9: the tooltip belongs to log numbers only.
+    expect(document.querySelector('[title="log return, ×100"]')).toBeNull();
+  });
+
+  it("a log-return target prints 100 × native with the §1.9 tooltip on every such number; the whisker is baseline + ci, scaled", async () => {
+    renderTab();
+    await waitFor(() => expect(answer()).toHaveTextContent(/Median at a month\s*\+3\.1%\s*vs \+1\.3% in a normal month/));
+    const tipped = (root: HTMLElement) => Array.from(root.querySelectorAll('[title="log return, ×100"]')).map((e) => e.textContent);
+    expect(tipped(answer())).toEqual(expect.arrayContaining(["+3.1%", "+1.3%", "−9.4%"]));
+    expect(tipped(rail())).toEqual(expect.arrayContaining(["−1.6 to +4.1 pts", study.why]));
+    const chart = screen.getByRole("img", { name: /\(log returns, ×100\): .*1 month \+3\.1% against \+1\.3%/ });
+    // The chart's value labels and ticks carry the tooltip as an SVG title.
+    expect(Array.from(chart.querySelectorAll("title")).map((t) => t.textContent)).toContain("log return, ×100");
+    // The axis's zero is not a log number.
+    const zero = Array.from(chart.querySelectorAll("text.dk-chart-axis")).find((t) => t.textContent === "0")!;
+    expect(zero.querySelector("title")).toBeNull();
+    // The 1-month whisker runs from 0.013 − 0.016 to 0.013 + 0.041, ×100: −0.3 to +5.4, so the top tick is +5%.
+    expect(chart).toHaveTextContent("+5%");
   });
 
   it("a study served without its target's unit prints no move and says so (R-02)", async () => {

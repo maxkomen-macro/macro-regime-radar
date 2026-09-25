@@ -12,7 +12,8 @@
   "while": "spx_below_50",
   "target": "spx",
   "horizon": 20,
-  "target_unit": "pct",
+  "target_unit": "log_return",
+  "display_unit": "percent",
   "target_label": "S&P 500"
  },
  "n_events": 18,
@@ -31,8 +32,8 @@
    "up_pct": 0.61,
    "median": 0.012,
    "baseline_median": 0.003,
-   "ci_lo_pts": -0.8,
-   "ci_hi_pts": 2.4,
+   "ci_lo": -0.008,
+   "ci_hi": 0.024,
    "verdict": "suggestive",
    "baseline_up_pct": 0.56,
    "n_complete": 18
@@ -43,8 +44,8 @@
    "up_pct": 0.61,
    "median": 0.016,
    "baseline_median": 0.006,
-   "ci_lo_pts": -0.6,
-   "ci_hi_pts": 2.9,
+   "ci_lo": -0.006,
+   "ci_hi": 0.029,
    "verdict": "suggestive",
    "baseline_up_pct": 0.58,
    "n_complete": 18
@@ -56,8 +57,8 @@
    "up_n": 12,
    "median": 0.031,
    "baseline_median": 0.013,
-   "ci_lo_pts": -1.6,
-   "ci_hi_pts": 4.1,
+   "ci_lo": -0.016,
+   "ci_hi": 0.041,
    "verdict": "suggestive",
    "worst": {
     "ret": -0.094,
@@ -76,8 +77,8 @@
    "up_pct": 0.56,
    "median": 0.029,
    "baseline_median": 0.036,
-   "ci_lo_pts": -3.9,
-   "ci_hi_pts": 2.6,
+   "ci_lo": -0.039,
+   "ci_hi": 0.026,
    "verdict": "no_edge",
    "baseline_up_pct": 0.66,
    "n_complete": 18

@@ -106,6 +106,23 @@ describe("Signal Ledger tab", () => {
     const row = within(table).getByRole("row", { name: /S&P golden cross/ });
     expect(row.textContent).toBe("S&P golden cross—————Reliable○ Quiet");
   });
+  it("each row's median prints in its own served unit: bp for a yield target, log percent with its tooltip, a dash without a unit (§1.9)", async () => {
+    stubDesk({
+      "/api/desk/ledger": () => ({
+        ...ledger,
+        signals: rows.map((r, i) => (i === 0 ? { ...r, median: 12.5, target_unit: "bp", display_unit: "bp" } : i === 2 ? { ...r, target_unit: null, display_unit: null } : r)),
+      }),
+    });
+    renderTab();
+    const table = await screen.findByRole("table");
+    const bp = within(table).getByRole("row", { name: /2s10s \+2σ steepening/ });
+    expect(bp).toHaveTextContent("+12.5 bp");
+    expect(bp.querySelector('[title="log return, ×100"]')).toBeNull();
+    expect((within(table).getByRole("row", { name: /S&P golden cross/ }) as HTMLTableRowElement).cells[4].textContent).toBe("—");
+    const gold = within(table).getByRole("row", { name: /Gold \+2σ while S&P weak/ }) as HTMLTableRowElement;
+    expect(gold.cells[4].textContent).toBe("+3.1%");
+    expect(gold.cells[4].querySelector("[title]")?.getAttribute("title")).toBe("log return, ×100");
+  });
   it("Space opens a row too; a chip shows it is pressed", async () => {
     renderTab();
     await screen.findByRole("table");

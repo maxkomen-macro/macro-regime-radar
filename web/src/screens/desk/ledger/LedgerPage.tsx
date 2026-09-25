@@ -16,6 +16,7 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { dayLong, dayShort, pct, pctPlain, pts, VERDICT_LABEL, VERDICT_RANK } from "../kit/format";
+import { moveText, tipOf } from "../kit/units";
 import { Awaiting, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
@@ -73,7 +74,16 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
       <td className="lg-mono">{typeof r.last_fired === "string" && dayLong(r.last_fired) ? dayLong(r.last_fired) : "—"}</td>
       <td className="lg-mono">{fin(r.n) ? r.n : "—"}</td>
       <td className="lg-mono">{fin(r.up_pct) ? pctPlain(r.up_pct) : "—"}</td>
-      <td className="lg-mono">{fin(r.median) ? <Signed value={r.median}>{pct(r.median)}</Signed> : "—"}</td>
+      {/* The median in the row's own served unit (§1.9): a yield target in bp, a price in log percent with its tooltip. */}
+      <td className="lg-mono">
+        {fin(r.median) && moveText(r.median, r.target_unit ?? undefined) ? (
+          <Signed value={r.median} title={tipOf(r.target_unit ?? undefined)}>
+            {moveText(r.median, r.target_unit ?? undefined)}
+          </Signed>
+        ) : (
+          "—"
+        )}
+      </td>
       <td className="lg-mono">{fin(r.vs_normal_pts) ? <Signed value={r.vs_normal_pts}>{pts(r.vs_normal_pts)}</Signed> : "—"}</td>
       <td className="lg-verdict">{knownVerdict(r.verdict) ? <VerdictPill verdict={r.verdict} className="lg-pill" /> : "—"}</td>
       <td className="lg-now" data-tone={r.firing_now === true ? "green" : r.firing_now === false ? "gray" : undefined}>

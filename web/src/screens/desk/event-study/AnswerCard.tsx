@@ -12,7 +12,7 @@ import { dayLong, isFiniteNumber as fin, monthYear, pctPlain, year } from "../ki
 import { useBox } from "../kit/LineChart";
 import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved, VerdictWord } from "../kit/ui";
 import { WINDOWS, horizonLabel } from "./question";
-import { isUnit, moveText, scaleOf, tickText } from "./units";
+import { isLog, isUnit, moveText, scaleOf, tickText, tipOf, whisker } from "../kit/units";
 
 /** Whether a fix from the empty state changes the question (no wider window than 60, no condition to drop). */
 function applies(q: StudyResponse["question"], fix: string): boolean {
@@ -35,7 +35,7 @@ export function normalStretch(h: number): string {
   return ({ 5: "in a normal week", 10: "over a normal two weeks", 20: "in a normal month", 60: "over a normal three months" } as Record<number, string>)[h] ?? "over a normal stretch of the same length";
 }
 
-/** A round step for basis points or price points: the largest 1, 2 or 5 × 10ⁿ at or under `hi`. */
+/** A round step for basis points: the largest 1, 2 or 5 × 10ⁿ at or under `hi`. */
 function roundStep(hi: number): number {
   const mag = 10 ** Math.floor(Math.log10(Math.max(hi, 1e-9)));
   return [5, 2, 1].map((m) => m * mag).find((s) => s <= hi) ?? mag;
@@ -43,24 +43,26 @@ function roundStep(hi: number): number {
 
 /** The chart's y ticks (§4: +5% / 0 / −3% for the gold study): zero, the
  * largest round step at or under the top, and a negative tick at 60% of it
- * when the data sit above it (or the round step under the bottom). A percent
- * steps by 5, 1 or a half; basis points and price points by 1, 2 or 5 × 10ⁿ
- * (+50 bp / 0 / −30 bp), the negative tick rounded to a whole step's tenth. */
-export function barTicks(lo: number, hi: number, unit: TargetUnit = "pct"): number[] {
-  const step = unit === "pct" ? (hi >= 5 ? 5 : hi >= 2 ? 1 : 0.5) : roundStep(hi);
+ * when the data sit above it (or the round step under the bottom). A log
+ * percent (§1.9) steps by 5, 1 or a half; basis points by 1, 2 or 5 × 10ⁿ
+ * (+50 bp / 0 / −30 bp), the negative tick rounded to a whole step's tenth.
+ * Ticks are in display units: the values come in already scaled. */
+export function barTicks(lo: number, hi: number, unit: TargetUnit = "log_return"): number[] {
+  const step = isLog(unit) ? (hi >= 5 ? 5 : hi >= 2 ? 1 : 0.5) : roundStep(hi);
   const pos = Math.max(step, Math.floor(hi / step) * step);
-  const tenths = unit === "pct" ? 1 : 10 / step; // ticks per unit: a percent's whole points, else tenths of a step
+  const tenths = isLog(unit) ? 1 : 10 / step; // ticks per unit: a percent's whole points, else tenths of a step
   const neg = lo < -0.6 * pos ? -Math.ceil(-lo / step) * step : -Math.round(0.6 * pos * tenths) / tenths;
   return [neg, 0, pos];
 }
 
-/** A horizon the chart can draw: its median, baseline and range all served as finite numbers, in the chart's units. */
+/** A horizon the chart can draw: its median, baseline and range all served as finite numbers, in display units.
+ * The whisker is baseline + ci in native units, then the same linear scale (§1.9). */
 type Drawn = { h: StudyHorizon; med: number; base: number; lo: number; hi: number };
 function drawn(h: StudyHorizon, unit: TargetUnit): Drawn | null {
-  if (!fin(h.median) || !fin(h.baseline_median) || !fin(h.ci_lo_pts) || !fin(h.ci_hi_pts)) return null;
+  const w = whisker(h.baseline_median, h.ci_lo, h.ci_hi, unit);
+  if (!fin(h.median) || !fin(h.baseline_median) || !w) return null;
   const k = scaleOf(unit);
-  const base = h.baseline_median * k;
-  return { h, med: h.median * k, base, lo: base + h.ci_lo_pts, hi: base + h.ci_hi_pts };
+  return { h, med: h.median * k, base: h.baseline_median * k, lo: w.lo, hi: w.hi };
 }
 
 function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: TargetUnit }) {
@@ -74,8 +76,9 @@ function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: TargetUnit }
   const lo = Math.min(0, ...vals);
   const hi = Math.max(0, ...vals);
   const ticks = barTicks(lo, hi, unit);
-  // Room below and above the ticks: 0.6 and 0.9 of a percent, the same share of the top tick in bp or points.
-  const room = unit === "pct" ? 1 : ticks[2] / 5;
+  // Room below and above the ticks: 0.6 and 0.9 of a percent, the same share of the top tick in bp.
+  const room = isLog(unit) ? 1 : ticks[2] / 5;
+  const tip = tipOf(unit);
   const dLo = Math.min(ticks[0], lo) - 0.6 * room;
   const dHi = Math.max(ticks[2], hi) + 0.9 * room;
   const pw = width - pad.l - pad.r;
@@ -85,11 +88,12 @@ function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: TargetUnit }
   const bw = Math.min(42, group * 0.2);
   return (
     <div ref={ref} className="dk-chart es-bars">
-      <svg width={width} height={height} role="img" aria-label={`The median move after the event against a normal stretch, with its range, at each horizon: ${pts.map((p) => (p.d ? `${p.h.label} ${moveText(p.d.med / k, unit)} against ${moveText(p.d.base / k, unit)}` : `${p.h.label} awaiting refresh`)).join("; ")}`}>
+      <svg width={width} height={height} role="img" aria-label={`The median move after the event against a normal stretch, with its range, at each horizon${isLog(unit) ? " (log returns, ×100)" : ""}: ${pts.map((p) => (p.d ? `${p.h.label} ${moveText(p.d.med / k, unit)} against ${moveText(p.d.base / k, unit)}` : `${p.h.label} awaiting refresh`)).join("; ")}`}>
         {ticks.map((t) => (
           <g key={t}>
             <line className={t === 0 ? "dk-chart-zero" : "dk-chart-grid"} x1={pad.l} x2={pad.l + pw} y1={y(t)} y2={y(t)} />
             <text className="dk-chart-axis" x={pad.l - 10} y={y(t) + 4} textAnchor="end">
+              {tip && t !== 0 ? <title>{tip}</title> : null}
               {tickText(t, unit)}
             </text>
           </g>
@@ -120,6 +124,7 @@ function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: TargetUnit }
               <line x1={wx - 8} x2={wx + 8} y1={y(p.hi)} y2={y(p.hi)} stroke={BLUE} strokeWidth={2} />
               <line x1={wx - 8} x2={wx + 8} y1={y(p.lo)} y2={y(p.lo)} stroke={BLUE} strokeWidth={2} />
               <text className="es-bar-value" x={wx} y={y(p.hi) - 9} textAnchor="middle">
+                {tip ? <title>{tip}</title> : null}
                 {moveText(p.med / k, unit)}
               </text>
               <text className="es-bar-label" x={cx} y={height - 12} textAnchor="middle">
@@ -157,11 +162,19 @@ export function WithoutCondition({ study, label }: { study: StudyResponse; label
   if (!w) return null;
   const move = q.move === "up2s" ? "+2σ" : q.move === "down2s" ? "−2σ" : q.move === "cross_above" ? "crossing above its average" : "crossing below its average";
   const median = moveText(w.median, q.target_unit);
+  const tip = tipOf(q.target_unit);
+  const facts = [fin(w.n_events) ? `${w.n_events} events` : null, fin(w.up_pct) ? `up ${pctPlain(w.up_pct)}` : null].filter(Boolean).join(", ");
   // Whether the condition helps is the engine's call, served as its sentence (Codex R-12); the page ranks nothing.
   const note = typeof w.comparison_note === "string" && w.comparison_note ? w.comparison_note : null;
   return (
     <p className="es-without">
-      <b>Without {cond}</b> — {label(q.shock)} {move} on its own — it&rsquo;s {[fin(w.n_events) ? `${w.n_events} events` : null, fin(w.up_pct) ? `up ${pctPlain(w.up_pct)}` : null, median ? `median ${median}` : null].filter(Boolean).join(", ") || "awaiting refresh"}: <VerdictWord verdict={w.verdict} />.{" "}
+      <b>Without {cond}</b> — {label(q.shock)} {move} on its own — it&rsquo;s {facts || (median ? null : "awaiting refresh")}
+      {median ? (
+        <>
+          {facts ? ", " : null}median <span title={tip}>{median}</span>
+        </>
+      ) : null}
+      : <VerdictWord verdict={w.verdict} />.{" "}
       {note ?? <span className="es-without-await">Whether the condition helps is awaiting refresh.</span>}
     </p>
   );
@@ -234,6 +247,8 @@ export default function AnswerCard({
   const baseline = h ? moveText(h.baseline_median, unit) : null;
   const worst = h?.worst ? moveText(h.worst.ret, unit) : null;
   const best = h?.best ? moveText(h.best.ret, unit) : null;
+  // Every log number carries the §1.9 tooltip; bp numbers none.
+  const tip = tipOf(unit);
   return (
     <section className="dk-card es-answer" aria-label="The answer" aria-busy={busy || undefined} data-busy={busy || undefined}>
       <h2 className="es-headline">{study.headline}</h2>
@@ -255,7 +270,19 @@ export default function AnswerCard({
           <Stat label={`Up ${phrase} later`} awaiting />
         )}
         {h && fin(h.median) && median ? (
-          <Stat label={`Median at ${phrase}`} value={median} tone={h.median > 0 ? "up" : h.median < 0 ? "down" : undefined} sub={baseline ? `vs ${baseline} ${normalStretch(h.h)}` : undefined} size="md" />
+          <Stat
+            label={`Median at ${phrase}`}
+            value={<span title={tip}>{median}</span>}
+            tone={h.median > 0 ? "up" : h.median < 0 ? "down" : undefined}
+            sub={
+              baseline ? (
+                <>
+                  vs <span title={tip}>{baseline}</span> {normalStretch(h.h)}
+                </>
+              ) : undefined
+            }
+            size="md"
+          />
         ) : (
           <Stat label={`Median at ${phrase}`} awaiting />
         )}
@@ -265,7 +292,13 @@ export default function AnswerCard({
             size="date"
             value={
               <>
-                <Signed value={h.worst.ret}>{worst}</Signed> / <Signed value={h.best.ret}>{best}</Signed>
+                <Signed value={h.worst.ret} title={tip}>
+                  {worst}
+                </Signed>{" "}
+                /{" "}
+                <Signed value={h.best.ret} title={tip}>
+                  {best}
+                </Signed>
               </>
             }
             sub={`${monthYear(h.worst.date)} · ${monthYear(h.best.date)}`}

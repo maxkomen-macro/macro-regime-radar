@@ -143,6 +143,17 @@ test.describe("desk v2", () => {
     const backdrop = page.getByRole("region", { name: "A month later, by economic backdrop" });
     await expect(backdrop).toContainText("Typical 10-year Treasury yield move after the setup");
     await expect(backdrop).toContainText("+12 bp");
+    await expect(page.locator('[title="log return, ×100"]')).toHaveCount(0);
+  });
+
+  test("a log-return study prints 100 × native, and every such number carries the tooltip \"log return, ×100\" (§1.9)", async ({ page }) => {
+    await open(page, "/desk/event-study?preset=gold-2sigma-spx-weak");
+    const answer = page.getByRole("region", { name: "The answer" });
+    await expect(answer).toContainText("+3.1%");
+    await expect(answer.locator('[title="log return, ×100"]', { hasText: "+3.1%" })).toHaveCount(1);
+    await expect(page.getByRole("complementary", { name: "Verdict and detail" }).locator('[title="log return, ×100"]', { hasText: "−1.6 to +4.1 pts" })).toHaveCount(1);
+    await open(page, "/desk/signal-ledger");
+    await expect(page.getByRole("table").locator('[title="log return, ×100"]').first()).toBeVisible();
   });
 
   test("overview: the four tiles carry their Live badges and read the fixture", async ({ page }) => {

@@ -18,7 +18,7 @@ import type { DeskPage } from "../desk-sections";
 import { dayLong, pctPlain, year } from "../kit/format";
 import { Awaiting, Signed, Unserved, useUnserved } from "../kit/ui";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
-import { isUnit, moveText, scaleOf } from "../event-study/units";
+import { isUnit, moveText, scaleOf, tipOf } from "../kit/units";
 import "./client.css";
 
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -98,7 +98,7 @@ function Backdrop({ s, failed }: { s: StudyResponse | undefined; failed: boolean
                   {/* A move that rounds to zero in its unit draws no sliver of a bar. */}
                   {b && v && unit && Math.abs(v * scaleOf(unit)) >= 0.05 ? <span className="cv-bar" aria-hidden="true" data-tone={v < 0 ? "red" : "green"} style={{ left: b.left, width: b.width }} /> : null}
                   {b ? (
-                    <span className="cv-val" style={{ left: b.label }}>
+                    <span className="cv-val" style={{ left: b.label }} title={tipOf(unit)}>
                       {moveText(v, unit)}
                     </span>
                   ) : (
@@ -160,7 +160,12 @@ export default function ClientView({ page }: { page: DeskPage }) {
           <div className="cv-main">
             <p className="dk-stat-label">{setupLabel(s)}</p>
             <h1 className="cv-headline">{s?.client?.headline ?? "What has happened after this setup"}</h1>
-            {s?.client?.summary ? <p className="cv-summary">{s.client.summary}</p> : thin ? <p className="cv-summary">{thin}</p> : s || failed ? <Awaiting className="cv-summary-await" /> : null}
+            {s?.client?.summary ? (
+              // The served summary carries the h = 20 median and baseline (§12.2): a log study's sentence carries the §1.9 tooltip.
+              <p className="cv-summary" title={tipOf(s.question?.target_unit)}>
+                {s.client.summary}
+              </p>
+            ) : thin ? <p className="cv-summary">{thin}</p> : s || failed ? <Awaiting className="cv-summary-await" /> : null}
             <div className="cv-stats">
               <StatCard label="Episodes" state={state(!!s && fin(s.n_events))}>
                 <p className="cv-stat-value">{s?.n_events}</p>
@@ -181,9 +186,17 @@ export default function ClientView({ page }: { page: DeskPage }) {
                 {month && fin(month.median) ? (
                   <>
                     <p className="cv-stat-value">
-                      <Signed value={month.median}>{moveText(month.median, s?.question?.target_unit)}</Signed>
+                      <Signed value={month.median} title={tipOf(s?.question?.target_unit)}>
+                        {moveText(month.median, s?.question?.target_unit)}
+                      </Signed>
                     </p>
-                    <p className="cv-stat-sub">{moveText(month.baseline_median, s?.question?.target_unit) ? `vs ${moveText(month.baseline_median, s?.question?.target_unit)} ordinary` : ""}</p>
+                    <p className="cv-stat-sub">
+                      {moveText(month.baseline_median, s?.question?.target_unit) ? (
+                        <>
+                          vs <span title={tipOf(s?.question?.target_unit)}>{moveText(month.baseline_median, s?.question?.target_unit)}</span> ordinary
+                        </>
+                      ) : null}
+                    </p>
                   </>
                 ) : null}
               </StatCard>

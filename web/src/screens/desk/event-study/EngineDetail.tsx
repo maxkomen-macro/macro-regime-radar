@@ -19,7 +19,7 @@ import { dayLong, grouped, isFiniteNumber as fin, pctPlain } from "../kit/format
 import { Awaiting, verdictLabel } from "../kit/ui";
 import { factsLine, fmtInterval, fmtMove, fmtZ, historyLine, missingForwardWord } from "./format";
 import { apiParams, type Ask } from "./question";
-import { moveText } from "./units";
+import { LOG_TIP, moveText, tipOf } from "../kit/units";
 
 /** The engine's per-horizon fact about zero, in words (its exclusion field). */
 export function engineZeroWords(e: EventStudyHorizon["exclusion"]): string {
@@ -31,6 +31,8 @@ export function engineZeroWords(e: EventStudyHorizon["exclusion"]): string {
 
 function EngineTables({ study }: { study: EventStudyResponse }) {
   const unit = study.target.unit === "bp" ? "bp" : "%";
+  // The engine's percent is 100 × a log change (§1.9): every such cell carries the tooltip.
+  const tip = unit === "%" ? LOG_TIP : undefined;
   return (
     <div className="es-engine">
       <p className="es-prov">{study.label}</p>
@@ -56,10 +58,10 @@ function EngineTables({ study }: { study: EventStudyResponse }) {
               <th scope="row">{h.h}</th>
               <td>{h.n}</td>
               <td>{h.n_blocks ?? "—"}</td>
-              <td>{fmtMove(h.median, unit)}</td>
-              <td>{fmtMove(h.baseline_median, unit)}</td>
-              <td>{fmtMove(h.delta, unit)}</td>
-              <td>{fmtInterval(h.ci90, unit) ?? "fewer than five blocks"}</td>
+              <td title={fin(h.median) ? tip : undefined}>{fmtMove(h.median, unit)}</td>
+              <td title={fin(h.baseline_median) ? tip : undefined}>{fmtMove(h.baseline_median, unit)}</td>
+              <td title={fin(h.delta) ? tip : undefined}>{fmtMove(h.delta, unit)}</td>
+              <td title={h.ci90 ? tip : undefined}>{fmtInterval(h.ci90, unit) ?? "fewer than five blocks"}</td>
               <td className="es-zero">{engineZeroWords(h.exclusion)}</td>
             </tr>
           ))}
@@ -87,7 +89,7 @@ function EngineTables({ study }: { study: EventStudyResponse }) {
               <td>{fmtZ(e.z)}</td>
               {study.horizons.map((h) => {
                 const v = e.forward[String(h.h)];
-                return <td key={h.h}>{v == null ? missingForwardWord(e, h.h) : fmtMove(v, unit)}</td>;
+                return <td key={h.h} title={fin(v) ? tip : undefined}>{v == null ? missingForwardWord(e, h.h) : fmtMove(v, unit)}</td>;
               })}
             </tr>
           ))}
@@ -153,7 +155,9 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
                     <td>{e.regime}</td>
                     {[e.ret_5, e.ret_10, e.ret_20, e.ret_60].map((v, i) => (
                       // Each move in the study's target unit (Codex R-02); none without it.
-                      <td key={i}>{fin(v) ? (moveText(v, study.question.target_unit) ?? "Awaiting refresh") : "no observation"}</td>
+                      <td key={i} title={fin(v) && moveText(v, study.question.target_unit) ? tipOf(study.question.target_unit) : undefined}>
+                        {fin(v) ? (moveText(v, study.question.target_unit) ?? "Awaiting refresh") : "no observation"}
+                      </td>
                     ))}
                   </tr>
                 ))}
@@ -173,7 +177,7 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
               {study.horizons.map((h) => (
                 <li key={h.h}>
                   <span>{h.label}</span>
-                  <span className="es-range-pts">{!fin(h.ci_lo_pts) || !fin(h.ci_hi_pts) ? "Awaiting refresh" : h.ci_lo_pts > 0 || h.ci_hi_pts < 0 ? "clears zero" : "includes zero"}</span>
+                  <span className="es-range-pts">{!fin(h.ci_lo) || !fin(h.ci_hi) ? "Awaiting refresh" : h.ci_lo > 0 || h.ci_hi < 0 ? "clears zero" : "includes zero"}</span>
                   <span>{verdictLabel(h.verdict)}</span>
                 </li>
               ))}

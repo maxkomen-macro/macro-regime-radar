@@ -148,7 +148,11 @@ describe("the response boundary", () => {
     const t = tryRead({ ...technicals, rsi_word: "extreme", move_20d_word: 3 }, "/technicals") as Record<string, unknown>;
     expect("rsi_word" in t).toBe(false);
     expect("move_20d_word" in t).toBe(false);
-    for (const u of ["pct", "bp", "px"]) expect((tryRead({ ...study, question: { ...study.question, target_unit: u } }, "/study") as { question: { target_unit: string } }).question.target_unit).toBe(u);
+    // §1.9: the three native units and the two display units pass; frame-3's old "pct" and "px" are removed.
+    for (const u of ["log_return", "log_change", "bp"]) expect((tryRead({ ...study, question: { ...study.question, target_unit: u } }, "/study") as { question: { target_unit: string } }).question.target_unit).toBe(u);
+    for (const u of ["pct", "px"]) expect("target_unit" in (tryRead({ ...study, question: { ...study.question, target_unit: u } }, "/study") as { question: object }).question).toBe(false);
+    for (const u of ["percent", "bp"]) expect((tryRead({ ...study, question: { ...study.question, display_unit: u } }, "/study") as { question: { display_unit: string } }).question.display_unit).toBe(u);
+    expect("display_unit" in (tryRead({ ...study, question: { ...study.question, display_unit: "log_return" } }, "/study") as { question: object }).question).toBe(false);
   });
 
   it("a hedge structure's legs are one fact, and its range needs both ends (Codex R-06)", () => {

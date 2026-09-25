@@ -17,10 +17,11 @@ import type { LedgerRow, OverviewResponse, OverviewTiles, PositionCompact, Since
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { capitalize, dayLong, dayShort, isFiniteNumber as fin, monthShort, monthYear, num, oneIn, pct, pctPlain, pts, utcTime, year } from "../kit/format";
+import { capitalize, dayLong, dayShort, isFiniteNumber as fin, monthShort, monthYear, num, oneIn, pctPlain, pts, utcTime, year } from "../kit/format";
 import { Awaiting, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
+import { moveText, tipOf } from "../kit/units";
 import "./overview.css";
 
 /** The since-last-close items (§2), in the spec's order. A vol change that
@@ -202,12 +203,12 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
           · S&amp;P up <b>{pctPlain(row.up_pct)}</b> of the time
         </>
       ) : null}
-      {ok(row.median) ? (
+      {ok(row.median) && moveText(row.median, row.target_unit ?? undefined) ? (
         <>
           {" "}
           · <span className="dk-nowrap">20-day</span> median{" "}
-          <Signed value={row.median} bold>
-            {pct(row.median)}
+          <Signed value={row.median} bold title={tipOf(row.target_unit ?? undefined)}>
+            {moveText(row.median, row.target_unit ?? undefined)}
           </Signed>
           {ok(row.vs_normal_pts) ? ` (${pts(row.vs_normal_pts)} vs normal)` : ""}
         </>

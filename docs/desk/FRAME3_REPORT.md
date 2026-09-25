@@ -2257,6 +2257,71 @@ mutations each fail a new test. Findings:
 The fixes were checked by the four gates and the tests above, not by a
 second verifier round.
 
+### Phase 2, item 2: units — `frame-3: align 2 units`
+
+**What changed.** A target move is served native in `question.target_unit`
+(`log_return`, `log_change` or `bp`) with `question.display_unit`
+(`percent` or `bp`), and every Ledger row carries the same pair (§1.9,
+§12.2, §12.5). `kit/units.ts` is main's linear log display, kept in the kit as the one display rule every tab uses: a log
+return or log change prints as 100 × native with a % sign (0.031 → +3.1%,
+never exponentiated), basis points print as served, and an unknown or absent
+unit prints no move at all. Every log number carries the tooltip "log
+return, ×100" (a `title`, or an SVG `<title>` in the chart); bp numbers carry
+none. The interval `ci_lo`/`ci_hi` is native and bounds Δ = median −
+baseline median: the rail's range prints it scaled ("−1.6 to +4.1 pts",
+"−10 to +40 bp"), and the chart's whisker runs from `baseline_median + ci_lo`
+to `baseline_median + ci_hi` in native units, then takes the same scale. The
+answer card, the rail, the Advanced panel (the study's events and the
+engine's tables, whose percent is the engine's 100 × log), the Client view,
+and the Ledger, Overview and Technicals rows (their h = 20 medians, now in
+each row's own unit, so a yield target prints bp) all go through it. The old
+`pct`/`px` units and `ci_lo_pts`/`ci_hi_pts` are gone. Technicals' `chg_1d`,
+`ret_1y`, `vs_ma50` and `vs_ma200` are unchanged: simple-return and
+level-ratio fractions, × 100, no tooltip (B-04). The fixtures serve the new
+fields (the study's intervals ÷ 100 into native units; the Ledger and
+Overview rows `log_return`/`percent`); the bp test study serves
+`bp`/`bp`.
+
+**Tests.** `kit/units.test.ts` (100 × native, no exponentiation at 0.5 →
++50.0%, both log units, bp never a percent, the whisker from baseline + ci
+then scaled, a difference in pts or bp, the tooltip on log units only, `pct`/`px`/`percent` refused as
+target units); `api.test.tsx` (the schema keeps the three target units and
+two display units, and drops the old ones); `EventStudyPage.test.tsx` (the
+log study's numbers carry the tooltip in the answer, rail and chart, the
+chart's top tick follows the whisker, the axis's zero untipped, the served
+`why` tipped; a bp study has no tooltip);
+`ClientView.test.tsx` (every log number and the served summary tipped, a bp
+study none);
+`LedgerPage.test.tsx` (a row in bp prints bp, a row without a unit prints a
+dash, a log row carries the tooltip). Browser: a log study's median and
+range carry the tooltip on Event Study and the Ledger; a bp study shows none.
+
+**Against the PNGs.** No visible change: the numbers print as before
+(+3.1%, −1.6 to +4.1 pts) and the tooltip shows only on hover. The Event
+Study compare shot is regenerated: its chart whiskers and the line without
+the condition moved by sub-pixel anti-aliasing (the whisker is now computed
+in native units before scaling, and the median in that line is its own
+element for its tooltip); the other eleven shots are pixel-identical.
+
+Verifier (one round): **PASS**, with one should-fix and five nits:
+- V2-1 (should-fix) the served `why` and `client.summary` carry log
+  numbers in words with no tooltip. **Fixed:** a log study's `why` and
+  summary carry it.
+- V2-2 "vs normal" and "normal month" ignore the row's unit: **left for
+  item 5**, which replaces them with each row's served baseline.
+- V2-3 `diffText` untested. **Fixed:** tested ("+1.8 pts", "+6 bp").
+- V2-4 the axis's zero and the engine table's dashes carried the tooltip.
+  **Fixed.**
+- V2-5 the unit rule lived under Event Study while four tabs import it.
+  **Fixed:** moved to `kit/units.ts`.
+- V2-6 the browser bp test does not re-serve `/study/events`: covered by
+  the unit test that serves the bp events list to the Advanced table.
+- V2-7 (outside this item) the RSI card's "S&P +1.1% a month later", the
+  RSI rows' units, and the Regime blocks' S&P numbers are items 7 and 12.
+
+The fixes were checked by the four gates and the tests above; the twelve
+compare shots re-shot after them are identical.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -2283,6 +2348,7 @@ tests against the fixture dev server.
 | frame-3: codex-4 dates-levels | clean | 117 / 1,375 | ok | 48 / 48 |
 | frame-3: spec fold v2–v4 | docs only | — | — | — |
 | frame-3: align 1 envelope | clean | 118 / 1,403 | ok | 50 / 50 |
+| frame-3: align 2 units | clean | 118 / 1,409 | ok | 51 / 51 |
 
 ## Finish
 

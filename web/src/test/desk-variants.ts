@@ -8,15 +8,15 @@ import studyEvents from "../fixtures/desk/study-events.json" with { type: "json"
 
 /** The gold study re-served with the 10-year yield as its target, every move in basis points. */
 export function bpStudy(): Record<string, unknown> {
-  const bpH: Record<number, { median: number; baseline_median: number; ci_lo_pts: number; ci_hi_pts: number }> = {
-    5: { median: 8, baseline_median: 1, ci_lo_pts: -6, ci_hi_pts: 18 },
-    10: { median: 12, baseline_median: 2, ci_lo_pts: -8, ci_hi_pts: 26 },
-    20: { median: 25, baseline_median: 5, ci_lo_pts: -10, ci_hi_pts: 40 },
-    60: { median: 30, baseline_median: 12, ci_lo_pts: -25, ci_hi_pts: 45 },
+  const bpH: Record<number, { median: number; baseline_median: number; ci_lo: number; ci_hi: number }> = {
+    5: { median: 8, baseline_median: 1, ci_lo: -6, ci_hi: 18 },
+    10: { median: 12, baseline_median: 2, ci_lo: -8, ci_hi: 26 },
+    20: { median: 25, baseline_median: 5, ci_lo: -10, ci_hi: 40 },
+    60: { median: 30, baseline_median: 12, ci_lo: -25, ci_hi: 45 },
   };
   return {
     ...study,
-    question: { ...study.question, target: "us10y", target_unit: "bp", target_label: "10-year Treasury yield" },
+    question: { ...study.question, target: "us10y", target_unit: "bp", display_unit: "bp", target_label: "10-year Treasury yield" },
     horizons: study.horizons.map((h) => ({ ...h, ...bpH[h.h], ...(h.h === 20 ? { worst: { ret: -30, date: "2020-03-09" }, best: { ret: 60, date: "2025-04-16" } } : {}) })),
     by_regime: study.by_regime.map((r) => ({ ...r, median: r.median == null ? null : ({ Goldilocks: 12, "Recession Risk": 20 } as Record<string, number>)[r.regime] })),
     last_events: study.last_events.map((e, i) => ({ ...e, ret_20: [30, -15, 22, 5, 18][i] ?? 10 })),

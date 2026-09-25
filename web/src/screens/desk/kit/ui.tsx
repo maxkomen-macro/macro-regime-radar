@@ -347,9 +347,9 @@ export function Awaiting({ children, className }: { children?: ReactNode; classN
 }
 
 /** A signed number in its direction's color: green up, red down (§1.3). */
-export function Signed({ value, children, bold }: { value: number; children: ReactNode; bold?: boolean }) {
+export function Signed({ value, children, bold, title }: { value: number; children: ReactNode; bold?: boolean; title?: string }) {
   return (
-    <span className={cx("dk-signed", bold && "dk-b")} data-tone={value > 0 ? "up" : value < 0 ? "down" : "flat"}>
+    <span className={cx("dk-signed", bold && "dk-b")} data-tone={value > 0 ? "up" : value < 0 ? "down" : "flat"} title={title}>
       {children}
     </span>
   );
