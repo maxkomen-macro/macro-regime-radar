@@ -328,19 +328,26 @@ def test_pipeline_ddl_is_the_static_file_verbatim_as_text():
 
 
 def test_nothing_under_web_imports_a_sql_file():
-    """R-02: the fixture is generated from the file, never imported as a module."""
-    pattern = re.compile(r"""(?:\bimport\s[^;]*?\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"][^'"]+\.sql(?:\?[^'"]*)?['"]""")
-    hits = []
-    for base in (ROOT / "web" / "src", ROOT / "web" / "scripts"):
-        if not base.exists():
+    """R-02: the DDL fixture is generated from the file (web/scripts/gen-ddl-fixture.mjs),
+    never imported as a module, anywhere in web/: sources, scripts, configs, a Vite
+    `?raw` import, an `import.meta.glob` of a .sql path."""
+    pattern = re.compile(r"""(?:\bimport\s[^;]*?\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|import\.meta\.glob[^(]*\(\s*)['"][^'"]+\.sql(?:\?[^'"]*)?['"]""")
+    skip = {"node_modules", "dist", "test-results", "playwright-report", ".vite"}
+    hits, scanned = [], 0
+    for f in (ROOT / "web").rglob("*"):
+        if skip & set(f.relative_to(ROOT / "web").parts) or not f.is_file():
             continue
-        for f in base.rglob("*"):
-            if f.suffix in (".ts", ".tsx", ".js", ".mjs", ".cjs", ".jsx") and "node_modules" not in f.parts:
-                if pattern.search(f.read_text(errors="replace")):
-                    hits.append(str(f.relative_to(ROOT)))
-    assert hits == []
+        if f.suffix in (".ts", ".tsx", ".js", ".mjs", ".cjs", ".jsx", ".mts", ".cts", ".html"):
+            scanned += 1
+            if pattern.search(f.read_text(errors="replace")):
+                hits.append(str(f.relative_to(ROOT)))
+    assert scanned > 100 and hits == []
+    gen = (ROOT / "web" / "scripts" / "gen-ddl-fixture.mjs").read_text()
+    assert "readFileSync(sqlPath" in gen and 'const SQL = "../../api/static/snowflake_proposed.sql"' in gen, "the generator reads the file"
     assert pattern.search('import ddl from "../api/static/snowflake_proposed.sql?raw";')
     assert pattern.search("const m = await import('./x.sql')") and not pattern.search('a.download = "schema.sql"')
+    assert pattern.search('import.meta.glob("../../api/static/snowflake_proposed.sql", { query: "?raw" })')
+    assert not pattern.search('new URL("../../../../api/static/snowflake_proposed.sql", import.meta.url)')
 
 
 def test_the_image_carries_the_ddl_without_a_new_copy():

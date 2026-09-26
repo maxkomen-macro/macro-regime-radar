@@ -54,7 +54,7 @@ condition and every study with the S&P as its target cannot be read on Sep
 | `positions.json` | The 2s10s sample entered at 40 bp on 2026-09-02 (Q11) and falsified at 15, now 25 | Everything else: sample positions, not anyone's trades |
 | `deferred-regime.json` | Months per regime 27 / 213 / 102 / 21 (counted from the stored history; NEEDS-ENDPOINT) | Every other value (NEEDS-COMPUTATION or NEEDS-ENDPOINT) |
 | `deferred-macro.json`, `vol.json`, `sectors.json` | none | §12.13's deferred shapes with the mockup's values, for the cards built for them: vol with each value's date (`dates`), sectors with breadth's comparison date (`compared_on`), each correlation with its symbol, quantity and transform (illustrative choices). No reads and no words: §12.0 serves a read only with a named rule, and none exists |
-| `baskets.json`, `pipeline-ddl.ts` | none | `baskets.json` is an Export of this browser's store; the DDL is the proposed export schema, its first line saying so; once session B ships `api/static/snowflake_proposed.sql`, the file is generated from it (S-04, R-02) |
+| `baskets.json`, `pipeline-ddl.ts` | none | `baskets.json` is an Export of this browser's store; the DDL is the proposed export schema, its first line saying so, generated from `api/static/snowflake_proposed.sql` (the one copy `/pipeline/ddl` serves) by `web/scripts/gen-ddl-fixture.mjs`; `pipeline-ddl.test.ts` holds it equal to the file byte for byte (S-04, R-02) |
 
 `consistency.test.ts` holds the fixtures to each other (one label per slug,
 one comparison session, the firing rows, the regime lag) and to the audit's
