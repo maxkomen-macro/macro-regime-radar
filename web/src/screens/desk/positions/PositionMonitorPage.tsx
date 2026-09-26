@@ -36,6 +36,7 @@ import { closed90d, exportPositions, importPositions, isOpen, newPositionId, why
 import { saveWords, useLevels, usePositionStore } from "./usePositionStore";
 import { CERTAINTY_WORDS, REPLACEMENTS, context, gateState, replaceFlag, type Flag } from "./wording";
 import "./positions.css";
+import { DroppedNote, droppedWords } from "../kit/ui";
 
 const HORIZONS = [5, 10, 20, 60];
 
@@ -158,11 +159,12 @@ function Expanded({ v, pathTo, onClose }: { v: PositionView; pathTo: (slug: stri
   );
 }
 
-function Monitored({ views, openId, onToggle, pathTo, onClose }: { views: PositionView[]; openId: string | null; onToggle: (id: string) => void; pathTo: (slug: string) => string; onClose: (id: string, type: CloseType, premortemRight: boolean | null) => void }) {
+function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose }: { views: PositionView[]; unreadable?: number; openId: string | null; onToggle: (id: string) => void; pathTo: (slug: string) => string; onClose: (id: string, type: CloseType, premortemRight: boolean | null) => void }) {
   const uid = useId();
-  // The deployed share is a sum of sizes, printed only when every row has one (P-11).
+  // The deployed share is a sum of sizes, printed only when every row has one (P-11) and every kept
+  // position could be read: an unreadable one may be open, so no total is claimed (Codex R-16).
   const sized = views.every((r) => typeof r.size_nav === "number" && Number.isFinite(r.size_nav));
-  const deployed = sized ? views.reduce((a, r) => a + (r.size_nav as number), 0) : null;
+  const deployed = sized && !unreadable ? views.reduce((a, r) => a + (r.size_nav as number), 0) : null;
   return (
     <section className="dk-card pm-mon" aria-labelledby="pm-mon-title">
       <h2 className="dk-card-title" id="pm-mon-title">
@@ -177,6 +179,8 @@ function Monitored({ views, openId, onToggle, pathTo, onClose }: { views: Positi
             </MonitoredRow>
           ))}
         </ul>
+      ) : unreadable ? (
+        <p className="dk-await">{`No readable open position; ${droppedWords(unreadable, "kept position").replace(/\.$/, "")}.`}</p>
       ) : (
         <p className="dk-await">No open positions in this browser.</p>
       )}
@@ -184,32 +188,42 @@ function Monitored({ views, openId, onToggle, pathTo, onClose }: { views: Positi
         <p className="pm-note">
           Sorted by room left · room = distance to the level as a share of the room at entry, same scale for every trade · size as % of NAV ·{" "}
           {deployed != null ? `${Math.round(deployed * 1000) / 10}% deployed, ` : ""}
-          {views.length} position{views.length === 1 ? "" : "s"} · click a row for the gate text
+          {unreadable ? (
+            <>{`${views.length} readable position${views.length === 1 ? "" : "s"}`} · click a row for the gate text</>
+          ) : (
+            <>
+              {views.length} position{views.length === 1 ? "" : "s"} · click a row for the gate text
+            </>
+          )}
         </p>
       ) : null}
+      {views.length ? <DroppedNote n={unreadable} one="kept position" /> : null}
     </section>
   );
 }
 
 function Closed({ store }: { store: PositionStore }) {
   const c = closed90d(store, new Date());
+  // A kept record this browser cannot read may hold close events, so no count is claimed (Codex R-16).
+  const lost = store.unreadable.length;
   return (
     <section className="dk-card pm-closed" aria-label="Closed in the last 90 days">
       <p className="dk-stat-label">Closed · last 90d</p>
       <dl>
         <div>
           <dt>Falsified on level</dt>
-          <dd>{c.falsified}</dd>
+          <dd>{lost ? "—" : c.falsified}</dd>
         </div>
         <div>
           <dt>Expired at horizon</dt>
-          <dd>{c.expired}</dd>
+          <dd>{lost ? "—" : c.expired}</dd>
         </div>
         <div>
           <dt>Pre-mortem was right</dt>
-          <dd data-tone="amber">{`${c.premortem_right[0]} of ${c.premortem_right[1]}`}</dd>
+          <dd data-tone={lost ? undefined : "amber"}>{lost ? "—" : `${c.premortem_right[0]} of ${c.premortem_right[1]}`}</dd>
         </div>
       </dl>
+      <DroppedNote n={lost} one="kept position" />
     </section>
   );
 }
@@ -624,7 +638,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
           </section>
         </div>
         <div className="pm-right">
-          <Monitored views={views} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} />
+          <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} />
           <Closed store={store} />
           <StoreCard store={store} onImport={onImport} />
         </div>

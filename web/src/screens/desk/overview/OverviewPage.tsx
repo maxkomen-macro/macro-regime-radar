@@ -300,8 +300,9 @@ function Monitored({ pathTo }: { pathTo: (slug: string) => string }) {
         </h2>
       </div>
       <div className="dk-card-body">
-        <MonitoredRows rows={rows} onOpen={(id) => navigate(withParam(pathTo("position-monitor"), "open", id))} />
+        <MonitoredRows rows={rows} unreadable={store.unreadable.length} onOpen={(id) => navigate(withParam(pathTo("position-monitor"), "open", id))} />
         {rows.length ? <p className="ov-mon-note">{MONITORED_NOTE}</p> : null}
+        {rows.length ? <DroppedNote n={store.unreadable.length} one="kept position" /> : null}
         <div className="ov-mon-act">
           <Link className="dk-btn" data-kind="light" to={pathTo("position-monitor")}>
             Act on this → Position Monitor

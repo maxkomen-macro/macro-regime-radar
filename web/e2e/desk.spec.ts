@@ -696,7 +696,7 @@ test.describe("desk v2", () => {
     for (const route of ["/desk/overview?view=client", "/desk/event-study?preset=gold-2sigma-spx-weak&view=client"]) {
       await open(page, route);
       // §12.2 (item 14): the client headline is the catalog client_label.
-      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold jumps while the S&P is weak");
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold jumps over a month while the S&P is weak");
       await expect(page.getByRole("region", { name: "A month later, by economic backdrop" }).getByRole("listitem")).toHaveCount(4);
       await expect(page.getByRole("main")).toContainText("Radar · FRED, Yahoo Finance · as of Sep 24, 2026 · Past patterns do not guarantee future results.");
       await expect(page.locator("main .dk-pill")).toHaveCount(0);
@@ -720,7 +720,7 @@ test.describe("desk v2", () => {
       { h: 20, regime: "Recession Risk", n: 12, up_pct: 0.83, median: 0.035 },
     ];
     await open(page, "/desk/overview?view=client", { "/api/desk/study": { status: 200, body: { ...study, by_regime } } });
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold jumps while the S&P is weak");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold jumps over a month while the S&P is weak");
     await page.emulateMedia({ media: "print" });
     await expect(page.getByRole("complementary", { name: "Sidebar" })).toBeHidden();
     await expect(page.getByRole("button", { name: "Export one-pager (PDF)" })).toBeHidden();

@@ -3839,6 +3839,113 @@ shots were re-shot after them and matched.
 - If you have Codex round 2's own report, its repros can be run against
   this commit as they stand.
 
+### Phase 2, item 15: the gold label and Codex's repros — `frame-3: align 15 label and codex-2 repros`
+
+The client labels are approved as listed in item 14 with one change, and
+Codex round 2's own repros are run and closed, in one commit.
+
+**1. The gold label.** `gold-2sigma-spx-weak`'s `client_label` is now "Gold
+jumps over a month while the S&P is weak", which names the 20-session window
+as the other twelve do (this replaces the draft in item 14's table; V14-11).
+Changed in §12.3, the fixture builder's table, `study-catalog.json`,
+`study.json` (`client.headline`), `desk-variants.ts`, `ClientView.test.tsx`,
+`e2e/desk.spec.ts` and compare shot 12. The other twelve stand. The longer
+title left "weak" alone on its second line at 1440, where the approved PNG's
+two lines are even; the Client title now balances its lines
+(`text-wrap: balance` on `.cv-headline`).
+
+**2. Codex round 2's repros.** Codex's report (against `7bb2a3e`) is now in
+hand. Each repro is a test in
+`web/src/screens/desk/codex-round2-codex.test.tsx`, as Codex states it, with
+its expectation turned into the assertion. R-16's positions half used a
+positions fixture the API served; item 10 moved positions to this browser's
+store, so the same collection (`positions[0].instrument = null`) runs through
+a seeded store and through Import JSON. Its active-signals half runs against
+/overview. Three tests marked "extends" are mine, not Codex's: they carry
+R-16 to the other position surfaces. Each test was run at the commit before
+item 14 (`54510e8`), at item 14 (`8fa4dea`) and at this commit:
+
+| Finding | Repro | `54510e8` | `8fa4dea` | this commit | Closed by |
+|---|---|---|---|---|---|
+| R-16 | Codex: positions, seeded store | fails | fails | passes | this commit |
+| R-16 | Codex: positions, Import JSON | fails | fails | passes | this commit |
+| R-16 | Codex: every active signal's label null, /overview | fails | passes | passes | item 14 (`8fa4dea`) |
+| R-16 | extends: Position Monitor with no readable open position | fails | fails | passes | this commit |
+| R-16 | extends: a closed record unreadable, 90-day strip | fails | fails | passes | this commit |
+| R-16 | extends: Overview monitored rows | fails | fails | passes | this commit |
+| R-17 | Codex: `firing_now` deleted | passes | passes | passes | item 9 (`2d179e2`) |
+| R-18 | Codex: `h: 20` row removed, horizon 20 kept | passes | passes | passes | item 3 (`d3f07a3`) |
+| R-19 | Codex: `without_condition` deleted | passes | passes | passes | item 1 (`f19d52d`) |
+| R-20 | Codex: `decimal(1e-21)`, `decimal(2e-21)` | fails | passes | passes | item 14 (`8fa4dea`) |
+
+So, per finding, against Codex's own repros: **R-16's positions half passed
+only after this commit's fix.** R-16's active-signals half and R-20 passed
+before it, from item 14's fixes. R-17, R-18 and R-19 passed before item 14.
+My eighteen repros in `codex-round2.test.tsx` pass at `8fa4dea` and at this
+commit.
+- **R-16, positions: still reproduced at `8fa4dea`.** The store keeps a record
+  it cannot read aside (item 10), and the "Positions kept in this browser"
+  card says so, but the Monitored card still totalled the two it could read
+  ("8% deployed", "2 positions"), and the Closed · last 90d strip counted
+  only the readable records' close events. **Changed:** while a kept
+  position cannot be read:
+  - The Monitored footer prints no deployed share and says "2 readable
+    positions". Under it the note reads "1 kept position could not be read.",
+    in the same sans note the Overview uses (`DroppedNote`). With none
+    readable, the card says "No readable open position; 1 kept position could
+    not be read." where it said "No open positions in this browser.".
+  - The strip's three counts read "—", with the same note.
+  - The Overview's monitored rows carry the note. With none readable, they
+    say "No readable position is monitored; 1 kept position could not be
+    read." where they said "No positions are monitored in this browser.".
+  - The spec says so in three places: §1.8 (while one is kept, no total and
+    no empty state is drawn from the readable records alone), §2 (the
+    Overview's rows) and §9 (the footer, the strip and the empty list).
+- **R-17.** Codex suggests "Awaiting refresh"; §4 says the pill prints
+  nothing when `firing_now` is null, which is what the page does, and Codex's
+  check (no "Not firing today") passes. The fixture has been stale since item
+  12, and a stale study's pill never reaches the firing branch. Both R-17
+  tests now serve `stale: false`, so they reach the branch Codex hit. With the
+  null guard removed, both tests fail.
+- **R-18.** The answer card's statistics read "Awaiting refresh" under the
+  month's labels; the chart below still draws each horizon it was served.
+
+Tests: `codex-round2-codex.test.tsx` (ten), `codex-round2.test.tsx` (the R-17
+test now serves `stale: false`).
+
+**Against the PNGs.**
+- 12 Client view: "Gold jumps over a month while the S&P is weak", on two
+  balanced lines, where the PNG has a question. §11 and §12.3, as approved.
+- The other eleven shots re-shoot pixel-identical to the committed ones; the
+  sample stores have no unreadable record.
+
+Verifier (one round): **FAIL**, one should-fix and six nits. It found the
+label change complete (only item 14's history keeps the draft), Codex's
+repros encoded faithfully, and no sideways scroll, clipping or off-palette
+colour at 1440, 1101 and 390 on Position Monitor, the Overview and the Client
+view. All fixed:
+- V15-1 (should-fix) the Closed · last 90d strip counted only the readable
+  records. **Fixed** (above).
+- V15-2 (nit) the R-17 repro could not reach the branch Codex hit, since the
+  fixture is stale. **Fixed:** `stale: false`, in both files; a mutation of
+  the pill's guard now fails both.
+- V15-3 (nit) the before/after table missed that the Overview monitored test
+  also fails at both earlier commits, and did not mark it as my extension.
+  **Fixed** (the table above).
+- V15-4 (nit) the loss sentence sat in the mono 11px footer. **Fixed:** the
+  footer keeps the count; the sentence is a sans `DroppedNote` with
+  `role="status"`.
+- V15-5 (nit) no spec sentence covered unreadable positions. **Fixed:** §1.8,
+  §2, §9.
+- V15-6 (nit) the new Position Monitor empty state had no test. **Fixed.**
+- V15-7 (nit) the Client title left one word on its second line at 1440.
+  **Fixed:** `text-wrap: balance`.
+
+Also seen, not item 15: a long monitored row name ("Long AI infrastructure
+basket vs 1.6 × N…") is cut with an ellipsis and has no `title`, so the whole
+name cannot be read on Position Monitor or the Overview (the same in the
+committed shot 08).
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -3878,6 +3985,7 @@ tests against the fixture dev server.
 | frame-3: align 12 fixtures | clean | 122 / 1,465 | ok | 54 / 54 |
 | frame-3: align 13 build-notes | clean | 123 / 1,477 | ok | 54 / 54 |
 | frame-3: align 14 rulings and codex-2 fixes | clean | 121 / 1,475 | ok | 54 / 54 |
+| frame-3: align 15 label and codex-2 repros | clean | 122 / 1,485 | ok | 54 / 54 |
 
 ## Finish
 
@@ -3923,6 +4031,16 @@ that tip: typecheck clean; unit 121 files / 1,475 tests; build ok; Desk
 browser tests 54 / 54. Of the list below, the Client title, the Regime
 reading, the frame-2 panel, the bridge title and the headline size are now
 settled by your rulings; the 13 client labels wait on your approval.
+
+After item 15 (above): the tip is the commit that carries this report,
+`frame-3: align 15 label and codex-2 repros` (parent `8fa4dea frame-3: align
+14 rulings and codex-2 fixes`), local only. Nothing is pushed; only `web/`
+and `docs/desk/` were touched. Your notes file and SVGs, `CLAUDE.md`, and the
+Python tests and script that read the frame-2 fixtures are left for the
+merge. The 13 client labels are approved, the gold one as you rewrote it.
+Codex round 2's own repros all pass; R-16's positions half passed only after
+this commit. Gate summary at that tip: typecheck clean; unit 122 files /
+1,485 tests; build ok; Desk browser tests 54 / 54.
 
 For Max, from the fold and alignment:
 - **Spec conflicts to settle:** §12.2 makes the Client title the catalog

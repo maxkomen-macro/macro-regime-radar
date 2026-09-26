@@ -222,7 +222,9 @@ served`. The `MOCKUP · values illustrative` amber badge is NOT built.
 Saved questions, baskets and positions live in `localStorage` per browser,
 each under a versioned key with an Export / Import JSON control. No accounts.
 Positions are validated on save, on import and on load; a record that fails
-is kept in an "unreadable" list the page shows, never dropped (§9).
+is kept in an "unreadable" list the page shows, never dropped (§9). While one
+is kept, no total and no empty state is drawn from the readable records alone
+(Codex round 2, R-16).
 
 ### 1.9 Units and display
 - `question.target_unit` ∈ `log_return` | `log_change` | `bp`;
@@ -294,8 +296,10 @@ Rows from the browser's position store (§9), sorted by `room_pct` ascending,
 null last, then id; row = name · `N% NAV` · `P% room · X to level` (green if
 room ≥ 50%, amber if < 30%) · bar · `▸`; a manual position prints "manual"
 in the room cell and an empty bar. Footer `Sorted by room left · same scale
-for every trade · size as % of NAV · click a row for the gate text`. Button
-**Act on this → Position Monitor**.
+for every trade · size as % of NAV · click a row for the gate text`. While a
+kept record cannot be read (§1.8), the rows carry "<n> kept position(s) could
+not be read." and no rows read "No readable position is monitored; <n> kept
+position(s) could not be read." Button **Act on this → Position Monitor**.
 
 ---
 
@@ -630,7 +634,11 @@ links `Open the study behind it →` (a study subject) and **Close…**. Footer
 entry, same scale for every trade · size as % of NAV · <deployed>% deployed,
 <n> positions · click a row for the gate text`. CLOSED · LAST 90D strip:
 Falsified on level · Expired at horizon · Pre-mortem was right `<yes> of
-<judged>`. Export / Import JSON of the store.
+<judged>`. While a kept record cannot be read (§1.8), the footer prints no
+deployed share and says `<n> readable positions`, the strip's counts read
+"—", each says "<n> kept position(s) could not be read.", and an empty list
+reads "No readable open position; <n> kept position(s) could not be read."
+Export / Import JSON of the store.
 
 ---
 
@@ -976,7 +984,7 @@ all four horizons):
 
 | slug | label | short | client_label | shock | window | move | while | target | engine query |
 |---|---|---|---|---|---|---|---|---|---|
-| gold-2sigma-spx-weak | Gold +2σ while S&P weak | gold while S&P weak | Gold jumps while the S&P is weak | gold | 20 | up2s | spx_below_50 | spx | preset `gold-2sigma-spx-weak` |
+| gold-2sigma-spx-weak | Gold +2σ while S&P weak | gold while S&P weak | Gold jumps over a month while the S&P is weak | gold | 20 | up2s | spx_below_50 | spx | preset `gold-2sigma-spx-weak` |
 | golden-cross | S&P golden cross | golden cross | The S&P's 50-day average rises above its 200-day | spx | — | cross_above | none | spx | preset `spx-golden-cross` |
 | death-cross | S&P death cross | death cross | The S&P's 50-day average falls below its 200-day | spx | — | cross_below | none | spx | preset `spx-death-cross` |
 | vix-spike-2sigma-5d | VIX spike +2σ, 5 days | VIX spike | Stock-market volatility jumps within a week | vix | 5 | up2s | none | spx | `vix-w5-z2.0-up-none-spx` |

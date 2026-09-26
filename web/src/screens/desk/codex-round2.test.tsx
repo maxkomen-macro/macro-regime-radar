@@ -146,7 +146,7 @@ function catalogWithout(slug: string) {
 
 describe("R-17: a firing status that is not served claims nothing (closed by item 9)", () => {
   it("a study without firing_now prints no firing pill, never 'Not firing today'", async () => {
-    stubDesk({ "/api/desk/study": () => without(study, "firing_now", "firing_day") });
+    stubDesk({ "/api/desk/study": () => without({ ...study, stale: false }, "firing_now", "firing_day") });
     renderTab("/desk/event-study");
     const card = await screen.findByRole("region", { name: "The answer" });
     await waitFor(() => expect(card).toHaveTextContent("● Live"));

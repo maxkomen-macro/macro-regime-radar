@@ -37,7 +37,7 @@ export function bpStudy(): Record<string, unknown> {
     without_condition: { ...study.without_condition, median: 9 },
     client: {
       horizon: 20,
-      headline: "Gold jumps while the S&P is weak",
+      headline: "Gold jumps over a month while the S&P is weak",
       summary: "Looking at 18 episodes since 2001, the 10Y Treasury was higher a month later in 12 of 18, with a typical move of +25 bp against +5 bp in an ordinary month.",
     },
   };

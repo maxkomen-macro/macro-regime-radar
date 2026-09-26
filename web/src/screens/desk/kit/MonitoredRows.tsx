@@ -91,8 +91,12 @@ export function MonitoredRow({
   );
 }
 
-export default function MonitoredRows({ rows, onOpen }: { rows: readonly MonitoredRowData[]; onOpen?: (id: string) => void }) {
-  if (!rows.length) return <p className="dk-await">No positions are monitored in this browser.</p>;
+export default function MonitoredRows({ rows, unreadable = 0, onOpen }: { rows: readonly MonitoredRowData[]; unreadable?: number; onOpen?: (id: string) => void }) {
+  // Codex R-16: with a kept position this browser cannot read, "none" is never claimed.
+  if (!rows.length) {
+    const lost = `${unreadable} kept position${unreadable === 1 ? "" : "s"} could not be read`;
+    return <p className="dk-await">{unreadable ? `No readable position is monitored; ${lost}.` : "No positions are monitored in this browser."}</p>;
+  }
   return (
     <ul className="dk-mon-list">
       {sortByRoom(rows).map((r) => (

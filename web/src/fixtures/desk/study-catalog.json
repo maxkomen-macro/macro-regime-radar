@@ -6,7 +6,7 @@
    "slug": "gold-2sigma-spx-weak",
    "label": "Gold +2σ while S&P weak",
    "short": "gold while S&P weak",
-   "client_label": "Gold jumps while the S&P is weak",
+   "client_label": "Gold jumps over a month while the S&P is weak",
    "available": true,
    "unavailable": null,
    "question": {

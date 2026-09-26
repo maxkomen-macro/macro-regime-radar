@@ -85,7 +85,7 @@ describe("Client view", () => {
     renderTab("/desk/overview?view=client");
     // §12.2 (item 14): client.headline is the catalog client_label; "since" is the sample's first year (the audit's §2.3: 2001-09-19).
     // §11 (item 14): the title is the catalog's client_label, in plain words.
-    expect(await screen.findByRole("heading", { level: 1, name: "Gold jumps while the S&P is weak" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Gold jumps over a month while the S&P is weak" })).toBeInTheDocument();
     const main = screen.getByRole("main");
     await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*18\s*since 2001/));
     expect(main).toHaveTextContent("Setup last seen · Apr 16, 2025");
@@ -168,7 +168,7 @@ describe("Client view", () => {
     const { calls } = stubDesk();
     renderTab("/desk/regime?view=client");
     await waitFor(() => expect(calls).toContain("GET /api/desk/study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20"));
-    expect(await screen.findByRole("heading", { level: 1, name: "Gold jumps while the S&P is weak" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Gold jumps over a month while the S&P is weak" })).toBeInTheDocument();
   });
 
   it("a drop draws red from zero, a mixed set shares one scale, all-null prints the words", async () => {
@@ -198,7 +198,7 @@ describe("Client view", () => {
     const main = await screen.findByRole("main");
     await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*6\s*since 2001/));
     // §11: with client null the title is the catalog row's client_label (never the σ label).
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Gold jumps while the S&P is weak");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Gold jumps over a month while the S&P is weak");
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toMatch(/σ/);
     expect(main.querySelector(".cv-summary")).toHaveTextContent(sentence);
     expect(main).toHaveTextContent("Higher a month latertoo few cases to say");
