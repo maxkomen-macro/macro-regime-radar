@@ -168,3 +168,22 @@ def regime_payload(now: datetime) -> dict:
 @router.get("/regime")
 def desk_regime() -> Response:
     return _response(env.answer("/regime", lambda: regime_payload(_now())))
+
+
+# ── GET /macro (§12.8) ──────────────────────────────────────────────────────
+
+def macro_payload() -> dict:
+    """The desk_macro item as it is: nothing in /macro depends on "now"."""
+    item = _result("desk_macro")
+    return {
+        "curve": stored_block(item["curve"]),
+        "credit": stored_block(item["credit"]),
+        "stock_bond": env.block_deferred("/macro", "stock_bond"),
+        "correlations": env.block_deferred("/macro", "correlations"),
+        "matrix": env.block_deferred("/macro", "matrix"),
+    }
+
+
+@router.get("/macro")
+def desk_macro() -> Response:
+    return _response(env.answer("/macro", macro_payload))

@@ -615,6 +615,7 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/pipeline/inventory"): ("/api/desk/pipeline/inventory", 200, None),
     # Desk v2 in the envelope (desk/frame-3-api-b2a): ready, or awaiting blocks, before the first refresh
     ("GET", "/api/desk/regime"): ("/api/desk/regime", 200, None),
+    ("GET", "/api/desk/macro"): ("/api/desk/macro", 200, None),
     # diagnostics, open in development (no DEPLOY_PUBLIC, no CORS_ORIGINS)
     ("GET", "/api/ops/whoami"): ("/api/ops/whoami", 200, None),
     ("GET", "/api/stream/debug"): ("/api/stream/debug", 200, None),

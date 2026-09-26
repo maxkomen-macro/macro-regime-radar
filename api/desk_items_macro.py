@@ -283,3 +283,237 @@ def desk_regime(ctx: dict) -> dict:
         conn.close()
     return {"rows": rows, "recession": part("recession", lambda: recession_block(ctx)),
             "next_prints": prints, "release_times": releases}
+
+
+# ── /macro: the desk_macro item (plan §1.8, N7, N8, R5) ─────────────────────
+
+# §12.8's five tenors, by FRED id. A tenor is read only when the Desk registry
+# (src/desk/series.py) declares it, through the engine's reader; one it does
+# not declare, or whose rows are not stored, is null with a null date.
+TENORS: tuple[tuple[str, str], ...] = (("3m", "DGS3MO"), ("2y", "DGS2"), ("5y", "DGS5"), ("10y", "DGS10"), ("30y", "DGS30"))
+# plan R5: tight < 0.30 ≤ normal < 0.70 ≤ wide on the three-year HY rank; the
+# edges are served on every answer, even when the rank is null (R-14)
+CREDIT_BAND_EDGES = (0.30, 0.70)
+IG_SOURCE = "fred:BAMLC0A0CM"  # IG is stored month-stamped in raw_series; its watermark dates it (S-22)
+
+
+def tenor_levels(conn: sqlite3.Connection) -> dict:
+    """Each tenor's finite stored observations (a pandas Series on the dates),
+    or None when the registry does not declare it or nothing is stored."""
+    import numpy as np
+
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    out: dict = {}
+    for tenor, series_id in TENORS:
+        spec = registry.BY_SERIES_ID.get(series_id)
+        if spec is None or not spec.available:
+            out[tenor] = None
+            continue
+        try:
+            s = es.load_level(conn, spec)
+        except es.NotStored:
+            out[tenor] = None
+            continue
+        s = s[np.isfinite(s.to_numpy(dtype=float))]
+        out[tenor] = s if len(s) else None
+    return out
+
+
+def _snapshot(values: dict, dates: dict, common) -> dict:
+    snap = {tenor: values.get(tenor) for tenor, _ in TENORS}
+    snap["date"] = common.strftime("%Y-%m-%d") if common is not None else None
+    snap["dates"] = {tenor: dates.get(tenor) for tenor, _ in TENORS}
+    return snap
+
+
+def _on(levels: dict, day) -> dict:
+    """Every stored tenor on one common date."""
+    values = {t: float(s.loc[day]) for t, s in levels.items() if s is not None}
+    return _snapshot(values, {t: day.strftime("%Y-%m-%d") for t in values}, day)
+
+
+def _each_at_or_before(levels: dict, bounds: dict) -> dict:
+    """Each stored tenor's newest observation on or before its own bound, with
+    its own date; `date` is null (the snapshot has no common date)."""
+    values, dates = {}, {}
+    for t, s in levels.items():
+        if s is None:
+            continue
+        upto = s[s.index <= bounds[t]]
+        if len(upto):
+            values[t], dates[t] = float(upto.iloc[-1]), upto.index[-1].strftime("%Y-%m-%d")
+    return _snapshot(values, dates, None)
+
+
+def curve(levels: dict) -> dict:
+    """N8 (§12.8; plan N8, S-24, S-29, S-30): the curve today and a month ago.
+
+    - `today.date` is the latest date on which every stored tenor has a
+      value; `month_ago` is the same alignment on or before `today.date` − 1
+      calendar month.
+    - With no such date (disjoint histories), `today.date` is null and each
+      stored tenor carries its own newest observation; `month_ago.date` is
+      null too, each tenor carrying its newest on or before its own `today`
+      date − 1 month (R-18).
+    - With a common `today.date` but no common date a month earlier, only
+      `month_ago` takes that per-tenor form, on or before `today.date` − 1 month.
+    - `today.dates` and `month_ago.dates` name every tenor on every path: the
+      common date, the tenor's own, or null for a tenor not stored or with no
+      observation early enough (R-19, R-20).
+    - The three differences are taken between common dates only: each is null
+      whenever a date it needs is null (S-29), or a tenor it reads is absent."""
+    import pandas as pd
+
+    stored = {t: s for t, s in levels.items() if s is not None}
+    common = None
+    for s in stored.values():
+        common = s.index if common is None else common.intersection(s.index)
+    month = pd.DateOffset(months=1)
+    if common is not None and len(common):
+        day = common.max()
+        today = _on(levels, day)
+        earlier = common[common <= day - month]
+        month_ago = _on(levels, earlier.max()) if len(earlier) else _each_at_or_before(levels, {t: day - month for t in stored})
+    else:
+        today = _each_at_or_before(levels, {t: s.index.max() for t, s in stored.items()})
+        month_ago = _each_at_or_before(levels, {t: s.index.max() - month for t, s in stored.items()})
+
+    def spread(snap: dict) -> float | None:
+        if snap["date"] is None or snap["10y"] is None or snap["2y"] is None:
+            return None
+        return (snap["10y"] - snap["2y"]) * 100.0
+
+    now_bp, then_bp = spread(today), spread(month_ago)
+    return {
+        "today": today,
+        "month_ago": month_ago,
+        "2s10s_bp": now_bp,
+        "2s10s_chg_bp": now_bp - then_bp if now_bp is not None and then_bp is not None else None,
+        "10y_chg_bp": ((today["10y"] - month_ago["10y"]) * 100.0
+                       if today["date"] is not None and month_ago["date"] is not None
+                       and today["10y"] is not None and month_ago["10y"] is not None else None),
+        "freq": "daily",
+        "source": "FRED",
+    }
+
+
+def credit_band(pct: float | None) -> str | None:
+    """Plan R5 on the three-year HY rank; null exactly when the rank is."""
+    if pct is None:
+        return None
+    lo, hi = CREDIT_BAND_EDGES
+    return "tight" if pct < lo else ("normal" if pct < hi else "wide")
+
+
+def _gap_reason(missing: list[str]) -> str:
+    n = len(missing)
+    head = ", ".join(missing[:3])
+    more = f" and {n - 3} more" if n > 3 else ""
+    return f"no value on {n} expected {'session' if n == 1 else 'sessions'} in the three-year window: {head}{more}"
+
+
+def _ig(conn: sqlite3.Connection) -> dict | None:
+    """IG's newest observation as its watermark records it (S-22)."""
+    from datetime import date
+
+    from api import provenance
+
+    if not provenance.table_exists(conn, "source_watermarks"):
+        return None
+    row = conn.execute("SELECT last_obs, last_value FROM source_watermarks WHERE source = ?", (IG_SOURCE,)).fetchone()
+    if row is None or row[0] is None or row[1] is None:
+        return None
+    try:
+        day = date.fromisoformat(str(row[0])[:10]).isoformat()
+        value = float(row[1])
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return {"value": value, "date": day, "freq": "daily", "source": "FRED BAMLC0A0CM"}
+
+
+def credit(conn: sqlite3.Connection) -> dict:
+    """N7 (§12.8; plan N7, S-12, B-07), with HY and IG levels.
+
+    - The rank window is [HY date − 3 years, HY date], closed. `valid` is every
+      finite stored observation dated in it, weekend month-end prints
+      included. `expected` is the XNYS sessions of the engine's calendar in
+      it (exchange_calendars), less `api.calendar.bond_extra_closures`; a
+      session with no finite observation is missing.
+    - With nothing missing: the rank of the current value among the valid
+      ones (values strictly below it over the count, current included) and
+      their range. With any missing: both null, and the reason: "coverage from
+      <first observation> only" when every missing session precedes the first
+      observation, else the gap's first three dates and its count.
+    - The line window is [HY date − 12 months, HY date]: every observation,
+      and the maximum, earliest on ties."""
+    import numpy as np
+    import pandas as pd
+
+    from api import calendar as cal
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    try:
+        hy = es.load_level(conn, registry.get("hy_oas"))
+    except es.NotStored:
+        raise absent() from None
+    hy = hy[np.isfinite(hy.to_numpy(dtype=float))]
+    ig = _ig(conn)
+    if not len(hy) or ig is None:
+        raise absent()
+    end = hy.index[-1]
+    current = float(hy.iloc[-1])
+    start = end - pd.DateOffset(years=3)
+    window = hy[(hy.index >= start) & (hy.index <= end)]
+    sessions = es.sessions_between(es.session_calendar(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")),
+                                   start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+    closed = set().union(*(cal.bond_extra_closures(y) for y in range(start.year, end.year + 1)))
+    expected = [s for s in sessions if s.date() not in closed]
+    have = set(window.index)
+    missing = [s for s in expected if s not in have]
+    first_obs, last_obs = window.index[0], window.index[-1]
+    values = window.to_numpy(dtype=float)
+    if missing:
+        pct, span = None, None
+        if all(s < first_obs for s in missing):
+            reason = f"coverage from {first_obs.strftime('%Y-%m-%d')} only"
+        else:
+            reason = _gap_reason([s.strftime("%Y-%m-%d") for s in missing])
+    else:
+        pct = float((values < current).sum() / len(values))
+        span, reason = [float(values.min()), float(values.max())], None
+    line_start = end - pd.DateOffset(months=12)
+    line = hy[(hy.index >= line_start) & (hy.index <= end)]
+    top = line.idxmax()  # the first occurrence: the earliest date on ties
+    return {
+        "hy": {"value": current, "date": end.strftime("%Y-%m-%d"), "freq": "daily", "source": "FRED BAMLH0A0HYM2"},
+        "ig": ig,
+        "hy_pct_3y": pct,
+        "hy_range_3y": span,
+        "rank_window": {"start": start.strftime("%Y-%m-%d"), "end": end.strftime("%Y-%m-%d"), "n": len(values),
+                        "expected_n": len(expected), "valid_n": len(values), "missing_n": len(missing),
+                        "first_obs": first_obs.strftime("%Y-%m-%d"), "last_obs": last_obs.strftime("%Y-%m-%d")},
+        "reason": reason,
+        "band": credit_band(pct),
+        "band_edges": list(CREDIT_BAND_EDGES),
+        "series": [{"date": d.strftime("%Y-%m-%d"), "hy": float(v)} for d, v in line.items()],
+        "line_window": {"start": line_start.strftime("%Y-%m-%d"), "end": end.strftime("%Y-%m-%d"), "n": len(line)},
+        "peak_12m": {"date": top.strftime("%Y-%m-%d"), "hy": float(line.loc[top])},
+    }
+
+
+def desk_macro(ctx: dict) -> dict:
+    """The desk_macro item: the curve and credit blocks. Nothing in /macro
+    depends on "now", so the route serves the item as it is."""
+    from api import db
+    from src.analytics import dbpath
+
+    conn = dbpath.connect_ro(db.DB_PATH)
+    try:
+        return {"curve": part("curve", lambda: curve(tenor_levels(conn))), "credit": part("credit", lambda: credit(conn))}
+    finally:
+        conn.close()

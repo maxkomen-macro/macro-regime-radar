@@ -322,6 +322,14 @@ def _desk_regime(ctx: dict) -> dict:
     return desk_regime(ctx)
 
 
+def _desk_macro(ctx: dict) -> dict:
+    """The Desk v2 /macro item (api/desk_items_macro.py): the curve today and a
+    month ago, and HY/IG credit with the rolling three-year HY statistics."""
+    from api.desk_items_macro import desk_macro
+
+    return desk_macro(ctx)
+
+
 ITEMS = [
     ("credit", _credit),
     ("recession", _recession),
@@ -339,6 +347,7 @@ ITEMS = [
     *[(f"desk_preset:{name}", _desk_preset(name)) for name in DESK_PRESETS],
     # Desk v2 (desk/frame-3-api-b2a)
     ("desk_regime", _desk_regime),
+    ("desk_macro", _desk_macro),
 ]
 
 
