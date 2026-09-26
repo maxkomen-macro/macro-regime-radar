@@ -89,12 +89,88 @@ def test_the_rows_are_the_registry_and_its_raw_series_readers():
     desk = {s.series_id for s in registry.SERIES if s.available and s.tier <= 2}
     assert len(pipe.row_ids()) == len(set(pipe.row_ids()))
     assert set(pipe.row_ids()) == desk | set(pipe.RAW_SERIES_ROWS)
-    assert set(pipe.FEEDS) == set(pipe.row_ids())
+    no_reader = {sid for sid in pipe.row_ids() if not pipe.feeds_of(sid)}
+    assert no_reader == set(pipe.NO_LIVE_READER) == {"^NDX", "^RUT", "JPY=X"}
     assert {"DGS3MO", "DGS5", "DGS30"} <= desk, "the three tenors are registered"
     assert set(pipe.RAW_SERIES_ROWS) == {"INDPRO", "CPIAUCSL", "UNRATE", "T10YIE", "T5YIE", "USREC", "BAMLC0A0CM"}
     from api import main
 
     assert set(main.RECESSION_INPUTS) - {s for s in desk} <= set(pipe.RAW_SERIES_ROWS), "every recession input has a row"
+
+
+def test_the_feeds_are_the_codes_readers():
+    """S-02, derived from the code: the recession model's actual reads (a
+    recording connection; USSLIND is only its staleness probe, CLAUDE.md), the
+    classifier's inputs and the next prints, /macro's tenors, and the catalog
+    studies and Ledger rows as spec §12.3 and §8 state them."""
+    import ast
+
+    from api import desk_items_macro as items
+    from api import main
+    from src.analytics import recession
+
+    read: list[str] = []
+
+    class Recording:
+        def execute(self, sql, params=()):
+            read.append(params[0])
+            return self
+
+        def fetchall(self):  # two monthly prints for every series, so the frame builds
+            return [("2020-01-01", 1.0), ("2020-02-01", 1.0)]
+
+    recession._build_feature_frame(Recording())
+    assert set(read) - {"USSLIND"} == set(pipe.RECESSION_MODEL) == set(main.RECESSION_INPUTS) | {"USREC"}
+    cfg = ast.parse((ROOT / "src" / "config.py").read_text())
+    series = next(ast.literal_eval(n.value) for n in cfg.body if isinstance(n, ast.Assign)
+                  and any(isinstance(x, ast.Name) and x.id == "SERIES" for x in n.targets))
+    assert set(pipe.REGIME_INPUTS) == {series["growth"], series["inflation"]} == {sid for _, sid, _, _ in items.NEXT_PRINTS}
+    assert pipe.CURVE_SERIES == tuple(sid for _, sid in items.TENORS)
+    spec = (ROOT / "docs" / "desk" / "DESK_FRAME3_SPEC.md").read_text()
+    table = spec[spec.index("### 12.3"):spec.index("### 12.4")]
+    rows = {}
+    for line in table.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) == 10 and cells[0] in pipe.CATALOG_INPUTS:
+            shock, while_, target = cells[4], cells[7], cells[8]
+            rows[cells[0]] = {shock, target} | ({"spx"} if while_ == "spx_below_50" else set())
+    assert rows == {k: set(v) for k, v in pipe.CATALOG_INPUTS.items()}, rows
+    ledger = spec[spec.index("The twelve rows in exactly"):spec.index("A firing row is green-tinted")]
+    order = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)+", ledger.split(":", 1)[1])
+    assert tuple(s for s in order if not s.startswith("rsi-")) == pipe.LEDGER_STUDIES
+
+
+def test_every_served_note_speaks_the_desks_language(hermetic, monkeypatch):
+    """The Desk's ban list (web/src/screens/desk/desk-language.test.ts, read
+    here so the two cannot drift) holds for every string /pipeline prints; the
+    registry's gold note said "always" and is served reworded."""
+    ts = (ROOT / "web" / "src" / "screens" / "desk" / "desk-language.test.ts").read_text()
+    banned = re.compile(re.search(r"const BANNED = /(.+?)/gi;", ts).group(1), re.I)
+    rows = rows_of(get_pipeline())
+    for sid, r in rows.items():
+        for text in (r["label"], r["note"] or "", r["provider"], *r["feeds"]):
+            assert not banned.search(text), (sid, text)
+    gold = registry.get("gold").note
+    assert "always" in gold, "the registry's note was reworded: drop DESK_WORDING's entry"
+    served = pipe._with_reader_note("GC=F", gold)  # the note a stored gold row serves (this store has no prices)
+    assert served == gold.replace("so entry is always the next session", "so entry is the next session")
+    assert not banned.search(served)
+    for spec in pipe.desk_specs():  # every registry note, as a stored row would serve it
+        assert not banned.search(pipe._with_reader_note(spec.series_id, spec.note) or ""), spec.series_id
+
+
+def test_the_feeds_carry_every_real_reader():
+    """The readers the fixture's table missed: every study reads the regime
+    label, so INDPRO and CPI feed every study tab; the recession model reads
+    the HY spread, so it feeds Regime and Overview; the Position Monitor reads
+    2s10s from /macro; ^NDX, ^RUT and JPY=X have no live reader."""
+    for sid in ("INDPRO", "CPIAUCSL"):
+        assert {"Overview", "Technicals", "Event Study", "Regime", "Ledger"} <= set(pipe.feeds_of(sid)), sid
+    assert {"Regime", "Overview", "Macro", "Event Study", "Ledger"} == set(pipe.feeds_of("BAMLH0A0HYM2"))
+    for sid in ("DGS2", "DGS10"):
+        assert "Position Monitor" in pipe.feeds_of(sid) and "Regime" in pipe.feeds_of(sid), sid
+    assert pipe.feeds_of("DGS10").count("Ledger") == 0, "no Ledger row reads the 10-year"
+    assert all(pipe.feeds_of(sid) == [] for sid in ("^NDX", "^RUT", "JPY=X"))
 
 
 def test_each_row_carries_its_registry_or_raw_series_fields(hermetic, monkeypatch):
@@ -109,7 +185,9 @@ def test_each_row_carries_its_registry_or_raw_series_fields(hermetic, monkeypatc
         else:
             meta = freshness_mod.SERIES_REGISTRY[sid]
             assert (r["label"], r["key"], r["freq"]) == (meta["label"], None, meta["cadence"]), sid
-        assert r["feeds"] == list(pipe.FEEDS[sid]), sid
+        assert r["feeds"] == pipe.feeds_of(sid), sid
+        if sid in pipe.NO_LIVE_READER:
+            assert r["feeds"] == [] and r["note"].endswith(pipe.NO_LIVE_READER[sid]), (sid, r["note"])
 
 
 def test_pipeline_providers_are_each_rows_declaration(tmp_path, install_worker, monkeypatch):

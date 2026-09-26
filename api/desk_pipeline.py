@@ -49,20 +49,96 @@ PIPELINE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 # and dated by api/freshness.SERIES_REGISTRY.
 RAW_SERIES_ROWS: tuple[str, ...] = ("INDPRO", "CPIAUCSL", "UNRATE", "T10YIE", "T5YIE", "USREC", "BAMLC0A0CM")
 
-# S-02: the Desk tabs that read each series, a fixed table (the inventory's
-# FEEDS names main-app readers). Session A's fixture's table for every series
-# it lists; T10YIE, T5YIE and USREC, recession-model inputs like UNRATE, feed
-# the Regime tab as UNRATE does.
-FEEDS: dict[str, tuple[str, ...]] = {
-    "DGS3MO": ("Macro",), "DGS2": ("Macro", "Regime"), "T10Y2Y": ("Event Study", "Ledger"), "DGS5": ("Macro",),
-    "DGS10": ("Macro", "Regime", "Event Study"), "DGS30": ("Macro",), "T10YIE": ("Regime",), "T5YIE": ("Regime",),
-    "BAMLH0A0HYM2": ("Macro", "Event Study", "Ledger"), "BAMLC0A0CM": ("Macro",),
-    "^GSPC": ("Overview", "Technicals", "Event Study", "Ledger", "Position Monitor"), "^NDX": ("Macro", "Basket & Hedge"),
-    "^RUT": ("Technicals", "Sectors"), "VIXCLS": ("Overview", "Event Study", "Ledger"),
-    "DX-Y.NYB": ("Event Study", "Ledger"), "JPY=X": ("Macro",), "GC=F": ("Event Study", "Ledger"),
-    "DCOILWTICO": ("Event Study", "Ledger"),
-    "CPIAUCSL": ("Regime",), "INDPRO": ("Regime",), "UNRATE": ("Regime",), "USREC": ("Regime",),
+# S-02: the Desk tabs that read each series, derived from what each tab's served
+# values are computed from (spec §12; FRAME3_API_PLAN.md §1), never from a
+# fixture. A series feeds a tab when a value the tab shows is computed from its
+# stored rows, directly or through a stored result derived from it:
+# - the regimes table, from the classifier's two inputs (src/regime.py over
+#   src/config.py SERIES growth and inflation), which every event study reads
+#   too (each event's K−2 label and the evaluable mask, event_study.regime_at);
+# - the recession model (src/analytics/recession.py), whose inputs are
+#   api/main.RECESSION_INPUTS and whose training target is USREC.
+REGIME_INPUTS: tuple[str, ...] = ("INDPRO", "CPIAUCSL")
+RECESSION_MODEL: tuple[str, ...] = ("DGS10", "DGS2", "BAMLH0A0HYM2", "T10YIE", "T5YIE", "UNRATE", "INDPRO", "USREC")
+# Each catalog study's inputs (spec §12.3: shock, condition series, target, as
+# registry keys; api/desk_catalog on desk/frame-3-api), and the Ledger's rows
+# with a question (spec §8; the two RSI rows read nothing).
+CATALOG_INPUTS: dict[str, tuple[str, ...]] = {
+    "gold-2sigma-spx-weak": ("gold", "spx"),
+    "golden-cross": ("spx",),
+    "death-cross": ("spx",),
+    "vix-spike-2sigma-5d": ("vix", "spx"),
+    "hy-2sigma-20d": ("hy_oas", "spx"),
+    "10y-2sigma-20d": ("us10y", "spx"),
+    "dollar-2sigma-20d": ("dxy", "spx"),
+    "oil-2sigma-gold": ("wti", "gold"),
+    "spx-2sigma-10y": ("spx", "us10y"),
+    "spx-20d-2sigma": ("spx",),
+    "spx-5d-2sigma": ("spx",),
+    "2s10s-2sigma-steepening": ("curve_2s10s", "spx"),
+    "oil-2sigma-20d": ("wti", "spx"),
 }
+LEDGER_STUDIES: tuple[str, ...] = (
+    "2s10s-2sigma-steepening", "dollar-2sigma-20d", "golden-cross", "vix-spike-2sigma-5d", "gold-2sigma-spx-weak",
+    "hy-2sigma-20d", "spx-20d-2sigma", "death-cross", "oil-2sigma-20d", "spx-5d-2sigma",
+)
+# /technicals' scored markers and its 20-day z (spec §12.7 signals_allowlist, move_20d_sigma)
+TECHNICALS_STUDIES: tuple[str, ...] = ("golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma")
+# /overview's data_status contributors (spec §12.1, N9)
+DATA_STATUS_SERIES: tuple[str, ...] = ("T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS2", "DGS10", "^GSPC", "GC=F")
+CURVE_SERIES: tuple[str, ...] = ("DGS3MO", "DGS2", "DGS5", "DGS10", "DGS30")  # /macro curve (api/desk_items_macro.TENORS)
+CREDIT_SERIES: tuple[str, ...] = ("BAMLH0A0HYM2", "BAMLC0A0CM")                # /macro credit: HY stored, IG's watermark
+
+
+def _studies_read(slugs) -> set[str]:
+    """The FRED ids and symbols a set of studies reads, the regimes' inputs included."""
+    from src.desk import series as registry
+
+    return {registry.get(k).series_id for s in slugs for k in CATALOG_INPUTS[s]} | set(REGIME_INPUTS)
+
+
+def tab_readers() -> dict[str, set[str]]:
+    """Each Desk tab and the series its served values are computed from.
+    Sectors and Basket & Hedge serve nothing yet (§12.13), nor do /macro's
+    correlations, so they read nothing."""
+    ledger = _studies_read(LEDGER_STUDIES)
+    return {
+        # tiles (the K−2 regime, the recession score, the trend, VIX), the Ledger's signals
+        # (active_signals, since_last_close), VIX's change and data_status
+        "Overview": set(REGIME_INPUTS) | set(RECESSION_MODEL) | {"^GSPC", "VIXCLS"} | ledger | set(DATA_STATUS_SERIES),
+        "Technicals": {"^GSPC"} | _studies_read(TECHNICALS_STUDIES),
+        "Event Study": _studies_read(CATALOG_INPUTS),
+        "Regime": set(REGIME_INPUTS) | set(RECESSION_MODEL),   # the rows, the next prints, the recession score
+        "Macro": set(CURVE_SERIES) | set(CREDIT_SERIES),
+        "Ledger": ledger,
+        "Position Monitor": {"^GSPC", "DGS2", "DGS10"},        # the S&P from /technicals, 2s10s from /macro
+    }
+
+
+TAB_ORDER: tuple[str, ...] = ("Overview", "Technicals", "Event Study", "Regime", "Macro", "Ledger", "Position Monitor")
+
+# A registered series no live tab reads yet says so, in its row's note.
+NO_LIVE_READER: dict[str, str] = {
+    "^NDX": "No Desk tab reads it yet: the correlations on Macro & Correlations and Basket & Hedge are not served.",
+    "^RUT": "No Desk tab reads it yet: Sectors and its breadth are not served.",
+    "JPY=X": "No Desk tab reads it yet: the correlations on Macro & Correlations are not served.",
+}
+
+
+# The Desk's language (DESK_FRAME3_SPEC §1.5, the ban list of
+# web/src/screens/desk/desk-language.test.ts) covers every string the API
+# prints. The registry's notes are written for the event-study engine; where
+# one uses a banned word, /pipeline prints it reworded, the meaning kept.
+# Pinned by tests/test_desk_v2_pipeline.py (every served note passes the list).
+DESK_WORDING: dict[str, tuple[tuple[str, str], ...]] = {
+    "GC=F": (("so entry is always the next session", "so entry is the next session"),),
+}
+
+
+def feeds_of(series_id: str) -> list[str]:
+    readers = tab_readers()
+    return [tab for tab in TAB_ORDER if series_id in readers[tab]]
+
 
 # The provider each row declares (R-15): the registry's own source, never the
 # stored rows' provider column, so an unstored row names its provider too. The
@@ -112,6 +188,13 @@ def _watermarks(conn: sqlite3.Connection) -> dict[str, dict]:
     return {r[0]: dict(zip(cols, r)) for r in conn.execute(f"SELECT {', '.join(cols)} FROM source_watermarks")}
 
 
+def _with_reader_note(series_id: str, note: str | None) -> str | None:
+    for before, after in DESK_WORDING.get(series_id, ()):
+        note = note.replace(before, after) if note else note
+    extra = NO_LIVE_READER.get(series_id)
+    return note if extra is None else (f"{note} {extra}" if note else extra)
+
+
 def _desk_row(conn: sqlite3.Connection, spec) -> dict:
     """A registry row: dated by the engine's reader; an unstored series has
     the engine's not_stored sentence as its note."""
@@ -129,7 +212,8 @@ def _desk_row(conn: sqlite3.Connection, spec) -> dict:
     else:
         store, provider = "desk_series", PROVIDER_DESK_FRED if spec.source == "fred" else PROVIDER_DESK_MARKET
     return {"label": spec.label, "id": spec.series_id, "key": spec.key, "provider": provider, "freq": "daily",
-            "first": first, "last": last, "feeds": list(FEEDS[spec.series_id]), "note": note, "store": store}
+            "first": first, "last": last, "feeds": feeds_of(spec.series_id), "note": _with_reader_note(spec.series_id, note),
+            "store": store}
 
 
 def _raw_row(conn: sqlite3.Connection, sid: str, watermarks: dict, raw_table: bool) -> dict:
@@ -147,7 +231,7 @@ def _raw_row(conn: sqlite3.Connection, sid: str, watermarks: dict, raw_table: bo
     if meta["cadence"] == "daily":
         last = _date_or_none((watermarks.get(f"fred:{sid}") or {}).get("last_obs")) if first else None
     return {"label": meta["label"], "id": sid, "key": None, "provider": desk_mod.SOURCE_BY_KIND["fred"], "freq": meta["cadence"],
-            "first": first, "last": last, "feeds": list(FEEDS[sid]), "note": None, "store": "raw_series",
+            "first": first, "last": last, "feeds": feeds_of(sid), "note": _with_reader_note(sid, None), "store": "raw_series",
             "stamp": stamp}
 
 

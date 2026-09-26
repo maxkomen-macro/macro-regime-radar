@@ -11,8 +11,8 @@
     {
      "label": "3M Treasury",
      "id": "DGS3MO",
-     "key": null,
-     "provider": "FRED",
+     "key": "us3m",
+     "provider": "FRED (Desk daily history)",
      "freq": "daily",
      "first": null,
      "last": null,
@@ -20,19 +20,21 @@
       "Macro"
      ],
      "status": "missing",
-     "note": "not stored"
+     "note": "3M Treasury (DGS3MO) is awaiting the next full refresh: this database has no DGS3MO rows in desk_series yet."
     },
     {
      "label": "2Y Treasury",
      "id": "DGS2",
      "key": "us2y",
-     "provider": "FRED",
+     "provider": "FRED (Desk daily history)",
      "freq": "daily",
      "first": "1976-06-01",
      "last": "2026-09-22",
      "feeds": [
+      "Overview",
+      "Regime",
       "Macro",
-      "Regime"
+      "Position Monitor"
      ],
      "status": "current",
      "note": null
@@ -41,11 +43,12 @@
      "label": "2s10s curve",
      "id": "T10Y2Y",
      "key": "curve_2s10s",
-     "provider": "FRED",
+     "provider": "FRED (Desk daily history)",
      "freq": "daily",
      "first": "1976-06-01",
      "last": "2026-09-23",
      "feeds": [
+      "Overview",
       "Event Study",
       "Ledger"
      ],
@@ -55,8 +58,8 @@
     {
      "label": "5Y Treasury",
      "id": "DGS5",
-     "key": null,
-     "provider": "FRED",
+     "key": "us5y",
+     "provider": "FRED (Desk daily history)",
      "freq": "daily",
      "first": null,
      "last": null,
@@ -64,20 +67,22 @@
       "Macro"
      ],
      "status": "missing",
-     "note": "not stored"
+     "note": "5Y Treasury (DGS5) is awaiting the next full refresh: this database has no DGS5 rows in desk_series yet."
     },
     {
      "label": "10Y Treasury",
      "id": "DGS10",
      "key": "us10y",
-     "provider": "FRED",
+     "provider": "FRED (Desk daily history)",
      "freq": "daily",
      "first": "1962-01-02",
      "last": "2026-09-22",
      "feeds": [
-      "Macro",
+      "Overview",
+      "Event Study",
       "Regime",
-      "Event Study"
+      "Macro",
+      "Position Monitor"
      ],
      "status": "current",
      "note": null
@@ -85,8 +90,8 @@
     {
      "label": "30Y Treasury",
      "id": "DGS30",
-     "key": null,
-     "provider": "FRED",
+     "key": "us30y",
+     "provider": "FRED (Desk daily history)",
      "freq": "daily",
      "first": null,
      "last": null,
@@ -94,7 +99,37 @@
       "Macro"
      ],
      "status": "missing",
-     "note": "not stored"
+     "note": "30Y Treasury (DGS30) is awaiting the next full refresh: this database has no DGS30 rows in desk_series yet."
+    },
+    {
+     "label": "10-year breakeven inflation",
+     "id": "T10YIE",
+     "key": null,
+     "provider": "FRED",
+     "freq": "daily",
+     "first": "2003-01-01",
+     "last": "2026-09-23",
+     "feeds": [
+      "Overview",
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
+    },
+    {
+     "label": "5-year breakeven inflation",
+     "id": "T5YIE",
+     "key": null,
+     "provider": "FRED",
+     "freq": "daily",
+     "first": "2003-01-01",
+     "last": "2026-09-23",
+     "feeds": [
+      "Overview",
+      "Regime"
+     ],
+     "status": "current",
+     "note": null
     }
    ]
   },
@@ -106,67 +141,33 @@
      "label": "US HY OAS",
      "id": "BAMLH0A0HYM2",
      "key": "hy_oas",
-     "provider": "FRED",
+     "provider": "FRED (Desk daily history)",
      "freq": "daily",
      "first": "2023-09-25",
      "last": "2026-09-23",
      "feeds": [
-      "Macro",
+      "Overview",
       "Event Study",
+      "Regime",
+      "Macro",
       "Ledger"
      ],
      "status": "current",
-     "note": "FRED serves the ICE BofA series for three years; stored from 2023-09-25"
+     "note": "ICE BofA index OAS, published the next morning. FRED serves a rolling three years only (since April 2026); the store keeps every observation it has been served, from 2023-09-25."
     },
     {
      "label": "Investment-grade OAS",
      "id": "BAMLC0A0CM",
      "key": null,
      "provider": "FRED",
-     "freq": "monthly",
+     "freq": "daily",
      "first": "1996-12-01",
      "last": "2026-09-23",
      "feeds": [
       "Macro"
      ],
      "status": "current",
-     "note": "one row a month; newest observation 2026-09-23"
-    },
-    {
-     "label": "BB OAS",
-     "id": "BAMLH0A1HYBB",
-     "key": null,
-     "provider": "FRED",
-     "freq": "monthly",
-     "first": "1996-12-01",
-     "last": "2026-09-23",
-     "feeds": [],
-     "status": "current",
-     "note": "one row a month; newest observation 2026-09-23"
-    },
-    {
-     "label": "Single-B OAS",
-     "id": "BAMLH0A2HYB",
-     "key": null,
-     "provider": "FRED",
-     "freq": "monthly",
-     "first": "1996-12-01",
-     "last": "2026-09-23",
-     "feeds": [],
-     "status": "current",
-     "note": "one row a month; newest observation 2026-09-23"
-    },
-    {
-     "label": "CCC OAS",
-     "id": "BAMLH0A3HYC",
-     "key": null,
-     "provider": "FRED",
-     "freq": "monthly",
-     "first": "1996-12-01",
-     "last": "2026-09-23",
-     "feeds": [],
-     "status": "current",
-     "note": "one row a month; newest observation 2026-09-23"
+     "note": null
     }
    ]
   },
@@ -178,7 +179,7 @@
      "label": "S&P 500",
      "id": "^GSPC",
      "key": "spx",
-     "provider": "Yahoo Finance",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
      "freq": "daily",
      "first": "1990-01-02",
      "last": "2026-09-23",
@@ -190,58 +191,37 @@
       "Position Monitor"
      ],
      "status": "current",
-     "note": "no 2026-09-22 row"
+     "note": "Stored from 1990 by the allocation refresh (asset_prices)."
     },
     {
      "label": "Nasdaq 100",
      "id": "^NDX",
      "key": "ndx",
-     "provider": "Yahoo Finance",
+     "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
      "freq": "daily",
      "first": null,
      "last": null,
-     "feeds": [
-      "Macro",
-      "Basket & Hedge"
-     ],
+     "feeds": [],
      "status": "missing",
-     "note": "tier 2, not stored"
+     "note": "Nasdaq 100 (^NDX) is awaiting the next full refresh: this database has no ^NDX rows in desk_series yet. No Desk tab reads it yet: the correlations on Macro & Correlations and Basket & Hedge are not served."
     },
     {
      "label": "Russell 2000",
      "id": "^RUT",
      "key": "rut",
-     "provider": "Yahoo Finance",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
      "freq": "daily",
      "first": "1990-01-02",
      "last": "2026-09-23",
-     "feeds": [
-      "Technicals",
-      "Sectors"
-     ],
+     "feeds": [],
      "status": "current",
-     "note": "no 2026-09-22 row"
-    },
-    {
-     "label": "S&P 500 equal weight",
-     "id": "RSP",
-     "key": null,
-     "provider": "Yahoo Finance",
-     "freq": "daily",
-     "first": null,
-     "last": null,
-     "feeds": [
-      "Technicals",
-      "Sectors"
-     ],
-     "status": "missing",
-     "note": "not stored"
+     "note": "Stored from 1990 by the allocation refresh (asset_prices). No Desk tab reads it yet: Sectors and its breadth are not served."
     },
     {
      "label": "VIX",
      "id": "VIXCLS",
      "key": "vix",
-     "provider": "FRED",
+     "provider": "FRED (Desk daily history)",
      "freq": "daily",
      "first": "1990-01-02",
      "last": "2026-09-22",
@@ -251,21 +231,7 @@
       "Ledger"
      ],
      "status": "current",
-     "note": null
-    },
-    {
-     "label": "VIX 3-month",
-     "id": "VXVCLS",
-     "key": null,
-     "provider": "FRED",
-     "freq": "daily",
-     "first": null,
-     "last": null,
-     "feeds": [
-      "Technicals"
-     ],
-     "status": "missing",
-     "note": "not stored"
+     "note": "CBOE close via FRED VIXCLS; settles 16:15 ET, so a VIX-dated event enters the target the next session."
     }
    ]
   },
@@ -277,69 +243,70 @@
      "label": "US Dollar Index",
      "id": "DX-Y.NYB",
      "key": "dxy",
-     "provider": "Yahoo Finance",
-     "freq": "monthly",
-     "first": "1971-01-01",
-     "last": "2026-09-01",
+     "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
+     "freq": "daily",
+     "first": null,
+     "last": null,
      "feeds": [
+      "Overview",
       "Event Study",
       "Ledger"
      ],
      "status": "missing",
-     "note": "monthly rows only; the daily series is tier 2, not stored"
+     "note": "US Dollar Index (DX-Y.NYB) is awaiting the next full refresh: this database has no DX-Y.NYB rows in desk_series yet."
     },
     {
      "label": "USD/JPY",
      "id": "JPY=X",
      "key": "usdjpy",
-     "provider": "Yahoo Finance",
-     "freq": "monthly",
-     "first": "1996-10-01",
-     "last": "2026-09-01",
-     "feeds": [
-      "Macro"
-     ],
+     "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
+     "freq": "daily",
+     "first": null,
+     "last": null,
+     "feeds": [],
      "status": "missing",
-     "note": "monthly rows only; the daily series is tier 2, not stored"
+     "note": "USD/JPY (JPY=X) is awaiting the next full refresh: this database has no JPY=X rows in desk_series yet. No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
     },
     {
      "label": "Gold (COMEX front month)",
      "id": "GC=F",
      "key": "gold",
-     "provider": "Yahoo Finance",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
      "freq": "daily",
      "first": "2000-08-30",
      "last": "2026-09-23",
      "feeds": [
+      "Overview",
       "Event Study",
       "Ledger"
      ],
      "status": "current",
-     "note": null
+     "note": "COMEX front-month futures (GC=F), stored from 2000-08-30 by the allocation refresh; studies on gold say \"since 2000\". The daily close is declared at 17:00 ET (conservative), so a gold shock enters an equity target the next session; as a target its fixing time is ambiguous, so entry is the next session."
     },
     {
      "label": "WTI crude",
      "id": "DCOILWTICO",
      "key": "wti",
-     "provider": "FRED",
+     "provider": "FRED (Desk daily history)",
      "freq": "daily",
      "first": null,
      "last": null,
      "feeds": [
+      "Overview",
       "Event Study",
       "Ledger"
      ],
      "status": "missing",
-     "note": "tier 2, not stored"
+     "note": "WTI crude (DCOILWTICO) is awaiting the next full refresh: this database has no DCOILWTICO rows in desk_series yet."
     }
    ]
   },
   {
    "name": "Macro (monthly)",
-   "status": "missing",
+   "status": "current",
    "series": [
     {
-     "label": "CPI",
+     "label": "CPI (all items)",
      "id": "CPIAUCSL",
      "key": null,
      "provider": "FRED",
@@ -347,10 +314,14 @@
      "first": "1996-03-01",
      "last": "2026-08-01",
      "feeds": [
-      "Regime"
+      "Overview",
+      "Technicals",
+      "Event Study",
+      "Regime",
+      "Ledger"
      ],
      "status": "current",
-     "note": "2025-10 missing"
+     "note": null
     },
     {
      "label": "Industrial production",
@@ -361,7 +332,11 @@
      "first": "1996-03-01",
      "last": "2026-08-01",
      "feeds": [
-      "Regime"
+      "Overview",
+      "Technicals",
+      "Event Study",
+      "Regime",
+      "Ledger"
      ],
      "status": "current",
      "note": null
@@ -375,44 +350,24 @@
      "first": "1996-03-01",
      "last": "2026-08-01",
      "feeds": [
+      "Overview",
       "Regime"
      ],
      "status": "current",
-     "note": "2025-10 missing"
+     "note": null
     },
     {
-     "label": "Payrolls",
-     "id": "PAYEMS",
-     "key": null,
-     "provider": "FRED",
-     "freq": "monthly",
-     "first": null,
-     "last": null,
-     "feeds": [],
-     "status": "missing",
-     "note": "not stored"
-    },
-    {
-     "label": "Retail sales",
-     "id": "RSAFS",
-     "key": null,
-     "provider": "FRED",
-     "freq": "monthly",
-     "first": null,
-     "last": null,
-     "feeds": [],
-     "status": "missing",
-     "note": "not stored"
-    },
-    {
-     "label": "Fed funds rate",
-     "id": "FEDFUNDS",
+     "label": "NBER recession indicator",
+     "id": "USREC",
      "key": null,
      "provider": "FRED",
      "freq": "monthly",
      "first": "1996-03-01",
      "last": "2026-08-01",
-     "feeds": [],
+     "feeds": [
+      "Overview",
+      "Regime"
+     ],
      "status": "current",
      "note": null
     }

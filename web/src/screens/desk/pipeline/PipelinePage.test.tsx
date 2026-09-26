@@ -53,7 +53,8 @@ describe("Pipeline words", () => {
     expect(findSeries(groups, "VIX")).toEqual({ group: "Equities & vol", id: "VIXCLS" });
     expect(findSeries(groups, "dgs10")).toEqual({ group: "Rates", id: "DGS10" });
     expect(findSeries(groups, "gold")).toEqual({ group: "FX & commodities", id: "GC=F" });
-    expect(findSeries(groups, "tier 2")).toEqual({ group: "Equities & vol", id: "^NDX" });
+    // a series no live tab reads says so in its note (desk-v2: feeds)
+    expect(findSeries(groups, "no desk tab reads")).toEqual({ group: "Equities & vol", id: "^NDX" });
     expect(findSeries(groups, "WTI")).toEqual({ group: "FX & commodities", id: "DCOILWTICO" });
     expect(findSeries(groups, "nothing like this")).toBeNull();
   });
@@ -84,17 +85,17 @@ describe("Data Pipeline tab", () => {
     expect(await screen.findByTestId("pl-badge")).toHaveTextContent("Last full refresh Sep 24, 15:52 UTC · validation unknown");
     expect(await screen.findByRole("heading", { level: 1, name: "Where every number comes from" })).toBeInTheDocument();
     const inv = screen.getByRole("region", { name: /Series inventory/ });
-    await waitFor(() => expect(inv).toHaveTextContent("27 series · grouped · generated from the registry"));
+    await waitFor(() => expect(inv).toHaveTextContent("22 series · grouped · generated from the registry"));
     const heads = within(inv).getAllByRole("button", { expanded: false });
     // §12.9: each group's status is the worst of its series; a series not stored is missing.
     expect(heads.map((b) => b.textContent)).toEqual([
-      "▸Rates6 series ● missing",
-      "▸Credit5 series ● current",
-      "▸Equities & vol6 series ● missing",
+      "▸Rates8 series ● missing",
+      "▸Credit2 series ● current",
+      "▸Equities & vol4 series ● missing",
       "▸FX & commodities4 series ● missing",
-      "▸Macro (monthly)6 series ● missing",
+      "▸Macro (monthly)4 series ● current",
     ]);
-    expect(within(inv).getByText("● current")).toHaveAttribute("data-tone", "green");
+    expect(within(inv).getAllByText("● current")[0]).toHaveAttribute("data-tone", "green");
     expect(within(inv).getAllByText("● missing")[0]).toHaveAttribute("data-tone", "amber");
   });
   it("a group opens by click and by ?group=, its rows in a scrolling region", async () => {
@@ -102,11 +103,13 @@ describe("Data Pipeline tab", () => {
     const rows = await screen.findByRole("region", { name: "Credit series" });
     expect(rows).toHaveAttribute("tabindex", "0");
     // §11: provider and frequency beside the series; a daily series dated to the day, a monthly one to the month.
+    // The served row (desk-v2: feeds): the registry's provider declaration, the tabs whose values read it, its note.
     expect(within(rows).getAllByRole("row")[1].textContent).toBe(
-      "US HY OAS · FRED, dailyBAMLH0A0HYM2Sep 25, 2023Sep 23, 2026Macro, Event Study, Ledgercurrent · FRED serves the ICE BofA series for three years; stored from 2023-09-25",
+      "US HY OAS · FRED (Desk daily history), dailyBAMLH0A0HYM2Sep 25, 2023Sep 23, 2026Overview, Event Study, Regime, Macro, Ledgercurrent · ICE BofA index OAS, published the next morning. FRED serves a rolling three years only (since April 2026); the store keeps every observation it has been served, from 2023-09-25.",
     );
-    expect(within(rows).getAllByRole("row")[2].textContent).toContain("Dec 1996Sep 2026");
-    expect(screen.getByText("showing 5 of 5 · the list scrolls inside the group; the page does not grow")).toBeInTheDocument();
+    // IG is daily at FRED, stored one row a month: first its first month stamp, last its watermark (S-03).
+    expect(within(rows).getAllByRole("row")[2].textContent).toContain("Dec 1, 1996Sep 23, 2026");
+    expect(screen.getByText("showing 2 of 2 · the list scrolls inside the group; the page does not grow")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Rates/ }));
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toContain("group=rates"));
     expect(screen.getByRole("region", { name: "Rates series" })).toBeInTheDocument();
@@ -152,7 +155,7 @@ describe("Data Pipeline tab", () => {
     const groups = pipeline.groups.map((g, i) => (i === 0 ? { ...g, status: "stale" } : i === 1 ? { ...g, series: [] } : g));
     stubDesk({ "/api/desk/pipeline": () => ({ ...pipeline, groups }) });
     const first = renderTab("/desk/data-pipeline?group=credit");
-    expect(await screen.findByRole("button", { name: /^Rates\s*6 series\s*● stale/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Rates\s*8 series\s*● stale/ })).toBeInTheDocument();
     expect(await screen.findByText("No series in this group yet.")).toBeInTheDocument();
     first.unmount();
     stubDesk({ "/api/desk/pipeline": () => ({ ...pipeline, groups: [] }) });
