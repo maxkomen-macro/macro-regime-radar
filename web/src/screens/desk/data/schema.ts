@@ -184,19 +184,6 @@ const ledgerRow = o({
   short: "s",
 });
 
-const positionCompact = {
-  id: "s!",
-  name: "s!",
-  instrument: "s!",
-  direction: e(["long", "short"]),
-  size_nav: "n",
-  room_pct: "n",
-  to_level: o({ value: "n!", unit: "s" }, { nul: true }),
-  opened: "s",
-  horizon_days: "n",
-  day: "n",
-} as const;
-
 const question = o(
   {
     shock: "s!",
@@ -219,7 +206,7 @@ const regimeTrend = o({ label: "s!", print: "s", growth: "s", inflation: "s", mo
 const BANDS = ["low", "elevated", "high_risk"] as const;
 const recessionScore = { score: "n", probability_month: "s", inputs_through: "s", band: e(BANDS), band_edges: t(["n!", "n!"], { nul: true }), freq: "s", source: "s" } as const;
 const nextPrint = o({ date: "s!", flip_threshold_mom: "n", flips_to: "s?" }, { nul: true });
-const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s" });
+const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s") });
 const basketLeg = o({ symbol: "s!", name: "s?", weight: "n!" });
 const priced = {
   prices_as_of: "s",
@@ -290,7 +277,6 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       vol: o({ vix: "n", date: "s", freq: "s", source: "s" }),
     }),
     active_signals: l(ledgerRow),
-    monitored: l(o(positionCompact)),
     data_status: "s",
   }),
   "/ledger": o({ ...envelope, verdict_rule: "s", horizon: "n", comparison_session: "s?", prev_session: "s?", scored_n: "n", unavailable_n: "n", signals: l(ledgerRow) }),
@@ -298,6 +284,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     ...envelope,
     instrument: o({ symbol: "s!", label: "s!" }),
     price: "n",
+    // §12.7: the session the price and the averages are dated to.
+    date: "s",
     chg_1d: "n",
     ma50: "n",
     ma200: "n",
@@ -429,22 +417,6 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     ),
   }),
   "/study/events": o({ ...envelope, slug: "s?", events: l(o({ date: "s!", regime: "s", ret_5: "n", ret_10: "n", ret_20: "n", ret_60: "n" })) }),
-  "/positions": o({
-    ...envelope,
-    positions: l(
-      o({
-        ...positionCompact,
-        falsifies_at: o({ label: "s!", value: "n", unit: "s?" }, { nul: true }),
-        now: o({ value: "n", unit: "s", date: "s" }, { nul: true }),
-        dv01: "n",
-        variant: "s",
-        pre_mortem: "s",
-        red_team: "s",
-        study_slug: "s?",
-      }),
-    ),
-    closed_90d: o({ falsified: "n", expired: "n", premortem_right: t(["n", "n"], { nul: true }) }),
-  }),
   "/pipeline": o({
     ...envelope,
     last_refresh_utc: "s?",

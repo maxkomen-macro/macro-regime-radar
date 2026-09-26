@@ -269,6 +269,63 @@
   margin: 0;
   color: var(--dk-t1);
 }
+/* §9: a manual row names how it is watched, in words. */
+.pm-manual {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+/* Close…: an explicit close and the pre-mortem judged (§9). */
+.pm-close {
+  margin-top: 4px;
+}
+.pm-close .pm-chips {
+  margin-top: 4px;
+}
+.pm-close-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+/* Export / Import JSON of the store (§1.8) and the records it cannot read (§9). */
+.pm-store {
+  padding: 10px 17px 12px;
+}
+.pm-io {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  font-size: 12.5px;
+}
+.pm-io-words {
+  color: var(--dk-t3);
+  margin-right: auto;
+}
+.pm-io-note {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--dk-t3);
+}
+.pm-unreadable {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dk-box);
+}
+.pm-unreadable ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--dk-t2);
+}
+.pm-unreadable-id {
+  font-family: var(--dk-mono);
+  color: var(--dk-t1);
+}
 @media (max-width: 1100px) {
   .pm-grid {
     grid-template-columns: minmax(0, 1fr);

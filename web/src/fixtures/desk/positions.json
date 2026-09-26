@@ -1,100 +1,224 @@
 {
- "as_of": "2026-09-22",
- "generation_id": "gen-fixture-2026-09-22",
+ "kind": "mrr.desk.positions",
+ "version": 1,
+ "note": "Illustrative: sample positions for the fixture tests and the compare shots, not anyone's trades. Import it on the Position Monitor to see the tab filled.",
  "positions": [
   {
    "id": "ndx-vs-spx",
-   "name": "Long NDX vs SPX",
    "instrument": "NDX vs SPX",
    "direction": "long",
    "size_nav": 0.04,
-   "room_pct": 0.68,
-   "to_level": {
-    "value": 3.4,
-    "unit": "%"
-   },
-   "opened": "2026-08-24",
    "horizon_days": 60,
-   "day": 21,
-   "falsifies_at": {
-    "label": "NDX gives back 3.4% against SPX from here",
-    "value": -3.4,
-    "unit": "%"
-   },
-   "now": null,
-   "dv01": null,
-   "study_slug": null,
    "variant": "TODO(Max): the variant view for Long NDX vs SPX, in your words.",
    "pre_mortem": "TODO(Max): the pre-mortem for Long NDX vs SPX.",
-   "red_team": "TODO(Max): the strongest case against Long NDX vs SPX."
+   "red_team": "TODO(Max): the strongest case against Long NDX vs SPX.",
+   "wrong_if": {
+    "id": "custom",
+    "label": "NDX gives back 3.4% against SPX from entry"
+   },
+   "subject": {
+    "kind": "instrument",
+    "id": "NDX vs SPX"
+   },
+   "monitoring": "manual",
+   "entry_ts": "2026-08-24T20:15:00Z",
+   "entry_date": "2026-08-24",
+   "entry_value": null,
+   "trigger": null,
+   "original_room": null,
+   "evaluation": "close",
+   "closes": []
   },
   {
    "id": "2s10s-steepener",
-   "name": "2s10s steepener",
    "instrument": "2s10s",
    "direction": "long",
    "size_nav": 0.02,
-   "room_pct": 0.22,
-   "to_level": {
-    "value": 3,
-    "unit": "bp"
-   },
-   "opened": "2026-09-02",
    "horizon_days": 20,
-   "day": 14,
-   "falsifies_at": {
-    "label": "2s10s below +38 bp",
-    "value": 38,
-    "unit": "bp"
-   },
-   "now": {
-    "value": 41,
-    "unit": "bp",
-    "date": "2026-09-22"
-   },
-   "dv01": 1400,
-   "study_slug": "2s10s-2sigma-steepening",
    "variant": "TODO(Max): the variant view for 2s10s steepener, in your words.",
    "pre_mortem": "TODO(Max): the pre-mortem for 2s10s steepener.",
-   "red_team": "TODO(Max): the strongest case against 2s10s steepener."
+   "red_team": "TODO(Max): the strongest case against 2s10s steepener.",
+   "wrong_if": {
+    "id": "curve_down_10",
+    "label": "falls 10 bp from entry (below +38 bp)"
+   },
+   "subject": {
+    "kind": "study",
+    "question": {
+     "shock": "curve_2s10s",
+     "window": 20,
+     "move": "up2s",
+     "while": "none",
+     "target": "spx",
+     "horizon": 20
+    }
+   },
+   "monitoring": "automatic",
+   "entry_ts": "2026-09-02T20:30:00Z",
+   "entry_date": "2026-09-02",
+   "entry_value": 48,
+   "trigger": {
+    "series": "curve_2s10s",
+    "operator": "below",
+    "threshold": 38,
+    "policy": "frozen",
+    "observed_on": "2026-09-02"
+   },
+   "original_room": 10,
+   "evaluation": "close",
+   "closes": []
   },
   {
    "id": "ai-infra-hedged",
-   "name": "AI-infra basket, hedged",
    "instrument": "AI infrastructure basket vs 1.6 × NDX",
    "direction": "long",
    "size_nav": 0.06,
-   "room_pct": 0.52,
-   "to_level": {
-    "value": 2.1,
-    "unit": "%"
-   },
-   "opened": "2026-08-10",
    "horizon_days": 60,
-   "day": 31,
-   "falsifies_at": {
-    "label": "basket minus 1.6 × NDX below −4%",
-    "value": -4,
-    "unit": "%"
-   },
-   "now": {
-    "value": -1.9,
-    "unit": "%",
-    "date": "2026-09-22"
-   },
-   "dv01": null,
-   "study_slug": null,
    "variant": "TODO(Max): the variant view for AI-infra basket, hedged, in your words.",
    "pre_mortem": "TODO(Max): the pre-mortem for AI-infra basket, hedged.",
-   "red_team": "TODO(Max): the strongest case against AI-infra basket, hedged."
+   "red_team": "TODO(Max): the strongest case against AI-infra basket, hedged.",
+   "wrong_if": {
+    "id": "custom",
+    "label": "basket minus 1.6 × NDX below −4%"
+   },
+   "subject": {
+    "kind": "basket",
+    "legs": [
+     {
+      "symbol": "NVDA",
+      "weight": 22
+     },
+     {
+      "symbol": "AVGO",
+      "weight": 16
+     },
+     {
+      "symbol": "VRT",
+      "weight": 14
+     },
+     {
+      "symbol": "CRWV",
+      "weight": 12
+     },
+     {
+      "symbol": "ANET",
+      "weight": 12
+     },
+     {
+      "symbol": "CEG",
+      "weight": 12
+     },
+     {
+      "symbol": "SMCI",
+      "weight": 12
+     }
+    ],
+    "benchmark": "NDX"
+   },
+   "monitoring": "manual",
+   "entry_ts": "2026-08-10T19:45:00Z",
+   "entry_date": "2026-08-10",
+   "entry_value": null,
+   "trigger": null,
+   "original_room": null,
+   "evaluation": "close",
+   "closes": []
+  },
+  {
+   "id": "gold-dip",
+   "instrument": "GLD",
+   "direction": "long",
+   "size_nav": 0.02,
+   "horizon_days": 20,
+   "variant": "TODO(Max): the variant view for Long GLD, in your words.",
+   "pre_mortem": "TODO(Max): the pre-mortem for Long GLD.",
+   "red_team": "TODO(Max): the strongest case against Long GLD.",
+   "wrong_if": {
+    "id": "custom",
+    "label": "GLD closes below its August low"
+   },
+   "subject": {
+    "kind": "instrument",
+    "id": "GLD"
+   },
+   "monitoring": "manual",
+   "entry_ts": "2026-08-19T20:05:00Z",
+   "entry_date": "2026-08-19",
+   "entry_value": null,
+   "trigger": null,
+   "original_room": null,
+   "evaluation": "close",
+   "closes": [
+    {
+     "type": "falsified",
+     "ts": "2026-09-10T20:20:00Z",
+     "premortem_right": true
+    }
+   ]
+  },
+  {
+   "id": "spx-put-spread",
+   "instrument": "SPX Oct put spread",
+   "direction": "long",
+   "size_nav": 0.01,
+   "horizon_days": 20,
+   "variant": "TODO(Max): the variant view for SPX Oct put spread, in your words.",
+   "pre_mortem": "TODO(Max): the pre-mortem for SPX Oct put spread.",
+   "red_team": "TODO(Max): the strongest case against SPX Oct put spread.",
+   "wrong_if": {
+    "id": "custom",
+    "label": "VIX closes below 14"
+   },
+   "subject": {
+    "kind": "instrument",
+    "id": "SPX Oct put spread"
+   },
+   "monitoring": "manual",
+   "entry_ts": "2026-08-14T19:30:00Z",
+   "entry_date": "2026-08-14",
+   "entry_value": null,
+   "trigger": null,
+   "original_room": null,
+   "evaluation": "close",
+   "closes": [
+    {
+     "type": "expired",
+     "ts": "2026-09-14T20:10:00Z",
+     "premortem_right": false
+    }
+   ]
+  },
+  {
+   "id": "hy-widener",
+   "instrument": "HYG",
+   "direction": "short",
+   "size_nav": 0.03,
+   "horizon_days": 20,
+   "variant": "TODO(Max): the variant view for Short HYG, in your words.",
+   "pre_mortem": "TODO(Max): the pre-mortem for Short HYG.",
+   "red_team": "TODO(Max): the strongest case against Short HYG.",
+   "wrong_if": {
+    "id": "custom",
+    "label": "HY spreads tighten below 3.0%"
+   },
+   "subject": {
+    "kind": "instrument",
+    "id": "HYG"
+   },
+   "monitoring": "manual",
+   "entry_ts": "2026-08-03T20:00:00Z",
+   "entry_date": "2026-08-03",
+   "entry_value": null,
+   "trigger": null,
+   "original_room": null,
+   "evaluation": "close",
+   "closes": [
+    {
+     "type": "falsified",
+     "ts": "2026-08-27T20:15:00Z",
+     "premortem_right": null
+    }
+   ]
   }
- ],
- "closed_90d": {
-  "falsified": 4,
-  "expired": 6,
-  "premortem_right": [
-   2,
-   4
-  ]
- }
+ ]
 }

@@ -4,7 +4,7 @@
  * (src/fixtures/desk), unless a test overrides the path. Anything else
  * answers 404. Returns the list of requested paths.
  */
-import { FIXTURE_META, deskFixture, resetDeskFixtureState } from "../fixtures/desk";
+import { FIXTURE_META, deskFixture } from "../fixtures/desk";
 import { awaitingEnvelope, onTheWire, routeOf } from "../screens/desk/data/envelope";
 
 /** An override's body as the wire carries it (§12.0): a payload or `{error}` body in its envelope, an envelope as it is. */
@@ -13,7 +13,6 @@ const wire = (pathname: string, status: number, body: unknown) => (pathname.star
 export type DeskOverride = (url: URL, init?: RequestInit) => { status: number; body: unknown } | unknown;
 
 export function stubDesk(over: Record<string, DeskOverride> = {}) {
-  resetDeskFixtureState();
   const calls: string[] = [];
   const fn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "http://localhost");

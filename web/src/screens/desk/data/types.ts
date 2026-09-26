@@ -101,45 +101,8 @@ export interface LedgerResponse extends Envelope {
   signals?: LedgerRow[];
 }
 
-// ── §12.8 /positions ──────────────────────────────────────────────────────
-
-export interface ToLevel {
-  value: number;
-  unit: string;
-}
-
-export interface PositionCompact {
-  id: string;
-  name: string;
-  instrument: string;
-  direction: "long" | "short";
-  /** Null when not served (a position saved without a size); the row prints "—". */
-  size_nav: number | null;
-  room_pct: number | null;
-  to_level: ToLevel | null;
-  opened: string;
-  horizon_days: number | null;
-  day: number | null;
-}
-
-/** §12.8's expanded row: the compact row plus the gate text and the level. */
-export interface PositionExpanded extends PositionCompact {
-  /** PROPOSED (§12.13) shape: the level that falsifies the idea, in words and number. */
-  falsifies_at: { label: string; value: number | null; unit: string | null } | null;
-  /** PROPOSED (§12.13) shape: the level's series today, dated at its own frequency. */
-  now: { value: number | null; unit: string; date: string } | null;
-  dv01: number | null;
-  variant: string;
-  pre_mortem: string;
-  red_team: string;
-  study_slug: string | null;
-}
-
-/** GET /positions (PROPOSED shape, §12.13). */
-export interface PositionsResponse extends Envelope {
-  positions?: PositionExpanded[];
-  closed_90d?: { falsified: number | null; expired: number | null; premortem_right: [number | null, number | null] | null };
-}
+// Positions (§9, §12.13) are kept in this browser: their record is in
+// screens/desk/positions/store.ts; `GET /positions` is a deferred stub.
 
 // ── §12.11 /pipeline ──────────────────────────────────────────────────────
 
@@ -240,7 +203,6 @@ export interface OverviewResponse extends Envelope {
   since_last_close?: SinceLastClose;
   tiles?: OverviewTiles;
   active_signals?: LedgerRow[];
-  monitored?: PositionCompact[];
   /** PROPOSED (§12.13): the sidebar TODAY card's data word ("current" | "stale" | "unknown"). */
   data_status: string;
 }
@@ -259,6 +221,8 @@ export interface TechnicalsResponse extends Envelope {
   /** PROPOSED (§12.13, Codex R-08): the one series every level here describes. */
   instrument?: { symbol: string; label: string };
   price: number | null;
+  /** §12.7: the session the price and the averages are dated to. */
+  date?: string;
   chg_1d: number | null;
   ma50: number | null;
   ma200: number | null;
@@ -435,7 +399,9 @@ export interface CurvePoint {
   "5y": number | null;
   "10y": number | null;
   "30y": number | null;
-  date: string;
+  /** §12.8: the date the tenors share, or null when they differ (then `dates` dates each). */
+  date: string | null;
+  dates?: Record<string, string>;
 }
 
 export interface MacroResponse extends Envelope {

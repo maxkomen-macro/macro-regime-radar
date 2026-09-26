@@ -19,7 +19,6 @@ import macro from "./macro.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
 import pipeline from "./pipeline.json" with { type: "json" };
 import { PIPELINE_DDL } from "./pipeline-ddl";
-import positions from "./positions.json" with { type: "json" };
 import regime from "./regime.json" with { type: "json" };
 import studyCatalog from "./study-catalog.json" with { type: "json" };
 import studyEvents from "./study-events.json" with { type: "json" };
@@ -88,6 +87,8 @@ function catalogAsk(u: URL): { study: CatalogStudy | null; question: Question | 
 const DEFERRED: Readonly<Record<string, string>> = {
   "/vol": "needs stored SPY option snapshots and a versioned skew method.",
   "/sectors": "sector ETFs, RSP and IWM not ingested.",
+  // §9, §12.13: positions are kept in the browser; there is no server position store (v2 D-21).
+  "/positions": "positions are kept in this browser; there is no server position store.",
 };
 
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
@@ -100,80 +101,6 @@ function asksFixtureStudy(u: URL): boolean {
   const preset = u.searchParams.get("preset");
   if (preset) return preset === (study as { slug: string }).slug;
   return SLOTS.every((k) => u.searchParams.get(k) === String(STUDY_Q[k]));
-}
-
-/** Whether a POST body names the study a "signal reverses" level binds to (Codex R-11): a
- * slug, or `question` as exactly the six slots, each one the slots can ask. Anything else,
- * a blank slug, a seventh key, a slot of the wrong kind, names no study. */
-function namesStudy(b: Record<string, unknown>): boolean {
-  if (typeof b.study_slug === "string" && b.study_slug.trim()) return true;
-  const q = b.question;
-  if (!q || typeof q !== "object" || Array.isArray(q)) return false;
-  const keys = Object.keys(q);
-  return keys.length === SLOTS.length && SLOTS.every((k) => keys.includes(k)) && isQuestion(q);
-}
-
-// ── /positions (§12.8): the server keeps positions; the fixture keeps the
-// ones posted during this dev-server or test session, in memory. ──────────
-
-let posted: Record<string, unknown>[] = [];
-
-/** Forget what was posted (tests call this between cases). */
-export function resetDeskFixtureState(): void {
-  posted = [];
-}
-
-const CERTAINTY = /\b(will|always|never|proves|guaranteed)\b/gi;
-
-function positionsReply(method: string, body: string | undefined): FixtureReply {
-  if (method.toUpperCase() === "GET") {
-    const base = positions as { positions: Record<string, unknown>[] };
-    return json(200, { ...base, positions: [...base.positions, ...posted] });
-  }
-  if (method.toUpperCase() !== "POST") return json(405, { error: "method not allowed" });
-  let b: Record<string, unknown>;
-  try {
-    b = JSON.parse(body ?? "{}") as Record<string, unknown>;
-  } catch {
-    return json(400, { error: "not JSON" });
-  }
-  const text = `${String(b.variant ?? "")} ${String(b.pre_mortem ?? "")}`;
-  const words = [...new Set([...text.matchAll(CERTAINTY)].map((m) => m[0].toLowerCase()))];
-  if (words.length) return json(422, { error: "wording", words });
-  const wrongIf = b.wrong_if as { label?: string } | undefined;
-  const missing = [
-    !String(b.instrument ?? "").trim() && "instrument",
-    !String(b.variant ?? "").trim() && "variant",
-    !String(b.pre_mortem ?? "").trim() && "pre_mortem",
-    !String(wrongIf?.label ?? "").trim() && "level",
-  ].filter(Boolean);
-  if (missing.length) return json(422, { error: "gate", missing });
-  // The signal's own reversal is a level only against the study it comes from (Codex R-11).
-  if ((b.wrong_if as { id?: unknown } | undefined)?.id === "signal_reverses" && !namesStudy(b)) return json(422, { error: "gate", missing: ["study"] });
-  const id = `p${posted.length + 1}`;
-  const row = {
-    id,
-    name: `${b.direction === "short" ? "Short" : "Long"} ${String(b.instrument)}`,
-    instrument: String(b.instrument),
-    direction: b.direction === "short" ? "short" : "long",
-    // The fixture measures nothing: what a real server would compute from market data (room, the
-    // distance to the level, the level's value) stays null; the day it opened is today, day 1.
-    size_nav: typeof b.size_nav === "number" ? b.size_nav : null,
-    room_pct: null,
-    to_level: null,
-    opened: (positions as { as_of: string }).as_of,
-    horizon_days: typeof b.horizon_days === "number" ? b.horizon_days : 20,
-    day: 1,
-    falsifies_at: { label: String(wrongIf?.label ?? ""), value: null, unit: null },
-    now: null,
-    dv01: null,
-    variant: String(b.variant),
-    pre_mortem: String(b.pre_mortem),
-    red_team: "",
-    study_slug: typeof b.study_slug === "string" ? b.study_slug : null,
-  };
-  posted = [...posted, row];
-  return json(201, row);
 }
 
 // ── Basket & Hedge (§12.12): the fixtures carry one basket, its price and
@@ -230,7 +157,8 @@ export function deskFixture(method: string, url: string, _body?: string, accept?
 
 /** The fixture's answer before it is put on the wire: a payload or a `{error}` body. */
 function rawReply(method: string, u: URL, path: string, _body?: string, accept?: string): FixtureReply {
-  if (path === "/positions") return positionsReply(method, _body);
+  // §12.0: a removed write answers 405 (`POST /positions`).
+  if (path === "/positions" && method.toUpperCase() !== "GET") return json(405, { error: "method not allowed" });
   if (method.toUpperCase() === "GET" && path in DESK_JSON_FIXTURES) return json(200, DESK_JSON_FIXTURES[path]);
   if (method.toUpperCase() === "GET" && path in DEFERRED) return json(200, awaitingEnvelope({ reason: DEFERRED[path], until: null }, FIXTURE_META));
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {

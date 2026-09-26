@@ -18,6 +18,8 @@ import { FIXTURE_META, deskFixture } from "../src/fixtures/desk/index";
 import { awaitingEnvelope } from "../src/screens/desk/data/envelope";
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 import { bpStudy } from "../src/test/desk-variants";
+import positionSample from "../src/fixtures/desk/positions.json" with { type: "json" };
+import { POSITIONS_KEY } from "../src/screens/desk/positions/store";
 
 /** A fixture answer's payload: the envelope's `data` (§12.0), for an override to change and serve again. */
 function payloadOf(reply: { body: string }): Record<string, unknown> {
@@ -26,6 +28,17 @@ function payloadOf(reply: { body: string }): Record<string, unknown> {
 
 /** The v2 tabs built so far; each later tab adds itself here. */
 const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline", "build-notes", "basket-hedge"];
+
+/** The illustrative store (§9: positions live in the browser), set before the app loads on every navigation of this page. */
+async function seedPositions(page: Page, list: unknown[] = (positionSample as { positions: unknown[] }).positions): Promise<void> {
+  await page.addInitScript(([key, text]) => {
+    try {
+      localStorage.setItem(key, text);
+    } catch {
+      /* no storage: the tab shows an empty monitor */
+    }
+  }, [POSITIONS_KEY, JSON.stringify(list)] as const);
+}
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
   await routeDesk(page, over);
@@ -71,7 +84,6 @@ test.describe("desk v2", () => {
     { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
     { slug: "sectors", path: "/api/desk/sectors", labels: ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"] },
     { slug: "signal-ledger", path: "/api/desk/ledger", labels: ["Signals scored", "Firing now", "Reliable", "No edge"] },
-    { slug: "position-monitor", path: "/api/desk/positions", labels: ["Monitored", "Closed · last 90d"] },
     { slug: "data-pipeline", path: "/api/desk/pipeline", labels: ["Series inventory"] },
     { slug: "basket-hedge", path: "/api/desk/basket/ai-infra", labels: ["3-month", "Basket vol", "Hedge ratio", "Cost of waiting", "Roll"] },
   ];
@@ -178,6 +190,10 @@ test.describe("desk v2", () => {
   });
 
   test("overview: the four tiles carry their Live badges and read the fixture", async ({ page }) => {
+    // The monitored rows are this browser's (§2, §9): one amber, one green, one manual.
+    const [ndx, curve] = ["ndx-vs-spx", "2s10s-steepener"].map((id) => (positionSample as { positions: { id: string }[] }).positions.find((p) => p.id === id)!);
+    const spx = { ...curve, id: "spx-long", instrument: "S&P 500", wrong_if: { id: "below_50d", label: "closes below its 50-day (6,280)" }, subject: { kind: "instrument", id: "spx" }, entry_value: 6500, original_room: 220, trigger: { series: "spx", operator: "below", threshold: 6280, policy: "frozen", observed_on: "2026-09-02" } };
+    await seedPositions(page, [ndx, spx, { ...curve, entry_value: 58, original_room: 20 }]);
     await open(page, "/desk/overview");
     // §2: the K−2 row governing today (a September session reads the July row).
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Jul row");
@@ -191,8 +207,9 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-value")).toHaveCSS("color", "rgb(232, 180, 71)");
     const rows = page.getByTestId("dk-mon-row");
     await expect(rows.nth(0).locator(".dk-mon-room")).toHaveCSS("color", "rgb(232, 180, 71)");
-    await expect(rows.nth(2).locator(".dk-mon-room")).toHaveCSS("color", "rgb(38, 220, 160)");
+    await expect(rows.nth(1).locator(".dk-mon-room")).toHaveCSS("color", "rgb(38, 220, 160)");
     await expect(rows.nth(0).locator(".dk-mon-dim")).toHaveCSS("color", "rgb(139, 146, 158)");
+    await expect(rows.nth(2).locator(".dk-mon-room")).toHaveText("manual");
   });
 
   test("the walkthrough strip is in the v2 palette", async ({ page }) => {
@@ -425,7 +442,9 @@ test.describe("desk v2", () => {
   });
 
   test("position monitor: the flagged and expanded states stay in the palette; no sideways scroll; no stretch in a tall window", async ({ page }) => {
+    await seedPositions(page);
     await open(page, "/desk/position-monitor?from=gold-2sigma-spx-weak&open=2s10s-steepener");
+    await expect(page.getByRole("region", { name: /Monitored/ })).toContainText("2s10s below +38 bp · now +41 bp");
     await page.getByLabel(/Variant view/).fill("The market thinks gold will keep falling.");
     await expect(page.getByRole("group", { name: "Wording" })).toContainText("1 to fix, one click");
     await page.getByRole("button", { name: /closes below its 50-day/ }).click();
@@ -448,6 +467,28 @@ test.describe("desk v2", () => {
       expect(cramped.chips).toBe(0);
       expect(cramped.own).toBeGreaterThan(120);
     }
+  });
+
+  test("position monitor: a save stays in this browser, survives a reload, and asks the server nothing (§9, v3 §16)", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/desk/positions")) asked.push(`${r.method()} ${r.url()}`);
+    });
+    await open(page, "/desk/position-monitor");
+    await page.getByLabel("Instrument", { exact: true }).fill("TLT");
+    await page.getByLabel(/Variant view/).fill("The market thinks rates stay high, I think they fall, because growth is slowing.");
+    await page.getByLabel(/Pre-mortem/).fill("It lost money because inflation surprised up.");
+    await page.getByLabel("Or type your own level").fill("TLT closes below 84");
+    await page.getByTestId("pm-save").click();
+    await expect(page.getByRole("status")).toContainText("Saved in this browser.");
+    const mon = page.getByRole("region", { name: /Monitored/ });
+    await expect(mon.getByTestId("dk-mon-row")).toHaveCount(1);
+    await expect(mon.locator(".dk-mon-room")).toHaveText("manual");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("region", { name: /Monitored/ }).getByTestId("dk-mon-row")).toHaveCount(1);
+    expect(asked).toEqual([]);
+    expect(await auditPalette(page)).toEqual([]);
+    expect(await bannedWordsOnPage(page)).toEqual([]);
   });
 
   test("data pipeline: the badge, a search that opens its group, the group's own scroll; no sideways scroll at 390", async ({ page }) => {

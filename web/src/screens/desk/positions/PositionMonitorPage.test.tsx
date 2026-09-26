@@ -1,29 +1,33 @@
 /**
- * Position Monitor (DESK_FRAME3_SPEC §9, §12.8): the gate fields ship empty,
- * Save stays off and names what is left until three answers and a level are
- * in and no certainty word remains, a one-click replacement clears a word,
- * Save posts to /positions (which applies the same rules), the saved position
- * appears on the monitor, a row opens to its gate text (and `?open=` opens
- * one), and a carried-in study fills the instrument and nothing else.
+ * Position Monitor (DESK_FRAME3_SPEC §9, v3 §16, v4 B-10): the gate fields
+ * ship empty, Save stays off and names what is left until three answers and
+ * a level are in and no certainty word remains, a one-click replacement
+ * clears a word, Save keeps the position in this browser (nothing is
+ * posted) with automatic room only for the S&P against its 50-day and 2s10s
+ * against a bp level, the monitor reads the store against today's levels, a
+ * row opens to its gate text and Close…, records the store cannot read are
+ * listed and kept, and a carried-in study fills the instrument and nothing
+ * else.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes, useNavigate } from "react-router-dom";
 import DeskShell from "../DeskShell";
-import positions from "../../../fixtures/desk/positions.json";
-import type { PositionExpanded } from "../data/types";
+import sample from "../../../fixtures/desk/positions.json";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
 import study from "../../../fixtures/desk/study.json";
 import technicals from "../../../fixtures/desk/technicals.json";
-import { FIXTURE_META, deskFixture, resetDeskFixtureState } from "../../../fixtures/desk";
-import { errorEnvelope } from "../data/envelope";
-import { falsifiesLine, parseSize, refusalWords, sizeLine } from "./PositionMonitorPage";
-import { DeskApiError } from "../data/api";
-import { MonitoredRow, levelText, sortByRoom } from "../kit/MonitoredRows";
-import { render } from "@testing-library/react";
+import { FIXTURE_META, deskFixture } from "../../../fixtures/desk";
+import { awaitingEnvelope } from "../data/envelope";
+import { SAVED_BASKETS_KEY } from "../basket/weights";
+import { parseSize } from "./PositionMonitorPage";
+import { MonitoredRow } from "../kit/MonitoredRows";
 import { describes, suggestions, underlyingName } from "./levels";
+import { POSITIONS_KEY, type PositionRecord } from "./store";
 import { findFlags, gateState, replaceFlag } from "./wording";
+
+const RECORDS = (sample as { positions: PositionRecord[] }).positions;
 
 function renderTab(route = "/desk/position-monitor") {
   return renderWithProviders(
@@ -34,12 +38,24 @@ function renderTab(route = "/desk/position-monitor") {
   );
 }
 
+const stored = (): unknown[] => JSON.parse(localStorage.getItem(POSITIONS_KEY) ?? "[]") as unknown[];
+const seed = (list: unknown[]) => localStorage.setItem(POSITIONS_KEY, JSON.stringify(list));
+
+/** The three gate answers, typed. */
+function answer(variant = "The market thinks a, I think b, because c.", preMortem = "It lost money because d.") {
+  fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: variant } });
+  fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: preMortem } });
+}
+
 const realFetch = globalThis.fetch;
 beforeEach(() => {
+  localStorage.removeItem(POSITIONS_KEY);
   stubDesk();
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
+  localStorage.removeItem(POSITIONS_KEY);
+  vi.restoreAllMocks();
 });
 
 describe("the gate, pure", () => {
@@ -61,28 +77,24 @@ describe("the gate, pure", () => {
     expect(suggestions("SPX", t, null, "short").top.map((c) => c.label)).toEqual(["closes above its 50-day (6,280)", "rises 2σ over 5 days"]);
     expect(suggestions("SPX", t, null).top.map((c) => c.id)).toEqual(["below_50d", "falls_2s_5d"]);
     // A pair, an option on the index, a future: the rules without the index's numbers (Codex R-08).
-    for (const i of ["NDX vs SPX", "QQQ/SPY", "ES Dec 26", "SPX Dec 26 put spread", "Long yes-no basket"]) expect(describes(i, t)).toBe(false);
+    for (const i of ["NDX vs SPX", "QQQ/SPY", "ES Dec 26", "SPX Dec 26 put spread", "Long yes-no basket"]) expect(describes(i)).toBe(false);
     expect(suggestions("SPX Dec 26 put spread", t, null, "short").top[0].label).toBe("closes above its 50-day");
   });
-  it("reads the size as typed, and words each refusal", () => {
+  it("reads the size as typed", () => {
     expect([parseSize(""), parseSize("4"), parseSize(" 4% "), parseSize("0.5")]).toEqual([null, 4, 4, 0.5]);
     expect(parseSize("four")).toBeNaN();
-    expect(refusalWords(new DeskApiError(422, "x", { error: "gate", missing: ["level", "pre_mortem"] } as never))).toBe("The server says the gate is incomplete: a “wrong if” level, the pre-mortem. Nothing was saved.");
-    expect(refusalWords(new DeskApiError(422, "x", { error: "gate" } as never))).toBe("The server says the gate is incomplete. Nothing was saved.");
-    expect(refusalWords(new DeskApiError(422, "x", { error: "wording", words: ["will"] } as never))).toBe("The server refused certainty words: will. Nothing was saved.");
-    expect(refusalWords(new TypeError("Failed to fetch"))).toBe("The data service did not answer; nothing was saved.");
-    // deskPost wraps a failed fetch as status 0 (R2-3).
-    expect(refusalWords(new DeskApiError(0, "network"))).toBe("The data service did not answer; nothing was saved.");
     expect([parseSize("0x10"), parseSize("1e2"), parseSize("500"), parseSize("-3")].every((v) => Number.isNaN(v))).toBe(true);
     expect(parseSize("100")).toBe(100);
     expect([parseSize(".5"), parseSize("4.")]).toEqual([0.5, 4]);
   });
-  it("a row with unserved values prints dashes and never crashes (P-2)", () => {
-    const row = { id: "x", name: "Long TLT", instrument: "TLT", direction: "long", size_nav: null, room_pct: null, to_level: null, opened: "2026-09-22", horizon_days: 20, day: 1 } as never;
-    const { container } = render(<ul><MonitoredRow row={row} /></ul>);
-    expect(container.textContent).toBe("Long TLT— NAVroom —▶");
-    expect(levelText({ value: -2, unit: "bp" })).toBe("−2 bp");
-    expect(sortByRoom([{ room_pct: null }, { room_pct: 0.4 }]).map((r) => r.room_pct)).toEqual([0.4, null]);
+  it("a row without room prints dashes and never crashes (P-2); a manual row says manual, its bar empty (§2)", () => {
+    const row = { id: "x", name: "Long TLT", size_nav: null, monitoring: "automatic", room_pct: null, to_level: null } as const;
+    const a = render(<ul><MonitoredRow row={row} /></ul>);
+    expect(a.container.textContent).toBe("Long TLT— NAVroom —▶");
+    a.unmount();
+    const b = render(<ul><MonitoredRow row={{ ...row, size_nav: 0.04, monitoring: "manual" }} /></ul>);
+    expect(b.container.textContent).toBe("Long TLT4% NAVmanual▶");
+    expect(b.container.querySelector(".dk-mon-bar")?.children).toHaveLength(0);
   });
   it("a bad size joins the count of what is left (R2-2)", () => {
     expect(gateState({ instrument: "x", variant: "a", pre_mortem: "b", level: null, sizeOk: false }).left).toBe("Two things left: pick a “wrong if” level, and enter the size as a number from 0 to 100, or leave it empty");
@@ -97,22 +109,18 @@ describe("the gate, pure", () => {
     const t = { instrument: { symbol: "SPX", label: "S&P 500" }, ma50: 6280, ma200: 5910 } as never;
     expect(suggestions("SPY", t, null).top[0].label).toBe("closes below its 50-day");
     expect(suggestions("SPY", t, null).more[0].label).toBe("closes below its 200-day");
-    expect(underlyingName("SPY", t)).toBe("SPY");
-    expect([describes("S&P 500", t), describes(" s&p  500 ", t), describes("spx", t), describes("SPY", t), describes("", t)]).toEqual([true, true, true, false, false]);
-    expect(underlyingName("spx", t)).toBe("S&P 500");
-    // Without the served series, no instrument is it: names only.
-    expect(suggestions("S&P 500", { ma50: 6280, ma200: 5910 } as never, null).top[0].label).toBe("closes below its 50-day");
+    expect(underlyingName("SPY")).toBe("SPY");
+    expect([describes("S&P 500"), describes(" s&p  500 "), describes("spx"), describes("^GSPC"), describes("SPY"), describes("")]).toEqual([true, true, true, true, false, false]);
+    expect(underlyingName("spx")).toBe("S&P 500");
+    expect(underlyingName("2s10s")).toBe("2s10s");
+    // Without the served averages, the rules are named without numbers.
+    expect(suggestions("S&P 500", { ma50: null, ma200: null }, null).top[0].label).toBe("closes below its 50-day");
   });
   it("suggests levels from the served S&P averages for an S&P instrument only", () => {
     const t = { instrument: { symbol: "SPX", label: "S&P 500" }, ma50: 6280, ma200: 5910 } as never;
     expect(suggestions("S&P 500", t, "Gold gives back its move").top.map((c) => c.label)).toEqual(["closes below its 50-day (6,280)", "falls 2σ over 5 days", "the signal reverses (Gold gives back its move)"]);
     expect(suggestions("TLT", t, null).top[0].label).toBe("closes below its 50-day");
     expect(suggestions("S&P 500", t, null).more).toHaveLength(8);
-  });
-  it("spells the expanded row's lines from served fields", () => {
-    const p = positions.positions.find((x) => x.id === "2s10s-steepener") as PositionExpanded;
-    expect(falsifiesLine(p)).toBe("2s10s below +38 bp · now +41 bp");
-    expect(sizeLine(p)).toBe("2% NAV · DV01 $1.4k · 14 of 20 trading days · opened Sep 2");
   });
 });
 
@@ -122,30 +130,103 @@ describe("Position Monitor tab", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Promote to position" })).toBeInTheDocument();
     expect(screen.getByLabelText(/Variant view/)).toHaveValue("");
     expect(screen.getByLabelText(/Pre-mortem/)).toHaveValue("");
+    expect(screen.getByLabelText(/Red team/)).toHaveValue("");
     expect(screen.getByTestId("pm-save")).toBeDisabled();
     expect(screen.queryByTestId("dk-view-toggle")).toBeNull();
   });
 
-  it("fills, fixes a certainty word in one click, saves to the server and shows the position", async () => {
-    const { calls } = stubDesk();
+  it("fills, fixes a certainty word in one click, and keeps the position in this browser: automatic against the S&P's 50-day, nothing posted", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-22T21:00:00Z") });
+    try {
+      const { calls } = stubDesk();
+      renderTab();
+      fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX" } });
+      answer("The market thinks gold will keep falling, I think it bounces, because the study says so.", "It lost money because the regime read was stale.");
+      fireEvent.change(screen.getByLabelText(/Red team/), { target: { value: "The bounce is priced." } });
+      const wording = screen.getByRole("group", { name: "Wording" });
+      expect(wording).toHaveTextContent("1 to fix, one click");
+      expect(screen.getByRole("status")).toHaveTextContent("Two things left: pick a “wrong if” level, and fix one word above");
+      fireEvent.click(within(wording).getByRole("button", { name: "Use “is likely to”" }));
+      expect(screen.getByLabelText(/Variant view/)).toHaveValue("The market thinks gold is likely to keep falling, I think it bounces, because the study says so.");
+      await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day/ }));
+      expect(screen.getByRole("status")).toHaveTextContent("The gate is complete. Save keeps the position in this browser.");
+      fireEvent.click(screen.getByTestId("pm-save"));
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved in this browser. The position is on the monitor, its room read from the served level."));
+      expect(calls.some((c) => c.startsWith("POST"))).toBe(false);
+      const [p] = stored() as PositionRecord[];
+      expect(p).toMatchObject({
+        instrument: "SPX",
+        direction: "long",
+        size_nav: null,
+        horizon_days: 20,
+        red_team: "The bounce is priced.",
+        wrong_if: { id: "below_50d", label: "closes below its 50-day (6,280)" },
+        subject: { kind: "instrument", id: "spx" },
+        monitoring: "automatic",
+        entry_date: "2026-09-22",
+        entry_value: 6412,
+        trigger: { series: "spx", operator: "below", threshold: 6280, policy: "frozen", observed_on: "2026-09-22" },
+        original_room: 132,
+        evaluation: "close",
+        closes: [],
+      });
+      const mon = screen.getByRole("region", { name: /Monitored/ });
+      expect(within(mon).getAllByTestId("dk-mon-row")).toHaveLength(1);
+      expect(mon).toHaveTextContent("100% room · 2.1% to level");
+      expect(screen.getByLabelText(/Variant view/)).toHaveValue("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("B-10: a level already crossed at entry is refused with a sentence, never saved as manual", async () => {
     renderTab();
-    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX" } });
-    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "The market thinks gold will keep falling, I think it bounces, because the study says so." } });
-    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "It lost money because the regime read was stale." } });
-    const wording = screen.getByRole("group", { name: "Wording" });
-    expect(wording).toHaveTextContent("1 to fix, one click");
-    expect(screen.getByRole("status")).toHaveTextContent("Two things left: pick a “wrong if” level, and fix one word above");
-    fireEvent.click(within(wording).getByRole("button", { name: "Use “is likely to”" }));
-    expect(screen.getByLabelText(/Variant view/)).toHaveValue("The market thinks gold is likely to keep falling, I think it bounces, because the study says so.");
-    await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day/ }));
-    const save = screen.getByTestId("pm-save");
-    expect(save).toBeEnabled();
-    fireEvent.click(save);
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved."));
-    expect(calls.some((c) => c.startsWith("POST /api/desk/positions"))).toBe(true);
-    await waitFor(() => expect(screen.getAllByTestId("dk-mon-row")).toHaveLength(4));
-    expect(screen.getByLabelText(/Variant view/)).toHaveValue("");
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
+    fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "short" } });
+    answer();
+    await waitFor(() => expect(screen.getByRole("button", { name: "closes above its 50-day (6,280)" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "closes above its 50-day (6,280)" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    expect(screen.getByRole("status")).toHaveTextContent("The S&P 500 is at 6,412, already above 6,280, so there is no room to monitor. Pick another level; nothing was saved.");
+    // A refusal is a caution, never green (P-3); the form keeps every word.
+    expect(screen.getByRole("status")).toHaveAttribute("data-tone", "amber");
+    expect(screen.getByLabelText(/Variant view/)).not.toHaveValue("");
+    expect(stored()).toEqual([]);
+  });
+
+  it("2s10s is monitored automatically against a bp level from entry; any other instrument or rule is manual", async () => {
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "2s10s" } });
+    answer();
+    await waitFor(() => expect(screen.getByRole("button", { name: "falls 10 bp from entry (below +31 bp)" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "falls 10 bp from entry (below +31 bp)" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0]).toMatchObject({ subject: { kind: "instrument", id: "curve_2s10s" }, monitoring: "automatic", entry_value: 41, trigger: { series: "curve_2s10s", operator: "below", threshold: 31 }, original_room: 10 });
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "TLT" } });
+    answer();
+    fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "TLT below 88" } });
+    fireEvent.change(screen.getByLabelText("Size · % NAV"), { target: { value: "3" } });
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved in this browser. The position is on the monitor, monitored by hand."));
+    expect(stored()[1]).toMatchObject({ instrument: "TLT", size_nav: 0.03, wrong_if: { id: "custom", label: "TLT below 88" }, monitoring: "manual", entry_value: null, trigger: null, original_room: null });
+    const rows = within(screen.getByRole("region", { name: /Monitored/ })).getAllByTestId("dk-mon-row");
+    expect(rows.map((r) => r.getAttribute("data-monitoring"))).toEqual(["automatic", "manual"]);
+    expect(rows[1]).toHaveTextContent("manual");
+  });
+
+  it("a browser that keeps nothing says so, and nothing is shown as saved", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "TLT" } });
+    answer();
+    fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "TLT below 88" } });
+    fireEvent.click(screen.getByTestId("pm-save"));
+    expect(screen.getByRole("status")).toHaveTextContent("This browser's storage is full, so nothing was saved.");
+    expect(screen.getByText("No open positions in this browser.")).toBeInTheDocument();
   });
 
   it("SPY gets the rules without the index's numbers; the index itself gets them (Codex R-08)", async () => {
@@ -160,74 +241,110 @@ describe("Position Monitor tab", () => {
     expect(screen.getByRole("main").textContent).not.toMatch(/6,280|5,910/);
   });
 
-  it("technicals served without its instrument: every level is named, none carries a number (Codex R-08)", async () => {
+  it("the S&P is known by its name, not by a served field: /technicals without `instrument` still numbers and monitors its 50-day (§12.7)", async () => {
     stubDesk({ "/api/desk/technicals": () => ({ ...technicals, instrument: undefined }) });
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
-    await waitFor(() => expect(screen.getByRole("button", { name: "closes below its 50-day" })).toBeInTheDocument());
-    expect(screen.getByRole("main").textContent).not.toMatch(/6,280|5,910/);
-  });
-
-  it("the server's refusal is shown, not hidden", async () => {
-    stubDesk({ "/api/desk/positions": (_u, init) => (init?.method === "POST" ? { status: 422, body: { error: "gate", missing: ["level"] } } : positions) });
-    renderTab();
-    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "TLT" } });
-    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "a" } });
-    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "b" } });
-    fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "TLT below 88" } });
+    answer();
+    fireEvent.click(await screen.findByRole("button", { name: "closes below its 50-day (6,280)" }));
     fireEvent.click(screen.getByTestId("pm-save"));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("The server says the gate is incomplete: a “wrong if” level. Nothing was saved."));
-    // A refusal is a caution, never green (P-3).
-    expect(screen.getByRole("status")).toHaveAttribute("data-tone", "amber");
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0]).toMatchObject({ subject: { kind: "instrument", id: "spx" }, monitoring: "automatic", trigger: { series: "spx", threshold: 6280 } });
   });
 
-  it("a save whose answer cannot be read says so and asks Monitored again (Codex R-09, G1-7)", async () => {
-    const { calls } = stubDesk({ "/api/desk/positions": (_u, init) => (init?.method === "POST" ? null : positions) });
+  it("with /technicals awaiting, the S&P's 50-day is refused as not served, never saved as manual (§9, B-10)", async () => {
+    stubDesk({ "/api/desk/technicals": () => awaitingEnvelope({ reason: "generation warming", until: null }, FIXTURE_META) });
     renderTab();
-    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "TLT" } });
-    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "a" } });
-    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "b" } });
-    fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "TLT below 88" } });
-    await waitFor(() => expect(calls.filter((c) => c === "GET /api/desk/positions")).toHaveLength(1));
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
+    answer();
+    fireEvent.click(screen.getByRole("button", { name: "closes below its 50-day" }));
     fireEvent.click(screen.getByTestId("pm-save"));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("The data service's answer could not be read; check Monitored before saving again."));
-    await waitFor(() => expect(calls.filter((c) => c === "GET /api/desk/positions")).toHaveLength(2));
+    expect(screen.getByRole("status")).toHaveTextContent("The S&P 500 level is not served right now, so the room at entry cannot be recorded. Nothing was saved.");
+    expect(stored()).toEqual([]);
   });
 
-  it("the monitor: sorted by room, a row opens to its gate text, and ?open= opens one", async () => {
+  it("a basket sent from Basket & Hedge is monitored by hand, whatever its instrument reads (§9)", async () => {
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([{ id: "local-1", name: "Grid", legs: [{ symbol: "CEG", name: null, weight: 100 }], saved_at: "2026-09-22T00:00:00Z" }]));
+    try {
+      renderTab("/desk/position-monitor?basket=local-1");
+      await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("Grid basket"));
+      fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "2s10s" } });
+      answer();
+      fireEvent.click(await screen.findByRole("button", { name: /falls 10 bp from entry/ }));
+      fireEvent.click(screen.getByTestId("pm-save"));
+      await waitFor(() => expect(stored()).toHaveLength(1));
+      expect(stored()[0]).toMatchObject({ subject: { kind: "basket", legs: [{ symbol: "CEG", weight: 100 }], benchmark: null }, monitoring: "manual", trigger: null, original_room: null });
+    } finally {
+      localStorage.removeItem(SAVED_BASKETS_KEY);
+    }
+  });
+
+  it("the monitor: sorted by room, manual rows last by id, a row opens to its gate text, and ?open= opens one", async () => {
+    seed(RECORDS);
     renderTab("/desk/position-monitor?open=2s10s-steepener");
     const mon = await screen.findByRole("region", { name: /Monitored/ });
-    await waitFor(() => expect(within(mon).getAllByTestId("dk-mon-row")).toHaveLength(3));
+    await waitFor(() => expect(mon).toHaveTextContent("30% room · 3 bp to level"));
     expect(within(mon).getAllByTestId("dk-mon-row").map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "ai-infra-hedged", "ndx-vs-spx"]);
     expect(mon).toHaveTextContent("2s10s below +38 bp · now +41 bp");
+    expect(mon).toHaveTextContent(/2% NAV · DV01 — · \d+ of 20 trading days · opened Sep 2/);
     expect(mon).toHaveTextContent("TODO(Max): the variant view for 2s10s steepener");
-    expect(within(mon).getByRole("link", { name: "Open the study behind it →" })).toHaveAttribute("href", "/desk/event-study?preset=2s10s-2sigma-steepening");
+    expect(within(mon).getByRole("link", { name: "Open the study behind it →" })).toHaveAttribute("href", "/desk/event-study?shock=curve_2s10s&window=20&move=up2s&while=none&target=spx&horizon=20");
+    expect(within(mon).queryByRole("link", { name: /Price a hedge/ })).toBeNull();
     expect(mon).toHaveTextContent("12% deployed, 3 positions");
-    fireEvent.click(within(within(mon).getAllByTestId("dk-mon-row")[2]).getByRole("button"));
+    fireEvent.click(within(within(mon).getAllByTestId("dk-mon-row")[2]).getAllByRole("button")[0]);
     await waitFor(() => expect(mon).toHaveTextContent("TODO(Max): the variant view for Long NDX vs SPX"));
-    expect(screen.getByRole("region", { name: "Closed in the last 90 days" })).toHaveTextContent(/Pre-mortem was right\s*2 of 4/);
+    expect(mon).toHaveTextContent("NDX gives back 3.4% against SPX from entry");
+    expect(mon).toHaveTextContent("Monitored by hand: close it when the level is reached.");
+    expect(screen.getByRole("region", { name: "Closed in the last 90 days" })).toHaveTextContent(/Falsified on level\s*2\s*Expired at horizon\s*1\s*Pre-mortem was right\s*1 of 2/);
   });
 
-  it("the POST carries the size as a fraction, the level, the direction and the carried study", async () => {
-    const posts: unknown[] = [];
-    stubDesk({ "/api/desk/positions": (_u, init) => (init?.method === "POST" ? (posts.push(JSON.parse(String(init.body))), { status: 201, body: {} }) : positions) });
-    renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
-    await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
-    fireEvent.change(screen.getByLabelText("Size · % NAV"), { target: { value: "4%" } });
-    fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "short" } });
-    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "a" } });
-    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "b" } });
-    fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "SPX above 6,600" } });
-    // Picking a chip clears the typed level (P-13).
-    await waitFor(() => expect(screen.getByRole("button", { name: /closes above its 50-day/ })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /closes above its 50-day/ }));
-    expect(screen.getByLabelText("Or type your own level")).toHaveValue("");
-    fireEvent.click(screen.getByTestId("pm-save"));
-    await waitFor(() => expect(posts).toHaveLength(1));
-    expect(posts[0]).toMatchObject({ instrument: "S&P 500", direction: "short", size_nav: 0.04, horizon_days: 20, wrong_if: { id: "above_50d" }, study_slug: "gold-2sigma-spx-weak" });
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved."));
-    expect(screen.getByRole("status")).not.toHaveAttribute("data-tone", "green");
+  it("Close… stores an explicit close and the pre-mortem judged; the row leaves the monitor for the strip", async () => {
+    seed(RECORDS);
+    renderTab("/desk/position-monitor?open=ndx-vs-spx");
+    const mon = await screen.findByRole("region", { name: /Monitored/ });
+    fireEvent.click(await within(mon).findByRole("button", { name: "Close…" }));
+    const close = within(mon).getByRole("group", { name: "Close as" });
+    expect(within(close).getByRole("button", { name: "Close position" })).toBeDisabled();
+    fireEvent.click(within(close).getByRole("button", { name: "Expired at horizon" }));
+    fireEvent.click(within(close).getByRole("button", { name: "Yes" }));
+    fireEvent.click(within(close).getByRole("button", { name: "Close position" }));
+    await waitFor(() => expect(within(mon).getAllByTestId("dk-mon-row").map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "ai-infra-hedged"]));
+    expect(screen.getByRole("region", { name: "Closed in the last 90 days" })).toHaveTextContent(/Expired at horizon\s*2\s*Pre-mortem was right\s*2 of 3/);
+    const ndx = (stored() as PositionRecord[]).find((p) => p.id === "ndx-vs-spx")!;
+    expect(ndx.closes).toEqual([{ type: "expired", ts: expect.any(String), premortem_right: true }]);
   });
+
+  it("a record the store cannot read is listed with its reason and kept through a save (§9: never dropped)", async () => {
+    const bad = { ...RECORDS[0], id: "odd-one", variant: "It will work." };
+    seed([bad, RECORDS[0]]);
+    renderTab();
+    const card = await screen.findByTestId("pm-unreadable");
+    expect(card).toHaveTextContent("Unreadable · 1 kept, not monitored");
+    expect(card).toHaveTextContent("odd-one · NDX vs SPX: certainty words in the variant view or the pre-mortem (will)");
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "TLT" } });
+    answer();
+    fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "TLT below 88" } });
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(3));
+    expect(stored()).toContainEqual(bad);
+  });
+
+  it("Import JSON merges a file, keeps what it cannot read, and says what it did", async () => {
+    renderTab();
+    const text = JSON.stringify({ kind: "mrr.desk.positions", version: 1, positions: [...RECORDS.slice(0, 2), { id: "broken" }] });
+    const file = new File([text], "positions.json", { type: "application/json" });
+    Object.defineProperty(file, "text", { value: () => Promise.resolve(text) });
+    fireEvent.change(await screen.findByLabelText("Import positions"), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole("region", { name: "Positions kept in this browser" })).toHaveTextContent("Imported 2 positions; 1 unreadable, kept below."));
+    expect(within(screen.getByRole("region", { name: /Monitored/ })).getAllByTestId("dk-mon-row")).toHaveLength(2);
+    expect(screen.getByTestId("pm-unreadable")).toHaveTextContent("broken: no instrument");
+  });
+
+  it("the fixture server keeps no positions: GET is a deferred stub, POST is 405 (§12.0, §12.13)", () => {
+    expect(JSON.parse(deskFixture("GET", "/api/desk/positions")!.body)).toMatchObject({ status: "awaiting", unavailable: { reason: "positions are kept in this browser; there is no server position store." } });
+    expect(deskFixture("POST", "/api/desk/positions", "{}")!.status).toBe(405);
+  });
+
   it("the carried study's served target name fills the instrument and the subtitle (Codex R-03)", async () => {
     stubDesk({ "/api/desk/study": () => ({ ...study, question: { ...study.question, target_label: "S&P 500 index" } }) });
     renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
@@ -268,51 +385,41 @@ describe("Position Monitor tab", () => {
     expect(screen.queryByRole("button", { name: /the signal reverses/ })).toBeNull();
   });
 
-  it("a study without a slug is saved with its six slots, and its reversal is offered (Codex R-11)", async () => {
-    const posts: Record<string, unknown>[] = [];
-    stubDesk({
-      "/api/desk/study": () => ({ ...study, slug: null }),
-      "/api/desk/positions": (_u, init) => (init?.method === "POST" ? (posts.push(JSON.parse(String(init.body))), { status: 201, body: {} }) : positions),
-    });
+  it("a carried study is the subject, its six slots; its reversal is offered and the size is kept as a fraction (§9)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, slug: null }) });
     renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
     await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
-    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "a" } });
-    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "b" } });
+    fireEvent.change(screen.getByLabelText("Size · % NAV"), { target: { value: "4%" } });
+    answer();
     fireEvent.click(await screen.findByRole("button", { name: /the signal reverses/ }));
     fireEvent.click(screen.getByTestId("pm-save"));
-    await waitFor(() => expect(posts).toHaveLength(1));
-    expect(posts[0]).toMatchObject({ study_slug: null, wrong_if: { id: "signal_reverses" }, question: { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 } });
-    expect(Object.keys(posts[0].question as object).sort()).toEqual(["horizon", "move", "shock", "target", "while", "window"]);
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    const [p] = stored() as PositionRecord[];
+    expect(p).toMatchObject({ instrument: "S&P 500", size_nav: 0.04, wrong_if: { id: "signal_reverses" }, monitoring: "manual", subject: { kind: "study", question: { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 } } });
+    expect(Object.keys((p.subject as { question: object }).question).sort()).toEqual(["horizon", "move", "shock", "target", "while", "window"]);
   });
 
-  it("with no study carried in, the reversal is not offered; the fixture server refuses it without a study (Codex R-11)", async () => {
+  it("a carried study's S&P 50-day level is monitored automatically, the study kept as its subject", async () => {
+    renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
+    await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
+    answer();
+    fireEvent.click(await screen.findByRole("button", { name: "closes below its 50-day (6,280)" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0]).toMatchObject({ subject: { kind: "study" }, monitoring: "automatic", trigger: { series: "spx", threshold: 6280 } });
+  });
+
+  it("with no study carried in, the reversal is not offered", async () => {
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
     await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day/ })).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: /the signal reverses/ })).toBeNull();
-    const body = { instrument: "S&P 500", direction: "long", size_nav: null, horizon_days: 20, variant: "a", pre_mortem: "b", wrong_if: { id: "signal_reverses", label: "the signal reverses" }, study_slug: null };
-    const refused = { status: 422, body: JSON.stringify(errorEnvelope("gate", "gate", FIXTURE_META, { missing: ["study"] })) };
-    const post = (extra: Record<string, unknown>) => deskFixture("POST", "/api/desk/positions", JSON.stringify({ ...body, ...extra }));
-    const six = { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 };
-    expect(post({})).toMatchObject(refused);
-    // Only a slug, or exactly the six slots each of a kind the slots can ask, names a study (Codex G2-3).
-    expect(post({ study_slug: " " })).toMatchObject(refused);
-    expect(post({ question: study.question })).toMatchObject(refused);
-    expect(post({ question: { ...six, extra: 1 } })).toMatchObject(refused);
-    expect(post({ question: { shock: 1, window: "x", move: {}, while: [], target: true, horizon: "abc" } })).toMatchObject(refused);
-    expect(post({ question: { ...six, window: 7 } })).toMatchObject(refused);
-    expect(post({ question: [six] })).toMatchObject(refused);
-    expect(post({ question: six })?.status).toBe(201);
-    expect(post({ study_slug: "gold-2sigma-spx-weak" })?.status).toBe(201);
-    resetDeskFixtureState();
-    expect(refusalWords(new DeskApiError(422, "gate", { error: "gate", missing: ["study"] }))).toBe("The server says the gate is incomplete: the study the signal comes from. Nothing was saved.");
   });
 
   it("a picked level follows the instrument's label, and lapses when the direction turns it over (R2-1)", async () => {
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX" } });
-    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "a" } });
-    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "b" } });
+    answer();
     await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ }));
     expect(screen.getByTestId("pm-save")).toBeEnabled();
@@ -320,69 +427,60 @@ describe("Position Monitor tab", () => {
     fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "short" } });
     expect(screen.getByTestId("pm-save")).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("pick a “wrong if” level");
-    // Instrument: the same rule without the S&P's number is still offered, and its label follows it.
     fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "long" } });
     // Switching back brings nothing back: the dropped level stays dropped.
     expect(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ })).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ }));
+    // Instrument: the same rule without the S&P's number is still offered, and its label follows it.
     fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "TLT" } });
     const chip = screen.getByRole("button", { name: "closes below its 50-day" });
     expect(chip).toHaveAttribute("aria-pressed", "true");
-    const posts: unknown[] = [];
-    stubDesk({ "/api/desk/positions": (_u, init) => (init?.method === "POST" ? (posts.push(JSON.parse(String(init.body))), { status: 201, body: {} }) : positions) });
     fireEvent.click(screen.getByTestId("pm-save"));
-    await waitFor(() => expect(posts).toHaveLength(1));
-    expect(posts[0]).toMatchObject({ instrument: "TLT", wrong_if: { id: "below_50d", label: "closes below its 50-day" } });
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0]).toMatchObject({ instrument: "TLT", wrong_if: { id: "below_50d", label: "closes below its 50-day" }, monitoring: "manual" });
   });
+
   it("a size that is not a number keeps Save off and says so", async () => {
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "TLT" } });
     fireEvent.change(screen.getByLabelText("Size · % NAV"), { target: { value: "four" } });
-    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "a" } });
-    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "b" } });
+    answer();
     fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "TLT below 88" } });
     expect(screen.getByTestId("pm-save")).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("enter the size as a number");
   });
+
   it("no carried study asks no /study; an unanswerable one says it is awaiting refresh", async () => {
     const { calls } = stubDesk();
     const first = renderTab();
     await screen.findByLabelText("Instrument");
     expect(calls.some((c) => c.includes("/api/desk/study"))).toBe(false);
+    expect(calls.some((c) => c.includes("/api/desk/positions"))).toBe(false);
     first.unmount();
     stubDesk();
     renderTab("/desk/position-monitor?from=no-such-study");
     await waitFor(() => expect(screen.getByText(/The study carried in from Event Study \(no-such-study\) is awaiting refresh/)).toBeInTheDocument());
     expect(screen.getByLabelText("Instrument")).toHaveValue("");
   });
-  it("an empty list says so; a null size leaves the deployed share out", async () => {
-    stubDesk({ "/api/desk/positions": () => ({ ...positions, positions: [] }) });
+
+  it("an empty store says so; a null size leaves the deployed share out", async () => {
     const first = renderTab();
-    expect(await screen.findByText("No open positions.")).toBeInTheDocument();
+    expect(await screen.findByText("No open positions in this browser.")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Closed in the last 90 days" })).toHaveTextContent(/Pre-mortem was right\s*0 of 0/);
     first.unmount();
-    stubDesk({ "/api/desk/positions": () => ({ ...positions, positions: positions.positions.map((p, i) => (i === 0 ? { ...p, size_nav: null } : p)) }) });
+    seed(RECORDS.map((p, i) => (i === 0 ? { ...p, size_nav: null } : p)));
     renderTab();
     const mon = await screen.findByRole("region", { name: /Monitored/ });
     await waitFor(() => expect(mon).toHaveTextContent("3 positions · click a row"));
     expect(mon).not.toHaveTextContent("deployed");
   });
-  it("a failed /positions keeps both cards' labels and says Awaiting refresh", async () => {
-    stubDesk({ "/api/desk/positions": () => ({ status: 503, body: { error: "warming" } }) });
-    renderTab();
-    const mon = await screen.findByRole("region", { name: /Monitored/ });
-    await waitFor(() => expect(mon).toHaveTextContent("Awaiting refresh"));
-    expect(screen.getByRole("region", { name: "Closed in the last 90 days" })).toHaveTextContent(/Closed · last 90d\s*Awaiting refresh/);
-  });
-  it("a position's missing values are left out, never printed as null", () => {
-    const p = { ...(positions.positions[0] as PositionExpanded), dv01: null, day: null, falsifies_at: null } as unknown as PositionExpanded;
-    expect(sizeLine(p)).not.toMatch(/null|NaN|undefined/);
-    expect(falsifiesLine(p)).toBe("—");
-  });
+
   it("a study carried in as the six slots fills the same fields", async () => {
     renderTab("/desk/position-monitor?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20");
     await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
     expect(screen.getByLabelText(/Variant view/)).toHaveValue("");
   });
+
   it("a study carried in fills the instrument and the horizon, nothing in the gate", async () => {
     renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
     await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));

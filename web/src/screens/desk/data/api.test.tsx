@@ -22,7 +22,6 @@ import ledger from "../../../fixtures/desk/ledger.json";
 import macro from "../../../fixtures/desk/macro.json";
 import overview from "../../../fixtures/desk/overview.json";
 import pipeline from "../../../fixtures/desk/pipeline.json";
-import positions from "../../../fixtures/desk/positions.json";
 import regime from "../../../fixtures/desk/regime.json";
 import sectors from "../../../fixtures/desk/sectors.json";
 import studyCatalog from "../../../fixtures/desk/study-catalog.json";
@@ -108,7 +107,6 @@ describe("the response boundary", () => {
       "/study": study,
       "/study/events": studyEvents,
       "/study/catalog": studyCatalog,
-      "/positions": positions,
       "/pipeline": pipeline,
       "/basket/ai-infra": basket,
       "/basket/price": basketPrice,
@@ -191,8 +189,9 @@ describe("the response boundary", () => {
   });
 
   it("a statistic that is not finite is null, 1e999 included (G1-4)", () => {
-    const pos = tryRead(JSON.parse('{"closed_90d":{"falsified":1e999,"expired":"4","premortem_right":[1e999,4]}}'), "/positions") as { closed_90d: Record<string, unknown> };
-    expect(pos.closed_90d).toEqual({ falsified: null, expired: null, premortem_right: [null, 4] });
+    // Positions are kept in the browser (§9); a served statistic, a pair's included, is read the same way everywhere.
+    const m = tryRead(JSON.parse('{"credit":{"hy":1e999,"hy_pct_3y":"0.4","hy_range_3y":[1e999,4]}}'), "/macro") as { credit: Record<string, unknown> };
+    expect(m.credit).toMatchObject({ hy: null, hy_pct_3y: null, hy_range_3y: [null, 4] });
   });
 
   it("a basket's legs are one fact: one bad leg and the basket is unreadable (G1-6); a price's bad leg is dropped", () => {
@@ -203,7 +202,9 @@ describe("the response boundary", () => {
   });
 
   it("knows every endpoint the Desk asks, a basket by its id included", () => {
-    for (const p of ["/overview", "/ledger", "/technicals", "/vol", "/sectors", "/regime", "/macro", "/study", "/study/events", "/positions", "/pipeline", "/basket/price", "/hedge"]) expect(schemaFor(p), p).toBeDefined();
+    for (const p of ["/overview", "/ledger", "/technicals", "/vol", "/sectors", "/regime", "/macro", "/study", "/study/events", "/pipeline", "/basket/price", "/hedge"]) expect(schemaFor(p), p).toBeDefined();
+    // §9: no server position store, so no /positions answer to read.
+    expect(schemaFor("/positions")).toBeUndefined();
     expect(schemaFor("/basket/ai-infra")).toBe(SCHEMAS["/basket"]);
   });
 

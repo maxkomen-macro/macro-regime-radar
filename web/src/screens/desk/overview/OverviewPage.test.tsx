@@ -13,6 +13,12 @@ import type { OverviewResponse } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
 import { sinceItems, trendWords } from "./OverviewPage";
+import positions from "../../../fixtures/desk/positions.json";
+import { FIXTURE_META } from "../../../fixtures/desk";
+import { awaitingEnvelope } from "../data/envelope";
+import { POSITIONS_KEY, type PositionRecord } from "../positions/store";
+
+const RECORDS = (positions as { positions: PositionRecord[] }).positions;
 
 const fixture = overview as unknown as OverviewResponse;
 
@@ -27,10 +33,12 @@ function renderOverview() {
 
 const realFetch = globalThis.fetch;
 beforeEach(() => {
+  localStorage.removeItem(POSITIONS_KEY);
   stubDesk();
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
+  localStorage.removeItem(POSITIONS_KEY);
 });
 
 describe("Overview words", () => {
@@ -131,18 +139,36 @@ describe("Overview tab", () => {
     ]);
   });
 
-  it("sorts the monitored positions by room left, least first, with size and distance in their units", async () => {
+  it("reads the monitored positions from this browser, least room first, manual last, in their units (§2, §9)", async () => {
+    const [ndx, curve] = [RECORDS.find((p) => p.id === "ndx-vs-spx")!, RECORDS.find((p) => p.id === "2s10s-steepener")!];
+    const spx = { ...curve, id: "spx-long", instrument: "S&P 500", size_nav: 0.03, wrong_if: { id: "below_50d", label: "closes below its 50-day (6,280)" }, subject: { kind: "instrument", id: "spx" }, entry_value: 6500, original_room: 220, trigger: { series: "spx", operator: "below", threshold: 6280, policy: "frozen", observed_on: "2026-09-02" } };
+    localStorage.setItem(POSITIONS_KEY, JSON.stringify([ndx, spx, { ...curve, entry_value: 58, original_room: 20 }]));
     renderOverview();
     const card = await screen.findByRole("region", { name: /Monitored/ });
-    await waitFor(() => expect(within(card).getAllByTestId("dk-mon-row")).toHaveLength(3));
+    await waitFor(() => expect(card).toHaveTextContent("15% room"));
     const rows = within(card).getAllByTestId("dk-mon-row");
-    expect(rows.map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "ai-infra-hedged", "ndx-vs-spx"]);
-    expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("2% NAV22% room · 3 bp to level");
-    expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("4% NAV68% room · 3.4% to level");
-    expect(within(rows[0]).getByText(/22% room/)).toHaveAttribute("data-tone", "amber");
-    expect(within(rows[2]).getByText(/68% room/)).toHaveAttribute("data-tone", "green");
+    expect(rows.map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "spx-long", "ndx-vs-spx"]);
+    expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Long 2s10s2% NAV15% room · 3 bp to level");
+    expect(rows[1].textContent?.replace(/\s+/g, " ")).toContain("Long S&P 5003% NAV60% room · 2.1% to level");
+    expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("Long NDX vs SPX4% NAVmanual");
+    expect(within(rows[0]).getByText(/15% room/)).toHaveAttribute("data-tone", "amber");
+    expect(within(rows[1]).getByText(/60% room/)).toHaveAttribute("data-tone", "green");
+    expect(rows[2].querySelector(".dk-mon-bar")?.children).toHaveLength(0);
     expect(card).toHaveTextContent("Sorted by room left · same scale for every trade · size as % of NAV · click a row for the gate text");
     expect(within(card).getByRole("link", { name: "Act on this → Position Monitor" })).toHaveAttribute("href", "/desk/position-monitor");
+  });
+
+  it("the monitored rows stay live from the browser when /overview is awaiting (§1.0), and say so when there are none", async () => {
+    localStorage.setItem(POSITIONS_KEY, JSON.stringify(RECORDS));
+    stubDesk({ "/api/desk/overview": () => awaitingEnvelope({ reason: "generation warming", until: null }, FIXTURE_META) });
+    const first = renderOverview();
+    const card = await screen.findByRole("region", { name: /Monitored/ });
+    await waitFor(() => expect(within(card).getAllByTestId("dk-mon-row")).toHaveLength(3));
+    first.unmount();
+    localStorage.removeItem(POSITIONS_KEY);
+    stubDesk();
+    renderOverview();
+    expect(await screen.findByText("No positions are monitored in this browser.")).toBeInTheDocument();
   });
 
   it("with no /overview every tile keeps its label and says Awaiting refresh, no number", async () => {

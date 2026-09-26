@@ -164,52 +164,5 @@
    "short": "2s10s steepening"
   }
  ],
- "monitored": [
-  {
-   "id": "ndx-vs-spx",
-   "name": "Long NDX vs SPX",
-   "instrument": "NDX vs SPX",
-   "direction": "long",
-   "size_nav": 0.04,
-   "room_pct": 0.68,
-   "to_level": {
-    "value": 3.4,
-    "unit": "%"
-   },
-   "opened": "2026-08-24",
-   "horizon_days": 60,
-   "day": 21
-  },
-  {
-   "id": "2s10s-steepener",
-   "name": "2s10s steepener",
-   "instrument": "2s10s",
-   "direction": "long",
-   "size_nav": 0.02,
-   "room_pct": 0.22,
-   "to_level": {
-    "value": 3,
-    "unit": "bp"
-   },
-   "opened": "2026-09-02",
-   "horizon_days": 20,
-   "day": 14
-  },
-  {
-   "id": "ai-infra-hedged",
-   "name": "AI-infra basket, hedged",
-   "instrument": "AI infrastructure basket vs 1.6 × NDX",
-   "direction": "long",
-   "size_nav": 0.06,
-   "room_pct": 0.52,
-   "to_level": {
-    "value": 2.1,
-    "unit": "%"
-   },
-   "opened": "2026-08-10",
-   "horizon_days": 60,
-   "day": 31
-  }
- ],
  "data_status": "current"
 }

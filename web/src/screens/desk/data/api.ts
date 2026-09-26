@@ -31,7 +31,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
-import type { BasketPriceResponse, BasketResponse, DeskErrorBody, HedgeResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, PositionsResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { BasketPriceResponse, BasketResponse, DeskErrorBody, HedgeResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -231,21 +231,22 @@ export async function deskPost<T>(path: string, body: unknown): Promise<T> {
  * server served with a 2xx, an answer that arrived unreadable, one not served yet, or a poll that ran out. */
 export const retry = (count: number, err: unknown) => count < 1 && (!(err instanceof DeskApiError) || ((err.status === 0 || err.status >= 500) && !err.unreadable && !err.awaiting));
 
-function useDesk<T>(path: string, params?: Params) {
+function useDesk<T>(path: string, params?: Params, opts: { enabled?: boolean } = {}) {
   return useQuery<T, DeskApiError>({
     queryKey: ["desk-v2", path, params ?? null],
     queryFn: ({ signal: s }) => deskGet<T>(path, params, { signal: s }),
     staleTime: 60_000,
     retry,
+    enabled: opts.enabled ?? true,
   });
 }
 
 export const useOverview = () => useDesk<OverviewResponse>("/overview");
 export const useLedger = () => useDesk<LedgerResponse>("/ledger");
-export const useTechnicals = () => useDesk<TechnicalsResponse>("/technicals");
+export const useTechnicals = (opts: { enabled?: boolean } = {}) => useDesk<TechnicalsResponse>("/technicals", undefined, opts);
 export const useSectors = () => useDesk<SectorsResponse>("/sectors");
 export const useRegime = () => useDesk<RegimeResponse>("/regime");
-export const useMacro = () => useDesk<MacroResponse>("/macro");
+export const useMacro = (opts: { enabled?: boolean } = {}) => useDesk<MacroResponse>("/macro", undefined, opts);
 
 /** §12.2: one study; the previous answer stays on screen while the next is asked. */
 export function useStudy(params: Params, opts: { enabled?: boolean } = {}) {
@@ -258,9 +259,6 @@ export function useStudy(params: Params, opts: { enabled?: boolean } = {}) {
     enabled: opts.enabled ?? true,
   });
 }
-
-/** §12.8: the open positions and the last 90 days' closed ones. */
-export const usePositions = () => useDesk<PositionsResponse>("/positions");
 
 /** §12.11: the series inventory, grouped, from the pipeline config. */
 export const usePipeline = () => useDesk<PipelineResponse>("/pipeline");

@@ -1,7 +1,7 @@
 /** Desk v2 formatting (kit/format.ts, kit/MonitoredRows.tsx): true minus signs, fractions as percents, served dates at their own frequency. */
 import { describe, expect, it } from "vitest";
 import { dayLong, dayShort, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, signed, utcTime, year } from "./format";
-import { levelText, roomTone, sortByRoom } from "./MonitoredRows";
+import { levelText, roomTone, roomWords, sortByRoom } from "./MonitoredRows";
 
 describe("numbers", () => {
   it("signs with a true minus and never signs a rounded zero", () => {
@@ -60,10 +60,24 @@ describe("monitored rows", () => {
     expect(roomTone(0.22)).toBe("amber");
     expect(roomTone(0.4)).toBeUndefined();
   });
-  it("prints the distance to the level in its unit and sorts least room first", () => {
+  it("prints the distance to the level in its unit and sorts least room first, a row without room last, then by id", () => {
     expect(levelText({ value: 3.4, unit: "%" })).toBe("3.4%");
     expect(levelText({ value: 3, unit: "bp" })).toBe("3 bp");
-    expect(sortByRoom([{ room_pct: 0.68 }, { room_pct: 0.22 }, { room_pct: 0.52 }]).map((r) => r.room_pct)).toEqual([0.22, 0.52, 0.68]);
+    const rows = [
+      { id: "c", room_pct: 0.68 },
+      { id: "m2", room_pct: null },
+      { id: "a", room_pct: 0.22 },
+      { id: "m1", room_pct: null },
+      { id: "b", room_pct: 0.22 },
+    ];
+    expect(sortByRoom(rows).map((r) => r.id)).toEqual(["a", "b", "c", "m1", "m2"]);
+  });
+  it("words the room cell: room and distance, through the level, manual, or not computed (§2, §9)", () => {
+    const row = { id: "x", name: "Long S&P 500", size_nav: 0.02, monitoring: "automatic" as const, room_pct: 0.3, to_level: { value: 2.06, unit: "%" as const } };
+    expect(roomWords(row)).toEqual({ room: "30% room", level: "2.1% to level" });
+    expect(roomWords({ ...row, room_pct: -0.12, to_level: null })).toEqual({ room: "−12% room", level: "through the level" });
+    expect(roomWords({ ...row, room_pct: null, to_level: null })).toEqual({ room: "room —", level: "" });
+    expect(roomWords({ ...row, monitoring: "manual", room_pct: null, to_level: null })).toEqual({ room: "manual", level: "" });
   });
 });
 

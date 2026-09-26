@@ -3022,6 +3022,157 @@ item's gates ran on a scratch worktree holding exactly this commit.
 The fixes were checked by the four gates and the tests above; the compare
 shots were re-shot after them.
 
+### Phase 2, item 10: positions in the browser — `frame-3: align 10 positions`
+
+**What changed.** Positions live in this browser (§1.8, §9, v3 §16, v4
+B-10); nothing is posted. `positions/store.ts` holds §12.13's record
+(`instrument`, `direction`, `size_nav`, `horizon_days`, `variant`,
+`pre_mortem`, `red_team`, `wrong_if`, `subject`, `monitoring`, `entry_ts`,
+`entry_date`, `entry_value`, `trigger {series, operator, threshold,
+policy: "frozen", observed_on}`, `original_room`, `evaluation: "close"`,
+`closes`) under the versioned key `mrr.desk.positions.v1`, with Export /
+Import JSON. §9's gate rule is the record's validation (`whyUnreadable`)
+and runs on Save, on Import and on load: a record that fails keeps its
+stays in storage and is listed under UNREADABLE with its reason, never
+dropped; a store that is not a JSON list is kept whole. An id is a position
+(its time of entry), so Import skips a record whose id is already here,
+changed or not: a copy never counts a close twice. Monitoring is
+automatic only when the instrument is the served series, the level is its
+monitored one and the subject is not a basket: the S&P (by its exact name,
+`S&P 500`, `SPX` or `^GSPC`, since every `/technicals` field describes the
+registry series `spx`, §12.7) against its 50-day, and 2s10s against a bp
+level (falls or rises 10 or 25 bp from entry, the level frozen at entry).
+Load validation holds a stored automatic record to the same rule: its
+instrument is the trigger's series, its subject is not a basket, and its
+level sits on its direction's side (below for a long, above for a short). Such a position records its
+entry value, the frozen threshold and its observation date, and a positive
+`original_room`; a level already crossed at entry is refused with a
+sentence, never saved as manual, and so is one whose series is not served
+at Save. Every other subject and rule (NDX vs SPX, a basket, the 200-day,
+`regime_changes`, a typed level) is manual: no level, no room, "manual" in
+the room cell and an empty bar, closed by hand. Room is the signed
+distance now over the room at entry, oriented the same way at both
+(`value − threshold` below, `threshold − value` above); it goes to zero or
+below once through the level and to "room —" when the series is not served
+now. `day` counts XNYS sessions from the New York date of the save through
+today, both counted, from the holiday table `api/calendar.py` keeps (a
+parity test pins them): a save on a session is day 1, one after the close
+included (evaluation is at the close); a save on a weekend or holiday is day
+0 until the next session opens. SIZE ·
+HORIZON prints "DV01 —". Close… stores an explicit close (falsified,
+expired or closed) with the pre-mortem judged yes, no or not; the strip
+counts the last 90 days' closes. The optional fourth gate field, RED TEAM,
+is on the form. The Overview's Monitored rows read the same store against
+the same levels and stay live when `/overview` is awaiting (§1.0). `GET
+/positions` is a deferred stub in the fixtures and `POST` answers 405
+(§12.0); `usePositions`, the server shapes and `monitored` are gone from
+the types, the schema and `overview.json`; `/technicals` serves §12.7's
+`date`. `positions.json` is now an illustrative Export of the store (six
+positions, three open, three closed, every gate text a `TODO(Max)`
+marker), used by the tests and the compare shots (`desk-compare.mjs
+--store`).
+
+**Tests.** `store.test.ts` (the rule on every sample record; each failure
+named; B-10's room and level checks; unreadable entries kept through load
+and write, a non-JSON store kept whole; storage off or full; Import that
+skips, renumbers and quarantines; explicit closes and the 90-day window);
+`sessions.test.ts` (parity with `api/calendar.py`, the day count across
+Labor Day and a weekend entry, New York dates); `monitor.test.ts` (the
+levels, `planFor` for automatic, manual, crossed and unserved levels, the
+room, distance and lines); `PositionMonitorPage.test.tsx` (a save kept in
+the browser with nothing posted, the crossed-level refusal, 2s10s
+automatic and TLT manual, a browser that keeps nothing, the monitor's
+order, Close…, the unreadable list kept through a save, Import, the
+fixture's stub and 405, the carried study as subject); `OverviewPage.test.tsx`
+(rows from the store, least room first, manual last, live while
+`/overview` is awaiting); `format.test.ts` (the room words, the sort).
+Browser: a save survives a reload with no request to `/api/desk/positions`;
+the Overview's tones from a seeded store.
+
+**Against the PNGs.**
+- 08 Position Monitor, the rows' names: "Long 2s10s", "Long AI
+  infrastructure basket vs 1.6 × NDX", "Long NDX vs SPX", where the PNG
+  has "2s10s steepener" and "AI-infra basket, hedged". §12.13's record has
+  no name field; the row is its direction and instrument ("Don't invent
+  fields").
+- 08, the rows' room: the two manual rows print "manual" and an empty bar,
+  where the PNG shows 68% and 52%. §2: "a manual position prints "manual"
+  in the room cell and an empty bar"; §9: "Unserved subjects (NDX vs SPX, a
+  basket) … are saved with `monitoring: "manual"`, `original_room: null`,
+  `room_pct: null`".
+- 08, the 2s10s row: 30% room, its level "falls 10 bp from entry (below
+  +38 bp)", where the PNG has 22%; the sample's entry is illustrative, and
+  §9 defines 2s10s levels as a bp level frozen at entry.
+- 08, the rows' order: 2s10s, the basket, NDX vs SPX, where the PNG has
+  NDX vs SPX first. §9: "sorted by `room_pct` ascending, null last, then
+  id".
+- 08, SIZE · HORIZON: "DV01 —" where the PNG has "DV01 $1.4k", and the day
+  counted on XNYS from the sample's entry (17 of 20 on Sep 25, where the PNG
+  has 14). §9: "`<size> NAV · DV01 — · <day> of <horizon> trading days ·
+  opened <entry_date>`"; "`dv01` is null"; "`day` counts the entry session
+  as 1 on XNYS".
+- 08, the expanded row's links: "Open the study behind it → · Close…",
+  where the PNG has "Price a hedge →". §9: "links `Open the study behind it
+  →` (a study subject) and **Close…**".
+- 08, the form: a fourth step, RED TEAM (optional), under the wrong-if row.
+  §9: "4. RED TEAM (optional) — "the strongest case against, in your
+  words.""
+- 08, the right column: a third card, "Kept in this browser only. Export
+  JSON · Import JSON", and the unreadable list when there is one. §9:
+  "Export / Import JSON of the store"; "a record that fails is kept in an
+  "unreadable" list the page shows".
+- 08, the Save helper: "Save keeps the position in this browser." §9:
+  "there is no server position store and nothing is posted".
+- 08, CLOSED · LAST 90D: 2, 1 and "1 of 2" from the sample's closes, where
+  the PNG has 4, 6 and "2 of 4" (illustrative values either way).
+- 01 Overview, Monitored: the same three rows from the store, the manual
+  two reading "manual". §2: "Rows from the browser's position store (§9)".
+
+Verifier (one round): **FAIL**, on two should-fix findings; both taken, and
+five of the nine nits, the rest noted. It probed stored, corrupt and
+non-JSON data, saves of every kind, Close…, Import and reload at 1440, 1101
+and 390, with no request to `/api/desk/positions` and nothing off the
+palette.
+- V10-1 (should-fix) the S&P was recognised through `/technicals`
+  `instrument`, a field §12.7 does not serve: against a conformant API, or
+  with `/technicals` awaiting, "closes below its 50-day" saved as manual.
+  §1.0: "automatic room only for the S&P against its 50-day"; §9: "never
+  saved as manual". **Fixed:** the S&P is known by its names (§12.7: "Every
+  field describes the registry series `spx` (^GSPC)"), the chips' numbers
+  come from `ma50`/`ma200` alone, and a 50-day pick with `/technicals` not
+  served is refused.
+- V10-2 (should-fix) automatic monitoring was not tied to the subject: a
+  basket retyped as 2s10s saved automatic, and a stored TLT record with an
+  S&P trigger passed validation. §9: automatic "when the subject's
+  monitored quantity exactly matches a served series"; "Unserved subjects
+  (NDX vs SPX, a basket) … `monitoring: "manual"`". **Fixed** in `planFor`
+  and in load validation.
+- V10-3 (nit) unreadable entries move to the end of the stored list on a
+  write: kept, not in place. **Fixed** in the words (this section and the
+  module now say "stays in storage").
+- V10-4 (nit) stray text read two ways. **Fixed:** one reason.
+- V10-5 (nit) the day-count rule for weekend and after-close saves was not
+  stated. **Fixed:** stated above and in `monitor.ts`.
+- V10-6 (nit) a changed copy of a closed position imported under a new id
+  counted its close twice. **Fixed:** an id already here is skipped.
+- V10-7 (nit) 2s10s was unserved when §12.8's `today.date` is null.
+  **Fixed:** dated by its two tenors when they agree.
+- V10-8 (nit) a long with an above-level trigger passed. **Fixed** in
+  validation.
+- V10-9 (nit) Build Notes does not yet say the browser gate is a workflow
+  check (§9), and `BUILD_NOTES.md` speaks of "a numeric level". Left for
+  item 13; `BUILD_NOTES.md` is your file.
+- V10-10 (nit) the sample's gate texts are `TODO(Max)` markers, as at HEAD;
+  kept for you to write. V10-11 (nit) a long row name ends in an ellipsis
+  at 1440 (§2: the name is nowrap).
+
+Decision recorded for you: a study subject may be monitored automatically
+when its instrument is the S&P or 2s10s (the sample's 2s10s steepener is
+one); §9 names the instrument, and only the basket is called unserved.
+
+The fixes were checked by the four gates and the tests above; the compare
+shots were re-shot after them (unchanged).
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -3056,6 +3207,7 @@ tests against the fixture dev server.
 | frame-3: align 7 unavailable | clean | 118 / 1,431 | ok | 55 / 55 |
 | frame-3: align 8 slots | clean | 119 / 1,445 | ok | 56 / 56 |
 | frame-3: align 9 firing | clean | 119 / 1,450 | ok | 56 / 56 |
+| frame-3: align 10 positions | clean | 122 / 1,480 | ok | 56 / 56 |
 
 ## Finish
 

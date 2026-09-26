@@ -1,8 +1,9 @@
 /**
  * Overview (DESK_FRAME3_SPEC §2, screens/01-overview.png), read from
- * GET /api/desk/overview (§12.1) only: the since-last-close line, four tiles
- * (regime, recession, S&P trend, VIX), the active signals with their
- * verdicts, and the monitored positions sorted by room left. Every number is
+ * GET /api/desk/overview (§12.1): the since-last-close line, four tiles
+ * (regime, recession, S&P trend, VIX) and the active signals with their
+ * verdicts; beside them the positions kept in this browser (§9), sorted by
+ * room left, their levels read from /technicals and /macro. Every number is
  * a served field, formatted; the words beside them are fixed spellings of
  * served values (a band, a sign, a verdict). Each tile stands on its own:
  * a missing block leaves that tile's label and "Awaiting refresh" (§1.7);
@@ -13,7 +14,7 @@ import type { Unavailable } from "../data/envelope";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { unavailableOf, useOverview } from "../data/api";
-import type { LedgerRow, OverviewResponse, OverviewTiles, PositionCompact, SinceLastClose, Verdict } from "../data/types";
+import type { LedgerRow, OverviewResponse, OverviewTiles, SinceLastClose, Verdict } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
@@ -21,6 +22,9 @@ import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pct
 import { Awaiting, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
+import { viewOf } from "../positions/monitor";
+import { isOpen } from "../positions/store";
+import { useLevels, usePositionStore } from "../positions/usePositionStore";
 import { moveText, tipOf, vsNormalText } from "../kit/units";
 import "./overview.css";
 
@@ -279,10 +283,14 @@ function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | unde
 /** The footer under the monitored rows; separators hold to the word before them. */
 export const MONITORED_NOTE = ["Sorted by room left", "same scale for every trade", "size as % of NAV", "click a row for the gate text"].map((p) => p.replace(/ /g, "\u00a0")).join("\u00a0· ");
 
-function Monitored({ rows, failed, pathTo }: { rows: PositionCompact[] | undefined; failed: boolean; pathTo: (slug: string) => string }) {
+/** §2: the rows of this browser's position store (§9), their room read from today's served levels. They
+ * do not come from /overview, so they stay live when it is awaiting (§1.0). */
+function Monitored({ pathTo }: { pathTo: (slug: string) => string }) {
   const navigate = useNavigate();
-  const unserved = useUnserved();
-  if (unserved) return <UnservedCard headingId="ov-mon-title" className="ov-monitored" title="Monitored" sub="how far each is from being wrong · live" block={unserved} />;
+  const [store] = usePositionStore();
+  const levels = useLevels(store);
+  const now = new Date();
+  const rows = store.positions.filter(isOpen).map((p) => viewOf(p, levels, now));
   return (
     <section className="dk-card ov-monitored" aria-labelledby="ov-mon-title">
       <div className="dk-card-head">
@@ -293,15 +301,9 @@ function Monitored({ rows, failed, pathTo }: { rows: PositionCompact[] | undefin
           </span>
         </h2>
       </div>
-      <div className="dk-card-body" aria-busy={!rows && !failed}>
-        {rows ? (
-          <>
-            <MonitoredRows rows={rows} onOpen={(id) => navigate(withParam(pathTo("position-monitor"), "open", id))} />
-            <p className="ov-mon-note">{MONITORED_NOTE}</p>
-          </>
-        ) : failed ? (
-          <Awaiting />
-        ) : null}
+      <div className="dk-card-body">
+        <MonitoredRows rows={rows} onOpen={(id) => navigate(withParam(pathTo("position-monitor"), "open", id))} />
+        {rows.length ? <p className="ov-mon-note">{MONITORED_NOTE}</p> : null}
         <div className="ov-mon-act">
           <Link className="dk-btn" data-kind="light" to={pathTo("position-monitor")}>
             Act on this → Position Monitor
@@ -327,7 +329,7 @@ export default function OverviewPage({ page }: { page: DeskPage }) {
         <Tiles data={data} failed={failed} />
         <div className="ov-grid">
           <ActiveSignals data={data} failed={failed} pathTo={pathTo} />
-          <Monitored rows={data?.monitored} failed={failed || (!!data && !data.monitored)} pathTo={pathTo} />
+          <Monitored pathTo={pathTo} />
         </div>
       </Unserved>
     </div>

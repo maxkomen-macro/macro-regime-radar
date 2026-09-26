@@ -6,8 +6,10 @@
  * Needs a dev server answering /api/desk/* from the fixtures:
  *   DESK_FIXTURES=1 npx vite --port 5193
  * Usage:
- *   node scripts/desk-compare.mjs <route> <png-name> [--base URL] [--out DIR] [--click SEL] [--wait MS]
- *   e.g. node scripts/desk-compare.mjs /desk/overview 01-overview
+ *   node scripts/desk-compare.mjs <route> <png-name> [--base URL] [--out DIR] [--click SEL] [--wait MS] [--store FILE]
+ *   e.g. node scripts/desk-compare.mjs /desk/overview 01-overview --store src/fixtures/desk/positions.json
+ * --store seeds this browser's position store (§9: positions live in the
+ * browser) from an Export JSON file before the page loads.
  * Writes <out>/<png-name>.build.png (the build, 2880 px wide) and
  * <out>/<png-name>.png (design left, build right, both at 1440 CSS px).
  * <out> defaults to docs/desk/screens/compare.
@@ -22,12 +24,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "..", "..");
 const args = process.argv.slice(2);
 const pos = [];
-const opt = { base: "http://127.0.0.1:5193", out: join(repo, "docs/desk/screens/compare"), click: [], wait: 900 };
+const opt = { base: "http://127.0.0.1:5193", out: join(repo, "docs/desk/screens/compare"), click: [], wait: 900, store: null };
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--base") opt.base = args[++i];
   else if (args[i] === "--out") opt.out = resolve(args[++i]);
   else if (args[i] === "--click") opt.click.push(args[++i]);
   else if (args[i] === "--wait") opt.wait = Number(args[++i]);
+  else if (args[i] === "--store") opt.store = resolve(args[++i]);
   else pos.push(args[i]);
 }
 const [route, name] = pos;
@@ -57,6 +60,12 @@ const pairFile = join(opt.out, `${name}.png`);
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: cssW, height: cssH }, deviceScaleFactor: 2, colorScheme: "dark", reducedMotion: "reduce" });
+  if (opt.store) {
+    // The position store's key (positions/store.ts POSITIONS_KEY) and the file's records, as Import would keep them.
+    const doc = JSON.parse(readFileSync(opt.store, "utf8"));
+    const list = Array.isArray(doc) ? doc : doc.positions;
+    await page.addInitScript(([key, text]) => localStorage.setItem(key, text), ["mrr.desk.positions.v1", JSON.stringify(list)]);
+  }
   await page.goto(`${opt.base}${route}`, { waitUntil: "networkidle" });
   await page.evaluate(() => document.fonts.ready);
   for (const sel of opt.click) {
