@@ -18,10 +18,13 @@ import DeskSidebar from "./DeskSidebar";
 import DeskTopBar from "./DeskTopBar";
 import { DESK_HOME, deskPageBySlug } from "./desk-sections";
 import { useDeskView, withView } from "./desk-view";
+import TourStrip from "./tour/TourStrip";
+import { DESK_ALIASES, parseTour } from "./tour/tour";
 import "../../styles/desk.css";
 
 const TodayPage = lazy(() => import("./today/TodayPage"));
 const EventStudyPage = lazy(() => import("./event-study/EventStudyPage"));
+const InternalsPage = lazy(() => import("./internals/InternalsPage"));
 const PositionMonitorPage = lazy(() => import("./positions/PositionMonitorPage"));
 const DataPipelinePage = lazy(() => import("./pipeline/DataPipelinePage"));
 const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
@@ -41,6 +44,7 @@ export default function DeskShell() {
   const { shellCompact } = useBreakpoint();
   const { view, setView, pathTo } = useDeskView();
   const page = deskPageBySlug(slug);
+  const tour = parseTour(location.search);
 
   useEffect(() => {
     document.title = `${page?.label ?? "Desk"} · Desk · Macro Regime Radar`;
@@ -50,6 +54,9 @@ export default function DeskShell() {
     if (!location.hash && (window.scrollY > 0 || window.scrollX > 0)) window.scrollTo({ top: 0, left: 0 });
   }, [location.pathname, location.hash]);
 
+  // The walkthrough's short paths (§6) open their pages with the query kept.
+  const alias = slug ? DESK_ALIASES[slug] : undefined;
+  if (alias) return <Navigate to={{ pathname: `/desk/${alias}`, search: location.search, hash: location.hash }} replace />;
   if (!page) return <Navigate to={withView(`/desk/${DESK_HOME}`, view)} replace />;
 
   let body;
@@ -59,6 +66,9 @@ export default function DeskShell() {
       break;
     case "event-study":
       body = <EventStudyPage page={page} />;
+      break;
+    case "sp-internals":
+      body = <InternalsPage page={page} />;
       break;
     case "position-monitor":
       body = <PositionMonitorPage page={page} />;
@@ -74,7 +84,7 @@ export default function DeskShell() {
   }
 
   return (
-    <div className="mrr-app mrr-desk" data-view={view} data-testid="desk-shell">
+    <div className="mrr-app mrr-desk" data-view={view} data-tour={tour ?? undefined} data-testid="desk-shell">
       <a href="#main-content" className="mrr-skip">
         Skip to content
       </a>
@@ -88,6 +98,7 @@ export default function DeskShell() {
           </ErrorBoundary>
           <p className="mrr-desk-print-only">Automated briefing from Macro Regime Radar. Not investment advice.</p>
         </main>
+        {tour ? <TourStrip step={tour} /> : null}
       </div>
     </div>
   );

@@ -50,6 +50,8 @@ Golden and death crosses on SPX since data start. Same forward-return and baseli
 Returns JSON with the §4 fields per horizon, the regime split, the last ten events (date, regime, forward moves), and the §5 provenance block. `GET /api/desk/event-study/assets` returns the §3 lists with `history_from` and `shock_unit`.
 Studies are addressable by a stable slug (`gold-2sigma-spx-weak`) for permalinks.
 
+**Planned field, not yet served (desk/frame-2 R-08 and R-13, scheduled for the frame-3 API work): `recent_events[].window_open`.** Shape: `{ "5": bool, "10": bool, "20": bool, "60": bool }`, one entry per horizon in `horizons[]`. Rule: `window_open[h]` is true only when the event's entry session plus h sessions, counted on the exchange (XNYS) calendar, lands after the **target series' own last available observation** (its last stored date, `provenance.as_of_by_series[target]`), not the study-wide `as_of` (the earliest last date across all inputs). A window whose exit session is on or before the target's last observation has elapsed: a missing endpoint there is a data gap, `window_open` is false, and the page reads "no observation". Either way the move stays out of that horizon's n. Until the engine serves it, the page prints every missing forward return as "no observation" and never "window open".
+
 ## 8. Verification deliverables
 - A test that recomputes the preset's N, hit rate, and 20d median through an independent pandas path and asserts equality.
 - A printout of the ten most recent preset events with dates and forward moves for Max to eyeball against Streamlit.

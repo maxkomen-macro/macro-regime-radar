@@ -972,3 +972,232 @@ def test_a_served_file_moved_back_over_an_unreadable_one_clears_the_staging_erro
     time.sleep(0.3)
     st = w.status()
     assert w.current is first and st["last_error"] is None and st["current_with_file"] is True
+
+
+# ── desk/hardening, review R-01: an item whose import failed ─────────────────
+
+def test_an_import_failure_rebuilds_the_same_file_until_it_answers(serving_worker, scratch):
+    """R-01: an item that failed to import has nothing to wait for (the file key
+    never moves), so the worker rebuilds the same file, whole, and publishes the
+    rebuild once it answers more. Every item is computed again from the
+    rebuild's own copy; nothing is carried from the first generation."""
+    builds = {"flaky": 0, "steady": 0}
+
+    def flaky(ctx):
+        builds["flaky"] += 1
+        if builds["flaky"] == 1:
+            raise ImportError("probe: a transient first import", name="src.desk.event_study")
+        return "imported"
+
+    def steady(ctx):
+        builds["steady"] += 1
+        return {"hy": _hy_oas_latest_ro(), "build": builds["steady"]}
+
+    w = serving_worker(items=[("flaky", flaky), ("steady", steady)])
+    w.import_retry_s = 0.2
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current
+    assert isinstance(first.errors["flaky"], ImportError) and first.results["steady"]["build"] == 1
+    assert w.wait_published(min_id=first.id + 1, timeout=30)
+    second = w.current
+    assert second.key == first.key and second.errors == {} and second.results["flaky"] == "imported"
+    assert second.results["steady"]["build"] == 2, "rebuilt whole, from the rebuild's own copy"
+    assert w.status()["rebuild"] is None and w.status()["last_error"] is None
+    time.sleep(0.5)
+    assert w.current is second and builds == {"flaky": 2, "steady": 2}, "no rebuild once everything answers"
+
+
+def test_an_import_failure_that_persists_is_rebuilt_a_bounded_number_of_times(serving_worker, scratch):
+    """A package that is really missing fails every rebuild: IMPORT_RETRY_ATTEMPTS
+    rebuilds, each dropped (it answers nothing more), then the served generation
+    stands with the error and the worker says so."""
+    from api import worker as worker_mod
+
+    builds = {"n": 0}
+
+    def missing(ctx):
+        builds["n"] += 1
+        raise ModuleNotFoundError("probe: No module named 'nowhere'", name="nowhere")
+
+    w = serving_worker(items=[("missing", missing), ("hy", lambda ctx: _hy_oas_latest_ro())])
+    w.import_retry_s = 0.05
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current
+    deadline = time.monotonic() + 30
+    while w.status()["rebuild"] is not None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    time.sleep(1.0)  # past every backoff: no further rebuild comes
+    assert builds["n"] == 1 + worker_mod.IMPORT_RETRY_ATTEMPTS
+    assert w.current is first, "a rebuild that answers nothing more is dropped, never published"
+    st = w.status()
+    assert st["rebuild"] is None and f"after {worker_mod.IMPORT_RETRY_ATTEMPTS} rebuilds" in (st["last_error"] or ""), st
+    with pytest.raises(ModuleNotFoundError):
+        w.result("missing")
+
+
+def test_a_rebuild_that_loses_another_item_is_dropped_and_the_next_one_publishes(serving_worker, scratch):
+    """Generation consistency: a rebuild publishes only when it answers strictly
+    more. One that recovers the import but loses an item the served generation
+    answers is dropped whole; the next rebuild, answering both, replaces it."""
+    builds = {"n": 0}
+
+    def imports_late(ctx):
+        builds["n"] += 1
+        if builds["n"] == 1:
+            raise ImportError("probe: first import")
+        return "imported"
+
+    calls = {"n": 0}
+
+    def breaks_once(ctx):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("probe: failed in the first rebuild only")
+        return calls["n"]
+
+    w = serving_worker(items=[("imports_late", imports_late), ("breaks_once", breaks_once)])
+    w.import_retry_s = 0.1
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current
+    assert w.wait_published(min_id=first.id + 1, timeout=30)
+    published = w.current
+    assert calls["n"] == 3 and published.id == first.id + 2, "the first rebuild (id + 1) was dropped"
+    assert published.errors == {} and published.results == {"imports_late": "imported", "breaks_once": 3}
+
+
+def test_a_new_file_resets_the_rebuild_count(serving_worker, scratch):
+    """The bound is per file: a new file publishing starts the count again."""
+    a, b = scratch
+    builds = {"n": 0}
+
+    def missing(ctx):
+        builds["n"] += 1
+        raise ImportError("probe: missing everywhere")
+
+    w = serving_worker(items=[("missing", missing)])
+    w.import_retry_s = 0.05
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first = w.current
+    deadline = time.monotonic() + 30
+    while w.status()["rebuild"] is not None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    before = builds["n"]
+    os.replace(b, a)
+    w.poke()
+    assert w.wait_published(min_id=first.id + 1, timeout=30), "a failure the served generation already has publishes at once"
+    deadline = time.monotonic() + 30
+    while w.status()["rebuild"] is not None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    from api import worker as worker_mod
+
+    assert builds["n"] - before == 1 + worker_mod.IMPORT_RETRY_ATTEMPTS
+
+
+# ── desk/hardening, verifier round 1 (V-02, V-03, V-04) ─────────────────────
+
+def test_a_rebuild_that_cannot_stage_keeps_the_import_failure_in_last_error(serving_worker, scratch):
+    """V-02: a rebuild whose copy cannot be staged counts as an attempt, and
+    the R-01 message stays in last_error through it and after the last one
+    (the same-file branch used to clear it the next poll)."""
+    from api import worker as worker_mod
+
+    a, _ = scratch
+
+    def missing(ctx):
+        raise ImportError("probe: missing")
+
+    w = serving_worker(items=[("missing", missing)])
+    w.import_retry_s = 0.05
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    os.chmod(a, 0)  # the served generation reads its own copy; a rebuild cannot open the file
+    try:
+        deadline = time.monotonic() + 30
+        while w.status()["rebuild"] is not None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        time.sleep(0.3)  # more polls of the same file
+        st = w.status()
+    finally:
+        os.chmod(a, 0o644)
+    assert st["rebuild"] is None and f"after {worker_mod.IMPORT_RETRY_ATTEMPTS} rebuilds" in (st["last_error"] or ""), st
+
+
+def test_a_file_swapped_during_a_rebuilds_copy_is_never_published_under_the_served_key(serving_worker, scratch):
+    """V-03: a rebuild reuses the served file's key. If the file is replaced
+    between reading that key and copying it, the copy holds the new file:
+    publishing it under the old key would let anything keyed on it (the Desk's
+    study cache) treat two files as one. It is dropped; the next poll builds
+    the new file under its own key."""
+    a, b = scratch
+    builds = {"n": 0}
+
+    def imports_late(ctx):
+        builds["n"] += 1
+        if builds["n"] == 1:
+            raise ImportError("probe: first import")
+        return "imported"
+
+    w = serving_worker(items=[("imports_late", imports_late), ("hy", lambda ctx: _hy_oas_latest_ro())])
+    w.import_retry_s = 0.1
+    published: list[tuple[tuple, float]] = []
+    real_publish, real_stage = w._publish, w._stage
+
+    def publish(gen, *args, **kw):
+        published.append((gen.key, gen.results.get("hy")))
+        return real_publish(gen, *args, **kw)
+
+    def stage(src, key):
+        cur = w.current
+        if cur is not None and key == cur.key and os.path.exists(b):
+            os.replace(b, a)  # the swap lands after the key was read, before the copy
+        return real_stage(src, key)
+
+    w._publish, w._stage = publish, stage
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    first_key, old_hy = w.current.key, w.current.results["hy"]
+    assert w.wait_published(min_id=w.current.id + 1, timeout=30)
+    deadline = time.monotonic() + 10
+    while w.current.key == first_key and time.monotonic() < deadline:
+        time.sleep(0.05)
+    new_hy = _hy_oas_latest_ro()
+    assert new_hy != old_hy
+    assert all(hy == old_hy for key, hy in published if key == first_key), published
+    assert w.current.key != first_key and w.current.results["hy"] == new_hy
+
+
+def test_the_rebuild_state_is_published_with_the_generation(serving_worker, scratch, monkeypatch):
+    """V-04: status() read right after a publish agrees with the generation it
+    reports: a pending rebuild for one whose import failed, none once it
+    answers (the state used to be set after the publish was visible)."""
+    from api import worker as worker_mod
+
+    builds = {"n": 0}
+
+    def flaky(ctx):
+        builds["n"] += 1
+        if builds["n"] == 1:
+            raise ImportError("probe: first import")
+        return "imported"
+
+    real_info = worker_mod.log.info
+
+    def slow_info(msg, *args, **kw):
+        if str(msg).startswith("generation %d published"):
+            time.sleep(0.3)  # widen the window between the publish and what follows it
+        return real_info(msg, *args, **kw)
+
+    monkeypatch.setattr(worker_mod.log, "info", slow_info)
+    w = serving_worker(items=[("flaky", flaky)])
+    w.import_retry_s = 0.5
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    st = w.status()
+    assert st["errors"] == ["flaky"] and st["rebuild"] == {"items": ["flaky"], "done": 0, "of": worker_mod.IMPORT_RETRY_ATTEMPTS}, st
+    assert w.wait_published(min_id=st["generation"] + 1, timeout=30)
+    st = w.status()
+    assert st["errors"] == [] and st["rebuild"] is None and st["last_error"] is None, st

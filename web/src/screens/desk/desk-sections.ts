@@ -54,9 +54,8 @@ export const DESK_GROUPS: DeskGroup[] = [
       {
         slug: "sp-internals",
         label: "S&P Internals",
-        status: "designed",
-        blurb: "Breadth, the 50/200 crosses and their forward record, split by regime.",
-        reads: "Reads the 50/200 cross study from the event-study engine and stored S&P constituents once live.",
+        status: "live",
+        blurb: "The S&P 500's 50/200-day crosses scored by the event-study engine, each with its verdict, horizons, regime split and events.",
       },
       { slug: "position-monitor", label: "Position Monitor", status: "live", blurb: "Promote an idea to a position only through the discipline gate; then watch its distance to falsification." },
       {

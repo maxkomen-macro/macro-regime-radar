@@ -66,17 +66,19 @@ function CurveCaption({ m }: { m: RecessionMetrics }): JSX.Element {
 }
 
 /** The input's series, its stamp and its §5 label (E3). An unknown feature
- * has no series and reads "As of unknown". */
-function inputFresh(feature: string, report: FreshReport): { ids: readonly string[]; label: FreshLabel } {
+ * has no series and reads "As of unknown". The payload's block is passed like
+ * on the screen (desk/hardening, Codex R-31): an awaiting block overrides a
+ * cached report's dates. */
+function inputFresh(feature: string, report: FreshReport, block: RecessionMetrics["freshness"]): { ids: readonly string[]; label: FreshLabel } {
   const ids = RECESSION_FEATURE_SERIES[feature] ?? [];
-  return { ids, label: report.group(ids) };
+  return { ids, label: report.group(ids, block) };
 }
 
 function InputCard({ m, feature, report }: { m: RecessionMetrics; feature: string; report: FreshReport }): JSX.Element {
   const read = INPUT_READ[feature];
   const missing = read == null || read(m) == null;
   const isCurve = feature === "yield_curve";
-  const fresh = inputFresh(feature, report);
+  const fresh = inputFresh(feature, report, m.freshness);
   const through = <Stamp source={fresh.ids.length ? `${SRC.fred} ${fresh.ids.join(", ")}` : SRC.fred} label={fresh.label} />;
   if (missing) {
     // The 02 B.3 unavailable state: no value to print, reference tint, one line.
@@ -133,7 +135,7 @@ function InputCard({ m, feature, report }: { m: RecessionMetrics; feature: strin
 export default function ModelInputs({ m, status }: RecessionPanelProps): JSX.Element {
   const ready = status === "ready" && m != null;
   const report = useFreshReport();
-  const all = report.group(RECESSION_INPUT_IDS);
+  const all = report.group(RECESSION_INPUT_IDS, m?.freshness);
   return (
     <Card as="section" variant="panel" id="model" style={{ minWidth: 0 }}>
       <SectionHeader

@@ -1,7 +1,7 @@
 /**
- * The seven designed shells (docs/desk/DESK_FRAME_SPEC.md §6): Launchpad,
- * S&P Internals, Pitch Evaluation, Red Team, Macro / Regime, Basket Builder,
- * Hedge Simulator. Real UI, labelled Designed: each has its layout, its
+ * The six designed shells (docs/desk/DESK_FRAME_SPEC.md §6): Launchpad,
+ * Pitch Evaluation, Red Team, Macro / Regime, Basket Builder, Hedge
+ * Simulator (S&P Internals went live in desk/frame-2, internals/). Real UI, labelled Designed: each has its layout, its
  * controls (reachable, holding local state, never inert to the keyboard) and
  * its empty states, plus one line naming what it reads once live. No fake
  * numbers anywhere: a result slot says what it is waiting for. Red Team and
@@ -99,47 +99,6 @@ function Launchpad({ page, isClient }: { page: DeskPage; isClient: boolean }) {
           <span className="mrr-desk-hint">Opens each live page in turn once the route is wired; for now it marks the panels above.</span>
         </form>
       ) : null}
-      <ReadsNote>{page.reads}</ReadsNote>
-    </>
-  );
-}
-
-/* ── S&P Internals ───────────────────────────────────────────────────────── */
-function SpInternals({ page, isClient }: { page: DeskPage; isClient: boolean }) {
-  const [cross, setCross] = useState("golden");
-  const [attempted, submit] = useAttempt();
-  return (
-    <>
-      {!isClient ? (
-        <Panel id="cross-query" title="Cross study" description="The 50/200 crosses on the S&P 500 since data start, through the event-study machinery." badge={DESIGNED}>
-          <form className="mrr-desk-form" onSubmit={submit}>
-            <div className="mrr-desk-fields">
-              <div className="mrr-desk-field">
-                <span className="mrr-desk-label" id="sp-cross">
-                  Cross
-                </span>
-                <Segmented label="Cross type" options={[{ id: "golden", label: "Golden (50 over 200)" }, { id: "death", label: "Death (50 under 200)" }]} value={cross} onChange={setCross} aria-describedby="sp-cross" />
-              </div>
-            </div>
-            <div className="mrr-desk-actions">
-              <button type="submit" className="mrr-btn mrr-btn-primary">
-                Run cross study
-              </button>
-            </div>
-          </form>
-        </Panel>
-      ) : null}
-      <div className="mrr-desk-2">
-        <Panel id="cross-record" title="Cross record" description="Every cross with its forward moves and the regime at the cross date." badge={DESIGNED}>
-          <Waiting attempted={attempted} what="the cross record" reads="Once live: the engine's second study type (EVENT_STUDY_SPEC §6) with N, hit rate, median and the bootstrap interval per horizon." />
-        </Panel>
-        <Panel id="breadth" title="Breadth" description="Share of constituents above their 50- and 200-day averages." badge={DESIGNED}>
-          <Waiting attempted={attempted} what="breadth" reads="Once live: stored S&P constituents' daily bars; none are stored today." />
-        </Panel>
-      </div>
-      <Panel id="cross-regime" title="By regime" badge={DESIGNED}>
-        <Waiting attempted={attempted} what="the regime split" reads="Once live: the classifier's stored label at each cross date, reads with N under ten suppressed." />
-      </Panel>
       <ReadsNote>{page.reads}</ReadsNote>
     </>
   );
@@ -429,9 +388,6 @@ export default function DesignedShellPage({ page }: { page: DeskPage }) {
   switch (page.slug) {
     case "launchpad":
       body = <Launchpad page={page} isClient={isClient} />;
-      break;
-    case "sp-internals":
-      body = <SpInternals page={page} isClient={isClient} />;
       break;
     case "pitch-evaluation":
       body = <PitchEvaluation page={page} isClient={isClient} />;

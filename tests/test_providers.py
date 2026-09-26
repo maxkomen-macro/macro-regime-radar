@@ -379,3 +379,63 @@ def test_status_matrix_never_carries_token(up):
     s = market.status()
     assert s["eodhd_configured"] is True and TOKEN not in json.dumps(s)
     assert s["primary"]["ticks"]["fallback"] == "no fallback"
+
+
+# ── desk/hardening, verifier round 24: V-87, a negative or NaN Retry-After ─────
+
+
+@pytest.mark.parametrize("header", ["-1", "nan", "NaN", "-0.5"])
+def test_a_negative_or_nan_retry_after_is_treated_as_absent(header, monkeypatch):
+    """Verifier V-87: `min(float(retry_after), 5.0)` passed a negative or NaN
+    Retry-After to time.sleep, which raised ValueError outside the typed errors.
+    The prefetch caught only ProviderError, so no backoff was stored and every
+    ten-second tick called the provider again. Such a header is now treated as
+    absent: the default backoff, then the typed RateLimited, and the prefetch
+    stores its backoff and makes no call on the next ticks."""
+    from api import worker as worker_mod
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(429, text="slow down", request=request, headers={"Retry-After": header})
+
+    slept: list[float] = []
+
+    def sleep(s: float) -> None:
+        # as the real time.sleep (verifier V-90): a negative or NaN length raises ValueError
+        if s != s or s < 0:
+            raise ValueError("sleep length must be non-negative")
+        slept.append(s)
+
+    monkeypatch.setattr(eod, "_bucket", cache_mod.TokenBucket(rate=10_000, burst=100_000))
+    monkeypatch.setattr(eod.time, "sleep", sleep)
+    market.set_client_for_tests(eod.EodhdClient(TOKEN, timeout=1.0, max_retries=2, transport=httpx.MockTransport(handler)))
+    market.clear_caches()
+    entitlements.reset_for_tests()
+    try:
+        with pytest.raises(RateLimited):
+            market.client().eod("AMZN.US", from_="2026-01-01", to="2026-09-06")
+        assert len(calls) == 3, calls  # 1 + max_retries
+        assert len(slept) == 2 and 0.5 <= slept[0] < 0.6 and 1.0 <= slept[1] < 1.1, slept  # the default 0.5 s, then 1 s
+
+        worker_mod.reset_prefetch_backoff()
+        market.clear_caches()  # the provider layer remembers the error above; the prefetch must reach the provider
+        entitlements.reset_for_tests()
+        calls.clear()
+        now = {"t": 1000.0}
+        monkeypatch.setattr(worker_mod.time, "monotonic", lambda: now["t"])
+        monkeypatch.setattr(eod, "_bucket", cache_mod.TokenBucket(rate=10_000, burst=100_000))  # on the pinned clock
+        worker_mod.prefetch_tick()  # a ValueError here escaped before
+        after_first = len(calls)
+        keys = [(s, rk) for s in worker_mod.PREFETCH_SYMBOLS for rk in worker_mod.PREFETCH_RANGES]
+        assert after_first > 0 and all(k in worker_mod._prefetch_backoff for k in keys), worker_mod._prefetch_backoff
+        for _ in range(2):
+            now["t"] += worker_mod.PREFETCH_EVERY_S
+            worker_mod.prefetch_tick()
+        assert len(calls) == after_first, "the backoff holds: no call on the next ticks"
+    finally:
+        worker_mod.reset_prefetch_backoff()
+        market.set_client_for_tests(None)
+        market.clear_caches()
+        entitlements.reset_for_tests()

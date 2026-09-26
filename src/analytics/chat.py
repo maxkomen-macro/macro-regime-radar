@@ -14,8 +14,10 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -158,14 +160,93 @@ def is_safe_select(sql: str) -> bool:
     return head in ("select", "with")
 
 
+# The guard's caps on how much work one statement can ask for (verifier V-88). SQLite never
+# interrupts inside a function, nor between the functions of one row's expression, so a statement
+# of 400 two-argument trims in 4 KB ran 25 s past a 250 ms budget. These caps bound that work where
+# the budget cannot: the statement's length, how many functions it calls, and the one function
+# (trim with a character set) whose cost is the product of its two arguments.
+_GUARD_MAX_SQL_BYTES = 2 * 1024
+_GUARD_MAX_FUNCTION_CALLS = 16
+_GUARD_TRIMS = frozenset({"trim", "ltrim", "rtrim"})
+# words SQL itself puts before "(": a keyword, not a function call
+_GUARD_KEYWORDS = frozenset({
+    "all", "and", "as", "between", "by", "case", "cast", "collate", "distinct", "else", "end",
+    "escape", "except", "exists", "filter", "from", "glob", "group", "having", "in", "intersect",
+    "is", "join", "like", "limit", "match", "not", "offset", "on", "or", "order", "over", "partition",
+    "recursive", "regexp", "select", "then", "union", "using", "values", "when", "where", "window", "with",
+})
+_GUARD_LITERAL = re.compile(r"'(?:[^']|'')*'?")
+_GUARD_COMMENT = re.compile(r"--[^\n]*|/\*.*?(?:\*/|$)", re.DOTALL)
+# an identifier followed by "(": bare, or quoted the three ways SQLite accepts for a function's name
+_GUARD_CALL = re.compile(r'(?:"((?:[^"]|"")+)"|\[([^\]]+)\]|`((?:[^`]|``)+)`|\b([A-Za-z_][A-Za-z0-9_$]*))\s*\(')
+
+
+def _guard_mask(sql: str) -> str:
+    """`sql` with its string literals and comments blanked, positions kept."""
+    blank = lambda m: " " * len(m.group(0))  # noqa: E731
+    return _GUARD_COMMENT.sub(blank, _GUARD_LITERAL.sub(blank, sql))
+
+
+def _guard_has_second_argument(text: str, open_paren: int) -> bool:
+    depth = 0
+    for ch in text[open_paren:]:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return False
+        elif ch == "," and depth == 1:
+            return True
+    return False
+
+
+def sql_guard_refusal(sql: str) -> str | None:
+    """Why the query tool refuses `sql`, or None: is_safe_select's read-only
+    rule, then the caps on one statement's work (verifier V-88), each refusal
+    naming its limit."""
+    if not is_safe_select(sql):
+        return "SQL guard: only single-statement SELECT (or WITH ... SELECT) queries are permitted."
+    size = len(sql.encode("utf-8"))
+    if size > _GUARD_MAX_SQL_BYTES:
+        return (f"SQL guard: a query is limited to {_GUARD_MAX_SQL_BYTES // 1024} KB of SQL (this one is {size} bytes); "
+                "write a shorter one.")
+    text = _guard_mask(sql)
+    calls = []
+    for m in _GUARD_CALL.finditer(text):
+        quoted = next((g for g in m.groups()[:3] if g is not None), None)
+        name = (quoted if quoted is not None else m.group(4)).lower()
+        if quoted is None and name in _GUARD_KEYWORDS:
+            continue
+        calls.append((name, m.end() - 1))
+    if len(calls) > _GUARD_MAX_FUNCTION_CALLS:
+        return (f"SQL guard: a query may call at most {_GUARD_MAX_FUNCTION_CALLS} functions (this one calls {len(calls)}); "
+                "simplify it, or ask in several queries.")
+    for name, paren in calls:
+        if name in _GUARD_TRIMS and _guard_has_second_argument(text, paren):
+            return ("SQL guard: trim(), ltrim() and rtrim() take one argument here, and strip spaces; the two-argument "
+                    "form, which strips a set of characters, is refused.")
+    return None
+
+
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-def _ro_conn(db_path: Path | None = None) -> sqlite3.Connection:
-    """Open SQLite read-only. Through dbpath (fix/prelaunch-1): in the API the
-    assistant reads the same published generation every screen reads."""
-    conn = dbpath.connect_ro(db_path or DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+@contextmanager
+def _ro_conn(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
+    """Open SQLite read-only, closed when the block ends. Through dbpath
+    (fix/prelaunch-1): in the API the assistant reads the same published
+    generation every screen reads, on a copy of its own for each tool call
+    (verifier V-80), made from the generation's private copy (Codex R-34). A
+    model's query never holds a lock the screens' reads or another visitor's
+    tool calls wait on. A connection's own `with` only ends a transaction, so
+    each tool call used to leave its connection to the copy for the garbage
+    collector (verifier V-51)."""
+    conn = dbpath.copy_private_ro(db_path or DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        yield conn
+    finally:
+        conn.close()
 
 
 def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
@@ -174,22 +255,72 @@ def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 
 # ── Tool implementations ──────────────────────────────────────────────────────
 
-# Execution bound for query_database: SQLite invokes the progress handler every
-# _QUERY_PROGRESS_PERIOD VM instructions; after _QUERY_PROGRESS_BUDGET callbacks
-# (≈ 20M instructions — orders of magnitude above any legitimate dashboard
-# query) the handler returns non-zero and SQLite aborts with OperationalError
-# ("interrupted"). Guards against runaway queries the keyword guard cannot see,
-# e.g. an unbounded `WITH RECURSIVE` bomb.
-_QUERY_PROGRESS_PERIOD = 10_000
-_QUERY_PROGRESS_BUDGET = 2_000
-# Bounds on bytes and time, which the instruction budget cannot express
-# (launch-1, item 2 re-audit). printf('%.*c', 999999999, 'x') is a handful of
-# instructions and ~1 GB of memory; 200 rows of five wide values was another
-# gigabyte; a sort of many wide rows spills to temp files at disk speed.
-_QUERY_MAX_VALUE_BYTES = 256_000   # one value (SQLITE_LIMIT_LENGTH); stored rows are ~1.4 KB
+# Execution bound for query_database: a wall-clock budget, enforced from
+# outside SQLite. A timer thread calls conn.interrupt() (sqlite3_interrupt, C)
+# once the budget has passed, and SQLite aborts the query with OperationalError
+# ("interrupted"). It guards against runaway queries the keyword guard cannot
+# see, e.g. an unbounded `WITH RECURSIVE` bomb, and against a sort of many wide
+# rows spilling to temp files at disk speed. It replaced a Python progress
+# handler (Codex R-32): SQLite ran that inside its shared-cache lock on the
+# generation's copy, where a garbage collection that closed another connection
+# to the copy waited for good (verifier V-51).
+# 250 ms (verifiers V-60, V-69): a query on the copy holds the copy's shared-cache
+# lock for as long as it runs, and every other reader of the served generation
+# waits behind it; 100 ms interrupted natural questions (a month-key join by
+# regime took 0.2 to 1.6 s), so an interrupted query answers with how to rewrite
+# it (_query_error). The budget bounds what the tool's statements run between
+# SQLite's interrupt checks; a single SQL function runs uninterrupted, which the
+# value cap below keeps short (V-68). The clock starts when the tool call
+# connects, before any setup (V-61), so a queued call no longer starts a fresh
+# budget once the lock frees; a wait SQLite cannot interrupt (opening, closing)
+# can still carry it past its own deadline when calls arrive staggered (V-67).
+_QUERY_TIME_BUDGET_S = 0.25        # wall clock, from the tool call's connect to its last row
+# Bounds on bytes, which a time budget cannot express (launch-1, item 2
+# re-audit): printf('%.*c', 999999999, 'x') is a handful of instructions and
+# ~1 GB of memory; 200 rows of five wide values was another gigabyte. One value
+# is capped at 16 KB (verifier V-68): SQLite never interrupts inside a function,
+# and trim() over a 250 KB value held the copy's lock 13.6 s. The largest stored
+# value is about 2 KB (news_feed.perplexity_research). Past the cap printf()
+# yields NULL, and every other way of building a value fails (_query_error).
+_QUERY_MAX_VALUE_BYTES = 16 * 1024  # one value (SQLITE_LIMIT_LENGTH)
+# LIKE and GLOB patterns are capped at 256 bytes (verifier V-84): one LIKE with an 8,000-
+# character pattern over a 16 KB value ran 133 ms uninterrupted, and since every tool call reads its
+# own copy (V-80) four such statements burn four cores at once. SQLite's own limit, set on each
+# call's connection, so it holds for a pattern built at run time (printf, ||), which no reading of
+# the SQL text can measure. A 250-character pattern costs about 5.6 ms. SQLite counts the pattern
+# in bytes (V-89): accented text gets fewer than 256 characters.
+_QUERY_MAX_PATTERN_BYTES = 256     # one LIKE or GLOB pattern, in bytes (SQLITE_LIMIT_LIKE_PATTERN_LENGTH; V-89)
 _QUERY_MAX_COLUMNS = 32            # one row (SQLITE_LIMIT_COLUMN)
 _QUERY_MAX_RESULT_BYTES = 2_000_000  # the whole result, counted while it is read
-_QUERY_TIME_BUDGET_S = 2.0         # wall clock, checked with the instruction budget
+_INTERRUPT_REPEAT_S = 0.001  # after the budget, until the query stops: SQLite clears an interrupt as a statement starts
+
+
+def _interrupt_after(conn: sqlite3.Connection, seconds: float) -> Callable[[], None]:
+    """Interrupt `conn` once `seconds` have passed, from a timer thread, and keep
+    interrupting until stopped: sqlite3_interrupt does nothing while no statement
+    runs, so a single interrupt that fired before the query began (a zero budget)
+    would be lost. Returns the stop, which waits for the timer's thread, so it
+    never touches the connection after its caller closes it."""
+    done = threading.Event()
+
+    def fire() -> None:
+        while not done.is_set():
+            try:
+                conn.interrupt()
+            except sqlite3.ProgrammingError:  # already closed
+                return
+            done.wait(_INTERRUPT_REPEAT_S)
+
+    timer = threading.Timer(max(0.0, seconds), fire)
+    timer.daemon = True
+    timer.start()
+
+    def stop() -> None:
+        done.set()
+        timer.cancel()
+        timer.join()
+
+    return stop
 
 
 def _value_bytes(value: Any) -> int:
@@ -200,49 +331,78 @@ def _value_bytes(value: Any) -> int:
     return 8
 
 
+def _query_error(exc: sqlite3.Error) -> str:
+    """The tool's error for a failed query, in words the model can act on: an
+    interrupt says the budget and how to rewrite (verifier V-69), a value past the
+    cap names the cap (V-68), anything else is SQLite's own message."""
+    msg = str(exc)
+    if msg == "interrupted":
+        # the budget alone first (verifier V-88): a query can pass it inside one function too, which
+        # reading less does not cure; the rewrite hints are the second sentence
+        return (f"SQL error: the query exceeded the {_QUERY_TIME_BUDGET_S * 1000:.0f} ms budget; simplify it. "
+                "If it reads many rows: filter by a date range first (for example WHERE date >= '2015-01-01'); "
+                "do not join on computed month keys such as strftime('%Y-%m', a.date) = strftime('%Y-%m', b.date), "
+                "which cannot use an index; join on the regimes table's stored month column instead, regimes.date, "
+                "the first day of each month (for example ON r.date = strftime('%Y-%m-01', x.date)); "
+                "and aggregate before joining.")
+    if "LIKE or GLOB pattern too complex" in msg:
+        return (f"SQL error: a LIKE or GLOB pattern in this query is longer than the assistant's "
+                f"{_QUERY_MAX_PATTERN_BYTES}-byte limit (fewer characters for accented text). "
+                "Match a shorter pattern, or compare with = or instr().")
+    if "string or blob too big" in msg:
+        return (f"SQL error: a value in this query would pass the assistant's {_QUERY_MAX_VALUE_BYTES // 1024} KB limit "
+                "on one value (the largest stored value is about 2 KB). Read stored values as they are, "
+                "or shorten one with substr().")
+    return f"SQL error: {msg}"
+
+
 def _tool_query_database(sql: str) -> dict[str, Any]:
-    if not is_safe_select(sql):
-        return {"error": "SQL guard: only single-statement SELECT (or WITH ... SELECT) queries are permitted."}
+    refusal = sql_guard_refusal(sql)
+    if refusal is not None:
+        return {"error": refusal}
+    deadline = time.monotonic() + _QUERY_TIME_BUDGET_S  # the clock starts at connect (V-61)
     try:
         with _ro_conn() as conn:
-            remaining = _QUERY_PROGRESS_BUDGET
-            deadline = time.monotonic() + _QUERY_TIME_BUDGET_S
-
-            def _budget_exceeded() -> int:
-                nonlocal remaining
-                remaining -= 1
-                return 1 if remaining < 0 or time.monotonic() > deadline else 0
-
-            conn.set_progress_handler(_budget_exceeded, _QUERY_PROGRESS_PERIOD)
-            # Load the schema before the column limit is set: with the limit
-            # in place first, SQLite refuses to load any table wider than it
-            # and every query fails (item 2 re-audit, loop 3). Loaded, the
-            # limit applies to result sets, which is what it is for.
-            conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchall()
-            conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _QUERY_MAX_VALUE_BYTES)
-            conn.setlimit(sqlite3.SQLITE_LIMIT_COLUMN, _QUERY_MAX_COLUMNS)
-            # The connection refuses writes itself, not only the guard: a
-            # generation copy already does, and the file fallback (before the
-            # first generation) accepted temp tables, ATTACH and VACUUM INTO.
-            conn.set_authorizer(dbpath.read_only_authorizer)
+            stop = _interrupt_after(conn, deadline - time.monotonic())
             try:
-                cur = conn.execute(sql)
-                cols = [d[0] for d in cur.description] if cur.description else []
-                rows: list = []
-                size = 0
-                while len(rows) < 200:  # cap at 200 rows
-                    row = cur.fetchone()
-                    if row is None:
-                        break
-                    size += sum(_value_bytes(v) for v in row)
-                    if size > _QUERY_MAX_RESULT_BYTES:
-                        return {"error": "The result is too large to return: select fewer or narrower columns, or fewer rows."}
-                    rows.append(row)
+                return _run_query(conn, sql)
             finally:
-                conn.set_progress_handler(None, 0)
-        return {"columns": cols, "rows": _rows_to_dicts(rows), "row_count": len(rows)}
+                stop()
     except sqlite3.Error as exc:
-        return {"error": f"SQL error: {exc}"}
+        return {"error": _query_error(exc)}
+
+
+def _run_query(conn: sqlite3.Connection, sql: str) -> dict[str, Any]:
+    """The query tool's statements on one connection, inside the caller's
+    budget, which is already running."""
+    # Load the schema before the column limit is set: with the limit in place
+    # first, SQLite refuses to load any table wider than it and every query
+    # fails (item 2 re-audit, loop 3). Loaded, the limit applies to result
+    # sets, which is what it is for.
+    conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchall()
+    conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _QUERY_MAX_VALUE_BYTES)
+    conn.setlimit(sqlite3.SQLITE_LIMIT_COLUMN, _QUERY_MAX_COLUMNS)
+    conn.setlimit(sqlite3.SQLITE_LIMIT_LIKE_PATTERN_LENGTH, _QUERY_MAX_PATTERN_BYTES)
+    # The connection refuses writes itself, not only the guard: a generation
+    # copy already does (query_only, no attach), and the file fallback (before
+    # the first generation) accepted temp tables, ATTACH and VACUUM INTO. The
+    # authorizer goes on the file only: on the copy it ran inside SQLite's
+    # shared-cache lock (verifier V-51).
+    if not dbpath.is_copy(conn):
+        conn.set_authorizer(dbpath.read_only_authorizer)
+    cur = conn.execute(sql)
+    cols = [d[0] for d in cur.description] if cur.description else []
+    rows: list = []
+    size = 0
+    while len(rows) < 200:  # cap at 200 rows
+        row = cur.fetchone()
+        if row is None:
+            break
+        size += sum(_value_bytes(v) for v in row)
+        if size > _QUERY_MAX_RESULT_BYTES:
+            return {"error": "The result is too large to return: select fewer or narrower columns, or fewer rows."}
+        rows.append(row)
+    return {"columns": cols, "rows": _rows_to_dicts(rows), "row_count": len(rows)}
 
 
 def _tool_get_current_regime() -> dict[str, Any]:
@@ -548,6 +708,44 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
+# ── Which tools the assistant is offered ──────────────────────────────────────
+
+# The free-form query tool runs SQL a model writes. Guarding it (is_safe_select, the caps in
+# sql_guard_refusal, a copy of the data per call, the 250 ms budget) bounds it, and the verifier
+# still found ways past the caps (V-92). So it ships disabled: ASSISTANT_FREEFORM_SQL (env, default
+# off) registers it; unset, the model is not offered it and a request naming it is refused. The
+# fixed-SQL tools, whose queries this module writes, are always offered. The guard, the caps and the
+# per-call copy stay, for a deploy that turns it on.
+FREEFORM_SQL_TOOL = "query_database"
+_FREEFORM_SQL_ON = frozenset({"1", "true", "yes", "on"})
+
+
+def freeform_sql_enabled() -> bool:
+    """Whether ASSISTANT_FREEFORM_SQL turns the free-form query tool on (default off)."""
+    return os.environ.get("ASSISTANT_FREEFORM_SQL", "").strip().lower() in _FREEFORM_SQL_ON
+
+
+def active_tools() -> list[dict[str, Any]]:
+    """The tools the model is offered: every tool, the free-form query tool only when enabled."""
+    enabled = freeform_sql_enabled()
+    return [t for t in TOOLS if enabled or t["name"] != FREEFORM_SQL_TOOL]
+
+
+def _run_tool(name: str, args: dict) -> tuple[Any, bool]:
+    """One tool call the model requested: its result and whether it is an error. A tool the
+    model was not offered is refused, the free-form query tool when it is off included."""
+    if name == FREEFORM_SQL_TOOL and not freeform_sql_enabled():
+        return {"error": f"The {name} tool is not enabled on this server; answer with the other tools."}, True
+    impl = _TOOL_IMPLS.get(name)
+    if impl is None:
+        return {"error": f"Unknown tool: {name}"}, True
+    try:
+        result = impl(**args) if args else impl()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{name} failed: {exc}"}, True
+    return result, isinstance(result, dict) and "error" in result
+
+
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT_TEMPLATE = """You are the Macro Regime Radar AI Analyst — a senior macro/markets analyst embedded in a Bloomberg-terminal-style dashboard. Voice: concise, declarative, data-grounded. Default to 2–4 sentences unless explicitly asked to elaborate.
@@ -557,7 +755,7 @@ OPERATING PRINCIPLES
 2. Cite the source after each metric, e.g. "IG OAS at 81bps (BAMLC0A0CM, 2026-04-01)" or "(regimes table, latest)".
 3. The user is viewing a specific tab. Call explain_current_view BEFORE answering "what am I looking at" / "explain this tab" / "this chart" questions.
 4. For broad questions (current regime, recession risk, headlines), combine get_current_regime / get_recession_probability / get_recent_headlines as needed.
-5. Refuse politely if asked to write to the database or run non-SELECT SQL — the query_database tool will reject it anyway.
+5. Refuse politely if asked to write to the database or to run SQL that changes it; nothing here can.
 6. If a tool returns empty/error, say so plainly — do not guess.
 7. Don't list every tool call you made. Just answer.
 
@@ -670,6 +868,7 @@ class MacroRadarAgent:
         messages: list[dict] = trimmed
         messages.append({"role": "user", "content": user_msg})
 
+        tools = active_tools()  # the free-form query tool only when ASSISTANT_FREEFORM_SQL is on
         guard = SPEND_GUARD.get()
         api = self.client
         if guard is not None and hasattr(api, "with_options"):
@@ -683,7 +882,7 @@ class MacroRadarAgent:
             if guard is not None:
                 try:
                     hold = guard.reserve(
-                        prompt_tokens=prompt_token_bound(system_prompt, TOOLS, messages),
+                        prompt_tokens=prompt_token_bound(system_prompt, tools, messages),
                         max_tokens=MAX_TOKENS,
                     )
                 except Exception:  # noqa: BLE001 — a broken guard must not spend
@@ -699,7 +898,7 @@ class MacroRadarAgent:
                     model=self.model,
                     max_tokens=MAX_TOKENS,
                     system=system_prompt,
-                    tools=TOOLS,
+                    tools=tools,
                     messages=messages,
                 ) as stream:
                     for event in stream:
@@ -736,17 +935,7 @@ class MacroRadarAgent:
                 name = block.name
                 args = block.input or {}
                 self._log_tool_call(name, args)
-                try:
-                    impl = _TOOL_IMPLS.get(name)
-                    if impl is None:
-                        result_obj: Any = {"error": f"Unknown tool: {name}"}
-                        is_error = True
-                    else:
-                        result_obj = impl(**args) if args else impl()
-                        is_error = isinstance(result_obj, dict) and "error" in result_obj
-                except Exception as exc:  # noqa: BLE001
-                    result_obj = {"error": f"{name} failed: {exc}"}
-                    is_error = True
+                result_obj, is_error = _run_tool(name, args)
                 tool_results.append({
                     "type":         "tool_result",
                     "tool_use_id":  block.id,
