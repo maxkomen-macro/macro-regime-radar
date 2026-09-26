@@ -569,3 +569,31 @@ provider declarations, the derived feeds, the served notes and statuses. The fix
   `.sql` path. `new URL(…sql)` passes, since a URL is a read, not an import.
 - PROVENANCE.md's `pipeline-ddl.ts` row names the generator and the test.
 
+
+## Codex R-01 (P2): a raw_series row is dated and judged by its stored rows only
+
+**The finding.** A raw_series row with no stored rows still read "current" when its
+`fred:<id>` watermark survived. `statuses()` passed the watermark to
+`api/freshness.fred_series_state`, which dates a daily series by the watermark's `last_obs` and
+falls back to it for a monthly one. This happened for the series absent on its own, or for the
+whole `raw_series` table absent.
+
+**The fix** is in `api/desk_pipeline.py`:
+- `_raw_row` counts the series' stored rows. Only with some stored does a daily series take its
+  watermark's `last_obs` as `last`.
+- `statuses()` judges a raw row by its policy only when it has stored rows. With none, the row
+  is `missing` whatever its watermark says, and its group, the worst of its rows, is missing too.
+- The Desk and price rows were already dated by stored rows alone (`desk_series_states`, and the
+  price row's newest close).
+
+**The tests** (`tests/test_desk_v2_pipeline.py`, at a frozen 2026-09-24 16:00 UTC, on a hermetic
+store where every raw row is current):
+- each of the seven raw series with its rows deleted and its watermark kept: `first` and `last`
+  null, the row missing, its group missing, and the other six still current;
+- `raw_series` dropped with the watermarks surviving: every raw row missing; Rates, Credit and
+  Macro (monthly) missing; the Desk's own HY row still current.
+
+Against the unfixed module, all eight of those cases fail.
+
+On the audit copy every raw series is stored, so the fixture is unchanged: regenerating it gives
+no diff.

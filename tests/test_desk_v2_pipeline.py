@@ -580,3 +580,77 @@ def test_regime_macro_and_pipeline_answer_on_one_generation(tmp_path, install_wo
     at(monkeypatch, datetime(2026, 9, 26, 15, 0, tzinfo=timezone.utc))
     ids = {contract.check_response(r, client.get(f"/api/desk{r}"))["generation_id"] for r in ("/regime", "/macro", "/pipeline")}
     assert len(ids) == 1 and None not in ids
+
+
+# ── Codex R-01: a raw_series row is dated and judged by stored rows only ─────
+
+FROZEN = datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc)
+RAW_GROUP = {sid: name for name, ids in pipe.PIPELINE_GROUPS for sid in ids if sid in pipe.RAW_SERIES_ROWS}
+
+
+def raw_store(tmp_path: Path) -> Path:
+    """The hermetic store with every raw row current at FROZEN: USREC's monthly
+    rows added, and a `fred:<id>` watermark for each raw series (a monthly print
+    at its newest month, a daily series on Sep 23)."""
+    from api import freshness as freshness_mod
+    from src import watermarks as wm
+
+    path = store.build(tmp_path / "macro_radar.db")
+    conn = sqlite3.connect(path)
+    months = [f"{y}-{m:02d}-01" for y in range(1996, 2027) for m in range(1, 13) if f"{y}-{m:02d}" <= store.END_MONTH]
+    conn.executemany("INSERT INTO raw_series (series_id, date, value, fetched_at) VALUES ('USREC', ?, 0.0, 't')", [(d,) for d in months])
+    for sid in pipe.RAW_SERIES_ROWS:
+        daily = freshness_mod.SERIES_REGISTRY[sid]["cadence"] == "daily"
+        wm.record(conn, f"fred:{sid}", "2026-09-23" if daily else f"{store.END_MONTH}-01", 1.0)
+    conn.commit()
+    conn.close()
+    return path
+
+
+def serve_at(install_worker, monkeypatch, path: Path) -> tuple[dict, dict]:
+    serve_pipeline(install_worker, monkeypatch, path)
+    at(monkeypatch, FROZEN)
+    body = get_pipeline()
+    return rows_of(body), {g["name"]: g["status"] for g in body["data"]["groups"]}
+
+
+def test_every_raw_row_is_current_when_stored(tmp_path, install_worker, monkeypatch):
+    rows, groups = serve_at(install_worker, monkeypatch, raw_store(tmp_path))
+    for sid in pipe.RAW_SERIES_ROWS:
+        assert rows[sid]["status"] == "current" and rows[sid]["first"] and rows[sid]["last"], (sid, rows[sid])
+    assert groups["Macro (monthly)"] == groups["Credit"] == "current"
+
+
+@pytest.mark.parametrize("sid", pipe.RAW_SERIES_ROWS)
+def test_a_raw_series_with_no_stored_rows_is_missing_whatever_its_watermark_says(tmp_path, install_worker, monkeypatch, sid):
+    """R-01: the series' rows are gone and its watermark survives (a daily
+    series' watermark once dated its row, and a monthly one's stood in for its
+    newest stamp): first and last are null, the row is missing, and so is its
+    group; the other raw rows are unaffected."""
+    path = raw_store(tmp_path)
+    conn = sqlite3.connect(path)
+    conn.execute("DELETE FROM raw_series WHERE series_id = ?", (sid,))
+    conn.commit()
+    assert conn.execute("SELECT last_obs FROM source_watermarks WHERE source = ?", (f"fred:{sid}",)).fetchone()[0]
+    conn.close()
+    rows, groups = serve_at(install_worker, monkeypatch, path)
+    assert (rows[sid]["first"], rows[sid]["last"], rows[sid]["status"]) == (None, None, "missing"), rows[sid]
+    assert groups[RAW_GROUP[sid]] == "missing"
+    for other in pipe.RAW_SERIES_ROWS:
+        if other != sid:
+            assert rows[other]["status"] == "current", (other, rows[other])
+
+
+def test_without_the_raw_table_every_raw_row_is_missing_and_the_watermarks_survive(tmp_path, install_worker, monkeypatch):
+    path = raw_store(tmp_path)
+    conn = sqlite3.connect(path)
+    conn.execute("DROP TABLE raw_series")
+    conn.commit()
+    marks = {r[0] for r in conn.execute("SELECT source FROM source_watermarks")}
+    conn.close()
+    assert {f"fred:{sid}" for sid in pipe.RAW_SERIES_ROWS} <= marks
+    rows, groups = serve_at(install_worker, monkeypatch, path)
+    for sid in pipe.RAW_SERIES_ROWS:
+        assert (rows[sid]["first"], rows[sid]["last"], rows[sid]["status"]) == (None, None, "missing"), (sid, rows[sid])
+    assert groups["Macro (monthly)"] == groups["Credit"] == groups["Rates"] == "missing"
+    assert rows["BAMLH0A0HYM2"]["status"] == "current", "the Desk's own HY row still reads its stored rows"

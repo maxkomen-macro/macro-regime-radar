@@ -21,7 +21,9 @@ desk_series rows through api/freshness.desk_series_states (close → current,
 stale → stale, unknown → missing); ^GSPC, GC=F and ^RUT through the
 asset_prices rule of api/freshness.assess applied to the symbol's newest row
 (current and delayed → current, stale → stale, absent → missing); raw_series
-rows through api/freshness.fred_series_state (the same mapping). A group's
+rows through api/freshness.fred_series_state (the same mapping), and only when
+the series has stored rows: a watermark never makes a row with none current
+(Codex R-01). A group's
 status is the worst of its series: missing, then stale, then current.
 
 Stdlib at import; the engine and the worker are imported at the point of use.
@@ -218,21 +220,23 @@ def _desk_row(conn: sqlite3.Connection, spec) -> dict:
 
 def _raw_row(conn: sqlite3.Connection, sid: str, watermarks: dict, raw_table: bool) -> dict:
     """A raw_series row: its first and last month stamps; a daily series stored
-    month-stamped is dated by its watermark's last_obs (S-03)."""
+    month-stamped is dated by its watermark's last_obs (S-03). The watermark
+    dates stored rows only: with none stored (the series absent, or the table),
+    the row is undated and missing whatever the watermark says (Codex R-01)."""
     from api import desk as desk_mod
     from api import freshness as freshness_mod
 
     meta = freshness_mod.SERIES_REGISTRY[sid]
-    first = last = None
+    n, first, last = 0, None, None
     if raw_table:
-        lo, hi = conn.execute("SELECT MIN(date), MAX(date) FROM raw_series WHERE series_id = ?", (sid,)).fetchone()
+        n, lo, hi = conn.execute("SELECT COUNT(*), MIN(date), MAX(date) FROM raw_series WHERE series_id = ?", (sid,)).fetchone()
         first, last = _date_or_none(lo), _date_or_none(hi)
     stamp = last
     if meta["cadence"] == "daily":
-        last = _date_or_none((watermarks.get(f"fred:{sid}") or {}).get("last_obs")) if first else None
+        last = _date_or_none((watermarks.get(f"fred:{sid}") or {}).get("last_obs")) if n else None
     return {"label": meta["label"], "id": sid, "key": None, "provider": desk_mod.SOURCE_BY_KIND["fred"], "freq": meta["cadence"],
             "first": first, "last": last, "feeds": feeds_of(sid), "note": _with_reader_note(sid, None), "store": "raw_series",
-            "stamp": stamp}
+            "stamp": stamp, "stored": n > 0}
 
 
 def desk_pipeline(ctx: dict) -> dict:
@@ -282,6 +286,8 @@ def statuses(item: dict, now: datetime) -> dict[str, str]:
                 rep = freshness_mod.assess(db_fresh={"asset_prices_date": r["last"]}, series_latest=[], relay=None,
                                            bootstrap=None, now=now, watermarks=wm)
                 state = next(x["verdict"] for x in rep["sla"] if x["feed"] == "asset_prices")
+        elif not r["stored"]:
+            state = "unknown"  # no stored observation: missing, whatever the watermark says (Codex R-01)
         else:
             state = freshness_mod.fred_series_state(r["id"], today_ny=today_ny, stored_date=r["stamp"],
                                                     watermark=wm.get(f"fred:{r['id']}"))["state"]
