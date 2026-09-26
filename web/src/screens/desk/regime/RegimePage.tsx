@@ -424,7 +424,7 @@ export default function RegimePage({ page }: { page: DeskPage }) {
   const unserved = unavailableOf(q.error);
   return (
     <div className="rg">
-      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : r ? <LiveBadge boxed parts={[print, dayShort(r.as_of)]} /> : null} />
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : r ? <LiveBadge boxed parts={[print, dayShort(r.as_of)]} /> : null} />
       <Unserved block={unserved}>
         <div className="rg-grid">
           <WhereWeAre r={r} state={state} />

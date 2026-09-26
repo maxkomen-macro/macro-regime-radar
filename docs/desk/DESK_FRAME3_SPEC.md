@@ -93,7 +93,8 @@ A card whose block is unavailable keeps its title, subtitle and stat labels.
 Its body prints one sentence: the served `unavailable.reason`, and, when
 served, "Until: <`unavailable.until`>". No number, no chart, no gauge. Its
 `Advanced ▸` control is disabled and says "not yet served". Its badge reads
-`○ Not yet served`. A block that is unavailable by §1.0 but has no served
+`○ Not yet served` (`○ Awaiting refresh` when the reason begins "Awaiting
+refresh", §1.7). A block that is unavailable by §1.0 but has no served
 envelope prints the reason in §1.0's table (the confidence chips) or, for the
 RSI card, the RSI rows' served reason, "RSI is not computed yet." (§12.3).
 
@@ -201,7 +202,8 @@ is no universal normal month.
 A card that reads live data carries `● Live · <source> · <date>` (green dot,
 mono 10px) top-right, dating only what it covers; a separately dated block
 carries its own date (v2 D-36). An unavailable card carries `○ Not yet
-served`. The `MOCKUP · values illustrative` amber badge is NOT built.
+served`, or `○ Awaiting refresh` when its served reason begins "Awaiting
+refresh" (§1.7). The `MOCKUP · values illustrative` amber badge is NOT built.
 
 ### 1.7 Empty, busy and awaiting states
 - `computing` (202): the card stays quiet and busy while the client polls.
@@ -214,6 +216,11 @@ served`. The `MOCKUP · values illustrative` amber badge is NOT built.
   study). No chart.
 - A block whose answer failed or did not arrive: "Awaiting refresh" (gray),
   labels kept, no number.
+- A block served `awaiting` whose reason begins "Awaiting refresh" (§12.0: the
+  server could not compute it from the current generation) badges
+  `○ Awaiting refresh` and prints its reason; every other awaiting block
+  badges `○ Not yet served` (§1.0.2). The sidebar's TODAY card says "awaiting
+  refresh" for the first and "not yet served" for the second.
 - An unavailable block: §1.0.2.
 - A value is rendered with a date only when the date arrives in the same
   response as the value, at the series' own frequency.
@@ -392,8 +399,8 @@ reason "conditional-versus-unconditional comparison is not defined").
    Basket & Hedge is unavailable.
 2. BY REGIME · A MONTH LATER: REGIME / N / UP / MEDIAN, four regimes at
    h = 20; a regime with n < 10 prints its count and "too few cases to say"
-   (v2 §9.2). Beneath: "Unlabeled: <unlabeled_n> events before the first
-   labelled month" when non-zero; "Today is <regime>: <n> events<, too few to
+   (v2 §9.2). Beneath: "Unlabeled: <unlabeled_n> events whose K−2 month has
+   no stored regimes row" when non-zero; "Today is <regime>: <n> events<, too few to
    read alone>."
 3. LAST FIVE EVENTS · <target label> A MONTH LATER: event date · regime ·
    `value_20`.
@@ -927,7 +934,7 @@ that parses to a catalog study's query. Anything else: 422 `unsupported`.
 | `last_events` | array of ≤ 5, newest first | required | — | — | P |
 | `last_events[].event_date` | date | required | — | — | P |
 | `last_events[].entry_date` | date | required, nullable (null when the entry session is after the stored data) | — | — | P |
-| `last_events[].regime` | regime label | required | — | the K−2 row of the event's month | P (regime at K−2, already in the run): a retained event always carries its K−2 label; events before the first labelled month are counted in `unlabeled_n` and not listed. |
+| `last_events[].regime` | regime label | required | — | the K−2 row of the event's month | P (regime at K−2, already in the run): a retained event always carries its K−2 label; events whose K−2 month has no stored regimes row are counted in `unlabeled_n` and not listed. |
 | `last_events[].value_20` | number | required, nullable (incomplete) | `target_unit` | — | P |
 | `without_condition` | block envelope | required | — | — | awaiting, reason "conditional-versus-unconditional comparison is not defined" (v4 B-11, C-01); the shape once defined is §12.13 |
 | `provenance.entry_rule` | string | required | — | — | E `provenance.entry_rule` |
@@ -955,7 +962,9 @@ that parses to a catalog study's query. Anything else: 422 `unsupported`.
 Templates (A, fixed here; `<L>` is the horizon's label). Numbers in served
 templates are printed by the engine's `fmt_move` (`src/desk/event_study.py:768`):
 a log unit as `±x.x%` of 100 × native, a bp unit as `±x bp`; a share as a
-percent with one decimal.
+percent with one decimal. The adapter then substitutes U+2212 (−) for a
+number's leading hyphen, so a negative reads "−1.6%"; the page prints the
+served string as is.
 - `headline`: "<verdict label> at <L>: " followed by that verdict's §1.5
   definition, word for word from its first word after the dash (e.g.
   "Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same
@@ -1034,7 +1043,7 @@ Parameters as `/study`. `Accept: application/json` answers the envelope;
 | `events` | array, newest event first, every retained event | required | — | — | P: the run's full event table |
 | `events[].event_date` | date | required | — | XNYS | P |
 | `events[].entry_date` | date | required, nullable (null when the entry session is after the stored data) | — | XNYS | P (§4.1 entry rule) |
-| `events[].regime` | regime label | required | — | K−2 row | P: a retained event always carries its K−2 label; events before the first labelled month are counted in `unlabeled_n` (§12.2) and not listed. |
+| `events[].regime` | regime label | required | — | K−2 row | P: a retained event always carries its K−2 label; events whose K−2 month has no stored regimes row are counted in `unlabeled_n` (§12.2) and not listed. |
 | `events[].exit_<h>` (h = 5, 10, 20, 60) | date | required, nullable (null when incomplete) | — | XNYS | P |
 | `events[].value_<h>` | number | required, nullable (null when incomplete) | the study's `target_unit`, native | — | P |
 | `events[].complete_<h>` | boolean | required | — | — | P |
@@ -1157,7 +1166,7 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `credit.data.hy`, `.ig` | `{value, date, freq, source}` | required | percent (OAS) | own `date` · daily · FRED BAMLH0A0HYM2, BAMLC0A0CM | E: HY the newest `desk_series` observation; IG `source_watermarks` `fred:BAMLC0A0CM` (`last_obs`, `last_value`) |
 | `credit.data.hy_pct_3y` | fraction | required, nullable | — | `rank_window` | N rolling HY rank (v2 §12, v3 §12): count(values < current) / count(valid) over the closed three-year window ending on the HY date, current included, ties not below |
 | `credit.data.hy_range_3y` | `[lo, hi]` | required, nullable | percent | `rank_window` | N |
-| `credit.data.rank_window` | `{start, end, n, expected_n, valid_n, missing_n, first_obs, last_obs}` | required | — | bond calendar | N: coverage is a finite observation on every expected bond-calendar session (v4 B-07) |
+| `credit.data.rank_window` | `{start, end, n, expected_n, valid_n, missing_n, first_obs, last_obs}` | required | — | XNYS sessions less bond closures | N: Expected sessions are the XNYS sessions of the engine's calendar (`exchange_calendars`) in the window, minus `api/calendar.bond_extra_closures`; `valid_n` counts every finite stored observation dated in the window (weekend month-end prints included); `n = valid_n`. Coverage is a finite observation on every expected session (v4 B-07). `api/calendar`'s holiday tables cover every year the store holds, generated from `exchange_calendars`' bounded regular and ad hoc holidays; they agree with its sessions from 1970 on and are the authority before 1970. |
 | `credit.data.reason` | string | required, nullable | — | — | N: non-null exactly when the 3-year figures are null ("coverage from <date> only", or the gap) |
 | `credit.data.band` | `"tight"` \| `"normal"` \| `"wide"` | required, nullable | — | — | A rule: tight < 0.30 ≤ normal < 0.70 ≤ wide on `hy_pct_3y` |
 | `credit.data.band_edges` | `[0.30, 0.70]` | required | — | — | A |
@@ -1171,7 +1180,7 @@ DGS10 (v2 §12). Until then those tenors are null.
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
 | `last_refresh_utc` | ts | required, nullable ("unknown" in the UI when null) | — | the published run artifact | E `source_watermarks` / the run artifact |
-| `validation` | `"pass"` \| `"fail"` | required, nullable | — | the published run artifact | E `scripts/validate_db.py` verdict as published |
+| `validation` | `"pass"` \| `"fail"` | required, nullable | — | the published `validation.json` | S: the verdict of the `validation.json` published with the served database. Both writers publish it: `refresh-data.yml` and `intraday-refresh.yml`, each in the mode it validates in, as `{verdict, mode, timestamp, db_sha256}`, uploaded after the database. The API verifies `db_sha256` against the file, records the file's key right after that check, and serves the verdict only for the generation with that key; missing, mismatched or re-keyed → null (the UI prints "unknown"). The key is recorded only when `<DB_PATH>-wal` is absent or empty, checked at the download and at every poll alike; with a non-empty WAL nothing is recorded and the verdict is null. |
 | `groups` | array | required | — | — | E registry and its consumers (`/api/desk/pipeline/inventory`) |
 | `groups[].name` | string | required | — | — | A |
 | `groups[].status` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | A: the worst of its series |

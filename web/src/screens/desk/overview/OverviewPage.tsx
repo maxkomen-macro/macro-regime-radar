@@ -118,7 +118,7 @@ function Tile({ label, state, badge, value, tone, sub, unserved }: { label: stri
     <section className="ov-tile" aria-label={label} aria-busy={state === "loading" && !unserved} data-unserved={unserved ? "" : undefined}>
       <div className="ov-tile-head">
         <span className="ov-tile-label">{label}</span>
-        {unserved ? <NotServedBadge /> : state === "ready" ? badge : null}
+        {unserved ? <NotServedBadge block={unserved} /> : state === "ready" ? badge : null}
       </div>
       {unserved ? (
         // §1.0.2: the tile keeps its label, prints the served reason, and no number.

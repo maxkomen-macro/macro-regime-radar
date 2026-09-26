@@ -150,7 +150,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   ];
   return (
     <div className="lg">
-      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : l && dayShort(l.as_of) ? <LiveBadge boxed parts={[`engine as of ${dayShort(l.as_of)}`]} /> : null} />
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : l && dayShort(l.as_of) ? <LiveBadge boxed parts={[`engine as of ${dayShort(l.as_of)}`]} /> : null} />
       <Unserved block={unserved}>
         <div className="lg-stats" aria-busy={state === "loading"}>
           <Stat

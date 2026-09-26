@@ -114,8 +114,8 @@ describe("Macro tab", () => {
     expect(card).toHaveTextContent(/HY spread\s*2\.73%\s*tight · Sep 23/);
     expect(card).toHaveTextContent(/3-year range\s*2\.6 – 4\.6%\s*since Sep 23, 2023/);
     expect(card).toHaveTextContent(/Investment grade\s*0\.77%\s*Sep 23/);
-    // §12.8's rank over the 747 bond sessions of the window (PROVENANCE.md).
-    expect(within(card).getByRole("img", { name: "High-yield spread at the 15th percentile of three years, tight" })).toBeInTheDocument();
+    // §12.8's rank over every finite observation in the window, 787 (S-12; PROVENANCE.md).
+    expect(within(card).getByRole("img", { name: "High-yield spread at the 16th percentile of three years, tight" })).toBeInTheDocument();
     expect(within(card).getByRole("img", { name: /High-yield spread over the last year; peak 3\.5% on Mar 30/ })).toBeInTheDocument();
   });
   it("what moves with the S&P: six rows, each with the symbol it declares; the matrix under Advanced", async () => {

@@ -186,7 +186,7 @@ export default function AnswerCard({
       <section className="dk-card es-answer" aria-label="The answer" aria-busy={!failed && !unserved}>
         {unserved ? (
           <div className="es-pills">
-            <NotServedBadge />
+            <NotServedBadge block={unserved} />
           </div>
         ) : null}
         <StatRow cols={4}>

@@ -431,7 +431,7 @@ export default function MacroPage({ page }: { page: DeskPage }) {
   return (
     <div className="mc">
       {/* §6: `● Live · FRED · <date>`, the curve's own date (the HY date when the tenors are dated apart). */}
-      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : m ? <LiveBadge boxed parts={["FRED", dayShort(m.curve?.today?.date ?? m.credit?.hy?.date) || null]} /> : null} />
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : m ? <LiveBadge boxed parts={["FRED", dayShort(m.curve?.today?.date ?? m.credit?.hy?.date) || null]} /> : null} />
       <Unserved block={unserved}>
         <div className="mc-grid">
           <Curve m={m} state={state} />

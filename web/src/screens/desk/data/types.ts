@@ -383,7 +383,7 @@ export interface StudyResponse extends Envelope {
   horizons?: StudyHorizon[];
   /** At h = 20 (§12.2); `up_pct` and `median` null under ten events (MIN_REGIME_N). */
   by_regime?: { h?: number | null; regime: string; n: number | null; up_pct: number | null; median: number | null }[];
-  /** Events before the first labelled month (§4 rail); they are counted here and never listed (S-06). */
+  /** Events whose K−2 month has no stored regimes row (§4 rail); they are counted here and never listed (S-06). */
   unlabeled_n?: number | null;
   /** §12.2 (S-05, S-06): `entry_date` null when the entry session is after the stored data; `regime` absent only when it could not be read. */
   last_events?: { event_date: string; entry_date: string | null; regime?: RegimeLabel; value_20: number | null }[];

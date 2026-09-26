@@ -4128,6 +4128,120 @@ text or banned word on the changed pages at 1440, 1101 and 390.
   which §1.0 does not intend for a LIVE block. §1.7's gray "Awaiting
   refresh" is the other choice.
 
+### S-01, S-12 and three amendments — `frame-3: spec errata S-01, S-12 and amendments`
+
+The two rows the first pass left for Codex's revision, from the plan's §6 at
+`9aa83d0`, then your three amendments to the first pass.
+
+**S-01, §12.9 `validation`.**
+- The row takes §6's replacement wording: the verdict of the
+  `validation.json` published with the served database, by both writers, as
+  `{verdict, mode, timestamp, db_sha256}`. The API verifies the sha,
+  records the file's key right after that check, and serves the verdict only
+  for the generation with that key; missing, mismatched or re-keyed gives
+  null, which the UI prints as "unknown".
+- One sentence carries the ruling: the key is recorded only when
+  `<DB_PATH>-wal` is absent or empty, checked at the download and at every
+  poll alike; with a non-empty WAL nothing is recorded and the verdict is
+  null.
+- The Date column names the published `validation.json`, where it said "the
+  published run artifact".
+- The page already prints "unknown" for a null verdict (`pipeline/badge.tsx`
+  `validationWord`). The fixture's `"pass"` stands.
+
+**S-12, §12.8 `rank_window`.**
+- The row takes §6's wording: expected sessions are the XNYS sessions of the
+  engine's calendar (`exchange_calendars`) in the window, minus
+  `api/calendar.bond_extra_closures`; `valid_n` counts every finite stored
+  observation in the window, weekend month-end prints included;
+  `n = valid_n`.
+- B-07's coverage sentence stays, now over "every expected session".
+- The ruling's sentence: `api/calendar`'s holiday tables cover every year the
+  store holds, generated from `exchange_calendars`' bounded regular and ad hoc
+  holidays; they agree with its sessions from 1970 on and are the authority
+  before 1970.
+- The Date column reads "XNYS sessions less bond closures", where it said
+  "bond calendar".
+- The fixture follows. 747 sessions are expected, all of them stored, so
+  coverage is complete. `n` and `valid_n` are 787: the 40 more are weekend
+  month-end prints and values on bond-closure days and holidays, which the
+  old rule left out. The rank and range read all 787. `hy_pct_3y` moves from
+  0.1539 to 0.1550, so the gauge reads "16th pct" where it read "15th pct".
+  The range, 2.59 to 4.61, and the band, tight, are unchanged.
+
+**Amendment 1, S-08: U+2212.**
+- §12.2's templates now say that after `fmt_move` the adapter substitutes
+  U+2212 (−) for a number's leading hyphen, so a negative reads "−1.6%", and
+  that the page prints the served string as is.
+- The fixture's `why` reads "runs −1.6% to +4.1%". Its `headline` and the
+  Client `summary` carry no negative number, so neither changes.
+- The page applies no transform of its own.
+
+**Amendment 2, S-27 / §1.7: the badge.**
+- A block served awaiting whose reason begins "Awaiting refresh" badges
+  "○ Awaiting refresh". Every other awaiting block badges "○ Not yet served".
+- The rule is in the kit. `isAwaitingRefresh` tests the reason's start, and
+  `NotServedBadge` takes the block and picks its words from it.
+- Every badge site passes its block: `UnservedCard`, `Card`, the Overview's
+  tiles, the answer card, and the page badges of Technicals, Ledger,
+  Sectors, Macro and Regime. Basket & Hedge's badge has no served block and
+  stays "Not yet served".
+- §1.6, §1.0.2 and §1.7 state the rule.
+- The sidebar's TODAY card follows it too. For such a block it says "Regime
+  awaiting refresh" or "Awaiting refresh", where it would have said "not yet
+  served", so the card does not contradict the badge beside it. §1.7 says so.
+  This goes a step past "badges", and it is yours to keep or drop.
+
+**Amendment 3, S-06 and §4's rail line.** An unlabelled event is one "whose
+K−2 month has no stored regimes row" in §12.2's and §12.4's regime rows and
+in §4's rail line, and the rail prints "Unlabeled: <n> events whose K−2
+month has no stored regimes row". The gold study has none, so no shot
+changes.
+
+Tests:
+- `kit/Unserved.test.tsx`, three tests: a block whose reason begins
+  "Awaiting refresh" badges "Awaiting refresh" and prints its reason; any
+  other badges "Not yet served", as does a card with no served block; the
+  rule's edges (case, a mid-sentence match, null).
+- `OverviewPage.test.tsx`: the regime tile badges "Awaiting refresh" beside
+  a "Not yet served" vol tile, and the sidebar says "Regime awaiting
+  refresh".
+- `consistency.test.ts`: no served template leads a number with a hyphen;
+  S-12's window counts.
+- `EventStudyPage.test.tsx`: the rail text and the verdict box.
+- `MacroPage.test.tsx`: the 16th percentile.
+
+**Against the PNGs.**
+- 03 Event Study: the verdict box reads "−1.6%" where it read "-1.6%".
+  §12.2 templates, as amended.
+- 05 Macro & Correlations: the HY gauge reads "16th pct" where it read "15th
+  pct". §12.8 (S-12).
+
+Verifier (one round): **PASS**, four nits, nothing should-fix. It found:
+- S-01 and S-12 in §6's words;
+- every badge site passing its block, and the Basket & Hedge badge right
+  without one;
+- the page printing the served strings untransformed;
+- S-12's counts matching a query of the audit's store under
+  `exchange_calendars` 4.13.2: 752 sessions less 5 bond closures, 787 finite
+  rows, 122 below the current value.
+- V17-1 (nit) a Macro test comment still said "747 bond sessions". **Fixed.**
+- V17-2 (nit) §12.9's `last_refresh_utc` row still names "the published run
+  artifact", which the API cannot read (the plan sources it from
+  `source_watermarks`). No §6 row rules on it, so it is left for a later
+  erratum.
+- V17-3 (nit) the fixture's `validation: "pass"` was listed neither real nor
+  illustrative. **Fixed:** PROVENANCE.md lists it illustrative, since no
+  `validation.json` was published with the audit's store.
+- V17-4 (nit, yours) a card served "Awaiting refresh" still says "Advanced ▸
+  not yet served" under its "○ Awaiting refresh" badge. §1.0.2 says the
+  control reads "not yet served", and the amendment covers badges only.
+
+**For you:**
+- Whether the Advanced control follows the badge rule (V17-4).
+- Whether the TODAY card keeps the rule (amendment 2).
+- `last_refresh_utc`'s source wording (V17-2).
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -4169,6 +4283,7 @@ tests against the fixture dev server.
 | frame-3: align 14 rulings and codex-2 fixes | clean | 121 / 1,475 | ok | 54 / 54 |
 | frame-3: align 15 label and codex-2 repros | clean | 122 / 1,485 | ok | 54 / 54 |
 | frame-3: spec errata S-02–S-27 | clean | 122 / 1,498 | ok | 54 / 54 |
+| frame-3: spec errata S-01, S-12 and amendments | clean | 122 / 1,504 | ok | 54 / 54 |
 
 ## Finish
 
@@ -4232,6 +4347,14 @@ label and codex-2 repros`), local only. Nothing is pushed. Only `web/` and
 S-12 wait on Codex's revision. Every other row of the API plan's §6 is in
 the spec in its own words. Gate summary at that tip: typecheck clean; unit
 122 files / 1,498 tests; build ok; Desk browser tests 54 / 54.
+
+After S-01, S-12 and the amendments (above): the tip is the commit that
+carries this report, `frame-3: spec errata S-01, S-12 and amendments`
+(parent `ef3a338 frame-3: spec errata S-02–S-27`), local only. Nothing is
+pushed. Only `web/` and `docs/desk/` were touched; your notes file and SVGs
+are left out. Every row of the API plan's §6 is now in the spec. Gate summary
+at that tip: typecheck clean; unit 122 files / 1,504 tests; build ok; Desk
+browser tests 54 / 54.
 
 For Max, from the fold and alignment:
 - **Spec conflicts to settle:** §12.2 makes the Client title the catalog

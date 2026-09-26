@@ -17,7 +17,8 @@ export type Tone = "up" | "down" | "flat" | "amber" | "green" | "red" | "blue" |
 // ── The unavailable state (§1.0.2) ─────────────────────────────────────────
 // A block the API serves awaiting keeps its title, subtitle and stat labels;
 // its body prints the served reason once; its Advanced control is disabled
-// and says "not yet served"; its badge reads "○ Not yet served". A card
+// and says "not yet served"; its badge reads "○ Not yet served", or "○ Awaiting
+// refresh" when the reason begins "Awaiting refresh" (§1.7, S-27). A card
 // inside an <Unserved> scope takes that state: the Card prints the reason
 // once, a Stat keeps its label with no number, Awaiting says nothing more.
 // Outside a Card (a section a page draws itself), Awaiting prints the reason.
@@ -68,7 +69,7 @@ export function useBlockUnserved(data: { _blocks?: Record<string, Unavailable> }
 
 /**
  * A card whose block is unavailable, drawn exactly as §1.0.2 says: its title
- * and subtitle, "○ Not yet served", its stat labels with no number, the
+ * and subtitle, its badge (§1.7), its stat labels with no number, the
  * served reason once, and its Advanced control disabled ("not yet served").
  * Cards a page draws itself return this in place of their body.
  */
@@ -104,7 +105,7 @@ export function UnservedCard({
           {sub ? <span className="dk-card-sub"> {sub}</span> : null}
         </h2>
         <div className="dk-card-badge">
-          <NotServedBadge />
+          <NotServedBadge block={block} />
         </div>
       </div>
       <UnservedContext.Provider value={{ block, once: true }}>
@@ -126,12 +127,20 @@ export function UnservedCard({
   );
 }
 
-/** The badge of an unavailable card (§1.6): "○ Not yet served", gray. */
-export function NotServedBadge({ boxed = false }: { boxed?: boolean }) {
+/** §1.7 (S-27): a block served awaiting whose reason begins "Awaiting refresh" is live but could not
+ * be computed from the current data; every other awaiting block is not yet served. */
+export function isAwaitingRefresh(block: Unavailable | null | undefined): boolean {
+  return !!block && typeof block.reason === "string" && block.reason.startsWith("Awaiting refresh");
+}
+
+/** The badge of a block served awaiting (§1.6, §1.7), gray: "○ Awaiting refresh" when its reason begins
+ * "Awaiting refresh", else "○ Not yet served" (a card unavailable by §1.0 with no served block included). */
+export function NotServedBadge({ block, boxed = false }: { block?: Unavailable | null; boxed?: boolean }) {
+  const refresh = isAwaitingRefresh(block);
   return (
-    <span className={cx("dk-live", "dk-live-off", boxed && "dk-live-boxed")} data-testid="dk-live">
+    <span className={cx("dk-live", "dk-live-off", boxed && "dk-live-boxed")} data-testid="dk-live" data-refresh={refresh || undefined}>
       <span className="dk-dot dk-dot-off" aria-hidden="true" />
-      Not yet served
+      {refresh ? "Awaiting refresh" : "Not yet served"}
     </span>
   );
 }
@@ -201,7 +210,7 @@ export function Card({
   const hid = useId();
   const ctx = useContext(UnservedContext);
   const block = unavailable === undefined ? (ctx?.block ?? null) : unavailable;
-  const shownBadge = block ? <NotServedBadge /> : badge;
+  const shownBadge = block ? <NotServedBadge block={block} /> : badge;
   // One element whatever the state, so a block that turns unavailable never remounts the card's body;
   // an explicit `unavailable={null}` clears an enclosing scope for this card.
   const inner: UnservedValue | null = block ? { block, once: true } : unavailable === null ? null : ctx;

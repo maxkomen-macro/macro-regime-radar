@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
-import { Advanced, Awaiting, Card, LiveBadge, Stat, StatRow, Unserved } from "./ui";
+import { Advanced, Awaiting, Card, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, UnservedCard, isAwaitingRefresh } from "./ui";
 
 const block = { reason: "sector ETFs, RSP and IWM not ingested.", until: null };
 
@@ -85,6 +85,35 @@ describe("the unavailable state (§1.0.2)", () => {
       </Unserved>,
     );
     expect(screen.getByRole("region", { name: "Served" })).toHaveTextContent("58");
+  });
+});
+
+describe("the awaiting badge (§1.7, S-27)", () => {
+  const failed = { reason: "Awaiting refresh: this could not be computed from the current data.", until: null };
+
+  it("a block served awaiting whose reason begins 'Awaiting refresh' badges ○ Awaiting refresh, and prints its reason", () => {
+    render(
+      <Unserved block={failed}>
+        <Sample />
+      </Unserved>,
+    );
+    const card = screen.getByRole("region", { name: /Sector leadership/ });
+    expect(within(card).getByTestId("dk-live")).toHaveTextContent(/^Awaiting refresh$/);
+    expect(card).not.toHaveTextContent("Not yet served");
+    expect(within(card).getAllByText(failed.reason)).toHaveLength(1);
+  });
+
+  it("every other awaiting block badges ○ Not yet served, and a card unavailable with no served block too", () => {
+    render(<UnservedCard title="Vol" block={block} labels={["Skew"]} />);
+    expect(within(screen.getByRole("region", { name: "Vol" })).getByTestId("dk-live")).toHaveTextContent(/^Not yet served$/);
+    render(<NotServedBadge boxed />);
+    expect(screen.getAllByTestId("dk-live").map((b) => b.textContent)).toEqual(["Not yet served", "Not yet served"]);
+  });
+
+  it("the rule is the reason's start, nothing else", () => {
+    expect([failed, block, { reason: "awaiting refresh soon", until: null }, { reason: "Data is Awaiting refresh", until: null }, null, undefined].map(isAwaitingRefresh)).toEqual([true, false, false, false, false, false]);
+    render(<UnservedCard title="Curve" block={failed} labels={["2s10s"]} />);
+    expect(within(screen.getByRole("region", { name: "Curve" })).getByTestId("dk-live")).toHaveTextContent(/^Awaiting refresh$/);
   });
 });
 

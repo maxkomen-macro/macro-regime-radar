@@ -171,7 +171,7 @@ export function checkAnswer(body: unknown, spec: Obj): Record<string, unknown> |
 // ── The shapes (§12, §12.13) ──────────────────────────────────────────────
 
 const VERDICTS = ["reliable", "suggestive", "no_edge", "insufficient"] as const;
-/** §12.2, §12.4 (S-06): a listed event always carries its K−2 label; "Unlabeled" events are counted, never listed. */
+/** §12.2, §12.4 (S-06): a listed event always carries its K−2 label; one whose K−2 month has no stored regimes row is counted, never listed. */
 const REGIME_LABELS = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"] as const;
 // §12.0: a read names the rule that produced it; a read without one is not served.
 const read = o({ label: "s?", text: "s!", tone: e(["normal", "warning"]), rule: "s!" });

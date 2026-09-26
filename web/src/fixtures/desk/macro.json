@@ -51,7 +51,7 @@
    "freq": "daily",
    "source": "FRED BAMLC0A0CM"
   },
-  "hy_pct_3y": 0.1539491298527443,
+  "hy_pct_3y": 0.15501905972045743,
   "hy_range_3y": [
    2.59,
    4.61
@@ -59,9 +59,9 @@
   "rank_window": {
    "start": "2023-09-23",
    "end": "2026-09-23",
-   "n": 747,
+   "n": 787,
    "expected_n": 747,
-   "valid_n": 747,
+   "valid_n": 787,
    "missing_n": 0,
    "first_obs": "2023-09-25",
    "last_obs": "2026-09-23"

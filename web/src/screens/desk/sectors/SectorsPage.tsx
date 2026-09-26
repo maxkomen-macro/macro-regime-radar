@@ -254,7 +254,7 @@ export default function SectorsPage({ page }: { page: DeskPage }) {
   const unserved = unavailableOf(q.error);
   return (
     <div className="sc">
-      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : ok && s.as_of ? <LiveBadge boxed parts={["Yahoo", dayShort(s.as_of)]} /> : null} />
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : ok && s.as_of ? <LiveBadge boxed parts={["Yahoo", dayShort(s.as_of)]} /> : null} />
       <Unserved block={unserved}>
         <div className="sc-grid">
           <Leadership s={ok ? s : undefined} state={state} why={why} />

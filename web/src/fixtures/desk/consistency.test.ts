@@ -24,10 +24,11 @@ import { PIPELINE_DDL } from "./pipeline-ddl";
 import { sessionCount } from "../../screens/desk/positions/sessions";
 import type { TargetUnit } from "../../screens/desk/data/types";
 
-/** §12.2 (S-08): served templates print numbers by the engine's `fmt_move` (src/desk/event_study.py:768). */
+/** §12.2 (S-08 as amended): served templates print numbers by the engine's `fmt_move`
+ * (src/desk/event_study.py:768), then the adapter puts U+2212 for a negative number's leading hyphen. */
 function fmtMove(x: number, unit: TargetUnit): string {
   const v = unit === "bp" ? x.toFixed(0) : (x * 100).toFixed(1);
-  return `${v.startsWith("-") ? v : `+${v}`}${unit === "bp" ? " bp" : "%"}`;
+  return `${v.startsWith("-") ? `\u2212${v.slice(1)}` : `+${v}`}${unit === "bp" ? " bp" : "%"}`;
 }
 
 const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
@@ -298,6 +299,19 @@ describe("the API plan's spec errata (§6, S-02–S-27) as the fixtures carry th
     for (const r of rows) expect([r.id, r.first, r.last]).toEqual([r.id, "1996-12-01", macro.credit.ig.date]);
     // The page prints a monthly series' dates by month (§1.7), so the note names the true date.
     for (const r of rows) expect(r.note, r.id).toContain(r.last!);
+  });
+
+  it("S-08 as amended: no served template leads a number with a hyphen", () => {
+    for (const text of [study.why, study.headline, study.client.summary]) expect(text).not.toMatch(/-\d/);
+    expect(study.why).toContain("\u22121.6%");
+  });
+
+  it("S-12: the HY window counts every finite observation in it, and its expected sessions are all stored", () => {
+    const w = macro.credit.rank_window;
+    expect(w.n).toBe(w.valid_n);
+    expect(w.missing_n).toBe(0);
+    // Weekend month-end prints and bond-closure days count as valid observations beyond the expected sessions.
+    expect(w.valid_n).toBeGreaterThan(w.expected_n);
   });
 
   it("S-04: the proposed schema's first line says it is proposed", () => {

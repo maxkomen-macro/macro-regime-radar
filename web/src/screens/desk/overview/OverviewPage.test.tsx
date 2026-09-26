@@ -209,4 +209,16 @@ describe("blocks served awaiting inside a ready answer (§12.1, §1.0.2)", () =>
     expect(screen.getByTestId("ov-since")).not.toHaveTextContent("Awaiting refresh");
     expect(screen.getByRole("region", { name: "Regime" })).toHaveTextContent("Goldilocks");
   });
+
+  it("a block the server could not compute badges ○ Awaiting refresh and prints its reason; the sidebar says so too (§1.7, S-27)", async () => {
+    const reason = "Awaiting refresh: this could not be computed from the current data.";
+    stubDesk({ "/api/desk/overview": () => ({ ...overview, tiles: { ...overview.tiles, regime: off(reason), vol: off("realized-volatility method not specified.") } }) });
+    renderOverview();
+    const regime = await screen.findByRole("region", { name: "Regime" });
+    await waitFor(() => expect(regime).toHaveTextContent(reason));
+    expect(within(regime).getByTestId("dk-live")).toHaveTextContent(/^Awaiting refresh$/);
+    expect(within(screen.getByRole("region", { name: "Vol · VIX" })).getByTestId("dk-live")).toHaveTextContent(/^Not yet served$/);
+    expect(screen.getByTestId("dk-today")).toHaveTextContent("Regime awaiting refresh");
+    expect(screen.getByTestId("dk-today")).not.toHaveTextContent("not yet served");
+  });
 });

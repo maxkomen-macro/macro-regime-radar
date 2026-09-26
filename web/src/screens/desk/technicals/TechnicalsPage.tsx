@@ -388,7 +388,7 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
   return (
     <div className="te">
       {/* §3: `● Live · <date>` from `/technicals` `date`. */}
-      <PageTitle page={page} badge={unavailableOf(tq.error) ? <NotServedBadge boxed /> : t ? <LiveBadge boxed parts={[dayShort(t.date) || null]} /> : null} />
+      <PageTitle page={page} badge={unavailableOf(tq.error) ? <NotServedBadge boxed block={unavailableOf(tq.error)} /> : t ? <LiveBadge boxed parts={[dayShort(t.date) || null]} /> : null} />
       <div className="te-grid">
         {/* §12.0: a card whose answer is served awaiting keeps its labels and prints the reason (§1.0.2). */}
         <Unserved block={volOff}>

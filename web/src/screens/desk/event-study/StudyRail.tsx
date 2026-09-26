@@ -157,7 +157,8 @@ export default function StudyRail({
       <DroppedNote n={droppedOf(study, "by_regime")} one="regime row" />
       {fin(study.unlabeled_n) && study.unlabeled_n > 0 ? (
         <p className="es-note">
-          Unlabeled: {study.unlabeled_n} event{study.unlabeled_n === 1 ? "" : "s"} before the first labelled month
+          {/* §4 (S-06): an event whose K−2 row is not stored carries no label, wherever it falls. */}
+          Unlabeled: {study.unlabeled_n} event{study.unlabeled_n === 1 ? "" : "s"} whose K−2 month has no stored regimes row
         </p>
       ) : null}
       {today && fin(today.n) ? (
