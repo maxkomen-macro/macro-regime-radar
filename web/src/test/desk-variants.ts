@@ -13,6 +13,25 @@ import technicals from "../fixtures/desk/technicals.json" with { type: "json" };
 import vol from "../fixtures/desk/vol.json" with { type: "json" };
 import studyEvents from "../fixtures/desk/study-events.json" with { type: "json" };
 
+/**
+ * /technicals on a session whose 50 and 200 closes are all stored. The fixture's Sep 23 reads both averages
+ * null across the missing Sep 22 close (§12.7, Codex R-24), so a test of what a served average drives
+ * (automatic monitoring against the 50-day, the level chips' numbers) takes these: the means of the stored
+ * closes the fixture carried before R-24. Illustrative, for the tests only.
+ */
+export function completeTechnicals(): Record<string, unknown> {
+  return {
+    ...technicals,
+    ma50: 7624.837392578125,
+    ma200: 7192.012006835937,
+    ma50_window: { start: "2026-07-14", end: "2026-09-23", n: 50 },
+    ma200_window: { start: "2025-12-04", end: "2026-09-23", n: 200 },
+    vs_ma50: 0.010648409716534468,
+    vs_ma200: 0.07147065074860048,
+    trend: { state: "above_both", state_since: "2026-09-17" },
+  };
+}
+
 /** The gold study re-served with the 10-year yield as its target, every move in basis points. */
 export function bpStudy(): Record<string, unknown> {
   const bpH: Record<number, { median: number; baseline_median: number; ci_lo: number; ci_hi: number }> = {

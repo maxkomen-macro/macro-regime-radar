@@ -17,6 +17,7 @@ import { DESK_SIDEBAR_ID } from "./DeskSidebar";
 import { TOUR_BUTTON_ID, TOUR_STRIP_ID } from "./tour/TourStrip";
 import { parseTour, tourHref } from "./tour/tour";
 import { askFromSearch, askParams } from "./event-study/question";
+import { useMixedGenerations } from "./data/generations";
 
 export function ViewToggle({ view, onChange, labels = ["Desk", "Client"] }: { view: DeskView; onChange: (v: DeskView) => void; labels?: [string, string] }) {
   return (
@@ -114,11 +115,22 @@ export default function DeskTopBar({
 
 /** The page title row: h1 (serif), the gray one-liner, and the page's badge right. */
 export function PageTitle({ page, badge, title }: { page: DeskPage; badge?: ReactNode; title?: ReactNode }) {
+  // §1.1 (Codex R-22): answers from two generations on one page: the badge says so while the page refetches.
+  // Data Pipeline's page badge is its header badge (§11), which says it there.
+  const mixed = useMixedGenerations() && page.slug !== "data-pipeline";
+  const shown = mixed ? (
+    <span className="dk-live dk-live-off dk-live-boxed" data-testid="dk-gen-mixed">
+      <span className="dk-dot dk-dot-off" aria-hidden="true" />
+      mixed generations · refreshing
+    </span>
+  ) : (
+    badge
+  );
   return (
     <div className="dk-title">
       <h1>{title ?? page.title ?? page.label}</h1>
       {page.blurb ? <p className="dk-title-sub">{page.blurb}</p> : null}
-      {badge ? <div className="dk-title-badge">{badge}</div> : null}
+      {shown ? <div className="dk-title-badge">{shown}</div> : null}
     </div>
   );
 }

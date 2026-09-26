@@ -16,6 +16,7 @@ import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { aboveBelow, allowlistRows, dayInYear, dayMove, monthTicks, quarterOf, RSI_UNAVAILABLE, sevenOf, trendWord } from "./TechnicalsPage";
 import { servedTechnicals } from "../../../test/desk-variants";
+import { DESK_ACCENTS } from "../kit/palette";
 
 function renderTab() {
   return renderWithProviders(
@@ -69,12 +70,15 @@ describe("Technicals tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("7,706"));
     // §12.7: the day's change is null while the 2026-09-22 close is missing, so no change is printed.
     expect(card).not.toHaveTextContent(/today|on Sep 2\d/);
-    expect(card).toHaveTextContent("7,625");
-    expect(card).toHaveTextContent("price is 1.1% above");
-    expect(card).toHaveTextContent("7,192");
-    expect(card).toHaveTextContent("price is 7.1% above");
+    // §12.7 (Codex R-24): both averages read null across the missing Sep 22 close; the labels stay, awaiting.
+    expect(card).toHaveTextContent(/50-day average\s*Awaiting refresh/);
+    expect(card).toHaveTextContent(/200-day average\s*Awaiting refresh/);
+    expect(card).not.toHaveTextContent(/price is [\d.]+% (above|below)/);
     expect(card.textContent?.replace(/\s+/g, " ")).toContain("Jul 1, 2025 — the 50-day crossed above the 200-day. This has happened 14 times before; the S&P was higher a month later 79% of the time. Reliable.");
-    expect(within(card).getByRole("img", { name: /with its 50-day and 200-day averages, 1Y/ })).toBeInTheDocument();
+    const chart = within(card).getByRole("img", { name: /with its 50-day and 200-day averages, 1Y/ });
+    // §12.7, Codex R-25: the missing Sep 22 close breaks the S&P's line; it never bridges the slot.
+    const line = [...chart.querySelectorAll("path")].find((p) => p.getAttribute("stroke") === DESK_ACCENTS.blue)!;
+    expect(line.getAttribute("d")?.match(/M/g)).toHaveLength(2);
     fireEvent.click(within(card).getByRole("button", { name: "3Y" }));
     expect(within(card).getByRole("img", { name: /3Y/ })).toBeInTheDocument();
   });
@@ -91,10 +95,28 @@ describe("Technicals tab", () => {
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toBe("S&P golden cross14× since 1996 · up 79% · a month later +2.7%Reliable");
     // §12.7: 252 XNYS sessions back, Sep 22, 2025.
     expect(card).toHaveTextContent(/1-year return\s*\+15\.1%\s*since Sep 22, 2025/);
-    expect(card).toHaveTextContent(/Trend\s*Above both\s*since Sep 17, 2026/);
+    expect(card).toHaveTextContent(/Trend\s*Unavailable\s*since Sep 22, 2026/);
     expect(card).toHaveTextContent(/Last 20 days\s*−0\.3σ\s*on Sep 23/);
     expect(card.querySelector(".te-note")?.textContent).toBe("vs normal compares each study to its own baseline over its own sample.");
     expect(card.textContent).not.toMatch(/normal month|A normal month|survives resampling/);
+  });
+
+  it("Codex R-26: an absent allowlist is Awaiting refresh; an empty one is an empty panel", async () => {
+    const { signals_allowlist: _a, ...noList } = technicals;
+    void _a;
+    stubDesk({ "/api/desk/technicals": () => noList });
+    const one = renderTab();
+    let card = await screen.findByRole("region", { name: /^Signals/ });
+    await waitFor(() => expect(card).toHaveTextContent("Awaiting refresh"));
+    expect(within(card).queryAllByRole("listitem")).toHaveLength(0);
+    expect(card.querySelector(".te-note")).toBeNull();
+    one.unmount();
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, signals_allowlist: [] }) });
+    renderTab();
+    card = await screen.findByRole("region", { name: /^Signals/ });
+    await waitFor(() => expect(card.querySelector(".te-sig-list")).not.toBeNull());
+    expect(within(card).queryAllByRole("listitem")).toHaveLength(0);
+    expect([...card.querySelectorAll(".dk-await")].map((e) => e.textContent)).not.toContain("Awaiting refresh");
   });
 
   it("reads what protection costs from /technicals' vol block once served (§12.13's deferred shape), with its source line", async () => {

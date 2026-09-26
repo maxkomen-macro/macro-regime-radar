@@ -54,12 +54,14 @@ describe("Overview words", () => {
   });
 
   it("names the trend from the served state, and its sub-line from state_since and the last cross (§2)", () => {
+    // Codex R-24: the fixture's averages read null across the missing Sep 22 close, as Monday serves them.
     const t = fixture.tiles!.trend!;
-    expect(trendWords(t)).toBe("Above 50 & 200");
+    expect([trendWords(t), trendSub(t)]).toEqual(["Unavailable", "since Sep 22, 2026 · last cross golden, Jul 1, 2025"]);
+    expect(trendWords({ ...t, state: "above_both", above_50: true, above_200: true })).toBe("Above 50 & 200");
     expect(trendWords({ ...t, state: "below_both" })).toBe("Below 50 & 200");
     expect(trendWords({ ...t, state: "mixed", above_50: false, above_200: true })).toBe("Above 200, below 50");
     expect(trendWords({ ...t, state: "unavailable", above_50: null, above_200: null })).toBe("Unavailable");
-    expect(trendSub(t)).toBe("since Sep 17, 2026 · last cross golden, Jul 1, 2025");
+    expect(trendSub({ ...t, state_since: "2026-09-17" })).toBe("since Sep 17, 2026 · last cross golden, Jul 1, 2025");
     expect(trendSub({ ...t, state_since: null, cross: null })).toBe("");
   });
 
@@ -88,9 +90,10 @@ describe("Overview tab", () => {
     expect(rec).not.toHaveTextContent("one-in-eight");
     const trend = screen.getByRole("region", { name: "S&P 500 · trend" });
     expect(trend).toHaveTextContent("Live · Sep 23");
-    expect(trend).toHaveTextContent("Above 50 & 200");
+    // §12.7 (Codex R-24): both averages null across the missing Sep 22 close, so the state is unavailable.
+    expect(trend).toHaveTextContent("Unavailable");
     // §2: "since <state_since> · last cross <golden|death>, <date>".
-    expect(trend).toHaveTextContent("since Sep 17, 2026 · last cross golden, Jul 1, 2025");
+    expect(trend).toHaveTextContent("since Sep 22, 2026 · last cross golden, Jul 1, 2025");
     const vol = screen.getByRole("region", { name: "Vol · VIX" });
     expect(vol).toHaveTextContent("14.2");
     // §2: the level and its day; the gap to realized and the band word are unavailable (§1.0).

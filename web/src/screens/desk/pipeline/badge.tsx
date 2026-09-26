@@ -6,6 +6,7 @@
 
 import { usePipeline } from "../data/api";
 import { dayShort, utcTime } from "../kit/format";
+import { useMixedGenerations } from "../data/generations";
 
 /** "Sep 22, 00:23 UTC" from the served refresh time. */
 export function refreshWords(iso: string | null | undefined): string {
@@ -23,6 +24,15 @@ export function validationWord(v: unknown): "passed" | "failed" | "unknown" {
 export function PipelineBadge({ testId = "pl-badge" }: { testId?: string }) {
   const q = usePipeline();
   const p = q.data;
+  // §1.1 (Codex R-22): this is Data Pipeline's page badge, so it says so when the page's answers disagree.
+  const mixed = useMixedGenerations();
+  if (mixed)
+    return (
+      <span className="dk-live dk-live-off dk-live-boxed pl-badge" data-testid="dk-gen-mixed">
+        <span className="dk-dot dk-dot-off" aria-hidden="true" />
+        mixed generations · refreshing
+      </span>
+    );
   if (!p) return null;
   const when = refreshWords(p.last_refresh_utc) || "unknown";
   const validation = validationWord(p.validation);

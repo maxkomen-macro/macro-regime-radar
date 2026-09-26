@@ -4256,6 +4256,194 @@ The fixture already carries that value. In the audit's store the
 lists the value as real, a stored read, where it was illustrative
 (NEEDS-ENDPOINT). No page changes, and no compare shot changes.
 
+## Codex round 3
+
+### Nine findings, R-21 to R-29 — `frame-3: codex-3 fixes`
+
+Codex's round-3 text was not pasted into the brief, so each finding is built
+from your ruling on it, and each is tested as ruled. The plan's round-6
+amendment on `error` goes in with them.
+
+**R-21: a count whose field is missing says Awaiting refresh.**
+- The Ledger's header counts are read from the rows only when every row
+  carries what they count:
+  - `available` for all of them;
+  - `firing_now` and `stale` on every available row for Firing now;
+  - `verdict` on every available row for Reliable and No edge;
+  - an unavailable row needs neither.
+- Otherwise the stat says "Awaiting refresh". Signals scored falls back to
+  counting rows only when `scored_n` is not served and every row says
+  whether it is available.
+- §1.7 says so.
+- Left as it was: Position Monitor's deployed total. Its rows are this
+  browser's records, not served rows, and it already prints no total unless
+  every row has a size.
+- Tests: `LedgerPage.test.tsx`, one per field.
+
+**R-22: the generation footer and the mixed-generation rule (§1.1, §12.0).**
+- **Tracking.** The shell reads the `generation_id` of every Desk answer the
+  page is using: each desk-v2 query with a live observer, the sidebar's
+  included. An awaiting envelope and a 4xx/5xx error envelope name their
+  generation too. Code: `data/generations.ts`.
+- **Footer.** It prints "Generation <id>" in the §1.3 gray: the label in
+  sans at 12px, the id in mono.
+- **Disagreement.** When two ids differ, the footer names both, and the page
+  badge reads "mixed generations · refreshing". On Data Pipeline that is
+  the header badge, which is its page badge (§11); elsewhere it is the
+  title's. The page's Desk answers are asked again once for each distinct
+  disagreement, so the same disagreement after the refetch is not asked
+  about again.
+- **Every page.** The footer is on every page, the Client view included, as
+  §1.1 states it.
+- Tests: `generations.test.tsx` (seven).
+
+**R-23: a preset link keeps its horizon.**
+- `?preset=<slug>&horizon=<h>` keeps the horizon verbatim through each step:
+  - the parse (`Ask` gains `horizon`);
+  - the address (`searchFor`);
+  - the query identity and the request (`apiParams`);
+  - the answer card's labels, and the slots of a preset that is awaiting or
+    refused;
+  - a study carried to Position Monitor (`?from=…&horizon=`);
+  - both exports: Event Study's CSV and Data Pipeline's current-study CSV.
+- An empty `horizon=` is sent as written and refused, never dropped for the
+  default.
+- The Client view's month drops it, since the month is h = 20.
+- A horizon the study does not allow is refused by the server's 422, and
+  the page prints its words: "No study in the catalog asks
+  gold-2sigma-spx-weak at a horizon of 7; its horizons are 5, 10, 20, 60
+  sessions."
+- The preset parse also admits engine slugs, sent as written, since §12.2
+  (S-20) lets a preset be one.
+- §12.2 says the horizon rides with a preset.
+- Tests: `EventStudyPage.test.tsx` (three).
+
+**R-24: the fixtures follow the folded contract.**
+- **The averages.** The builder now takes §12.7's averages over the last 50
+  and 200 XNYS session slots, null whenever a slot has no close. Only Sep 22
+  has none. So on Sep 22 and Sep 23:
+  - `ma50`, `ma200`, `vs_ma50` and `vs_ma200` are null;
+  - the windows start Jul 15 and Dec 5, with 49 and 199 closes;
+  - the trend is `unavailable` since Sep 22, on `/technicals` and on
+    `/overview`'s tile, whose `above_50` and `above_200` are null.
+  - Every earlier point is unchanged, since the stored closes have no other
+    gap.
+- **Validation.** `/pipeline` `validation` is null, "unknown" on the page:
+  no `validation.json` was published with the audit's store.
+- **Dependents.** Technicals prints both averages "Awaiting refresh" and the
+  trend "Unavailable since Sep 22, 2026". The Overview tile reads
+  "Unavailable". Position Monitor's S&P 50-day chip carries no number, and
+  Save refuses it as not served.
+- **Tests.** Those of the automatic 50-day monitor now take a
+  `completeTechnicals()` variant, a session whose closes are all stored.
+  One new test holds Monday's refusal.
+- **PROVENANCE.md** marks the averages, the trend and the null verdict as
+  real.
+- Tests: `consistency.test.ts` (R-24 block); Technicals, Overview, Data
+  Pipeline, Position Monitor, `monitor.test.ts`, `e2e/desk.spec.ts`.
+
+**R-25: paths break at a missing slot, runs at a missing month.**
+- Technicals keeps Sep 22's null-close point, so the S&P line stops before it
+  and resumes after it, never bridging the slot.
+- Regime's `runs()` ends a run at a month with no stored row, the rule §12.6
+  already states. The strip draws that month as an empty slot of its own:
+  61 calendar months from Aug 2021, with Oct 2025 between Sep's and Nov's
+  Stagflation. Its title reads "Oct 2025: no stored regimes row".
+- Tests: `TechnicalsPage.test.tsx`, `RegimePage.test.tsx`.
+
+**R-26: the allowlist.** Technicals' Signals list is drawn only from a served
+`signals_allowlist`. An absent one reads "Awaiting refresh"; an empty one is
+an empty panel. §12.7's row says so. Test: `TechnicalsPage.test.tsx`.
+
+**R-27: the fixture resolver holds §12.2's parameter rules.** Each is refused
+422 `unsupported`, the message naming what:
+- an unknown parameter ("There is no confidence parameter.");
+- a repeated one;
+- a preset asked with slot parameters;
+- a horizon outside the row's `allowed_horizons`.
+
+The asked horizon selects the answer. The builder writes the gold study's
+answer at 5, 10, 20 and 60 sessions (`study-horizons.json`: selected horizon,
+question horizon, verdict, headline, `why`, empty state) by §12.2's
+templates. The resolver serves `study.json` with that horizon's fields, and
+the Client block stays at h = 20. §12.2 says so. Tests: `api.test.tsx`,
+`consistency.test.ts`.
+
+**R-28 (spec): the warnings.**
+- §12.2's `warnings` row now carries the plan's round-4 rule: every engine
+  warning is served verbatim, except the "calendar sessions without a value"
+  entry. When an input's stored history starts before 1970, that entry
+  appends "(includes N pre-1970 holidays the engine calendar treats as
+  sessions)" after that input's count. N is defined as the plan defines it.
+- The gold study has no pre-1970 input, so no fixture changes.
+- `client_label` is confirmed in §12.3, the field row and the catalog
+  column, with a note that the 13 titles were approved in item 15.
+
+**R-29 (spec): the validation procedure.** §12.9's `validation` row now
+states the plan's bracket, run at the download (on the downloaded file) and
+at every poll (on the served file):
+1. read the key, k1;
+2. require the file's WAL to be absent or empty (at a download, the served
+   file's too);
+3. hash the file and compare the hash;
+4. read the key again, k2, and check the WAL of step 2 (at a download, both) is
+   still empty;
+5. bind only when the sha matches, k1 equals k2 and the WAL is still empty,
+   binding exactly k1, with no further sample.
+
+**The round-6 amendment.** §12.0's `error` is `{code, message}`, plus
+`provider` and `retryable` on code `schema_check` only (served `"api"` and
+`true`, as the plan's error map has them), and nothing else.
+`envelope.ts`'s type names the two.
+
+**Against the PNGs.**
+- Every Desk page ends with the generation footer, which the PNGs predate
+  (§1.1). The shots grew by it: 02, 03, 04, 07, 11 and 12 in height, the
+  others in their last rows.
+- 01 Overview: the trend tile reads "Unavailable", "since Sep 22, 2026 · last
+  cross golden, Jul 1, 2025" (§12.1, §12.7).
+- 02 Technicals: the 50- and 200-day averages read "Awaiting refresh"; the
+  trend reads "Unavailable since Sep 22, 2026"; the averages' lines end
+  before Sep 22 (§12.7).
+- 04 Regime: the strip's empty Oct 2025 slot (§12.6).
+- 08 Position Monitor: "closes below its 50-day" with no number (§9, §12.7).
+- 10 Data Pipeline: "validation unknown" (§12.9).
+- 12 Client view: the footer only.
+
+Verifier (one round): **FAIL**, three should-fix and six nits. It recomputed
+R-24 independently (the only missing session since 2022-06-01 is Sep 22;
+every point's close and averages match, 0 mismatches). In a browser it
+confirmed exactly one refetch round with no loop, the footer's type, R-27's
+refusals on both paths, and no sideways scroll on the 11 pages.
+- V18-1 (should-fix) a preset carried to Position Monitor dropped its
+  horizon, so the request asked at 20. **Fixed.**
+- V18-2 (should-fix) a 4xx/5xx error envelope did not report its generation.
+  **Fixed:** `readError` carries it, and a test serves a refusal on another
+  generation.
+- V18-3 (should-fix) hiding the footer on the Client view was an exception
+  you had not ruled. **Reverted:** the footer is on every page, as §1.1
+  states it; shot 12 now shows it. Whether the one-pager should carry it is
+  yours, below.
+- V18-4 (nit) the slots of an awaiting or refused preset showed h = 20 under
+  a link's other horizon. **Fixed.**
+- V18-5 (nit) an empty `horizon=` was dropped by the request builder.
+  **Fixed:** sent as written, refused as "an empty horizon".
+- V18-6 (nit, yours) `?preset=rsi-above-70&horizon=20` answers awaiting.
+  The plan checks the horizon on the slot path only, and the RSI rows have
+  no question to check it against. Left as it is.
+- V18-7 (nit) §12.9's step 4 now re-checks both WALs at a download.
+  **Fixed.**
+- V18-8 (nit) §12.0 now names the values `provider` "api" and `retryable`
+  true. **Fixed.**
+- V18-9 (nit) on Data Pipeline the mixed badge sat under the title while the
+  header badge, its page badge, kept reading the refresh. **Fixed:** the
+  header badge says it, and the title carries none.
+
+**For you.**
+- Whether the Client view, the one-pager a client sees, should carry the
+  generation footer (§1.1 says every page; §11 speaks of plain words).
+- Whether a horizon given with an RSI preset should be refused (V18-6).
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -4299,6 +4487,7 @@ tests against the fixture dev server.
 | frame-3: spec errata S-02–S-27 | clean | 122 / 1,498 | ok | 54 / 54 |
 | frame-3: spec errata S-01, S-12 and amendments | clean | 122 / 1,504 | ok | 54 / 54 |
 | frame-3: spec erratum last_refresh_utc | clean | 122 / 1,504 | ok | 54 / 54 |
+| frame-3: codex-3 fixes | clean | 123 / 1,524 | ok | 54 / 54 |
 
 ## Finish
 
@@ -4376,6 +4565,13 @@ carries this report, `frame-3: spec erratum last_refresh_utc` (parent
 `0d3996f`), local only. Nothing is pushed; your notes file and SVGs are left
 out. Gate summary at that tip: typecheck clean; unit 122 files / 1,504
 tests; build ok; Desk browser tests 54 / 54.
+
+After Codex round 3 (above): the tip is the commit that carries this
+report, `frame-3: codex-3 fixes` (parent `42298cb`), local only. Nothing is
+pushed; your notes file and SVGs are left out. Codex's own text was not in
+the brief, so the nine findings are built from your rulings. Gate summary at
+that tip: typecheck clean; unit 123 files / 1,524 tests; build ok; Desk
+browser tests 54 / 54.
 
 For Max, from the fold and alignment:
 - **Spec conflicts to settle:** §12.2 makes the Client title the catalog

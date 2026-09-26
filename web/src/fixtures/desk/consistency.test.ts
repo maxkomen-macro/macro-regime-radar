@@ -19,6 +19,7 @@ import macro from "./macro.json";
 import technicals from "./technicals.json";
 import catalog from "./study-catalog.json";
 import pipeline from "./pipeline.json";
+import studyHorizons from "./study-horizons.json";
 import { FIXTURE_META } from "./index";
 import { PIPELINE_DDL } from "./pipeline-ddl";
 import { sessionCount } from "../../screens/desk/positions/sessions";
@@ -316,5 +317,44 @@ describe("the API plan's spec errata (§6, S-02–S-27) as the fixtures carry th
 
   it("S-04: the proposed schema's first line says it is proposed", () => {
     expect(PIPELINE_DDL.split("\n")[0]).toBe("-- PROPOSED Snowflake export schema (not the current SQLite layout); nothing in this project creates it.");
+  });
+});
+
+describe("Codex R-24: the fixtures follow the folded contract", () => {
+  it("§12.7: an average that reads a missing close is null, with its distance and the trend, on /technicals and /overview alike", () => {
+    type Pt = { date: string; close: number | null; ma50: number | null; ma200: number | null };
+    const pts = (technicals.series as unknown as Record<string, Pt[]>)["1y"];
+    const missing = pts.filter((p) => p.close === null).map((p) => p.date);
+    expect(missing).toEqual(["2026-09-22"]);
+    // Every point whose last 50 (200) slots reach the missing close reads that average null; the others carry one.
+    for (const [i, p] of pts.entries()) {
+      const reaches = (k: number) => pts.slice(Math.max(0, i - k + 1), i + 1).some((q) => q.close === null);
+      if (reaches(50)) expect(p.ma50, p.date).toBeNull();
+      else if (i >= 49) expect(typeof p.ma50, p.date).toBe("number");
+      if (reaches(200)) expect(p.ma200, p.date).toBeNull();
+    }
+    expect([technicals.ma50, technicals.ma200, technicals.vs_ma50, technicals.vs_ma200]).toEqual([null, null, null, null]);
+    expect([technicals.ma50_window.n, technicals.ma200_window.n]).toEqual([49, 199]);
+    expect(technicals.trend).toEqual({ state: "unavailable", state_since: "2026-09-22" });
+    const tile = overview.tiles.trend;
+    expect([tile.state, tile.state_since, tile.above_50, tile.above_200]).toEqual(["unavailable", "2026-09-22", null, null]);
+  });
+
+  it("§12.9: no validation.json was published with the fixtures' store, so validation is null", () => {
+    expect(pipeline.validation).toBeNull();
+  });
+});
+
+describe("Codex R-27: the study's answer at each horizon", () => {
+  it("each answer is §12.2's templates over its own horizon's row; the default is the h = 20 one", () => {
+    const answers = studyHorizons.answers as Record<string, { selected_horizon: number; question_horizon: number; verdict: string; headline: string; why: string; empty_state: unknown }>;
+    expect(Object.keys(answers).sort()).toEqual(["10", "20", "5", "60"]);
+    for (const h of study.horizons) {
+      const a = answers[String(h.h)];
+      expect([a.selected_horizon, a.question_horizon, a.verdict]).toEqual([h.h, h.h, h.verdict]);
+      expect(a.headline.startsWith(`Suggestive at ${h.label}: `)).toBe(true);
+      expect(a.why).toBe(`${h.n} completed outcomes in ${h.n_blocks} overlap blocks; the 90% interval on the excess median runs ${fmtMove(h.ci_lo, "log_return")} to ${fmtMove(h.ci_hi, "log_return")}; ${(Math.round(h.adverse_share * 1000) / 10).toFixed(1)}% of resampled medians are adverse against a 3% bar.`);
+    }
+    expect([answers["20"].headline, answers["20"].why, answers["20"].empty_state]).toEqual([study.headline, study.why, study.empty_state]);
   });
 });

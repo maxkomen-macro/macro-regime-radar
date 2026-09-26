@@ -222,6 +222,36 @@ describe("Signal Ledger tab", () => {
     expect(row.querySelector(".dk-pill")).toBeNull();
     expect(row.textContent).toBe("VIX spike +2σ, 5 daysJun 5, 202611966%+1.5%+0.2 pts——");
   });
+  it("Codex R-21: a count whose field is missing on any row says Awaiting refresh, never a number", async () => {
+    const stat = (label: string) => screen.getByText(label, { selector: ".dk-stat-label" }).parentElement!;
+    const without = (r: LedgerRow, k: keyof LedgerRow) => {
+      const c = { ...r } as Record<string, unknown>;
+      delete c[k];
+      return c;
+    };
+    // An available row with no verdict: Reliable and No edge wait; Firing now still counts.
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => (r.slug === "golden-cross" ? without(r, "verdict") : r)) }) });
+    const a = renderTab();
+    await waitFor(() => expect(stat("Reliable")).toHaveTextContent(/Reliable\s*Awaiting refresh/));
+    expect(stat("No edge")).toHaveTextContent(/No edge\s*Awaiting refresh/);
+    expect(stat("Firing now")).toHaveTextContent(/Firing now\s*0\s*none/);
+    a.unmount();
+    // An available row with no firing state: Firing now waits; the verdicts still count.
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => (r.slug === "death-cross" ? without(r, "firing_now") : r)) }) });
+    const b = renderTab();
+    await waitFor(() => expect(stat("Firing now")).toHaveTextContent(/Firing now\s*Awaiting refresh/));
+    expect(stat("Reliable")).toHaveTextContent(/Reliable\s*1/);
+    b.unmount();
+    // A row that does not say whether it is available, and no served scored_n: nothing is counted from the rows.
+    const { scored_n: _s, unavailable_n: _u, ...rest } = ledger;
+    void [_s, _u];
+    stubDesk({ "/api/desk/ledger": () => ({ ...rest, signals: rows.map((r) => (r.slug === "rsi-above-70" ? without(r, "available") : r)) }) });
+    renderTab();
+    await waitFor(() => expect(stat("Signals scored")).toHaveTextContent(/Signals scored\s*Awaiting refresh/));
+    for (const l of ["Firing now", "Reliable", "No edge"]) expect(stat(l)).toHaveTextContent(new RegExp(`${l}\\s*Awaiting refresh`));
+    // An unavailable row needs neither a verdict nor a firing state: the fixture's four count as they are.
+  });
+
   it("counts are green only above zero", async () => {
     stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: firingRows().map((r) => ({ ...r, verdict: r.verdict === "reliable" ? "suggestive" : r.verdict })) }) });
     renderTab();

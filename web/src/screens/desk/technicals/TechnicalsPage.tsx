@@ -171,7 +171,8 @@ export function aboveBelow(frac: number): string {
 
 function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; state: CardState; cross: LedgerRow | undefined }) {
   const [range, setRange] = useState<Range>("1y");
-  const pts = (t?.series?.[range] ?? []).filter((p) => fin(p.close));
+  // §12.7: a missing close is a point with close null; the line breaks there, never bridging the slot (Codex R-25).
+  const pts = (t?.series?.[range] ?? []).filter((p) => typeof p?.date === "string");
   const all = pts.flatMap((p) => [p.close, p.ma50, p.ma200]).filter(fin);
   const lo = all.length ? Math.min(...all) : 0;
   const hi = all.length ? Math.max(...all) : 1;
@@ -202,7 +203,7 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
         <Stat label="50-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma50))} value={ready && fin(t.ma50) ? grouped(t.ma50) : undefined} tone="green" sub={ready && fin(t.vs_ma50) ? aboveBelow(t.vs_ma50) : undefined} />
         <Stat label="200-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma200))} value={ready && fin(t.ma200) ? grouped(t.ma200) : undefined} tone="gray" sub={ready && fin(t.vs_ma200) ? aboveBelow(t.vs_ma200) : undefined} />
       </StatRow>
-      {ready && pts.length > 1 ? (
+      {ready && pts.filter((p) => fin(p.close)).length > 1 ? (
         <LineChart
           ariaLabel={`S&P 500 with its 50-day and 200-day averages, ${range.toUpperCase()}${crossI >= 0 && t.cross ? `; ${crossWord.toLowerCase()} cross on ${dayLong(t.cross.date)}` : ""}`}
           height={230}
@@ -213,7 +214,7 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
           series={[
             { key: "ma200", values: pts.map((p) => (fin(p.ma200) ? p.ma200 : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 2, label: "200-day" },
             { key: "ma50", values: pts.map((p) => (fin(p.ma50) ? p.ma50 : null)), color: DESK_ACCENTS.green, dash: "4 4", width: 2, label: "50-day" },
-            { key: "close", values: pts.map((p) => p.close), color: DESK_ACCENTS.blue, width: 2.5, label: "S&P 500" },
+            { key: "close", values: pts.map((p) => (fin(p.close) ? p.close : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "S&P 500" },
           ]}
           endDot="close"
           markers={crossI >= 0 && fin(pts[crossI].ma50) ? [{ i: crossI, v: pts[crossI].ma50, color: crossWord === "Death" ? DESK_ACCENTS.red : DESK_ACCENTS.green, r: 5 }] : []}
@@ -255,6 +256,8 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
   const rows = allowlistRows(ledger, t?.signals_allowlist);
   const ready = tState === "ready" && !!t;
   const aw = tState === "awaiting";
+  // Codex R-26: the list is drawn from a served allowlist only; an absent one is Awaiting refresh, an empty one an empty panel.
+  const listed = ready && Array.isArray(t.signals_allowlist) && lState === "ready";
   const unserved = useUnserved();
   if (unserved) return <UnservedCard headingId="te-sig-title" className="te-signals" title="Signals" sub="what fired, and what usually follows" labels={["1-year return", "Trend", "Last 20 days"]} block={unserved} />;
   return (
@@ -276,7 +279,7 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
           sub={ready && dayShort(t.move_20d_date) ? `on ${dayShort(t.move_20d_date)}` : undefined}
         />
       </StatRow>
-      {lState === "ready" ? (
+      {listed ? (
         <ul className="te-sig-list">
           {rows.map((r) => (
             <li key={r.slug}>
@@ -305,13 +308,13 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
             </li>
           ))}
         </ul>
-      ) : lState === "awaiting" ? (
+      ) : lState === "awaiting" || aw || (ready && lState === "ready") ? (
         <Awaiting />
       ) : null}
       {/* §3's note box: there is no universal normal month (§1.5). */}
       {/* Codex R-16: a row the allowlist or the Ledger lost at the boundary is said, never silently left out. */}
       <DroppedNote n={droppedOf(t, "signals_allowlist") + droppedOf(ledger, "signals")} one="signal row" />
-      {lState === "ready" ? <div className="dk-read te-note">vs normal compares each study to its own baseline over its own sample.</div> : null}
+      {listed ? <div className="dk-read te-note">vs normal compares each study to its own baseline over its own sample.</div> : null}
     </section>
   );
 }

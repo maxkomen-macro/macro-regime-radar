@@ -7,14 +7,15 @@
  */
 import { describe, expect, it } from "vitest";
 import sample from "../../../fixtures/desk/positions.json";
-import technicals from "../../../fixtures/desk/technicals.json";
 import macro from "../../../fixtures/desk/macro.json";
 import type { MacroResponse, TechnicalsResponse } from "../data/types";
 import { planFor, planRefusal, seriesOf, suggestions } from "./levels";
 import { falsifiesLine, levelsFrom, sizeLine, viewOf } from "./monitor";
 import type { PositionRecord } from "./store";
+import { completeTechnicals } from "../../../test/desk-variants";
 
-const T = technicals as unknown as TechnicalsResponse;
+// A session whose 50 and 200 closes are all stored (the fixture's Sep 23 reads both averages null, Codex R-24).
+const T = completeTechnicals() as unknown as TechnicalsResponse;
 const M = macro as unknown as MacroResponse;
 const LEVELS = levelsFrom(T, M);
 const RECORDS = (sample as { positions: PositionRecord[] }).positions;

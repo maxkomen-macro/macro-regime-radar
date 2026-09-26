@@ -333,9 +333,10 @@ function WordingLine({ flag, onReplace }: { flag: Flag & { text: string }; onRep
 export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const { pathTo } = useDeskView();
   const [search, setSearch] = useSearchParams();
-  // A study carried in: `?from=<preset>`, or the six slots Event Study's own address uses.
+  // A study carried in: `?from=<preset>` with the horizon its link keeps (Codex R-23), or the six slots Event Study's own address uses.
   const from = search.get("from");
-  const carriedAsk: Ask | null = from ? { preset: from } : search.get("shock") ? askFromSearch(search) : null;
+  const fromHorizon = search.get("horizon");
+  const carriedAsk: Ask | null = from ? (fromHorizon === null ? { preset: from } : { preset: from, horizon: fromHorizon }) : search.get("shock") ? askFromSearch(search) : null;
   const study = useStudy(carriedAsk ? apiParams(carriedAsk) : {}, { enabled: !!carriedAsk });
   // A basket sent from Basket & Hedge (`?basket=`): one saved in this browser (§10: no basket is served).
   const basketId = search.get("basket");

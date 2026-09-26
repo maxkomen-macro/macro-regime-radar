@@ -79,8 +79,9 @@ describe("Pipeline words", () => {
 describe("Data Pipeline tab", () => {
   it("the badge, the title, the groups as served, all closed", async () => {
     renderTab();
-    // The audit's §1: the last full run checked the store at 15:52 UTC on Sep 24 and validated it.
-    expect(await screen.findByTestId("pl-badge")).toHaveTextContent("Last full refresh Sep 24, 15:52 UTC · validation passed");
+    // The audit's §1: the last full run checked the store at 15:52 UTC on Sep 24; no validation.json was published
+    // with that store, so the verdict is null and reads "unknown" (§12.9, S-01; Codex R-24).
+    expect(await screen.findByTestId("pl-badge")).toHaveTextContent("Last full refresh Sep 24, 15:52 UTC · validation unknown");
     expect(await screen.findByRole("heading", { level: 1, name: "Where every number comes from" })).toBeInTheDocument();
     const inv = screen.getByRole("region", { name: /Series inventory/ });
     await waitFor(() => expect(inv).toHaveTextContent("27 series · grouped · generated from the registry"));

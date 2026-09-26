@@ -210,6 +210,9 @@ refresh" (§1.7). The `MOCKUP · values illustrative` amber badge is NOT built.
 - A list whose rows the response boundary could not read says so ("1 row could
   not be read."; event, series, month, sector … as fits), and nothing is
   counted or called empty from the rows that are left (Codex round 2, R-16).
+  A count read from rows (the Ledger's Firing now, Reliable, No edge, and
+  Signals scored when `scored_n` is not served) says "Awaiting refresh" when a
+  field it counts is missing on any row, never a number (Codex round 3, R-21).
 - A study whose selected horizon has fewer than ten completed outcomes is
   `insufficient`: the answer card prints the served `empty_state.sentence`
   and the served `fixes` as chips (each only when it leads to a catalog
@@ -751,7 +754,7 @@ above (v3 §18).
 | `engine_version` | string | required | the git commit sha of the running build, injected at image build as `ENGINE_VERSION` (`ARG`/`ENV`) and read from the environment: `ENGINE_VERSION`, else the host's `RENDER_GIT_COMMIT`; `"unknown"` when neither is set |
 | `data` | object | required, nullable | the payload; non-null only when `status` is `ready` |
 | `unavailable` | `{reason: string, until: string\|null}` | required, nullable | non-null only when `status` is `awaiting` |
-| `error` | `{code: string, message: string}` | required, nullable | non-null only when `status` is `error` |
+| `error` | `{code: string, message: string, provider?: string, retryable?: boolean}` | required, nullable | non-null only when `status` is `error`; `provider` and `retryable` only on `code` `schema_check` (served `"api"` and `true`), and no other field |
 
 HTTP: `ready` 200; `computing` 202 with `Retry-After: 2`, and the client polls
 the same URL; `awaiting` 200 with `data: null`; `error` 4xx/5xx. A study
@@ -876,7 +879,11 @@ Overheating | Stagflation | Recession Risk>`), `target`, `horizon` (5 | 10 |
 `horizon` then selects that study's results. There is no `confidence`
 parameter. `while` defaults to `none`; `window` is required for
 `up2s`/`down2s` and refused for a cross; `preset` also accepts an engine slug
-that parses to a catalog study's query. Anything else: 422 `unsupported`.
+that parses to a catalog study's query. `horizon` also rides with a preset,
+and a preset link keeps it (Codex round 3, R-23). An unknown parameter, a
+repeated one, a preset asked with slot parameters, or a horizon outside the
+study's `allowed_horizons` is refused 422 `unsupported`, the message naming
+what (R-27). Anything else: 422 `unsupported`.
 
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
@@ -942,7 +949,7 @@ that parses to a catalog study's query. Anything else: 422 `unsupported`.
 | `provenance.seed` | integer | required | — | — | E |
 | `provenance.engine_version` | string | required | — | — | A |
 | `provenance.series_start` | object, key → date | required | — | each input's first stored observation | E `provenance.inputs` |
-| `warnings` | string[] | required (may be empty) | — | — | E `provenance.warnings` |
+| `warnings` | string[] | required (may be empty) | — | — | E `provenance.warnings`, each served verbatim except the engine's "calendar sessions without a value: …" entry: when an input's stored history starts before 1970-01-01, the served copy appends, right after that input's count, "(includes N pre-1970 holidays the engine calendar treats as sessions)". N counts the dates that are an `api/calendar` holiday before 1970, inside the input's stored range, a session of the study's own calendar, and a date on which the input has no stored value. A study with no pre-1970 input serves the engine's warnings unchanged. |
 | `series` | array | required | — | — | E registry (`series.with_role`) |
 | `series[].key`, `label` | string | required | — | — | E |
 | `series[].roles` | array of `shock` \| `target` \| `condition` | required | — | — | E registry `roles` |
@@ -989,7 +996,7 @@ served string as is.
 | `studies` | array of 15 | required | — | — | A: the catalog below |
 | `studies[].slug` | string | required | — | — | A |
 | `studies[].label`, `short` | string | required | — | — | A: one canonical label and short per slug, reused by every tab (v2 §19) |
-| `studies[].client_label` | string | required, nullable (null for the RSI definitions) | — | — | A: the Client view's title in plain words, no σ and no engine terms (§11; ruling of item 14) |
+| `studies[].client_label` | string | required, nullable (null for the RSI definitions) | — | — | A: the Client view's title in plain words, no σ and no engine terms (§11; ruled in item 14, the 13 titles below approved in item 15) |
 | `studies[].available` | boolean | required | — | the current generation | A: true when the engine completes on the pinned generation (v4 B-07): every input's coverage stored |
 | `studies[].unavailable` | `{reason, until\|null}` | required, nullable (null when available) | — | — | E: the engine's `not_stored` reason, or the §1.0 reason |
 | `studies[].question` | `{shock, window, move, while, target}` | required, nullable (null for the RSI definitions) | — | — | A |
@@ -1144,7 +1151,7 @@ Every field describes the registry series `spx` (^GSPC).
 | `move_20d_sigma` | number | required, nullable | σ | `move_20d_date` | N firing state: the spx-20d-2sigma study's z (`zscore(move(level, spx, 20))`) on its `evaluated_on` |
 | `move_20d_date` | date | required, nullable | — | — | N |
 | `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13): the XNYS sessions after `date` − 6, 12 and 36 calendar months, through `date`; a missing close is a point with `close: null`; `ma50`/`ma200` nullable per point |
-| `signals_allowlist` | `["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows are omitted while unavailable) |
+| `signals_allowlist` | `["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows are omitted while unavailable). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
 | `vol` | block envelope | required | — | — | awaiting: "needs stored SPY option snapshots and a versioned skew method." |
 | `sectors` | block envelope | required | — | — | awaiting: "sector ETFs, RSP and IWM not ingested." |
 
@@ -1180,7 +1187,7 @@ DGS10 (v2 §12). Until then those tenors are null.
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
 | `last_refresh_utc` | ts | required, nullable ("unknown" in the UI when null) | — | `source_watermarks` row `"desk_series"` | S: that row's `checked_at` (the Desk store runs only in the full refresh), never the run artifact |
-| `validation` | `"pass"` \| `"fail"` | required, nullable | — | the published `validation.json` | S: the verdict of the `validation.json` published with the served database. Both writers publish it: `refresh-data.yml` and `intraday-refresh.yml`, each in the mode it validates in, as `{verdict, mode, timestamp, db_sha256}`, uploaded after the database. The API verifies `db_sha256` against the file, records the file's key right after that check, and serves the verdict only for the generation with that key; missing, mismatched or re-keyed → null (the UI prints "unknown"). The key is recorded only when `<DB_PATH>-wal` is absent or empty, checked at the download and at every poll alike; with a non-empty WAL nothing is recorded and the verdict is null. |
+| `validation` | `"pass"` \| `"fail"` | required, nullable | — | the published `validation.json` | S: the verdict of the `validation.json` published with the served database. Both writers publish it: `refresh-data.yml` and `intraday-refresh.yml`, each in the mode it validates in, as `{verdict, mode, timestamp, db_sha256}`, uploaded after the database. The API binds a verdict by one procedure, run at the download (on the downloaded file) and at every poll (on the served file): read the file's key (k1); require the file's `-wal` to be absent or empty (at a download, `<DB_PATH>-wal` too); hash the file and compare with `db_sha256`; read the key again (k2) and check that the WAL of step 2 (at a download, both) is still absent or empty; bind only when the sha matches, k1 equals k2 and the WAL is still empty, binding exactly k1, with no further sample of the key. It serves the verdict only for the generation with that key; missing, mismatched, WAL-present or re-keyed → null (the UI prints "unknown"). |
 | `groups` | array | required | — | — | E registry and its consumers (`/api/desk/pipeline/inventory`) |
 | `groups[].name` | string | required | — | — | A |
 | `groups[].status` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | A: the worst of its series |

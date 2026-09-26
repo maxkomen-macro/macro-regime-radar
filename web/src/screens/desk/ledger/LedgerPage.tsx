@@ -28,6 +28,21 @@ export const isAvailable = (r: LedgerRow) => r.available !== false;
 // A firing claim needs the state and its freshness served: stale not served claims nothing (§12.5; verifier V14-5).
 export const firingToday = (r: LedgerRow) => isAvailable(r) && r.firing_now === true && r.stale === false;
 
+/**
+ * Codex R-21: which of the header's counts the rows can give. A count is read from the rows only when every
+ * row carries the fields it counts (`available` for all; `firing_now` and `stale` for Firing now; `verdict`
+ * for Reliable and No edge, an unavailable row needing none); otherwise it says Awaiting refresh.
+ */
+export function countable(rows: readonly LedgerRow[]): { rows: boolean; firing: boolean; verdicts: boolean } {
+  const avail = rows.every((r) => typeof r.available === "boolean");
+  const live = rows.filter((r) => r.available !== false);
+  return {
+    rows: avail,
+    firing: avail && live.every((r) => r.firing_now !== undefined && typeof r.stale === "boolean"),
+    verdicts: avail && live.every((r) => typeof r.verdict === "string"),
+  };
+}
+
 export function applyFilter(rows: readonly LedgerRow[], f: Filter): LedgerRow[] {
   if (f === "firing") return rows.filter(firingToday);
   if (f === "reliable") return rows.filter((r) => isAvailable(r) && r.verdict === "reliable");
@@ -135,9 +150,12 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   const firing = rows.filter(firingToday);
   const reliable = rows.filter((r) => isAvailable(r) && r.verdict === "reliable");
   const noEdge = rows.filter((r) => isAvailable(r) && r.verdict === "no_edge");
-  const scored = fin(l?.scored_n) ? l.scored_n : lost ? null : rows.filter(isAvailable).length;
+  const known = countable(rows);
+  const scored = fin(l?.scored_n) ? l.scored_n : lost || !known.rows ? null : rows.filter(isAvailable).length;
   const off = fin(l?.unavailable_n) ? l.unavailable_n : lost || scored == null ? null : rows.length - scored;
   const counted = ready && !lost;
+  const firingCounted = counted && known.firing;
+  const verdictsCounted = counted && known.verdicts;
   // §8: the rows in exactly the served order, whatever their state (v3 §2's fixed order).
   const shown = applyFilter(rows, filter);
   const open = (slug: string) => navigate(withParam(pathTo("event-study"), "preset", slug));
@@ -159,10 +177,10 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
             value={ready && scored != null ? String(scored) : undefined}
             sub={ready && scored != null ? (off != null ? `${scored} scored · ${off} not yet served` : `${scored} scored`) : undefined}
           />
-          {/* Counted from the rows, so only when every row was read. */}
-          <Stat label="Firing now" awaiting={state === "awaiting" || (ready && !counted)} value={counted ? String(firing.length) : undefined} tone={counted && firing.length ? "green" : undefined} sub={counted ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
-          <Stat label="Reliable" awaiting={state === "awaiting" || (ready && !counted)} value={counted ? String(reliable.length) : undefined} tone={counted && reliable.length ? "green" : undefined} sub={counted ? reliable.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
-          <Stat label="No edge" awaiting={state === "awaiting" || (ready && !counted)} value={counted ? String(noEdge.length) : undefined} />
+          {/* Counted from the rows, so only when every row was read and carries what is counted (Codex R-16, R-21). */}
+          <Stat label="Firing now" awaiting={state === "awaiting" || (ready && !firingCounted)} value={firingCounted ? String(firing.length) : undefined} tone={firingCounted && firing.length ? "green" : undefined} sub={firingCounted ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
+          <Stat label="Reliable" awaiting={state === "awaiting" || (ready && !verdictsCounted)} value={verdictsCounted ? String(reliable.length) : undefined} tone={verdictsCounted && reliable.length ? "green" : undefined} sub={verdictsCounted ? reliable.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
+          <Stat label="No edge" awaiting={state === "awaiting" || (ready && !verdictsCounted)} value={verdictsCounted ? String(noEdge.length) : undefined} />
         </div>
         <section className="dk-card lg-card" aria-label="Every scored signal" aria-busy={state === "loading"}>
           <div className="lg-chips" role="group" aria-label="Filter">

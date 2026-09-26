@@ -1,0 +1,37 @@
+{
+ "note": "The gold study's answer at each selectable horizon (§12.2: the requested horizon selects the answer; Codex R-27). The fixture resolver serves study.json with the requested horizon's fields in place; the Client block stays at h = 20.",
+ "answers": {
+  "5": {
+   "selected_horizon": 5,
+   "question_horizon": 5,
+   "verdict": "suggestive",
+   "headline": "Suggestive at 1 week: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met.",
+   "why": "18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −1.8% to +3.0%; 34.3% of resampled medians are adverse against a 3% bar.",
+   "empty_state": null
+  },
+  "10": {
+   "selected_horizon": 10,
+   "question_horizon": 10,
+   "verdict": "suggestive",
+   "headline": "Suggestive at 2 weeks: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met.",
+   "why": "18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −0.9% to +3.2%; 41.6% of resampled medians are adverse against a 3% bar.",
+   "empty_state": null
+  },
+  "20": {
+   "selected_horizon": 20,
+   "question_horizon": 20,
+   "verdict": "suggestive",
+   "headline": "Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met.",
+   "why": "18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −1.6% to +4.1%; 14.6% of resampled medians are adverse against a 3% bar.",
+   "empty_state": null
+  },
+  "60": {
+   "selected_horizon": 60,
+   "question_horizon": 60,
+   "verdict": "suggestive",
+   "headline": "Suggestive at 3 months: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met.",
+   "why": "18 completed outcomes in 17 overlap blocks; the 90% interval on the excess median runs −4.2% to +6.3%; 49.1% of resampled medians are adverse against a 3% bar.",
+   "empty_state": null
+  }
+ }
+}

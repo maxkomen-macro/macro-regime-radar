@@ -36,10 +36,10 @@
    "source": "recession model (src/analytics/recession.py)"
   },
   "trend": {
-   "state": "above_both",
-   "above_50": true,
-   "above_200": true,
-   "state_since": "2026-09-17",
+   "state": "unavailable",
+   "above_50": null,
+   "above_200": null,
+   "state_since": "2026-09-22",
    "cross": {
     "kind": "golden",
     "date": "2025-07-01"

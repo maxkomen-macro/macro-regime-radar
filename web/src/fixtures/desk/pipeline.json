@@ -2,7 +2,7 @@
  "as_of": "2026-09-24",
  "generation_id": "gen-fixture-2026-09-24",
  "last_refresh_utc": "2026-09-24T15:52:43Z",
- "validation": "pass",
+ "validation": null,
  "groups": [
   {
    "name": "Rates",

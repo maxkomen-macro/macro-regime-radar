@@ -6,7 +6,7 @@
  * export and import, fewer than 10 events is one sentence and two fixes, and
  * Advanced opens the events, the resampling detail, the rules and the provenance.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient } from "@tanstack/react-query";
@@ -19,7 +19,7 @@ import { bpEvents, bpStudy } from "../../../test/desk-variants";
 import type { Question } from "../data/types";
 import { applyFix, provenanceLine } from "./EventStudyPage";
 import { barTicks, horizonPhrase, servedWords } from "./AnswerCard";
-import { LAST_STUDY_KEY, SAVED_KEY, WHILES, WINDOWS, askFromSearch, exportSaved, importSaved, loadSaved, questionFromEngine, questionWords, searchFor, unreadableSaved, withSaved, withdrawnIn, writeSaved } from "./question";
+import { LAST_STUDY_KEY, SAVED_KEY, WHILES, WINDOWS, apiParams, askFromSearch, atMonth, exportSaved, importSaved, loadSaved, questionFromEngine, questionWords, searchFor, unreadableSaved, withSaved, withdrawnIn, writeSaved } from "./question";
 
 const GOLD: Question = { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 };
 
@@ -609,6 +609,55 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     await waitFor(() => expect(rail()).toHaveTextContent(/3 months\s*fewer than five independent blocks/));
     expect(within(rail()).getByText("fewer than five independent blocks")).toHaveClass("es-range-why");
     expect(rail()).toHaveTextContent(/Last five events · S&P 500 a month later\s*No events/);
+  });
+
+  it("Codex R-23: a preset link keeps its horizon through the address, the request, the answer and the export", async () => {
+    const { calls } = stubDesk();
+    const urls = globalThis.URL as unknown as { createObjectURL?: unknown; revokeObjectURL?: unknown };
+    const [c0, r0] = [urls.createObjectURL, urls.revokeObjectURL];
+    urls.createObjectURL = () => "blob:x";
+    urls.revokeObjectURL = () => {};
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    try {
+      renderTab("/desk/event-study?preset=gold-2sigma-spx-weak&horizon=5");
+      const card = await screen.findByRole("region", { name: "The answer" });
+      await waitFor(() => expect(card).toHaveTextContent("Suggestive at 1 week:"));
+      expect(calls).toContain("GET /api/desk/study?preset=gold-2sigma-spx-weak&horizon=5");
+      fireEvent.click(await screen.findByTestId("es-export"));
+      await waitFor(() => expect(calls.some((c) => c.startsWith("GET /api/desk/study/events?preset=gold-2sigma-spx-weak&horizon=5"))).toBe(true));
+      await waitFor(() => expect(click).toHaveBeenCalled());
+    } finally {
+      click.mockRestore();
+      urls.createObjectURL = c0;
+      urls.revokeObjectURL = r0;
+    }
+  });
+
+  it("Codex R-23: a preset link with a horizon the study does not allow prints the refusal's words", async () => {
+    const one = renderTab("/desk/event-study?preset=gold-2sigma-spx-weak&horizon=7");
+    let card = await screen.findByRole("region", { name: "The answer" });
+    await waitFor(() => expect(card).toHaveTextContent("No study in the catalog asks gold-2sigma-spx-weak at a horizon of 7; its horizons are 5, 10, 20, 60 sessions."));
+    one.unmount();
+    // An empty horizon is sent as written, and refused, never dropped for the default.
+    renderTab("/desk/event-study?preset=gold-2sigma-spx-weak&horizon=");
+    card = await screen.findByRole("region", { name: "The answer" });
+    await waitFor(() => expect(card).toHaveTextContent("No study in the catalog asks gold-2sigma-spx-weak with an empty horizon; its horizons are 5, 10, 20, 60 sessions."));
+  });
+
+  it("Codex R-23: an awaiting preset asked at a horizon shows that horizon in the slots", async () => {
+    renderTab("/desk/event-study?preset=dollar-2sigma-20d&horizon=5");
+    await waitFor(() => expect(screen.getByLabelText("Over the next")).toHaveValue("5"));
+  });
+
+  it("Codex R-23: the address and the query identity carry the preset's horizon; the Client view's month drops it", () => {
+    const a = askFromSearch("preset=gold-2sigma-spx-weak&horizon=5");
+    expect(a).toEqual({ preset: "gold-2sigma-spx-weak", horizon: "5" });
+    expect(searchFor(a)).toBe("preset=gold-2sigma-spx-weak&horizon=5");
+    expect(apiParams(a)).toEqual({ preset: "gold-2sigma-spx-weak", horizon: "5" });
+    expect(apiParams(askFromSearch("preset=gold-2sigma-spx-weak"))).toEqual({ preset: "gold-2sigma-spx-weak" });
+    expect(atMonth(a)).toEqual({ preset: "gold-2sigma-spx-weak" });
+    // An engine slug is a preset too (§12.2, S-20), sent as written for the server to normalize.
+    expect(askFromSearch("preset=gold-w20-z2.0-up-spx_below_50dma-spx")).toEqual({ preset: "gold-w20-z2.0-up-spx_below_50dma-spx" });
   });
 
   it("events whose K−2 month has no stored regimes row are counted under the table (S-06)", async () => {

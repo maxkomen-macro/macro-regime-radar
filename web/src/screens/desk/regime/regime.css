@@ -120,6 +120,11 @@
 .rg-strip span[data-tone="red"] {
   background: var(--dk-red);
 }
+/* A month with no stored regimes row keeps its slot, drawn empty (Codex R-25). */
+.rg-strip span[data-gap] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--dk-box);
+}
 .rg-strip-years {
   position: relative;
   height: 15px;

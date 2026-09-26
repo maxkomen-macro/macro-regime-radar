@@ -26,14 +26,40 @@ export const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession R
 
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 
-/** Contiguous runs of one regime in a monthly history. */
-export function runs(history: readonly { month: string; regime: string }[]): { regime: string; from: string; to: string; months: number }[] {
-  const out: { regime: string; from: string; to: string; months: number }[] = [];
+/** The month after `m` ("2025-09" → "2025-10"). */
+export function nextMonth(m: string): string {
+  const [y, mo] = m.split("-").map(Number);
+  const k = y * 12 + mo;
+  return `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, "0")}`;
+}
+
+/** A run of one regime in consecutive stored months, or (regime null) months with no stored row. */
+export type Run = { regime: string | null; from: string; to: string; months: number };
+
+/**
+ * Contiguous runs of one regime in a monthly history, oldest first. A month with no stored row ends a run
+ * (§12.6, S-14; Codex R-25) and is a gap of its own, so the strip never draws one run across it.
+ */
+export function runs(history: readonly { month: string; regime: string }[]): Run[] {
+  const out: Run[] = [];
   for (const h of history) {
     const last = out[out.length - 1];
-    if (last && last.regime === h.regime) {
-      last.to = h.month;
-      last.months += 1;
+    if (last && h.month > last.to) {
+      let next = nextMonth(last.to);
+      if (next !== h.month) {
+        const gap: Run = { regime: null, from: next, to: next, months: 0 };
+        for (let guard = 0; next < h.month && guard < 1200; guard++) {
+          gap.to = next;
+          gap.months += 1;
+          next = nextMonth(next);
+        }
+        out.push(gap);
+      }
+    }
+    const prev = out[out.length - 1];
+    if (prev && prev.regime === h.regime && nextMonth(prev.to) === h.month) {
+      prev.to = h.month;
+      prev.months += 1;
     } else out.push({ regime: h.regime, from: h.month, to: h.month, months: 1 });
   }
   return out;
@@ -50,19 +76,27 @@ function ServedRead({ read }: { read: Read | undefined }) {
 
 
 function Strip({ history, note, lost = 0 }: { history: NonNullable<RegimeResponse["history"]>; note?: string; lost?: number }) {
-  const total = history.length;
   const segs = runs(history);
+  // Calendar months from the first row to the last: a month with no stored row keeps its slot (Codex R-25).
+  const total = segs.reduce((a, s) => a + s.months, 0);
   const first = history[0]?.month;
   const last = history[history.length - 1]?.month;
+  const months: string[] = [];
+  for (let m = first, guard = 0; m && last && m <= last && guard < 1200; m = nextMonth(m), guard++) months.push(m);
   // One tick per January; the strip's own last year is the one `today` names (§5: 2021…2025, then today).
-  const years = history.map((h, i) => ({ i, y: h.month.slice(0, 4), jan: h.month.endsWith("-01") })).filter((x) => x.jan && x.y !== last?.slice(0, 4));
+  const years = months.map((m, i) => ({ i, y: m.slice(0, 4), jan: m.endsWith("-01") })).filter((x) => x.jan && x.y !== last?.slice(0, 4));
+  const span = (s: Run) => (s.from === s.to ? monthYear(s.from) : `${monthYear(s.from)} to ${monthYear(s.to)}`);
   return (
     <div className="rg-strip-wrap">
       <p className="dk-stat-label">Last five years</p>
-      <div className="rg-strip" role="img" aria-label={`Regime by month from ${monthYear(first)} to ${monthYear(last)}: ${segs.map((s) => `${s.regime} ${monthYear(s.from)} to ${monthYear(s.to)}`).join("; ")}`}>
-        {segs.map((s) => (
-          <span key={s.from} data-tone={REGIME_KEY[s.regime] ?? "gray"} style={{ width: `${(s.months / total) * 100}%` }} title={`${s.regime}, ${monthYear(s.from)} to ${monthYear(s.to)}`} />
-        ))}
+      <div className="rg-strip" role="img" aria-label={`Regime by month from ${monthYear(first)} to ${monthYear(last)}: ${segs.map((s) => (s.regime ? `${s.regime} ${monthYear(s.from)} to ${monthYear(s.to)}` : `no stored row for ${span(s)}`)).join("; ")}`}>
+        {segs.map((s) =>
+          s.regime ? (
+            <span key={s.from} data-tone={REGIME_KEY[s.regime] ?? "gray"} style={{ width: `${(s.months / total) * 100}%` }} title={`${s.regime}, ${monthYear(s.from)} to ${monthYear(s.to)}`} />
+          ) : (
+            <span key={s.from} data-gap="" style={{ width: `${(s.months / total) * 100}%` }} title={`${span(s)}: no stored regimes row`} />
+          ),
+        )}
       </div>
       <div className="rg-strip-years" aria-hidden="true">
         {years.map((y) => (

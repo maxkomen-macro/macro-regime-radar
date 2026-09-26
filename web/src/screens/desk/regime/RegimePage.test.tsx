@@ -49,8 +49,20 @@ describe("Regime words", () => {
     // The stored rows (the audit's store): five years of Overheating and Stagflation turns, then the July Goldilocks row and August's Overheating.
     expect(r[0]).toMatchObject({ regime: "Overheating", from: "2021-08" });
     expect(r.slice(-2)).toEqual([expect.objectContaining({ regime: "Goldilocks", from: "2026-07", to: "2026-07", months: 1 }), expect.objectContaining({ regime: "Overheating", from: "2026-08", to: "2026-08", months: 1 })]);
-    expect(r).toHaveLength(25);
-    expect(r.reduce((a, x) => a + x.months, 0)).toBe(regime.history.length);
+    // Codex R-25 (§12.6, S-14): the missing 2025-10 row ends the Stagflation run and is a gap of its own.
+    const gap = r.findIndex((x) => x.regime === null);
+    expect(r[gap]).toEqual({ regime: null, from: "2025-10", to: "2025-10", months: 1 });
+    expect([r[gap - 1], r[gap + 1]]).toEqual([expect.objectContaining({ regime: "Stagflation", to: "2025-09" }), expect.objectContaining({ regime: "Stagflation", from: "2025-11" })]);
+    expect(r).toHaveLength(27);
+    expect(r.reduce((a, x) => a + x.months, 0)).toBe(regime.history.length + 1);
+  });
+
+  it("a run never bridges a missing month, even of the same regime (Codex R-25)", () => {
+    expect(runs([{ month: "2025-08", regime: "Goldilocks" }, { month: "2025-09", regime: "Goldilocks" }, { month: "2025-12", regime: "Goldilocks" }])).toEqual([
+      { regime: "Goldilocks", from: "2025-08", to: "2025-09", months: 2 },
+      { regime: null, from: "2025-10", to: "2025-11", months: 2 },
+      { regime: "Goldilocks", from: "2025-12", to: "2025-12", months: 1 },
+    ]);
   });
   it("spells the flip from the served threshold and operator, never a typed one (§5)", () => {
     expect(flipWords("cpi", regime.next_prints.cpi as never)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
@@ -94,9 +106,13 @@ describe("Regime tab", () => {
     expect(card.querySelector(".rg-latest")?.textContent).toBe("Latest print: Aug 2026");
     const strip = within(card).getByRole("img", { name: /Regime by month from Aug 2021 to Aug 2026/ });
     const segs = [...strip.querySelectorAll("span")];
-    expect(segs).toHaveLength(25);
+    expect(segs).toHaveLength(27);
     expect(segs.slice(-2).map((x) => x.getAttribute("data-tone"))).toEqual(["green", "amber"]);
-    expect(segs[segs.length - 1].style.width).toBe(`${(1 / 60) * 100}%`);
+    // 61 calendar months from Aug 2021 to Aug 2026, Oct 2025 an empty slot of its own (Codex R-25).
+    expect(segs[segs.length - 1].style.width).toBe(`${(1 / 61) * 100}%`);
+    const gap = strip.querySelector("[data-gap]")!;
+    expect([gap.getAttribute("title"), (gap as HTMLElement).style.width]).toEqual(["Oct 2025: no stored regimes row", `${(1 / 61) * 100}%`]);
+    expect(strip.getAttribute("aria-label")).toContain("Stagflation Sep 2025 to Sep 2025; no stored row for Oct 2025; Stagflation Nov 2025 to");
     // §5: the served note under the strip.
     expect(card).toHaveTextContent("labels as stored; revisions are not replayed.");
     // Each January from 2022 to 2025, then today (§5): the strip's own last year is today's.

@@ -9,8 +9,10 @@
  * tab; navigation resets scroll unless the URL carries an anchor.
  */
 
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { MixedGenerations, usePageGenerations } from "./data/generations";
 import ErrorBoundary from "../shared/ErrorBoundary";
 import DeskSidebar from "./DeskSidebar";
 import DeskTopBar from "./DeskTopBar";
@@ -35,6 +37,30 @@ const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
 const BasketHedgePage = lazy(() => import("./basket/BasketHedgePage"));
 const ClientView = lazy(() => import("./client/ClientView"));
 
+/** §1.1 (Codex R-22): the page footer names the one generation the page's answers share, or each when they differ. */
+function GenerationFooter({ ids }: { ids: readonly string[] }) {
+  if (!ids.length) return null;
+  return (
+    <footer className="dk-gen" data-testid="dk-gen">
+      <span>{ids.length > 1 ? "Generations" : "Generation"}</span> <span className="dk-gen-id">{ids.join(" · ")}</span>
+    </footer>
+  );
+}
+
+/** The page's generations, and one refetch of its Desk answers for each disagreement (§1.1, v3 §18). */
+function useGenerationCheck(): string[] {
+  const qc = useQueryClient();
+  const ids = usePageGenerations();
+  const sig = ids.join(" ");
+  const refetched = useRef<string | null>(null);
+  useEffect(() => {
+    if (ids.length < 2 || refetched.current === sig) return;
+    refetched.current = sig;
+    void qc.refetchQueries({ queryKey: ["desk-v2"], type: "active" });
+  }, [qc, sig, ids.length]);
+  return ids;
+}
+
 function PageLoading({ label }: { label: string }) {
   return (
     <p role="status" aria-live="polite" className="dk-await">
@@ -50,6 +76,7 @@ export default function DeskShell() {
   const [menu, setMenu] = useState(false);
   const page = deskPageBySlug(slug);
   const tour = parseTour(location.search);
+  const generations = useGenerationCheck();
 
   useEffect(() => {
     document.title = `${page?.label ?? "Desk"} · Desk · Macro Regime Radar`;
@@ -85,15 +112,18 @@ export default function DeskShell() {
         Skip to content
       </a>
       <DeskSidebar activeSlug={page.slug} pathTo={pathTo} onNavigate={() => setMenu(false)} />
-      <div className="dk-main">
-        <DeskTopBar page={page} view={view} onChangeView={setView} pathTo={pathTo} onMenu={() => setMenu((m) => !m)} menuOpen={menu} right={page.slug === "data-pipeline" ? <PipelineBadge /> : undefined} />
-        <main id="main-content" className="dk-page" tabIndex={-1} style={{ outline: "none" }} data-slug={page.slug}>
-          <ErrorBoundary key={page.slug} label="This Desk tab">
-            <Suspense fallback={<PageLoading label={page.label} />}>{body}</Suspense>
-          </ErrorBoundary>
-        </main>
-        {tour ? <TourStrip step={tour} /> : null}
-      </div>
+      <MixedGenerations.Provider value={generations.length > 1}>
+        <div className="dk-main">
+          <DeskTopBar page={page} view={view} onChangeView={setView} pathTo={pathTo} onMenu={() => setMenu((m) => !m)} menuOpen={menu} right={page.slug === "data-pipeline" ? <PipelineBadge /> : undefined} />
+          <main id="main-content" className="dk-page" tabIndex={-1} style={{ outline: "none" }} data-slug={page.slug}>
+            <ErrorBoundary key={page.slug} label="This Desk tab">
+              <Suspense fallback={<PageLoading label={page.label} />}>{body}</Suspense>
+            </ErrorBoundary>
+            <GenerationFooter ids={generations} />
+          </main>
+          {tour ? <TourStrip step={tour} /> : null}
+        </div>
+      </MixedGenerations.Provider>
     </div>
   );
 }

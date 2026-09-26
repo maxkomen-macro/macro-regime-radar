@@ -54,8 +54,17 @@ export const HORIZONS: readonly { h: number; label: string }[] = [
 /** The rail's confidence chips (§4): shown, disabled, "not yet served"; 90% is the engine's served level. */
 export const CONFIDENCES: readonly number[] = [0.8, 0.9, 0.95];
 
-/** The address of what the page asks: a preset, or the six slots (§12.2: no `confidence`). */
-export type Ask = { preset: string } | { question: Question };
+/** The address of what the page asks: a preset, with the horizon its address names kept verbatim for the server
+ * to judge (§12.2; Codex R-23), or the six slots (§12.2: no `confidence`). */
+export type Ask = { preset: string; horizon?: string } | { question: Question };
+
+/** A preset is a catalog slug, or an engine slug that parses to a catalog study's query (§12.2, S-20). */
+const PRESET_RE = /^[a-z0-9][a-z0-9_.=-]{0,120}$/;
+
+/** The horizon a preset ask names, as a number; null when it names none or not a whole number. */
+export function presetHorizon(ask: Ask): number | null {
+  return "preset" in ask && ask.horizon !== undefined && /^\d+$/.test(ask.horizon) ? Number(ask.horizon) : null;
+}
 
 const MOVE_IDS = new Set(MOVES.map((m) => m.id));
 const WHILE_IDS = new Set(WHILES.map((w) => w.id));
@@ -73,7 +82,11 @@ export function askFromSearch(search: string | URLSearchParams): Ask {
   const p = typeof search === "string" ? new URLSearchParams(search) : search;
   // A preset is any study slug: the nine chips, or a Ledger row's (§8: a row opens its study).
   const preset = p.get("preset");
-  if (preset && /^[a-z0-9][a-z0-9-]{0,80}$/.test(preset)) return { preset };
+  if (preset && PRESET_RE.test(preset)) {
+    // Codex R-23: the horizon rides with the preset, as the address wrote it; an unallowed one is refused (422).
+    const horizon = p.get("horizon");
+    return horizon === null ? { preset } : { preset, horizon };
+  }
   // A frame-2 link (?study=<engine slug>) opens the same question when the six slots can ask it.
   const fromEngine = questionFromEngine(p.get("study"));
   if (fromEngine) return { question: fromEngine };
@@ -96,8 +109,10 @@ export function searchFor(ask: Ask, keep?: URLSearchParams): string {
     const v = keep?.get(k);
     if (v) p.set(k, v);
   }
-  if ("preset" in ask) p.set("preset", ask.preset);
-  else {
+  if ("preset" in ask) {
+    p.set("preset", ask.preset);
+    if (ask.horizon !== undefined) p.set("horizon", ask.horizon);
+  } else {
     const q = ask.question;
     p.set("shock", q.shock);
     if (q.window != null) p.set("window", String(q.window));
@@ -111,15 +126,15 @@ export function searchFor(ask: Ask, keep?: URLSearchParams): string {
 
 /** The API parameters for an ask (§12.2). */
 export function apiParams(ask: Ask): Record<string, string | number | undefined> {
-  if ("preset" in ask) return { preset: ask.preset };
+  if ("preset" in ask) return ask.horizon !== undefined ? { preset: ask.preset, horizon: ask.horizon } : { preset: ask.preset };
   const q = ask.question;
   return { shock: q.shock, window: q.window ?? undefined, move: q.move, while: q.while, target: q.target, horizon: q.horizon };
 }
 
 /** The same ask at h = 20 (v4 B-01: the Client view reads the month, whatever horizon the desk has
- * selected). A preset already asks h = 20, §12.2's default. */
+ * selected). A preset with no horizon asks h = 20, §12.2's default. */
 export function atMonth(ask: Ask): Ask {
-  return "question" in ask ? { ...ask, question: { ...ask.question, horizon: 20 } } : ask;
+  return "question" in ask ? { ...ask, question: { ...ask.question, horizon: 20 } } : { preset: ask.preset };
 }
 
 /** The six slots and nothing else: a served question also carries its target's unit and name

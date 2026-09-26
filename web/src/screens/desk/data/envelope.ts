@@ -24,7 +24,8 @@ export interface Envelope<T = unknown> {
   engine_version: string;
   data: T | null;
   unavailable: Unavailable | null;
-  error: { code: string; message: string; [extra: string]: unknown } | null;
+  /** §12.0: `provider` and `retryable` ride only on `code` "schema_check"; other extra keys are not served. */
+  error: { code: string; message: string; provider?: string; retryable?: boolean; [extra: string]: unknown } | null;
 }
 
 export interface BlockEnvelope<T = unknown> {

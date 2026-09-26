@@ -17,7 +17,6 @@ import sample from "../../../fixtures/desk/positions.json";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
 import study from "../../../fixtures/desk/study.json";
-import technicals from "../../../fixtures/desk/technicals.json";
 import { FIXTURE_META, deskFixture } from "../../../fixtures/desk";
 import { awaitingEnvelope } from "../data/envelope";
 import { SAVED_BASKETS_KEY } from "../basket/weights";
@@ -26,6 +25,7 @@ import { MonitoredRow } from "../kit/MonitoredRows";
 import { describes, suggestions, underlyingName } from "./levels";
 import { POSITIONS_KEY, type PositionRecord } from "./store";
 import { findFlags, gateState, replaceFlag } from "./wording";
+import { completeTechnicals } from "../../../test/desk-variants";
 
 const RECORDS = (sample as { positions: PositionRecord[] }).positions;
 
@@ -138,7 +138,8 @@ describe("Position Monitor tab", () => {
   it("fills, fixes a certainty word in one click, and keeps the position in this browser: automatic against the S&P's 50-day, nothing posted", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-22T21:00:00Z") });
     try {
-      const { calls } = stubDesk();
+      // A session whose 50 closes are all stored: the fixture's Sep 23 reads the average null (Codex R-24).
+      const { calls } = stubDesk({ "/api/desk/technicals": () => completeTechnicals() });
       renderTab();
       fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX" } });
       answer("The market thinks gold will keep falling, I think it bounces, because the study says so.", "It lost money because the regime read was stale.");
@@ -181,6 +182,8 @@ describe("Position Monitor tab", () => {
   });
 
   it("B-10: a level already crossed at entry is refused with a sentence, never saved as manual", async () => {
+    // A session whose 50 closes are all stored: the fixture's Sep 23 reads the average null (Codex R-24).
+    stubDesk({ "/api/desk/technicals": () => completeTechnicals() });
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
     fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "short" } });
@@ -230,6 +233,8 @@ describe("Position Monitor tab", () => {
   });
 
   it("SPY gets the rules without the index's numbers; the index itself gets them (Codex R-08)", async () => {
+    // A session whose 50 closes are all stored: the fixture's Sep 23 reads the average null (Codex R-24).
+    stubDesk({ "/api/desk/technicals": () => completeTechnicals() });
     renderTab();
     // The index first, so the served numbers are known to have arrived before SPY is judged (G4-5).
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
@@ -242,7 +247,7 @@ describe("Position Monitor tab", () => {
   });
 
   it("the S&P is known by its name, not by a served field: /technicals without `instrument` still numbers and monitors its 50-day (§12.7)", async () => {
-    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, instrument: undefined }) });
+    stubDesk({ "/api/desk/technicals": () => ({ ...completeTechnicals(), instrument: undefined }) });
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
     answer();
@@ -261,6 +266,25 @@ describe("Position Monitor tab", () => {
     fireEvent.click(screen.getByTestId("pm-save"));
     expect(screen.getByRole("status")).toHaveTextContent("The S&P 500 level is not served right now, so the room at entry cannot be recorded. Nothing was saved.");
     expect(stored()).toEqual([]);
+  });
+
+  it("on the fixture's Sep 23, the 50-day reads null across the missing Sep 22 close: no number on the chip, and Save refuses it as not served (Codex R-24)", async () => {
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
+    answer();
+    await waitFor(() => expect(screen.getByRole("button", { name: "closes below its 50-day" })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /closes below its 50-day \(/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "closes below its 50-day" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    expect(screen.getByRole("status")).toHaveTextContent("The S&P 500 level is not served right now, so the room at entry cannot be recorded. Nothing was saved.");
+    expect(stored()).toEqual([]);
+  });
+
+  it("Codex R-23: a study carried with its horizon asks that horizon", async () => {
+    const { calls } = stubDesk();
+    renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak&horizon=5");
+    await waitFor(() => expect(calls).toContain("GET /api/desk/study?preset=gold-2sigma-spx-weak&horizon=5"));
+    expect(calls.filter((c) => c.startsWith("GET /api/desk/study?") && !c.includes("horizon=5"))).toEqual([]);
   });
 
   it("a basket sent from Basket & Hedge is monitored by hand, whatever its instrument reads (§9)", async () => {
@@ -400,6 +424,8 @@ describe("Position Monitor tab", () => {
   });
 
   it("a carried study's S&P 50-day level is monitored automatically, the study kept as its subject", async () => {
+    // A session whose 50 closes are all stored: the fixture's Sep 23 reads the average null (Codex R-24).
+    stubDesk({ "/api/desk/technicals": () => completeTechnicals() });
     renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
     await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
     answer();
@@ -417,6 +443,8 @@ describe("Position Monitor tab", () => {
   });
 
   it("a picked level follows the instrument's label, and lapses when the direction turns it over (R2-1)", async () => {
+    // A session whose 50 closes are all stored: the fixture's Sep 23 reads the average null (Codex R-24).
+    stubDesk({ "/api/desk/technicals": () => completeTechnicals() });
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX" } });
     answer();

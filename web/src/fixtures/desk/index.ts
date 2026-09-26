@@ -18,6 +18,7 @@ import regime from "./regime.json" with { type: "json" };
 import studyCatalog from "./study-catalog.json" with { type: "json" };
 import studyEvents from "./study-events.json" with { type: "json" };
 import study from "./study.json" with { type: "json" };
+import studyHorizons from "./study-horizons.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
 import { isQuestion, questionFromEngine } from "../../screens/desk/event-study/question";
 import { isAnswerable, studyFor } from "../../screens/desk/event-study/catalog";
@@ -98,14 +99,46 @@ const DEFERRED: Readonly<Record<string, string>> = {
 
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
 const STUDY_Q = (study as { question: Record<string, string | number> }).question;
-/** The six slots a question is asked by (the served question also carries its target's unit and label). */
-const SLOTS = ["shock", "window", "move", "while", "target", "horizon"] as const;
+/** The five slots besides the horizon, which selects the answer rather than the study (§12.2). */
+const SLOTS = ["shock", "window", "move", "while", "target"] as const;
+/** §12.2's parameters, and nothing else (there is no `confidence`). */
+const STUDY_PARAMS: readonly string[] = ["preset", ...SLOTS, "horizon"];
 
-/** Whether a /study request asks the fixture's question: its preset (a catalog or engine slug), or its six slots. */
+/** Whether a /study request asks the fixture's study: its preset (a catalog or engine slug), or its five slots. */
 function asksFixtureStudy(u: URL, c: CatalogStudy): boolean {
   const preset = u.searchParams.get("preset");
   if (preset) return c.slug === (study as { slug: string }).slug;
-  return SLOTS.every((k) => u.searchParams.get(k) === String(STUDY_Q[k]));
+  return SLOTS.every((k) => (u.searchParams.get(k) ?? (k === "while" ? "none" : null)) === (STUDY_Q[k] == null ? null : String(STUDY_Q[k])));
+}
+
+/** §12.2's parameter rules (Codex R-27): the refusal's words, or null when the request may be asked. */
+function paramRefusal(u: URL): string | null {
+  const keys = [...u.searchParams.keys()];
+  const unknown = [...new Set(keys.filter((k) => !STUDY_PARAMS.includes(k)))];
+  if (unknown.length) return `There is no ${unknown.join(" or ")} parameter.`;
+  const repeated = [...new Set(keys.filter((k, i) => keys.indexOf(k) !== i))];
+  if (repeated.length) return `The ${repeated.join(" and ")} parameter is given more than once.`;
+  if (u.searchParams.has("preset") && SLOTS.some((k) => u.searchParams.has(k))) return "A preset is asked on its own, with at most a horizon; the six slots are the other way to ask.";
+  // §12.2 (S-20): `window` is required for a shock move and refused for a cross.
+  const move = u.searchParams.get("move");
+  if (!u.searchParams.has("preset") && move && (move === "cross_above" || move === "cross_below") === u.searchParams.has("window"))
+    return u.searchParams.has("window") ? "A cross takes no window." : `The move ${move} needs a window (5, 20 or 60 sessions).`;
+  return null;
+}
+
+/** §12.2: the horizon a request asks (20 when it names none), and whether the catalog row allows it. */
+function askedHorizon(u: URL, c: CatalogStudy): { h: number; words: string } | { refusal: string } {
+  const raw = u.searchParams.get("horizon") ?? "20";
+  const h = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!c.allowed_horizons.includes(h)) return { refusal: `No study in the catalog asks ${c.slug} ${raw === "" ? "with an empty horizon" : `at a horizon of ${raw}`}; its horizons are ${c.allowed_horizons.join(", ")} sessions.` };
+  return { h, words: raw };
+}
+
+/** The fixture study's answer at a selected horizon (§12.2: the requested horizon selects the answer; Codex R-27). */
+function studyAt(h: number): unknown {
+  const a = (studyHorizons as { answers: Record<string, { selected_horizon: number; question_horizon: number; verdict: string; headline: string; why: string; empty_state: unknown }> }).answers[String(h)];
+  if (!a) return study;
+  return { ...study, selected_horizon: a.selected_horizon, question: { ...study.question, horizon: a.question_horizon }, verdict: a.verdict, headline: a.headline, why: a.why, empty_state: a.empty_state };
 }
 
 /** §12.4's CSV columns, in order. */
@@ -144,20 +177,21 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {
     // §12.2: a request must normalize to one catalog study at an allowed horizon, else 422 `unsupported`;
     // a catalog study whose inputs are not stored answers awaiting with its reason (B-07).
-    // §12.2 (S-20): `window` is required for a shock move and refused for a cross.
-    const move = u.searchParams.get("move");
-    if (!u.searchParams.has("preset") && move && (move === "cross_above" || move === "cross_below") === u.searchParams.has("window"))
-      return json(422, { error: "unsupported", message: u.searchParams.has("window") ? "A cross takes no window." : `The move ${move} needs a window (5, 20 or 60 sessions).` });
+    const refused = paramRefusal(u);
+    if (refused) return json(422, { error: "unsupported", message: refused });
     const { study: c, question } = catalogAsk(u);
+    // A row with a question checks the asked horizon against its allowed ones (§12.3; the RSI rows have none and answer awaiting).
+    const asked = c?.question ? askedHorizon(u, c) : null;
+    if (asked && "refusal" in asked) return json(422, { error: "unsupported", message: asked.refusal });
     if (!c || (question && c.available && !isAnswerable(CATALOG, question))) {
       // §12.0: the refusal names what is not supported.
-      const asked = question ? [`shock ${question.shock}`, question.window == null ? "no window" : `window ${question.window}`, `move ${question.move}`, `while ${question.while}`, `target ${question.target}`, `horizon ${question.horizon}`].join(", ") : `preset ${u.searchParams.get("preset") ?? "(none)"}`;
-      return json(422, { error: "unsupported", message: `No study in the catalog asks ${asked}.` });
+      const what = question ? [`shock ${question.shock}`, question.window == null ? "no window" : `window ${question.window}`, `move ${question.move}`, `while ${question.while}`, `target ${question.target}`, `horizon ${question.horizon}`].join(", ") : `preset ${u.searchParams.get("preset") ?? "(none)"}`;
+      return json(422, { error: "unsupported", message: `No study in the catalog asks ${what}.` });
     }
     if (!c.available) return json(200, awaitingEnvelope({ reason: c.unavailable?.reason ?? "not yet served", until: c.unavailable?.until ?? null }, FIXTURE_META));
     // The fixtures carry one study (the gold preset); another catalog study has no fixture.
     if (!asksFixtureStudy(u, c)) return json(404, { error: "no fixture for this question" });
-    if (path === "/study") return json(200, study);
+    if (path === "/study") return json(200, asked && "h" in asked ? studyAt(asked.h) : study);
     if (/text\/csv/.test(accept ?? "")) return { status: 200, contentType: "text/csv", body: eventsCsv(studyEvents as { events: Record<string, unknown>[] }) };
     return json(200, studyEvents);
   }

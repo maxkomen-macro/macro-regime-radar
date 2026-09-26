@@ -41,6 +41,8 @@ export class DeskApiError extends Error {
   readonly body: DeskErrorBody | null;
   /** Served when the answer is `awaiting` (§1.0.2): why it is not served, and until when. */
   readonly unavailable: Unavailable | null;
+  /** The generation an awaiting or error envelope was answered on (§1.1's footer), when it names one. */
+  generationId: string | null = null;
   constructor(status: number, message: string, body: DeskErrorBody | null = null, unavailable: Unavailable | null = null) {
     super(message);
     this.name = "DeskApiError";
@@ -93,12 +95,13 @@ export function readBody<T>(body: unknown, path: string, status = 200): T {
  */
 export function readAnswer<T>(body: unknown, path: string, status = 200): T {
   if (!isEnvelope(body)) throw unreadable(status);
+  const gen = typeof body.generation_id === "string" ? body.generation_id : null;
   if (body.status === "awaiting") {
     const u = readUnavailable(body.unavailable);
     if (!u) throw unreadable(status);
-    throw new DeskApiError(status, u.reason, { error: "awaiting" }, u);
+    throw Object.assign(new DeskApiError(status, u.reason, { error: "awaiting" }, u), { generationId: gen });
   }
-  if (body.status === "error") throw errorFrom(status, body.error);
+  if (body.status === "error") throw Object.assign(errorFrom(status, body.error), { generationId: gen });
   if (body.status !== "ready") throw unreadable(status);
   const data = body.data;
   if (!data || typeof data !== "object" || Array.isArray(data)) throw unreadable(status);
@@ -134,7 +137,8 @@ export type Params = Record<string, string | number | undefined>;
 export function deskUrl(path: string, params?: Params): string {
   const qs = params
     ? Object.entries(params)
-        .filter(([, v]) => v !== undefined && v !== "")
+        // An empty value is sent as the address wrote it, for the server to judge (§12.0: never a silent drop; Codex R-23).
+        .filter(([, v]) => v !== undefined)
         .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
         .join("&")
     : "";
@@ -164,10 +168,12 @@ async function readError(res: Response): Promise<DeskApiError> {
   } catch {
     /* not JSON: keep the status line */
   }
-  if (isEnvelope(parsed) && parsed.status === "error" && parsed.error) return errorFrom(res.status, parsed.error);
+  // §1.1 (Codex R-22): a refusal or failure answered in its envelope names the generation it was answered on.
+  const gen = isEnvelope(parsed) && typeof parsed.generation_id === "string" ? parsed.generation_id : null;
+  if (isEnvelope(parsed) && parsed.status === "error" && parsed.error) return Object.assign(errorFrom(res.status, parsed.error), { generationId: gen });
   if (isEnvelope(parsed) && parsed.status === "awaiting") {
     const u = readUnavailable(parsed.unavailable);
-    if (u) return new DeskApiError(res.status, u.reason, { error: "awaiting" }, u);
+    if (u) return Object.assign(new DeskApiError(res.status, u.reason, { error: "awaiting" }, u), { generationId: gen });
   }
   if (parsed && typeof parsed === "object" && typeof (parsed as DeskErrorBody).error === "string") {
     const body = parsed as DeskErrorBody;

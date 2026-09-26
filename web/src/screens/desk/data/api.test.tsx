@@ -93,6 +93,29 @@ describe("the response boundary", () => {
     expect(deskFixture("GET", "/api/desk/study?shock=gold&move=up2s&while=none&target=spx")!.status).toBe(422);
   });
 
+  it("Codex R-27: the fixture resolver holds §12.2's parameter rules and the asked horizon selects the answer", () => {
+    const reply = (q: string) => deskFixture("GET", `/api/desk/study?${q}`)!;
+    const refusal = (q: string) => {
+      const r = reply(q);
+      return [r.status, (JSON.parse(r.body) as { error?: { code: string; message: string } }).error];
+    };
+    expect(refusal("preset=gold-2sigma-spx-weak&confidence=0.8")).toEqual([422, { code: "unsupported", message: "There is no confidence parameter." }]);
+    expect(refusal("preset=gold-2sigma-spx-weak&horizon=5&horizon=20")).toEqual([422, { code: "unsupported", message: "The horizon parameter is given more than once." }]);
+    expect(refusal("preset=gold-2sigma-spx-weak&shock=gold")[0]).toBe(422);
+    expect(refusal("preset=gold-2sigma-spx-weak&horizon=7")).toEqual([422, { code: "unsupported", message: "No study in the catalog asks gold-2sigma-spx-weak at a horizon of 7; its horizons are 5, 10, 20, 60 sessions." }]);
+    expect(refusal("shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=15")[0]).toBe(422);
+    expect(deskFixture("GET", "/api/desk/study/events?preset=gold-2sigma-spx-weak&horizon=7")!.status).toBe(422);
+    // The asked horizon selects the answer: its verdict, headline, why and question horizon; the Client block stays at h = 20.
+    const at5 = (JSON.parse(reply("preset=gold-2sigma-spx-weak&horizon=5").body) as { data: typeof study }).data;
+    expect([at5.selected_horizon, at5.question.horizon, at5.headline.startsWith("Suggestive at 1 week: ")]).toEqual([5, 5, true]);
+    expect(at5.why).toContain("runs \u22121.8% to +3.0%");
+    expect(at5.client).toEqual(study.client);
+    const at60 = (JSON.parse(reply("shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=60").body) as { data: typeof study }).data;
+    expect([at60.selected_horizon, at60.question.horizon]).toEqual([60, 60]);
+    // With no horizon, §12.2's default, 20 sessions: the fixture as it is.
+    expect((JSON.parse(reply("preset=gold-2sigma-spx-weak").body) as { data: typeof study }).data.why).toBe(study.why);
+  });
+
   it("a listed event's regime is a label and its entry session may be null (S-05, S-06)", () => {
     const e0 = { ...study.last_events[0], regime: "Unlabeled", entry_date: null };
     const read = readBody({ ...study, last_events: [e0, ...study.last_events.slice(1)] }, "/study") as typeof study;

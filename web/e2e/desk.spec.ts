@@ -17,7 +17,7 @@ import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures"
 import { FIXTURE_META, deskFixture } from "../src/fixtures/desk/index";
 import { awaitingEnvelope } from "../src/screens/desk/data/envelope";
 import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
-import { bpStudy } from "../src/test/desk-variants";
+import { bpStudy, completeTechnicals } from "../src/test/desk-variants";
 import positionSample from "../src/fixtures/desk/positions.json" with { type: "json" };
 import { POSITIONS_KEY } from "../src/screens/desk/positions/store";
 import basketSample from "../src/fixtures/desk/baskets.json" with { type: "json" };
@@ -519,7 +519,8 @@ test.describe("desk v2", () => {
 
   test("data pipeline: the badge, a search that opens its group, the group's own scroll; no sideways scroll at 390", async ({ page }) => {
     await open(page, "/desk/data-pipeline");
-    await expect(page.getByTestId("pl-badge")).toContainText("validation passed");
+    // §12.9 (S-01, Codex R-24): no validation.json was published with the fixtures' store, so "unknown".
+    await expect(page.getByTestId("pl-badge")).toContainText("validation unknown");
     await page.getByLabel("Find a series").fill("DGS10");
     const rates = page.getByRole("region", { name: "Rates series" });
     await expect(rates).toBeVisible();
@@ -609,7 +610,8 @@ test.describe("desk v2", () => {
   });
 
   test("SPY gets no index numbers; the S&P 500 does (Codex R-08)", async ({ page }) => {
-    await open(page, "/desk/position-monitor");
+    // A session whose 50 closes are all stored; the fixture's Sep 23 reads the average null (Codex R-24).
+    await open(page, "/desk/position-monitor", { "/api/desk/technicals": { status: 200, body: completeTechnicals() } });
     await page.getByLabel("Instrument", { exact: true }).fill("S&P 500");
     await expect(page.getByRole("button", { name: "closes below its 50-day (7,625)" })).toBeVisible();
     await page.getByLabel("Instrument", { exact: true }).fill("SPY");

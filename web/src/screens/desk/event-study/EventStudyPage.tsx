@@ -24,7 +24,7 @@ import AnswerCard from "./AnswerCard";
 import EngineDetail from "./EngineDetail";
 import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
-import { WINDOWS, apiParams, askFromSearch, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
+import { WINDOWS, apiParams, askFromSearch, presetHorizon, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
 import { DroppedNote, Unserved } from "../kit/ui";
 import { droppedOf } from "../data/schema";
@@ -102,7 +102,9 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   // A preset with no answer (awaiting, or refused) still spells out its question: the catalog carries it (§12.3).
   const catalogQ = "preset" in ask ? catalog?.find((c) => c.slug === ask.preset)?.question : null;
   useEffect(() => {
-    if (!draft && !served && catalogQ) setDraft({ ...catalogQ, horizon: 20 });
+    // The slots show the horizon the link asks when it is one of theirs (Codex R-23), else §12.2's default.
+    const ph = presetHorizon(ask);
+    if (!draft && !served && catalogQ) setDraft({ ...catalogQ, horizon: ph != null && [5, 10, 20, 60].includes(ph) ? ph : 20 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, catalogQ, served]);
   useEffect(() => {
@@ -170,8 +172,8 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   // §12.0: never a silent parameter drop. An address asking what §12.2 no longer serves opens the default question, and says so.
   const withdrawn = !search.get("preset") && !oldLink ? withdrawnIn(search) : null;
   // A served study is scored at its selected horizon, Too few included (v4 B-02): the rail reads it either way.
-  // A preset asks §12.2's default horizon, 20 sessions (apiParams); a question asks its own (Codex R-18).
-  const askedHorizon = "question" in ask ? ask.question.horizon : (study?.selected_horizon ?? study?.question?.horizon ?? 20);
+  // A preset asks the horizon its address names, else §12.2's default of 20 sessions (Codex R-23); a question asks its own (R-18).
+  const askedHorizon = "question" in ask ? ask.question.horizon : (study?.selected_horizon ?? presetHorizon(ask) ?? study?.question?.horizon ?? 20);
 
   return (
     <div className="es">
