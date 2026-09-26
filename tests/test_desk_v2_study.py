@@ -499,6 +499,7 @@ def main():
 
     from api import analytics_cache, db
     from api import worker as worker_mod
+    from src.analytics import recession
     from src.desk import event_study as es
 
     faulthandler.dump_traceback_later(120, exit=True)
@@ -526,7 +527,15 @@ def main():
         conns.append(conn)
         return FailsMidway(conn)
 
+    real_recession = recession._get_conn
+
+    def failing_recession():
+        conn = real_recession()
+        conns.append(conn)
+        return FailsMidway(conn)
+
     es._connect = failing
+    recession._get_conn = failing_recession  # desk_regime's recession provenance (N5)
     db.DB_PATH = Path(store)
     items = [(n, f) for n, f in analytics_cache.ITEMS if n.startswith(tuple(sys.argv[3].split(",")))]
     w = worker_mod.AnalyticsWorker(items, poll_s=0.05, preload=False)
@@ -553,8 +562,10 @@ def main():
     t.start()
     t.join(10)
     faulthandler.cancel_dump_traceback_later()
+    regime = w.current.results.get("desk_regime", {"recession": "absent"})
     print("RESULT " + json.dumps({"opened": len(conns), "left_open": left_open, "failed": failed,
-                                  "rows": box.get("rows"), "hung": t.is_alive()}), flush=True)
+                                  "regime_recession": regime["recession"], "rows": box.get("rows"),
+                                  "hung": t.is_alive()}), flush=True)
     w.stop()
     os._exit(0)
 
@@ -565,7 +576,7 @@ if __name__ == "__main__":
 
 
 # Every Desk v2 builder that opens a connection to the copy (plan §5): each is made to fail once it is open.
-FAILING_ITEM_PREFIXES = ("desk_study:", "desk_technicals")
+FAILING_ITEM_PREFIXES = ("desk_study:", "desk_technicals", "desk_facts", "desk_regime")
 
 
 def test_a_desk_item_that_fails_midway_leaves_no_connection_to_the_copy(tmp_path, synth_path):
@@ -577,9 +588,11 @@ def test_a_desk_item_that_fails_midway_leaves_no_connection_to_the_copy(tmp_path
     lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("RESULT ")]
     assert lines, (proc.returncode, proc.stdout[-2000:], proc.stderr[-4000:])
     res = json.loads(lines[-1][len("RESULT "):])
-    want = sorted(n for n, _ in analytics_cache.ITEMS if n.startswith(FAILING_ITEM_PREFIXES))
-    assert res["failed"] == want, res
-    assert res["opened"] == len(want) and res["left_open"] == 0 and res["rows"] > 0 and not res["hung"], res
+    items = sorted(n for n, _ in analytics_cache.ITEMS if n.startswith(FAILING_ITEM_PREFIXES))
+    # desk_regime logs a provenance it cannot build and serves its rows (the recession tile reads awaiting)
+    assert res["failed"] == [n for n in items if n != "desk_regime"], res
+    assert res["regime_recession"] is None, res
+    assert res["opened"] == len(items) and res["left_open"] == 0 and res["rows"] > 0 and not res["hung"], res
 
 
 def test_the_new_modules_install_no_python_callback_on_a_connection():

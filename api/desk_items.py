@@ -81,6 +81,62 @@ def desk_technicals(ctx: dict) -> dict:
     return {"ok": True, **out}
 
 
+# /overview's data_status contributors (plan N9): the tier-1 inputs of the twelve Ledger
+# studies plus DGS2 and DGS10, by registry key, in the plan's order.
+FACT_KEYS = ("curve_2s10s", "vix", "hy_oas", "us2y", "us10y", "spx", "gold")
+VIX_RECENT_ROWS = 40
+
+
+def desk_facts(ctx: dict) -> dict:
+    """/overview's stored facts (plan §7 commit 9): the newest stored date and
+    value of each data_status contributor, read through the engine's
+    `load_level` (provenance-aware; None for a series the store lacks), and
+    the last VIX rows, for the change between the two comparison sessions."""
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    cutoff = es.resolve_as_of(None, es.DB_PATH)
+    newest: dict[str, dict | None] = {}
+    vix_recent: dict[str, float] = {}
+    conn = es._connect(es.DB_PATH)
+    try:
+        for key in FACT_KEYS:
+            spec = registry.get(key)
+            try:
+                s = es.load_level(conn, spec, cutoff)
+            except es.NotStored:
+                newest[spec.series_id] = None
+                continue
+            newest[spec.series_id] = {"date": s.index[-1].strftime("%Y-%m-%d"), "value": float(s.iloc[-1])}
+            if key == "vix":
+                vix_recent = {d.strftime("%Y-%m-%d"): float(v) for d, v in s.iloc[-VIX_RECENT_ROWS:].items()}
+    finally:
+        conn.close()
+    return {"newest": newest, "vix_recent": vix_recent}
+
+
+def desk_regime(ctx: dict) -> dict:
+    """The regime and recession facts /overview reads (plan §1.1, §1.6): the
+    stored regimes rows by month, and the recession model's provenance (N5,
+    `recession_provenance`), built beside the `recession` item in the same
+    generation. /regime (plan §7 commit 7) adds the next-print thresholds. A
+    provenance that cannot be built (no stored model inputs) is logged and
+    None, so the regime rows still serve."""
+    import logging
+
+    from api import db
+    from src.analytics.recession import recession_provenance
+
+    rows = [{"month": r["date"][:7], "label": r["label"], "growth_trend": r["growth_trend"],
+             "inflation_trend": r["inflation_trend"]} for r in db.regime_history(None, None, None)]
+    try:
+        provenance = recession_provenance()
+    except Exception:  # logged; the recession tile then reads awaiting
+        logging.getLogger("mrr.desk").exception("desk_regime: the recession provenance could not be built")
+        provenance = None
+    return {"rows": rows, "recession": provenance}
+
+
 TECH_CHART_MONTHS = {"6m": 6, "1y": 12, "3y": 36}
 
 

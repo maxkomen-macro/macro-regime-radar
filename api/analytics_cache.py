@@ -339,6 +339,8 @@ ITEMS = [
     *[(f"desk_study:{slug}", desk_items.desk_study(slug)) for slug in desk_catalog.CATALOG_QUERY_SLUGS],
     *[(f"desk_preset:{name}", _desk_preset(name)) for name in DESK_PRESETS],
     ("desk_technicals", desk_items.desk_technicals),
+    ("desk_facts", desk_items.desk_facts),
+    ("desk_regime", desk_items.desk_regime),
 ]
 
 

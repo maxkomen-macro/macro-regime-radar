@@ -626,6 +626,7 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/study/events"): ("/api/desk/study/events?preset=golden-cross", 200, None),
     ("GET", "/api/desk/ledger"): ("/api/desk/ledger", 200, None),
     ("GET", "/api/desk/technicals"): ("/api/desk/technicals", 200, None),
+    ("GET", "/api/desk/overview"): ("/api/desk/overview", 200, None),
     # diagnostics, open in development (no DEPLOY_PUBLIC, no CORS_ORIGINS)
     ("GET", "/api/ops/whoami"): ("/api/ops/whoami", 200, None),
     ("GET", "/api/stream/debug"): ("/api/stream/debug", 200, None),

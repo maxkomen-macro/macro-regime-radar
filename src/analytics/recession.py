@@ -376,6 +376,41 @@ def get_recession_metrics() -> dict:
     }
 
 
+def recession_provenance() -> dict | None:
+    """Which months the model's latest score is for and was built from
+    (desk/frame-3-api, plan N5), by the model's own steps: the feature frame,
+    the three-month shift, the scoring rows (the shifted rows with every
+    feature, dated on or before today), and the training rows (those with the
+    target too). `probability_month` is the last scoring row's month;
+    `inputs_through` the feature frame's row three before it (the row-wise
+    shift the model applies), the month of every feature, since the shifted row
+    is complete by construction. None when there is no scoring row.
+    `scoring_index` is the scoring rows' dates, which equal the served
+    `recession_prob_series` (a test pins it)."""
+    conn = _get_conn()
+    try:
+        features_df, usrec, _ = _build_feature_frame(conn)
+    finally:
+        conn.close()  # on every path (verifier V-54)
+    X = features_df[FEATURE_NAMES].shift(3)
+    scoring = X.dropna()
+    scoring = scoring[scoring.index <= pd.Timestamp(date.today())]
+    if scoring.empty:
+        return None
+    last = scoring.index[-1]
+    inputs = features_df.index[features_df.index.get_loc(last) - 3]
+    training = pd.concat([X, usrec.rename("usrec")], axis=1).dropna()
+    month = inputs.strftime("%Y-%m")
+    return {
+        "probability_month": last.strftime("%Y-%m"),
+        "inputs_through": month,
+        "feature_months": {f: month for f in FEATURE_NAMES},
+        "training": ({"start": training.index[0].strftime("%Y-%m"), "end": training.index[-1].strftime("%Y-%m")}
+                     if not training.empty else None),
+        "scoring_index": [d.strftime("%Y-%m-%d") for d in scoring.index],
+    }
+
+
 def _classify_prob(p: float) -> tuple[str, str]:
     if p < 20:
         return "Low Risk", "#2ecc71"

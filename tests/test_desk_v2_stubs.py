@@ -114,7 +114,7 @@ def test_a_removed_write_answers_the_enveloped_405(method, url, route, idle):
     ("POST", "/api/desk/pipeline/inventory"),
     ("POST", "/health"),
     ("POST", "/api/regime/latest"),
-    ("POST", "/api/desk/overview"),           # not built yet: 404, or the SPA's 405 under a bundle
+    ("POST", "/api/desk/macro"),              # not built yet: 404, or the SPA's 405 under a bundle
     ("POST", "/api/desk/basket/a/b"),         # no v2 route matches two segments
 ])
 def test_every_other_405_keeps_fastapis_answer(method, url):
@@ -175,7 +175,7 @@ def test_the_v2_router_is_get_only_and_every_route_is_enveloped():
         ("/api/desk/sectors", ["GET"]), ("/api/desk/vol", ["GET"]), ("/api/desk/positions", ["GET"]),
         ("/api/desk/basket/price", ["GET"]), ("/api/desk/basket/{basket_id}", ["GET"]), ("/api/desk/hedge", ["GET"]),
         ("/api/desk/study", ["GET"]), ("/api/desk/study/catalog", ["GET"]), ("/api/desk/study/events", ["GET"]),
-        ("/api/desk/ledger", ["GET"]), ("/api/desk/technicals", ["GET"]),
+        ("/api/desk/ledger", ["GET"]), ("/api/desk/technicals", ["GET"]), ("/api/desk/overview", ["GET"]),
     ])
     for path, _ in routes:
         route = env.route_of(re.sub(r"\{[^}]+\}", "x", path)[len(desk_v2.PREFIX):])

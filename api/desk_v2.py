@@ -234,6 +234,209 @@ def desk_technicals(request: Request) -> Response:
     return _response(env.answer("/technicals", lambda: technicals_answer(params)))
 
 
+@router.get("/overview")
+def desk_overview(request: Request) -> Response:
+    params = list(request.query_params.multi_items())
+    return _response(env.answer("/overview", lambda: overview_answer(params)))
+
+
+# ── §12.1 GET /overview ─────────────────────────────────────────────────────
+
+REGIMES_SOURCE = "regimes table (src/regime.py)"
+RECESSION_SOURCE = "recession model (src/analytics/recession.py)"
+VIX_SOURCE = "FRED VIXCLS (desk_series)"
+RECESSION_BAND_EDGES = (0.20, 0.40)
+# N9: the Desk feed set, by series id, in the plan's order; the five FRED inputs, then the two prices
+DATA_STATUS_FRED = ("T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS2", "DGS10")
+DATA_STATUS_PRICES = ("^GSPC", "GC=F")
+STATE_RANK = {"current": 0, "stale": 1, "missing": 2}
+
+
+def _result(name: str) -> Any:
+    from api.worker import get_worker
+
+    return get_worker().result(name)
+
+
+def recession_band(score: float) -> str:
+    """R4 (v3 §11): src/analytics/recession._classify_prob's own edges, on a fraction."""
+    lo, hi = RECESSION_BAND_EDGES
+    return "low" if score < lo else ("elevated" if score < hi else "high_risk")
+
+
+def k_minus_2(session: str) -> str:
+    """R8 (v2 §9.1): the regimes month a session reads, K−2 for its month K
+    (event_study.regime_at's rule, REGIME_LAG_MONTHS = 2)."""
+    y, m = int(session[:4]), int(session[5:7]) - 2
+    if m <= 0:
+        y, m = y - 1, m + 12
+    return f"{y:04d}-{m:02d}"
+
+
+def _month_before(month: str) -> str:
+    y, m = int(month[:4]), int(month[5:7]) - 1
+    return f"{y - 1:04d}-12" if m == 0 else f"{y:04d}-{m:02d}"
+
+
+def regime_run(rows: list[dict], print_month: str) -> tuple[int, str]:
+    """R9 (spec §12.1, S-14): the run of equal labels in consecutive stored
+    months ending at `print`; a missing month ends the run. (months_in, since)."""
+    by = {r["month"]: r for r in rows}
+    label = by[print_month]["label"]
+    since, n = print_month, 1
+    while True:
+        prev = _month_before(since)
+        if prev not in by or by[prev]["label"] != label:
+            return n, since
+        since, n = prev, n + 1
+
+
+def _direction(trend: float | None) -> str:
+    return "rising" if trend is not None and trend > 0 else "falling"  # the classifier's own test (src/regime.py)
+
+
+def regime_tile(rows: list[dict], comparison: str) -> dict:
+    """tiles.regime: the stored K−2 row for comparison_session's month."""
+    month = k_minus_2(comparison)
+    row = next((r for r in rows if r["month"] == month), None)
+    if row is None:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    months_in, since = regime_run(rows, month)
+    return {"label": row["label"], "print": month, "growth": _direction(row["growth_trend"]),
+            "inflation": _direction(row["inflation_trend"]), "months_in": months_in, "since": since,
+            "freq": "monthly", "source": REGIMES_SOURCE}
+
+
+def recession_tile(regime_item: dict) -> dict:
+    """tiles.recession: the recession model's score, dated by N5; awaiting when the model has no data."""
+    metrics = _result("recession")
+    prov = regime_item.get("recession")
+    if metrics.get("recession_prob") is None or prov is None:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    score = metrics["recession_prob"] / 100
+    return {"score": score, "probability_month": prov["probability_month"], "inputs_through": prov["inputs_through"],
+            "band": recession_band(score), "band_edges": list(RECESSION_BAND_EDGES), "freq": "monthly",
+            "source": RECESSION_SOURCE}
+
+
+def trend_tile() -> dict:
+    t = _technicals_item()
+    if not t["ok"]:
+        raise env.Awaiting(t["reason"])
+    return {"state": t["trend"]["state"], "above_50": t["above_50"], "above_200": t["above_200"],
+            "state_since": t["trend"]["state_since"], "cross": t["cross"], "date": t["date"], "freq": "daily",
+            "source": SPX_SOURCE}
+
+
+def vol_tile(facts: dict) -> dict:
+    vix = facts["newest"].get("VIXCLS")
+    if vix is None:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    return {"vix": vix["value"], "date": vix["date"], "freq": "daily", "source": VIX_SOURCE}
+
+
+def active_signals(rows: list[dict]) -> list[dict]:
+    """R6 (spec §12.1, v2 §19, S-18): the available rows firing now and not
+    stale, and the five rows with the latest non-null last_fired, once each;
+    firing first, then last_fired descending, then slug."""
+    firing = {r["slug"] for r in rows if r["available"] and r["firing_now"] and not r["stale"]}
+    recent = sorted((r for r in rows if r["last_fired"]), key=lambda r: (r["last_fired"], r["slug"]), reverse=True)
+    chosen = firing | {r["slug"] for r in recent[:5]}
+    picked = [r for r in rows if r["slug"] in chosen]
+    picked.sort(key=lambda r: r["slug"])
+    picked.sort(key=lambda r: r["last_fired"] or "", reverse=True)
+    picked.sort(key=lambda r: r["slug"] not in firing)
+    return picked
+
+
+def _rfc3339(stamp: str | None) -> str | None:
+    from api.freshness import _parse_dt
+
+    d = _parse_dt(stamp)
+    return d.strftime("%Y-%m-%dT%H:%M:%SZ") if d else None
+
+
+def data_status(*, now: datetime, stored: dict | None, watermarks: dict | None, prices: dict[str, str | None]) -> dict:
+    """N9 (v4 B-06, C-02, S-23): each contributor through its existing policy.
+    The FRED inputs by api/freshness.desk_series_states (close → current, stale
+    → stale, unknown → missing), expected on _daily_expected_and_lag's date;
+    ^GSPC and GC=F by api/freshness.assess's asset_prices rule applied to the
+    symbol's own newest row (current and delayed → current, stale → stale,
+    unstored → missing), expected on that rule's session. The state is the
+    worst contributor: missing, then stale, then current."""
+    from api import calendar as cal
+    from api import desk as desk_mod
+    from api import freshness as fr
+
+    specs = {s["id"]: s for s in desk_mod.desk_series_specs(stored)}
+    rows = fr.desk_series_states(stored=stored, specs=[specs[sid] for sid in DATA_STATUS_FRED], watermarks=watermarks,
+                                 now=now)
+    by = {r["id"][len("desk:"):]: r for r in rows}
+    today = now.astimezone(cal.NY).date()
+    out = []
+    for sid in DATA_STATUS_FRED:
+        r = by[sid]
+        expected, _lag = fr._daily_expected_and_lag(today, today, specs[sid].get("calendar") == "bond")
+        out.append({"series": sid, "observation_date": (stored or {}).get(sid),
+                    "expected_observation_date": expected.isoformat(),
+                    "state": {"close": "current", "stale": "stale", "unknown": "missing"}[r["state"]], "reason": r["reason"]})
+    for sym in DATA_STATUS_PRICES:
+        d = prices.get(sym)
+        sla = fr.assess(db_fresh={"asset_prices_date": d}, series_latest=[], relay=None, bootstrap=None, now=now,
+                        watermarks=watermarks)["sla"]
+        row = next(x for x in sla if x["feed"] == "asset_prices")
+        state = "missing" if d is None else {"current": "current", "delayed": "current", "stale": "stale"}[row["verdict"]]
+        out.append({"series": sym, "observation_date": d, "expected_observation_date": row["expected"], "state": state,
+                    "reason": row["reason"]})
+    return {"state": max((c["state"] for c in out), key=STATE_RANK.__getitem__), "contributors": out}
+
+
+def overview_answer(params: list[tuple[str, str]]) -> dict:
+    """§12.1, composed from the Ledger, the technicals, regime and recession
+    items and the stored facts of the request's one generation; every field
+    that depends on now is computed for this response."""
+    if params:
+        raise env.Unsupported(f"{params[0][0]} is not a parameter of /overview.")
+    from api import db
+
+    now = _now()
+    comparison, prev = sessions_now(now)
+    entries = ledger_rows(comparison, prev)
+    rows = [r for r, _ in entries]
+
+    def since_last_close() -> dict:
+        new, still = fire_lists(entries)
+        regime_rows = _result("desk_regime")["rows"]
+        labels = {r["month"]: r["label"] for r in regime_rows}
+        r_from, r_to = labels.get(k_minus_2(prev)), labels.get(k_minus_2(comparison))
+        vix = _result("desk_facts")["vix_recent"]
+        wm = (db.watermarks() or {}).get("desk_series") or {}
+        return {
+            "comparison_session": comparison, "prev_session": prev, "new_fires": new, "still_firing": still,
+            "vol_change_pts": vix[comparison] - vix[prev] if comparison in vix and prev in vix else None,
+            "regime_from": r_from, "regime_to": r_to,
+            "regime_changed": None if r_from is None or r_to is None else r_from != r_to,
+            "refreshed_at_utc": _rfc3339(wm.get("advanced_at")),
+        }
+
+    def status() -> dict:
+        newest = _result("desk_facts")["newest"]
+        prices = {sym: (newest.get(sym) or {}).get("date") for sym in DATA_STATUS_PRICES}
+        return data_status(now=now, stored=db.freshness()["desk_series_latest"], watermarks=db.watermarks(), prices=prices)
+
+    return {
+        "since_last_close": env.block_from("/overview", "since_last_close", since_last_close),
+        "tiles": {
+            "regime": env.block_from("/overview", "tiles.regime", lambda: regime_tile(_result("desk_regime")["rows"], comparison)),
+            "recession": env.block_from("/overview", "tiles.recession", lambda: recession_tile(_result("desk_regime"))),
+            "trend": env.block_from("/overview", "tiles.trend", trend_tile),
+            "vol": env.block_from("/overview", "tiles.vol", lambda: vol_tile(_result("desk_facts"))),
+        },
+        "active_signals": active_signals(rows),
+        "data_status": env.block_from("/overview", "data_status", status),
+    }
+
+
 # ── §12.7 GET /technicals ───────────────────────────────────────────────────
 
 TECHNICALS_KEYS = ("price", "date", "freq", "source", "chg_1d", "chg_1d_dates", "ret_1y", "ret_1y_dates", "ma50",
