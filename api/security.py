@@ -43,7 +43,7 @@ EXPENSIVE_PATHS = {"/api/lbo/run", "/api/regime/scenario", "/api/recession/scena
 # request holds its slot while it waits on the engine (api/desk.COMPUTE_TIMEOUT_S),
 # and four slow studies sharing the calculators' slots answered the LBO and
 # the scenario POSTs 429.
-DESK_STUDY_PATHS = {"/api/desk/event-study", "/api/desk/study", "/api/desk/study/catalog"}
+DESK_STUDY_PATHS = {"/api/desk/event-study", "/api/desk/study", "/api/desk/study/catalog", "/api/desk/study/events"}
 # A preset by its slug alone is a worker item, a lookup: it reads under the
 # stored-read ceiling, never behind other visitors' studies (verifier V-13).
 # Mirrors src/desk/event_study.PRESETS (parity pinned by tests/test_desk_api.py).

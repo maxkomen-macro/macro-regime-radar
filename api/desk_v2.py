@@ -29,6 +29,7 @@ numpy) is imported at the point of use.
 from __future__ import annotations
 
 import bisect
+import json
 import logging
 import math
 import threading
@@ -135,6 +136,20 @@ def desk_study_catalog(request: Request) -> Response:
     return _response(env.answer("/study/catalog", lambda: catalog_answer(params)))
 
 
+@router.get("/study/events")
+def desk_study_events(request: Request) -> Response:
+    """§12.4: every retained event, newest first. `Accept: text/csv` answers
+    the CSV; an answer that is not ready keeps its JSON envelope and status."""
+    params = list(request.query_params.multi_items())
+    reply = env.answer("/study/events", lambda: events_answer(params))
+    if reply.status_code == 200 and "text/csv" in request.headers.get("accept", ""):
+        data = json.loads(reply.body)["data"]
+        if data is not None:
+            return Response(content=events_csv(data["events"]).encode("utf-8"), status_code=200,
+                            headers={"Cache-Control": "no-store"}, media_type="text/csv; charset=utf-8")
+    return _response(reply)
+
+
 def _item(slug: str) -> dict:
     """The generation's worker item for a catalog study (a lookup, never a computation)."""
     from api.worker import get_worker
@@ -205,6 +220,55 @@ def study_answer(params: list[tuple[str, str]], t0: float) -> dict:
     out["served_from_cache"] = hit
     out["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 1)
     return {k: out[k] for k in STUDY_KEYS}
+
+
+def events_answer(params: list[tuple[str, str]]) -> dict:
+    """§12.4 as JSON: the study's full event table, newest first (plan §2)."""
+    study, h = catalog.normalize(params, "/study/events", resolve_alias=engine_alias)
+    if h is None:  # a row with no horizons, asked without one (S-31)
+        raise env.Awaiting(catalog.RSI_REASON)
+    item = _item(study.slug)
+    if not item["ok"]:
+        raise env.Awaiting(item["reason"])
+    _hit, rows = memo(("/study/events", study.slug), lambda: event_rows(item["events"]))
+    return {"slug": study.slug, "events": rows}
+
+
+def event_rows(table: Any) -> list[dict]:
+    """Every row of the event table, newest first, in §12.4's fields."""
+    rows = []
+    for i in range(len(table) - 1, -1, -1):
+        entry = int(table.entry_idx[i])
+        row = {"event_date": table.sessions[int(table.event_idx[i])],
+               "entry_date": table.sessions[entry] if entry >= 0 else None,
+               "regime": table.regime[i]}
+        for h in catalog.HORIZONS:
+            exit_ = int(table.exit_idx[h][i])
+            complete = exit_ >= 0
+            row[f"exit_{h}"] = table.sessions[exit_] if complete else None
+            row[f"value_{h}"] = float(table.value[h][i]) if complete else None
+            row[f"complete_{h}"] = complete
+        rows.append(row)
+    return rows
+
+
+EVENTS_CSV_COLUMNS = ("event_date", "entry_date", "regime",
+                      *(c for h in catalog.HORIZONS for c in (f"exit_{h}", f"value_{h}", f"complete_{h}")))
+
+
+def events_csv(rows: list[dict]) -> str:
+    """§12.4's CSV: the columns in order, rows as served (newest first); a value
+    is repr(float), the JSON's precision; a null is an empty cell; a boolean
+    is true or false. No cell holds a comma or a quote, so none is quoted."""
+    def cell(v: Any) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        return repr(v) if isinstance(v, float) else str(v)
+
+    lines = [",".join(EVENTS_CSV_COLUMNS)] + [",".join(cell(r[c]) for c in EVENTS_CSV_COLUMNS) for r in rows]
+    return "\n".join(lines) + "\n"
 
 
 STUDY_KEYS = (

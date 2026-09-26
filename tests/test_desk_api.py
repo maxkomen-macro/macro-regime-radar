@@ -623,6 +623,7 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     # a catalog study by preset (asset_prices and regimes only: ready before the refresh), and the catalog
     ("GET", "/api/desk/study"): ("/api/desk/study?preset=golden-cross", 200, None),
     ("GET", "/api/desk/study/catalog"): ("/api/desk/study/catalog", 200, None),
+    ("GET", "/api/desk/study/events"): ("/api/desk/study/events?preset=golden-cross", 200, None),
     # diagnostics, open in development (no DEPLOY_PUBLIC, no CORS_ORIGINS)
     ("GET", "/api/ops/whoami"): ("/api/ops/whoami", 200, None),
     ("GET", "/api/stream/debug"): ("/api/stream/debug", 200, None),
