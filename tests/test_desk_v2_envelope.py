@@ -33,9 +33,9 @@ def _body(r: env.Reply) -> dict:
 
 
 @pytest.fixture()
-def no_generation(install_worker):
-    """A worker with nothing published: `answer` names no generation."""
-    return install_worker(worker_mod.AnalyticsWorker(items=[], preload=False))
+def a_generation(tmp_path, monkeypatch, install_worker):
+    """A worker serving one generation of a tiny file: `answer` pins it (Codex R-01)."""
+    return _published(tmp_path, monkeypatch, install_worker)
 
 
 # ── engine_version (S-21) ───────────────────────────────────────────────────
@@ -69,7 +69,7 @@ def test_engine_version_is_read_from_the_environment_at_import(extra, expected):
     assert out.stdout.strip() == expected
 
 
-def test_every_envelope_carries_the_engine_version(monkeypatch, no_generation):
+def test_every_envelope_carries_the_engine_version(monkeypatch, a_generation):
     monkeypatch.setattr(env, "ENGINE_VERSION", "cafef00d")
     for r in (env.answer("/ledger", lambda: {"x": 1}),
               env.answer("/study", _raise(env.Unsupported("no"))),
@@ -100,6 +100,18 @@ def test_envelope_serves_each_part_only_in_its_state():
         env.unavailable("  ")
     with pytest.raises(ValueError):
         env.Awaiting("")
+
+
+def test_before_any_publication_answer_waits_then_answers_computing(tmp_path, monkeypatch, install_worker):
+    """Codex R-01: `answer` pins a generation before the body runs; with none
+    published within the worker's wait, the body never runs and the answer is
+    202 computing, naming no generation."""
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "absent.db")
+    install_worker(worker_mod.AnalyticsWorker(items=[], preload=False, wait_s=0.3))
+    ran = []
+    r = env.answer("/ledger", lambda: ran.append(1) or {"x": 1})
+    b = _body(r)
+    assert r.status_code == 202 and b["status"] == "computing" and b["generation_id"] is None and ran == []
 
 
 def test_a_computing_answer_names_no_generation(tmp_path, monkeypatch, install_worker):
@@ -164,27 +176,27 @@ def _raise(exc):
     return fn
 
 
-def test_a_payload_is_ready(no_generation):
+def test_a_payload_is_ready(a_generation):
     r = env.answer("/ledger", lambda: {"x": 1.25, "y": [None, "a"]})
     assert r.status_code == 200 and r.headers["Cache-Control"] == "no-store" and r.media_type == "application/json"
     assert _body(r)["status"] == "ready" and _body(r)["data"] == {"x": 1.25, "y": [None, "a"]}
 
 
-def test_awaiting_is_200_with_its_reason(no_generation):
+def test_awaiting_is_200_with_its_reason(a_generation):
     r = env.answer("/study", _raise(env.Awaiting("the inputs are not stored", until="2026-10-01")))
     b = _body(r)
     assert r.status_code == 200 and b["status"] == "awaiting" and b["data"] is None
     assert b["unavailable"] == {"reason": "the inputs are not stored", "until": "2026-10-01"}
 
 
-def test_an_unsupported_request_is_422_naming_what(no_generation):
+def test_an_unsupported_request_is_422_naming_what(a_generation):
     r = env.answer("/study", _raise(env.Unsupported("confidence is not a parameter of /study")))
     b = _body(r)
     assert r.status_code == 422 and b["error"] == {"code": "unsupported", "message": "confidence is not a parameter of /study"}
     dc.check("/study", r.body)
 
 
-def test_the_engines_validation_is_422_in_its_own_words(no_generation):
+def test_the_engines_validation_is_422_in_its_own_words(a_generation):
     from src.desk import event_study as es
 
     r = env.answer("/study", _raise(es.StudyError("window must be one of 5, 20, 60")))
@@ -200,7 +212,7 @@ def test_warming_is_202_computing_with_no_generation(tmp_path, monkeypatch, inst
     assert b["data"] is None and b["unavailable"] is None and b["error"] is None
 
 
-def test_an_unavailable_database_is_503_with_a_sanitized_message(no_generation):
+def test_an_unavailable_database_is_503_with_a_sanitized_message(a_generation):
     r = env.answer("/regime", _raise(db.DBUnavailable("database file not found at /srv/data/macro_radar.db")))
     assert r.status_code == 503
     assert _body(r)["error"] == {"code": "db_unavailable", "message": "The database is not available on this server."}
@@ -216,7 +228,7 @@ def test_the_sanitizing_rule_is_api_mains():
         assert env.sanitized(exc) == main._sanitized(exc), text
 
 
-def test_a_failed_schema_check_is_503_retryable(no_generation, monkeypatch):
+def test_a_failed_schema_check_is_503_retryable(a_generation, monkeypatch):
     """desk/hardening's api.provenance.SchemaCheckFailed (a sqlite3.OperationalError) is matched by
     its own class once its module is loaded; here a stand-in module plays it."""
     fake = types.ModuleType("api.provenance")
@@ -235,13 +247,13 @@ def test_a_failed_schema_check_is_503_retryable(no_generation, monkeypatch):
     assert env.answer("/pipeline", _raise(sqlite3.OperationalError("locked"))).status_code == 500
 
 
-def test_the_real_schema_check_failure_once_hardening_lands(no_generation):
+def test_the_real_schema_check_failure_once_hardening_lands(a_generation):
     provenance = pytest.importorskip("api.provenance")
     r = env.answer("/pipeline", _raise(provenance.SchemaCheckFailed("could not read")))
     assert r.status_code == 503 and _body(r)["error"]["code"] == "schema_check"
 
 
-def test_anything_else_is_500_internal_and_logged(no_generation, caplog):
+def test_anything_else_is_500_internal_and_logged(a_generation, caplog):
     with caplog.at_level(logging.ERROR, logger="mrr.desk"):
         r = env.answer("/technicals", _raise(KeyError("no result named 'desk_technicals'")))
     assert r.status_code == 500
@@ -250,19 +262,19 @@ def test_anything_else_is_500_internal_and_logged(no_generation, caplog):
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), -float("inf")])
-def test_a_non_finite_number_is_a_500_never_on_the_wire(no_generation, bad):
+def test_a_non_finite_number_is_a_500_never_on_the_wire(a_generation, bad):
     r = env.answer("/technicals", lambda: {"price": 1.0, "series": [{"close": bad}]})
     assert r.status_code == 500 and b"NaN" not in r.body and b"Infinity" not in r.body
     assert _body(r)["error"]["code"] == "internal"
 
 
-def test_a_payload_that_cannot_be_serialized_is_a_500(no_generation):
+def test_a_payload_that_cannot_be_serialized_is_a_500(a_generation):
     assert env.answer("/ledger", lambda: {"when": object()}).status_code == 500
     assert env.answer("/ledger", lambda: ["not", "a", "payload"]).status_code == 500
     assert env.answer("/ledger", lambda: None).status_code == 500
 
 
-def test_the_405_names_get(no_generation):
+def test_the_405_names_get(a_generation):
     r = env.method_not_allowed("POST")
     assert r.status_code == 405 and r.headers == {"Cache-Control": "no-store", "Allow": "GET"}
     assert _body(r)["error"]["code"] == "method_not_allowed"
@@ -295,7 +307,7 @@ def test_a_fact_about_the_whole_answer_is_never_one_blocks():
             env.block_from("/overview", "tiles.vol", _raise(exc))
 
 
-def test_a_failed_block_inside_a_ready_answer(no_generation, caplog):
+def test_a_failed_block_inside_a_ready_answer(a_generation, caplog):
     def fn():
         return {"stats": env.block_from("/regime", "stats", _raise(RuntimeError("boom")))}
 
@@ -354,7 +366,8 @@ def test_the_new_modules_never_import_src_config_or_anything_heavy():
         mods = _imports(ROOT / name)
         assert not any(m == "src.config" or m.startswith("src.config.") for m in mods), (name, mods)
     project = {m for m in _imports(ROOT / "api" / "desk_envelope.py") if m.split(".")[0] in ("api", "src")}
-    assert project == {"api.calendar", "api.worker"}, project  # api.worker only inside _generation
+    # api.worker and src.analytics (dbpath, stdlib) only inside the functions that pin and name the generation
+    assert project == {"api.calendar", "api.worker", "src.analytics"}, project
     heavy = ("pandas", "numpy", "sklearn", "scipy", "exchange_calendars", "riskfolio", "anthropic", "src.config",
              "src.desk.event_study")
     code = f"import sys, api.desk_envelope, api.desk_v2; print(sorted(m for m in {heavy!r} if m in sys.modules))"
