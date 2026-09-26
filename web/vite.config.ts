@@ -1,5 +1,7 @@
 /// <reference types="vitest" />
 import { execSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, searchForWorkspaceRoot, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
@@ -61,6 +63,12 @@ function deskFixturesPlugin(): Plugin {
 // second port), which is how the launch-1 rehearsal runs.
 const API_TARGET = process.env.VITE_PROXY_TARGET ?? "http://127.0.0.1:8000";
 
+/** The Build Notes figures the dev server may read: each SVG in docs/desk/screens/, file by file. */
+function notesFigures(): string[] {
+  const dir = fileURLToPath(new URL("../docs/desk/screens", import.meta.url));
+  return existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".svg")).map((f) => join(dir, f)) : [];
+}
+
 // Dev-time proxy: the FastAPI service (uvicorn api.main:app --port 8000) is
 // reached same-origin via /api and the unprefixed /health, matching the
 // production plan where FastAPI serves the built bundle from one process.
@@ -94,9 +102,12 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    // Build Notes renders docs/desk/BUILD_NOTES.md (DESK_FRAME3_SPEC §11), outside web/:
-    // the dev server may read that one file besides its own root.
-    fs: { allow: [searchForWorkspaceRoot(process.cwd()), fileURLToPath(new URL("../docs/desk/BUILD_NOTES.md", import.meta.url))] },
+    // Build Notes renders docs/desk/BUILD_NOTES.md (DESK_FRAME3_SPEC §11), outside web/, with
+    // its figures, the SVGs in docs/desk/screens/: the dev server may read those files, and no
+    // other file of that folder, besides its own root.
+    fs: {
+      allow: [searchForWorkspaceRoot(process.cwd()), fileURLToPath(new URL("../docs/desk/BUILD_NOTES.md", import.meta.url)), ...notesFigures()],
+    },
     proxy: {
       // ws: true upgrades /api/stream/ws to the FastAPI relay alongside plain GETs.
       "/api": { target: API_TARGET, changeOrigin: true, ws: true },

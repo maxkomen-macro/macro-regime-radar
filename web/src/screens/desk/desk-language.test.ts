@@ -10,8 +10,11 @@
  *
  * Parsed with the TypeScript compiler, so comments never count and every
  * string does. Build Notes is scanned as the page prints it: the words of
- * docs/desk/BUILD_NOTES.md after the page's holds (./notes/notes.ts), under
- * the same list and the same recession allowance (review R-10, verifier B-5).
+ * docs/desk/BUILD_NOTES.md after the page's holds (./notes/notes.ts). That
+ * file is the owner's prose, so of the list only frame-3's two words are
+ * enforced on it (DESK_FRAME3_SPEC §11: "of the Desk's banned words only
+ * 'established' and 'significant' are enforced on it"); the page's own
+ * §1.0.1 section is source (./notes/scope.ts) and takes the whole list.
  * Not scanned: tests and saved engine payloads (they carry the words on
  * purpose, as inputs to the gate or as the engine's own text); in gate.ts,
  * the ban list's own entries (a list of the words is the words). "model"
@@ -52,6 +55,8 @@ const BOARD_FILES = ["/src/screens/desk/pipeline/PipelinePage.tsx", "/src/fixtur
 const SOURCES = import.meta.glob<string>(["/src/**/desk/**/*.{ts,tsx,md}", "/src/api/desk.ts"], { query: "?raw", import: "default", eager: true });
 const FIXTURES = import.meta.glob<unknown>("/src/fixtures/desk/*.json", { import: "default", eager: true });
 const NOTES = import.meta.glob<string>("../../../../docs/desk/BUILD_NOTES.md", { query: "?raw", import: "default", eager: true });
+/** The notes' figures (docs/desk/screens/*.svg), whose words the page shows as drawn. */
+const FIGURES = import.meta.glob<string>("../../../../docs/desk/screens/*.svg", { query: "?raw", import: "default", eager: true });
 
 /** Every string value in a JSON document, keys excluded. */
 export function jsonStrings(v: unknown): string[] {
@@ -139,16 +144,37 @@ describe("the Desk's language ban list", () => {
     expect(hits).toEqual([]);
   });
 
-  it("Build Notes prints no banned word: the file as the page renders it", () => {
+  it("Build Notes prints neither of frame-3's two words: the file as the page renders it (§11)", () => {
     const md = Object.values(NOTES)[0];
     expect(md, "docs/desk/BUILD_NOTES.md").toBeTruthy();
     const n = readNotes(md);
+    const frame3 = (para: string) => offending("/docs/desk/BUILD_NOTES.md", para).filter((w) => FRAME3.test(w));
     const hits = [n.title ?? "", n.lead, ...n.sections.flatMap((x) => [x.title, x.body])]
       .flatMap((t) => t.split(/\n\s*\n/))
       .map((para) => para.replace(/\s*\n\s*/g, " "))
-      .filter((para) => offending("/docs/desk/BUILD_NOTES.md", para).length)
-      .map((para) => `[${offending("/docs/desk/BUILD_NOTES.md", para).join(", ")}] ${para.slice(0, 120)}`);
+      .filter((para) => frame3(para).length)
+      .map((para) => `[${frame3(para).join(", ")}] ${para.slice(0, 120)}`);
     expect(hits).toEqual([]);
+  });
+
+  it("the notes' figures draw neither of frame-3's two words: the words the page cannot hold (§1.5)", () => {
+    // A figure is shown as drawn, so its text is checked here; the owner's words, so the frame-3 two only.
+    const hits = Object.entries(FIGURES).flatMap(([f, svg]) =>
+      [...svg.matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/g)]
+        .map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+        .filter((t) => /(?<![\p{L}\p{N}])(established|significant)(?![\p{L}\p{N}])/iu.test(t))
+        .map((t) => `${f}: ${t.slice(0, 120)}`),
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("the owner's file is exempt from the frame-2 list, and only from it (§11)", () => {
+    // The frame-2 words pass in the notes file; the two frame-3 words are held by the page.
+    const n = readNotes("# Notes\n\n## One\nThe tape will move; a second model reads it. It never fails. It is established.\n");
+    const body = n.sections[0].body;
+    expect(body).toContain("The tape will move; a second model reads it. It never fails.");
+    expect(body).not.toMatch(/established/);
+    expect(n.held).toBe(1);
   });
 
   it("the scanner skips data keys: literal types, case labels, comparisons, object keys", () => {

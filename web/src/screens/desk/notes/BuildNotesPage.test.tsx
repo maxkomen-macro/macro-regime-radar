@@ -1,8 +1,10 @@
 /**
  * Build Notes (DESK_FRAME3_SPEC §11): the page renders docs/desk/BUILD_NOTES.md
- * (its title, lead and `##` sections, the contents list from those sections),
- * adds only §11's byline and the source line, and holds any sentence that uses
- * a word the Desk never prints. A build without the file says so.
+ * (its title, lead and `##` sections with their tables and figures, the
+ * contents list from those sections), adds only §11's byline, the source line
+ * and §1.0.1's section "Live / Designed, not yet served" word for word, and
+ * holds any sentence that uses one of the two words the Desk never prints. A
+ * build without the file says so.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, screen, within } from "@testing-library/react";
@@ -11,8 +13,13 @@ import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
 import { deskPageBySlug } from "../desk-sections";
-import { BuildNotesView, NOTES_MD } from "./BuildNotesPage";
+import { BYLINE, BuildNotesView, NOTES_MD, SCOPE_ID, figureUrl, leadWithoutByline } from "./BuildNotesPage";
 import { HELD_HEADING, HELD_MARK, holdBanned, readNotes, sentences } from "./notes";
+import { SCOPE_LISTS, SCOPE_TITLE } from "./scope";
+
+const SPEC = Object.values(import.meta.glob<string>("../../../../../docs/desk/DESK_FRAME3_SPEC.md", { query: "?raw", import: "default", eager: true }))[0] ?? "";
+const BANNED_WORD = /(?<![\p{L}\p{N}])(established|significant)(?![\p{L}\p{N}])/iu;
+const IMAGE_LINE = /^\s*!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
 
 function renderTab(route = "/desk/build-notes") {
   return renderWithProviders(
@@ -97,6 +104,14 @@ describe("Build Notes reading", () => {
     expect(n.sections.map((s) => s.title)).toEqual(["One", "Two"]);
     expect(n.sections[0].body).toBe("```\n## not a section\n```");
   });
+  it("holds a table cell by cell, keeping the table's shape, and a figure whose caption uses a held word", () => {
+    const md = "| Step | Rule |\n|---|---|\n| One | Fine. Not established. |\n| Two | Fine. |\n\n![Why it is significant](screens/x.svg)\n";
+    const r = holdBanned(md);
+    expect(r.text.split("\n")[2]).toBe(`| One | Fine. ${HELD_MARK} |`);
+    expect(r.text.split("\n").slice(0, 2)).toEqual(["| Step | Rule |", "|---|---|"]);
+    expect(r.text).toContain("(one figure held: its caption uses a word the Desk does not print)");
+    expect(r.held).toBe(2);
+  });
   it("an empty file is no title, no lead, no sections", () => {
     expect(readNotes("")).toEqual({ title: null, lead: "", sections: [], held: 0 });
     expect(readNotes("Just a paragraph.\n\n## One\nx").title).toBeNull();
@@ -106,19 +121,30 @@ describe("Build Notes reading", () => {
 /** The file's blocks as a reader sees them, parsed without ./notes.ts:
  * paragraphs joined, list items one by one, heading text, emphasis marks gone. */
 function fileBlocks(md: string): string[] {
+  // Code spans print as written ("/api/desk/*"), so their marks are kept out of the emphasis rule.
   const plain = (t: string) =>
     t
       .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .replace(/\*\*|`/g, "")
+      .replace(/`([^`]*)`/g, (_, c: string) => c.replace(/\*/g, "\u0001").replace(/_/g, "\u0002"))
+      .replace(/\*\*/g, "")
       .replace(/(^|[\s(])[*_](?=\S)|(?<=\S)[*_](?=[\s.,;:!?)]|$)/g, "$1")
+      .replace(/\u0001/g, "*")
+      .replace(/\u0002/g, "_")
       .replace(/\s+/g, " ")
       .trim();
   return md
     .replace(/\r\n?/g, "\n")
     .split(/\n\s*\n/)
     .flatMap((b) => {
-      const lines = b.split("\n").filter((l) => l.trim());
+      const lines = b.split("\n").filter((l) => l.trim() && !IMAGE_LINE.test(l));
       if (!lines.length) return [];
+      // A table: its cells in reading order, the rule line left out.
+      if (lines[0].trim().startsWith("|"))
+        return lines
+          .filter((l) => !/^\s*\|?\s*:?-{3,}/.test(l))
+          .flatMap((l) => l.trim().replace(/^\||\|$/g, "").split("|"))
+          .map(plain)
+          .filter(Boolean);
       if (/^#{1,4}\s/.test(lines[0])) return [plain(lines[0].replace(/^#{1,4}\s+/, "")), ...(lines.length > 1 ? [plain(lines.slice(1).join(" "))] : [])];
       // A list: each marker line starts an item, and the lines after it continue it.
       if (/^\s*(?:[-*•]|\d+[.)])\s+/.test(lines[0]))
@@ -129,13 +155,41 @@ function fileBlocks(md: string): string[] {
     });
 }
 
+/** How many of the file's units use a held word, counted without ./notes.ts: each sentence of its prose
+ * blocks (table cells one by one), each figure line and each line of a code fence. */
+function bannedIn(md: string): number {
+  let code = false;
+  let n = 0;
+  const prose: string[] = [];
+  for (const line of md.replace(/\r\n?/g, "\n").split("\n")) {
+    if (line.trim().startsWith("```")) {
+      code = !code;
+      prose.push("");
+      continue;
+    }
+    if (code || IMAGE_LINE.test(line)) {
+      if (BANNED_WORD.test(line)) n += 1;
+      prose.push("");
+      continue;
+    }
+    prose.push(line);
+  }
+  return n + fileBlocks(prose.join("\n")).flatMap((b) => sentences(b)).filter((x) => BANNED_WORD.test(x)).length;
+}
+
 describe("Build Notes tab", () => {
-  it("reads the repo's file, whose holds are the ones the report records", () => {
+  it("reads the repo's file and holds exactly its sentences that use one of the two words", () => {
     expect(NOTES_MD.length).toBeGreaterThan(500);
     const n = readNotes(NOTES_MD);
     expect(n.sections.length).toBeGreaterThan(2);
-    // FRAME3_REPORT.md §10 quotes the two held sentences: when the file's holds change, so does that section.
-    expect(n.held, "BUILD_NOTES.md's held sentences changed: update FRAME3_REPORT.md §10 and this count").toBe(2);
+    // The file is the owner's and its holds change with it; each held sentence is one of the file's, counted once.
+    expect(n.held).toBe(bannedIn(NOTES_MD));
+  });
+
+  it("the count of held words follows the file: a sentence, a table cell, a figure's caption, a code line (V13-6)", () => {
+    const md = "# T\n\n## One\nFine. Not established.\n\n| a | b |\n|---|---|\n| ok | Not significant. |\n\n![Why it is significant](screens/x.svg)\n\n```\nestablished\nsignificant\nok\n```\n";
+    expect(readNotes(md).held).toBe(5);
+    expect(bannedIn(md)).toBe(5);
   });
 
   it("renders the file: contents from its sections, the byline, the source line, every block in order", async () => {
@@ -145,7 +199,7 @@ describe("Build Notes tab", () => {
     expect(within(article).getByRole("heading", { level: 2 })).toHaveTextContent(n.title ?? "Build Notes");
     expect(article).toHaveTextContent("Max Komen · September 2026");
     const toc = screen.getByRole("navigation", { name: "Contents" });
-    expect(within(toc).getAllByRole("link").map((a) => a.textContent)).toEqual(n.sections.map((s) => s.title));
+    expect(within(toc).getAllByRole("link").map((a) => a.textContent)).toEqual([...n.sections.map((s) => s.title), SCOPE_TITLE]);
     expect(within(toc).getAllByRole("link")[0]).toHaveAttribute("href", `#${n.sections[0].id}`);
     for (const s of n.sections) expect(within(article).getByRole("heading", { level: 3, name: s.title })).toBeInTheDocument();
     expect(screen.getByText("Rendered from docs/desk/BUILD_NOTES.md · same file in the repo")).toBeInTheDocument();
@@ -160,6 +214,42 @@ describe("Build Notes tab", () => {
       expect(i, b.slice(0, 60)).toBeGreaterThanOrEqual(at);
       at = i + b.length;
     }
+    // Each figure is the build's file, or named in words when this build does not ship it.
+    for (const line of NOTES_MD.split("\n").filter((l) => IMAGE_LINE.test(l))) {
+      const [, alt, src] = IMAGE_LINE.exec(line)!;
+      const url = figureUrl(src);
+      if (url) expect(within(article).getByRole("img", { name: alt })).toHaveAttribute("src", url);
+      else expect(article).toHaveTextContent(`Figure: ${alt} (not in this build)`);
+    }
+    expect(article.textContent).not.toMatch(/!\[|\]\(screens\//);
+  });
+
+  it("prints §1.0.1's two lists as their own section, word for word, last in the contents", async () => {
+    // The spec's lines: `**Live**`, then its items, then `**Designed, not yet served**` and its items.
+    const block = SPEC.slice(SPEC.indexOf("#### 1.0.1"), SPEC.indexOf("#### 1.0.2"));
+    const lists: { title: string; items: string[] }[] = [];
+    for (const line of block.split("\n")) {
+      const head = /^\*\*(.+)\*\*$/.exec(line.trim());
+      if (head) lists.push({ title: head[1], items: [] });
+      else if (line.startsWith("- ") && lists.length) lists[lists.length - 1].items.push(line.slice(2).trim());
+    }
+    expect(lists.map((l) => l.title)).toEqual(["Live", "Designed, not yet served"]);
+    expect(SCOPE_LISTS).toEqual(lists);
+    expect(SCOPE_TITLE).toBe("Live / Designed, not yet served");
+    renderTab();
+    const section = await screen.findByRole("region", { name: SCOPE_TITLE });
+    expect(section).toHaveAttribute("id", SCOPE_ID);
+    expect(within(section).getAllByRole("heading", { level: 4 }).map((h) => h.textContent)).toEqual(["Live", "Designed, not yet served"]);
+    expect(within(section).getAllByRole("listitem").map((li) => li.textContent)).toEqual(lists.flatMap((l) => l.items));
+    const links = within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link");
+    expect(links[links.length - 1]).toHaveAttribute("href", `#${SCOPE_ID}`);
+  });
+
+  it("a figure resolves only to a file in docs/desk/screens/ of this build", () => {
+    const shipped = { "/x/docs/desk/screens/pipeline-mechanics.svg": "/assets/pipeline-mechanics-abc.svg" };
+    expect(figureUrl("screens/pipeline-mechanics.svg", shipped)).toBe("/assets/pipeline-mechanics-abc.svg");
+    expect(figureUrl("./screens/pipeline-mechanics.svg", shipped)).toBe("/assets/pipeline-mechanics-abc.svg");
+    for (const src of ["screens/other.svg", "https://example.com/screens/pipeline-mechanics.svg", "../screens/pipeline-mechanics.svg", "screens/pipeline-mechanics.png"]) expect(figureUrl(src, shipped)).toBeNull();
   });
 
   it("marks the section a reader jumps to, from the list or on arrival by #section", async () => {
@@ -177,11 +267,22 @@ describe("Build Notes tab", () => {
     expect(within(toc2).getAllByRole("link")[1]).toHaveAttribute("aria-current", "location");
   });
 
+  it("prints §11's byline once: a lead paragraph that only repeats it is not printed again", () => {
+    expect(leadWithoutByline(`${BYLINE}\n\nThe lead.`)).toBe("The lead.");
+    expect(leadWithoutByline(BYLINE)).toBe("");
+    expect(leadWithoutByline("Written by Max Komen · September 2026, in the notes.")).toBe("Written by Max Komen · September 2026, in the notes.");
+    const page = deskPageBySlug("build-notes")!;
+    renderWithProviders(<BuildNotesView page={page} md={`# Notes\n\n${BYLINE}\n\nA lead.\n\n## One\nBody.`} />, { route: "/desk/build-notes" });
+    expect(screen.getAllByText(BYLINE)).toHaveLength(1);
+    expect(screen.getByText("A lead.")).toBeInTheDocument();
+  });
+
   it("a build without the file says so, and a file without a title takes the tab's name", () => {
     const page = deskPageBySlug("build-notes")!;
     const { unmount } = renderWithProviders(<BuildNotesView page={page} md="" />, { route: "/desk/build-notes" });
     expect(screen.getByRole("status")).toHaveTextContent("Awaiting the notes file: docs/desk/BUILD_NOTES.md is not in this build.");
-    expect(screen.queryByRole("navigation", { name: "Contents" })).toBeNull();
+    // §1.0.1's section is the page's own, so it stands without the file.
+    expect(within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link").map((a) => a.textContent)).toEqual([SCOPE_TITLE]);
     expect(screen.queryByText(/Rendered from docs\/desk\/BUILD_NOTES\.md/)).toBeNull();
     unmount();
     renderWithProviders(<BuildNotesView page={page} md={"Lead only.\n\n## One\nBody."} />, { route: "/desk/build-notes" });
@@ -193,7 +294,8 @@ describe("Build Notes tab", () => {
     const page = deskPageBySlug("build-notes")!;
     renderWithProviders(<BuildNotesView page={page} md={"# Notes\n\n## Title\nA.\n\n## Title h\nB.\n\n## Title\nC."} />, { route: "/desk/build-notes#%E0%A4%A" });
     expect(screen.getByRole("article")).toHaveAccessibleName("Notes");
-    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label") ?? r.textContent?.slice(0, 7))).toHaveLength(3);
+    // Three file sections and §1.0.1's.
+    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label") ?? r.textContent?.slice(0, 7))).toHaveLength(4);
     const ids = [...document.querySelectorAll("[id]")].map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link")[0]).toHaveAttribute("aria-current", "location");

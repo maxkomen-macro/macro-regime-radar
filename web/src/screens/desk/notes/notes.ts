@@ -8,7 +8,8 @@
  * each part, so a held heading keeps its section. A paragraph is held whole
  * (its wrapped lines joined, as the renderer joins them) and a list item with
  * its continuation lines (joined here, since ../../shell/Markdown ends a list
- * at a line without a marker). Pure.
+ * at a line without a marker). A table row is held cell by cell, so the
+ * table keeps its shape, and a figure line whole. Pure.
  */
 
 export interface NotesSection {
@@ -35,6 +36,7 @@ export const HELD_MARK = "*(one sentence held: it uses a word the Desk does not 
 /** What stands in for a held heading (a heading is not set in emphasis). */
 export const HELD_HEADING = "(heading held: it uses a word the Desk does not print)";
 const HELD_CODE = "(one line held: it uses a word the Desk does not print)";
+const HELD_FIGURE = "(one figure held: its caption uses a word the Desk does not print)";
 
 const COUNT = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 function heldMark(n: number): string {
@@ -98,6 +100,21 @@ function holdHeading(text: string): { text: string; held: number } {
 const HEADING = /^(#{1,4}[ \t]+)(.*)$/;
 const RULE = /^\s*(-{3,}|\*{3,})\s*$/;
 const ITEM = /^(\s*(?:[-*•]|\d+[.)])\s+)(.*)$/;
+const TABLE_ROW = /^\s*\|/;
+const FIGURE = /^\s*!\[[^\]]*\]\([^)\s]+\)\s*$/;
+
+/** A table row with each cell's banned sentences held; the pipes stay. */
+function holdRow(line: string): { text: string; held: number } {
+  if (!BANNED.test(line)) return { text: line, held: 0 };
+  let held = 0;
+  const cells = line.split(/(?<!\\)\|/).map((c) => {
+    if (!BANNED.test(c)) return c;
+    const r = holdSentences(c.trim());
+    held += r.held;
+    return ` ${r.text} `;
+  });
+  return { text: cells.join("|"), held };
+}
 
 /** A Markdown body, block by block as ../../shell/Markdown parses it, with
  * a list item's continuation lines joined into the item. */
@@ -142,6 +159,13 @@ export function holdBanned(md: string): { text: string; held: number } {
     if (!line.trim()) {
       flush();
       out.push(line);
+      continue;
+    }
+    if (TABLE_ROW.test(line) || FIGURE.test(line)) {
+      flush();
+      const r = FIGURE.test(line) ? (BANNED.test(line) ? { text: HELD_FIGURE, held: 1 } : { text: line, held: 0 }) : holdRow(line);
+      held += r.held;
+      out.push(r.text);
       continue;
     }
     const h = HEADING.exec(line);

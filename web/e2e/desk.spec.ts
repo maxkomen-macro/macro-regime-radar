@@ -557,7 +557,8 @@ test.describe("desk v2", () => {
     await page.route(/BUILD_NOTES\.md\?import&raw/, (r) => r.fulfill({ status: 200, contentType: "application/javascript", body: `export default ${JSON.stringify(notes)};` }));
     const marked = page.locator('.bn-toc a[aria-current="location"]');
     const toc = page.getByRole("navigation", { name: "Contents" });
-    const titles = ["Long A", "Short", "Tiny", "Long B", "Long C", "Last"];
+    // The file's sections, then the page's own §1.0.1 section, last.
+    const titles = ["Long A", "Short", "Tiny", "Long B", "Long C", "Last", "Live / Designed, not yet served"];
     await open(page, "/desk/build-notes");
     await expect(page.getByRole("heading", { level: 2, name: "Synthetic notes" })).toBeVisible();
     await expect(toc.getByRole("link")).toHaveText(titles);
@@ -576,7 +577,7 @@ test.describe("desk v2", () => {
     });
     expect(seen).toEqual(titles);
     // A click keeps its mark, even for a section too low to reach the top or too short to hold the line.
-    for (const t of ["Tiny", "Long B", "Last", "Short"]) {
+    for (const t of ["Tiny", "Long B", "Live / Designed, not yet served", "Short"]) {
       await toc.getByRole("link", { name: t, exact: true }).click();
       await settle(page, 300);
       await expect(marked).toHaveText(t);

@@ -1,10 +1,14 @@
 /**
  * Build Notes (DESK_FRAME3_SPEC §11, screens/11-build-notes.png): the page
  * renders docs/desk/BUILD_NOTES.md, nothing hardcoded but the byline §11
- * names and the line saying where the text comes from. The contents list is
- * the file's own `##` sections, the article its title, lead and sections
- * through the app's Markdown renderer. A sentence using a word the Desk never
- * prints is held with a marker (./notes.ts); the report records how many.
+ * names, the line saying where the text comes from and §1.0.1's section
+ * "Live / Designed, not yet served" (./scope.ts), word for word. The
+ * contents list is the file's own `##` sections and that section; the
+ * article is the file's title, lead and sections through the app's Markdown
+ * renderer, with its tables and its figures (an image whose path is a file
+ * in docs/desk/screens/ of this build; else the figure is named in words).
+ * A sentence using one of the two words the Desk never prints is held with
+ * a marker (./notes.ts).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -13,12 +17,36 @@ import Markdown from "../../shell/Markdown";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { readNotes } from "./notes";
+import { SCOPE_LISTS, SCOPE_TITLE } from "./scope";
 import "./notes.css";
 
 /** The notes file, read at build time. A build context that holds only web/
  * (the Docker image) finds no file and the page says so; it never fails the build. */
 const FILES = import.meta.glob<string>("../../../../../docs/desk/BUILD_NOTES.md", { query: "?raw", import: "default", eager: true });
 export const NOTES_MD: string = Object.values(FILES)[0] ?? "";
+
+/** The notes' figures: the SVGs beside the mockups in docs/desk/screens/, as this build ships them. */
+const FIGURES = import.meta.glob<string>("../../../../../docs/desk/screens/*.svg", { query: "?url", import: "default", eager: true });
+
+/** A figure's path in the notes (`screens/<name>.svg`, relative to docs/desk/) as its URL in this build, or null. */
+export function figureUrl(src: string, figures: Record<string, string> = FIGURES): string | null {
+  const m = /^(?:\.\/)?screens\/([\w.-]+\.svg)$/.exec(src);
+  if (!m) return null;
+  const hit = Object.entries(figures).find(([path]) => path.endsWith(`/screens/${m[1]}`));
+  return hit ? hit[1] : null;
+}
+
+/** The file's lead without a paragraph that only repeats §11's byline, which the page prints itself. */
+export function leadWithoutByline(lead: string): string {
+  return lead
+    .split(/\n\s*\n/)
+    .filter((para) => para.trim() !== BYLINE)
+    .join("\n\n")
+    .trim();
+}
+
+/** §1.0.1's section's id: outside the file sections' `bn-…` namespace. */
+export const SCOPE_ID = "bnx-scope";
 
 /** §11's byline. */
 export const BYLINE = "Max Komen · September 2026";
@@ -115,8 +143,9 @@ function useReading(ids: string[], hash: string) {
 export function BuildNotesView({ page, md }: { page: DeskPage; md: string }) {
   const notes = readNotes(md);
   const { hash } = useLocation();
+  const toc = [...notes.sections.map((s) => ({ id: s.id, title: s.title })), { id: SCOPE_ID, title: SCOPE_TITLE }];
   const { active, jump } = useReading(
-    notes.sections.map((s) => s.id),
+    toc.map((s) => s.id),
     hash,
   );
   const missing = !md.trim();
@@ -125,21 +154,17 @@ export function BuildNotesView({ page, md }: { page: DeskPage; md: string }) {
       <PageTitle page={page} />
       <div className="bn-grid">
         <aside className="bn-side">
-          {notes.sections.length ? (
-            <nav aria-label="Contents">
-              <ul className="bn-toc">
-                {notes.sections.map((s) => (
-                  <li key={s.id}>
-                    <a href={`#${s.id}`} aria-current={active === s.id ? "location" : undefined} onClick={() => jump(s.id)}>
-                      {s.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          ) : (
-            <span />
-          )}
+          <nav aria-label="Contents">
+            <ul className="bn-toc">
+              {toc.map((s) => (
+                <li key={s.id}>
+                  <a href={`#${s.id}`} aria-current={active === s.id ? "location" : undefined} onClick={() => jump(s.id)}>
+                    {s.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
           {missing ? null : <p className="bn-source">Rendered from docs/desk/BUILD_NOTES.md · same file in the repo</p>}
         </aside>
         {/* Fixed ids sit outside the sections' `bn-…` namespace, and a heading's id ends in `--h`,
@@ -154,13 +179,28 @@ export function BuildNotesView({ page, md }: { page: DeskPage; md: string }) {
               Awaiting the notes file: docs/desk/BUILD_NOTES.md is not in this build.
             </p>
           ) : null}
-          {notes.lead ? <Markdown text={notes.lead} headingLevel={3} /> : null}
+          {/* §11's byline is printed once: a lead paragraph that repeats it is not printed again. */}
+          {leadWithoutByline(notes.lead) ? <Markdown text={leadWithoutByline(notes.lead)} headingLevel={3} tables figure={figureUrl} /> : null}
           {notes.sections.map((s) => (
             <section key={s.id} id={s.id} className="bn-section" aria-labelledby={`${s.id}--h`}>
               <h3 id={`${s.id}--h`}>{s.title}</h3>
-              <Markdown text={s.body} headingLevel={3} />
+              <Markdown text={s.body} headingLevel={3} tables figure={figureUrl} />
             </section>
           ))}
+          {/* §1.0.1: the two lists as their own section, word for word (./scope.ts). */}
+          <section id={SCOPE_ID} className="bn-section bn-scope" aria-labelledby={`${SCOPE_ID}--h`}>
+            <h3 id={`${SCOPE_ID}--h`}>{SCOPE_TITLE}</h3>
+            {SCOPE_LISTS.map((l) => (
+              <div key={l.title} className="bn-scope-list">
+                <h4>{l.title}</h4>
+                <ul>
+                  {l.items.map((it) => (
+                    <li key={it}>{it}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </section>
         </article>
       </div>
     </div>

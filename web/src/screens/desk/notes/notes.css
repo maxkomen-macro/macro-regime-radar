@@ -141,6 +141,84 @@
 .bn-missing {
   margin-top: 14px;
 }
+/* The file's tables and figures (§11: a markdown render of the file). A wide table scrolls
+   inside its own region, never the page. */
+.bn-card .mrr-md-table {
+  margin: 10px 0;
+  overflow-x: auto;
+  border: 1px solid var(--dk-box);
+  border-radius: 6px;
+}
+.bn-card .mrr-md-table:focus-visible {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: 1px;
+}
+.bn-card .mrr-md-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 18px;
+}
+.bn-card .mrr-md-table th {
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dk-t3);
+  background: var(--dk-card-2);
+  border-bottom: 1px solid var(--dk-box);
+}
+.bn-card .mrr-md-table td {
+  padding: 7px 10px;
+  vertical-align: top;
+  color: var(--dk-t2);
+  border-top: 1px solid var(--dk-row);
+  min-width: 96px;
+}
+.bn-card .mrr-md-table tr:first-child td {
+  border-top: 0;
+}
+.bn-card .mrr-md-figure {
+  margin: 12px 0;
+}
+/* A figure at its own size: its words are drawn for it (1200px and more), and scaled to the card
+   they fell under the 12px floor; a wider one scrolls inside its region. */
+.bn-card .mrr-md-figure-scroll {
+  overflow-x: auto;
+  border-radius: 6px;
+}
+.bn-card .mrr-md-figure-scroll:focus-visible {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: 1px;
+}
+.bn-card .mrr-md-figure img {
+  display: block;
+  max-width: none;
+  height: auto;
+  border-radius: 6px;
+}
+.bn-card .mrr-md-figure-missing {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--dk-t3);
+}
+/* §1.0.1's section: the two lists under their own small heads. */
+.bn-scope h4 {
+  margin: 12px 0 4px;
+  font-family: var(--dk-serif);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--dk-t1);
+}
+.bn-scope ul {
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 20.5px;
+  color: var(--dk-t1);
+}
+.bn-scope li + li {
+  margin-top: 6px;
+}
 @media (max-width: 900px) {
   .bn-grid {
     grid-template-columns: minmax(0, 1fr);

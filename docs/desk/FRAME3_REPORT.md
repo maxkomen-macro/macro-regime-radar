@@ -1111,7 +1111,10 @@ A rewording in the Desk's own terms would clear both markers with no code
 change. For example: "Suggestive: don't size on it." and "… both clear the
 bar the engine sets for a Reliable read." A unit test pins the count at
 two, so any change to the file's holds, in either direction, fails it
-until this section and the count are updated.
+until this section and the count are updated. (Item 13 of the fold and
+alignment below changed that test: it now counts the file's own sentences
+that use either word, so it follows the file; your rewritten notes hold
+none. The two sentences above are those of the committed file.)
 
 **An owner action outside `web/` (B-1):** the image build copies only
 `web/` (`Dockerfile`, stage 1) and `.dockerignore` excludes `docs` and
@@ -2086,6 +2089,11 @@ The two lines for the API branch, exactly:
   `COPY docs/desk/BUILD_NOTES.md /build/docs/desk/BUILD_NOTES.md`
 - `.dockerignore`, after the `*.md` line:
   `!docs/desk/BUILD_NOTES.md`
+
+(Item 13 below: with the notes' figures, two more lines, `COPY
+docs/desk/screens/*.svg /build/docs/desk/screens/` beside the first and
+`!docs/desk/screens/*.svg` beside the second, or the image prints each
+figure as "Figure: … (not in this build)".)
 
 The glob in `BuildNotesPage.tsx` resolves from `/build/web/src/screens/desk/notes`
 to `/build/docs/desk/BUILD_NOTES.md`, which is where the `COPY` puts the
@@ -3474,7 +3482,7 @@ wins for numbers, labels and API shape").
   the page says "Inflation Falling" and "a print ≤ −0.39% m/m flips
   inflation to falling" together. Both follow §12.6.
 - The frame-2 engine panel in Advanced is still there; §4 retires it (v2
-  §8). It is left for you, as noted at item 4.
+  §8). It is left for you to retire; no item of this pass asked for it.
 - The Data Pipeline bridge card is titled "Snowflake bridge · schema and
   export"; §11 titles it "Proposed export schema (not the current SQLite
   layout)". Not changed here (a §11 title, not a §19 label).
@@ -3533,6 +3541,119 @@ and four of the nits.
 The fixes were checked by the four gates, the layout scan above and the
 tests above; the compare shots were re-shot after them.
 
+### Phase 2, item 13: Build Notes — `frame-3: align 13 build-notes`
+
+**What changed.** Build Notes prints §1.0.1's two lists as their own
+section, "Live / Designed, not yet served", word for word: the title, the
+"Live" and "Designed, not yet served" heads and all nineteen items, from
+`notes/scope.ts`, after the file's sections and last in the contents. It is
+the page's own text (§11 allows exactly this and the byline), so it stands
+when a build has no notes file. Of the Desk's banned words only
+"established" and "significant" are enforced on `docs/desk/BUILD_NOTES.md`
+(§11: "the file is the owner's prose"), still by the page's hold; the
+language scan keeps the whole list on every source file, `scope.ts`
+included.
+
+Your new `BUILD_NOTES.md` (uncommitted, not part of this commit) draws pipe
+tables and five figures from `docs/desk/screens/*.svg` (untracked). §11
+makes the page "a markdown render" of the file, so the renderer now draws
+both, for Build Notes only: `shell/Markdown.tsx` takes a `tables` flag and a
+`figure` resolver, which the assistant's panel does not pass, so a model's
+reply still never loads an image or draws a table. A figure resolves only to
+an SVG of `docs/desk/screens/` bundled with the build (`figureUrl`);
+otherwise the page says "Figure: <alt> (not in this build)". A figure is
+shown at its own size, since its words are drawn for 1200px and more and
+scaled to the card they fell to 2–8px; a wide figure or table scrolls
+inside its own region, a tab stop only while it scrolls. The dev server may
+read each SVG of that folder and no other file there (`vite.config.ts`).
+The page prints §11's byline once: a lead paragraph that only repeats it
+(your new file's line 3) is not printed again. Two fixes the file exposed: an underscore now
+emphasizes only at a word's edge, as in GitHub's Markdown, so
+"FRAME3_DATA_AUDIT.md" no longer prints as "FRAME3DATAAUDIT.md"; and a held
+sentence in a table is held cell by cell, a held caption as its whole
+figure, so the table keeps its shape. The held-sentence test now counts the
+file's own sentences, table cells, figure captions and code lines that use
+either word, so it follows the file rather than a fixed two (§10 above
+says so now). The figures' drawn text is scanned for the two words too.
+
+**Tests.** `BuildNotesPage.test.tsx` (the section against the spec's own
+§1.0.1 lines, read from `DESK_FRAME3_SPEC.md`; the contents; the section
+without the file; figures resolved or named; tables in reading order;
+holds in a table and a caption; the held count on a file with each kind;
+the byline once; every block of the file in order, figures and tables
+included); `desk-language.test.ts` (the file scanned for the two words
+only; the frame-2 words pass in it; the two frame-3 words are held; the
+figures' text); new `Markdown.test.tsx` (tables and figures only on
+request, a figure resolved or named, plain text for the assistant, a
+table named by its header's words, snake_case as written);
+`e2e/desk.spec.ts` (the contents mark reaches the new section at the foot
+and on a click). With your new file in place the Build Notes, language and
+shell suites pass too (128 tests), and the page shows its five figures and
+three tables with no sideways scroll at 390, the figures legible at their own
+size, the byline once.
+
+**Against the PNG.** 11 Build Notes: a last section, "Live / Designed, not
+yet served", with its two lists, where the PNG has none. §11: "nothing
+hardcoded except §11's byline … and the section 'Live / Designed, not yet
+served': §1.0.1's two lists, word for word." The section is also the last
+entry in the contents, which §11 draws "from the file's sections": a
+decision recorded here, so a reader can reach the section like any other.
+The PNG's article is the mockup's text; the page prints the file's (§11),
+with its tables and figures.
+
+**For you** (your file; nothing here edits it):
+- §9 says "The gate in the browser is a workflow check, and Build Notes
+  says so." Neither the committed file nor your new one says it, and the
+  page may add nothing beyond the byline and §1.0.1's section. One sentence
+  in the file closes it (V10-9).
+- The new file still carries its placeholders ("[N] findings across [R]
+  rounds", "[fill from FRAME3_DATA_AUDIT.md §8 …]").
+- The five SVGs are untracked; they need to go in with the file for the
+  figures to ship. The Docker image copies neither: R-15's two lines
+  (above) plus two for the figures, now written out there. On Vercel the
+  setting for files outside the root directory covers `screens/` too.
+- An SVG shown as an image cannot use the page's fonts, so the figures'
+  IBM Plex Mono falls back to the system's monospace (Courier on a Mac).
+  Outlining the text in the SVGs, or setting it in a system font, would fix
+  that.
+- The file's own section "Live, and designed but not yet served" and the
+  page's "Live / Designed, not yet served" sit next to each other in the
+  contents and list different things (the file's "Live" leaves out
+  Position Monitor and the Client view, which §1.0.1 lists as live).
+- The committed file holds two sentences for "established" (§10 quotes
+  them); your new one holds none.
+
+Verifier (one round): **PASS**, five should-fix and eight nits. The section
+matched §1.0.1 word for word on both builds at 1440, 1101 and 390; the
+exemption is exactly §11's; the assistant's replies still cannot load an
+image or draw a table, and `figureUrl` resolved the five SVGs and none of
+eleven other paths. Fixed, except where the owner has to act.
+- V13-1 the byline printed twice with your new file. **Fixed:** a lead
+  paragraph that repeats it is not printed.
+- V13-2 the figures, scaled to the card, set their words at 2–8px.
+  **Fixed:** shown at their own size, scrolling inside their region.
+- V13-3 the Docker hand-off lines left out the figures. **Fixed** in the
+  report (R-15's note above).
+- V13-4 §10 above still said the test pins the count at two. **Fixed.**
+- V13-5 §9's "Build Notes says so" is still unmet. Yours: one sentence in
+  the file (above).
+- V13-6 (nit) the held-count test would miss a caption or a code line.
+  **Fixed**, with a file that has each.
+- V13-7 (nit) a table's region label carried Markdown marks. **Fixed.**
+- V13-8 (nit) no gap after a table. **Fixed.**
+- V13-9 (nit) a table that does not scroll was a tab stop. **Fixed**, and a
+  figure likewise.
+- V13-10 (nit) the dev server could read every file of `docs/desk/screens`.
+  **Fixed:** its SVGs only (the mockup PNG answers 403).
+- V13-11 (nit) nothing checked the figures' text for the two words.
+  **Fixed.**
+- V13-12 (nit) the file's section and the page's sit side by side. Yours
+  (above).
+- V13-13 (nit) a comment named the wrong test. **Fixed.**
+
+The fixes were checked by the four gates and the tests above; the compare
+shot was re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -3570,6 +3691,7 @@ tests against the fixture dev server.
 | frame-3: align 10 positions | clean | 122 / 1,480 | ok | 56 / 56 |
 | frame-3: align 11 basket-hedge | clean | 122 / 1,462 | ok | 54 / 54 |
 | frame-3: align 12 fixtures | clean | 122 / 1,465 | ok | 54 / 54 |
+| frame-3: align 13 build-notes | clean | 123 / 1,477 | ok | 54 / 54 |
 
 ## Finish
 
@@ -3595,6 +3717,34 @@ fixtures`, after `f3c182a` and `7166f1c`), local only. Nothing is pushed.
 The round touched `web/` and `docs/desk/` only. R-15 is deferred to the
 API branch with its two lines. Gate summary at that tip: typecheck clean;
 unit 117 files / 1,375 tests; build ok; Desk browser tests 48 / 48.
+
+After the fold and alignment (above): the tip is the commit that carries
+this report, `frame-3: align 13 build-notes` (parent `1591bff frame-3: align
+12 fixtures`), on `desk/frame-3`, local only; the fold is `a863fc7` and the
+thirteen items follow it, one commit each (`f19d52d` … `1591bff`, then the
+tip). Nothing is pushed. Only `web/` and `docs/desk/` were touched; your
+uncommitted `docs/desk/BUILD_NOTES.md` and the five SVGs in
+`docs/desk/screens/` are left out of every commit. Gate summary at the tip,
+on a copy of the tree with the committed notes file: typecheck clean; unit
+123 files / 1,477 tests; build ok; Desk browser tests 54 / 54. With your new
+notes file in place, the Build Notes, language and shell suites pass too.
+
+For Max, from the fold and alignment:
+- **Spec conflicts to settle:** §12.2 makes the Client title the catalog
+  label, which carries a σ, and §11 says the Client view prints no σ;
+  §12.2's `provenance.entry_rule` is the engine's whole entry sentence, so
+  Event Study's provenance line runs three lines; Regime shows the K−2 row
+  beside next prints read from the latest print, so "Inflation Falling" and
+  "flips inflation to falling" sit together (item 12).
+- **Left for you:** the frame-2 engine panel in Advanced, which §4 retires;
+  the Data Pipeline bridge card's title, which §11 gives as
+  "Proposed export schema (not the current SQLite layout)"; the Event Study
+  headline's type size (21px, §4 says 17px) (item 12).
+- **Your notes file:** §9's sentence that the browser gate is a workflow
+  check; the two placeholders; the five SVGs to commit with it, and the
+  Docker lines for both (item 13, R-15).
+- **For session B (the API):** `api/calendar` has no 2023 holidays, which
+  the §12.8 rank window reaches until late 2026 (item 12, PROVENANCE.md).
 
 For Max:
 - **BUILD_NOTES.md** uses "established" twice (§10 quotes both sentences);
