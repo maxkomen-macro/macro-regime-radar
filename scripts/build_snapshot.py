@@ -82,6 +82,8 @@ def seed_freshness(entries: dict) -> dict:
         out["/api/freshness"] = fr
     for path, body in out.items():
         if path != "/api/freshness" and isinstance(body, dict) and isinstance(body.get("freshness"), dict):
+            if body["freshness"].get("status") == "awaiting":  # verifier V-53: no verdict to freeze
+                continue
             out[path] = {**body, "freshness": {k: _unknown(v) for k, v in body["freshness"].items()}}
     return out
 

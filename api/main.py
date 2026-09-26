@@ -37,6 +37,8 @@ from api import worker as worker_mod
 from api.db import NotStored
 from api import freshness as freshness_mod
 from api.chat import router as assistant_router
+from api import desk as desk_mod
+from api import provenance
 from api.desk import router as desk_router
 from api.providers import entitlements
 from api.providers import market as market_layer
@@ -226,6 +228,15 @@ async def _not_stored(_: Request, exc: NotStored) -> JSONResponse:
         status_code=503,
         content={"detail": str(exc), "kind": "not_stored", "provider": "api", "retryable": False},
     )
+
+
+@app.exception_handler(provenance.SchemaCheckFailed)
+async def _schema_check_failed(_: Request, exc: provenance.SchemaCheckFailed) -> JSONResponse:
+    """Codex R-27, verifier V-47: whether the Desk's store carries provenance could not be read.
+    Nothing is read without it; a route that reached the check (/api/freshness, the pipeline
+    inventory) fails closed with the Desk studies' structured 503, never a bare 500. A freshness
+    block elsewhere never reaches here: it says it is awaiting the check (verifier V-53)."""
+    return JSONResponse(status_code=503, headers={"Cache-Control": "no-store"}, content=desk_mod.schema_error_body(exc))
 
 
 @app.exception_handler(Exception)
@@ -629,7 +640,9 @@ class CreditSeries(BaseModel):
 class CreditOAS(BaseModel):
     as_of: str | None
     series: list[CreditSeries]
-    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
+    # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
+    # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
+    freshness: dict[str, Any] | None = None
 
 
 class RecessionMetrics(BaseModel):
@@ -653,7 +666,9 @@ class RecessionMetrics(BaseModel):
     data_as_of: str
     curve_shape: dict[str, float | None]  # tenors absent from raw_series are None
     current_inputs: dict[str, float | None]
-    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
+    # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
+    # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
+    freshness: dict[str, Any] | None = None
 
 
 class SignalFull(BaseModel):
@@ -670,7 +685,9 @@ class SignalFull(BaseModel):
 class SignalsLatestFull(BaseModel):
     date: str  # newest as-of date across the set
     signals: list[SignalFull]
-    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
+    # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
+    # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
+    freshness: dict[str, Any] | None = None
 
 
 class PricedMetric(BaseModel):
@@ -898,7 +915,9 @@ class CreditMetrics(BaseModel):
     ccc_sparkline: list[DatedValue]
     bb_sparkline: list[DatedValue]
     b_sparkline: list[DatedValue]
-    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
+    # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
+    # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
+    freshness: dict[str, Any] | None = None
 
 
 # ── Response models: Recession sensitivity ───────────────────────────────────
@@ -932,7 +951,9 @@ class LboDefaults(BaseModel):
     is_fallback: bool = False
     fedfunds_as_of: str | None = None
     hy_oas_as_of: str | None = None
-    freshness: dict[str, dict] | None = None  # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md
+    # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
+    # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
+    freshness: dict[str, Any] | None = None
 
 
 class LboRequest(BaseModel):
@@ -1468,7 +1489,8 @@ def api_lbo_defaults() -> LboDefaults:
 
     defaults = _guarded(analytics_cache.get_lbo_defaults)
     block = _freshness_block(["FEDFUNDS", "BAMLH0A0HYM2"])
-    block["lbo_all_in_rate"] = _all_in_state(defaults, block)
+    if block.get("status") != "awaiting":
+        block["lbo_all_in_rate"] = _all_in_state(defaults, block)
     return LboDefaults(**defaults, freshness=block)
 
 
@@ -1491,8 +1513,16 @@ def _series_states() -> dict[str, dict]:
     return {s["id"]: s for s in rep["series"]}
 
 
-def _freshness_block(ids: list[str]) -> dict[str, dict]:
-    states = _series_states()
+def _freshness_block(ids: list[str]) -> dict[str, Any]:
+    """The per-series states for `ids`. Verifier V-53: the freshness report also
+    reads whether the Desk's store carries provenance, and when that check cannot
+    run, an endpoint outside the Desk still serves its own data, with the block
+    saying its freshness is awaiting that check; only /api/freshness and the Desk
+    routes answer the 503."""
+    try:
+        states = _series_states()
+    except provenance.SchemaCheckFailed as exc:
+        return {"status": "awaiting", "reason": f"The freshness of these numbers could not be judged this time: {exc}"}
     return {i: states[i] for i in ids if i in states}
 
 

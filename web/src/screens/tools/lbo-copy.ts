@@ -16,6 +16,7 @@ import type { Freshness, LboDefaults, LboRequest, LboResult, SeriesState } from 
 import { fmtDate } from "../../lib/format";
 import { freshLabel, labelText, lookupFrom, normalizeState, type FreshLabel } from "../shared/fresh-state";
 import { MISSING, missingNote } from "../shared/screen-ui";
+import { awaitingLabel, isAwaitingBlock } from "../shared/useFreshReport";
 import type { StatusTone } from "../shared/SummaryCard";
 import type { TabHeroPillTone } from "../shared/TabHero";
 import { FALLBACK_RATE, irrTone, type IrrTone } from "./lbo-deal";
@@ -236,6 +237,13 @@ export function stampOf(d: LboDefaults | undefined | null): string | null {
  * the payload's block. Print a label with `labelText` (or its muted tail
  * beside it) so the "behind" part is never dropped (Acceptance F2). */
 export function componentAsOf(d: LboDefaults | undefined | null, f?: Freshness | null): { fed: FreshLabel; hy: FreshLabel } {
+  // An awaiting block (the Desk store's schema check could not run) overrides
+  // a cached report's dates, as in useFreshReport (desk/hardening, Codex R-31).
+  const block = d?.freshness;
+  if (isAwaitingBlock(block)) {
+    const label = awaitingLabel(block);
+    return { fed: label, hy: label };
+  }
   const look = lookupFrom(f, d?.freshness);
   return { fed: freshLabel(look("FEDFUNDS")), hy: freshLabel(look("BAMLH0A0HYM2")) };
 }
@@ -257,6 +265,7 @@ const STATE_RANK: Record<string, number> = { live: 0, close: 0, delayed: 1, stal
  * weaker component's alone, a tie going to the one further behind (the
  * summary rows print both). */
 export function componentDetail(d: LboDefaults, f?: Freshness | null): string {
+  if (isAwaitingBlock(d.freshness)) return awaitingLabel(d.freshness).reason; // no date to print (Codex R-31)
   const { fed, hy } = componentAsOf(d, f);
   const both = `Fed ${labelText(fed)} · HY ${labelText(hy)}`;
   if (both.length <= STRIP_LINE_CHARS) return both;
@@ -291,6 +300,10 @@ export function lboStrip(defaults: DefaultsLike, snapshot = false, f?: Freshness
   // each component's as-of word; a state the UI does not know reads unknown
   // and never a healthy tone.
   const block = defaults.data.freshness;
+  if (isAwaitingBlock(block)) {
+    // no date is known for these numbers: the caution tone and the server's reason (Codex R-31)
+    return { tone: "amber", title: "FRED rate · as of —", detail: awaitingLabel(block).reason };
+  }
   if (block) {
     const detail = componentDetail(defaults.data, f);
     switch (normalizeState(block.lbo_all_in_rate?.state)) {

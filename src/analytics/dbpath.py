@@ -144,9 +144,16 @@ def _read_only_authorizer(action: int, arg1, arg2, db_name, trigger) -> int:
     return sqlite3.SQLITE_DENY
 
 
-# The same rule for any read connection that runs SQL it did not write (the
-# assistant's query tool, launch-1).
+# The same rule for a read connection to the file that runs SQL it did not
+# write (the assistant's query tool, launch-1). Never on a connection to a
+# generation's copy (verifier V-51, below).
 read_only_authorizer = _read_only_authorizer
+
+
+def is_copy(conn: sqlite3.Connection) -> bool:
+    """Whether `conn` reads a generation's in-memory copy (its main database has no file)."""
+    row = conn.execute("PRAGMA database_list").fetchone()
+    return row is not None and not row[2]
 
 
 def open_generation(gen: GenerationRef, factory: type = sqlite3.Connection) -> Optional[sqlite3.Connection]:
@@ -154,17 +161,27 @@ def open_generation(gen: GenerationRef, factory: type = sqlite3.Connection) -> O
     has been released (its name would open a new, empty database)."""
     conn = sqlite3.connect(gen.uri, uri=True, factory=factory)
     try:
+        # Read-only by the connection's own mode, and by nothing written in Python
+        # (verifier V-51). SQLite runs an authorizer while it holds the copy's
+        # shared-cache lock; a garbage collection inside it that finalized another
+        # connection to the same copy needed that lock too, and the reader waited for
+        # good, taking every reader of the copy with it. A shared-cache memory database
+        # cannot be opened with a read-only URI (`mode=ro` beside `mode=memory` opens
+        # nothing), so query_only is the mode, with no database attachable: query_only
+        # refuses every write, temp tables and VACUUM INTO included, and the attach
+        # limit refuses ATTACH and the file VACUUM INTO would create. query_only is a
+        # pragma: only the app's own SQL runs on these connections, and the assistant's
+        # query tool, whose guard bans PRAGMA, opens and closes a connection per call,
+        # so a flip could never reach a second statement (launch-1, re-audit NG-2).
         conn.execute("PRAGMA query_only = 1")
-        # query_only is a pragma, and a pragma can be turned off again by
-        # whoever runs the next statement. The generation is a shared-cache
-        # copy every reader and every screen sees, so the connection also
-        # carries an authorizer that denies anything but reading: a flip
-        # cannot make it writable (launch-1, re-audit NG-2).
-        conn.set_authorizer(_read_only_authorizer)
+        conn.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED, 0)
         if conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone() is not None:
             return conn
     except sqlite3.Error:
         pass
+    except BaseException:
+        sqlite3.Connection.close(conn)  # on any failure, a MemoryError included (Codex R-36)
+        raise
     sqlite3.Connection.close(conn)  # the base close: a factory may make close() a no-op
     return None
 
@@ -191,6 +208,64 @@ def connect_ro(path: Path | str) -> sqlite3.Connection:
         if conn is not None:
             return conn
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+
+
+def _private_of(gen: GenerationRef) -> Optional[sqlite3.Connection]:
+    """A connection to `gen`'s private copy (Codex R-34), or None when it has none
+    (a retired generation). A reference without the method is read as it is."""
+    private = getattr(gen, "private", None)
+    if private is None:
+        return open_generation(gen)
+    ref = private()
+    return open_generation(ref) if ref is not None else None
+
+
+def connect_private_ro(path: Path | str) -> sqlite3.Connection:
+    """A read-only connection for SQL the app did not write (the assistant's,
+    Codex R-34): the generation's private copy, never the shared copy every
+    other reader waits on. A model's query can hold a copy's lock for as long as
+    a single SQL function runs, uninterrupted, so it holds only its own. Built on
+    first use from the generation's copy; the served generation's for a request
+    whose pinned one has been retired; the file itself before the first
+    generation."""
+    gen = generation_for(path)
+    if gen is not None:
+        conn = _private_of(gen)
+        if conn is None:
+            served = served_for(path)
+            if served is not None and served is not gen:
+                conn = _private_of(served)
+        if conn is not None:
+            return conn
+    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+
+
+# a per-call copy is taken in steps of this many pages, so a reader of the source waits at most
+# one step while it is made (verifier V-80)
+CALL_COPY_PAGES = 64
+
+
+def copy_private_ro(path: Path | str) -> sqlite3.Connection:
+    """A read-only copy of `path`'s data for one call (verifier V-80), which the
+    caller closes: the assistant's SQL, which a model writes, holds only its own
+    copy's lock. A query whose functions run uninterrupted held the generation's
+    private copy 17 s, and every other visitor's tool calls waited as long. The
+    copy is a plain in-memory database backed up from the generation's private
+    copy (connect_private_ro; the file itself before the first generation), in
+    steps, and is read-only by its own mode: query_only, no database attachable."""
+    src = connect_private_ro(path)
+    try:
+        dst = sqlite3.connect(":memory:")
+        try:
+            src.backup(dst, pages=CALL_COPY_PAGES)
+            dst.execute("PRAGMA query_only = 1")
+            dst.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED, 0)
+        except BaseException:
+            dst.close()
+            raise
+        return dst
+    finally:
+        src.close()
 
 
 def current_key(path: Path | str) -> tuple | None:

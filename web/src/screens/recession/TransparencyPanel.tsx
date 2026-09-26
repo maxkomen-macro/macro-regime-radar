@@ -154,7 +154,10 @@ function DivergenceTile({ m }: { m: RecessionMetrics }): JSX.Element {
 }
 
 function ModelCardTile({ m }: { m: RecessionMetrics }): JSX.Element {
-  const through = inputsThrough(useFreshReport().group).text;
+  // The payload's block passed like on the screen: an awaiting block overrides
+  // a cached report's dates (desk/hardening, Codex R-31).
+  const report = useFreshReport();
+  const through = inputsThrough((ids) => report.group(ids, m.freshness)).text;
   // The six rows (RecessionScreen.tsx:660-679 before Phase 7), verbatim; no "Last refit" (F4).
   const rows: [string, string][] = [
     ["Estimator", "Logistic regression, class-balanced"],

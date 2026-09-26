@@ -28,6 +28,17 @@ reason to wait: that file publishes at once. An answer that is a fact about the 
 is not a failure. A file that cannot be staged at all leaves the last good
 generation serving, is retried with a backoff, and is reported in last_error.
 
+An item that failed to import its module (ImportError, desk/hardening R-01: a
+transient first import of src.desk.event_study left the Desk's items failed
+for the life of the generation, because nothing rebuilds a file whose key has
+not moved) gets its generation rebuilt from the same file, whole, after
+IMPORT_RETRY_S, then twice and four times that, at most IMPORT_RETRY_ATTEMPTS
+times. A rebuild publishes only when it answers strictly more than the
+generation it would replace (an item that failed now answers, and none that
+answered fails); otherwise it is dropped and the served generation stands. A
+result is never patched into a published generation: the rebuild is its own
+generation, from its own copy, so one response still reads one generation.
+
 Before the first generation exists, a request waits up to WAIT_S seconds for
 it, then gets 503 with Retry-After and a "warming" body; /health/ready reports
 ready only once the first pass has completed.
@@ -52,7 +63,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from api import db
+from api import calendar as _cal
+from api import db, provenance
 from src.analytics import dbpath
 
 log = logging.getLogger("mrr.worker")
@@ -74,6 +86,10 @@ PREFETCH_EVERY_S = 10.0
 # units in one session day. It now waits 2, 4, 8, 16 then 30 minutes.
 PREFETCH_BACKOFF_BASE_S = 120.0
 PREFETCH_BACKOFF_MAX_S = 1800.0
+# the exponent's clamp (verifier V-81, R-37's bug in the prefetch): past 1,024 failures
+# 2 ** 1024 overflowed a float inside the error handler, before the backoff was stored, so
+# every tick made a billed call again; 2 ** 16 is past the cap already
+PREFETCH_BACKOFF_EXP_MAX = 16
 _prefetch_backoff: dict[tuple[str, str], tuple[float, int]] = {}
 _prefetch_backoff_lock = threading.Lock()
 
@@ -82,8 +98,16 @@ def reset_prefetch_backoff() -> None:
     with _prefetch_backoff_lock:
         _prefetch_backoff.clear()
 STAGE_RETRY_MAX_S = 60.0  # an unreadable file is retried after 2, 4, 8 … s, at most this far apart
+# the exponent's clamp (Codex R-37): 2 ** 1024 overflowed a float after 1,023 failed attempts;
+# 2 ** 16 is past the cap already, so the clamp changes no delay
+STAGE_RETRY_EXP_MAX = 16
+# the assistant's private copy is copied in steps of this many pages, so a reader of the shared
+# copy waits at most one step while it is built (Codex R-34)
+PRIVATE_COPY_PAGES = 64
 HOLD_ATTEMPTS = 3  # builds of a new file whose items fail before it publishes with the failures as errors
 HOLD_RETRY_S = 30.0  # the first retry of a held file comes after this long, then doubles
+IMPORT_RETRY_ATTEMPTS = 3  # rebuilds of the served file while an item's import failed (R-01), then it stands
+IMPORT_RETRY_S = 10.0  # the first such rebuild comes after this long, then doubles (10, 20, 40 s)
 
 # A full garbage collection walks every tracked object; after the libraries
 # load and the first generation builds that is ~180k of them, ~30 ms idle and
@@ -121,18 +145,61 @@ class Generation:
     errors: dict[str, BaseException] = field(default_factory=dict)
     item_ms: dict[str, float] = field(default_factory=dict)
     staged_at: str = ""
+    as_of: str = ""  # the New York date the copy was staged: the Desk reads no row dated after it (review R-06)
     built_at: str | None = None
     build_ms: float | None = None
+    # Codex R-34: the assistant's own copy of this generation, built on its first query
+    private_uri: str | None = None
+    private_anchor: sqlite3.Connection | None = None
+    _private_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def private(self) -> "PrivateCopy | None":
+        """The assistant's private copy of this generation (Codex R-34), built on
+        first use from this generation's own copy and held until retirement: its
+        SQL, which a model writes, never takes the shared copy's lock that every
+        other reader waits on. None once the generation is retired."""
+        with self._private_lock:
+            if self.private_uri is None:
+                if self.anchor is None:
+                    return None
+                uri = f"file:mrr-gen-{os.getpid()}-{next(_URI_SEQ)}-private?mode=memory&cache=shared"
+                dst = sqlite3.connect(uri, uri=True, check_same_thread=False)
+                try:
+                    self.anchor.backup(dst, pages=PRIVATE_COPY_PAGES)
+                except BaseException:
+                    dst.close()
+                    raise
+                self.private_uri, self.private_anchor = uri, dst
+            return PrivateCopy(uri=self.private_uri, source=self.source, key=self.key, as_of=self.as_of)
 
     def close(self) -> None:
-        """Release the anchor. Readers still holding a connection keep the
-        in-memory copy alive until they move to the next generation."""
-        if self.anchor is not None:
-            try:
-                self.anchor.close()
-            except sqlite3.Error:
-                pass
-            self.anchor = None
+        """Release the anchor, and the assistant's private copy with it. Readers
+        still holding a connection keep an in-memory copy alive until they move
+        to the next generation."""
+        with self._private_lock:
+            for name in ("anchor", "private_anchor"):
+                conn = getattr(self, name)
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except sqlite3.Error:
+                        pass
+                    setattr(self, name, None)
+            self.private_uri = None
+
+
+@dataclass(frozen=True)
+class PrivateCopy:
+    """A generation's private copy as dbpath.open_generation reads it."""
+
+    uri: str
+    source: Path
+    key: tuple
+    as_of: str = ""
+
+
+class _SnapshotMoved(Exception):
+    """The file's key changed between its sampling and the end of its copy (R-11)."""
 
 
 def _detached(exc: BaseException) -> BaseException:
@@ -157,6 +224,14 @@ def _fact_about_the_file(exc: BaseException) -> bool:
     Desk's. A new file answering this way publishes at once: holding it back
     keeps nothing the file could give (verifier V-01)."""
     return isinstance(exc, db.NotStored) or getattr(exc, "awaiting_refresh", False) is True
+
+
+def _failed_import(exc: BaseException) -> bool:
+    """An item's error that may clear on its own: its module did not import
+    (desk/hardening R-01). A module half-imported during a deploy, or a
+    race on the first import, succeeds on the next attempt; a package that is
+    really missing fails every time, which the retry bound caps."""
+    return isinstance(exc, ImportError)
 
 
 def _fresh(exc: BaseException) -> BaseException:
@@ -248,7 +323,7 @@ def prefetch_tick() -> int:
                     fetched += 1
             except ProviderError as exc:
                 failures += 1
-                wait = min(PREFETCH_BACKOFF_BASE_S * 2 ** (failures - 1), PREFETCH_BACKOFF_MAX_S)
+                wait = min(PREFETCH_BACKOFF_BASE_S * 2 ** min(failures - 1, PREFETCH_BACKOFF_EXP_MAX), PREFETCH_BACKOFF_MAX_S)
                 with _prefetch_backoff_lock:
                     _prefetch_backoff[key] = (now + wait, failures)
                 log.info("prefetch %s %s: %s; next try in %d s", sym, rk, exc.kind, wait)
@@ -280,6 +355,7 @@ class AnalyticsWorker:
         self._current: Generation | None = None
         self._retired: Generation | None = None  # the one before, readable until the next publish
         self._failed: tuple[tuple, int, float] | None = None  # (file key, attempts, retry at): an unstageable file
+        self.snapshots_moved = 0  # copies discarded because the file moved while they were taken (R-11)
         self._hold: tuple[tuple, int, float] | None = None  # (file key, attempts, retry at): a file whose items failed
         self._ids = itertools.count(1)
         self._thread: threading.Thread | None = None
@@ -297,6 +373,11 @@ class AnalyticsWorker:
         self.freeze_gc = False  # the API's lifespan turns it on (GC_FREEZE); tests keep a normal heap
         self.hold_retry_s = HOLD_RETRY_S
         self._held: dict | None = None  # a new file held back: its name, the attempts, the items that failed
+        self.import_retry_s = IMPORT_RETRY_S
+        # (file key, rebuilds so far, rebuild at, items): the served generation
+        # has items whose import failed; rebuild it from the same file (R-01)
+        self._rebuild: tuple[tuple, int, float, list[str]] | None = None
+        self._rebuild_note: str | None = None  # the R-01 sentence last_error carries while it stands
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -380,8 +461,12 @@ class AnalyticsWorker:
             return
         if cur is not None and cur.key == key and _same_path(cur.source, src):
             if self._held is not None or self._failed is not None:  # the file went back to the one being served
-                self._held, self.last_error = None, None
+                # (a rebuild's staging error included: the R-01 note is what still stands, V-02)
+                self._held, self.last_error = None, self._rebuild_note
             self._failed = self._hold = None
+            r = self._rebuild
+            if r is not None and r[0] == key and time.monotonic() >= r[2]:
+                self._build(src, key, rebuild=True)  # R-01: an item's import failed; the same file, rebuilt whole
             return
         for blocked in (self._failed, self._hold):
             if blocked is not None and blocked[0] == key and time.monotonic() < blocked[2]:
@@ -391,30 +476,63 @@ class AnalyticsWorker:
     def _stage(self, src: Path, key: tuple) -> Generation | None:
         gid = next(self._ids)
         uri = f"file:mrr-gen-{os.getpid()}-{next(_URI_SEQ)}?mode=memory&cache=shared"
-        anchor = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        anchor: sqlite3.Connection | None = None
         try:
+            anchor = sqlite3.connect(uri, uri=True, check_same_thread=False)  # inside the handler (Codex R-35)
             source = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
             try:
                 source.backup(anchor)
             finally:
                 source.close()
-        except sqlite3.Error as exc:
+            # R-11 (the API plan's review): the copy is this key's only if the file did not move
+            # between the key's sampling and the end of the backup (a commit before the backup
+            # copied the next file under this one's key); every build, not only a rebuild (V-03)
+            if dbpath.file_key(src) != key:
+                raise _SnapshotMoved()
+            # one instant for both stamps, its New York date through the session calendar's zone (V-20)
+            staged = datetime.now(timezone.utc)
+            # Codex R-14: the Desk's provenance on the copy (the file stays read-only); a store the
+            # refresh has not migrated yet reads its rows as the pre-provenance run's
+            provenance.migrate(anchor, staged)
+        except _SnapshotMoved:
             anchor.close()
+            raise
+        except BaseException as exc:
+            if anchor is not None:  # on every failure, not only SQLite's (verifier V-64): a MemoryError from backup, a ValueError
+                anchor.close()
+            if not isinstance(exc, Exception):
+                raise  # an interpreter exit or an interrupt, not a staging failure
+            # any staging failure backs off, not only SQLite's (verifier V-73): an error that is not
+            # SQLite's re-copied the whole file at every poll and left the state at "building"
             attempts = self._failed[1] + 1 if self._failed is not None and self._failed[0] == key else 1
-            self._failed = (key, attempts, time.monotonic() + min(STAGE_RETRY_MAX_S, 2.0 ** attempts))
-            self.last_error = f"staging {src.name}: {exc} (attempt {attempts}; the last good generation keeps serving)"
+            self._failed = (key, attempts, time.monotonic() + min(STAGE_RETRY_MAX_S, 2.0 ** min(attempts, STAGE_RETRY_EXP_MAX)))
+            what = str(exc) if isinstance(exc, sqlite3.Error) else f"{type(exc).__name__}: {exc}"
+            self.last_error = f"staging {src.name}: {what} (attempt {attempts}; the last good generation keeps serving)"
             if attempts == 1 or attempts % 10 == 0:
-                log.warning("could not stage %s (attempt %d): %s", src, attempts, exc)
+                log.warning("could not stage %s (attempt %d): %s", src, attempts, what)
             self.state = "ready" if self._current is not None else "error"
             return None
         self._failed = None
-        return Generation(id=gid, key=key, source=src, uri=uri, anchor=anchor, owner=self, staged_at=_now_iso())
+        return Generation(id=gid, key=key, source=src, uri=uri, anchor=anchor, owner=self,
+                          staged_at=staged.strftime("%Y-%m-%dT%H:%M:%SZ"), as_of=staged.astimezone(_cal.NY).date().isoformat())
 
-    def _build(self, src: Path, key: tuple) -> None:
+    def _build(self, src: Path, key: tuple, *, rebuild: bool = False) -> None:
         self.state = "building"
         t0 = time.perf_counter()
-        gen = self._stage(src, key)
+        try:
+            gen = self._stage(src, key)
+        except _SnapshotMoved:
+            # R-11 (V-03 for every build): the file moved while its copy was taken, so the copy
+            # may hold another file under this key. Dropped, with no backoff and no rebuild
+            # attempt: the next poll copies the file under its own key.
+            self.snapshots_moved += 1
+            self.state = "ready" if self._current is not None else "idle"
+            log.info("staging %s: the file changed during its copy; discarded, the next poll copies it again", src)
+            return
         if gen is None:
+            if rebuild and self._current is not None:
+                # a rebuild that could not stage its copy is one of its attempts
+                self._schedule_rebuild(self._current, done=(self._rebuild[1] if self._rebuild is not None else 0) + 1)
             return
         if self._build_gate is not None:
             while not self._build_gate.wait(0.05):
@@ -482,6 +600,9 @@ class AnalyticsWorker:
             except Exception as exc:  # noqa: BLE001 — a request will compute them instead
                 log.warning("generation %d: stored maxima not precomputed: %s", gen.id, exc)
         cur = self._current
+        if rebuild:
+            self._finish_rebuild(gen, cur, t0)
+            return
         # Hold back only for a regression: an item the served generation
         # answers well. One it already answers as an error (or as NotStored)
         # has no good result to keep, and waiting would only make every
@@ -510,13 +631,71 @@ class AnalyticsWorker:
         gen.built_at = _now_iso()
         self._publish(gen)
 
-    def _publish(self, gen: Generation) -> None:
+    def _finish_rebuild(self, gen: Generation, cur: Generation | None, t0: float) -> None:
+        """R-01: a rebuild of the served file publishes only when it answers
+        strictly more than the served generation: at least one item that failed
+        there answers here, and nothing that answered there fails here. Else it
+        is dropped whole and the served generation stands."""
+        done = (self._rebuild[1] if self._rebuild is not None else 0) + 1
+        recovered = sorted(n for n in (cur.errors if cur is not None else {}) if n in gen.results)
+        lost = sorted(n for n in gen.errors if cur is not None and n in cur.results)
+        if cur is None or cur.key != gen.key or not recovered or lost:
+            gen.close()
+            self.state = "ready"
+            log.warning("rebuild %d of %s dropped: recovered %s, failed %s; generation %s keeps serving",
+                        done, gen.source.name, ", ".join(recovered) or "nothing", ", ".join(lost) or "nothing",
+                        cur.id if cur is not None else None)
+            if cur is not None:
+                self._schedule_rebuild(cur, done=done)
+            return
+        gen.build_ms = round((time.perf_counter() - t0) * 1000, 1)
+        gen.built_at = _now_iso()
+        self._publish(gen, rebuilds=done)
+        log.info("rebuild %d of %s published as generation %d: %s now answer", done, gen.source.name, gen.id, ", ".join(recovered))
+
+    def _next_rebuild(self, gen: Generation, *, done: int) -> tuple[tuple | None, str | None]:
+        """R-01: the rebuild to schedule while `gen` is served, `done` rebuilds
+        of its file so far, and the sentence last_error carries meanwhile.
+        None while every item imported; None, with the sentence, after
+        IMPORT_RETRY_ATTEMPTS rebuilds."""
+        failed = sorted(n for n, e in gen.errors.items() if _failed_import(e))
+        if not failed:
+            return None, None
+        if done >= IMPORT_RETRY_ATTEMPTS:
+            return None, (f"generation {gen.id}: {', '.join(failed)} failed to import after {done} rebuilds of "
+                          f"{gen.source.name}; they answer with that error until the file changes")
+        wait = self.import_retry_s * 2 ** done
+        return (gen.key, done, time.monotonic() + wait, failed), (
+            f"generation {gen.id}: {', '.join(failed)} failed to import; rebuilding {gen.source.name} "
+            f"in {wait:.0f} s (rebuild {done + 1} of {IMPORT_RETRY_ATTEMPTS})")
+
+    @staticmethod
+    def _log_rebuild(state: tuple | None, note: str | None) -> None:
+        if note:
+            (log.warning if state is not None else log.error)("%s", note)
+
+    def _schedule_rebuild(self, gen: Generation, *, done: int) -> None:
+        """After a rebuild that published nothing (dropped, or its copy could
+        not be staged): the served generation's next rebuild, if any."""
+        state, note = self._next_rebuild(gen, done=done)
+        with self._cond:
+            self._rebuild, self._rebuild_note = state, note
+            if note:
+                self.last_error = note
+        self._log_rebuild(state, note)
+
+    def _publish(self, gen: Generation, *, rebuilds: int = 0) -> None:
+        """Serve `gen`. Its R-01 rebuild state (`rebuilds` of its file so far)
+        is set with it, under the same lock, so status() read the instant it is
+        visible already agrees with it (V-04)."""
+        state, note = self._next_rebuild(gen, done=rebuilds)
         with self._cond:
             old, self._current = self._current, gen
             released, self._retired = self._retired, old
             self.builds += 1
             self.state = "ready"
-            self.last_error = None
+            self.last_error = note
+            self._rebuild, self._rebuild_note = state, note
             self._held = None
             self._hold = None
             self._cond.notify_all()
@@ -527,6 +706,7 @@ class AnalyticsWorker:
             released.close()
         log.info("generation %d published in %.0f ms: %d results, %d errors (%s)", gen.id, gen.build_ms or 0,
                  len(gen.results), len(gen.errors), ", ".join(sorted(gen.errors)) or "none")
+        self._log_rebuild(state, note)
 
     # ── serving ──────────────────────────────────────────────────────────
 
@@ -589,20 +769,23 @@ class AnalyticsWorker:
         return self._current
 
     def status(self) -> dict:
-        gen = self._current
+        with self._cond:  # the generation and its rebuild state, as one publish set them (V-04)
+            gen, rebuild, held, last_error = self._current, self._rebuild, self._held, self.last_error
         src = Path(db.DB_PATH)
         return {
             "state": self.state,
             "serving": self.serving,
             "generation": gen.id if gen else None,
             "built_at": gen.built_at if gen else None,
+            "as_of": gen.as_of if gen else None,
             "build_ms": gen.build_ms if gen else None,
             "results": len(gen.results) if gen else 0,
             "errors": sorted(gen.errors) if gen else [],
-            "held": dict(self._held) if self._held else None,
+            "held": dict(held) if held else None,
+            "rebuild": {"items": list(rebuild[3]), "done": rebuild[1], "of": IMPORT_RETRY_ATTEMPTS} if rebuild else None,
             "current_with_file": bool(gen and gen.key == dbpath.file_key(src) and _same_path(gen.source, src)),
             "builds": self.builds,
-            "last_error": self.last_error,
+            "last_error": last_error,
         }
 
 

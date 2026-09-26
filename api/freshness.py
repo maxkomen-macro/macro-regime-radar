@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from api import calendar as cal
+from api import provenance
 
 # Monthly regime inputs and their publication rule: (series, release-day-of-
 # month after which last month's print is expected). UNRATE is the Employment
@@ -125,19 +126,68 @@ def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, wate
 # REFRESH_TIER), mirrored here because this module stays stdlib + api/
 # (scripts/validate_db.py runs it on the lean installs; tests/test_workflows.py
 # pins it). tests/test_desk_api.py pins the mirror to the registry. Rates and
-# spreads follow the bond calendar, VIX the NYSE's (desk/integration).
-DESK_REFRESH_SERIES: dict[str, dict[str, str]] = {
-    "DGS10": {"label": "10Y Treasury", "kind": "fred", "calendar": "bond"},
-    "DGS2": {"label": "2Y Treasury", "kind": "fred", "calendar": "bond"},
-    "T10Y2Y": {"label": "2s10s curve", "kind": "fred", "calendar": "bond"},
-    "VIXCLS": {"label": "VIX", "kind": "fred", "calendar": "nyse"},
-    "BAMLH0A0HYM2": {"label": "US HY OAS", "kind": "fred", "calendar": "bond"},
+# spreads follow the bond calendar, everything else the NYSE's (desk/integration).
+# `tier` is the registry's: the drawer's verdict and scripts/validate_db.py judge
+# tier 1 and report tier 2 without judging it (desk/hardening, 2026-09-23).
+DESK_REFRESH_SERIES: dict[str, dict] = {
+    "DGS10": {"label": "10Y Treasury", "kind": "fred", "calendar": "bond", "tier": 1},
+    "DGS2": {"label": "2Y Treasury", "kind": "fred", "calendar": "bond", "tier": 1},
+    "T10Y2Y": {"label": "2s10s curve", "kind": "fred", "calendar": "bond", "tier": 1},
+    "VIXCLS": {"label": "VIX", "kind": "fred", "calendar": "nyse", "tier": 1},
+    "BAMLH0A0HYM2": {"label": "US HY OAS", "kind": "fred", "calendar": "bond", "tier": 1},
+    "DCOILWTICO": {"label": "WTI crude", "kind": "fred", "calendar": "nyse", "tier": 2},
+    "^NDX": {"label": "Nasdaq 100", "kind": "market", "calendar": "nyse", "tier": 2},
+    "DX-Y.NYB": {"label": "US Dollar Index", "kind": "market", "calendar": "nyse", "tier": 2},
+    "JPY=X": {"label": "USD/JPY", "kind": "market", "calendar": "nyse", "tier": 2},
+}
+# A Desk series its source publishes less often than daily: current within
+# `tolerance` business days rather than DAILY_TOLERANCE. EIA publishes the WTI
+# spot series weekly (FRED DCOILWTICO): on 2026-09-22 after the close the newest
+# print was 2026-09-15, five business days back, the usual gap before a release.
+# The registry declares each WTI print known at 13:00 ET on the eighth business
+# day after its date (review R-01), so the newest print due is at most eight
+# business days back: the tolerance is that rule's, stated in the row's reason.
+DESK_SLOW_PUBLICATION: dict[str, dict] = {
+    "DCOILWTICO": {"tolerance": 8, "published": "EIA publishes it weekly and each print is taken as known "
+                                                 "at 13:00 ET on the eighth business day after its date"},
 }
 
 
+# A stored Desk row the engine's reader keeps (src/desk/event_study.load_level): its date
+# ISO-shaped text naming a real day on or after the floor (verifiers V-22, V-26), its value
+# a number (V-14). Freshness reads the newest date among such rows, never the raw MAX
+# (verifier V-27: a junk date that sorts last made a series read "not stored yet"). The
+# floor is pinned equal to the engine's DATE_FLOOR by tests/test_desk_api.py; the registry's
+# earliest declared start is 1962.
+DESK_DATE_FLOOR = "1900-01-01"
+
+
+def desk_readable_sql(date_col: str = "date", value_col: str = "value") -> str:
+    """SQL for a stored Desk row the reader keeps (before its as-of cut). SQLite's
+    date() returns NULL for '1999-99-99' and normalizes '2010-02-30', so
+    `date(d) = d` holds only for YYYY-MM-DD text naming a real day."""
+    return (f"(typeof({date_col}) = 'text' AND COALESCE(date({date_col}) = {date_col}, 0) "
+            f"AND {date_col} >= '{DESK_DATE_FLOOR}' AND typeof({value_col}) IN ('real', 'integer'))")
+
+
+# Codex R-14, R-15 (desk/hardening): which stored rows the Desk's reader keeps is decided by
+# provenance (api/provenance.py), no longer by the `advanced_at` watermark (verifier V-34): in a
+# migrated store, a row a committed refresh wrote, dated on or before that run's New York date.
+def desk_latest_query(as_of: str, migrated: bool) -> tuple[str, list]:
+    """SQL and parameters for each desk_series series' newest row the reader keeps (V-27):
+    readable, dated on or before `as_of`, and in a migrated store written by a committed run
+    and dated on or before its New York date."""
+    readable = desk_readable_sql("d.date", "d.value")
+    if not migrated:
+        return (f"SELECT d.series_id, MAX(d.date) FROM desk_series d WHERE {readable} AND d.date <= ? "
+                "GROUP BY d.series_id", [as_of])
+    return (f"SELECT d.series_id, MAX(d.date) FROM desk_series d {provenance.COMMITTED_JOIN} "
+            f"WHERE {readable} AND d.date <= ? AND r.run_id IS NOT NULL AND d.date <= r.as_of GROUP BY d.series_id", [as_of])
+
+
 def desk_refresh_specs() -> list[dict]:
-    """The series the drawer's desk_series verdict judges, in registry order."""
-    return [{"id": sid, **meta} for sid, meta in DESK_REFRESH_SERIES.items()]
+    """The series the drawer's desk_series verdict reads, in registry order."""
+    return [{"id": sid, **meta, **DESK_SLOW_PUBLICATION.get(sid, {})} for sid, meta in DESK_REFRESH_SERIES.items()]
 
 
 def desk_series_states(*, stored: dict[str, str] | None, specs: list[dict], watermarks: dict | None,
@@ -152,7 +202,9 @@ def desk_series_states(*, stored: dict[str, str] | None, specs: list[dict], wate
     (current within DAILY_TOLERANCE business days of the newest print due, on
     the bond calendar for rates and spreads). The writer's per-series watermark
     (`desk:<id>`) adds what the last refresh saw: a failed fetch, or a source
-    serving less history than the registry declares."""
+    serving less history than the registry declares. A spec may carry its own
+    `tolerance` and `published` sentence (DESK_SLOW_PUBLICATION: WTI is
+    published weekly)."""
     now = now or datetime.now(timezone.utc)
     today_ny = now.astimezone(cal.NY).date()
     out: list[dict] = []
@@ -171,13 +223,18 @@ def desk_series_states(*, stored: dict[str, str] | None, specs: list[dict], wate
             out.append(_state(rid, label, kind, "daily", None, "unknown", reason=why))
             continue
         exp, lag = _daily_expected_and_lag(d, today_ny, spec.get("calendar") == "bond")
-        state = "close" if lag <= DAILY_TOLERANCE else "stale"
+        tolerance = int(spec.get("tolerance", DAILY_TOLERANCE))
+        state = "close" if lag <= tolerance else "stale"
         reason = (f"{label} observed {d.isoformat()}, the newest print due." if lag == 0
                   else f"{label} observed {d.isoformat()}; {lag} business day(s) behind the {exp.isoformat()} print.")
+        if spec.get("published"):
+            reason += f" {spec['published']}, so a print up to {tolerance} business days old is current."
         if wm.get("status") == "short":
             reason += f" The source serves less history than the registry declares ({wm.get('detail')})."
         elif wm.get("status") == "error":
             reason += f" The last full refresh could not fetch it ({wm.get('detail')}); the stored rows stand."
+        elif wm.get("status") == "excluded":  # desk/hardening review R-03
+            reason += f" The last full refresh excluded rows dated after it ({wm.get('detail')})."
         out.append(_state(rid, label, kind, "daily", d.isoformat(), state, cycles_behind=lag, reason=reason))
     return out
 
@@ -299,11 +356,19 @@ def assess(
             rows.append(_verdict("desk_series", None, None, False, False,
                                  "The Desk's daily series are not stored in this database yet; the next full refresh stores them."))
         else:
-            states = desk_series_states(stored=by_id, specs=desk_refresh_specs(), watermarks=watermarks, now=now)
-            behind = [s for s in states if s["state"] != "close"]
-            dated = [s["as_of"] for s in states if s["as_of"]]
-            reason = ("Every series the full refresh stores includes its newest print due (FRED posts next day)." + ds_src if not behind
+            # desk/hardening: tier 1 decides the verdict; a tier-2 series behind
+            # is named in the reason and never turns it (validate_db judges
+            # this verdict in full mode, and tier 2 must never block a publish).
+            specs = desk_refresh_specs()
+            states = desk_series_states(stored=by_id, specs=specs, watermarks=watermarks, now=now)
+            judged = [s for s, spec in zip(states, specs) if spec.get("tier", 1) <= 1]
+            behind = [s for s in judged if s["state"] != "close"]
+            reported = [s for s, spec in zip(states, specs) if spec.get("tier", 1) > 1 and s["state"] != "close"]
+            dated = [s["as_of"] for s in judged if s["as_of"]]
+            reason = ("Every tier-1 series the full refresh stores includes its newest print due (FRED posts next day)." + ds_src if not behind
                       else "Behind: " + " ".join(s["reason"] for s in behind))
+            if reported:
+                reason += " Tier 2, reported and not judged: " + " ".join(s["reason"] for s in reported)
             rows.append(_verdict("desk_series", min(dated) if dated else None, None, not behind, False, reason))
     elif ds_known:
         ds = _parse_date(db_fresh.get("desk_series_date"))

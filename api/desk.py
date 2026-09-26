@@ -16,8 +16,9 @@ GET /api/desk/event-study?study=<slug> | ?shock=&w=&z=&sign=&cond=&cond_value=&r
     (decision 2026-09-21: it cannot be precomputed), behind the expensive-
     study ceiling (api/security.DESK_STUDY_PATHS, its own since
     desk/integration), pinned to the
-    generation the request arrived on, and cached by (generation key, study
-    slug, seed) so a repeat is a lookup. A request waits at most
+    generation the request arrived on, and cached by the generation's identity,
+    its effective as-of cutoff and the study's parameters (desk/hardening review
+    R-07) so a repeat is a lookup. A request waits at most
     COMPUTE_TIMEOUT_S for its computation; past that it answers 202 with a
     `computing` body and Retry-After, and the computation keeps running for
     the next request. Outstanding computations are bounded at CACHE_MAX
@@ -68,6 +69,7 @@ from pydantic import BaseModel
 
 from api import bootstrap, db, stream
 from api import freshness as freshness_mod
+from api import provenance
 from api.db import NotStored
 from src.analytics import dbpath
 
@@ -139,14 +141,22 @@ def preset_name(q: es.Query) -> str | None:
     return None
 
 
-def _compute(gen, q: es.Query) -> dict:
+def _cutoff(gen) -> str:
+    """The generation's effective as-of cutoff: the date its studies read up to
+    (review R-06), resolved once per submission and handed to the job, so the
+    cache key and the computation can never use two different dates (R-07)."""
+    return es.resolve_as_of(getattr(gen, "as_of", None) or None)
+
+
+def _compute(gen, q: es.Query, cutoff: str) -> dict:
     """The job's lease on its generation: its own connection to that copy,
-    never the served generation's fallback (R-16)."""
+    never the served generation's fallback (R-16), read up to the cutoff its
+    cache key carries (review R-06, R-07: the pool's thread carries no pin)."""
     conn = dbpath.open_generation(gen)
     if conn is None:
         raise GenerationExpired()
     try:
-        return es.run_on(conn, q, generation=gen.key)
+        return es.run_on(conn, q, generation=gen.key, as_of=cutoff)
     finally:
         conn.close()
 
@@ -175,7 +185,7 @@ def study_result(q: es.Query) -> dict | None:
         with _lock:
             _cache.pop(key, None)
         cur = w.generation()
-        if cur is not None and cur.key != gen.key:
+        if cur is not None and cur is not gen and getattr(cur, "id", None) != getattr(gen, "id", None):
             _submit(cur, q)  # a fresh job under the current generation; the client retries into it
         return None
     except BaseException:
@@ -185,17 +195,25 @@ def study_result(q: es.Query) -> dict | None:
 
 
 def _submit(gen, q: es.Query) -> tuple[tuple, Future]:
-    key = (gen.key, es.cache_key(q))  # R-07: the validated parameters, losslessly
+    """The study's job, cached by what determines its answer (and so its
+    inputs_hash, which only exists once it is computed): the generation's
+    identity (its id, and the file key it was staged from), its effective
+    as-of cutoff, and the validated parameters, losslessly (event-study R-07).
+    desk/hardening review R-07: two generations of one file staged across New
+    York midnight differ only in the cutoff, and keyed on the file alone they
+    shared entries; finished entries of any other generation expire here."""
+    cutoff = _cutoff(gen)
+    key = (getattr(gen, "id", None), gen.key, cutoff, es.cache_key(q))
     with _lock:
         fut = _cache.get(key)
         if fut is None:
-            for stale in [k for k, f in _cache.items() if k[0] != gen.key and f.done()]:
+            for stale in [k for k, f in _cache.items() if k[:2] != key[:2] and f.done()]:
                 _cache.pop(stale, None)
             outstanding = sum(1 for f in _cache.values() if not f.done())
             if outstanding >= CACHE_MAX:
                 stats["busy"] += 1
                 raise QueueFull()
-            fut = _pool.submit(_compute, gen, q)
+            fut = _pool.submit(_compute, gen, q, cutoff)
             _cache[key] = fut
             stats["computed"] += 1
             done_keys = [k for k, f in _cache.items() if f.done()]
@@ -228,9 +246,26 @@ def _query(study: str | None, **kw: Any) -> es.Query:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def schema_error_body(exc: Exception, slug: str | None = None) -> dict:
+    """The body of a 503 for a schema check that could not run (Codex R-27): the message in both
+    `detail`, which the web client reads, and `reason` (verifier V-50), with the client's `kind`
+    and `retryable` beside `status: "error"`."""
+    return {"status": "error", **({"slug": slug} if slug else {}), "detail": str(exc), "reason": str(exc),
+            "kind": "schema_check", "provider": "api", "retryable": True}
+
+
+def _schema_error(exc: Exception, slug: str | None = None) -> JSONResponse:
+    """Codex R-27: whether the store carries provenance could not be read, so nothing is read
+    without it; the study is an error with the reason, never a legacy read."""
+    return JSONResponse(status_code=503, headers={"Cache-Control": "no-store"}, content=schema_error_body(exc, slug))
+
+
 @router.get("/event-study/assets")
-def desk_event_study_assets() -> dict:
-    return _worker().result("desk_assets")
+def desk_event_study_assets():
+    try:
+        return _worker().result("desk_assets")
+    except provenance.SchemaCheckFailed as exc:
+        return _schema_error(exc)
 
 
 @router.get("/event-study")
@@ -252,6 +287,8 @@ def desk_event_study(
                regime=regime, target=target, cross=cross, seed=seed)
     try:
         payload = study_result(q)
+    except provenance.SchemaCheckFailed as exc:
+        return _schema_error(exc, es.slug_for(q))
     except es.StudyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except es.NotStored as exc:
@@ -411,9 +448,12 @@ def desk_series_specs(stored: dict[str, str] | None) -> list[dict]:
     """The desk_series series the inventory lists (desk/integration, the
     event-study report's §10 follow-up): the ones the full refresh stores
     (registry.REFRESH_TIER), in registry order, then any other series the
-    table holds (a tier-2 fetch run by hand). Rates and spreads follow the
-    bond calendar, everything else the NYSE's. The refresh set is mirrored in
-    api/freshness.DESK_REFRESH_SERIES for the drawer's verdict (parity pinned)."""
+    table holds (a series fetched by hand). Rates and spreads follow the bond
+    calendar, everything else the NYSE's. Each carries its registry tier (the
+    drawer's verdict judges tier 1, desk/hardening) and, for a series published
+    less often than daily, its tolerance (api/freshness.DESK_SLOW_PUBLICATION).
+    The refresh set is mirrored in api/freshness.DESK_REFRESH_SERIES for the
+    drawer's verdict (parity pinned)."""
     from src.desk import series as registry
 
     ids = [s.series_id for s in registry.fetched(registry.REFRESH_TIER)]
@@ -423,7 +463,8 @@ def desk_series_specs(stored: dict[str, str] | None) -> list[dict]:
         spec = registry.BY_SERIES_ID.get(sid)
         kind = "fred" if spec is None or spec.source == "fred" else "market"
         calendar = freshness_mod.SERIES_REGISTRY.get(sid, {}).get("calendar") or ("bond" if spec is not None and spec.unit == "bp" else "nyse")
-        specs.append({"id": sid, "label": spec.label if spec else sid, "kind": kind, "calendar": calendar})
+        specs.append({"id": sid, "label": spec.label if spec else sid, "kind": kind, "calendar": calendar,
+                      "tier": spec.tier if spec else 3, **freshness_mod.DESK_SLOW_PUBLICATION.get(sid, {})})
     return specs
 
 
