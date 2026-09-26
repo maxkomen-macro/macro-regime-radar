@@ -1,15 +1,15 @@
 /**
  * Basket & Hedge's legs (DESK_FRAME3_SPEC §10): the weights the analyst
- * types, and the baskets they save in this browser. The weights are the
- * analyst's input, so the page may tidy them (equal-weight, normalize to
- * 100%); every number about the basket itself (returns, residual, vol, beta)
- * is the API's, priced from these legs (§12.12). Pure except the storage
+ * types, and the baskets they save in this browser (§1.8). The weights are
+ * the analyst's input, so the page may tidy them (equal-weight, normalize to
+ * 100%); nothing about the basket itself is computed here, and nothing is
+ * priced while basket pricing is not served (§1.0). Pure except the storage
  * helpers, which never throw.
  */
 
 export interface WorkLeg {
   symbol: string;
-  /** The API's name for the ticker; null until a price answer carries it. */
+  /** The ticker's name as saved; null for a ticker added here. */
   name: string | null;
   /** As typed: percent of the basket ("22", "12.5", ""). */
   weight: string;
@@ -22,7 +22,6 @@ export interface SavedBasket {
   saved_at: string;
 }
 
-export const DEFAULT_BASKET = "ai-infra";
 export const SAVED_BASKETS_KEY = "mrr.desk.baskets.v1";
 
 /** A weight as typed: a number from 0 to 100, to any number of decimals, kept exactly as
@@ -143,21 +142,39 @@ function isSaved(v: unknown): v is SavedBasket {
   return !!b && typeof b.id === "string" && typeof b.name === "string" && Array.isArray(b.legs) && b.legs.every((l) => l && typeof l.symbol === "string" && typeof l.weight === "number" && Number.isFinite(l.weight));
 }
 
-export function readSaved(storage: Pick<Storage, "getItem"> | null = safeStorage()): SavedBasket[] {
+/** Every stored entry as stored; a store that is not a JSON list is kept whole, as one entry. */
+function readRaw(storage: Pick<Storage, "getItem"> | null): unknown[] {
+  let text: string | null = null;
   try {
-    const parsed = JSON.parse(storage?.getItem(SAVED_BASKETS_KEY) ?? "[]") as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isSaved) : [];
+    text = storage?.getItem(SAVED_BASKETS_KEY) ?? null;
   } catch {
     return [];
   }
+  if (text === null) return [];
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return Array.isArray(parsed) ? parsed : [text];
+  } catch {
+    return [text];
+  }
+}
+
+export function readSaved(storage: Pick<Storage, "getItem"> | null = safeStorage()): SavedBasket[] {
+  return readRaw(storage).filter(isSaved);
+}
+
+/** Stored entries this page cannot read: kept in this browser through every write, counted, never dropped (§1.8). */
+export function unreadableSaved(storage: Pick<Storage, "getItem"> | null = safeStorage()): unknown[] {
+  return readRaw(storage).filter((x) => !isSaved(x));
 }
 
 export type SaveResult = "ok" | "off" | "full";
 
-function writeAll(list: SavedBasket[], storage: Pick<Storage, "setItem"> | null): SaveResult {
+function writeAll(list: SavedBasket[], storage: (Pick<Storage, "setItem"> & Partial<Pick<Storage, "getItem">>) | null): SaveResult {
   if (!storage) return "off";
   try {
-    storage.setItem(SAVED_BASKETS_KEY, JSON.stringify(list));
+    const kept = storage.getItem ? unreadableSaved(storage as Pick<Storage, "getItem">) : [];
+    storage.setItem(SAVED_BASKETS_KEY, JSON.stringify([...list, ...kept]));
     return "ok";
   } catch {
     return "full";
@@ -169,7 +186,7 @@ export function writeSaved(b: SavedBasket, storage: Pick<Storage, "getItem" | "s
   return writeAll([...readSaved(storage).filter((x) => x.id !== b.id), b], storage);
 }
 
-/** Forgets one saved basket (a basket of this browser's, or this browser's weights for a served one). */
+/** Forgets one saved basket. */
 export function removeSaved(id: string, storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): SaveResult {
   return writeAll(readSaved(storage).filter((x) => x.id !== id), storage);
 }
@@ -182,17 +199,12 @@ export function exportSaved(list: readonly SavedBasket[]): string {
 const sameBasket = (x: SavedBasket, y: SavedBasket) => x.name === y.name && legsKey(x.legs) === legsKey(y.legs);
 
 /** A JSON file's baskets merged into the list, never replacing one. A basket
- * already here (same name and legs, under any number) is skipped. A served
- * basket's id (`served`) comes in as this browser's weights for it unless
- * this browser already keeps different ones. Anything else whose id is
- * taken here, and any id that is neither `local-<n>` nor served, gets a
- * fresh `local-<n>`: every browser numbers from `local-1`, so collisions are
- * the normal case. Unreadable entries are counted, not kept. */
-export function importSaved(
-  list: readonly SavedBasket[],
-  text: string,
-  served: readonly string[] = [DEFAULT_BASKET],
-): { list: SavedBasket[]; added: number; rejected: number; renumbered: number; skipped: number } {
+ * already here (same name and legs, under any number) is skipped. One whose
+ * id is taken here, or is not `local-<n>` (a basket a server once kept; none
+ * is served now, §10), gets a fresh `local-<n>`: every browser numbers from
+ * `local-1`, so collisions are the normal case. Unreadable entries are
+ * counted, not kept. */
+export function importSaved(list: readonly SavedBasket[], text: string): { list: SavedBasket[]; added: number; rejected: number; renumbered: number; skipped: number } {
   let items: unknown;
   try {
     const doc = JSON.parse(text) as { baskets?: unknown } | unknown[];
@@ -212,7 +224,7 @@ export function importSaved(
       continue;
     }
     const taken = out.some((x) => x.id === b.id);
-    const keepId = !taken && (served.includes(b.id) || b.id.startsWith("local-"));
+    const keepId = !taken && b.id.startsWith("local-");
     const id = keepId ? b.id : newBasketId(out);
     if (!keepId) renumbered += 1;
     out = [...out, { ...b, id }];
@@ -222,7 +234,7 @@ export function importSaved(
 }
 
 /** Writes a whole list (after an import). */
-export function writeAllSaved(list: SavedBasket[], storage: Pick<Storage, "setItem"> | null = safeStorage()): SaveResult {
+export function writeAllSaved(list: SavedBasket[], storage: (Pick<Storage, "setItem"> & Partial<Pick<Storage, "getItem">>) | null = safeStorage()): SaveResult {
   return writeAll(list, storage);
 }
 

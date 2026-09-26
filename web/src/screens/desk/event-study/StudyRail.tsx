@@ -1,14 +1,13 @@
 /**
  * The Event Study rail (DESK_FRAME3_SPEC §4), top to bottom: the verdict box
  * (amber-bordered for Suggestive) with the verdict's label, the served
- * headline and why, and `Price it →`; the answer by regime a month later (§4's fixed label: §12.2
+ * headline and why, and `Price it →` (disabled, not yet served, while Basket & Hedge is unavailable); the answer by regime a month later (§4's fixed label: §12.2
  * serves `by_regime` and `last_events` at 20 sessions; a regime under ten
  * events prints its count and "too few cases to say"); the last five events; the range against a normal stretch at
  * the engine's 90% (the 80% and 95% chips disabled, "not yet served"); and the
  * footer: Advanced and Export.
  */
 
-import { Link } from "react-router-dom";
 import type { StudyResponse } from "../data/types";
 import { dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { Advanced, Awaiting, Signed, UnservedLine, useUnserved, VerdictWord } from "../kit/ui";
@@ -69,7 +68,6 @@ export function rangeWords(lo: number | null, hi: number | null, unit: TargetUni
 export default function StudyRail({
   study,
   todayRegime,
-  priceHref,
   advOpen,
   onAdvanced,
   advId,
@@ -79,7 +77,6 @@ export default function StudyRail({
 }: {
   study: StudyResponse;
   todayRegime: string | null;
-  priceHref: string;
   advOpen: boolean;
   onAdvanced: () => void;
   advId: string;
@@ -106,9 +103,13 @@ export default function StudyRail({
             numbers (§12.2), so a log study's sentence carries the §1.9 tooltip. */}
         <p>
           {study.headline ? <b>{study.headline}</b> : null} <span title={tip}>{study.why}</span>{" "}
-          <Link className="dk-link" to={priceHref}>
-            Price it →
-          </Link>
+          {/* §4: disabled with "not yet served" while Basket & Hedge is unavailable (§10). */}
+          <span className="es-price-off">
+            <button type="button" className="dk-link" disabled>
+              Price it →
+            </button>{" "}
+            <span>not yet served</span>
+          </span>
         </p>
       </div>
 

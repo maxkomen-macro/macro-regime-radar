@@ -12,7 +12,7 @@
  *   required top-level block makes the answer unreadable.
  * - Any other field of the wrong kind is removed (a nullable one, `?`, is
  *   set to null), so a page never reads a number where it expects words.
- * - A strict list (a basket's legs) is one fact: one bad row invalidates it.
+ * - A strict list (the 12-asset matrix's rows) is one fact: one bad row invalidates it.
  * - Keys the schema does not name pass through untouched (the Sectors
  *   not-ingested `error`, a field B adds before this file knows it).
  */
@@ -207,24 +207,6 @@ const BANDS = ["low", "elevated", "high_risk"] as const;
 const recessionScore = { score: "n", probability_month: "s", inputs_through: "s", band: e(BANDS), band_edges: t(["n!", "n!"], { nul: true }), freq: "s", source: "s" } as const;
 const nextPrint = o({ date: "s!", flip_threshold_mom: "n", flips_to: "s?" }, { nul: true });
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s") });
-const basketLeg = o({ symbol: "s!", name: "s?", weight: "n!" });
-const priced = {
-  prices_as_of: "s",
-  benchmark: o({ symbol: "s!", label: "s!" }),
-  ret_3m: "n",
-  bench_ret_3m: "n",
-  residual: "n",
-  residual_window: "n",
-  falsifies_at: "n",
-  month_ago: "n",
-  vol: "n",
-  bench_vol: "n",
-  vol_ratio: "n",
-  beta: "n",
-  series: l(o({ date: "s!", value: "n" })),
-  reads: reads(["chart", "beta"]),
-} as const;
-
 /** The deferred vol and sectors shapes (§12.13), served as `/technicals` blocks and as their own stubs. */
 const VOL = {
   source: "s",
@@ -433,52 +415,9 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       }),
     ),
   }),
-  "/basket": o({
-    ...envelope,
-    ...priced,
-    id: "s!",
-    name: "s!",
-    short: "s",
-    instrument: "s",
-    rebalance: "s",
-    baskets: l(o({ id: "s!", name: "s!" })),
-    // A basket's legs are its composition: one bad leg and the basket cannot be read as served (Codex G1-6).
-    legs: l(basketLeg, { req: true, strict: true }),
-  }),
-  "/basket/price": o({ ...envelope, ...priced, legs: l(basketLeg) }),
-  "/hedge": o({
-    ...envelope,
-    mode: "s",
-    subject: o({ kind: "s", id: "s?", label: "s!" }),
-    surface: "s",
-    surface_as_of: "s",
-    provider: "s",
-    beta: "n",
-    options: l(
-      o({
-        id: "s!",
-        label: "s!",
-        underlying: "s",
-        cost_pct: "n",
-        breakeven: "n",
-        max_loss: "n",
-        protected_range: o({ ndx_from: "n!", ndx_to: "n!", basis: e(["strikes", "table_floor"], { req: true }) }, { nul: true }),
-        note: "s",
-        hedge_per_100: "n",
-        delta: "n",
-        legs: l(o({ right: e(["put", "call"], { req: true }), strike: "n!", qty: "n!" }), { strict: true }),
-        theta_pct_week: "n",
-        roll: o({ date: "s", days: "n", at_dte: "n" }, { nul: true }),
-        scenarios: l(o({ ndx: "n!", basket: "n!", hedged: "n!" })),
-        scenario_note: "s",
-      }),
-    ),
-    recommended: "s?",
-    reads: reads(["why_index", "recommendation"]),
-  }),
 };
 
-/** The schema for a path (`/basket/<id>` reads as `/basket`). */
+/** The schema for a path. */
 export function schemaFor(path: string): Obj | undefined {
-  return SCHEMAS[path] ?? (path.startsWith("/basket/") && path !== "/basket/price" ? SCHEMAS["/basket"] : undefined);
+  return SCHEMAS[path];
 }

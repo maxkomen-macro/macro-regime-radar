@@ -57,7 +57,8 @@ export const DESK_GROUPS: DeskGroup[] = [
     id: "tools",
     label: "Tools",
     pages: [
-      { slug: "basket-hedge", label: "Basket & Hedge", blurb: "build the exposure, then price the cheapest way to own it", action: "send" },
+      // §10: no Desk / Client toggle.
+      { slug: "basket-hedge", label: "Basket & Hedge", blurb: "build the exposure, then price the cheapest way to own it", action: "send", toggle: false },
       {
         slug: "data-pipeline",
         label: "Data Pipeline",

@@ -22,7 +22,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useBasket, useStudy, useTechnicals } from "../data/api";
+import { useStudy, useTechnicals } from "../data/api";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView } from "../desk-view";
@@ -323,17 +323,10 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const from = search.get("from");
   const carriedAsk: Ask | null = from ? { preset: from } : search.get("shock") ? askFromSearch(search) : null;
   const study = useStudy(carriedAsk ? apiParams(carriedAsk) : {}, { enabled: !!carriedAsk });
-  // A basket sent from Basket & Hedge (`?basket=`): the server's instrument words, or a basket saved in this browser.
+  // A basket sent from Basket & Hedge (`?basket=`): one saved in this browser (§10: no basket is served).
   const basketId = search.get("basket");
-  const basket = useBasket(basketId ?? "", { enabled: !!basketId && !basketId.startsWith("local-") });
   const localBasket = basketId ? (readSaved().find((b) => b.id === basketId) ?? null) : null;
-  const sent = basketId
-    ? basket.data
-      ? { name: basket.data.name, instrument: basket.data.instrument, legs: basket.data.legs }
-      : localBasket
-        ? { name: localBasket.name, instrument: `${localBasket.name} basket`, legs: localBasket.legs }
-        : null
-    : null;
+  const sent = localBasket ? { name: localBasket.name, instrument: `${localBasket.name} basket`, legs: localBasket.legs } : null;
   const tech = useTechnicals();
   const [store, change] = usePositionStore();
   const levels = useLevels(store, true);
@@ -358,7 +351,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
 
   useEffect(() => {
     if (!sent || carriedAsk) return;
-    // A basket served without its instrument words fills nothing (Codex G1-8).
+    // A basket saved without a name fills nothing (Codex G1-8).
     const words = sent.instrument;
     if (typeof words !== "string" || !words.trim()) return;
     setDraft((d) => (d.instrument ? d : { ...d, instrument: words }));
@@ -485,8 +478,8 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     ? `Carried in from Event Study · ${questionWords(carried.question, label)} · any study can be carried in`
     : sent && !carriedAsk
       ? `Sent from Basket & Hedge · ${sent.name} · the gate is the same for every position.`
-      : basketId && !carriedAsk && (basket.isError || (basketId.startsWith("local-") && !localBasket))
-        ? `The basket sent from Basket & Hedge (${basketId}) ${basketId.startsWith("local-") ? "is not saved in this browser" : "is awaiting refresh"}; the gate is the same for every position.`
+      : basketId && !carriedAsk && !localBasket
+        ? `The basket sent from Basket & Hedge (${basketId}) is not saved in this browser; the gate is the same for every position.`
         : carriedFailed
           ? `The study carried in from Event Study (${from ?? "the question in the address"}) is awaiting refresh; the gate is the same for every position.`
           : "Any study can be carried in from Event Study; the gate is the same for every position.";

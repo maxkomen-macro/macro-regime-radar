@@ -23,7 +23,7 @@
  * (`./schema.ts`): a statistic that is not finite becomes null, a row or
  * block missing a field it cannot be read without is dropped (its panel says
  * it is missing), and an answer missing a block it cannot be read without
- * (the study's six-slot `question`, a basket's legs) is unreadable. Every
+ * (the study's six-slot `question`) is unreadable. Every
  * panel still guards its own block: the boundary never invents one.
  * Unreadable answers are not retried.
  */
@@ -31,7 +31,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
-import type { BasketPriceResponse, BasketResponse, DeskErrorBody, HedgeResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -216,17 +216,6 @@ export async function deskGet<T>(path: string, params?: Params, opts: { signal?:
   }
 }
 
-export async function deskPost<T>(path: string, body: unknown): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(deskUrl(path), { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body), signal: signal() });
-  } catch {
-    throw new DeskApiError(0, "The data service did not answer.");
-  }
-  if (!res.ok) throw await readError(res);
-  return readAnswer<T>(await readJson(res), path, res.status);
-}
-
 /** One retry for an answer that did not come (no answer, or a 5xx); never for a refusal, an error the
  * server served with a 2xx, an answer that arrived unreadable, one not served yet, or a poll that ran out. */
 export const retry = (count: number, err: unknown) => count < 1 && (!(err instanceof DeskApiError) || ((err.status === 0 || err.status >= 500) && !err.unreadable && !err.awaiting));
@@ -262,39 +251,6 @@ export function useStudy(params: Params, opts: { enabled?: boolean } = {}) {
 
 /** §12.11: the series inventory, grouped, from the pipeline config. */
 export const usePipeline = () => useDesk<PipelineResponse>("/pipeline");
-
-/** §12.12: one basket the server keeps (PROPOSED shape, §12.13). */
-export function useBasket(id: string, opts: { enabled?: boolean } = {}) {
-  return useQuery<BasketResponse, DeskApiError>({
-    queryKey: ["desk-v2", "/basket", id],
-    queryFn: ({ signal: s }) => deskGet<BasketResponse>(`/basket/${encodeURIComponent(id)}`, undefined, { signal: s }),
-    staleTime: 60_000,
-    retry,
-    enabled: opts.enabled ?? true,
-  });
-}
-
-/** §12.12: a set of legs priced without saving (POST, but it writes nothing, so it is read as a query). */
-export function useBasketPrice(legs: { symbol: string; weight: number }[] | null) {
-  return useQuery<BasketPriceResponse, DeskApiError>({
-    queryKey: ["desk-v2", "/basket/price", legs],
-    queryFn: () => deskPost<BasketPriceResponse>("/basket/price", { legs }),
-    staleTime: 60_000,
-    retry,
-    enabled: !!legs,
-  });
-}
-
-/** §12.12: the hedge for a basket, a set of legs, a position or a study. */
-export function useHedge(params: Params, opts: { enabled?: boolean } = {}) {
-  return useQuery<HedgeResponse, DeskApiError>({
-    queryKey: ["desk-v2", "/hedge", params],
-    queryFn: ({ signal: s }) => deskGet<HedgeResponse>("/hedge", params, { signal: s }),
-    staleTime: 60_000,
-    retry,
-    enabled: opts.enabled ?? true,
-  });
-}
 
 /** §12.3: the fifteen catalog studies the slots and chips are drawn from. */
 export const useStudyCatalog = () => useDesk<StudyCatalogResponse>("/study/catalog");

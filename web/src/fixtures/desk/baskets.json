@@ -1,0 +1,49 @@
+{
+ "kind": "mrr.desk.baskets",
+ "version": 1,
+ "note": "Illustrative: a sample basket for the fixture tests and the compare shots, not anyone's holdings. Import it on Basket & Hedge to see the tab filled.",
+ "baskets": [
+  {
+   "id": "local-1",
+   "name": "AI infrastructure",
+   "legs": [
+    {
+     "symbol": "NVDA",
+     "name": "Nvidia",
+     "weight": 22
+    },
+    {
+     "symbol": "AVGO",
+     "name": "Broadcom",
+     "weight": 16
+    },
+    {
+     "symbol": "VRT",
+     "name": "Vertiv",
+     "weight": 14
+    },
+    {
+     "symbol": "CRWV",
+     "name": "CoreWeave",
+     "weight": 12
+    },
+    {
+     "symbol": "ANET",
+     "name": "Arista",
+     "weight": 12
+    },
+    {
+     "symbol": "CEG",
+     "name": "Constellation",
+     "weight": 12
+    },
+    {
+     "symbol": "SMCI",
+     "name": "Supermicro",
+     "weight": 12
+    }
+   ],
+   "saved_at": "2026-09-22T20:00:00Z"
+  }
+ ]
+}

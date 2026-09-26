@@ -12,12 +12,9 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "../../../test/utils";
-import { DeskApiError, MAX_POLLS, deskGet, deskPost, readAnswer, readBody, retry, retryAfterMs, unavailableOf, useOverview } from "./api";
+import { DeskApiError, MAX_POLLS, deskGet, readAnswer, readBody, retry, retryAfterMs, unavailableOf, useOverview } from "./api";
 import { NESTED_PATHS, awaitingEnvelope, errorEnvelope, isEnvelope, readyEnvelope, routeOf, unwrapBlocks } from "./envelope";
 import { SCHEMAS, schemaFor } from "./schema";
-import basketPrice from "../../../fixtures/desk/basket-price.json";
-import basket from "../../../fixtures/desk/basket.json";
-import hedge from "../../../fixtures/desk/hedge.json";
 import ledger from "../../../fixtures/desk/ledger.json";
 import macro from "../../../fixtures/desk/macro.json";
 import overview from "../../../fixtures/desk/overview.json";
@@ -73,8 +70,8 @@ describe("the response boundary", () => {
 
   it("every fixture passes its own schema unchanged", () => {
     for (const path of Object.keys(SCHEMAS)) {
-      const url = path === "/basket" ? "/api/desk/basket/ai-infra" : `/api/desk${path}${path === "/study" || path === "/study/events" ? "?preset=gold-2sigma-spx-weak" : path === "/hedge" ? "?mode=protect&basket=ai-infra" : ""}`;
-      const reply = path === "/basket/price" ? deskFixture("POST", url, JSON.stringify({ legs: basket.legs.map((x) => ({ symbol: x.symbol, weight: x.weight })) })) : deskFixture("GET", url);
+      const url = `/api/desk${path}${path === "/study" || path === "/study/events" ? "?preset=gold-2sigma-spx-weak" : ""}`;
+      const reply = deskFixture("GET", url);
       if (!reply || reply.contentType !== "application/json" || reply.status !== 200) continue;
       // On the wire every fixture is an envelope (§12.0); its payload, blocks taken apart, passes its schema unchanged.
       const env = JSON.parse(reply.body) as unknown;
@@ -82,7 +79,7 @@ describe("the response boundary", () => {
       // A deferred stub (§12.0: /vol, /sectors) answers awaiting, with no payload; its shape is checked below.
       if ((env as { status: string }).status === "awaiting") continue;
       const { data } = unwrapBlocks(routeOf(path), (env as { data: Record<string, unknown> }).data);
-      expect(readBody(data, path === "/basket" ? "/basket/ai-infra" : path), path).toEqual(data);
+      expect(readBody(data, path), path).toEqual(data);
     }
   });
 
@@ -108,12 +105,9 @@ describe("the response boundary", () => {
       "/study/events": studyEvents,
       "/study/catalog": studyCatalog,
       "/pipeline": pipeline,
-      "/basket/ai-infra": basket,
-      "/basket/price": basketPrice,
-      "/hedge": hedge,
     };
     expect(Object.keys(fixtures).length).toBe(Object.keys(SCHEMAS).length);
-    const required: Record<string, string[]> = { "/study": ["question"], "/basket/ai-infra": ["id", "name", "legs"] };
+    const required: Record<string, string[]> = { "/study": ["question"] };
     for (const [path, fx] of Object.entries(fixtures))
       for (const key of Object.keys(fx))
         for (const bad of [undefined, null, "x", 3, [], {}, [null], [3]]) {
@@ -168,21 +162,7 @@ describe("the response boundary", () => {
     expect("display_unit" in (tryRead({ ...study, question: { ...study.question, display_unit: "log_return" } }, "/study") as { question: object }).question).toBe(false);
   });
 
-  it("a hedge structure's legs are one fact, and its range needs both ends (Codex R-06)", () => {
-    const [o] = hedge.options;
-    const read = (x: Record<string, unknown>) => (tryRead({ ...hedge, options: [{ ...o, ...x }] }, "/hedge") as { options: Record<string, unknown>[] }).options[0];
-    expect(read({}).legs).toEqual(o.legs);
-    expect("legs" in read({ legs: [o.legs[0], { right: "straddle", strike: -0.1, qty: -1 }] })).toBe(false);
-    expect("legs" in read({ legs: [o.legs[0], { right: "put", strike: null, qty: -1 }] })).toBe(false);
-    expect(read({ protected_range: { ndx_from: -0.05, ndx_to: null, basis: "strikes" } }).protected_range).toBeNull();
-    expect(read({ protected_range: { ndx_from: -0.05, ndx_to: -0.1 } }).protected_range).toBeNull();
-    expect(read({ protected_range: { ndx_from: -0.05, ndx_to: -0.1, basis: "wide" } }).protected_range).toBeNull();
-    expect(read({ protected_range: { ndx_from: -0.05, ndx_to: -0.1, basis: "strikes" } }).protected_range).toEqual({ ndx_from: -0.05, ndx_to: -0.1, basis: "strikes" });
-  });
-
-  it("a price keeps its own date, and technicals names its series whole or not at all (Codex R-04, R-08)", () => {
-    expect((tryRead({ ...basketPrice, prices_as_of: "2026-09-24" }, "/basket/price") as Record<string, unknown>).prices_as_of).toBe("2026-09-24");
-    expect("prices_as_of" in (tryRead({ ...basketPrice, prices_as_of: 20260924 }, "/basket/price") as object)).toBe(false);
+  it("technicals names its series whole or not at all (Codex R-08)", () => {
     expect((tryRead(technicals, "/technicals") as Record<string, unknown>).instrument).toEqual({ symbol: "SPX", label: "S&P 500" });
     expect("instrument" in (tryRead({ ...technicals, instrument: { symbol: "SPX" } }, "/technicals") as object)).toBe(false);
     expect("instrument" in (tryRead({ ...technicals, instrument: "S&P 500" }, "/technicals") as object)).toBe(false);
@@ -194,27 +174,19 @@ describe("the response boundary", () => {
     expect(m.credit).toMatchObject({ hy: null, hy_pct_3y: null, hy_range_3y: [null, 4] });
   });
 
-  it("a basket's legs are one fact: one bad leg and the basket is unreadable (G1-6); a price's bad leg is dropped", () => {
-    expect(tryRead({ ...basket, legs: [null, ...basket.legs.slice(1)] }, "/basket/ai-infra")).toBe("unreadable");
-    expect(tryRead({ ...basket, legs: [{ ...basket.legs[0], weight: "22" }, ...basket.legs.slice(1)] }, "/basket/ai-infra")).toBe("unreadable");
-    const price = tryRead({ legs: [null, basket.legs[0]] }, "/basket/price") as { legs: unknown[] };
-    expect(price.legs).toEqual([basket.legs[0]]);
+  it("knows every endpoint the Desk asks, and none it does not", () => {
+    for (const p of ["/overview", "/ledger", "/technicals", "/vol", "/sectors", "/regime", "/macro", "/study", "/study/events", "/pipeline"]) expect(schemaFor(p), p).toBeDefined();
+    // §9, §10: no server position store, no basket pricing, no hedge: nothing to read.
+    for (const p of ["/positions", "/basket/local-1", "/basket/price", "/hedge"]) expect(schemaFor(p), p).toBeUndefined();
   });
 
-  it("knows every endpoint the Desk asks, a basket by its id included", () => {
-    for (const p of ["/overview", "/ledger", "/technicals", "/vol", "/sectors", "/regime", "/macro", "/study", "/study/events", "/pipeline", "/basket/price", "/hedge"]) expect(schemaFor(p), p).toBeDefined();
-    // §9: no server position store, so no /positions answer to read.
-    expect(schemaFor("/positions")).toBeUndefined();
-    expect(schemaFor("/basket/ai-infra")).toBe(SCHEMAS["/basket"]);
-  });
-
-  it("a completed 200 that is null or not JSON rejects as unreadable, GET and POST alike", async () => {
+  it("a completed 200 that is null, not JSON or a list rejects as unreadable", async () => {
     answer("null");
     await expect(deskGet("/overview")).rejects.toSatisfy(unreadable);
     answer("<html>not json</html>");
     await expect(deskGet("/regime")).rejects.toSatisfy(unreadable);
     answer("[]");
-    await expect(deskPost("/basket/price", { legs: [] })).rejects.toSatisfy(unreadable);
+    await expect(deskGet("/ledger")).rejects.toSatisfy(unreadable);
     answer(JSON.stringify(readyEnvelope("/study", { ...study, horizons: "x" }, FIXTURE_META)));
     const s = (await deskGet("/study")) as Record<string, unknown>;
     expect("horizons" in s).toBe(false);

@@ -1,6 +1,6 @@
 /** Basket & Hedge's weights (DESK_FRAME3_SPEC §10): typed, tidied, keyed, kept in this browser. */
 import { describe, expect, it } from "vitest";
-import { apiLegs, equalWeight, exportSaved, importSaved, decimal, legsKey, newBasketId, normalize, parseTicker, parseWeight, readSaved, removeSaved, sumsToHundred, toWork, total, totalText, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
+import { apiLegs, equalWeight, exportSaved, importSaved, decimal, legsKey, newBasketId, normalize, parseTicker, parseWeight, readSaved, removeSaved, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
 
 const legs = (ws: string[]): WorkLeg[] => ws.map((w, i) => ({ symbol: `T${i}`, name: null, weight: w }));
 
@@ -107,13 +107,28 @@ describe("basket weights", () => {
     expect(r.renumbered).toBe(2);
     // Importing the same file again adds nothing.
     expect(importSaved(r.list, text)).toMatchObject({ added: 0, skipped: 2 });
-    // A served basket's id comes in as this browser's weights for it, unless this browser keeps other weights for it.
+    // No basket is served (§10): a basket a server once kept comes in as this browser's own.
     const served: SavedBasket = { ...a, id: "ai-infra", name: "AI infrastructure" };
-    expect(importSaved([], JSON.stringify([served])).list.map((x) => x.id)).toEqual(["ai-infra"]);
-    const ours: SavedBasket = { ...served, legs: [{ symbol: "NVDA", name: null, weight: 100 }] };
-    expect(importSaved([ours], JSON.stringify([served])).list.map((x) => x.id)).toEqual(["ai-infra", "local-1"]);
+    expect(importSaved([], JSON.stringify([served])).list.map((x) => x.id)).toEqual(["local-1"]);
     expect(importSaved([], JSON.stringify([{ ...a, id: "my-basket" }])).list.map((x) => x.id)).toEqual(["local-1"]);
     expect(importSaved([a], JSON.stringify({ baskets: [b, { id: 3 }] }))).toMatchObject({ added: 1, rejected: 1 });
     expect(importSaved([a], "not json")).toEqual({ list: [a], added: 0, rejected: 1, renumbered: 0, skipped: 0 });
+  });
+  it("keeps what it cannot read through every write, and counts it (§1.8: never dropped)", () => {
+    const m = new Map<string, string>();
+    const st = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
+    const ok = { id: "local-1", name: "Grid", legs: [{ symbol: "CEG", name: null, weight: 100 }], saved_at: "2026-09-22T00:00:00Z" };
+    const bad = { id: "local-2", name: "Broken", legs: [{ symbol: "NVDA", weight: "22" }] };
+    m.set(SAVED_BASKETS_KEY, JSON.stringify([ok, bad]));
+    expect(readSaved(st).map((b) => b.id)).toEqual(["local-1"]);
+    expect(unreadableSaved(st)).toEqual([bad]);
+    expect(writeSaved({ ...ok, name: "Grid 2" }, st)).toBe("ok");
+    expect(removeSaved("local-1", st)).toBe("ok");
+    expect(JSON.parse(m.get(SAVED_BASKETS_KEY)!)).toEqual([bad]);
+    // A store that is not a list is one unreadable entry, kept whole.
+    m.set(SAVED_BASKETS_KEY, "{oops");
+    expect(unreadableSaved(st)).toEqual(["{oops"]);
+    writeSaved(ok, st);
+    expect(JSON.parse(m.get(SAVED_BASKETS_KEY)!)).toEqual([ok, "{oops"]);
   });
 });

@@ -282,6 +282,14 @@
 .es-verdict[data-verdict="reliable"] .es-verdict-label {
   color: var(--dk-green);
 }
+/* §4: Price it, disabled while Basket & Hedge is unavailable, says so as Advanced does. */
+.es-price-off {
+  white-space: nowrap;
+  color: var(--dk-t3);
+}
+.es-price-off .dk-link {
+  font: inherit;
+}
 .es-rail-h {
   margin-top: 9px;
   margin-bottom: 2px;

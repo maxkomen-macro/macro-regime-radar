@@ -3173,6 +3173,101 @@ one); §9 names the instrument, and only the basket is called unserved.
 The fixes were checked by the four gates and the tests above; the compare
 shots were re-shot after them (unchanged).
 
+### Phase 2, item 11: Basket & Hedge unavailable — `frame-3: align 11 basket-hedge`
+
+**What changed.** Basket & Hedge is unavailable (§1.0, §10): basket pricing
+and option structures are not yet defined in the engine. What stays is the
+analyst's own work, kept in this browser (§1.8): the selector of this
+browser's baskets and `+ New basket`, the LEGS table with Equal-weight and
+Normalize to 100%, typed weights, `+ Add a ticker…`, the total, **Save
+basket** (only at exactly 100%), Export / Import JSON and Delete. The page
+opens this browser's first basket and writes it in the address, so **Send to
+Position Monitor →** carries it; Position Monitor reads only baskets kept here
+and saves them as manual subjects (§9). The priced parts keep their labels
+and print §1.0's reason (§1.0.2): 3-MONTH, VS NDX · RESIDUAL and BASKET VOL
+with no number and the reason once, the one sentence §1.0.2 allows; the
+chart's title for an open basket, with no chart and no beta read; the Hedge card
+with its title, subtitle, the three mode labels (disabled) and its stat
+labels, the reason, and no structure, ratio or scenario. Both cards'
+Advanced controls are disabled ("not yet served"), the page badge reads `○
+Not yet served`, and the tab has no Desk / Client toggle (§10). Event
+Study's `Price it →` is disabled with "not yet served" (§4). Nothing is
+asked of the server: `deskPost`, the basket, price and hedge hooks, their
+types and schemas and the three fixtures are gone; the fixture server
+answers `GET /basket/:id`, `/basket/price` and `/hedge` with the awaiting
+envelope and `POST /basket/price` with 405 (§12.0). `baskets.json` is an
+illustrative Export of the store (the AI infrastructure basket), used by
+the tests and the compare shot.
+
+**Tests.** `BasketHedgePage.test.tsx` (the unavailable state and nothing
+asked of the server; the first basket in the address; weights as typed;
+Save only at 100%; storage full; an empty store; + New basket and Delete;
+switching baskets never drops typed weights; an unreadable saved basket
+counted and kept;
+another window's save; Import renumbering an old served id; a basket not
+here; the fixture stubs and 405; Send to Position Monitor); `weights.test.ts`
+(an old served id imported as this browser's own); `EventStudyPage.test.tsx`
+(Price it disabled); `api.test.tsx` (no schema for the removed endpoints,
+every read a GET). Browser: the unavailable page, weights saved, the
+hand-off, every width with no sideways scroll and no request to the basket
+or hedge endpoints.
+
+**Against the PNGs.**
+- 09 Basket & Hedge, the header: `○ Not yet served` where the PNG has
+  "MOCKUP · values illustrative" and "Live · prices Sep 22 · options via
+  EODHD", and no Desk / Client toggle. §10: "No Desk/Client toggle … Badge
+  `○ Not yet served`".
+- 09, the Basket's stats: labels with "—" and the reason, where the PNG has
+  +12.7%, −1.9% and 41%. §10: "The stats (3-MONTH, VS NDX · RESIDUAL, BASKET
+  VOL), the residual chart and the beta read are unavailable: labels kept,
+  the reason printed."
+- 09, the chart and the beta read: the chart's title alone, no chart, no
+  "Beta to NDX" box. Same sentence of §10.
+- 09, the meta line: "7 names · saved in this browser" where the PNG has
+  "rebalanced monthly" (a served field; no basket is served).
+- 09, the add row's hint: "any US-listed name" without "price history
+  pulled on add" (nothing is pulled while pricing is not served), in sans at
+  12px as the legs' hint (owner rule: prose in sans, 12px or more).
+- 09, the footer: "kept in this browser only" where the PNG has "changes
+  re-price the hedge on the right"; Export, Import and Delete on their own
+  line (§10: "Save basket and Export / Import JSON: local editing only").
+- 09, the Hedge: title, subtitle, the three mode labels (none picked) and
+  the stat labels, then the reason; no structures, ratio, scenarios, "Why
+  index options" or Recommendation. §10: "Title, subtitle and the three mode
+  labels kept; the reason printed; no structures, no ratio, no scenarios."
+  The subtitle reads "priced off the SPY / QQQ surface" where the PNG has
+  "the live SPY / QQQ surface": nothing on it is live (§1.6).
+- 03 Event Study, the verdict box: "Price it → not yet served", disabled.
+  §4: "`Price it →`, disabled with "not yet served" while Basket & Hedge is
+  unavailable."
+
+Saved baskets this page cannot read are now kept through every write and
+counted on the card, as saved questions and positions are (§1.8); before
+this item they were dropped on the next save.
+
+Verifier (one round): **PASS**, no should-fix, eight nits; seven taken. It
+probed empty, illustrative and corrupt stores at 1440, 1101 and 390, with
+and without `?basket=`, every local flow, the Position Monitor hand-off and
+Price it, with no request to the basket or hedge endpoints, nothing off the
+palette and every stop named and ringed.
+- V11-1 the hedge subtitle said "options surface". **Fixed:** "priced off
+  the SPY / QQQ surface".
+- V11-2 a second sentence beside the reason. **Fixed:** removed (§1.0.2:
+  one sentence).
+- V11-3 an amber dash for a total that does not exist. **Fixed.**
+- V11-4 a chart title with no basket open. **Fixed:** shown for an open
+  basket only.
+- V11-5 unreadable saved baskets were dropped on the next write (as at
+  HEAD). **Fixed:** kept and counted.
+- V11-6 switching baskets dropped typed weights (as at HEAD). **Fixed:** the
+  selector waits, as + New basket does. Send to Position Monitor still
+  carries the saved legs, not typed ones; noted.
+- V11-7 a stale comment. **Fixed.**
+- V11-8 two hints in small type (as at HEAD). **Fixed:** sans, 12px.
+
+The fixes were checked by the four gates and the tests above; the compare
+shot was re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -3208,6 +3303,7 @@ tests against the fixture dev server.
 | frame-3: align 8 slots | clean | 119 / 1,445 | ok | 56 / 56 |
 | frame-3: align 9 firing | clean | 119 / 1,450 | ok | 56 / 56 |
 | frame-3: align 10 positions | clean | 122 / 1,480 | ok | 56 / 56 |
+| frame-3: align 11 basket-hedge | clean | 122 / 1,462 | ok | 54 / 54 |
 
 ## Finish
 

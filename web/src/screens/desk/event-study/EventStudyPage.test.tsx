@@ -143,11 +143,13 @@ describe("Event Study tab", () => {
     await waitFor(() => expect(rail).toHaveTextContent("Verdict · Suggestive"));
     // §4: the box is the label, the served headline and why, and Price it; nothing else (no advice drawn from a verdict).
     expect([...rail.querySelectorAll(".es-verdict > p")].map((p) => p.textContent?.replace(/\s+/g, " ").trim()).join(" ")).toBe(
-      "Verdict · Suggestive Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met. 18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −1.6 to +4.1 pts; 14.6% of resampled medians are adverse against a 3% bar. Price it →",
+      "Verdict · Suggestive Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met. 18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −1.6 to +4.1 pts; 14.6% of resampled medians are adverse against a 3% bar. Price it → not yet served",
     );
     // Rule v1 reads the lean at 5, 10 and 20 sessions whatever the horizon, so 3 months is Suggestive too.
     expect(rail).toHaveTextContent(/3 months\s*−3\.9 to \+2\.6 pts\s*Suggestive/);
-    expect(within(rail).getByRole("link", { name: "Price it →" })).toHaveAttribute("href", "/desk/basket-hedge?mode=express&study=gold-2sigma-spx-weak");
+    // §4: disabled with "not yet served" while Basket & Hedge is unavailable (§10).
+    expect(within(rail).getByRole("button", { name: "Price it →" })).toBeDisabled();
+    expect(within(rail).queryByRole("link", { name: /Price it/ })).toBeNull();
     const rows = within(rail).getAllByRole("row");
     // By regime from the events at their K−2 rows of the regime record (Codex R-05).
     // §4: a regime under ten events (MIN_REGIME_N) prints its count and "too few cases to say" across Up and Median.

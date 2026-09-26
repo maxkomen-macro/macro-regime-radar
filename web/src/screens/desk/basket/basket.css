@@ -81,9 +81,10 @@
   gap: 10px;
   flex-wrap: wrap;
 }
+/* Prose in sans at 12px or more (owner rule). */
 .bh-hint {
   margin-left: 6px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--dk-t3);
 }
 .bh-legs-tools {
@@ -188,9 +189,8 @@
 }
 /* The hint wraps under the input when the row is narrow, never cut (verifier R3-6). */
 .bh-add-hint {
-  font-family: var(--dk-mono);
-  font-size: 10.5px;
-  color: var(--dk-t4);
+  font-size: 12px;
+  color: var(--dk-t3);
 }
 .bh-total {
   font-family: var(--dk-mono);
@@ -211,24 +211,6 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--dk-t4);
-}
-.bh-chart,
-.bh-chart-title + .dk-await,
-.bh-chart-quiet {
-  margin-top: 32px;
-}
-.bh-sentence {
-  margin: 6px 0 16px;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--dk-t2);
-}
-/* The Beta read sits at the card's foot, as in the PNG (verifier B-10). */
-.bh-card .bh-beta {
-  margin-top: auto;
-}
-.bh-chart-quiet {
-  margin-bottom: 16px;
 }
 .bh-adv-row {
   font-size: 12.5px;
@@ -268,143 +250,24 @@
   gap: 8px;
   margin-top: 11px;
 }
+/* §10: the three mode labels are kept, and nothing can be picked while the hedge is not served. */
 .bh-modes button {
   padding: 5px 11px;
   border: 1px solid var(--dk-box);
   border-radius: 6px;
   background: none;
-  color: var(--dk-t2);
+  color: var(--dk-t3);
   font-size: 13px;
-  cursor: pointer;
+  cursor: default;
 }
-.bh-modes button:hover {
-  color: var(--dk-t1);
-}
-.bh-modes button[aria-pressed="true"] {
-  border-color: var(--dk-t3);
-  background: var(--dk-active);
-  color: #ffffff;
-}
-.bh-subject {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--dk-t2);
-}
-.bh-hedge-body {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-}
-.bh-opts {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.bh-modes + .dk-stats {
   margin-top: 14px;
 }
-.bh-opt {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 8px 13px 9px;
-  border: 1px solid var(--dk-border);
-  border-radius: 8px;
-  cursor: pointer;
-}
-.bh-opt:hover {
-  border-color: var(--dk-box);
-}
-.bh-opt-on,
-.bh-opt-on:hover {
-  border-color: var(--dk-t3);
-  background: var(--dk-card-2);
-}
-.bh-opt:has(:focus-visible) {
-  outline: 2px solid var(--dk-blue);
-  outline-offset: 2px;
-}
-.bh-opt-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 15px;
-  line-height: 18px;
-  color: var(--dk-t1);
-}
-.bh-opt-cost {
-  font-family: var(--dk-mono);
-  font-size: 11.5px;
-  color: var(--dk-t3);
-  white-space: nowrap;
-}
-.bh-opt-on .bh-opt-cost {
-  color: var(--dk-t1);
-}
-.bh-opt-sub {
-  display: block;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--dk-t3);
-}
-.bh-opt-note {
-  display: block;
-  font-size: 12.5px;
-  line-height: 16.5px;
-  color: var(--dk-t2);
-}
-.bh-opts + .dk-stats {
-  margin-top: 16px;
-}
-.bh-scen {
-  width: 100%;
-  margin-top: 12px;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.bh-scen th,
-.bh-scen td {
-  height: 25px;
-  border-bottom: 1px solid var(--dk-row);
-  font-weight: 400;
-}
-.bh-scen thead th:first-child {
-  text-align: left;
-}
-.bh-scen thead th {
-  height: 24px;
-  font-family: var(--dk-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--dk-t4);
-  text-align: right;
-}
-.bh-scen tbody th {
-  text-align: left;
-  color: var(--dk-t1);
-}
-.bh-scen td {
-  width: 110px;
-  text-align: right;
-  font-family: var(--dk-mono);
-  font-size: 12px;
-}
-.bh-scen-note {
+.bh-unserved {
   margin-top: 8px;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--dk-t3);
 }
-.bh-hedge .dk-read {
-  font-size: 13.5px;
-  line-height: 18.5px;
-}
-.bh-why-box {
-  margin: 14px 0;
-}
-/* The Recommendation sits at the card's foot, as in the PNG. */
-.bh-hedge .bh-rec {
-  margin-top: auto;
+.bh-chart-title + .bh-why {
+  margin-top: 6px;
 }
 
 @media (max-width: 1100px) {
@@ -419,8 +282,5 @@
   }
   .bh-add-hint {
     display: none;
-  }
-  .bh-scen td {
-    width: 76px;
   }
 }

@@ -11,9 +11,6 @@
 
 import engineAssets from "../../screens/desk/event-study/__fixtures__/engine-assets.json" with { type: "json" };
 import engineStudies from "../../screens/desk/event-study/__fixtures__/engine-studies.json" with { type: "json" };
-import basketPrice from "./basket-price.json" with { type: "json" };
-import basket from "./basket.json" with { type: "json" };
-import hedge from "./hedge.json" with { type: "json" };
 import ledger from "./ledger.json" with { type: "json" };
 import macro from "./macro.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
@@ -82,13 +79,16 @@ function catalogAsk(u: URL): { study: CatalogStudy | null; question: Question | 
 }
 
 /** The deferred resources of §12.13 that are GET-only stubs on Monday (§12.0): each answers the awaiting
- * envelope with §1.0's reason. Their deferred shapes (vol.json, sectors.json) stay for the unit tests
- * that render a block once it is served. */
+ * envelope with §1.0's reason. The shapes Monday's pages still render once served (vol.json,
+ * sectors.json) stay for their unit tests; basket, price and hedge have no page that reads them. */
 const DEFERRED: Readonly<Record<string, string>> = {
   "/vol": "needs stored SPY option snapshots and a versioned skew method.",
   "/sectors": "sector ETFs, RSP and IWM not ingested.",
   // §9, §12.13: positions are kept in the browser; there is no server position store (v2 D-21).
   "/positions": "positions are kept in this browser; there is no server position store.",
+  // §10, §12.13: basket pricing and option structures (v2 D-25–D-28).
+  "/basket/price": "basket pricing and option structures not yet defined in the engine.",
+  "/hedge": "basket pricing and option structures not yet defined in the engine.",
 };
 
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
@@ -101,36 +101,6 @@ function asksFixtureStudy(u: URL): boolean {
   const preset = u.searchParams.get("preset");
   if (preset) return preset === (study as { slug: string }).slug;
   return SLOTS.every((k) => u.searchParams.get(k) === String(STUDY_Q[k]));
-}
-
-// ── Basket & Hedge (§12.12): the fixtures carry one basket, its price and
-// one hedge (Protect, for that basket, as a basket, as its legs, or as the
-// position that holds it), as they carry one study. Other weights, baskets,
-// modes and subjects have no fixture: the page shows what the API would on an
-// error, Awaiting refresh. ─────────────────────────────────────────────────
-
-const B = basket as { id: string; legs: { symbol: string; weight: number }[] };
-const legsKey = (legs: { symbol: string; weight: number }[]) => legs.map((l) => `${l.symbol}:${l.weight}`).join(",");
-const BASKET_LEGS = legsKey(B.legs);
-/** The position on the fixture's Position Monitor that holds the basket. */
-const BASKET_POSITION = "ai-infra-hedged";
-
-function basketPriceReply(body: string | undefined): FixtureReply {
-  let legs: { symbol: string; weight: number }[] = [];
-  try {
-    legs = ((JSON.parse(body ?? "{}") as { legs?: unknown }).legs as typeof legs) ?? [];
-  } catch {
-    return json(400, { error: "not JSON" });
-  }
-  if (!Array.isArray(legs) || legsKey(legs) !== BASKET_LEGS) return json(404, { error: "no fixture for these legs" });
-  return json(200, basketPrice);
-}
-
-function hedgeReply(u: URL): FixtureReply {
-  const q = u.searchParams;
-  const ours = q.get("basket") === B.id || q.get("position") === BASKET_POSITION || q.get("legs") === BASKET_LEGS;
-  if (q.get("mode") !== "protect" || !ours) return json(404, { error: "no fixture for this hedge" });
-  return json(200, hedge);
 }
 
 /** §12.3's CSV: one row per event, the JSON's columns in order. */
@@ -157,8 +127,10 @@ export function deskFixture(method: string, url: string, _body?: string, accept?
 
 /** The fixture's answer before it is put on the wire: a payload or a `{error}` body. */
 function rawReply(method: string, u: URL, path: string, _body?: string, accept?: string): FixtureReply {
-  // §12.0: a removed write answers 405 (`POST /positions`).
-  if (path === "/positions" && method.toUpperCase() !== "GET") return json(405, { error: "method not allowed" });
+  // §12.0: a removed write answers 405 (`POST /positions`, `POST /basket/price`).
+  if ((path === "/positions" || path === "/basket/price") && method.toUpperCase() !== "GET") return json(405, { error: "method not allowed" });
+  // §12.13: `GET /basket/:id` is a deferred stub like the others.
+  if (method.toUpperCase() === "GET" && path.startsWith("/basket/") && path !== "/basket/price") return json(200, awaitingEnvelope({ reason: DEFERRED["/basket/price"], until: null }, FIXTURE_META));
   if (method.toUpperCase() === "GET" && path in DESK_JSON_FIXTURES) return json(200, DESK_JSON_FIXTURES[path]);
   if (method.toUpperCase() === "GET" && path in DEFERRED) return json(200, awaitingEnvelope({ reason: DEFERRED[path], until: null }, FIXTURE_META));
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {
@@ -185,9 +157,6 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
     const answer = slug === "gold-2sigma-spx-weak" ? engineStudies.preset : slug === "spx-golden-cross" ? engineStudies.cross : null;
     return answer ? json(200, answer) : json(404, { error: "no fixture for this engine study" });
   }
-  if (method.toUpperCase() === "GET" && path.startsWith("/basket/")) return path === `/basket/${B.id}` ? json(200, basket) : json(404, { error: `no fixture for basket ${path.slice(8)}` });
-  if (path === "/basket/price") return method.toUpperCase() === "POST" ? basketPriceReply(_body) : json(405, { error: "method not allowed" });
-  if (method.toUpperCase() === "GET" && path === "/hedge") return hedgeReply(u);
   // §12.11: the Snowflake DDL, as text.
   if (method.toUpperCase() === "GET" && path === "/pipeline/ddl") return { status: 200, contentType: "text/plain", body: PIPELINE_DDL };
   return json(404, { error: `no fixture for ${method.toUpperCase()} /api/desk${path}` });

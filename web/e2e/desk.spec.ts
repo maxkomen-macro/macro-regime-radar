@@ -20,6 +20,8 @@ import { DESK_GROUPS } from "../src/screens/desk/desk-sections";
 import { bpStudy } from "../src/test/desk-variants";
 import positionSample from "../src/fixtures/desk/positions.json" with { type: "json" };
 import { POSITIONS_KEY } from "../src/screens/desk/positions/store";
+import basketSample from "../src/fixtures/desk/baskets.json" with { type: "json" };
+import { SAVED_BASKETS_KEY } from "../src/screens/desk/basket/weights";
 
 /** A fixture answer's payload: the envelope's `data` (§12.0), for an override to change and serve again. */
 function payloadOf(reply: { body: string }): Record<string, unknown> {
@@ -38,6 +40,17 @@ async function seedPositions(page: Page, list: unknown[] = (positionSample as { 
       /* no storage: the tab shows an empty monitor */
     }
   }, [POSITIONS_KEY, JSON.stringify(list)] as const);
+}
+
+/** The illustrative basket (§10: baskets live in the browser), set before the app loads on every navigation of this page. */
+async function seedBaskets(page: Page): Promise<void> {
+  await page.addInitScript(([key, text]) => {
+    try {
+      localStorage.setItem(key, text);
+    } catch {
+      /* no storage: the tab says no basket is saved */
+    }
+  }, [SAVED_BASKETS_KEY, JSON.stringify((basketSample as { baskets: unknown[] }).baskets)] as const);
 }
 
 async function open(page: Page, route: string, over?: Parameters<typeof routeDesk>[1]): Promise<void> {
@@ -85,7 +98,6 @@ test.describe("desk v2", () => {
     { slug: "sectors", path: "/api/desk/sectors", labels: ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"] },
     { slug: "signal-ledger", path: "/api/desk/ledger", labels: ["Signals scored", "Firing now", "Reliable", "No edge"] },
     { slug: "data-pipeline", path: "/api/desk/pipeline", labels: ["Series inventory"] },
-    { slug: "basket-hedge", path: "/api/desk/basket/ai-infra", labels: ["3-month", "Basket vol", "Hedge ratio", "Cost of waiting", "Roll"] },
   ];
   for (const t of NULL_ANSWERS)
     test(`${t.slug}: a 200 answered null keeps its labels and says Awaiting refresh`, async ({ page }) => {
@@ -581,16 +593,7 @@ test.describe("desk v2", () => {
     await expect(marked).toHaveText("Long A");
   });
 
-  test("the badge dates the basket's numbers from the answer that gave them; SPY gets no index numbers (Codex R-04, R-08)", async ({ page }) => {
-    const price = payloadOf(deskFixture("POST", "/api/desk/basket/price", JSON.stringify({ legs: [{ symbol: "NVDA", weight: 22 }, { symbol: "AVGO", weight: 16 }, { symbol: "VRT", weight: 14 }, { symbol: "CRWV", weight: 12 }, { symbol: "ANET", weight: 12 }, { symbol: "CEG", weight: 12 }, { symbol: "SMCI", weight: 12 }] }))!);
-    await open(page, "/desk/basket-hedge", { "/api/desk/basket/price": { status: 200, body: { ...price, prices_as_of: "2026-09-24", ret_3m: 0.133 } } });
-    const basket = page.getByRole("region", { name: "Basket" });
-    await expect(page.getByTestId("dk-live")).toHaveText("Live · prices Sep 22 · options via EODHD");
-    await expect(page.getByRole("region", { name: /^Hedge · express or protect/ })).toContainText("priced off the SPY / QQQ surface of Sep 22");
-    await basket.getByLabel("Weight of SMCI, percent").fill("8");
-    await basket.getByLabel("Weight of NVDA, percent").fill("26");
-    await expect(basket).toContainText("+13.3%");
-    await expect(page.getByTestId("dk-live")).toHaveText("Live · prices Sep 24 · options via EODHD");
+  test("SPY gets no index numbers; the S&P 500 does (Codex R-08)", async ({ page }) => {
     await open(page, "/desk/position-monitor");
     await page.getByLabel("Instrument", { exact: true }).fill("S&P 500");
     await expect(page.getByRole("button", { name: "closes below its 50-day (6,280)" })).toBeVisible();
@@ -599,48 +602,42 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("main")).not.toContainText("6,280");
   });
 
-  test("numbers shown undated say so in the card, and the badge never pushes a phone's page sideways (Codex G4-1)", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    const served = payloadOf(deskFixture("GET", "/api/desk/basket/ai-infra")!);
-    await open(page, "/desk/basket-hedge", { "/api/desk/basket/ai-infra": { status: 200, body: { ...served, prices_as_of: undefined } } });
-    await expect(page.getByRole("region", { name: "Basket" })).toContainText("prices date awaiting refresh");
-    await expect(page.getByTestId("dk-live")).toHaveText("Live · options via EODHD");
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-  });
-
-  test("basket & hedge: the basket, a picked structure, typed weights, a save, the hand-off; phone width", async ({ page }) => {
+  test("basket & hedge: unavailable, the basket's weights kept in the browser, the hand-off; every width", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (/\/api\/desk\/(basket|hedge)/.test(r.url())) asked.push(`${r.method()} ${r.url()}`);
+    });
+    await seedBaskets(page);
     await open(page, "/desk/basket-hedge");
     const basket = page.getByRole("region", { name: "Basket" });
     const hedge = page.getByRole("region", { name: /^Hedge · express or protect/ });
-    await expect(basket).toContainText("+12.7%");
-    await expect(hedge).toContainText("$62.4 per $100");
-    await expect(page.getByTestId("dk-live")).toHaveText("Live · prices Sep 22 · options via EODHD");
-    await expect(basket.getByRole("img")).toBeVisible();
-    // The keyboard picks a structure: its numbers follow.
-    await hedge.getByRole("radio").nth(1).focus();
-    await page.keyboard.press("Space");
-    await expect(hedge.getByRole("radio").nth(1)).toBeChecked();
-    await expect(hedge).toContainText("costs 0.2% of basket");
-    await expect(hedge.getByRole("table")).toContainText("−22.8%");
+    // §10: the badge, the labels kept, the reason printed; no chart, no structure.
+    await expect(page.getByRole("main").getByTestId("dk-live").first()).toHaveText("Not yet served");
+    await expect(basket).toContainText("Basket pricing and option structures are not yet defined in the engine.");
+    await expect(basket).toContainText("Is the AI infrastructure bet working?");
+    await expect(basket.getByRole("img")).toHaveCount(0);
+    await expect(hedge.getByRole("group", { name: "Hedge mode" }).getByRole("button")).toHaveCount(3);
+    for (const b of await hedge.getByRole("group", { name: "Hedge mode" }).getByRole("button").all()) await expect(b).toBeDisabled();
+    await expect(hedge.getByRole("radio")).toHaveCount(0);
+    await expect(hedge).toContainText("Basket pricing and option structures are not yet defined in the engine.");
     expect(await auditPalette(page)).toEqual([]);
-    // Weights as typed.
+    expect(await bannedWordsOnPage(page)).toEqual([]);
+    // Weights as typed, saved in this browser.
     await basket.getByLabel("Weight of SMCI, percent").fill("8");
     await expect(basket).toContainText("total 96%");
     await basket.getByRole("button", { name: "Normalize to 100%" }).click();
     await expect(basket).toContainText("total 100%");
     await basket.getByRole("button", { name: "Save basket" }).click();
     await expect(basket).toContainText("Saved in this browser.");
-    // The hand-off: Position Monitor reads the basket.
+    // The hand-off: Position Monitor reads the basket, a manual subject (§9).
     await page.getByTestId("dk-act").click();
-    await expect(page).toHaveURL(/\/desk\/position-monitor\?basket=ai-infra$/);
-    await expect(page.getByRole("textbox", { name: "Instrument" })).toHaveValue("AI infrastructure basket vs 1.6 × NDX");
+    await expect(page).toHaveURL(/\/desk\/position-monitor\?basket=local-1$/);
+    await expect(page.getByRole("textbox", { name: "Instrument" })).toHaveValue("AI infrastructure basket");
     // A phone gets both cards, one under the other, and never scrolls sideways.
-    // (The save above lives in this browser; a fresh one reads the served basket.)
-    await page.evaluate(() => localStorage.clear());
     for (const width of [1440, 1200, 1101, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/basket-hedge");
-      await expect(page.getByRole("region", { name: /^Hedge · express or protect/ })).toContainText("$62.4 per $100");
+      await expect(page.getByRole("region", { name: "Basket" }).getByLabel("Weight of NVDA, percent")).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `overflow at ${width}`).toBeLessThanOrEqual(1);
       // Nothing in the basket's header is cut: the title, and the selector at its basket's width.
       const head = await page.evaluate(() => {
@@ -654,16 +651,6 @@ test.describe("desk v2", () => {
       });
       expect(head.titleCut, `title at ${width}`).toBe(false);
       expect(head.room, `selector at ${width}`).toBeGreaterThan(16);
-      // The falsification band holds its label, and the label clears the x captions.
-      const band = await page.evaluate(() => {
-        const t = [...document.querySelectorAll<SVGTextElement>(".bh-card .dk-chart-band")].find((e) => /comes off/.test(e.textContent ?? ""))!;
-        const r = t.parentElement!.querySelector("rect")!.getBoundingClientRect();
-        const b = t.getBoundingClientRect();
-        const caps = [...document.querySelectorAll<SVGTextElement>(".bh-card .dk-chart-axis")].filter((e) => /sessions ago|today|Sep/.test(e.textContent ?? "")).map((e) => e.getBoundingClientRect().top);
-        return { inside: b.top >= r.top - 1 && b.bottom <= r.bottom + 1, clear: caps.every((c) => b.bottom <= c + 1) };
-      });
-      expect(band.inside, `band label inside at ${width}`).toBe(true);
-      expect(band.clear, `band label clear of captions at ${width}`).toBe(true);
       expect(await auditPalette(page)).toEqual([]);
     }
     // Nothing on the tab animates under reduced motion.
@@ -671,6 +658,8 @@ test.describe("desk v2", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await open(page, "/desk/basket-hedge");
     expect(await page.evaluate(() => [...document.querySelectorAll(".dk *")].filter((el) => getComputedStyle(el).animationName !== "none").length)).toBe(0);
+    // Nothing is priced, so nothing is asked of the server.
+    expect(asked).toEqual([]);
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

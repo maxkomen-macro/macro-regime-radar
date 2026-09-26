@@ -19,13 +19,12 @@ import { DeskApiError, deskUrl, unavailableOf, useOverview, useStudy, useStudyCa
 import type { Question, StudyResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { useDeskView, withParam } from "../desk-view";
 import { dayShort, grouped, isFiniteNumber as fin, verdictRuleWords, year } from "../kit/format";
 import AnswerCard from "./AnswerCard";
 import EngineDetail from "./EngineDetail";
 import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
-import { WINDOWS, apiParams, askFromSearch, askParams, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
+import { WINDOWS, apiParams, askFromSearch, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
 import { Unserved } from "../kit/ui";
 import "./study.css";
@@ -54,7 +53,6 @@ export function applyFix(q: Question, fix: string): Question | null {
 const askKey = (a: Ask) => searchFor(a);
 
 export default function EventStudyPage({ page }: { page: DeskPage }) {
-  const { pathTo } = useDeskView();
   const [search, setSearch] = useSearchParams();
   const ask: Ask = useMemo(() => askFromSearch(search), [search]);
   const key = askKey(ask);
@@ -158,7 +156,6 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   // §12.0: never a silent parameter drop. An address asking what §12.2 no longer serves opens the default question, and says so.
   const withdrawn = !search.get("preset") && !oldLink ? withdrawnIn(search) : null;
   const engineSlug = study?.question ? engineSlugFor(study.question) : null;
-  const priceHref = askParams(ask).reduce((href, [k, v]) => withParam(href, k === "preset" ? "study" : k, v), withParam(pathTo("basket-hedge"), "mode", "express"));
   // A served study is scored at its selected horizon, Too few included (v4 B-02): the rail reads it either way.
   const askedHorizon = "question" in ask ? ask.question.horizon : (study?.selected_horizon ?? study?.question?.horizon ?? undefined);
 
@@ -209,7 +206,6 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
               <StudyRail
                 study={study}
                 todayRegime={ov.data?.tiles?.regime?.label ?? null}
-                priceHref={priceHref}
                 advOpen={adv}
                 onAdvanced={() => setAdv((o) => !o)}
                 advId={advId}

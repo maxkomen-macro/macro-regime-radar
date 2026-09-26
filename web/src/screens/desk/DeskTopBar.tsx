@@ -17,7 +17,6 @@ import { DESK_SIDEBAR_ID } from "./DeskSidebar";
 import { TOUR_BUTTON_ID, TOUR_STRIP_ID } from "./tour/TourStrip";
 import { parseTour, tourHref } from "./tour/tour";
 import { askFromSearch, askParams } from "./event-study/question";
-import { DEFAULT_BASKET } from "./basket/weights";
 
 export function ViewToggle({ view, onChange, labels = ["Desk", "Client"] }: { view: DeskView; onChange: (v: DeskView) => void; labels?: [string, string] }) {
   return (
@@ -51,9 +50,11 @@ function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => st
         Act on this → Position Monitor
       </Link>
     );
+  // §10: a basket kept in this browser is the subject sent; the page writes the open one in the address.
+  const basket = new URLSearchParams(location.search).get("basket");
   if (page.action === "send")
     return (
-      <Link className="dk-btn" data-kind="light" to={withParam(pathTo("position-monitor"), "basket", new URLSearchParams(location.search).get("basket") || DEFAULT_BASKET)} data-testid="dk-act">
+      <Link className="dk-btn" data-kind="light" to={basket ? withParam(pathTo("position-monitor"), "basket", basket) : pathTo("position-monitor")} data-testid="dk-act">
         Send to Position Monitor →
       </Link>
     );
