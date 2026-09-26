@@ -1,5 +1,5 @@
 {
- "base": "dc9704df2f1072500e9442622ed6ff09e683a9c0",
+ "base": "9979fe960f6798dd10e62225d92f2b4f5c949d29",
  "method": "sha256 of json.dumps(run_on(conn, q, **pins), sort_keys=True, separators=(',', ':'), ensure_ascii=False); a refusal is 'NotStored:<series>' or 'StudyError:<message>'",
  "pins": {
   "as_of": "2026-09-24",
