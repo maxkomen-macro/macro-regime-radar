@@ -228,6 +228,56 @@ def desk_ledger(request: Request) -> Response:
     return _response(env.answer("/ledger", lambda: ledger_answer(params)))
 
 
+@router.get("/technicals")
+def desk_technicals(request: Request) -> Response:
+    params = list(request.query_params.multi_items())
+    return _response(env.answer("/technicals", lambda: technicals_answer(params)))
+
+
+# ── §12.7 GET /technicals ───────────────────────────────────────────────────
+
+TECHNICALS_KEYS = ("price", "date", "freq", "source", "chg_1d", "chg_1d_dates", "ret_1y", "ret_1y_dates", "ma50",
+                   "ma200", "ma50_window", "ma200_window", "vs_ma50", "vs_ma200", "trend", "cross", "move_20d_sigma",
+                   "move_20d_date", "series", "signals_allowlist", "vol", "sectors")
+SPX_SOURCE = "asset_prices ^GSPC"
+
+
+def _technicals_item() -> dict:
+    from api.worker import get_worker
+
+    return get_worker().result("desk_technicals")
+
+
+def move_20d() -> tuple[float | None, str | None]:
+    """N4: the spx-20d-2sigma study's z on its evaluated_on, read from that
+    item's own trace (nothing recomputed); both null when the study refused or
+    has no evaluable session."""
+    import numpy as np
+
+    item = _item("spx-20d-2sigma")
+    if not item["ok"] or item["trace"].z is None:
+        return None, None
+    tr = item["trace"]
+    ev = np.flatnonzero(tr.evaluable)
+    if not len(ev):
+        return None, None
+    z = float(tr.z[int(ev[-1])])
+    return (z if math.isfinite(z) else None), tr.sessions[int(ev[-1])]
+
+
+def technicals_answer(params: list[tuple[str, str]]) -> dict:
+    if params:
+        raise env.Unsupported(f"{params[0][0]} is not a parameter of /technicals.")
+    item = _technicals_item()
+    if not item["ok"]:
+        raise env.Awaiting(item["reason"])
+    sigma, sigma_date = move_20d()
+    out = {**item, "freq": "daily", "source": SPX_SOURCE, "move_20d_sigma": sigma, "move_20d_date": sigma_date,
+           "signals_allowlist": list(catalog.TECHNICALS_ALLOWLIST),
+           "vol": env.block_deferred("/technicals", "vol"), "sectors": env.block_deferred("/technicals", "sectors")}
+    return {k: out[k] for k in TECHNICALS_KEYS}
+
+
 # ── §12.5 GET /ledger ───────────────────────────────────────────────────────
 
 LEDGER_KEYS = ("slug", "label", "short", "group", "available", "unavailable", "horizon", "last_fired", "sample_start",

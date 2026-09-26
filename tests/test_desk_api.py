@@ -625,6 +625,7 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/study/catalog"): ("/api/desk/study/catalog", 200, None),
     ("GET", "/api/desk/study/events"): ("/api/desk/study/events?preset=golden-cross", 200, None),
     ("GET", "/api/desk/ledger"): ("/api/desk/ledger", 200, None),
+    ("GET", "/api/desk/technicals"): ("/api/desk/technicals", 200, None),
     # diagnostics, open in development (no DEPLOY_PUBLIC, no CORS_ORIGINS)
     ("GET", "/api/ops/whoami"): ("/api/ops/whoami", 200, None),
     ("GET", "/api/stream/debug"): ("/api/stream/debug", 200, None),
@@ -1033,8 +1034,10 @@ def test_a_failed_first_import_of_the_engine_recovers_by_rebuilding_the_same_fil
     monkeypatch.setattr(db, "DB_PATH", SCRATCH)
     db.reset_connections_for_tests()
     items = [(n, fn) for n, fn in analytics_cache.ITEMS if n.startswith("desk")]
-    # desk/frame-3-api: the catalog's thirteen studies sit between desk_assets and the presets
-    assert [n for n, _ in items][0] == "desk_assets" and len(items) == 1 + 13 + len(analytics_cache.DESK_PRESETS)
+    # desk/frame-3-api: the Desk v2 items (the catalog's thirteen studies, /technicals' and /overview's)
+    # sit among them; desk_assets is still the first to import the engine
+    assert [n for n, _ in items][0] == "desk_assets"
+    assert {f"desk_preset:{n}" for n in analytics_cache.DESK_PRESETS} <= {n for n, _ in items}
     w = install_worker(worker_mod.AnalyticsWorker(items=items, poll_s=0.05))
     w.import_retry_s = 1.5
     w.start(serving=True)

@@ -528,7 +528,7 @@ def main():
 
     es._connect = failing
     db.DB_PATH = Path(store)
-    items = [(n, f) for n, f in analytics_cache.ITEMS if n.startswith("desk_study:")]
+    items = [(n, f) for n, f in analytics_cache.ITEMS if n.startswith(tuple(sys.argv[3].split(",")))]
     w = worker_mod.AnalyticsWorker(items, poll_s=0.05, preload=False)
     worker_mod._worker = w
     w.start(serving=True)
@@ -564,17 +564,22 @@ if __name__ == "__main__":
 '''
 
 
+# Every Desk v2 builder that opens a connection to the copy (plan §5): each is made to fail once it is open.
+FAILING_ITEM_PREFIXES = ("desk_study:", "desk_technicals")
+
+
 def test_a_desk_item_that_fails_midway_leaves_no_connection_to_the_copy(tmp_path, synth_path):
     script = tmp_path / "failing_build.py"
     script.write_text(_FAILING_BUILD)
     env_ = {**os.environ, "EODHD_PROBE_ON_START": "0", "ASSISTANT_ACCESS": "off"}
-    proc = subprocess.run([sys.executable, str(script), str(ROOT), str(synth_path)], capture_output=True, text=True,
-                          timeout=300, env=env_, cwd=ROOT)
+    proc = subprocess.run([sys.executable, str(script), str(ROOT), str(synth_path), ",".join(FAILING_ITEM_PREFIXES)],
+                          capture_output=True, text=True, timeout=300, env=env_, cwd=ROOT)
     lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("RESULT ")]
     assert lines, (proc.returncode, proc.stdout[-2000:], proc.stderr[-4000:])
     res = json.loads(lines[-1][len("RESULT "):])
-    assert res["failed"] == sorted(f"desk_study:{s}" for s in catalog.CATALOG_QUERY_SLUGS), res
-    assert res["opened"] == 13 and res["left_open"] == 0 and res["rows"] > 0 and not res["hung"], res
+    want = sorted(n for n, _ in analytics_cache.ITEMS if n.startswith(FAILING_ITEM_PREFIXES))
+    assert res["failed"] == want, res
+    assert res["opened"] == len(want) and res["left_open"] == 0 and res["rows"] > 0 and not res["hung"], res
 
 
 def test_the_new_modules_install_no_python_callback_on_a_connection():
