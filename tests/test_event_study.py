@@ -201,7 +201,8 @@ def test_calendar_extends_one_session_past_the_last_input(tmp_path):
     clock = es.clock_for(cal, sessions[[-1]])
     assert clock.next_opens[0].tz_convert(NY).strftime("%Y-%m-%d %H:%M") == "2027-01-04 09:30"
     db = _synthetic_db(tmp_path / "yearend.db", spx_end="2026-12-31")
-    r = es.run(es.Query(shock="us10y", w=5, z=1.5, sign="both", target="spx"), db)
+    # a store as of year end (review R-06: the reader stops at the as-of, today by default)
+    r = es.run(es.Query(shock="us10y", w=5, z=1.5, sign="both", target="spx"), db, as_of="2026-12-31")
     assert " to 2026-12-31: " in r["provenance"]["calendar"], "the study index stays bounded by the inputs"
     assert r["provenance"]["sample_end"] == "2026-09-30", "the last labelled session (regime rows to 2026-07, lag 2); every later session still resolved its next open without error"
 
@@ -708,12 +709,14 @@ def test_not_stored_is_typed(tmp_path):
     assert es.run(es.PRESETS["gold-2sigma-spx-weak"], db)["provenance"]["n_events"] >= 0
 
 
-def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp_path):
+def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp_path, monkeypatch):
     """desk/integration, Step 4: the deployed database has no desk_series table
     until the first full refresh after the merge. A study on a series that
     refresh stores says so (awaiting_refresh, never the raw sqlite error); a
-    series no refresh stores yet (tier 2) stays not-stored and says why. The
-    flag survives copy.copy, which is how the worker re-raises a stored error."""
+    series no refresh stores yet stays not-stored and says why. The flag
+    survives copy.copy, which is how the worker re-raises a stored error.
+    desk/hardening: the refresh stores tier 2, so the Nasdaq 100 is awaiting it
+    too; the planned path is pinned with the refresh tier set back to 1."""
     import copy
 
     db = _synthetic_db(tmp_path / "s.db")
@@ -724,19 +727,29 @@ def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp
     assert "first full refresh" in str(awaiting.value) and "no such table" not in str(awaiting.value)
     again = copy.copy(awaiting.value)
     assert again.awaiting_refresh is True and again.series == "us10y" and str(again) == str(awaiting.value)
-    with pytest.raises(es.NotStored) as planned:
+    with pytest.raises(es.NotStored) as tier2:
         es.run(es.Query(shock="ndx", target="spx"), db)
-    assert planned.value.awaiting_refresh is False and "tier 2" in str(planned.value) and "^NDX" in str(planned.value)
+    assert tier2.value.awaiting_refresh is True and tier2.value.series == "ndx" and "first full refresh" in str(tier2.value)
 
     a = es.assets_with_coverage(db)
     by = {x["key"]: x for x in a["shocks"]}
-    tier1 = [s.key for s in registry.fetched(registry.REFRESH_TIER)]
-    assert tier1 == ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas"]
-    assert set(tier1) <= set(a["awaiting_refresh"])
+    stored_by_refresh = [s.key for s in registry.fetched(registry.REFRESH_TIER)]
+    assert stored_by_refresh == ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "wti", "ndx", "dxy", "usdjpy"]
+    assert set(stored_by_refresh) <= set(a["awaiting_refresh"])
     for k in a["awaiting_refresh"]:
         assert by[k]["status"] == "awaiting_refresh" and registry.stored_by_refresh(registry.get(k)), k
-    assert by["ndx"]["status"] == "planned" and by["wti"]["status"] == "planned" and by["spx"]["status"] == "stored"
-    assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["rut"]  # ^RUT is not in the synthetic store
+    assert by["ndx"]["status"] == "awaiting_refresh" and by["wti"]["status"] == "awaiting_refresh" and by["spx"]["status"] == "stored"
+    # ^RUT is not in the synthetic store, nor are the four tier-2 desk_series series
+    assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["wti", "ndx", "rut", "dxy", "usdjpy"]
+
+    # A tier the refresh does not store is planned: not stored, and it says why.
+    monkeypatch.setattr(registry, "REFRESH_TIER", 1)
+    with pytest.raises(es.NotStored) as planned:
+        es.run(es.Query(shock="ndx", target="spx"), db)
+    assert planned.value.awaiting_refresh is False and "tier 2" in str(planned.value) and "^NDX" in str(planned.value)
+    assert "stores tiers up to 1 only" in str(planned.value)
+    by = {x["key"]: x for x in es.assets_with_coverage(db)["shocks"]}
+    assert by["ndx"]["status"] == "planned" and by["wti"]["status"] == "planned" and by["us10y"]["status"] == "awaiting_refresh"
 
 
 def test_the_web_slug_fixture_is_the_engines():
@@ -803,7 +816,7 @@ def test_assets_from_the_registry_with_stored_coverage(synth):
     by = {x["key"]: x for x in a["shocks"]}
     assert by["spx"]["status"] == "stored" and by["spx"]["history_from"] == "1995-01-02" and by["spx"]["warn"]
     assert by["gold"]["status"] == "stored" and by["gold"]["defer_as_target"] and by["gold"]["known"] == "17:00 ET clock"
-    assert by["us10y"]["known"] == "next session open" and by["wti"]["status"] == "planned" and by["copper"]["status"] == "deferred"
+    assert by["us10y"]["known"] == "next session open" and by["wti"]["status"] == "awaiting_refresh" and by["copper"]["status"] == "deferred"
     assert "gold_lbma" not in by and a["unavailable"][0]["key"] == "gold_lbma"
     assert {t["key"] for t in a["targets"]} <= set(by) and [p["slug"] for p in a["presets"]] == list(es.PRESETS)
     assert a["regime_lag_months"] == 2 and a["history_bar"] == "1990-12-31" and a["master_calendar"]
@@ -1027,9 +1040,603 @@ def test_scratch_assets_gaps_and_timing():
         es.run(es.PRESETS[name], SCRATCH)
     assert time.perf_counter() - t < 8.0
     by = {x["key"]: x for x in a["shocks"]}
-    assert by["hy_oas"]["history_from"] == "2023-09-22" and by["hy_oas"]["warn"]
+    # desk/hardening: HY OAS starts where FRED's rolling three-year window stood
+    # when this copy was first filled (2023-09-22 for the owner's 2026-09-21
+    # copy, 2023-09-25 for one filled from 2026-09-22), never after the declaration.
+    hy_first = _read("SELECT date, value FROM desk_series WHERE series_id = ? ORDER BY date", "BAMLH0A0HYM2").index[0].strftime("%Y-%m-%d")
+    assert by["hy_oas"]["history_from"] == hy_first <= registry.get("hy_oas").history_from and by["hy_oas"]["warn"]
     assert by["gold"]["history_from"] == "2000-08-30" and by["spx"]["history_from"] == "1990-01-02" and not by["spx"]["warn"]
     r = es.run(es.Query(shock="us10y", w=20, z=2.0, sign="+", target="spx"), SCRATCH)
     p = r["provenance"]
     assert p["exclusions"]["us10y"]["off_session"] > 0, "Treasury prints on NYSE holidays are dropped"
     assert p["n_events"] > 0 and p["entry_same_session"] is False, "R-01: known at the next open"
+
+
+@scratch
+def test_scratch_tier2_series_are_stored_and_studied():
+    """desk/hardening: the full refresh stores tier 2. Against a copy filled by
+    `desk_history --tier 2`, each tier-2 series is stored from its declared
+    start or earlier and a study reads it: WTI's one settlement below zero
+    (2020-04-20) is an exclusion with its reason, never a log of a negative;
+    a USD/JPY shock enters a dollar-index target the next session (its bar
+    is read at 20:00 ET, after the index's 17:00 fixing); a Nasdaq 100 shock
+    enters the S&P the same session (both at the close)."""
+    c = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    stored = {r[0] for r in c.execute("SELECT DISTINCT series_id FROM desk_series")}
+    c.close()
+    tier2 = [s for s in registry.fetched(registry.REFRESH_TIER) if s.tier == 2]
+    if not {s.series_id for s in tier2} <= stored:
+        pytest.skip("the scratch copy predates the tier-2 store: run `desk_history --tier 2` against it")
+    by = {x["key"]: x for x in es.assets_with_coverage(SCRATCH)["shocks"]}
+    for spec in tier2:
+        row = by[spec.key]
+        assert row["status"] == "stored" and row["shock_unit"] == "log_return" and row["rows"] > 5000, row
+        assert row["history_from"] <= spec.history_from, row
+
+    wti = es.run(es.Query(shock="wti", w=5, z=2.0, sign="-", target="spx"), SCRATCH)["provenance"]
+    assert wti["exclusions"]["wti"]["invalid_values"] >= 1 and "non-positive" in wti["exclusions"]["wti"]["invalid_reason"]
+    assert wti["n_events"] > 0 and wti["entry_same_session"] is False, "WTI is known at the next open"
+    fx = es.run(es.Query(shock="usdjpy", w=5, z=2.0, sign="+", target="dxy"), SCRATCH)["provenance"]
+    assert fx["n_events"] > 0 and fx["entry_same_session"] is False
+    ndx = es.run(es.Query(shock="ndx", w=5, z=2.0, sign="-", target="spx"), SCRATCH)["provenance"]
+    assert ndx["n_events"] > 0 and ndx["entry_same_session"] is True
+
+
+# ── desk/hardening, review round 2: R-01, WTI's weekly publication ──────────
+
+def _with_tier2(path: Path, seed: int = 5) -> Path:
+    """The synthetic store plus the four tier-2 series: WTI from FRED (one
+    settlement below zero, as on 2020-04-20), and the Nasdaq 100, the dollar
+    index and USD/JPY as market series."""
+    rng = np.random.default_rng(seed)
+    days = pd.bdate_range("1995-01-02", "2026-09-18")
+    days = days[days != pd.Timestamp(GOLD_OFF)]
+    d = [x.strftime("%Y-%m-%d") for x in days]
+    conn = sqlite3.connect(path)
+    for sid, base, vol in (("DCOILWTICO", 20.0, 0.02), ("^NDX", 1000.0, 0.013), ("DX-Y.NYB", 90.0, 0.004), ("JPY=X", 110.0, 0.006)):
+        level = base * np.cumprod(1.0 + rng.normal(0.0, vol, len(d)))
+        rows = [(dd, -36.98 if (sid == "DCOILWTICO" and dd == "2020-04-20") else v) for dd, v in zip(d, level.tolist())]
+        desk_history.write_series(conn, sid, rows, provider="test", merge=False)
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_wti_is_declared_known_on_the_eighth_business_day_after_its_date():
+    """Review R-01: EIA publishes the WTI spot series weekly, so each
+    observation is taken as known at 13:00 ET on the eighth business day
+    (XNYS session) after its date, stated in the registry."""
+    wti = registry.get("wti")
+    assert wti.known == registry.session_clock(8, 13, 0) and wti.known[0] in registry.ANCHORS
+    assert registry.rule_str(wti.known) == "13:00 ET on the 8th business day after (XNYS sessions)"
+    assert wti.known_by == "after_close" and "weekly" in (wti.known_note or "")
+    assert [s.key for s in registry.SERIES if s.known[0] == "session_clock"] == ["wti"]
+
+
+def test_a_wti_shock_never_enters_a_target_before_it_is_known(synth):
+    """Review R-01: for every session and every target, a WTI-dated event is
+    entered at the first session whose fixing of the target is at or after
+    13:00 ET on the eighth session after the event date, never earlier:
+    checked against an independent zoneinfo resolution of that time. The
+    baseline takes the same delay, and the verdict states the rule."""
+    from datetime import time as dtime
+
+    wti = registry.get("wti")
+    cal = es.session_calendar("1995-01-02", "2026-09-18")
+    all_sessions = pd.DatetimeIndex(cal.sessions).tz_localize(None).as_unit("ns")
+    sessions = es.sessions_between(cal, "1995-01-03", "2026-09-18")
+    pos = all_sessions.get_indexer(sessions)
+    known = pd.DatetimeIndex([datetime.combine(all_sessions[p + 8].date(), dtime(13, 0), NY) for p in pos]).tz_convert("UTC").as_unit("ns").asi8
+    clock = es.clock_for(cal, sessions)
+    for target in registry.with_role("target"):
+        delay = es.entry_delay_vec([wti], target, clock)
+        assert (delay >= 8).all(), target.key
+        at_entry = es.when_vec(target.fixed, es.clock_for(cal, all_sessions[pos + delay])).asi8
+        one_before = es.when_vec(target.fixed, es.clock_for(cal, all_sessions[pos + delay - 1])).asi8
+        assert (at_entry >= known).all(), f"{target.key}: entered before WTI was known"
+        assert (one_before < known).all(), f"{target.key}: entered later than the first fixing after WTI was known"
+    # every other input keeps the entry cc721f0 gave it: test_every_entry_but_wtis_is_the_one_cc721f0_froze
+
+    db = _with_tier2(synth)
+    for target in ("spx", "gold", "us10y", "dxy", "ndx"):
+        r = es.run(es.Query(shock="wti", w=5, z=2.0, sign="both", target=target), db)
+        p = r["provenance"]
+        # 8 sessions; 9 where the eighth is an early close and the target fixes before 13:00
+        # (the 10-year Treasury, read 30 minutes before a 13:00 close)
+        assert p["n_events"] > 0 and p["entry_same_session"] is False and min(p["entry_delay_sessions"]) == 8, (target, p["entry_delay_sessions"])
+        assert set(p["entry_delay_sessions"]) <= ({8, 9} if target == "us10y" else {8}), (target, p["entry_delay_sessions"])
+        for ev in r["recent_events"]:
+            assert ev["entry_delay"] >= 8 and ev["same_session"] is False, ev
+            if ev["entry_date"] is not None:
+                i = int(all_sessions.get_loc(pd.Timestamp(ev["date"])))
+                assert pd.Timestamp(ev["entry_date"]) == all_sessions[i + ev["entry_delay"]], ev
+        text = r["verdict"]["text"]
+        assert "WTI crude is taken as known at 13:00 ET on the 8th business day after (XNYS sessions)" in text, text
+        assert "EIA publishes" in text and "the baseline takes the same delay" in text, text
+        _no_banned(text)
+        assert "8th business day" in p["entry_rule"]
+    # a WTI condition delays entry the same way (the condition is an input)
+    assert es.entry_delay_vec([registry.get("spx"), wti], registry.get("spx"), clock).min() >= 8
+
+
+ENTRY_FIXTURE = ROOT / "tests" / "fixtures" / "desk_entries_cc721f0.json"
+
+
+def test_every_entry_but_wtis_is_the_one_cc721f0_froze():
+    """Review R-05: the entry-delay change (R-01) must leave every other input's
+    entry where it was. The expectations are frozen: generated once by the
+    cc721f0 engine (same_session_entry, before the change) from a git archive
+    of that commit, for every shock but WTI alone and with a condition input,
+    every target, and fifteen sessions chosen for their edges (early closes,
+    both DST changes, the sessions before Good Friday and New Year, Columbus
+    Day). Never regenerated from the code under test."""
+    import json
+
+    doc = json.loads(ENTRY_FIXTURE.read_text())
+    assert doc["generated_from"] == "cc721f0" and doc["calendar"].endswith(xcal_version())
+    assert "same_session_entry" in doc["_generator"], "the generator that produced them travels with them"
+    assert {"2001-11-23", "2013-07-03", "2019-12-24", "2025-11-28", "2026-11-27", "2026-03-09", "2026-11-02"} <= set(doc["dates"])
+    cal = es.session_calendar("1995-01-02", "2026-12-31")
+    all_sessions = pd.DatetimeIndex(cal.sessions).tz_localize(None).as_unit("ns")
+    pos = all_sessions.get_indexer(pd.DatetimeIndex(doc["dates"]))
+    assert (pos >= 0).all(), "every sample date is an XNYS session"
+    clock = es.clock_for(cal, all_sessions[pos])
+    shocks, targets, wrong = set(), set(), []
+    for case in doc["cases"]:
+        assert "wti" not in case["inputs"], case
+        shocks.add(case["inputs"][0])
+        targets.add(case["target"])
+        delay = es.entry_delay_vec([registry.get(k) for k in case["inputs"]], registry.get(case["target"]), clock)
+        got = [all_sessions[p + d].strftime("%Y-%m-%d") for p, d in zip(pos, delay)]
+        if got != case["entries"]:
+            wrong.append((case["inputs"], case["target"], [(d, e, g) for d, e, g in zip(doc["dates"], case["entries"], got) if e != g]))
+    assert not wrong, wrong[:5]
+    assert shocks == {s.key for s in registry.with_role("shock") if s.key != "wti"}
+    assert targets == {s.key for s in registry.with_role("target")}
+    flat = [(d, e) for c in doc["cases"] for d, e in zip(doc["dates"], c["entries"])]
+    assert len(flat) >= 4000 and any(d == e for d, e in flat) and any(d != e for d, e in flat), "both kinds of entry are frozen"
+
+
+def xcal_version() -> str:
+    import exchange_calendars
+
+    return exchange_calendars.__version__
+
+
+# ── desk/hardening, review round 3: R-06, the reader's as-of ─────────────────
+
+def _add_future_rows(path: Path) -> Path:
+    """Rows dated after any real observation: WTI in desk_series and the S&P in asset_prices."""
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO desk_series VALUES ('DCOILWTICO', '2026-12-31', 99.0, 'fred')")
+    conn.execute("INSERT INTO asset_prices VALUES ('^GSPC', '1d', '2026-12-31', 9999.0, 'test')")
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_the_series_reader_excludes_rows_dated_after_the_as_of(tmp_path):
+    """Review R-06: whatever the store left behind, the engine reads no row
+    dated after the as-of: an explicit one, else the generation's (the New York
+    date its copy was staged), else today in New York. The exclusion is
+    counted, disclosed and hashed, and the study is the one the clean store
+    gives."""
+    from types import SimpleNamespace
+
+    from src.analytics import dbpath
+
+    clean = _with_tier2(_synthetic_db(tmp_path / "clean.db"))
+    dirty = _add_future_rows(_with_tier2(_synthetic_db(tmp_path / "dirty.db")))
+    q = es.Query(shock="wti", w=5, z=2.0, sign="both", target="spx")
+    a, b = es.run(q, clean, as_of="2026-09-22"), es.run(q, dirty, as_of="2026-09-22")
+    pa, pb = a["provenance"], b["provenance"]
+    assert pb["as_of_cutoff"] == "2026-09-22" and pb["future_excluded"] == {"spx": 1, "wti": 1} and pa["future_excluded"] == {}
+    assert {m["key"]: m["last"] for m in pb["inputs"]} == {"spx": "2026-09-18", "wti": "2026-09-18"}
+    assert any("rows dated after 2026-09-22 excluded: spx 1, wti 1" in w for w in pb["warnings"]), pb["warnings"]
+    assert a["horizons"] == b["horizons"] and pa["n_events"] == pb["n_events"] and pa["sample_end"] == pb["sample_end"]
+    assert pa["inputs_hash"] != pb["inputs_hash"], "the exclusion is part of the provenance"
+    # an earlier as-of cuts earlier
+    early = es.run(q, dirty, as_of="2026-06-30")["provenance"]
+    assert early["future_excluded"]["wti"] > 50 and all(m["last"] <= "2026-06-30" for m in early["inputs"])
+    # the default: the generation's as-of when one is pinned, else today in New York
+    with dbpath.pinned(SimpleNamespace(id=1, key=("k",), source=Path("/nowhere.db"), uri="file:x?mode=memory", as_of="2026-06-30")):
+        assert es.resolve_as_of() == "2026-06-30"
+    assert es.resolve_as_of() == pd.Timestamp.now(tz="America/New_York").strftime("%Y-%m-%d")
+    assert es.resolve_as_of("2026-01-05") == "2026-01-05"
+    conn = sqlite3.connect(f"file:{dirty}?mode=ro", uri=True)
+    try:
+        assert es.load_level(conn, registry.get("wti")).index.max() == pd.Timestamp("2026-09-18")
+        assert es.load_level(conn, registry.get("spx")).attrs["future_excluded"] == 1
+    finally:
+        conn.close()
+    cov = {x["key"]: x for x in es.assets_with_coverage(dirty, as_of="2026-09-22")["shocks"]}
+    assert cov["wti"]["last"] == "2026-09-18" and cov["spx"]["last"] == "2026-09-18"
+
+
+# ── desk/hardening, verifier round 9: V-34, a hand-stored row after the series' refresh ──
+
+def _level_rows(path: Path, series_id: str) -> list[tuple[str, float]]:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return [(d, float(v)) for d, v in conn.execute("SELECT date, value FROM desk_series WHERE series_id = ? ORDER BY date", (series_id,))]
+    finally:
+        conn.close()
+
+
+def _store_runs(monkeypatch, served: dict):
+    """The store's refresh against stubs: FRED is down for every series (their rows
+    stand, and their watermarks never advance); each market series answers
+    `served[yahoo_code]` (a list of rows) or raises when that entry is None."""
+    from api.providers import market
+    from api.providers.errors import ProviderUnavailable
+
+    def fred_down(series_id, start):
+        raise RuntimeError("FRED down (test)")
+
+    def daily_history(eodhd_code, yahoo_code, start, end=None, *, allow_yahoo=False):
+        rows = served.get(yahoo_code)
+        if rows is None:
+            raise ProviderUnavailable("eodhd", "down (test)")
+        return {"provider": "eodhd", "fallback_used": False, "fallback_reason": None, "rows": [r for r in rows if r[0] >= start]}
+
+    monkeypatch.setattr(desk_history, "fred_daily", fred_down)
+    monkeypatch.setattr(market, "daily_history", daily_history)
+
+
+def test_a_hand_stored_row_is_set_aside_until_a_refresh_replaces_it(tmp_path, monkeypatch):
+    """Verifier V-34, since Codex R-14 by provenance: a USD/JPY row dated New
+    York's tomorrow, stored by hand on Monday evening, carries no run. That
+    evening's study excludes it and names it. On Tuesday its date is no longer
+    after the as-of:
+    - a successful refresh replaces it with the fetched Tuesday bar, and
+      nothing is excluded;
+    - a failed one leaves it in the table, and the reader still sets it aside,
+      as a row no committed refresh wrote. The study is the one the store
+      without the hand row gives.
+    Before V-34 the reader cut at the as-of only, and read the hand row on
+    Tuesday as a real observation."""
+    from api import freshness, provenance
+
+    base = _with_tier2(_synthetic_db(tmp_path / "base.db"))
+    history = {sid: _level_rows(base, sid) for sid in ("^NDX", "DX-Y.NYB", "JPY=X")}
+    monday = datetime(2026, 9, 22, 0, 23, tzinfo=ZoneInfo("UTC"))  # the evening full run: 20:23 ET Monday 09-21
+    tuesday = datetime(2026, 9, 23, 0, 23, tzinfo=ZoneInfo("UTC"))  # 20:23 ET Tuesday 09-22
+    served = {**history, "JPY=X": history["JPY=X"] + [("2026-09-21", 111.0), ("2026-09-22", 111.9)]}  # Tuesday's bar in progress
+    _store_runs(monkeypatch, served)
+    desk_history.refresh(base, now=monday, tier=2)
+    assert _level_rows(base, "JPY=X")[-1] == ("2026-09-21", 111.0), "Monday's bar is stored; Tuesday's, in progress, is dropped"
+
+    def copy(name: str, hand: bool) -> Path:
+        path = tmp_path / name
+        src, dst = sqlite3.connect(base), sqlite3.connect(path)
+        src.backup(dst)
+        src.close()
+        if hand:
+            dst.execute("INSERT INTO desk_series (series_id, date, value, provider) VALUES ('JPY=X', '2026-09-22', 250.0, 'hand')")
+        dst.commit()
+        dst.close()
+        return path
+
+    unprovenanced = "stored rows no committed refresh wrote (no provenance) set aside on read and excluded: usdjpy 1."
+    q = es.Query(shock="usdjpy", w=5, z=2.0, sign="+", target="spx")
+    evening = copy("evening.db", hand=True)
+    p = es.run(q, evening, as_of="2026-09-21")["provenance"]
+    assert p["no_provenance_excluded"] == {"usdjpy": 1} and p["future_excluded"] == {}, p
+    assert unprovenanced in p["warnings"], p["warnings"]
+
+    # Tuesday, the refresh succeeds: the fetched bar replaces the hand row, nothing is excluded
+    ok = copy("ok.db", hand=True)
+    served["JPY=X"] = served["JPY=X"][:-1] + [("2026-09-22", 112.0), ("2026-09-23", 112.4)]
+    desk_history.refresh(ok, now=tuesday, tier=2)
+    assert _level_rows(ok, "JPY=X")[-1] == ("2026-09-22", 112.0)
+    r = es.run(q, ok, as_of="2026-09-22")
+    assert r["provenance"]["future_excluded"] == {} and r["provenance"]["no_provenance_excluded"] == {}
+    assert not any("excluded" in w for w in r["provenance"]["warnings"]), r["provenance"]["warnings"]
+
+    # Tuesday, the refresh fails: the hand row stays in the table and is still set aside, never read
+    failed, control = copy("failed.db", hand=True), copy("control.db", hand=False)
+    served["JPY=X"] = None
+    for path in (failed, control):
+        out = desk_history.refresh(path, now=tuesday, tier=2)
+        assert "JPY=X" in out["failed"]
+    assert _level_rows(failed, "JPY=X")[-1] == ("2026-09-22", 250.0), "a failed fetch keeps what is stored"
+    a, b = es.run(q, failed, as_of="2026-09-22"), es.run(q, control, as_of="2026-09-22")
+    pa = a["provenance"]
+    assert pa["no_provenance_excluded"] == {"usdjpy": 1} and unprovenanced in pa["warnings"], pa
+    assert {m["key"]: m["last"] for m in pa["inputs"]}["usdjpy"] == "2026-09-21"
+    assert (a["horizons"], a["regimes"], a["recent_events"], a["verdict"]) == (b["horizons"], b["regimes"], b["recent_events"], b["verdict"]), \
+        "the study is the one the store without the hand row gives"
+    assert pa["inputs_hash"] != b["provenance"]["inputs_hash"], "the exclusion is hashed"
+    conn = sqlite3.connect(f"file:{failed}?mode=ro", uri=True)
+    try:
+        s = es.load_level(conn, registry.get("usdjpy"), "2026-09-22")
+        assert s.index.max() == pd.Timestamp("2026-09-21") and s.attrs["no_provenance_excluded"] == 1
+        latest = dict(conn.execute(*freshness.desk_latest_query("2026-09-22", provenance.is_migrated(conn))).fetchall())
+        assert latest["JPY=X"] == "2026-09-21", "freshness reads what the reader keeps (V-27)"
+    finally:
+        conn.close()
+    cov = {x["key"]: x for x in es.assets_with_coverage(failed, as_of="2026-09-22")["shocks"]}["usdjpy"]
+    assert cov["last"] == "2026-09-21" and cov["exclusions"]["no_provenance"] == 1
+    assert cov["warnings"] == ["1 stored row no committed refresh wrote (no provenance) set aside on read"]
+
+
+# ── desk/hardening, Codex round 5: R-14 and R-15 on the scratch store, as Codex ran them ──
+
+def _codex_store(tmp_path: Path, name: str) -> Path:
+    """Codex round 5's store: a copy of the scratch store without its Desk rows
+    after 2026-09-18 or its Desk watermarks, with the S&P's completed 09-22
+    and 09-23 sessions added."""
+    path = tmp_path / name
+    src, dst = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True), sqlite3.connect(path)
+    src.backup(dst)
+    src.close()
+    dst.execute("DELETE FROM desk_series WHERE date > '2026-09-18'")
+    dst.execute("DELETE FROM source_watermarks WHERE source LIKE 'desk%'")
+    spx = dst.execute("SELECT close FROM asset_prices WHERE symbol = '^GSPC' AND interval = '1d' ORDER BY date DESC LIMIT 1").fetchone()[0]
+    for d, k in (("2026-09-22", 1.001), ("2026-09-23", 1.002)):
+        dst.execute("INSERT OR REPLACE INTO asset_prices (symbol, interval, date, close, provider) VALUES ('^GSPC', '1d', ?, ?, 'test')", (d, spx * k))
+    dst.commit()
+    dst.close()
+    return path
+
+
+def _codex_providers(monkeypatch, state: dict):
+    """Codex round 5's providers: each series' scratch history through
+    `state["end"]` (FRED) or `state["market_end"]` (market), DGS10 and WTI with
+    their own 09-18 to 09-23 prints, market series 100, 101, 102 from 09-21,
+    and a bogus DGS10 2026-12-31 print while `state["bogus"]`."""
+    from api.providers import market
+
+    conn = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    try:
+        history = {s.series_id: conn.execute("SELECT date, value FROM desk_series WHERE series_id = ? ORDER BY date", (s.series_id,)).fetchall()
+                   for s in registry.fetched(2)}
+    finally:
+        conn.close()
+
+    def fred(series_id, start):
+        rows = {d: float(x) for d, x in history[series_id] if d <= state["end"]}
+        if series_id in ("DGS10", "DCOILWTICO"):
+            base = 4.0 if series_id == "DGS10" else 70.0
+            for i, d in enumerate(("2026-09-18", "2026-09-21", "2026-09-22", "2026-09-23")):
+                if d <= state["end"]:
+                    rows[d] = base + i * 0.01
+        out = sorted(rows.items())
+        return out + [("2026-12-31", 99.0)] if series_id == "DGS10" and state.get("bogus") else out
+
+    def daily_history(eodhd_code, yahoo_code, start, end=None, *, allow_yahoo=False):
+        rows = {d: float(x) for d, x in history[yahoo_code] if d <= state["market_end"]}
+        for i, d in enumerate(("2026-09-21", "2026-09-22", "2026-09-23")):
+            if d <= state["market_end"]:
+                rows[d] = 100.0 + i
+        return {"provider": "test", "fallback_used": False, "fallback_reason": None, "rows": sorted(rows.items())}
+
+    monkeypatch.setattr(desk_history, "fred_daily", fred)
+    monkeypatch.setattr(market, "daily_history", daily_history)
+    monkeypatch.setattr(desk_history, "_wait_for_upstream_budget", lambda *a, **k: None)
+
+
+def _news_now(path: Path, now: datetime) -> None:
+    """The newest headline dated `now`, so news-only validation judges this run (Codex dated every row)."""
+    c = sqlite3.connect(path)
+    c.execute("UPDATE news_feed SET published_at = ? WHERE rowid = (SELECT rowid FROM news_feed ORDER BY published_at DESC LIMIT 1)",
+              (now.strftime("%Y-%m-%d %H:%M:%S"),))
+    c.commit()
+    c.close()
+
+
+SPX_US10Y = dict(shock="spx", w=5, z=1.5, sign="both", target="us10y")  # Codex's study
+
+
+@scratch
+def test_r14_a_hand_row_a_successful_fred_refresh_never_served_is_set_aside(tmp_path, monkeypatch):
+    """Codex R-14 (V-36), Codex's repro: after the September 21 evening refresh,
+    September 22 rows valued 99 are inserted by hand for DGS10 and WTI; the
+    September 22 evening refresh succeeds, with FRED serving only through
+    September 21, so FRED's merge keeps both hand rows. Under V-34 the fetch
+    moved each series' `advanced_at` to the 22nd and both rows were read, with
+    no exclusion and validation passing; the SPX→US10Y five-session baseline N
+    was 7,406. By provenance neither row was written by a committed refresh:
+    both are excluded and named, validation fails, and N is 7,405."""
+    from scripts import validate_db as v
+
+    path = _codex_store(tmp_path, "r14.db")
+    state = {"end": "2026-09-18", "market_end": "2026-09-21", "bogus": False}
+    _codex_providers(monkeypatch, state)
+    desk_history.refresh(path, now=datetime(2026, 9, 22, 0, 23, tzinfo=ZoneInfo("UTC")), tier=2)
+    c = sqlite3.connect(path)
+    c.executemany("INSERT INTO desk_series (series_id, date, value, provider) VALUES (?, '2026-09-22', 99.0, 'hand')", [("DGS10",), ("DCOILWTICO",)])
+    c.commit()
+    c.close()
+    state.update(end="2026-09-21", market_end="2026-09-22")
+    now = datetime(2026, 9, 23, 0, 23, tzinfo=ZoneInfo("UTC"))
+    out = desk_history.refresh(path, now=now, tier=2)
+    assert out["failed"] == [], out
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        for key in ("us10y", "wti"):
+            s = es.load_level(conn, registry.get(key), "2026-09-22")
+            assert 99.0 not in s.to_numpy() and s.index.max() == pd.Timestamp("2026-09-21"), (key, s.tail(2))
+            assert s.attrs["no_provenance_excluded"] == 1, (key, s.attrs)
+    finally:
+        conn.close()
+    cov = {x["key"]: x for x in es.assets_with_coverage(path, as_of="2026-09-22")["shocks"]}
+    for key in ("us10y", "wti"):
+        assert cov[key]["warnings"] == ["1 stored row no committed refresh wrote (no provenance) set aside on read"], (key, cov[key])
+    _news_now(path, now)
+    rep = v.validate(path, None, "news-only", now=now)
+    assert rep["verdict"] == "fail" and rep["upload"] is False
+    assert "desk:DGS10 (tier 1): 1 row no committed refresh wrote (no provenance)" in rep["failures"], rep["failures"]
+    assert any(w.startswith("desk:DCOILWTICO: 1 row no committed refresh wrote (no provenance)") for w in rep["warnings"]), rep["warnings"]
+    r = es.run(es.Query(**SPX_US10Y), path, as_of="2026-09-22")
+    assert {h["h"]: h["baseline_n"] for h in r["horizons"]}[5] == 7405, r["horizons"]
+    assert "stored rows no committed refresh wrote (no provenance) set aside on read and excluded: us10y 1." in r["provenance"]["warnings"]
+
+
+@scratch
+def test_r15_a_repaired_future_print_leaves_the_next_refreshs_rows_readable(tmp_path, monkeypatch):
+    """Codex R-15 (V-35), Codex's repro: the September 21 run stores a bogus
+    DGS10 2026-12-31 print (tier 1 is stored as served), the owner deletes it,
+    and the September 24 refresh brings the legitimate prints through the 23rd.
+    Under V-34 the watermark's `advanced_at` stayed at the bogus run, so the
+    22nd and 23rd were set aside, validation said falsely that the store had
+    not written them, and the SPX→US10Y study had 371 events. By provenance
+    both rows are the September 24 run's: readable, no corruption named, 372
+    events, the count the cc721f0 engine gives on the same data."""
+    from scripts import validate_db as v
+
+    path = _codex_store(tmp_path, "r15.db")
+    state = {"end": "2026-09-18", "market_end": "2026-09-21", "bogus": True}
+    _codex_providers(monkeypatch, state)
+    desk_history.refresh(path, now=datetime(2026, 9, 22, 0, 23, tzinfo=ZoneInfo("UTC")), tier=2)
+    c = sqlite3.connect(path)
+    c.execute("DELETE FROM desk_series WHERE series_id = 'DGS10' AND date = '2026-12-31'")
+    c.commit()
+    c.close()
+    state.update(end="2026-09-23", market_end="2026-09-23", bogus=False)
+    now = datetime(2026, 9, 24, 12, 0, tzinfo=ZoneInfo("UTC"))
+    desk_history.refresh(path, now=now, tier=2)
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        s = es.load_level(conn, registry.get("us10y"), "2026-09-24")
+        assert [d.strftime("%Y-%m-%d") for d in s.index[-3:]] == ["2026-09-21", "2026-09-22", "2026-09-23"], s.tail(3)
+        assert (s.attrs["future_excluded"], s.attrs["no_provenance_excluded"], s.attrs["malformed_date_excluded"]) == (0, 0, 0)
+    finally:
+        conn.close()
+    _news_now(path, now)
+    rep = v.validate(path, None, "news-only", now=now)
+    assert not any("DGS10" in f for f in rep["failures"]) and not any("DGS10" in w and "set aside" in w for w in rep["warnings"]), rep
+    assert rep["corruption"]["desk_series_no_provenance"] == {} and rep["corruption"]["desk_series_after_run"] == {}
+    r = es.run(es.Query(**SPX_US10Y), path, as_of="2026-09-24")
+    assert r["provenance"]["n_events"] == 372, r["provenance"]["n_events"]
+    assert not any("excluded" in w for w in r["provenance"]["warnings"]), r["provenance"]["warnings"]
+
+
+@scratch
+def test_r15_the_repair_path_moves_a_bogus_future_print_and_reconciles_the_watermark(tmp_path, monkeypatch):
+    """Codex R-15's documented repair: `python -m src.market_data.desk_history
+    --repair DGS10` lists the rows the reader sets aside for provenance (here the
+    bogus 2026-12-31 print, dated after the New York date of the run that stored
+    it) and changes nothing; with `--apply` it moves them to the quarantine and
+    resets `desk:DGS10` to the newest committed row, stamped when that row was
+    committed. The next refresh advances from there, and the study has its 372
+    events."""
+    from src import watermarks
+
+    path = _codex_store(tmp_path, "repair.db")
+    state = {"end": "2026-09-18", "market_end": "2026-09-21", "bogus": True}
+    _codex_providers(monkeypatch, state)
+    monday = datetime(2026, 9, 22, 0, 23, tzinfo=ZoneInfo("UTC"))
+    desk_history.refresh(path, now=monday, tier=2)
+
+    def wm():
+        c = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            return watermarks.read_all(c)["desk:DGS10"]
+        finally:
+            c.close()
+
+    assert wm()["last_obs"] == "2026-12-31", "the bogus print is the watermark's newest observation"
+    dry = desk_history.repair(path, "DGS10")
+    assert [r[:2] for r in dry["rows"]] == [("2026-12-31", 99.0)] and dry["applied"] is False
+    assert wm()["last_obs"] == "2026-12-31", "a dry run writes nothing"
+    assert desk_history.main(["--db", str(path), "--repair", "DGS10", "--apply"]) == 0
+    w = wm()
+    assert (w["last_obs"], w["advanced_at"], w["status"]) == ("2026-09-18", "2026-09-22T00:23:00Z", "repaired"), w
+    c = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        assert c.execute("SELECT COUNT(*) FROM desk_series WHERE series_id = 'DGS10' AND date > '2026-09-18'").fetchone()[0] == 0
+        q = c.execute("SELECT date, value, reason FROM desk_series_quarantine WHERE series_id = 'DGS10'").fetchall()
+    finally:
+        c.close()
+    assert q == [("2026-12-31", 99.0, "repair: dated after 2026-09-21, the New York date of the refresh that stored it")], q
+    state.update(end="2026-09-23", market_end="2026-09-23", bogus=False)
+    desk_history.refresh(path, now=datetime(2026, 9, 24, 12, 0, tzinfo=ZoneInfo("UTC")), tier=2)
+    w = wm()
+    assert (w["last_obs"], w["status"]) == ("2026-09-23", "ok") and w["advanced_at"] == "2026-09-24T12:00:00Z", w
+    assert es.run(es.Query(**SPX_US10Y), path, as_of="2026-09-24")["provenance"]["n_events"] == 372
+
+
+# ── desk/hardening, Codex round 8: R-27, the schema check fails closed ──
+
+@scratch
+def test_r27_a_schema_check_that_raises_never_reads_the_store_without_provenance(monkeypatch):
+    """Codex R-27, Codex's repro: an in-memory copy of the scratch store, migrated,
+    with DGS10's 2008-10-10 value set to 99.0 and no provenance. A second
+    connection holds a schema write while the reader asks whether the store
+    carries provenance, so SQLite raises; the reader caught it, read the store
+    as legacy, and the study took the unstamped 99.0: 172 events instead of
+    180, the five-session baseline N two higher (Codex read 7,463 against
+    7,461; this environment reads 7,462 against 7,460), with no provenance
+    warning. The schema check now retries (up to three times over
+    about a second) and reads a store without provenance only when a read that
+    completed says so. The race above clears on the retry, and the study is the
+    clean one. A fault that outlasts the retries raises: an error, never a
+    legacy read."""
+    from datetime import datetime, timezone
+
+    from api import provenance
+
+    uri = "file:r27-provenance-read-race?mode=memory&cache=shared"
+    src = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    writer = sqlite3.connect(uri, uri=True, isolation_level=None)
+    src.backup(writer)
+    src.close()
+    reader = sqlite3.connect(uri, uri=True, isolation_level=None)
+    try:
+        provenance.migrate(writer, datetime(2026, 9, 24, 18, tzinfo=timezone.utc))
+        writer.execute("UPDATE desk_series SET value = 99.0, run_id = NULL, ingested_at = NULL WHERE series_id = 'DGS10' AND date = '2008-10-10'")
+        probe = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
+
+        class SchemaRace:
+            """The reader's first provenance check meets a schema write held by the other connection."""
+
+            def __init__(self, conn):
+                self.c, self.faulted = conn, None
+
+            def execute(self, sql, *args, **kwargs):
+                if self.faulted is None and sql.startswith(probe) and args and args[0] == (provenance.RUNS,):
+                    writer.execute("BEGIN IMMEDIATE")
+                    writer.execute("CREATE TABLE unrelated_refresh_stage (n INTEGER)")
+                    try:
+                        return self.c.execute(sql, *args, **kwargs)
+                    except sqlite3.OperationalError as exc:
+                        self.faulted = str(exc)
+                        raise
+                    finally:
+                        writer.execute("COMMIT")
+                return self.c.execute(sql, *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self.c, name)
+
+        q = es.Query(shock="us10y", w=5, z=2.0, sign="both", target="spx")
+        clean = es.run_on(reader, q, generation="same", as_of="2026-09-23", n_boot=199)
+        race = SchemaRace(reader)
+        raced = es.run_on(race, q, generation="same", as_of="2026-09-23", n_boot=199)
+        assert race.faulted and "locked" in race.faulted, "SQLite raised on the schema read"
+        warning = "stored rows no committed refresh wrote (no provenance) set aside on read and excluded: us10y 1."
+        for r in (clean, raced):
+            p = r["provenance"]
+            # 180 events as Codex found; the five-session baseline N is 7,460 here where Codex's run read
+            # 7,461 (and 7,462 against its 7,463 on the staged code): one more in both, the same difference
+            assert p["n_events"] == 180 and {h["h"]: h["baseline_n"] for h in r["horizons"]}[5] == 7460, (p["n_events"], r["horizons"])
+            assert p["no_provenance_excluded"] == {"us10y": 1} and warning in p["warnings"]
+        assert raced["provenance"]["inputs_hash"] == clean["provenance"]["inputs_hash"]
+        writer.execute("DROP TABLE unrelated_refresh_stage")
+
+        # a fault that outlasts the retries is an error, never a read without provenance
+        monkeypatch.setattr(provenance, "SCHEMA_RETRY_WAITS_S", (0.0, 0.0, 0.0))
+
+        class AlwaysLocked(SchemaRace):
+            def execute(self, sql, *args, **kwargs):
+                if sql.startswith(probe) and args and args[0] == (provenance.RUNS,):
+                    raise sqlite3.OperationalError("database schema is locked: main")
+                return self.c.execute(sql, *args, **kwargs)
+
+        with pytest.raises(provenance.SchemaCheckFailed, match=r"could not read whether desk_series carries provenance .*after 4 tries: "
+                                                             r"the read and 3 retries, [\d.]+ s apart in all, .*about 23 s at worst"):
+            es.run_on(AlwaysLocked(reader), q, generation="same", as_of="2026-09-23", n_boot=199)
+    finally:
+        reader.close()
+        writer.close()

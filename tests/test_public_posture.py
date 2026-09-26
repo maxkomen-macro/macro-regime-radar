@@ -7,7 +7,8 @@ fixes for what it found still open:
 NG-1  the public posture hung on CORS_ORIGINS, which the same-origin deploy
       does not set, so that shape shipped an open assistant and open ops views
 NG-2  the generation connection was read-only by PRAGMA query_only, which SQL
-      can flip; the guard was the only thing standing in the way
+      can flip; the guard was the only thing standing in the way (verifier V-51
+      took the authorizer this added off the copy: see the tests below)
 NG-3  the assistant had a rate limit but no concurrency ceiling on a sync route
 F6    503 bodies disclosed the database's absolute path
 SR-2d the assistant echoed raw Anthropic error text to any caller
@@ -61,7 +62,13 @@ def test_an_explicit_assistant_mode_still_wins(monkeypatch):
 # ── NG-2: the generation copy cannot be made writable by SQL ────────────────
 
 
-def test_a_generation_connection_refuses_writes_even_after_query_only_is_flipped(tmp_path):
+def test_a_generation_connection_refuses_writes_by_its_own_mode(tmp_path):
+    """NG-2 as verifier V-51 leaves it. The copy's connection refuses writes by its
+    own mode (query_only, no database attachable), with no Python authorizer: SQLite
+    ran that inside the copy's shared-cache lock. A flip of query_only is SQL only
+    the app's code or the assistant's tool could run; the guard bans PRAGMA, and each
+    tool call opens and closes its own connection, so a flip cannot reach the next
+    statement: a new connection refuses writes again."""
     src = tmp_path / "gen.db"
     seed = sqlite3.connect(src)
     seed.execute("CREATE TABLE t (a INTEGER)")
@@ -80,14 +87,21 @@ def test_a_generation_connection_refuses_writes_even_after_query_only_is_flipped
         conn = dbpath.open_generation(_Gen())
         assert conn is not None
         assert conn.execute("SELECT a FROM t").fetchone()[0] == 1
-        with pytest.raises(sqlite3.Error):
-            conn.execute("INSERT INTO t VALUES (2)")
-        # The guard bans PRAGMA, so this is defence in depth: even if a flip
-        # got through, the connection must still refuse to write.
-        with pytest.raises(sqlite3.Error):
-            conn.execute("PRAGMA query_only = 0")
-            conn.execute("INSERT INTO t VALUES (3)")
+        for sql in ("INSERT INTO t VALUES (2)", "CREATE TEMP TABLE x (a)", f"VACUUM INTO '{tmp_path / 'v.db'}'",
+                    f"ATTACH '{tmp_path / 'a.db'}' AS a"):
+            with pytest.raises(sqlite3.Error):
+                conn.execute(sql)
+        assert not (tmp_path / "v.db").exists() and not (tmp_path / "a.db").exists()
+        from src.analytics.chat import is_safe_select
+
+        assert not is_safe_select("PRAGMA query_only = 0")
+        conn.execute("PRAGMA query_only = 0")  # past the guard, on this connection only
         conn.close()
+        again = dbpath.open_generation(_Gen())
+        with pytest.raises(sqlite3.Error):
+            again.execute("INSERT INTO t VALUES (3)")
+        assert again.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 1
+        again.close()
     finally:
         anchor.close()
 
@@ -195,9 +209,10 @@ def test_docs_are_closed_on_a_public_deploy(monkeypatch):
 
 
 def test_the_generation_still_answers_the_pragmas_a_read_needs(tmp_path):
-    """The authorizer must not break ordinary reads: callers check for a column
-    with PRAGMA table_info before reading it, and the snapshot builder does it
-    on every table."""
+    """Callers check for a column with PRAGMA table_info before reading it, and
+    the snapshot builder does it on every table. A pragma that would change the
+    database changes nothing on the copy (verifier V-51: its mode, not an
+    authorizer, keeps it read-only)."""
     src = tmp_path / "gen2.db"
     seed = sqlite3.connect(src)
     seed.execute("CREATE TABLE t (a INTEGER, b TEXT)")
@@ -217,10 +232,10 @@ def test_the_generation_still_answers_the_pragmas_a_read_needs(tmp_path):
         cols = {r[1] for r in conn.execute("PRAGMA table_info(t)")}
         assert cols == {"a", "b"}
         assert conn.execute("PRAGMA quick_check").fetchone() is not None
+        assert conn.execute("PRAGMA journal_mode = WAL").fetchone()[0] == "memory"
         with pytest.raises(sqlite3.Error):
-            conn.execute("PRAGMA query_only = 0")
-        with pytest.raises(sqlite3.Error):
-            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA user_version = 7")
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 0
         conn.close()
     finally:
         anchor.close()

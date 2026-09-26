@@ -115,9 +115,13 @@ class EodhdClient:
                     retry_after = r.headers.get("Retry-After")
                     last = RateLimited(PROVIDER, "EODHD rate limit reached; retry shortly.", status=429, detail=self._redact(r.text[:200]))
                     try:
-                        delay = min(float(retry_after), 5.0) if retry_after else delay
+                        wait = float(retry_after) if retry_after else None
                     except ValueError:
-                        pass
+                        wait = None
+                    # a negative or NaN Retry-After is treated as absent, the default backoff kept:
+                    # time.sleep raised ValueError on it, outside the typed errors (verifier V-87)
+                    if wait is not None and wait >= 0:  # NaN >= 0 is False
+                        delay = min(wait, 5.0)
                 elif r.status_code >= 500:
                     last = ProviderUnavailable(PROVIDER, f"EODHD returned a server error ({what}).", status=r.status_code, detail=self._redact(r.text[:200]))
                 else:
