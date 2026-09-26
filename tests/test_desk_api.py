@@ -617,6 +617,8 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     # Desk v2 in the envelope (desk/frame-3-api-b2a): ready, or awaiting blocks, before the first refresh
     ("GET", "/api/desk/regime"): ("/api/desk/regime", 200, None),
     ("GET", "/api/desk/macro"): ("/api/desk/macro", 200, None),
+    ("GET", "/api/desk/pipeline"): ("/api/desk/pipeline", 200, None),
+    ("GET", "/api/desk/pipeline/ddl"): ("/api/desk/pipeline/ddl", 200, None),
     # diagnostics, open in development (no DEPLOY_PUBLIC, no CORS_ORIGINS)
     ("GET", "/api/ops/whoami"): ("/api/ops/whoami", 200, None),
     ("GET", "/api/stream/debug"): ("/api/stream/debug", 200, None),
@@ -1983,7 +1985,8 @@ def test_every_builder_closes_its_connection_on_every_path():
     factories = {"_get_conn", "_connect", "get_connection"}
     files = (sorted((ROOT / "src" / "analytics").glob("*.py")) + sorted((ROOT / "src" / "desk").glob("*.py"))
              + [ROOT / "api" / "desk.py", ROOT / "api" / "assistant_budget.py"]
-             + [ROOT / "api" / "desk_items_macro.py", ROOT / "api" / "desk_v2_macro.py"])
+             + [ROOT / "api" / "desk_items_macro.py", ROOT / "api" / "desk_v2_macro.py", ROOT / "api" / "desk_pipeline.py",
+                ROOT / "api" / "bootstrap.py"])
     factory_only = [f for d in ("utils", "market_data", "events") for f in sorted((ROOT / "src" / d).glob("*.py"))]
     unclosed, withs, setups = [], [], []
 

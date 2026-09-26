@@ -8,7 +8,7 @@ tests never skip:
   INDPRO and CPIAUCSL (the regime classifier's inputs), and the recession
   model's DGS10, DGS2, UNRATE, BAMLH0A0HYM2, T10YIE and T5YIE (no USREC, so
   the model trains on its NBER fallback, and no USSLIND, so its fifth feature
-  is the breakeven spread);
+  is the breakeven spread), and IG (BAMLC0A0CM, dated by its watermark);
 - `regimes`, one row a month, classified with the 3-point slope the
   classifier uses (src/regime.py), from 1996-03 to END_MONTH;
 - `event_calendar`: a "CPI Release" at 12:30 UTC around the 12th of each
@@ -100,12 +100,13 @@ def build(path: Path, *, seed: int = 7, end_month: str = END_MONTH, regimes: boo
     hy = pd.Series(np.clip(5.0 + np.cumsum(rng.normal(0.0, 0.25, n)), 2.5, 16.0), index=months)
     t10 = pd.Series(2.2 + rng.normal(0.0, 0.2, n), index=months)
     t5 = pd.Series(2.0 + rng.normal(0.0, 0.2, n), index=months)
+    ig = pd.Series(np.clip(1.2 + np.cumsum(rng.normal(0.0, 0.05, n)), 0.5, 5.0), index=months)
 
     conn = sqlite3.connect(path)
     conn.execute(RAW_DDL)
     conn.execute(REGIMES_DDL)
     for sid, s in (("INDPRO", indpro), ("CPIAUCSL", cpi), ("DGS10", dgs10), ("DGS2", dgs2), ("UNRATE", unrate),
-                   ("BAMLH0A0HYM2", hy), ("T10YIE", t10), ("T5YIE", t5)):
+                   ("BAMLH0A0HYM2", hy), ("T10YIE", t10), ("T5YIE", t5), ("BAMLC0A0CM", ig)):
         write_raw(conn, sid, s)
     if regimes:
         write_regimes(conn, classify(pd.DataFrame({"growth": indpro, "inflation": cpi}).dropna()))

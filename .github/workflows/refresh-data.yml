@@ -257,6 +257,21 @@ jobs:
             echo "Uploaded snapshot-latest.json ($(du -h snapshot-latest.json | cut -f1))."
           fi
 
+      # FRAME3_API_PLAN.md S-01: the verdict published with the database, as
+      # {verdict, mode, timestamp, db_sha256} (scripts/validation_asset.py), so
+      # the API can serve the verdict of the file it serves. Its own step, under
+      # the publish step's condition, bounded, and never able to fail a refresh
+      # whose database is already published: a failure only leaves it absent.
+      - name: Publish the validation verdict
+        if: steps.mode.outputs.mode != 'verify-only' && steps.validate.outputs.upload == 'true'
+        timeout-minutes: 1
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/validation_asset.py validation.json data/macro_radar.db publish/validation.json
+          gh release upload data-latest publish/validation.json --clobber
+
       # launch-1: the static site ships a copy of the validated snapshot, so a
       # published full refresh asks Vercel for a fresh deploy. Absent the
       # secret this is a no-op line in the log: a fork, or a deploy that is not

@@ -330,6 +330,14 @@ def _desk_macro(ctx: dict) -> dict:
     return desk_macro(ctx)
 
 
+def _desk_pipeline(ctx: dict) -> dict:
+    """The Desk v2 /pipeline item (api/desk_pipeline.py): every Data Pipeline
+    row's dates, provider, feeds and note, and the watermarks its statuses read."""
+    from api.desk_pipeline import desk_pipeline
+
+    return desk_pipeline(ctx)
+
+
 ITEMS = [
     ("credit", _credit),
     ("recession", _recession),
@@ -348,6 +356,7 @@ ITEMS = [
     # Desk v2 (desk/frame-3-api-b2a)
     ("desk_regime", _desk_regime),
     ("desk_macro", _desk_macro),
+    ("desk_pipeline", _desk_pipeline),
 ]
 
 

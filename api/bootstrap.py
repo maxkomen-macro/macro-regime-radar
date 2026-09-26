@@ -22,15 +22,37 @@ identity means no download, no swap, no new database file key, and so no
 rebuild by the worker (api/worker.py). The local file's mtime never decides.
 After a swap the worker is poked, builds a generation from the new file, and
 publishes reads and results together.
+
+The published verdict (desk/frame-3-api-b2a; FRAME3_API_PLAN.md §1.9, S-01):
+both database writers upload `validation.json` beside the database, the
+validator's {verdict, mode, timestamp, db_sha256}. Bootstrap binds it to the
+file it verifies, in memory only, through one bracketed procedure: read the
+file key, require the file's -wal (and at a download the served file's) to be
+absent or empty, hash the file and compare with `db_sha256`, read the key and
+the WALs again, and bind exactly the first key when the hash matches, the key
+did not move and the WAL is still empty. At a download it runs on the new file
+before the swap (os.replace keeps the inode, mtime and size, so the bound key
+is the one the swapped file carries); on a poll with an unchanged asset it runs
+on the served file whenever nothing is held or the held hash is not the
+current asset's, so a late or failed upload and a restart recover with no
+database download. /api/desk/pipeline serves the verdict only for the
+generation whose key is the bound key (`validation_for`): a local commit moves
+the key (WAL frames count, a checkpoint moves the mtime and size), and the
+verdict reads unknown until the next upload is verified. The worker re-reads
+the key after its copy and drops a copy taken across a change (hardening
+R-11), so a generation's key is always the key of the bytes it holds.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import re
 import tempfile
+import threading
 from pathlib import Path
 
 import httpx
@@ -38,6 +60,7 @@ import httpx
 from datetime import datetime, timezone
 
 from api import db
+from src.analytics import dbpath
 
 log = logging.getLogger("mrr.bootstrap")
 
@@ -145,6 +168,131 @@ def _write_identity(identity: dict) -> None:
     os.replace(tmp, path)
 
 
+# ── The published validation verdict (S-01) ─────────────────────────────────
+
+_VALIDATION_ASSET_NAME = "validation.json"
+_VALIDATION_FIELDS = ("verdict", "mode", "timestamp", "db_sha256")
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+# (verdict, mode, timestamp, validated_key, db_sha256) once bound, else None
+_validation: dict | None = None
+_validation_lock = threading.Lock()
+
+
+def _set_validation(bound: dict | None) -> None:
+    global _validation
+    with _validation_lock:
+        _validation = bound
+
+
+def validation_state() -> dict | None:
+    """What bootstrap holds: the bound verdict and its key, or None."""
+    with _validation_lock:
+        return dict(_validation) if _validation is not None else None
+
+
+def validation_for(key: tuple | None) -> str | None:
+    """The verdict to serve for a generation with this file key: the held
+    verdict when it was bound to exactly this key, else None ("unknown")."""
+    held = validation_state()
+    if held is None or key is None or held["validated_key"] != tuple(key):
+        return None
+    return held["verdict"]
+
+
+def reset_validation_for_tests() -> None:
+    _set_validation(None)
+
+
+def parse_validation(raw: bytes) -> dict | None:
+    """The published verdict, or None unless it has exactly the four fields
+    with a pass/fail verdict and a sha256 in hex."""
+    try:
+        doc = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(doc, dict) or set(doc) != set(_VALIDATION_FIELDS):
+        return None
+    if doc["verdict"] not in ("pass", "fail") or not isinstance(doc["mode"], str) or not isinstance(doc["timestamp"], str):
+        return None
+    if not isinstance(doc["db_sha256"], str) or not _SHA256_HEX.match(doc["db_sha256"]):
+        return None
+    return doc
+
+
+def sha256_file(path: Path | str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _wal_empty(path: Path | str) -> bool:
+    try:
+        return os.stat(f"{path}-wal").st_size == 0
+    except OSError:
+        return True  # absent
+
+
+def bind_validation(published: dict, path: Path | str, *, served: Path | str | None = None) -> dict | None:
+    """The bracketed binding (plan §1.9 part 2, rounds 3 and 4 of R-01), run on
+    the file whose bytes are hashed: `path` (a download's new file, or the
+    served file on a poll), with `served` the served file whose WAL the new one
+    will sit beside at a download.
+
+    1. k1 = file_key(path);
+    2. path's WAL (and served's) absent or empty;
+    3. its sha256 equal to the published `db_sha256`;
+    4. k2 = file_key(path), and the WALs still empty;
+    5. bind exactly k1 when all hold and k1 == k2; else nothing.
+
+    A non-empty WAL holds commits the hash never saw (a WAL commit leaves the
+    main file's bytes unchanged), and any commit after step 4 moves the key,
+    which the per-request gate then refuses."""
+    wals = [path] + ([served] if served is not None else [])
+    k1 = dbpath.file_key(path)
+    if k1 is None or not all(_wal_empty(w) for w in wals):
+        return None
+    sha = sha256_file(path)
+    if sha != published["db_sha256"]:
+        return None
+    k2 = dbpath.file_key(path)
+    if k2 != k1 or not all(_wal_empty(w) for w in wals):
+        return None
+    return {"verdict": published["verdict"], "mode": published["mode"], "timestamp": published["timestamp"],
+            "validated_key": tuple(k1), "db_sha256": sha}
+
+
+def _asset_sha(asset: dict) -> str | None:
+    """The database asset's sha256 as the release lists it (`sha256:<hex>`)."""
+    digest = str(asset.get("digest") or "")
+    hexpart = digest[len("sha256:"):] if digest.startswith("sha256:") else ""
+    return hexpart if _SHA256_HEX.match(hexpart) else None
+
+
+def _fetch_validation(client: httpx.Client, auth: dict, assets: list[dict]) -> dict | None:
+    """The published verdict from the release listing's validation.json, or
+    None when it is not listed or does not parse."""
+    asset = next((a for a in assets if a.get("name") == _VALIDATION_ASSET_NAME), None)
+    if asset is None:
+        return None
+    resp = client.get(asset["url"], headers={**auth, "Accept": "application/octet-stream"}, timeout=30.0)
+    resp.raise_for_status()
+    return parse_validation(resp.content)
+
+
+def _verify_published(client: httpx.Client, auth: dict, assets: list[dict], path: Path | str, *,
+                      served: Path | str | None = None) -> dict | None:
+    """Fetch the published verdict and bind it to `path`; any failure binds
+    nothing (logged without its text: a URL can be signed)."""
+    try:
+        published = _fetch_validation(client, auth, assets)
+        return bind_validation(published, path, served=served) if published is not None else None
+    except Exception as exc:  # noqa: BLE001 — the verdict is optional; the database never waits on it
+        log.warning("validation.json could not be verified (%s); the verdict reads unknown", public_error(exc))
+        return None
+
+
 def _poke_worker() -> None:
     from api import worker as worker_mod
 
@@ -197,6 +345,11 @@ def refresh_db(force: bool = False) -> bool:
             _state["last_result"] = "unchanged"
             _state["last_error"] = None
             log.info("data-latest asset unchanged (id %s, updated %s): no download, no swap", remote.get("id"), remote.get("updated_at"))
+            # S-01 (R-05): re-fetch the verdict while nothing held matches the current
+            # asset (the listing's digest, else the file on disk), with no download
+            held = validation_state()
+            if held is None or held["db_sha256"] != (_asset_sha(asset) or sha256_file(DB_PATH)):
+                _set_validation(_verify_published(client, auth, assets, DB_PATH))
             return False
         # 2) stream the bytes to a temp file beside DB_PATH, then swap atomically.
         #    httpx (like requests in the dashboard) drops the Authorization header
@@ -216,8 +369,12 @@ def refresh_db(force: bool = False) -> bool:
                 for chunk in dl.iter_bytes(65536):
                     out.write(chunk)
             _validate_sqlite(tmp)
+            # S-01: bind the published verdict to the new file's bytes and key, before the
+            # swap (os.replace keeps the inode, mtime and size); held only once it is in place
+            bound = _verify_published(client, auth, assets, tmp, served=DB_PATH)
             os.replace(tmp, DB_PATH)  # atomic swap into place
             _write_identity(remote)
+            _set_validation(bound)
         except Exception as exc:
             _state["last_result"] = "error"
             _state["last_error"] = public_error(exc)
