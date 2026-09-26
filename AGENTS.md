@@ -284,15 +284,15 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 **Where it lives:** Floating bottom-right FAB rendered on every tab. Click opens an `@st.dialog` modal containing the chat. Wired in once at the end of `dashboard/app.py`, after the last `with tab_meth:` block.
 
 **Files added:**
-- `src/analytics/chat.py` — `MacroRadarAgent`, `SYSTEM_PROMPT_TEMPLATE`, 8 tool definitions, tool-use loop (10-iteration cap), `is_safe_select` SQL guard, `RateLimited` / `NetworkError` / `AgentError` exception hierarchy.
+- `src/analytics/chat.py` — `MacroRadarAgent`, `SYSTEM_PROMPT_TEMPLATE`, 8 tool definitions (`active_tools()` offers 7 unless `ASSISTANT_FREEFORM_SQL` is on), tool-use loop (10-iteration cap), `is_safe_select` SQL guard, `RateLimited` / `NetworkError` / `AgentError` exception hierarchy.
 - `dashboard/components/chat_widget.py` — `render_chat_launcher()` (FAB) and `_chat_dialog()` (modal). Streams via `st.write_stream` over `MacroRadarAgent.ask_streaming`.
 - `dashboard/utils/tab_context.py` — `register_tab_context(tab_name, metrics, kind="live")` writes to `st.session_state.current_tab_context`.
 - `tests/test_chat_sql_guard.py` — unit tests covering allowed SELECT/CTE forms and rejecting DDL/DML/PRAGMA/ATTACH/chained statements.
 
 **Files modified:** `dashboard/app.py` (launcher wire-up + Dashboard tab context call); all 11 tab render functions in `dashboard/components/` plus the inline Dashboard block (`register_tab_context` call at entry).
 
-**Tools (8):**
-- `query_database(sql)` — read-only SELECT only; capped at 200 rows.
+**Tools (8; 7 offered by default):**
+- `query_database(sql)` — **off by default** (desk/hardening): offered only when `ASSISTANT_FREEFORM_SQL` is `1`/`true`/`yes`/`on`; otherwise `active_tools()` omits it and `_run_tool` refuses it. Read-only SELECT only; capped at 200 rows.
 - `get_current_regime()` — latest `regimes` row (label, confidence, growth/inflation trends, 4 probabilities).
 - `get_signal_status(signal_name?)` — latest signal rows from `signals`.
 - `get_recession_probability()` — latest + 1m / 3m / 6m prior `prob_recession`.
@@ -305,7 +305,7 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 
 **API key:** `ANTHROPIC_API_KEY` loaded via `src/analytics/chat.py`'s own `get_secret` (env → `st.secrets` → repo-root `.env`) — *not* `src.config`, which would drag in the `FRED_API_KEY` requirement and break the key-less FastAPI path. Missing key → FAB silently replaced with a muted "AI Assistant unavailable — API key not configured" caption; no traceback.
 
-**SQL guard:** `is_safe_select` rejects anything that isn't a single `SELECT` (or `WITH … SELECT`) statement. Bans interior `;`, all DDL/DML, PRAGMA (including table-valued `pragma_*`), ATTACH/DETACH, VACUUM, REINDEX, TRUNCATE, `randomblob`/`zeroblob`, `load_extension`. `query_database` additionally installs a SQLite progress handler that aborts a query after ~20M VM instructions — the bound the keyword guard can't express (e.g. an unbounded `WITH RECURSIVE`).
+**SQL guard:** `is_safe_select` rejects anything that isn't a single `SELECT` (or `WITH … SELECT`) statement. Bans interior `;`, all DDL/DML, PRAGMA (including table-valued `pragma_*`), ATTACH/DETACH, VACUUM, REINDEX, TRUNCATE, `randomblob`/`zeroblob`, `load_extension`. When `query_database` is on, `sql_guard_refusal` also caps a statement at 2 KB of SQL, 16 function calls and no two-argument `trim`/`ltrim`/`rtrim`, and each call reads its own in-memory copy (`dbpath.copy_private_ro`) under a 250 ms wall-clock budget (`_interrupt_after` re-fires `conn.interrupt()`), with one value capped at 16 KB and a LIKE/GLOB pattern at 256 bytes. There is no progress-handler (VM-instruction) budget any more (desk/hardening, `docs/desk/HARDENING_REPORT.md` decisions 36, 42, 44).
 
 **Cost guards:** history sent to the API is capped at the last `HISTORY_TURN_LIMIT = 20` turns. Token usage accumulates in `st.session_state.chat_token_log` (input/output) and renders in the dialog footer.
 
