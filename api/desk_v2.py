@@ -222,6 +222,101 @@ def study_answer(params: list[tuple[str, str]], t0: float) -> dict:
     return {k: out[k] for k in STUDY_KEYS}
 
 
+@router.get("/ledger")
+def desk_ledger(request: Request) -> Response:
+    params = list(request.query_params.multi_items())
+    return _response(env.answer("/ledger", lambda: ledger_answer(params)))
+
+
+# ── §12.5 GET /ledger ───────────────────────────────────────────────────────
+
+LEDGER_KEYS = ("slug", "label", "short", "group", "available", "unavailable", "horizon", "last_fired", "sample_start",
+               "n", "up_n", "up_pct", "median", "baseline_median", "vs_normal", "target_unit", "display_unit", "verdict",
+               "firing_now", "firing_day", "evaluated_on", "stale")
+LEDGER_STATS = ("last_fired", "sample_start", "n", "up_n", "up_pct", "median", "baseline_median", "vs_normal",
+                "target_unit", "display_unit", "verdict")
+
+
+def vs_normal(delta: float | None, unit: str) -> float | None:
+    """R3 (spec §1.9, v3 §6): the excess median in log pp for a log unit, bp for bp."""
+    if delta is None:
+        return None
+    return delta if unit == "bp" else 100 * delta
+
+
+def _ledger_static() -> list[tuple[dict, Any, bool]]:
+    """The generation-dependent part of the twelve rows: (row, trace, cross)."""
+    out = []
+    for slug in catalog.LEDGER_ORDER:
+        s = catalog.BY_SLUG[slug]
+        available, unavailable = availability(s)
+        row = {"slug": slug, "label": s.label, "short": s.short, "group": catalog.LEDGER_GROUP[slug],
+               "available": available, "unavailable": unavailable, "horizon": 20, **{k: None for k in LEDGER_STATS}}
+        if not available:
+            out.append((row, None, False))
+            continue
+        item = _item(slug)
+        native, table = item["native"], item["events"]
+        by_h = {H["h"]: H for H in native["horizons"]}
+        H = by_h[20]
+        unit = registry.get(s.question.target).unit
+        v = table.value[20]
+        row.update(
+            last_fired=table.sessions[int(table.event_idx[-1])] if len(table) else None,
+            sample_start=native["provenance"]["sample_start"], n=H["n"],
+            up_n=int(sum(1 for x in v if math.isfinite(x) and x > 0)),
+            up_pct=H["hit_rate"], median=H["median"], baseline_median=H["baseline_median"],
+            vs_normal=vs_normal(H["delta"], unit), target_unit=unit, display_unit=display_unit(unit),
+            verdict=verdict_v1(by_h, 20))
+        out.append((row, item["trace"], s.question.move.startswith("cross")))
+    return out
+
+
+def ledger_rows(comparison: str, prev: str) -> list[tuple[dict, dict | None]]:
+    """The twelve Ledger rows with this response's firing state, and each
+    row's firing detail (None for an unavailable row). An unavailable row's
+    statistics and firing fields are null and it is not stale (S-19)."""
+    _hit, static = memo(("/ledger",), _ledger_static)
+    rows = []
+    for base, trace, cross in static:
+        row = dict(base)
+        if trace is None:
+            row.update(firing_now=None, firing_day=None, evaluated_on=None, stale=False)
+            rows.append(({k: row[k] for k in LEDGER_KEYS}, None))
+            continue
+        f = firing_state(trace, comparison, prev, cross=cross)
+        row.update(firing_now=f["firing_now"], firing_day=f["firing_day"], evaluated_on=f["evaluated_on"], stale=f["stale"])
+        rows.append(({k: row[k] for k in LEDGER_KEYS}, f))
+    return rows
+
+
+def ledger_answer(params: list[tuple[str, str]]) -> dict:
+    if params:
+        raise env.Unsupported(f"{params[0][0]} is not a parameter of /ledger.")
+    comparison, prev = sessions_now()
+    rows = [r for r, _ in ledger_rows(comparison, prev)]
+    scored = sum(1 for r in rows if r["available"])
+    return {"verdict_rule": VERDICT_RULE, "horizon": 20, "comparison_session": comparison, "prev_session": prev,
+            "scored_n": scored, "unavailable_n": len(catalog.LEDGER_ORDER) - scored, "signals": rows}
+
+
+def fire_lists(entries: list[tuple[dict, dict | None]]) -> tuple[list[dict], list[dict]]:
+    """N1's two lists over (row, firing detail) pairs (/overview's
+    since_last_close): new_fires turned from false on prev_session to true on
+    comparison_session, still_firing is true on both; a stale row, or one whose
+    state on either session is null, is in neither."""
+    new, still = [], []
+    for row, f in entries:
+        if f is None or f["stale"] or f["state_prev"] is None or f["state_comparison"] is None:
+            continue
+        ident = {"slug": row["slug"], "label": row["label"], "short": row["short"]}
+        if f["state_comparison"] and not f["state_prev"]:
+            new.append(ident)
+        elif f["state_comparison"] and f["state_prev"]:
+            still.append({**ident, "firing_day": f["firing_day"]})
+    return new, still
+
+
 def events_answer(params: list[tuple[str, str]]) -> dict:
     """§12.4 as JSON: the study's full event table, newest first (plan §2)."""
     study, h = catalog.normalize(params, "/study/events", resolve_alias=engine_alias)
