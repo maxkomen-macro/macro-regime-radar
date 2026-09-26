@@ -103,9 +103,9 @@ export function coverTicks(lo: number, hi: number, max: number): { v: number; te
   return [lo, hi].map((v) => ({ v, text: num(v, 2) }));
 }
 
-/** "Tenors dated apart: 2y Sep 22 · 10y Sep 21" (§6, §12.8). */
-export function tenorDates(dates: Record<string, string>): string {
-  return `Tenors dated apart: ${TENORS.filter((t) => dates[t]).map((t) => `${t} ${dayShort(dates[t])}`).join(" · ")}`;
+/** "Tenors dated apart: 2y Sep 22 · 10y Sep 21" (§6, §12.8); a tenor not stored is dated null and left out (S-24). */
+export function tenorDates(dates: Record<string, string | null>): string {
+  return `Tenors dated apart: ${TENORS.flatMap((t) => (dates[t] ? [`${t} ${dayShort(dates[t])}`] : [])).join(" · ")}`;
 }
 
 /** "3m, 5y and 30y not served": the curve's tenors without a value today (§6), or "" when all are served. */

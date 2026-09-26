@@ -83,6 +83,23 @@ describe("the response boundary", () => {
     }
   });
 
+  it("the fixture server follows §12.2's parameters (S-20): an engine-slug preset, a window only for a shock move", () => {
+    const body = (url: string) => JSON.parse(deskFixture("GET", url)!.body) as { status?: string; error?: { code: string; message: string }; data?: { slug?: string } };
+    // The engine's slug for the gold study normalizes to its catalog row.
+    expect(body("/api/desk/study?preset=gold-w20-z2.0-up-spx_below_50dma-spx").data?.slug).toBe("gold-2sigma-spx-weak");
+    // A cross with a window, and a shock move without one, are refused, never silently repaired.
+    const cross = deskFixture("GET", "/api/desk/study?shock=spx&window=20&move=cross_above&while=none&target=spx")!;
+    expect([cross.status, body("/api/desk/study?shock=spx&window=20&move=cross_above&while=none&target=spx").error?.message]).toEqual([422, "A cross takes no window."]);
+    expect(deskFixture("GET", "/api/desk/study?shock=gold&move=up2s&while=none&target=spx")!.status).toBe(422);
+  });
+
+  it("a listed event's regime is a label and its entry session may be null (S-05, S-06)", () => {
+    const e0 = { ...study.last_events[0], regime: "Unlabeled", entry_date: null };
+    const read = readBody({ ...study, last_events: [e0, ...study.last_events.slice(1)] }, "/study") as typeof study;
+    expect(read.last_events[0]).toEqual({ event_date: e0.event_date, entry_date: null, value_20: e0.value_20 });
+    expect(read.last_events.slice(1)).toEqual(study.last_events.slice(1));
+  });
+
   it("a study's question must be its six slots, or nothing in it can be read (G1-1)", () => {
     // §12.2: `window` is nullable (a cross has none), so a null window reads; a missing slot does not.
     for (const q of [{}, { ...study.question, while: undefined }, { ...study.question, move: "sideways" }, { ...study.question, while: 5 }, { ...study.question, shock: undefined }, "gold"]) expect(tryRead({ ...study, question: q }, "/study")).toBe("unreadable");
@@ -292,6 +309,19 @@ describe("the envelope (§12.0)", () => {
     expect([e.status, e.body?.error, e.message, e.body?.missing]).toEqual([422, "unsupported", "a window of 10 sessions is not in the catalog", ["window"]]);
     expect(e.unreadable).toBe(false);
     expect(e.awaiting).toBe(false);
+  });
+
+  it("a refusal made before the route runs keeps the middleware's {detail} body, and says it (S-26)", async () => {
+    answers([429, { detail: "Too many requests" }]);
+    const e = (await deskGet("/study").catch((x: unknown) => x)) as DeskApiError;
+    expect([e.status, e.message, e.awaiting]).toEqual([429, "Too many requests", false]);
+  });
+
+  it("before a generation exists the answer is computing with generation_id and as_of null, and is asked again (S-11)", async () => {
+    const warming = { status: "computing", generation_id: null, as_of: null, engine_version: "unknown", data: null, unavailable: null, error: null };
+    const seen = answers([202, warming, { "Retry-After": "0" }], [200, ready("/study", study)]);
+    const s = (await deskGet("/study", { preset: "gold-2sigma-spx-weak" })) as { slug: string };
+    expect([s.slug, seen.length]).toEqual([study.slug, 2]);
   });
 
   it("computing (202) is asked again after the served Retry-After, until the answer is ready", async () => {

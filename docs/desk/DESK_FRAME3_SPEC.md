@@ -94,8 +94,8 @@ Its body prints one sentence: the served `unavailable.reason`, and, when
 served, "Until: <`unavailable.until`>". No number, no chart, no gauge. Its
 `Advanced ▸` control is disabled and says "not yet served". Its badge reads
 `○ Not yet served`. A block that is unavailable by §1.0 but has no served
-envelope (the RSI card, the confidence chips) prints the reason in §1.0's
-table.
+envelope prints the reason in §1.0's table (the confidence chips) or, for the
+RSI card, the RSI rows' served reason, "RSI is not computed yet." (§12.3).
 
 ### 1.1 Navigation
 - The sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
@@ -246,7 +246,8 @@ is kept, no total and no empty state is drawn from the readable records alone
 - JSON carries full precision; one display-rounding rule lives in the UI kit.
 
 ### 1.10 Dates and samples
-- `as_of` dates the calculation and never an observation.
+- `as_of` is the New York date the generation was staged (§12.0), never an
+  observation's date.
 - Every live block carries `date` (session `YYYY-MM-DD`), `month` (`YYYY-MM`)
   or `ts` (RFC 3339 with zone) beside its values, plus `freq` ∈ daily |
   weekly | monthly and `source`. A composite statistic carries `window:
@@ -436,8 +437,11 @@ show the same calculation; the frame-2 engine panel is retired (v2 §8).
   five to seven blocks enumerate Bᴮ draws; above seven, 10,000 Monte Carlo
   draws with seed 20260921.
 - **Compute.** `/study`, `/study/events`, `/study/catalog` and the presets
-  share the existing single-flight study queue and generation cache; the CSV
-  export reuses the computed study. No new public compute route is added.
+  share the existing single-flight study queue and generation cache, except
+  a lookup (a request of only `preset=<catalog slug>`, with an optional
+  `horizon`, and a bare `/study/catalog`), which reads under the stored-read
+  ceiling (§13.1 step 2); the CSV export reuses the computed study. No new
+  public compute route is added.
 
 ---
 
@@ -735,9 +739,9 @@ above (v3 §18).
 | Field | Type | Presence | Meaning |
 |---|---|---|---|
 | `status` | `"ready"` \| `"computing"` \| `"awaiting"` \| `"error"` | required | the response's state |
-| `generation_id` | string | required, nullable | the store generation computed on; null only while awaiting before a generation exists |
-| `as_of` | date | required, nullable | the calculation's date (never an observation's); null as above |
-| `engine_version` | string | required | the engine's version string |
+| `generation_id` | string | required, nullable | the store generation computed on; null only before a generation exists: the answer is then `computing` (202, `Retry-After: 2`) while the server builds its first generation, and `as_of` is null too |
+| `as_of` | date | required, nullable | the New York date the generation was staged; per-request anchors (`comparison_session`) are served in the payload; null as above |
+| `engine_version` | string | required | the git commit sha of the running build, injected at image build as `ENGINE_VERSION` (`ARG`/`ENV`) and read from the environment: `ENGINE_VERSION`, else the host's `RENDER_GIT_COMMIT`; `"unknown"` when neither is set |
 | `data` | object | required, nullable | the payload; non-null only when `status` is `ready` |
 | `unavailable` | `{reason: string, until: string\|null}` | required, nullable | non-null only when `status` is `awaiting` |
 | `error` | `{code: string, message: string}` | required, nullable | non-null only when `status` is `error` |
@@ -746,7 +750,8 @@ HTTP: `ready` 200; `computing` 202 with `Retry-After: 2`, and the client polls
 the same URL; `awaiting` 200 with `data: null`; `error` 4xx/5xx. A study
 outside the catalog is 422 with `error.code: "unsupported"` and a message
 naming what is not supported, never a silent parameter drop. The client
-parses `data` only when `status` is `ready`.
+parses `data` only when `status` is `ready`. Refusals made before the route
+runs (413, 429 from `api/security.py`) keep the middleware's `{detail}` body.
 
 **Nested block envelopes** occur at exactly these paths and nowhere else
 (v4 B-08, C-01):
@@ -761,7 +766,9 @@ A block envelope is `{"status":"ready","data":<the declared object or
 array>,"unavailable":null}` or `{"status":"awaiting","data":null,
 "unavailable":{"reason","until"}}`. Every other object and array is an
 ordinary payload field. The tables below give a nested block's fields as
-`<path>.data.<field>`.
+`<path>.data.<field>`. A block that could not be computed from the current
+generation is `awaiting` with reason "Awaiting refresh: this could not be
+computed from the current data."
 
 **Values.** Full precision. A missing statistic is null with a reason where
 the table says so, never 0, NaN or Infinity. Dates are sessions
@@ -825,7 +832,7 @@ two sessions; v2 §21's `data_status {state, worst_series, date}` is
 | `tiles.regime.data.print` | month | required | — | K−2 for the month of `comparison_session` | A: `event_study.regime_at` rule (`REGIME_LAG_MONTHS = 2`) |
 | `tiles.regime.data.growth` | `"rising"` \| `"falling"` | required | — | as `print` | E: sign of the stored `growth_trend` (`compute_trends`) |
 | `tiles.regime.data.inflation` | `"rising"` \| `"falling"` | required | — | as `print` | E: sign of the stored `inflation_trend` |
-| `tiles.regime.data.months_in` | integer | required | months | — | A: length of the run of equal stored labels ending at `print` |
+| `tiles.regime.data.months_in` | integer | required | months | — | A: length of the run of equal labels in consecutive stored months ending at `print`; a missing month ends the run |
 | `tiles.regime.data.since` | month | required | — | — | A: the first row of that run |
 | `tiles.regime.data.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, `"regimes table (src/regime.py)"` |
 | `tiles.recession` | block envelope | required | — | — | — |
@@ -842,14 +849,14 @@ two sessions; v2 §21's `data_status {state, worst_series, date}` is
 | `tiles.vol.data.vix` | number | required | index points | `date` · daily · FRED VIXCLS (`desk_series`) | E: newest stored observation |
 | `tiles.vol.data.date` | date | required | — | — | E |
 | `tiles.vol.data.freq`, `.source` | `"daily"`, string | required | — | — | A |
-| `active_signals` | array of Ledger rows (§12.5) | required (may be empty) | — | each row's own | A: the deduplicated union of every row with `firing_now` true and the five rows with the latest non-null `last_fired`, ordered firing first, then `last_fired` descending, then `slug` (v2 §19) |
+| `active_signals` | array of Ledger rows (§12.5) | required (may be empty) | — | each row's own | A: the deduplicated union of every row with `firing_now` true and `stale` false and the five rows with the latest non-null `last_fired`, ordered firing first, then `last_fired` descending, then `slug` (v2 §19) |
 | `data_status` | block envelope | required | — | — | — |
 | `data_status.data.state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N data status (v4 B-06): the worst contributor, missing > stale > current |
 | `data_status.data.contributors` | array | required | — | — | N: one per series of the Desk feed set, the tier-1 inputs of the twelve Ledger studies plus DGS2 and DGS10 |
 | `…contributors[].series` | string (series id) | required | — | — | A |
 | `…contributors[].observation_date` | date | required, nullable | — | the series' newest stored observation | S: `desk_series` for the FRED inputs, `asset_prices` for ^GSPC and GC=F (the symbol's own newest row) |
 | `…contributors[].expected_observation_date` | date | required, nullable | — | the observation the series' existing freshness policy expects (C-02); never a publication timestamp | E: for the FRED inputs, `api/freshness._daily_expected_and_lag`'s expected date (bond calendar for rates and spreads, FRED tolerance kept); for ^GSPC and GC=F, the completed session the `asset_prices` rule of `api/freshness.assess` expects, applied to the symbol |
-| `…contributors[].state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N: each series through its existing policy (`desk_series_states` for the FRED inputs, the `asset_prices` rule for the two prices): close/current → `current`, stale or delayed past its window → `stale`, absent/unknown → `missing`; never a bare comparison with the latest XNYS session outside that policy (B-06) |
+| `…contributors[].state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N: each series through its existing policy: `desk_series_states` for the FRED inputs, close/current → `current`, stale or delayed past its window → `stale`, absent/unknown → `missing`; the `asset_prices` rule for ^GSPC and GC=F, `current` and `delayed` within the grace → `current`; `stale` → `stale`; absent → `missing`; never a bare comparison with the latest XNYS session outside that policy (B-06) |
 | `…contributors[].reason` | string | required | — | — | E: the freshness policy's reason sentence |
 
 ### 12.2 `GET /study`
@@ -860,7 +867,9 @@ Parameters: `preset=<slug>`, or the six slots `shock`, `window` (5 | 20 |
 Overheating | Stagflation | Recession Risk>`), `target`, `horizon` (5 | 10 |
 20 | 60, default 20). A request must normalize to one catalog study (§12.3);
 `horizon` then selects that study's results. There is no `confidence`
-parameter. Anything else: 422 `unsupported`.
+parameter. `while` defaults to `none`; `window` is required for
+`up2s`/`down2s` and refused for a cross; `preset` also accepts an engine slug
+that parses to a catalog study's query. Anything else: 422 `unsupported`.
 
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
@@ -883,6 +892,7 @@ parameter. Anything else: 422 `unsupported`.
 | `firing_day` | integer | required, nullable (null unless `firing_now` is true) | sessions | — | N firing state |
 | `evaluated_on` | date | required, nullable | — | — | N firing state: the study's latest evaluable session |
 | `comparison_session` | date | required | — | XNYS | N firing state: as §12.5 |
+| `prev_session` | date | required | — | XNYS | N firing state: as §12.1 |
 | `stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; a stale study is never called firing today (v3 §3) |
 | `verdict` | `reliable` \| `suggestive` \| `no_edge` \| `insufficient` | required | — | `selected_horizon` | A: `verdict_rule` v1 (§1.5) at `selected_horizon` |
 | `verdict_rule` | `"v1"` | required | — | — | A |
@@ -905,9 +915,9 @@ parameter. Anything else: 422 `unsupported`.
 | `horizons[].adverse_share` | fraction | required, nullable (null under five blocks) | — | — | E `opposite_sign_share` |
 | `horizons[].draws` | integer | required (0 with no interval) | — | — | E `n_draws` |
 | `horizons[].method` | `enumeration` \| `monte_carlo` | required, nullable | — | — | E `resampling` (engine "exact" → `enumeration`); 5–7 blocks enumerate Bᴮ draws, above 7 10,000 draws, seed 20260921 |
-| `horizons[].reason` | string | required, nullable | — | — | A: the engine's `note` in v3 §8's words ("fewer than five independent blocks" for "too few blocks for an interval (n < 5)") |
+| `horizons[].reason` | string | required, nullable | — | — | A: the engine's `note` in these words: `insufficient data` → "no completed outcomes at this horizon"; `too few blocks for an interval (B < 5)` → "fewer than five independent blocks"; `too few independent blocks to judge exclusion` → "fewer than ten independent blocks; the interval is shown but not judged"; `exclusion not established` → "the interval clears zero but 3% or more of resampled medians are adverse"; none → null. |
 | `horizons[].verdict` | verdict enum | required | — | this `h` | A: v1 at this `h` |
-| `horizons[].worst`, `best` | `{value, event_date, entry_date}` | required, nullable | `target_unit` | — | P: min and max over the `n` completed outcomes |
+| `horizons[].worst`, `best` | `{value, event_date, entry_date}` | required, nullable | `target_unit` | — | P: min and max over the `n` completed outcomes, the earliest event on ties. |
 | `by_regime` | array of 4 | required | — | h = 20 | E `regime_split` at h = 20 |
 | `by_regime[].h` | `20` | required | sessions | — | A (B-01) |
 | `by_regime[].regime` | regime label | required | — | — | E |
@@ -915,8 +925,9 @@ parameter. Anything else: 422 `unsupported`.
 | `by_regime[].up_pct`, `median` | fraction, number | required, nullable (null when n < 10, `MIN_REGIME_N`) | —, `target_unit` | — | E |
 | `unlabeled_n` | integer | required | events | — | E `provenance.n_unlabeled` |
 | `last_events` | array of ≤ 5, newest first | required | — | — | P |
-| `last_events[].event_date`, `entry_date` | date | required | — | — | P |
-| `last_events[].regime` | regime label \| `"Unlabeled"` | required | — | the K−2 row of the event's month | P (regime at K−2, already in the run) |
+| `last_events[].event_date` | date | required | — | — | P |
+| `last_events[].entry_date` | date | required, nullable (null when the entry session is after the stored data) | — | — | P |
+| `last_events[].regime` | regime label | required | — | the K−2 row of the event's month | P (regime at K−2, already in the run): a retained event always carries its K−2 label; events before the first labelled month are counted in `unlabeled_n` and not listed. |
 | `last_events[].value_20` | number | required, nullable (incomplete) | `target_unit` | — | P |
 | `without_condition` | block envelope | required | — | — | awaiting, reason "conditional-versus-unconditional comparison is not defined" (v4 B-11, C-01); the shape once defined is §12.13 |
 | `provenance.entry_rule` | string | required | — | — | E `provenance.entry_rule` |
@@ -941,8 +952,10 @@ parameter. Anything else: 422 `unsupported`.
 | `served_from_cache` | boolean | required | — | — | A |
 | `elapsed_ms` | number | required | ms | — | A |
 
-Templates (A, fixed here; `<L>` is the horizon's label, numbers printed by
-§1.9):
+Templates (A, fixed here; `<L>` is the horizon's label). Numbers in served
+templates are printed by the engine's `fmt_move` (`src/desk/event_study.py:768`):
+a log unit as `±x.x%` of 100 × native, a bp unit as `±x bp`; a share as a
+percent with one decimal.
 - `headline`: "<verdict label> at <L>: " followed by that verdict's §1.5
   definition, word for word from its first word after the dash (e.g.
   "Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same
@@ -971,7 +984,7 @@ Templates (A, fixed here; `<L>` is the horizon's label, numbers printed by
 | `studies[].available` | boolean | required | — | the current generation | A: true when the engine completes on the pinned generation (v4 B-07): every input's coverage stored |
 | `studies[].unavailable` | `{reason, until\|null}` | required, nullable (null when available) | — | — | E: the engine's `not_stored` reason, or the §1.0 reason |
 | `studies[].question` | `{shock, window, move, while, target}` | required, nullable (null for the RSI definitions) | — | — | A |
-| `studies[].allowed_horizons` | subset of [5, 10, 20, 60] | required | sessions | — | A |
+| `studies[].allowed_horizons` | subset of [5, 10, 20, 60] | required | sessions | — | A: [5, 10, 20, 60] for every row with a question, available or not; [] for the RSI rows. |
 
 A study is `ready` when the existing engine completes on the pinned
 generation; missing required inputs, or no evaluable history, is `awaiting`
@@ -979,8 +992,8 @@ with the reason; a completed run with zero retained events is `ready` with
 an `insufficient` verdict; short-history warnings alone never make a study
 unavailable (v4 B-07).
 
-The catalog (v2 §2, v3 §2; z = 2.0 throughout; every available row allows
-all four horizons):
+The catalog (v2 §2, v3 §2; z = 2.0 throughout; every row with a question
+allows all four horizons):
 
 | slug | label | short | client_label | shock | window | move | while | target | engine query |
 |---|---|---|---|---|---|---|---|---|---|
@@ -1000,6 +1013,11 @@ all four horizons):
 | rsi-above-70 | RSI above 70 | RSI > 70 | — | — | — | — | — | — | none: `available: false` (RSI not computed) |
 | rsi-below-30 | RSI below 30 | RSI < 30 | — | — | — | — | — | — | none: `available: false` |
 
+Served reasons: RSI rows: `unavailable.reason` "RSI is not computed yet.";
+`/positions`: "Positions are kept in this browser; there is no server
+position store."; `/basket/:id`, `/basket/price`, `/hedge`: "basket pricing
+and option structures not yet defined in the engine."
+
 The Event Study's slots enable an option only when some available catalog
 row agrees with it and with the other slots' values. WTI (`wti`) and the
 dollar index (`dxy`) are tier 2; the three studies that read them are
@@ -1015,8 +1033,8 @@ Parameters as `/study`. `Accept: application/json` answers the envelope;
 | `slug` | string | required | — | — | A |
 | `events` | array, newest event first, every retained event | required | — | — | P: the run's full event table |
 | `events[].event_date` | date | required | — | XNYS | P |
-| `events[].entry_date` | date | required | — | XNYS | P (§4.1 entry rule) |
-| `events[].regime` | regime label \| `"Unlabeled"` | required | — | K−2 row | P |
+| `events[].entry_date` | date | required, nullable (null when the entry session is after the stored data) | — | XNYS | P (§4.1 entry rule) |
+| `events[].regime` | regime label | required | — | K−2 row | P: a retained event always carries its K−2 label; events before the first labelled month are counted in `unlabeled_n` (§12.2) and not listed. |
 | `events[].exit_<h>` (h = 5, 10, 20, 60) | date | required, nullable (null when incomplete) | — | XNYS | P |
 | `events[].value_<h>` | number | required, nullable (null when incomplete) | the study's `target_unit`, native | — | P |
 | `events[].complete_<h>` | boolean | required | — | — | P |
@@ -1053,7 +1071,7 @@ cells; booleans `true` / `false`.
 | `signals[].firing_now` | boolean | required, nullable | — | `evaluated_on` | N firing state: shocks — the raw trigger and the condition hold on `evaluated_on`, regardless of cooldown; crosses — true only on the strict crossing session |
 | `signals[].firing_day` | integer | required, nullable (null unless `firing_now` is true) | sessions | — | N: consecutive qualifying XNYS sessions including `evaluated_on`, reset after any false or unevaluable session, never bridging a missing session; 1 for a cross |
 | `signals[].evaluated_on` | date | required, nullable | — | — | N: the row's own latest evaluable session |
-| `signals[].stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; a stale row is never called firing today |
+| `signals[].stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; false for an unavailable row; a stale row is never called firing today |
 
 ### 12.6 `GET /regime`
 
@@ -1064,7 +1082,7 @@ cells; booleans `true` / `false`.
 | `current.data.print` | month | required | — | K−2 for the current session month | A (v2 §9.1) |
 | `current.data.latest_print` | month | required | — | the newest stored row | E; shown on Regime only, never used to classify |
 | `current.data.growth`, `inflation` | `"rising"` \| `"falling"` | required | — | as `print` | E signs of the stored trends |
-| `current.data.months_in` | integer | required | months | — | A: the run of equal stored labels ending at `print` |
+| `current.data.months_in` | integer | required | months | — | A: the run of equal labels in consecutive stored months ending at `print`; a missing month ends the run |
 | `current.data.since` | month | required | — | — | A |
 | `current.data.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, `"regimes table (src/regime.py)"` |
 | `history` | array of 60 `{month, regime}` | required | — | monthly · `regimes` | E: the last 60 stored rows |
@@ -1087,7 +1105,7 @@ cells; booleans `true` / `false`.
 | `next_prints.data.<k>.release_date` | date | required, nullable (null when the calendar has no record) | — | `event_calendar` | E |
 | `next_prints.data.<k>.reference_month` | month | required | — | — | N |
 | `next_prints.data.<k>.series` | `"CPIAUCSL"` \| `"INDPRO"` | required | — | — | A |
-| `next_prints.data.<k>.threshold_mom` | fraction | required, nullable | m/m change | — | N: for latest observed month m, the three-month level-slope boundary x(m+1) = x(m−1), i.e. x(m−1)/x(m) − 1; equality is falling |
+| `next_prints.data.<k>.threshold_mom` | fraction | required, nullable | m/m change | — | N: m is the month of the latest stored regimes row; x_prev is the series' value on the joint INDPRO–CPIAUCSL row before m; `threshold_mom = x_prev / x(m) − 1` (valid for the three-month window only); `threshold_mom` and `flips_to` are null when the series already has a value for m+1; equality is falling |
 | `next_prints.data.<k>.operator` | `"<="` \| `">"` | required | — | — | N: `<=` flips a rising axis to falling; `>` a falling axis to rising |
 | `next_prints.data.<k>.flips_to` | regime label | required, nullable (null when not evaluable) | — | — | N: from the latest reference row's other-axis sign |
 | `next_prints.data.<k>.first_effective_month` | month | required | — | — | N: `reference_month` + 2 months |
@@ -1116,7 +1134,7 @@ Every field describes the registry series `spx` (^GSPC).
 | `cross` | `{kind: "golden"\|"death", date}` | required, nullable | — | — | E `cross_positions` |
 | `move_20d_sigma` | number | required, nullable | σ | `move_20d_date` | N firing state: the spx-20d-2sigma study's z (`zscore(move(level, spx, 20))`) on its `evaluated_on` |
 | `move_20d_date` | date | required, nullable | — | — | N |
-| `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13); `ma50`/`ma200` nullable per point |
+| `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13): the XNYS sessions after `date` − 6, 12 and 36 calendar months, through `date`; a missing close is a point with `close: null`; `ma50`/`ma200` nullable per point |
 | `signals_allowlist` | `["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows are omitted while unavailable) |
 | `vol` | block envelope | required | — | — | awaiting: "needs stored SPY option snapshots and a versioned skew method." |
 | `sectors` | block envelope | required | — | — | awaiting: "sector ETFs, RSP and IWM not ingested." |
@@ -1129,14 +1147,14 @@ DGS10 (v2 §12). Until then those tenors are null.
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
 | `curve` | block envelope | required | — | — | — |
-| `curve.data.today` | `{"3m","2y","5y","10y","30y": number\|null, date, dates}` | required | percent (yield) | `date` shared, or null with per-tenor `dates` · daily · FRED | N curve snapshot alignment (B-12) over stored DGS* |
+| `curve.data.today` | `{"3m","2y","5y","10y","30y": number\|null, date, dates}` | required | percent (yield) | `date` shared, or null with per-tenor `dates` · daily · FRED | N curve snapshot alignment (B-12) over stored DGS*: `today.date` is the latest date on which every stored tenor has a value; `dates` names it per tenor (null for a tenor not stored); when no such date exists, `date` is null and each tenor its own newest |
 | `curve.data.today.dates` | object, tenor → date | required | — | — | N; the UI labels a mismatch |
 | `curve.data.month_ago` | same shape | required | percent | the last observation on or before `today.date` − 1 calendar month | N month-ago selection (B-12) |
 | `curve.data.2s10s_bp` | number | required, nullable | bp | `today.date` | N: (DGS10 − DGS2) × 100 on `today.date` |
 | `curve.data.2s10s_chg_bp`, `10y_chg_bp` | number | required, nullable | bp | the two dates | N dated differences (B-12) |
 | `curve.data.freq`, `source` | `"daily"`, `"FRED"` | required | — | — | A |
 | `credit` | block envelope | required | — | — | — |
-| `credit.data.hy`, `.ig` | `{value, date, freq, source}` | required | percent (OAS) | own `date` · daily · FRED BAMLH0A0HYM2, BAMLC0A0CM | E stored observations (`desk_series`; IG's date from `source_watermarks`) |
+| `credit.data.hy`, `.ig` | `{value, date, freq, source}` | required | percent (OAS) | own `date` · daily · FRED BAMLH0A0HYM2, BAMLC0A0CM | E: HY the newest `desk_series` observation; IG `source_watermarks` `fred:BAMLC0A0CM` (`last_obs`, `last_value`) |
 | `credit.data.hy_pct_3y` | fraction | required, nullable | — | `rank_window` | N rolling HY rank (v2 §12, v3 §12): count(values < current) / count(valid) over the closed three-year window ending on the HY date, current included, ties not below |
 | `credit.data.hy_range_3y` | `[lo, hi]` | required, nullable | percent | `rank_window` | N |
 | `credit.data.rank_window` | `{start, end, n, expected_n, valid_n, missing_n, first_obs, last_obs}` | required | — | bond calendar | N: coverage is a finite observation on every expected bond-calendar session (v4 B-07) |
@@ -1161,13 +1179,15 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `…series[].label`, `id`, `key` | string (`key` nullable for a non-Desk series) | required | — | — | E registry |
 | `…series[].provider` | string | required | — | — | E |
 | `…series[].freq` | `"daily"` \| `"weekly"` \| `"monthly"` | required | — | — | E |
-| `…series[].first`, `last` | date | required, nullable | — | first and last stored observation | S: the series' first and last stored rows |
-| `…series[].feeds` | string[] | required | — | — | E: the Desk tabs that read the series |
+| `…series[].first`, `last` | date | required, nullable | — | first and last stored observation | S: the first and last stored observation; for a FRED daily series stored month-stamped in `raw_series`, `last` is its `source_watermarks` `last_obs` and `first` its first month stamp. |
+| `…series[].feeds` | string[] | required | — | — | A: the Desk tabs that read the series, a fixed table in the adapter (the inventory's `FEEDS` names main-app readers). |
 | `…series[].status` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | E `api/freshness` mapped as §12.1 |
 | `…series[].note` | string | required, nullable | — | — | E registry note |
 
-`/pipeline/ddl` answers `text/plain; charset=utf-8`: the CREATE statements of
-the proposed export schema (not the current SQLite layout).
+`/pipeline/ddl` answers `text/plain; charset=utf-8`: the contents of
+`api/static/snowflake_proposed.sql`, the one copy of the proposed Snowflake
+export schema (not the current SQLite layout; the file says so in its first
+line), served verbatim by the route and read by the fixture.
 
 ### 12.13 Deferred shapes (`status: deferred`)
 
@@ -1266,9 +1286,11 @@ classification or comparison prose is generated until then.
    `/study/catalog` and the preset precompute use the existing bounded study
    concurrency, timeout and single-flight policy of `api/security.py`, added
    to the middleware's study path list in the same commit that adds the
-   routes; engine aliases, worker precompute and middleware registration
-   change together (v3 §2, §20). Ordinary stored reads stay on their own
-   pool.
+   routes; a request of only `preset=<catalog slug>` (with an optional
+   `horizon`), and a bare `/study/catalog`, is a lookup and reads under the
+   stored-read ceiling, as `?study=<preset>` does; engine aliases, worker
+   precompute and middleware registration change together (v3 §2, §20).
+   Ordinary stored reads stay on their own pool.
 3. `/study/events` and its CSV (§12.4).
 4. `/ledger` (§12.5).
 5. `/technicals` (§12.7).

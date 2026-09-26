@@ -145,7 +145,12 @@
     "while": "none",
     "target": "spx"
    },
-   "allowed_horizons": []
+   "allowed_horizons": [
+    5,
+    10,
+    20,
+    60
+   ]
   },
   {
    "slug": "oil-2sigma-gold",
@@ -164,7 +169,12 @@
     "while": "none",
     "target": "gold"
    },
-   "allowed_horizons": []
+   "allowed_horizons": [
+    5,
+    10,
+    20,
+    60
+   ]
   },
   {
    "slug": "spx-2sigma-10y",
@@ -267,7 +277,12 @@
     "while": "none",
     "target": "spx"
    },
-   "allowed_horizons": []
+   "allowed_horizons": [
+    5,
+    10,
+    20,
+    60
+   ]
   },
   {
    "slug": "rsi-above-70",
@@ -276,7 +291,7 @@
    "client_label": null,
    "available": false,
    "unavailable": {
-    "reason": "RSI is not computed in src/desk/ or api/; adding it is a new calculation outside Monday's scope.",
+    "reason": "RSI is not computed yet.",
     "until": null
    },
    "question": null,
@@ -289,7 +304,7 @@
    "client_label": null,
    "available": false,
    "unavailable": {
-    "reason": "RSI is not computed in src/desk/ or api/; adding it is a new calculation outside Monday's scope.",
+    "reason": "RSI is not computed yet.",
     "until": null
    },
    "question": null,

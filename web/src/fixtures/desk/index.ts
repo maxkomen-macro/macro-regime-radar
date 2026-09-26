@@ -19,13 +19,14 @@ import studyCatalog from "./study-catalog.json" with { type: "json" };
 import studyEvents from "./study-events.json" with { type: "json" };
 import study from "./study.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
-import { isQuestion } from "../../screens/desk/event-study/question";
+import { isQuestion, questionFromEngine } from "../../screens/desk/event-study/question";
 import { isAnswerable, studyFor } from "../../screens/desk/event-study/catalog";
 import type { CatalogStudy, Question } from "../../screens/desk/data/types";
 import { awaitingEnvelope, onTheWire, routeOf, type EnvelopeMeta } from "../../screens/desk/data/envelope";
 
-/** The envelope's fields for every fixture answer (§12.0); a payload's own `as_of` and `generation_id` win. */
-export const FIXTURE_META: EnvelopeMeta = { generation_id: "gen-fixture-2026-09-24", as_of: "2026-09-24", engine_version: "fixture" };
+/** The envelope's fields for every fixture answer (§12.0); a payload's own `as_of` and `generation_id` win.
+ * `engine_version` is the git sha of the build that ran the engine (§12.0, S-21): the audit's commit. */
+export const FIXTURE_META: EnvelopeMeta = { generation_id: "gen-fixture-2026-09-24", as_of: "2026-09-24", engine_version: "cd465f8d48323dbbfaa81b9246cf41a9d9d2b2f0" };
 
 /** A reply as the wire carries it (§12.0): a JSON body on an enveloped route in its envelope. */
 export function wireReply(path: string, reply: FixtureReply): FixtureReply {
@@ -58,10 +59,16 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
 
 const CATALOG = (studyCatalog as { studies: CatalogStudy[] }).studies;
 
-/** The catalog study a /study request names (§12.2): its preset, or its six slots; the question too, for the horizon check. */
+/** The catalog study a /study request names (§12.2): its preset, or its six slots; the question too, for the horizon check.
+ * A preset may also be an engine slug that parses to a catalog study's query (S-20). */
 function catalogAsk(u: URL): { study: CatalogStudy | null; question: Question | null } {
   const preset = u.searchParams.get("preset");
-  if (preset) return { study: CATALOG.find((s) => s.slug === preset) ?? null, question: null };
+  if (preset) {
+    const named = CATALOG.find((s) => s.slug === preset);
+    if (named) return { study: named, question: null };
+    const q = questionFromEngine(preset);
+    return { study: q ? studyFor(CATALOG, q) : null, question: null };
+  }
   const move = u.searchParams.get("move");
   const cross = move === "cross_above" || move === "cross_below";
   const q = {
@@ -82,9 +89,9 @@ function catalogAsk(u: URL): { study: CatalogStudy | null; question: Question | 
 const DEFERRED: Readonly<Record<string, string>> = {
   "/vol": "needs stored SPY option snapshots and a versioned skew method.",
   "/sectors": "sector ETFs, RSP and IWM not ingested.",
-  // §9, §12.13: positions are kept in the browser; there is no server position store (v2 D-21).
-  "/positions": "positions are kept in this browser; there is no server position store.",
-  // §10, §12.13: basket pricing and option structures (v2 D-25–D-28).
+  // §9, §12.3's served reasons (S-17): positions are kept in the browser (v2 D-21).
+  "/positions": "Positions are kept in this browser; there is no server position store.",
+  // §10, §12.3's served reasons (S-17): basket pricing and option structures (v2 D-25–D-28).
   "/basket/price": "basket pricing and option structures not yet defined in the engine.",
   "/hedge": "basket pricing and option structures not yet defined in the engine.",
 };
@@ -94,10 +101,10 @@ const STUDY_Q = (study as { question: Record<string, string | number> }).questio
 /** The six slots a question is asked by (the served question also carries its target's unit and label). */
 const SLOTS = ["shock", "window", "move", "while", "target", "horizon"] as const;
 
-/** Whether a /study request asks the fixture's question: its preset, or its six slots. */
-function asksFixtureStudy(u: URL): boolean {
+/** Whether a /study request asks the fixture's question: its preset (a catalog or engine slug), or its six slots. */
+function asksFixtureStudy(u: URL, c: CatalogStudy): boolean {
   const preset = u.searchParams.get("preset");
-  if (preset) return preset === (study as { slug: string }).slug;
+  if (preset) return c.slug === (study as { slug: string }).slug;
   return SLOTS.every((k) => u.searchParams.get(k) === String(STUDY_Q[k]));
 }
 
@@ -137,6 +144,10 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {
     // §12.2: a request must normalize to one catalog study at an allowed horizon, else 422 `unsupported`;
     // a catalog study whose inputs are not stored answers awaiting with its reason (B-07).
+    // §12.2 (S-20): `window` is required for a shock move and refused for a cross.
+    const move = u.searchParams.get("move");
+    if (!u.searchParams.has("preset") && move && (move === "cross_above" || move === "cross_below") === u.searchParams.has("window"))
+      return json(422, { error: "unsupported", message: u.searchParams.has("window") ? "A cross takes no window." : `The move ${move} needs a window (5, 20 or 60 sessions).` });
     const { study: c, question } = catalogAsk(u);
     if (!c || (question && c.available && !isAnswerable(CATALOG, question))) {
       // §12.0: the refusal names what is not supported.
@@ -145,12 +156,12 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
     }
     if (!c.available) return json(200, awaitingEnvelope({ reason: c.unavailable?.reason ?? "not yet served", until: c.unavailable?.until ?? null }, FIXTURE_META));
     // The fixtures carry one study (the gold preset); another catalog study has no fixture.
-    if (!asksFixtureStudy(u)) return json(404, { error: "no fixture for this question" });
+    if (!asksFixtureStudy(u, c)) return json(404, { error: "no fixture for this question" });
     if (path === "/study") return json(200, study);
     if (/text\/csv/.test(accept ?? "")) return { status: 200, contentType: "text/csv", body: eventsCsv(studyEvents as { events: Record<string, unknown>[] }) };
     return json(200, studyEvents);
   }
-  // §12.11: the Snowflake DDL, as text.
-  if (method.toUpperCase() === "GET" && path === "/pipeline/ddl") return { status: 200, contentType: "text/plain", body: PIPELINE_DDL };
+  // §12.9 (S-04): the proposed Snowflake export schema, as text.
+  if (method.toUpperCase() === "GET" && path === "/pipeline/ddl") return { status: 200, contentType: "text/plain; charset=utf-8", body: PIPELINE_DDL };
   return json(404, { error: `no fixture for ${method.toUpperCase()} /api/desk${path}` });
 }

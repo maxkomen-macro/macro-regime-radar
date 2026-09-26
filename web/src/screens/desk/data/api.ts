@@ -173,6 +173,9 @@ async function readError(res: Response): Promise<DeskApiError> {
     const body = parsed as DeskErrorBody;
     return new DeskApiError(res.status, body.error, body);
   }
+  // §12.0 (S-26): a refusal made before the route runs (413, 429) keeps the middleware's `{detail}` body.
+  const detail = parsed && typeof parsed === "object" ? (parsed as { detail?: unknown }).detail : undefined;
+  if (typeof detail === "string" && detail) return new DeskApiError(res.status, detail, null);
   return new DeskApiError(res.status, `${res.status} ${res.statusText}`, null);
 }
 

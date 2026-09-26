@@ -341,7 +341,7 @@ describe("Position Monitor tab", () => {
   });
 
   it("the fixture server keeps no positions: GET is a deferred stub, POST is 405 (§12.0, §12.13)", () => {
-    expect(JSON.parse(deskFixture("GET", "/api/desk/positions")!.body)).toMatchObject({ status: "awaiting", unavailable: { reason: "positions are kept in this browser; there is no server position store." } });
+    expect(JSON.parse(deskFixture("GET", "/api/desk/positions")!.body)).toMatchObject({ status: "awaiting", unavailable: { reason: "Positions are kept in this browser; there is no server position store." } });
     expect(deskFixture("POST", "/api/desk/positions", "{}")!.status).toBe(405);
   });
 

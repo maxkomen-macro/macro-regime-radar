@@ -1,5 +1,5 @@
 {
- "note": "The fixtures' monthly regime record: the stored regimes table of the audit's store, oldest first, with 2025-10 absent as it is stored. Its last 60 rows are /regime's history; a study event in month K takes the row stamped K−2 (src/desk/event_study.py REGIME_LAG_MONTHS), Unlabeled when that row is absent. Fixture only: no endpoint serves it.",
+ "note": "The fixtures' monthly regime record: the stored regimes table of the audit's store, oldest first, with 2025-10 absent as it is stored. Its last 60 rows are /regime's history; a study event in month K takes the row stamped K−2 (src/desk/event_study.py REGIME_LAG_MONTHS); an event whose K−2 row is absent is not retained, is counted in unlabeled_n and is not listed (§12.2, §12.4). Fixture only: no endpoint serves it.",
  "lag_months": 2,
  "months": [
   {

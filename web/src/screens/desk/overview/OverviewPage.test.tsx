@@ -155,6 +155,8 @@ describe("Overview tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("29% room"));
     const rows = within(card).getAllByTestId("dk-mon-row");
     expect(rows.map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "spx-long", "ndx-vs-spx"]);
+    // A name cut with an ellipsis stays readable whole in its title.
+    expect(rows.map((r) => r.querySelector(".dk-mon-name")?.getAttribute("title"))).toEqual(["Long 2s10s", "Long S&P 500", "Long NDX vs SPX"]);
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Long 2s10s2% NAV29% room · 10 bp to level");
     expect(rows[1].textContent?.replace(/\s+/g, " ")).toContain("Long S&P 5003% NAV60% room · 1.1% to level");
     expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("Long NDX vs SPX4% NAVmanual");

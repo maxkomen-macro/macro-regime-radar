@@ -18,8 +18,17 @@ import study from "./study.json";
 import macro from "./macro.json";
 import technicals from "./technicals.json";
 import catalog from "./study-catalog.json";
-import { rangeText } from "../../screens/desk/kit/units";
+import pipeline from "./pipeline.json";
+import { FIXTURE_META } from "./index";
+import { PIPELINE_DDL } from "./pipeline-ddl";
+import { sessionCount } from "../../screens/desk/positions/sessions";
 import type { TargetUnit } from "../../screens/desk/data/types";
+
+/** §12.2 (S-08): served templates print numbers by the engine's `fmt_move` (src/desk/event_study.py:768). */
+function fmtMove(x: number, unit: TargetUnit): string {
+  const v = unit === "bp" ? x.toFixed(0) : (x * 100).toFixed(1);
+  return `${v.startsWith("-") ? v : `+${v}`}${unit === "bp" ? " bp" : "%"}`;
+}
 
 const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
 /** §12.2: a regime with fewer than ten events (the engine's MIN_REGIME_N) serves its count and null cells. */
@@ -88,7 +97,7 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
   it("the served why is §12.2's template over horizons[selected], every number from that row (§13.3)", () => {
     const h = study.horizons.find((x) => x.h === study.selected_horizon)!;
     const adverse = `${(Math.round(h.adverse_share * 1000) / 10).toFixed(1)}%`;
-    expect(study.why).toBe(`${h.n} completed outcomes in ${h.n_blocks} overlap blocks; the 90% interval on the excess median runs ${rangeText(h.ci_lo, h.ci_hi, study.question.target_unit as TargetUnit)}; ${adverse} of resampled medians are adverse against a 3% bar.`);
+    expect(study.why).toBe(`${h.n} completed outcomes in ${h.n_blocks} overlap blocks; the 90% interval on the excess median runs ${fmtMove(h.ci_lo, study.question.target_unit as TargetUnit)} to ${fmtMove(h.ci_hi, study.question.target_unit as TargetUnit)}; ${adverse} of resampled medians are adverse against a 3% bar.`);
     expect(study.headline.startsWith(`Suggestive at ${h.label}: `)).toBe(true);
   });
 
@@ -99,8 +108,9 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
       expect([h.h, h.n, h.up_n]).toEqual([h.h, done.length, vals.filter((v) => v > 0).length]);
       expect(h.up_pct).toBeCloseTo(h.up_n / h.n, 12);
       expect(h.median).toBeCloseTo(median(vals), 12);
-      const lo = done.reduce((a, b) => (b.v < a.v ? b : a));
-      const hi = done.reduce((a, b) => (b.v > a.v ? b : a));
+      // §12.2 (S-09): the earliest event on ties.
+      const lo = done.reduce((a, b) => (b.v < a.v || (b.v === a.v && b.event_date < a.event_date) ? b : a));
+      const hi = done.reduce((a, b) => (b.v > a.v || (b.v === a.v && b.event_date < a.event_date) ? b : a));
       expect([h.worst, h.best]).toEqual([
         { value: lo.v, event_date: lo.event_date, entry_date: lo.entry_date },
         { value: hi.v, event_date: hi.event_date, entry_date: hi.entry_date },
@@ -224,5 +234,73 @@ describe("the firing state (§12.1, §12.5, v4 B-05)", () => {
     expect(study.comparison_session).toBe(sl.comparison_session);
     // A row that is not firing has no firing day (B-05).
     for (const r of ledger.signals) if (r.firing_now !== true) expect(r.firing_day ?? null).toBeNull();
+  });
+});
+
+describe("the API plan's spec errata (§6, S-02–S-27) as the fixtures carry them", () => {
+  it("S-05, S-06: every listed event carries a regime label, never Unlabeled; unlabelled events are only counted", () => {
+    for (const e of [...studyEvents.events, ...study.last_events]) expect(REGIMES).toContain(e.regime);
+    expect(typeof study.unlabeled_n).toBe("number");
+  });
+
+  it("S-10: /study serves prev_session, the session before comparison_session, as /overview and /ledger do", () => {
+    expect([study.comparison_session, study.prev_session]).toEqual([ledger.comparison_session, ledger.prev_session]);
+  });
+
+  it("S-16, S-17: every row with a question allows all four horizons, available or not; the RSI rows none, with the served reason", () => {
+    for (const r of catalog.studies) {
+      if (r.question) expect(r.allowed_horizons, r.slug).toEqual([5, 10, 20, 60]);
+      else expect([r.allowed_horizons, r.unavailable?.reason]).toEqual([[], "RSI is not computed yet."]);
+    }
+    for (const r of ledger.signals.filter((x) => x.slug.startsWith("rsi-"))) expect(r.unavailable?.reason).toBe("RSI is not computed yet.");
+  });
+
+  it("S-18, S-19: a firing row counts as firing only when not stale; an unavailable row is not stale", () => {
+    const firing = overview.active_signals.filter((r) => r.firing_now === true && r.stale === false);
+    expect(overview.active_signals.slice(0, firing.length)).toEqual(firing);
+    for (const r of ledger.signals.filter((x) => !x.available)) expect(r.stale).toBe(false);
+  });
+
+  it("S-21: engine_version is the git sha of the build, the envelope's and the provenance's alike", () => {
+    expect(FIXTURE_META.engine_version).toMatch(/^[0-9a-f]{40}$/);
+    expect(study.provenance.engine_version).toBe(FIXTURE_META.engine_version);
+  });
+
+  it("S-15: each chart series is the XNYS sessions after its start, through the date; a missing close is a point with close null", () => {
+    const after = (months: number) => {
+      const [y, m, d] = technicals.date.split("-").map(Number);
+      const k = y * 12 + (m - 1) - months;
+      return `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    };
+    const series = technicals.series as Record<string, { date: string; close: number | null }[]>;
+    for (const [key, months] of [["6m", 6], ["1y", 12], ["3y", 36]] as const) {
+      const pts = series[key];
+      const start = after(months);
+      expect(pts[0].date > start && pts.at(-1)!.date === technicals.date, key).toBe(true);
+      // The holiday table covers 2024 on; the 3-year window reaches 2023.
+      if (start >= "2024-01-01") expect(pts.length, key).toBe(sessionCount(pts[0].date, technicals.date));
+      expect(pts.filter((p) => p.close === null).map((p) => p.date), key).toEqual(["2026-09-22"]);
+    }
+  });
+
+  it("S-24: the curve dates every tenor, null for one not stored", () => {
+    for (const snap of [macro.curve.today, macro.curve.month_ago]) {
+      const dates = snap.dates as Record<string, string | null>;
+      expect(Object.keys(dates).sort()).toEqual(["10y", "2y", "30y", "3m", "5y"]);
+      for (const t of ["3m", "5y", "30y"]) expect([t, (snap as Record<string, unknown>)[t], dates[t]]).toEqual([t, null, null]);
+      expect([dates["2y"], dates["10y"]]).toEqual([snap.date, snap.date]);
+    }
+  });
+
+  it("S-03: a FRED daily series stored month-stamped has its newest observation as last and its first month stamp as first", () => {
+    const rows = pipeline.groups.flatMap((g) => g.series as { id: string; first: string | null; last: string | null; note: string | null }[]).filter((r) => ["BAMLC0A0CM", "BAMLH0A1HYBB", "BAMLH0A2HYB", "BAMLH0A3HYC"].includes(r.id));
+    expect(rows).toHaveLength(4);
+    for (const r of rows) expect([r.id, r.first, r.last]).toEqual([r.id, "1996-12-01", macro.credit.ig.date]);
+    // The page prints a monthly series' dates by month (§1.7), so the note names the true date.
+    for (const r of rows) expect(r.note, r.id).toContain(r.last!);
+  });
+
+  it("S-04: the proposed schema's first line says it is proposed", () => {
+    expect(PIPELINE_DDL.split("\n")[0]).toBe("-- PROPOSED Snowflake export schema (not the current SQLite layout); nothing in this project creates it.");
   });
 });

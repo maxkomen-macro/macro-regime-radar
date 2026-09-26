@@ -1,10 +1,19 @@
 /**
- * The fixture for GET /api/desk/pipeline/ddl (DESK_FRAME3_SPEC §12.11): the
- * Snowflake DDL as text, the three layers the Snowflake bridge card shows
- * (RAW, CUR, MART). A .ts module rather than a .sql file so the browser tests
- * (Node) and the dev server read it the same way the JSON fixtures are read.
+ * The fixture for GET /api/desk/pipeline/ddl (DESK_FRAME3_SPEC §12.9): the
+ * proposed Snowflake export schema as text, the three layers the bridge card
+ * shows (RAW, CUR, MART). A .ts module rather than a .sql file so the browser
+ * tests (Node) and the dev server read it the same way the JSON fixtures are
+ * read.
+ *
+ * For now a plain TS file (the API plan's R-02). Once session B ships
+ * `api/static/snowflake_proposed.sql`, the one copy the route serves verbatim
+ * (§12.9, S-04), this file is generated from it by
+ * `web/scripts/gen-ddl-fixture.mjs`, with a test that the two match byte for
+ * byte; nothing under web/ imports a .sql file. The text below starts with the
+ * file's first line, which says the schema is proposed.
  */
-export const PIPELINE_DDL = `-- Macro Regime Radar · Desk: the Snowflake landing (RAW → CUR → MART)
+export const PIPELINE_DDL = `-- PROPOSED Snowflake export schema (not the current SQLite layout); nothing in this project creates it.
+-- Macro Regime Radar · Desk: the Snowflake landing (RAW → CUR → MART)
 -- Same three-layer shape as the SQLite build; one idempotent daily job.
 
 CREATE SCHEMA IF NOT EXISTS RAW;

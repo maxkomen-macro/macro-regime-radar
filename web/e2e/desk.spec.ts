@@ -270,7 +270,7 @@ test.describe("desk v2", () => {
       const cards: [RegExp, string, string][] = [
         [/^What protection costs right now/, "needs stored SPY option snapshots and a versioned skew method.", "PUTS vs CALLS · 1 MONTH OUT"],
         [/^Sector leadership/, "sector ETFs, RSP and IWM not ingested.", "Sector leadership"],
-        [/^Momentum · RSI/, "RSI is not computed in src/desk/ or api/; adding it is a new calculation outside Monday's scope.", "Last below 30"],
+        [/^Momentum · RSI/, "RSI is not computed yet.", "Last below 30"],
       ];
       for (const [name, reason, label] of cards) {
         const card = page.getByRole("region", { name });
@@ -485,9 +485,12 @@ test.describe("desk v2", () => {
       const cramped = await page.evaluate(() => {
         const chips = [...document.querySelectorAll<HTMLElement>(".pm-chip")].filter((c) => c.scrollHeight > c.clientHeight + 1 || c.scrollWidth > c.clientWidth + 1).length;
         const own = document.querySelector<HTMLElement>(".pm-own")?.getBoundingClientRect().width ?? 0;
-        return { chips, own: Math.round(own) };
+        // A monitored name cut with an ellipsis carries its whole text as a title.
+        const untitled = [...document.querySelectorAll<HTMLElement>(".dk-mon-name")].filter((n) => n.scrollWidth > n.clientWidth + 1 && n.title !== n.textContent).length;
+        return { chips, own: Math.round(own), untitled };
       });
       expect(cramped.chips).toBe(0);
+      expect(cramped.untitled).toBe(0);
       expect(cramped.own).toBeGreaterThan(120);
     }
   });

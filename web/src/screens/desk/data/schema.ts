@@ -171,6 +171,8 @@ export function checkAnswer(body: unknown, spec: Obj): Record<string, unknown> |
 // ── The shapes (§12, §12.13) ──────────────────────────────────────────────
 
 const VERDICTS = ["reliable", "suggestive", "no_edge", "insufficient"] as const;
+/** §12.2, §12.4 (S-06): a listed event always carries its K−2 label; "Unlabeled" events are counted, never listed. */
+const REGIME_LABELS = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"] as const;
 // §12.0: a read names the rule that produced it; a read without one is not served.
 const read = o({ label: "s?", text: "s!", tone: e(["normal", "warning"]), rule: "s!" });
 const reads = (keys: string[]) => o(Object.fromEntries(keys.map((key) => [key, { ...read, nul: true }])));
@@ -227,7 +229,8 @@ const nextPrint = o(
   { release_date: "s?", reference_month: "s!", series: "s", threshold_mom: "n", operator: e(["<=", ">"], { req: true }), flips_to: "s?", first_effective_month: "s!", freq: "s", source: "s" },
   { nul: true },
 );
-const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s") });
+// §12.8 (S-24): `dates` names each tenor's date, null for a tenor not stored.
+const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s?") });
 /** The deferred vol and sectors shapes (§12.13), served as `/technicals` blocks and as their own stubs. */
 const VOL = {
   source: "s",
@@ -381,6 +384,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     firing_day: "n",
     evaluated_on: "s?",
     comparison_session: "s?",
+    prev_session: "s?",
     stale: "b",
     last_event: "s?",
     // The verdict box says Awaiting refresh on its own; the numbers still stand.
@@ -416,7 +420,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     ),
     by_regime: l(o({ h: "n", regime: "s!", n: "n", up_pct: "n", median: "n" })),
     unlabeled_n: "n",
-    last_events: l(o({ event_date: "s!", entry_date: "s?", regime: "s", value_20: "n" })),
+    // §12.2 (S-05, S-06): entry_date null when the entry session is after the stored data.
+    last_events: l(o({ event_date: "s!", entry_date: "s?", regime: e(REGIME_LABELS), value_20: "n" })),
     provenance: o({ entry_rule: "s", cooldown: "n", seed: "n", engine_version: "s", series_start: m("s!") }),
     warnings: l("s!"),
     empty_state: o({ horizon: "n", sentence: "s", fixes: l("s!") }, { nul: true }),
@@ -447,7 +452,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       o({
         event_date: "s!",
         entry_date: "s?",
-        regime: "s",
+        regime: e(REGIME_LABELS),
         ...Object.fromEntries([5, 10, 20, 60].flatMap((h) => [[`exit_${h}`, "s?"], [`value_${h}`, "n"], [`complete_${h}`, "b"]])),
       }),
     ),

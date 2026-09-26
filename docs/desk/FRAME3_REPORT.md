@@ -3946,6 +3946,188 @@ basket vs 1.6 × N…") is cut with an ellipsis and has no `title`, so the whole
 name cannot be read on Position Monitor or the Overview (the same in the
 committed shot 08).
 
+## Spec errata
+
+### S-02 to S-27 from the API plan's §6 — `frame-3: spec errata S-02–S-27`
+
+The replacement wording of `FRAME3_API_PLAN.md` §6 (branch
+`desk/frame-3-api-plan`) for S-02 through S-27, except S-12, is folded into
+`DESK_FRAME3_SPEC.md`, with the operator's rulings for S-04, S-10, S-21 and
+S-25. S-01 and S-12 are untouched; Codex is revising them and a follow-up
+carries them.
+
+**Every row is applied in its §6 words.** Where a row's words sit in a table
+cell, they go in the cell the row names, and the cell's other words stay:
+
+| Row | Place | How it went in |
+|---|---|---|
+| S-02 | §12.9 `feeds` | the basis cell, as written |
+| S-03 | §12.9 `first`, `last` | the basis cell, as written |
+| S-04 | §12.9 `/pipeline/ddl` | the paragraph, as written (ruling: the static file, served verbatim) |
+| S-05 | §12.2 `last_events[].entry_date`, §12.4 `events[].entry_date` | presence as written; §12.2's shared `event_date`, `entry_date` row is split in two so only `entry_date` is nullable |
+| S-06 | §12.2 `last_events[].regime`, §12.4 `events[].regime` | the type is `regime label` (no `"Unlabeled"`); the sentence goes after the basis code; §12.4's adds "(§12.2)" after `unlabeled_n`, which only `/study` serves |
+| S-07 | §12.2 `horizons[].reason` | the basis cell, as written |
+| S-08 | §12.2 templates | the sentence replaces "numbers printed by §1.9" |
+| S-09 | §12.2 `worst`, `best` | appended, as written |
+| S-10 | §12.2 | the row, after `comparison_session` (ruling) |
+| S-11 | §12.0 `generation_id` | the meaning cell, as written |
+| S-13 | §12.6 `threshold_mom` | the basis cell, as written; "equality is falling" is kept after it |
+| S-14 | §12.1 `tiles.regime.data.months_in`, §12.6 `current.data.months_in` | as written, after "A:" (§12.1 keeps "length of") |
+| S-15 | §12.7 `series.6m`, `.1y`, `.3y` | the basis cell, as written |
+| S-16 | §12.3 `allowed_horizons` | the basis cell, as written |
+| S-17 | §12.3 | a "Served reasons" paragraph after the catalog table, the three sentences as written |
+| S-18 | §12.1 `active_signals` | inserted, as written |
+| S-19 | §12.5 `signals[].stale` | "false for an unavailable row" goes after the definition, before "a stale row is never called firing today" |
+| S-20 | §12.2 parameters | the sentence, before "Anything else: 422" |
+| S-21 | §12.0 `engine_version`, `as_of` | as written (ruling); `as_of` keeps "null as above" |
+| S-22 | §12.8 `credit.data.hy, .ig` | the basis cell, as written |
+| S-23 | §12.1 `contributors[].state` | the cell now names both policies: the FRED inputs' mapping as before, then ^GSPC and GC=F in the row's words |
+| S-24 | §12.8 `curve.data.today` | the basis cell, as written |
+| S-25 | §13.1 step 2 | inserted mid-sentence, as written (ruling: lookups on the ordinary pool) |
+| S-26 | §12.0 | the sentence, after the HTTP paragraph |
+| S-27 | §12.0 blocks | the sentence, after the block-envelope paragraph |
+
+Four sentences elsewhere in the spec now agree with the rows:
+- §1.0.2: the RSI card prints the RSI rows' served reason, "RSI is not
+  computed yet." (S-17). §1.0's table keeps its reason as the rationale.
+- §1.10: `as_of` is the New York date the generation was staged (S-21).
+- §4.1 Compute: a lookup reads under the stored-read ceiling, not the study
+  queue (S-25).
+- §12.3's catalog intro: every row with a question allows all four horizons
+  (S-16).
+
+**For Codex, or for you, on the words themselves:** S-06 says unlabelled
+events are "events before the first labelled month", and §4's rail line says
+the same. The stored regimes lack 2025-10, so an event in 2025-12, whose K−2
+row is that missing month, is also unlabelled, well after the first
+labelled month. The fixtures have no such event.
+
+**Fixtures.** They are rebuilt where the wording changes a value:
+- `study.json`:
+  - `prev_session` 2026-09-22 (S-10).
+  - `why` printed by the engine's `fmt_move`: "runs -1.6% to +4.1%", where
+    it read "runs −1.6 to +4.1 pts" (S-08).
+  - `provenance.engine_version` is the sha of the audit's commit
+    `cd465f8d48323dbbfaa81b9246cf41a9d9d2b2f0`, whose engine produced every
+    number (S-21). The envelope's `engine_version` (`FIXTURE_META`) is the
+    same.
+- `study-catalog.json`:
+  - The dollar and both oil rows allow all four horizons, although they are
+    unavailable (S-16).
+  - The RSI rows carry "RSI is not computed yet." (S-17), as the Ledger's do.
+- `technicals.json`: each chart series is the XNYS sessions after Sep 23 less
+  6, 12 and 36 calendar months (127, 251 and 752 points), with Sep 22 a
+  point whose close is null (S-15).
+- `macro.json`: the curve dates all five tenors, null for the three not
+  stored (S-24). IG stays 0.77% on Sep 23, as `source_watermarks` records it
+  (S-22).
+- `pipeline.json`: IG, BB, B and CCC keep their first month stamp
+  (1996-12-01) as `first`, and take the newest observation, 2026-09-23, as
+  `last` (S-03). The page prints a monthly series' dates by month (§1.7), so
+  their notes name the date: "one row a month; newest observation
+  2026-09-23".
+- `regime-record.json`: its note says an event whose K−2 row is absent is
+  counted and not listed (S-06).
+- The fixture server:
+  - `/positions` answers "Positions are kept in this browser; there is no
+    server position store." (S-17).
+  - `/pipeline/ddl` answers as `text/plain; charset=utf-8` (S-04).
+  - `preset` also takes an engine slug that parses to a catalog study.
+  - A cross with a window, or a shock move without one, is refused 422
+    (S-20).
+
+Unchanged, because the gold study has neither case: no event with a null
+entry (S-05) and none unlabelled (S-06). No horizon carries an engine note:
+the builder maps all four of S-07's notes, reading `(B < 5)` as the pattern
+the engine writes ("(3 < 5)"), and fails on any other. There are
+no ties at worst or best (S-09), no firing row (S-18), and no unavailable row
+that is stale (S-19). `PROVENANCE.md` says each of these.
+
+**`pipeline-ddl.ts`** stays a plain TS file (R-02). Its header now says that
+once session B ships `api/static/snowflake_proposed.sql`, the one copy the
+route serves verbatim, the file is generated from it by
+`web/scripts/gen-ddl-fixture.mjs`, with a byte-for-byte test, and that
+nothing under `web/` imports a `.sql` file. Its text starts with the line
+the plan gives the file: "-- PROPOSED Snowflake export schema (not the
+current SQLite layout); nothing in this project creates it.". That way B
+moves the text as it stands.
+
+**Types and schema:**
+- `types.ts`:
+  - `prev_session` on the study.
+  - A `RegimeLabel` type for listed events, whose `entry_date` is nullable.
+  - Tenor dates as `string | null`.
+- `schema.ts`:
+  - `prev_session`.
+  - A listed event's `regime` is one of the four labels, and "Unlabeled" is
+    not read as one (Advanced's events table and the rail print "—" in its
+    place).
+  - Tenor dates nullable.
+- `data/api.ts` reads a refusal made before the route runs (`{detail}`, S-26)
+  as its message.
+
+**The monitored rows:** a position name cut with an ellipsis carries its
+whole text as a `title`, on the Overview and on Position Monitor.
+
+Tests:
+- `consistency.test.ts`: a block for the errata (S-03, S-04, S-05/06, S-10,
+  S-15, S-16/17, S-18/19, S-21, S-24). The `why` is checked against
+  `fmt_move`, and worst/best take the earliest event on ties.
+- `api.test.tsx`:
+  - S-20 on the fixture server;
+  - an "Unlabeled" regime and a null entry;
+  - S-26's `{detail}`;
+  - S-11's warm-up `computing`.
+- `OverviewPage.test.tsx`: the title.
+- `e2e/desk.spec.ts`:
+  - no untitled truncated name at five widths;
+  - the RSI card's reason.
+
+**Against the PNGs.**
+- 02 Technicals: the RSI card reads "RSI is not computed yet."; the
+  one-year chart starts Sep 24, 2025; Sep 22, served as a point with a null
+  close, is left out of the line. §1.0.2, §12.3, §12.7.
+- 03 Event Study: the verdict box's second sentence reads "-1.6% to +4.1%"
+  where it read "−1.6 to +4.1 pts". §12.2 templates (S-08).
+- 07 Signal Ledger: the two RSI rows read "RSI is not computed yet.". §12.3.
+- 10 Data Pipeline: IG's note names its newest observation, 2026-09-23.
+  §12.9 (S-03).
+
+Verifier (one round): **FAIL**, two should-fix and five nits. It found
+every row in its §6 words (placement only), S-01 and S-12 untouched, the
+fixtures byte-identical to a fresh build, and no sideways scroll, small sans
+text or banned word on the changed pages at 1440, 1101 and 390.
+- V16-1 (should-fix) §4.1 still put `/study/catalog` and the presets on the
+  study queue, against S-25. **Fixed:** §4.1 names the lookup exception.
+- V16-2 (should-fix) IG's true date appeared nowhere on Data Pipeline: the
+  page prints `last` by month, and the note no longer carried the date.
+  **Fixed:** the note says "one row a month; newest observation 2026-09-23",
+  and a test holds the note to `last`.
+- V16-3 (nit) the served `why` reads "-1.6%": for you, below.
+- V16-4 (nit) the §1.7 sentence added for S-27 gave a failed live block the
+  "○ Not yet served" badge. **Removed:** S-27 stays in §12.0 alone, and how
+  such a block renders is yours, below.
+- V16-5 (nit) §1.0.2 named the RSI card, then excepted it. **Fixed.**
+- V16-6 (nit) §13.1 step 2 was not rewrapped. **Fixed.**
+- V16-7 (nit) §12.4 says `unlabeled_n`, which `/study/events` does not
+  serve. **Fixed:** "(§12.2)".
+- For the operator: S-07's key `(B < 5)` is a pattern (the engine writes the
+  block count), and S-06's "before the first labelled month" is narrower than
+  the engine, above.
+- Observation: the Technicals chart draws straight across Sep 22's null
+  close (the page skips a null point); the spec gives no rule for gaps.
+
+**For you** (the owner's calls, left as they are):
+- `fmt_move` prints an ASCII hyphen, so the served `why` reads "-1.6%"
+  beside the page's "−4.9%"; the rail prints the same interval as "−4.2 to
+  +6.3 pts" by §1.9. S-08 and §1.9 disagree on how a served interval reads;
+  a follow-up erratum would settle it.
+- A block the server could not compute is served `awaiting` with "Awaiting
+  refresh: this could not be computed from the current data." (S-27). The
+  page renders every awaiting block by §1.0.2, badge "○ Not yet served",
+  which §1.0 does not intend for a LIVE block. §1.7's gray "Awaiting
+  refresh" is the other choice.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -3986,6 +4168,7 @@ tests against the fixture dev server.
 | frame-3: align 13 build-notes | clean | 123 / 1,477 | ok | 54 / 54 |
 | frame-3: align 14 rulings and codex-2 fixes | clean | 121 / 1,475 | ok | 54 / 54 |
 | frame-3: align 15 label and codex-2 repros | clean | 122 / 1,485 | ok | 54 / 54 |
+| frame-3: spec errata S-02–S-27 | clean | 122 / 1,498 | ok | 54 / 54 |
 
 ## Finish
 
@@ -4041,6 +4224,14 @@ merge. The 13 client labels are approved, the gold one as you rewrote it.
 Codex round 2's own repros all pass; R-16's positions half passed only after
 this commit. Gate summary at that tip: typecheck clean; unit 122 files /
 1,485 tests; build ok; Desk browser tests 54 / 54.
+
+After the spec errata (above): the tip is the commit that carries this
+report, `frame-3: spec errata S-02–S-27` (parent `00c9a2e frame-3: align 15
+label and codex-2 repros`), local only. Nothing is pushed. Only `web/` and
+`docs/desk/` were touched; your notes file and SVGs are left out. S-01 and
+S-12 wait on Codex's revision. Every other row of the API plan's §6 is in
+the spec in its own words. Gate summary at that tip: typecheck clean; unit
+122 files / 1,498 tests; build ok; Desk browser tests 54 / 54.
 
 For Max, from the fold and alignment:
 - **Spec conflicts to settle:** §12.2 makes the Client title the catalog

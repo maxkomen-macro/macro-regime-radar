@@ -145,7 +145,7 @@ describe("Event Study tab", () => {
     await waitFor(() => expect(rail).toHaveTextContent("Verdict · Suggestive"));
     // §4: the box is the label, the served headline and why, and Price it; nothing else (no advice drawn from a verdict).
     expect([...rail.querySelectorAll(".es-verdict > p")].map((p) => p.textContent?.replace(/\s+/g, " ").trim()).join(" ")).toBe(
-      "Verdict · Suggestive Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met. 18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −1.6 to +4.1 pts; 14.6% of resampled medians are adverse against a 3% bar. Price it → not yet served",
+      "Verdict · Suggestive Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met. 18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs -1.6% to +4.1%; 14.6% of resampled medians are adverse against a 3% bar. Price it → not yet served",
     );
     // Rule v1 reads the lean at 5, 10 and 20 sessions whatever the horizon, so 3 months is Suggestive too.
     expect(rail).toHaveTextContent(/3 months\s*−4\.2 to \+6\.3 pts\s*Suggestive/);

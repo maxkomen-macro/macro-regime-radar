@@ -47,7 +47,7 @@ export default function EngineDetail({ id, study, ask }: { id: string; study: St
                 {list.map((e) => (
                   <tr key={e.event_date}>
                     <th scope="row">{dayLong(e.event_date)}</th>
-                    <td>{e.regime}</td>
+                    <td>{e.regime ?? "—"}</td>
                     {([e.value_5, e.value_10, e.value_20, e.value_60] as (number | null | undefined)[]).map((v, i) => (
                       // Each move in the study's target unit (Codex R-02); an incomplete window says so (§12.4 `complete_<h>`).
                       <td key={i} title={fin(v) && moveText(v, study.question.target_unit) ? tipOf(study.question.target_unit) : undefined}>

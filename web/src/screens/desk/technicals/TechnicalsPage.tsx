@@ -369,8 +369,8 @@ export function dayInYear(iso: string | null | undefined, asOf: string): string 
   return iso.slice(0, 4) === asOf.slice(0, 4) ? dayShort(iso) : dayLong(iso);
 }
 
-/** §1.0: RSI is not computed, and the card has no served envelope, so it prints §1.0's reason (§1.0.2). */
-export const RSI_UNAVAILABLE = { reason: "RSI is not computed in src/desk/ or api/; adding it is a new calculation outside Monday's scope.", until: null } as const;
+/** §1.0: RSI is not computed, and the card has no served envelope, so it prints the RSI rows' served reason (§1.0.2, §12.3). */
+export const RSI_UNAVAILABLE = { reason: "RSI is not computed yet.", until: null } as const;
 
 function RsiCard() {
   return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub="is the S&P stretched, either way?" labels={["Now", "Last above 70", "Last below 30"]} block={RSI_UNAVAILABLE} advanced />;

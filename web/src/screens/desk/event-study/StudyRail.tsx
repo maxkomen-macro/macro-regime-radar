@@ -177,7 +177,7 @@ export default function StudyRail({
             <li key={e.event_date}>
               {/* §4: event date · regime · value_20. */}
               <span>{dayLong(e.event_date)}</span>
-              <span className="es-events-regime">{e.regime}</span>
+              <span className="es-events-regime">{e.regime ?? "—"}</span>
               {fin(e.value_20) && moveText(e.value_20, unit) ? <Signed value={e.value_20} title={tip}>{moveText(e.value_20, unit)}</Signed> : <span className="es-events-none">—</span>}
             </li>
           ))}

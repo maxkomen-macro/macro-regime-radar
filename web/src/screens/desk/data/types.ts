@@ -328,7 +328,7 @@ export interface StudyHorizon {
   adverse_share?: number | null;
   draws?: number | null;
   method?: "enumeration" | "monte_carlo" | null;
-  /** Why a statistic here is null, in words (§12.2: "fewer than five independent blocks" for an interval under five blocks). */
+  /** The engine's note in §12.2's words (S-07), e.g. "fewer than five independent blocks"; null with none. */
   reason?: string | null;
   verdict?: Verdict;
   /** Events at this horizon whose window is not complete yet, and the baseline's observations (§12.2). */
@@ -368,6 +368,8 @@ export interface StudyResponse extends Envelope {
   firing_day?: number | null;
   evaluated_on?: string | null;
   comparison_session?: string | null;
+  /** §12.2 (S-10): the XNYS session before `comparison_session`, as §12.1. */
+  prev_session?: string | null;
   stale?: boolean;
   last_event: string | null;
   /** The selected horizon's verdict (§1.5, B-01). Absent when not served or not known: the verdict box says Awaiting refresh. */
@@ -381,9 +383,10 @@ export interface StudyResponse extends Envelope {
   horizons?: StudyHorizon[];
   /** At h = 20 (§12.2); `up_pct` and `median` null under ten events (MIN_REGIME_N). */
   by_regime?: { h?: number | null; regime: string; n: number | null; up_pct: number | null; median: number | null }[];
-  /** Events before the first labelled month (§4 rail). */
+  /** Events before the first labelled month (§4 rail); they are counted here and never listed (S-06). */
   unlabeled_n?: number | null;
-  last_events?: { event_date: string; entry_date: string | null; regime: string; value_20: number | null }[];
+  /** §12.2 (S-05, S-06): `entry_date` null when the entry session is after the stored data; `regime` absent only when it could not be read. */
+  last_events?: { event_date: string; entry_date: string | null; regime?: RegimeLabel; value_20: number | null }[];
   /** §12.2: a block envelope, awaiting on Monday (C-01); its shape once defined is §12.13's. */
   without_condition?: unknown;
   provenance?: { entry_rule: string; cooldown: number | null; seed?: number | null; engine_version?: string; series_start?: Record<string, string> };
@@ -415,11 +418,15 @@ export interface StudyCatalogResponse extends Envelope {
   studies?: CatalogStudy[];
 }
 
+/** A regime label; a listed event always carries one (§12.2, §12.4, S-06). */
+export type RegimeLabel = "Goldilocks" | "Overheating" | "Stagflation" | "Recession Risk";
+
 /** §12.4 /study/events: every retained event, newest first; CSV with `Accept: text/csv`. */
 export interface StudyEvent {
   event_date: string;
+  /** Null when the entry session is after the stored data (S-05). */
   entry_date: string | null;
-  regime: string;
+  regime?: RegimeLabel;
   exit_5?: string | null;
   value_5?: number | null;
   complete_5?: boolean;
@@ -484,9 +491,10 @@ export interface CurvePoint {
   "5y": number | null;
   "10y": number | null;
   "30y": number | null;
-  /** §12.8: the date the tenors share, or null when they differ (then `dates` dates each). */
+  /** §12.8 (S-24): the latest date on which every stored tenor has a value, or null when none (then each tenor is its own newest). */
   date: string | null;
-  dates?: Record<string, string>;
+  /** Each tenor's date; null for a tenor not stored. */
+  dates?: Record<string, string | null>;
 }
 
 /** §12.8: a served value with its own date. */

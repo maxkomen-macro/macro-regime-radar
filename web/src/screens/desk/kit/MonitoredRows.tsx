@@ -73,7 +73,10 @@ export function MonitoredRow({
   return (
     <li className={cx("dk-mon", open && "dk-mon-open")} data-testid="dk-mon-row" data-id={row.id} data-monitoring={row.monitoring}>
       <button type="button" className="dk-mon-row" onClick={onClick} aria-expanded={children !== undefined ? Boolean(open) : undefined} aria-controls={controls}>
-        <span className="dk-mon-name">{row.name}</span>
+        {/* A long name is cut with an ellipsis (desk2.css); the title carries it whole. */}
+        <span className="dk-mon-name" title={row.name}>
+          {row.name}
+        </span>
         <span className="dk-mon-nav">{fin(row.size_nav) ? pctPlain(row.size_nav) : "—"} NAV</span>
         <span className="dk-mon-room" data-tone={tone}>
           {words.room}
