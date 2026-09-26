@@ -1179,7 +1179,7 @@ DGS10 (v2 §12). Until then those tenors are null.
 
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
-| `last_refresh_utc` | ts | required, nullable ("unknown" in the UI when null) | — | the published run artifact | E `source_watermarks` / the run artifact |
+| `last_refresh_utc` | ts | required, nullable ("unknown" in the UI when null) | — | `source_watermarks` row `"desk_series"` | S: that row's `checked_at` (the Desk store runs only in the full refresh), never the run artifact |
 | `validation` | `"pass"` \| `"fail"` | required, nullable | — | the published `validation.json` | S: the verdict of the `validation.json` published with the served database. Both writers publish it: `refresh-data.yml` and `intraday-refresh.yml`, each in the mode it validates in, as `{verdict, mode, timestamp, db_sha256}`, uploaded after the database. The API verifies `db_sha256` against the file, records the file's key right after that check, and serves the verdict only for the generation with that key; missing, mismatched or re-keyed → null (the UI prints "unknown"). The key is recorded only when `<DB_PATH>-wal` is absent or empty, checked at the download and at every poll alike; with a non-empty WAL nothing is recorded and the verdict is null. |
 | `groups` | array | required | — | — | E registry and its consumers (`/api/desk/pipeline/inventory`) |
 | `groups[].name` | string | required | — | — | A |

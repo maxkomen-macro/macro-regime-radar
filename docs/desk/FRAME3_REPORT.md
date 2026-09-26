@@ -4242,6 +4242,20 @@ Verifier (one round): **PASS**, four nits, nothing should-fix. It found:
 - Whether the TODAY card keeps the rule (amendment 2).
 - `last_refresh_utc`'s source wording (V17-2).
 
+### last_refresh_utc — `frame-3: spec erratum last_refresh_utc`
+
+§12.9's `last_refresh_utc` is S: the `checked_at` of the `source_watermarks`
+row `"desk_series"`. The Desk store runs only in the full refresh, so that
+row dates the last full run. It is never the run artifact, which the API
+cannot read. The row's Date column names the watermark row, where it said
+"the published run artifact". This closes the leftover V17-2 found.
+
+The fixture already carries that value. In the audit's store the
+`desk_series` row has `checked_at` 2026-09-24T15:52:43Z, the fixture's
+`last_refresh_utc`, so `pipeline.json` is unchanged. `PROVENANCE.md` now
+lists the value as real, a stored read, where it was illustrative
+(NEEDS-ENDPOINT). No page changes, and no compare shot changes.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -4284,6 +4298,7 @@ tests against the fixture dev server.
 | frame-3: align 15 label and codex-2 repros | clean | 122 / 1,485 | ok | 54 / 54 |
 | frame-3: spec errata S-02–S-27 | clean | 122 / 1,498 | ok | 54 / 54 |
 | frame-3: spec errata S-01, S-12 and amendments | clean | 122 / 1,504 | ok | 54 / 54 |
+| frame-3: spec erratum last_refresh_utc | clean | 122 / 1,504 | ok | 54 / 54 |
 
 ## Finish
 
@@ -4355,6 +4370,12 @@ pushed. Only `web/` and `docs/desk/` were touched; your notes file and SVGs
 are left out. Every row of the API plan's §6 is now in the spec. Gate summary
 at that tip: typecheck clean; unit 122 files / 1,504 tests; build ok; Desk
 browser tests 54 / 54.
+
+After the `last_refresh_utc` erratum (above): the tip is the commit that
+carries this report, `frame-3: spec erratum last_refresh_utc` (parent
+`0d3996f`), local only. Nothing is pushed; your notes file and SVGs are left
+out. Gate summary at that tip: typecheck clean; unit 122 files / 1,504
+tests; build ok; Desk browser tests 54 / 54.
 
 For Max, from the fold and alignment:
 - **Spec conflicts to settle:** §12.2 makes the Client title the catalog
