@@ -376,6 +376,53 @@ def get_recession_metrics() -> dict:
     }
 
 
+# ── Public: provenance of the served score (Desk v2 /regime, plan N5) ─────────
+
+def recession_provenance() -> dict | None:
+    """Which months the served score is for and was computed from, read off the
+    model's own frames (DESK_FRAME3_SPEC §12.6, FRAME3_API_PLAN.md N5). Nothing
+    is refitted and no number is recomputed: each step mirrors a line of
+    `train_recession_model` / `get_recession_metrics`.
+
+    - `probability_month`: the month of the last scoring row, the row the
+      headline `recession_prob` is read from (features shifted three rows,
+      complete rows only, dated on or before today);
+    - `inputs_through`: the month of the features row that scoring row reads,
+      three rows earlier in the feature frame (the shift is row-wise), and
+      `feature_months` that month for every feature, because a shifted row is
+      complete by construction;
+    - `training`: the first and last month of the rows the model is fitted on
+      (shifted features beside the aligned USREC target, complete rows only);
+    - `scoring_index`: every scoring date, which a test pins equal to the
+      served `recession_prob_series`.
+
+    None when the frames hold no scoring row. The connection is closed on
+    every path (verifier V-54)."""
+    conn = _get_conn()
+    try:
+        features_df, usrec, _ = _build_feature_frame(conn)
+    finally:
+        conn.close()
+    if features_df.empty:
+        return None
+    X = features_df[FEATURE_NAMES].shift(3)                         # as train_recession_model
+    scoring = X.dropna()                                             # as get_recession_metrics' `combined`
+    scoring = scoring[scoring.index <= pd.Timestamp(date.today())]   # as its `valid_prob`
+    if scoring.empty:
+        return None
+    last = scoring.index[-1]
+    through = features_df.index[features_df.index.get_loc(last) - 3]
+    fitted = pd.concat([X, usrec.rename("usrec")], axis=1).dropna()  # as train_recession_model's `combined`
+    return {
+        "probability_month": last.strftime("%Y-%m"),
+        "inputs_through": through.strftime("%Y-%m"),
+        "feature_months": {f: through.strftime("%Y-%m") for f in FEATURE_NAMES},
+        "training": ({"start": fitted.index[0].strftime("%Y-%m"), "end": fitted.index[-1].strftime("%Y-%m")}
+                     if not fitted.empty else None),
+        "scoring_index": [d.strftime("%Y-%m-%d") for d in scoring.index],
+    }
+
+
 def _classify_prob(p: float) -> tuple[str, str]:
     if p < 20:
         return "Low Risk", "#2ecc71"

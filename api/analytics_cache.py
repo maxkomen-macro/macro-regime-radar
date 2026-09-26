@@ -313,6 +313,15 @@ def _desk_preset(name: str):
 DESK_PRESETS = ("gold-2sigma-spx-weak", "spx-golden-cross", "spx-death-cross")
 
 
+def _desk_regime(ctx: dict) -> dict:
+    """The Desk v2 /regime item (api/desk_items_macro.py): the stored regimes
+    rows, the recession block with its provenance, the next-print thresholds.
+    Reads the `recession` item above, so it is listed after it."""
+    from api.desk_items_macro import desk_regime
+
+    return desk_regime(ctx)
+
+
 ITEMS = [
     ("credit", _credit),
     ("recession", _recession),
@@ -328,6 +337,8 @@ ITEMS = [
     ("allocation", _allocation),
     ("desk_assets", _desk_assets),
     *[(f"desk_preset:{name}", _desk_preset(name)) for name in DESK_PRESETS],
+    # Desk v2 (desk/frame-3-api-b2a)
+    ("desk_regime", _desk_regime),
 ]
 
 
