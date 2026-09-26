@@ -613,6 +613,13 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/event-study/assets"): ("/api/desk/event-study/assets", 200, None),
     ("GET", "/api/desk/event-study"): ("/api/desk/event-study", 200, None),
     ("GET", "/api/desk/pipeline/inventory"): ("/api/desk/pipeline/inventory", 200, None),
+    # the Desk v2 routes (api/desk_v2.py, desk/frame-3-api): the §12.13 stubs answer awaiting
+    ("GET", "/api/desk/sectors"): ("/api/desk/sectors", 200, None),
+    ("GET", "/api/desk/vol"): ("/api/desk/vol", 200, None),
+    ("GET", "/api/desk/positions"): ("/api/desk/positions", 200, None),
+    ("GET", "/api/desk/basket/price"): ("/api/desk/basket/price", 200, None),
+    ("GET", "/api/desk/basket/{basket_id}"): ("/api/desk/basket/ai-infra", 200, None),
+    ("GET", "/api/desk/hedge"): ("/api/desk/hedge?mode=protect", 200, None),
     # diagnostics, open in development (no DEPLOY_PUBLIC, no CORS_ORIGINS)
     ("GET", "/api/ops/whoami"): ("/api/ops/whoami", 200, None),
     ("GET", "/api/stream/debug"): ("/api/stream/debug", 200, None),
@@ -729,12 +736,13 @@ def test_the_route_sweep_fails_on_a_missing_endpoint_and_on_a_wrong_status(serve
     """The sweep itself: an endpoint that is not served is a failure even where
     404 is what the entry says, and any other status than the stated one is."""
     tc = TestClient(app, raise_server_exceptions=False)
+    # (/api/desk/positions, the example here before desk/frame-3-api, is a served stub now.)
     failed = route_sweep_failures(tc, {
-        ("GET", "/api/desk/positions"): ("/api/desk/positions", 404, None),
+        ("GET", "/api/desk/not-a-route"): ("/api/desk/not-a-route", 404, None),
         ("GET", "/api/desk/event-study/assets"): ("/api/desk/event-study/assets", 503, None),
         ("GET", "/health"): ("/health", 200, None),
     })
-    assert failed["GET /api/desk/positions"][:2] == (404, "not served")
+    assert failed["GET /api/desk/not-a-route"][:2] == (404, "not served")
     assert failed["GET /api/desk/event-study/assets"][:2] == (200, "expected 503")
     assert "GET /health" not in failed
 

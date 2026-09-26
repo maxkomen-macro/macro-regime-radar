@@ -187,6 +187,14 @@ def _env(**over) -> dict:
     {"status": "error", "data": None, "error": {"code": "", "message": "m"}},
     {"status": "error", "data": None, "error": {"code": "c", "message": "m", "detail": "x"}},
     {"status": "error", "data": None, "error": {"code": "c"}},
+    # S-28 / R-16: provider and retryable ride only on schema_check, exactly as "api" and true
+    {"status": "error", "data": None, "error": {"code": "internal", "message": "m", "retryable": True, "provider": "api"}},
+    {"status": "error", "data": None, "error": {"code": "unsupported", "message": "m", "provider": "api"}},
+    {"status": "error", "data": None, "error": {"code": "schema_check", "message": "m"}},
+    {"status": "error", "data": None, "error": {"code": "schema_check", "message": "m", "retryable": True}},
+    {"status": "error", "data": None, "error": {"code": "schema_check", "message": "m", "retryable": False, "provider": "api"}},
+    {"status": "error", "data": None, "error": {"code": "schema_check", "message": "m", "retryable": True, "provider": "x"}},
+    {"status": "error", "data": None, "error": {"code": "schema_check", "message": "m", "retryable": True, "provider": "api", "kind": "schema_check"}},
 ])
 def test_the_envelope_state_rules(broken):
     assert dc.problems("/ledger", _env(**broken)), broken

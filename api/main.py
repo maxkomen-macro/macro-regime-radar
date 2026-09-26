@@ -233,11 +233,15 @@ async def _not_stored(_: Request, exc: NotStored) -> JSONResponse:
 
 
 @app.exception_handler(provenance.SchemaCheckFailed)
-async def _schema_check_failed(_: Request, exc: provenance.SchemaCheckFailed) -> JSONResponse:
+async def _schema_check_failed(request: Request, exc: provenance.SchemaCheckFailed) -> Response:
     """Codex R-27, verifier V-47: whether the Desk's store carries provenance could not be read.
     Nothing is read without it; a route that reached the check (/api/freshness, the pipeline
     inventory) fails closed with the Desk studies' structured 503, never a bare 500. A freshness
-    block elsewhere never reaches here: it says it is awaiting the check (verifier V-53)."""
+    block elsewhere never reaches here: it says it is awaiting the check (verifier V-53).
+    On a Desk v2 route it steps aside for the envelope's own 503 (desk/frame-3-api)."""
+    enveloped = desk_v2.schema_check_failed(request, exc)
+    if enveloped is not None:
+        return enveloped
     return JSONResponse(status_code=503, headers={"Cache-Control": "no-store"}, content=desk_mod.schema_error_body(exc))
 
 

@@ -75,10 +75,28 @@ def serves(path: str) -> bool:
     return any(r.path_regex.match(path) for r in router.routes if isinstance(r, APIRoute))
 
 
+def _route(request: Request) -> str | None:
+    """The enveloped route a request is for, or None when its path is not this router's."""
+    path = request.url.path
+    if not serves(path):
+        return None
+    route = env.route_of(path[len(PREFIX):])
+    return route if route in env.ENVELOPED_ROUTES else None
+
+
 def method_not_allowed(request: Request) -> Response | None:
     """The enveloped 405 for a write to an enveloped route, or None when the
     path is not this router's (the caller answers as FastAPI does)."""
-    path = request.url.path
-    if not serves(path) or env.route_of(path[len(PREFIX):]) not in env.ENVELOPED_ROUTES:
+    if _route(request) is None:
         return None
     return _response(env.method_not_allowed(request.method))
+
+
+def schema_check_failed(request: Request, exc: Exception) -> Response | None:
+    """The enveloped 503 `schema_check` for a failed provenance check that
+    reached api/main.py's handler from a v2 route (raised outside `answer`,
+    in a dependency or middleware; plan §3), or None elsewhere."""
+    route = _route(request)
+    if route is None:
+        return None
+    return _response(env.map_exception(route, exc))

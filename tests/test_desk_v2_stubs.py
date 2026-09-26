@@ -11,6 +11,7 @@ directory, when this tree does not carry the client yet; skipped without it).
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sqlite3
@@ -121,6 +122,39 @@ def test_every_other_405_keeps_fastapis_answer(method, url):
     assert r.status_code in (404, 405), r.text
     assert set(r.json()) == {"detail"}, r.text
     assert r.headers.get("cache-control") != "no-store"
+
+
+def test_a_failed_schema_check_that_escapes_a_v2_handler_is_the_enveloped_503(monkeypatch, idle):
+    """desk/hardening's app-level handler steps aside on the v2 routes (plan §3): a
+    SchemaCheckFailed raised outside `answer` (a dependency, middleware) still answers
+    the envelope's 503, with provider and retryable inside `error` (S-28)."""
+    from api import provenance
+
+    def fail(route):
+        raise provenance.SchemaCheckFailed("could not read whether desk_series carries provenance")
+
+    monkeypatch.setattr(env, "deferred", fail)
+    tc = TestClient(app, raise_server_exceptions=False)
+    r = tc.get("/api/desk/vol")
+    body = dc.check_response("/vol", r)
+    assert r.status_code == 503 and body["error"] == {
+        "code": "schema_check", "message": "could not read whether desk_series carries provenance",
+        "provider": "api", "retryable": True}
+
+
+def test_off_the_v2_routes_the_schema_check_answer_is_hardenings():
+    import asyncio
+
+    from starlette.requests import Request
+
+    from api import main, provenance
+
+    exc = provenance.SchemaCheckFailed("could not read")
+    for path in ("/api/freshness", "/api/desk/pipeline/inventory", "/api/desk/event-study"):
+        req = Request({"type": "http", "method": "GET", "path": path, "query_string": b"", "headers": [],
+                       "scheme": "http", "server": ("testserver", 80), "root_path": ""})
+        r = asyncio.run(main._schema_check_failed(req, exc))
+        assert r.status_code == 503 and json.loads(r.body) == desk_mod.schema_error_body(exc), path
 
 
 def test_the_405_scope_is_the_routers_own_paths():
