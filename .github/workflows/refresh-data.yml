@@ -130,11 +130,17 @@ jobs:
       # desk/event-study: the Desk's daily series (src/market_data/desk_history.py),
       # FRED direct (the .env above carries the key) plus, at tier 2, market
       # series through the same EODHD-first/Yahoo-fallback path as the step
-      # above. Tier 1 makes no provider calls. Never fails the refresh;
-      # validate_db judges the table.
+      # above. Tier 2 since desk/hardening: six FRED calls (the five rates and
+      # spreads plus WTI) and three market series (^NDX, DX-Y.NYB, JPY=X), which
+      # go to Yahoo here because this workflow carries no EODHD token. Never fails
+      # the refresh: each series is written in its own savepoint, the command
+      # exits 1 only when a tier-1 series failed (review R-08), and the step
+      # continues on error whatever stops it (review R-04); validate_db judges
+      # tier 1 and only warns on tier 2.
       - name: Store Desk daily series
         if: steps.mode.outputs.mode == 'full'
-        run: python -m src.market_data.desk_history --tier 1
+        continue-on-error: true
+        run: python -m src.market_data.desk_history --tier 2
 
       - name: Fetch intraday bars
         if: steps.mode.outputs.mode == 'market-only'

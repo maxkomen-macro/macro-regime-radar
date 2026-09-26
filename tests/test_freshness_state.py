@@ -140,6 +140,16 @@ def test_seeded_snapshot_freshness_is_unknown_until_the_live_report():
     assert seeded["/api/credit/metrics"]["hy_oas"] == 270.0
 
 
+def test_a_seeded_snapshot_keeps_an_awaiting_freshness_block():
+    """Verifier V-53: a block that says its freshness is awaiting the Desk's schema
+    check carries no verdict to freeze, and seeding it no longer raises."""
+    from scripts import build_snapshot
+
+    awaiting = {"status": "awaiting", "reason": "The freshness of these numbers could not be judged this time: x"}
+    seeded = build_snapshot.seed_freshness({"/api/credit/metrics": {"hy_oas": 270.0, "freshness": awaiting}})
+    assert seeded["/api/credit/metrics"] == {"hy_oas": 270.0, "freshness": awaiting}
+
+
 @pytest.mark.parametrize("path", ["/api/credit/metrics", "/api/credit/oas?days=90", "/api/recession/probability", "/api/signals/latest", "/api/lbo/defaults"])
 def test_payloads_carry_a_freshness_block(path):
     from fastapi.testclient import TestClient

@@ -53,7 +53,8 @@ The process never imports `src.config`, so it does not read `FRED_API_KEY` or th
 **Configuration (not secret)**
 
 - Posture: `DEPLOY_PUBLIC`, `CORS_ORIGINS`, `CSP_CONNECT_SRC`
-- Assistant: `ASSISTANT_ACCESS`, `ASSISTANT_DAILY_CAP_USD`, `ASSISTANT_LEDGER_PATH`, `ASSISTANT_MAX_CONCURRENCY`
+- Assistant: `ASSISTANT_ACCESS`, `ASSISTANT_DAILY_CAP_USD`, `ASSISTANT_LEDGER_PATH`, `ASSISTANT_MAX_CONCURRENCY`,
+  `ASSISTANT_FREEFORM_SQL` (off unless `1`, `true`, `yes` or `on`: the free-form SQL tool; desk/hardening)
 - Client address: `CLIENT_IP_HEADER`, `TRUSTED_PROXY_HOPS`, `TRUST_X_FORWARDED_FOR` (legacy)
 - Database bootstrap: `BOOTSTRAP_DB_REFRESH_MIN`, `BOOTSTRAP_DB_MAX_AGE_MIN` (legacy; it is reported and changes nothing)
 - Limits: `MAX_BODY_BYTES`, `RATE_LIMIT_PER_CLIENT_PER_MIN`, `RATE_LIMIT_PER_CLIENT_BURST`, `RATE_LIMIT_GLOBAL_PER_MIN`,

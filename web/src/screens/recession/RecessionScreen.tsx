@@ -131,12 +131,16 @@ export default function RecessionScreen() {
 
   // E3 (Iteration 1 step 6): the model's freshness is its seven FRED inputs
   // (DGS10, DGS2, BAMLH0A0HYM2, T10YIE, T5YIE, UNRATE, INDPRO) as
-  // /api/freshness series[] states them. Not the payload's own freshness
-  // block: that one lists USSLIND, which the model does not read, and omits
-  // UNRATE and INDPRO (a backend follow-up, B8).
+  // /api/freshness series[] states them. The payload's own block is passed
+  // like on every other screen (desk/hardening, verifier V-62): series[] comes
+  // first and the block only fills an input the report does not carry (since
+  // BH1 it names these seven, not USSLIND), and an awaiting block (the Desk
+  // store's schema check could not run) overrides a cached report's dates
+  // (Codex R-31).
+  const block = m?.freshness;
   const report = useFreshReport();
-  const fresh = report.group(RECESSION_INPUT_IDS);
-  const through = inputsThrough(report.group);
+  const fresh = report.group(RECESSION_INPUT_IDS, block);
+  const through = inputsThrough((ids) => report.group(ids, block));
   const copy = m ? heroCopy(m) : null;
   const prob = m?.recession_prob ?? 0;
 
