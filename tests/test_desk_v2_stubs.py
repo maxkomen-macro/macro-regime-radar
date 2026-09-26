@@ -174,6 +174,7 @@ def test_the_v2_router_is_get_only_and_every_route_is_enveloped():
     assert routes == sorted([
         ("/api/desk/sectors", ["GET"]), ("/api/desk/vol", ["GET"]), ("/api/desk/positions", ["GET"]),
         ("/api/desk/basket/price", ["GET"]), ("/api/desk/basket/{basket_id}", ["GET"]), ("/api/desk/hedge", ["GET"]),
+        ("/api/desk/study", ["GET"]), ("/api/desk/study/catalog", ["GET"]),
     ])
     for path, _ in routes:
         route = env.route_of(re.sub(r"\{[^}]+\}", "x", path)[len(desk_v2.PREFIX):])
