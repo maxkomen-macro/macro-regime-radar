@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from api import calendar as cal
+from api import provenance
 
 # Monthly regime inputs and their publication rule: (series, release-day-of-
 # month after which last month's print is expected). UNRATE is the Employment
@@ -143,9 +144,45 @@ DESK_REFRESH_SERIES: dict[str, dict] = {
 # `tolerance` business days rather than DAILY_TOLERANCE. EIA publishes the WTI
 # spot series weekly (FRED DCOILWTICO): on 2026-09-22 after the close the newest
 # print was 2026-09-15, five business days back, the usual gap before a release.
+# The registry declares each WTI print known at 13:00 ET on the eighth business
+# day after its date (review R-01), so the newest print due is at most eight
+# business days back: the tolerance is that rule's, stated in the row's reason.
 DESK_SLOW_PUBLICATION: dict[str, dict] = {
-    "DCOILWTICO": {"tolerance": 7, "published": "EIA publishes it weekly"},
+    "DCOILWTICO": {"tolerance": 8, "published": "EIA publishes it weekly and each print is taken as known "
+                                                 "at 13:00 ET on the eighth business day after its date"},
 }
+
+
+# A stored Desk row the engine's reader keeps (src/desk/event_study.load_level): its date
+# ISO-shaped text naming a real day on or after the floor (verifiers V-22, V-26), its value
+# a number (V-14). Freshness reads the newest date among such rows, never the raw MAX
+# (verifier V-27: a junk date that sorts last made a series read "not stored yet"). The
+# floor is pinned equal to the engine's DATE_FLOOR by tests/test_desk_api.py; the registry's
+# earliest declared start is 1962.
+DESK_DATE_FLOOR = "1900-01-01"
+
+
+def desk_readable_sql(date_col: str = "date", value_col: str = "value") -> str:
+    """SQL for a stored Desk row the reader keeps (before its as-of cut). SQLite's
+    date() returns NULL for '1999-99-99' and normalizes '2010-02-30', so
+    `date(d) = d` holds only for YYYY-MM-DD text naming a real day."""
+    return (f"(typeof({date_col}) = 'text' AND COALESCE(date({date_col}) = {date_col}, 0) "
+            f"AND {date_col} >= '{DESK_DATE_FLOOR}' AND typeof({value_col}) IN ('real', 'integer'))")
+
+
+# Codex R-14, R-15 (desk/hardening): which stored rows the Desk's reader keeps is decided by
+# provenance (api/provenance.py), no longer by the `advanced_at` watermark (verifier V-34): in a
+# migrated store, a row a committed refresh wrote, dated on or before that run's New York date.
+def desk_latest_query(as_of: str, migrated: bool) -> tuple[str, list]:
+    """SQL and parameters for each desk_series series' newest row the reader keeps (V-27):
+    readable, dated on or before `as_of`, and in a migrated store written by a committed run
+    and dated on or before its New York date."""
+    readable = desk_readable_sql("d.date", "d.value")
+    if not migrated:
+        return (f"SELECT d.series_id, MAX(d.date) FROM desk_series d WHERE {readable} AND d.date <= ? "
+                "GROUP BY d.series_id", [as_of])
+    return (f"SELECT d.series_id, MAX(d.date) FROM desk_series d {provenance.COMMITTED_JOIN} "
+            f"WHERE {readable} AND d.date <= ? AND r.run_id IS NOT NULL AND d.date <= r.as_of GROUP BY d.series_id", [as_of])
 
 
 def desk_refresh_specs() -> list[dict]:
@@ -196,6 +233,8 @@ def desk_series_states(*, stored: dict[str, str] | None, specs: list[dict], wate
             reason += f" The source serves less history than the registry declares ({wm.get('detail')})."
         elif wm.get("status") == "error":
             reason += f" The last full refresh could not fetch it ({wm.get('detail')}); the stored rows stand."
+        elif wm.get("status") == "excluded":  # desk/hardening review R-03
+            reason += f" The last full refresh excluded rows dated after it ({wm.get('detail')})."
         out.append(_state(rid, label, kind, "daily", d.isoformat(), state, cycles_behind=lag, reason=reason))
     return out
 

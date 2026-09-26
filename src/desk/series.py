@@ -18,10 +18,14 @@ against the NYSE session (api.calendar.session_bounds, so an early close is
 handled; review R-02): `fixed`, when the day's stored value is determined
 (the price a target can be entered at), and `known`, when a desk can see it.
 A rule is (anchor, offset minutes): ("open", m), ("close", m),
-("next_open", m) for a value public only at the next session's open, or
-("clock", minutes after midnight New York). The engine enters a target at
+("next_open", m) for a value public only at the next session's open,
+("clock", minutes after midnight New York), or ("session_clock", n × 1440 +
+minutes after midnight New York) for a value public only at that clock time
+on the n-th exchange session after its date (desk/hardening review R-01:
+WTI, which EIA publishes weekly). The engine enters a target at
 the event date's close only when the target's value is fixed at or after
-every input is known; otherwise at the next session. `defer_as_target`
+every input is known; otherwise at the first later session whose fixing is
+(the next session for every input but WTI, the eighth for WTI). `defer_as_target`
 (review R-03) forces the next session whenever the series is the target,
 because its fixing time is ambiguous. `known_by` is derived for the assets
 endpoint: "close" when public by the session close, "after_close" otherwise.
@@ -34,7 +38,10 @@ before the close and known at the next session open (review R-01: a FRED
 daily value is never same-day); ICE BofA OAS is priced an hour before the
 close and known at the next session open (R-01); VIX settles 15 min after
 the close; the ICE dollar index closes at 17:00 ET; WTI spot (EIA) settles
-14:30 and is known at the next session open. USD/JPY is read at 20:00 ET
+14:30, and because EIA publishes the series weekly each observation is known
+at 13:00 ET on the eighth business day (XNYS session) after its date, the
+conservative reading of the weekly cycle (review R-01), so a WTI-dated event
+enters any target eight sessions later. USD/JPY is read at 20:00 ET
 (desk/hardening, 2026-09-23): Yahoo dates an FX daily bar by its London day
 and EODHD by its UTC day, so the bar closes 19:00 to 20:00 New York time, not
 at the 17:00 New York close; the later reading keeps a same-session entry from
@@ -57,20 +64,44 @@ UNITS =("log_return", "bp", "log_change")
 SOURCES = ("fred", "market", "asset_prices")
 ROLES = ("shock", "condition", "target")
 KNOWN_BY = ("close", "after_close")
-ANCHORS = ("open", "close", "next_open", "clock")
+ANCHORS = ("open", "close", "next_open", "clock", "session_clock")
 Rule = tuple[str, int]
 AT_CLOSE: Rule = ("close", 0)
 NEXT_OPEN: Rule = ("next_open", 0)
+# Verifier V-31 (desk/hardening): the zone whose calendar date is a series'
+# current trading day at its provider. A row dated after that day is
+# future-dated; one dated after the last completed New York session but not
+# after that day is a bar still in progress, which the store's session filter
+# drops. New York's date for FRED and for anything traded in New York's
+# session. For an instrument traded round the clock, the date in Tokyo, where
+# its trading day starts: no provider dates a bar later than that, whether by
+# the London or UTC day (FX) or by a next-day trade date taken in the New
+# York evening (futures).
+NY_ZONE = "America/New_York"
+ROUND_THE_CLOCK_ZONE = "Asia/Tokyo"
 
 
 def clock(hour: int, minute: int = 0) -> Rule:
     return ("clock", hour * 60 + minute)
 
 
+def session_clock(sessions: int, hour: int, minute: int = 0) -> Rule:
+    """The New York clock time on the `sessions`-th exchange session after
+    the date, as ("session_clock", sessions × 1440 + minutes after midnight)."""
+    return ("session_clock", sessions * 1440 + hour * 60 + minute)
+
+
+def _ordinal(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
 def rule_str(rule: Rule) -> str:
     anchor, off = rule
     if anchor == "clock":
         return f"{off // 60:02d}:{off % 60:02d} ET clock"
+    if anchor == "session_clock":
+        n, m = divmod(off, 1440)
+        return f"{m // 60:02d}:{m % 60:02d} ET on the {_ordinal(n)} business day after (XNYS sessions)"
     base = {"open": "session open", "close": "session close", "next_open": "next session open"}[anchor]
     if off == 0:
         return base
@@ -93,6 +124,8 @@ class DeskSeries:
     defer_as_target: bool = False   # R-03: as a target, always enter the next session
     eodhd: str | None = None   # market source only
     note: str | None = None    # shown with the history_from warning
+    known_note: str | None = None  # why `known` is late, stated in a study's verdict (review R-01)
+    day_zone: str = NY_ZONE    # V-31: the zone whose date is the provider's current trading day (see ROUND_THE_CLOCK_ZONE)
     available: bool = True     # False: listed with `reason`, never fetched, never selectable
     reason: str | None = None  # the one-line reason when unavailable
 
@@ -136,17 +169,22 @@ SERIES: tuple[DeskSeries, ...] = (
                note="ICE BofA index OAS, published the next morning. FRED serves a rolling three years only "
                     "(since April 2026); the store keeps every observation it has been served, from 2023-09-25."),
     # ── tier 2 ────────────────────────────────────────────────────────────
-    DeskSeries("wti", "WTI crude", "fred", "DCOILWTICO", "log_return", 1.0, "1986-01-02", 2, _SC, fixed=clock(14, 30), known=NEXT_OPEN,
-               note="EIA spot price via FRED, which EIA publishes weekly, so the newest print can be a week old. "
+    DeskSeries("wti", "WTI crude", "fred", "DCOILWTICO", "log_return", 1.0, "1986-01-02", 2, _SC, fixed=clock(14, 30),
+               known=session_clock(8, 13, 0), known_note="EIA publishes the WTI spot series weekly",
+               note="EIA spot price via FRED, which EIA publishes weekly, so the newest print can be a week old; each value is taken as "
+                    "known at 13:00 ET on the eighth business day after its date. "
                     "Settled at −$36.98 on 2020-04-20: a price at or below zero has no log return, and the study counts it as an exclusion."),
     DeskSeries("ndx", "Nasdaq 100", "market", "^NDX", "log_return", 1.0, "1985-10-01", 2, _ALL, eodhd="NDX.INDX"),
     DeskSeries("rut", "Russell 2000", "asset_prices", "^RUT", "log_return", 1.0, "1990-01-02", 2, _SC,
                note="Stored from 1990 by the allocation refresh (asset_prices)."),
-    DeskSeries("dxy", "US Dollar Index", "market", "DX-Y.NYB", "log_return", 1.0, "1971-01-04", 2, _ALL, eodhd="DXY.INDX", fixed=clock(17, 0), known=clock(17, 0)),
+    DeskSeries("dxy", "US Dollar Index", "market", "DX-Y.NYB", "log_return", 1.0, "1971-01-04", 2, _ALL, eodhd="DXY.INDX", fixed=clock(17, 0), known=clock(17, 0),
+               day_zone=ROUND_THE_CLOCK_ZONE),
     DeskSeries("usdjpy", "USD/JPY", "market", "JPY=X", "log_return", 1.0, "1996-10-30", 2, _SC, eodhd="USDJPY.FOREX", fixed=clock(20, 0), known=clock(20, 0),
+               day_zone=ROUND_THE_CLOCK_ZONE,
                note="Yahoo history starts 1996-10-30. The daily bar closes 19:00 to 20:00 ET (London or UTC day), read at 20:00 ET."),
     # ── tier 3 (deferred) ─────────────────────────────────────────────────
     DeskSeries("copper", "Copper", "market", "HG=F", "log_return", 1.0, "2000-08-30", 3, _SC, fixed=clock(17, 0), known=clock(17, 0), defer_as_target=True,
+               day_zone=ROUND_THE_CLOCK_ZONE,
                note="Front-month futures; history from 2000-08-30."),
 ) + tuple(
     DeskSeries(t.lower(), f"{name} sector ETF ({t})", "market", t, "log_return", 1.0, "1998-12-22", 3, _SC,

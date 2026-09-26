@@ -132,7 +132,11 @@ def reserve_usd() -> float:
 def _connect() -> sqlite3.Connection:
     LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(LEDGER_PATH, timeout=5.0)
-    ensure_ai_spend_ledger(conn)
+    try:
+        ensure_ai_spend_ledger(conn)
+    except BaseException:
+        conn.close()  # never left open when its setup fails (Codex R-33)
+        raise
     return conn
 
 

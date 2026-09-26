@@ -466,6 +466,8 @@ def test_desk_series_states_judge_each_stored_series():
         "desk:BAMLH0A0HYM2": {"source": "desk:BAMLH0A0HYM2", "last_obs": None, "status": "error", "detail": "ConnectionError"},
         "desk:T10Y2Y": {"source": "desk:T10Y2Y", "last_obs": "2026-09-21", "status": "short",
                         "detail": "fred; served from 1990-01-02; stored from 1990-01-02; 9000 rows; declared 1976-06-01"},
+        "desk:^NDX": {"source": "desk:^NDX", "last_obs": "2026-09-21", "status": "excluded",
+                      "detail": "yfinance; 1 row dated after 2026-09-22 excluded (tier 2)"},
     }
     rows = freshness_mod.desk_series_states(stored=stored, specs=desk_mod.desk_series_specs(stored=stored), watermarks=marks, now=NOW)
     by = {r["id"]: r for r in rows}
@@ -479,10 +481,17 @@ def test_desk_series_states_judge_each_stored_series():
     assert by["desk:BAMLH0A0HYM2"]["state"] == "unknown" and by["desk:BAMLH0A0HYM2"]["as_of"] is None
     assert "ConnectionError" in by["desk:BAMLH0A0HYM2"]["reason"]
     assert by["desk:^NDX"]["kind"] == "market" and by["desk:^NDX"]["state"] == "close"
-    # desk/hardening: EIA publishes WTI weekly, so four business days back is current
-    # (the FRED daily rule would read it stale); a month back is not
+    assert "excluded rows dated after it (yfinance; 1 row dated after 2026-09-22 excluded (tier 2))" in by["desk:^NDX"]["reason"]  # R-03
+    # desk/hardening: EIA publishes WTI weekly and each print is known on the eighth business
+    # day after its date (review R-01), so four business days back is current (the FRED daily
+    # rule would read it stale), eight still is, and a month back is not
     wti = by["desk:DCOILWTICO"]
     assert wti["state"] == "close" and wti["cycles_behind"] == 4 > freshness_mod.DAILY_TOLERANCE and "EIA publishes it weekly" in wti["reason"]
+    assert "eighth business day after its date" in wti["reason"] and "up to 8 business days old is current" in wti["reason"]
+    eight = freshness_mod.desk_series_states(stored={**stored, "DCOILWTICO": "2026-09-09"}, specs=desk_mod.desk_series_specs(stored=stored),
+                                             watermarks=marks, now=NOW)
+    eight_row = next(r for r in eight if r["id"] == "desk:DCOILWTICO")
+    assert eight_row["cycles_behind"] == 8 and eight_row["state"] == "close", eight_row
     old = freshness_mod.desk_series_states(stored={**stored, "DCOILWTICO": "2026-08-31"}, specs=desk_mod.desk_series_specs(stored=stored),
                                            watermarks=marks, now=NOW)
     assert next(r for r in old if r["id"] == "desk:DCOILWTICO")["state"] == "stale"
@@ -1043,3 +1052,1492 @@ def test_a_failed_first_import_of_the_engine_recovers_by_rebuilding_the_same_fil
             break
         time.sleep(0.5)
     assert r.status_code == 200 and r.json()["status"] == "ready", r.text[:200]
+
+
+# ── desk/hardening, review round 3: R-06, the generation's as-of ────────────
+
+def test_the_desk_reads_nothing_dated_after_the_generations_as_of(tmp_path, install_worker, monkeypatch):
+    """Review R-06, end to end: rows dated after the generation's as-of (the New
+    York date its copy was staged) are read by none of the Desk's paths: the
+    worker-built preset and assets list (the generation is pinned) and a
+    free-form study computed on the pool's thread (it gets the as-of from its
+    lease). Each says what it left out."""
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    import sqlite3
+
+    from api import worker as worker_mod
+
+    path = tmp_path / "macro_radar.db"
+    src = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    dst = sqlite3.connect(path)
+    src.backup(dst)
+    src.close()
+    dst.execute("INSERT INTO desk_series VALUES ('DCOILWTICO', '2099-12-31', 99.0, 'fred')")
+    dst.execute("INSERT INTO asset_prices VALUES ('^GSPC', '1d', '2099-12-31', 99999.0, 'test')")
+    dst.commit()
+    dst.close()
+    monkeypatch.setattr(db, "DB_PATH", path)
+    db.reset_connections_for_tests()
+    w = install_worker(worker_mod.AnalyticsWorker(poll_s=0.05))
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    desk_mod.clear_cache()
+    as_of = w.current.as_of
+    # pinned through the session calendar to the instant the copy was staged, never today() (V-20:
+    # a build straddling New York midnight made the two dates differ)
+    from api import calendar as cal
+
+    staged = datetime.strptime(w.current.staged_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    assert as_of == staged.astimezone(cal.NY).date().isoformat() and w.status()["as_of"] == as_of
+
+    preset = client.get("/api/desk/event-study", params={"study": "gold-2sigma-spx-weak"}).json()
+    assert preset["status"] == "ready" and preset["provenance"]["as_of_cutoff"] == as_of
+    assert preset["provenance"]["future_excluded"] == {"spx": 1}
+    assets = {x["key"]: x for x in client.get("/api/desk/event-study/assets").json()["shocks"]}
+    assert assets["wti"]["last"] < "2099-12-31" and assets["spx"]["last"] < "2099-12-31"
+    deadline = time.monotonic() + 60
+    while True:
+        r = client.get("/api/desk/event-study", params={"shock": "wti", "w": 5, "z": 2.0, "sign": "both", "target": "spx"})
+        if r.status_code != 202 or time.monotonic() > deadline:
+            break
+        time.sleep(0.5)
+    assert r.status_code == 200 and r.json()["status"] == "ready", r.text[:300]
+    p = r.json()["provenance"]
+    assert p["as_of_cutoff"] == as_of and p["future_excluded"] == {"spx": 1, "wti": 1}
+    assert all(m["last"] < "2099-12-31" for m in p["inputs"])
+    assert any("rows dated after" in x for x in p["warnings"])
+
+
+# ── desk/hardening, review round 4: R-07, the study cache and the cutoff ────
+
+def _one_event_store(path: Path) -> Path:
+    """A synthetic store ending Monday 2026-09-14 whose VIX has exactly one +2.5σ
+    5-session move: every other 5-session move is ±1% (z of about ±1), and the
+    level doubles six sessions before the end. VIX settles after the close, so
+    the S&P is entered the next session and the 5-session window closes on
+    2026-09-14: N = 1 at a cutoff of 2026-09-14, N = 0 at 2026-09-13."""
+    import sqlite3
+
+    import numpy as np
+
+    from src.market_data import desk_history
+    from tests.test_event_study import _synthetic_db
+
+    _synthetic_db(path, spx_end="2026-09-14")
+    cal = es.session_calendar("1995-01-02", "2026-09-14")
+    sessions = es.sessions_between(cal, "1995-01-03", "2026-09-14")
+    level = np.log(20.0) + 0.01 * (np.arange(len(sessions)) % 2)
+    level[len(sessions) - 7:] += np.log(2.0)
+    conn = sqlite3.connect(path)
+    desk_history.write_series(conn, "VIXCLS", [(d.strftime("%Y-%m-%d"), float(np.exp(v))) for d, v in zip(sessions, level)],
+                              provider="fred", merge=False)
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_two_generations_of_one_file_with_different_cutoffs_never_share_a_cached_study(tmp_path, install_worker, monkeypatch):
+    """Review R-07: two generations built from one file across New York
+    midnight carry different as-of cutoffs. The study cache used to key on the
+    file alone, so a study cached under the newer generation (cutoff Sep 14,
+    5d N = 1) was served to a request pinned to the older one (cutoff Sep 13,
+    where the direct computation gives N = 0). The key is now the generation's
+    identity, its effective cutoff and the lossless parameters, and expiry
+    follows the generation, not the file."""
+    from dataclasses import replace as dc_replace
+
+    from api import analytics_cache
+    from api import worker as worker_mod
+    from src.analytics import dbpath
+
+    path = _one_event_store(tmp_path / "macro_radar.db")
+    monkeypatch.setattr(db, "DB_PATH", path)
+    db.reset_connections_for_tests()
+    w = install_worker(worker_mod.AnalyticsWorker(items=[("desk_assets", analytics_cache._desk_assets)], poll_s=0.05))
+    w.start(serving=True)
+    assert w.wait_published(timeout=120)
+    gen = w.current
+    newer = dc_replace(gen, id=gen.id + 1000, as_of="2026-09-14")  # the same file, staged after midnight
+    older = dc_replace(gen, id=gen.id + 1001, as_of="2026-09-13")
+    assert newer.key == older.key and newer.uri == older.uri
+    q = es.Query(shock="vix", w=5, z=2.5, sign="+", target="spx")
+
+    def study(g):
+        with dbpath.pinned(g):
+            for _ in range(60):
+                r = desk_mod.study_result(q)
+                if r is not None:
+                    return r
+                time.sleep(0.5)
+        raise AssertionError("the study never finished")
+
+    def n5(r):
+        return next(h for h in r["horizons"] if h["h"] == 5)["n"]
+
+    desk_mod.clear_cache()
+    before = dict(desk_mod.stats)
+    r_new = study(newer)
+    assert n5(r_new) == 1 and r_new["provenance"]["as_of_cutoff"] == "2026-09-14"
+    r_old = study(older)
+    conn = dbpath.open_generation(gen)
+    try:
+        direct = es.run_on(conn, q, generation=gen.key, as_of="2026-09-13")
+    finally:
+        conn.close()
+    assert n5(direct) == 0
+    assert n5(r_old) == 0 and r_old["provenance"]["as_of_cutoff"] == "2026-09-13", "the newer generation's entry was reused"
+    assert r_old["horizons"] == direct["horizons"]
+    assert desk_mod.stats["computed"] == before["computed"] + 2 and desk_mod.stats["hits"] == before["hits"]
+    # expiry follows the generation: the newer one's finished entry went when the older one submitted
+    assert {k[0] for k in desk_mod._cache} == {older.id}
+    assert n5(study(older)) == 0 and desk_mod.stats["hits"] == before["hits"] + 1, "a repeat under the same generation is a hit"
+
+
+# ── desk/hardening, verifier round 4: V-14, a non-numeric past-dated value ──
+
+def test_a_non_numeric_stored_value_is_quarantined_on_read_and_never_500s_the_desk(tmp_path, install_worker, monkeypatch):
+    """Verifier V-14: a single non-numeric value in a past-dated stored row (the
+    10-year Treasury in desk_series, USD/JPY there too, the S&P in asset_prices)
+    made the reader's float() raise: desk_assets failed, the assets list and
+    every free-form study answered 500. The reader now quarantines such a value
+    on read: the study excludes it and says so. validate_db reports it: tier 1
+    and asset_prices fail, tier 2 warns."""
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    import sqlite3
+
+    from api import worker as worker_mod
+    from scripts import validate_db as v
+
+    path = tmp_path / "macro_radar.db"
+    src = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    dst = sqlite3.connect(path)
+    src.backup(dst)
+    src.close()
+    assert dst.execute("UPDATE desk_series SET value = 'n/a' WHERE series_id = 'DGS10' AND date = '2010-06-01'").rowcount == 1
+    assert dst.execute("UPDATE desk_series SET value = 'n/a' WHERE series_id = 'JPY=X' AND date = '2010-06-01'").rowcount == 1
+    assert dst.execute("UPDATE asset_prices SET close = 'n/a' WHERE symbol = '^GSPC' AND interval = '1d' AND date = '2010-06-01'").rowcount == 1
+    dst.commit()
+    dst.close()
+    monkeypatch.setattr(db, "DB_PATH", path)
+    db.reset_connections_for_tests()
+    w = install_worker(worker_mod.AnalyticsWorker(poll_s=0.05))
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    desk_mod.clear_cache()
+    assert not any(name.startswith("desk") for name in w.current.errors), w.current.errors
+
+    tc = TestClient(app, raise_server_exceptions=False)
+    assets = tc.get("/api/desk/event-study/assets")
+    assert assets.status_code == 200, assets.text[:300]
+    by = {x["key"]: x for x in assets.json()["shocks"]}
+    assert by["us10y"]["status"] == "stored" and by["usdjpy"]["status"] == "stored" and by["spx"]["status"] == "stored"
+
+    def ready(params):
+        deadline = time.monotonic() + 60
+        while True:
+            r = tc.get("/api/desk/event-study", params=params)
+            if r.status_code != 202 or time.monotonic() > deadline:
+                return r
+            time.sleep(0.5)
+
+    r = ready({"shock": "us10y", "w": 20, "z": 2.0, "sign": "+", "target": "spx"})
+    assert r.status_code == 200 and r.json()["status"] == "ready", r.text[:300]
+    p = r.json()["provenance"]
+    assert p["non_numeric_excluded"] == {"spx": 1, "us10y": 1}
+    assert p["exclusions"]["us10y"]["non_numeric"] == 1 and p["exclusions"]["spx"]["non_numeric"] == 1
+    assert any("non-numeric stored values quarantined on read and excluded: spx 1, us10y 1" in x for x in p["warnings"]), p["warnings"]
+    r = ready({"shock": "usdjpy", "w": 5, "z": 2.0, "sign": "+", "target": "dxy"})
+    assert r.status_code == 200 and r.json()["provenance"]["non_numeric_excluded"] == {"usdjpy": 1}, r.text[:300]
+
+    rep = v.validate(path, None, "full")
+    assert "desk:DGS10 (tier 1): 1 non-numeric value" in rep["failures"], rep["failures"]
+    assert "asset_prices: 1 row(s) with a non-numeric close" in rep["failures"]
+    assert any(w_.startswith("desk:JPY=X: 1 non-numeric value") and "tier 2, reported, never blocking" in w_ for w_ in rep["warnings"]), rep["warnings"]
+
+
+# ── desk/hardening, verifier round 5: V-22, a malformed stored date ─────────
+
+def test_a_malformed_stored_date_is_set_aside_on_read_and_never_500s_the_desk(tmp_path, install_worker, monkeypatch):
+    """Verifier V-22, V-14's fault in the date column: one stored row whose date
+    is not a valid ISO date ('1999-99-99' in the 10-year Treasury, tier 1; and
+    '2010-02-30' in USD/JPY, tier 2) made the reader's date parse raise, so the
+    assets list and every free-form study answered 500. Such a row is now set
+    aside on read, counted per series, named in the study's warnings and
+    included in its hash. validate_db fails the tier-1 date and warns for tier 2."""
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    import sqlite3
+
+    from api import worker as worker_mod
+    from scripts import validate_db as v
+
+    path = tmp_path / "macro_radar.db"
+    src = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    dst = sqlite3.connect(path)
+    src.backup(dst)
+    src.close()
+    dst.execute("INSERT INTO desk_series VALUES ('DGS10', '1999-99-99', 4.5, 'fred')")
+    dst.execute("INSERT INTO desk_series VALUES ('JPY=X', '2010-02-30', 110.0, 'yfinance')")
+    dst.commit()
+    dst.close()
+    monkeypatch.setattr(db, "DB_PATH", path)
+    db.reset_connections_for_tests()
+    w = install_worker(worker_mod.AnalyticsWorker(poll_s=0.05))
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    desk_mod.clear_cache()
+    assert not any(name.startswith("desk") for name in w.current.errors), w.current.errors
+
+    tc = TestClient(app, raise_server_exceptions=False)
+    assets = tc.get("/api/desk/event-study/assets")
+    assert assets.status_code == 200, assets.text[:300]
+    by = {x["key"]: x for x in assets.json()["shocks"]}
+    assert by["us10y"]["status"] == "stored" and by["usdjpy"]["status"] == "stored"
+
+    deadline = time.monotonic() + 60
+    while True:
+        r = tc.get("/api/desk/event-study", params={"shock": "us10y", "w": 20, "z": 2.0, "sign": "+", "target": "spx"})
+        if r.status_code != 202 or time.monotonic() > deadline:
+            break
+        time.sleep(0.5)
+    assert r.status_code == 200 and r.json()["status"] == "ready", r.text[:300]
+    p = r.json()["provenance"]
+    assert p["malformed_date_excluded"] == {"us10y": 1} and p["exclusions"]["us10y"]["malformed_date"] == 1
+    assert any("stored rows with a malformed date set aside on read and excluded: us10y 1" in x for x in p["warnings"]), p["warnings"]
+
+    rep = v.validate(path, None, "full")
+    assert "desk:DGS10 (tier 1): 1 malformed date" in rep["failures"], rep["failures"]
+    assert any(w_.startswith("desk:JPY=X: 1 malformed date") and "tier 2, reported, never blocking" in w_ for w_ in rep["warnings"]), rep["warnings"]
+
+
+# ── desk/hardening, verifier round 6: V-26 (a date floor), V-27 (freshness) ─
+
+def _served_copy_with(tmp_path, install_worker, monkeypatch, rows: list[tuple], prepare=None):
+    """A worker serving a copy of the scratch store with `rows` added to desk_series
+    (after `prepare(conn)`, when given, runs on the copy)."""
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    import sqlite3
+
+    from api import worker as worker_mod
+
+    path = tmp_path / "macro_radar.db"
+    src = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True)
+    dst = sqlite3.connect(path)
+    src.backup(dst)
+    src.close()
+    if prepare is not None:
+        prepare(dst)
+    dst.executemany("INSERT INTO desk_series (series_id, date, value, provider) VALUES (?, ?, ?, ?)", rows)
+    dst.commit()
+    dst.close()
+    monkeypatch.setattr(db, "DB_PATH", path)
+    db.reset_connections_for_tests()
+    w = install_worker(worker_mod.AnalyticsWorker(poll_s=0.05))
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    desk_mod.clear_cache()
+    return w, path
+
+
+def test_a_date_before_the_floor_is_set_aside_on_read_and_never_500s_the_desk(tmp_path, install_worker, monkeypatch):
+    """Verifier V-26: a well-formed, real, but far-past date ('0000-01-01',
+    '1000-01-01') passed V-22's checks, then the engine raised building its
+    calendar (strftime out of range; a nonexistent time under DST rules), and
+    the assets list and every free-form study answered 500. Dates before
+    1900-01-01 (the registry's earliest declared start is 1962) are now
+    malformed: set aside on read, counted, warned and hashed like V-22, and
+    validate_db fails them for tier 1."""
+    from scripts import validate_db as v
+
+    w, path = _served_copy_with(tmp_path, install_worker, monkeypatch,
+                                [("DGS10", "0000-01-01", 4.0, "fred"), ("DGS10", "1000-01-01", 4.0, "fred")])
+    assert not any(name.startswith("desk") for name in w.current.errors), w.current.errors
+    tc = TestClient(app, raise_server_exceptions=False)
+    assert tc.get("/api/desk/event-study/assets").status_code == 200
+    deadline = time.monotonic() + 60
+    while True:
+        r = tc.get("/api/desk/event-study", params={"shock": "us10y", "w": 20, "z": 2.0, "sign": "+", "target": "spx"})
+        if r.status_code != 202 or time.monotonic() > deadline:
+            break
+        time.sleep(0.5)
+    assert r.status_code == 200 and r.json()["status"] == "ready", r.text[:300]
+    p = r.json()["provenance"]
+    assert p["malformed_date_excluded"] == {"us10y": 2}
+    assert any("stored rows with a malformed date set aside on read and excluded: us10y 2" in x for x in p["warnings"]), p["warnings"]
+    rep = v.validate(path, None, "full")
+    assert rep["verdict"] == "fail" and "desk:DGS10 (tier 1): 2 malformed dates" in rep["failures"], rep["failures"]
+
+
+def test_the_date_floor_is_one_value_below_every_declared_start():
+    """V-26: the engine's floor and the one freshness and validate_db read are the
+    same date, and no series the registry declares starts before it."""
+    from api import freshness as freshness_mod
+    from scripts import validate_db as v
+
+    assert es.DATE_FLOOR == freshness_mod.DESK_DATE_FLOOR == "1900-01-01"
+    # Codex round 4: one constant, defined once and imported by the engine and validate_db
+    assert es.DATE_FLOOR is freshness_mod.DESK_DATE_FLOOR
+    for module in ("src/desk/event_study.py", "scripts/validate_db.py"):
+        assert '"1900-01-01"' not in (ROOT / module).read_text(), f"{module} defines its own floor"
+    assert freshness_mod.DESK_DATE_FLOOR in v.MALFORMED_DATE and es.DATE_FLOOR in es.ISO_DATE
+    assert min(s.history_from for s in es.registry.SERIES) >= es.DATE_FLOOR
+
+
+def test_a_junk_date_that_sorts_last_never_makes_a_series_read_not_stored(tmp_path, install_worker, monkeypatch):
+    """Verifier V-27: freshness read the raw MAX(date), so a malformed date that
+    sorts after the newest real one ('2026-09-21x') made the 10-year Treasury
+    read "not stored yet" in the inventory and turned the drawer's tier-1
+    verdict stale. Freshness now reads the newest date that survives the
+    reader's checks, in the API and in validate_db alike."""
+    import sqlite3
+
+    from scripts import validate_db as v
+
+    c = sqlite3.connect(f"file:{SCRATCH}?mode=ro", uri=True) if SCRATCH.exists() else None
+    if c is None:
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    newest = c.execute("SELECT MAX(date) FROM desk_series WHERE series_id = 'DGS10'").fetchone()[0]
+    c.close()
+    w, path = _served_copy_with(tmp_path, install_worker, monkeypatch, [("DGS10", newest + "x", 4.0, "fred")])
+    inv = {s["id"]: s for s in client.get("/api/desk/pipeline/inventory").json()["series"]}
+    row = inv["desk:DGS10"]
+    assert row["as_of"] == newest and row["state"] != "unknown" and "not stored yet" not in row["reason"], row
+    assert db.freshness()["desk_series_latest"]["DGS10"] == newest
+    assert v.inspect(path)["fresh"]["desk_series_latest"]["DGS10"] == newest
+
+
+# ── desk/hardening, Codex round 4: R-12, exclusions in each asset's coverage ─
+
+def test_each_assets_row_names_what_the_reader_left_out(tmp_path, install_worker, monkeypatch):
+    """Codex R-12: the reader's exclusions reached a study's provenance but not
+    the assets list, so the page's asset picker showed a series as cleanly
+    stored while rows of it were being set aside. Each asset row now carries
+    the counts and the warnings, here DGS10's four faults (a non-numeric
+    value, a malformed date, a date before the floor, a date after the as-of)."""
+    w, _ = _served_copy_with(tmp_path, install_worker, monkeypatch, [
+        ("DGS10", "2010-06-05", "n/a", "fred"), ("DGS10", "1999-99-99", 4.0, "fred"),
+        ("DGS10", "1000-01-01", 4.0, "fred"), ("DGS10", "2099-12-31", 4.0, "fred"),
+    ])
+    r = client.get("/api/desk/event-study/assets")
+    assert r.status_code == 200, r.text[:300]
+    us10y = next(x for x in r.json()["shocks"] if x["key"] == "us10y")
+    assert us10y["status"] == "stored"
+    assert us10y["exclusions"] == {"future": 1, "non_numeric": 1, "malformed_date": 2, "no_provenance": 0}, us10y["exclusions"]
+    text = " ".join(us10y["warnings"])
+    # Codex R-18: the effective cutoff for the row: the as-of, or the New York date of the run that committed
+    # it when earlier. The file predates provenance, so the staged copy back-fills it with the pre-provenance
+    # run, dated when the copy was staged
+    effective = min(w.current.as_of, _run_as_of(w, "pre-provenance"))
+    assert f"1 stored row dated after {effective} excluded" in text, us10y["warnings"]
+    assert "1 non-numeric stored value quarantined on read" in text and "2 stored rows with a malformed date set aside on read" in text
+    clean = next(x for x in r.json()["shocks"] if x["key"] == "vix")
+    assert clean["exclusions"] == {"future": 0, "non_numeric": 0, "malformed_date": 0, "no_provenance": 0} and clean["warnings"] == []
+
+
+def _run_as_of(w, run_id: str) -> str:
+    """The New York date of one run in the served generation's copy."""
+    import sqlite3
+
+    c = sqlite3.connect(w.current.uri, uri=True)
+    try:
+        return c.execute("SELECT as_of FROM desk_series_runs WHERE run_id = ?", (run_id,)).fetchone()[0]
+    finally:
+        c.close()
+
+
+def test_an_assets_row_names_its_refresh_date_when_the_generation_is_staged_after_it(tmp_path, install_worker, monkeypatch):
+    """Codex R-18: a generation staged after the New York date of the refresh
+    that committed a row. The store migrated this file on 2026-09-23 and a run
+    that day committed a DGS10 row dated 2026-09-24 (stored as served, V-15);
+    today's generation is staged later, so the row is not after the as-of but
+    is after its refresh's day: the row says 2026-09-23, not the as-of."""
+    from api import provenance
+
+    def migrated_on_the_23rd(conn):
+        day = datetime(2026, 9, 23, 22, 0, tzinfo=timezone.utc)
+        provenance.migrate(conn, day)
+        run_id, run_as_of = provenance.start_run(conn, day)
+        assert run_as_of == "2026-09-23"
+        conn.execute("INSERT INTO desk_series (series_id, date, value, provider, run_id, ingested_at) VALUES "
+                     "('DGS10', '2026-09-24', 4.0, 'fred', ?, '2026-09-23T22:00:00Z')", (run_id,))
+        provenance.mark_committed(conn, run_id, day)
+
+    w, _ = _served_copy_with(tmp_path, install_worker, monkeypatch, [], prepare=migrated_on_the_23rd)
+    assert w.current.as_of > "2026-09-23", "the generation is staged after the row's refresh"
+    us10y = next(x for x in client.get("/api/desk/event-study/assets").json()["shocks"] if x["key"] == "us10y")
+    assert us10y["exclusions"]["future"] == 1 and us10y["last"] < "2026-09-24", us10y
+    assert us10y["warnings"] == ["1 stored row dated after 2026-09-23, the New York date of the refresh that stored it, excluded"], us10y["warnings"]
+    assert _run_as_of(w, "pre-provenance") == "2026-09-23", "the file's own migration, not the staging, dated the back-fill"
+
+
+# ── desk/hardening, Codex round 8: R-27, a schema check that cannot run is an error ──
+
+def test_a_study_whose_provenance_check_cannot_run_is_an_error(served, monkeypatch):
+    """Codex R-27: when whether the store carries provenance cannot be read, the
+    study never reads the store without it: the API answers 503 with
+    status "error" and the reason, and so does the assets list."""
+    from api import provenance
+
+    def cannot_read(conn):
+        raise provenance.SchemaCheckFailed("could not read whether desk_series carries provenance (OperationalError: database "
+                                           "schema is locked: main) after 4 tries over 1 s")
+
+    monkeypatch.setattr(provenance, "is_migrated", cannot_read)
+    desk_mod.clear_cache()
+    deadline = time.monotonic() + 60
+    while True:
+        r = client.get("/api/desk/event-study", params={"shock": "us10y", "w": 5, "z": 2.0, "sign": "both", "target": "spx", "seed": 7})
+        if r.status_code != 202 or time.monotonic() > deadline:
+            break
+        time.sleep(0.5)
+    assert r.status_code == 503, r.text[:300]
+    body = r.json()
+    assert body["status"] == "error" and "could not read whether desk_series carries provenance" in body["reason"], body
+    assert body["detail"] == body["reason"], "the web client reads `detail` (verifier V-50)"
+
+
+# ── desk/hardening, verifier round 16: V-47, freshness fails closed with a structured 503 ──
+
+def test_freshness_and_the_inventory_fail_closed_when_the_provenance_check_cannot_run(served, monkeypatch):
+    """Verifier V-47: api/db._freshness_uncached reads whether the store carries
+    provenance, and a SchemaCheckFailed there was a bare 500 on /api/freshness and
+    the pipeline inventory. Both now answer the studies' structured 503, the
+    message in `detail` and `reason` (V-50)."""
+    from api import provenance
+
+    def cannot_read(conn):
+        raise provenance.SchemaCheckFailed("could not read whether desk_series carries provenance (OperationalError: database "
+                                           "schema is locked: main) after 4 tries")
+
+    monkeypatch.setattr(provenance, "is_migrated", cannot_read)
+    db._freshness_memo.clear()
+    for path in ("/api/freshness", "/api/desk/pipeline/inventory"):
+        r = client.get(path)
+        assert r.status_code == 503, (path, r.status_code, r.text[:300])
+        body = r.json()
+        assert body["status"] == "error" and body["kind"] == "schema_check" and body["retryable"] is True, (path, body)
+        assert body["detail"] == body["reason"] and "could not read whether desk_series carries provenance" in body["detail"], body
+    db._freshness_memo.clear()
+
+
+# ── desk/hardening, verifier round 17: V-51, a collection inside a SQLite call ──
+
+_V51_SWEEP = r'''
+import faulthandler, gc, json, os, sqlite3, sys, threading, time
+
+HANG_S = 60
+
+
+def main():
+    root, scratch = sys.argv[1], sys.argv[2]
+    sys.path.insert(0, root)
+    from pathlib import Path
+
+    from fastapi.testclient import TestClient
+
+    from api import db, provenance
+    from api import worker as worker_mod
+    from api.main import app
+    from src.analytics import dbpath
+
+    db.DB_PATH = Path(scratch)
+    w = worker_mod.AnalyticsWorker(poll_s=0.05)
+    worker_mod._worker = w
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    gen = dbpath.generation_for(db.DB_PATH)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    def cannot_read(conn):
+        raise provenance.SchemaCheckFailed("could not read whether desk_series carries provenance (OperationalError: "
+                                           "database schema is locked: main) after 4 tries")
+
+    provenance.is_migrated = cannot_read
+
+    def bounded(fn, what, timeout=30):
+        box = {}
+
+        def run():
+            try:
+                box["value"] = fn()
+            except BaseException as exc:
+                box["error"] = repr(exc)
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        t.join(timeout)
+        if t.is_alive():
+            print("RESULT " + json.dumps({"hung": what}), flush=True)
+            faulthandler.dump_traceback(all_threads=True)
+            os._exit(3)
+        if "error" in box:
+            raise RuntimeError(what + ": " + box["error"])
+        return box.get("value")
+
+    def leave_exited_threads(n=4):
+        """Threads that read the copy through api/db and exit, as anyio prunes an idle worker."""
+        def read():
+            db._connect().execute("SELECT COUNT(*) FROM regimes").fetchone()
+        for _ in range(n):
+            t = threading.Thread(target=read)
+            t.start()
+            t.join()
+
+    # Python that SQLite runs inside one of its calls runs a full collection there,
+    # as the collector may at any allocation; automatic collection is off, so the
+    # objects an exited thread left stay garbage until one of these passes.
+    depth, fired = threading.local(), []
+
+    def is_sqlite(arg):
+        return isinstance(getattr(arg, "__self__", None), (sqlite3.Connection, sqlite3.Cursor))
+
+    def profile(frame, event, arg):
+        if event == "c_call" and is_sqlite(arg):
+            depth.n = getattr(depth, "n", 0) + 1
+        elif event in ("c_return", "c_exception") and is_sqlite(arg):
+            depth.n = getattr(depth, "n", 1) - 1
+        elif event == "call" and getattr(depth, "n", 0) > 0:
+            fired.append(frame.f_code.co_name)
+            gc.collect()
+
+    # A hang can hold the interpreter, so the bound is faulthandler's own thread:
+    # past it the process prints every thread's stack and exits.
+    faulthandler.dump_traceback_later(HANG_S, exit=True)
+    gc.disable()
+    t0 = time.monotonic()
+    statuses, kinds = [], []
+    for i in range(3):
+        leave_exited_threads()
+        db._freshness_memo.clear()
+        threading.setprofile_all_threads(profile)
+        r = bounded(lambda: client.get("/api/freshness"), f"GET /api/freshness, request {i + 1}")
+        threading.setprofile_all_threads(None)
+        statuses.append(r.status_code)
+        kinds.append(r.json().get("kind"))
+        if i == 0:
+            gc.collect()  # mid-sweep, from the sweep's own thread, outside any SQLite call
+    sweep_s = time.monotonic() - t0
+
+    # a collection inside a SQLite call on the copy (the verifier's standalone repro)
+    leave_exited_threads()
+    threading.setprofile_all_threads(profile)
+
+    def collect_inside_sqlite():
+        conn = dbpath.open_generation(gen)
+        try:
+            first = []
+
+            def authorizer(*args):
+                if not first:
+                    first.append(1)
+                    gc.collect()
+                return sqlite3.SQLITE_OK
+
+            conn.set_authorizer(authorizer)
+            return conn.execute("SELECT COUNT(*) FROM regimes").fetchone()[0]
+        finally:
+            conn.close()
+
+    rows = bounded(collect_inside_sqlite, "a collection inside a SQLite call on the copy")
+    threading.setprofile_all_threads(None)
+    gc.collect()
+
+    def fresh_reader():  # a new thread, a new connection: no thread may still hold the copy's lock
+        return db._connect().execute("SELECT COUNT(*) FROM desk_series").fetchone()[0]
+
+    fresh = bounded(fresh_reader, "a fresh reader after the collections", timeout=10)
+    faulthandler.cancel_dump_traceback_later()
+    print("RESULT " + json.dumps({"statuses": statuses, "kinds": kinds, "sweep_s": round(sweep_s, 2), "rows": rows,
+                                  "fresh": fresh, "fired": sorted(set(fired))}), flush=True)
+    w.stop()
+    os._exit(0)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def test_the_route_sweep_answers_while_collections_run_inside_sqlite_calls(tmp_path):
+    """Verifier V-51: SQLite ran the copy connection's Python authorizer inside the
+    copy's shared-cache lock, and a collection there that closed a connection an
+    exited thread had left for the collector needed the same lock: the reader
+    waited for good, and every reader of the copy after it. The sweep runs in its
+    own process so that a hang is a bounded failure: /api/freshness with the
+    schema check failing, three times, each after threads that read the copy have
+    exited, with a collection wherever Python runs inside a SQLite call and one
+    mid-sweep; then a collection inside a SQLite call on the copy, then a fresh
+    reader. On the staged code the first request hung."""
+    import json
+
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    script = tmp_path / "v51_sweep.py"
+    script.write_text(_V51_SWEEP)
+    env = {**os.environ, "EODHD_PROBE_ON_START": "0", "ASSISTANT_ACCESS": "off"}
+    try:
+        proc = subprocess.run([sys.executable, str(script), str(ROOT), str(SCRATCH)], capture_output=True, text=True,
+                              timeout=300, env=env, cwd=ROOT)
+    except subprocess.TimeoutExpired as exc:
+        pytest.fail(f"the sweep did not finish in 300 s: {(exc.stdout or '')[-2000:]}")
+    assert "Timeout (" not in proc.stderr, "hung past 60 s:\n" + proc.stderr[proc.stderr.find("Timeout ("):][:6000]
+    lines = [line for line in proc.stdout.splitlines() if line.startswith("RESULT ")]
+    assert lines, (proc.returncode, proc.stdout[-2000:], proc.stderr[-4000:])
+    res = json.loads(lines[-1][len("RESULT "):])
+    assert "hung" not in res, (res, proc.stderr[-6000:])
+    assert res["statuses"] == [503, 503, 503] and res["kinds"] == ["schema_check"] * 3, res
+    assert res["sweep_s"] < 60, res
+    assert res["rows"] > 0 and res["fresh"] > 0, res
+    assert proc.returncode == 0, (proc.returncode, proc.stderr[-2000:])
+
+
+def test_a_thread_closes_its_copy_connection_when_it_exits(served, monkeypatch):
+    """Verifier V-51: an exited thread's connection is closed by that thread as it
+    exits, never left for the collector. Collection is off, so only the thread's
+    exit can close it; on the staged code nothing did."""
+    import gc
+    import threading
+
+    closed, used = [], []
+    real = db._ReusedConnection.really_close
+
+    def spy(self):
+        closed.append(threading.get_ident())
+        real(self)
+
+    monkeypatch.setattr(db._ReusedConnection, "really_close", spy)
+
+    def read():
+        used.append(threading.get_ident())
+        assert db._connect().execute("SELECT COUNT(*) FROM regimes").fetchone()[0] > 0
+
+    was = gc.isenabled()
+    gc.disable()
+    try:
+        t = threading.Thread(target=read)
+        t.start()
+        t.join()
+    finally:
+        if was:
+            gc.enable()
+    assert closed == used, (closed, used)
+
+
+def test_a_copy_connection_is_read_only_by_its_own_mode_with_no_python_callback(served):
+    """Verifier V-51: no Python runs inside SQLite's calls on a copy connection, so
+    the copy is read-only by the connection's own mode: query_only refuses every
+    write, temp tables and VACUUM INTO included, and a zero attach limit refuses
+    ATTACH. On the staged code open_generation installed a Python authorizer."""
+    import sqlite3
+
+    from src.analytics import dbpath
+
+    installed: list[str] = []
+
+    class Spy(sqlite3.Connection):
+        def set_authorizer(self, *a, **k):
+            installed.append("set_authorizer")
+            return super().set_authorizer(*a, **k)
+
+        def set_progress_handler(self, *a, **k):
+            installed.append("set_progress_handler")
+            return super().set_progress_handler(*a, **k)
+
+        def set_trace_callback(self, *a, **k):
+            installed.append("set_trace_callback")
+            return super().set_trace_callback(*a, **k)
+
+        def create_function(self, *a, **k):
+            installed.append("create_function")
+            return super().create_function(*a, **k)
+
+    conn = dbpath.open_generation(dbpath.generation_for(db.DB_PATH), factory=Spy)
+    assert conn is not None
+    try:
+        assert installed == []
+        assert conn.execute("SELECT COUNT(*) FROM regimes").fetchone()[0] > 0
+        for sql in ("DELETE FROM regimes", "CREATE TEMP TABLE t (x)", "ATTACH ':memory:' AS m", "VACUUM INTO ':memory:'"):
+            with pytest.raises(sqlite3.Error):
+                conn.execute(sql)
+        assert conn.execute("SELECT COUNT(*) FROM regimes").fetchone()[0] > 0
+    finally:
+        conn.close()
+
+
+# ── desk/hardening, verifier round 17: V-53 and V-52, what a failed Desk schema check takes out ──
+
+def test_a_failed_desk_schema_check_answers_503_only_on_the_desk_routes(served, monkeypatch):
+    """Verifier V-53: the freshness report reads whether the Desk's store carries
+    provenance, so a check that could not run took out every endpoint with a
+    freshness block. Outside the Desk they now serve their own data, the block
+    reading {"status": "awaiting", "reason": ...}; /api/freshness, the pipeline
+    inventory and a study still answer the structured 503, the reason in
+    `detail`, which the Data Pipeline page's client reads (V-52)."""
+    from api import provenance
+
+    message = ("could not read whether desk_series carries provenance (OperationalError: database schema is locked: main) "
+               "after 4 tries")
+
+    def cannot_read(conn):
+        raise provenance.SchemaCheckFailed(message)
+
+    monkeypatch.setattr(provenance, "is_migrated", cannot_read)
+    db._freshness_memo.clear()
+    desk_mod.clear_cache()
+    try:
+        own = {"/api/signals/latest": "signals", "/api/credit/oas?days=3650": "series", "/api/credit/metrics": "hy_oas",
+               "/api/recession/probability": "probability_source", "/api/lbo/defaults": "lbo_all_in_rate",
+               "/api/allocation": "asset_classes"}
+        for path, key in own.items():
+            db._freshness_memo.clear()
+            r = client.get(path)
+            assert r.status_code == 200, (path, r.status_code, r.text[:300])
+            body = r.json()
+            assert body.get(key) is not None, (path, sorted(body))
+            assert body["freshness"] == {"status": "awaiting", "reason": body["freshness"]["reason"]}, (path, body["freshness"])
+            assert message in body["freshness"]["reason"], (path, body["freshness"])
+        for path in ("/api/freshness", "/api/desk/pipeline/inventory"):
+            db._freshness_memo.clear()
+            r = client.get(path)
+            assert r.status_code == 503, (path, r.status_code, r.text[:300])
+            body = r.json()
+            assert body["kind"] == "schema_check" and body["detail"] == body["reason"] and message in body["detail"], (path, body)
+        deadline = time.monotonic() + 60
+        while True:
+            r = client.get("/api/desk/event-study", params={"shock": "us10y", "w": 5, "z": 2.0, "sign": "both", "target": "spx", "seed": 7})
+            if r.status_code != 202 or time.monotonic() > deadline:
+                break
+            time.sleep(0.5)
+        assert r.status_code == 503 and r.json()["kind"] == "schema_check" and message in r.json()["detail"], r.text[:300]
+    finally:
+        db._freshness_memo.clear()
+
+
+# ── desk/hardening, verifier round 18: V-54, a failed build leaves no connection to the copy ──
+
+_V54_BUILD = r'''
+import faulthandler, gc, json, os, sqlite3, sys, threading
+
+
+def main():
+    root, scratch = sys.argv[1], sys.argv[2]
+    sys.path.insert(0, root)
+    from pathlib import Path
+
+    from api import db
+    from api import worker as worker_mod
+    from src.analytics import dbpath, recession
+
+    faulthandler.dump_traceback_later(120, exit=True)  # a hang can hold the interpreter
+    gc.disable()  # a connection left for the collector stays until the passes below
+    opened: set[int] = set()
+    real = recession._get_conn
+
+    class FailsMidway:
+        """recession's real connection to the copy, whose reads fail once it is open."""
+
+        def __init__(self, conn):
+            self._conn = conn
+
+        def execute(self, *args, **kwargs):
+            raise sqlite3.OperationalError("forced failure mid-build")
+
+        def close(self):
+            self._conn.close()
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    def failing():
+        conn = real()
+        opened.add(id(conn))
+        return FailsMidway(conn)
+
+    recession._get_conn = failing
+    db.DB_PATH = Path(scratch)
+    w = worker_mod.AnalyticsWorker(poll_s=0.05)
+    worker_mod._worker = w
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    served = dbpath.generation_for(db.DB_PATH)
+    # the build returns before the curve shape once its features fail; read it on the served copy too
+    assert recession._load_curve_shape() == {}
+
+    def is_open(conn):
+        try:
+            conn.in_transaction
+            return True
+        except sqlite3.ProgrammingError:
+            return False
+
+    left_open = sum(1 for o in gc.get_objects() if isinstance(o, sqlite3.Connection) and id(o) in opened and is_open(o))
+
+    def bounded(fn, what, timeout=30):
+        box = {}
+
+        def run():
+            try:
+                box["value"] = fn()
+            except BaseException as exc:
+                box["error"] = repr(exc)
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        t.join(timeout)
+        if t.is_alive():
+            print("RESULT " + json.dumps({"hung": what, "opened": len(opened), "left_open": left_open}), flush=True)
+            faulthandler.dump_traceback(all_threads=True)
+            os._exit(3)
+        if "error" in box:
+            raise RuntimeError(what + ": " + box["error"])
+        return box.get("value")
+
+    def collect_inside_sqlite():
+        conn = dbpath.open_generation(served)
+        try:
+            first = []
+
+            def authorizer(*args):
+                if not first:
+                    first.append(1)
+                    gc.collect()
+                return sqlite3.SQLITE_OK
+
+            conn.set_authorizer(authorizer)
+            return conn.execute("SELECT COUNT(*) FROM regimes").fetchone()[0]
+        finally:
+            conn.close()
+
+    rows = bounded(collect_inside_sqlite, "a collection inside a SQLite call on the served copy")
+    gc.collect()
+
+    def fresh_reader():  # a new thread, a new connection
+        return db._connect().execute("SELECT COUNT(*) FROM regimes").fetchone()[0]
+
+    fresh = bounded(fresh_reader, "a fresh reader after the collections", timeout=10)
+    faulthandler.cancel_dump_traceback_later()
+    print("RESULT " + json.dumps({"opened": len(opened), "left_open": left_open, "rows": rows, "fresh": fresh}), flush=True)
+    w.stop()
+    os._exit(0)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def test_a_build_that_fails_midway_leaves_no_connection_to_the_copy(tmp_path):
+    """Verifier V-54: recession.py closed its connection only when the build
+    succeeded, so a failure left the worker's connection to the copy for the
+    collector, and a collection inside a SQLite call on that copy (the query
+    tool's progress handler is one) then waited for good. In its own process, so
+    a hang is a bounded failure: every recession read fails once its connection
+    is open, with automatic collection off, the curve shape read on the served
+    copy as well; after that none of those connections is open, a collection inside a SQLite call on the served copy
+    and one outside it both complete, and a fresh reader reads."""
+    import json
+
+    if not SCRATCH.exists():
+        pytest.skip("populate data/desk_scratch.db for the Desk API tests")
+    script = tmp_path / "v54_build.py"
+    script.write_text(_V54_BUILD)
+    env = {**os.environ, "EODHD_PROBE_ON_START": "0", "ASSISTANT_ACCESS": "off"}
+    try:
+        proc = subprocess.run([sys.executable, str(script), str(ROOT), str(SCRATCH)], capture_output=True, text=True,
+                              timeout=300, env=env, cwd=ROOT)
+    except subprocess.TimeoutExpired as exc:
+        pytest.fail(f"the build did not finish in 300 s: {(exc.stdout or '')[-2000:]}")
+    assert "Timeout (" not in proc.stderr, "hung past 120 s:\n" + proc.stderr[proc.stderr.find("Timeout ("):][:6000]
+    lines = [line for line in proc.stdout.splitlines() if line.startswith("RESULT ")]
+    assert lines, (proc.returncode, proc.stdout[-2000:], proc.stderr[-4000:])
+    res = json.loads(lines[-1][len("RESULT "):])
+    assert "hung" not in res, (res, proc.stderr[-6000:])
+    assert res["opened"] >= 3 and res["left_open"] == 0, res
+    assert res["rows"] > 0 and res["fresh"] > 0, res
+    assert proc.returncode == 0, (proc.returncode, proc.stderr[-2000:])
+
+
+def test_every_builder_closes_its_connection_on_every_path():
+    """Verifier V-54, for every builder: a connection a module opens to read the
+    store is closed in a `finally`, never only after the reads succeed, and never
+    by a connection's own `with`, which ends a transaction and does not close.
+    Codex R-33, for every factory (`_get_conn`, `_connect`) that runs setup on a
+    connection before handing it over: a failed setup closes the connection
+    before the error propagates. The assistant's ledger is included, and
+    (verifier V-64) the refresh's factories in src/utils, src/market_data and
+    src/events, whose builders this test does not judge."""
+    import ast
+
+    openers = {"_get_conn", "connect_ro", "open_generation", "_connect", "get_connection"}
+    factories = {"_get_conn", "_connect", "get_connection"}
+    files = (sorted((ROOT / "src" / "analytics").glob("*.py")) + sorted((ROOT / "src" / "desk").glob("*.py"))
+             + [ROOT / "api" / "desk.py", ROOT / "api" / "assistant_budget.py"])
+    factory_only = [f for d in ("utils", "market_data", "events") for f in sorted((ROOT / "src" / d).glob("*.py"))]
+    unclosed, withs, setups = [], [], []
+
+    def name_of(call) -> str | None:
+        f = call.func
+        return f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+
+    def opener(call) -> bool:
+        return name_of(call) in openers
+
+    for path in files + factory_only:
+        tree = ast.parse(path.read_text())
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name in openers - factories:
+                continue  # dbpath's openers hand their connection to the caller
+            if path in factory_only and fn.name not in factories:
+                continue
+            where = f"{path.relative_to(ROOT)}:{fn.lineno} {fn.name}"
+            if fn.name in factories:
+                # R-33: a call on the new connection before it is returned must sit in a try whose
+                # handler closes the connection and re-raises
+                for i, stmt in enumerate(fn.body):
+                    if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call) and (
+                            opener(stmt.value) or name_of(stmt.value) == "connect"):
+                        var = stmt.targets[0].id
+                        setup = [x for x in fn.body[i + 1:] if not (isinstance(x, ast.Return))]
+                        calls = any(isinstance(n, ast.Call) for x in setup for n in ast.walk(x))
+                        guarded = any(isinstance(x, ast.Try) and any(
+                            f"{var}.close()" in ast.unparse(h) and any(isinstance(n, ast.Raise) for n in ast.walk(h))
+                            for h in x.handlers) for x in setup)
+                        if calls and not guarded:
+                            setups.append(where)
+                continue
+            closes = {ast.unparse(n) for t in ast.walk(fn) if isinstance(t, ast.Try) for f in t.finalbody for n in ast.walk(f)}
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and opener(node.value):
+                    var = node.targets[0].id
+                    if f"{var}.close()" not in closes:
+                        unclosed.append(where)
+                if isinstance(node, ast.withitem) and isinstance(node.context_expr, ast.Call) and opener(node.context_expr):
+                    withs.append(where)
+    assert unclosed == [] and withs == [] and setups == [], {
+        "closed only on success": unclosed, "a connection's own with": withs, "left open when its setup fails": setups}
+
+
+class _ConnectProxy:
+    """A module's `sqlite3` with `connect` replaced, everything else the real module."""
+
+    def __init__(self, connect):
+        import sqlite3
+
+        self._real, self.connect = sqlite3, connect
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+FACTORIES = {"api.assistant_budget": "_connect", "src.analytics.alerts": "_get_conn", "src.analytics.backtest": "_get_conn",
+             "src.analytics.playbook": "_get_conn", "src.analytics.priced": "_get_conn", "src.analytics.surprise": "_get_conn",
+             "src.analytics.volatility": "_get_conn",
+             # verifier V-64: the refresh's own factories
+             "src.utils.db": "get_connection", "src.market_data.fetch_market": "_get_conn",
+             "src.events.load_events": "_get_conn", "src.market_data.backfill_yfinance": "_get_conn"}
+
+
+@pytest.mark.parametrize("module", sorted(FACTORIES))
+def test_a_factory_closes_its_connection_when_its_setup_fails(module, tmp_path, monkeypatch):
+    """Codex R-33, with its repro: the ledger's `ensure_ai_spend_ledger` raises
+    "database is locked"; each other factory's `PRAGMA journal_mode` is denied.
+    The error propagates, and the connection the factory opened is closed; on the
+    staged code it still answered `SELECT 1`. Verifier V-64 added the refresh's
+    four factories, whose store path is pointed at a scratch file."""
+    import importlib
+    import sqlite3
+
+    mod = importlib.import_module(module)
+    if hasattr(mod, "DB_PATH"):
+        scratch = tmp_path / "store.db"
+        scratch.touch()
+        monkeypatch.setattr(mod, "DB_PATH", scratch)
+    opened: list[sqlite3.Connection] = []
+
+    def connect(*args, **kwargs):
+        conn = sqlite3.connect(":memory:")  # never the store or the ledger file
+        if module != "api.assistant_budget":
+            conn.set_authorizer(lambda action, arg1, *rest: sqlite3.SQLITE_DENY
+                                if action == sqlite3.SQLITE_PRAGMA and str(arg1).lower() == "journal_mode" else sqlite3.SQLITE_OK)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(mod, "sqlite3", _ConnectProxy(connect))
+    if module == "api.assistant_budget":
+        monkeypatch.setattr(mod, "LEDGER_PATH", tmp_path / "ledger" / "assistant_spend.db")
+
+        def locked(conn):
+            raise sqlite3.OperationalError("database is locked")
+
+        monkeypatch.setattr(mod, "ensure_ai_spend_ledger", locked)
+    with pytest.raises(sqlite3.DatabaseError):
+        getattr(mod, FACTORIES[module])()
+    assert len(opened) == 1
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        opened[0].execute("SELECT 1")
+
+
+def test_a_failed_staging_closes_its_copy_and_backs_off_on_any_error(tmp_path, monkeypatch):
+    """Verifiers V-64, V-73: the worker's staging closed its in-memory copy only on
+    a SQLite error, and only a SQLite error backed off. An error that is not
+    SQLite's (a ValueError, a MemoryError from `backup`) left the copy open, then
+    re-copied the whole file at every poll with the state stuck at "building".
+    Now any staging error closes the copy and backs off: in a real worker loop,
+    one attempt in a second at a 50 ms poll, the state "error", the reason named.
+    An interpreter exit is not a staging failure: the copy closes and it
+    propagates."""
+    import sqlite3
+
+    from api import provenance
+    from api import worker as worker_mod
+
+    src = tmp_path / "store.db"
+    seed = sqlite3.connect(src)
+    seed.execute("CREATE TABLE regimes (date TEXT)")
+    seed.execute("INSERT INTO regimes VALUES ('2026-09-01')")
+    seed.commit()
+    seed.close()
+    from src.analytics import dbpath
+
+    key = dbpath.file_key(src)  # the file's own key: staging now checks it holds across the copy (R-11)
+    anchors: list[sqlite3.Connection] = []
+
+    def connect(*args, **kwargs):
+        conn = sqlite3.connect(*args, **kwargs)
+        if str(args[0]).startswith("file:mrr-gen-"):
+            anchors.append(conn)
+        return conn
+
+    monkeypatch.setattr(worker_mod, "sqlite3", _ConnectProxy(connect))
+    for exc in (ValueError("forced failure while staging"), MemoryError("backup ran out of memory"),
+                sqlite3.OperationalError("database is locked")):
+        def broken(conn, now=None, exc=exc):
+            raise exc
+
+        monkeypatch.setattr(provenance, "migrate", broken)
+        w = worker_mod.AnalyticsWorker(poll_s=0.05)
+        before = time.monotonic()
+        assert w._stage(src, key) is None
+        assert w._failed is not None and w._failed[0] == key and w._failed[2] >= before + 1.5, (exc, w._failed)
+        assert w.state == "error" and str(exc) in (w.last_error or ""), (exc, w.state, w.last_error)
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            anchors[-1].execute("SELECT COUNT(*) FROM regimes")
+
+    def exits(conn, now=None):
+        raise SystemExit(3)
+
+    monkeypatch.setattr(provenance, "migrate", exits)
+    with pytest.raises(SystemExit):
+        worker_mod.AnalyticsWorker(poll_s=0.05)._stage(src, key)
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        anchors[-1].execute("SELECT COUNT(*) FROM regimes")
+
+    calls: list[float] = []
+
+    def failing(conn, now=None):
+        calls.append(time.monotonic())
+        raise ValueError("forced failure while staging")
+
+    monkeypatch.setattr(provenance, "migrate", failing)
+    monkeypatch.setattr(db, "DB_PATH", src)
+    w = worker_mod.AnalyticsWorker(poll_s=0.05)
+    w.start(serving=True)
+    try:
+        time.sleep(1.0)
+        assert len(calls) == 1, f"staged {len(calls)} times in 1 s at a 50 ms poll"
+        assert w.state == "error" and "ValueError: forced failure while staging" in (w.last_error or ""), (w.state, w.last_error)
+    finally:
+        w.stop()
+
+
+# ── desk/hardening, verifier rounds 20 and 21: V-60, V-61, V-69, the query tool's budget on the copy ──
+
+REGIME_QUESTIONS = {
+    # verifier V-69: natural questions joining on a computed month key, which took 0.2 to 1.6 s
+    "SPY daily return by regime": (
+        "SELECT g.label, COUNT(*) AS days, AVG(x.ret) AS avg_daily FROM (SELECT date, close / LAG(close) OVER (ORDER BY date) - 1 AS ret "
+        "FROM market_daily WHERE symbol='SPY') x JOIN regimes g ON strftime('%Y-%m', x.date) = strftime('%Y-%m', g.date) GROUP BY g.label"),
+    "every symbol's average daily return by regime": (
+        "SELECT g.label, x.symbol, AVG(x.ret) AS avg_daily FROM (SELECT symbol, date, close / LAG(close) OVER (PARTITION BY symbol ORDER BY date) - 1 AS ret "
+        "FROM market_daily) x JOIN regimes g ON strftime('%Y-%m', x.date) = strftime('%Y-%m', g.date) GROUP BY g.label, x.symbol ORDER BY g.label, x.symbol"),
+    "signal trigger rate by regime": (
+        "SELECT g.label, s.signal_name, AVG(s.triggered) AS rate FROM signals s JOIN regimes g ON strftime('%Y-%m', s.date) = strftime('%Y-%m', g.date) "
+        "GROUP BY g.label, s.signal_name"),
+}
+
+
+def _rewrite_error(out: dict) -> bool:
+    """The interrupt's error: the budget, and how to rewrite (V-69), never a bare interrupt."""
+    err = out.get("error", "")
+    return (err.startswith("SQL error: the query exceeded the 250 ms budget; simplify it. If it reads many rows:")
+            and "date range" in err and "strftime('%Y-%m', a.date)" in err and "regimes.date" in err
+            and "strftime('%Y-%m-01', x.date)" in err)
+
+
+def test_the_query_tool_stops_a_cross_join_within_300_ms_and_explains_how_to_rewrite(served):
+    """Verifiers V-60, V-61, V-69: a query on the served copy holds the copy's
+    lock while it runs, so the tool's budget is 250 ms, its clock starting when
+    the tool call connects, before any setup. A four-way cross join of the regimes
+    table stops within 300 ms of the call, alone and four at once (the assistant's
+    concurrency ceiling), and answers the rewrite error: the budget, and how to
+    rewrite. The natural regime questions the verifier listed either answer or
+    return that error, never a bare interrupt, and the ordinary questions answer.
+    On the staged code the cross join took 2 s at first, and returned a bare
+    interrupt at 100 ms after round 21."""
+    import threading
+
+    from src.analytics import chat
+
+    cross = "SELECT COUNT(*) AS n FROM regimes a, regimes b, regimes c, regimes d"
+
+    def timed(sql: str) -> tuple[float, dict]:
+        t = time.perf_counter()
+        out = chat._tool_query_database(sql)
+        return time.perf_counter() - t, out
+
+    elapsed, out = timed(cross)
+    assert _rewrite_error(out) and elapsed < 0.300, (elapsed, out)
+    results: list[tuple[float, dict]] = []
+    threads = [threading.Thread(target=lambda: results.append(timed(cross))) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    assert len(results) == 4 and all(_rewrite_error(o) and e < 0.300 for e, o in results), results
+    for name, sql in REGIME_QUESTIONS.items():
+        _, out = timed(sql)
+        assert ("error" not in out and out["row_count"] > 0) or _rewrite_error(out), (name, out)
+    for sql in ("SELECT date, label, confidence FROM regimes ORDER BY date DESC LIMIT 12",
+                "SELECT series_id, MAX(date) AS latest, COUNT(*) AS n FROM raw_series GROUP BY series_id ORDER BY series_id",
+                "SELECT r.date, r.label, s.signal_name, s.value FROM regimes r JOIN signals s ON s.date = r.date "
+                "ORDER BY r.date DESC LIMIT 50",
+                # the rewrite the error suggests: join on the regimes table's stored month
+                "SELECT g.label, COUNT(*) AS days, AVG(x.ret) AS avg_daily FROM (SELECT date, close / LAG(close) OVER (ORDER BY date) - 1 AS ret "
+                "FROM market_daily WHERE symbol='SPY') x JOIN regimes g ON g.date = strftime('%Y-%m-01', x.date) GROUP BY g.label"):
+        _, out = timed(sql)
+        assert "error" not in out and out["row_count"] > 0, (sql, out)
+
+
+# ── desk/hardening, Codex round 10: R-34, the assistant's SQL on its own private copy ──
+
+def _like(n: int) -> str:
+    """Codex's repro: n repetitions of a LIKE a single call of which runs uninterrupted.
+    Since verifier V-84 its 8,000-character pattern is past the 256-character cap."""
+    one = "(printf('%.*c',16000,'a') LIKE ('%'||printf('%.*c',8000,'a')||'b'))"
+    return ", ".join(f"{one} AS l{i}" for i in range(n)) if n <= 8 else " + ".join([one] * n) + " AS s"
+
+
+def _glob_chain() -> str:
+    """The longest single-call hold found under every cap (decision 42, verifier V-88): 2 KB of
+    GLOB operators on a 16 KB value with a 256-byte pattern, one row, no jump between them for an
+    interrupt to land on; about 1.0 s. The summed trims the R-34 and V-80 tests used before are
+    refused by the guard since V-88 (two-argument trim, the 16-call and 2 KB caps)."""
+    head = "WITH v(x,p) AS (SELECT printf('%.*c',16000,'a'), '*'||printf('%.*c',254,'a')||'b') SELECT "
+    terms: list[str] = []
+    while len((head + "+".join(terms + ["(x GLOB p)"]) + " AS s FROM v").encode()) <= 2048:
+        terms.append("(x GLOB p)")
+    return head + "+".join(terms) + " AS s FROM v"
+
+
+def test_the_assistants_sql_runs_on_a_private_copy_that_never_stalls_other_readers(served):
+    """Codex R-34: SQLite never interrupts inside a function, so a model's query
+    of string functions held the served copy's lock for seconds: eight
+    repetitions of Codex's printf/LIKE stalled another reader 1.05 s, and 128
+    summed, 15.94 s. The assistant's SQL now runs on the generation's private
+    copy, built on its first query from the generation's own copy, held by the
+    generation and closed with it. The budget, the cap and the guard are
+    unchanged. A reader of the shared copy running SELECT COUNT(*) throughout
+    stays under 20 ms, the private copy's build included. Since V-84 and V-88
+    Codex's LIKEs are refused at once, so the longest hold the caps leave (2 KB
+    of GLOB operators, about 1 s) supplies the uninterrupted work."""
+    import threading
+
+    from src.analytics import chat, dbpath
+
+    gen = dbpath.generation_for(db.DB_PATH)
+    assert gen is not None and getattr(gen, "private_uri", None) is None  # built on the first query, not before
+    reader = dbpath.open_generation(gen)
+    stop, worst, reads = threading.Event(), [0.0], [0]
+
+    def read():
+        conn = dbpath.open_generation(gen)
+        try:
+            while not stop.is_set():
+                t = time.perf_counter()
+                conn.execute("SELECT COUNT(*) FROM regimes").fetchone()
+                worst[0] = max(worst[0], time.perf_counter() - t)
+                reads[0] += 1
+                time.sleep(0.002)
+        finally:
+            conn.close()
+
+    t = threading.Thread(target=read, daemon=True)
+    t.start()
+    try:
+        time.sleep(0.05)
+        # Codex's repro: 8 repetitions are refused at once by the pattern cap (V-84), 128 by the guard's 2 KB cap (V-88)
+        out = chat._tool_query_database(f"SELECT {_like(8)} FROM regimes LIMIT 1")
+        assert "256-byte limit" in out.get("error", ""), {k: v for k, v in out.items() if k != "rows"}
+        out = chat._tool_query_database(f"SELECT {_like(128)} FROM regimes LIMIT 1")
+        assert out.get("error", "").startswith("SQL guard: a query is limited to 2 KB of SQL"), out
+        started = time.perf_counter()
+        long = chat._tool_query_database(_glob_chain())  # the longest hold left under every cap
+        long_s = time.perf_counter() - started
+        assert "budget; simplify it" in long.get("error", ""), long
+        # verifier V-90: the long call must really run long. The longest query the caps leave runs about
+        # 1.0 s (0.98 to 1.04 s measured), so the bound is twice the budget, not the 1 s V-90 suggested.
+        assert long_s > 0.5, long_s
+        assert chat._tool_query_database("SELECT COUNT(*) AS n FROM regimes")["rows"] == [
+            {"n": reader.execute("SELECT COUNT(*) FROM regimes").fetchone()[0]}]  # the same generation's data
+    finally:
+        stop.set()
+        t.join(10)
+        reader.close()
+    assert reads[0] > 20 and worst[0] < 0.020, f"the shared copy's reader waited {worst[0] * 1000:.1f} ms"
+    assert gen.private_uri is not None and gen.private_uri != gen.uri and gen.private_anchor is not None
+
+
+def test_a_generation_closes_its_private_copy_when_it_retires(tmp_path):
+    """Codex R-34: the private copy lives and dies with its generation: built
+    lazily, from the generation's own copy (the provenance migration included),
+    and closed at retirement, after which the generation has none to give."""
+    import sqlite3
+
+    from api import worker as worker_mod
+    from src.analytics import dbpath
+
+    src = tmp_path / "store.db"
+    seed = sqlite3.connect(src)
+    seed.execute("CREATE TABLE regimes (date TEXT)")
+    seed.executemany("INSERT INTO regimes VALUES (?)", [("2026-08-01",), ("2026-09-01",)])
+    seed.commit()
+    seed.close()
+    gen = worker_mod.AnalyticsWorker(poll_s=0.05)._stage(src, dbpath.file_key(src))
+    assert gen is not None and gen.private_uri is None
+    ref = gen.private()
+    assert ref is not None and ref.uri == gen.private_uri and ref.key == gen.key and ref.as_of == gen.as_of
+    conn = dbpath.open_generation(ref)
+    assert conn.execute("SELECT COUNT(*) FROM regimes").fetchone()[0] == 2
+    conn.close()
+    assert gen.private() is ref or gen.private().uri == ref.uri  # built once
+    anchor = gen.private_anchor
+    gen.close()
+    assert gen.private_anchor is None and gen.private_uri is None and gen.private() is None
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        anchor.execute("SELECT 1")
+
+
+# ── desk/hardening, Codex round 10: R-11, R-35, R-36, R-37, staging and the generation factory ──
+
+def _one_table_store(path, rows=1):
+    import sqlite3
+
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE regimes (date TEXT)")
+    conn.executemany("INSERT INTO regimes VALUES (?)", [(f"2026-{m:02d}-01",) for m in range(1, rows + 1)])
+    conn.commit()
+    conn.close()
+
+
+def test_a_file_that_moves_during_its_copy_is_never_published_under_the_old_key(tmp_path, monkeypatch):
+    """R-11 (the API plan's review): every build, not only a rebuild, needs the
+    file's key to hold across the copy. The interleaving: the poll samples the
+    key, a refresh commits, then the backup copies the new file, which the
+    staged code published under the old key. Now the copy is discarded with no
+    backoff, and the next poll publishes the new file under its own key."""
+    import sqlite3
+
+    from api import worker as worker_mod
+    from src.analytics import dbpath
+
+    src = tmp_path / "store.db"
+    _one_table_store(src)
+    commit_first = [True]
+
+    def connect(*args, **kwargs):
+        if commit_first[0] and str(args[0]).startswith(f"file:{src}"):
+            commit_first[0] = False
+            writer = sqlite3.connect(src)  # the refresh commits between the key's sampling and the backup
+            writer.execute("INSERT INTO regimes VALUES ('2026-12-01')")
+            writer.commit()
+            writer.close()
+        return sqlite3.connect(*args, **kwargs)
+
+    monkeypatch.setattr(worker_mod, "sqlite3", _ConnectProxy(connect))
+    monkeypatch.setattr(db, "DB_PATH", src)
+    w = worker_mod.AnalyticsWorker(items=[], poll_s=0.05, preload=False)
+    try:
+        sampled = dbpath.file_key(src)
+        w._maybe_build()
+        assert w._current is None and w.snapshots_moved == 1 and w._failed is None and w.state == "idle"
+        assert dbpath.file_key(src) != sampled
+        w._maybe_build()
+        gen = w._current
+        assert gen is not None and gen.key == dbpath.file_key(src)
+        conn = dbpath.open_generation(gen)
+        assert conn.execute("SELECT COUNT(*) FROM regimes").fetchone()[0] == 2  # the new file, under its own key
+        conn.close()
+    finally:
+        w.stop()
+
+
+def test_a_staging_connection_that_cannot_open_backs_off(tmp_path, monkeypatch):
+    """Codex R-35: the copy's own connection was opened outside the staging
+    error handler, so a failure to open it skipped the backoff: six attempts in
+    350 ms at a 50 ms poll, `_failed` None, the state stuck at "building". Now it
+    backs off like any staging error."""
+    import sqlite3
+
+    from api import worker as worker_mod
+
+    src = tmp_path / "store.db"
+    _one_table_store(src)
+    attempts: list[float] = []
+
+    def connect(*args, **kwargs):
+        if str(args[0]).startswith("file:mrr-gen-"):
+            attempts.append(time.monotonic())
+            raise sqlite3.OperationalError("unable to open database file")
+        return sqlite3.connect(*args, **kwargs)
+
+    monkeypatch.setattr(worker_mod, "sqlite3", _ConnectProxy(connect))
+    monkeypatch.setattr(db, "DB_PATH", src)
+    w = worker_mod.AnalyticsWorker(items=[], poll_s=0.05, preload=False)
+    w.start(serving=True)
+    try:
+        time.sleep(0.5)
+        assert len(attempts) == 1, f"{len(attempts)} attempts in 0.5 s"
+        assert w._failed is not None and w.state == "error" and "unable to open database file" in (w.last_error or "")
+    finally:
+        w.stop()
+
+
+def test_the_staging_backoff_never_overflows(tmp_path, monkeypatch):
+    """Codex R-37: after 1,023 failed attempts, 2.0 ** 1024 raised OverflowError and
+    left the expired retry state as it was, so retries fell back to every poll.
+    The exponent is clamped; the delay stays at the cap."""
+    import sqlite3
+
+    from api import provenance
+    from api import worker as worker_mod
+    from src.analytics import dbpath
+
+    src = tmp_path / "store.db"
+    _one_table_store(src)
+    key = dbpath.file_key(src)
+
+    def broken(conn, now=None):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(provenance, "migrate", broken)
+    w = worker_mod.AnalyticsWorker(items=[], poll_s=0.05, preload=False)
+    w._failed = (key, 1023, 0.0)
+    before = time.monotonic()
+    assert w._stage(src, key) is None
+    assert w._failed[0] == key and w._failed[1] == 1024
+    assert before + worker_mod.STAGE_RETRY_MAX_S - 1 <= w._failed[2] <= time.monotonic() + worker_mod.STAGE_RETRY_MAX_S
+
+
+def test_open_generation_closes_its_connection_on_any_setup_error(tmp_path):
+    """Codex R-36: the generation factory closed its connection only on a SQLite
+    error; a MemoryError on the setup pragma left it open, still reading the
+    generation. Now it is closed and the error propagates."""
+    import sqlite3
+
+    from src.analytics import dbpath
+
+    src = tmp_path / "store.db"
+    _one_table_store(src)
+    uri = "file:mrr-gen-test-r36?mode=memory&cache=shared"
+    anchor = sqlite3.connect(uri, uri=True)
+    seed = sqlite3.connect(src)
+    seed.backup(anchor)
+    seed.close()
+
+    class _Gen:
+        source = src
+        key = (0, 0, 0)
+
+    _Gen.uri = uri
+    opened: list[sqlite3.Connection] = []
+
+    class Failing(sqlite3.Connection):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            opened.append(self)
+
+        def execute(self, sql, *a, **k):
+            if sql.startswith("PRAGMA query_only"):
+                raise MemoryError("forced")
+            return super().execute(sql, *a, **k)
+
+    try:
+        with pytest.raises(MemoryError):
+            dbpath.open_generation(_Gen, factory=Failing)
+        assert len(opened) == 1
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            sqlite3.Connection.execute(opened[0], "SELECT COUNT(*) FROM regimes")
+    finally:
+        anchor.close()
+
+
+# ── desk/hardening, verifier round 23: V-80, a private copy per assistant tool call ──
+
+def test_a_long_assistant_query_leaves_another_visitors_tool_calls_under_20_ms(served, monkeypatch):
+    """Verifier V-80: one private copy per generation was shared by every
+    visitor's assistant, so Codex's 128 summed LIKEs (about 17 s, uninterrupted
+    inside its functions) made another visitor's fixed-SQL tool call wait 17 s.
+    Since the guard's caps (V-84, V-88), the long query is the longest hold they
+    leave: 2 KB of GLOB operators, about 1 s.
+    Each tool call now reads a copy of its own, made from the generation's
+    private copy and closed in a finally: while the long query runs, another
+    visitor's fixed-SQL calls and a query of theirs each answer under 20 ms, and
+    every copy is closed afterwards."""
+    import sqlite3
+    import threading
+
+    from src.analytics import chat, dbpath
+
+    copies: list[sqlite3.Connection] = []
+    real = getattr(dbpath, "copy_private_ro", None)  # absent on the staged code, which fails on the timings instead
+
+    def tracked(path):
+        conn = real(path)
+        copies.append(conn)
+        return conn
+
+    if real is not None:
+        monkeypatch.setattr(dbpath, "copy_private_ro", tracked)
+    chat._tool_get_current_regime()  # the generation's private copy exists before the clock starts
+    done = threading.Event()
+
+    def long_query():
+        try:
+            chat._tool_query_database(_glob_chain())  # the longest hold the caps leave, about 1 s (decision 42)
+        finally:
+            done.set()
+
+    t = threading.Thread(target=long_query, daemon=True)
+    t0 = time.perf_counter()
+    t.start()
+    time.sleep(0.05)
+    timings = []
+    for _ in range(5):
+        for call in (chat._tool_get_current_regime, lambda: chat._tool_query_database("SELECT COUNT(*) AS n FROM regimes")):
+            s = time.perf_counter()
+            out = call()
+            timings.append(time.perf_counter() - s)
+            assert "error" not in out, out
+        time.sleep(0.05)
+    ended_early = done.is_set()
+    t.join(60)
+    long_s = time.perf_counter() - t0
+    assert max(timings) < 0.020, f"another visitor's call took {max(timings) * 1000:.1f} ms while the long query ran {long_s:.1f} s"
+    assert not ended_early and long_s > 0.5, "the long query ended before the other visitor's calls: nothing was measured"
+    assert len(copies) == 12  # one per call: the warm-up, the long query and the ten measured
+    for conn in copies:  # made on other threads too: in_transaction checks the connection, not the thread
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            conn.in_transaction

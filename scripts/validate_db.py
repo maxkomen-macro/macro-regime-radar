@@ -4,7 +4,12 @@
 Runs after a refresh and before any upload. It never repairs anything; it
 decides. Checks, in order:
 
-  1. SQLite header + PRAGMA integrity_check.
+  1. SQLite header + PRAGMA integrity_check, and the mandatory checks
+     (Codex R-09): the Desk's per-series rows, non-numeric values and
+     malformed dates, and the value sanity checks (probabilities in [0, 1],
+     positive closes), each run on its own (verifier V-33). One that cannot
+     run is "not executed" and fails, whatever the mode, and so does one of
+     the previous snapshot's, whose integrity must hold too (verifier V-32).
   2. Required tables present; row counts and max dates per table.
   3. Against the previous snapshot (when given): no table's max date may
      regress (the forward-looking event_calendar only warns: a rescheduled
@@ -18,12 +23,21 @@ decides. Checks, in order:
      judges everything).
 
 The Desk's daily series (desk_series) are judged by tier (desk/hardening,
-2026-09-23): tier 1 blocks as before (the table must exist and hold rows, and
-its date and row checks against the previous snapshot run over the tier-1
-series); a tier-2 series that is missing, short, failed, behind, or that lost
-rows or moved its newest date earlier is a warning, never a failure, so it can
-never hold the full refresh's publish back. The tiers are the registry's, read
-through api/freshness.DESK_REFRESH_SERIES (this script stays stdlib + api/).
+2026-09-23). Tier 1 blocks, series by series before any table-wide check
+(review R-02): a tier-1 series missing, losing more than 1% of its rows or
+moving its newest date earlier against the previous snapshot fails on its
+own, and a future-dated one fails (R-03); the table must exist and hold
+rows, and the table-wide date and row checks run over the tier-1 series. A
+tier-2 series that is missing, short, failed, behind, future-dated (the store
+excludes such rows, R-03), holding a non-numeric value or a malformed date
+(the engine sets such a row aside on read, verifiers V-14 and V-22; tier 1
+fails on it), or that lost rows
+or moved its newest date earlier is a warning, never a failure, so it can
+never hold the full refresh's publish back. The tiers are the registry's, read through
+api/freshness.DESK_REFRESH_SERIES (this script stays stdlib + api/). In a store with
+provenance (Codex R-14, api/provenance.py), a row no committed refresh wrote, or dated
+after the New York date of the refresh that committed it, fails for tier 1 and is
+reported for any other; a store not yet migrated reads as the migration would leave it.
 
 Output: a JSON report (--json), a GitHub Step Summary table (--summary, or
 $GITHUB_STEP_SUMMARY), and exit 0 only when the verdict is "pass". A stale
@@ -47,6 +61,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from api import freshness as freshness_mod  # noqa: E402  (stdlib-only module)
+from api import provenance  # noqa: E402  (stdlib-only module; Codex R-14)
 
 REQUIRED_TABLES = ["regimes", "signals", "raw_series", "market_daily", "market_intraday", "news_feed"]
 DATE_COLUMNS = {
@@ -60,7 +75,8 @@ DATE_COLUMNS = {
     "event_calendar": "event_datetime",
     "priced_metrics": "date",
     "macro_surprises": "date",
-    "backtest_results": "date",
+    # Codex R-17: the table has computed_at and no `date` column; MAX("date") compared the literal string
+    "backtest_results": "computed_at",
     # fix/prelaunch-1: allocation's price histories, stored by the full refresh
     "asset_prices": "date",
     # desk/event-study: the Desk's daily series (src/market_data/desk_history.py)
@@ -78,7 +94,9 @@ FORWARD_TABLES = {"event_calendar"}
 # publish its rows or the next run (which downloads the published DB) forgets
 # the spend, so new ledger rows count as a change in the modes that enrich.
 MODE_TABLES = {
-    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger", "asset_prices", "desk_series"],
+    # Codex R-20: desk_series_runs too, so a refresh that only restores rows' provenance publishes
+    "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger", "asset_prices", "desk_series",
+             "desk_series_runs"],
     "news-only": ["news_feed", "ai_spend_ledger"],
     "market-only": ["market_daily", "market_intraday", "source_watermarks"],
     # B6 (2026-09-18): intraday runs also capture the official close after the
@@ -105,8 +123,11 @@ FINGERPRINT_SQL = {
     "source_watermarks": "SELECT source, last_obs, last_value FROM source_watermarks ORDER BY source",
     # Adjusted closes are restated back through history after every dividend.
     "asset_prices": "SELECT symbol, interval, date, close FROM asset_prices ORDER BY symbol, interval, date",
-    # FRED revises a daily observation in place (desk/event-study).
+    # FRED revises a daily observation in place (desk/event-study); inspect() replaces this with
+    # _desk_fingerprints, which adds each row's readability (Codex R-20, V-39)
     "desk_series": "SELECT series_id, date, value FROM desk_series ORDER BY series_id, date",
+    # the refresh runs (Codex R-14); a change only alongside what the Desk reads (V-40)
+    "desk_series_runs": "SELECT run_id, as_of, status FROM desk_series_runs ORDER BY run_id",
 }
 # Feeds whose "checked this run, not advancing" is a source outage (a warning)
 # rather than a missed cycle (a failure): the FRED series and, since
@@ -120,32 +141,62 @@ OUTAGE_WINDOW = timedelta(hours=3)
 AI_MONTHLY_CAP_USD = 50.0
 
 
-def _ai_spend(path: Path, now: datetime) -> dict | None:
-    """Month-to-date AI spend and call count from ai_spend_ledger (current UTC month)."""
+def _ai_spend(path: Path, now: datetime) -> dict:
+    """Month-to-date AI spend and call count from ai_spend_ledger (current UTC month).
+    A query that fails raises: the caller reports it "not executed" (Codex R-27 audit)."""
     month = now.strftime("%Y-%m")
+    conn = _open(path)
     try:
-        conn = _open(path)
-        try:
-            cost, calls = conn.execute(
-                "SELECT COALESCE(SUM(cost_usd), 0), COALESCE(SUM(provider <> 'budget'), 0)"
-                " FROM ai_spend_ledger WHERE month = ?",
-                (month,),
-            ).fetchone()
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        return None
+        cost, calls = conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0), COALESCE(SUM(provider <> 'budget'), 0)"
+            " FROM ai_spend_ledger WHERE month = ?",
+            (month,),
+        ).fetchone()
+    finally:
+        conn.close()
     return {"month": month, "cost_usd": float(cost or 0.0), "calls": int(calls or 0), "cap_usd": AI_MONTHLY_CAP_USD}
 
 
-def _fingerprint(conn: sqlite3.Connection, sql: str) -> str | None:
-    try:
-        h = hashlib.sha256()
-        for row in conn.execute(sql):
-            h.update(repr(tuple(row)).encode())
-        return h.hexdigest()[:16]
-    except sqlite3.Error:
-        return None
+def _desk_fingerprints(conn: sqlite3.Connection, as_of: str) -> tuple[str, dict[str, str]]:
+    """desk_series as the Desk reads it (Codex R-20; verifiers V-39, V-40, V-49,
+    V-56): each row's date, its value, and its readability flag, hashed for every
+    row whatever the flag, whatever the series' tier. The flag is the reader's
+    rule (src/desk/event_study.load_level), judged the same way on both snapshots:
+    a committed run wrote the row, it is dated no later than `as_of`, R-30's
+    explicit cutoff (the run's New York date at validation start, passed to both
+    sides), and it is not dated after the New York date of the run that wrote it.
+    A row the migration back-filled is judged by the cutoff alone (Codex R-30):
+    the migration's own date would make migrating a copy name series across New
+    York midnight. A store not yet migrated is read as the migration would leave
+    it (Codex R-26): every row back-filled. Which run wrote a row does not count,
+    so a row re-stamped under a new run is a change if and only if its flag
+    changed: from an uncommitted run to a committed one, from a run dated before
+    the row to one dated on or after it, or the reverse. A re-stamp that leaves
+    the date, the value and the flag as they were changes nothing. Tier decides
+    whether a check fails or warns, never whether a change is named.
+    Returns the table's fingerprint and each series'. A query that fails
+    raises: the caller runs this as a mandatory check (Codex R-23)."""
+    if provenance.is_migrated(conn):
+        rows = conn.execute(f"SELECT d.series_id, d.date, d.value, COALESCE(r.status = 'committed' AND d.date <= ? AND "
+                            f"(d.run_id = '{provenance.PRE_PROVENANCE}' OR d.date <= r.as_of), 0) "
+                            f"FROM desk_series d LEFT JOIN {provenance.RUNS} r ON r.run_id = d.run_id "
+                            f"ORDER BY d.series_id, d.date", (as_of,))
+    else:
+        rows = conn.execute("SELECT series_id, date, value, COALESCE(date <= ?, 0) FROM desk_series ORDER BY series_id, date", (as_of,))
+    table, per = hashlib.sha256(), {}
+    for sid, d, v, readable in rows:
+        table.update(repr((sid, d, v, bool(readable))).encode())
+        per.setdefault(sid, hashlib.sha256()).update(repr((d, v, bool(readable))).encode())
+    return table.hexdigest()[:16], {sid: h.hexdigest()[:16] for sid, h in per.items()}
+
+
+def _fingerprint(conn: sqlite3.Connection, sql: str) -> str:
+    """A table's content fingerprint. A query that fails raises: the caller runs it
+    as a mandatory check, never as "unchanged" (Codex R-23)."""
+    h = hashlib.sha256()
+    for row in conn.execute(sql):
+        h.update(repr(tuple(row)).encode())
+    return h.hexdigest()[:16]
 
 
 def _open(path: Path) -> sqlite3.Connection:
@@ -162,7 +213,24 @@ def _header_ok(path: Path) -> bool:
         return False
 
 
-def inspect(path: Path) -> dict:
+def _mandatory(out: dict, name: str, key: str | None, query):
+    """Codex R-09: one mandatory check, run on its own. Its result is returned,
+    and lands in out[key] when a key is given; a check that cannot run is named in
+    out["checks_not_executed"] and returns None. validate() fails that list
+    in every mode, the current snapshot's and the previous one's alike
+    (verifier V-32): a check that never ran is never a check that found
+    nothing."""
+    try:
+        value = query()
+    except sqlite3.Error as exc:
+        out.setdefault("checks_not_executed", []).append(f"{name} ({type(exc).__name__}: {exc})")
+        return None
+    if key is not None:
+        out[key] = value
+    return value
+
+
+def inspect(path: Path, as_of: str | None = None) -> dict:
     out: dict = {"path": str(path), "exists": path.exists(), "size": path.stat().st_size if path.exists() else 0}
     if not path.exists():
         out["error"] = "missing"
@@ -172,7 +240,9 @@ def inspect(path: Path) -> dict:
         return out
     conn = _open(path)
     try:
-        out["integrity"] = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        # Codex R-09, verifier V-32: the integrity check is mandatory, the previous
+        # snapshot's as much as the current one's (the table list or a row count failing raises)
+        _mandatory(out, "integrity_check", "integrity", lambda: conn.execute("PRAGMA integrity_check").fetchone()[0])
         tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
         out["tables"] = {}
         for t in tables:
@@ -180,29 +250,38 @@ def inspect(path: Path) -> dict:
             col = DATE_COLUMNS.get(t)
             mx = None
             if col:
-                try:
-                    mx = conn.execute(f'SELECT MAX("{col}") FROM "{t}"').fetchone()[0]
-                except sqlite3.Error:
-                    mx = None
+                # Codex R-17: each table's newest date is a mandatory check, on both snapshots, and
+                # the column must exist (SQLite reads "date" in double quotes as a string literal when
+                # the table has no such column, so a missing one compared the word itself)
+                if col in {r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')}:
+                    mx = _mandatory(out, f"{t} newest {col}", None, lambda t=t, col=col: conn.execute(f'SELECT MAX("{col}") FROM "{t}"').fetchone()[0])
+                else:
+                    out.setdefault("checks_not_executed", []).append(f"{t} newest {col} (the table has no {col} column)")
             out["tables"][t] = {"rows": int(n), "max": mx}
-        try:
-            out["market_sources"] = {r[0] or "null": int(r[1]) for r in conn.execute("SELECT source, COUNT(*) FROM market_daily GROUP BY source")}
-        except sqlite3.Error:
-            out["market_sources"] = {}
-        try:
-            out["series_latest"] = [dict(r) for r in conn.execute(
+        # Codex R-27 audit: a query that cannot run is "not executed", never an empty answer
+        out["market_sources"] = {}
+        if "market_daily" in out["tables"]:
+            _mandatory(out, "market_daily sources", "market_sources", lambda: {
+                r[0] or "null": int(r[1]) for r in conn.execute("SELECT source, COUNT(*) FROM market_daily GROUP BY source")})
+        out["series_latest"] = []
+        if "raw_series" in out["tables"]:
+            _mandatory(out, "raw_series newest observations", "series_latest", lambda: [dict(r) for r in conn.execute(
                 "SELECT r.series_id, r.date, r.value FROM raw_series r JOIN (SELECT series_id, MAX(date) AS md FROM raw_series GROUP BY series_id) m ON r.series_id = m.series_id AND r.date = m.md"
-            )]
-        except sqlite3.Error:
-            out["series_latest"] = []
-        out["fingerprints"] = {t: _fingerprint(conn, sql) for t, sql in FINGERPRINT_SQL.items() if t in out["tables"]}
+            )])
+        # Codex R-23: every fingerprint is a mandatory check, on both snapshots: one that cannot run is
+        # "not executed" and fails validation, never a table that did not change
+        out["fingerprints"] = {}
+        for t, sql in FINGERPRINT_SQL.items():
+            if t in out["tables"] and t != "desk_series":
+                out["fingerprints"][t] = _mandatory(out, f"{t} fingerprint", None, lambda sql=sql: _fingerprint(conn, sql))
+        if "desk_series" in out["tables"]:  # Codex R-20: content and readability-deciding provenance
+            cut_fp = as_of or datetime.now(timezone.utc).astimezone(freshness_mod.cal.NY).date().isoformat()
+            desk_fp = _mandatory(out, "desk_series fingerprint", None, lambda: _desk_fingerprints(conn, cut_fp))
+            out["fingerprints"]["desk_series"], out["desk_series_fingerprints"] = desk_fp if desk_fp else (None, {})
         out["watermarks"] = None
         if "source_watermarks" in out["tables"]:
-            try:
-                out["watermarks"] = {r["source"]: dict(r) for r in conn.execute(
-                    "SELECT source, last_obs, last_value, advanced_at, checked_at, status, detail FROM source_watermarks")}
-            except sqlite3.Error:
-                out["watermarks"] = None
+            _mandatory(out, "source_watermarks", "watermarks", lambda: {r["source"]: dict(r) for r in conn.execute(
+                "SELECT source, last_obs, last_value, advanced_at, checked_at, status, detail FROM source_watermarks")})
         out["fresh"] = {
             "regimes_date": out["tables"].get("regimes", {}).get("max"),
             "signals_date": out["tables"].get("signals", {}).get("max"),
@@ -215,27 +294,57 @@ def inspect(path: Path) -> dict:
             "desk_series_latest": None,
         }
         if "asset_prices" in out["tables"]:
-            try:
-                out["fresh"]["asset_prices_date"] = conn.execute(
-                    "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM asset_prices WHERE interval = '1d' GROUP BY symbol)"
-                ).fetchone()[0]
-            except sqlite3.Error:
-                pass
+            out["fresh"]["asset_prices_date"] = _mandatory(out, "asset_prices newest daily closes", None, lambda: conn.execute(
+                "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM asset_prices WHERE interval = '1d' GROUP BY symbol)"
+            ).fetchone()[0])
+            # verifiers V-14, V-22: rows the Desk and allocation cannot read (mandatory, Codex R-09)
+            _mandatory(out, "asset_prices non-numeric closes", "asset_prices_non_numeric", lambda: int(conn.execute(
+                "SELECT COUNT(*) FROM asset_prices WHERE typeof(close) NOT IN ('real', 'integer')").fetchone()[0]))
+            _mandatory(out, "asset_prices malformed dates", "asset_prices_malformed_dates", lambda: int(conn.execute(
+                f"SELECT COUNT(*) FROM asset_prices WHERE {MALFORMED_DATE}").fetchone()[0]))
         if "desk_series" in out["tables"]:
-            # desk/event-study: the oldest newest observation across the stored series
-            try:
-                out["fresh"]["desk_series_date"] = conn.execute(
-                    "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM desk_series GROUP BY series_id)"
-                ).fetchone()[0]
+            # desk/event-study: the oldest newest observation across the stored series; since
+            # verifier V-27 over the rows the engine's reader keeps, up to the as-of (today in
+            # New York unless given), as api/db.freshness reads them: a junk date that sorts
+            # last never stands in for the newest observation
+            cut = as_of or datetime.now(timezone.utc).astimezone(freshness_mod.cal.NY).date().isoformat()
+            # Codex R-14, R-15: in a store with provenance, only rows a committed refresh wrote, dated
+            # on or before its New York date (api/provenance.py), as the reader keeps them
+            # Codex R-27: whether the store carries provenance is a mandatory check, read fail-closed;
+            # one that cannot run fails validation, and nothing that depends on it runs
+            _mandatory(out, "desk_series provenance schema", "desk_provenance", lambda: provenance.is_migrated(conn))
+            if "desk_provenance" in out:
                 # desk/integration (verifier V-06): per series, as api/db.freshness reports them
-                out["fresh"]["desk_series_latest"] = dict(conn.execute(
-                    "SELECT series_id, MAX(date) FROM desk_series GROUP BY series_id").fetchall())
-                # desk/hardening: rows and dates per series, so the snapshot
-                # comparison can judge tier 1 and only report tier 2
-                out["desk_series_by_id"] = {sid: {"rows": int(n), "max": mx} for sid, n, mx in conn.execute(
-                    "SELECT series_id, COUNT(*), MAX(date) FROM desk_series GROUP BY series_id")}
-            except sqlite3.Error:
-                pass
+                latest = _mandatory(out, "desk_series newest readable observations", None, lambda: dict(conn.execute(
+                    *freshness_mod.desk_latest_query(cut, out["desk_provenance"])).fetchall()))
+                if latest is not None:
+                    out["fresh"]["desk_series_latest"] = latest
+                    out["fresh"]["desk_series_date"] = min(latest.values(), default=None)
+            # Codex R-09: the integrity and corruption checks are mandatory, each on its own, so
+            # no other query failing can skip them; one that cannot run is "not executed"
+            # desk/hardening: rows and dates per series (the tier-1 and future-date checks)
+            _mandatory(out, "desk_series per-series rows and dates", "desk_series_by_id", lambda: {
+                sid: {"rows": int(n), "max": mx} for sid, n, mx in conn.execute(
+                    "SELECT series_id, COUNT(*), MAX(date) FROM desk_series GROUP BY series_id")})
+            # verifier V-14: stored values that are not numbers, per series
+            _mandatory(out, "desk_series non-numeric values", "desk_series_non_numeric", lambda: {
+                sid: int(n) for sid, n in conn.execute(
+                    "SELECT series_id, COUNT(*) FROM desk_series WHERE typeof(value) NOT IN ('real', 'integer') GROUP BY series_id")})
+            # verifiers V-22, V-26: stored dates that are not valid ISO dates on or after the floor
+            _mandatory(out, "desk_series malformed dates", "desk_series_malformed_dates", lambda: {
+                sid: int(n) for sid, n in conn.execute(
+                    f"SELECT series_id, COUNT(*) FROM desk_series WHERE {MALFORMED_DATE} GROUP BY series_id")})
+            if out.get("desk_provenance"):
+                # Codex R-14: rows no committed refresh wrote, and rows dated after the New York date of
+                # the run that committed them (not after the as-of: the future-date check names those)
+                _mandatory(out, "desk_series provenance", "desk_series_no_provenance", lambda: {
+                    sid: int(n) for sid, n in conn.execute(
+                        f"SELECT d.series_id, COUNT(*) FROM desk_series d {provenance.COMMITTED_JOIN} "
+                        "WHERE r.run_id IS NULL GROUP BY d.series_id")})
+                _mandatory(out, "desk_series dates after their refresh", "desk_series_after_run", lambda: {
+                    sid: int(n) for sid, n in conn.execute(
+                        f"SELECT d.series_id, COUNT(*) FROM desk_series d {provenance.COMMITTED_JOIN} "
+                        "WHERE r.run_id IS NOT NULL AND d.date > r.as_of AND d.date <= ? GROUP BY d.series_id", (cut,))})
     finally:
         conn.close()
     return out
@@ -251,6 +360,47 @@ def _desk_tier_note(series_id: str) -> str:
     if tier == 1:
         return "tier 1"
     return f"tier {tier}, reported, never blocking" if tier else "not in the refresh set, reported, never blocking"
+
+
+# verifier V-33: the value sanity checks, each run on its own: (name, report key, table, query)
+VALUE_SANITY = (
+    ("regimes probabilities within [0, 1]", "regimes_prob_out_of_range", "regimes",
+     "SELECT COUNT(*) FROM regimes WHERE prob_goldilocks NOT BETWEEN 0 AND 1 OR prob_overheating NOT BETWEEN 0 AND 1"
+     " OR prob_stagflation NOT BETWEEN 0 AND 1 OR prob_recession NOT BETWEEN 0 AND 1"),
+    ("market_daily non-positive closes", "market_daily_non_positive", "market_daily",
+     "SELECT COUNT(*) FROM market_daily WHERE close IS NOT NULL AND close <= 0"),
+    ("asset_prices non-positive closes", "asset_prices_non_positive", "asset_prices",
+     "SELECT COUNT(*) FROM asset_prices WHERE close IS NULL OR close <= 0"),
+)
+DESK_TIER1_ROW_LOSS = 0.01  # review R-02: a tier-1 Desk series losing more than 1% of its rows fails
+# verifier V-22: a stored date that is not YYYY-MM-DD text naming a real day (SQLite's date()
+# returns NULL for '1999-99-99' and normalizes '2010-02-30' to '2010-03-02', so both differ),
+# or one before the engine's floor (verifier V-26: '0000-01-01', '1000-01-01')
+MALFORMED_DATE = f"NOT (typeof(date) = 'text' AND COALESCE(date(date) = date, 0) AND date >= '{freshness_mod.DESK_DATE_FLOOR}')"
+
+
+def _desk_tier1_failures(cur: dict[str, dict], prev: dict[str, dict] | None, *, full: bool, table_present: bool) -> list[str]:
+    """Review R-02: each tier-1 Desk series on its own, before any table-wide
+    check. In full mode a tier-1 series the table lacks fails; against the
+    previous snapshot, a tier-1 series that vanished, lost more than 1% of its
+    rows, or moved its newest date earlier fails."""
+    out: list[str] = []
+    for sid, meta in freshness_mod.DESK_REFRESH_SERIES.items():
+        if int(meta.get("tier", 1)) != 1:
+            continue
+        now_, was = cur.get(sid), (prev or {}).get(sid)
+        if now_ is None and full and table_present:
+            out.append(f"desk:{sid} (tier 1): not stored; the full refresh stores it")
+        if was is None:
+            continue
+        if now_ is None:
+            out.append(f"desk:{sid} (tier 1): {was['rows']} rows before, none now")
+            continue
+        if was["rows"] and now_["rows"] < (1 - DESK_TIER1_ROW_LOSS) * was["rows"]:
+            out.append(f"desk:{sid} (tier 1): rows fell {was['rows']} → {now_['rows']} (more than 1%)")
+        if was["max"] and now_["max"] and str(now_["max"]) < str(was["max"]):
+            out.append(f"desk:{sid} (tier 1): max date regressed {was['max']} → {now_['max']}")
+    return out
 
 
 def _desk_series_judged(cur: dict[str, dict], prev: dict[str, dict]) -> tuple[dict, dict, list[str]]:
@@ -277,15 +427,16 @@ def _desk_series_judged(cur: dict[str, dict], prev: dict[str, dict]) -> tuple[di
 
 def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: str = "", now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
-    cur = inspect(current)
-    prev = inspect(previous) if previous else None
+    as_of = now.astimezone(freshness_mod.cal.NY).date().isoformat()  # V-27: freshness up to the run's New York date
+    cur = inspect(current, as_of=as_of)
+    prev = inspect(previous, as_of=as_of) if previous else None
     failures: list[str] = []
     warnings: list[str] = []
 
     if cur.get("error"):
         failures.append(f"database unusable: {cur['error']}")
         return {"verdict": "fail", "mode": mode, "failures": failures, "warnings": warnings, "current": cur, "previous": prev, "changed": False}
-    if cur.get("integrity") != "ok":
+    if "integrity" in cur and cur["integrity"] != "ok":  # one that could not run fails as "not executed" below
         failures.append(f"integrity_check: {cur.get('integrity')}")
     for t in REQUIRED_TABLES:
         if t not in cur["tables"]:
@@ -310,7 +461,7 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             failures.append("desk_series: table is empty")
         reported: set[str] = set()
         for src, wm in sorted((cur.get("watermarks") or {}).items()):
-            if src.startswith("desk:") and wm.get("status") in ("short", "error"):
+            if src.startswith("desk:") and wm.get("status") in ("short", "error", "excluded"):
                 warnings.append(f"{src} {wm['status']}: {wm.get('detail')} ({_desk_tier_note(src[5:])})")
                 reported.add(src)
         # desk/hardening: a tier-2 series missing or behind is reported by
@@ -329,29 +480,86 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
     for t, info in cur["tables"].items():
         if t in FORWARD_TABLES:
             continue
+        if t == "desk_series" and "desk_series_by_id" in cur:
+            # review R-03: per series; tier 1 fails, anything else is reported. Codex R-11: against
+            # the run's New York as-of, the cutoff every other Desk check uses, never the one-day
+            # allowance above (which let a row dated tomorrow in New York through)
+            for sid, row in sorted(cur["desk_series_by_id"].items()):
+                mx = row.get("max")
+                if mx and str(mx)[:10] > as_of:
+                    if _desk_tier(sid) == 1:
+                        failures.append(f"desk:{sid} (tier 1): max date {mx} is in the future")
+                    else:
+                        warnings.append(f"desk:{sid}: max date {mx} is in the future; the store excludes such rows "
+                                        f"({_desk_tier_note(sid)})")
+            continue
         mx = info.get("max")
         if mx and re.match(r"^\d{4}-\d{2}-\d{2}", str(mx)) and str(mx)[:10] > horizon:
             failures.append(f"{t}: max date {mx} is in the future")
-    # Bounded value sanity on the two tables every screen reads.
+    # Bounded value sanity on the tables every screen reads. Verifier V-33: each check on its
+    # own (it was one block, which an error in any query, a regimes table without the
+    # probability columns say, skipped whole with a warning), and one that cannot run is
+    # "not executed" and fails below (Codex R-09). A check whose table is missing is not run:
+    # a missing required table already fails.
+    conn = _open(current)
     try:
-        conn = _open(current)
-        try:
-            bad_prob = conn.execute(
-                "SELECT COUNT(*) FROM regimes WHERE prob_goldilocks NOT BETWEEN 0 AND 1 OR prob_overheating NOT BETWEEN 0 AND 1 OR prob_stagflation NOT BETWEEN 0 AND 1 OR prob_recession NOT BETWEEN 0 AND 1"
-            ).fetchone()[0]
-            if bad_prob:
-                failures.append(f"regimes: {bad_prob} row(s) with probabilities outside [0, 1]")
-            bad_px = conn.execute("SELECT COUNT(*) FROM market_daily WHERE close IS NOT NULL AND close <= 0").fetchone()[0]
-            if bad_px:
-                failures.append(f"market_daily: {bad_px} row(s) with a non-positive close")
-            if "asset_prices" in cur["tables"]:
-                bad_ap = conn.execute("SELECT COUNT(*) FROM asset_prices WHERE close IS NULL OR close <= 0").fetchone()[0]
-                if bad_ap:
-                    failures.append(f"asset_prices: {bad_ap} row(s) with a non-positive close")
-        finally:
-            conn.close()
-    except sqlite3.Error as exc:
-        warnings.append(f"value sanity checks skipped: {type(exc).__name__}")
+        for name, key, table, sql in VALUE_SANITY:
+            if table in cur["tables"]:
+                _mandatory(cur, name, key, lambda sql=sql: int(conn.execute(sql).fetchone()[0]))
+    finally:
+        conn.close()
+    if cur.get("regimes_prob_out_of_range"):
+        failures.append(f"regimes: {cur['regimes_prob_out_of_range']} row(s) with probabilities outside [0, 1]")
+    if cur.get("market_daily_non_positive"):
+        failures.append(f"market_daily: {cur['market_daily_non_positive']} row(s) with a non-positive close")
+    if cur.get("asset_prices_non_positive"):
+        failures.append(f"asset_prices: {cur['asset_prices_non_positive']} row(s) with a non-positive close")
+
+    # Malformed stored rows the Desk reads (verifiers V-14, V-22), counted by inspect() as
+    # mandatory checks of their own (Codex R-09), so no unrelated schema error can skip them. A
+    # non-numeric value or a malformed date fails for a tier-1 series and is reported for any
+    # other (the engine sets such a row aside on read either way, so the Desk still answers);
+    # in asset_prices, allocation's table, it fails. Text compares above every number, so
+    # the `close <= 0` check above never saw a non-numeric close.
+    for name in cur.get("checks_not_executed") or []:  # Codex R-09
+        failures.append(f"check not executed: {name}; a mandatory check that did not run never counts as clean")
+    # verifier V-32: the previous snapshot's mandatory checks are judged the same way. Its
+    # per-series Desk rows feed the tier-1 row-loss and date-regression comparisons, and
+    # its integrity says whether it is a baseline at all.
+    if prev and not prev.get("error"):
+        if "integrity" in prev and prev["integrity"] != "ok":
+            failures.append(f"previous snapshot integrity_check: {prev['integrity']}; nothing is compared against a damaged baseline")
+        for name in prev.get("checks_not_executed") or []:
+            failures.append(f"check not executed on the previous snapshot: {name}; a mandatory check that did not run never counts as clean")
+        if "desk_series" in prev["tables"] and "desk_series_by_id" not in prev:
+            failures.append("desk_series (tier 1): the row-loss and date-regression comparisons did not run, "
+                            "because the previous snapshot's per-series check was not executed")
+    elif previous is None:
+        warnings.append("no previous snapshot given: the row-loss, date-regression and change comparisons did not run")
+    if cur.get("asset_prices_non_numeric"):
+        failures.append(f"asset_prices: {cur['asset_prices_non_numeric']} row(s) with a non-numeric close")
+    if cur.get("asset_prices_malformed_dates"):
+        failures.append(f"asset_prices: {cur['asset_prices_malformed_dates']} row(s) with a malformed date")
+    for key, what, verb in (("desk_series_non_numeric", ("non-numeric value", "non-numeric values"), "excludes {} on read"),
+                            ("desk_series_malformed_dates", ("malformed date", "malformed dates"), "sets {} aside on read"),
+                            # Codex R-14: the hand-inserted class, and rows dated after their refresh's day
+                            ("desk_series_no_provenance", ("row no committed refresh wrote (no provenance)",
+                                                           "rows no committed refresh wrote (no provenance)"), "sets {} aside on read"),
+                            ("desk_series_after_run", ("row dated after the New York date of the refresh that stored it",
+                                                       "rows dated after the New York date of the refresh that stored them"),
+                             "sets {} aside on read")):
+        for sid, n in sorted((cur.get(key) or {}).items()):
+            noun = f"{n} {what[0] if n == 1 else what[1]}"
+            if _desk_tier(sid) == 1:
+                failures.append(f"desk:{sid} (tier 1): {noun}")
+            else:
+                warnings.append(f"desk:{sid}: {noun}; the Desk {verb.format('it' if n == 1 else 'them')} ({_desk_tier_note(sid)})")
+
+    # review R-02: each tier-1 Desk series on its own, before any table-wide check
+    if "desk_series" in cur["tables"] and "desk_series_by_id" in cur:
+        failures.extend(_desk_tier1_failures(
+            cur["desk_series_by_id"], (prev or {}).get("desk_series_by_id") if prev and not prev.get("error") else None,
+            full=(mode == "full"), table_present=True))
 
     changed = False
     changed_tables: list[str] = []
@@ -359,6 +567,8 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
         failures.append(f"previous snapshot unusable ({prev['error']}); refusing to publish without a baseline")
     if prev and not prev.get("error"):
         for t, info in cur["tables"].items():
+            if t == provenance.RUNS:
+                continue  # verifier V-40: judged below, by what the Desk reads
             p = prev["tables"].get(t)
             if not p:
                 if info["rows"] > 0:
@@ -379,6 +589,17 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             fp_prev = (prev.get("fingerprints") or {}).get(t)
             if info["rows"] != p["rows"] or str(info["max"]) != str(p["max"]) or (fp_cur and fp_prev and fp_cur != fp_prev):
                 changed_tables.append(t)
+        # Codex R-20: name each Desk series whose readable rows changed (value, date or readability)
+        if "desk_series" in cur["tables"]:
+            fp_now, fp_was = cur.get("desk_series_fingerprints") or {}, prev.get("desk_series_fingerprints") or {}
+            changed_tables.extend(f"desk:{sid}" for sid in sorted(set(fp_now) | set(fp_was)) if fp_now.get(sid) != fp_was.get(sid))
+        # verifier V-40: the runs table is a change only when what the Desk reads changed with it. A run
+        # that commits nothing, or re-stamps identical rows, adds a row here and changes nothing else.
+        if provenance.RUNS in cur["tables"] and "desk_series" in changed_tables:
+            p_runs = prev["tables"].get(provenance.RUNS)
+            fp_runs = ((cur.get("fingerprints") or {}).get(provenance.RUNS), (prev.get("fingerprints") or {}).get(provenance.RUNS))
+            if p_runs is None or cur["tables"][provenance.RUNS]["rows"] != p_runs["rows"] or fp_runs[0] != fp_runs[1]:
+                changed_tables.append(provenance.RUNS)
         expected = MODE_TABLES.get(mode, [])
         touched = [t for t in expected if t in changed_tables]
         changed = bool(touched) if expected else bool(changed_tables)
@@ -424,6 +645,11 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
     for r in delayed:
         warnings.append(f"{r['feed']} delayed: {r['reason']}")
 
+    ai_spend = None
+    if "ai_spend_ledger" in cur["tables"]:  # R-27 audit: a ledger that cannot be read is not "no spend"
+        ai_spend = _mandatory(cur, "ai_spend_ledger month-to-date", None, lambda: _ai_spend(current, now))
+        if ai_spend is None:
+            failures.append(f"check not executed: {cur['checks_not_executed'][-1]}; a mandatory check that did not run never counts as clean")
     verdict = "fail" if failures else "pass"
     return {
         "verdict": verdict,
@@ -440,7 +666,25 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
         "sla_all": report["sla"],
         "regime": report["regime"],
         "session": report["session"],
-        "ai_spend": _ai_spend(current, now) if "ai_spend_ledger" in cur["tables"] else None,
+        # Codex R-09: what the mandatory corruption checks found, and any that did not run
+        "corruption": {
+            "desk_series_non_numeric": dict(cur.get("desk_series_non_numeric") or {}),
+            "desk_series_malformed_dates": dict(cur.get("desk_series_malformed_dates") or {}),
+            # Codex R-14: provenance, when the store carries it
+            "desk_provenance": cur.get("desk_provenance"),
+            "desk_series_no_provenance": dict(cur.get("desk_series_no_provenance") or {}),
+            "desk_series_after_run": dict(cur.get("desk_series_after_run") or {}),
+            "asset_prices_non_numeric": cur.get("asset_prices_non_numeric"),
+            "asset_prices_malformed_dates": cur.get("asset_prices_malformed_dates"),
+            "not_executed": list(cur.get("checks_not_executed") or []),
+            # verifier V-33: the value sanity checks, each on its own
+            "regimes_prob_out_of_range": cur.get("regimes_prob_out_of_range"),
+            "market_daily_non_positive": cur.get("market_daily_non_positive"),
+            "asset_prices_non_positive": cur.get("asset_prices_non_positive"),
+            # verifier V-32: the previous snapshot's checks that did not run
+            "previous_not_executed": list((prev or {}).get("checks_not_executed") or []),
+        },
+        "ai_spend": ai_spend,
     }
 
 
@@ -480,6 +724,21 @@ def summary_markdown(rep: dict) -> str:
             if w.get("detail"):
                 status += f" · {w['detail']}"
             lines.append(f"| {src} | {w.get('last_obs')} | {w.get('advanced_at')} | {w.get('checked_at')} | {status} |")
+    corr = rep.get("corruption") or {}
+    if corr:  # Codex R-09
+        lines += ["", "**Corruption checks** · non-numeric values and malformed dates the Desk sets aside on read", "",
+                  f"- desk_series non-numeric values: {json.dumps(corr.get('desk_series_non_numeric') or {})}",
+                  f"- desk_series malformed dates: {json.dumps(corr.get('desk_series_malformed_dates') or {})}",
+                  f"- desk_series provenance: {'recorded' if corr.get('desk_provenance') else 'not yet (read as pre-provenance)'} · "
+                  f"no provenance {json.dumps(corr.get('desk_series_no_provenance') or {})} · "
+                  f"after their refresh {json.dumps(corr.get('desk_series_after_run') or {})}",
+                  f"- asset_prices non-numeric closes: {corr.get('asset_prices_non_numeric')} · malformed dates: {corr.get('asset_prices_malformed_dates')}",
+                  f"- regimes probabilities outside [0, 1]: {corr.get('regimes_prob_out_of_range')} · non-positive closes: "
+                  f"market_daily {corr.get('market_daily_non_positive')}, asset_prices {corr.get('asset_prices_non_positive')}"]
+        for name in corr.get("not_executed") or []:
+            lines.append(f"- NOT EXECUTED: {name}")
+        for name in corr.get("previous_not_executed") or []:
+            lines.append(f"- NOT EXECUTED on the previous snapshot: {name}")
     reg = rep.get("regime") or {}
     if reg:
         lines += ["", f"- Regime month {reg.get('latest_month')} · expected {reg.get('expected_month')}"]
