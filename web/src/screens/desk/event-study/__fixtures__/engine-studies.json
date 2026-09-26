@@ -1,5 +1,5 @@
 {
- "_comment": "desk/integration: real /api/desk/event-study payloads from the engine against the owner's scratch copy (2026-09-22), provenance trimmed to the keys the page reads. tests/test_event_study.py checks every key here against a fresh engine run.",
+ "_comment": "desk/frame-2: real /api/desk/event-study payloads from the engine against a read-only copy of the integration database (2026-09-23, data through 2026-09-18), provenance trimmed to the keys the page reads (inputs to five keys each). tests/test_event_study.py checks every key here against a fresh engine run.",
  "preset": {
   "status": "ready",
   "study": {
@@ -42,23 +42,23 @@
     "h": 5,
     "n": 18,
     "n_incomplete": 0,
-    "baseline_n": 6227,
+    "baseline_n": 6226,
     "resampling": "monte_carlo",
     "n_draws": 10000,
-    "baseline_median": 0.003382009077730633,
-    "baseline_hit_rate": 0.5813393287297254,
-    "baseline_p25": -0.009312161951124151,
-    "baseline_p75": 0.014511305700826645,
+    "baseline_median": 0.0033814073796661097,
+    "baseline_hit_rate": 0.5812720848056537,
+    "baseline_p25": -0.009321901850543065,
+    "baseline_p75": 0.014507603242990868,
     "hit_rate": 0.5555555555555556,
     "median": 0.015839305769570954,
     "mean": 0.006208241419706662,
     "p25": -0.022525665102070977,
     "p75": 0.03418471743258779,
-    "delta": 0.01245729669184032,
+    "delta": 0.012457898389904843,
     "n_blocks": 18,
     "ci90": [
-     -0.018047027442224462,
-     0.02963368732294181
+     -0.01804642574415994,
+     0.029634289021006333
     ],
     "opposite_sign_share": 0.3434,
     "ci_excludes_zero": false,
@@ -69,23 +69,23 @@
     "h": 10,
     "n": 18,
     "n_incomplete": 0,
-    "baseline_n": 6222,
+    "baseline_n": 6221,
     "resampling": "monte_carlo",
     "n_draws": 10000,
-    "baseline_median": 0.00667796766329991,
-    "baseline_hit_rate": 0.6107360977177756,
-    "baseline_p25": -0.011183686180100995,
-    "baseline_p75": 0.021146143082088693,
+    "baseline_median": 0.006679560054650292,
+    "baseline_hit_rate": 0.6106735251567272,
+    "baseline_p25": -0.0111870166767566,
+    "baseline_p75": 0.021147503549990693,
     "hit_rate": 0.6111111111111112,
     "median": 0.019400574427929328,
     "mean": 0.017455582891657162,
     "p25": -0.0055111266962336964,
     "p75": 0.0406426885120705,
-    "delta": 0.012722606764629418,
+    "delta": 0.012721014373279035,
     "n_blocks": 18,
     "ci90": [
-     -0.009043454845980826,
-     0.03216721067684166
+     -0.00904504723733121,
+     0.032165618285491276
     ],
     "opposite_sign_share": 0.4162,
     "ci_excludes_zero": false,
@@ -96,23 +96,23 @@
     "h": 20,
     "n": 18,
     "n_incomplete": 0,
-    "baseline_n": 6212,
+    "baseline_n": 6211,
     "resampling": "monte_carlo",
     "n_draws": 10000,
-    "baseline_median": 0.01313589751208459,
-    "baseline_hit_rate": 0.6482614294913072,
-    "baseline_p25": -0.013796633012726931,
-    "baseline_p75": 0.03237888047770431,
+    "baseline_median": 0.013138521080747695,
+    "baseline_hit_rate": 0.6482047979391402,
+    "baseline_p25": -0.013797694044997477,
+    "baseline_p75": 0.032381101702612984,
     "hit_rate": 0.6666666666666666,
     "median": 0.03091584327727763,
     "mean": 0.02718817176349704,
     "p25": -0.008888212168063686,
     "p75": 0.059967932491807326,
-    "delta": 0.01777994576519304,
+    "delta": 0.017777322196529936,
     "n_blocks": 18,
     "ci90": [
-     -0.016233700372549616,
-     0.04099238631136686
+     -0.016236323941212723,
+     0.04098976274270376
     ],
     "opposite_sign_share": 0.146,
     "ci_excludes_zero": false,
@@ -123,23 +123,23 @@
     "h": 60,
     "n": 18,
     "n_incomplete": 0,
-    "baseline_n": 6172,
+    "baseline_n": 6171,
     "resampling": "monte_carlo",
     "n_draws": 10000,
-    "baseline_median": 0.03191212191342918,
-    "baseline_hit_rate": 0.7030136098509397,
-    "baseline_p25": -0.011615747237769416,
-    "baseline_p75": 0.06451029053783866,
+    "baseline_median": 0.03190570416977188,
+    "baseline_hit_rate": 0.7029654837141468,
+    "baseline_p25": -0.011622687957405817,
+    "baseline_p75": 0.06451071108102752,
     "hit_rate": 0.6111111111111112,
     "median": 0.029851936529838932,
     "mean": 0.041984585363463806,
     "p25": -0.011141259625721978,
     "p75": 0.10001581904244937,
-    "delta": -0.002060185383590249,
+    "delta": -0.002053767639932945,
     "n_blocks": 17,
     "ci90": [
-     -0.04156745222628124,
-     0.06284867369241504
+     -0.04156103448262394,
+     0.06285509143607235
     ],
     "opposite_sign_share": 0.4908,
     "ci_excludes_zero": false,
@@ -156,9 +156,9 @@
      {
       "h": 5,
       "n": 2,
-      "baseline_n": 523,
-      "baseline_median": 0.002754095330196847,
-      "baseline_hit_rate": 0.5640535372848948,
+      "baseline_n": 522,
+      "baseline_median": 0.0027112888975321233,
+      "baseline_hit_rate": 0.5632183908045977,
       "hit_rate": null,
       "median": null,
       "mean": null,
@@ -167,9 +167,9 @@
      {
       "h": 10,
       "n": 2,
-      "baseline_n": 518,
-      "baseline_median": 0.005878738476826976,
-      "baseline_hit_rate": 0.5945945945945946,
+      "baseline_n": 517,
+      "baseline_median": 0.005873333955932748,
+      "baseline_hit_rate": 0.5938104448742747,
       "hit_rate": null,
       "median": null,
       "mean": null,
@@ -229,9 +229,9 @@
      {
       "h": 20,
       "n": 6,
-      "baseline_n": 3404,
-      "baseline_median": 0.0145330558831195,
-      "baseline_hit_rate": 0.6609870740305523,
+      "baseline_n": 3403,
+      "baseline_median": 0.014543090656823177,
+      "baseline_hit_rate": 0.6608874522480165,
       "hit_rate": null,
       "median": null,
       "mean": null,
@@ -240,9 +240,9 @@
      {
       "h": 60,
       "n": 6,
-      "baseline_n": 3364,
-      "baseline_median": 0.03458864252895398,
-      "baseline_hit_rate": 0.7274078478002378,
+      "baseline_n": 3363,
+      "baseline_median": 0.03455744126729392,
+      "baseline_hit_rate": 0.7273267915551591,
       "hit_rate": null,
       "median": null,
       "mean": null,
@@ -537,30 +537,64 @@
    }
   ],
   "verdict": {
-   "text": "S&P 500 is not distinguishable from baseline at 5 sessions (n = 18, 18 blocks); 10 sessions (n = 18, 18 blocks); 20 sessions (n = 18, 18 blocks); 60 sessions (n = 18, 17 blocks) (the 90% interval on Δ includes zero). No regime reaches n = 10 at 20 sessions, so the split is not informative. n<10: Goldilocks (2), Overheating (6), Stagflation (9), Recession Risk (1). Sample since 2000 (data from 2000-08-30; events evaluable 2001-09-19 to 2026-09-21); 18 events after a 20-session cooldown (193 shock sessions before it); 18 independent blocks at 20 sessions (Monte Carlo, 10,000 draws).",
+   "text": "S&P 500 is not distinguishable from baseline at 5 sessions (n = 18, 18 blocks); 10 sessions (n = 18, 18 blocks); 20 sessions (n = 18, 18 blocks); 60 sessions (n = 18, 17 blocks) (the 90% interval on Δ includes zero). No regime reaches n = 10 at 20 sessions, so the split is not informative. n<10: Goldilocks (2), Overheating (6), Stagflation (9), Recession Risk (1). Sample since 2000 (data from 2000-08-30; events evaluable 2001-09-19 to 2026-09-18); 18 events after a 20-session cooldown (193 shock sessions before it); 18 independent blocks at 20 sessions (Monte Carlo, 10,000 draws).",
    "sentences": [
     "S&P 500 is not distinguishable from baseline at 5 sessions (n = 18, 18 blocks); 10 sessions (n = 18, 18 blocks); 20 sessions (n = 18, 18 blocks); 60 sessions (n = 18, 17 blocks) (the 90% interval on Δ includes zero).",
     "No regime reaches n = 10 at 20 sessions, so the split is not informative.",
     "n<10: Goldilocks (2), Overheating (6), Stagflation (9), Recession Risk (1).",
-    "Sample since 2000 (data from 2000-08-30; events evaluable 2001-09-19 to 2026-09-21); 18 events after a 20-session cooldown (193 shock sessions before it); 18 independent blocks at 20 sessions (Monte Carlo, 10,000 draws)."
+    "Sample since 2000 (data from 2000-08-30; events evaluable 2001-09-19 to 2026-09-18); 18 events after a 20-session cooldown (193 shock sessions before it); 18 independent blocks at 20 sessions (Monte Carlo, 10,000 draws)."
    ]
   },
   "provenance": {
-   "as_of": "2026-09-21",
+   "as_of": "2026-09-18",
+   "as_of_by_series": {
+    "gold": "2026-09-18",
+    "spx": "2026-09-18"
+   },
+   "data_start": "2000-08-30",
    "sample_start": "2001-09-19",
-   "sample_end": "2026-09-21",
+   "sample_end": "2026-09-18",
    "n_events": 18,
+   "n_unlabeled": 0,
    "cooldown": "20 sessions on the session calendar",
    "cooldown_sessions": 20,
    "seed": 20260921,
    "n_boot": 10000,
    "ci": 0.9,
    "bootstrap": "cluster bootstrap: events whose forward windows overlap form one block; every draw of B blocks is enumerated when B ≤ 7, else 10000 Monte Carlo draws; an interval needs 5 blocks; a zero-exclusion claim needs 10 blocks, the 90% interval on the point estimate's side of zero and fewer than 3% of resampled medians adverse (zero counts as adverse)",
-   "inputs_hash": "84684210bb3a78ae",
+   "inputs_hash": "faf0bad495b3c86b",
+   "n_blocks_by_h": {
+    "5": 18,
+    "10": 18,
+    "20": 18,
+    "60": 17
+   },
+   "entry_rule": "the target's close on the event date only when its value is fixed (session close) at or after every input is known (Gold (COMEX front month): 17:00 ET clock; S&P 500: session close), resolved per session against the XNYS open and close; else the next session's close; the baseline takes the same delay",
+   "entry_same_session": false,
+   "regime_lag_months": 2,
+   "regime_rule": "a session in month K takes the row stamped K−2 months (that row needs data published mid K−1); earlier sessions are Unlabeled, reported in their own row, outside the totals",
+   "hit_rate_rule": "share of forward moves > 0 in the target's unit; never sign-flipped by the engine",
    "warnings": [
     "Gold (COMEX front month): history from 2000-08-30 (after 1990)",
     "off-session observations dropped: gold 6.",
     "calendar sessions without a value: gold 19."
+   ],
+   "z_window": 252,
+   "inputs": [
+    {
+     "key": "gold",
+     "label": "Gold (COMEX front month)",
+     "table": "asset_prices",
+     "history_from": "2000-08-30",
+     "last": "2026-09-18"
+    },
+    {
+     "key": "spx",
+     "label": "S&P 500",
+     "table": "asset_prices",
+     "history_from": "1990-01-02",
+     "last": "2026-09-18"
+    }
    ]
   }
  },
@@ -602,23 +636,23 @@
     "h": 5,
     "n": 14,
     "n_incomplete": 0,
-    "baseline_n": 7577,
+    "baseline_n": 7576,
     "resampling": "monte_carlo",
     "n_draws": 10000,
-    "baseline_median": 0.003463301828272894,
-    "baseline_hit_rate": 0.5764814570410453,
-    "baseline_p25": -0.010066567462153522,
-    "baseline_p75": 0.015126798641505,
+    "baseline_median": 0.003462160394514688,
+    "baseline_hit_rate": 0.5764255543822597,
+    "baseline_p25": -0.010072255142880997,
+    "baseline_p75": 0.015113425628115188,
     "hit_rate": 0.7142857142857143,
     "median": 0.01019558708482957,
     "mean": 0.007949683180877947,
     "p25": -0.002250202181457511,
     "p75": 0.024526813968745613,
-    "delta": 0.006732285256556675,
+    "delta": 0.0067334266903148815,
     "n_blocks": 14,
     "ci90": [
-     -0.004912725390883743,
-     0.01754472555995878
+     -0.0049115839571255366,
+     0.017545866993716987
     ],
     "opposite_sign_share": 0.155,
     "ci_excludes_zero": false,
@@ -629,23 +663,23 @@
     "h": 10,
     "n": 14,
     "n_incomplete": 0,
-    "baseline_n": 7572,
+    "baseline_n": 7571,
     "resampling": "monte_carlo",
     "n_draws": 10000,
-    "baseline_median": 0.0066437012743711,
-    "baseline_hit_rate": 0.6036714210248283,
-    "baseline_p25": -0.01243769210887499,
-    "baseline_p75": 0.022049117666794044,
+    "baseline_median": 0.006652083009789326,
+    "baseline_hit_rate": 0.6036190727777044,
+    "baseline_p25": -0.012451483354881197,
+    "baseline_p75": 0.022049186899707866,
     "hit_rate": 0.7142857142857143,
     "median": 0.012134990225729368,
     "mean": 0.008678165406581862,
     "p25": -0.00963485298167958,
     "p75": 0.023501833834897696,
-    "delta": 0.005491288951358268,
+    "delta": 0.005482907215940041,
     "n_blocks": 14,
     "ci90": [
-     -0.011877126600402032,
-     0.015227124772940987
+     -0.01188550833582026,
+     0.015218743037522763
     ],
     "opposite_sign_share": 0.1121,
     "ci_excludes_zero": false,
@@ -656,23 +690,23 @@
     "h": 20,
     "n": 14,
     "n_incomplete": 0,
-    "baseline_n": 7562,
+    "baseline_n": 7561,
     "resampling": "monte_carlo",
     "n_draws": 10000,
-    "baseline_median": 0.013063597242458131,
-    "baseline_hit_rate": 0.635942872256017,
-    "baseline_p25": -0.01605130907739969,
-    "baseline_p75": 0.03392646777269576,
+    "baseline_median": 0.013078018035141668,
+    "baseline_hit_rate": 0.6358947229202486,
+    "baseline_p25": -0.0160522076756365,
+    "baseline_p75": 0.033928285953568886,
     "hit_rate": 0.7857142857142857,
     "median": 0.026657107900459658,
     "mean": 0.022206367553149205,
     "p25": 0.015591116611882888,
     "p75": 0.05543922874300504,
-    "delta": 0.013593510658001526,
+    "delta": 0.01357908986531799,
     "n_blocks": 14,
     "ci90": [
-     0.004143311896463676,
-     0.032671738002342646
+     0.00412889110378014,
+     0.032657317209659115
     ],
     "opposite_sign_share": 0.0167,
     "ci_excludes_zero": true,
@@ -683,23 +717,23 @@
     "h": 60,
     "n": 14,
     "n_incomplete": 0,
-    "baseline_n": 7522,
+    "baseline_n": 7521,
     "resampling": "monte_carlo",
     "n_draws": 10000,
-    "baseline_median": 0.031846314343594806,
-    "baseline_hit_rate": 0.6936984844456262,
-    "baseline_p25": -0.014300134040729827,
-    "baseline_p75": 0.06581079539164375,
+    "baseline_median": 0.03183594671206959,
+    "baseline_hit_rate": 0.6936577582768249,
+    "baseline_p25": -0.014313121517917632,
+    "baseline_p75": 0.06582522176377674,
     "hit_rate": 0.9285714285714286,
     "median": 0.05156573121678598,
     "mean": 0.05511017828323964,
     "p25": 0.027173259295286578,
     "p75": 0.07114550312696026,
-    "delta": 0.019719416873191176,
+    "delta": 0.019729784504716394,
     "n_blocks": 14,
     "ci90": [
-     -0.0004052298432414003,
-     0.037114957441359675
+     -0.0003948622117161821,
+     0.03712532507288489
     ],
     "opposite_sign_share": 0.0673,
     "ci_excludes_zero": false,
@@ -716,9 +750,9 @@
      {
       "h": 5,
       "n": 1,
-      "baseline_n": 548,
-      "baseline_median": 0.0017767413834912115,
-      "baseline_hit_rate": 0.5583941605839416,
+      "baseline_n": 547,
+      "baseline_median": 0.0017140224382220918,
+      "baseline_hit_rate": 0.5575868372943327,
       "hit_rate": null,
       "median": null,
       "mean": null,
@@ -727,9 +761,9 @@
      {
       "h": 10,
       "n": 1,
-      "baseline_n": 543,
-      "baseline_median": 0.004716587292824914,
-      "baseline_hit_rate": 0.58195211786372,
+      "baseline_n": 542,
+      "baseline_median": 0.004663367163355101,
+      "baseline_hit_rate": 0.5811808118081181,
       "hit_rate": null,
       "median": null,
       "mean": null,
@@ -789,9 +823,9 @@
      {
       "h": 20,
       "n": 5,
-      "baseline_n": 4457,
-      "baseline_median": 0.015178527432488601,
-      "baseline_hit_rate": 0.6542517388377833,
+      "baseline_n": 4456,
+      "baseline_median": 0.015186550581682362,
+      "baseline_hit_rate": 0.6541741472172352,
       "hit_rate": null,
       "median": null,
       "mean": null,
@@ -800,9 +834,9 @@
      {
       "h": 60,
       "n": 5,
-      "baseline_n": 4417,
-      "baseline_median": 0.03681193347398458,
-      "baseline_hit_rate": 0.7321711568938193,
+      "baseline_n": 4416,
+      "baseline_median": 0.03680036608245773,
+      "baseline_hit_rate": 0.7321105072463768,
       "hit_rate": null,
       "median": null,
       "mean": null,
@@ -1097,42 +1131,56 @@
    }
   ],
   "verdict": {
-   "text": "The 90% interval on Δ excludes zero at 20 sessions (n = 14, 14 blocks). The effect is modest at 20 sessions (n = 14): median +2.7% against a baseline of +1.3%, Δ +1.4%. S&P 500 is not distinguishable from baseline at 5 sessions (n = 14, 14 blocks); 10 sessions (n = 14, 14 blocks); 60 sessions (n = 14, 14 blocks). No regime reaches n = 10 at 20 sessions, so the split is not informative. n<10: Goldilocks (1), Overheating (5), Stagflation (6), Recession Risk (2), Unlabeled (2, outside the totals). Sample since 1990 (data from 1990-01-02; events evaluable 1996-07-01 to 2026-09-21); 14 events; no cooldown, a cross cannot recur before the opposite cross; 14 independent blocks at 20 sessions (Monte Carlo, 10,000 draws).",
+   "text": "The 90% interval on Δ excludes zero at 20 sessions (n = 14, 14 blocks). The effect is modest at 20 sessions (n = 14): median +2.7% against a baseline of +1.3%, Δ +1.4%. S&P 500 is not distinguishable from baseline at 5 sessions (n = 14, 14 blocks); 10 sessions (n = 14, 14 blocks); 60 sessions (n = 14, 14 blocks). No regime reaches n = 10 at 20 sessions, so the split is not informative. n<10: Goldilocks (1), Overheating (5), Stagflation (6), Recession Risk (2), Unlabeled (2, outside the totals). Sample since 1990 (data from 1990-01-02; events evaluable 1996-07-01 to 2026-09-18); 14 events; no cooldown, a cross cannot recur before the opposite cross; 14 independent blocks at 20 sessions (Monte Carlo, 10,000 draws).",
    "sentences": [
     "The 90% interval on Δ excludes zero at 20 sessions (n = 14, 14 blocks).",
     "The effect is modest at 20 sessions (n = 14): median +2.7% against a baseline of +1.3%, Δ +1.4%.",
     "S&P 500 is not distinguishable from baseline at 5 sessions (n = 14, 14 blocks); 10 sessions (n = 14, 14 blocks); 60 sessions (n = 14, 14 blocks).",
     "No regime reaches n = 10 at 20 sessions, so the split is not informative.",
     "n<10: Goldilocks (1), Overheating (5), Stagflation (6), Recession Risk (2), Unlabeled (2, outside the totals).",
-    "Sample since 1990 (data from 1990-01-02; events evaluable 1996-07-01 to 2026-09-21); 14 events; no cooldown, a cross cannot recur before the opposite cross; 14 independent blocks at 20 sessions (Monte Carlo, 10,000 draws)."
+    "Sample since 1990 (data from 1990-01-02; events evaluable 1996-07-01 to 2026-09-18); 14 events; no cooldown, a cross cannot recur before the opposite cross; 14 independent blocks at 20 sessions (Monte Carlo, 10,000 draws)."
    ]
   },
   "provenance": {
-   "as_of": "2026-09-21",
+   "as_of": "2026-09-18",
+   "as_of_by_series": {
+    "spx": "2026-09-18"
+   },
+   "data_start": "1990-01-02",
    "sample_start": "1996-07-01",
-   "sample_end": "2026-09-21",
+   "sample_end": "2026-09-18",
    "n_events": 14,
+   "n_unlabeled": 2,
    "cooldown": "no cooldown (a cross cannot recur before the opposite cross)",
    "cooldown_sessions": null,
    "seed": 20260921,
    "n_boot": 10000,
    "ci": 0.9,
    "bootstrap": "cluster bootstrap: events whose forward windows overlap form one block; every draw of B blocks is enumerated when B ≤ 7, else 10000 Monte Carlo draws; an interval needs 5 blocks; a zero-exclusion claim needs 10 blocks, the 90% interval on the point estimate's side of zero and fewer than 3% of resampled medians adverse (zero counts as adverse)",
-   "inputs_hash": "4ffb414725edc09d",
-   "warnings": []
+   "inputs_hash": "87d32c313f830761",
+   "n_blocks_by_h": {
+    "5": 14,
+    "10": 14,
+    "20": 14,
+    "60": 14
+   },
+   "entry_rule": "the target's close on the event date only when its value is fixed (session close) at or after every input is known (S&P 500: session close), resolved per session against the XNYS open and close; else the next session's close; the baseline takes the same delay",
+   "entry_same_session": true,
+   "regime_lag_months": 2,
+   "regime_rule": "a session in month K takes the row stamped K−2 months (that row needs data published mid K−1); earlier sessions are Unlabeled, reported in their own row, outside the totals",
+   "hit_rate_rule": "share of forward moves > 0 in the target's unit; never sign-flipped by the engine",
+   "warnings": [],
+   "z_window": null,
+   "inputs": [
+    {
+     "key": "spx",
+     "label": "S&P 500",
+     "table": "asset_prices",
+     "history_from": "1990-01-02",
+     "last": "2026-09-18"
+    }
+   ]
   }
- },
- "computing": {
-  "status": "computing",
-  "slug": "vix-w5-z2.0-up-none-spx",
-  "retry_after": 3,
-  "detail": "The study vix-w5-z2.0-up-none-spx is computing; retry in 3 seconds."
- },
- "awaiting_refresh": {
-  "status": "awaiting_refresh",
-  "slug": "vix-w5-z2.0-up-none-spx",
-  "series": "vix",
-  "detail": "VIX (VIXCLS) is awaiting the first full refresh: this database has no desk_series table yet, and that refresh stores it."
  },
  "bp_target": {
   "status": "ready",
@@ -1677,21 +1725,67 @@
   },
   "provenance": {
    "as_of": "2026-09-18",
+   "as_of_by_series": {
+    "gold": "2026-09-18",
+    "us10y": "2026-09-18"
+   },
+   "data_start": "2000-08-30",
    "sample_start": "2001-08-22",
    "sample_end": "2026-09-18",
    "n_events": 43,
+   "n_unlabeled": 0,
    "cooldown": "5 sessions on the session calendar",
    "cooldown_sessions": 5,
    "seed": 20260921,
    "n_boot": 10000,
    "ci": 0.9,
    "bootstrap": "cluster bootstrap: events whose forward windows overlap form one block; every draw of B blocks is enumerated when B ≤ 7, else 10000 Monte Carlo draws; an interval needs 5 blocks; a zero-exclusion claim needs 10 blocks, the 90% interval on the point estimate's side of zero and fewer than 3% of resampled medians adverse (zero counts as adverse)",
-   "inputs_hash": "bf4d62518d35e3af",
+   "inputs_hash": "a1656a4836207070",
+   "n_blocks_by_h": {
+    "5": 43,
+    "10": 37,
+    "20": 36,
+    "60": 26
+   },
+   "entry_rule": "the target's close on the event date only when its value is fixed (session close − 30 min) at or after every input is known (Gold (COMEX front month): 17:00 ET clock), resolved per session against the XNYS open and close; else the next session's close; the baseline takes the same delay",
+   "entry_same_session": false,
+   "regime_lag_months": 2,
+   "regime_rule": "a session in month K takes the row stamped K−2 months (that row needs data published mid K−1); earlier sessions are Unlabeled, reported in their own row, outside the totals",
+   "hit_rate_rule": "share of forward moves > 0 in the target's unit; never sign-flipped by the engine",
    "warnings": [
     "Gold (COMEX front month): history from 2000-08-30 (after 1990)",
     "off-session observations dropped: gold 6, us10y 41.",
     "calendar sessions without a value: gold 19, us10y 232."
+   ],
+   "z_window": 252,
+   "inputs": [
+    {
+     "key": "gold",
+     "label": "Gold (COMEX front month)",
+     "table": "asset_prices",
+     "history_from": "2000-08-30",
+     "last": "2026-09-18"
+    },
+    {
+     "key": "us10y",
+     "label": "10Y Treasury",
+     "table": "desk_series",
+     "history_from": "1962-01-02",
+     "last": "2026-09-18"
+    }
    ]
   }
+ },
+ "computing": {
+  "status": "computing",
+  "slug": "vix-w5-z2.0-up-none-spx",
+  "retry_after": 3,
+  "detail": "The study vix-w5-z2.0-up-none-spx is computing; retry in 3 seconds."
+ },
+ "awaiting_refresh": {
+  "status": "awaiting_refresh",
+  "slug": "vix-w5-z2.0-up-none-spx",
+  "series": "vix",
+  "detail": "VIX (VIXCLS) is awaiting the first full refresh: this database has no desk_series table yet, and that refresh stores it."
  }
 }
