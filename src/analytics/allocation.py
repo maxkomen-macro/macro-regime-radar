@@ -360,12 +360,14 @@ def portfolio_daily_returns(weights: Dict[str, float], daily_returns: pd.DataFra
 def get_regime_history() -> pd.DataFrame:
     """Return regime labels indexed by date from the DB."""
     conn = _get_conn()
-    df = pd.read_sql_query(
-        "SELECT date, label AS regime, confidence FROM regimes ORDER BY date",
-        conn,
-        parse_dates=["date"],
-    )
-    conn.close()
+    try:
+        df = pd.read_sql_query(
+            "SELECT date, label AS regime, confidence FROM regimes ORDER BY date",
+            conn,
+            parse_dates=["date"],
+        )
+    finally:
+        conn.close()  # on every path (verifier V-54)
     return df.set_index("date")
 
 
@@ -377,13 +379,15 @@ def get_current_regime() -> Tuple[str, float, Optional[float]]:
     for legacy rows where the prob_* columns are NULL.
     """
     conn = _get_conn()
-    df = pd.read_sql_query(
-        "SELECT label, confidence, prob_goldilocks, prob_overheating, "
-        "prob_stagflation, prob_recession "
-        "FROM regimes ORDER BY date DESC LIMIT 1",
-        conn,
-    )
-    conn.close()
+    try:
+        df = pd.read_sql_query(
+            "SELECT label, confidence, prob_goldilocks, prob_overheating, "
+            "prob_stagflation, prob_recession "
+            "FROM regimes ORDER BY date DESC LIMIT 1",
+            conn,
+        )
+    finally:
+        conn.close()  # on every path (verifier V-54)
     if df.empty:
         return "Unknown", 0.0, None
     label = str(df.iloc[0]["label"])
@@ -404,11 +408,13 @@ def get_current_regime() -> Tuple[str, float, Optional[float]]:
 def get_risk_free_rate() -> float:
     """Return annualized risk-free rate from FEDFUNDS in raw_series, or 4.5% fallback."""
     conn = _get_conn()
-    df = pd.read_sql_query(
-        "SELECT value FROM raw_series WHERE series_id='FEDFUNDS' ORDER BY date DESC LIMIT 1",
-        conn,
-    )
-    conn.close()
+    try:
+        df = pd.read_sql_query(
+            "SELECT value FROM raw_series WHERE series_id='FEDFUNDS' ORDER BY date DESC LIMIT 1",
+            conn,
+        )
+    finally:
+        conn.close()  # on every path (verifier V-54)
     if df.empty:
         return 0.045
     return float(df.iloc[0]["value"]) / 100.0
@@ -1790,11 +1796,14 @@ def get_allocation_data() -> Dict:
     # Fetch CPI from DB (standalone — no src.config import)
     cpi_series = None
     try:
-        with _get_conn() as conn:
+        conn = _get_conn()  # a connection's own `with` ends a transaction and never closes it (V-54)
+        try:
             cpi_df = pd.read_sql(
                 "SELECT date, value FROM raw_series WHERE series_id='CPIAUCSL' ORDER BY date",
                 conn,
             )
+        finally:
+            conn.close()
         if not cpi_df.empty:
             cpi_df["date"] = pd.to_datetime(cpi_df["date"])
             cpi_series = cpi_df.set_index("date")["value"]
@@ -1807,10 +1816,13 @@ def get_allocation_data() -> Dict:
     # Fetch regimes table (separate from regime_history which uses a different schema)
     regimes_df = pd.DataFrame()
     try:
-        with _get_conn() as conn:
+        conn = _get_conn()
+        try:
             regimes_df = pd.read_sql(
                 "SELECT date, label FROM regimes ORDER BY date", conn
             )
+        finally:
+            conn.close()
     except Exception as e:
         print(f"  Regimes fetch failed: {e}")
 

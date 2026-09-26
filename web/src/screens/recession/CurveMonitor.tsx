@@ -160,8 +160,10 @@ function ShapeTile({ m }: { m: RecessionMetrics }): JSX.Element {
 export default function CurveMonitor({ m, status, range, onRangeChange }: CurveMonitorProps): JSX.Element {
   const ready = status === "ready" && m != null;
   // E3 (Iteration 1 step 6): the curve's as-of is the weaker of DGS10 and
-  // DGS2 in /api/freshness series[], a §5 word, beside the cadence.
-  const curveFresh = useFreshReport().group(["DGS10", "DGS2"]);
+  // DGS2 in /api/freshness series[], a §5 word, beside the cadence; the
+  // payload's block passed like on the screen, so an awaiting block overrides
+  // a cached report's dates (desk/hardening, Codex R-31).
+  const curveFresh = useFreshReport().group(["DGS10", "DGS2"], m?.freshness);
   return (
     <Card as="section" variant="panel" id="curve" style={{ minWidth: 0 }}>
       <SectionHeader

@@ -324,3 +324,38 @@ def test_every_retry_is_counted_in_the_quota():
     snap = quota.snapshot(elapsed_override_s=3600)
     assert snap["requests"] == 3 and snap["units"] == 15
     quota.reset()
+
+
+def test_the_prefetch_backoff_never_overflows(monkeypatch):
+    """Verifier V-81 (Codex R-37's bug in the prefetch): past 1,024 failures,
+    2 ** 1024 overflowed inside the error handler, before the backoff was stored,
+    so every ten-second tick made a billed call for the first symbol and the
+    error aborted the tick. The exponent is clamped: from 1,024 failures each
+    series is tried once, its backoff stored at the cap, and the ticks after it
+    make no call."""
+    from api.providers import market
+    from api.providers.errors import ProviderUnavailable
+
+    attempts: list[tuple[str, str]] = []
+
+    def fail(sym, rk, margin):
+        attempts.append((sym, rk))
+        raise ProviderUnavailable("eodhd", "down")
+
+    monkeypatch.setattr(market, "refresh_candles", fail)
+    now = {"t": 1000.0}
+    monkeypatch.setattr(worker_mod.time, "monotonic", lambda: now["t"])
+    worker_mod.reset_prefetch_backoff()
+    keys = [(s, rk) for s in worker_mod.PREFETCH_SYMBOLS for rk in worker_mod.PREFETCH_RANGES]
+    for key in keys:
+        worker_mod._prefetch_backoff[key] = (0.0, 1024)
+    try:
+        for _ in range(3):
+            worker_mod.prefetch_tick()
+            now["t"] += worker_mod.PREFETCH_EVERY_S
+        assert sorted(attempts) == sorted(keys), attempts  # one call per series, then the backoff holds
+        for key in keys:
+            retry_at, failures = worker_mod._prefetch_backoff[key]
+            assert failures == 1025 and retry_at == 1000.0 + worker_mod.PREFETCH_BACKOFF_MAX_S, (key, retry_at, failures)
+    finally:
+        worker_mod.reset_prefetch_backoff()

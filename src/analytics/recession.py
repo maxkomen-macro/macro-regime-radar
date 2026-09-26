@@ -164,8 +164,10 @@ def train_recession_model() -> tuple:
     """
     try:
         conn = _get_conn()
-        features_df, usrec, _ = _build_feature_frame(conn)
-        conn.close()
+        try:
+            features_df, usrec, _ = _build_feature_frame(conn)
+        finally:
+            conn.close()  # on every path (verifier V-54): never left for the garbage collector
     except Exception:
         return None, None, FEATURE_NAMES
 
@@ -204,14 +206,16 @@ def _load_curve_shape() -> dict:
     result: dict = {}
     try:
         conn = _get_conn()
-        for sid, label in TENORS:
-            row = conn.execute(
-                "SELECT value FROM raw_series WHERE series_id = ? AND value IS NOT NULL "
-                "ORDER BY date DESC LIMIT 1",
-                (sid,),
-            ).fetchone()
-            result[label] = float(row["value"]) if row else None
-        conn.close()
+        try:
+            for sid, label in TENORS:
+                row = conn.execute(
+                    "SELECT value FROM raw_series WHERE series_id = ? AND value IS NOT NULL "
+                    "ORDER BY date DESC LIMIT 1",
+                    (sid,),
+                ).fetchone()
+                result[label] = float(row["value"]) if row else None
+        finally:
+            conn.close()  # on every path (verifier V-54)
     except Exception:
         pass
     return result
@@ -229,18 +233,19 @@ def get_recession_metrics() -> dict:
 
     try:
         conn = _get_conn()
-        features_df, usrec, yield_curve_daily = _build_feature_frame(conn)
+        try:
+            features_df, usrec, yield_curve_daily = _build_feature_frame(conn)
 
-        # Load HY OAS for divergence score
-        hy_oas_full = _to_monthly(_load_raw("BAMLH0A0HYM2", conn, scale=100.0))
+            # Load HY OAS for divergence score
+            hy_oas_full = _to_monthly(_load_raw("BAMLH0A0HYM2", conn, scale=100.0))
 
-        # Load prob_recession from regimes table
-        reg_rows = conn.execute(
-            "SELECT prob_recession FROM regimes ORDER BY date DESC LIMIT 1"
-        ).fetchone()
-        macro_recession_signal = float(reg_rows["prob_recession"]) * 100.0 if reg_rows else None
-
-        conn.close()
+            # Load prob_recession from regimes table
+            reg_rows = conn.execute(
+                "SELECT prob_recession FROM regimes ORDER BY date DESC LIMIT 1"
+            ).fetchone()
+            macro_recession_signal = float(reg_rows["prob_recession"]) * 100.0 if reg_rows else None
+        finally:
+            conn.close()  # on every path (verifier V-54)
     except Exception:
         return empty
 

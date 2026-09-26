@@ -261,8 +261,9 @@ def test_one_value_cannot_grow_past_a_megabyte(tmp_path, monkeypatch):
         "SELECT max(length(x)) AS n FROM s")
     assert "error" in doubling or (doubling["rows"][0]["n"] or 0) <= 1_000_000, doubling
     assert time.perf_counter() - t < 2.0
-    ok = chat_mod._tool_query_database("SELECT length(printf('%.*c', 200000, 'x')) AS n")
-    assert ok["rows"] == [{"n": 200000}]
+    # one value is capped at 16 KB since verifier V-68 (the largest stored value is about 2 KB)
+    ok = chat_mod._tool_query_database("SELECT length(printf('%.*c', 16000, 'x')) AS n")
+    assert ok["rows"] == [{"n": 16000}]
 
 
 def test_the_tool_connection_refuses_writes_even_on_the_file(tmp_path, monkeypatch):
@@ -294,12 +295,12 @@ def test_one_call_cannot_return_a_gigabyte_of_rows(tmp_path, monkeypatch):
     from src.analytics import chat as chat_mod
 
     monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
-    wide = ", ".join(f"printf('%.*c', 200000, 'x') AS c{i}" for i in range(5))
+    wide = ", ".join(f"printf('%.*c', 16000, 'x') AS c{i}" for i in range(5))  # under the 16 KB value cap (V-68)
     t = time.perf_counter()
     out = chat_mod._tool_query_database(
         f"WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 200) SELECT {wide} FROM r")
     assert "error" in out and "too large" in out["error"], {k: v for k, v in out.items() if k != "rows"}
-    many = ", ".join(f"1 AS c{i}" for i in range(300))
+    many = ", ".join(["1"] * 300)  # 300 columns inside the guard's 2 KB (V-88)
     out = chat_mod._tool_query_database(f"SELECT {many}")
     assert "error" in out and "too many columns" in out["error"].lower(), out
     assert time.perf_counter() - t < 3.0
@@ -317,7 +318,7 @@ def test_a_query_has_a_wall_clock_budget(tmp_path, monkeypatch):
     monkeypatch.setattr(chat_mod, "_QUERY_TIME_BUDGET_S", 0.0)
     out = chat_mod._tool_query_database(
         "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 100000) SELECT count(*) AS n FROM r")
-    assert "error" in out and "interrupted" in out["error"], out
+    assert "error" in out and "budget; simplify it" in out["error"], out
 
 
 def test_the_row_cap_is_two_hundred(tmp_path, monkeypatch):
@@ -364,3 +365,415 @@ def test_the_result_budget_counts_bytes_not_characters(tmp_path, monkeypatch):
     assert fits["row_count"] == 1
     wide = chat_mod._tool_query_database("SELECT printf('%.*c', 300, char(128200)) AS s")  # 300 chars, 1,200 bytes
     assert "error" in wide and "too large" in wide["error"], {k: v for k, v in wide.items() if k != "rows"}
+
+
+# ── desk/hardening, verifier V-51: the tool's connections to the copy ─────────
+
+def test_each_tool_call_closes_its_connection(tmp_path, monkeypatch):
+    """Verifier V-51: a connection's own `with` only ends a transaction, so every
+    tool call left its connection (to the copy, in the API) for the garbage
+    collector, and a collection inside a SQLite call on the same copy that closed
+    it waited for good. Each call now closes its connection when it ends."""
+    import sqlite3 as _sq
+
+    from src.analytics import chat as chat_mod
+    from src.analytics import dbpath
+
+    opened = []
+    real = dbpath.connect_private_ro  # the assistant's own copy since Codex R-34
+
+    def spy(path):
+        conn = real(path)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    monkeypatch.setattr(dbpath, "connect_private_ro", spy)
+    with chat_mod._ro_conn() as conn:  # every tool reads through it
+        assert conn.execute("SELECT label FROM regimes").fetchone()["label"] == "Overheating"
+    assert chat_mod._tool_query_database("SELECT label FROM regimes")["rows"] == [{"label": "Overheating"}]
+    assert len(opened) == 2
+    for conn in opened:
+        with pytest.raises(_sq.ProgrammingError, match="closed"):
+            conn.execute("SELECT 1")
+
+
+def test_the_tool_refuses_writes_on_a_copy_without_an_authorizer(tmp_path, monkeypatch):
+    """Verifier V-51 took the Python authorizer off the copy: SQLite ran it inside
+    the copy's shared-cache lock. Past the guard, the copy's connection still
+    refuses every write by its own mode, creates no file, and a flip of
+    query_only dies with its call's connection."""
+    import sqlite3 as _sq
+
+    from src.analytics import chat as chat_mod
+    from src.analytics import dbpath
+
+    src = _scratch_db(tmp_path)
+    uri = "file:mrr-gen-test-tool?mode=memory&cache=shared"
+    anchor = _sq.connect(uri, uri=True)
+    seed = _sq.connect(src)
+    seed.backup(anchor)
+    seed.close()
+
+    class _Gen:
+        source = src
+        key = (0, 0, 0)
+
+    _Gen.uri = uri
+    monkeypatch.setattr(dbpath, "_provider", lambda: _Gen)
+    monkeypatch.setattr(chat_mod, "DB_PATH", src)
+    monkeypatch.setattr(chat_mod, "is_safe_select", lambda s: True)  # the connection is the second wall
+    try:
+        with chat_mod._ro_conn() as conn:
+            assert conn.execute("PRAGMA database_list").fetchone()[2] == ""  # the tool reads the copy
+        vacuum, attached = tmp_path / "v.db", tmp_path / "a.db"
+        for sql in (f"VACUUM INTO '{vacuum}'", "CREATE TEMP TABLE t(x)", f"ATTACH '{attached}' AS m",
+                    "INSERT INTO regimes VALUES ('2099-01-01', 'x')"):
+            out = chat_mod._tool_query_database(sql)
+            assert "error" in out, (sql, out)
+        assert not vacuum.exists() and not attached.exists()
+        assert "error" not in chat_mod._tool_query_database("PRAGMA query_only = 0")
+        assert "error" in chat_mod._tool_query_database("INSERT INTO regimes VALUES ('2099-01-01', 'x')")
+        assert chat_mod._tool_query_database("SELECT COUNT(*) AS n FROM regimes")["rows"] == [{"n": 1}]
+    finally:
+        anchor.close()
+
+
+# ── desk/hardening, Codex round 9: R-32, no Python callback on a generation connection ──
+
+def test_the_tool_registers_no_python_callback_on_a_generation_and_its_budget_still_fires(tmp_path, monkeypatch):
+    """Codex R-32: the query tool installed a Python progress handler on the
+    generation's connection, which SQLite runs inside the copy's shared-cache
+    lock. Through the tool itself, on a generation: nothing registers a progress
+    handler, an authorizer, a trace callback, a function or a collation, and the
+    wall-clock budget, now a timer that interrupts the connection from outside
+    SQLite, still stops a query that runs past it."""
+    import sqlite3 as _sq
+    import time
+
+    from src.analytics import chat as chat_mod
+    from src.analytics import dbpath
+
+    src = tmp_path / "gen-r32.db"
+    seed = _sq.connect(src)
+    seed.execute("CREATE TABLE regimes (date TEXT, label TEXT)")
+    seed.executemany("INSERT INTO regimes VALUES (?, 'Goldilocks')", [(f"d{i:04d}",) for i in range(2000)])
+    seed.commit()
+    uri = "file:mrr-gen-test-r32?mode=memory&cache=shared"
+    anchor = _sq.connect(uri, uri=True)
+    seed.backup(anchor)
+    seed.close()
+
+    class _Gen:
+        source = src
+        key = (0, 0, 0)
+
+    _Gen.uri = uri
+    registered: list[str] = []
+
+    class Spy(_sq.Connection):
+        pass
+
+    for name in ("set_progress_handler", "set_authorizer", "set_trace_callback", "create_function", "create_collation",
+                 "create_aggregate", "create_window_function"):
+        def record(self, *a, _name=name, **k):
+            registered.append(_name)
+            return getattr(_sq.Connection, _name)(self, *a, **k)
+        setattr(Spy, name, record)
+
+    real_open, opened = dbpath.open_generation, []
+
+    def spying_open(gen, factory=_sq.Connection):
+        conn = real_open(gen, factory=Spy)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(dbpath, "_provider", lambda: _Gen)
+    monkeypatch.setattr(dbpath, "open_generation", spying_open)
+    monkeypatch.setattr(chat_mod, "DB_PATH", src)
+    try:
+        assert chat_mod._tool_query_database("SELECT COUNT(*) AS n FROM regimes")["rows"] == [{"n": 2000}]
+        monkeypatch.setattr(chat_mod, "_QUERY_TIME_BUDGET_S", 0.2)
+        t = time.perf_counter()
+        slow = chat_mod._tool_query_database("SELECT COUNT(*) AS n FROM regimes a, regimes b, regimes c")  # 8e9 rows
+        elapsed = time.perf_counter() - t
+        assert "error" in slow and "budget; simplify it" in slow["error"], slow
+        assert elapsed < 2.0, elapsed
+        assert len(opened) == 2 and all(isinstance(c, Spy) for c in opened)
+        assert registered == [], registered
+    finally:
+        anchor.close()
+
+
+# ── desk/hardening, verifier round 21: V-68, a 16 KB cap on one value ─────────
+
+def test_a_250_kb_value_cannot_be_built_and_the_cap_error_names_the_limit(tmp_path, monkeypatch):
+    """Verifier V-68: SQLite never interrupts inside a function, and trim() over
+    a 250 KB value held the generation copy's lock 13.6 s. One value is capped at
+    16 KB (the largest stored value is about 2 KB). The verifier's instr repro
+    gets NULL, because past the cap printf() builds nothing, and answers within the
+    budget; its trim repro is refused by the guard since V-88 (two-argument trim). Every other way of building a 250 KB value for them fails
+    with an error that names the limit: concatenation, doubling and
+    group_concat (the guard already refuses zeroblob, randomblob and replace).
+    On the staged code the trim ran 13 s."""
+    import time
+
+    from src.analytics import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    # the verifier's trim repro: since V-88 the guard refuses a two-argument trim before anything runs
+    out = chat_mod._tool_query_database(
+        "SELECT length(trim(printf('%.*c',250000,'a'), printf('%.*c',21000,'b')||'a')) AS m FROM regimes LIMIT 1")
+    assert out.get("error", "").startswith("SQL guard: trim(), ltrim() and rtrim() take one argument here"), out
+    for sql in ("SELECT instr(printf('%.*c',250000,'a'), printf('%.*c',120000,'b')) AS m FROM regimes",):
+        t = time.perf_counter()
+        out = chat_mod._tool_query_database(sql)
+        assert out.get("rows") == [{"m": None}] and time.perf_counter() - t < chat_mod._QUERY_TIME_BUDGET_S, (sql, out)
+    for sql in ("SELECT length(printf('%.*c', 15000, 'a') || printf('%.*c', 15000, 'a')) AS m FROM regimes",
+                "SELECT instr(group_concat(printf('%.*c', 1000, 'a')), 'b') AS m FROM "
+                "(WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 250) SELECT i FROM r)",
+                "WITH RECURSIVE s(x) AS (SELECT 'a' UNION ALL SELECT x || x FROM s WHERE length(x) < 250000) "
+                "SELECT max(length(x)) AS m FROM s"):
+        out = chat_mod._tool_query_database(sql)
+        assert out.get("error", "").startswith("SQL error: a value in this query would pass the assistant's 16 KB limit"), (sql, out)
+    assert chat_mod._tool_query_database("SELECT length(printf('%.*c', 16000, 'a')) AS m")["rows"] == [{"m": 16000}]
+
+
+# ── desk/hardening, verifier round 24: V-84, LIKE and GLOB patterns capped at 256 characters ──
+
+def test_like_and_glob_patterns_are_capped_at_256_characters(tmp_path, monkeypatch):
+    """Verifier V-84: one LIKE with an 8,000-character pattern over a 16 KB value ran
+    133 ms uninterrupted, and with a copy per tool call (V-80) four such statements
+    burn four cores at once. The query tool caps a LIKE or GLOB pattern at 256
+    characters (SQLite's SQLITE_LIMIT_LIKE_PATTERN_LENGTH, set on each call's
+    connection, so a pattern built at run time is measured too), and the error
+    names the limit. Codex's repro is refused at once; a 256-character pattern
+    still matches. SQLite counts the pattern in bytes (verifier V-89): 85 euro
+    signs and an 'a' (256 bytes) match, 86 of them (258 bytes) are refused."""
+    import time
+
+    from src.analytics import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    limit = ("SQL error: a LIKE or GLOB pattern in this query is longer than the assistant's 256-byte limit "
+             "(fewer characters for accented text).")
+
+    def run(sql):
+        t = time.perf_counter()
+        return chat_mod._tool_query_database(sql), time.perf_counter() - t
+
+    ok, _ = run("SELECT printf('%.*c', 300, 'a') LIKE ('%' || printf('%.*c', 254, 'a') || '%') AS m FROM regimes")
+    assert ok.get("rows") == [{"m": 1}], ok  # exactly 256 characters
+    ok, _ = run("SELECT 'abc' GLOB printf('%.*c', 255, '*') || 'c' AS m FROM regimes")
+    assert ok.get("rows") == [{"m": 1}], ok
+    for sql in ("SELECT printf('%.*c', 300, 'a') LIKE ('%' || printf('%.*c', 255, 'a') || '%') AS m FROM regimes",
+                "SELECT 'abc' GLOB printf('%.*c', 300, '*') AS m FROM regimes",
+                "SELECT label FROM regimes WHERE label LIKE '" + "_" * 300 + "'",
+                # Codex's repro (8,000 characters), which ran 133 ms a call
+                "SELECT (printf('%.*c',16000,'a') LIKE ('%'||printf('%.*c',8000,'a')||'b')) AS m FROM regimes LIMIT 1"):
+        out, elapsed = run(sql)
+        assert out.get("error", "").startswith(limit), (sql[:60], out)
+        assert elapsed < 0.05, (sql[:60], elapsed)
+    ok, _ = run("SELECT '" + "€" * 85 + "a' LIKE '" + "€" * 85 + "%' AS m")  # 256 bytes, 86 characters
+    assert ok.get("rows") == [{"m": 1}], ok
+    out, _ = run("SELECT 'x' LIKE '" + "€" * 86 + "' AS m")  # 258 bytes, 86 characters
+    assert out.get("error", "").startswith(limit), out
+
+
+
+# ── desk/hardening, verifier round 25: V-88, the guard's caps on one statement's work ──
+
+def _glob_chain() -> str:
+    """The longest single-call hold found under every cap (decision 42): 2 KB of
+    GLOB operators on a 16 KB value with a 256-byte pattern, one row, no jump
+    between them for an interrupt to land on. About 1.0 s."""
+    head = "WITH v(x,p) AS (SELECT printf('%.*c',16000,'a'), '*'||printf('%.*c',254,'a')||'b') SELECT "
+    terms: list[str] = []
+    while len((head + "+".join(terms + ["(x GLOB p)"]) + " AS s FROM v").encode()) <= 2048:
+        terms.append("(x GLOB p)")
+    return head + "+".join(terms) + " AS s FROM v"
+
+
+def test_the_guard_caps_a_statements_length_calls_and_two_argument_trims(tmp_path, monkeypatch):
+    """Verifier V-88: 400 two-argument trims in 4 KB ran one call 25 s. The guard
+    caps a statement at 2 KB and at 16 function calls (an identifier, bare or
+    quoted, followed by "("; SQL keywords before a parenthesis, literals and
+    comments do not count), and refuses trim, ltrim and rtrim with a second
+    argument. Each refusal names its limit, before any connection opens; on the
+    staged code each of these ran."""
+    import time
+
+    from src.analytics import chat as chat_mod
+    from src.analytics import dbpath
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    opened = []
+    real = dbpath.copy_private_ro
+    monkeypatch.setattr(dbpath, "copy_private_ro", lambda path: opened.append(path) or real(path))
+    g = chat_mod._tool_query_database
+
+    ok = "SELECT 1 AS n" + " " * (2048 - 13)
+    assert g(ok)["rows"] == [{"n": 1}]  # exactly 2 KB
+    assert g(ok + " ")["error"].startswith("SQL guard: a query is limited to 2 KB of SQL (this one is 2049 bytes)")
+
+    sixteen = "SELECT " + ", ".join(f"abs({i}) AS a{i}" for i in range(16)) + " FROM regimes"
+    assert "rows" in g(sixteen), g(sixteen)
+    seventeen = "SELECT " + ", ".join(f"abs({i}) AS a{i}" for i in range(17)) + " FROM regimes"
+    assert g(seventeen)["error"].startswith("SQL guard: a query may call at most 16 functions (this one calls 17)")
+    not_calls = ("WITH x(a) AS (SELECT 1) SELECT a FROM x WHERE a IN (SELECT 1) AND EXISTS (SELECT 1) "
+                 "AND CAST (a AS TEXT) = '1' AND 'abs(1), abs(2)' <> '' -- abs(3) abs(4)")
+    assert "rows" in g(not_calls), g(not_calls)  # x( is the one call
+
+    trim_error = "SQL guard: trim(), ltrim() and rtrim() take one argument here"
+    for sql in ("SELECT trim(label, 'O') FROM regimes", 'SELECT "trim"(label, \'O\') FROM regimes',
+                "SELECT [LTRIM](label, 'O') FROM regimes", "SELECT `rtrim`(label, 'g') FROM regimes",
+                "SELECT upper(rtrim(substr(label, 1, 5), 'e')) FROM regimes"):
+        assert g(sql)["error"].startswith(trim_error), sql
+    assert g("SELECT trim(label) AS t, ltrim(' a') AS l, rtrim(substr(label, 1, 3)) AS r FROM regimes")["rows"] == [
+        {"t": "Overheating", "l": "a", "r": "Ove"}]
+
+    repro = ("WITH x(s,t) AS (SELECT printf('%.*c',16000,'a'), printf('%.*c',1364,'b')||'a') SELECT "
+             + ", ".join("max(" + ", ".join(["trim(s,t)"] * 100) + f") AS m{i}" for i in range(4)) + " FROM x")
+    t = time.perf_counter()
+    assert g(repro)["error"].startswith("SQL guard: a query is limited to 2 KB of SQL")  # the verifier's 25 s repro
+    assert time.perf_counter() - t < 0.05
+    refused = len(opened)
+    g("SELECT trim(label, 'O') FROM regimes")
+    assert len(opened) == refused, "a refused query opens no connection"
+
+
+def test_an_interrupted_query_names_the_budget_first_and_the_residual_hold_stays_near_a_second(tmp_path, monkeypatch):
+    """Verifier V-88: the interrupt's error names the budget alone first ("the
+    query exceeded the 250 ms budget; simplify it"), since a query can pass the
+    budget inside one row's functions, which reading less does not cure; the
+    rewrite hints are its second sentence. Decision 42's residual: the longest
+    single-call hold found under every cap, 2 KB of GLOB operators, measured at
+    about 1.0 s, is pinned here under 3 s."""
+    import time
+
+    from src.analytics import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    out = chat_mod._tool_query_database(
+        "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r) SELECT count(*) AS n FROM r")
+    first, _, rest = out["error"].partition(". ")
+    assert first == "SQL error: the query exceeded the 250 ms budget; simplify it", out
+    assert rest.startswith("If it reads many rows: filter by a date range first") and "regimes.date" in rest, out
+    t = time.perf_counter()
+    out = chat_mod._tool_query_database(_glob_chain())
+    elapsed = time.perf_counter() - t
+    assert out["error"].startswith("SQL error: the query exceeded the 250 ms budget"), out
+    assert 0.25 < elapsed < 3.0, elapsed
+
+
+# ── desk/hardening, round 27: the free-form SQL tool ships disabled ──────────
+
+class _FakeUsage:
+    input_tokens, output_tokens = 100, 10
+    cache_creation_input_tokens = cache_read_input_tokens = 0
+
+
+class _FakeToolUse:
+    type = "tool_use"
+
+    def __init__(self, name: str, args: dict) -> None:
+        self.name, self.id, self.input = name, "toolu_1", args
+
+    def model_dump(self) -> dict:
+        return {"type": "tool_use", "id": self.id, "name": self.name, "input": self.input}
+
+
+class _FakeText:
+    type = "text"
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def model_dump(self) -> dict:
+        return {"type": "text", "text": self.text}
+
+
+class _FakeFinal:
+    def __init__(self, stop_reason: str, content: list) -> None:
+        self.stop_reason, self.content, self.usage, self.model = stop_reason, content, _FakeUsage(), "claude"
+
+
+class _FakeStream:
+    def __init__(self, final: _FakeFinal) -> None:
+        self.final = final
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def __iter__(self):
+        return iter(())
+
+    def get_final_message(self):
+        return self.final
+
+
+class _FakeClient:
+    """Records each call's tools and messages; asks for query_database first, then answers."""
+
+    def __init__(self) -> None:
+        self.messages, self.calls = self, []
+
+    def stream(self, **kwargs):
+        self.calls.append({"tools": [t["name"] for t in kwargs["tools"]], "messages": list(kwargs["messages"])})
+        if len(self.calls) == 1:
+            return _FakeStream(_FakeFinal("tool_use", [_FakeToolUse("query_database", {"sql": "SELECT COUNT(*) AS n FROM regimes"})]))
+        return _FakeStream(_FakeFinal("end_turn", [_FakeText("done")]))
+
+
+def _agent_run(monkeypatch):
+    from src.analytics import chat as chat_mod
+
+    client = _FakeClient()
+    agent = chat_mod.MacroRadarAgent.__new__(chat_mod.MacroRadarAgent)
+    agent.client, agent.model = client, chat_mod.MODEL
+    monkeypatch.setattr(chat_mod, "_build_state_snapshot", lambda: "snapshot")
+    list(agent.ask_streaming("How many regime months are stored?"))
+    result = [b for m in client.calls[1]["messages"] if m["role"] == "user" and isinstance(m["content"], list)
+              for b in m["content"] if b.get("type") == "tool_result"]
+    return client, result
+
+
+def test_the_free_form_sql_tool_is_off_unless_its_variable_turns_it_on(tmp_path, monkeypatch):
+    """Round 27: the free-form query tool ships disabled. With ASSISTANT_FREEFORM_SQL
+    unset, the model is not offered query_database, a request naming it is refused
+    without running any SQL, and the seven fixed-SQL tools stay. Only 1, true, yes
+    or on turn it on, and then the tool is offered and dispatched through its guard.
+    On the staged code the tool was always offered and ran."""
+    from src.analytics import chat as chat_mod
+
+    fixed = ["get_current_regime", "get_signal_status", "get_recession_probability", "get_credit_snapshot",
+             "get_market_snapshot", "get_recent_headlines", "explain_current_view"]
+    monkeypatch.setattr(chat_mod, "DB_PATH", _scratch_db(tmp_path))
+    ran: list[str] = []
+    real = chat_mod._tool_query_database
+    monkeypatch.setitem(chat_mod._TOOL_IMPLS, "query_database", lambda sql: ran.append(sql) or real(sql))
+
+    for value in (None, "", "0", "false", "off", "no", "2"):
+        if value is None:
+            monkeypatch.delenv("ASSISTANT_FREEFORM_SQL", raising=False)
+        else:
+            monkeypatch.setenv("ASSISTANT_FREEFORM_SQL", value)
+        assert not chat_mod.freeform_sql_enabled(), value
+        assert [t["name"] for t in chat_mod.active_tools()] == fixed, value
+        client, result = _agent_run(monkeypatch)
+        assert client.calls[0]["tools"] == fixed and client.calls[1]["tools"] == fixed, value  # offered to the model
+        assert len(result) == 1 and result[0]["is_error"] is True, result
+        assert "The query_database tool is not enabled on this server" in result[0]["content"], result
+    assert ran == [], "a refused request ran SQL"
+    assert "query_database" not in chat_mod.SYSTEM_PROMPT_TEMPLATE  # the prompt names no tool it may not offer
+
+    for value in ("1", "true", "YES", " on "):
+        monkeypatch.setenv("ASSISTANT_FREEFORM_SQL", value)
+        assert chat_mod.freeform_sql_enabled(), value
+        client, result = _agent_run(monkeypatch)
+        assert client.calls[0]["tools"] == ["query_database"] + fixed, value
+        assert result[0]["is_error"] is False and '"n": 1' in result[0]["content"], result
+    assert ran == ["SELECT COUNT(*) AS n FROM regimes"] * 4

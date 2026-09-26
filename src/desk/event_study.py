@@ -25,6 +25,20 @@ tests/test_event_study.py and mapped in docs/desk/EVENT_STUDY_REPORT.md §9:
   Z_WINDOW − Z_MIN_PRESENT missing moves (bond-market holidays).
 - Valid prices (R-17): before any log, a non-finite or non-positive value is
   an exclusion with a reason, counted per series, for events and baseline.
+- As-of (desk/hardening review R-06): the series reader reads no row dated
+  after the as-of, an explicit date, else the generation's (the New York date
+  its copy was staged, api/worker.Generation.as_of), else today in New York;
+  in a desk_series store with provenance (Codex R-14, R-15, api/provenance.py)
+  it reads only rows a committed refresh wrote, dated no later than that
+  run's New York date, and sets aside a row without provenance as
+  hand-inserted; what it leaves out is counted per series, disclosed and
+  hashed.
+- Stored values (verifier V-14): the reader reads only numeric stored values;
+  a malformed one (text in the value column) is quarantined on read,
+  excluded from the study and counted, disclosed and hashed like a future-
+  dated row, so no single junk row can take the Desk down. The same holds for
+  the date column (verifier V-22): a row whose date is not a valid ISO date
+  (not YYYY-MM-DD text, or no such day) is set aside on read the same way.
 - One evaluability mask (R-05): a session is evaluable when the shock's
   z-score exists, the co-condition is computable, the target has a value and
   the lagged regime label exists. Events and the baseline both use it; every
@@ -37,8 +51,10 @@ tests/test_event_study.py and mapped in docs/desk/EVENT_STUDY_REPORT.md §9:
   calendar's open and close (early closes handled). FRED daily Treasury and
   OAS values are known at the next session's open. Entry is the event date's
   close only when the target's value is fixed at or after every input is
-  known; otherwise the next session. Gold and copper as targets always enter
-  the next session.
+  known; otherwise the first later session whose fixing is (the next session
+  for every input but WTI, which EIA publishes weekly and is known at 13:00 ET
+  on the eighth business day after its date: the eighth session, desk/hardening
+  review R-01). Gold and copper as targets always enter a later session.
 - Cooldown: sessions i+1 … i+w after an event at i. The shock defines the
   event date; the condition is evaluated on it; a shock whose condition fails
   is dropped and still starts the cooldown. Every filtering stage is
@@ -307,21 +323,101 @@ def _connect(db_path: Path | str) -> sqlite3.Connection:
     return dbpath.connect_ro(db_path)
 
 
-def load_level(conn: sqlite3.Connection, spec: registry.DeskSeries) -> pd.Series:
-    """A stored level series on a DatetimeIndex, or NotStored."""
+def resolve_as_of(as_of: str | None = None, db_path: Path | str | None = None) -> str:
+    """The date after which a stored row is future-dated and never read (review
+    R-06): `as_of` when given; else the as-of of the generation a read of
+    `db_path` uses (the pinned one, or the served one: the New York date its
+    copy was staged); else today's New York date, for a script or a test
+    reading a file directly."""
+    if as_of:
+        return str(as_of)[:10]
+    gen = dbpath.generation_for(db_path if db_path is not None else DB_PATH)
+    if gen is None:
+        gen = dbpath.pinned_generation()
+    gen_as_of = getattr(gen, "as_of", None) if gen is not None else None
+    if gen_as_of:
+        return str(gen_as_of)[:10]
+    return pd.Timestamp.now(tz=NY).strftime("%Y-%m-%d")
+
+
+NUMERIC = "IN ('real', 'integer')"  # SQLite storage classes a stored level may have (V-14)
+# a stored date the reader can take: ISO-shaped text (V-22) on or after the floor (V-26: pandas and
+# the XNYS calendar cannot build a session index for year 0 or the year 1000; the registry's
+# earliest declared start is 1962); whether it is a real day is checked on parse. The floor is one
+# constant, api/freshness.DESK_DATE_FLOOR, which validate_db reads too (Codex round 4); that
+# module is stdlib-only, so importing it costs the engine nothing.
+from api import provenance  # noqa: E402
+from api.freshness import DESK_DATE_FLOOR as DATE_FLOOR  # noqa: E402
+ISO_DATE = f"(typeof(date) = 'text' AND date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND date >= '{DATE_FLOOR}')"
+
+
+def load_level(conn: sqlite3.Connection, spec: registry.DeskSeries, as_of: str | None = None) -> pd.Series:
+    """A stored level series on a DatetimeIndex, or NotStored. No row dated
+    after the as-of is read (review R-06), and no stored value that is not a
+    number (verifier V-14: text in the value column made float() raise and
+    took the assets list, and every free-form study, down), and no row whose
+    date is not a valid ISO date on or after DATE_FLOOR (verifiers V-22,
+    V-26, the same fault in the date column). Each row counts in exactly one
+    bucket, tested in this order (V-28): a date that is not ISO-shaped text on
+    or after the floor is malformed; else, in a desk_series store with
+    provenance, one no committed refresh wrote has no provenance (Codex R-14,
+    the hand-inserted class); else one dated after the as-of, or after the
+    New York date of the run that committed it, is future-dated; else one
+    whose value is not a number is non-numeric; else
+    one whose date names no real day ('1999-99-99', '2010-02-30') is
+    malformed. So '9999-99-99' counts as future-dated and '2010-02-30' with a
+    text value as non-numeric; validate_db, which judges date and value apart,
+    can count such a row under both. How many of each were left out is in
+    `.attrs["malformed_date_excluded"]`, `["no_provenance_excluded"]`,
+    `["future_excluded"]` (of which `["after_run_excluded"]` were dated after
+    their run's New York date, those dates in `["after_run_dates"]`) and
+    `["non_numeric_excluded"]`."""
+    cutoff = resolve_as_of(as_of)
+    prov = False
+    # Codex R-27: the schema is read fail-closed. A table is missing only when a read that
+    # completed says so, and a store is read without provenance only when one says the
+    # columns are absent; a read that keeps failing raises provenance.SchemaCheckFailed
+    if not provenance.table_exists(conn, spec.table):
+        raise not_stored(spec, table_missing=True)
     if spec.table == "asset_prices":
-        sql, arg = "SELECT date, close FROM asset_prices WHERE symbol = ? AND interval = '1d' ORDER BY date", spec.series_id
+        where, arg, col = "FROM asset_prices WHERE symbol = ? AND interval = '1d'", spec.series_id, "close"
     else:
-        sql, arg = "SELECT date, value FROM desk_series WHERE series_id = ? ORDER BY date", spec.series_id
-    try:
-        rows = conn.execute(sql, (arg,)).fetchall()
-    except sqlite3.OperationalError:  # the table does not exist in this database
-        rows = None
+        prov = provenance.is_migrated(conn)
+        where = (f"FROM desk_series d {provenance.COMMITTED_JOIN} WHERE d.series_id = ?" if prov
+                 else "FROM desk_series WHERE series_id = ?")
+        arg, col = spec.series_id, "value"
+    committed = " AND r.run_id IS NOT NULL" if prov else ""  # R-14: a committed refresh wrote it
+    in_run = " AND date <= r.as_of" if prov else ""          # and it is not dated after that run's day
+    # R-27: no query error is read as "no rows": it raises (a missing table was ruled out above)
+    rows = conn.execute(f"SELECT date, {col} {where} AND {ISO_DATE} AND date <= ?{committed}{in_run} AND typeof({col}) {NUMERIC} "
+                        "ORDER BY date", (arg, cutoff)).fetchall()
+    misshapen = conn.execute(f"SELECT COUNT(*) {where} AND NOT {ISO_DATE}", (arg,)).fetchone()[0]
+    unprovenanced = conn.execute(f"SELECT COUNT(*) {where} AND {ISO_DATE} AND r.run_id IS NULL", (arg,)).fetchone()[0] if prov else 0
+    future = conn.execute(f"SELECT COUNT(*) {where} AND {ISO_DATE}{committed} AND date > ?", (arg, cutoff)).fetchone()[0]
+    after_run = conn.execute(f"SELECT COUNT(*), GROUP_CONCAT(DISTINCT r.as_of) {where} AND {ISO_DATE}{committed} AND date <= ? "
+                             "AND date > r.as_of", (arg, cutoff)).fetchone() if prov else (0, None)
+    junk = conn.execute(f"SELECT COUNT(*) {where} AND {ISO_DATE} AND date <= ?{committed}{in_run} AND typeof({col}) NOT {NUMERIC}",
+                        (arg, cutoff)).fetchone()[0]
+    if rows:
+        # ISO-shaped but no such day ('1999-99-99', '2010-02-30'): set aside too (V-22)
+        dates = pd.to_datetime(pd.Index([r[0] for r in rows]), format="%Y-%m-%d", errors="coerce")
+        ok = ~pd.isna(dates)
+        impossible = int((~ok).sum())
+        rows = [r for r, good in zip(rows, ok) if good]
+        dates = dates[ok]
+    else:
+        impossible = 0
     if not rows:
         raise not_stored(spec, table_missing=rows is None)
-    idx = pd.DatetimeIndex([r[0] for r in rows])
-    s = pd.Series([float(r[1]) for r in rows], index=idx, name=spec.key).sort_index()
-    return s[~s.index.duplicated(keep="last")]
+    s = pd.Series([float(r[1]) for r in rows], index=pd.DatetimeIndex(dates), name=spec.key).sort_index()
+    s = s[~s.index.duplicated(keep="last")]
+    s.attrs["malformed_date_excluded"] = int(misshapen) + impossible
+    s.attrs["no_provenance_excluded"] = int(unprovenanced)
+    s.attrs["future_excluded"] = int(future) + int(after_run[0])
+    s.attrs["after_run_excluded"] = int(after_run[0])
+    s.attrs["after_run_dates"] = sorted(set((after_run[1] or "").split(",")) - {""})
+    s.attrs["non_numeric_excluded"] = int(junk)
+    return s
 
 
 def not_stored(spec: registry.DeskSeries, *, table_missing: bool) -> NotStored:
@@ -336,7 +432,7 @@ def not_stored(spec: registry.DeskSeries, *, table_missing: bool) -> NotStored:
                f"{name} is awaiting the next full refresh: this database has no {spec.series_id} rows in {spec.table} yet.")
         return NotStored(msg, series=spec.key, awaiting_refresh=True)
     return NotStored(f"{name} is not stored in this database: it is a tier {spec.tier} series, and the full refresh "
-                     f"stores tier {registry.REFRESH_TIER} only.", series=spec.key)
+                     f"stores tiers up to {registry.REFRESH_TIER} only.", series=spec.key)
 
 
 def load_regimes(conn: sqlite3.Connection) -> pd.Series:
@@ -403,21 +499,26 @@ def sessions_between(cal, start: str, end: str) -> pd.DatetimeIndex:
 
 @dataclass
 class SessionClock:
-    """Per-session open, close and next open (UTC), from the calendar."""
+    """Per-session open, close and next open (UTC), from the calendar, and
+    where each session sits in it (a `session_clock` rule reads a session n
+    places later, review R-01)."""
     sessions: pd.DatetimeIndex
     opens: pd.DatetimeIndex
     closes: pd.DatetimeIndex
     next_opens: pd.DatetimeIndex
+    cal: Any = None
+    positions: np.ndarray | None = None
+    all_sessions: pd.DatetimeIndex | None = None
 
 
 def clock_for(cal, sessions: pd.DatetimeIndex) -> SessionClock:
     """The clock for these sessions; a date the calendar does not know as a
     session is rejected (R-02: never regular hours by assumption)."""
     sessions = pd.DatetimeIndex(sessions).as_unit("ns")  # one resolution for every epoch comparison (pandas 3 units)
+    all_sessions = pd.DatetimeIndex(cal.sessions).tz_localize(None).as_unit("ns")
     if len(sessions) == 0:
         empty = pd.DatetimeIndex([], tz="UTC")
-        return SessionClock(sessions, empty, empty, empty)
-    all_sessions = pd.DatetimeIndex(cal.sessions).tz_localize(None).as_unit("ns")
+        return SessionClock(sessions, empty, empty, empty, cal, np.zeros(0, dtype=int), all_sessions)
     pos = all_sessions.get_indexer(sessions)
     if (pos < 0).any():
         bad = sessions[pos < 0][0].strftime("%Y-%m-%d")
@@ -427,7 +528,7 @@ def clock_for(cal, sessions: pd.DatetimeIndex) -> SessionClock:
     opens = pd.DatetimeIndex(cal.opens.to_numpy()[pos], tz="UTC").as_unit("ns")
     closes = pd.DatetimeIndex(cal.closes.to_numpy()[pos], tz="UTC").as_unit("ns")
     next_opens = pd.DatetimeIndex(cal.opens.to_numpy()[pos + 1], tz="UTC").as_unit("ns")
-    return SessionClock(sessions, opens, closes, next_opens)
+    return SessionClock(sessions, opens, closes, next_opens, cal, pos, all_sessions)
 
 
 def when_vec(rule: registry.Rule, clock: SessionClock) -> pd.DatetimeIndex:
@@ -437,20 +538,48 @@ def when_vec(rule: registry.Rule, clock: SessionClock) -> pd.DatetimeIndex:
     if anchor == "clock":
         wall = (clock.sessions + delta).tz_localize(NY, ambiguous=False, nonexistent="shift_forward")
         return wall.tz_convert("UTC").as_unit("ns")
+    if anchor == "session_clock":
+        # the clock time on the n-th calendar session after each date (review R-01)
+        n, minutes = divmod(off, 1440)
+        ahead = clock.positions + n
+        if len(ahead) and ahead.max() >= len(clock.all_sessions):
+            raise StudyError(f"the {CALENDAR} calendar ends before the {n}th session after {clock.sessions[-1].date()}")
+        day = clock.all_sessions[ahead] if len(ahead) else clock.sessions
+        wall = (day + pd.Timedelta(minutes=minutes)).tz_localize(NY, ambiguous=False, nonexistent="shift_forward")
+        return wall.tz_convert("UTC").as_unit("ns")
     base = {"open": clock.opens, "close": clock.closes, "next_open": clock.next_opens}[anchor]
     return (base + delta).as_unit("ns")
 
 
-def same_session_vec(inputs: list[registry.DeskSeries], target: registry.DeskSeries, clock: SessionClock) -> np.ndarray:
-    """Per session: enter at that session's close (True) or the next (False):
-    the target's value must be fixed at or after every input is known (R-02);
-    a target whose fixing time is ambiguous always defers (R-03)."""
+MAX_ENTRY_DELAY = 15  # sessions; WTI's eighth-business-day rule is the longest declared (review R-01)
+
+
+def entry_delay_vec(inputs: list[registry.DeskSeries], target: registry.DeskSeries, clock: SessionClock) -> np.ndarray:
+    """Per session: how many sessions after it the target is entered, the
+    first session whose fixing of the target is at or after every input is
+    known (R-02), and never the same session for a target whose fixing time
+    is ambiguous (R-03). An input known by the next open gives 0 or 1; WTI,
+    known at 13:00 ET on the eighth business day after its date, gives 8
+    (desk/hardening review R-01). Events and baseline take the same delay."""
     n = len(clock.sessions)
-    if target.defer_as_target or n == 0:
-        return np.zeros(n, dtype=bool)
-    fixed = when_vec(target.fixed, clock).asi8
+    if n == 0:
+        return np.zeros(0, dtype=int)
     known = np.max(np.stack([when_vec(s.known, clock).asi8 for s in inputs]), axis=0)
-    return fixed >= known
+    delay = np.full(n, -1, dtype=int)
+    for d in range(1 if target.defer_as_target else 0, MAX_ENTRY_DELAY + 1):
+        todo = delay < 0
+        if not todo.any():
+            break
+        ahead = clock if d == 0 else clock_for(clock.cal, clock.all_sessions[clock.positions + d])
+        delay[todo & (when_vec(target.fixed, ahead).asi8 >= known)] = d
+    if (delay < 0).any():
+        raise StudyError(f"{target.label} has no fixing within {MAX_ENTRY_DELAY} sessions of its inputs being known")
+    return delay
+
+
+def same_session_vec(inputs: list[registry.DeskSeries], target: registry.DeskSeries, clock: SessionClock) -> np.ndarray:
+    """Per session: enter at that session's close (True) or a later one (False)."""
+    return entry_delay_vec(inputs, target, clock) == 0
 
 
 def when(rule: registry.Rule, sessions: pd.DatetimeIndex, pos: int):
@@ -900,10 +1029,13 @@ def _series_meta(key: str, raw: pd.Series, off: int, missing: int, invalid: int,
     }
 
 
-def _inputs_hash(q: Query, metas: list[dict], months: pd.Series, generation: Any, horizons: list[dict]) -> str:
+def _inputs_hash(q: Query, metas: list[dict], months: pd.Series, generation: Any, horizons: list[dict],
+                 future_excluded: dict[str, int] | None = None, non_numeric_excluded: dict[str, int] | None = None,
+                 malformed_date_excluded: dict[str, int] | None = None, no_provenance_excluded: dict[str, int] | None = None) -> str:
     """R-09: the data generation id, the content hash of every input series
     and of the regime table, every effective parameter, the timing rules and
-    the resampling method and draws per horizon."""
+    the resampling method and draws per horizon, and the rows the as-of left
+    out (R-06; absent when none, so a clean store hashes as before)."""
     payload = {
         "generation": str(generation),
         "params": asdict(q),
@@ -916,36 +1048,49 @@ def _inputs_hash(q: Query, metas: list[dict], months: pd.Series, generation: Any
                    "min_blocks_interval": MIN_BLOCKS_INTERVAL, "min_blocks_exclusion": MIN_BLOCKS_EXCLUSION,
                    "opposite_sign_max": OPPOSITE_SIGN_MAX, "master": MASTER},
     }
+    if future_excluded:
+        payload["future_excluded"] = dict(sorted(future_excluded.items()))
+    if non_numeric_excluded:  # V-14; absent when none, so a clean store hashes as before
+        payload["non_numeric_excluded"] = dict(sorted(non_numeric_excluded.items()))
+    if malformed_date_excluded:  # V-22; the same
+        payload["malformed_date_excluded"] = dict(sorted(malformed_date_excluded.items()))
+    if no_provenance_excluded:  # Codex R-14; the same
+        payload["no_provenance_excluded"] = dict(sorted(no_provenance_excluded.items()))
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
-def run(q: Query, db_path: Path | str = DB_PATH, *, n_boot: int = N_BOOT) -> dict:
+def run(q: Query, db_path: Path | str = DB_PATH, *, n_boot: int = N_BOOT, as_of: str | None = None) -> dict:
     """Run one study against the stored data. JSON-safe dict."""
+    cutoff = resolve_as_of(as_of, db_path)
     conn = _connect(db_path)
     try:
-        return run_on(conn, q, generation=dbpath.current_key(db_path), n_boot=n_boot)
+        return run_on(conn, q, generation=dbpath.current_key(db_path), n_boot=n_boot, as_of=cutoff)
     finally:
         conn.close()
 
 
-def run_on(conn: sqlite3.Connection, q: Query, *, generation: Any, n_boot: int = N_BOOT) -> dict:
+def run_on(conn: sqlite3.Connection, q: Query, *, generation: Any, n_boot: int = N_BOOT, as_of: str | None = None) -> dict:
     """Run one study on a given connection (the API leases a generation's
-    copy and hands it here, R-16)."""
+    copy and hands it here with the generation's as-of, R-16, R-06)."""
     raw_cv = q.cond_value
     q = validate(q)
     clamped = (isinstance(q.cond_value, float) and raw_cv is not None and not isinstance(raw_cv, str)
                and abs(float(raw_cv)) > COND_VALUE_BOUND)
-    return _run(q, conn, n_boot=n_boot, generation=generation, clamped=clamped)
+    return _run(q, conn, n_boot=n_boot, generation=generation, clamped=clamped, as_of=resolve_as_of(as_of))
 
 
-def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, clamped: bool = False) -> dict:
+def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, clamped: bool = False, as_of: str) -> dict:
     target_spec = registry.get(q.target)
     shock_spec = registry.get(q.shock)
     cond_meta = CONDITIONS.get(q.cond or "") if q.kind == "shock" else None
     keys = {q.target, q.shock}
     if cond_meta and cond_meta["series"]:
         keys.add(cond_meta["series"])
-    raw = {k: load_level(conn, registry.get(k)) for k in sorted(keys)}
+    raw = {k: load_level(conn, registry.get(k), as_of) for k in sorted(keys)}
+    future_excluded = {k: s.attrs.get("future_excluded", 0) for k, s in raw.items() if s.attrs.get("future_excluded", 0)}
+    non_numeric = {k: s.attrs.get("non_numeric_excluded", 0) for k, s in raw.items() if s.attrs.get("non_numeric_excluded", 0)}
+    malformed = {k: s.attrs.get("malformed_date_excluded", 0) for k, s in raw.items() if s.attrs.get("malformed_date_excluded", 0)}
+    unprovenanced = {k: s.attrs.get("no_provenance_excluded", 0) for k, s in raw.items() if s.attrs.get("no_provenance_excluded", 0)}
     months = load_regimes(conn)
 
     # the session calendar over the whole span of the inputs (R-04, R-02)
@@ -1025,15 +1170,16 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
 
     # entry (R-01, R-02, R-03): the same delay for events and baseline candidates (R-05)
     inputs = [shock_spec] + ([registry.get(cond_meta["series"])] if cond_meta and cond_meta["series"] else [])
-    same_all = same_session_vec(inputs, target_spec, clock)
+    delay_all = entry_delay_vec(inputs, target_spec, clock)
 
     def entries_for(pos: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        same = same_all[pos] if len(pos) else np.zeros(0, dtype=bool)
-        ent = np.where(same, pos, pos + 1)
+        delay = delay_all[pos] if len(pos) else np.zeros(0, dtype=int)
+        ent = pos + delay
         has = ent < n_sessions
-        return np.where(has, ent, -1), same, has
+        return np.where(has, ent, -1), delay == 0, has
 
     entry, same, has_entry = entries_for(ev_pos)
+    ev_delay = delay_all[ev_pos] if len(ev_pos) else np.zeros(0, dtype=int)
     n_no_entry = int((~has_entry).sum())
     moves_by_h = {h: forward_moves(target, target_spec, entry, h) for h in HORIZONS}
     unl_entry, _, _ = entries_for(unl_pos)
@@ -1065,6 +1211,7 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
             "regime": str(labels[i]),
             "entry_date": sessions[entry[i]].strftime("%Y-%m-%d") if has_entry[i] else None,
             "same_session": bool(same[i]),
+            "entry_delay": int(ev_delay[i]),
             "moves": {str(h): (None if np.isnan(moves_by_h[h][i]) else float(moves_by_h[h][i])) for h in HORIZONS},
         })
     recent.reverse()
@@ -1077,6 +1224,14 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
         sample_start=sample_start, sample_end=sample_end, n_events=n_events, n_raw=n_raw, w=w,
         shock_label=shock_spec.label, target_label=target_spec.label, stages=stages,
     )
+    # review R-01: an input known sessions after its date says so, and what it does to the entry
+    for spec in inputs:
+        if spec.known[0] == "session_clock" and len(ev_delay):
+            lo, hi = int(ev_delay.min()), int(ev_delay.max())
+            span = f"{lo} sessions" if lo == hi else f"{lo} to {hi} sessions"
+            sentences.append(f"{spec.label} is taken as known at {registry.rule_str(spec.known)}"
+                             + (f" ({spec.known_note})" if spec.known_note else "")
+                             + f", so each event enters {target_spec.label} {span} after its date; the baseline takes the same delay.")
     warnings = [f"{m['label']}: history from {m['history_from']} (after {registry.HISTORY_BAR[:4]})" for m in metas if m["warn"]]
     if (q.kind == "shock" and q.cond == "regime") or q.regime != "all":
         warnings.append(f"a regime condition or filter limits the sample to sessions with a lagged label ({sample_start.date()} to {sample_end.date()}).")
@@ -1089,6 +1244,26 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
     bad = {m["key"]: (m["invalid_values"], m["invalid_reason"]) for m in metas if m["invalid_values"]}
     if bad:
         warnings.append("invalid values excluded: " + ", ".join(f"{k} {v} ({why})" for k, (v, why) in sorted(bad.items())) + ".")
+    if future_excluded:
+        # R-14, R-15: a row not after the as-of but after the New York date of the refresh that
+        # committed it is named with that date
+        after_as_of = {k: n - raw[k].attrs.get("after_run_excluded", 0) for k, n in future_excluded.items()}
+        after_as_of = {k: n for k, n in after_as_of.items() if n}
+        after_run = {k: raw[k].attrs["after_run_excluded"] for k in future_excluded if raw[k].attrs.get("after_run_excluded", 0)}
+        if after_as_of:
+            warnings.append(f"rows dated after {as_of} excluded: " + ", ".join(f"{k} {n}" for k, n in sorted(after_as_of.items())) + ".")
+        if after_run:
+            warnings.append("rows dated after the New York date of the refresh that stored them excluded: "
+                            + ", ".join(f"{k} {n} (after {', '.join(raw[k].attrs['after_run_dates'])})" for k, n in sorted(after_run.items())) + ".")
+    if unprovenanced:
+        warnings.append("stored rows no committed refresh wrote (no provenance) set aside on read and excluded: "
+                        + ", ".join(f"{k} {n}" for k, n in sorted(unprovenanced.items())) + ".")
+    if non_numeric:
+        warnings.append("non-numeric stored values quarantined on read and excluded: "
+                        + ", ".join(f"{k} {n}" for k, n in sorted(non_numeric.items())) + ".")
+    if malformed:
+        warnings.append("stored rows with a malformed date set aside on read and excluded: "
+                        + ", ".join(f"{k} {n}" for k, n in sorted(malformed.items())) + ".")
     if clamped:
         warnings.append(f"cond_value was clamped to ±{COND_VALUE_BOUND:g}.")
     known_rules = sorted({f"{s.label}: {registry.rule_str(s.known)}" for s in inputs})
@@ -1132,7 +1307,10 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
             "baseline_no_entry": int((~base_has).sum()),
             "stages": stages,
             "exclusions": {m["key"]: {"off_session": m["off_session_dropped"], "missing_sessions": m["missing_sessions"],
-                                      "invalid_values": m["invalid_values"], "invalid_reason": m["invalid_reason"]} for m in metas},
+                                      "invalid_values": m["invalid_values"], "invalid_reason": m["invalid_reason"],
+                                      "non_numeric": int(raw[m["key"]].attrs.get("non_numeric_excluded", 0)),
+                                      "malformed_date": int(raw[m["key"]].attrs.get("malformed_date_excluded", 0)),
+                                      "no_provenance": int(raw[m["key"]].attrs.get("no_provenance_excluded", 0))} for m in metas},
             "event_rule": ("the shock defines the event date; the condition is evaluated on that date and a shock whose condition "
                            "fails is dropped and still starts the cooldown (stages: threshold → cooldown → evaluable → condition → "
                            "regime filter → entry → complete window per horizon)" if q.kind == "shock" else
@@ -1148,7 +1326,12 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
                           f"and fewer than {OPPOSITE_SIGN_MAX:.0%} of resampled medians adverse (zero counts as adverse)"),
             "z_window": Z_WINDOW if q.kind == "shock" else None,
             "z_min_present": Z_MIN_PRESENT if q.kind == "shock" else None,
-            "inputs_hash": _inputs_hash(q, metas, months, generation, horizons),
+            "inputs_hash": _inputs_hash(q, metas, months, generation, horizons, future_excluded, non_numeric, malformed, unprovenanced),
+            "as_of_cutoff": as_of,
+            "future_excluded": dict(sorted(future_excluded.items())),
+            "non_numeric_excluded": dict(sorted(non_numeric.items())),
+            "malformed_date_excluded": dict(sorted(malformed.items())),
+            "no_provenance_excluded": dict(sorted(unprovenanced.items())),
             "generation": str(generation),
             "inputs": metas,
             "warnings": warnings,
@@ -1166,10 +1349,12 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
             "regimes_first": fl.strftime("%Y-%m-%d") if fl is not None else None,
             "regimes_last": ll.strftime("%Y-%m-%d") if ll is not None else None,
             "entry_rule": (f"the target's close on the event date only when its value is fixed ({registry.rule_str(target_spec.fixed)}) at or after "
-                           f"every input is known ({'; '.join(known_rules)}), resolved per session against the {CALENDAR} open and close; else the next session's close"
-                           + ("; this target's fixing time is ambiguous, so entry is always the next session" if target_spec.defer_as_target else "")
+                           f"every input is known ({'; '.join(known_rules)}), resolved per session against the {CALENDAR} open and close; else the first "
+                           "later session whose fixing is"
+                           + ("; this target's fixing time is ambiguous, so entry is never the event's own session" if target_spec.defer_as_target else "")
                            + "; the baseline takes the same delay"),
             "entry_same_session": bool(same.all()) if len(same) else None,
+            "entry_delay_sessions": sorted({int(x) for x in ev_delay}),
             "forward_rule": "close at entry to close h sessions later; a window whose entry or exit session is missing is excluded, not truncated, and counted; the baseline is every evaluable session under the same rule",
             "hit_rate_rule": "share of forward moves > 0 in the target's unit; never sign-flipped by the engine",
         },
@@ -1180,19 +1365,50 @@ def assets() -> dict:
     return assets_with_coverage(None)
 
 
-def assets_with_coverage(db_path: Path | str | None) -> dict:
+def _exclusion_warnings(ex: dict[str, int], cutoff: str, after_run: int = 0, after_run_dates: list[str] | None = None) -> list[str]:
+    """The reader's exclusions for one series, in the words a study's warnings use (Codex R-12).
+    `after_run` of the future-dated rows were dated after the New York date of the refresh that
+    committed them, `after_run_dates` (R-14, R-15), the effective cutoff for those rows."""
+    out = []
+    n = ex.get("future", 0) - after_run
+    if n:
+        out.append(f"{n} stored row{'s' if n != 1 else ''} dated after {cutoff} excluded")
+    if after_run:
+        out.append(f"{after_run} stored row{'s' if after_run != 1 else ''} dated after {', '.join(after_run_dates or [])}, "
+                   f"the New York date of the refresh that stored {'them' if after_run != 1 else 'it'}, excluded")
+    n = ex.get("no_provenance", 0)
+    if n:
+        out.append(f"{n} stored row{'s' if n != 1 else ''} no committed refresh wrote (no provenance) set aside on read")
+    n = ex.get("non_numeric", 0)
+    if n:
+        out.append(f"{n} non-numeric stored value{'s' if n != 1 else ''} quarantined on read")
+    n = ex.get("malformed_date", 0)
+    if n:
+        out.append(f"{n} stored row{'s' if n != 1 else ''} with a malformed date set aside on read")
+    return out
+
+
+def assets_with_coverage(db_path: Path | str | None, as_of: str | None = None) -> dict:
     coverage: dict[str, dict] = {}
     if db_path is not None:
+        cutoff = resolve_as_of(as_of, db_path)
         conn = _connect(db_path)
         try:
             for spec in registry.SERIES:
                 if not spec.available:
                     continue
                 try:
-                    s = load_level(conn, spec)
+                    s = load_level(conn, spec, cutoff)
                 except NotStored:
                     continue
-                coverage[spec.key] = {"history_from": s.index[0].strftime("%Y-%m-%d"), "last": s.index[-1].strftime("%Y-%m-%d"), "rows": int(len(s))}
+                # Codex R-12: what the reader left out, carried into the asset's coverage
+                ex = {"future": int(s.attrs.get("future_excluded", 0)), "non_numeric": int(s.attrs.get("non_numeric_excluded", 0)),
+                      "malformed_date": int(s.attrs.get("malformed_date_excluded", 0)),
+                      "no_provenance": int(s.attrs.get("no_provenance_excluded", 0))}
+                coverage[spec.key] = {"history_from": s.index[0].strftime("%Y-%m-%d"), "last": s.index[-1].strftime("%Y-%m-%d"),
+                                      "rows": int(len(s)), "exclusions": ex,
+                                      "warnings": _exclusion_warnings(ex, cutoff, int(s.attrs.get("after_run_excluded", 0)),
+                                                                      s.attrs.get("after_run_dates"))}
         finally:
             conn.close()
 
@@ -1217,6 +1433,7 @@ def assets_with_coverage(db_path: Path | str | None) -> dict:
             "fixed": registry.rule_str(spec.fixed), "known": registry.rule_str(spec.known), "defer_as_target": spec.defer_as_target,
             "roles": list(spec.roles),
             "last": cov["last"] if cov else None, "rows": cov["rows"] if cov else None,
+            "exclusions": cov["exclusions"] if cov else None, "warnings": cov["warnings"] if cov else [],
             "note": spec.note, "reason": spec.reason,
         }
 

@@ -12,6 +12,11 @@ deadlocked the worker pool under a burst of concurrent requests (independent
 technical review, P0-1: 39 threads parked in SQLite's unix-VFS mutex). Call
 sites keep their `with closing(_connect())` shape; `close()` on the reused
 connection is a no-op and the real close happens on swap or thread exit.
+Thread exit (verifier V-51): each thread's connection lives in a
+`_ThreadConnection`, a context manager its thread's locals hold, which closes
+it when the thread ends. Before it, an exited thread's connection was left for
+the garbage collector, closed by whichever thread next ran a collection; inside
+a SQLite call on the same in-memory copy, that close waited for good.
 
 Generations (fix/prelaunch-1): when the API's worker has published one, reads
 go to its in-memory copy of the file instead (src/analytics/dbpath.py), the
@@ -59,7 +64,46 @@ class _ReusedConnection(sqlite3.Connection):
         super().close()
 
 
+class _ThreadConnection:
+    """One thread's connection and what it reads (a generation's uri, or the
+    file's key and path). Its thread's locals are its only owner, so when the
+    thread exits it goes with them and its exit closes the connection, in that
+    thread and outside any SQLite call (verifier V-51)."""
+
+    __slots__ = ("conn", "gen", "key", "path")
+
+    def __init__(self) -> None:
+        self.conn: _ReusedConnection | None = None
+        self.gen: str | None = None
+        self.key: tuple | None = None
+        self.path: str | None = None
+
+    def close(self) -> None:
+        conn, self.conn = self.conn, None
+        if conn is not None:
+            try:
+                conn.really_close()
+            except sqlite3.Error:
+                pass
+
+    def __enter__(self) -> "_ThreadConnection":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        self.__exit__(None, None, None)
+
+
 _local = threading.local()
+
+
+def _slot() -> _ThreadConnection:
+    slot = getattr(_local, "slot", None)
+    if slot is None:
+        slot = _local.slot = _ThreadConnection()
+    return slot
 
 
 def _file_key(path: Path) -> tuple[int, int, int]:
@@ -68,20 +112,15 @@ def _file_key(path: Path) -> tuple[int, int, int]:
 
 
 def _drop_local() -> None:
-    conn = getattr(_local, "conn", None)
-    if conn is not None:
-        try:
-            conn.really_close()
-        except sqlite3.Error:
-            pass
-    _local.conn = None
+    _slot().close()
 
 
 def _connect() -> sqlite3.Connection:
+    slot = _slot()
     gen = dbpath.generation_for(DB_PATH)
     if gen is not None:
-        conn = getattr(_local, "conn", None)
-        if conn is not None and getattr(_local, "gen", None) == gen.uri:
+        conn = slot.conn
+        if conn is not None and slot.gen == gen.uri:
             return conn
         _drop_local()
         conn = dbpath.open_generation(gen, factory=_ReusedConnection)
@@ -93,31 +132,32 @@ def _connect() -> sqlite3.Connection:
                 gen, conn = served, dbpath.open_generation(served, factory=_ReusedConnection)
         if conn is not None:
             conn.row_factory = sqlite3.Row
-            _local.conn, _local.gen, _local.key, _local.path = conn, gen.uri, None, None  # the uri is unique per worker and generation
+            slot.conn, slot.gen, slot.key, slot.path = conn, gen.uri, None, None  # the uri is unique per worker and generation
             return conn
     if not DB_PATH.exists():
         log.warning("database not found at %s", DB_PATH)
         raise DBUnavailable("The database is not available on this server.")
     key = _file_key(DB_PATH)
-    conn = getattr(_local, "conn", None)
-    if conn is not None and getattr(_local, "gen", None) is None and getattr(_local, "key", None) == key and getattr(_local, "path", None) == str(DB_PATH):
+    conn = slot.conn
+    if conn is not None and slot.gen is None and slot.key == key and slot.path == str(DB_PATH):
         return conn
     _drop_local()
-    _local.gen = None
+    slot.gen = None
     try:
         conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, factory=_ReusedConnection)
     except sqlite3.Error as exc:
         log.warning("database at %s cannot be opened read-only: %s", DB_PATH, exc)
         raise DBUnavailable("The database could not be opened on this server.") from exc
     conn.row_factory = sqlite3.Row
-    _local.conn, _local.key, _local.path = conn, key, str(DB_PATH)
+    slot.conn, slot.key, slot.path = conn, key, str(DB_PATH)
     return conn
 
 
 def reset_connections_for_tests() -> None:
     _drop_local()
-    _local.key = None
-    _local.gen = None
+    slot = _slot()
+    slot.key = None
+    slot.gen = None
 
 
 def latest_regime() -> dict | None:
@@ -667,6 +707,19 @@ _freshness_memo: dict[str, dict] = {}
 _FRESHNESS_MEMO_SLOTS = 3
 
 
+def _desk_as_of() -> str:
+    """The as-of the Desk's freshness reads up to: the generation's (the New York
+    date its copy was staged, api/worker.Generation.as_of), else today in New York."""
+    gen = dbpath.generation_for(DB_PATH)
+    as_of = getattr(gen, "as_of", None) if gen is not None else None
+    if as_of:
+        return str(as_of)[:10]
+    from api import calendar as cal
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).astimezone(cal.NY).date().isoformat()
+
+
 def freshness() -> dict:
     """Latest data timestamps per feed — for the shell's data-freshness line."""
     gen = dbpath.generation_for(DB_PATH)
@@ -704,13 +757,20 @@ def _freshness_uncached() -> dict:
         # The Desk's daily series (desk/event-study): the oldest newest
         # observation across the stored series; None before the table exists.
         has_desk = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='desk_series'").fetchone()
-        out["desk_series_date"] = conn.execute(
-            "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM desk_series GROUP BY series_id)"
-        ).fetchone()[0] if has_desk else None
+        # verifier V-27: over the rows the Desk's reader keeps (api/freshness.desk_readable_sql),
+        # up to the generation's as-of, never the raw MAX: a junk date that sorts last made a
+        # series read "not stored yet" and turned the drawer's tier-1 verdict stale
+        from api import freshness as freshness_mod
+
+        # Codex R-14, R-15: and, in a store with provenance, only rows a committed refresh wrote,
+        # dated on or before its New York date (api/provenance.py)
+        from api import provenance
+
         # Per series (desk/integration): the Data Pipeline inventory lists each
         # desk_series series with its own as-of. desk_series stores true
         # observation dates, never month stamps. None before the table exists.
-        out["desk_series_latest"] = {
-            r[0]: r[1] for r in conn.execute("SELECT series_id, MAX(date) FROM desk_series GROUP BY series_id")
-        } if has_desk else None
+        out["desk_series_latest"] = dict(conn.execute(*freshness_mod.desk_latest_query(
+            _desk_as_of(), provenance.is_migrated(conn))).fetchall()) if has_desk else None
+        # the oldest of those newest observations
+        out["desk_series_date"] = min(out["desk_series_latest"].values(), default=None) if has_desk else None
     return out
