@@ -12,7 +12,7 @@ import ledger from "../../../fixtures/desk/ledger.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { applyFilter } from "./LedgerPage";
+import { applyFilter, countable } from "./LedgerPage";
 
 const rows = ledger.signals as LedgerRow[];
 /** The fixture with the 2s10s row firing today on the comparison session (the real snapshot fires nothing). */
@@ -250,6 +250,20 @@ describe("Signal Ledger tab", () => {
     await waitFor(() => expect(stat("Signals scored")).toHaveTextContent(/Signals scored\s*Awaiting refresh/));
     for (const l of ["Firing now", "Reliable", "No edge"]) expect(stat(l)).toHaveTextContent(new RegExp(`${l}\\s*Awaiting refresh`));
     // An unavailable row needs neither a verdict nor a firing state: the fixture's four count as they are.
+  });
+
+  it("Codex R-30: one available row with firing_now null (stale false) leaves Firing now uncounted, Awaiting refresh", async () => {
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => (r.slug === "spx-5d-2sigma" ? { ...r, available: true, firing_now: null, stale: false } : r)) }) });
+    renderTab();
+    const stat = (label: string) => screen.getByText(label, { selector: ".dk-stat-label" }).parentElement!;
+    await waitFor(() => expect(stat("Firing now")).toHaveTextContent(/Firing now\s*Awaiting refresh/));
+    expect(stat("Firing now").querySelector(".dk-stat-value")).toBeNull();
+    expect(stat("Firing now")).not.toHaveTextContent(/none/);
+    // The verdict counts do not read the firing state: they still count.
+    expect(stat("Reliable")).toHaveTextContent(/Reliable\s*1/);
+    expect(countable(rows.map((r) => (r.slug === "spx-5d-2sigma" ? { ...r, firing_now: null } : r))).firing).toBe(false);
+    // An unavailable row's null state needs no boolean: the fixture as served counts.
+    expect(countable(rows).firing).toBe(true);
   });
 
   it("counts are green only above zero", async () => {

@@ -82,8 +82,8 @@ export interface LedgerRow {
   vs_normal?: number | null;
   /** Absent when the server sent a verdict the Desk does not know (the pill prints "—"). */
   verdict?: Verdict;
-  /** Absent when not served: the row claims neither firing nor quiet. */
-  firing_now?: boolean;
+  /** Absent when not served, null when not evaluable (§12.5): either way the row claims neither firing nor quiet. */
+  firing_now?: boolean | null;
   firing_day?: number | null;
   /** PROPOSED (§12.13): first session of the signal's sample, for "since 1990" / "since 2000". */
   sample_start: string | null;

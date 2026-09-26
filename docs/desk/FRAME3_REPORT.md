@@ -4580,6 +4580,31 @@ on its own:
 
 No compare shot changes: the fixture's tenors share both dates.
 
+## Codex round 4
+
+### R-30 — `frame-3: codex-4 fix R-30`
+
+Codex round 4 found one blocking issue. R-21's count let a null firing state
+pass as a "no", so one available row with `firing_now` null (not evaluable,
+§12.5) and `stale` false left Firing now counting the rest.
+
+**Changed.** `countable()` (`LedgerPage.tsx`) now counts firing only when
+every available row carries a boolean `firing_now` and a boolean `stale`;
+otherwise Firing now says "Awaiting refresh". An unavailable row still needs
+neither. `LedgerRow.firing_now` is typed nullable, as §12.5 and the schema
+already had it.
+
+**The Overview.** It counts nothing from `firing_now`: each active signal
+only marks itself firing (`firing_now` true and `stale` false), and its
+empty-list sentence reads the served list. So there is no aggregate to
+change.
+
+**Test.** `LedgerPage.test.tsx` runs Codex's repro: one available row with
+`firing_now` null and `stale` false. Firing now reads "Awaiting refresh" with
+no number and no "none", while Reliable still counts. `countable()` gives no
+firing count for that row set, and the fixture as served still counts. No
+compare shot changes.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -4626,6 +4651,7 @@ tests against the fixture dev server.
 | frame-3: codex-3 fixes | clean | 123 / 1,524 | ok | 54 / 54 |
 | frame-3: spec S-29–S-32 and fixes | clean | 123 / 1,530 | ok | 54 / 54 |
 | frame-3: S-30 today curve | clean | 123 / 1,531 | ok | 54 / 54 |
+| frame-3: codex-4 fix R-30 | clean | 123 / 1,532 | ok | 54 / 54 |
 
 ## Finish
 
@@ -4722,6 +4748,13 @@ report, `frame-3: S-30 today curve` (parent `055d47a`), local only. Nothing is
 pushed; your notes file and SVGs are left out. Round 8 is folded. Gate
 summary at that tip: typecheck clean; unit 123 files / 1,531 tests; build ok;
 Desk browser tests 54 / 54.
+
+After Codex round 4 (above): the tip is the commit that carries this report,
+`frame-3: codex-4 fix R-30` (parent `df349e3`), ready to push and open as a
+pull request to `main`, to merge after `desk/frame-3-docs` and before the API
+branches. Your notes file and SVGs are not in it. Gate summary at that tip:
+typecheck clean; unit 123 files / 1,532 tests; build ok; Desk browser tests
+54 / 54.
 
 For Max, from the fold and alignment:
 - **Spec conflicts to settle:** §12.2 makes the Client title the catalog

@@ -29,16 +29,17 @@ export const isAvailable = (r: LedgerRow) => r.available !== false;
 export const firingToday = (r: LedgerRow) => isAvailable(r) && r.firing_now === true && r.stale === false;
 
 /**
- * Codex R-21: which of the header's counts the rows can give. A count is read from the rows only when every
- * row carries the fields it counts (`available` for all; `firing_now` and `stale` for Firing now; `verdict`
- * for Reliable and No edge, an unavailable row needing none); otherwise it says Awaiting refresh.
+ * Codex R-21, R-30: which of the header's counts the rows can give. A count is read from the rows only when
+ * every row carries the fields it counts (`available` for all; a boolean `firing_now` and `stale` for Firing
+ * now, so a null firing state on any available row is not a "no"; `verdict` for Reliable and No edge, an
+ * unavailable row needing none); otherwise it says Awaiting refresh.
  */
 export function countable(rows: readonly LedgerRow[]): { rows: boolean; firing: boolean; verdicts: boolean } {
   const avail = rows.every((r) => typeof r.available === "boolean");
   const live = rows.filter((r) => r.available !== false);
   return {
     rows: avail,
-    firing: avail && live.every((r) => r.firing_now !== undefined && typeof r.stale === "boolean"),
+    firing: avail && live.every((r) => typeof r.firing_now === "boolean" && typeof r.stale === "boolean"),
     verdicts: avail && live.every((r) => typeof r.verdict === "string"),
   };
 }
