@@ -16,6 +16,9 @@ export const DESK_PALETTE: readonly string[] = [
   "#0f1a16", "#1f6b52", "#1a160f", "#5a4a1e", "#171a1f",
 ];
 
+/** §1.3's one exception (v2 D-36): a named regime carries its color wherever it appears. */
+export const REGIME_TONE: Readonly<Record<string, "green" | "amber" | "red" | "gray">> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
+
 /** "r,g,b" for each palette color. */
 export function paletteRgb(): Set<string> {
   return new Set(DESK_PALETTE.map((c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)).join(",")));

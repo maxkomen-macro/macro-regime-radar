@@ -14,7 +14,7 @@ import type { Unavailable } from "../data/envelope";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { unavailableOf, useOverview } from "../data/api";
-import type { LedgerRow, OverviewResponse, OverviewTiles, SinceLastClose, Verdict } from "../data/types";
+import type { LedgerRow, OverviewResponse, OverviewTiles, SinceLastClose } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
@@ -22,6 +22,7 @@ import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pct
 import { Awaiting, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
+import { REGIME_TONE } from "../kit/palette";
 import { viewOf } from "../positions/monitor";
 import { isOpen } from "../positions/store";
 import { useLevels, usePositionStore } from "../positions/usePositionStore";
@@ -79,33 +80,23 @@ function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefine
   );
 }
 
-/** §1.3 gives one regime a color: Overheating is amber; the others keep the text color. */
-export const REGIME_TONE: Readonly<Record<string, string>> = { Overheating: "amber" };
 
-/** "Above 50 & 200" and its trend word, from the two served flags. */
+/** "Above 50 & 200", from the served state (§2, §12.1); a mixed state reads its two flags. */
 type TrendTile = NonNullable<OverviewTiles["trend"]>;
 type RecessionTile = NonNullable<OverviewTiles["recession"]>;
 
-export function trendWords(t: TrendTile): { value: string; trend: string } {
-  if (t.above_50 && t.above_200) return { value: "Above 50 & 200", trend: "Uptrend" };
-  if (!t.above_50 && !t.above_200) return { value: "Below 50 & 200", trend: "Downtrend" };
-  return t.above_200 ? { value: "Above 200, below 50", trend: "Mixed trend" } : { value: "Above 50, below 200", trend: "Mixed trend" };
+export function trendWords(t: TrendTile): string {
+  if (t.state === "above_both") return "Above 50 & 200";
+  if (t.state === "below_both") return "Below 50 & 200";
+  if (t.state === "mixed") return t.above_200 ? "Above 200, below 50" : t.above_50 ? "Above 50, below 200" : "Mixed";
+  return "Unavailable";
 }
 
-const VERDICT_CLAUSE: Record<Verdict, string> = {
-  reliable: "that signal is reliable",
-  suggestive: "that signal is suggestive",
-  no_edge: "that signal has no edge",
-  insufficient: "too few events to score that signal",
-};
-
-/** The trend tile's sub-line from the served block; any missing part is left out. */
-export function trendSub(tr: TrendTile, word: string): string {
-  const when = monthYear(tr.since);
-  const signal = tr.since_signal ? tr.since_signal.replace(/-/g, " ") : "";
-  const since = when ? ` since the ${when}${signal ? ` ${signal}` : ""}` : "";
-  const clause = VERDICT_CLAUSE[tr.since_verdict];
-  return `${word}${since}${clause ? ` · ${clause}` : ""}`;
+/** The trend tile's sub-line (§2): "since <state_since> · last cross <golden|death>, <date>"; a missing part is left out. */
+export function trendSub(tr: TrendTile): string {
+  const since = dayLong(tr.state_since);
+  const cross = tr.cross && dayLong(tr.cross.date) ? `last cross ${tr.cross.kind}, ${dayLong(tr.cross.date)}` : null;
+  return [since ? `since ${since}` : null, cross].filter(Boolean).join(" · ");
 }
 
 /** The recession tile's sub-line (§2): "<band> · score for <probability_month> · inputs through <inputs_through>". */
@@ -152,7 +143,6 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
     vol: useBlockUnserved(data, "tiles.vol"),
   };
   const state = (block: unknown): TileState => (block ? "ready" : failed || data ? "awaiting" : "loading");
-  const trend = t?.trend ? trendWords(t.trend) : null;
   return (
     <div className="ov-tiles">
       <Tile
@@ -161,6 +151,7 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
         state={state(t?.regime)}
         badge={t?.regime ? <LiveBadge parts={[rowWords(t.regime.print) || null]} /> : null}
         value={t?.regime?.label}
+        // §1.3's exception (v2 D-36): the tile carries its regime's color.
         tone={t?.regime ? REGIME_TONE[t.regime.label] : undefined}
         sub={t?.regime ? [t.regime.growth && t.regime.inflation ? `Growth ${t.regime.growth}, inflation ${t.regime.inflation}` : null, "rule-based, two-month lag"].filter(Boolean).join(" · ") : null}
       />
@@ -170,8 +161,8 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
         unserved={off.trend}
         state={state(t?.trend)}
         badge={t?.trend ? <LiveBadge parts={[dayShort(t.trend.date) || null]} /> : null}
-        value={trend?.value}
-        sub={t?.trend && trend ? trendSub(t.trend, trend.trend) : null}
+        value={t?.trend ? trendWords(t.trend) : null}
+        sub={t?.trend ? trendSub(t.trend) || null : null}
       />
       <Tile
         label="Vol · VIX"

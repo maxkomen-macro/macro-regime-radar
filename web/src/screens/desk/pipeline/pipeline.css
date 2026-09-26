@@ -188,13 +188,18 @@
 .pl-table .pl-note {
   color: var(--dk-t3);
 }
+/* A note is prose: sans, 12px (owner rule: mono is for data). */
+.pl-table .pl-note {
+  font-family: var(--dk-sans);
+  font-size: 12px;
+}
 /* A long list of readers, or a status with its note, wraps inside its cell, so every column
-   stays in view (R2-1). */
+   stays in view (R2-1); 84px leaves room for the two day-dated columns (§11) at 601px. */
 .pl-table td.pl-feeds,
 .pl-table td.pl-status,
 .pl-table tbody th {
   white-space: normal;
-  min-width: 96px;
+  min-width: 84px;
   padding-top: 4px;
   padding-bottom: 4px;
   line-height: 14px;
@@ -309,4 +314,9 @@
     margin-left: 24px;
     text-align: left;
   }
+}
+/* §11: provider and frequency beside the series name, quieter than the name. */
+.pl-table .pl-prov {
+  font-weight: 400;
+  color: var(--dk-t3);
 }

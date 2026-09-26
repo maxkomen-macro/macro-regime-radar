@@ -84,7 +84,9 @@
 }
 .es-slots {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.05fr) minmax(0, 1.5fr) minmax(0, 1.85fr) minmax(0, 1.2fr) minmax(0, 1.2fr) auto auto;
+  /* The shock slot takes the registry's longest label, "Gold (COMEX front month)" (§12.2 series[]):
+     every default slot reads whole from 1280px up. */
+  grid-template-columns: minmax(0, 2.05fr) minmax(0, 0.9fr) minmax(0, 1.3fr) minmax(0, 1.75fr) minmax(0, 1.05fr) minmax(0, 0.95fr) auto auto;
   column-gap: 12px;
   align-items: end;
   margin-top: 6px;
@@ -384,6 +386,18 @@
   height: 27px;
   border-bottom: 1px solid var(--dk-row);
 }
+/* The resampling rows carry four parts (horizon, how, zero, pill): their own columns, and room to wrap. */
+.es-ranges.es-resampling li {
+  grid-template-columns: 5.5em minmax(0, 1fr) auto auto;
+  height: auto;
+  min-height: 27px;
+  padding: 4px 0;
+}
+.es-range-how {
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--dk-t3);
+}
 .es-events li:last-child,
 .es-ranges li:last-child {
   border-bottom: 0;
@@ -526,11 +540,15 @@
   word-break: break-word;
 }
 
-@media (max-width: 1100px) {
+/* Below 1280px the six slots take three columns, so each reads whole (§4: "the slots show exactly
+   what is being asked"); on a phone the two longest, shock and while, take a row each. */
+@media (max-width: 1279px) {
   .es-slots {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     row-gap: 10px;
   }
+}
+@media (max-width: 1100px) {
   .es-grid,
   .es-adv-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -539,6 +557,10 @@
 @media (max-width: 600px) {
   .es-slots {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .es-slots > :nth-child(1),
+  .es-slots > :nth-child(4) {
+    grid-column: 1 / -1;
   }
   .es-params {
     grid-template-columns: minmax(0, 1fr);

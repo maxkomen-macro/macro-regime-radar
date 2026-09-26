@@ -10,28 +10,18 @@
 
 import type { ReactNode } from "react";
 import { unavailableOf, useSectors } from "../data/api";
-import type { Read, RelPoint, SectorsResponse } from "../data/types";
+import type { RelPoint, SectorsResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { dayShort, endDay, pct } from "../kit/format";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars, { relTone } from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, useAdvanced } from "../kit/ui";
+import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, useAdvanced } from "../kit/ui";
 import "./sectors.css";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
-
-function ServedRead({ read, children }: { read: Read | undefined; children?: ReactNode }) {
-  if (!read) return null;
-  return (
-    <ReadBox label={read.label} warn={read.tone === "warning"}>
-      {read.text}
-      {children}
-    </ReadBox>
-  );
-}
 
 function CardHead({ id, title, sub }: { id: string; title: string; sub: string }) {
   return (
@@ -64,7 +54,6 @@ function Leadership({ s, state, why }: { s: SectorsResponse | undefined; state: 
   const bottom = rows.length > 1 ? rows[rows.length - 1] : undefined;
   const topV = top && fin(top.rel_ret) ? top.rel_ret : null;
   const bottomV = bottom && fin(bottom.rel_ret) ? bottom.rel_ret : null;
-  const pattern = typeof s?.pattern === "string" && s.pattern ? s.pattern[0].toUpperCase() + s.pattern.slice(1) : undefined;
   return (
     <section className="dk-card sc-card" aria-labelledby="sc-lead" aria-busy={quiet}>
       <CardHead id="sc-lead" title="Sector leadership" sub={`${windowWord(s)} return relative to the S&P · all eleven`} />
@@ -78,7 +67,8 @@ function Leadership({ s, state, why }: { s: SectorsResponse | undefined; state: 
             tone={bottomV != null ? relTone(bottomV) : undefined}
             sub={bottomV != null ? <span data-tone={bottomV < 0 ? "red" : undefined}>{pct(bottomV)} vs the index</span> : undefined}
           />
-          <Stat label="Pattern" awaiting={!pattern} value={pattern} sub={s?.words?.pattern} />
+          {/* §12.13's shape serves no pattern word yet: the label stays, the value waits for its rule. */}
+          <Stat label="Pattern" awaiting />
         </StatRow>
       )}
       {rows.length ? (
@@ -95,7 +85,6 @@ function Leadership({ s, state, why }: { s: SectorsResponse | undefined; state: 
               <i data-tone="red" /> more than 1% behind
             </span>
           </p>
-          <ServedRead read={s?.reads?.leadership} />
         </>
       ) : quiet ? null : (
         <Awaiting>{why ?? "the sector returns"}</Awaiting>
@@ -194,21 +183,15 @@ function Breadth({ s, state, why }: { s: SectorsResponse | undefined; state: Sta
       <CardHead id="sc-breadth" title="Breadth" sub="is the rally wide or narrow?" />
       {quiet ? null : (
         <StatRow cols={3}>
-          {/* §7: fewer sectors above than a month ago is narrowing, a caution (amber); more is up (§1.3 green). */}
-          <Stat
-            label="Above 50-day"
-            awaiting={!count(a50)}
-            value={count(a50)}
-            tone={a50 && fin(a50.n) && fin(a50.month_ago) ? (a50.n < a50.month_ago ? "amber" : a50.n > a50.month_ago ? "green" : undefined) : undefined}
-            sub={count(a50) ? `sectors${a50 && fin(a50.month_ago) ? ` · was ${a50.month_ago} a month ago` : ""}` : undefined}
-          />
-          <Stat label="Above 200-day" awaiting={!count(a200)} value={count(a200)} tone={a200?.broad === true ? "green" : undefined} sub={count(a200) ? ["sectors", s?.words?.above_200].filter(Boolean).join(" · ") : undefined} />
+          {/* §12.13: breadth serves its comparison date; no month-ago count or engine words are served. */}
+          <Stat label="Above 50-day" awaiting={!count(a50)} value={count(a50)} sub={count(a50) ? `sectors${a50 && dayShort(a50.compared_on) ? ` · on ${dayShort(a50.compared_on)}` : ""}` : undefined} />
+          <Stat label="Above 200-day" awaiting={!count(a200)} value={count(a200)} sub={count(a200) ? "sectors" : undefined} />
           <Stat
             label={vs("Equal", "cap weight")}
             awaiting={!fin(eqw)}
             value={fin(eqw) ? pct(eqw) : undefined}
             tone={fin(eqw) ? (eqw < 0 ? "down" : eqw > 0 ? "up" : undefined) : undefined}
-            sub={fin(eqw) ? ["3 months", s?.words?.eqw].filter(Boolean).join(" · ") : undefined}
+            sub={fin(eqw) ? "3 months" : undefined}
           />
         </StatRow>
       )}
@@ -241,13 +224,7 @@ function Breadth({ s, state, why }: { s: SectorsResponse | undefined; state: Sta
             pad={{ t: 19, r: 54, b: 6 }}
             ends={false}
           />
-          {s?.reads?.breadth ? (
-            <ServedRead read={s.reads.breadth}>
-              <span className="sc-gray"> {BREADTH_NOTE}</span>
-            </ServedRead>
-          ) : (
-            <p className="sc-note sc-gray">{BREADTH_NOTE}</p>
-          )}
+          <p className="sc-note sc-gray">{BREADTH_NOTE}</p>
         </>
       ) : quiet ? null : (
         <Awaiting>{why ?? "the breadth measures"}</Awaiting>

@@ -56,28 +56,12 @@
 .lg-table .lg-verdict {
   text-align: right;
 }
-.lg-group th {
-  height: 18px;
-  padding: 1px 0 0;
-  font-family: var(--dk-mono);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--dk-t4);
-  text-align: left;
-}
-/* The second group sits a little further from the rows above it, as in the PNG. */
-.lg-table tbody + tbody .lg-group th {
-  height: 23px;
-  padding-top: 6px;
-}
-.lg-table tbody tr:not(.lg-group) {
+.lg-table tbody tr {
   height: 39px;
   border-bottom: 1px solid var(--dk-row);
   cursor: pointer;
 }
-.lg-table tbody tr:not(.lg-group):hover {
+.lg-table tbody tr:hover {
   background: var(--dk-card-2);
 }
 /* Firing rows: the Reliable tint (§1.3), kept under the pointer (L-7). */

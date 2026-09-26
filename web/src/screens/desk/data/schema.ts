@@ -155,7 +155,8 @@ export function checkAnswer(body: unknown, spec: Obj): Record<string, unknown> |
 // ── The shapes (§12, §12.13) ──────────────────────────────────────────────
 
 const VERDICTS = ["reliable", "suggestive", "no_edge", "insufficient"] as const;
-const read = o({ label: "s?", text: "s!", tone: "s" });
+// §12.0: a read names the rule that produced it; a read without one is not served.
+const read = o({ label: "s?", text: "s!", tone: e(["normal", "warning"]), rule: "s!" });
 const reads = (keys: string[]) => o(Object.fromEntries(keys.map((key) => [key, { ...read, nul: true }])));
 const envelope = { as_of: "s", generation_id: "s" } as const;
 
@@ -195,7 +196,6 @@ const question = o(
     horizon: "n!",
     target_unit: e(["log_return", "log_change", "bp"]),
     display_unit: e(["percent", "bp"]),
-    target_label: "s",
   },
   { req: true },
 );
@@ -204,8 +204,13 @@ const pricePoint = o({ date: "s!", close: "n", ma50: "n", ma200: "n" });
 const relPoint = o({ date: "s!", rel: "n" });
 const regimeTrend = o({ label: "s!", print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", freq: "s", source: "s" });
 const BANDS = ["low", "elevated", "high_risk"] as const;
+const TREND_STATES = ["above_both", "below_both", "mixed", "unavailable"] as const;
+const FRESH_STATES = ["current", "stale", "missing"] as const;
 const recessionScore = { score: "n", probability_month: "s", inputs_through: "s", band: e(BANDS), band_edges: t(["n!", "n!"], { nul: true }), freq: "s", source: "s" } as const;
-const nextPrint = o({ date: "s!", flip_threshold_mom: "n", flips_to: "s?" }, { nul: true });
+const nextPrint = o(
+  { release_date: "s?", reference_month: "s!", series: "s", threshold_mom: "n", operator: e(["<=", ">"], { req: true }), flips_to: "s?", first_effective_month: "s!", freq: "s", source: "s" },
+  { nul: true },
+);
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s") });
 /** The deferred vol and sectors shapes (§12.13), served as `/technicals` blocks and as their own stubs. */
 const VOL = {
@@ -217,22 +222,18 @@ const VOL = {
   realized_20d: "n",
   term: o({ "1m": "n", "3m": "n", "6m": "n" }, { nul: true }),
   history_from: "s",
-  skew_band_edges: t(["n!", "n!"], { nul: true }),
-  reads: reads(["skew", "iv_rv", "term_meaning", "term", "gauge"]),
+  dates: m("s"),
 } as const;
 const SECTORS = {
   window_months: "n",
   leadership: l(o({ etf: "s!", name: "s!", short: "s", rel_ret: "n" })),
-  pattern: "s",
   breadth: o({
-    above_50: o({ n: "n", of: "n", month_ago: "n", by_etf: m("b") }),
-    above_200: o({ n: "n", of: "n", by_etf: m("b"), broad: "b" }),
+    above_50: o({ n: "n", of: "n", compared_on: "s?", by_etf: m("b") }),
+    above_200: o({ n: "n", of: "n", by_etf: m("b") }),
     eqw_vs_cap_3m: "n",
     eqw_vs_cap_series: l(relPoint),
     small_vs_large_series: l(relPoint),
   }),
-  reads: reads(["leadership_brief", "leadership", "breadth"]),
-  words: o({ pattern: "s", above_200: "s", eqw: "s" }),
   error: "s",
   missing: l("s"),
 } as const;
@@ -254,29 +255,38 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     tiles: o({
       regime: regimeTrend,
       recession: o({ ...recessionScore }),
-      // The trend tile names the trend from its two flags: without both it says nothing (Codex G1-9).
-      trend: o({ above_50: "b!", above_200: "b!", since: "s", since_signal: "s", since_verdict: e(VERDICTS), date: "s" }),
+      // §12.1: the served state names the trend; without it the tile says nothing (Codex G1-9).
+      trend: o({ state: e(TREND_STATES, { req: true }), above_50: "b?", above_200: "b?", state_since: "s?", cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }), date: "s", freq: "s", source: "s" }),
       vol: o({ vix: "n", date: "s", freq: "s", source: "s" }),
     }),
     active_signals: l(ledgerRow),
-    data_status: "s",
+    data_status: o({
+      state: e(FRESH_STATES, { req: true }),
+      contributors: l(o({ series: "s!", observation_date: "s?", expected_observation_date: "s?", state: e(FRESH_STATES, { req: true }), reason: "s" })),
+    }),
   }),
   "/ledger": o({ ...envelope, verdict_rule: "s", horizon: "n", comparison_session: "s?", prev_session: "s?", scored_n: "n", unavailable_n: "n", signals: l(ledgerRow) }),
   "/technicals": o({
     ...envelope,
-    instrument: o({ symbol: "s!", label: "s!" }),
     price: "n",
     // §12.7: the session the price and the averages are dated to.
     date: "s",
+    freq: "s",
+    source: "s",
     chg_1d: "n",
+    chg_1d_dates: o({ from: "s!", to: "s!" }),
+    ret_1y: "n",
+    ret_1y_dates: o({ from: "s!", to: "s!" }),
     ma50: "n",
     ma200: "n",
+    ma50_window: o({ start: "s!", end: "s!", n: "n!" }),
+    ma200_window: o({ start: "s!", end: "s!", n: "n!" }),
     vs_ma50: "n",
     vs_ma200: "n",
-    ret_1y: "n",
-    trend: "s",
+    trend: o({ state: e(TREND_STATES, { req: true }), state_since: "s?" }),
     move_20d_sigma: "n",
-    move_20d_word: "s",
+    move_20d_date: "s?",
+    signals_allowlist: l("s!"),
     // A cross without its kind and day claims nothing (Codex G1-9).
     cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),
     series: o({ "6m": l(pricePoint), "1y": l(pricePoint), "3y": l(pricePoint) }),
@@ -291,6 +301,9 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     // The page words a missing label on its own (Regime R-2); the rest of the block still reads.
     current: o({ label: "s", print: "s", latest_print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", freq: "s", source: "s" }),
     history: l(o({ month: "s!", regime: "s!" })),
+    history_note: "s",
+    history_freq: "s",
+    history_source: "s",
     recession: o({
       ...recessionScore,
       feature_months: m("s!"),
@@ -306,26 +319,28 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   }),
   "/macro": o({
     ...envelope,
-    curve: o({ today: curvePoint, month_ago: curvePoint, "2s10s_bp": "n", "2s10s_chg_bp": "n", "10y_chg_bp": "n" }),
+    curve: o({ today: curvePoint, month_ago: curvePoint, "2s10s_bp": "n", "2s10s_chg_bp": "n", "10y_chg_bp": "n", freq: "s", source: "s" }),
     stock_bond: o({
       today: "n",
       year_ago: "n",
       flipped: "s?",
-      hedging: "b?",
-      words: o({ today: "s", year_ago: "s", flipped: "s" }),
       series: l(o({ date: "s!", corr: "n" })),
     }),
     credit: o({
-      hy: "n",
+      // §12.8: each spread with its own date; a value without its date is not read.
+      hy: o({ value: "n", date: "s!", freq: "s", source: "s" }, { nul: true }),
+      ig: o({ value: "n", date: "s!", freq: "s", source: "s" }, { nul: true }),
       hy_pct_3y: "n",
       hy_range_3y: t(["n", "n"], { nul: true }),
-      ig: "n",
-      series: l(o({ date: "s!", hy: "n" })),
-      peak_12m: o({ date: "s!", hy: "n" }, { nul: true }),
+      rank_window: o({ start: "s!", end: "s!", n: "n", expected_n: "n", valid_n: "n", missing_n: "n", first_obs: "s?", last_obs: "s?" }),
+      reason: "s?",
+      band: e(["tight", "normal", "wide"], { nul: true }),
       band_edges: t(["n!", "n!"], { nul: true }),
-      words: o({ hy: "s", ig: "s", range: "s" }),
+      series: l(o({ date: "s!", hy: "n" })),
+      line_window: o({ start: "s!", end: "s!", n: "n" }),
+      peak_12m: o({ date: "s!", hy: "n" }, { nul: true }),
     }),
-    correlations: l(o({ asset: "s!", corr: "n", meaning: "s" })),
+    correlations: l(o({ asset: "s!", symbol: "s", quantity: "s", transform: "s", corr: "n" })),
     // The matrix is one grid: its names and every row of values, or nothing (Codex G1-5).
     matrix: o({ assets: l("s!", { req: true, strict: true }), labels: l("s!", { strict: true }), window: "n", values: l(l("n", { strict: true }), { req: true, strict: true }) }),
     reads: reads(["curve", "front_end", "stock_bond", "credit", "correlations"]),
@@ -336,11 +351,16 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     served_from_cache: "b",
     elapsed_ms: "n",
     slug: "s?",
+    label: "s",
+    short: "s",
     // Every number in a study answers its question: without its six slots nothing can be labelled (Codex G1-1).
     question,
     matched_n: "n",
     selected_horizon: "n",
+    data_start: "s?",
     sample_start: "s?",
+    sample_end: "s?",
+    first_event: "s?",
     firing_now: "b?",
     firing_day: "n",
     evaluated_on: "s?",
@@ -360,6 +380,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         up_pct: "n",
         up_n: "n",
         n: "n",
+        n_incomplete: "n",
+        baseline_n: "n",
         median: "n",
         baseline_median: "n",
         baseline_up_pct: "n",
@@ -371,14 +393,15 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         method: e(["enumeration", "monte_carlo"]),
         reason: "s?",
         verdict: e(VERDICTS),
-        worst: o({ ret: "n", date: "s" }, { nul: true }),
-        best: o({ ret: "n", date: "s" }, { nul: true }),
+        // §12.2: min and max over the completed outcomes, each with its event and entry sessions.
+        worst: o({ value: "n", event_date: "s!", entry_date: "s?" }, { nul: true }),
+        best: o({ value: "n", event_date: "s!", entry_date: "s?" }, { nul: true }),
       }),
     ),
     by_regime: l(o({ h: "n", regime: "s!", n: "n", up_pct: "n", median: "n" })),
     unlabeled_n: "n",
-    last_events: l(o({ date: "s!", regime: "s", ret_20: "n" })),
-    provenance: o({ bootstrap: "n", entry: "s", cooldown: "n", series_start: m("s!") }),
+    last_events: l(o({ event_date: "s!", entry_date: "s?", regime: "s", value_20: "n" })),
+    provenance: o({ entry_rule: "s", cooldown: "n", seed: "n", engine_version: "s", series_start: m("s!") }),
     warnings: l("s!"),
     empty_state: o({ horizon: "n", sentence: "s", fixes: l("s!") }, { nul: true }),
     series: l(o({ key: "s!", label: "s!", roles: l("s!"), ops: l("s!"), unit: "s" })),
@@ -398,20 +421,28 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       }),
     ),
   }),
-  "/study/events": o({ ...envelope, slug: "s?", events: l(o({ date: "s!", regime: "s", ret_5: "n", ret_10: "n", ret_20: "n", ret_60: "n" })) }),
+  // §12.4: every retained event, newest first, with each horizon's exit, value and completeness.
+  "/study/events": o({
+    ...envelope,
+    slug: "s?",
+    events: l(
+      o({
+        event_date: "s!",
+        entry_date: "s?",
+        regime: "s",
+        ...Object.fromEntries([5, 10, 20, 60].flatMap((h) => [[`exit_${h}`, "s?"], [`value_${h}`, "n"], [`complete_${h}`, "b"]])),
+      }),
+    ),
+  }),
   "/pipeline": o({
     ...envelope,
     last_refresh_utc: "s?",
-    validation: "s",
+    validation: e(["pass", "fail"], { nul: true }),
     groups: l(
       o({
         name: "s!",
-        source: "s",
-        freq: "s",
-        status: "s",
-        status_text: "s",
-        note: "s?",
-        series: l(o({ label: "s!", id: "s!", from: "s", as_of: "s", feeds: l("s!"), status: "s", note: "s?" })),
+        status: e(FRESH_STATES),
+        series: l(o({ label: "s!", id: "s!", key: "s?", provider: "s", freq: e(["daily", "weekly", "monthly"]), first: "s?", last: "s?", feeds: l("s!"), status: e(FRESH_STATES), note: "s?" })),
       }),
     ),
   }),

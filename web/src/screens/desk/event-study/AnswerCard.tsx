@@ -241,8 +241,8 @@ export default function AnswerCard({
   const unit = isUnit(study.question?.target_unit) ? study.question.target_unit : undefined;
   const median = h ? moveText(h.median, unit) : null;
   const baseline = h ? moveText(h.baseline_median, unit) : null;
-  const worst = h?.worst ? moveText(h.worst.ret, unit) : null;
-  const best = h?.best ? moveText(h.best.ret, unit) : null;
+  const worst = h?.worst ? moveText(h.worst.value, unit) : null;
+  const best = h?.best ? moveText(h.best.value, unit) : null;
   // Every log number carries the §1.9 tooltip; bp numbers none.
   const tip = tipOf(unit);
   return (
@@ -289,22 +289,23 @@ export default function AnswerCard({
         ) : (
           <Stat label={`Median at ${phrase}`} awaiting />
         )}
-        {h?.worst && h?.best && fin(h.worst.ret) && fin(h.best.ret) && worst && best ? (
+        {h?.worst && h?.best && fin(h.worst.value) && fin(h.best.value) && worst && best ? (
           <Stat
             label="Worst · best"
             size="date"
             value={
               <>
-                <Signed value={h.worst.ret} title={tip}>
+                <Signed value={h.worst.value} title={tip}>
                   {worst}
                 </Signed>{" "}
                 /{" "}
-                <Signed value={h.best.ret} title={tip}>
+                <Signed value={h.best.value} title={tip}>
                   {best}
                 </Signed>
               </>
             }
-            sub={`${monthYear(h.worst.date)} · ${monthYear(h.best.date)}`}
+            // §4: with their event dates.
+            sub={`${monthYear(h.worst.event_date)} · ${monthYear(h.best.event_date)}`}
           />
         ) : (
           <Stat label="Worst · best" awaiting />

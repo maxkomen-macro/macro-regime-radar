@@ -1,9 +1,11 @@
 /**
- * The fixtures agree with each other (Codex round 1, group 3). R-05: every
- * study event carries the regime row stamped two months before its own month
- * in the fixtures' monthly record, whose last rows are /regime's history; the
- * study's by-regime rows and last five events are those events, recomputed.
- * (R-06's hedge checks left with the hedge fixture: §10 serves no hedge.)
+ * The fixtures agree with each other (Codex round 1, group 3) and carry the
+ * audit's real values (item 12). R-05: every study event carries the regime
+ * row stamped two months before its own month in the fixtures' monthly
+ * record (Unlabeled where that row is absent), whose last rows are /regime's
+ * history; the study's by-regime rows, extrema and last five events are
+ * those events, recomputed. (R-06's hedge checks left with the hedge
+ * fixture: §10 serves no hedge.)
  */
 import { describe, expect, it } from "vitest";
 import ledger from "./ledger.json";
@@ -13,6 +15,9 @@ import regime from "./regime.json";
 import deferredRegime from "./deferred-regime.json";
 import studyEvents from "./study-events.json";
 import study from "./study.json";
+import macro from "./macro.json";
+import technicals from "./technicals.json";
+import catalog from "./study-catalog.json";
 import { rangeText } from "../../screens/desk/kit/units";
 import type { TargetUnit } from "../../screens/desk/data/types";
 
@@ -32,6 +37,9 @@ function median(xs: number[]): number {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
+type Ev = (typeof studyEvents.events)[number];
+const valueAt = (e: Ev, h: number) => e[`value_${h}` as "value_20"] as number | null;
+
 describe("the study's events and the regime fixture (Codex R-05)", () => {
   const months = record.months;
   const byMonth = new Map(months.map((r) => [r.month, r.regime]));
@@ -42,26 +50,36 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
     expect(regime.stats).toEqual({ status: "awaiting", data: null, unavailable: { reason: "regime statistics not yet defined in the engine.", until: null } });
   });
 
-  it("the record is one row a month, and its last rows are /regime's history exactly", () => {
-    for (let i = 1; i < months.length; i++) expect(months[i].month).toBe(monthBefore(months[i - 1].month, -1));
-    expect(months.slice(-regime.history.length)).toEqual(regime.history);
+  it("the record is one row a month but the one month the store lacks, and its last 60 rows are /regime's history exactly", () => {
+    const gaps: string[] = [];
+    for (let i = 1; i < months.length; i++) {
+      const want = monthBefore(months[i - 1].month, -1);
+      if (months[i].month !== want) gaps.push(want);
+      expect([monthBefore(months[i - 1].month, -1), monthBefore(months[i - 1].month, -2)]).toContain(months[i].month);
+    }
+    // The audit's Q10: 2025-10 has no row (no October CPI or UNRATE print stored).
+    expect(gaps).toEqual(["2025-10"]);
+    expect(regime.history).toHaveLength(60);
+    expect(months.slice(-60)).toEqual(regime.history);
     expect(record.lag_months).toBe(2);
     expect(months.every((r) => REGIMES.includes(r.regime))).toBe(true);
   });
 
-  it("every event's regime is the row stamped K−2, K its own month", () => {
+  it("every event's regime is the row stamped K−2, K its own month (Unlabeled where that row is absent)", () => {
     expect(studyEvents.events.length).toBe(study.matched_n);
-    for (const e of studyEvents.events) expect([e.date, e.regime]).toEqual([e.date, byMonth.get(monthBefore(e.date.slice(0, 7), record.lag_months))]);
-    const dates = studyEvents.events.map((e) => e.date);
+    for (const e of studyEvents.events) expect([e.event_date, e.regime]).toEqual([e.event_date, byMonth.get(monthBefore(e.event_date.slice(0, 7), record.lag_months)) ?? "Unlabeled"]);
+    const dates = studyEvents.events.map((e) => e.event_date);
     expect(dates).toEqual([...dates].sort().reverse());
+    // §12.4: an exit and a value exactly when the window is complete.
+    for (const e of studyEvents.events) for (const h of [5, 10, 20, 60]) expect([h, e[`complete_${h}` as "complete_20"], e[`exit_${h}` as "exit_20"] !== null]).toEqual([h, valueAt(e, h) !== null, valueAt(e, h) !== null]);
   });
 
   it("by regime is recomputed from those events: n, the share up and the median a month later", () => {
     const want = REGIMES.map((r) => {
       // §12.2: `by_regime[].n` counts the regime's events complete at h = 20.
-      const rets = studyEvents.events.filter((e) => e.regime === r && typeof e.ret_20 === "number").map((e) => e.ret_20 as number);
+      const rets = studyEvents.events.filter((e) => e.regime === r && valueAt(e, 20) !== null).map((e) => valueAt(e, 20) as number);
       if (rets.length < FLOOR) return { h: 20, regime: r, n: rets.length, up_pct: null, median: null };
-      return { h: 20, regime: r, n: rets.length, up_pct: Math.round((rets.filter((x) => x > 0).length / rets.length) * 100) / 100, median: Math.round(median(rets) * 1000) / 1000 };
+      return { h: 20, regime: r, n: rets.length, up_pct: rets.filter((x) => x > 0).length / rets.length, median: median(rets) };
     });
     expect(study.by_regime).toEqual(want);
     expect(study.by_regime.reduce((a, r) => a + r.n, 0) + study.unlabeled_n).toBe(study.matched_n);
@@ -76,20 +94,59 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
 
   it("each horizon's counts, share up, median and extrema are its own completed outcomes (C-03)", () => {
     for (const h of study.horizons) {
-      const done = studyEvents.events.filter((e) => typeof e[`ret_${h.h}` as "ret_20"] === "number").map((e) => ({ v: e[`ret_${h.h}` as "ret_20"] as number, date: e.date }));
+      const done = studyEvents.events.filter((e) => valueAt(e, h.h) !== null).map((e) => ({ v: valueAt(e, h.h) as number, event_date: e.event_date, entry_date: e.entry_date }));
       const vals = done.map((d) => d.v);
       expect([h.h, h.n, h.up_n]).toEqual([h.h, done.length, vals.filter((v) => v > 0).length]);
-      expect(h.up_pct).toBe(Math.round((h.up_n / h.n) * 100) / 100);
-      expect(h.median).toBe(Math.round(median(vals) * 1000) / 1000);
+      expect(h.up_pct).toBeCloseTo(h.up_n / h.n, 12);
+      expect(h.median).toBeCloseTo(median(vals), 12);
       const lo = done.reduce((a, b) => (b.v < a.v ? b : a));
       const hi = done.reduce((a, b) => (b.v > a.v ? b : a));
-      expect([h.worst, h.best]).toEqual([{ ret: lo.v, date: lo.date }, { ret: hi.v, date: hi.date }]);
+      expect([h.worst, h.best]).toEqual([
+        { value: lo.v, event_date: lo.event_date, entry_date: lo.entry_date },
+        { value: hi.v, event_date: hi.event_date, entry_date: hi.entry_date },
+      ]);
     }
     expect(study.horizons.find((h) => h.h === study.selected_horizon)).toBeDefined();
   });
 
   it("the last five events are the list's first five, with their regimes", () => {
-    expect(study.last_events).toEqual(studyEvents.events.slice(0, 5).map((e) => ({ date: e.date, regime: e.regime, ret_20: e.ret_20 })));
+    expect(study.last_events).toEqual(studyEvents.events.slice(0, 5).map((e) => ({ event_date: e.event_date, entry_date: e.entry_date, regime: e.regime, value_20: e.value_20 })));
+    expect([study.first_event, study.last_event]).toEqual([studyEvents.events[studyEvents.events.length - 1].event_date, studyEvents.events[0].event_date]);
+  });
+});
+
+describe("the audit's real values (FRAME3_DATA_AUDIT.md on desk/frame-3-docs, COMPUTABLE rows)", () => {
+  const row = (slug: string) => ledger.signals.find((r) => r.slug === slug)!;
+  it("the gold study (§2.3): 18 events since 2000, 12 of 18 up, +3.09% against +1.31%, the interval −1.62 to +4.10 pp, 14.6% adverse, last Apr 16, 2025", () => {
+    const h = study.horizons.find((x) => x.h === 20)!;
+    expect([study.matched_n, h.n, h.up_n, study.data_start, study.last_event, study.inputs_hash]).toEqual([18, 18, 12, "2000-08-30", "2025-04-16", "879a8a1f76831fad"]);
+    expect([h.median, h.baseline_median, h.ci_lo, h.ci_hi, h.adverse_share].map((x) => Math.round(x * 10000) / 10000)).toEqual([0.0309, 0.0131, -0.0162, 0.041, 0.146]);
+    expect(study.by_regime.map((r) => r.n)).toEqual([2, 6, 9, 1]);
+  });
+  it("the Ledger rows (§4): counts, share up, medians and last fires", () => {
+    const want: [string, number, number, string][] = [
+      ["2s10s-2sigma-steepening", 49, 0.714, "2025-04-21"],
+      ["golden-cross", 14, 0.786, "2025-07-01"],
+      ["vix-spike-2sigma-5d", 119, 0.664, "2026-06-05"],
+      ["gold-2sigma-spx-weak", 18, 0.667, "2025-04-16"],
+      ["hy-2sigma-20d", 2, 0.5, "2025-04-08"],
+      ["death-cross", 14, 0.571, "2025-04-14"],
+    ];
+    for (const [slug, n, up, last] of want) expect([slug, row(slug).n, Math.round((row(slug).up_pct as number) * 1000) / 1000, row(slug).last_fired]).toEqual([slug, n, up, last]);
+    // Rule v1 at 20 sessions: only the golden cross is established; HY has two events.
+    expect(ledger.signals.filter((r) => r.verdict === "reliable").map((r) => r.slug)).toEqual(["golden-cross"]);
+    expect(row("hy-2sigma-20d").verdict).toBe("insufficient");
+    expect([ledger.scored_n, ledger.unavailable_n]).toEqual([8, 4]);
+    expect(catalog.studies.filter((s) => !s.available).map((s) => s.slug)).toEqual(["dollar-2sigma-20d", "oil-2sigma-gold", "oil-2sigma-20d", "rsi-above-70", "rsi-below-30"]);
+  });
+  it("the regime, the recession score, the curve, credit and the cross (§2.1, §2.4, §2.5, §2.2)", () => {
+    expect([regime.current.latest_print, overview.tiles.regime.label, overview.tiles.regime.print]).toEqual(["2026-08", "Goldilocks", "2026-07"]);
+    expect(Math.round(regime.recession.score * 10000) / 10000).toBe(0.1164);
+    expect(regime.next_prints.cpi.release_date).toBe("2026-10-14");
+    expect(regime.next_prints.indpro.release_date).toBeNull();
+    expect([macro.curve.today["2y"], macro.curve.today["10y"], macro.curve.today.date]).toEqual([4.71, 4.96, "2026-09-22"]);
+    expect([macro.credit.hy.value, macro.credit.hy.date, macro.credit.ig.value]).toEqual([2.73, "2026-09-23", 0.77]);
+    expect(technicals.cross).toEqual({ kind: "golden", date: "2025-07-01" });
   });
 });
 
@@ -138,12 +195,15 @@ describe("the regime row governing today and the recession score (§5, §12.1, �
 describe("the firing state (§12.1, §12.5, v4 B-05)", () => {
   it("every since-last-close fire is a Ledger row firing on the comparison session, not stale; the three answers share the sessions", () => {
     const sl = overview.since_last_close;
+    // Nothing fires in the audit's snapshot, so the JSON's lists are empty; typed here for the checks that follow.
+    type Fire = { slug: string; firing_day?: number | null };
+    const [newFires, stillFiring] = [sl.new_fires as Fire[], sl.still_firing as Fire[]];
     const bySlug = new Map(ledger.signals.map((r) => [r.slug, r]));
-    for (const f of [...sl.new_fires, ...sl.still_firing]) {
+    for (const f of [...newFires, ...stillFiring]) {
       const r = bySlug.get(f.slug)!;
       expect([f.slug, r.firing_now, r.stale, r.evaluated_on]).toEqual([f.slug, true, false, sl.comparison_session]);
     }
-    for (const f of sl.still_firing) expect(f.firing_day).toBe(bySlug.get(f.slug)!.firing_day);
+    for (const f of stillFiring) expect(f.firing_day).toBe(bySlug.get(f.slug)!.firing_day);
     expect([ledger.comparison_session, ledger.prev_session]).toEqual([sl.comparison_session, sl.prev_session]);
     expect(study.comparison_session).toBe(sl.comparison_session);
     // A row that is not firing has no firing day (B-05).

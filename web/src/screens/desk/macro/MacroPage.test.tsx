@@ -81,11 +81,18 @@ describe("Macro tab", () => {
   it("the yield curve: three stats and the two curves", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Yield curve/ });
-    await waitFor(() => expect(card).toHaveTextContent("4.21%"));
-    expect(card).toHaveTextContent(/10-year\s*4\.21%\s*−6 bp on the month/);
-    expect(card).toHaveTextContent(/2s10s\s*\+41 bp\s*steepening · \+9 bp/);
-    // The front end's words were a served read; none is served on Monday (§1.4).
-    expect(card).toHaveTextContent(/Front end\s*3m 4\.05%/);
+    await waitFor(() => expect(card).toHaveTextContent("4.96%"));
+    // The audit's real curve (§2.5): 2y 4.71, 10y 4.96 on Sep 22; a month ago 4.24 and 4.74 (Q4).
+    expect(card).toHaveTextContent(/10-year\s*4\.96%\s*\+22 bp on the month/);
+    expect(card).toHaveTextContent(/2s10s\s*\+25 bp\s*flattening · −25 bp/);
+    // §6: the front end says Awaiting refresh until DGS3MO is registered; the chart names the tenors not served.
+    expect(card).toHaveTextContent(/Front end\s*Awaiting refresh/);
+    expect([...card.querySelectorAll("text.dk-chart-axis")].map((e) => e.textContent)).toEqual(expect.arrayContaining(["3m", "2y", "5y", "10y", "30y"]));
+    expect(card).toHaveTextContent("3m, 5y and 30y not served");
+    // Both dates' served points are marked (2y and 10y each), and each date's line joins them (§6).
+    expect(card.querySelectorAll('circle[fill="#8b929e"]')).toHaveLength(2);
+    expect(card.querySelectorAll('circle[fill="#58b8e6"]')).toHaveLength(2);
+    for (const color of ["#8b929e", "#58b8e6"]) expect(card.querySelector(`path[stroke="${color}"]`)?.getAttribute("d")).toMatch(/^M[\d.]+,[\d.]+L[\d.]+,[\d.]+$/);
     expect(card).not.toHaveTextContent("market leans to cuts");
     expect(within(card).getByRole("img", { name: /Treasury yields by tenor on Sep 22, against a month ago \(Aug 21\)/ })).toBeInTheDocument();
     // §1.4: no read is served on Monday, so the box is omitted.
@@ -95,32 +102,36 @@ describe("Macro tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Do bonds still hedge stocks/ });
     await waitFor(() => expect(card).toHaveTextContent("+0.31"));
-    expect(card).toHaveTextContent("positive · bonds not hedging");
-    expect(card).toHaveTextContent(/A year ago\s*−0\.24\s*was working/);
-    expect(card).toHaveTextContent(/Flipped\s*Mar 2026\s*six months positive/);
-    expect(card).not.toHaveTextContent("Read for the desk");
+    // §12.13's shape is the three numbers and the series: no words, no hedging call, no read (§12.0).
+    expect(card).toHaveTextContent(/Today\s*\+0\.31\s*A year ago\s*−0\.24\s*Flipped\s*Mar 2026/);
+    expect(card).not.toHaveTextContent(/hedging|was working|Read for the desk/);
   });
   it("credit: the spread, its three-year range, IG, the gauge and the year", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /^Credit/ });
-    await waitFor(() => expect(card).toHaveTextContent("3.12%"));
-    expect(card).toHaveTextContent(/3-year range\s*2\.6 – 5\.9%\s*today near the low/);
-    expect(card).toHaveTextContent(/Investment grade\s*0\.94%\s*also tight/);
-    expect(within(card).getByRole("img", { name: "High-yield spread at the 18th percentile of three years, tight" })).toBeInTheDocument();
-    expect(within(card).getByRole("img", { name: /High-yield spread over the last year; peak 4\.6% on Mar 10/ })).toBeInTheDocument();
+    await waitFor(() => expect(card).toHaveTextContent("2.73%"));
+    // §6: each spread dated; the band word is the served one; the range over its served window (the audit's §2.5, Q5).
+    expect(card).toHaveTextContent(/HY spread\s*2\.73%\s*tight · Sep 23/);
+    expect(card).toHaveTextContent(/3-year range\s*2\.6 – 4\.6%\s*since Sep 23, 2023/);
+    expect(card).toHaveTextContent(/Investment grade\s*0\.77%\s*Sep 23/);
+    // §12.8's rank over the 747 bond sessions of the window (PROVENANCE.md).
+    expect(within(card).getByRole("img", { name: "High-yield spread at the 15th percentile of three years, tight" })).toBeInTheDocument();
+    expect(within(card).getByRole("img", { name: /High-yield spread over the last year; peak 3\.5% on Mar 30/ })).toBeInTheDocument();
   });
-  it("what moves with the S&P: six rows with their meanings; the matrix under Advanced", async () => {
+  it("what moves with the S&P: six rows, each with the symbol it declares; the matrix under Advanced", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What moves with the S&P/ });
     const list = await within(card).findByRole("list", { name: "Correlation with the S&P" });
+    // §12.13: each asset declares its symbol, quantity and transform; no meaning words are served.
     expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "10-year Treasury (price)+0.31moves with · no hedge",
-      "Gold+0.12no relationship",
-      "Dollar−0.22weak dollar helps",
-      "Oil+0.18weak",
-      "Nasdaq+0.92same trade",
-      "High-yield credit+0.64risk-on together",
+      "10-year Treasury (price)+0.31IEF",
+      "Gold+0.12GC=F",
+      "Dollar−0.22DX-Y.NYB",
+      "Oil+0.18DCOILWTICO",
+      "Nasdaq+0.92^NDX",
+      "High-yield credit+0.64HYG",
     ]);
+    expect(within(list).getByText("IEF")).toHaveAttribute("title", "adjusted close, daily log return");
     fireEvent.click(within(card).getByTestId("dk-advanced"));
     expect(within(card).getByRole("table")).toHaveTextContent("60-day correlation, every pair");
     expect(within(card).getAllByRole("row")).toHaveLength(13);
@@ -141,28 +152,29 @@ describe("Macro tab", () => {
     expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent(/HY spread\s*Awaiting refresh/);
     expect(screen.getByRole("region", { name: /What moves with the S&P/ })).toHaveTextContent("Awaiting refresh · the correlations");
   });
-  it("TODAY is amber when the served call says bonds are not hedging; 2s10s is colored by the month's change", async () => {
+  it("TODAY takes no color of its own (§12.13 serves no hedging call); 2s10s is colored by the month's change", async () => {
     renderTab();
     const sb = await screen.findByRole("region", { name: /Do bonds still hedge/ });
-    await waitFor(() => expect(within(sb).getByText("+0.31")).toHaveAttribute("data-tone", "amber"));
+    await waitFor(() => expect(within(sb).getByText("+0.31")).toHaveAttribute("data-tone", "default"));
     const curve = screen.getByRole("region", { name: /Yield curve/ });
-    expect(within(curve).getByText("+41 bp")).toHaveAttribute("data-tone", "up");
+    // A month of flattening colors 2s10s down.
+    expect(within(curve).getByText("+25 bp")).toHaveAttribute("data-tone", "down");
   });
   it("a flattening month colors 2s10s down; a malformed flip month is not served", async () => {
     stubDesk({ "/api/desk/macro": () => ({ ...macro, curve: { ...macro.curve, "2s10s_chg_bp": -4 }, stock_bond: { ...macro.stock_bond, flipped: "2026-3" } }) });
     renderTab();
     const curve = await screen.findByRole("region", { name: /Yield curve/ });
-    await waitFor(() => expect(within(curve).getByText("+41 bp")).toHaveAttribute("data-tone", "down"));
+    await waitFor(() => expect(within(curve).getByText("+25 bp")).toHaveAttribute("data-tone", "down"));
     expect(curve).toHaveTextContent("flattening · −4 bp");
     expect(screen.getByRole("region", { name: /Do bonds still hedge/ })).toHaveTextContent(/Flipped\s*Awaiting refresh/);
   });
-  it("the served stock–bond words and hedging call; a year with no flip reads None", async () => {
-    stubDesk({ "/api/desk/macro": () => withBlock("stock_bond", { today: -0.2, year_ago: 0.3, hedging: true, flipped: null, words: { today: "negative · bonds hedging", year_ago: "was not hedging", flipped: "no change of sign this year" } }) });
+  it("a year with no flip reads None; the numbers stand without words", async () => {
+    stubDesk({ "/api/desk/macro": () => withBlock("stock_bond", { today: -0.2, year_ago: 0.3, flipped: null }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /Do bonds still hedge/ });
-    await waitFor(() => expect(card).toHaveTextContent(/Today\s*−0\.20\s*negative · bonds hedging/));
-    expect(card).toHaveTextContent(/A year ago\s*\+0\.30\s*was not hedging/);
-    expect(card).toHaveTextContent(/Flipped\s*None\s*no change of sign this year/);
+    await waitFor(() => expect(card).toHaveTextContent(/Today\s*−0\.20/));
+    expect(card).toHaveTextContent(/A year ago\s*\+0\.30/);
+    expect(card).toHaveTextContent(/Flipped\s*None/);
     expect(within(card).getByText("−0.20")).not.toHaveAttribute("data-tone", "amber");
   });
   it("null values inside a block keep their labels and print nothing unserved (M-2)", async () => {
@@ -268,8 +280,8 @@ describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () =>
       expect(within(card).getByTestId("dk-live")).toHaveTextContent("Not yet served");
       expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
     }
-    expect(screen.getByRole("region", { name: /^Yield curve/ })).toHaveTextContent("4.21%");
-    expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent("3.12%");
+    expect(screen.getByRole("region", { name: /^Yield curve/ })).toHaveTextContent("4.96%");
+    expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent("2.73%");
   });
   it("the matrix alone served awaiting disables its Advanced with not yet served; the six rows stand", async () => {
     stubDesk({ "/api/desk/macro": () => ({ ...macro, matrix: off("not ingested.") }) });

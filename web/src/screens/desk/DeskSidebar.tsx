@@ -10,6 +10,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { unavailableOf, useOverview, useTechnicals } from "./data/api";
+import type { DataStatus } from "./data/types";
 import { DESK_GROUPS, GATES } from "./desk-sections";
 import { dayShort, isFiniteNumber as fin, nyToday, pct, rowWords, toneOf } from "./kit/format";
 import Contain from "./kit/Contain";
@@ -22,6 +23,15 @@ export { nyToday };
  * the session's own day ("S&P Sep 22"), so a weekend never reads as today. */
 export function spxDayLabel(asOf: string, today = nyToday()): string {
   return asOf === today ? "S&P today" : `S&P ${dayShort(asOf)}`;
+}
+
+/** The contributors that are not current, one per line: "DGS10 stale: <reason>". */
+export function statusTitle(d: DataStatus): string {
+  const rows = Array.isArray(d.contributors) ? d.contributors : [];
+  return rows
+    .filter((c) => c.state !== "current")
+    .map((c) => `${c.series} ${c.state}: ${c.reason}`)
+    .join("\n");
 }
 
 function TodayCard() {
@@ -57,7 +67,8 @@ function TodayCard() {
         <p className="dk-today-sub" style={{ marginTop: 8 }} aria-busy="true" />
       )}
       <p className="dk-today-kv">
-        <span>{tech.data ? spxDayLabel(tech.data.as_of) : "S&P today"}</span>
+        {/* §12.7: the change is dated by its own sessions, never by the answer's calculation date. */}
+        <span>{tech.data ? spxDayLabel(tech.data.chg_1d_dates?.to ?? tech.data.date ?? tech.data.as_of) : "S&P today"}</span>
         {tech.data && fin(tech.data.chg_1d) ? (
           <span data-tone={toneOf(tech.data.chg_1d)}>{pct(tech.data.chg_1d)}</span>
         ) : techOff ? (
@@ -71,9 +82,14 @@ function TodayCard() {
       <p className="dk-today-kv">
         <span>Data</span>
         {ov.data?.data_status ? (
-          <span data-tone={ov.data.data_status === "current" ? "up" : "amber"} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span
+            data-tone={ov.data.data_status.state === "current" ? "up" : "amber"}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            // §12.1 (B-06): the worst contributor names the state; the tooltip lists any that are not current.
+            title={statusTitle(ov.data.data_status) || undefined}
+          >
             <span className="dk-dot" aria-hidden="true" />
-            {ov.data.data_status}
+            {ov.data.data_status.state}
           </span>
         ) : statusOff ? (
           <span>not yet served</span>

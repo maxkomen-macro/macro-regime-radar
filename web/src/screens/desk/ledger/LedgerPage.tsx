@@ -1,11 +1,9 @@
 /**
  * Signal Ledger (DESK_FRAME3_SPEC §8, screens/07-signal-ledger.png), read
  * from GET /api/desk/ledger (§12.4): every signal the engine scores on one
- * page. Four counts, five filters, and one table in two groups: firing now
- * (green-tinted rows), then the quiet ones sorted by verdict (Reliable,
- * Suggestive, No edge; §12.4 makes sorting the client's job and names no
- * third key, so a verdict keeps the served order). A row opens its study in
- * Event Study.
+ * page. Four counts, five filters, and one table: the twelve rows in the
+ * served fixed order (§8, v3 §2), a firing row green-tinted. A row opens its
+ * study in Event Study.
  */
 
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -15,7 +13,7 @@ import type { LedgerRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { dayLong, dayShort, pctPlain, VERDICT_LABEL, VERDICT_RANK } from "../kit/format";
+import { dayLong, dayShort, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { moveText, tipOf, vsNormalText } from "../kit/units";
 import { Awaiting, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
@@ -34,12 +32,6 @@ export function applyFilter(rows: readonly LedgerRow[], f: Filter): LedgerRow[] 
   if (f === "spx") return rows.filter((r) => r.group === "spx");
   if (f === "cross") return rows.filter((r) => r.group === "cross");
   return [...rows];
-}
-
-/** The quiet rows by verdict, served order within a verdict (a stable sort). */
-export function byVerdict(rows: readonly LedgerRow[]): LedgerRow[] {
-  const rank = (r: LedgerRow) => (r.verdict ? VERDICT_RANK[r.verdict] : 9) ?? 9;
-  return [...rows].sort((a, b) => rank(a) - rank(b));
 }
 
 /** Whether a box scrolls sideways: the table's region is a Tab stop only then (R2-4). */
@@ -141,9 +133,8 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   const noEdge = rows.filter((r) => isAvailable(r) && r.verdict === "no_edge");
   const scored = fin(l?.scored_n) ? l.scored_n : rows.filter(isAvailable).length;
   const off = fin(l?.unavailable_n) ? l.unavailable_n : rows.length - scored;
+  // §8: the rows in exactly the served order, whatever their state (v3 §2's fixed order).
   const shown = applyFilter(rows, filter);
-  const shownFiring = shown.filter(firingToday);
-  const shownQuiet = byVerdict(shown.filter((r) => !firingToday(r)));
   const open = (slug: string) => navigate(withParam(pathTo("event-study"), "preset", slug));
   const chips: { id: Filter; label: string }[] = [
     { id: "all", label: `All ${rows.length || ""}`.trim() },
@@ -197,31 +188,14 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
                   <th scope="col">Now</th>
                 </tr>
               </thead>
-              {shownFiring.length ? (
+              {shown.length ? (
                 <tbody>
-                  <tr className="lg-group">
-                    <th scope="rowgroup" colSpan={8}>
-                      Firing now
-                    </th>
-                  </tr>
-                  {shownFiring.map((r) => (
+                  {shown.map((r) => (
                     <Row key={r.slug} r={r} onOpen={open} />
                   ))}
                 </tbody>
               ) : null}
-              {shownQuiet.length ? (
-                <tbody>
-                  <tr className="lg-group">
-                    <th scope="rowgroup" colSpan={8}>
-                      Quiet · sorted by verdict
-                    </th>
-                  </tr>
-                  {shownQuiet.map((r) => (
-                    <Row key={r.slug} r={r} onOpen={open} />
-                  ))}
-                </tbody>
-              ) : null}
-              {!shownFiring.length && !shownQuiet.length ? (
+              {!shown.length ? (
                 <tbody>
                   <tr>
                     <td colSpan={8} className="lg-empty">

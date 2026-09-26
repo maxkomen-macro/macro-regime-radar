@@ -1,7 +1,8 @@
 /**
- * Signal Ledger (DESK_FRAME3_SPEC §8) against the §12.4 fixture: four counts,
- * five filters, firing rows first and the quiet ones by verdict in served
- * order, a row opening its study, and Awaiting refresh on a failed /ledger.
+ * Signal Ledger (DESK_FRAME3_SPEC §8) against the §12.5 fixture (the audit's
+ * real rows): four counts, five filters, the twelve rows in exactly the
+ * served fixed order (v3 §2), a row opening its study, and Awaiting refresh
+ * on a failed /ledger.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -11,9 +12,13 @@ import ledger from "../../../fixtures/desk/ledger.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { applyFilter, byVerdict } from "./LedgerPage";
+import { applyFilter } from "./LedgerPage";
 
 const rows = ledger.signals as LedgerRow[];
+/** The fixture with the 2s10s row firing today on the comparison session (the real snapshot fires nothing). */
+const firingRows = () => rows.map((r) => (r.slug === "2s10s-2sigma-steepening" ? { ...r, firing_now: true, firing_day: 10, stale: false } : r));
+/** v3 §2's fixed order of the twelve rows, by label. */
+const FIXED = ["2s10s +2σ steepening", "Dollar −2σ, 20 days", "S&P golden cross", "RSI below 30", "VIX spike +2σ, 5 days", "Gold +2σ while S&P weak", "HY spreads +2σ, 20 days", "S&P 20-day move over 2σ", "S&P death cross", "RSI above 70", "Oil +2σ, 20 days", "S&P 5-day move over 2σ"];
 
 function LocationSpy() {
   const l = useLocation();
@@ -41,14 +46,13 @@ afterEach(() => {
 });
 
 describe("Ledger order and filters", () => {
-  it("sorts the quiet rows by verdict and keeps the served order within one; unavailable rows have no verdict and go last", () => {
-    expect(byVerdict(rows.filter((r) => !r.firing_now)).map((r) => r.slug)).toEqual([
-      "golden-cross", "vix-spike-2sigma-5d", "gold-2sigma-spx-weak", "hy-2sigma-20d", "spx-20d-2sigma", "death-cross", "spx-5d-2sigma", "dollar-2sigma-20d", "rsi-below-30", "rsi-above-70", "oil-2sigma-20d",
-    ]);
+  it("the fixture serves the twelve rows in v3 §2's fixed order", () => {
+    expect(rows.map((r) => r.label)).toEqual(FIXED);
   });
   it("filters by firing, verdict and group; an unavailable row never counts as firing or Reliable (§8, v4 B-02)", () => {
-    expect(applyFilter(rows, "firing").map((r) => r.slug)).toEqual(["2s10s-2sigma-steepening"]);
-    expect(applyFilter(rows, "reliable").map((r) => r.slug)).toEqual(["golden-cross", "vix-spike-2sigma-5d"]);
+    expect(applyFilter(rows, "firing")).toHaveLength(0);
+    expect(applyFilter(firingRows(), "firing").map((r) => r.slug)).toEqual(["2s10s-2sigma-steepening"]);
+    expect(applyFilter(rows, "reliable").map((r) => r.slug)).toEqual(["golden-cross"]);
     expect(applyFilter(rows, "spx")).toHaveLength(6);
     expect(applyFilter(rows, "cross")).toHaveLength(6);
     expect(applyFilter(rows, "all")).toHaveLength(12);
@@ -58,32 +62,34 @@ describe("Ledger order and filters", () => {
 });
 
 describe("Signal Ledger tab", () => {
-  it("the four counts and the grouped table", async () => {
+  it("the four counts and the table in the served fixed order, with no groups", async () => {
     renderTab();
     // §8, v4 B-02: SIGNALS SCORED is scored_n, "<scored_n> scored · <unavailable_n> not yet served"; the rest count available rows only.
     await waitFor(() => expect(screen.getByText("Signals scored").parentElement?.textContent).toBe("Signals scored88 scored · 4 not yet served"));
-    expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/1\s*2s10s steepening/);
-    expect(screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/2\s*golden cross · VIX spike/);
+    expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/);
+    expect(screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/1\s*golden cross/);
     // §8: NO EDGE is the count alone; v2 §7's withdrawn "shown so you know it was checked" is gone.
-    expect(screen.getByText("No edge", { selector: ".dk-stat-label" }).parentElement?.textContent).toBe("No edge3");
+    expect(screen.getByText("No edge", { selector: ".dk-stat-label" }).parentElement?.textContent).toBe("No edge4");
     const table = screen.getByRole("table");
-    const groups = within(table).getAllByRole("rowgroup").slice(1);
-    expect(groups[0]).toHaveTextContent("Firing now");
-    expect(within(groups[0]).getAllByRole("row").slice(1).map((r) => r.querySelector("th")?.textContent)).toEqual(["2s10s +2σ steepening"]);
+    // §8: exactly the fixed order, one body, no group rows.
+    expect(within(table).getAllByRole("rowgroup")).toHaveLength(2);
+    expect(within(table).getAllByRole("row").slice(1).map((r) => r.querySelector("th")?.textContent)).toEqual(FIXED);
+    expect(table).not.toHaveTextContent(/Quiet · sorted|Firing now/);
     // An unavailable row keeps its label and prints its reason across the value columns, with no pill (§8).
     const dollar = within(table).getAllByRole("row").find((r) => r.querySelector("th")?.textContent === "Dollar −2σ, 20 days")!;
     expect(dollar.textContent).toBe("Dollar −2σ, 20 daysUS Dollar Index (DX-Y.NYB) is not stored in this database: it is a tier 2 series, and the full refresh stores tier 1 only.");
     expect(dollar.querySelector("td")?.getAttribute("colspan")).toBe("7");
     expect(dollar.querySelector(".dk-pill")).toBeNull();
     expect(dollar).not.toHaveAttribute("tabindex");
-    expect(groups[1]).toHaveTextContent("Quiet · sorted by verdict");
-    const first = within(groups[1]).getAllByRole("row")[1];
-    expect(first.textContent).toBe("S&P golden crossJul 1, 20253168%+2.7%+1.4 ptsReliable○ Quiet");
+    const rowOf = (label: string) => within(table).getAllByRole("row").find((r) => r.querySelector("th")?.textContent === label)!;
+    expect(rowOf("2s10s +2σ steepening").textContent).toBe("2s10s +2σ steepeningApr 21, 20254971%+1.6%+0.3 ptsNo edge○ Quiet");
+    // The golden cross last evaluated on Sep 21 (the 2026-09-22 close is missing): stale, never quiet or firing (v3 §3).
+    expect(rowOf("S&P golden cross").textContent).toBe("S&P golden crossJul 1, 20251479%+2.7%+1.4 ptsReliable○ Stale · Sep 21");
     // §8's footer: no universal normal month; each row is against its own baseline.
     const note = document.querySelector(".lg-note")!;
-    expect(note.textContent?.replace(/\u00a0/g, " ")).toBe("vs normal compares each study to its own baseline over its own sample. a month = 20 sessions · engine as of Sep 22");
+    expect(note.textContent?.replace(/\u00a0/g, " ")).toBe("vs normal compares each study to its own baseline over its own sample. a month = 20 sessions · engine as of Sep 24");
     // The date never breaks across lines.
-    expect(note.textContent).toContain("engine\u00a0as\u00a0of\u00a0Sep\u00a022");
+    expect(note.textContent).toContain("engine\u00a0as\u00a0of\u00a0Sep\u00a024");
     expect(document.body.textContent).not.toContain("normal month");
   });
   it("a filter narrows the table; a row opens its study in Event Study", async () => {
@@ -92,9 +98,9 @@ describe("Signal Ledger tab", () => {
     const group = screen.getByRole("group", { name: "Filter" });
     fireEvent.click(within(group).getByRole("button", { name: "Reliable only" }));
     const table = screen.getByRole("table");
-    expect(within(table).getAllByRole("row").filter((r) => r.querySelector("th[scope=row]"))).toHaveLength(2);
-    fireEvent.click(within(table).getByRole("row", { name: /VIX spike/ }));
-    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?preset=vix-spike-2sigma-5d"));
+    expect(within(table).getAllByRole("row").filter((r) => r.querySelector("th[scope=row]"))).toHaveLength(1);
+    fireEvent.click(within(table).getByRole("row", { name: /S&P golden cross/ }));
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?preset=golden-cross"));
   });
   it("a row opens from the keyboard too (Enter)", async () => {
     renderTab();
@@ -119,7 +125,7 @@ describe("Signal Ledger tab", () => {
     renderTab();
     const table = await screen.findByRole("table");
     const row = within(table).getByRole("row", { name: /S&P golden cross/ });
-    expect(row.textContent).toBe("S&P golden cross—————Reliable○ Quiet");
+    expect(row.textContent).toBe("S&P golden cross—————Reliable○ Stale · Sep 21");
   });
   it("each row's median prints in its own served unit: bp for a yield target, log percent with its tooltip, a dash without a unit (§1.9)", async () => {
     stubDesk({
@@ -163,7 +169,7 @@ describe("Signal Ledger tab", () => {
     const bp = within(table).getByRole("row", { name: /2s10s \+2σ steepening/ }) as HTMLTableRowElement;
     expect([bp.cells[4].textContent, bp.cells[5].textContent]).toEqual(["+12.5 bp", "+6 bp"]);
     const hy = within(table).getByRole("row", { name: /HY spreads/ }) as HTMLTableRowElement;
-    expect(hy.cells[5].textContent).toBe("+1.4 pts");
+    expect(hy.cells[5].textContent).toBe("−5.2 pts");
     expect(hy.cells[5].querySelector("[title]")?.getAttribute("title")).toBe("log return, ×100");
   });
   it("NOW reads '○ Stale · <evaluated_on>' when a row's last evaluable session is not the comparison session, never Firing (§8, v3 §3)", async () => {
@@ -186,14 +192,15 @@ describe("Signal Ledger tab", () => {
     expect(now).not.toHaveAttribute("data-tone");
   });
   it("NOW reads '● Firing · day <n>' and its tooltip names the session each row was evaluated on (§8, §12.5)", async () => {
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: firingRows() }) });
     renderTab();
     const table = await screen.findByRole("table");
     const firing = within(table).getByRole("row", { name: /2s10s/ }) as HTMLTableRowElement;
     const now = firing.cells[firing.cells.length - 1];
     expect(now.textContent).toBe("● Firing · day 10");
-    expect(now).toHaveAttribute("title", "evaluated on Sep 22, 2026");
-    const quiet = within(table).getByRole("row", { name: /S&P golden cross/ }) as HTMLTableRowElement;
-    expect(quiet.cells[quiet.cells.length - 1]).toHaveAttribute("title", "evaluated on Sep 22, 2026");
+    expect(now).toHaveAttribute("title", "evaluated on Sep 23, 2026");
+    const stale = within(table).getByRole("row", { name: /S&P golden cross/ }) as HTMLTableRowElement;
+    expect(stale.cells[stale.cells.length - 1]).toHaveAttribute("title", "evaluated on Sep 21, 2026");
   });
   it("Space opens a row too; a chip shows it is pressed", async () => {
     renderTab();
@@ -213,10 +220,10 @@ describe("Signal Ledger tab", () => {
     const table = await screen.findByRole("table");
     const row = within(table).getByRole("row", { name: /VIX spike/ });
     expect(row.querySelector(".dk-pill")).toBeNull();
-    expect(row.textContent).toBe("VIX spike +2σ, 5 daysAug 5, 20244171%+2.2%+0.9 pts——");
+    expect(row.textContent).toBe("VIX spike +2σ, 5 daysJun 5, 202611966%+1.5%+0.2 pts——");
   });
   it("counts are green only above zero", async () => {
-    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => ({ ...r, verdict: r.verdict === "reliable" ? "suggestive" : r.verdict })) }) });
+    stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: firingRows().map((r) => ({ ...r, verdict: r.verdict === "reliable" ? "suggestive" : r.verdict })) }) });
     renderTab();
     await waitFor(() => expect(screen.getByText("Signals scored").parentElement).toHaveTextContent("8 scored"));
     const reliable = screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement;

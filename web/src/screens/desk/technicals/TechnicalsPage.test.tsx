@@ -14,7 +14,7 @@ import technicals from "../../../fixtures/desk/technicals.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
-import { aboveBelow, dayInYear, dayMove, ledgerOrder, monthTicks, quarterOf, RSI_UNAVAILABLE, sevenOf, spxName, trendSub } from "./TechnicalsPage";
+import { aboveBelow, allowlistRows, dayInYear, dayMove, monthTicks, quarterOf, RSI_UNAVAILABLE, sevenOf, trendWord } from "./TechnicalsPage";
 import { servedTechnicals } from "../../../test/desk-variants";
 
 function renderTab() {
@@ -42,17 +42,16 @@ describe("Technicals words", () => {
     expect(quarterOf("2024-02")).toBe("Q1 2024");
     expect(dayInYear("2026-06-12", "2026-09-22")).toBe("Jun 12");
     expect(dayInYear("2025-04-08", "2026-09-22")).toBe("Apr 8, 2025");
-    expect(spxName("S&P golden cross")).toBe("Golden cross");
-    expect(spxName("RSI below 30")).toBe("RSI below 30");
     expect(quarterOf("2023")).toBe("");
     expect(dayMove(0.004, "2026-09-22", "2026-09-22")).toBe("+0.4% today");
     expect(dayMove(0.004, "2026-09-22", "2026-09-24")).toBe("+0.4% on Sep 22");
-    expect(trendSub({ vs_ma50: 0.021, vs_ma200: 0.085 })).toBe("above both averages");
-    expect(trendSub({ vs_ma50: Number.NaN, vs_ma200: 0.085 })).toBeNull();
+    // §3: `trend.state` in words.
+    expect([trendWord("above_both"), trendWord("below_both"), trendWord("mixed"), trendWord("unavailable"), trendWord("sideways")]).toEqual(["Above both", "Below both", "Mixed", "Unavailable", null]);
   });
-  it("orders the Ledger's rows firing first, then by verdict, served order within a verdict", () => {
-    const order = ledgerOrder((ledger.signals as LedgerRow[]).filter((r) => r.group === "spx" && r.available !== false)).map((r) => r.slug);
-    expect(order).toEqual(["golden-cross", "spx-20d-2sigma", "death-cross", "spx-5d-2sigma"]);
+  it("lists the Ledger's rows in `signals_allowlist` order, leaving out what the Ledger does not serve (§3)", () => {
+    const l = { ...ledger, signals: ledger.signals as LedgerRow[] };
+    expect(allowlistRows(l as never, technicals.signals_allowlist).map((r) => r.slug)).toEqual(["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]);
+    expect(allowlistRows(l as never, ["rsi-above-70", "golden-cross", "nope"]).map((r) => r.slug)).toEqual(["golden-cross"]);
   });
   it("keeps the top three, the middle one and the bottom three", () => {
     expect(sevenOf([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])).toEqual([1, 2, 3, 6, 9, 10, 11]);
@@ -67,13 +66,14 @@ describe("Technicals tab", () => {
   it("prints the price and its two averages with their distances, from /technicals", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /^S&P 500/ });
-    await waitFor(() => expect(card).toHaveTextContent("6,412"));
-    expect(card).toHaveTextContent(/\+0\.4% (today|on Sep 22)/);
-    expect(card).toHaveTextContent("6,280");
-    expect(card).toHaveTextContent("price is 2.1% above");
-    expect(card).toHaveTextContent("5,910");
-    expect(card).toHaveTextContent("price is 8.5% above");
-    expect(card.textContent?.replace(/\s+/g, " ")).toContain("Jul 1, 2025 — the 50-day crossed above the 200-day. This has happened 31 times before; the S&P was higher a month later 68% of the time. Reliable.");
+    await waitFor(() => expect(card).toHaveTextContent("7,706"));
+    // §12.7: the day's change is null while the 2026-09-22 close is missing, so no change is printed.
+    expect(card).not.toHaveTextContent(/today|on Sep 2\d/);
+    expect(card).toHaveTextContent("7,625");
+    expect(card).toHaveTextContent("price is 1.1% above");
+    expect(card).toHaveTextContent("7,192");
+    expect(card).toHaveTextContent("price is 7.1% above");
+    expect(card.textContent?.replace(/\s+/g, " ")).toContain("Jul 1, 2025 — the 50-day crossed above the 200-day. This has happened 14 times before; the S&P was higher a month later 79% of the time. Reliable.");
     expect(within(card).getByRole("img", { name: /with its 50-day and 200-day averages, 1Y/ })).toBeInTheDocument();
     fireEvent.click(within(card).getByRole("button", { name: "3Y" }));
     expect(within(card).getByRole("img", { name: /3Y/ })).toBeInTheDocument();
@@ -85,11 +85,14 @@ describe("Technicals tab", () => {
     await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(4));
     expect(card.textContent).not.toMatch(/RSI/);
     const rows = within(card).getAllByRole("listitem");
-    expect(rows[0].textContent?.replace(/\s+/g, " ")).toBe("Golden cross31× since 1990 · up 68% · a month later +2.7%Reliable");
-    expect(card).toHaveTextContent("+14.2%");
-    expect(card).toHaveTextContent("above both averages");
-    expect(card).toHaveTextContent("+0.6σ");
-    expect(card).toHaveTextContent("no extreme move");
+    // §3: the allowlist's order; the audit's real counts (14 golden crosses since the regime labels begin).
+    // §12.3: one canonical label per slug, the catalog's, on every tab (v2 §19).
+    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P golden cross", "S&P death cross", "S&P 20-day move over 2σ", "S&P 5-day move over 2σ"]);
+    expect(rows[0].textContent?.replace(/\s+/g, " ")).toBe("S&P golden cross14× since 1996 · up 79% · a month later +2.7%Reliable");
+    // §12.7: 252 XNYS sessions back, Sep 22, 2025.
+    expect(card).toHaveTextContent(/1-year return\s*\+15\.1%\s*since Sep 22, 2025/);
+    expect(card).toHaveTextContent(/Trend\s*Above both\s*since Sep 17, 2026/);
+    expect(card).toHaveTextContent(/Last 20 days\s*−0\.3σ\s*on Sep 23/);
     expect(card.querySelector(".te-note")?.textContent).toBe("vs normal compares each study to its own baseline over its own sample.");
     expect(card.textContent).not.toMatch(/normal month|A normal month|survives resampling/);
   });
@@ -100,10 +103,14 @@ describe("Technicals tab", () => {
     const card = await screen.findByRole("region", { name: "What protection costs right now" });
     await waitFor(() => expect(card).toHaveTextContent("+6.8 pts"));
     expect(card).toHaveTextContent("Puts are 6.8 vol points more expensive than calls.");
-    expect(card).toHaveTextContent("Rising since June. Investors are paying up for downside cover.");
+    // §12.0 serves a read only with a named rule; the §12.13 shape carries the trend's words and no read.
+    expect(card).toHaveTextContent("Rising since June.");
+    expect(card).not.toHaveTextContent("Investors are paying up");
     expect(card).toHaveTextContent("Options price 15.4% annual movement; the last 20 days delivered 11.9%.");
     expect(card).toHaveTextContent("15.4 · 16.8 · 17.5");
-    expect(card).toHaveTextContent("74th pct");
+    // No band edges in §12.13's shape: the percentile in words, no Cheap / Typical / Expensive gauge.
+    expect(card).toHaveTextContent("74th percentile of two years");
+    expect(card).not.toHaveTextContent("Expensive");
     expect(card).toHaveTextContent("Source: EODHD options, one pull per close · live read, not scored (history from Q4 2023)");
   });
 
@@ -142,20 +149,12 @@ describe("Technicals tab", () => {
     for (const card of [vol, sect]) expect(card).not.toHaveTextContent("Awaiting refresh");
   });
 
-  it("the words that judge a level are the served ones; unserved, the number stays and the word goes (Codex R-13)", async () => {
-    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, move_20d_word: "an extreme move" }) });
-    const first = renderTab();
-    const signals = await screen.findByRole("region", { name: /^Signals/ });
-    await waitFor(() => expect(signals).toHaveTextContent("an extreme move"));
-    first.unmount();
-
-    const { move_20d_word: _m, ...bare } = technicals;
-    void _m;
-    stubDesk({ "/api/desk/technicals": () => bare });
+  it("LAST 20 DAYS is the served σ on its own date, with no word (§3, §12.7 serve none)", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, move_20d_date: null }) });
     renderTab();
-    const s2 = await screen.findByRole("region", { name: /^Signals/ });
-    await waitFor(() => expect(s2).toHaveTextContent("+0.6σ"));
-    expect(s2).not.toHaveTextContent(/extreme move/);
+    const signals = await screen.findByRole("region", { name: /^Signals/ });
+    await waitFor(() => expect(signals).toHaveTextContent("−0.3σ"));
+    expect(signals).not.toHaveTextContent(/extreme move|on Sep 23/);
   });
 
   it("stays quiet while the first answers are on their way", async () => {
@@ -177,7 +176,7 @@ describe("Technicals tab", () => {
     await waitFor(() => expect(sect).toHaveTextContent("Awaiting refresh"));
     const sig = screen.getByRole("region", { name: /^Signals/ });
     await waitFor(() => expect(sig).toHaveTextContent("Awaiting refresh"));
-    expect(screen.getByRole("region", { name: /^S&P 500/ })).toHaveTextContent("6,412");
+    expect(screen.getByRole("region", { name: /^S&P 500/ })).toHaveTextContent("7,706");
   });
 
   it("a failed /technicals keeps the vol and sector cards' labels and says Awaiting refresh", async () => {

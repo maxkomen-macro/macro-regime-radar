@@ -11,7 +11,7 @@
 
 import type { ReactNode } from "react";
 import { unavailableOf, useRegime } from "../data/api";
-import type { Read, RegimeResponse } from "../data/types";
+import type { Read, RegimeResponse, NextPrint as NextPrintRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
@@ -47,9 +47,8 @@ function ServedRead({ read }: { read: Read | undefined }) {
   );
 }
 
-type NextPrintBlock = { date: string; flip_threshold_mom: number | null; flips_to: string | null };
 
-function Strip({ history }: { history: NonNullable<RegimeResponse["history"]> }) {
+function Strip({ history, note }: { history: NonNullable<RegimeResponse["history"]>; note?: string }) {
   const total = history.length;
   const segs = runs(history);
   const first = history[0]?.month;
@@ -80,6 +79,8 @@ function Strip({ history }: { history: NonNullable<RegimeResponse["history"]> })
           </span>
         ))}
       </p>
+      {/* §5: the served history note ("labels as stored; revisions are not replayed."). */}
+      {note ? <p className="rg-strip-note">{note}</p> : null}
     </div>
   );
 }
@@ -102,11 +103,12 @@ function Card({ id, title, sub, children, footer, busy }: { id: string; title: s
 type Trend = "rising" | "falling";
 const trend = (x: unknown): Trend | null => (x === "rising" || x === "falling" ? x : null);
 
-/** A trend's color (§1.3): growth rising is green and falling red; inflation rising is amber (caution) and falling green. */
+/** A trend's color (§1.3): growth rising is green (up) and falling red (down); inflation rising is amber
+ * (caution) and falling red, down, since green only ever means up, Reliable, firing or current. */
 export function trendTone(kind: "growth" | "inflation", t: Trend | null): "green" | "red" | "amber" | undefined {
   if (!t) return undefined;
   if (kind === "growth") return t === "rising" ? "green" : "red";
-  return t === "rising" ? "amber" : "green";
+  return t === "rising" ? "amber" : "red";
 }
 
 /** Labels that stay, each saying "Awaiting refresh" (§1.7), while nothing is loading. */
@@ -140,7 +142,8 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
     >
       {c?.label ? (
         <div className="rg-label-line">
-          <p className="rg-big" data-tone={REGIME_KEY[c.label] === "amber" ? "amber" : undefined}>
+          {/* §1.3's exception (v2 D-36) and §5: the big label in its regime's color. */}
+          <p className="rg-big" data-tone={REGIME_KEY[c.label]}>
             {c.label}
           </p>
           {/* §5: the newest stored row, shown beside the label and never used to classify it. */}
@@ -151,7 +154,7 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
       ) : null}
       {c && g && i ? (
         <p className="rg-lede">
-          Growth {g} and inflation {i}.{fin(c.months_in) && c.months_in > 1 ? ` ${capitalize(ordinalWord(c.months_in))} month in a row.` : ""}
+          Growth {g} and inflation {i}.{fin(c.months_in) && c.months_in >= 1 ? ` ${capitalize(ordinalWord(c.months_in))} month in a row.` : ""}
         </p>
       ) : null}
       {c ? (
@@ -164,7 +167,7 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
         <AwaitingStats labels={["Growth", "Inflation", "In this regime"]} quiet={quiet} />
       )}
       {history.length ? (
-        <Strip history={history} />
+        <Strip history={history} note={r?.history_note} />
       ) : quiet ? null : (
         <div className="rg-strip-wrap">
           <p className="dk-stat-label">Last five years</p>
@@ -314,30 +317,19 @@ export function mom(x: number): string {
 }
 
 /**
- * "a soft print (<0.2% m/m) flips inflation to falling → Goldilocks", from the
- * served threshold and the trend today: a rising trend flips on a print below
- * the threshold, a falling one on a print above it. Null when the threshold or
- * the trend is not served (the stat then says Awaiting refresh).
+ * §5: "a print <operator> <threshold_mom × 100>% m/m flips <inflation|growth> to
+ * <falling|rising> → <flips_to>, effective from the <first_effective_month>
+ * label." `<=` flips a rising axis to falling, `>` a falling axis to rising
+ * (v3 §9.3); the operator prints as ≤ or >. Null without a threshold.
  */
-export function flipWords(kind: "cpi" | "indpro", p: { flip_threshold_mom: number | null; flips_to: string | null }, now: unknown): string | null {
-  const t = trend(now);
-  if (!t || !fin(p.flip_threshold_mom) || typeof p.flips_to !== "string" || !p.flips_to) return null;
-  const x = p.flip_threshold_mom;
+export function flipWords(kind: "cpi" | "indpro", p: Pick<NextPrintRow, "threshold_mom" | "operator" | "flips_to" | "first_effective_month">): string | null {
+  if (!fin(p.threshold_mom) || (p.operator !== "<=" && p.operator !== ">")) return null;
+  const x = p.threshold_mom;
   const what = kind === "cpi" ? "inflation" : "growth";
-  const sign = x < 0 ? "−" : "";
-  const print =
-    t === "rising"
-      ? x > 0
-        ? `a soft print (<${mom(x)}% m/m)`
-        : x === 0
-          ? "a negative print"
-          : `a print below ${sign}${mom(x)}% m/m`
-      : x > 0
-        ? `a hot print (>${mom(x)}% m/m)`
-        : x === 0
-          ? "a positive print"
-          : `a print above ${sign}${mom(x)}% m/m`;
-  return `${print} flips ${what} to ${t === "rising" ? "falling" : "rising"} → ${p.flips_to}`;
+  const to = p.operator === "<=" ? "falling" : "rising";
+  const when = monthYear(p.first_effective_month);
+  const flips = typeof p.flips_to === "string" && p.flips_to ? ` → ${p.flips_to}` : "";
+  return `a print ${p.operator === "<=" ? "≤" : ">"} ${x < 0 ? "−" : ""}${mom(x)}% m/m flips ${what} to ${to}${flips}${when ? `, effective from the ${when} label` : ""}.`;
 }
 
 /** The date's color: the regime it would flip to, with red read as caution (D12: red is for down and negative numbers only). */
@@ -346,11 +338,13 @@ export function flipTone(to: string): "green" | "amber" | undefined {
   return k === "green" ? "green" : k === "amber" || k === "red" ? "amber" : undefined;
 }
 
-function NextPrint({ label, kind, p, now }: { label: string; kind: "cpi" | "indpro"; p: NextPrintBlock | null | undefined; now: unknown }) {
-  const words = p ? flipWords(kind, p, now) : null;
-  const date = p ? dayShort(p.date) : "";
-  if (!p || !words || !date || !p.flips_to) return <Stat label={label} awaiting />;
-  return <Stat label={label} value={date} tone={flipTone(p.flips_to)} sub={words} />;
+function NextPrint({ label, kind, p }: { label: string; kind: "cpi" | "indpro"; p: NextPrintRow | null | undefined }) {
+  const words = p ? flipWords(kind, p) : null;
+  if (!p || !words) return <Stat label={label} awaiting />;
+  // §5: the release date, "release date unavailable" when the calendar has no record.
+  const date = dayShort(p.release_date);
+  // The dash for a date not served is no signal, so it takes no color.
+  return <Stat label={label} value={date || "—"} tone={date && p.flips_to ? flipTone(p.flips_to) : undefined} sub={date ? words : `release date unavailable · ${words}`} />;
 }
 
 function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State }) {
@@ -383,8 +377,8 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
             </Unserved>
           ) : (
             <StatRow cols={2}>
-              <NextPrint label="Next CPI" kind="cpi" p={np?.cpi} now={r?.current?.inflation} />
-              <NextPrint label="Next INDPRO" kind="indpro" p={np?.indpro} now={r?.current?.growth} />
+              <NextPrint label="Next CPI" kind="cpi" p={np?.cpi} />
+              <NextPrint label="Next INDPRO" kind="indpro" p={np?.indpro} />
             </StatRow>
           )}
           <p className="dk-stat-label rg-changes-h">Last five regime changes · S&amp;P a month later</p>

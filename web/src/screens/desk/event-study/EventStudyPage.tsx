@@ -29,11 +29,21 @@ import { saveServed } from "../kit/download";
 import { Unserved } from "../kit/ui";
 import "./study.css";
 
-/** The provenance line under the grid (§4). */
-export function provenanceLine(s: Pick<StudyResponse, "as_of" | "slug" | "provenance" | "verdict_rule" | "verdict_confidence">, label: (k: string) => string): string {
+/** The provenance line under the grid (§4): "Engine as of <as_of> · <method> <draws> · entry <rule> · cooldown <n | none> ·
+ * <series> history from <data_start> · verdict rule v1 at 90% · slug <slug>"; a part not served is left out. */
+export function provenanceLine(
+  s: Pick<StudyResponse, "as_of" | "slug" | "provenance" | "verdict_rule" | "verdict_confidence" | "horizons" | "selected_horizon" | "data_start">,
+  label: (k: string) => string,
+): string {
   const p = s.provenance;
-  const hist = Object.entries(p?.series_start ?? {}).map(([k, v]) => `${label(k)} history from ${year(v)}`);
-  return [dayShort(s.as_of) ? `Engine as of ${dayShort(s.as_of)}` : null, fin(p?.bootstrap) ? `cluster bootstrap ${grouped(p.bootstrap)}` : null, p?.entry ? `entry ${p.entry}` : null, fin(p?.cooldown) ? `cooldown ${p.cooldown}` : null, ...hist, verdictRuleWords(s), s.slug ? `slug ${s.slug}` : null]
+  const h = (Array.isArray(s.horizons) ? s.horizons : []).find((x) => x.h === s.selected_horizon);
+  const method = h?.method === "monte_carlo" ? "Monte Carlo" : h?.method === "enumeration" ? "enumeration" : null;
+  const resampling = method ? [method, fin(h?.draws) ? grouped(h.draws) : null].filter(Boolean).join(" ") : null;
+  // The series whose history starts last sets `data_start`.
+  const latest = Object.entries(p?.series_start ?? {}).find(([, v]) => v === s.data_start)?.[0];
+  const history = latest && year(s.data_start) ? `${label(latest)} history from ${year(s.data_start)}` : null;
+  const cooldown = p ? `cooldown ${fin(p.cooldown) ? p.cooldown : "none"}` : null;
+  return [dayShort(s.as_of) ? `Engine as of ${dayShort(s.as_of)}` : null, resampling, p?.entry_rule ? `entry ${p.entry_rule}` : null, cooldown, history, verdictRuleWords(s), s.slug ? `slug ${s.slug}` : null]
     .filter(Boolean)
     .join(" · ");
 }

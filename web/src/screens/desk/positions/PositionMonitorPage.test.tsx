@@ -148,7 +148,7 @@ describe("Position Monitor tab", () => {
       expect(screen.getByRole("status")).toHaveTextContent("Two things left: pick a “wrong if” level, and fix one word above");
       fireEvent.click(within(wording).getByRole("button", { name: "Use “is likely to”" }));
       expect(screen.getByLabelText(/Variant view/)).toHaveValue("The market thinks gold is likely to keep falling, I think it bounces, because the study says so.");
-      await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ })).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day \(7,625\)/ })).toBeInTheDocument());
       fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day/ }));
       expect(screen.getByRole("status")).toHaveTextContent("The gate is complete. Save keeps the position in this browser.");
       fireEvent.click(screen.getByTestId("pm-save"));
@@ -161,19 +161,19 @@ describe("Position Monitor tab", () => {
         size_nav: null,
         horizon_days: 20,
         red_team: "The bounce is priced.",
-        wrong_if: { id: "below_50d", label: "closes below its 50-day (6,280)" },
+        wrong_if: { id: "below_50d", label: "closes below its 50-day (7,625)" },
         subject: { kind: "instrument", id: "spx" },
         monitoring: "automatic",
         entry_date: "2026-09-22",
-        entry_value: 6412,
-        trigger: { series: "spx", operator: "below", threshold: 6280, policy: "frozen", observed_on: "2026-09-22" },
-        original_room: 132,
+        entry_value: 7706.02978515625,
+        trigger: { series: "spx", operator: "below", threshold: 7624.837392578125, policy: "frozen", observed_on: "2026-09-23" },
         evaluation: "close",
         closes: [],
       });
       const mon = screen.getByRole("region", { name: /Monitored/ });
       expect(within(mon).getAllByTestId("dk-mon-row")).toHaveLength(1);
-      expect(mon).toHaveTextContent("100% room · 2.1% to level");
+      expect(p.original_room).toBeCloseTo(7706.02978515625 - 7624.837392578125, 9);
+      expect(mon).toHaveTextContent("100% room · 1.1% to level");
       expect(screen.getByLabelText(/Variant view/)).toHaveValue("");
     } finally {
       vi.useRealTimers();
@@ -185,10 +185,10 @@ describe("Position Monitor tab", () => {
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
     fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "short" } });
     answer();
-    await waitFor(() => expect(screen.getByRole("button", { name: "closes above its 50-day (6,280)" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "closes above its 50-day (6,280)" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "closes above its 50-day (7,625)" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "closes above its 50-day (7,625)" }));
     fireEvent.click(screen.getByTestId("pm-save"));
-    expect(screen.getByRole("status")).toHaveTextContent("The S&P 500 is at 6,412, already above 6,280, so there is no room to monitor. Pick another level; nothing was saved.");
+    expect(screen.getByRole("status")).toHaveTextContent("The S&P 500 is at 7,706, already above 7,625, so there is no room to monitor. Pick another level; nothing was saved.");
     // A refusal is a caution, never green (P-3); the form keeps every word.
     expect(screen.getByRole("status")).toHaveAttribute("data-tone", "amber");
     expect(screen.getByLabelText(/Variant view/)).not.toHaveValue("");
@@ -199,11 +199,11 @@ describe("Position Monitor tab", () => {
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "2s10s" } });
     answer();
-    await waitFor(() => expect(screen.getByRole("button", { name: "falls 10 bp from entry (below +31 bp)" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "falls 10 bp from entry (below +31 bp)" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "falls 10 bp from entry (below +15 bp)" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "falls 10 bp from entry (below +15 bp)" }));
     fireEvent.click(screen.getByTestId("pm-save"));
     await waitFor(() => expect(stored()).toHaveLength(1));
-    expect(stored()[0]).toMatchObject({ subject: { kind: "instrument", id: "curve_2s10s" }, monitoring: "automatic", entry_value: 41, trigger: { series: "curve_2s10s", operator: "below", threshold: 31 }, original_room: 10 });
+    expect(stored()[0]).toMatchObject({ subject: { kind: "instrument", id: "curve_2s10s" }, monitoring: "automatic", entry_value: 25, trigger: { series: "curve_2s10s", operator: "below", threshold: 15 }, original_room: 10 });
     fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "TLT" } });
     answer();
     fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "TLT below 88" } });
@@ -233,12 +233,12 @@ describe("Position Monitor tab", () => {
     renderTab();
     // The index first, so the served numbers are known to have arrived before SPY is judged (G4-5).
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
-    await waitFor(() => expect(screen.getByRole("button", { name: "closes below its 50-day (6,280)" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "closes below its 50-day (7,625)" })).toBeInTheDocument());
     expect(screen.getByText(/suggested for S&P 500/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "SPY" } });
     await waitFor(() => expect(screen.getByRole("button", { name: "closes below its 50-day" })).toBeInTheDocument());
     expect(screen.getByText(/suggested for SPY/)).toBeInTheDocument();
-    expect(screen.getByRole("main").textContent).not.toMatch(/6,280|5,910/);
+    expect(screen.getByRole("main").textContent).not.toMatch(/7,625|7,192/);
   });
 
   it("the S&P is known by its name, not by a served field: /technicals without `instrument` still numbers and monitors its 50-day (§12.7)", async () => {
@@ -246,10 +246,10 @@ describe("Position Monitor tab", () => {
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "S&P 500" } });
     answer();
-    fireEvent.click(await screen.findByRole("button", { name: "closes below its 50-day (6,280)" }));
+    fireEvent.click(await screen.findByRole("button", { name: "closes below its 50-day (7,625)" }));
     fireEvent.click(screen.getByTestId("pm-save"));
     await waitFor(() => expect(stored()).toHaveLength(1));
-    expect(stored()[0]).toMatchObject({ subject: { kind: "instrument", id: "spx" }, monitoring: "automatic", trigger: { series: "spx", threshold: 6280 } });
+    expect(stored()[0]).toMatchObject({ subject: { kind: "instrument", id: "spx" }, monitoring: "automatic", trigger: { series: "spx", threshold: 7624.837392578125 } });
   });
 
   it("with /technicals awaiting, the S&P's 50-day is refused as not served, never saved as manual (§9, B-10)", async () => {
@@ -283,9 +283,9 @@ describe("Position Monitor tab", () => {
     seed(RECORDS);
     renderTab("/desk/position-monitor?open=2s10s-steepener");
     const mon = await screen.findByRole("region", { name: /Monitored/ });
-    await waitFor(() => expect(mon).toHaveTextContent("30% room · 3 bp to level"));
+    await waitFor(() => expect(mon).toHaveTextContent("40% room · 10 bp to level"));
     expect(within(mon).getAllByTestId("dk-mon-row").map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "ai-infra-hedged", "ndx-vs-spx"]);
-    expect(mon).toHaveTextContent("2s10s below +38 bp · now +41 bp");
+    expect(mon).toHaveTextContent("2s10s below +15 bp · now +25 bp");
     expect(mon).toHaveTextContent(/2% NAV · DV01 — · \d+ of 20 trading days · opened Sep 2/);
     expect(mon).toHaveTextContent("TODO(Max): the variant view for 2s10s steepener");
     expect(within(mon).getByRole("link", { name: "Open the study behind it →" })).toHaveAttribute("href", "/desk/event-study?shock=curve_2s10s&window=20&move=up2s&while=none&target=spx&horizon=20");
@@ -345,15 +345,15 @@ describe("Position Monitor tab", () => {
     expect(deskFixture("POST", "/api/desk/positions", "{}")!.status).toBe(405);
   });
 
-  it("the carried study's served target name fills the instrument and the subtitle (Codex R-03)", async () => {
-    stubDesk({ "/api/desk/study": () => ({ ...study, question: { ...study.question, target_label: "S&P 500 index" } }) });
+  it("the carried study's target, named by its series[] entry, fills the instrument and the subtitle (§12.2)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, series: study.series.map((x) => (x.key === "spx" ? { ...x, label: "S&P 500 index" } : x)) }) });
     renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
     await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500 index"));
     expect(screen.getByText(/Carried in from Event Study · .*→ S&P 500 index over the next/)).toBeInTheDocument();
   });
 
-  it("without a served target name the target goes unnamed, in the subtitle and the instrument alike (Codex G2-9)", async () => {
-    stubDesk({ "/api/desk/study": () => ({ ...study, question: { ...study.question, target_label: undefined } }) });
+  it("a target series[] does not list goes unnamed, in the subtitle and the instrument alike (Codex G2-9)", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, series: study.series.filter((x) => x.key !== "spx") }) });
     renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
     await waitFor(() => expect(screen.getByText(/Carried in from Event Study · .*→ the study's target over the next/)).toBeInTheDocument());
     expect(screen.getByLabelText("Instrument")).toHaveValue("");
@@ -403,10 +403,10 @@ describe("Position Monitor tab", () => {
     renderTab("/desk/position-monitor?from=gold-2sigma-spx-weak");
     await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
     answer();
-    fireEvent.click(await screen.findByRole("button", { name: "closes below its 50-day (6,280)" }));
+    fireEvent.click(await screen.findByRole("button", { name: "closes below its 50-day (7,625)" }));
     fireEvent.click(screen.getByTestId("pm-save"));
     await waitFor(() => expect(stored()).toHaveLength(1));
-    expect(stored()[0]).toMatchObject({ subject: { kind: "study" }, monitoring: "automatic", trigger: { series: "spx", threshold: 6280 } });
+    expect(stored()[0]).toMatchObject({ subject: { kind: "study" }, monitoring: "automatic", trigger: { series: "spx", threshold: 7624.837392578125 } });
   });
 
   it("with no study carried in, the reversal is not offered", async () => {
@@ -420,8 +420,8 @@ describe("Position Monitor tab", () => {
     renderTab();
     fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "SPX" } });
     answer();
-    await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /closes below its 50-day \(7,625\)/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day \(7,625\)/ }));
     expect(screen.getByTestId("pm-save")).toBeEnabled();
     // Direction: the long's level is not a short's, so nothing is picked any more.
     fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "short" } });
@@ -429,8 +429,8 @@ describe("Position Monitor tab", () => {
     expect(screen.getByRole("status")).toHaveTextContent("pick a “wrong if” level");
     fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "long" } });
     // Switching back brings nothing back: the dropped level stays dropped.
-    expect(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ })).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day \(6,280\)/ }));
+    expect(screen.getByRole("button", { name: /closes below its 50-day \(7,625\)/ })).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day \(7,625\)/ }));
     // Instrument: the same rule without the S&P's number is still offered, and its label follows it.
     fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "TLT" } });
     const chip = screen.getByRole("button", { name: "closes below its 50-day" });
@@ -486,6 +486,7 @@ describe("Position Monitor tab", () => {
     await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("S&P 500"));
     expect(screen.getByLabelText("Horizon")).toHaveValue("20");
     expect(screen.getByLabelText(/Variant view/)).toHaveValue("");
-    expect(screen.getByText(/Carried in from Event Study · Gold up 2σ or more over 20 days while S&P below its 50-day → S&P 500 over the next 1 month/)).toBeInTheDocument();
+    // The shock is named by the served series label, the registry's (§12.2).
+    expect(screen.getByText(/Carried in from Event Study · Gold \(COMEX front month\) up 2σ or more over 20 days while S&P below its 50-day → S&P 500 over the next 1 month/)).toBeInTheDocument();
   });
 });

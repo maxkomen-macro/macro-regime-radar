@@ -166,11 +166,11 @@ test.describe("desk v2", () => {
     await expect(answer).toContainText("+25 bp");
     await expect(answer).toContainText("+5 bp");
     await expect(answer).not.toContainText(/[+−]\d+(\.\d)?%/);
-    await expect(page.getByRole("main")).toContainText("10-year Treasury yield a month later");
+    await expect(page.getByRole("main")).toContainText("10Y Treasury a month later");
     expect(await auditPalette(page)).toEqual([]);
     await open(page, "/desk/event-study?preset=gold-2sigma-spx-weak&view=client", { "/api/desk/study": { status: 200, body: bpStudy() } });
     const backdrop = page.getByRole("region", { name: "A month later, by economic backdrop" });
-    await expect(backdrop).toContainText("Typical 10-year Treasury yield move after the setup");
+    await expect(backdrop).toContainText("Typical 10Y Treasury move after the setup");
     await expect(backdrop).toContainText("+12 bp");
     await expect(page.locator('[title="log return, ×100"]')).toHaveCount(0);
   });
@@ -205,18 +205,22 @@ test.describe("desk v2", () => {
     // The monitored rows are this browser's (§2, §9): one amber, one green, one manual.
     const [ndx, curve] = ["ndx-vs-spx", "2s10s-steepener"].map((id) => (positionSample as { positions: { id: string }[] }).positions.find((p) => p.id === id)!);
     const spx = { ...curve, id: "spx-long", instrument: "S&P 500", wrong_if: { id: "below_50d", label: "closes below its 50-day (6,280)" }, subject: { kind: "instrument", id: "spx" }, entry_value: 6500, original_room: 220, trigger: { series: "spx", operator: "below", threshold: 6280, policy: "frozen", observed_on: "2026-09-02" } };
-    await seedPositions(page, [ndx, spx, { ...curve, entry_value: 58, original_room: 20 }]);
+    // On the audit's levels (2s10s now 25 bp, falsified at 15): entered at 55, 10 of 40 bp of room is left, 25%.
+    await seedPositions(page, [ndx, spx, { ...curve, entry_value: 55, original_room: 40 }]);
     await open(page, "/desk/overview");
     // §2: the K−2 row governing today (a September session reads the July row).
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Jul row");
-    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Overheating");
+    // The audit's values (§2.2, §2.1, Q7): the July row is Goldilocks; the S&P dated Sep 23; the VIX Sep 22.
+    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Goldilocks");
     await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("12%");
-    await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Live · Sep 22");
-    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("16.2");
+    await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Live · Sep 23");
+    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("14.2");
     await expect(page.getByTestId("dk-live")).toHaveCount(4);
-    await expect(page.getByTestId("ov-since")).toContainText("2s10s steepening still firing, day 10");
-    // Tones render (verifier V-1): Overheating amber, room amber under 30% and green at 50% or more.
-    await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-value")).toHaveCSS("color", "rgb(232, 180, 71)");
+    // Nothing is firing in the audit's snapshot, so the line names no signal.
+    await expect(page.getByTestId("ov-since")).toContainText("regime unchanged");
+    await expect(page.getByTestId("ov-since")).not.toContainText("firing");
+    // Tones render (verifier V-1): Goldilocks green, room amber under 30% and green at 50% or more.
+    await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-value")).toHaveCSS("color", "rgb(38, 220, 160)");
     const rows = page.getByTestId("dk-mon-row");
     await expect(rows.nth(0).locator(".dk-mon-room")).toHaveCSS("color", "rgb(232, 180, 71)");
     await expect(rows.nth(1).locator(".dk-mon-room")).toHaveCSS("color", "rgb(38, 220, 160)");
@@ -233,16 +237,17 @@ test.describe("desk v2", () => {
   test("overview: a failed /overview keeps every label and says Awaiting refresh", async ({ page }) => {
     await open(page, "/desk/overview", { "/api/desk/overview": { status: 503, body: { error: "generation warming" } } });
     for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) await expect(page.getByRole("region", { name })).toContainText("Awaiting refresh");
-    await expect(page.getByText("Overheating")).toHaveCount(0);
+    await expect(page.getByText("Goldilocks")).toHaveCount(0);
     await expect(page.getByTestId("dk-live")).toHaveCount(0);
   });
 
-  test("technicals: the page badge, the range chips redraw the chart, the 5,000 / 6,000 / 7,000 axis", async ({ page }) => {
+  test("technicals: the page badge, the range chips redraw the chart, the 6,000 / 7,000 / 8,000 axis", async ({ page }) => {
     await open(page, "/desk/technicals");
-    await expect(page.getByTestId("dk-live").first()).toContainText("Live · Yahoo/FRED · as of Sep 22, 2026");
+    // §3: the badge dates /technicals' own session.
+    await expect(page.getByTestId("dk-live").first()).toContainText("Live · Sep 23");
     const price = page.getByRole("region", { name: /S&P 500 price/ });
     await expect(price.getByRole("img", { name: /1Y/ })).toBeVisible();
-    await expect(price.locator(".dk-chart-axis")).toContainText(["5,000", "6,000", "7,000", "Oct 25", "Apr 26", "Sep 26"]);
+    await expect(price.locator(".dk-chart-axis")).toContainText(["6,000", "7,000", "8,000", "Oct 25", "Apr 26", "Sep 26"]);
     await price.getByRole("button", { name: "3Y" }).click();
     await expect(price.getByRole("img", { name: /3Y/ })).toBeVisible();
     // §3: the S&P rows the Ledger scores; the RSI rows are omitted while unavailable.
@@ -316,7 +321,8 @@ test.describe("desk v2", () => {
     expect(download.suggestedFilename()).toBe("gold-2sigma-spx-weak-events.csv");
     const csv = await (await download.createReadStream())?.toArray();
     const text = Buffer.concat((csv ?? []) as Buffer[]).toString("utf8");
-    expect(text.split("\n")[0]).toBe("date,regime,ret_5,ret_10,ret_20,ret_60");
+    // §12.4's columns: the event, its entry, its regime, then exit, value and completeness per horizon.
+    expect(text.split("\n")[0]).toBe("event_date,entry_date,regime,exit_5,value_5,complete_5,exit_10,value_10,complete_10,exit_20,value_20,complete_20,exit_60,value_60,complete_60");
     expect(text.trim().split("\n")).toHaveLength(19);
     const chips = page.getByRole("group", { name: "Confidence" });
     await expect(chips.getByRole("button", { name: "80%" })).toBeDisabled();
@@ -382,13 +388,14 @@ test.describe("desk v2", () => {
 
   test("verdicts: a Too few row's pill is dashed gray; both footers carry the four definitions and fit at 1440 and 390 (§1.5, B-13)", async ({ page }) => {
     const ledger = payloadOf(deskFixture("GET", "/api/desk/ledger")!) as { signals: Record<string, unknown>[] };
-    const signals = ledger.signals.map((r, i) => (i === 0 ? { ...r, verdict: "insufficient", n: 6 } : r));
+    // The fixture's HY row is Too few on its own (n 2, the audit's §2.4); one more makes two.
+    const signals = ledger.signals.map((r) => (r.slug === "death-cross" ? { ...r, verdict: "insufficient", n: 6 } : r));
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/signal-ledger", { "/api/desk/ledger": { status: 200, body: { ...ledger, signals } } });
       const pill = page.locator(".lg-table .dk-pill[data-verdict=insufficient]");
-      await expect(pill).toHaveText("Too few");
-      expect(await pill.evaluate((e) => getComputedStyle(e).borderTopStyle)).toBe("dashed");
+      await expect(pill).toHaveText(["Too few", "Too few"]);
+      expect(await pill.evaluateAll((els) => els.map((e) => getComputedStyle(e).borderTopStyle))).toEqual(["dashed", "dashed"]);
       await expect(page.locator(".lg-foot .dk-defs > div")).toHaveCount(4);
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
@@ -456,7 +463,8 @@ test.describe("desk v2", () => {
   test("position monitor: the flagged and expanded states stay in the palette; no sideways scroll; no stretch in a tall window", async ({ page }) => {
     await seedPositions(page);
     await open(page, "/desk/position-monitor?from=gold-2sigma-spx-weak&open=2s10s-steepener");
-    await expect(page.getByRole("region", { name: /Monitored/ })).toContainText("2s10s below +38 bp · now +41 bp");
+    // The 2s10s sample on real levels (the audit's Q11): entered at 40 bp, falsified at 15, now 25.
+    await expect(page.getByRole("region", { name: /Monitored/ })).toContainText("2s10s below +15 bp · now +25 bp");
     await page.getByLabel(/Variant view/).fill("The market thinks gold will keep falling.");
     await expect(page.getByRole("group", { name: "Wording" })).toContainText("1 to fix, one click");
     await page.getByRole("button", { name: /closes below its 50-day/ }).click();
@@ -596,10 +604,10 @@ test.describe("desk v2", () => {
   test("SPY gets no index numbers; the S&P 500 does (Codex R-08)", async ({ page }) => {
     await open(page, "/desk/position-monitor");
     await page.getByLabel("Instrument", { exact: true }).fill("S&P 500");
-    await expect(page.getByRole("button", { name: "closes below its 50-day (6,280)" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "closes below its 50-day (7,625)" })).toBeVisible();
     await page.getByLabel("Instrument", { exact: true }).fill("SPY");
     await expect(page.getByRole("button", { name: "closes below its 50-day", exact: true })).toBeVisible();
-    await expect(page.getByRole("main")).not.toContainText("6,280");
+    await expect(page.getByRole("main")).not.toContainText("7,625");
   });
 
   test("basket & hedge: unavailable, the basket's weights kept in the browser, the hand-off; every width", async ({ page }) => {
@@ -683,9 +691,10 @@ test.describe("desk v2", () => {
   test("the client view: the study in plain words, §1.3 colors, no banned word, no verdict pill; back to Desk", async ({ page }) => {
     for (const route of ["/desk/overview?view=client", "/desk/event-study?preset=gold-2sigma-spx-weak&view=client"]) {
       await open(page, route);
-      await expect(page.getByRole("heading", { level: 1 })).toHaveText("When gold jumps and stocks are already soft, what has the S&P done next?");
+      // §12.2: the client headline is the catalog label.
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold +2σ while S&P weak");
       await expect(page.getByRole("region", { name: "A month later, by economic backdrop" }).getByRole("listitem")).toHaveCount(4);
-      await expect(page.getByRole("main")).toContainText("Radar · FRED, Yahoo Finance · as of Sep 22, 2026 · Past patterns do not guarantee future results.");
+      await expect(page.getByRole("main")).toContainText("Radar · FRED, Yahoo Finance · as of Sep 24, 2026 · Past patterns do not guarantee future results.");
       await expect(page.locator("main .dk-pill")).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Export one-pager (PDF)" })).toBeVisible();
       expect(await auditPalette(page)).toEqual([]);
@@ -707,7 +716,7 @@ test.describe("desk v2", () => {
       { h: 20, regime: "Recession Risk", n: 12, up_pct: 0.83, median: 0.035 },
     ];
     await open(page, "/desk/overview?view=client", { "/api/desk/study": { status: 200, body: { ...study, by_regime } } });
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/When gold jumps/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold +2σ while S&P weak");
     await page.emulateMedia({ media: "print" });
     await expect(page.getByRole("complementary", { name: "Sidebar" })).toBeHidden();
     await expect(page.getByRole("button", { name: "Export one-pager (PDF)" })).toBeHidden();

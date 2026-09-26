@@ -176,3 +176,9 @@
   outline: 2px solid var(--dk-blue);
   outline-offset: 2px;
 }
+/* §6: tenors dated apart say so under the chart. */
+.mc-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--dk-t3);
+}

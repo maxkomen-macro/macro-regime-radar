@@ -19,6 +19,8 @@ export interface LineSeries {
   width?: number;
   /** Printed at the line's right end. */
   label?: string;
+  /** Join the served points across a value not served (the yield curve's tenors), instead of lifting the pen. */
+  connect?: boolean;
 }
 
 export interface YBand {
@@ -151,12 +153,12 @@ export default function LineChart(props: LineChartProps) {
   const ph = Math.max(10, height - pad.t - pad.b);
   const x = (i: number) => pad.l + (n <= 1 ? 0 : (i / (n - 1)) * pw);
   const y = (v: number) => pad.t + ((hi - v) / (hi - lo || 1)) * ph;
-  const path = (vals: readonly (number | null)[]) => {
+  const path = (vals: readonly (number | null)[], connect = false) => {
     let d = "";
     let pen = false;
     vals.forEach((v, i) => {
       if (v == null || !Number.isFinite(v)) {
-        pen = false;
+        if (!connect) pen = false;
         return;
       }
       d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
@@ -178,11 +180,18 @@ export default function LineChart(props: LineChartProps) {
   // The drawn lines as segments, for labels that keep clear of them.
   const lines: [number, number, number, number][] = [];
   if (pointLabels.some((p) => p.avoid))
-    for (const s of series)
+    for (const s of series) {
+      // Each drawn segment: consecutive points, or for a connected series the next served point.
+      let prev: { i: number; v: number } | null = null;
       s.values.forEach((v, i) => {
-        const w = s.values[i + 1];
-        if (v != null && w != null && Number.isFinite(v) && Number.isFinite(w)) lines.push([x(i), y(v), x(i + 1), y(w)]);
+        if (v == null || !Number.isFinite(v)) {
+          if (!s.connect) prev = null;
+          return;
+        }
+        if (prev) lines.push([x(prev.i), y(prev.v), x(i), y(v)]);
+        prev = { i, v };
       });
+    }
   const taken: Box[] = [];
   const placed = pointLabels.map((p) => {
     if (!p.avoid) return p.dy ?? -8;
@@ -242,7 +251,7 @@ export default function LineChart(props: LineChartProps) {
           </>
         ) : null}
         {series.map((s) => (
-          <path key={s.key} d={path(s.values)} fill="none" stroke={s.color} strokeWidth={s.width ?? 2} strokeDasharray={s.dash} strokeLinejoin="round" strokeLinecap="round" />
+          <path key={s.key} d={path(s.values, s.connect)} fill="none" stroke={s.color} strokeWidth={s.width ?? 2} strokeDasharray={s.dash} strokeLinejoin="round" strokeLinecap="round" />
         ))}
         {series.map((s, k) =>
           s.label && ends[k] ? (

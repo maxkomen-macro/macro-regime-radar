@@ -1,53 +1,25 @@
 {
- "as_of": "2026-09-22",
- "generation_id": "gen-fixture-2026-09-22",
+ "as_of": "2026-09-24",
+ "generation_id": "gen-fixture-2026-09-24",
  "current": {
-  "label": "Overheating",
+  "label": "Goldilocks",
   "print": "2026-07",
-  "latest_print": "2026-08",
   "growth": "rising",
-  "inflation": "rising",
-  "months_in": 2,
-  "since": "2026-06",
+  "inflation": "falling",
+  "months_in": 1,
+  "since": "2026-07",
   "freq": "monthly",
-  "source": "regimes table (src/regime.py)"
+  "source": "regimes table (src/regime.py)",
+  "latest_print": "2026-08"
  },
  "history": [
-  {
-   "month": "2021-01",
-   "regime": "Goldilocks"
-  },
-  {
-   "month": "2021-02",
-   "regime": "Goldilocks"
-  },
-  {
-   "month": "2021-03",
-   "regime": "Goldilocks"
-  },
-  {
-   "month": "2021-04",
-   "regime": "Goldilocks"
-  },
-  {
-   "month": "2021-05",
-   "regime": "Goldilocks"
-  },
-  {
-   "month": "2021-06",
-   "regime": "Goldilocks"
-  },
-  {
-   "month": "2021-07",
-   "regime": "Goldilocks"
-  },
   {
    "month": "2021-08",
    "regime": "Overheating"
   },
   {
    "month": "2021-09",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2021-10",
@@ -63,19 +35,19 @@
   },
   {
    "month": "2022-01",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2022-02",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-03",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-04",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-05",
@@ -91,15 +63,15 @@
   },
   {
    "month": "2022-08",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-09",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-10",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-11",
@@ -111,95 +83,95 @@
   },
   {
    "month": "2023-01",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-02",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-03",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-04",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-05",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-06",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-07",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-08",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-09",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-10",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-11",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-12",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2024-01",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-02",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-03",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2024-04",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2024-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2024-07",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-08",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-09",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-10",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-11",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-12",
@@ -215,11 +187,11 @@
   },
   {
    "month": "2025-03",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-04",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-05",
@@ -227,51 +199,47 @@
   },
   {
    "month": "2025-06",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-07",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-08",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-09",
    "regime": "Stagflation"
   },
   {
-   "month": "2025-10",
-   "regime": "Goldilocks"
-  },
-  {
    "month": "2025-11",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2025-12",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2026-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-02",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-03",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-06",
@@ -279,13 +247,16 @@
   },
   {
    "month": "2026-07",
-   "regime": "Overheating"
+   "regime": "Goldilocks"
   },
   {
    "month": "2026-08",
    "regime": "Overheating"
   }
  ],
+ "history_note": "labels as stored; revisions are not replayed.",
+ "history_freq": "monthly",
+ "history_source": "regimes table (src/regime.py)",
  "recession": {
   "score": 0.11644217590049129,
   "probability_month": "2026-08",
@@ -319,24 +290,36 @@
   "freq": "monthly",
   "source": "recession model (src/analytics/recession.py)"
  },
+ "next_prints": {
+  "cpi": {
+   "release_date": "2026-10-14",
+   "reference_month": "2026-09",
+   "series": "CPIAUCSL",
+   "threshold_mom": -0.003944560666325425,
+   "operator": "<=",
+   "flips_to": "Goldilocks",
+   "first_effective_month": "2026-11",
+   "freq": "monthly",
+   "source": "CPIAUCSL"
+  },
+  "indpro": {
+   "release_date": null,
+   "reference_month": "2026-09",
+   "series": "INDPRO",
+   "threshold_mom": -0.00022121275039244104,
+   "operator": "<=",
+   "flips_to": "Stagflation",
+   "first_effective_month": "2026-11",
+   "freq": "monthly",
+   "source": "INDPRO"
+  }
+ },
  "stats": {
   "status": "awaiting",
   "data": null,
   "unavailable": {
    "reason": "regime statistics not yet defined in the engine.",
    "until": null
-  }
- },
- "next_prints": {
-  "cpi": {
-   "date": "2026-10-14",
-   "flip_threshold_mom": 0.002,
-   "flips_to": "Goldilocks"
-  },
-  "indpro": {
-   "date": "2026-10-17",
-   "flip_threshold_mom": 0.0,
-   "flips_to": "Stagflation"
   }
  },
  "changes": {

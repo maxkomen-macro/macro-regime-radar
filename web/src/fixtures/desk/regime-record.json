@@ -1,94 +1,94 @@
 {
- "note": "The fixtures' monthly regime record (the stored regimes table they stand for), oldest first. Its last rows are /regime's history exactly and its months by regime are /regime's stats; a study event in month K takes the row stamped K−2 (src/desk/event_study.py REGIME_LAG_MONTHS). Fixture only: no endpoint serves it.",
+ "note": "The fixtures' monthly regime record: the stored regimes table of the audit's store, oldest first, with 2025-10 absent as it is stored. Its last 60 rows are /regime's history; a study event in month K takes the row stamped K−2 (src/desk/event_study.py REGIME_LAG_MONTHS), Unlabeled when that row is absent. Fixture only: no endpoint serves it.",
  "lag_months": 2,
  "months": [
   {
    "month": "1996-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1996-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1996-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1996-08",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1996-09",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1996-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1996-11",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1996-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-02",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-03",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-08",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-09",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-11",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1997-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-02",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-03",
@@ -96,39 +96,39 @@
   },
   {
    "month": "1998-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-07",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "1998-08",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-09",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-11",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1998-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "1999-01",
@@ -164,7 +164,7 @@
   },
   {
    "month": "1999-09",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "1999-10",
@@ -204,19 +204,19 @@
   },
   {
    "month": "2000-07",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2000-08",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2000-09",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2000-10",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2000-11",
@@ -236,23 +236,23 @@
   },
   {
    "month": "2001-03",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2001-04",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2001-05",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2001-06",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2001-07",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2001-08",
@@ -260,11 +260,11 @@
   },
   {
    "month": "2001-09",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2001-10",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2001-11",
@@ -276,71 +276,71 @@
   },
   {
    "month": "2002-01",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2002-02",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2002-03",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2002-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2002-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2002-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2002-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2002-08",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2002-09",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2002-10",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2002-11",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2002-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2003-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2003-02",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2003-03",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2003-04",
-   "regime": "Goldilocks"
+   "regime": "Recession Risk"
   },
   {
    "month": "2003-05",
-   "regime": "Goldilocks"
+   "regime": "Recession Risk"
   },
   {
    "month": "2003-06",
@@ -348,19 +348,19 @@
   },
   {
    "month": "2003-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2003-08",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2003-09",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2003-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2003-11",
@@ -368,7 +368,7 @@
   },
   {
    "month": "2003-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2004-01",
@@ -384,7 +384,7 @@
   },
   {
    "month": "2004-04",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2004-05",
@@ -392,11 +392,11 @@
   },
   {
    "month": "2004-06",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2004-07",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2004-08",
@@ -420,7 +420,7 @@
   },
   {
    "month": "2005-01",
-   "regime": "Overheating"
+   "regime": "Goldilocks"
   },
   {
    "month": "2005-02",
@@ -440,7 +440,7 @@
   },
   {
    "month": "2005-06",
-   "regime": "Overheating"
+   "regime": "Goldilocks"
   },
   {
    "month": "2005-07",
@@ -452,19 +452,19 @@
   },
   {
    "month": "2005-09",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2005-10",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2005-11",
-   "regime": "Overheating"
+   "regime": "Goldilocks"
   },
   {
    "month": "2005-12",
-   "regime": "Overheating"
+   "regime": "Goldilocks"
   },
   {
    "month": "2006-01",
@@ -492,11 +492,11 @@
   },
   {
    "month": "2006-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2006-08",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2006-09",
@@ -504,39 +504,39 @@
   },
   {
    "month": "2006-10",
-   "regime": "Goldilocks"
+   "regime": "Recession Risk"
   },
   {
    "month": "2006-11",
-   "regime": "Goldilocks"
+   "regime": "Recession Risk"
   },
   {
    "month": "2006-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2007-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2007-02",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2007-03",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2007-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2007-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2007-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2007-07",
@@ -544,11 +544,11 @@
   },
   {
    "month": "2007-08",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2007-09",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2007-10",
@@ -556,11 +556,11 @@
   },
   {
    "month": "2007-11",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2007-12",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2008-01",
@@ -592,7 +592,7 @@
   },
   {
    "month": "2008-08",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2008-09",
@@ -616,51 +616,51 @@
   },
   {
    "month": "2009-02",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2009-03",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2009-04",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2009-05",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2009-06",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2009-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2009-08",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2009-09",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2009-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2009-11",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2009-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2010-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2010-02",
@@ -672,7 +672,7 @@
   },
   {
    "month": "2010-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2010-05",
@@ -684,31 +684,31 @@
   },
   {
    "month": "2010-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2010-08",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2010-09",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2010-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2010-11",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2010-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2011-01",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2011-02",
@@ -716,11 +716,11 @@
   },
   {
    "month": "2011-03",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2011-04",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2011-05",
@@ -728,47 +728,47 @@
   },
   {
    "month": "2011-06",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2011-07",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2011-08",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2011-09",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2011-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2011-11",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2011-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2012-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2012-02",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2012-03",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2012-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2012-05",
@@ -784,19 +784,19 @@
   },
   {
    "month": "2012-08",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2012-09",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2012-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2012-11",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2012-12",
@@ -804,15 +804,15 @@
   },
   {
    "month": "2013-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2013-02",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2013-03",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2013-04",
@@ -820,83 +820,83 @@
   },
   {
    "month": "2013-05",
-   "regime": "Goldilocks"
+   "regime": "Recession Risk"
   },
   {
    "month": "2013-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2013-07",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2013-08",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2013-09",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2013-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2013-11",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2013-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2014-01",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2014-02",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2014-03",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2014-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2014-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2014-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2014-07",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2014-08",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2014-09",
-   "regime": "Recession Risk"
+   "regime": "Goldilocks"
   },
   {
    "month": "2014-10",
-   "regime": "Recession Risk"
+   "regime": "Goldilocks"
   },
   {
    "month": "2014-11",
-   "regime": "Recession Risk"
+   "regime": "Goldilocks"
   },
   {
    "month": "2014-12",
-   "regime": "Recession Risk"
+   "regime": "Goldilocks"
   },
   {
    "month": "2015-01",
@@ -908,27 +908,27 @@
   },
   {
    "month": "2015-03",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2015-04",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2015-05",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2015-06",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2015-07",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2015-08",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2015-09",
@@ -940,59 +940,59 @@
   },
   {
    "month": "2015-11",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2015-12",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2016-01",
-   "regime": "Recession Risk"
+   "regime": "Goldilocks"
   },
   {
    "month": "2016-02",
-   "regime": "Recession Risk"
+   "regime": "Goldilocks"
   },
   {
    "month": "2016-03",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2016-04",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2016-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2016-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2016-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2016-08",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2016-09",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2016-10",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2016-11",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2016-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2017-01",
@@ -1000,7 +1000,7 @@
   },
   {
    "month": "2017-02",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2017-03",
@@ -1016,19 +1016,19 @@
   },
   {
    "month": "2017-06",
-   "regime": "Overheating"
+   "regime": "Goldilocks"
   },
   {
    "month": "2017-07",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2017-08",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2017-09",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2017-10",
@@ -1064,7 +1064,7 @@
   },
   {
    "month": "2018-06",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2018-07",
@@ -1080,15 +1080,15 @@
   },
   {
    "month": "2018-10",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2018-11",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2018-12",
-   "regime": "Recession Risk"
+   "regime": "Goldilocks"
   },
   {
    "month": "2019-01",
@@ -1096,55 +1096,55 @@
   },
   {
    "month": "2019-02",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2019-03",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2019-04",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2019-05",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2019-06",
-   "regime": "Recession Risk"
+   "regime": "Goldilocks"
   },
   {
    "month": "2019-07",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2019-08",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2019-09",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2019-10",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2019-11",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2019-12",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2020-01",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2020-02",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2020-03",
@@ -1160,59 +1160,59 @@
   },
   {
    "month": "2020-06",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2020-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2020-08",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2020-09",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2020-10",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2020-11",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2020-12",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2021-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2021-02",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2021-03",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2021-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2021-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2021-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2021-07",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2021-08",
@@ -1220,7 +1220,7 @@
   },
   {
    "month": "2021-09",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2021-10",
@@ -1236,19 +1236,19 @@
   },
   {
    "month": "2022-01",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2022-02",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-03",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-04",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-05",
@@ -1264,15 +1264,15 @@
   },
   {
    "month": "2022-08",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-09",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-10",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2022-11",
@@ -1284,95 +1284,95 @@
   },
   {
    "month": "2023-01",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-02",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-03",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-04",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-05",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-06",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-07",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-08",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-09",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2023-10",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-11",
-   "regime": "Recession Risk"
+   "regime": "Stagflation"
   },
   {
    "month": "2023-12",
-   "regime": "Recession Risk"
+   "regime": "Overheating"
   },
   {
    "month": "2024-01",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-02",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-03",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2024-04",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2024-06",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2024-07",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-08",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-09",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-10",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-11",
-   "regime": "Overheating"
+   "regime": "Stagflation"
   },
   {
    "month": "2024-12",
@@ -1388,11 +1388,11 @@
   },
   {
    "month": "2025-03",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-04",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-05",
@@ -1400,51 +1400,47 @@
   },
   {
    "month": "2025-06",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-07",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-08",
-   "regime": "Stagflation"
+   "regime": "Overheating"
   },
   {
    "month": "2025-09",
    "regime": "Stagflation"
   },
   {
-   "month": "2025-10",
-   "regime": "Goldilocks"
-  },
-  {
    "month": "2025-11",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2025-12",
-   "regime": "Goldilocks"
+   "regime": "Stagflation"
   },
   {
    "month": "2026-01",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-02",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-03",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-04",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-05",
-   "regime": "Goldilocks"
+   "regime": "Overheating"
   },
   {
    "month": "2026-06",
@@ -1452,7 +1448,7 @@
   },
   {
    "month": "2026-07",
-   "regime": "Overheating"
+   "regime": "Goldilocks"
   },
   {
    "month": "2026-08",

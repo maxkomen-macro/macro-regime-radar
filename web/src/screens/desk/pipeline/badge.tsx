@@ -14,19 +14,22 @@ export function refreshWords(iso: string | null | undefined): string {
   return d && t ? `${d}, ${t}` : "";
 }
 
-/** The top bar's badge (§11): the last full refresh and whether it validated. */
+/** The served verdict in the header's words: pass → "passed", fail → "failed", not served → "unknown" (§11). */
+export function validationWord(v: unknown): "passed" | "failed" | "unknown" {
+  return v === "pass" ? "passed" : v === "fail" ? "failed" : "unknown";
+}
+
+/** The top bar's badge (§11): "● Last full refresh <when> · validation <passed|failed>", "unknown" for either part not served. */
 export function PipelineBadge({ testId = "pl-badge" }: { testId?: string }) {
   const q = usePipeline();
   const p = q.data;
-  const when = refreshWords(p?.last_refresh_utc);
-  const validation = typeof p?.validation === "string" && p.validation ? p.validation : null;
-  // Nothing to say without either; a failed validation shows even when the refresh time is missing (D-2).
-  if (!p || (!when && !validation)) return null;
-  const passed = validation === "passed";
+  if (!p) return null;
+  const when = refreshWords(p.last_refresh_utc) || "unknown";
+  const validation = validationWord(p.validation);
   return (
-    <span className="dk-live dk-live-boxed pl-badge" data-tone={passed ? undefined : "amber"} data-testid={testId}>
+    <span className="dk-live dk-live-boxed pl-badge" data-tone={validation === "passed" ? undefined : "amber"} data-testid={testId}>
       <span className="dk-dot" aria-hidden="true" />
-      {[`Last full refresh ${when || "—"}`, validation ? `validation ${validation}` : null].filter(Boolean).join(" · ")}
+      {`Last full refresh ${when} · validation ${validation}`}
     </span>
   );
 }

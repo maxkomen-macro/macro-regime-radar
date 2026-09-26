@@ -313,3 +313,11 @@ export function importSaved(list: SavedQuestion[], text: string): { list: SavedQ
   }
   return { list: out, added, rejected };
 }
+
+/** The study's target, named by its `series[]` entry (§12.2 serves no separate target name); null when
+ * the target is not listed, and the page then leaves it unnamed rather than guessing from the key. */
+export function targetLabel(s: { question?: { target?: string }; series?: { key: string; label: string }[] } | null | undefined): string | null {
+  const key = s?.question?.target;
+  const hit = key && Array.isArray(s?.series) ? s.series.find((x) => x.key === key) : undefined;
+  return typeof hit?.label === "string" && hit.label ? hit.label : null;
+}

@@ -193,6 +193,10 @@
 .te-signals .dk-stat-sub {
   font-size: 13px;
 }
+/* The trend's words (§3) break between words in a narrow column; the numbers have no spaces to break at. */
+.te-signals .dk-stat-value {
+  white-space: normal;
+}
 .te-note {
   margin-top: auto;
   font-size: 13.5px;

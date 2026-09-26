@@ -74,7 +74,8 @@
   line-height: 1.2;
   margin-top: 3px;
   color: var(--dk-t1);
-  white-space: nowrap;
+  /* Words ("Above 50 & 200") break between words in a narrow tile rather than run into the next one. */
+  white-space: normal;
 }
 .ov-tile-sub {
   font-size: 13.5px;
@@ -164,7 +165,9 @@
   height: 30px;
   font-size: 14px;
 }
-@media (max-width: 1100px) {
+/* Below 1280px four tiles and two columns leave the signal names a sliver (verifier V12-12): the tiles
+   take two columns and the signals and the monitored rows a row each. */
+@media (max-width: 1279px) {
   .ov-tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

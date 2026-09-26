@@ -11,7 +11,7 @@
 import type { StudyResponse } from "../data/types";
 import { dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { Advanced, Awaiting, Signed, UnservedLine, useUnserved, VerdictWord } from "../kit/ui";
-import { CONFIDENCES } from "./question";
+import { CONFIDENCES, targetLabel } from "./question";
 import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
 import type { TargetUnit } from "../data/types";
 
@@ -94,7 +94,7 @@ export default function StudyRail({
   const unit = isUnit(study.question.target_unit) ? study.question.target_unit : undefined;
   // Every log number carries the §1.9 tooltip; bp numbers none.
   const tip = tipOf(unit);
-  const target = study.question.target_label;
+  const target = targetLabel(study);
   return (
     <>
       <div className="es-verdict" data-verdict={verdict}>
@@ -171,10 +171,11 @@ export default function StudyRail({
       ) : lastEvents ? (
         <ul className="es-events">
           {lastEvents.map((e) => (
-            <li key={e.date}>
-              <span>{dayLong(e.date)}</span>
+            <li key={e.event_date}>
+              {/* §4: event date · regime · value_20. */}
+              <span>{dayLong(e.event_date)}</span>
               <span className="es-events-regime">{e.regime}</span>
-              {fin(e.ret_20) && moveText(e.ret_20, unit) ? <Signed value={e.ret_20} title={tip}>{moveText(e.ret_20, unit)}</Signed> : <span className="es-events-none">—</span>}
+              {fin(e.value_20) && moveText(e.value_20, unit) ? <Signed value={e.value_20} title={tip}>{moveText(e.value_20, unit)}</Signed> : <span className="es-events-none">—</span>}
             </li>
           ))}
         </ul>

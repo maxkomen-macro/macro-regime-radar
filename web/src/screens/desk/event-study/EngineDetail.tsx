@@ -14,7 +14,7 @@
 import { ApiError } from "../../../api/client";
 import { isEngineAbsent, useEventStudy, useEventStudyAssets, type EventStudyHorizon, type EventStudyResponse } from "../../../api/desk";
 import { useStudyEvents } from "../data/api";
-import type { Question, StudyResponse } from "../data/types";
+import type { Question, StudyHorizon, StudyResponse } from "../data/types";
 import { dayLong, grouped, isFiniteNumber as fin, pctPlain, verdictRuleWords } from "../kit/format";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import { Awaiting, VerdictWord } from "../kit/ui";
@@ -128,6 +128,13 @@ function FrameTwo({ slug, question, label }: { slug: string | null; question: Qu
   return <p className="es-note" aria-busy="true" />;
 }
 
+/** A horizon's resampling, in words: "Monte Carlo · 10,000 draws · 18 blocks · 14.6% adverse"; a horizon with no interval says why. */
+export function resamplingWords(h: Pick<StudyHorizon, "method" | "draws" | "n_blocks" | "adverse_share" | "reason">): string {
+  const method = h.method === "enumeration" ? "enumeration" : h.method === "monte_carlo" ? "Monte Carlo" : null;
+  if (!method) return typeof h.reason === "string" ? h.reason : "no interval";
+  return [method, fin(h.draws) ? `${grouped(h.draws)} draws` : null, fin(h.n_blocks) ? `${h.n_blocks} blocks` : null, fin(h.adverse_share) ? `${pctPlain(h.adverse_share, 1)} adverse` : null].filter(Boolean).join(" · ");
+}
+
 export default function EngineDetail({ id, study, ask, engineSlug, label }: { id: string; study: StudyResponse; ask: Ask; engineSlug: string | null; label: (k: string) => string }) {
   const events = useStudyEvents(apiParams(ask));
   const pv = study.provenance;
@@ -151,13 +158,13 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
               </thead>
               <tbody>
                 {list.map((e) => (
-                  <tr key={e.date}>
-                    <th scope="row">{dayLong(e.date)}</th>
+                  <tr key={e.event_date}>
+                    <th scope="row">{dayLong(e.event_date)}</th>
                     <td>{e.regime}</td>
-                    {[e.ret_5, e.ret_10, e.ret_20, e.ret_60].map((v, i) => (
-                      // Each move in the study's target unit (Codex R-02); none without it.
+                    {([e.value_5, e.value_10, e.value_20, e.value_60] as (number | null | undefined)[]).map((v, i) => (
+                      // Each move in the study's target unit (Codex R-02); an incomplete window says so (§12.4 `complete_<h>`).
                       <td key={i} title={fin(v) && moveText(v, study.question.target_unit) ? tipOf(study.question.target_unit) : undefined}>
-                        {fin(v) ? (moveText(v, study.question.target_unit) ?? "Awaiting refresh") : "no observation"}
+                        {fin(v) ? (moveText(v, study.question.target_unit) ?? "Awaiting refresh") : "not complete yet"}
                       </td>
                     ))}
                   </tr>
@@ -171,15 +178,17 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
         <div>
           <p className="dk-stat-label es-rail-h">Resampling detail</p>
           <p className="es-note">
-            Cluster bootstrap, {pv && fin(pv.bootstrap) ? grouped(pv.bootstrap) : "an unstated number of"} draws, ranges at {fin(study.verdict_confidence) ? `the engine's ${pctPlain(study.verdict_confidence)}` : "the engine's served level"}.
+            Cluster bootstrap over overlap blocks, ranges at {fin(study.verdict_confidence) ? `the engine's ${pctPlain(study.verdict_confidence)}` : "the engine's served level"}; each horizon's method and draws below.
             {verdictRuleWords(study) ? ` Each horizon's verdict follows ${verdictRuleWords(study)}:` : " Each horizon's verdict follows the definitions below."}
           </p>
           <VerdictDefinitions />
           {Array.isArray(study.horizons) ? (
-            <ul className="es-ranges">
+            <ul className="es-ranges es-resampling">
               {study.horizons.map((h) => (
                 <li key={h.h}>
                   <span>{h.label}</span>
+                  {/* §4: each horizon's method, draws, blocks and adverse share. */}
+                  <span className="es-range-how">{resamplingWords(h)}</span>
                   {!fin(h.ci_lo) || !fin(h.ci_hi) ? (
                     <span className="es-range-why">{typeof h.reason === "string" && h.reason ? h.reason : "Awaiting refresh"}</span>
                   ) : (
@@ -195,7 +204,7 @@ export default function EngineDetail({ id, study, ask, engineSlug, label }: { id
           <p className="dk-stat-label es-rail-h">Entry rules</p>
           {pv ? (
             <p className="es-note">
-              The condition is checked on the shock day; entry is the {pv.entry || "served entry rule"}; {fin(pv.cooldown) ? `a new event needs ${pv.cooldown} sessions after the last one.` : "the cooldown between events was not served."}
+              Entry is {pv.entry_rule || "the served entry rule"}. {fin(pv.cooldown) ? `A new event needs ${pv.cooldown} sessions after the last one.` : "A cross has no cooldown."}
             </p>
           ) : (
             <Awaiting>the study's entry rules</Awaiting>

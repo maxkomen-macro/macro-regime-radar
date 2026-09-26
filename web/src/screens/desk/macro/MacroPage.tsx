@@ -15,7 +15,7 @@ import { unavailableOf, useMacro } from "../data/api";
 import type { MacroResponse, Read } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { dayShort, endDay, monthYear, num, ordinal } from "../kit/format";
+import { dayLong, dayShort, endDay, monthYear, num, ordinal } from "../kit/format";
 import Gauge from "../kit/Gauge";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
@@ -102,6 +102,19 @@ export function coverTicks(lo: number, hi: number, max: number): { v: number; te
   return [lo, hi].map((v) => ({ v, text: num(v, 2) }));
 }
 
+/** "Tenors dated apart: 2y Sep 22 · 10y Sep 21" (§6, §12.8). */
+export function tenorDates(dates: Record<string, string>): string {
+  return `Tenors dated apart: ${TENORS.filter((t) => dates[t]).map((t) => `${t} ${dayShort(dates[t])}`).join(" · ")}`;
+}
+
+/** "3m, 5y and 30y not served": the curve's tenors without a value today (§6), or "" when all are served. */
+export function unservedTenors(today: Partial<Record<(typeof TENORS)[number], number | null>>): string {
+  const off = TENORS.filter((t) => !fin(today[t]));
+  if (!off.length) return "";
+  const list = off.length === 1 ? off[0] : `${off.slice(0, -1).join(", ")} and ${off[off.length - 1]}`;
+  return `${list} not served`;
+}
+
 function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
@@ -138,12 +151,19 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
               n={TENORS.length}
               yDomain={[ticks[0].v, ticks[ticks.length - 1].v]}
               yTicks={ticks.map((t) => ({ v: t.v, text: `${t.text}%` }))}
+              // §6: a tenor not served leaves its point out; the line under the chart names it (per-tick
+              // words collide below 1280px, verifier V12-2).
               xTicks={TENORS.map((t, i) => ({ i, text: t }))}
               series={[
-                { key: "ago", values: TENORS.map((t) => (fin(ago?.[t]) ? (ago?.[t] as number) : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 1.5, label: "a month ago" },
-                { key: "today", values: TENORS.map((t) => (fin(today[t]) ? (today[t] as number) : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "today" },
+                // §6: today blue solid, a month ago gray dashed, each joining its served tenors.
+                { key: "ago", values: TENORS.map((t) => (fin(ago?.[t]) ? (ago?.[t] as number) : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 1.5, label: "a month ago", connect: true },
+                { key: "today", values: TENORS.map((t) => (fin(today[t]) ? (today[t] as number) : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "today", connect: true },
               ]}
-              markers={TENORS.map((t, i) => ({ i, v: today[t] as number, color: DESK_ACCENTS.blue, r: 3.5 })).filter((p) => fin(p.v))}
+              // Both dates' points are marked, so a curve with tenors left out still shows each served point.
+              markers={[
+                ...TENORS.map((t, i) => ({ i, v: ago?.[t] as number, color: DESK_ACCENTS.gray, r: 3 })),
+                ...TENORS.map((t, i) => ({ i, v: today[t] as number, color: DESK_ACCENTS.blue, r: 3.5 })),
+              ].filter((p) => fin(p.v))}
               // Each value's label keeps clear of both lines (the kit places it); the first starts at its
               // point, clear of the y labels, and the last ends at it, clear of the two end labels.
               pointLabels={TENORS.map((t, i) => ({
@@ -160,6 +180,9 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
           ) : (
             <Awaiting>the curve</Awaiting>
           )}
+          {/* §6: the tenors not served, and tenors dated apart, say so. */}
+          {today && drawn && unservedTenors(today) ? <p className="mc-note">{unservedTenors(today)}</p> : null}
+          {today && !today.date && today.dates ? <p className="mc-note">{tenorDates(today.dates)}</p> : null}
           <ServedRead read={m?.reads?.curve} />
         </>
       ) : (
@@ -189,9 +212,10 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
       {sb ? (
         <>
           <StatRow cols={3}>
-            <Stat label="Today" value={fin(sb.today) ? corrText(sb.today) : undefined} awaiting={!fin(sb.today)} tone={sb.hedging === false ? "amber" : undefined} sub={sb.words?.today} />
-            <Stat label="A year ago" value={fin(sb.year_ago) ? corrText(sb.year_ago) : undefined} awaiting={!fin(sb.year_ago)} sub={sb.words?.year_ago} />
-            <Stat label="Flipped" value={flipServed ? (sb.flipped ? monthYear(sb.flipped) : "None") : undefined} awaiting={!flipServed} sub={sb.words?.flipped} />
+            {/* §12.13's shape carries the three numbers only; no words and no hedging call are served. */}
+            <Stat label="Today" value={fin(sb.today) ? corrText(sb.today) : undefined} awaiting={!fin(sb.today)} />
+            <Stat label="A year ago" value={fin(sb.year_ago) ? corrText(sb.year_ago) : undefined} awaiting={!fin(sb.year_ago)} />
+            <Stat label="Flipped" value={flipServed ? (sb.flipped ? monthYear(sb.flipped) : "None") : undefined} awaiting={!flipServed} />
           </StatRow>
           {drawn ? (
             <LineChart
@@ -253,9 +277,16 @@ function Credit({ m, state }: { m: MacroResponse | undefined; state: State }) {
       {c ? (
         <>
           <StatRow cols={3}>
-            <Stat label="HY spread" value={fin(c.hy) ? `${num(c.hy, 2)}%` : undefined} awaiting={!fin(c.hy)} sub={c.words?.hy} />
-            <Stat label="3-year range" value={fin(lo) && fin(hi) ? `${num(lo)} – ${num(hi)}%` : undefined} awaiting={!(fin(lo) && fin(hi))} sub={c.words?.range} />
-            <Stat label="Investment grade" value={fin(c.ig) ? `${num(c.ig, 2)}%` : undefined} awaiting={!fin(c.ig)} sub={c.words?.ig} />
+            {/* §6: HY and IG dated; the 3-year range, or the served reason when it is null. */}
+            <Stat label="HY spread" value={fin(c.hy?.value) ? `${num(c.hy.value, 2)}%` : undefined} awaiting={!fin(c.hy?.value)} sub={c.hy && fin(c.hy.value) ? [c.band ?? null, dayShort(c.hy.date) || null].filter(Boolean).join(" · ") || undefined : undefined} />
+            {fin(lo) && fin(hi) ? (
+              <Stat label="3-year range" value={`${num(lo)} – ${num(hi)}%`} sub={c.rank_window && dayShort(c.rank_window.start) ? `since ${dayLong(c.rank_window.start)}` : undefined} />
+            ) : typeof c.reason === "string" && c.reason ? (
+              <Stat label="3-year range" value="—" sub={c.reason} />
+            ) : (
+              <Stat label="3-year range" awaiting />
+            )}
+            <Stat label="Investment grade" value={fin(c.ig?.value) ? `${num(c.ig.value, 2)}%` : undefined} awaiting={!fin(c.ig?.value)} sub={c.ig && fin(c.ig.value) ? dayShort(c.ig.date) || undefined : undefined} />
           </StatRow>
           {fin(pctile) && edges && fin(edges[0]) && fin(edges[1]) ? (
             <Gauge
@@ -269,7 +300,7 @@ function Credit({ m, state }: { m: MacroResponse | undefined; state: State }) {
                 { label: "Wide", to: 1, tone: "amber" },
               ]}
               caption={`${ordinal(Math.round(pctile * 100))} pct`}
-              label={`High-yield spread at the ${ordinal(Math.round(pctile * 100))} percentile of three years${c.words?.hy ? `, ${c.words.hy}` : ""}`}
+              label={`High-yield spread at the ${ordinal(Math.round(pctile * 100))} percentile of three years${c.band ? `, ${c.band}` : ""}`}
             />
           ) : (
             <Awaiting>the three-year percentile</Awaiting>
@@ -335,7 +366,10 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
                     <span className="mc-val" data-tone={r.corr < 0 ? "green" : r.corr > 0 ? "amber" : undefined}>
                       {corrText(r.corr)}
                     </span>
-                    <span className="mc-meaning">{r.meaning}</span>
+                    {/* §12.13: each asset declares what is correlated: its symbol, quantity and transform. */}
+                    <span className="mc-meaning" title={[r.quantity, r.transform].filter(Boolean).join(", ") || undefined}>
+                      {r.symbol ?? ""}
+                    </span>
                   </>
                 ) : (
                   <span className="mc-row-await dk-stat-await">Awaiting refresh</span>
@@ -394,7 +428,8 @@ export default function MacroPage({ page }: { page: DeskPage }) {
   const unserved = unavailableOf(q.error);
   return (
     <div className="mc">
-      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : m ? <LiveBadge boxed parts={["FRED", dayShort(m.as_of)]} /> : null} />
+      {/* §6: `● Live · FRED · <date>`, the curve's own date (the HY date when the tenors are dated apart). */}
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : m ? <LiveBadge boxed parts={["FRED", dayShort(m.curve?.today?.date ?? m.credit?.hy?.date) || null]} /> : null} />
       <Unserved block={unserved}>
         <div className="mc-grid">
           <Curve m={m} state={state} />

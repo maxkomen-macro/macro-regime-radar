@@ -53,7 +53,8 @@ describe("Pipeline words", () => {
     expect(findSeries(groups, "VIX")).toEqual({ group: "Equities & vol", id: "VIXCLS" });
     expect(findSeries(groups, "dgs10")).toEqual({ group: "Rates", id: "DGS10" });
     expect(findSeries(groups, "gold")).toEqual({ group: "FX & commodities", id: "GC=F" });
-    expect(findSeries(groups, "weekly")).toEqual({ group: "FX & commodities", id: "WCOILWTICO" });
+    expect(findSeries(groups, "tier 2")).toEqual({ group: "Equities & vol", id: "^NDX" });
+    expect(findSeries(groups, "WTI")).toEqual({ group: "FX & commodities", id: "DCOILWTICO" });
     expect(findSeries(groups, "nothing like this")).toBeNull();
   });
   it("has the six lineage steps of §11 and the board's schema lines", () => {
@@ -78,24 +79,32 @@ describe("Pipeline words", () => {
 describe("Data Pipeline tab", () => {
   it("the badge, the title, the groups as served, all closed", async () => {
     renderTab();
-    expect(await screen.findByTestId("pl-badge")).toHaveTextContent("Last full refresh Sep 22, 00:23 UTC · validation passed");
+    // The audit's §1: the last full run checked the store at 15:52 UTC on Sep 24 and validated it.
+    expect(await screen.findByTestId("pl-badge")).toHaveTextContent("Last full refresh Sep 24, 15:52 UTC · validation passed");
     expect(await screen.findByRole("heading", { level: 1, name: "Where every number comes from" })).toBeInTheDocument();
     const inv = screen.getByRole("region", { name: /Series inventory/ });
-    await waitFor(() => expect(inv).toHaveTextContent("26 series · grouped · read from the pipeline config"));
+    await waitFor(() => expect(inv).toHaveTextContent("27 series · grouped · generated from the registry"));
     const heads = within(inv).getAllByRole("button", { expanded: false });
+    // §12.9: each group's status is the worst of its series; a series not stored is missing.
     expect(heads.map((b) => b.textContent)).toEqual([
-      "▸Rates5 series · FRED · daily ● all current",
-      "▸Credit5 series · FRED · daily ● all current · HY OAS history from 2023",
-      "▸Equities & vol6 series · Yahoo / FRED · daily ● all current",
-      "▸FX & commodities4 series · Yahoo / FRED · daily ● all current · WTI published weekly",
-      "▸Macro (monthly)6 series · FRED · monthly ● Aug print in",
+      "▸Rates6 series ● missing",
+      "▸Credit5 series ● current",
+      "▸Equities & vol6 series ● missing",
+      "▸FX & commodities4 series ● missing",
+      "▸Macro (monthly)6 series ● missing",
     ]);
+    expect(within(inv).getByText("● current")).toHaveAttribute("data-tone", "green");
+    expect(within(inv).getAllByText("● missing")[0]).toHaveAttribute("data-tone", "amber");
   });
   it("a group opens by click and by ?group=, its rows in a scrolling region", async () => {
     renderTab("/desk/data-pipeline?group=credit");
     const rows = await screen.findByRole("region", { name: "Credit series" });
     expect(rows).toHaveAttribute("tabindex", "0");
-    expect(within(rows).getAllByRole("row")[1].textContent).toBe("High-yield OASBAMLH0A0HYM22023-092026-09-21Event Study, Ledgercurrent · from 2023");
+    // §11: provider and frequency beside the series; a daily series dated to the day, a monthly one to the month.
+    expect(within(rows).getAllByRole("row")[1].textContent).toBe(
+      "US HY OAS · FRED, dailyBAMLH0A0HYM2Sep 25, 2023Sep 23, 2026Macro, Event Study, Ledgercurrent · FRED serves the ICE BofA series for three years; stored from 2023-09-25",
+    );
+    expect(within(rows).getAllByRole("row")[2].textContent).toContain("Dec 1996Sep 2026");
     expect(screen.getByText("showing 5 of 5 · the list scrolls inside the group; the page does not grow")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Rates/ }));
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toContain("group=rates"));
@@ -130,23 +139,23 @@ describe("Data Pipeline tab", () => {
   it("a validation that did not pass is amber, and shows even without a refresh time", async () => {
     const { last_refresh_utc: _t, ...rest } = pipeline;
     void _t;
-    stubDesk({ "/api/desk/pipeline": () => ({ ...rest, validation: "failed" }) });
+    stubDesk({ "/api/desk/pipeline": () => ({ ...rest, validation: "fail" }) });
     renderTab();
     const badge = await screen.findByTestId("pl-badge");
-    expect(badge).toHaveTextContent("Last full refresh — · validation failed");
+    expect(badge).toHaveTextContent("Last full refresh unknown · validation failed");
     expect(badge).toHaveAttribute("data-tone", "amber");
   });
   it("a group without words shows its served status; an empty group says so; no groups says Awaiting", async () => {
-    const groups = pipeline.groups.map((g, i) => (i === 0 ? { ...g, status: "stale", status_text: undefined } : i === 1 ? { ...g, series: [] } : g));
+    const groups = pipeline.groups.map((g, i) => (i === 0 ? { ...g, status: "stale" } : i === 1 ? { ...g, series: [] } : g));
     stubDesk({ "/api/desk/pipeline": () => ({ ...pipeline, groups }) });
     const first = renderTab("/desk/data-pipeline?group=credit");
-    expect(await screen.findByRole("button", { name: /^Rates\s*5 series · FRED · daily\s*● stale/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Rates\s*6 series\s*● stale/ })).toBeInTheDocument();
     expect(await screen.findByText("No series in this group yet.")).toBeInTheDocument();
     first.unmount();
     stubDesk({ "/api/desk/pipeline": () => ({ ...pipeline, groups: [] }) });
     renderTab();
     const inv = await screen.findByRole("region", { name: /Series inventory/ });
-    await waitFor(() => expect(inv).toHaveTextContent("Awaiting refresh · the pipeline config"));
+    await waitFor(() => expect(inv).toHaveTextContent("Awaiting refresh · the registry's inventory"));
     expect(inv).not.toHaveTextContent("0 series");
   });
   it("a download that fails or answers the wrong type saves nothing and says so", async () => {
@@ -171,7 +180,7 @@ describe("Data Pipeline tab", () => {
     stubDesk({ "/api/desk/pipeline": deskError(503, "warming") });
     renderTab();
     const inv = await screen.findByRole("region", { name: /Series inventory/ });
-    await waitFor(() => expect(inv).toHaveTextContent("Awaiting refresh · the pipeline config"));
+    await waitFor(() => expect(inv).toHaveTextContent("Awaiting refresh · the registry's inventory"));
     expect(screen.queryByTestId("pl-badge")).toBeNull();
     expect(screen.getByRole("region", { name: "Lineage" })).toHaveTextContent("1 · Sources");
   });

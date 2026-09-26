@@ -12,7 +12,7 @@ import overview from "../../../fixtures/desk/overview.json";
 import type { OverviewResponse } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { sinceItems, trendWords } from "./OverviewPage";
+import { sinceItems, trendSub, trendWords } from "./OverviewPage";
 import positions from "../../../fixtures/desk/positions.json";
 import { FIXTURE_META } from "../../../fixtures/desk";
 import { awaitingEnvelope } from "../data/envelope";
@@ -43,23 +43,24 @@ afterEach(() => {
 
 describe("Overview words", () => {
   it("spells the since-last-close items in the spec's order", () => {
-    // The dollar study is unavailable (DXY not stored, §1.0), so it cannot fire; no skew is served (§1.0).
-    expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual([
-      "2s10s steepening still firing, day 10",
-      "vol up 0.8 pts",
-      "regime unchanged",
-      "data refreshed 00:23 UTC",
-    ]);
+    // The audit's snapshot: nothing firing, no VIX for the Sep 23 session yet (FRED posts next day), the July row both days.
+    expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual(["regime unchanged", "data refreshed 05:07 UTC"]);
+    const still = { slug: "2s10s-2sigma-steepening", label: "2s10s +2σ steepening", short: "2s10s steepening", firing_day: 10 };
+    expect(sinceItems({ ...fixture.since_last_close!, still_firing: [still], vol_change_pts: 0.8 }).map((i) => i.text)).toEqual(["2s10s steepening still firing, day 10", "vol up 0.8 pts", "regime unchanged", "data refreshed 05:07 UTC"]);
     expect(sinceItems({ ...fixture.since_last_close!, regime_changed: true, regime_from: "Goldilocks", regime_to: "Overheating", vol_change_pts: -1.2 }).map((i) => i.text)).toContain("regime changed → Overheating");
     expect(sinceItems({ ...fixture.since_last_close!, vol_change_pts: -1.2 }).find((i) => i.key === "vol")?.text).toBe("vol down 1.2 pts");
     // §2: each new fire with (new); its served short name.
     expect(sinceItems({ ...fixture.since_last_close!, new_fires: [{ slug: "golden-cross", label: "S&P golden cross", short: "golden cross" }] })[0]).toEqual({ key: "new-golden-cross", text: "golden cross fired", tag: "(new)" });
   });
 
-  it("names the trend from the two served flags", () => {
-    expect(trendWords(fixture.tiles!.trend!)).toEqual({ value: "Above 50 & 200", trend: "Uptrend" });
-    expect(trendWords({ ...fixture.tiles!.trend!, above_50: false, above_200: false })).toEqual({ value: "Below 50 & 200", trend: "Downtrend" });
-    expect(trendWords({ ...fixture.tiles!.trend!, above_50: false }).trend).toBe("Mixed trend");
+  it("names the trend from the served state, and its sub-line from state_since and the last cross (§2)", () => {
+    const t = fixture.tiles!.trend!;
+    expect(trendWords(t)).toBe("Above 50 & 200");
+    expect(trendWords({ ...t, state: "below_both" })).toBe("Below 50 & 200");
+    expect(trendWords({ ...t, state: "mixed", above_50: false, above_200: true })).toBe("Above 200, below 50");
+    expect(trendWords({ ...t, state: "unavailable", above_50: null, above_200: null })).toBe("Unavailable");
+    expect(trendSub(t)).toBe("since Sep 17, 2026 · last cross golden, Jul 1, 2025");
+    expect(trendSub({ ...t, state_since: null, cross: null })).toBe("");
   });
 
 });
@@ -68,29 +69,32 @@ describe("Overview tab", () => {
   it("prints the since-last-close line and the four tiles from /overview", async () => {
     renderOverview();
     const since = await screen.findByTestId("ov-since");
-    await waitFor(() => expect(since).toHaveTextContent("2s10s steepening still firing, day 10"));
+    await waitFor(() => expect(since).toHaveTextContent("regime unchanged"));
     // §12.1 (B-05): the two sessions compared, by their dates.
-    expect(within(since).getByText("Since last close")).toHaveAttribute("title", "the Sep 22 close against Sep 21");
-    expect(since).not.toHaveTextContent("Dollar");
-    expect(since.textContent).toContain("data refreshed 00:23 UTC");
+    expect(within(since).getByText("Since last close")).toHaveAttribute("title", "the Sep 23 close against Sep 22");
+    expect(since).not.toHaveTextContent(/Dollar|firing/);
+    expect(since.textContent).toContain("data refreshed 05:07 UTC");
     const regime = screen.getByRole("region", { name: "Regime" });
-    // §2: the K−2 row governing today (a September session reads the July row).
+    // §2: the K−2 row governing today (a September session reads the July row, Goldilocks as stored).
     expect(regime).toHaveTextContent("Live · Jul row");
-    expect(regime).toHaveTextContent("Overheating");
-    expect(regime).toHaveTextContent("Growth rising, inflation rising · rule-based, two-month lag");
+    expect(regime).toHaveTextContent("Goldilocks");
+    // §1.3's exception (v2 D-36): the regime carries its color, Goldilocks green.
+    expect(regime.querySelector(".ov-tile-value")).toHaveAttribute("data-tone", "green");
+    expect(regime).toHaveTextContent("Growth rising, inflation falling · rule-based, two-month lag");
     const rec = screen.getByRole("region", { name: "Recession · logistic model" });
     expect(rec).toHaveTextContent("12%");
     // §2: "<band> · score for <probability_month> · inputs through <inputs_through>"; no odds in words.
     expect(rec).toHaveTextContent("Low · score for Aug 2026 · inputs through May 2026");
     expect(rec).not.toHaveTextContent("one-in-eight");
     const trend = screen.getByRole("region", { name: "S&P 500 · trend" });
-    expect(trend).toHaveTextContent("Live · Sep 22");
+    expect(trend).toHaveTextContent("Live · Sep 23");
     expect(trend).toHaveTextContent("Above 50 & 200");
-    expect(trend).toHaveTextContent("Uptrend since the Jul 2025 golden cross · that signal is reliable");
+    // §2: "since <state_since> · last cross <golden|death>, <date>".
+    expect(trend).toHaveTextContent("since Sep 17, 2026 · last cross golden, Jul 1, 2025");
     const vol = screen.getByRole("region", { name: "Vol · VIX" });
-    expect(vol).toHaveTextContent("16.2");
+    expect(vol).toHaveTextContent("14.2");
     // §2: the level and its day; the gap to realized and the band word are unavailable (§1.0).
-    expect(vol).toHaveTextContent("VIX 16.2 · Sep 22");
+    expect(vol).toHaveTextContent("VIX 14.2 · Sep 22");
     // §1.0.2: no envelope of its own, so the unserved half prints §1.0's reason.
     expect(vol).toHaveTextContent("The gap to realized and the band word: realized-volatility method not specified.");
     expect(vol).not.toHaveTextContent(/Calm|protection costs/);
@@ -121,13 +125,15 @@ describe("Overview tab", () => {
     const card = await screen.findByRole("region", { name: /Active signals/ });
     await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(5));
     const rows = within(card).getAllByRole("listitem");
-    expect(rows[0]).toHaveTextContent("S&P golden cross");
-    expect(rows[0]).toHaveTextContent("last fired Jul 1, 2025");
-    expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Fired 31× since 1990 · S&P up 68% of the time · 20-day median +2.7% (+1.4 pts vs normal)");
-    expect(within(rows[0]).getByText("Reliable")).toBeInTheDocument();
-    expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("Fired 18× since 2000");
-    expect(within(rows[2]).getByText("Suggestive")).toBeInTheDocument();
-    expect(rows[4].textContent?.replace(/\s+/g, " ")).toContain("20-day median −0.6% (−1.9 pts vs normal)");
+    // §12.1: nothing firing, so the five latest last fires, newest first.
+    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P 5-day move over 2σ", "VIX spike +2σ, 5 days", "S&P 20-day move over 2σ", "S&P golden cross", "2s10s +2σ steepening"]);
+    expect(rows[0]).toHaveTextContent("last fired Aug 4, 2026");
+    expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Fired 78× since 1996 · S&P up 63% of the time · 20-day median +1.7% (+0.4 pts vs normal)");
+    expect(within(rows[0]).getByText("No edge")).toBeInTheDocument();
+    expect(rows[3].textContent?.replace(/\s+/g, " ")).toContain("Fired 14× since 1996 · S&P up 79% of the time · 20-day median +2.7% (+1.4 pts vs normal)");
+    expect(within(rows[3]).getByText("Reliable")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Suggestive")).toBeInTheDocument();
+    expect(rows[4].textContent?.replace(/\s+/g, " ")).toContain("20-day median +1.6% (+0.3 pts vs normal)");
     expect(within(card).getByRole("link", { name: "Full Signal Ledger →" })).toHaveAttribute("href", "/desk/signal-ledger");
     // The four §1.5 definitions (B-13), word for word.
     const defs = [...card.querySelectorAll(".dk-defs > div")].map((d) => [...d.children].map((c) => c.textContent?.trim()).join(" "));
@@ -141,17 +147,18 @@ describe("Overview tab", () => {
 
   it("reads the monitored positions from this browser, least room first, manual last, in their units (§2, §9)", async () => {
     const [ndx, curve] = [RECORDS.find((p) => p.id === "ndx-vs-spx")!, RECORDS.find((p) => p.id === "2s10s-steepener")!];
-    const spx = { ...curve, id: "spx-long", instrument: "S&P 500", size_nav: 0.03, wrong_if: { id: "below_50d", label: "closes below its 50-day (6,280)" }, subject: { kind: "instrument", id: "spx" }, entry_value: 6500, original_room: 220, trigger: { series: "spx", operator: "below", threshold: 6280, policy: "frozen", observed_on: "2026-09-02" } };
-    localStorage.setItem(POSITIONS_KEY, JSON.stringify([ndx, spx, { ...curve, entry_value: 58, original_room: 20 }]));
+    // Entries on the real levels: the S&P 81 points over its 50-day of 134 at entry (60%), 2s10s 10 bp over its level of 35 (29%).
+    const spx = { ...curve, id: "spx-long", instrument: "S&P 500", size_nav: 0.03, wrong_if: { id: "below_50d", label: "closes below its 50-day (7,625)" }, subject: { kind: "instrument", id: "spx" }, entry_value: 7759.22, original_room: 134.38, trigger: { series: "spx", operator: "below", threshold: 7624.84, policy: "frozen", observed_on: "2026-09-02" } };
+    localStorage.setItem(POSITIONS_KEY, JSON.stringify([ndx, spx, { ...curve, entry_value: 50, original_room: 35 }]));
     renderOverview();
     const card = await screen.findByRole("region", { name: /Monitored/ });
-    await waitFor(() => expect(card).toHaveTextContent("15% room"));
+    await waitFor(() => expect(card).toHaveTextContent("29% room"));
     const rows = within(card).getAllByTestId("dk-mon-row");
     expect(rows.map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "spx-long", "ndx-vs-spx"]);
-    expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Long 2s10s2% NAV15% room · 3 bp to level");
-    expect(rows[1].textContent?.replace(/\s+/g, " ")).toContain("Long S&P 5003% NAV60% room · 2.1% to level");
+    expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Long 2s10s2% NAV29% room · 10 bp to level");
+    expect(rows[1].textContent?.replace(/\s+/g, " ")).toContain("Long S&P 5003% NAV60% room · 1.1% to level");
     expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("Long NDX vs SPX4% NAVmanual");
-    expect(within(rows[0]).getByText(/15% room/)).toHaveAttribute("data-tone", "amber");
+    expect(within(rows[0]).getByText(/29% room/)).toHaveAttribute("data-tone", "amber");
     expect(within(rows[1]).getByText(/60% room/)).toHaveAttribute("data-tone", "green");
     expect(rows[2].querySelector(".dk-mon-bar")?.children).toHaveLength(0);
     expect(card).toHaveTextContent("Sorted by room left · same scale for every trade · size as % of NAV · click a row for the gate text");
@@ -194,10 +201,10 @@ describe("blocks served awaiting inside a ready answer (§12.1, §1.0.2)", () =>
     await waitFor(() => expect(screen.getByRole("region", { name: "Vol · VIX" })).toHaveTextContent("realized-volatility method not specified."));
     const vol = screen.getByRole("region", { name: "Vol · VIX" });
     expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Not yet served");
-    expect(vol).not.toHaveTextContent("16.2");
+    expect(vol).not.toHaveTextContent("14.2");
     expect(screen.getByTestId("ov-since")).toHaveTextContent("Since last close");
     expect(screen.getByTestId("ov-since")).toHaveTextContent("no previous generation to compare.");
     expect(screen.getByTestId("ov-since")).not.toHaveTextContent("Awaiting refresh");
-    expect(screen.getByRole("region", { name: "Regime" })).toHaveTextContent("Overheating");
+    expect(screen.getByRole("region", { name: "Regime" })).toHaveTextContent("Goldilocks");
   });
 });

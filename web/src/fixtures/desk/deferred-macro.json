@@ -4,12 +4,6 @@
   "today": 0.31,
   "year_ago": -0.24,
   "flipped": "2026-03",
-  "hedging": false,
-  "words": {
-   "today": "positive · bonds not hedging",
-   "year_ago": "was working",
-   "flipped": "six months positive"
-  },
   "series": [
    {
     "date": "2025-09-22",
@@ -1024,33 +1018,45 @@
  "correlations": [
   {
    "asset": "10-year Treasury (price)",
-   "corr": 0.31,
-   "meaning": "moves with · no hedge"
+   "symbol": "IEF",
+   "quantity": "adjusted close",
+   "transform": "daily log return",
+   "corr": 0.31
   },
   {
    "asset": "Gold",
-   "corr": 0.12,
-   "meaning": "no relationship"
+   "symbol": "GC=F",
+   "quantity": "settle",
+   "transform": "daily log return",
+   "corr": 0.12
   },
   {
    "asset": "Dollar",
-   "corr": -0.22,
-   "meaning": "weak dollar helps"
+   "symbol": "DX-Y.NYB",
+   "quantity": "close",
+   "transform": "daily log return",
+   "corr": -0.22
   },
   {
    "asset": "Oil",
-   "corr": 0.18,
-   "meaning": "weak"
+   "symbol": "DCOILWTICO",
+   "quantity": "spot price",
+   "transform": "daily log return",
+   "corr": 0.18
   },
   {
    "asset": "Nasdaq",
-   "corr": 0.92,
-   "meaning": "same trade"
+   "symbol": "^NDX",
+   "quantity": "close",
+   "transform": "daily log return",
+   "corr": 0.92
   },
   {
    "asset": "High-yield credit",
-   "corr": 0.64,
-   "meaning": "risk-on together"
+   "symbol": "HYG",
+   "quantity": "adjusted close",
+   "transform": "daily log return",
+   "corr": 0.64
   }
  ],
  "matrix": {

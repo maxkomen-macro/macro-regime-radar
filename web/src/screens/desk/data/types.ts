@@ -33,13 +33,16 @@ export interface Envelope {
   _blocks?: Record<string, Unavailable>;
 }
 
-/** PROPOSED (§12.13): an interpretive sentence the server writes for a card.
+/** §12.0 (v2 §15): an interpretive sentence the server writes for a card.
  * `label` is the boxed read's lead ("Read", "Read for the desk") or null for
- * an inline sentence; `tone: "warning"` draws the amber-bordered box (§1.4). */
+ * an inline sentence; `tone: "warning"` draws the amber-bordered box (§1.4);
+ * `rule` names the contract rule that produced it, and a read without one is
+ * not served. No rule exists on Monday, so no read is served. */
 export interface Read {
   label: string | null;
   text: string;
   tone: "normal" | "warning";
+  rule: string;
 }
 
 /** §12 errors: `{ "error": string }` with a 4xx/5xx status. */
@@ -106,33 +109,32 @@ export interface LedgerResponse extends Envelope {
 
 // ── §12.11 /pipeline ──────────────────────────────────────────────────────
 
+/** §12.9: one series, from the registry and its consumers. */
 export interface PipelineSeries {
   label: string;
   id: string;
-  /** First month stored ("2023-09"). */
-  from: string;
-  /** Newest observation: a day for a daily series, a month for a monthly one. */
-  as_of: string;
+  /** The Desk registry key; null for a series the Desk does not read. */
+  key: string | null;
+  provider: string;
+  freq: "daily" | "weekly" | "monthly";
+  /** The first and last stored observation; null when nothing is stored. */
+  first: string | null;
+  last: string | null;
   feeds: string[];
-  status: string;
+  status: FreshState;
   note: string | null;
 }
 
 export interface PipelineGroup {
   name: string;
-  source: string;
-  freq: string;
-  status: string;
-  /** PROPOSED (§12.13): the group's state in words ("all current", "Aug print in"). */
-  status_text?: string;
-  /** PROPOSED (§12.13): the group's note ("HY OAS history from 2023"). */
-  note?: string | null;
+  /** The worst of its series. */
+  status: FreshState;
   series: PipelineSeries[];
 }
 
 export interface PipelineResponse extends Envelope {
   last_refresh_utc: string | null;
-  validation: string;
+  validation: "pass" | "fail" | null;
   groups?: PipelineGroup[];
 }
 
@@ -181,14 +183,17 @@ export interface RecessionScore {
 export interface OverviewTiles {
   regime?: RegimeRow;
   recession?: RecessionScore;
+  /** §12.1: the S&P against its 50- and 200-day averages; `unavailable` when either average is null. */
   trend?: {
-    above_50: boolean;
-    above_200: boolean;
-    since: string;
-    since_signal: string;
-    since_verdict: Verdict;
-    /** PROPOSED (§12.13): the session the trend is read at, dating the tile's badge. */
+    state: TrendState;
+    above_50: boolean | null;
+    above_200: boolean | null;
+    state_since: string | null;
+    cross: { kind: "golden" | "death"; date: string } | null;
+    /** The session the state is read at, dating the tile's badge. */
     date: string;
+    freq?: string;
+    source?: string;
   };
   /** §12.1: the VIX level and its day; the gap to realized and the band word are unavailable (§1.0). */
   vol?: {
@@ -203,13 +208,29 @@ export interface OverviewResponse extends Envelope {
   since_last_close?: SinceLastClose;
   tiles?: OverviewTiles;
   active_signals?: LedgerRow[];
-  /** PROPOSED (§12.13): the sidebar TODAY card's data word ("current" | "stale" | "unknown"). */
-  data_status: string;
+  /** §12.1 (v4 B-06): the worst contributor's state, and each Desk series through its freshness policy. */
+  data_status?: DataStatus;
 }
 
-// ── §12.10 /technicals ────────────────────────────────────────────────────
+export type TrendState = "above_both" | "below_both" | "mixed" | "unavailable";
+export type FreshState = "current" | "stale" | "missing";
 
-/** PROPOSED (§12.13): §12.10 leaves the series points as `[…]`. */
+export interface DataContributor {
+  series: string;
+  observation_date: string | null;
+  expected_observation_date: string | null;
+  state: FreshState;
+  reason: string;
+}
+
+export interface DataStatus {
+  state: FreshState;
+  contributors: DataContributor[];
+}
+
+// ── §12.7 /technicals ─────────────────────────────────────────────────────
+
+/** §12.7: a chart point; the averages are nullable per point. */
 export interface PricePoint {
   date: string;
   close: number | null;
@@ -217,27 +238,40 @@ export interface PricePoint {
   ma200: number | null;
 }
 
+export interface Window {
+  start: string;
+  end: string;
+  n: number;
+}
+
+/** §12.7: every field describes the registry series `spx` (^GSPC). */
 export interface TechnicalsResponse extends Envelope {
-  /** PROPOSED (§12.13, Codex R-08): the one series every level here describes. */
-  instrument?: { symbol: string; label: string };
   price: number | null;
-  /** §12.7: the session the price and the averages are dated to. */
+  /** The session the price and the averages are dated to. */
   date?: string;
+  freq?: string;
+  source?: string;
   chg_1d: number | null;
+  chg_1d_dates?: { from: string; to: string };
+  ret_1y: number | null;
+  ret_1y_dates?: { from: string; to: string };
   ma50: number | null;
   ma200: number | null;
-  /** PROPOSED (§12.13): price against each average, as fractions (0.021 = 2.1% above). */
+  ma50_window?: Window;
+  ma200_window?: Window;
+  /** Price against each average, as fractions (0.021 = 2.1% above). */
   vs_ma50: number | null;
   vs_ma200: number | null;
-  ret_1y: number | null;
-  trend: string;
+  trend?: { state: TrendState; state_since: string | null };
+  /** The spx-20d-2sigma study's z on its `evaluated_on`. */
   move_20d_sigma: number | null;
-  /** PROPOSED (§12.13, Codex R-13): the engine's word for the last 20 days' move ("no extreme move"). */
-  move_20d_word?: string;
+  move_20d_date?: string | null;
   cross: {
     kind: "golden" | "death";
     date: string;
   } | null;
+  /** The Ledger rows the Technicals signals list reads, in this order (v2 §13). */
+  signals_allowlist?: string[];
   series?: { "6m"?: PricePoint[]; "1y"?: PricePoint[]; "3y"?: PricePoint[] };
   /** §12.7: block envelopes, awaiting on Monday (the unwrapped data, once ready, is the deferred shape of §12.13). */
   vol?: VolResponse;
@@ -267,12 +301,12 @@ export type TargetUnit = "log_return" | "log_change" | "bp";
 export type DisplayUnit = "percent" | "bp";
 
 /** The question as a study serves it: the six slots, and its target's unit
- * and display unit (§12.2), and (Codex R-03) its name. Absent, every target
- * move says Awaiting refresh; the page never guesses a unit from the key. */
+ * and display unit (§12.2). Absent, every target move says Awaiting refresh;
+ * the page never guesses a unit from the key. The target's name is its
+ * `series[]` label (`targetLabel`). */
 export interface ServedQuestion extends Question {
   target_unit?: TargetUnit;
   display_unit?: DisplayUnit;
-  target_label?: string;
 }
 
 export interface StudyHorizon {
@@ -297,8 +331,18 @@ export interface StudyHorizon {
   /** Why a statistic here is null, in words (§12.2: "fewer than five independent blocks" for an interval under five blocks). */
   reason?: string | null;
   verdict?: Verdict;
-  worst?: { ret: number | null; date: string } | null;
-  best?: { ret: number | null; date: string } | null;
+  /** Events at this horizon whose window is not complete yet, and the baseline's observations (§12.2). */
+  n_incomplete?: number | null;
+  baseline_n?: number | null;
+  /** Min and max over the `n` completed outcomes, with their event and entry sessions (§12.2). */
+  worst?: Extreme | null;
+  best?: Extreme | null;
+}
+
+export interface Extreme {
+  value: number | null;
+  event_date: string;
+  entry_date: string | null;
 }
 
 export interface StudyResponse extends Envelope {
@@ -306,12 +350,19 @@ export interface StudyResponse extends Envelope {
   served_from_cache: boolean;
   elapsed_ms: number | null;
   slug: string | null;
+  /** The catalog's label and short name (§12.3). */
+  label?: string;
+  short?: string;
   question: ServedQuestion;
   /** The study's size: retained events in the evaluable sample, the same at every horizon (§12.2, C-03). */
   matched_n?: number | null;
   /** The horizon the verdict, headline, why, counts and empty state are for (§1.5, v4 B-01). */
   selected_horizon?: number | null;
+  /** The latest input's first observation, and the evaluable sample (§12.2). */
+  data_start?: string | null;
   sample_start: string | null;
+  sample_end?: string | null;
+  first_event?: string | null;
   /** §12.2 firing state, on `evaluated_on`; null when not evaluable. A stale study is never firing today (v3 §3). */
   firing_now: boolean | null;
   firing_day?: number | null;
@@ -332,10 +383,10 @@ export interface StudyResponse extends Envelope {
   by_regime?: { h?: number | null; regime: string; n: number | null; up_pct: number | null; median: number | null }[];
   /** Events before the first labelled month (§4 rail). */
   unlabeled_n?: number | null;
-  last_events?: { date: string; regime: string; ret_20: number | null }[];
+  last_events?: { event_date: string; entry_date: string | null; regime: string; value_20: number | null }[];
   /** §12.2: a block envelope, awaiting on Monday (C-01); its shape once defined is §12.13's. */
   without_condition?: unknown;
-  provenance?: { bootstrap: number | null; entry: string; cooldown: number | null; series_start?: Record<string, string> };
+  provenance?: { entry_rule: string; cooldown: number | null; seed?: number | null; engine_version?: string; series_start?: Record<string, string> };
   warnings?: string[];
   /** Served iff the selected horizon has fewer than ten completed outcomes (§1.7, §12.2). */
   empty_state?: { horizon?: number | null; sentence: string; fixes: string[] } | null;
@@ -362,18 +413,53 @@ export interface StudyCatalogResponse extends Envelope {
   studies?: CatalogStudy[];
 }
 
-/** §12.3 /study/events (PROPOSED shape, §12.13); CSV with `Accept: text/csv`. */
+/** §12.4 /study/events: every retained event, newest first; CSV with `Accept: text/csv`. */
+export interface StudyEvent {
+  event_date: string;
+  entry_date: string | null;
+  regime: string;
+  exit_5?: string | null;
+  value_5?: number | null;
+  complete_5?: boolean;
+  exit_10?: string | null;
+  value_10?: number | null;
+  complete_10?: boolean;
+  exit_20?: string | null;
+  value_20?: number | null;
+  complete_20?: boolean;
+  exit_60?: string | null;
+  value_60?: number | null;
+  complete_60?: boolean;
+}
+
 export interface StudyEventsResponse extends Envelope {
   slug: string | null;
-  events?: { date: string; regime: string; ret_5: number | null; ret_10: number | null; ret_20: number | null; ret_60: number | null }[];
+  events?: StudyEvent[];
 }
 
 // ── §12.5 /regime ─────────────────────────────────────────────────────────
 
+/** §12.6: the next print of one series and the move that would flip its axis. */
+export interface NextPrint {
+  release_date: string | null;
+  reference_month: string;
+  series: string;
+  threshold_mom: number | null;
+  operator: "<=" | ">";
+  flips_to: string | null;
+  first_effective_month: string;
+  freq?: string;
+  source?: string;
+}
+
 export interface RegimeResponse extends Envelope {
   /** The K−2 row governing today, and the newest stored row beside it (`latest_print`, shown, never used to classify). */
   current?: Partial<RegimeRow> & { latest_print?: string };
+  /** The last 60 stored rows, with how they are to be read (§12.6). */
   history?: { month: string; regime: string }[];
+  history_note?: string;
+  history_freq?: string;
+  history_source?: string;
   recession?: RecessionScore & {
     feature_months?: Record<string, string>;
     year_ago?: { score: number | null; probability_month: string } | null;
@@ -382,10 +468,7 @@ export interface RegimeResponse extends Envelope {
     methodology?: string;
   };
   stats?: { regime: string; months: number | null; spx_mo: number | null; up_pct: number | null; vix_avg: number | null; stock_bond_corr: number | null }[];
-  next_prints?: {
-    cpi?: { date: string; flip_threshold_mom: number | null; flips_to: string | null } | null;
-    indpro?: { date: string; flip_threshold_mom: number | null; flips_to: string | null } | null;
-  };
+  next_prints?: { cpi?: NextPrint | null; indpro?: NextPrint | null };
   changes?: { month: string; from: string; to: string; spx_1m: number | null }[];
   /** PROPOSED (§12.13): the cards' sentences (`stats`, `changes`). */
   reads?: { stats?: Read; changes?: Read };
@@ -404,35 +487,42 @@ export interface CurvePoint {
   dates?: Record<string, string>;
 }
 
+/** §12.8: a served value with its own date. */
+export interface DatedValue {
+  value: number | null;
+  date: string;
+  freq?: string;
+  source?: string;
+}
+
 export interface MacroResponse extends Envelope {
-  curve?: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null };
+  curve?: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null; freq?: string; source?: string };
   stock_bond?: {
     today: number | null;
     year_ago: number | null;
     /** The month the sign last changed; null when it has not changed within the served year (§12.13). */
     flipped: string | null;
-    /** PROPOSED (§12.13): the engine's call, whether bonds hedge stocks today (TODAY is amber when they do not). */
-    hedging: boolean | null;
-    /** PROPOSED (§12.13): the three stat notes. */
-    words: { today?: string; year_ago?: string; flipped?: string };
     series: { date: string; corr: number | null }[];
   };
+  /** §12.8: HY and IG as dated observations; the three-year figures over `rank_window`, null with a `reason` when coverage is short. */
   credit?: {
-    hy: number | null;
+    hy: DatedValue | null;
+    ig: DatedValue | null;
     hy_pct_3y: number | null;
     hy_range_3y: [number | null, number | null] | null;
-    ig: number | null;
-    series: { date: string; hy: number | null }[];
-    peak_12m: { date: string; hy: number | null } | null;
-    /** PROPOSED (§12.13): the 3-year percentile edges between Tight | Normal | Wide. */
+    rank_window?: { start: string; end: string; n: number; expected_n: number | null; valid_n: number | null; missing_n: number | null; first_obs: string | null; last_obs: string | null };
+    reason?: string | null;
+    band?: "tight" | "normal" | "wide" | null;
     band_edges: [number, number] | null;
-    /** PROPOSED (§12.13): the stat words ("tight", "also tight", "today near the low"). */
-    words: { hy?: string; ig?: string; range?: string };
+    series: { date: string; hy: number | null }[];
+    line_window?: Window;
+    peak_12m: { date: string; hy: number | null } | null;
   };
-  correlations?: { asset: string; corr: number | null; meaning: string }[];
+  /** §12.13: each asset declares its symbol, quantity and transform. */
+  correlations?: { asset: string; symbol?: string; quantity?: string; transform?: string; corr: number | null }[];
   /** `labels` is PROPOSED (§12.13): the assets' names, in `assets` order. */
   matrix?: { assets: string[]; labels?: string[]; window: number | null; values: (number | null)[][] };
-  /** PROPOSED (§12.13): the cards' sentences. */
+  /** §12.0: the cards' served reads (none on Monday). */
   reads?: { curve?: Read; front_end?: Read; stock_bond?: Read; credit?: Read; correlations?: Read };
 }
 
@@ -447,10 +537,8 @@ export interface VolResponse extends Envelope {
   realized_20d: number | null;
   term: { "1m": number | null; "3m": number | null; "6m": number | null } | null;
   history_from: string;
-  /** PROPOSED (§12.13): the percentile edges between Cheap | Typical | Expensive. */
-  skew_band_edges: [number, number] | null;
-  /** PROPOSED (§12.13): the card's sentences. */
-  reads?: { skew?: Read; iv_rv?: Read; term_meaning?: Read; term?: Read; gauge?: Read };
+  /** §12.13: "with each value's date", keyed by the value's field. */
+  dates?: Record<string, string>;
 }
 
 // ── §12.7 /sectors ────────────────────────────────────────────────────────
@@ -471,20 +559,15 @@ export interface RelPoint {
 export interface SectorsResponse extends Envelope {
   window_months: number | null;
   leadership?: SectorRow[];
-  pattern: string;
   breadth?: {
-    above_50: { n: number | null; of: number | null; month_ago: number | null; by_etf?: Record<string, boolean> };
-    /** `broad` is PROPOSED (§12.13): the engine's call that the 200-day trend is broad (the value is green). */
-    above_200: { n: number | null; of: number | null; by_etf?: Record<string, boolean>; broad?: boolean };
+    /** §12.13: breadth serves its comparison date. */
+    above_50: { n: number | null; of: number | null; compared_on: string | null; by_etf?: Record<string, boolean> };
+    above_200: { n: number | null; of: number | null; by_etf?: Record<string, boolean> };
     eqw_vs_cap_3m: number | null;
     eqw_vs_cap_series?: RelPoint[];
     /** PROPOSED (§12.13) point shape: §12.7 leaves it as `["… 252"]`. */
     small_vs_large_series?: RelPoint[];
   };
-  /** PROPOSED (§12.13): the cards' sentences. */
-  reads?: { leadership_brief?: Read; leadership?: Read; breadth?: Read };
-  /** PROPOSED (§12.13): the stat notes the engine words ("growth sectors over defensives", "trend still broad", "big names carrying it"). */
-  words?: { pattern?: string; above_200?: string; eqw?: string };
 }
 
 // Basket & Hedge (§10) is unavailable: no page reads `/basket/:id`, `/basket/price` or `/hedge`,

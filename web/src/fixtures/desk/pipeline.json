@@ -1,60 +1,51 @@
 {
- "as_of": "2026-09-22",
- "generation_id": "gen-fixture-2026-09-22",
- "last_refresh_utc": "2026-09-22T00:23:00Z",
- "validation": "passed",
+ "as_of": "2026-09-24",
+ "generation_id": "gen-fixture-2026-09-24",
+ "last_refresh_utc": "2026-09-24T15:52:43Z",
+ "validation": "pass",
  "groups": [
   {
    "name": "Rates",
-   "source": "FRED",
-   "freq": "daily",
-   "status": "current",
-   "status_text": "all current",
-   "note": null,
+   "status": "missing",
    "series": [
     {
-     "label": "3-month Treasury",
+     "label": "3M Treasury",
      "id": "DGS3MO",
-     "from": "1990-01",
-     "as_of": "2026-09-21",
+     "key": null,
+     "provider": "FRED",
+     "freq": "daily",
+     "first": null,
+     "last": null,
      "feeds": [
       "Macro"
      ],
-     "status": "current",
-     "note": null
+     "status": "missing",
+     "note": "not stored"
     },
     {
-     "label": "2-year Treasury",
+     "label": "2Y Treasury",
      "id": "DGS2",
-     "from": "1990-01",
-     "as_of": "2026-09-21",
+     "key": "us2y",
+     "provider": "FRED",
+     "freq": "daily",
+     "first": "1976-06-01",
+     "last": "2026-09-22",
      "feeds": [
       "Macro",
-      "Regime",
-      "Ledger"
+      "Regime"
      ],
      "status": "current",
      "note": null
     },
     {
-     "label": "5-year Treasury",
-     "id": "DGS5",
-     "from": "1990-01",
-     "as_of": "2026-09-21",
+     "label": "2s10s curve",
+     "id": "T10Y2Y",
+     "key": "curve_2s10s",
+     "provider": "FRED",
+     "freq": "daily",
+     "first": "1976-06-01",
+     "last": "2026-09-23",
      "feeds": [
-      "Macro"
-     ],
-     "status": "current",
-     "note": null
-    },
-    {
-     "label": "10-year Treasury",
-     "id": "DGS10",
-     "from": "1990-01",
-     "as_of": "2026-09-21",
-     "feeds": [
-      "Macro",
-      "Regime",
       "Event Study",
       "Ledger"
      ],
@@ -62,150 +53,201 @@
      "note": null
     },
     {
-     "label": "30-year Treasury",
-     "id": "DGS30",
-     "from": "1990-01",
-     "as_of": "2026-09-21",
+     "label": "5Y Treasury",
+     "id": "DGS5",
+     "key": null,
+     "provider": "FRED",
+     "freq": "daily",
+     "first": null,
+     "last": null,
      "feeds": [
       "Macro"
      ],
+     "status": "missing",
+     "note": "not stored"
+    },
+    {
+     "label": "10Y Treasury",
+     "id": "DGS10",
+     "key": "us10y",
+     "provider": "FRED",
+     "freq": "daily",
+     "first": "1962-01-02",
+     "last": "2026-09-22",
+     "feeds": [
+      "Macro",
+      "Regime",
+      "Event Study"
+     ],
      "status": "current",
      "note": null
+    },
+    {
+     "label": "30Y Treasury",
+     "id": "DGS30",
+     "key": null,
+     "provider": "FRED",
+     "freq": "daily",
+     "first": null,
+     "last": null,
+     "feeds": [
+      "Macro"
+     ],
+     "status": "missing",
+     "note": "not stored"
     }
    ]
   },
   {
    "name": "Credit",
-   "source": "FRED",
-   "freq": "daily",
    "status": "current",
-   "status_text": "all current",
-   "note": "HY OAS history from 2023",
    "series": [
     {
-     "label": "High-yield OAS",
+     "label": "US HY OAS",
      "id": "BAMLH0A0HYM2",
-     "from": "2023-09",
-     "as_of": "2026-09-21",
+     "key": "hy_oas",
+     "provider": "FRED",
+     "freq": "daily",
+     "first": "2023-09-25",
+     "last": "2026-09-23",
      "feeds": [
+      "Macro",
       "Event Study",
       "Ledger"
      ],
      "status": "current",
-     "note": "from 2023"
+     "note": "FRED serves the ICE BofA series for three years; stored from 2023-09-25"
     },
     {
      "label": "Investment-grade OAS",
      "id": "BAMLC0A0CM",
-     "from": "1996-12",
-     "as_of": "2026-09-21",
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": "1996-12-01",
+     "last": "2026-09-01",
      "feeds": [
-      "Regime"
+      "Macro"
      ],
      "status": "current",
-     "note": null
+     "note": "one row a month, its newest value (2026-09-23)"
     },
     {
      "label": "BB OAS",
      "id": "BAMLH0A1HYBB",
-     "from": "1996-12",
-     "as_of": "2026-09-21",
-     "feeds": [
-      "Regime"
-     ],
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": "1996-12-01",
+     "last": "2026-09-01",
+     "feeds": [],
      "status": "current",
-     "note": null
+     "note": "one row a month, its newest value (2026-09-23)"
     },
     {
      "label": "Single-B OAS",
      "id": "BAMLH0A2HYB",
-     "from": "1996-12",
-     "as_of": "2026-09-21",
-     "feeds": [
-      "Regime"
-     ],
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": "1996-12-01",
+     "last": "2026-09-01",
+     "feeds": [],
      "status": "current",
-     "note": null
+     "note": "one row a month, its newest value (2026-09-23)"
     },
     {
      "label": "CCC OAS",
      "id": "BAMLH0A3HYC",
-     "from": "1996-12",
-     "as_of": "2026-09-21",
-     "feeds": [
-      "Regime"
-     ],
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": "1996-12-01",
+     "last": "2026-09-01",
+     "feeds": [],
      "status": "current",
-     "note": null
+     "note": "one row a month, its newest value (2026-09-23)"
     }
    ]
   },
   {
    "name": "Equities & vol",
-   "source": "Yahoo / FRED",
-   "freq": "daily",
-   "status": "current",
-   "status_text": "all current",
-   "note": null,
+   "status": "missing",
    "series": [
     {
      "label": "S&P 500",
      "id": "^GSPC",
-     "from": "1990-01",
-     "as_of": "2026-09-22",
+     "key": "spx",
+     "provider": "Yahoo Finance",
+     "freq": "daily",
+     "first": "1990-01-02",
+     "last": "2026-09-23",
      "feeds": [
       "Overview",
       "Technicals",
       "Event Study",
       "Ledger",
-      "Regime",
-      "Macro",
-      "Sectors"
+      "Position Monitor"
      ],
      "status": "current",
-     "note": null
+     "note": "no 2026-09-22 row"
     },
     {
      "label": "Nasdaq 100",
      "id": "^NDX",
-     "from": "1990-01",
-     "as_of": "2026-09-22",
+     "key": "ndx",
+     "provider": "Yahoo Finance",
+     "freq": "daily",
+     "first": null,
+     "last": null,
      "feeds": [
-      "Macro"
+      "Macro",
+      "Basket & Hedge"
      ],
-     "status": "current",
-     "note": null
+     "status": "missing",
+     "note": "tier 2, not stored"
     },
     {
      "label": "Russell 2000",
      "id": "^RUT",
-     "from": "1990-01",
-     "as_of": "2026-09-22",
+     "key": "rut",
+     "provider": "Yahoo Finance",
+     "freq": "daily",
+     "first": "1990-01-02",
+     "last": "2026-09-23",
      "feeds": [
+      "Technicals",
       "Sectors"
      ],
      "status": "current",
-     "note": null
+     "note": "no 2026-09-22 row"
     },
     {
      "label": "S&P 500 equal weight",
      "id": "RSP",
-     "from": "2003-05",
-     "as_of": "2026-09-22",
+     "key": null,
+     "provider": "Yahoo Finance",
+     "freq": "daily",
+     "first": null,
+     "last": null,
      "feeds": [
+      "Technicals",
       "Sectors"
      ],
-     "status": "current",
-     "note": null
+     "status": "missing",
+     "note": "not stored"
     },
     {
      "label": "VIX",
      "id": "VIXCLS",
-     "from": "1990-01",
-     "as_of": "2026-09-21",
+     "key": "vix",
+     "provider": "FRED",
+     "freq": "daily",
+     "first": "1990-01-02",
+     "last": "2026-09-22",
      "feeds": [
       "Overview",
-      "Technicals",
+      "Event Study",
       "Ledger"
      ],
      "status": "current",
@@ -214,97 +256,110 @@
     {
      "label": "VIX 3-month",
      "id": "VXVCLS",
-     "from": "2007-12",
-     "as_of": "2026-09-21",
+     "key": null,
+     "provider": "FRED",
+     "freq": "daily",
+     "first": null,
+     "last": null,
      "feeds": [
       "Technicals"
      ],
-     "status": "current",
-     "note": null
+     "status": "missing",
+     "note": "not stored"
     }
    ]
   },
   {
    "name": "FX & commodities",
-   "source": "Yahoo / FRED",
-   "freq": "daily",
-   "status": "current",
-   "status_text": "all current",
-   "note": "WTI published weekly",
+   "status": "missing",
    "series": [
     {
-     "label": "Dollar index",
+     "label": "US Dollar Index",
      "id": "DX-Y.NYB",
-     "from": "1990-01",
-     "as_of": "2026-09-22",
-     "feeds": [
-      "Macro",
-      "Ledger"
-     ],
-     "status": "current",
-     "note": null
-    },
-    {
-     "label": "Dollar–yen",
-     "id": "DEXJPUS",
-     "from": "1990-01",
-     "as_of": "2026-09-18",
-     "feeds": [
-      "Macro"
-     ],
-     "status": "current",
-     "note": null
-    },
-    {
-     "label": "Gold",
-     "id": "GC=F",
-     "from": "2000-08",
-     "as_of": "2026-09-22",
+     "key": "dxy",
+     "provider": "Yahoo Finance",
+     "freq": "monthly",
+     "first": "1971-01-01",
+     "last": "2026-09-01",
      "feeds": [
       "Event Study",
+      "Ledger"
+     ],
+     "status": "missing",
+     "note": "monthly rows only; the daily series is tier 2, not stored"
+    },
+    {
+     "label": "USD/JPY",
+     "id": "JPY=X",
+     "key": "usdjpy",
+     "provider": "Yahoo Finance",
+     "freq": "monthly",
+     "first": "1996-10-01",
+     "last": "2026-09-01",
+     "feeds": [
       "Macro"
+     ],
+     "status": "missing",
+     "note": "monthly rows only; the daily series is tier 2, not stored"
+    },
+    {
+     "label": "Gold (COMEX front month)",
+     "id": "GC=F",
+     "key": "gold",
+     "provider": "Yahoo Finance",
+     "freq": "daily",
+     "first": "2000-08-30",
+     "last": "2026-09-23",
+     "feeds": [
+      "Event Study",
+      "Ledger"
      ],
      "status": "current",
      "note": null
     },
     {
      "label": "WTI crude",
-     "id": "WCOILWTICO",
-     "from": "1990-01",
-     "as_of": "2026-09-18",
+     "id": "DCOILWTICO",
+     "key": "wti",
+     "provider": "FRED",
+     "freq": "daily",
+     "first": null,
+     "last": null,
      "feeds": [
-      "Macro",
+      "Event Study",
       "Ledger"
      ],
-     "status": "current",
-     "note": "published weekly"
+     "status": "missing",
+     "note": "tier 2, not stored"
     }
    ]
   },
   {
    "name": "Macro (monthly)",
-   "source": "FRED",
-   "freq": "monthly",
-   "status": "current",
-   "status_text": "Aug print in",
-   "note": null,
+   "status": "missing",
    "series": [
     {
      "label": "CPI",
      "id": "CPIAUCSL",
-     "from": "1990-01",
-     "as_of": "2026-08",
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": "1996-03-01",
+     "last": "2026-08-01",
      "feeds": [
       "Regime"
      ],
      "status": "current",
-     "note": null
+     "note": "2025-10 missing"
     },
     {
      "label": "Industrial production",
      "id": "INDPRO",
-     "from": "1990-01",
-     "as_of": "2026-08",
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": "1996-03-01",
+     "last": "2026-08-01",
      "feeds": [
       "Regime"
      ],
@@ -314,44 +369,50 @@
     {
      "label": "Unemployment rate",
      "id": "UNRATE",
-     "from": "1990-01",
-     "as_of": "2026-08",
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": "1996-03-01",
+     "last": "2026-08-01",
      "feeds": [
       "Regime"
      ],
      "status": "current",
-     "note": null
+     "note": "2025-10 missing"
     },
     {
      "label": "Payrolls",
      "id": "PAYEMS",
-     "from": "1990-01",
-     "as_of": "2026-08",
-     "feeds": [
-      "Regime"
-     ],
-     "status": "current",
-     "note": null
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": null,
+     "last": null,
+     "feeds": [],
+     "status": "missing",
+     "note": "not stored"
     },
     {
      "label": "Retail sales",
      "id": "RSAFS",
-     "from": "1992-01",
-     "as_of": "2026-08",
-     "feeds": [
-      "Regime"
-     ],
-     "status": "current",
-     "note": null
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": null,
+     "last": null,
+     "feeds": [],
+     "status": "missing",
+     "note": "not stored"
     },
     {
      "label": "Fed funds rate",
      "id": "FEDFUNDS",
-     "from": "1990-01",
-     "as_of": "2026-08",
-     "feeds": [
-      "Macro"
-     ],
+     "key": null,
+     "provider": "FRED",
+     "freq": "monthly",
+     "first": "1996-03-01",
+     "last": "2026-08-01",
+     "feeds": [],
      "status": "current",
      "note": null
     }

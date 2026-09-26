@@ -46,16 +46,18 @@ describe("Sectors tab", () => {
     expect(within(list).getAllByRole("listitem").map((li) => li.textContent?.slice(0, 4))).toEqual(["XLKT", "XLII", "XLFF", "XLCC", "XLYD", "XLEE", "XLBM", "XLRE", "XLVH", "XLPS", "XLUU"]);
     expect(card).toHaveTextContent(/Leading\s*Technology\s*\+6\.1% vs the index/);
     expect(card).toHaveTextContent(/Lagging\s*Utilities\s*−4\.8% vs the index/);
-    expect(card).toHaveTextContent(/Pattern\s*Cyclical\s*growth sectors over defensives/);
-    expect(card).toHaveTextContent("Read: Tech, Industrials and Financials leading");
+    // §12.13's shape serves no pattern word and §12.0 no read without a rule: the label stays, nothing is made up.
+    expect(card).toHaveTextContent(/Pattern\s*Awaiting refresh/);
+    expect(card).not.toHaveTextContent("Read:");
   });
   it("breadth: the three stats, the two lines and the dots", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Breadth/ });
     await waitFor(() => expect(card).toHaveTextContent("7 of 11"));
-    expect(card).toHaveTextContent(/Above 50-day\s*7 of 11\s*sectors · was 10 a month ago/);
-    expect(card).toHaveTextContent(/Above 200-day\s*9 of 11\s*sectors · trend still broad/);
-    expect(card).toHaveTextContent(/Equal vs cap weight\s*−2\.4%\s*3 months · big names carrying it/);
+    // §12.13: breadth serves its comparison date; no month-ago count and no words.
+    expect(card).toHaveTextContent(/Above 50-day\s*7 of 11\s*sectors · on Sep 23/);
+    expect(card).toHaveTextContent(/Above 200-day\s*9 of 11\s*sectors/);
+    expect(card).toHaveTextContent(/Equal vs cap weight\s*−2\.4%\s*3 months/);
     expect(within(card).getByRole("img", { name: /Average stock vs the index · one year: −2\.4% on Sep 22/ })).toBeInTheDocument();
     // D13: the chart's right end names the served day, not "today" (the fixture is Sep 22).
     expect(within(card).getAllByText("Sep 22").length).toBeGreaterThan(0);
@@ -86,23 +88,20 @@ describe("Sectors tab", () => {
     expect(await screen.findByRole("region", { name: "Sector leadership 3-month return relative to the S&P · all eleven" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Breadth is the rally wide or narrow?" })).toBeInTheDocument();
   });
-  it("the notes and the 200-day color are served; the page picks no words of its own", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, pattern: "defensive", words: { pattern: "defensives over growth", above_200: "trend narrowing", eqw: "average stock keeping up" }, breadth: { ...sectors.breadth, above_200: { ...sectors.breadth.above_200, broad: false }, eqw_vs_cap_3m: 0.012 } }) });
-    renderTab();
-    const lead = await screen.findByRole("region", { name: /Sector leadership/ });
-    await waitFor(() => expect(lead).toHaveTextContent(/Pattern\s*Defensive\s*defensives over growth/));
-    const breadth = screen.getByRole("region", { name: /Breadth/ });
-    expect(breadth).toHaveTextContent(/Above 200-day\s*9 of 11\s*sectors · trend narrowing/);
-    expect(within(breadth).getByText("9 of 11")).not.toHaveAttribute("data-tone", "green");
-    expect(breadth).toHaveTextContent(/Equal vs cap weight\s*\+1\.2%\s*3 months · average stock keeping up/);
-    expect(within(breadth).getByText("+1.2%")).toHaveAttribute("data-tone", "up");
-  });
-  it("the fixture's colors: 50-day amber (narrowing), 200-day green (served broad), equal weight down", async () => {
+  it("the page picks no words and no colors of its own: the counts are plain, equal weight's color is its sign (§12.13, §1.3)", async () => {
+    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, eqw_vs_cap_3m: 0.012 } }) });
     renderTab();
     const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(within(breadth).getByText("7 of 11")).toHaveAttribute("data-tone", "amber"));
-    expect(within(breadth).getByText("9 of 11")).toHaveAttribute("data-tone", "green");
-    expect(within(breadth).getByText("−2.4%")).toHaveAttribute("data-tone", "down");
+    await waitFor(() => expect(within(breadth).getByText("+1.2%")).toHaveAttribute("data-tone", "up"));
+    expect(within(breadth).getByText("7 of 11")).toHaveAttribute("data-tone", "default");
+    expect(within(breadth).getByText("9 of 11")).toHaveAttribute("data-tone", "default");
+    expect(breadth).toHaveTextContent(/Equal vs cap weight\s*\+1\.2%\s*3 months/);
+  });
+  it("the fixture's colors: equal weight down; the counts carry none", async () => {
+    renderTab();
+    const breadth = await screen.findByRole("region", { name: /Breadth/ });
+    await waitFor(() => expect(within(breadth).getByText("−2.4%")).toHaveAttribute("data-tone", "down"));
+    expect(within(breadth).getByText("7 of 11")).toHaveAttribute("data-tone", "default");
   });
   it("a 200 answer carrying the not-ingested error says why on both cards", async () => {
     stubDesk({ "/api/desk/sectors": () => ({ error: "series not ingested", missing: ["XLK"] }) });
@@ -138,27 +137,26 @@ describe("Sectors tab", () => {
     await waitFor(() => expect(breadth).toHaveTextContent(/Equal vs cap weight\s*−2\.4%\s*3 months/));
     expect(screen.getByRole("region", { name: /Sector leadership/ })).toHaveTextContent("6-month return relative to the S&P");
   });
-  it("a dot the map does not serve is a ring, not a gray 'below'; a null month-ago drops only its clause (S-7)", async () => {
+  it("a dot the map does not serve is a ring, not a gray 'below'; a null comparison date drops only its clause (S-7)", async () => {
     const { XLU: _u, ...partial } = sectors.breadth.above_50.by_etf;
     void _u;
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, above_50: { ...sectors.breadth.above_50, by_etf: partial, month_ago: null } } }) });
+    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, above_50: { ...sectors.breadth.above_50, by_etf: partial, compared_on: null } } }) });
     renderTab();
     const breadth = await screen.findByRole("region", { name: /Breadth/ });
     const dots = await within(breadth).findByRole("list", { name: "Which sectors are above their 50-day" });
     const util = within(dots).getAllByRole("listitem")[10];
     expect(util).toHaveAttribute("data-state", "unknown");
     expect(util).toHaveTextContent("not served");
-    expect(breadth).toHaveTextContent(/Above 50-day\s*7 of 11\s*sectors(?! · was)/);
+    expect(breadth).toHaveTextContent(/Above 50-day\s*7 of 11\s*sectors(?! · on)/);
   });
-  it("more sectors above than a month ago is green (up); the ±5% axis steps to ±15% for a wider series", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, above_50: { ...sectors.breadth.above_50, month_ago: 5 }, eqw_vs_cap_series: sectors.breadth.eqw_vs_cap_series.map((p, i) => (i === 100 ? { ...p, rel: 0.12 } : p)) } }) });
+  it("the ±5% axis steps to ±15% for a wider series", async () => {
+    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, eqw_vs_cap_series: sectors.breadth.eqw_vs_cap_series.map((p, i) => (i === 100 ? { ...p, rel: 0.12 } : p)) } }) });
     renderTab();
     const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(within(breadth).getByText("7 of 11")).toHaveAttribute("data-tone", "green"));
-    expect(within(breadth).getByText("+15%")).toBeInTheDocument();
+    await waitFor(() => expect(within(breadth).getByText("+15%")).toBeInTheDocument());
   });
-  it("§7's gray note stays without the breadth read (S-11)", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, reads: { ...sectors.reads, breadth: undefined } }) });
+  it("§7's gray note stands, and no read is drawn: none is served (§12.0, S-11)", async () => {
+    stubDesk({ "/api/desk/sectors": () => ({ ...sectors }) });
     renderTab();
     const breadth = await screen.findByRole("region", { name: /Breadth/ });
     await waitFor(() => expect(breadth).toHaveTextContent("Measured from sector ETFs; stock-level breadth needs constituent data that is not ingested yet."));

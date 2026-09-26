@@ -18,7 +18,7 @@ import type { StudyResponse } from "../data/types";
 import type { DeskPage } from "../desk-sections";
 import { dayLong, pctPlain, year } from "../kit/format";
 import { Awaiting, Signed, Unserved, useUnserved } from "../kit/ui";
-import { apiParams, askFromSearch, atMonth, readLastStudy } from "../event-study/question";
+import { apiParams, askFromSearch, atMonth, readLastStudy, targetLabel } from "../event-study/question";
 import { isUnit, moveText, scaleOf, tipOf } from "../kit/units";
 import "./client.css";
 
@@ -87,9 +87,9 @@ export function thinWords(s: StudyResponse | undefined): string | null {
 }
 
 function Backdrop({ s, failed }: { s: StudyResponse | undefined; failed: boolean }) {
-  // Every move in the study's served unit, named by its served target (Codex R-02, R-03).
+  // Every move in the study's served unit, its target named by `series[]` (Codex R-02; §12.2).
   const unit = isUnit(s?.question?.target_unit) ? s.question.target_unit : undefined;
-  const target = s?.question?.target_label;
+  const target = targetLabel(s);
   const rows = s && unit && Array.isArray(s.by_regime) ? s.by_regime : [];
   const g = barGeometry(rows.map((r) => (fin(r.median) ? r.median : null)));
   const thin = thinWords(s);
@@ -175,7 +175,8 @@ export default function ClientView({ page }: { page: DeskPage }) {
         <div className="cv-grid">
           <div className="cv-main">
             <p className="dk-stat-label">{setupLabel(s)}</p>
-            <h1 className="cv-headline">{s?.client?.headline ?? "What has happened after this setup"}</h1>
+            {/* §11: the served client.headline; the catalog label (served on /study) when client is null. */}
+            <h1 className="cv-headline">{s?.client?.headline ?? s?.label ?? "What has happened after this setup"}</h1>
             {s?.client?.summary ? (
               // The served summary carries the h = 20 median and baseline (§12.2): a log study's sentence carries the §1.9 tooltip.
               <p className="cv-summary" title={tipOf(s.question?.target_unit)}>

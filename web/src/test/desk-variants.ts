@@ -23,24 +23,32 @@ export function bpStudy(): Record<string, unknown> {
   };
   return {
     ...study,
-    question: { ...study.question, target: "us10y", target_unit: "bp", display_unit: "bp", target_label: "10-year Treasury yield" },
+    question: { ...study.question, target: "us10y", target_unit: "bp", display_unit: "bp" },
     // §12.2's why is a template over horizons[selected]: in bp for a bp target.
     why: "18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −10 to +40 bp; 14.6% of resampled medians are adverse against a 3% bar.",
-    horizons: study.horizons.map((h) => ({ ...h, ...bpH[h.h], ...(h.h === 20 ? { worst: { ret: -30, date: "2020-03-09" }, best: { ret: 60, date: "2025-04-16" } } : {}) })),
+    horizons: study.horizons.map((h) => ({
+      ...h,
+      ...bpH[h.h],
+      ...(h.h === 20 ? { worst: { value: -30, event_date: "2011-08-30", entry_date: "2011-08-31" }, best: { value: 60, event_date: "2025-04-16", entry_date: "2025-04-17" } } : {}),
+    })),
     // One regime at ten events (MIN_REGIME_N), so a bp median prints; the rest too few, as served.
     by_regime: study.by_regime.map((r) => (r.regime === "Goldilocks" ? { ...r, n: 10, up_pct: 0.6, median: 12 } : r.regime === "Recession Risk" ? { ...r, n: 2 } : r)),
-    last_events: study.last_events.map((e, i) => ({ ...e, ret_20: [30, -15, 22, 5, 18][i] ?? 10 })),
+    last_events: study.last_events.map((e, i) => ({ ...e, value_20: [30, -15, 22, 5, 18][i] ?? 10 })),
     without_condition: { ...study.without_condition, median: 9 },
     client: {
-      headline: "When gold jumps and stocks are already soft, what has the 10-year yield done next?",
-      summary: "Looking at 18 episodes since 2000, the 10-year Treasury yield was higher a month later in 12 of 18, with a typical move of +25 bp against +5 bp in an ordinary month.",
+      horizon: 20,
+      headline: "Gold +2σ while S&P weak, the 10-year yield",
+      summary: "Looking at 18 episodes since 2001, the 10Y Treasury was higher a month later in 12 of 18, with a typical move of +25 bp against +5 bp in an ordinary month.",
     },
   };
 }
 
 /** The same study's event list, every move in basis points (a 1-month move of 8, a 3-month move of null). */
 export function bpEvents(): Record<string, unknown> {
-  return { ...studyEvents, events: studyEvents.events.map((e, i) => ({ ...e, ret_5: i === 0 ? 8 : 3, ret_10: 12, ret_20: 25, ret_60: i === 0 ? null : 30 })) };
+  return {
+    ...studyEvents,
+    events: studyEvents.events.map((e, i) => ({ ...e, value_5: i === 0 ? 8 : 3, value_10: 12, value_20: 25, value_60: i === 0 ? null : 30, complete_60: i !== 0 })),
+  };
 }
 
 // ── Deferred blocks served (§12.13): Monday serves them awaiting; these render the cards built for them. ──

@@ -132,7 +132,7 @@ describe("the response boundary", () => {
     expect("matrix" in m).toBe(false);
     const s = tryRead({ ...study, empty_state: { sentence: "Too few.", fixes: "widen_window" } }, "/study") as { empty_state: Record<string, unknown> };
     expect(s.empty_state).toEqual({ sentence: "Too few." });
-    const o = tryRead({ ...overview, data_status: { a: 1 }, tiles: { ...overview.tiles, regime: { label: { x: 1 } }, trend: { ...overview.tiles.trend, above_50: undefined } } }, "/overview") as { tiles: Record<string, unknown> };
+    const o = tryRead({ ...overview, data_status: { a: 1 }, tiles: { ...overview.tiles, regime: { label: { x: 1 } }, trend: { ...overview.tiles.trend, state: "sideways" } } }, "/overview") as { tiles: Record<string, unknown> };
     expect("data_status" in o).toBe(false);
     expect("regime" in o.tiles).toBe(false);
     expect("trend" in o.tiles).toBe(false);
@@ -145,16 +145,16 @@ describe("the response boundary", () => {
     const s = tryRead(
       {
         ...study,
-        question: { ...study.question, target_unit: "percent", target_label: 42 },
+        question: { ...study.question, target_unit: "percent" },
         horizons: study.horizons.map((h) => ({ ...h, n: "18" })),
       },
       "/study",
     ) as { question: Record<string, unknown>; horizons: Record<string, unknown>[] };
     expect("target_unit" in s.question).toBe(false);
-    expect("target_label" in s.question).toBe(false);
     expect(s.horizons.map((h) => h.n)).toEqual([null, null, null, null]);
-    const t = tryRead({ ...technicals, move_20d_word: 3 }, "/technicals") as Record<string, unknown>;
-    expect("move_20d_word" in t).toBe(false);
+    const t = tryRead({ ...technicals, move_20d_date: 3, trend: { state: "sideways" } }, "/technicals") as Record<string, unknown>;
+    expect(t.move_20d_date).toBeNull();
+    expect("trend" in t).toBe(false);
     // §1.9: the three native units and the two display units pass; frame-3's old "pct" and "px" are removed.
     for (const u of ["log_return", "log_change", "bp"]) expect((tryRead({ ...study, question: { ...study.question, target_unit: u } }, "/study") as { question: { target_unit: string } }).question.target_unit).toBe(u);
     for (const u of ["pct", "px"]) expect("target_unit" in (tryRead({ ...study, question: { ...study.question, target_unit: u } }, "/study") as { question: object }).question).toBe(false);
@@ -162,10 +162,14 @@ describe("the response boundary", () => {
     expect("display_unit" in (tryRead({ ...study, question: { ...study.question, display_unit: "log_return" } }, "/study") as { question: object }).question).toBe(false);
   });
 
-  it("technicals names its series whole or not at all (Codex R-08)", () => {
-    expect((tryRead(technicals, "/technicals") as Record<string, unknown>).instrument).toEqual({ symbol: "SPX", label: "S&P 500" });
-    expect("instrument" in (tryRead({ ...technicals, instrument: { symbol: "SPX" } }, "/technicals") as object)).toBe(false);
-    expect("instrument" in (tryRead({ ...technicals, instrument: "S&P 500" }, "/technicals") as object)).toBe(false);
+  it("technicals dates its windows whole or not at all (§12.7; Codex R-08)", () => {
+    const t = tryRead(technicals, "/technicals") as Record<string, unknown>;
+    expect(t.ma50_window).toEqual(technicals.ma50_window);
+    // The day's change is null (Sep 22 is not stored, the audit's §2.1) while its two sessions are still named.
+    expect(t.chg_1d).toBeNull();
+    expect(t.chg_1d_dates).toEqual({ from: "2026-09-22", to: "2026-09-23" });
+    expect("ma50_window" in (tryRead({ ...technicals, ma50_window: { start: "2026-07-13" } }, "/technicals") as object)).toBe(false);
+    expect("ret_1y_dates" in (tryRead({ ...technicals, ret_1y_dates: { from: "2025-09-23", to: 7 } }, "/technicals") as object)).toBe(false);
   });
 
   it("a statistic that is not finite is null, 1e999 included (G1-4)", () => {

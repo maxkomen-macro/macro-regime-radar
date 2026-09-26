@@ -39,8 +39,8 @@
    "pre_mortem": "TODO(Max): the pre-mortem for 2s10s steepener.",
    "red_team": "TODO(Max): the strongest case against 2s10s steepener.",
    "wrong_if": {
-    "id": "curve_down_10",
-    "label": "falls 10 bp from entry (below +38 bp)"
+    "id": "curve_down_25",
+    "label": "falls 25 bp from entry (below +15 bp)"
    },
    "subject": {
     "kind": "study",
@@ -56,15 +56,15 @@
    "monitoring": "automatic",
    "entry_ts": "2026-09-02T20:30:00Z",
    "entry_date": "2026-09-02",
-   "entry_value": 48,
+   "entry_value": 40,
    "trigger": {
     "series": "curve_2s10s",
     "operator": "below",
-    "threshold": 38,
+    "threshold": 15,
     "policy": "frozen",
     "observed_on": "2026-09-02"
    },
-   "original_room": 10,
+   "original_room": 25,
    "evaluation": "close",
    "closes": []
   },

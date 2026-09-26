@@ -1,13 +1,12 @@
 /**
  * Technicals (DESK_FRAME3_SPEC §3, screens/02-technicals.png): the S&P 500's
  * trend, momentum and what protection costs, every marker scored by the
- * event-study engine. Reads /technicals (§12.10), /vol (§12.9), /sectors
- * (§12.7) and /ledger (§12.4, the S&P group). Grid: the vol card spans the
- * left column; price and signals on top; sector leadership and RSI below.
- * Every number is a served field, formatted; the interpretive sentences are
- * the API's `reads` (§12.13); the words that judge a level are served too
- * (`move_20d_word`, `rsi_word`, Codex R-13): a stat without its word keeps
- * its number and drops the word.
+ * event-study engine. Reads /technicals (§12.7, its vol and sectors blocks
+ * awaiting) and /ledger (§12.5, the rows in `signals_allowlist` order). Grid:
+ * the vol card spans the left column; price and signals on top; sector
+ * leadership and RSI below. Every number is a served field, formatted, and
+ * dated by its own served dates; the trend's words spell the served
+ * `trend.state` (§3).
  * A card stays quiet while its first answer is on its way, and keeps its
  * labels with "Awaiting refresh" when its endpoint fails or its block is
  * missing (§1.7).
@@ -19,9 +18,8 @@ import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, Vo
 import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { capitalize, dayLong, dayShort, grouped, num, ordinal, pct, pctPlain, signed, VERDICT_RANK, year } from "../kit/format";
+import { capitalize, dayLong, dayShort, grouped, num, ordinal, pct, pctPlain, signed, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
-import Gauge from "../kit/Gauge";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars from "../kit/RankBars";
@@ -59,8 +57,6 @@ const VOL_LABELS = [
 function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardState }) {
   const adv = useAdvanced();
   const items = "put IV vs call IV · which side moved · full 2-year skew line · chain provenance";
-  const r = vol?.reads;
-  const edges = vol?.skew_band_edges;
   const pctile = fin(vol?.skew_pct_2y) ? Math.round(vol.skew_pct_2y * 100) : null;
   const unserved = useUnserved();
   if (unserved) return <UnservedCard headingId="te-vol-title" className="te-vol" title="What protection costs right now" sub="S&P 500 options, read from the SPY chain at last close." labels={[...VOL_LABELS, "Skew · where it sits"]} cols={1} block={unserved} advanced />;
@@ -91,7 +87,7 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
                   : `Calls are ${num(Math.abs(vol.skew_25d_1m_pts))} vol points more expensive than puts.`}
               </p>
             ) : null}
-            <p className="te-vol-context">{[vol.skew_trend ? `${capitalize(vol.skew_trend)}.` : "", r?.skew?.text ?? ""].filter(Boolean).join(" ")}</p>
+            {vol.skew_trend ? <p className="te-vol-context">{`${capitalize(vol.skew_trend)}.`}</p> : null}
           </div>
           <div className="te-vol-sec">
             {fin(vol.atm_iv_1m) && fin(vol.realized_20d) ? (
@@ -112,7 +108,6 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
             ) : (
               <Stat label={VOL_LABELS[1]} awaiting />
             )}
-            {r?.iv_rv ? <p className="te-vol-context">{r.iv_rv.text}</p> : null}
           </div>
           <div className="te-vol-sec">
             {vol.term && fin(vol.term["1m"]) && fin(vol.term["3m"]) && fin(vol.term["6m"]) ? (
@@ -120,29 +115,11 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
             ) : (
               <Stat label={VOL_LABELS[2]} awaiting />
             )}
-            {r?.term_meaning ? <p className="te-vol-meaning">{r.term_meaning.text}</p> : null}
-            {r?.term ? <p className="te-vol-context">{r.term.text}</p> : null}
           </div>
           <div className="te-vol-sec te-vol-gauge">
             <div className="dk-stat-label">SKEW · WHERE IT SITS</div>
-            {pctile != null && fin(vol.skew_pct_2y) && edges && fin(edges[0]) && fin(edges[1]) ? (
-              <Gauge
-                thick
-                min={0}
-                max={1}
-                value={vol.skew_pct_2y}
-                bands={[
-                  { label: "Cheap", to: Math.min(edges[0], edges[1]), tone: "green" },
-                  { label: "Typical", to: Math.max(edges[0], edges[1]), tone: "neutral" },
-                  { label: "Expensive", to: 1, tone: "amber" },
-                ]}
-                caption={`${ordinal(pctile)} pct`}
-                label={`Skew sits at the ${ordinal(pctile)} percentile of two years: ${vol.skew_pct_2y >= Math.max(edges[0], edges[1]) ? "expensive" : vol.skew_pct_2y < Math.min(edges[0], edges[1]) ? "cheap" : "typical"}`}
-              />
-            ) : (
-              <Awaiting />
-            )}
-            {r?.gauge ? <p className="te-vol-caption">{r.gauge.text}</p> : null}
+            {/* §12.13 serves the percentile without band edges (the bands are specified when the card is built). */}
+            {pctile != null ? <p className="te-vol-meaning">{`${ordinal(pctile)} percentile of two years`}</p> : <Awaiting />}
           </div>
         </>
       )}
@@ -180,8 +157,9 @@ export function monthTicks(dates: readonly string[]): { i: number; text: string 
 }
 
 /** "+0.4% today", or the session's own day when it is not New York's today (D13). */
-export function dayMove(chg: number, asOf: string, today = nyToday()): string {
-  return `${pct(chg)} ${asOf === today ? "today" : `on ${dayShort(asOf)}`}`;
+/** "+0.4% on Sep 22" (§3: `chg_1d` "on <chg_1d_dates.to>"), "today" for today's session. */
+export function dayMove(chg: number, to: string, today = nyToday()): string {
+  return `${pct(chg)} ${to === today ? "today" : `on ${dayShort(to)}`}`;
 }
 
 /** "price is 2.1% above" from the served distance to an average. */
@@ -219,7 +197,7 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
         </div>
       </div>
       <StatRow cols={3}>
-        <Stat label="Price" awaiting={state === "awaiting" || (ready && !fin(t.price))} value={ready && fin(t.price) ? grouped(t.price) : undefined} sub={ready && fin(t.chg_1d) ? <Signed value={t.chg_1d}>{dayMove(t.chg_1d, t.as_of)}</Signed> : undefined} />
+        <Stat label="Price" awaiting={state === "awaiting" || (ready && !fin(t.price))} value={ready && fin(t.price) ? grouped(t.price) : undefined} sub={ready && fin(t.chg_1d) && t.chg_1d_dates ? <Signed value={t.chg_1d}>{dayMove(t.chg_1d, t.chg_1d_dates.to)}</Signed> : undefined} />
         <Stat label="50-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma50))} value={ready && fin(t.ma50) ? grouped(t.ma50) : undefined} tone="green" sub={ready && fin(t.vs_ma50) ? aboveBelow(t.vs_ma50) : undefined} />
         <Stat label="200-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma200))} value={ready && fin(t.ma200) ? grouped(t.ma200) : undefined} tone="gray" sub={ready && fin(t.vs_ma200) ? aboveBelow(t.vs_ma200) : undefined} />
       </StatRow>
@@ -258,32 +236,22 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
 
 // ── Signals ──────────────────────────────────────────────────────────────
 
-/** The Ledger's order (§12.4): firing first, then Reliable, Suggestive, No
- * edge; §12.4 names no third key, so rows keep their served order within a
- * group (a stable sort), as the Ledger PNG draws them. */
-export function ledgerOrder(rows: readonly LedgerRow[]): LedgerRow[] {
-  const rank = (r: LedgerRow) => (r.verdict ? VERDICT_RANK[r.verdict] : 9) ?? 9;
-  return [...rows].sort((a, b) => Number(b.firing_now) - Number(a.firing_now) || rank(a) - rank(b));
+/** §3: the Ledger rows named by `signals_allowlist`, in its order; a slug the Ledger does not serve is left out. */
+export function allowlistRows(ledger: LedgerResponse | undefined, allow: readonly string[] | undefined): LedgerRow[] {
+  const rows = Array.isArray(ledger?.signals) ? ledger.signals : [];
+  return (allow ?? []).map((slug) => rows.find((r) => r.slug === slug)).filter((r): r is LedgerRow => !!r && r.available !== false && fin(r.n));
 }
 
-/** On the S&P's own card the "S&P " prefix is dropped: "S&P golden cross" → "Golden cross". */
-export function spxName(label: string): string {
-  return capitalize(label.replace(/^S&P\s+/, ""));
-}
-
-/** "above both averages" from the two served distances; null when either is missing. */
-export function trendSub(t: Pick<TechnicalsResponse, "vs_ma50" | "vs_ma200">): string | null {
-  if (!fin(t.vs_ma50) || !fin(t.vs_ma200)) return null;
-  if (t.vs_ma50 >= 0 && t.vs_ma200 >= 0) return "above both averages";
-  if (t.vs_ma50 < 0 && t.vs_ma200 < 0) return "below both averages";
-  return t.vs_ma200 >= 0 ? "above the 200-day, below the 50-day" : "above the 50-day, below the 200-day";
+/** §3: `trend.state` in words, "Above both" / "Below both" / "Mixed" ("Unavailable" when an average is null). */
+export function trendWord(state: string | undefined): string | null {
+  return ({ above_both: "Above both", below_both: "Below both", mixed: "Mixed", unavailable: "Unavailable" } as Record<string, string>)[state ?? ""] ?? null;
 }
 
 const bySlug = (ledger: LedgerResponse | undefined, slug: string) => (Array.isArray(ledger?.signals) ? ledger.signals.find((r) => r.slug === slug && fin(r.n)) : undefined);
 
 function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | undefined; tState: CardState; ledger: LedgerResponse | undefined; lState: CardState }) {
-  // §3: the S&P rows the Ledger scores; the RSI rows are omitted while unavailable.
-  const rows = Array.isArray(ledger?.signals) ? ledgerOrder(ledger.signals.filter((s) => s.group === "spx" && s.available !== false && fin(s.n))) : [];
+  // §3: the Ledger rows in `signals_allowlist` order; the RSI rows are omitted while unavailable.
+  const rows = allowlistRows(ledger, t?.signals_allowlist);
   const ready = tState === "ready" && !!t;
   const aw = tState === "awaiting";
   const unserved = useUnserved();
@@ -296,20 +264,23 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
         </h2>
       </div>
       <StatRow cols={3}>
-        <Stat label="1-year return" awaiting={aw || (ready && !fin(t.ret_1y))} value={ready && fin(t.ret_1y) ? pct(t.ret_1y) : undefined} tone={ready && fin(t.ret_1y) ? (t.ret_1y >= 0 ? "up" : "down") : undefined} sub="S&P 500" />
-        <Stat label="Trend" awaiting={aw || (ready && !t.trend)} value={ready && t.trend ? capitalize(t.trend) : undefined} tone={ready ? (t.trend === "up" ? "up" : t.trend === "down" ? "down" : undefined) : undefined} sub={ready ? (trendSub(t) ?? undefined) : undefined} />
+        {/* §3: 1-YEAR RETURN dated by `ret_1y_dates`; TREND the served state since `state_since`; LAST 20 DAYS in σ. */}
+        <Stat label="1-year return" awaiting={aw || (ready && !fin(t.ret_1y))} value={ready && fin(t.ret_1y) ? pct(t.ret_1y) : undefined} tone={ready && fin(t.ret_1y) ? (t.ret_1y >= 0 ? "up" : "down") : undefined} sub={ready && t.ret_1y_dates && dayLong(t.ret_1y_dates.from) ? `since ${dayLong(t.ret_1y_dates.from)}` : undefined} />
+        {/* §3's words ("Above both") are wider than a number: the small size keeps them in their column. */}
+        <Stat label="Trend" size="sm" awaiting={aw || (ready && !trendWord(t.trend?.state))} value={ready ? (trendWord(t.trend?.state) ?? undefined) : undefined} tone={ready ? (t.trend?.state === "above_both" ? "up" : t.trend?.state === "below_both" ? "down" : undefined) : undefined} sub={ready && dayLong(t.trend?.state_since) ? `since ${dayLong(t.trend?.state_since)}` : undefined} />
         <Stat
           label="Last 20 days"
           awaiting={aw || (ready && !fin(t.move_20d_sigma))}
           value={ready && fin(t.move_20d_sigma) ? `${signed(t.move_20d_sigma)}σ` : undefined}
-          sub={ready && typeof t.move_20d_word === "string" && t.move_20d_word ? t.move_20d_word : undefined}
+          sub={ready && dayShort(t.move_20d_date) ? `on ${dayShort(t.move_20d_date)}` : undefined}
         />
       </StatRow>
       {lState === "ready" ? (
         <ul className="te-sig-list">
           {rows.map((r) => (
             <li key={r.slug}>
-              <b>{spxName(r.label)}</b>
+              {/* §12.3: one canonical label per slug, reused by every tab (v2 §19). */}
+              <b>{r.label}</b>
               <span className="te-sig-text">
                 {fin(r.n) ? `${r.n}×` : "—"}
                 {fin(r.n) && year(r.sample_start) ? ` since ${year(r.sample_start)}` : ""}
@@ -371,7 +342,6 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
       </div>
       {state === "ready" && rows.length ? (
         <>
-          {s?.reads?.leadership_brief ? <p className="te-sect-read">{s.reads.leadership_brief.text}</p> : null}
           <RankBars label="Sector ETFs against the S&P, top three, middle and bottom three" rows={sevenOf(rows).map(toRow)} lo={lo} hi={hi} />
         </>
       ) : state === "loading" ? null : (
@@ -413,7 +383,8 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
   const cross = t?.cross ? bySlug(lq.data, t.cross.kind === "death" ? "death-cross" : "golden-cross") : undefined;
   return (
     <div className="te">
-      <PageTitle page={page} badge={unavailableOf(tq.error) ? <NotServedBadge boxed /> : t ? <LiveBadge boxed parts={["Yahoo/FRED", `as of ${dayLong(t.as_of)}`]} /> : null} />
+      {/* §3: `● Live · <date>` from `/technicals` `date`. */}
+      <PageTitle page={page} badge={unavailableOf(tq.error) ? <NotServedBadge boxed /> : t ? <LiveBadge boxed parts={[dayShort(t.date) || null]} /> : null} />
       <div className="te-grid">
         {/* §12.0: a card whose answer is served awaiting keeps its labels and prints the reason (§1.0.2). */}
         <Unserved block={volOff}>

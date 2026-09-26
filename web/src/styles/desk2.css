@@ -194,8 +194,18 @@
   line-height: 1.1;
   color: var(--dk-t1);
 }
+/* §1.3's exception (v2 D-36): the regime in its color, wherever it is named. */
+.dk-today-regime[data-regime="Goldilocks"] {
+  color: var(--dk-green);
+}
 .dk-today-regime[data-regime="Overheating"] {
   color: var(--dk-amber);
+}
+.dk-today-regime[data-regime="Stagflation"] {
+  color: var(--dk-red);
+}
+.dk-today-regime[data-regime="Recession Risk"] {
+  color: var(--dk-t3);
 }
 .dk-today-sub {
   font-size: 13px;

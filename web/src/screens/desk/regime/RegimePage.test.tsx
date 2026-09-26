@@ -46,25 +46,26 @@ afterEach(() => {
 describe("Regime words", () => {
   it("groups the monthly history into runs", () => {
     const r = runs(regime.history);
-    expect(r.map((x) => x.regime)).toEqual(["Goldilocks", "Overheating", "Stagflation", "Recession Risk", "Goldilocks", "Overheating", "Stagflation", "Goldilocks", "Overheating"]);
-    expect(r[r.length - 1]).toMatchObject({ from: "2026-06", to: "2026-08", months: 3 });
+    // The stored rows (the audit's store): five years of Overheating and Stagflation turns, then the July Goldilocks row and August's Overheating.
+    expect(r[0]).toMatchObject({ regime: "Overheating", from: "2021-08" });
+    expect(r.slice(-2)).toEqual([expect.objectContaining({ regime: "Goldilocks", from: "2026-07", to: "2026-07", months: 1 }), expect.objectContaining({ regime: "Overheating", from: "2026-08", to: "2026-08", months: 1 })]);
+    expect(r).toHaveLength(25);
     expect(r.reduce((a, x) => a + x.months, 0)).toBe(regime.history.length);
   });
-  it("spells the flip from the served threshold, never a typed one", () => {
-    expect(flipWords("cpi", regime.next_prints.cpi, "rising")).toBe("a soft print (<0.2% m/m) flips inflation to falling → Goldilocks");
-    expect(flipWords("indpro", regime.next_prints.indpro, "rising")).toBe("a negative print flips growth to falling → Stagflation");
+  it("spells the flip from the served threshold and operator, never a typed one (§5)", () => {
+    expect(flipWords("cpi", regime.next_prints.cpi as never)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
+    expect(flipWords("indpro", regime.next_prints.indpro as never)).toBe("a print ≤ −0.02% m/m flips growth to falling → Stagflation, effective from the Nov 2026 label.");
   });
-  it("a falling trend flips on a print above the threshold (G-2)", () => {
-    expect(flipWords("cpi", { flip_threshold_mom: 0.004, flips_to: "Overheating" }, "falling")).toBe("a hot print (>0.4% m/m) flips inflation to rising → Overheating");
-    expect(flipWords("indpro", { flip_threshold_mom: 0, flips_to: "Goldilocks" }, "falling")).toBe("a positive print flips growth to rising → Goldilocks");
-    expect(flipWords("indpro", { flip_threshold_mom: -0.001, flips_to: "Goldilocks" }, "falling")).toBe("a print above −0.1% m/m flips growth to rising → Goldilocks");
-    expect(flipWords("indpro", { flip_threshold_mom: -0.001, flips_to: "Stagflation" }, "rising")).toBe("a print below −0.1% m/m flips growth to falling → Stagflation");
+  it("`>` flips a falling axis to rising (v3 §9.3)", () => {
+    const p = { threshold_mom: 0.004, operator: ">" as const, flips_to: "Overheating", first_effective_month: "2026-11" };
+    expect(flipWords("cpi", p)).toBe("a print > 0.4% m/m flips inflation to rising → Overheating, effective from the Nov 2026 label.");
+    expect(flipWords("indpro", { ...p, threshold_mom: -0.001, flips_to: "Goldilocks" })).toBe("a print > −0.1% m/m flips growth to rising → Goldilocks, effective from the Nov 2026 label.");
   });
-  it("prints the served precision, and nothing without a threshold or a trend", () => {
-    expect(flipWords("cpi", { flip_threshold_mom: 0.0015, flips_to: "Goldilocks" }, "rising")).toBe("a soft print (<0.15% m/m) flips inflation to falling → Goldilocks");
-    expect(flipWords("cpi", { flip_threshold_mom: null as unknown as number, flips_to: "Goldilocks" }, "rising")).toBeNull();
-    expect(flipWords("cpi", regime.next_prints.cpi, undefined)).toBeNull();
-    expect(flipWords("cpi", { flip_threshold_mom: 0.002, flips_to: null as unknown as string }, "rising")).toBeNull();
+  it("prints the served precision, and nothing without a threshold; a flip not evaluable names no regime", () => {
+    const p = { threshold_mom: 0.0015, operator: "<=" as const, flips_to: "Goldilocks", first_effective_month: "2026-11" };
+    expect(flipWords("cpi", p)).toBe("a print ≤ 0.15% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
+    expect(flipWords("cpi", { ...p, threshold_mom: null })).toBeNull();
+    expect(flipWords("cpi", { ...p, flips_to: null })).toBe("a print ≤ 0.15% m/m flips inflation to falling, effective from the Nov 2026 label.");
     expect([mom(0.00003), mom(0.002), mom(0)]).toEqual(["0.003", "0.2", "0"]);
   });
   it("colors by §1.3's jobs: red is only for down numbers", () => {
@@ -72,7 +73,8 @@ describe("Regime words", () => {
     expect(flipTone("Stagflation")).toBe("amber");
     expect(flipTone("Recession Risk")).toBeUndefined();
     expect(trendTone("growth", "falling")).toBe("red");
-    expect(trendTone("inflation", "falling")).toBe("green");
+    // §1.3: green only ever means up, Reliable, firing or current; a falling inflation trend is down.
+    expect(trendTone("inflation", "falling")).toBe("red");
     expect(trendTone("inflation", null)).toBeUndefined();
     expect([stockBondTone(-0.2), stockBondTone(0.3), stockBondTone(0)]).toEqual(["green", "amber", undefined]);
   });
@@ -82,17 +84,23 @@ describe("Regime tab", () => {
   it("where we are: the label, the lede, three stats, the strip, the rule", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: "Where we are rule-based · two-month lag" });
-    await waitFor(() => expect(card).toHaveTextContent("Overheating"));
-    // §5: the Jul row governs a September session; the newest stored row sits beside it, never classifying.
-    expect(card).toHaveTextContent("Growth rising and inflation rising. Second month in a row.");
-    expect(card).toHaveTextContent(/In this regime\s*2 mo\s*since the June row/);
+    await waitFor(() => expect(card).toHaveTextContent("Goldilocks"));
+    // §5: the Jul row (Goldilocks, as stored) governs a September session; the newest stored row (Aug, Overheating) sits beside it, never classifying.
+    // §5's lede, "<Nth> month in a row", in its first month too (the audit's Q13: 1 month in).
+    expect(card).toHaveTextContent("Growth rising and inflation falling. First month in a row.");
+    // §1.3's exception (v2 D-36) and §5: the label in its regime's color.
+    expect(card.querySelector(".rg-big")).toHaveAttribute("data-tone", "green");
+    expect(card).toHaveTextContent(/In this regime\s*1 mo\s*since the July row/);
     expect(card.querySelector(".rg-latest")?.textContent).toBe("Latest print: Aug 2026");
-    const strip = within(card).getByRole("img", { name: /Regime by month from Jan 2021 to Aug 2026/ });
+    const strip = within(card).getByRole("img", { name: /Regime by month from Aug 2021 to Aug 2026/ });
     const segs = [...strip.querySelectorAll("span")];
-    expect(segs.map((x) => x.getAttribute("data-tone"))).toEqual(["green", "amber", "red", "gray", "green", "amber", "red", "green", "amber"]);
-    expect(segs[segs.length - 1].style.width).toBe(`${(3 / 68) * 100}%`);
-    // Ticks 2021…2025, then today (§5): the strip's own last year is today's.
-    expect(card.querySelector(".rg-strip-years")?.textContent).toBe("20212022202320242025today");
+    expect(segs).toHaveLength(25);
+    expect(segs.slice(-2).map((x) => x.getAttribute("data-tone"))).toEqual(["green", "amber"]);
+    expect(segs[segs.length - 1].style.width).toBe(`${(1 / 60) * 100}%`);
+    // §5: the served note under the strip.
+    expect(card).toHaveTextContent("labels as stored; revisions are not replayed.");
+    // Each January from 2022 to 2025, then today (§5): the strip's own last year is today's.
+    expect(card.querySelector(".rg-strip-years")?.textContent).toBe("2022202320242025today");
     expect(card).toHaveTextContent("How it's decided: two signs");
   });
   it("recession: the model's score, its band, the month it is for, the gauge, the three stats and what it is (§5)", async () => {
@@ -134,7 +142,8 @@ describe("Regime tab", () => {
     const card = await screen.findByRole("region", { name: /What each regime has meant/ });
     await waitFor(() => expect(within(card).getAllByRole("row")).toHaveLength(5));
     const cur = within(card).getAllByRole("row").find((r) => r.getAttribute("aria-current") === "true");
-    expect(cur?.textContent).toContain("Overheating88+0.9%59%17+0.3");
+    // The current row is the governing (K−2) label, Goldilocks; its months are the stored record's (27).
+    expect(cur?.textContent).toContain("Goldilocks27+1.4%66%15−0.2");
     // §12.13's deferred shape carries no read (§1.4: no read is served).
     expect(card).not.toHaveTextContent("Read for the desk");
   });
@@ -143,7 +152,8 @@ describe("Regime tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What would change it/ });
     await waitFor(() => expect(card).toHaveTextContent("Oct 14"));
-    expect(card).toHaveTextContent("Oct 17");
+    // §5: the calendar has no INDPRO release, so its date says so.
+    expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · a print ≤ −0.02% m\/m flips growth to falling → Stagflation/);
     expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "Jun 2026Goldilocks → Overheating+2.1%",
       "Oct 2025Stagflation → Goldilocks+3.8%",
@@ -201,12 +211,13 @@ describe("Regime tab", () => {
     const where = await screen.findByRole("region", { name: /Where we are/ });
     await waitFor(() => expect(where).toHaveTextContent(/Growth\s*Awaiting refresh/));
     expect(where).not.toHaveTextContent("Growth and inflation");
-    expect(where).toHaveTextContent("Overheating");
+    expect(where).toHaveTextContent("Goldilocks");
     const rec = screen.getByRole("region", { name: /Recession score/ });
     expect(rec).toHaveTextContent("Awaiting refresh · the recession score");
     expect(rec).toHaveTextContent(/Inputs through\s*May/);
+    // The flip is spelled from the served operator, so it stands without today's trends (§12.6).
     const change = screen.getByRole("region", { name: /What would change it/ });
-    expect(change).toHaveTextContent(/Next CPI\s*Awaiting refresh/);
+    expect(change).toHaveTextContent(/Next CPI\s*Oct 14/);
   });
 
   it("a served current without its label says so", async () => {
@@ -214,7 +225,7 @@ describe("Regime tab", () => {
     renderTab();
     const where = await screen.findByRole("region", { name: /Where we are/ });
     await waitFor(() => expect(where).toHaveTextContent("Awaiting refresh · the regime label"));
-    expect(where).toHaveTextContent("Growth rising and inflation rising.");
+    expect(where).toHaveTextContent("Growth rising and inflation falling.");
   });
 
   it("a failed /regime keeps the stat labels and the method boxes, prints no number", async () => {

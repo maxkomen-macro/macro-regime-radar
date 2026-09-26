@@ -27,7 +27,7 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView } from "../desk-view";
 import { MonitoredRow, sortByRoom } from "../kit/MonitoredRows";
-import { apiParams, askFromSearch, questionWords, searchFor, slotsOf, type Ask } from "../event-study/question";
+import { apiParams, askFromSearch, questionWords, searchFor, slotsOf, targetLabel, type Ask } from "../event-study/question";
 import { readSaved } from "../basket/weights";
 import { planFor, planRefusal, seriesOf, suggestions, underlyingName } from "./levels";
 import { falsifiesLine, sizeLine, viewOf, type PositionView } from "./monitor";
@@ -344,8 +344,8 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const carriedFailed = !!carriedAsk && study.isError;
   useEffect(() => {
     if (!carried) return;
-    // The instrument is the study's served target name (Codex R-03); without it the field is left for the analyst.
-    const target = carried.question.target_label;
+    // The instrument is the study's target as `series[]` names it (§12.2); without it the field is left for the analyst.
+    const target = targetLabel(carried);
     setDraft((d) => (d.instrument ? d : { ...d, instrument: typeof target === "string" ? target : "", horizon: HORIZONS.includes(carried.question.horizon) ? carried.question.horizon : d.horizon }));
   }, [carried]);
 
@@ -358,9 +358,9 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sent?.instrument]);
 
-  // The target is named by the study's served target_label (Codex R-03); other series by the served list.
-  // Without a served target_label the target goes unnamed here as on every tab, never named from a list.
-  const label = (k: string) => (carried && k === carried.question.target ? (carried.question.target_label || "the study's target") : ((Array.isArray(carried?.series) ? carried.series : []).find((s) => s.key === k)?.label ?? k));
+  // Every series, the target included, is named by the study's served `series[]` (§12.2); a target it does
+  // not list goes unnamed ("the study's target"), never guessed from its key.
+  const label = (k: string) => (carried && k === carried.question.target ? (targetLabel(carried) ?? "the study's target") : ((Array.isArray(carried?.series) ? carried.series : []).find((s) => s.key === k)?.label ?? k));
   // The six slots the study was asked by: the study subject a position records (§9).
   const canonical = carried ? slotsOf(carried.question) : null;
   // "The signal reverses" is offered only for a study subject with its full question (§9).

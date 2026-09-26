@@ -27,7 +27,7 @@ import type { CatalogStudy, Question } from "../../screens/desk/data/types";
 import { awaitingEnvelope, onTheWire, routeOf, type EnvelopeMeta } from "../../screens/desk/data/envelope";
 
 /** The envelope's fields for every fixture answer (§12.0); a payload's own `as_of` and `generation_id` win. */
-export const FIXTURE_META: EnvelopeMeta = { generation_id: "gen-fixture-2026-09-22", as_of: "2026-09-22", engine_version: "fixture" };
+export const FIXTURE_META: EnvelopeMeta = { generation_id: "gen-fixture-2026-09-24", as_of: "2026-09-24", engine_version: "fixture" };
 
 /** A reply as the wire carries it (§12.0): a JSON body on an enveloped route in its envelope. */
 export function wireReply(path: string, reply: FixtureReply): FixtureReply {
@@ -103,9 +103,12 @@ function asksFixtureStudy(u: URL): boolean {
   return SLOTS.every((k) => u.searchParams.get(k) === String(STUDY_Q[k]));
 }
 
-/** §12.3's CSV: one row per event, the JSON's columns in order. */
+/** §12.4's CSV columns, in order. */
+export const EVENTS_CSV_COLUMNS = ["event_date", "entry_date", "regime", ...[5, 10, 20, 60].flatMap((h) => [`exit_${h}`, `value_${h}`, `complete_${h}`])];
+
+/** §12.4's CSV: one row per event, newest first; values native, nulls empty, booleans true / false. */
 export function eventsCsv(doc: { events: Record<string, unknown>[] }): string {
-  const cols = ["date", "regime", "ret_5", "ret_10", "ret_20", "ret_60"];
+  const cols = EVENTS_CSV_COLUMNS;
   const cell = (v: unknown) => (v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
   return [cols.join(","), ...doc.events.map((e) => cols.map((c) => cell(e[c])).join(","))].join("\n") + "\n";
 }

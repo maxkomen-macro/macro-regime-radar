@@ -3,7 +3,7 @@
  "stats": [
   {
    "regime": "Goldilocks",
-   "months": 154,
+   "months": 27,
    "spx_mo": 0.014,
    "up_pct": 0.66,
    "vix_avg": 15,
@@ -11,7 +11,7 @@
   },
   {
    "regime": "Overheating",
-   "months": 88,
+   "months": 213,
    "spx_mo": 0.009,
    "up_pct": 0.59,
    "vix_avg": 17,
@@ -19,7 +19,7 @@
   },
   {
    "regime": "Stagflation",
-   "months": 46,
+   "months": 102,
    "spx_mo": -0.002,
    "up_pct": 0.48,
    "vix_avg": 24,
@@ -27,7 +27,7 @@
   },
   {
    "regime": "Recession Risk",
-   "months": 76,
+   "months": 21,
    "spx_mo": -0.006,
    "up_pct": 0.45,
    "vix_avg": 29,

@@ -2,7 +2,7 @@
  * Data Pipeline (DESK_FRAME3_SPEC §11, §12.11, screens/10-data-pipeline.png):
  * where every number comes from. The lineage strip (fixed copy: the six
  * steps a number takes), the series inventory read from GET /pipeline (the
- * pipeline config, so a new series lands in its group with no page change),
+ * registry, so a new series lands in its group with no page change),
  * grouped and collapsible, each group's table scrolling inside the group, and
  * a search that jumps to a series and opens its group; and the Snowflake
  * bridge: the three-layer schema as the board draws it, the current study's
@@ -17,6 +17,7 @@ import type { PipelineGroup } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { Awaiting, Unserved } from "../kit/ui";
+import { dayLong, monthYear } from "../kit/format";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { saveServed } from "../kit/download";
 import { PipelineBadge } from "./badge";
@@ -25,7 +26,8 @@ import "./pipeline.css";
 /** The six steps a number takes (§11), fixed copy. */
 export const LINEAGE: readonly { step: string; lines: readonly string[] }[] = [
   { step: "Sources", lines: ["FRED API", "Yahoo Finance", "EODHD (live tape)"] },
-  { step: "Fetch", lines: ["GitHub Actions", "daily 00:23 UTC", "news-only hourly"] },
+  // The full refresh runs at 11:17 UTC daily and 00:23 UTC Tuesday to Saturday (the audit's §10 #21).
+  { step: "Fetch", lines: ["GitHub Actions", "full refresh daily", "news-only hourly"] },
   { step: "Validate", lines: ["schema + range checks", "as-of ≤ today", "gap detection"] },
   { step: "Transform", lines: ["z-scores, MAs", "regime labels", "forward returns"] },
   { step: "Store", lines: ["SQLite snapshot", "published as release asset", "Snowflake-ready schema"] },
@@ -60,6 +62,11 @@ export function findSeries(groups: readonly PipelineGroup[], text: string): { gr
   return null;
 }
 
+/** A stored observation at its series' own frequency: "Sep 22, 2026" for a daily series, "Aug 2026" for a monthly one. */
+export function storedDay(d: string | null | undefined, freq: string | undefined): string {
+  return freq === "monthly" ? monthYear(d) : dayLong(d);
+}
+
 function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; onToggle: () => void; hit: string | null }) {
   const id = useId();
   const rows = Array.isArray(g.series) ? g.series : [];
@@ -76,16 +83,16 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
         </span>
         <span className="pl-group-name">{g.name}</span>
         <span className="pl-group-meta">
-          {[`${rows.length} series`, g.source, g.freq].filter(Boolean).join(" · ")}
-          {g.status_text || g.status ? (
+          {`${rows.length} series`}
+          {/* §12.9: the group's status is the worst of its series. */}
+          {g.status ? (
             <>
               {" "}
               <span className="pl-state" data-tone={current ? "green" : "amber"}>
-                ● {g.status_text || g.status}
+                ● {g.status}
               </span>
             </>
           ) : null}
-          {g.note ? ` · ${g.note}` : ""}
         </span>
       </button>
       {open && !rows.length ? (
@@ -109,10 +116,14 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
               <tbody>
                 {rows.map((s) => (
                   <tr key={s.id} ref={s.id === hit ? hitRef : undefined} data-hit={s.id === hit || undefined}>
-                    <th scope="row">{s.label || s.id}</th>
+                    <th scope="row">
+                      {s.label || s.id}
+                      {/* §11: provider and frequency beside the series. */}
+                      {s.provider || s.freq ? <span className="pl-prov"> · {[s.provider, s.freq].filter(Boolean).join(", ")}</span> : null}
+                    </th>
                     <td className="pl-id">{s.id}</td>
-                    <td>{s.from || "—"}</td>
-                    <td>{s.as_of || "—"}</td>
+                    <td>{storedDay(s.first, s.freq) || "—"}</td>
+                    <td>{storedDay(s.last, s.freq) || "—"}</td>
                     <td className="pl-feeds">{Array.isArray(s.feeds) && s.feeds.length ? s.feeds.join(", ") : "—"}</td>
                     <td className="pl-status">
                       <span data-tone={s.status === "current" ? "green" : s.status ? "amber" : undefined}>{s.status || "—"}</span>
@@ -260,7 +271,8 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
               <h2 className="dk-card-title" id="pl-inv-title">
                 Series inventory
               </h2>
-              <p className="pl-head-sub">{total ? `${total} series · grouped · read from the pipeline config` : "grouped · read from the pipeline config"}</p>
+              {/* §11: "generated from the registry and its consumers, counts derived". */}
+              <p className="pl-head-sub">{total ? `${total} series · grouped · generated from the registry` : "grouped · generated from the registry"}</p>
               <input className="pl-search" type="search" aria-label="Find a series" placeholder="Find a series… (VIX, DGS10, gold)" value={text} onChange={(e) => onSearch(e.target.value)} disabled={!groups.length} />
             </div>
             {text.trim() && !hit ? (
@@ -275,7 +287,7 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
                 ))}
               </div>
             ) : q.isError || p ? (
-              <Awaiting>the pipeline config</Awaiting>
+              <Awaiting>the registry's inventory</Awaiting>
             ) : null}
             <p className="pl-mono-note">Click a group to expand · search jumps to a series and opens its group · new series land in a group automatically</p>
           </section>

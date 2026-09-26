@@ -81,23 +81,28 @@ describe("Client view words and geometry", () => {
 describe("Client view", () => {
   it("reads the study in plain words: the question, the three numbers, the backdrop, the source", async () => {
     renderTab("/desk/overview?view=client");
-    expect(await screen.findByRole("heading", { level: 1, name: "When gold jumps and stocks are already soft, what has the S&P done next?" })).toBeInTheDocument();
+    // §12.2: client.headline is the catalog label; "since" is the sample's first year (the audit's §2.3: 2001-09-19).
+    expect(await screen.findByRole("heading", { level: 1, name: "Gold +2σ while S&P weak" })).toBeInTheDocument();
     const main = screen.getByRole("main");
-    await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*18\s*since 2000/));
+    await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*18\s*since 2001/));
     expect(main).toHaveTextContent("Setup last seen · Apr 16, 2025");
-    expect(main).toHaveTextContent(/Higher a month later\s*67%\s*vs 62% in an ordinary month/);
+    expect(main).toHaveTextContent(/Higher a month later\s*67%\s*vs 65% in an ordinary month/);
     expect(main.querySelector(".cv-stat-value[data-tone='green']")).toHaveTextContent("67%");
     expect(main).toHaveTextContent(/Typical move\s*\+3\.1%\s*vs \+1\.3% ordinary/);
     // §1.9: every log number carries the tooltip, the backdrop's too.
     // The served summary carries its numbers in words, so the sentence carries the tooltip too.
-    expect([...main.querySelectorAll('[title="log return, ×100"]')].map((e) => e.textContent)).toEqual([expect.stringMatching(/^Looking at 18 episodes since 2000, the S&P 500 was higher a month later in 12 of 18/), "+3.1%", "+1.3%"]);
+    expect([...main.querySelectorAll('[title="log return, ×100"]')].map((e) => e.textContent)).toEqual([expect.stringMatching(/^Looking at 18 episodes since 2001, the S&P 500 was higher a month later in 12 of 18/), "+3.1%", "+1.3%"]);
     // Every regime has fewer than ten events, so every row is served null (§12.2, MIN_REGIME_N).
     expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilockstoo few cases to say", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risktoo few cases to say"]);
     expect(backdrop().querySelectorAll(".cv-bar")).toHaveLength(0);
-    expect(main).toHaveTextContent("Radar · FRED, Yahoo Finance · as of Sep 22, 2026 · Past patterns do not guarantee future results.");
+    expect(main).toHaveTextContent("Radar · FRED, Yahoo Finance · as of Sep 24, 2026 · Past patterns do not guarantee future results.");
     // No verdict pills, no σ.
     expect(main.querySelector(".dk-pill")).toBeNull();
-    expect(main.textContent).not.toMatch(/σ|Reliable|Suggestive|No edge/);
+    expect(main.textContent).not.toMatch(/Reliable|Suggestive|No edge/);
+    // §12.2 makes the title the catalog label, which carries a σ; §11's "no σ" holds everywhere else (an open
+    // conflict between the two sentences, recorded in FRAME3_REPORT.md for the owner).
+    const title = screen.getByRole("heading", { level: 1 }).textContent ?? "";
+    expect(main.textContent?.replace(title, "")).not.toMatch(/σ/);
     // The desk's internals leave the sidebar; the navigation stays.
     expect(screen.getByTestId("desk-shell")).toHaveAttribute("data-client");
     expect(within(screen.getByRole("complementary", { name: "Sidebar" })).getByRole("link", { name: "Regime" })).toBeInTheDocument();
@@ -106,7 +111,7 @@ describe("Client view", () => {
   it("a basis-point study reads in bp, named by its served target (Codex R-02, R-03)", async () => {
     stubDesk({ "/api/desk/study": bpStudy });
     renderTab("/desk/overview?view=client");
-    await waitFor(() => expect(backdrop()).toHaveTextContent("Typical 10-year Treasury yield move after the setup"));
+    await waitFor(() => expect(backdrop()).toHaveTextContent("Typical 10Y Treasury move after the setup"));
     expect(within(backdrop()).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Goldilocks+12 bp", "Overheatingtoo few cases to say", "Stagflationtoo few cases to say", "Recession Risktoo few cases to say"]);
     expect(screen.getByRole("main")).toHaveTextContent(/Typical move\s*\+25 bp\s*vs \+5 bp ordinary/);
     expect(backdrop().textContent).not.toMatch(/%/);
@@ -153,7 +158,7 @@ describe("Client view", () => {
     const { calls } = stubDesk();
     renderTab("/desk/regime?view=client");
     await waitFor(() => expect(calls).toContain("GET /api/desk/study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20"));
-    expect(await screen.findByRole("heading", { level: 1, name: /When gold jumps/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Gold +2σ while S&P weak" })).toBeInTheDocument();
   });
 
   it("a drop draws red from zero, a mixed set shares one scale, all-null prints the words", async () => {
@@ -174,15 +179,16 @@ describe("Client view", () => {
   });
 
   it("a study too thin to read at a month, served without a client paragraph, says so in plain words, not the desk's sentence (§11)", async () => {
-    const desk = "Only 6 events complete at 1 month since 2000, fewer than the ten a verdict other than Too few needs.";
-    const sentence = "Only 6 episodes since 2000: too few to say what usually happens a month later.";
+    const desk = "Only 6 events complete at 1 month since 2001, fewer than the ten a verdict other than Too few needs.";
+    const sentence = "Only 6 episodes since 2001: too few to say what usually happens a month later.";
     const thin: Record<string, unknown> = { ...study, matched_n: 6, verdict: "insufficient", horizons: [], by_regime: [], empty_state: { horizon: 20, sentence: desk, fixes: [] } };
     delete thin.client;
     stubDesk({ "/api/desk/study": () => thin });
     renderTab("/desk/overview?view=client");
     const main = await screen.findByRole("main");
-    await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*6\s*since 2000/));
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("What has happened after this setup");
+    await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*6\s*since 2001/));
+    // §11: with client null the title is the catalog label, served on /study; with neither, the plain words.
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Gold +2σ while S&P weak");
     expect(main.querySelector(".cv-summary")).toHaveTextContent(sentence);
     expect(main).toHaveTextContent("Higher a month latertoo few cases to say");
     expect(main).toHaveTextContent("Typical movetoo few cases to say");

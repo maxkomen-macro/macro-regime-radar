@@ -3268,6 +3268,271 @@ palette and every stop named and ringed.
 The fixes were checked by the four gates and the tests above; the compare
 shot was re-shot after them.
 
+### Phase 2, item 12: ordering, labels and fixtures — `frame-3: align 12 fixtures`
+
+**What changed.** Every Desk fixture is regenerated to the folded §12
+shapes, with the audit's real values wherever it marks a value COMPUTABLE
+(`docs/desk/FRAME3_DATA_AUDIT.md` on `desk/frame-3-docs`, `cd465f8`).
+One snapshot throughout, the audit's store: refreshed Sep 24 05:07 UTC,
+calculation date Sep 24, comparison session Sep 23 against Sep 22, no
+^GSPC row for Sep 22, regimes through 2026-08 with 2025-10 absent. The
+study values are the event-study engine's own output, run read-only on a
+copy of that store; its firing check puts nothing firing, and every row it
+cannot evaluate on Sep 23 is stale at its last evaluable session. What
+is not COMPUTABLE is illustrative and named as such in the new
+`web/src/fixtures/desk/PROVENANCE.md`, fixture by fixture.
+
+- Shapes: `/overview` (`trend {state, above_50, above_200, state_since,
+  cross, date, freq, source}`, `data_status {state, contributors}`),
+  `/technicals` (§12.7's `date`, `freq`, `source`, `chg_1d_dates`,
+  `ret_1y_dates`, the two average windows, `trend {state, state_since}`,
+  `move_20d_date`, `signals_allowlist`; no `instrument`, no
+  `move_20d_word`), `/study` (`label`, `short`, `data_start`,
+  `sample_end`, `first_event`, extremes `{value, event_date, entry_date}`,
+  `last_events[].value_20`, `provenance {entry_rule, cooldown, seed,
+  engine_version, series_start}`), `/study/events` (exit, value and
+  completeness per horizon; the CSV takes §12.4's columns), `/macro` (each
+  tenor dated, HY and IG as dated objects, the served band, the rank and
+  line windows), `/regime` (`next_prints` per §12.6, the history note),
+  `/pipeline` (§12.9's groups, a status per group that is the worst of its
+  series, provider and frequency per series, `validation` pass or fail).
+  Types and the response boundary (`data/types.ts`, `data/schema.ts`)
+  follow them, and every tab reads the new fields.
+- Ordering and labels (v2 §19 as amended): one label and one short per
+  slug, the catalog's, on every tab; the Ledger in v3 §2's fixed order, one
+  table in the served order with no group rows; Overview's active signals
+  by §12.1's rule (firing first, then the five latest fires, newest
+  first); Technicals' rows in `signals_allowlist` order, under their
+  catalog labels ("S&P golden cross", no longer shortened on that tab); the
+  series labels in `/study` `series[]` and on Data Pipeline are the
+  registry's (`src/desk/series.py`), so gold reads "Gold (COMEX front
+  month)", and a study's target is named by its `series[]` entry (§12.2
+  serves no separate target name; the old `target_label` is gone).
+- §12.13's deferred shapes: `vol.json` carries each value's date and no
+  band edges, `sectors.json` breadth's comparison date and no pattern,
+  words or month-ago count, `deferred-macro.json` each correlation's
+  symbol, quantity and transform and no words or hedging call. §12.0's
+  read must name its rule or it is not read, so no fixture carries one.
+  The cards built for these blocks (not served on Monday) follow: the
+  Sectors PATTERN stat waits, the breadth count is dated, the skew
+  percentile is printed without Cheap / Typical / Expensive bands, the
+  correlation rows show the declared symbol.
+- Tabs, where a field moved: the Overview trend reads `trend.state`
+  ("since <state_since> · last cross golden, <date>"); the regime is in
+  its color wherever it is named, the Overview tile, the Regime page's
+  label and the sidebar's TODAY (§1.3's exception, all four regimes; only
+  Overheating was colored before, which the real Goldilocks row showed);
+  a falling inflation trend is red, down, not green (§1.3: green only ever
+  means up, Reliable, firing or current); the Regime lede says "First
+  month in a row." for a first month (§5's "<Nth> month in a row"); the
+  sidebar dates the S&P by its sessions and says Awaiting refresh for a
+  day's change it cannot compute; the
+  Technicals badge is `● Live · <date>` from `/technicals` `date`; the
+  Event Study provenance line is §4's; the Client view's title falls back
+  to the study's label when `client` is null; Macro dates each spread,
+  prints the served band and the range over its window, draws each date's
+  curve through its served tenors with a marker on each, and names the
+  tenors not served under the chart; Regime spells each flip from
+  `operator`, `threshold_mom`, `flips_to` and `first_effective_month` and
+  prints "release date unavailable" for the INDPRO print, its dash
+  uncolored; Data Pipeline shows provider and frequency on each row (notes
+  in sans), a daily series to the day and a monthly one to the month,
+  says the inventory is "generated from the registry" (§11), the lineage's
+  fetch step "full refresh daily", and always "validation passed",
+  "failed" or "unknown".
+- Layout the real values needed: the Event Study slot grid gives the shock
+  its registry label, and below 1280px the six slots take three columns
+  (on a phone shock and while take a row each), so every slot reads whole
+  at 1440, 1280, 1101 and 390; the Advanced resampling rows have their own
+  four columns and wrap; the Overview stacks below 1280px (tiles two by
+  two, signals and monitored rows full width) and its tile words may wrap;
+  the Technicals trend words take the small stat size and may wrap; the
+  Data Pipeline wrap columns start at 84px so the day-dated columns fit at
+  601px; the kit's line chart can join a series across a value not
+  served.
+
+**Tests.** `consistency.test.ts` (one label per slug; the sessions, the
+generation and the firing rows across the fixtures; the regime lag; the
+audit's real values: the K−2 row, recession, VIX, the curve, the spreads,
+the gold study's counts and hash, the Ledger's counts and verdicts, the
+pipeline's first and last observations); `api.test.tsx` (the new
+fields, a wrong kind removed or nulled, the windows whole or not at all);
+`OverviewPage`, `TechnicalsPage`, `EventStudyPage`, `ClientView`,
+`RegimePage`, `MacroPage`, `LedgerPage`, `PipelinePage`, `DeskShell`,
+`PositionMonitorPage` and `monitor` tests on the real values. Browser:
+`e2e/desk.spec.ts` on the same values (the Overview tiles and tones, the
+Technicals axis at 6,000 / 7,000 / 8,000, §12.4's CSV header, two Too few
+pills, the 2s10s position at 15 bp, the 50-day at 7,625, the Client title,
+the 10Y Treasury named from `series[]`); `SectorsPage`, the deferred
+`MacroPage` and `TechnicalsPage` cards on §12.13's shapes. After the
+verifier's round the layouts above were scanned at 1440, 1280, 1101 and
+390 for sideways scroll, cut slots, overlapping rows and colliding ticks,
+with none found.
+
+**Against the PNGs.** Where a value differs, the PNG carries the mockup's
+number and the fixture the store's (the rule of this item; §0: "this file
+wins for numbers, labels and API shape").
+- 01 Overview: REGIME Goldilocks (green), "Live · Jul row", where the PNG
+  has Overheating. §2: the tile shows "the K−2 row governing today";
+  the audit's Q13 has July as Goldilocks; §1.3: "Goldilocks green … wherever
+  a regime is named." S&P TREND: "since Sep 17, 2026 · last cross golden,
+  Jul 1, 2025" where the PNG has "since the Jul 2025 golden cross". §2's
+  table: "since <state_since> · last cross <golden|death>, <date>". VIX
+  14.2 · Sep 22 where the PNG has 16.2 (the audit's Q7). ACTIVE SIGNALS:
+  S&P 5-day, VIX spike, S&P 20-day, golden cross, 2s10s, with the engine's
+  counts (14× since 1996 for the golden cross, where the PNG has 31× since
+  1990). §12.1: "the deduplicated union of every row with `firing_now`
+  true and the five rows with the latest non-null `last_fired`, ordered
+  firing first, then `last_fired` descending". SINCE
+  LAST CLOSE: "regime unchanged · data refreshed 05:07 UTC"; nothing fires.
+  Sidebar: "Goldilocks" in green and "S&P Sep 23 Awaiting refresh" where
+  the PNG has an amber Overheating and "S&P today +0.4%". §1.1: TODAY "in
+  its regime color"; §12.7: `chg_1d` is "close(to) / close(from) − 1 on
+  exact indexed XNYS endpoints", nullable, and Sep 22 is not stored. Below
+  1280px the page stacks (PNG 01 is 1440px wide; §0: the PNG wins for
+  layout, and at these widths its layout does not fit).
+- 02 Technicals: badge "Live · Sep 23" where the PNG has "Live ·
+  Yahoo/FRED · as of Sep 22, 2026". §3: "Badge `● Live · <date>` from
+  `/technicals` `date`." TREND "Above both" in the small size, where the PNG
+  has "Up". §3: "TREND (`trend.state` in words: above both / below both /
+  mixed; since `state_since`)." SIGNALS rows read "S&P golden cross",
+  "S&P death cross", "S&P 20-day move over 2σ", "S&P 5-day move over 2σ"
+  where the PNG drops "S&P". §12.3: "one canonical label and short per
+  slug, reused by every tab (v2 §19)". 1-YEAR RETURN +15.1% since Sep 22,
+  2025 (§12.7: 252 XNYS sessions back). Prices, averages, the 6,000 /
+  7,000 / 8,000 axis and the signal rows (14×, 14×, 34×, 78×) are the
+  store's.
+- 03 Event Study: SHOCK reads "Gold (COMEX front month)" where the PNG has
+  "Gold". §4: "Series labels, roles and ops come from `/study`
+  `series[]`"; §12.2: `series[].label` is the engine registry's. Pill "○
+  Stale · Sep 21, 2026" where the PNG has "Not firing today · last Apr 16,
+  2025". §4: "`○ Stale · <evaluated_on>` when `stale`, never firing
+  today". WORST · BEST −4.9% / +12.0% (Aug 2011 · Apr 2025); BY REGIME n 2
+  / 6 / 9 / 1, all too few; "Today is Goldilocks: two events"; the last
+  five and the four ranges are the engine's. The provenance line reads
+  "Monte Carlo 10,000 · entry <the engine's entry sentence> · … Gold
+  (COMEX front month) history from 2000", where the PNG has "cluster
+  bootstrap 10,000 · entry next session". §4: "`<method> <draws> · entry
+  <rule>`"; §12.2: `provenance.entry_rule` is the engine's
+  `provenance.entry_rule`, which is that sentence.
+- 04 Regime: Goldilocks in green, "First month in a row.", "1 mo, since
+  the July row", "Latest print: Aug 2026", where the PNG has an amber
+  Overheating, third month. §5 and §12.6: the K−2 row, `latest_print`
+  "never used to classify"; §5's big label "(regime color…)". INFLATION
+  "Falling" in red: §1.3 (red: "down"; green only ever means up). A YEAR AGO 17% (Aug 2025)
+  and PEAK SINCE 2015 95% (Jun 2020) where the PNG has 9% and 71% (the
+  audit's §2.4). NEXT INDPRO "—", "release date unavailable", where the
+  PNG has Oct 17: the audit marks it NEEDS-SERIES and §12.6 serves the
+  date nullable; the dash takes no color.
+- 05 Macro: 10-YEAR 4.96%, 2s10s +25 bp flattening −25 bp, HY 2.73% tight
+  · Sep 23, 3-year range 2.6 – 4.6% since Sep 23, 2023, IG 0.77% Sep 23,
+  gauge 15th percentile over the window's 747 bond sessions, peak Mar
+  3.5%: the store's. FRONT END "Awaiting refresh" and a two-point curve
+  for each date, where the PNG has five points. §6: "Awaiting refresh until
+  DGS3MO is registered"; "a tenor not served leaves its point out and its
+  label says so." The tenor ticks print the tenor only and one line under
+  the chart says "3m, 5y and 30y not served": the words under each tick
+  collided below 1280px (V12-2).
+- 07 Signal Ledger: 8 scored · 4 not yet served, none firing, one Reliable,
+  four No edge, one table in the fixed order with no group rows, where the
+  PNG has 12 scored and two groups. §12.5: "array of 12, in §8's fixed
+  order"; §1.0: the dollar, oil and two RSI rows are unavailable.
+- 08 Position Monitor: "2s10s below +15 bp · now +25 bp", where the PNG
+  has "+38 · now +41". The sample is entered at 40 bp on Sep 2 (the audit's
+  Q11) and illustrative otherwise (PROVENANCE.md).
+- 10 Data Pipeline: badge "Last full refresh Sep 24, 15:52 UTC ·
+  validation passed" (the last full run; the data last advanced at 05:07,
+  which the Overview's line prints); "27 series · grouped · generated from
+  the registry" where the PNG has "26 series … read from the pipeline
+  config" (§11: "generated from the registry and its consumers, counts
+  derived"); the lineage's fetch step "full refresh daily" where the PNG
+  has "daily 00:23 UTC", which the audit (§10 #21) shows is not the full
+  run's time; group lines "● missing" / "● current",
+  where the PNG has "● all current · HY OAS history from 2023". §12.9: the
+  group's status is "A: the worst of its series"; a series not stored is
+  missing. Rows carry provider and frequency ("US HY OAS · FRED, daily")
+  and dates to the day or the month, and each feeds list names the Desk
+  tabs that read the series. §11: "(provider, `freq`, first and last
+  stored observation, feeds)"; §12.9: "the Desk tabs that read the
+  series".
+- 12 Client view: the title "Gold +2σ while S&P weak", where the PNG has a
+  question. §12.2: "`client.headline`: the catalog `label`." EPISODES "since
+  2001" (§11: "since <sample_start year>"), 67% against 65%, as of Sep 24.
+- 06 Sectors, 09 Basket & Hedge, 11 Build Notes: only the sidebar's TODAY
+  card changed (Goldilocks in green · Jul row).
+
+**For you to decide.**
+- §12.2 makes the client title the catalog label, which carries a σ; §11
+  says the Client view prints "no σ". The page prints the served title; the
+  test holds "no σ" everywhere else.
+- The provenance line is long: §12.2 serves the engine's whole entry
+  sentence, so the mono line runs three lines at 1440px. The engine also
+  has `entry_same_session` (false for gold), which would print "next
+  session" if §12.2 served it.
+- Regime shows the K−2 row (Goldilocks, inflation falling) beside next
+  prints read from the latest print (Overheating, inflation rising), so
+  the page says "Inflation Falling" and "a print ≤ −0.39% m/m flips
+  inflation to falling" together. Both follow §12.6.
+- The frame-2 engine panel in Advanced is still there; §4 retires it (v2
+  §8). It is left for you, as noted at item 4.
+- The Data Pipeline bridge card is titled "Snowflake bridge · schema and
+  export"; §11 titles it "Proposed export schema (not the current SQLite
+  layout)". Not changed here (a §11 title, not a §19 label).
+- The Event Study answer headline is set at serif 21px, as before this
+  item; §4 says 17px. Left for you: a type size, not a value or a label.
+- On a phone the Event Study mode switch clips its wrapped second line
+  ("Common / questions"), as at HEAD.
+
+Verifier (one round): **FAIL**, twelve should-fix and six nits; every
+recomputed value matched (the engine rerun on a byte-identical copy of the
+audit's store, the recession model, the stored rows), and the findings
+were rendering, four fixture fields and one label rule. All twelve fixed,
+and four of the nits.
+- V12-1 the Advanced resampling rows overprinted each other at 1440 (a
+  fourth part in a three-column row). **Fixed:** their own columns, wrap.
+- V12-2 the two-line "not served" ticks collided at 1101 and 390.
+  **Fixed:** the tenor alone on each tick, one line under the chart naming
+  the tenors not served.
+- V12-3 the six slots were cut at 1101 and two at 390. **Fixed:** three
+  columns below 1280px; shock and while a row each on a phone.
+- V12-4 the regime color on the Overview tile only. **Fixed:** the Regime
+  label and the sidebar's TODAY too.
+- V12-5 a falling inflation trend in green. **Fixed:** red, down (§1.3).
+- V12-6 Technicals dropped "S&P" from the catalog labels. **Fixed:** the
+  canonical labels.
+- V12-7 the data-status contributors' expected dates and reasons were
+  made up. **Fixed:** each series through its freshness policy on Sep 24;
+  DGS2, DGS10 and VIX one business day behind, current.
+- V12-8 the rank window's coverage counts were made up. **Fixed:** the
+  bond sessions of the window, 747, all stored, the rank over them (15th
+  percentile); `api/calendar` has no 2023 holidays, so the builder adds
+  Thanksgiving and Christmas 2023 (recorded in PROVENANCE.md; a gap for the
+  API).
+- V12-9 the pipeline's feeds were the mockup's. **Fixed:** the Desk tabs
+  that read each series.
+- V12-10 `question.target_label` is not in §12.2. **Fixed:** removed; the
+  target is named by `series[]`.
+- V12-11 the deferred fixtures were not regenerated. **Fixed:** §12.13's
+  shapes, the fixture world's generation, no reads or words.
+- V12-12 the Overview broke just above 1100px (as at HEAD). **Fixed:** it
+  stacks below 1280px.
+- V12-13 (nit) the phone mode switch clips (as at HEAD). Left; noted above.
+- V12-14 (nit) the 1-year return anchor. **Fixed:** 252 XNYS sessions,
+  +15.1% since Sep 22, 2025. The averages stay illustrative, as marked.
+- V12-15 (nit) closes rounded to 2 dp. **Fixed:** full precision.
+- V12-16 (nit) PROVENANCE.md's opening rule, the VIX staleness reason and
+  three unmarked values. **Fixed.**
+- V12-17 (nit) Pipeline copy: the 00:23 line, "read from the pipeline
+  config", mono notes, mixed Rates labels. **Fixed**; the Credit group
+  shows about two of its five rows at 1101 in its scrolling region, as
+  designed.
+- V12-18 (nit) Regime: the first-month lede, the amber dash, the 21px
+  headline, the dots-only curve. **Fixed**, except the headline (left for
+  you, above).
+
+The fixes were checked by the four gates, the layout scan above and the
+tests above; the compare shots were re-shot after them.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -3304,6 +3569,7 @@ tests against the fixture dev server.
 | frame-3: align 9 firing | clean | 119 / 1,450 | ok | 56 / 56 |
 | frame-3: align 10 positions | clean | 122 / 1,480 | ok | 56 / 56 |
 | frame-3: align 11 basket-hedge | clean | 122 / 1,462 | ok | 54 / 54 |
+| frame-3: align 12 fixtures | clean | 122 / 1,465 | ok | 54 / 54 |
 
 ## Finish
 

@@ -276,3 +276,9 @@
     grid-auto-rows: auto;
   }
 }
+/* §5: the served history note under the strip. */
+.rg-strip-note {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--dk-t3);
+}
