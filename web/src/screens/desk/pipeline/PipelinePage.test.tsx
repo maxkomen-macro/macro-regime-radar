@@ -129,7 +129,9 @@ describe("Data Pipeline tab", () => {
     Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
     renderTab();
     fireEvent.click(await screen.findByRole("button", { name: "Export current study → CSV" }));
-    const bridge = screen.getByRole("region", { name: /Snowflake bridge/ });
+    const bridge = screen.getByRole("region", { name: /Proposed export schema \(not the current SQLite layout\)/ });
+    // §11's exact title.
+    expect(within(bridge).getByRole("heading", { level: 2 })).toHaveTextContent(/^Proposed export schema \(not the current SQLite layout\)$/);
     await waitFor(() => expect(within(bridge).getByRole("status")).toHaveTextContent("Saved gold-2sigma-spx-weak-events.csv."));
     expect(calls.some((c) => c.includes("/api/desk/study/events?preset=gold-2sigma-spx-weak"))).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Generate Snowflake DDL" }));
@@ -163,7 +165,7 @@ describe("Data Pipeline tab", () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     renderTab();
     fireEvent.click(await screen.findByRole("button", { name: "Export current study → CSV" }));
-    const bridge = screen.getByRole("region", { name: /Snowflake bridge/ });
+    const bridge = screen.getByRole("region", { name: /Proposed export schema \(not the current SQLite layout\)/ });
     await waitFor(() => expect(within(bridge).getByRole("status")).toHaveTextContent("The study's events did not answer; nothing was saved."));
     fireEvent.click(screen.getByRole("button", { name: "Generate Snowflake DDL" }));
     await waitFor(() => expect(within(bridge).getByRole("status")).toHaveTextContent("The DDL did not answer; nothing was saved."));

@@ -60,6 +60,16 @@ export const e = (of: readonly string[], opts: { req?: boolean; nul?: boolean } 
 export const t = (of: Spec[], opts: { req?: boolean; nul?: boolean } = {}): Tuple => ({ k: "tuple", of, ...opts });
 
 const INVALID = Symbol("invalid");
+
+/** Where an object records the rows its lists lost at the boundary: `{ signals: 2 }` (Codex R-16). */
+export const DROPPED = "_dropped";
+
+/** How many rows of `o[key]` could not be read at the boundary (0 when none, or when `o` is not an object). */
+export function droppedOf(o: unknown, key: string): number {
+  const d = o && typeof o === "object" ? (o as Record<string, unknown>)[DROPPED] : undefined;
+  const n = d && typeof d === "object" ? (d as Record<string, unknown>)[key] : undefined;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
+}
 type Checked = unknown | typeof INVALID;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -126,12 +136,17 @@ export function check(v: unknown, spec: Spec): Checked {
       if (v === null && spec.nul) return null;
       if (!isRecord(v)) return INVALID;
       const out: Record<string, unknown> = { ...v };
+      delete out[DROPPED];
+      const dropped: Record<string, number> = {};
       for (const [key, f] of Object.entries(spec.fields)) {
         if (!(key in v) || v[key] === undefined) {
           if (required(f)) return INVALID;
           continue;
         }
         const c = check(v[key], f);
+        // Codex R-16: a list that lost rows at the boundary says how many, so no page counts or claims
+        // "none" from what is left.
+        if (Array.isArray(c) && Array.isArray(v[key]) && c.length < (v[key] as unknown[]).length) dropped[key] = (v[key] as unknown[]).length - c.length;
         if (c !== INVALID) {
           out[key] = c;
           continue;
@@ -141,6 +156,7 @@ export function check(v: unknown, spec: Spec): Checked {
         if (fb === INVALID) delete out[key];
         else out[key] = fb;
       }
+      if (Object.keys(dropped).length) out[DROPPED] = dropped;
       return out;
     }
   }
@@ -414,6 +430,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         slug: "s!",
         label: "s!",
         short: "s",
+        // §12.3 (item 14): the Client view's title, in plain words; null for the RSI definitions.
+        client_label: "s?",
         available: "b!",
         unavailable: o({ reason: "s!", until: "s?" }, { nul: true }),
         question: o({ shock: "s!", window: "n", move: e(["up2s", "down2s", "cross_above", "cross_below"], { req: true }), while: "s!", target: "s!" }, { nul: true }),

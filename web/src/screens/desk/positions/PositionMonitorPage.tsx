@@ -404,7 +404,8 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
 
   const subject = (): Subject => {
     if (carried && canonical) return { kind: "study", question: canonical };
-    if (sent && !carriedAsk && Array.isArray(sent.legs) && sent.legs.length) return { kind: "basket", legs: sent.legs.map((l) => ({ symbol: l.symbol, weight: l.weight })), benchmark: null };
+    // A position records a basket's weights as numbers (§9); a saved basket keeps its exact digits (Codex R-20).
+    if (sent && !carriedAsk && Array.isArray(sent.legs) && sent.legs.length) return { kind: "basket", legs: sent.legs.map((l) => ({ symbol: l.symbol, weight: Number(l.weight) })), benchmark: null };
     return { kind: "instrument", id: seriesOf(draft.instrument) ?? draft.instrument.trim() };
   };
 

@@ -180,7 +180,8 @@ export default function AnswerCard({
 }) {
   const unserved = useUnserved();
   if (!study) {
-    const p = horizonPhrase(horizon ?? 20);
+    // Codex R-18: the asked horizon names the labels; with none asked, no horizon is named.
+    const p = fin(horizon) ? horizonPhrase(horizon) : null;
     return (
       <section className="dk-card es-answer" aria-label="The answer" aria-busy={!failed && !unserved}>
         {unserved ? (
@@ -190,7 +191,7 @@ export default function AnswerCard({
         ) : null}
         <StatRow cols={4}>
           {/* A refused question is not awaiting anything: its labels stay, with no word under them. */}
-          {["Events", `Up ${p} later`, `Median at ${p}`, "Worst · best"].map((l) => (
+          {["Events", p ? `Up ${p} later` : "Up later", p ? `Median at ${p}` : "Median", "Worst · best"].map((l) => (
             <Stat key={l} label={l} awaiting={failed && !refusal} />
           ))}
         </StatRow>
@@ -207,9 +208,10 @@ export default function AnswerCard({
   // Everything here is the selected horizon's (§1.5, v4 B-01): its verdict, counts and empty state.
   // Each block guards itself (Codex R-10): no .find on a list that was not served; no other horizon stands in.
   const horizons = Array.isArray(study.horizons) ? study.horizons : [];
-  const sel = fin(study.selected_horizon) ? study.selected_horizon : fin(study.question?.horizon) ? study.question.horizon : null;
+  // Codex R-18: the served horizon, else the question's, else the one asked; never another one (no 20 stands in).
+  const sel = fin(study.selected_horizon) ? study.selected_horizon : fin(study.question?.horizon) ? study.question.horizon : fin(horizon) ? horizon : null;
   const h = sel == null ? undefined : horizons.find((x) => x.h === sel);
-  const hLabel = h?.label || horizonLabel(sel ?? 20);
+  const hLabel = h?.label || (sel == null ? null : horizonLabel(sel));
   if (study.empty_state || study.verdict === "insufficient" || (h && fin(h.n) && h.n < 10)) {
     const q = study.question;
     // Only the served fixes (§1.7: each only when it leads to a catalog study); none is invented.
@@ -219,7 +221,7 @@ export default function AnswerCard({
     // The served sentence; without it, §12.2's template on the selected horizon's own count.
     const sentence =
       study.empty_state?.sentence ||
-      (h && fin(h.n) ? `Only ${h.n} events complete at ${hLabel}${since ? ` since ${since}` : ""}, fewer than the ten a verdict other than Too few needs.` : `Fewer than ten events are complete at ${hLabel}; a verdict other than Too few needs ten.`);
+      (h && fin(h.n) ? `Only ${h.n} events complete at ${hLabel}${since ? ` since ${since}` : ""}, fewer than the ten a verdict other than Too few needs.` : hLabel ? `Fewer than ten events are complete at ${hLabel}; a verdict other than Too few needs ten.` : "Fewer than ten events are complete; a verdict other than Too few needs ten.");
     return (
       <section className="dk-card es-answer" aria-label="The answer">
         <p className="es-headline">{sentence}</p>
@@ -235,7 +237,9 @@ export default function AnswerCard({
       </section>
     );
   }
-  const phrase = horizonPhrase(sel ?? 20);
+  const phrase = sel == null ? null : horizonPhrase(sel);
+  const upLabel = phrase ? `Up ${phrase} later` : "Up later";
+  const medianLabel = phrase ? `Median at ${phrase}` : "Median";
   const matched = study.matched_n;
   // Every target move is spelled in the study's served unit (Codex R-02); without it, none is printed.
   const unit = isUnit(study.question?.target_unit) ? study.question.target_unit : undefined;
@@ -250,7 +254,7 @@ export default function AnswerCard({
       <h2 className="es-headline">{study.headline}</h2>
       <div className="es-pills">
         {/* §4: nothing when the state is not served (a stale study with no evaluable session included); stale is never "firing today"; a firing study counts its days. */}
-        {study.firing_now == null ? null : study.stale ? (
+        {study.firing_now == null || study.stale == null ? null : study.stale ? (
           <span className="es-pill">○ Stale · {dayLong(study.evaluated_on) || "—"}</span>
         ) : study.firing_now === true ? (
           <span className="es-pill" data-on>
@@ -268,26 +272,29 @@ export default function AnswerCard({
         {fin(matched) ? <Stat label="Events" value={String(matched)} sub={h && fin(h.n) ? `${h.n} complete at ${hLabel}` : "count awaiting refresh"} size="md" /> : <Stat label="Events" awaiting />}
         {h && fin(h.up_pct) ? (
           // The horizon's own count is the denominator (C-03); the study's size is only the EVENTS stat.
-          <Stat label={`Up ${phrase} later`} value={pctPlain(h.up_pct)} tone={h.up_pct > 0.5 ? "up" : undefined} sub={fin(h.up_n) && fin(h.n) ? `${h.up_n} of ${h.n}` : "count awaiting refresh"} size="md" />
+          <Stat label={upLabel} value={pctPlain(h.up_pct)} tone={h.up_pct > 0.5 ? "up" : undefined} sub={fin(h.up_n) && fin(h.n) ? `${h.up_n} of ${h.n}` : "count awaiting refresh"} size="md" />
         ) : (
-          <Stat label={`Up ${phrase} later`} awaiting />
+          <Stat label={upLabel} awaiting />
         )}
         {h && fin(h.median) && median ? (
           <Stat
-            label={`Median at ${phrase}`}
+            label={medianLabel}
             value={<span title={tip}>{median}</span>}
             tone={h.median > 0 ? "up" : h.median < 0 ? "down" : undefined}
             sub={
+              // A baseline not served keeps its line and says so (§1.7), never disappears.
               baseline ? (
                 <>
                   vs <span title={tip}>{baseline}</span> {normalStretch(h.h)}
                 </>
-              ) : undefined
+              ) : (
+                "normal awaiting refresh"
+              )
             }
             size="md"
           />
         ) : (
-          <Stat label={`Median at ${phrase}`} awaiting />
+          <Stat label={medianLabel} awaiting />
         )}
         {h?.worst && h?.best && fin(h.worst.value) && fin(h.best.value) && worst && best ? (
           <Stat

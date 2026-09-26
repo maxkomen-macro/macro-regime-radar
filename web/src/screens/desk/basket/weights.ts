@@ -18,7 +18,9 @@ export interface WorkLeg {
 export interface SavedBasket {
   id: string;
   name: string;
-  legs: { symbol: string; name: string | null; weight: number }[];
+  /** A leg's weight in percent: saved as the exact decimal typed ("99.9999999999999994"), so a normalized
+   * basket adds to exactly 100% again when it is read back (Codex R-20); an older save's number reads too. */
+  legs: { symbol: string; name: string | null; weight: number | string }[];
   saved_at: string;
 }
 
@@ -33,10 +35,17 @@ export function parseWeight(s: string): number | null {
   return v >= 0 && v <= 100 ? v : null;
 }
 
-/** A weight's decimal digits, never exponent notation (a served 1e-7 is "0.0000001"). */
+/** A weight's decimal digits, never exponent notation (a served 1e-7 is "0.0000001", a 1e-21 is not "0"):
+ * the shortest round-trip digits of the number, with the exponent written out (Codex R-20). */
 export function decimal(w: number): string {
   const t = String(w);
-  return /e/i.test(t) ? w.toFixed(20).replace(/\.?0+$/, "") : t;
+  const m = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/i.exec(t);
+  if (!m) return t;
+  const [, sign, lead, rest = "", expText] = m;
+  const digits = lead + rest;
+  const exp = Number(expText);
+  if (exp < 0) return `${sign}0.${"0".repeat(-exp - 1)}${digits}`;
+  return `${sign}${digits.padEnd(exp + 1, "0").slice(0, exp + 1)}${digits.length > exp + 1 ? `.${digits.slice(exp + 1)}` : ""}`;
 }
 
 const text = (w: string | number) => (typeof w === "number" ? decimal(w) : w.trim());
@@ -67,6 +76,40 @@ export function total(legs: readonly { weight: string | number }[]): number | nu
 /** Whether the legs add to exactly 100%: 99.97 does not, nor does 99.9999999999. */
 export const sumsToHundred = (legs: readonly { weight: string | number }[]): boolean => totalText(legs) === "100";
 
+/** A weight as typed, as an exact decimal: its digits and its number of decimals; 0 when it is not a number. */
+function exact(t: string): { v: bigint; d: number } {
+  const s = parseWeight(t) == null ? "0" : t.trim();
+  const [i, f = ""] = s.split(".");
+  return { v: BigInt(i + f), d: f.length };
+}
+
+/** Weights in exact decimal arithmetic that add to exactly 100 at `d` decimals: each typed weight scaled
+ * in proportion, floored, and the remainder given to the largest fractions first (then the largest legs).
+ * No float is involved, so two distinct weights, however small, are never both rounded to zero by
+ * precision (Codex R-20). */
+function toHundredExact(typed: string[], d: number): string[] {
+  const xs = typed.map(exact);
+  const dd = Math.max(0, ...xs.map((x) => x.d));
+  const ws = xs.map((x) => x.v * 10n ** BigInt(dd - x.d));
+  const sum = ws.reduce((a, b) => a + b, 0n);
+  if (!ws.length || sum <= 0n) return ws.map(() => "0");
+  const whole = 100n * 10n ** BigInt(d);
+  const units = ws.map((w) => (w * whole) / sum);
+  const rems = ws.map((w, i) => w * whole - units[i] * sum);
+  let left = whole - units.reduce((a, b) => a + b, 0n);
+  const order = ws.map((_, i) => i).sort((a, b) => (rems[b] > rems[a] ? 1 : rems[b] < rems[a] ? -1 : ws[b] > ws[a] ? 1 : ws[b] < ws[a] ? -1 : 0));
+  for (const i of order) {
+    if (left <= 0n) break;
+    units[i] += 1n;
+    left -= 1n;
+  }
+  return units.map((u) => {
+    if (d === 0) return u.toString();
+    const t = u.toString().padStart(d + 1, "0");
+    return `${t.slice(0, -d)}.${t.slice(-d)}`.replace(/\.?0+$/, "");
+  });
+}
+
 /** Weights that add to exactly 100 at `d` decimals: `raw` scaled, rounded, and the
  * rounding's remainder given to the largest legs first. */
 function toHundred(raw: number[], d = 1): number[] {
@@ -96,15 +139,19 @@ export function equalWeight(legs: readonly WorkLeg[]): WorkLeg[] {
 
 /** Scaled to 100% in proportion, never coarser than the weights as typed (at least a tenth:
  * 22.11 and 77.86 become 22.12 and 77.88); a weight that is not a number counts as zero.
- * Weights that already add to exactly 100% are left as they are. */
+ * Weights that already add to exactly 100% are left as they are. When the legs add to more than
+ * 100, each shrinks, so the result carries enough extra decimals that every weight typed above zero
+ * stays above zero and distinct weights stay distinct (Codex R-20: two tiny weights, both 0). */
 export function normalize(legs: readonly WorkLeg[]): WorkLeg[] {
   if (sumsToHundred(legs)) return legs.map((l) => ({ ...l }));
-  const d = Math.max(1, ...legs.map((l) => (parseWeight(l.weight) == null ? 0 : (l.weight.trim().split(".")[1] ?? "").length)));
-  const w = toHundred(
-    legs.map((l) => parseWeight(l.weight) ?? 0),
-    Math.min(d, 12),
-  );
-  return legs.map((l, i) => ({ ...l, weight: fmt(w[i]) }));
+  const typed = legs.map((l) => (parseWeight(l.weight) == null ? "0" : l.weight.trim()));
+  const d0 = Math.max(1, ...typed.map((t) => (t.split(".")[1] ?? "").length));
+  const total = Number(totalText(typed.map((weight) => ({ weight }))) ?? "0");
+  // Shrinking by 100 / total needs ceil(log10(total / 100)) more decimals, and two more keep a
+  // difference of one typed unit at ten units or more after rounding.
+  const extra = total > 100 ? Math.ceil(Math.log10(total / 100)) + 2 : 0;
+  const w = toHundredExact(typed, d0 + extra);
+  return legs.map((l, i) => ({ ...l, weight: w[i] }));
 }
 
 /** A ticker as typed, upper-cased; null when it cannot be a US listing's symbol. */
@@ -118,13 +165,27 @@ export function apiLegs(legs: readonly WorkLeg[]): { symbol: string; weight: num
   return legs.map((l) => ({ symbol: l.symbol, weight: parseWeight(l.weight) ?? 0 }));
 }
 
-/** `NVDA:22,AVGO:16,…`: the legs in one string (a query key, the hedge's `legs` parameter). */
-export function legsKey(legs: readonly { symbol: string; weight: number | string }[]): string {
-  return legs.map((l) => `${l.symbol}:${typeof l.weight === "number" ? fmt(l.weight) : (parseWeight(l.weight) ?? l.weight)}`).join(",");
+/** A weight's exact decimal text, trailing zeros dropped ("22.10" and 22.1 are "22.1"); a text that is
+ * not a weight as it stands. */
+function canonical(w: number | string): string {
+  const t = text(w);
+  if (parseWeight(t) == null) return t;
+  return t.includes(".") ? t.replace(/\.?0+$/, "") : t.replace(/^0+(?=\d)/, "");
 }
 
-export function toWork(legs: readonly { symbol: string; name: string | null; weight: number }[]): WorkLeg[] {
-  return legs.map((l) => ({ symbol: l.symbol, name: l.name, weight: fmt(l.weight) }));
+/** `NVDA:22,AVGO:16,…`: the legs in one string, each weight in its exact digits (never through a float,
+ * so two weights that differ in their 17th digit are two keys; Codex R-20). */
+export function legsKey(legs: readonly { symbol: string; weight: number | string }[]): string {
+  return legs.map((l) => `${l.symbol}:${canonical(l.weight)}`).join(",");
+}
+
+export function toWork(legs: readonly { symbol: string; name: string | null; weight: number | string }[]): WorkLeg[] {
+  return legs.map((l) => ({ symbol: l.symbol, name: l.name, weight: typeof l.weight === "number" ? fmt(l.weight) : l.weight.trim() }));
+}
+
+/** The legs as this browser saves them: each weight the exact decimal typed; one that is not a number, 0. */
+export function savedLegs(legs: readonly WorkLeg[]): { symbol: string; name: string | null; weight: string }[] {
+  return legs.map((l) => ({ symbol: l.symbol, name: l.name, weight: parseWeight(l.weight) == null ? "0" : canonical(l.weight) }));
 }
 
 // ── Saved baskets: this browser only (like Event Study's saved questions, §1.8) ──
@@ -139,7 +200,13 @@ function safeStorage(): Storage | null {
 
 function isSaved(v: unknown): v is SavedBasket {
   const b = v as SavedBasket;
-  return !!b && typeof b.id === "string" && typeof b.name === "string" && Array.isArray(b.legs) && b.legs.every((l) => l && typeof l.symbol === "string" && typeof l.weight === "number" && Number.isFinite(l.weight));
+  return (
+    !!b &&
+    typeof b.id === "string" &&
+    typeof b.name === "string" &&
+    Array.isArray(b.legs) &&
+    b.legs.every((l) => l && typeof l.symbol === "string" && ((typeof l.weight === "number" && Number.isFinite(l.weight)) || (typeof l.weight === "string" && parseWeight(l.weight) != null)))
+  );
 }
 
 /** Every stored entry as stored; a store that is not a JSON list is kept whole, as one entry. */

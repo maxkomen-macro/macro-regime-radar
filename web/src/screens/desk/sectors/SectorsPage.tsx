@@ -17,7 +17,8 @@ import { dayShort, endDay, pct } from "../kit/format";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars, { relTone } from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, useAdvanced } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, useAdvanced } from "../kit/ui";
+import { droppedOf } from "../data/schema";
 import "./sectors.css";
 
 type State = "loading" | "awaiting" | "ready";
@@ -50,8 +51,10 @@ function Leadership({ s, state, why }: { s: SectorsResponse | undefined; state: 
   // §12.7 serves the eleven sorted, best first: the page keeps that order, so the leader is the first row
   // and the laggard the last, each saying Awaiting refresh when its value is not served (S-4).
   const rows = Array.isArray(s?.leadership) ? s.leadership : [];
-  const top = rows[0];
-  const bottom = rows.length > 1 ? rows[rows.length - 1] : undefined;
+  // Codex R-16: with a row lost, the first and last read are not the leader and the laggard.
+  const lost = droppedOf(s, "leadership");
+  const top = lost ? undefined : rows[0];
+  const bottom = lost ? undefined : rows.length > 1 ? rows[rows.length - 1] : undefined;
   const topV = top && fin(top.rel_ret) ? top.rel_ret : null;
   const bottomV = bottom && fin(bottom.rel_ret) ? bottom.rel_ret : null;
   return (
@@ -89,6 +92,7 @@ function Leadership({ s, state, why }: { s: SectorsResponse | undefined; state: 
       ) : quiet ? null : (
         <Awaiting>{why ?? "the sector returns"}</Awaiting>
       )}
+      <DroppedNote n={lost} one="sector" />
       <div className="dk-card-foot">
         <AdvancedPanel adv={adv} items="1 / 3 / 6 / 12 months · rotation over time · leadership by regime" missing="Other windows, rotation over time and leadership by regime are not served yet." />
       </div>

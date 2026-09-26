@@ -402,6 +402,8 @@ export interface CatalogStudy {
   slug: string;
   label: string;
   short: string;
+  /** §12.3 (item 14): the Client view's title in plain words, no σ and no engine terms; null for the RSI rows. */
+  client_label?: string | null;
   available: boolean;
   unavailable: Unavailable | null;
   /** The five non-horizon slots; null for a definition with no question yet (the RSI rows). */

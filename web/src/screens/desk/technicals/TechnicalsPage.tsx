@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { unavailableOf, useLedger, useTechnicals } from "../data/api";
+import { droppedOf } from "../data/schema";
 import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, VolResponse } from "../data/types";
 import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
@@ -23,7 +24,7 @@ import { moveText, tipOf } from "../kit/units";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
 import "./technicals.css";
 
 type CardState = "loading" | "awaiting" | "ready";
@@ -308,6 +309,8 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
         <Awaiting />
       ) : null}
       {/* §3's note box: there is no universal normal month (§1.5). */}
+      {/* Codex R-16: a row the allowlist or the Ledger lost at the boundary is said, never silently left out. */}
+      <DroppedNote n={droppedOf(t, "signals_allowlist") + droppedOf(ledger, "signals")} one="signal row" />
       {lState === "ready" ? <div className="dk-read te-note">vs normal compares each study to its own baseline over its own sample.</div> : null}
     </section>
   );
@@ -347,6 +350,7 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
       ) : state === "loading" ? null : (
         <Awaiting>the sector ETFs are not ingested yet</Awaiting>
       )}
+      <DroppedNote n={droppedOf(s, "leadership")} one="sector" />
       <div className="te-foot">
         {/* All eleven come from the sectors block once served; until then the control is disabled (§1.4). */}
         <AdvancedPanel enabled={rows.length > 0} adv={adv} items="all 11 · rotation over time · by regime" missing="Rotation over time and leadership by regime are not served yet.">

@@ -11,6 +11,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { unavailableOf, useOverview, useTechnicals } from "./data/api";
 import type { DataStatus } from "./data/types";
+import { droppedOf } from "./data/schema";
+import { droppedWords } from "./kit/ui";
 import { DESK_GROUPS, GATES } from "./desk-sections";
 import { dayShort, isFiniteNumber as fin, nyToday, pct, rowWords, toneOf } from "./kit/format";
 import Contain from "./kit/Contain";
@@ -28,9 +30,9 @@ export function spxDayLabel(asOf: string, today = nyToday()): string {
 /** The contributors that are not current, one per line: "DGS10 stale: <reason>". */
 export function statusTitle(d: DataStatus): string {
   const rows = Array.isArray(d.contributors) ? d.contributors : [];
-  return rows
-    .filter((c) => c.state !== "current")
-    .map((c) => `${c.series} ${c.state}: ${c.reason}`)
+  // Codex R-16: a contributor the boundary could not read is said.
+  return [...rows.filter((c) => c.state !== "current").map((c) => `${c.series} ${c.state}: ${c.reason}`), droppedWords(droppedOf(d, "contributors"), "series", "series")]
+    .filter(Boolean)
     .join("\n");
 }
 

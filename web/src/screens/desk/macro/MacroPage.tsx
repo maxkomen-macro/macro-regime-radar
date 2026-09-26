@@ -19,7 +19,8 @@ import { dayLong, dayShort, endDay, monthYear, num, ordinal } from "../kit/forma
 import Gauge from "../kit/Gauge";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
-import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved } from "../kit/ui";
+import { droppedOf } from "../data/schema";
 import "./macro.css";
 
 type State = "loading" | "awaiting" | "ready";
@@ -382,6 +383,7 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
       ) : quiet ? null : (
         <Awaiting>the correlations</Awaiting>
       )}
+      <DroppedNote n={droppedOf(m, "correlations")} one="asset" />
       <div className="dk-card-foot">
         <Unserved block={matrixOff}>
           {/* §6: the matrix block opens here once served; awaiting on Monday, so the control is disabled (§1.4). */}

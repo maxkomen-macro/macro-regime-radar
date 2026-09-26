@@ -15,7 +15,20 @@
  * value as one id, `vix_above=20.0`, exactly the slug's segment. Pure.
  */
 
-import type { EventStudyParams } from "../../../api/desk";
+/** A study in the engine's slug terms. `cond` is "none", a condition key, or a key
+ * with its value as the slug writes it ("vix_above=20.0", "regime=stagflation");
+ * `regime` is "all" or a slug word. A cross fixes the shock fields. */
+export interface EventStudyParams {
+  kind: "shock" | "cross";
+  cross: "golden" | "death" | null;
+  shock: string;
+  w: number;
+  z: number;
+  sign: "+" | "-" | "both";
+  cond: string;
+  regime: string;
+  target: string;
+}
 
 export const PRESET_SLUG = "gold-2sigma-spx-weak";
 

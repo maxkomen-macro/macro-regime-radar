@@ -299,16 +299,19 @@ test.describe("desk v2", () => {
     expect(await auditPalette(page)).toEqual([]);
   });
 
-  test("event study: Advanced opens the events and the engine's panel, all in the palette, no banned word", async ({ page }) => {
+  test("event study: Advanced opens the events and the resampling detail, all in the palette, no banned word; no frame-2 panel (§4)", async ({ page }) => {
     await open(page, "/desk/event-study");
     await expect(page.getByRole("region", { name: "The answer" })).toContainText("Suggestive at 1 month: 10+ completed outcomes");
+    // §4: "Headline (serif 17px)".
+    await expect(page.locator(".es-headline").first()).toHaveCSS("font-size", "17px");
     const toggle = page.getByRole("complementary", { name: "Verdict and detail" }).getByTestId("dk-advanced");
     // §1.4: an Advanced control that opens a served endpoint is a blue link (verifier T-1: a reset once turned it gray).
     await expect(toggle).toHaveCSS("color", "rgb(88, 184, 230)");
     await toggle.click();
     const adv = page.getByRole("region", { name: "Advanced" });
     await expect(adv).toContainText("All 18 events");
-    await expect(adv).toContainText("By horizon, as the engine scores it");
+    await expect(adv).toContainText("Resampling detail");
+    await expect(adv).not.toContainText("as the engine scores it");
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
   });
@@ -692,8 +695,8 @@ test.describe("desk v2", () => {
   test("the client view: the study in plain words, §1.3 colors, no banned word, no verdict pill; back to Desk", async ({ page }) => {
     for (const route of ["/desk/overview?view=client", "/desk/event-study?preset=gold-2sigma-spx-weak&view=client"]) {
       await open(page, route);
-      // §12.2: the client headline is the catalog label.
-      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold +2σ while S&P weak");
+      // §12.2 (item 14): the client headline is the catalog client_label.
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold jumps while the S&P is weak");
       await expect(page.getByRole("region", { name: "A month later, by economic backdrop" }).getByRole("listitem")).toHaveCount(4);
       await expect(page.getByRole("main")).toContainText("Radar · FRED, Yahoo Finance · as of Sep 24, 2026 · Past patterns do not guarantee future results.");
       await expect(page.locator("main .dk-pill")).toHaveCount(0);
@@ -717,7 +720,7 @@ test.describe("desk v2", () => {
       { h: 20, regime: "Recession Risk", n: 12, up_pct: 0.83, median: 0.035 },
     ];
     await open(page, "/desk/overview?view=client", { "/api/desk/study": { status: 200, body: { ...study, by_regime } } });
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold +2σ while S&P weak");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold jumps while the S&P is weak");
     await page.emulateMedia({ media: "print" });
     await expect(page.getByRole("complementary", { name: "Sidebar" })).toBeHidden();
     await expect(page.getByRole("button", { name: "Export one-pager (PDF)" })).toBeHidden();

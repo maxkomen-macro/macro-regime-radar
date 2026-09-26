@@ -9,13 +9,14 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { unavailableOf, useLedger } from "../data/api";
+import { droppedOf } from "../data/schema";
 import type { LedgerRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { dayLong, dayShort, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { moveText, tipOf, vsNormalText } from "../kit/units";
-import { Awaiting, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill } from "../kit/ui";
+import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
 
@@ -24,7 +25,8 @@ export type Filter = "all" | "firing" | "reliable" | "spx" | "cross";
 /** A row whose study can run (§12.5 `available`); an unavailable row is left out of every count but the header's. */
 export const isAvailable = (r: LedgerRow) => r.available !== false;
 /** Firing today: firing on the comparison session; a stale row is never called firing today (v3 §3). */
-export const firingToday = (r: LedgerRow) => isAvailable(r) && r.firing_now === true && r.stale !== true;
+// A firing claim needs the state and its freshness served: stale not served claims nothing (§12.5; verifier V14-5).
+export const firingToday = (r: LedgerRow) => isAvailable(r) && r.firing_now === true && r.stale === false;
 
 export function applyFilter(rows: readonly LedgerRow[], f: Filter): LedgerRow[] {
   if (f === "firing") return rows.filter(firingToday);
@@ -107,9 +109,9 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
       <td
         className="lg-now"
         title={r.evaluated_on ? `evaluated on ${dayLong(r.evaluated_on)}` : undefined}
-        data-tone={r.firing_now == null ? undefined : r.stale ? "gray" : r.firing_now ? "green" : "gray"}
+        data-tone={r.firing_now == null || r.stale == null ? undefined : r.stale ? "gray" : r.firing_now ? "green" : "gray"}
       >
-        {r.firing_now == null ? "—" : r.stale ? `○ Stale · ${dayShort(r.evaluated_on) || "—"}` : r.firing_now ? `● Firing${fin(r.firing_day) ? ` · day ${r.firing_day}` : ""}` : "○ Quiet"}
+        {r.firing_now == null || r.stale == null ? "—" : r.stale ? `○ Stale · ${dayShort(r.evaluated_on) || "—"}` : r.firing_now ? `● Firing${fin(r.firing_day) ? ` · day ${r.firing_day}` : ""}` : "○ Quiet"}
       </td>
     </tr>
   );
@@ -125,19 +127,22 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   const [filter, setFilter] = useState<Filter>("all");
   const l = q.data;
   const rows = Array.isArray(l?.signals) ? l.signals : [];
+  // Codex R-16: rows the boundary could not read are said, and no count is read from the rest.
+  const lost = droppedOf(l, "signals");
   const ready = rows.length > 0;
   const state = ready ? "ready" : q.isError || l ? "awaiting" : "loading";
   // §8, v4 B-02: unavailable rows are left out of every count but the header's.
   const firing = rows.filter(firingToday);
   const reliable = rows.filter((r) => isAvailable(r) && r.verdict === "reliable");
   const noEdge = rows.filter((r) => isAvailable(r) && r.verdict === "no_edge");
-  const scored = fin(l?.scored_n) ? l.scored_n : rows.filter(isAvailable).length;
-  const off = fin(l?.unavailable_n) ? l.unavailable_n : rows.length - scored;
+  const scored = fin(l?.scored_n) ? l.scored_n : lost ? null : rows.filter(isAvailable).length;
+  const off = fin(l?.unavailable_n) ? l.unavailable_n : lost || scored == null ? null : rows.length - scored;
+  const counted = ready && !lost;
   // §8: the rows in exactly the served order, whatever their state (v3 §2's fixed order).
   const shown = applyFilter(rows, filter);
   const open = (slug: string) => navigate(withParam(pathTo("event-study"), "preset", slug));
   const chips: { id: Filter; label: string }[] = [
-    { id: "all", label: `All ${rows.length || ""}`.trim() },
+    { id: "all", label: `All ${counted ? rows.length : ""}`.trim() },
     { id: "firing", label: "Firing now" },
     { id: "reliable", label: "Reliable only" },
     { id: "spx", label: "S&P only" },
@@ -148,10 +153,16 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed /> : l && dayShort(l.as_of) ? <LiveBadge boxed parts={[`engine as of ${dayShort(l.as_of)}`]} /> : null} />
       <Unserved block={unserved}>
         <div className="lg-stats" aria-busy={state === "loading"}>
-          <Stat label="Signals scored" awaiting={state === "awaiting"} value={ready ? String(scored) : undefined} sub={ready ? `${scored} scored · ${off} not yet served` : undefined} />
-          <Stat label="Firing now" awaiting={state === "awaiting"} value={ready ? String(firing.length) : undefined} tone={firing.length ? "green" : undefined} sub={ready ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
-          <Stat label="Reliable" awaiting={state === "awaiting"} value={ready ? String(reliable.length) : undefined} tone={reliable.length ? "green" : undefined} sub={ready ? reliable.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
-          <Stat label="No edge" awaiting={state === "awaiting"} value={ready ? String(noEdge.length) : undefined} />
+          <Stat
+            label="Signals scored"
+            awaiting={state === "awaiting" || (ready && scored == null)}
+            value={ready && scored != null ? String(scored) : undefined}
+            sub={ready && scored != null ? (off != null ? `${scored} scored · ${off} not yet served` : `${scored} scored`) : undefined}
+          />
+          {/* Counted from the rows, so only when every row was read. */}
+          <Stat label="Firing now" awaiting={state === "awaiting" || (ready && !counted)} value={counted ? String(firing.length) : undefined} tone={counted && firing.length ? "green" : undefined} sub={counted ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
+          <Stat label="Reliable" awaiting={state === "awaiting" || (ready && !counted)} value={counted ? String(reliable.length) : undefined} tone={counted && reliable.length ? "green" : undefined} sub={counted ? reliable.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
+          <Stat label="No edge" awaiting={state === "awaiting" || (ready && !counted)} value={counted ? String(noEdge.length) : undefined} />
         </div>
         <section className="dk-card lg-card" aria-label="Every scored signal" aria-busy={state === "loading"}>
           <div className="lg-chips" role="group" aria-label="Filter">
@@ -199,7 +210,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
                 <tbody>
                   <tr>
                     <td colSpan={8} className="lg-empty">
-                      No signal matches this filter.
+                      {lost ? "No readable signal matches this filter." : "No signal matches this filter."}
                     </td>
                   </tr>
                 </tbody>
@@ -209,6 +220,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
           ) : state === "awaiting" ? (
             <Awaiting />
           ) : null}
+          <DroppedNote n={lost} />
           <div className="lg-foot">
             <VerdictDefinitions />
             <p className="lg-note">

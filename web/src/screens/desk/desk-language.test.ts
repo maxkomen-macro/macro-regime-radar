@@ -1,8 +1,8 @@
 /**
  * The language ban list (DESK_FRAME2_SPEC §8, DESK_FRAME3_SPEC §1.5) over
  * every string the Desk can print: string literals, template text and JSX
- * text in every .ts/.tsx file under a `desk/` directory of web/src (plus
- * api/desk.ts), the Markdown under content/desk/, and every string value in
+ * text in every .ts/.tsx file under a `desk/` directory of web/src, the
+ * Markdown under content/desk/, and every string value in
  * the Desk v2 fixtures (src/fixtures/desk/*.json), which stand in for what
  * the API prints. Words: will, predicts, proves, guaranteed, always, never,
  * obviously, and model (or models) outside the recession label; frame-3 adds
@@ -29,11 +29,6 @@ import { readNotes } from "./notes/notes";
 const BANNED = /\b(will|predicts|proves|guaranteed|always|never|obviously|models?|established|significant)\b/gi;
 /** Frame-3's two words (§1.5). */
 const FRAME3 = /^(established|significant)$/i;
-/** Frame-2 files that v2 has not rebuilt or retired yet: they keep the frame-2
- * list; frame-3's two words are checked on them when their tab lands
- * (FRAME3_REPORT.md tracks this list until it is empty). */
-export const LEGACY_FRAME2 = ["/src/screens/desk/pyformat"];
-const legacy = (file: string) => LEGACY_FRAME2.some((p) => file.startsWith(p));
 /** A sentence about the recession regression, the one thing the Desk calls a model. */
 const RECESSION_SENTENCE = /recession probability|recession model|logistic regression|logistic model/i;
 /** The two Regime boxes, verbatim from DESK_FRAME3_SPEC §5: the one that says
@@ -52,7 +47,7 @@ const BOARD_FILES = ["/src/screens/desk/pipeline/PipelinePage.tsx", "/src/fixtur
 
 // Read through Vite's import.meta.glob (raw, eager), as hook-coverage does, so
 // the scan needs no Node types and sees exactly the files the build sees.
-const SOURCES = import.meta.glob<string>(["/src/**/desk/**/*.{ts,tsx,md}", "/src/api/desk.ts"], { query: "?raw", import: "default", eager: true });
+const SOURCES = import.meta.glob<string>(["/src/**/desk/**/*.{ts,tsx,md}"], { query: "?raw", import: "default", eager: true });
 const FIXTURES = import.meta.glob<unknown>("/src/fixtures/desk/*.json", { import: "default", eager: true });
 const NOTES = import.meta.glob<string>("../../../../docs/desk/BUILD_NOTES.md", { query: "?raw", import: "default", eager: true });
 /** The notes' figures (docs/desk/screens/*.svg), whose words the page shows as drawn. */
@@ -120,8 +115,8 @@ function offending(file: string, s: string): string[] {
 describe("the Desk's language ban list", () => {
   const files = deskFiles();
 
-  it("covers the Desk's pages, the adapter and the content", () => {
-    expect(files).toEqual(expect.arrayContaining(["/src/api/desk.ts", "/src/screens/desk/overview/OverviewPage.tsx", "/src/screens/desk/kit/ui.tsx", "/src/screens/desk/pipeline/PipelinePage.tsx"]));
+  it("covers the Desk's pages and the content", () => {
+    expect(files).toEqual(expect.arrayContaining(["/src/screens/desk/overview/OverviewPage.tsx", "/src/screens/desk/kit/ui.tsx", "/src/screens/desk/pipeline/PipelinePage.tsx"]));
     expect(files.length).toBeGreaterThan(25);
     expect(Object.keys(FIXTURES)).toEqual(expect.arrayContaining(["/src/fixtures/desk/overview.json", "/src/fixtures/desk/ledger.json"]));
   });
@@ -131,7 +126,7 @@ describe("the Desk's language ban list", () => {
     for (const f of files) {
       const text = SOURCES[f];
       for (const s of stringsOf(f, text)) {
-        const bad = offending(f, s).filter((w) => !(legacy(f) && FRAME3.test(w)));
+        const bad = offending(f, s);
         if (bad.length) hits.push(`${f}: [${bad.join(", ")}] ${s.trim().slice(0, 120)}`);
       }
     }

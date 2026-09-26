@@ -126,7 +126,8 @@ describe("the response boundary", () => {
     const p = tryRead({ ...pipeline, groups: [{}, ...pipeline.groups] }, "/pipeline") as { groups: unknown[] };
     expect(p.groups).toHaveLength(pipeline.groups.length);
     const t = tryRead({ ...technicals, series: { "1y": [{ close: 1 }, { date: "2026-09-22", close: 6412, ma50: "x", ma200: null }] }, cross: {} }, "/technicals") as Record<string, unknown>;
-    expect(t.series).toEqual({ "1y": [{ date: "2026-09-22", close: 6412, ma50: null, ma200: null }] });
+    // Codex R-16: the list says how many rows it lost.
+    expect(t.series).toEqual({ "1y": [{ date: "2026-09-22", close: 6412, ma50: null, ma200: null }], _dropped: { "1y": 1 } });
     expect(t.cross).toBeNull();
     const m = tryRead({ ...macro, matrix: { ...macro.matrix, assets: "x" } }, "/macro") as Record<string, unknown>;
     expect("matrix" in m).toBe(false);

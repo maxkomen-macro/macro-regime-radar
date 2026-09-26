@@ -155,11 +155,12 @@
 .es-answer {
   padding: 13px 18px 16px;
 }
+/* §4: "Headline (serif 17px)". */
 .es-headline {
   font-family: var(--dk-serif);
   font-weight: 700;
-  font-size: 21px;
-  line-height: 1.25;
+  font-size: 17px;
+  line-height: 1.3;
   color: var(--dk-t1);
 }
 .es-pills {

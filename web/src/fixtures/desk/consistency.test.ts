@@ -192,6 +192,22 @@ describe("the regime row governing today and the recession score (§5, §12.1, �
   });
 });
 
+describe("the client label (§11, §12.2, §12.3; item 14)", () => {
+  it("every query-backed catalog row has a client label in plain words; the study's client headline is its row's", () => {
+    const rows = catalog.studies as { slug: string; question: unknown; client_label?: string | null }[];
+    for (const r of rows) {
+      if (r.question == null) expect(r.client_label ?? null).toBeNull();
+      else {
+        expect(typeof r.client_label, r.slug).toBe("string");
+        // No σ and no engine terms (§11).
+        expect(r.client_label, r.slug).not.toMatch(/σ|\bz\b|sessions?|window|shock|condition|2s10s|cross/i);
+      }
+    }
+    expect(rows.filter((r) => r.question != null)).toHaveLength(13);
+    expect(study.client?.headline).toBe(rows.find((r) => r.slug === study.slug)?.client_label);
+  });
+});
+
 describe("the firing state (§12.1, §12.5, v4 B-05)", () => {
   it("every since-last-close fire is a Ledger row firing on the comparison session, not stale; the three answers share the sessions", () => {
     const sl = overview.since_last_close;

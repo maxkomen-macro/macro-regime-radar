@@ -14,12 +14,13 @@ import type { Unavailable } from "../data/envelope";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { unavailableOf, useOverview } from "../data/api";
+import { droppedOf } from "../data/schema";
 import type { LedgerRow, OverviewResponse, OverviewTiles, SinceLastClose } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
-import { Awaiting, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
+import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
 import { REGIME_TONE } from "../kit/palette";
@@ -36,6 +37,9 @@ export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?
   // §2, §12.1: each new fire with (new); each signal still firing with its `firing_day`.
   for (const f of s.new_fires ?? []) out.push({ key: `new-${f.slug}`, text: `${f.short || f.label} fired`, tag: "(new)" });
   for (const f of s.still_firing ?? []) out.push({ key: `still-${f.slug}`, text: `${f.short || f.label} still firing${fin(f.firing_day) ? `, day ${f.firing_day}` : ""}` });
+  // Codex R-16: a fire the boundary could not read is said, never left out as if nothing fired.
+  const lostFires = droppedOf(s, "new_fires") + droppedOf(s, "still_firing");
+  if (lostFires) out.push({ key: "lost", text: `${lostFires} ${lostFires === 1 ? "fire" : "fires"} could not be read` });
   const v = s.vol_change_pts;
   if (fin(v)) {
     const dir = v >= 0.05 ? "up" : v <= -0.05 ? "down" : "unchanged";
@@ -225,6 +229,8 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
 
 function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | undefined; failed: boolean; pathTo: (slug: string) => string }) {
   const rows = data?.active_signals;
+  // Codex R-16: "nothing is firing" is said only when every row was read.
+  const lost = droppedOf(data, "active_signals");
   const unserved = useUnserved();
   if (unserved) return <UnservedCard headingId="ov-active-title" className="ov-active" title="Active signals" sub="what fired, how it has played out before" block={unserved} />;
   return (
@@ -242,7 +248,7 @@ function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | unde
           rows.length ? (
             <ul className="ov-signals">
               {rows.map((r) => (
-                <li key={r.slug} className="ov-signal" data-firing={(r.firing_now === true && r.stale !== true) || undefined}>
+                <li key={r.slug} className="ov-signal" data-firing={(r.firing_now === true && r.stale === false) || undefined}>
                   <div className="ov-signal-name">
                     <b>{r.label}</b>
                     {dayLong(r.last_fired) ? <span>last fired {dayLong(r.last_fired)}</span> : null}
@@ -254,12 +260,13 @@ function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | unde
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : lost ? null : (
             <p className="dk-await">Nothing is firing, and nothing has fired recently.</p>
           )
         ) : failed || data ? (
           <Awaiting />
         ) : null}
+        <DroppedNote n={lost} />
       </div>
       <div className="ov-active-foot">
         <VerdictDefinitions />

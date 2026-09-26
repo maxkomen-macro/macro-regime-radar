@@ -17,7 +17,7 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { AdvancedPanel, Card, NotServedBadge, Stat, StatRow, Unserved, UnservedLine, useAdvanced } from "../kit/ui";
 import {
-  apiLegs,
+  savedLegs,
   equalWeight,
   exportSaved,
   importSaved,
@@ -164,13 +164,14 @@ function BasketCard({ basketId, saved, unreadable, onSelect, onSaved }: { basket
   }, [basketId]);
   const legs = work ?? base;
   const tot = legs ? totalText(legs) : null;
-  const dirty = !!work && !!base && legsKey(apiLegs(work)) !== legsKey(apiLegs(base));
+  const dirty = !!work && !!base && legsKey(work) !== legsKey(base);
   const adv = useAdvanced();
   const save = () => {
     if (!legs || !local) return;
     if (!legs.length) return setStatus("Add a ticker to save the basket.");
     if (tot !== "100") return setStatus(tot == null ? "A weight is not a number; fix it to save." : `The weights add to ${totalWords(tot)}; normalize them to 100% to save.`);
-    const r = writeSaved({ id: local.id, name: local.name, legs: apiLegs(legs).map((l) => ({ ...l, name: legs.find((x) => x.symbol === l.symbol)?.name ?? null })), saved_at: new Date().toISOString() });
+    // Each weight saved as the exact decimal typed, so the basket adds to exactly 100% when read back (Codex R-20).
+    const r = writeSaved({ id: local.id, name: local.name, legs: savedLegs(legs), saved_at: new Date().toISOString() });
     if (r !== "ok") return setStatus(STORAGE_WORDS[r]);
     onSaved();
     setWork(null);

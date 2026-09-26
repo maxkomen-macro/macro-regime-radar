@@ -13,11 +13,12 @@
 
 import type { ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { DeskApiError, unavailableOf, useStudy } from "../data/api";
+import { DeskApiError, unavailableOf, useStudy, useStudyCatalog } from "../data/api";
 import type { StudyResponse } from "../data/types";
 import type { DeskPage } from "../desk-sections";
 import { dayLong, pctPlain, year } from "../kit/format";
-import { Awaiting, Signed, Unserved, useUnserved } from "../kit/ui";
+import { Awaiting, DroppedNote, Signed, Unserved, useUnserved } from "../kit/ui";
+import { droppedOf } from "../data/schema";
 import { apiParams, askFromSearch, atMonth, readLastStudy, targetLabel } from "../event-study/question";
 import { isUnit, moveText, scaleOf, tipOf } from "../kit/units";
 import "./client.css";
@@ -35,7 +36,7 @@ export function setupLabel(s: Pick<StudyResponse, "firing_now" | "last_event" | 
   const d = dayLong(s?.last_event);
   if (!s || !d) return "Setup";
   // §11: "Setup · <last_event>" only when firing and not stale.
-  return s.firing_now === true && s.stale !== true ? `Setup · ${d}` : `Setup last seen · ${d}`;
+  return s.firing_now === true && s.stale === false ? `Setup · ${d}` : `Setup last seen · ${d}`;
 }
 
 /** Room right of the drawable track for each bar's value, left of it before the first bar, and before zero when nothing is negative (the PNG's geometry). */
@@ -129,6 +130,7 @@ function Backdrop({ s, failed }: { s: StudyResponse | undefined; failed: boolean
       ) : s || failed ? (
         <Awaiting />
       ) : null}
+      {s ? <DroppedNote n={droppedOf(s, "by_regime")} /> : null}
     </section>
   );
 }
@@ -165,6 +167,11 @@ export default function ClientView({ page }: { page: DeskPage }) {
   // §4: a question the server refuses (422 `unsupported`) prints the served message; nothing is awaited.
   const refusal = q.error instanceof DeskApiError && q.error.status === 422 && q.error.body?.error === "unsupported" ? q.error.message : null;
   const month = s && Array.isArray(s.horizons) ? s.horizons.find((h) => h.h === 20) : undefined;
+  // §11 (item 14): the title is the served client.headline, which §12.2 fills from the catalog's
+  // client_label; with no client block, that catalog row's client_label; never the σ label.
+  const catalog = useStudyCatalog();
+  const row = s?.slug && Array.isArray(catalog.data?.studies) ? catalog.data.studies.find((c) => c.slug === s.slug) : undefined;
+  const title = s?.client?.headline || row?.client_label || "What has happened after this setup";
   // A study too thin to read at a month answered: a plain sentence stands where the numbers would.
   const thin = thinWords(s);
   // Once, in the backdrop card (and in the summary's place when no client paragraph is served); the month's two stats read like a null regime row.
@@ -175,8 +182,7 @@ export default function ClientView({ page }: { page: DeskPage }) {
         <div className="cv-grid">
           <div className="cv-main">
             <p className="dk-stat-label">{setupLabel(s)}</p>
-            {/* §11: the served client.headline; the catalog label (served on /study) when client is null. */}
-            <h1 className="cv-headline">{s?.client?.headline ?? s?.label ?? "What has happened after this setup"}</h1>
+            <h1 className="cv-headline">{title}</h1>
             {s?.client?.summary ? (
               // The served summary carries the h = 20 median and baseline (§12.2): a log study's sentence carries the §1.9 tooltip.
               <p className="cv-summary" title={tipOf(s.question?.target_unit)}>
@@ -195,7 +201,7 @@ export default function ClientView({ page }: { page: DeskPage }) {
                     <p className="cv-stat-value" data-tone={fin(month.baseline_up_pct) && month.up_pct > month.baseline_up_pct ? "green" : undefined}>
                       {pctPlain(month.up_pct)}
                     </p>
-                    <p className="cv-stat-sub">{fin(month.baseline_up_pct) ? `vs ${pctPlain(month.baseline_up_pct)} in an ordinary month` : ""}</p>
+                    <p className="cv-stat-sub">{fin(month.baseline_up_pct) ? `vs ${pctPlain(month.baseline_up_pct)} in an ordinary month` : "ordinary month awaiting refresh"}</p>
                   </>
                 ) : null}
               </StatCard>
@@ -212,7 +218,9 @@ export default function ClientView({ page }: { page: DeskPage }) {
                         <>
                           vs <span title={tipOf(s?.question?.target_unit)}>{moveText(month.baseline_median, s?.question?.target_unit)}</span> ordinary
                         </>
-                      ) : null}
+                      ) : (
+                        "ordinary month awaiting refresh"
+                      )}
                     </p>
                   </>
                 ) : null}

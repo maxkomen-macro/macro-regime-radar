@@ -49,7 +49,9 @@ describe("Client view words and geometry", () => {
   });
   it("words the source line and the setup's date", () => {
     expect(sourceLine("2026-09-22")).toBe("Radar · FRED, Yahoo Finance · as of Sep 22, 2026 · Past patterns do not guarantee future results.");
-    expect(setupLabel({ firing_now: true, last_event: "2026-09-21" })).toBe("Setup · Sep 21, 2026");
+    expect(setupLabel({ firing_now: true, last_event: "2026-09-21", stale: false })).toBe("Setup · Sep 21, 2026");
+    // Without its freshness served, a firing state claims nothing about today (verifier V14-5).
+    expect(setupLabel({ firing_now: true, last_event: "2026-09-21" })).toBe("Setup last seen · Sep 21, 2026");
     expect(setupLabel({ firing_now: false, last_event: "2025-04-16" })).toBe("Setup last seen · Apr 16, 2025");
     expect(setupLabel({ firing_now: false, last_event: null })).toBe("Setup");
     expect(setupLabel(undefined)).toBe("Setup");
@@ -81,8 +83,9 @@ describe("Client view words and geometry", () => {
 describe("Client view", () => {
   it("reads the study in plain words: the question, the three numbers, the backdrop, the source", async () => {
     renderTab("/desk/overview?view=client");
-    // §12.2: client.headline is the catalog label; "since" is the sample's first year (the audit's §2.3: 2001-09-19).
-    expect(await screen.findByRole("heading", { level: 1, name: "Gold +2σ while S&P weak" })).toBeInTheDocument();
+    // §12.2 (item 14): client.headline is the catalog client_label; "since" is the sample's first year (the audit's §2.3: 2001-09-19).
+    // §11 (item 14): the title is the catalog's client_label, in plain words.
+    expect(await screen.findByRole("heading", { level: 1, name: "Gold jumps while the S&P is weak" })).toBeInTheDocument();
     const main = screen.getByRole("main");
     await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*18\s*since 2001/));
     expect(main).toHaveTextContent("Setup last seen · Apr 16, 2025");
@@ -99,10 +102,8 @@ describe("Client view", () => {
     // No verdict pills, no σ.
     expect(main.querySelector(".dk-pill")).toBeNull();
     expect(main.textContent).not.toMatch(/Reliable|Suggestive|No edge/);
-    // §12.2 makes the title the catalog label, which carries a σ; §11's "no σ" holds everywhere else (an open
-    // conflict between the two sentences, recorded in FRAME3_REPORT.md for the owner).
-    const title = screen.getByRole("heading", { level: 1 }).textContent ?? "";
-    expect(main.textContent?.replace(title, "")).not.toMatch(/σ/);
+    // §11: no σ anywhere on the view, the title included (item 14 settled §12.2 on client_label).
+    expect(main.textContent).not.toMatch(/σ/);
     // The desk's internals leave the sidebar; the navigation stays.
     expect(screen.getByTestId("desk-shell")).toHaveAttribute("data-client");
     expect(within(screen.getByRole("complementary", { name: "Sidebar" })).getByRole("link", { name: "Regime" })).toBeInTheDocument();
@@ -153,12 +154,21 @@ describe("Client view", () => {
     await waitFor(() => expect(screen.getByRole("main")).toHaveTextContent(/Higher a month later\s*67%/));
   });
 
+  it("with no client block and no catalog row for the study, the title is plain words, never the σ label (§11)", async () => {
+    const bare: Record<string, unknown> = { ...study };
+    delete bare.client;
+    stubDesk({ "/api/desk/study": () => bare, "/api/desk/study/catalog": deskError(503, "warming") });
+    renderTab("/desk/overview?view=client");
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("What has happened after this setup"));
+    expect(screen.getByRole("main").textContent).not.toMatch(/σ/);
+  });
+
   it("elsewhere it reads the last study Event Study answered in this browser", async () => {
     localStorage.setItem(LAST_STUDY_KEY, "?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20");
     const { calls } = stubDesk();
     renderTab("/desk/regime?view=client");
     await waitFor(() => expect(calls).toContain("GET /api/desk/study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20"));
-    expect(await screen.findByRole("heading", { level: 1, name: "Gold +2σ while S&P weak" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Gold jumps while the S&P is weak" })).toBeInTheDocument();
   });
 
   it("a drop draws red from zero, a mixed set shares one scale, all-null prints the words", async () => {
@@ -187,8 +197,9 @@ describe("Client view", () => {
     renderTab("/desk/overview?view=client");
     const main = await screen.findByRole("main");
     await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*6\s*since 2001/));
-    // §11: with client null the title is the catalog label, served on /study; with neither, the plain words.
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Gold +2σ while S&P weak");
+    // §11: with client null the title is the catalog row's client_label (never the σ label).
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Gold jumps while the S&P is weak");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).not.toMatch(/σ/);
     expect(main.querySelector(".cv-summary")).toHaveTextContent(sentence);
     expect(main).toHaveTextContent("Higher a month latertoo few cases to say");
     expect(main).toHaveTextContent("Typical movetoo few cases to say");

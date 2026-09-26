@@ -11,12 +11,13 @@
 
 import type { ReactNode } from "react";
 import { unavailableOf, useRegime } from "../data/api";
+import { droppedOf } from "../data/schema";
 import type { Read, RegimeResponse, NextPrint as NextPrintRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
 import Gauge from "../kit/Gauge";
-import { AdvancedPanel, Awaiting, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved } from "../kit/ui";
 import "./regime.css";
 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
@@ -48,7 +49,7 @@ function ServedRead({ read }: { read: Read | undefined }) {
 }
 
 
-function Strip({ history, note }: { history: NonNullable<RegimeResponse["history"]>; note?: string }) {
+function Strip({ history, note, lost = 0 }: { history: NonNullable<RegimeResponse["history"]>; note?: string; lost?: number }) {
   const total = history.length;
   const segs = runs(history);
   const first = history[0]?.month;
@@ -81,6 +82,8 @@ function Strip({ history, note }: { history: NonNullable<RegimeResponse["history
       </p>
       {/* §5: the served history note ("labels as stored; revisions are not replayed."). */}
       {note ? <p className="rg-strip-note">{note}</p> : null}
+      {/* Codex R-16: months the boundary could not read are said; the strip draws the rest. */}
+      <DroppedNote n={lost} one="month" />
     </div>
   );
 }
@@ -167,7 +170,7 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
         <AwaitingStats labels={["Growth", "Inflation", "In this regime"]} quiet={quiet} />
       )}
       {history.length ? (
-        <Strip history={history} note={r?.history_note} />
+        <Strip history={history} note={r?.history_note} lost={droppedOf(r, "history")} />
       ) : quiet ? null : (
         <div className="rg-strip-wrap">
           <p className="dk-stat-label">Last five years</p>
@@ -304,6 +307,7 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
         </table>
       ) : null}
       {!stats.length && !quiet ? <Awaiting>what each regime has meant</Awaiting> : null}
+      <DroppedNote n={droppedOf(r, "stats")} one="regime row" />
       <ServedRead read={r?.reads?.stats} />
     </Card>
   );
@@ -367,6 +371,8 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
     >
       {quiet ? null : (
         <>
+          {/* §5: the next prints are read from the newest stored row, not the K−2 row the label above shows. */}
+          <p className="rg-from">{`from the latest print${monthYear(r?.current?.latest_print) ? ` · ${monthYear(r?.current?.latest_print)}` : ""}`}</p>
           {npOff ? (
             <Unserved block={npOff}>
               <StatRow cols={2}>
@@ -399,6 +405,7 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
           ) : (
             <Awaiting />
           )}
+          <DroppedNote n={droppedOf(r, "changes")} one="regime change" />
         </>
       )}
       <ServedRead read={r?.reads?.changes} />

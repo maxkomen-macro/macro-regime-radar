@@ -4,7 +4,7 @@
  * the rail print served fields only, a slot change makes the question your
  * own and Run asks it, saved questions live in this browser with a JSON
  * export and import, fewer than 10 events is one sentence and two fixes, and
- * Advanced opens the events, the rules and the engine's own panel.
+ * Advanced opens the events, the resampling detail, the rules and the provenance.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -12,13 +12,14 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient } from "@tanstack/react-query";
 import DeskShell from "../DeskShell";
 import study from "../../../fixtures/desk/study.json";
+import studyEvents from "../../../fixtures/desk/study-events.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { bpEvents, bpStudy } from "../../../test/desk-variants";
 import type { Question } from "../data/types";
 import { applyFix, provenanceLine } from "./EventStudyPage";
 import { barTicks, horizonPhrase, servedWords } from "./AnswerCard";
-import { LAST_STUDY_KEY, SAVED_KEY, WHILES, WINDOWS, askFromSearch, engineSlugFor, exportSaved, importSaved, loadSaved, questionFromEngine, questionWords, searchFor, unreadableSaved, withSaved, withdrawnIn, writeSaved } from "./question";
+import { LAST_STUDY_KEY, SAVED_KEY, WHILES, WINDOWS, askFromSearch, exportSaved, importSaved, loadSaved, questionFromEngine, questionWords, searchFor, unreadableSaved, withSaved, withdrawnIn, writeSaved } from "./question";
 
 const GOLD: Question = { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 };
 
@@ -80,13 +81,6 @@ describe("the question", () => {
     expect(askFromSearch("study=gold-w5-z2.5-down-none-us10y")).toEqual({ preset: "gold-2sigma-spx-weak" });
   });
 
-  it("maps a question onto the engine's own study when the engine can ask it", () => {
-    expect(engineSlugFor(GOLD)).toBe("gold-2sigma-spx-weak");
-    expect(engineSlugFor({ ...GOLD, shock: "spx", move: "cross_above", while: "none" })).toBe("spx-golden-cross");
-    expect(engineSlugFor({ ...GOLD, window: 10 })).toBeNull();
-    expect(engineSlugFor({ ...GOLD, while: "spx_above_50" })).toBeNull();
-    expect(engineSlugFor({ ...GOLD, while: "regime:Recession Risk" })).toBe("gold-w20-z2.0-up-regime=recession_risk-spx");
-  });
   it("saves, exports and imports questions without duplicates or malformed entries", () => {
     const now = new Date("2026-09-24T00:00:00Z");
     const one = withSaved([], GOLD, "Gold", now);
@@ -293,7 +287,8 @@ describe("Event Study tab", () => {
     expect(rail).toHaveTextContent(/Range vs normal\s*Awaiting refresh/);
   });
 
-  it("Advanced opens the events, the rules and the engine's own panel for the same question", async () => {
+  it("Advanced opens the events, the resampling detail, the rules and the provenance; the frame-2 panel is retired (§4)", async () => {
+    const { calls } = stubDesk();
     renderTab();
     const rail = await screen.findByRole("complementary", { name: "Verdict and detail" });
     await waitFor(() => expect(rail).toHaveTextContent("Verdict"));
@@ -303,11 +298,22 @@ describe("Event Study tab", () => {
     expect(adv).toHaveTextContent("Sep 19, 2001");
     expect(adv).toHaveTextContent("A new event needs 20 sessions after the last one.");
     expect(adv).toHaveTextContent(`Entry is ${study.provenance.entry_rule}.`);
-    await waitFor(() => expect(adv).toHaveTextContent("By horizon, as the engine scores it"));
-    expect(adv.textContent).not.toMatch(/established|significant/i);
-    // The engine's rows state its fact about zero, never a §1.5 pill (E-1).
-    expect(within(adv).queryByText("Suggestive", { selector: ".es-zero" })).toBeNull();
     expect(adv).toHaveTextContent(/includes zero|clears zero/);
+    expect(adv.textContent).not.toMatch(/established|significant|frame-2|as the engine scores it/i);
+    // §4 (v2 §8): nothing asks the frame-2 engine routes any more.
+    expect(calls.some((c) => /\/api\/desk\/event-study/.test(c))).toBe(false);
+  });
+
+  it("Advanced says how many events could not be read, under the study's own count (Codex R-16)", async () => {
+    stubDesk({ "/api/desk/study/events": () => ({ ...studyEvents, events: [{ regime: "Goldilocks" }, ...studyEvents.events.slice(1)] }) });
+    renderTab();
+    const rail = await screen.findByRole("complementary", { name: "Verdict and detail" });
+    await waitFor(() => expect(rail).toHaveTextContent("Verdict"));
+    fireEvent.click(within(rail).getByTestId("dk-advanced"));
+    const adv = await screen.findByRole("region", { name: "Advanced" });
+    await waitFor(() => expect(adv).toHaveTextContent("1 event could not be read."));
+    expect(adv).toHaveTextContent("All 18 events");
+    expect(within(adv).getAllByRole("row")).toHaveLength(18);
   });
 });
 

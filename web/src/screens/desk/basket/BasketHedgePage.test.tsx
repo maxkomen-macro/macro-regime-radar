@@ -139,7 +139,8 @@ describe("Basket & Hedge tab", () => {
     expect(b).toHaveTextContent("unsaved weights");
     fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
     expect(b).toHaveTextContent("Saved in this browser.");
-    expect(stored()[0]).toMatchObject({ id: "local-1", name: "AI infrastructure", legs: expect.arrayContaining([{ symbol: "NVDA", name: "Nvidia", weight: 26 }, { symbol: "SMCI", name: "Supermicro", weight: 8 }]) });
+    // Saved as the exact decimals typed (Codex R-20).
+    expect(stored()[0]).toMatchObject({ id: "local-1", name: "AI infrastructure", legs: expect.arrayContaining([{ symbol: "NVDA", name: "Nvidia", weight: "26" }, { symbol: "SMCI", name: "Supermicro", weight: "8" }]) });
     expect(b).toHaveTextContent("kept in this browser only");
   });
 
@@ -258,7 +259,7 @@ describe("Basket & Hedge tab", () => {
   });
 
   it("a saved basket that cannot be read is counted and kept through a save (§1.8)", async () => {
-    const bad = { id: "local-9", name: "Broken", legs: [{ symbol: "NVDA", weight: "22" }] };
+    const bad = { id: "local-9", name: "Broken", legs: [{ symbol: "NVDA", weight: "twenty-two" }] };
     seed([...BASKETS, bad]);
     renderTab();
     const b = await loaded();

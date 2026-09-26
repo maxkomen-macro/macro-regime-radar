@@ -6,6 +6,7 @@
    "slug": "gold-2sigma-spx-weak",
    "label": "Gold +2σ while S&P weak",
    "short": "gold while S&P weak",
+   "client_label": "Gold jumps while the S&P is weak",
    "available": true,
    "unavailable": null,
    "question": {
@@ -26,6 +27,7 @@
    "slug": "golden-cross",
    "label": "S&P golden cross",
    "short": "golden cross",
+   "client_label": "The S&P's 50-day average rises above its 200-day",
    "available": true,
    "unavailable": null,
    "question": {
@@ -46,6 +48,7 @@
    "slug": "death-cross",
    "label": "S&P death cross",
    "short": "death cross",
+   "client_label": "The S&P's 50-day average falls below its 200-day",
    "available": true,
    "unavailable": null,
    "question": {
@@ -66,6 +69,7 @@
    "slug": "vix-spike-2sigma-5d",
    "label": "VIX spike +2σ, 5 days",
    "short": "VIX spike",
+   "client_label": "Stock-market volatility jumps within a week",
    "available": true,
    "unavailable": null,
    "question": {
@@ -86,6 +90,7 @@
    "slug": "hy-2sigma-20d",
    "label": "HY spreads +2σ, 20 days",
    "short": "HY spreads widening",
+   "client_label": "High-yield credit spreads widen sharply over a month",
    "available": true,
    "unavailable": null,
    "question": {
@@ -106,6 +111,7 @@
    "slug": "10y-2sigma-20d",
    "label": "10y yield +2σ, 20 days",
    "short": "10y yield up",
+   "client_label": "The 10-year Treasury yield jumps over a month",
    "available": true,
    "unavailable": null,
    "question": {
@@ -126,6 +132,7 @@
    "slug": "dollar-2sigma-20d",
    "label": "Dollar −2σ, 20 days",
    "short": "dollar weak",
+   "client_label": "The dollar falls sharply over a month",
    "available": false,
    "unavailable": {
     "reason": "US Dollar Index (DX-Y.NYB) is not stored in this database: it is a tier 2 series, and the full refresh stores tier 1 only.",
@@ -144,6 +151,7 @@
    "slug": "oil-2sigma-gold",
    "label": "Oil +2σ → gold",
    "short": "oil → gold",
+   "client_label": "Oil jumps over a month, and what gold does next",
    "available": false,
    "unavailable": {
     "reason": "WTI crude (DCOILWTICO) is not stored in this database: it is a tier 2 series, and the full refresh stores tier 1 only.",
@@ -162,6 +170,7 @@
    "slug": "spx-2sigma-10y",
    "label": "S&P −2σ → 10y",
    "short": "S&P drop → 10y",
+   "client_label": "The S&P falls sharply over a month, and what the 10-year yield does next",
    "available": true,
    "unavailable": null,
    "question": {
@@ -182,6 +191,7 @@
    "slug": "spx-20d-2sigma",
    "label": "S&P 20-day move over 2σ",
    "short": "S&P 20-day move",
+   "client_label": "The S&P rallies sharply over a month",
    "available": true,
    "unavailable": null,
    "question": {
@@ -202,6 +212,7 @@
    "slug": "spx-5d-2sigma",
    "label": "S&P 5-day move over 2σ",
    "short": "S&P 5-day move",
+   "client_label": "The S&P rallies sharply within a week",
    "available": true,
    "unavailable": null,
    "question": {
@@ -222,6 +233,7 @@
    "slug": "2s10s-2sigma-steepening",
    "label": "2s10s +2σ steepening",
    "short": "2s10s steepening",
+   "client_label": "The yield curve steepens sharply over a month",
    "available": true,
    "unavailable": null,
    "question": {
@@ -242,6 +254,7 @@
    "slug": "oil-2sigma-20d",
    "label": "Oil +2σ, 20 days",
    "short": "oil spike",
+   "client_label": "Oil jumps over a month",
    "available": false,
    "unavailable": {
     "reason": "WTI crude (DCOILWTICO) is not stored in this database: it is a tier 2 series, and the full refresh stores tier 1 only.",
@@ -260,6 +273,7 @@
    "slug": "rsi-above-70",
    "label": "RSI above 70",
    "short": "RSI > 70",
+   "client_label": null,
    "available": false,
    "unavailable": {
     "reason": "RSI is not computed in src/desk/ or api/; adding it is a new calculation outside Monday's scope.",
@@ -272,6 +286,7 @@
    "slug": "rsi-below-30",
    "label": "RSI below 30",
    "short": "RSI < 30",
+   "client_label": null,
    "available": false,
    "unavailable": {
     "reason": "RSI is not computed in src/desk/ or api/; adding it is a new calculation outside Monday's scope.",

@@ -13,6 +13,7 @@
 import { useId, useRef, useState, type ChangeEvent } from "react";
 import type { CatalogStudy, Move, Question } from "../data/types";
 import { leadsToStudy, type Slot as SlotKey } from "./catalog";
+import { droppedWords } from "../kit/ui";
 import { HORIZONS, MOVES, PRESET_CHIPS, WHILES, WINDOWS, exportSaved, importSaved, type SavedQuestion } from "./question";
 
 export type Mode = "common" | "saved" | "build";
@@ -65,6 +66,8 @@ export default function QueryCard({
   draft,
   onDraft,
   catalog,
+  gateSlots = true,
+  seriesLost = 0,
   series,
   seriesFailed = false,
   onRun,
@@ -84,6 +87,10 @@ export default function QueryCard({
   onDraft: (q: Question) => void;
   /** §12.3's catalog; null until served (every option then stays open). */
   catalog: CatalogStudy[] | null;
+  /** False when the catalog lost rows at the boundary: the slots gate nothing then (Codex R-16). */
+  gateSlots?: boolean;
+  /** How many `series[]` rows the boundary could not read (Codex R-16). */
+  seriesLost?: number;
   /** The 12 series the slots list; null until served (§12.13 PROPOSED `series`). */
   series: { key: string; label: string }[] | null;
   seriesFailed?: boolean;
@@ -100,7 +107,7 @@ export default function QueryCard({
     onDraft({ ...draft, [k]: parse(k, v) } as Question);
   };
   // §4: an option that does not lead to a catalog study, given the other slots, is disabled.
-  const off = (k: SlotKey, id: string) => !!catalog && !!draft && !leadsToStudy(catalog, draft, k, parse(k, id));
+  const off = (k: SlotKey, id: string) => gateSlots && !!catalog && !!draft && !leadsToStudy(catalog, draft, k, parse(k, id));
   const opts = (k: SlotKey, list: { id: string; label: string }[]): Option[] => list.map((o) => ({ ...o, off: off(k, o.id) }));
   const seriesList = (series ?? []).map((s) => ({ id: s.key, label: s.label }));
   const byChip = new Map((catalog ?? []).map((c) => [c.slug, c]));
@@ -198,7 +205,7 @@ export default function QueryCard({
       )}
       <p className="es-spelled">
         <span className="dk-stat-label">The question, spelled out</span>
-        <span className="es-hint">change any slot and it becomes your own · {series ? `every slot lists the same ${series.length} series` : seriesFailed ? "the series list is awaiting refresh" : "every slot lists the same series"}</span>
+        <span className="es-hint">change any slot and it becomes your own · {series ? (seriesLost ? `every slot lists the same series; ${droppedWords(seriesLost, "series", "series").replace(/\.$/, "")}` : `every slot lists the same ${series.length} series`) : seriesFailed ? "the series list is awaiting refresh" : "every slot lists the same series"}</span>
       </p>
       <div className="es-slots">
         <Slot label="Shock" value={draft?.shock ?? ""} options={opts("shock", seriesList)} onChange={set("shock")} disabled={!draft || !series} awaiting={seriesFailed} />

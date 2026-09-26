@@ -10,7 +10,8 @@
 
 import type { StudyResponse } from "../data/types";
 import { dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
-import { Advanced, Awaiting, Signed, UnservedLine, useUnserved, VerdictWord } from "../kit/ui";
+import { Advanced, Awaiting, DroppedNote, Signed, UnservedLine, useUnserved, VerdictWord } from "../kit/ui";
+import { droppedOf } from "../data/schema";
 import { CONFIDENCES, targetLabel } from "./question";
 import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
 import type { TargetUnit } from "../data/types";
@@ -153,6 +154,7 @@ export default function StudyRail({
       ) : (
         <Awaiting />
       )}
+      <DroppedNote n={droppedOf(study, "by_regime")} one="regime row" />
       {fin(study.unlabeled_n) && study.unlabeled_n > 0 ? (
         <p className="es-note">
           Unlabeled: {study.unlabeled_n} event{study.unlabeled_n === 1 ? "" : "s"} before the first labelled month
@@ -166,9 +168,10 @@ export default function StudyRail({
       ) : null}
 
       <p className="dk-stat-label es-rail-h">{target ? `Last five events · ${target} a month later` : "Last five events · a month later"}</p>
-      {lastEvents && !lastEvents.length ? (
+      {/* "No events" only when none was served; rows the boundary could not read are said (Codex R-16). */}
+      {lastEvents && !lastEvents.length && !droppedOf(study, "last_events") ? (
         <p className="es-note">No events</p>
-      ) : lastEvents ? (
+      ) : lastEvents && lastEvents.length ? (
         <ul className="es-events">
           {lastEvents.map((e) => (
             <li key={e.event_date}>
@@ -179,9 +182,10 @@ export default function StudyRail({
             </li>
           ))}
         </ul>
-      ) : (
+      ) : lastEvents ? null : (
         <Awaiting />
       )}
+      <DroppedNote n={droppedOf(study, "last_events")} one="event" />
 
       <div className="es-range-head">
         <p className="dk-stat-label">
@@ -220,6 +224,7 @@ export default function StudyRail({
       ) : (
         <Awaiting />
       )}
+      <DroppedNote n={droppedOf(study, "horizons")} one="horizon" />
 
       <div className="es-rail-foot">
         <Advanced items={`${fin(study.matched_n) ? `all ${study.matched_n} events` : "all events"} · resampling detail · entry rules · provenance`} open={advOpen} onToggle={onAdvanced} controls={advId} />

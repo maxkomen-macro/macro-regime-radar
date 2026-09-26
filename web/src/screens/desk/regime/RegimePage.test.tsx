@@ -152,6 +152,8 @@ describe("Regime tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What would change it/ });
     await waitFor(() => expect(card).toHaveTextContent("Oct 14"));
+    // §5 (item 14): the next prints are read from the newest stored row, and the card says which.
+    expect(card.querySelector(".rg-from")).toHaveTextContent("from the latest print · Aug 2026");
     // §5: the calendar has no INDPRO release, so its date says so.
     expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · a print ≤ −0.02% m\/m flips growth to falling → Stagflation/);
     expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual([

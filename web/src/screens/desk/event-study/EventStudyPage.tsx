@@ -24,9 +24,10 @@ import AnswerCard from "./AnswerCard";
 import EngineDetail from "./EngineDetail";
 import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
-import { WINDOWS, apiParams, askFromSearch, engineSlugFor, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
+import { WINDOWS, apiParams, askFromSearch, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
-import { Unserved } from "../kit/ui";
+import { DroppedNote, Unserved } from "../kit/ui";
+import { droppedOf } from "../data/schema";
 import "./study.css";
 
 /** The provenance line under the grid (§4): "Engine as of <as_of> · <method> <draws> · entry <rule> · cooldown <n | none> ·
@@ -69,6 +70,9 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const q = useStudy(apiParams(ask));
   const ov = useOverview();
   const cq = useStudyCatalog();
+  // Codex R-16: a catalog that lost rows at the boundary gates no slot option (a missing row would disable
+  // one that leads to a study), while the rows it read still label and gate their own chips (§4).
+  const catalogLost = droppedOf(cq.data, "studies");
   const catalog = Array.isArray(cq.data?.studies) ? cq.data.studies : null;
   // §4: a request the server refuses (422 `unsupported`) prints the served message.
   const refusal = q.error instanceof DeskApiError && q.error.status === 422 && q.error.body?.error === "unsupported" ? q.error.message : null;
@@ -165,9 +169,9 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const unreadLink = oldLink && !search.get("preset") && !questionFromEngine(oldLink) ? oldLink : null;
   // §12.0: never a silent parameter drop. An address asking what §12.2 no longer serves opens the default question, and says so.
   const withdrawn = !search.get("preset") && !oldLink ? withdrawnIn(search) : null;
-  const engineSlug = study?.question ? engineSlugFor(study.question) : null;
   // A served study is scored at its selected horizon, Too few included (v4 B-02): the rail reads it either way.
-  const askedHorizon = "question" in ask ? ask.question.horizon : (study?.selected_horizon ?? study?.question?.horizon ?? undefined);
+  // A preset asks §12.2's default horizon, 20 sessions (apiParams); a question asks its own (Codex R-18).
+  const askedHorizon = "question" in ask ? ask.question.horizon : (study?.selected_horizon ?? study?.question?.horizon ?? 20);
 
   return (
     <div className="es">
@@ -186,6 +190,8 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         onPickSaved={onPickSaved}
         draft={draft}
         catalog={catalog}
+        gateSlots={!catalogLost}
+        seriesLost={droppedOf(study, "series")}
         onDraft={(d) => {
           setDraft(d);
           setDirty(true);
@@ -197,6 +203,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         onSave={onSave}
         running={q.isFetching}
       />
+      <DroppedNote n={catalogLost} one="catalog study" many="catalog studies" />
       {unreadLink ? (
         <p className="es-note" role="status">
           The link asked for the engine study {unreadLink}, which the six slots cannot ask; this is the default question instead.
@@ -235,7 +242,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         </p>
       ) : null}
       {study ? <p className="es-provenance">{provenanceLine(study, label)}</p> : null}
-      {study && adv ? <EngineDetail id={advId} study={study} ask={ask} engineSlug={engineSlug} label={label} /> : null}
+      {study && adv ? <EngineDetail id={advId} study={study} ask={ask} /> : null}
     </div>
   );
 }

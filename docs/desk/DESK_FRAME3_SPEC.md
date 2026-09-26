@@ -205,6 +205,9 @@ served`. The `MOCKUP · values illustrative` amber badge is NOT built.
 
 ### 1.7 Empty, busy and awaiting states
 - `computing` (202): the card stays quiet and busy while the client polls.
+- A list whose rows the response boundary could not read says so ("1 row could
+  not be read."; event, series, month, sector … as fits), and nothing is
+  counted or called empty from the rows that are left (Codex round 2, R-16).
 - A study whose selected horizon has fewer than ten completed outcomes is
   `insufficient`: the answer card prints the served `empty_state.sentence`
   and the served `fixes` as chips (each only when it leads to a catalog
@@ -469,7 +472,10 @@ on the site, and it is labeled as one wherever it appears." Footer
 (awaiting, reason "regime statistics not yet defined in the engine."). Labels
 kept: REGIME / MONTHS / S&P / MO / UP / VIX AVG.
 
-**What would change it** (`the next two prints`). NEXT CPI · NEXT INDPRO, each
+**What would change it** (`the next two prints`). The card carries the
+sub-label "from the latest print · <latest_print>", and the page prints it:
+the next prints are read from the newest stored row, while WHERE WE ARE shows
+the K−2 row (both stay; ruling of item 14). NEXT CPI · NEXT INDPRO, each
 `release_date` ("release date unavailable" when null) and the sentence "a
 print <operator> <threshold_mom × 100>% m/m flips <inflation|growth> to
 <falling|rising> → <flips_to>, effective from the <first_effective_month>
@@ -688,7 +694,7 @@ on other tabs the last one Event Study answered in this browser, else the
 gold preset), with the same generation and the h = 20 counts Event Study
 shows. Left: "Setup · <last_event>" when `firing_now` and not `stale`, else "Setup
 last seen · <last_event>"; the served `client.headline` as the title (the catalog
-`label` when `client` is null); the served `client.summary`; three stats
+`client_label` when `client` is null); the served `client.summary`; three stats
 EPISODES (`matched_n`, "since <sample_start year>") · HIGHER A MONTH LATER
 (h = 20 `up_pct` against `baseline_up_pct`, green only when above) · TYPICAL
 MOVE (h = 20 `median` against `baseline_median`, §1.9); the source line
@@ -941,7 +947,7 @@ Templates (A, fixed here; `<L>` is the horizon's label, numbers printed by
 - `empty_state.sentence`: "Only <n> events complete at <L> since
   <sample_start year>, fewer than the ten a verdict other than Too few
   needs."
-- `client.headline`: the catalog `label`. `client.summary`: "Looking at
+- `client.headline`: the catalog `client_label` (§12.3), never `label` (§11: no σ). `client.summary`: "Looking at
   <matched_n> episodes since <sample_start year>, the <target label> was
   higher a month later in <up_n> of <n>, with a typical move of <median>
   against <baseline_median> in an ordinary month." (h = 20 values.)
@@ -953,6 +959,7 @@ Templates (A, fixed here; `<L>` is the horizon's label, numbers printed by
 | `studies` | array of 15 | required | — | — | A: the catalog below |
 | `studies[].slug` | string | required | — | — | A |
 | `studies[].label`, `short` | string | required | — | — | A: one canonical label and short per slug, reused by every tab (v2 §19) |
+| `studies[].client_label` | string | required, nullable (null for the RSI definitions) | — | — | A: the Client view's title in plain words, no σ and no engine terms (§11; ruling of item 14) |
 | `studies[].available` | boolean | required | — | the current generation | A: true when the engine completes on the pinned generation (v4 B-07): every input's coverage stored |
 | `studies[].unavailable` | `{reason, until\|null}` | required, nullable (null when available) | — | — | E: the engine's `not_stored` reason, or the §1.0 reason |
 | `studies[].question` | `{shock, window, move, while, target}` | required, nullable (null for the RSI definitions) | — | — | A |
@@ -967,23 +974,23 @@ unavailable (v4 B-07).
 The catalog (v2 §2, v3 §2; z = 2.0 throughout; every available row allows
 all four horizons):
 
-| slug | label | short | shock | window | move | while | target | engine query |
-|---|---|---|---|---|---|---|---|---|
-| gold-2sigma-spx-weak | Gold +2σ while S&P weak | gold while S&P weak | gold | 20 | up2s | spx_below_50 | spx | preset `gold-2sigma-spx-weak` |
-| golden-cross | S&P golden cross | golden cross | spx | — | cross_above | none | spx | preset `spx-golden-cross` |
-| death-cross | S&P death cross | death cross | spx | — | cross_below | none | spx | preset `spx-death-cross` |
-| vix-spike-2sigma-5d | VIX spike +2σ, 5 days | VIX spike | vix | 5 | up2s | none | spx | `vix-w5-z2.0-up-none-spx` |
-| hy-2sigma-20d | HY spreads +2σ, 20 days | HY spreads widening | hy_oas | 20 | up2s | none | spx | `hy_oas-w20-z2.0-up-none-spx` |
-| 10y-2sigma-20d | 10y yield +2σ, 20 days | 10y yield up | us10y | 20 | up2s | none | spx | `us10y-w20-z2.0-up-none-spx` |
-| dollar-2sigma-20d | Dollar −2σ, 20 days | dollar weak | dxy | 20 | down2s | none | spx | `dxy-w20-z2.0-down-none-spx` |
-| oil-2sigma-gold | Oil +2σ → gold | oil → gold | wti | 20 | up2s | none | gold | `wti-w20-z2.0-up-none-gold` |
-| spx-2sigma-10y | S&P −2σ → 10y | S&P drop → 10y | spx | 20 | down2s | none | us10y | `spx-w20-z2.0-down-none-us10y` |
-| spx-20d-2sigma | S&P 20-day move over 2σ | S&P 20-day move | spx | 20 | up2s | none | spx | `spx-w20-z2.0-up-none-spx` |
-| spx-5d-2sigma | S&P 5-day move over 2σ | S&P 5-day move | spx | 5 | up2s | none | spx | `spx-w5-z2.0-up-none-spx` |
-| 2s10s-2sigma-steepening | 2s10s +2σ steepening | 2s10s steepening | curve_2s10s | 20 | up2s | none | spx | `curve_2s10s-w20-z2.0-up-none-spx` |
-| oil-2sigma-20d | Oil +2σ, 20 days | oil spike | wti | 20 | up2s | none | spx | `wti-w20-z2.0-up-none-spx` |
-| rsi-above-70 | RSI above 70 | RSI > 70 | — | — | — | — | — | none: `available: false` (RSI not computed) |
-| rsi-below-30 | RSI below 30 | RSI < 30 | — | — | — | — | — | none: `available: false` |
+| slug | label | short | client_label | shock | window | move | while | target | engine query |
+|---|---|---|---|---|---|---|---|---|---|
+| gold-2sigma-spx-weak | Gold +2σ while S&P weak | gold while S&P weak | Gold jumps while the S&P is weak | gold | 20 | up2s | spx_below_50 | spx | preset `gold-2sigma-spx-weak` |
+| golden-cross | S&P golden cross | golden cross | The S&P's 50-day average rises above its 200-day | spx | — | cross_above | none | spx | preset `spx-golden-cross` |
+| death-cross | S&P death cross | death cross | The S&P's 50-day average falls below its 200-day | spx | — | cross_below | none | spx | preset `spx-death-cross` |
+| vix-spike-2sigma-5d | VIX spike +2σ, 5 days | VIX spike | Stock-market volatility jumps within a week | vix | 5 | up2s | none | spx | `vix-w5-z2.0-up-none-spx` |
+| hy-2sigma-20d | HY spreads +2σ, 20 days | HY spreads widening | High-yield credit spreads widen sharply over a month | hy_oas | 20 | up2s | none | spx | `hy_oas-w20-z2.0-up-none-spx` |
+| 10y-2sigma-20d | 10y yield +2σ, 20 days | 10y yield up | The 10-year Treasury yield jumps over a month | us10y | 20 | up2s | none | spx | `us10y-w20-z2.0-up-none-spx` |
+| dollar-2sigma-20d | Dollar −2σ, 20 days | dollar weak | The dollar falls sharply over a month | dxy | 20 | down2s | none | spx | `dxy-w20-z2.0-down-none-spx` |
+| oil-2sigma-gold | Oil +2σ → gold | oil → gold | Oil jumps over a month, and what gold does next | wti | 20 | up2s | none | gold | `wti-w20-z2.0-up-none-gold` |
+| spx-2sigma-10y | S&P −2σ → 10y | S&P drop → 10y | The S&P falls sharply over a month, and what the 10-year yield does next | spx | 20 | down2s | none | us10y | `spx-w20-z2.0-down-none-us10y` |
+| spx-20d-2sigma | S&P 20-day move over 2σ | S&P 20-day move | The S&P rallies sharply over a month | spx | 20 | up2s | none | spx | `spx-w20-z2.0-up-none-spx` |
+| spx-5d-2sigma | S&P 5-day move over 2σ | S&P 5-day move | The S&P rallies sharply within a week | spx | 5 | up2s | none | spx | `spx-w5-z2.0-up-none-spx` |
+| 2s10s-2sigma-steepening | 2s10s +2σ steepening | 2s10s steepening | The yield curve steepens sharply over a month | curve_2s10s | 20 | up2s | none | spx | `curve_2s10s-w20-z2.0-up-none-spx` |
+| oil-2sigma-20d | Oil +2σ, 20 days | oil spike | Oil jumps over a month | wti | 20 | up2s | none | spx | `wti-w20-z2.0-up-none-spx` |
+| rsi-above-70 | RSI above 70 | RSI > 70 | — | — | — | — | — | — | none: `available: false` (RSI not computed) |
+| rsi-below-30 | RSI below 30 | RSI < 30 | — | — | — | — | — | — | none: `available: false` |
 
 The Event Study's slots enable an option only when some available catalog
 row agrees with it and with the other slots' values. WTI (`wti`) and the

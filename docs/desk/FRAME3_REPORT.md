@@ -3654,6 +3654,191 @@ eleven other paths. Fixed, except where the owner has to act.
 The fixes were checked by the four gates and the tests above; the compare
 shot was re-shot after them.
 
+### Phase 2, item 14: rulings and Codex round 2 — `frame-3: align 14 rulings and codex-2 fixes`
+
+Your rulings on the Finish section, then Codex round 2's open findings, in
+one commit.
+
+**1. Client title: §11 wins.** §12.3 gains `client_label` (a field row and a
+catalog column): the Client view's title in plain words, no σ and no engine
+terms, for the 13 query-backed rows; the two RSI rows have none. §12.2's
+template now reads "`client.headline`: the catalog `client_label` (§12.3),
+never `label`", and §11's fallback for a study served without `client` is
+the catalog row's `client_label`. The catalog and study fixtures carry them;
+the Client view prints the served headline, else the catalog row's
+`client_label`, else "What has happened after this setup", and never the σ
+label. Drafted for your approval:
+
+| slug | label (every other tab) | client_label (Client view) |
+|---|---|---|
+| gold-2sigma-spx-weak | Gold +2σ while S&P weak | Gold jumps while the S&P is weak |
+| golden-cross | S&P golden cross | The S&P's 50-day average rises above its 200-day |
+| death-cross | S&P death cross | The S&P's 50-day average falls below its 200-day |
+| vix-spike-2sigma-5d | VIX spike +2σ, 5 days | Stock-market volatility jumps within a week |
+| hy-2sigma-20d | HY spreads +2σ, 20 days | High-yield credit spreads widen sharply over a month |
+| 10y-2sigma-20d | 10y yield +2σ, 20 days | The 10-year Treasury yield jumps over a month |
+| dollar-2sigma-20d | Dollar −2σ, 20 days | The dollar falls sharply over a month |
+| oil-2sigma-gold | Oil +2σ → gold | Oil jumps over a month, and what gold does next |
+| spx-2sigma-10y | S&P −2σ → 10y | The S&P falls sharply over a month, and what the 10-year yield does next |
+| spx-20d-2sigma | S&P 20-day move over 2σ | The S&P rallies sharply over a month |
+| spx-5d-2sigma | S&P 5-day move over 2σ | The S&P rallies sharply within a week |
+| 2s10s-2sigma-steepening | 2s10s +2σ steepening | The yield curve steepens sharply over a month |
+| oil-2sigma-20d | Oil +2σ, 20 days | Oil jumps over a month |
+
+The words map the question one to one: "jumps", "rallies", "falls sharply"
+or "widens sharply" stand for a two-standard-deviation move in the study's
+direction, "over a month" and "within a week" for its 20- or 5-session
+window, and a target other than the S&P is named ("and what gold does
+next"). Tests: `consistency.test.ts` (13 labels, none carrying σ or an
+engine term, the study's headline equal to its row's), `ClientView.test.tsx`
+(the title; no σ anywhere on the view, the title included; the catalog row's
+label with no client block; plain words with neither), `e2e/desk.spec.ts`.
+
+**2. Regime.** §5 gains the line: the "What would change it" card carries the
+sub-label "from the latest print · <latest_print>", because its next prints
+are read from the newest stored row while WHERE WE ARE shows the K−2 row;
+both stay. The page prints "from the latest print · Aug 2026" under the
+card's title. Test: `RegimePage.test.tsx`.
+
+**3. The frame-2 engine panel is retired** (§4, v2 §8). Advanced shows the
+study's events, each horizon's resampling detail, the entry rules and the
+provenance, nothing from the frame-2 engine; nothing asks its routes. Gone
+with it: the adapter `web/src/api/desk.ts` (its one shared type,
+`EventStudyParams`, moved into `studies.ts`, which old `?study=` links still
+use), the frame-2 formatters `event-study/format.ts`, `pyformat.ts` and
+their tests (`pyformat.test.ts`, `frame2.test.ts`, `engine-adapter.test.ts`),
+the engine-slug helpers, the fixture server's `/event-study` routes, and
+`LEGACY_FRAME2` (the language scan now holds every Desk file to the whole
+list). Kept: `event-study/__fixtures__/engine-studies.json`,
+`engine-assets.json` and `py-format.json`, which `tests/test_event_study.py`,
+`tests/test_desk_format_fixture.py` and `scripts/desk_format_fixture.py`
+still read; they are outside `web/` and `docs/desk/`, so retiring them is the
+API branch's. Tests: `EventStudyPage.test.tsx` (Advanced, and no request to
+the frame-2 routes), `desk-language.test.ts`, `e2e/desk.spec.ts`.
+
+**4. Bridge card title:** "Proposed export schema (not the current SQLite
+layout)", §11's exact words. Test: `PipelinePage.test.tsx`.
+
+**5. Event Study headline: 17px** (§4: "Headline (serif 17px)"). Test:
+`e2e/desk.spec.ts` (computed font size).
+
+**6. Codex round 2.** Codex's own text and repros were not in the repository
+or the Downloads folder, so each finding was re-verified with a repro written
+from its one-line description, in `web/src/screens/desk/codex-round2.test.tsx`.
+Of the thirteen tests written first, nine fail at the previous tip and four
+pass; the verifier's round added five more for what the first fixes missed.
+All eighteen pass at this commit.
+- **R-16 (blocking): dropped rows gave wrong totals and false empty-state
+  claims.** Still open at the tip. The response boundary drops a list row it
+  cannot read, silently; the Ledger then counted Firing now, Reliable and No
+  edge from the rest, the chip said "All 11", Data Pipeline counted a group's
+  readable rows and said "No series in this group yet" for a group whose one
+  row was unreadable, the Overview said "Nothing is firing, and nothing has
+  fired recently.", the rail said "No events", the slots' hint said "every
+  slot lists the same 12 series" of 13, and Data Pipeline's search said a
+  lost series did not exist. **Changed:** the boundary
+  now records, per list, how many rows it dropped (`_dropped`, never taken
+  from the answer), and every page that counts rows or says a list is empty
+  reads it: the Ledger counts from rows only when every row was read (its
+  header keeps the served `scored_n` and `unavailable_n`), the chip loses
+  its number and the empty filter says "No readable signal matches this
+  filter."; Data Pipeline counts read plus lost and claims no total when a
+  group is lost; the Overview and the rail make no "nothing" claim and the
+  since-last-close line names lost fires; a catalog that lost a row gates
+  no slot option, while the rows it read still gate and explain their own
+  chips (§4); the slots' hint counts no series from a partial list; a
+  search miss says a series could not be read; Sectors names no leader or
+  laggard from a partial list. Each place says "1 row could not be read."
+  (or event, series, month, regime row, regime change, sector, asset,
+  catalog study): the Ledger, the Overview's active signals, Data Pipeline,
+  the rail's last events, by-regime rows and horizons, Advanced's events
+  table, the Event Study catalog, the Regime strip, statistics and changes,
+  Sectors, the Technicals sector bars and signals, the Client backdrop,
+  Macro's correlations and the sidebar's data-status tooltip. §1.7 records
+  the state. Tests: `codex-round2.test.tsx` (ten), `data/api.test.tsx`,
+  `EventStudyPage.test.tsx`.
+- **R-17: a missing firing status printed "Not firing today".** Closed by item
+  9 (`2d179e2`): the pill prints nothing when `firing_now` is not served and
+  the Ledger's NOW says "—". The verifier found the same gap one field over:
+  with `stale` not served (§12.2 and §12.5 make it required), a firing study
+  was called firing today. **Changed:** every firing claim (the pill, the
+  Ledger's NOW and its Firing now count, the Overview's firing mark, the
+  Client's "Setup") needs `stale` served as false, and says nothing
+  otherwise. Test: `codex-round2.test.tsx` (three).
+- **R-18: a missing requested horizon substituted another.** Closed by item 3
+  (`d3f07a3`): the answer card reads the served `selected_horizon`, else the
+  question's `horizon`, and no other row stands in. Item 14 removes the card's
+  last default of 20 sessions: before an answer the labels name the asked
+  horizon (a question's own, a preset's §12.2 default of 20), and the card on
+  its own names none. Test: `codex-round2.test.tsx` (two).
+- **R-19: a missing comparison disappeared without an unavailable state.**
+  Closed by item 1 (`f19d52d`): the line on the question without its
+  condition is a block, printing its served reason, or "Awaiting refresh"
+  when it did not arrive. Test: `codex-round2.test.tsx`.
+- **R-20: tiny distinct weights aliased to zero.** Still open at the tip, two
+  ways: `decimal()` printed any weight under 1e-20 as "0", and Normalize
+  worked in floats capped at twelve decimals, so two distinct tiny weights
+  both became 0. **Changed:** `decimal()` writes an exponent form out in
+  full; Normalize works in exact decimals, and when the legs add to more
+  than 100 it keeps enough extra decimals that a weight typed above zero
+  stays above zero and distinct weights stay apart; the result still adds
+  to exactly 100. Those digits outrun a float, so a saved basket now keeps
+  each weight as the exact decimal typed (an older save's numbers still
+  read, and Export / Import carry either); a normalized basket reads back
+  adding to exactly 100% (V14-4). The hand-off to Position Monitor still
+  records numbers (§9). Tests: `codex-round2.test.tsx` (three),
+  `weights.test.ts`, `BasketHedgePage.test.tsx`.
+
+**Against the PNGs.**
+- 03 Event Study: the headline at 17px, where the build set it at 21px. §4:
+  "Headline (serif 17px)".
+- 04 Regime: "from the latest print · Aug 2026" under What would change it,
+  which the PNG does not have. §5, as ruled above.
+- 10 Data Pipeline: "Proposed export schema (not the current SQLite
+  layout)" where the PNG has "Snowflake bridge · schema and export". §11.
+- 12 Client view: "Gold jumps while the S&P is weak" where the PNG has a
+  question. §11 and §12.2, as ruled above.
+- Advanced (not in a PNG): no frame-2 panel. §4.
+
+Verifier (one round): **FAIL**, six should-fix and five nits. Items 1 to 5
+checked as stated (spec wording and placement, the 13 labels, nothing left
+reading the removed files, `?study=` links intact, the Python tests'
+fixtures kept). All fixed, except the owner's calls.
+- V14-1 the slots' hint counted a partial series list. **Fixed.**
+- V14-2 Data Pipeline's search said a lost series did not exist. **Fixed.**
+- V14-3 one lost catalog row re-enabled the unavailable chips and hid their
+  reasons. **Fixed:** the rows read still gate their chips; only the slot
+  options stop gating.
+- V14-4 a normalized basket no longer added to 100% after Save (floats).
+  **Fixed:** exact decimals in the store.
+- V14-5 with `stale` not served, a study was called firing today. **Fixed.**
+- V14-6 the report did not list the labels yet. **Fixed** (this section),
+  and the Finish's follow-up on `LEGACY_FRAME2` is closed.
+- V14-7 (nit) Regime statistics and changes, Sectors, the Technicals bars
+  and the data-status contributors lost rows silently. **Fixed.**
+- V14-8 (nit) a baseline not served dropped its "vs normal" line. **Fixed:**
+  "normal awaiting refresh" (Event Study), "ordinary month awaiting
+  refresh" (Client).
+- V14-9 (nit) the new "could not be read" state had no §1.7 sentence.
+  **Fixed.**
+- V14-10 (nit) two comments still said "catalog label". **Fixed**; a Python
+  test's docstring still names the removed adapter (outside this pass).
+- V14-11 (nit) the gold label alone names no window. Yours: it is your own
+  example; "Gold jumps over a month while the S&P is weak" would match the
+  rest.
+
+The fixes were checked by the four gates and the tests above; the compare
+shots were re-shot after them and matched.
+
+**For you.**
+- Approve or rewrite the 13 client labels above; they live in §12.3 and in
+  the fixture builder's one table.
+- `CLAUDE.md` (repo root, outside this pass) still describes
+  `web/src/api/desk.ts`; the Python tests and the script named in item 3
+  still read the frame-2 fixtures.
+- If you have Codex round 2's own report, its repros can be run against
+  this commit as they stand.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -3692,6 +3877,7 @@ tests against the fixture dev server.
 | frame-3: align 11 basket-hedge | clean | 122 / 1,462 | ok | 54 / 54 |
 | frame-3: align 12 fixtures | clean | 122 / 1,465 | ok | 54 / 54 |
 | frame-3: align 13 build-notes | clean | 123 / 1,477 | ok | 54 / 54 |
+| frame-3: align 14 rulings and codex-2 fixes | clean | 121 / 1,475 | ok | 54 / 54 |
 
 ## Finish
 
@@ -3729,6 +3915,15 @@ on a copy of the tree with the committed notes file: typecheck clean; unit
 123 files / 1,477 tests; build ok; Desk browser tests 54 / 54. With your new
 notes file in place, the Build Notes, language and shell suites pass too.
 
+After item 14 (above): the tip is the commit that carries this report,
+`frame-3: align 14 rulings and codex-2 fixes` (parent `54510e8 frame-3: align
+13 build-notes`), local only. Nothing is pushed; only `web/` and `docs/desk/`
+were touched, and your notes file and SVGs are left out. Gate summary at
+that tip: typecheck clean; unit 121 files / 1,475 tests; build ok; Desk
+browser tests 54 / 54. Of the list below, the Client title, the Regime
+reading, the frame-2 panel, the bridge title and the headline size are now
+settled by your rulings; the 13 client labels wait on your approval.
+
 For Max, from the fold and alignment:
 - **Spec conflicts to settle:** §12.2 makes the Client title the catalog
   label, which carries a σ, and §11 says the Client view prints no σ;
@@ -3763,10 +3958,9 @@ For Max:
   tab, with the notes for B at its end.
 
 Follow-ups (not done here):
-- `LEGACY_FRAME2` in `desk-language.test.ts` now lists one file,
-  `src/screens/desk/pyformat.ts`. It is the frame-2 number formatter that
-  Event Study's engine panel still uses (`event-study/format.ts`), so it
-  keeps the frame-2 list only.
+- ~~`LEGACY_FRAME2` in `desk-language.test.ts` now lists one file,
+  `src/screens/desk/pyformat.ts`.~~ Closed by item 14: the frame-2 panel,
+  `pyformat.ts` and `LEGACY_FRAME2` are gone.
 - `web/src/styles/desk.css` (1,502 lines, frame-2) is still imported by the
   shell, but only its walkthrough-strip rules (`.mrr-desk-tour*`) style
   anything the v2 Desk renders. Cutting it down to those is a follow-up.

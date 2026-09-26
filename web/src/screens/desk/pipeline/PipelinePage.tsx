@@ -13,10 +13,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { deskUrl, unavailableOf, usePipeline } from "../data/api";
+import { droppedOf } from "../data/schema";
 import type { PipelineGroup } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { Awaiting, Unserved } from "../kit/ui";
+import { Awaiting, DroppedNote, droppedWords, Unserved } from "../kit/ui";
 import { dayLong, monthYear } from "../kit/format";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { saveServed } from "../kit/download";
@@ -70,6 +71,10 @@ export function storedDay(d: string | null | undefined, freq: string | undefined
 function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; onToggle: () => void; hit: string | null }) {
   const id = useId();
   const rows = Array.isArray(g.series) ? g.series : [];
+  // Codex R-16: the served count is the rows read plus the rows the boundary could not read, and the
+  // group says so; "no series" only when none was served.
+  const lost = droppedOf(g, "series");
+  const served = rows.length + lost;
   const hitRef = useRef<HTMLTableRowElement | null>(null);
   useEffect(() => {
     if (open && hit) hitRef.current?.scrollIntoView?.({ block: "nearest" });
@@ -83,7 +88,7 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
         </span>
         <span className="pl-group-name">{g.name}</span>
         <span className="pl-group-meta">
-          {`${rows.length} series`}
+          {`${served} series`}
           {/* §12.9: the group's status is the worst of its series. */}
           {g.status ? (
             <>
@@ -97,7 +102,7 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
       </button>
       {open && !rows.length ? (
         <p id={id} className="pl-rows-foot">
-          No series in this group yet.
+          {lost ? droppedWords(lost, "series", "series") : "No series in this group yet."}
         </p>
       ) : open ? (
         <div id={id}>
@@ -135,7 +140,8 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
             </table>
           </div>
           <p className="pl-rows-foot">
-            showing {rows.length} of {rows.length} · the list scrolls inside the group; the page does not grow
+            showing {rows.length} of {served}
+            {lost ? ` · ${droppedWords(lost, "series", "series").replace(/\.$/, "")}` : ""} · the list scrolls inside the group; the page does not grow
           </p>
         </div>
       ) : null}
@@ -181,7 +187,8 @@ function Bridge() {
     <section className="dk-card pl-bridge" aria-labelledby="pl-bridge-title">
       <div className="pl-card-head">
         <h2 className="dk-card-title" id="pl-bridge-title">
-          Snowflake bridge · schema and export
+          {/* §11's exact title. */}
+          Proposed export schema (not the current SQLite layout)
         </h2>
         <p className="pl-head-sub">how this lands at a desk</p>
       </div>
@@ -214,7 +221,12 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
   const [text, setText] = useState("");
   const [hit, setHit] = useState<{ group: string; id: string } | null>(null);
   const opened = search.get("group");
-  const total = groups.reduce((a, g) => a + (Array.isArray(g.series) ? g.series.length : 0), 0);
+  // A group the boundary could not read has no count of its own, so then no total is claimed (Codex R-16).
+  const lostGroups = droppedOf(p, "groups");
+  const lostSeries = groups.reduce((n, g) => n + droppedOf(g, "series"), 0);
+  // What a search miss adds when rows were lost: "1 series could not be read", "1 group could not be read".
+  const lostWords = [droppedWords(lostSeries, "series", "series"), droppedWords(lostGroups, "group")].filter(Boolean).map((w) => w.replace(/\.$/, "")).join("; ");
+  const total = lostGroups ? 0 : groups.reduce((a, g) => a + (Array.isArray(g.series) ? g.series.length : 0) + droppedOf(g, "series"), 0);
   const toggle = (name: string) =>
     setSearch(
       (prev) => {
@@ -277,7 +289,8 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
             </div>
             {text.trim() && !hit ? (
               <p className="pl-miss" role="status">
-                No series matches &ldquo;{text.trim()}&rdquo;.
+                {/* Codex R-16: a series the boundary could not read may be the one asked for. */}
+                {lostWords ? `No readable series matches “${text.trim()}”; ${lostWords}.` : <>No series matches &ldquo;{text.trim()}&rdquo;.</>}
               </p>
             ) : null}
             {groups.length ? (
@@ -289,6 +302,7 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
             ) : q.isError || p ? (
               <Awaiting>the registry's inventory</Awaiting>
             ) : null}
+            <DroppedNote n={lostGroups} one="group" />
             <p className="pl-mono-note">Click a group to expand · search jumps to a series and opens its group · new series land in a group automatically</p>
           </section>
           <Bridge />

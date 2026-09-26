@@ -118,7 +118,8 @@ describe("basket weights", () => {
     const m = new Map<string, string>();
     const st = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
     const ok = { id: "local-1", name: "Grid", legs: [{ symbol: "CEG", name: null, weight: 100 }], saved_at: "2026-09-22T00:00:00Z" };
-    const bad = { id: "local-2", name: "Broken", legs: [{ symbol: "NVDA", weight: "22" }] };
+    // A weight that is no number at all; an exact decimal string ("22") reads (Codex R-20).
+    const bad = { id: "local-2", name: "Broken", legs: [{ symbol: "NVDA", weight: "twenty-two" }] };
     m.set(SAVED_BASKETS_KEY, JSON.stringify([ok, bad]));
     expect(readSaved(st).map((b) => b.id)).toEqual(["local-1"]);
     expect(unreadableSaved(st)).toEqual([bad]);

@@ -7,9 +7,8 @@
  * questions kept in this browser (§1.8) with their JSON export and import.
  */
 
-import type { EventStudyParams } from "../../../api/desk";
 import type { Move, Question } from "../data/types";
-import { paramsFor, slugFor } from "./studies";
+import { paramsFor } from "./studies";
 
 /** §4's nine chips, in the spec's order, each its catalog label (§12.3); the served catalog's label and availability win. */
 export const PRESET_CHIPS: readonly { slug: string; label: string }[] = [
@@ -144,22 +143,6 @@ export function questionWords(q: Question, label: (key: string) => string): stri
   return `${label(q.shock)} ${moveLabel(q.move)}${over}${cond} → ${label(q.target)} over the next ${horizonLabel(q.horizon)}`;
 }
 
-/** The engine study a question maps onto (the frame-2 panel under Advanced),
- * or null when the engine cannot ask it: its windows are 5, 20 and 60
- * sessions, its only S&P condition is "below its 50-day", and its crosses are
- * the target's own 50/200-day averages. */
-export function engineParamsFor(q: Question): EventStudyParams | null {
-  if (q.move === "cross_above" || q.move === "cross_below") {
-    if (q.shock !== q.target || q.while !== "none") return null;
-    return { kind: "cross", cross: q.move === "cross_above" ? "golden" : "death", shock: q.target, w: 20, z: 2, sign: "+", cond: "none", regime: "all", target: q.target };
-  }
-  if (q.window == null || ![5, 20, 60].includes(q.window)) return null;
-  let cond = "none";
-  if (q.while === "spx_below_50") cond = "spx_below_50dma";
-  else if (q.while.startsWith("regime:")) cond = `regime=${q.while.slice(7).toLowerCase().replace(/ /g, "_")}`;
-  else if (q.while !== "none") return null;
-  return { kind: "shock", cross: null, shock: q.shock, w: q.window, z: 2, sign: q.move === "up2s" ? "+" : "-", cond, regime: "all", target: q.target };
-}
 
 /** The six slots for a frame-2 engine slug, when they can ask it (a month out). */
 export function questionFromEngine(slug: string | null): Question | null {
@@ -177,11 +160,6 @@ export function questionFromEngine(slug: string | null): Question | null {
 /** The address of an ask (preset or the six slots) as query parameters, for a link that carries it. */
 export function askParams(ask: Ask): [string, string][] {
   return [...new URLSearchParams(searchFor(ask)).entries()];
-}
-
-export function engineSlugFor(q: Question): string | null {
-  const p = engineParamsFor(q);
-  return p ? slugFor(p) : null;
 }
 
 // ── Saved questions (§1.8: localStorage per browser, Export / Import JSON) ──

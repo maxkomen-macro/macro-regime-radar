@@ -351,6 +351,21 @@ export function Awaiting({ children, className }: { children?: ReactNode; classN
   );
 }
 
+/** "2 rows could not be read." (Codex R-16): said wherever a served list lost rows at the boundary, so a
+ * count or an empty state is never read from what is left. Nothing when none were lost. */
+export function droppedWords(n: number, one = "row", many = `${one}s`): string {
+  return n > 0 ? `${n} ${n === 1 ? one : many} could not be read.` : "";
+}
+
+export function DroppedNote({ n, one, many, className }: { n: number; one?: string; many?: string; className?: string }) {
+  if (!(n > 0)) return null;
+  return (
+    <p className={cx("dk-await dk-dropped", className)} role="status">
+      {droppedWords(n, one, many)}
+    </p>
+  );
+}
+
 /** A signed number in its direction's color: green up, red down (§1.3). */
 export function Signed({ value, children, bold, title }: { value: number; children: ReactNode; bold?: boolean; title?: string }) {
   return (

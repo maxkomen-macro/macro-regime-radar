@@ -9,8 +9,6 @@
  * Unit tests import the JSON directly.
  */
 
-import engineAssets from "../../screens/desk/event-study/__fixtures__/engine-assets.json" with { type: "json" };
-import engineStudies from "../../screens/desk/event-study/__fixtures__/engine-studies.json" with { type: "json" };
 import ledger from "./ledger.json" with { type: "json" };
 import macro from "./macro.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
@@ -151,14 +149,6 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
     if (path === "/study") return json(200, study);
     if (/text\/csv/.test(accept ?? "")) return { status: 200, contentType: "text/csv", body: eventsCsv(studyEvents as { events: Record<string, unknown>[] }) };
     return json(200, studyEvents);
-  }
-  // The frame-2 engine (the Event Study's Advanced panel) answers from its own
-  // saved payloads (screens/desk/event-study/__fixtures__, real engine output).
-  if (method.toUpperCase() === "GET" && path === "/event-study/assets") return json(200, engineAssets);
-  if (method.toUpperCase() === "GET" && path === "/event-study") {
-    const slug = u.searchParams.get("study");
-    const answer = slug === "gold-2sigma-spx-weak" ? engineStudies.preset : slug === "spx-golden-cross" ? engineStudies.cross : null;
-    return answer ? json(200, answer) : json(404, { error: "no fixture for this engine study" });
   }
   // §12.11: the Snowflake DDL, as text.
   if (method.toUpperCase() === "GET" && path === "/pipeline/ddl") return { status: 200, contentType: "text/plain", body: PIPELINE_DDL };
