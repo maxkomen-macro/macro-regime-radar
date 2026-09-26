@@ -294,6 +294,14 @@ describe("the API plan's spec errata (§6, S-02–S-27) as the fixtures carry th
     }
   });
 
+  it("S-29: the month ago is the last common observation a calendar month before today's date, and each difference reads both dates", () => {
+    const c = macro.curve;
+    expect(c.today.date).not.toBeNull();
+    expect(c.month_ago.date! <= "2026-08-22" && c.month_ago.date! > "2026-07-22").toBe(true);
+    expect(c["10y_chg_bp"]).toBeCloseTo(((c.today["10y"] as number) - (c.month_ago["10y"] as number)) * 100, 9);
+    expect(c["2s10s_chg_bp"]).toBeCloseTo(c["2s10s_bp"] - ((c.month_ago["10y"] as number) - (c.month_ago["2y"] as number)) * 100, 9);
+  });
+
   it("S-03: a FRED daily series stored month-stamped has its newest observation as last and its first month stamp as first", () => {
     const rows = pipeline.groups.flatMap((g) => g.series as { id: string; first: string | null; last: string | null; note: string | null }[]).filter((r) => ["BAMLC0A0CM", "BAMLH0A1HYBB", "BAMLH0A2HYB", "BAMLH0A3HYC"].includes(r.id));
     expect(rows).toHaveLength(4);

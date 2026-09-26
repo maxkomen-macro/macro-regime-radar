@@ -117,8 +117,9 @@ RSI card, the RSI rows' served reason, "RSI is not computed yet." (§12.3).
 - Page header, every tab: breadcrumb `Radar › Desk › <Tab>` (mono 11.5px, gray)
   left; right side the Desk / Client segmented toggle on the tabs in §11's
   allowlist, and at most one action button (listed per tab).
-- The page footer shows the one `generation_id` the page's responses share. If
-  two responses on a page carry different ids, the page badge reads "mixed
+- The page footer shows the one `generation_id` the page's responses share
+  (the Client view prints `Snapshot · <as_of>` instead, §11). If two
+  responses on a page carry different ids, the page badge reads "mixed
   generations · refreshing" and the client refetches once (v3 §18).
 
 ### 1.2 Typography
@@ -513,7 +514,11 @@ No action button. Badge `● Live · FRED · <date>`. 2×2.
 3m / 2y / 5y / 10y / 30y on x; today (blue solid) and a month ago (gray
 dashed), each labelled at its right end; a tenor not served leaves its point
 out and its label says so. Tenors share one `date` or carry their own and
-the chart labels the mismatch.
+the chart labels the mismatch. When `month_ago.date` is null, the month-ago
+tenors are drawn as separate points, each labelled with its tenor and date,
+with no line joining them, and their dates (`month_ago.dates`) are listed
+under the chart. The page lists `month_ago.dates` under the chart when the
+date is common too (S-30).
 
 **Do bonds still hedge stocks?**: UNAVAILABLE (§1.0), from `/macro`
 `stock_bond` (awaiting, reason "Treasury and credit price-return series not
@@ -724,7 +729,9 @@ MOVE (h = 20 `median` against `baseline_median`, §1.9); the source line
 future results.` Right: "A month later, by economic backdrop" / "Typical
 <target label> move after the setup", four regime rows with the h = 20
 `by_regime` median on one scale, "too few cases to say" when null. No
-verdict pills, no σ, no jargon.
+verdict pills, no σ, no jargon. The footer prints `Snapshot · <as_of>` and no
+generation id, and it is hidden in print. The mixed-generation check of §1.1
+still runs on the Client view (S-32).
 
 ---
 
@@ -883,7 +890,12 @@ that parses to a catalog study's query. `horizon` also rides with a preset,
 and a preset link keeps it (Codex round 3, R-23). An unknown parameter, a
 repeated one, a preset asked with slot parameters, or a horizon outside the
 study's `allowed_horizons` is refused 422 `unsupported`, the message naming
-what (R-27). Anything else: 422 `unsupported`.
+what (R-27). A preset for a row whose `allowed_horizons` is `[]` (the RSI
+rows) is awaiting, with the row's served reason, when the request carries no
+`horizon`; with any `horizon` parameter it is refused 422 `unsupported`, the
+message naming `horizon`. The default horizon is never applied to such a row.
+`/study/events` follows the same rule (S-31). Anything else: 422
+`unsupported`.
 
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
@@ -1165,9 +1177,10 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `curve` | block envelope | required | — | — | — |
 | `curve.data.today` | `{"3m","2y","5y","10y","30y": number\|null, date, dates}` | required | percent (yield) | `date` shared, or null with per-tenor `dates` · daily · FRED | N curve snapshot alignment (B-12) over stored DGS*: `today.date` is the latest date on which every stored tenor has a value; `dates` names it per tenor (null for a tenor not stored); when no such date exists, `date` is null and each tenor its own newest |
 | `curve.data.today.dates` | object, tenor → date | required | — | — | N; the UI labels a mismatch |
-| `curve.data.month_ago` | same shape | required | percent | the last observation on or before `today.date` − 1 calendar month | N month-ago selection (B-12) |
-| `curve.data.2s10s_bp` | number | required, nullable | bp | `today.date` | N: (DGS10 − DGS2) × 100 on `today.date` |
-| `curve.data.2s10s_chg_bp`, `10y_chg_bp` | number | required, nullable | bp | the two dates | N dated differences (B-12) |
+| `curve.data.month_ago` | same shape | required | percent | the last common observation on or before `today.date` − 1 calendar month | N month-ago selection (B-12): same shape; the last common observation on or before `today.date` − 1 calendar month. When `today.date` is null, `date` is null and each tenor carries its newest observation on or before its own `today.dates` entry − 1 calendar month; with a common `today.date` but no common date a month earlier, `date` is null and each tenor carries its newest observation on or before `today.date` − 1 calendar month. |
+| `curve.data.month_ago.dates` | object, tenor → date | required on every path | — | — | N: the common date, or each tenor's own date when `month_ago.date` is null; null for a tenor not served (S-30). |
+| `curve.data.2s10s_bp` | number | required, nullable | bp | `today.date` | N: (DGS10 − DGS2) × 100 on `today.date`; null whenever a date it needs, `today.date` or `month_ago.date`, is null. |
+| `curve.data.2s10s_chg_bp`, `10y_chg_bp` | number | required, nullable | bp | the two dates | N dated differences (B-12); null whenever a date it needs, `today.date` or `month_ago.date`, is null (so both are null when the tenors share today's date but not a month ago's). |
 | `curve.data.freq`, `source` | `"daily"`, `"FRED"` | required | — | — | A |
 | `credit` | block envelope | required | — | — | — |
 | `credit.data.hy`, `.ig` | `{value, date, freq, source}` | required | percent (OAS) | own `date` · daily · FRED BAMLH0A0HYM2, BAMLC0A0CM | E: HY the newest `desk_series` observation; IG `source_watermarks` `fred:BAMLC0A0CM` (`last_obs`, `last_value`) |

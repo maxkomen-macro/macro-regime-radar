@@ -11,6 +11,7 @@ import DeskShell from "./DeskShell";
 import overview from "../../fixtures/desk/overview.json";
 import ledger from "../../fixtures/desk/ledger.json";
 import pipeline from "../../fixtures/desk/pipeline.json";
+import study from "../../fixtures/desk/study.json";
 import { FIXTURE_META } from "../../fixtures/desk";
 import { awaitingEnvelope } from "./data/envelope";
 import { renderWithProviders } from "../../test/utils";
@@ -40,10 +41,30 @@ describe("the page's generations (§1.1, Codex R-22)", () => {
     expect(screen.queryByTestId("dk-gen-mixed")).toBeNull();
   });
 
-  it("the Client view prints the footer too, as §1.1 states it for every page", async () => {
+  it("S-32: the Client view's footer says only the snapshot's date, no generation id", async () => {
     renderTab("/desk/event-study?preset=gold-2sigma-spx-weak&view=client");
     await screen.findByRole("heading", { name: "Gold jumps over a month while the S&P is weak" });
-    await waitFor(() => expect(screen.getByTestId("dk-gen")).toHaveTextContent(/^Generation gen-fixture-2026-09-24$/));
+    await waitFor(() => expect(screen.getByTestId("dk-gen")).toHaveTextContent(/^Snapshot · Sep 24, 2026$/));
+    expect(screen.getByTestId("dk-gen")).toHaveAttribute("data-snapshot");
+    expect(document.body).not.toHaveTextContent("gen-fixture");
+  });
+
+  it("S-32: the snapshot date is the study's own as_of, the one its source line prints", async () => {
+    stubDesk({ "/api/desk/study": () => ({ ...study, as_of: "2026-09-23" }) });
+    renderTab("/desk/event-study?preset=gold-2sigma-spx-weak&view=client");
+    await screen.findByRole("heading", { name: "Gold jumps over a month while the S&P is weak" });
+    await waitFor(() => expect(screen.getByTestId("dk-gen")).toHaveTextContent(/^Snapshot · Sep 23, 2026$/));
+  });
+
+  it("S-32: on the Client view the mixed-generation check still runs: the answers are asked again once", async () => {
+    const { calls } = stubDesk({ "/api/desk/study": () => ({ ...study, generation_id: "gen-next" }) });
+    renderTab("/desk/event-study?preset=gold-2sigma-spx-weak&view=client");
+    await screen.findByRole("heading", { name: "Gold jumps over a month while the S&P is weak" });
+    const asked = () => calls.filter((c) => c.startsWith("GET /api/desk/study?")).length;
+    await waitFor(() => expect(asked()).toBe(2));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(asked()).toBe(2);
+    expect(screen.getByTestId("dk-gen")).toHaveTextContent(/^Snapshot · Sep 24, 2026$/);
   });
 
   it("a refusal answered in its envelope names its generation too, so a disagreement with it is seen", async () => {

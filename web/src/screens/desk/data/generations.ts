@@ -32,6 +32,25 @@ export function usePageGenerations(): string[] {
   return key ? key.split("\n") : [];
 }
 
+/** The Client view's "Snapshot · <as_of>" (S-32): the study's own `as_of`, the one its source line prints; else the
+ * newest among the page's other Desk answers. */
+export function usePageAsOf(): string | null {
+  const cache = useQueryClient().getQueryCache();
+  const read = () => {
+    let newest = "";
+    let studied = "";
+    for (const q of cache.findAll({ queryKey: ["desk-v2"] })) {
+      if (q.getObserversCount() === 0) continue;
+      const d = q.state.data as { as_of?: unknown } | undefined;
+      if (!d || typeof d !== "object" || typeof d.as_of !== "string") continue;
+      if (q.queryKey[1] === "/study" && d.as_of > studied) studied = d.as_of;
+      if (d.as_of > newest) newest = d.as_of;
+    }
+    return studied || newest;
+  };
+  return useSyncExternalStore((cb) => cache.subscribe(cb), read, read) || null;
+}
+
 /** Whether the page's answers disagree on their generation (the page badge reads so). */
 export const MixedGenerations = createContext(false);
 export const useMixedGenerations = () => useContext(MixedGenerations);

@@ -644,6 +644,19 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     await waitFor(() => expect(card).toHaveTextContent("No study in the catalog asks gold-2sigma-spx-weak with an empty horizon; its horizons are 5, 10, 20, 60 sessions."));
   });
 
+  it("S-31: a preset with no horizons asked at one prints the refusal's words; without one, its reason", async () => {
+    const one = renderTab("/desk/event-study?preset=rsi-above-70&horizon=20");
+    let card = await screen.findByRole("region", { name: "The answer" });
+    await waitFor(() => expect(card).toHaveTextContent("No study in the catalog asks rsi-above-70 at a horizon; it has none to ask."));
+    one.unmount();
+    renderTab("/desk/event-study?preset=rsi-above-70");
+    card = await screen.findByRole("region", { name: "The answer" });
+    await waitFor(() => expect(card).toHaveTextContent("RSI is not computed yet."));
+    // The default horizon is never applied to such a row: its labels name no horizon.
+    await waitFor(() => expect(card).toHaveTextContent(/Up later/));
+    expect(card).not.toHaveTextContent(/a month later|at a month/);
+  });
+
   it("Codex R-23: an awaiting preset asked at a horizon shows that horizon in the slots", async () => {
     renderTab("/desk/event-study?preset=dollar-2sigma-20d&horizon=5");
     await waitFor(() => expect(screen.getByLabelText("Over the next")).toHaveValue("5"));

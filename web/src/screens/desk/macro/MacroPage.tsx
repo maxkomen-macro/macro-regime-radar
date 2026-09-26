@@ -108,6 +108,12 @@ export function tenorDates(dates: Record<string, string | null>): string {
   return `Tenors dated apart: ${TENORS.flatMap((t) => (dates[t] ? [`${t} ${dayShort(dates[t])}`] : [])).join(" · ")}`;
 }
 
+/** "A month ago: 2y Aug 21 · 10y Aug 20": each tenor's month-ago date, always disclosed under the chart (§6, S-30). */
+export function monthAgoDates(dates: Record<string, string | null>): string {
+  const parts = TENORS.flatMap((t) => (dates[t] ? [`${t} ${dayShort(dates[t])}`] : []));
+  return parts.length ? `A month ago: ${parts.join(" · ")}` : "";
+}
+
 /** "3m, 5y and 30y not served": the curve's tenors without a value today (§6), or "" when all are served. */
 export function unservedTenors(today: Partial<Record<(typeof TENORS)[number], number | null>>): string {
   const off = TENORS.filter((t) => !fin(today[t]));
@@ -132,6 +138,11 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const sc = c?.["2s10s_chg_bp"];
   const drawn = TENORS.filter((t) => fin(today?.[t])).length > 1;
   const agoDrawn = TENORS.filter((t) => fin(ago?.[t])).length > 1;
+  // §6 (S-30): with no common month-ago date, a month ago's points are labelled markers, never joined by a line.
+  const agoJoined = !!ago?.date;
+  const agoNote = ago?.dates ? monthAgoDates(ago.dates) : "";
+  // S-30: each unjoined point is labelled with its tenor and date; the last also names the snapshot, whose end label goes with its line.
+  const agoLast = [...TENORS].reverse().find((t) => fin(ago?.[t]) && ago?.dates?.[t]);
   // §1.0.2: the block, or the whole answer, served awaiting.
   if (unserved) return <UnservedCard headingId="mc-curve" className="mc-card" title="Yield curve" sub="today against a month ago" labels={["10-year", "2s10s", "Front end"]} block={unserved} advanced />;
   return (
@@ -147,7 +158,7 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
           </StatRow>
           {drawn && today ? (
             <LineChart
-              ariaLabel={`Treasury yields by tenor${today.date ? ` on ${dayShort(today.date)}` : ""}${agoDrawn ? `, against a month ago${ago?.date ? ` (${dayShort(ago.date)})` : ""}` : ""}`}
+              ariaLabel={`Treasury yields by tenor${today.date ? ` on ${dayShort(today.date)}` : ""}${agoDrawn ? `, against a month ago${ago?.date ? ` (${dayShort(ago.date)})` : ", each tenor on its own date"}` : ""}`}
               height={148}
               n={TENORS.length}
               yDomain={[ticks[0].v, ticks[ticks.length - 1].v]}
@@ -156,8 +167,9 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
               // words collide below 1280px, verifier V12-2).
               xTicks={TENORS.map((t, i) => ({ i, text: t }))}
               series={[
-                // §6: today blue solid, a month ago gray dashed, each joining its served tenors.
-                { key: "ago", values: TENORS.map((t) => (fin(ago?.[t]) ? (ago?.[t] as number) : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 1.5, label: "a month ago", connect: true },
+                // §6: today blue solid, a month ago gray dashed, each joining its served tenors; a month ago
+                // dated apart is left unjoined (S-30).
+                ...(agoJoined ? [{ key: "ago", values: TENORS.map((t) => (fin(ago?.[t]) ? (ago?.[t] as number) : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 1.5, label: "a month ago", connect: true }] : []),
                 { key: "today", values: TENORS.map((t) => (fin(today[t]) ? (today[t] as number) : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "today", connect: true },
               ]}
               // Both dates' points are marked, so a curve with tenors left out still shows each served point.
@@ -167,14 +179,27 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
               ].filter((p) => fin(p.v))}
               // Each value's label keeps clear of both lines (the kit places it); the first starts at its
               // point, clear of the y labels, and the last ends at it, clear of the two end labels.
-              pointLabels={TENORS.map((t, i) => ({
-                i,
-                v: today[t] as number,
-                text: fin(today[t]) ? num(today[t] as number, 2) : "",
-                color: "#c9cdd3",
-                anchor: i === 0 ? ("start" as const) : i === TENORS.length - 1 ? ("end" as const) : undefined,
-                avoid: true,
-              })).filter((p) => fin(p.v))}
+              pointLabels={[
+                ...TENORS.map((t, i) => ({
+                  i,
+                  v: today[t] as number,
+                  text: fin(today[t]) ? num(today[t] as number, 2) : "",
+                  color: "#c9cdd3",
+                  anchor: i === 0 ? ("start" as const) : i === TENORS.length - 1 ? ("end" as const) : undefined,
+                  avoid: true,
+                })),
+                // S-30: each unjoined month-ago point carries its tenor and date.
+                ...(agoJoined
+                  ? []
+                  : TENORS.map((t, i) => ({
+                      i,
+                      v: ago?.[t] as number,
+                      text: ago?.dates?.[t] ? `${t === agoLast ? "a month ago · " : ""}${t} ${dayShort(ago.dates[t])}` : "",
+                      color: DESK_ACCENTS.gray,
+                      anchor: i === 0 ? ("start" as const) : i === TENORS.length - 1 ? ("end" as const) : undefined,
+                      avoid: true,
+                    }))),
+              ].filter((p) => fin(p.v) && p.text)}
               pad={{ l: 46, r: 84, t: 18, b: 24 }}
               grid
             />
@@ -184,6 +209,8 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
           {/* §6: the tenors not served, and tenors dated apart, say so. */}
           {today && drawn && unservedTenors(today) ? <p className="mc-note">{unservedTenors(today)}</p> : null}
           {today && !today.date && today.dates ? <p className="mc-note">{tenorDates(today.dates)}</p> : null}
+          {/* §6 (S-30): a month ago's dates, always. */}
+          {agoNote ? <p className="mc-note">{agoNote}</p> : null}
           <ServedRead read={m?.reads?.curve} />
         </>
       ) : (

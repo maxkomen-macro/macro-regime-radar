@@ -112,6 +112,9 @@ describe("the response boundary", () => {
     expect(at5.client).toEqual(study.client);
     const at60 = (JSON.parse(reply("shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=60").body) as { data: typeof study }).data;
     expect([at60.selected_horizon, at60.question.horizon]).toEqual([60, 60]);
+    // S-31: a preset with no horizons (RSI) refuses any horizon parameter, and answers awaiting without one.
+    expect(refusal("preset=rsi-above-70&horizon=20")).toEqual([422, { code: "unsupported", message: "No study in the catalog asks rsi-above-70 at a horizon; it has none to ask." }]);
+    expect(JSON.parse(reply("preset=rsi-above-70").body)).toMatchObject({ status: "awaiting", unavailable: { reason: "RSI is not computed yet." } });
     // With no horizon, §12.2's default, 20 sessions: the fixture as it is.
     expect((JSON.parse(reply("preset=gold-2sigma-spx-weak").body) as { data: typeof study }).data.why).toBe(study.why);
   });

@@ -4444,6 +4444,111 @@ refusals on both paths, and no sideways scroll on the 11 pages.
   generation footer (§1.1 says every page; §11 speaks of plain words).
 - Whether a horizon given with an RSI preset should be refused (V18-6).
 
+## Spec rows S-29 to S-32
+
+### `frame-3: spec S-29–S-32 and fixes`
+
+**Where the rows come from.** S-29 is `7a40167`'s row, and S-30 to S-32 are
+the next commit's, `292674b` (Codex round 7). All four are folded in the
+plan's ruled words. A first pass read the branch before `292674b` landed and
+wrote S-30 to S-32 from the brief; the verifier caught it, and those rows now
+carry the plan's text.
+
+Not folded: `584a4af` (Codex round 8, after "its next commit"). It extends
+S-30 to today's curve: when `today.date` is null, today's tenors become
+labelled points with no line, and `today.dates` is listed under the chart.
+The page still joins today's tenors with one line whatever `today.date` is;
+the fixture's is common. That row is yours to send.
+
+**S-29 (§12.8): the month ago.**
+- `month_ago` takes the plan's wording: the last common observation on or
+  before `today.date` − 1 calendar month.
+  - When `today.date` is null, `date` is null and each tenor carries its
+    newest observation on or before its own date − 1 month.
+  - With a common `today.date` but no common date a month earlier, `date` is
+    null and each tenor carries its newest observation on or before
+    `today.date` − 1 month.
+- `2s10s_bp`, `2s10s_chg_bp` and `10y_chg_bp` are null whenever a date they
+  need is null, so both changes are null when the tenors share today but not
+  a month ago.
+- The builder follows. The fixture's tenors share both dates (Sep 22, Aug 21),
+  so its output is byte-identical; a consistency test ties the two changes
+  to those dates.
+
+**S-30 (§6, §12.8, Macro): the month ago under the chart.**
+- §12.8 gains the `curve.data.month_ago.dates` row: every path, the common
+  date or each tenor's own, null for a tenor not served.
+- §6 takes the ruled sentence: when `month_ago.date` is null, the month-ago
+  tenors are separate points, each labelled with its tenor and date, with no
+  line joining them, and their dates are listed under the chart.
+- Your brief asks for the list always, which the plan allows. The page lists
+  "A month ago: 2y Aug 21 · 10y Aug 21" under every curve, and §6 says so.
+- With the date null, the gray line is not drawn. Each point is labelled
+  "2y Aug 21", the last "a month ago · 10y Aug 20" (the line's own end label
+  goes with the line), and the chart's name says "each tenor on its own
+  date".
+- Test: `MacroPage.test.tsx`, with disjoint month-ago dates. It checks no
+  gray path, two gray markers, both labels, the list, and no month's change.
+
+**S-31 (§12.2): a preset with no horizons.** §12.2 takes the ruled sentence.
+- A preset for an RSI row (`allowed_horizons` `[]`) asked with any `horizon`
+  parameter is refused 422 `unsupported`, the message naming `horizon`: "No
+  study in the catalog asks rsi-above-70 at a horizon; it has none to ask."
+- Asked without one, it answers awaiting with the row's reason, "RSI is not
+  computed yet.".
+- `/study/events` follows the same rule.
+- The default horizon is never applied. The answer card for an RSI preset
+  labels "Up later" and "Median" and names no horizon, where it read "a
+  month".
+- The fixture resolver and Event Study follow. This closes V18-6 as you
+  ruled it.
+- Tests: `api.test.tsx`, `EventStudyPage.test.tsx`.
+
+**S-32 (§11, §1.1): the Client view's footer.** §11 and §1.1 take the ruled
+sentences.
+- It reads "Snapshot · <as_of>": the study's own `as_of`, the date its source
+  line prints, "Snapshot · Sep 24, 2026" in the fixtures. It carries no
+  generation id and is hidden in print.
+- The mixed-generation check still runs there: a study answered on another
+  generation is asked again once.
+- Every other page keeps "Generation <id>".
+- Tests: `generations.test.tsx` (the text, the study's date, no id, the one
+  refetch) and
+  `e2e/desk.spec.ts` (shown on screen, hidden in print, the one-pager still
+  one page).
+
+**Against the PNGs.**
+- 05 Macro & Correlations: "A month ago: 2y Aug 21 · 10y Aug 21" under the
+  curve (§6, S-30).
+- 12 Client view: "Snapshot · Sep 24, 2026" where it read "Generation
+  gen-fixture-2026-09-24" (§1.1, §11, S-32).
+- The other ten shots are unchanged.
+
+Verifier (one round): **FAIL**, three should-fix and three nits. It found:
+- S-29 verbatim;
+- the fixtures byte-identical to a fresh build;
+- S-31 on both routes and every horizon form;
+- the snapshot footer on every Client view, with no id anywhere and hidden
+  in print;
+- no sideways scroll, and the shots matching.
+
+What it raised:
+- V19-1 (should-fix) S-30 to S-32 were the brief's words, not the plan's:
+  `292674b` had landed. **Fixed:** folded verbatim, with the `month_ago.dates`
+  row, "tenor and date", and S-31's three clauses (the message names
+  `horizon`, the default is never applied, `/study/events` follows).
+- V19-2 (should-fix, yours) round 8 extends S-30 to today's curve. Not folded
+  (above).
+- V19-3 (should-fix) the unjoined month-ago points lost the "a month ago"
+  label. **Fixed:** the last point's label names it.
+- V19-4 (nit) with five tenors served, a date label can meet a value label at
+  3m. The fixture serves two; the label placer avoids lines and labels, not
+  markers. Left for when the tenors are registered.
+- V19-5 (nit) the snapshot date could differ from the study's source line.
+  **Fixed:** it reads the study's `as_of`.
+- V19-6 (nit) an RSI preset's card labelled itself "a month". **Fixed**
+  (S-31's default clause).
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -4488,6 +4593,7 @@ tests against the fixture dev server.
 | frame-3: spec errata S-01, S-12 and amendments | clean | 122 / 1,504 | ok | 54 / 54 |
 | frame-3: spec erratum last_refresh_utc | clean | 122 / 1,504 | ok | 54 / 54 |
 | frame-3: codex-3 fixes | clean | 123 / 1,524 | ok | 54 / 54 |
+| frame-3: spec S-29–S-32 and fixes | clean | 123 / 1,530 | ok | 54 / 54 |
 
 ## Finish
 
@@ -4572,6 +4678,12 @@ pushed; your notes file and SVGs are left out. Codex's own text was not in
 the brief, so the nine findings are built from your rulings. Gate summary at
 that tip: typecheck clean; unit 123 files / 1,524 tests; build ok; Desk
 browser tests 54 / 54.
+
+After S-29 to S-32 (above): the tip is the commit that carries this report,
+`frame-3: spec S-29–S-32 and fixes` (parent `ee373dc`), local only. Nothing is
+pushed; your notes file and SVGs are left out. The plan's round 8
+(`584a4af`, today's curve) waits on you. Gate summary at that tip: typecheck
+clean; unit 123 files / 1,530 tests; build ok; Desk browser tests 54 / 54.
 
 For Max, from the fold and alignment:
 - **Spec conflicts to settle:** §12.2 makes the Client title the catalog

@@ -726,7 +726,10 @@ test.describe("desk v2", () => {
     ];
     await open(page, "/desk/overview?view=client", { "/api/desk/study": { status: 200, body: { ...study, by_regime } } });
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Gold jumps over a month while the S&P is weak");
+    // S-32: the Client view's footer is its snapshot date, on screen only.
+    await expect(page.getByTestId("dk-gen")).toHaveText("Snapshot · Sep 24, 2026");
     await page.emulateMedia({ media: "print" });
+    await expect(page.getByTestId("dk-gen")).toBeHidden();
     await expect(page.getByRole("complementary", { name: "Sidebar" })).toBeHidden();
     await expect(page.getByRole("button", { name: "Export one-pager (PDF)" })).toBeHidden();
     expect(await page.locator("main").evaluate((e) => e.getBoundingClientRect().width)).toBeGreaterThan(600);

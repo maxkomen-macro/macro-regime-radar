@@ -12,7 +12,8 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { MixedGenerations, usePageGenerations } from "./data/generations";
+import { MixedGenerations, usePageAsOf, usePageGenerations } from "./data/generations";
+import { dayLong } from "./kit/format";
 import ErrorBoundary from "../shared/ErrorBoundary";
 import DeskSidebar from "./DeskSidebar";
 import DeskTopBar from "./DeskTopBar";
@@ -43,6 +44,17 @@ function GenerationFooter({ ids }: { ids: readonly string[] }) {
   return (
     <footer className="dk-gen" data-testid="dk-gen">
       <span>{ids.length > 1 ? "Generations" : "Generation"}</span> <span className="dk-gen-id">{ids.join(" · ")}</span>
+    </footer>
+  );
+}
+
+/** §1.1, §11 (S-32): the Client view's footer says only when the answer was staged, never the generation, and is not printed. */
+function SnapshotFooter() {
+  const asOf = dayLong(usePageAsOf());
+  if (!asOf) return null;
+  return (
+    <footer className="dk-gen" data-snapshot="" data-testid="dk-gen">
+      Snapshot · {asOf}
     </footer>
   );
 }
@@ -119,7 +131,8 @@ export default function DeskShell() {
             <ErrorBoundary key={page.slug} label="This Desk tab">
               <Suspense fallback={<PageLoading label={page.label} />}>{body}</Suspense>
             </ErrorBoundary>
-            <GenerationFooter ids={generations} />
+            {/* S-32: the Client view prints its snapshot date instead; the mixed-generation check still runs. */}
+            {client ? <SnapshotFooter /> : <GenerationFooter ids={generations} />}
           </main>
           {tour ? <TourStrip step={tour} /> : null}
         </div>

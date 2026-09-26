@@ -1233,3 +1233,9 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+/* S-32: the Client view's snapshot line is not printed with the one-pager. */
+@media print {
+  .dk-gen[data-snapshot] {
+    display: none;
+  }
+}

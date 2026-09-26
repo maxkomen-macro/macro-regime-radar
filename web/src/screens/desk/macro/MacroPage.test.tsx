@@ -13,6 +13,8 @@ import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { servedMacro } from "../../../test/desk-variants";
 import { bpText, corrText, coverTicks } from "./MacroPage";
 import { placeLabel } from "../kit/LineChart";
+import { DESK_ACCENTS } from "../kit/palette";
+import macroFixture from "../../../fixtures/desk/macro.json";
 
 type Block = Record<string, unknown>;
 /** The card tests render /macro with its three deferred blocks served (§12.13); Monday serves them awaiting (tested below). */
@@ -247,6 +249,38 @@ describe("Macro tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("Awaiting refresh"));
     expect(card).toHaveTextContent("10-year");
     expect(card).not.toHaveTextContent("4.21");
+  });
+});
+
+describe("the month ago's dates (§6, §12.8: S-29, S-30)", () => {
+  const grayPaths = (chart: HTMLElement) => [...chart.querySelectorAll("path")].filter((p) => p.getAttribute("stroke") === DESK_ACCENTS.gray);
+
+  it("with a common month-ago date the gray line joins its points, and its dates are said under the chart", async () => {
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Yield curve/ });
+    await waitFor(() => expect(card).toHaveTextContent("A month ago: 2y Aug 21 · 10y Aug 21"));
+    expect(grayPaths(within(card).getByRole("img", { name: /Treasury yields by tenor/ }))).toHaveLength(1);
+  });
+
+  it("with month-ago dates apart the points are labelled markers with no line, and both changes are null", async () => {
+    const curve = {
+      ...macroFixture.curve,
+      month_ago: { ...macroFixture.curve.month_ago, date: null, dates: { ...macroFixture.curve.month_ago.dates, "2y": "2026-08-21", "10y": "2026-08-20" } },
+      "2s10s_chg_bp": null,
+      "10y_chg_bp": null,
+    };
+    stubDesk({ "/api/desk/macro": () => ({ ...macroFixture, curve }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Yield curve/ });
+    await waitFor(() => expect(card).toHaveTextContent("A month ago: 2y Aug 21 · 10y Aug 20"));
+    const chart = within(card).getByRole("img", { name: /against a month ago, each tenor on its own date/ });
+    expect(grayPaths(chart)).toHaveLength(0);
+    expect([...chart.querySelectorAll("circle")].filter((c) => c.getAttribute("fill") === DESK_ACCENTS.gray)).toHaveLength(2);
+    const labels = [...chart.querySelectorAll("text")].map((t) => t.textContent);
+    // S-30: each point labelled with its tenor and date; the last also names the snapshot.
+    expect(labels).toEqual(expect.arrayContaining(["2y Aug 21", "a month ago · 10y Aug 20"]));
+    // S-29: a difference whose month-ago date is null is null: no "on the month", no steepening word.
+    expect(card).not.toHaveTextContent(/on the month|steepening|flattening/);
   });
 });
 

@@ -130,6 +130,8 @@ function paramRefusal(u: URL): string | null {
 function askedHorizon(u: URL, c: CatalogStudy): { h: number; words: string } | { refusal: string } {
   const raw = u.searchParams.get("horizon") ?? "20";
   const h = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  // §12.2 (S-31): a row with no horizons (the RSI rows) takes no horizon parameter at all.
+  if (!c.allowed_horizons.length) return { refusal: `No study in the catalog asks ${c.slug} at a horizon; it has none to ask.` };
   if (!c.allowed_horizons.includes(h)) return { refusal: `No study in the catalog asks ${c.slug} ${raw === "" ? "with an empty horizon" : `at a horizon of ${raw}`}; its horizons are ${c.allowed_horizons.join(", ")} sessions.` };
   return { h, words: raw };
 }
@@ -180,8 +182,9 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
     const refused = paramRefusal(u);
     if (refused) return json(422, { error: "unsupported", message: refused });
     const { study: c, question } = catalogAsk(u);
-    // A row with a question checks the asked horizon against its allowed ones (§12.3; the RSI rows have none and answer awaiting).
-    const asked = c?.question ? askedHorizon(u, c) : null;
+    // A row with a question checks the asked horizon against its allowed ones (§12.3); a row with none (the RSI rows)
+    // refuses any horizon parameter and, asked without one, answers awaiting (§12.2, S-31).
+    const asked = c && (c.question || u.searchParams.has("horizon")) ? askedHorizon(u, c) : null;
     if (asked && "refusal" in asked) return json(422, { error: "unsupported", message: asked.refusal });
     if (!c || (question && c.available && !isAnswerable(CATALOG, question))) {
       // §12.0: the refusal names what is not supported.

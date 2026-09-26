@@ -173,7 +173,9 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const withdrawn = !search.get("preset") && !oldLink ? withdrawnIn(search) : null;
   // A served study is scored at its selected horizon, Too few included (v4 B-02): the rail reads it either way.
   // A preset asks the horizon its address names, else §12.2's default of 20 sessions (Codex R-23); a question asks its own (R-18).
-  const askedHorizon = "question" in ask ? ask.question.horizon : (study?.selected_horizon ?? presetHorizon(ask) ?? study?.question?.horizon ?? 20);
+  // §12.2 (S-31): a row with no horizons (the RSI rows) never takes the default one, so its labels name none.
+  const noHorizons = "preset" in ask && catalog?.find((c) => c.slug === ask.preset)?.allowed_horizons.length === 0;
+  const askedHorizon = "question" in ask ? ask.question.horizon : noHorizons ? null : (study?.selected_horizon ?? presetHorizon(ask) ?? study?.question?.horizon ?? 20);
 
   return (
     <div className="es">
@@ -219,7 +221,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
       {/* §12.0: a study served awaiting (an input not stored) keeps the labels and prints its reason (§1.0.2). */}
       <Unserved block={unavailableOf(q.error)}>
         <div className="es-grid" data-busy={placeholder || undefined}>
-          <AnswerCard study={study} failed={q.isError} refusal={refusal} busy={placeholder} onFix={onFix} horizon={askedHorizon} />
+          <AnswerCard study={study} failed={q.isError} refusal={refusal} busy={placeholder} onFix={onFix} horizon={askedHorizon ?? undefined} />
           <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
             {study ? (
               <StudyRail
