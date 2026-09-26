@@ -44,10 +44,11 @@ def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime=
         # desk/event-study: the Desk's daily series, stored by the same full refresh.
         conn.execute("CREATE TABLE desk_series (series_id TEXT NOT NULL, date TEXT NOT NULL, value REAL NOT NULL,"
                      " provider TEXT NOT NULL, PRIMARY KEY (series_id, date))")
-        # desk/integration: the five tier-1 series the full refresh stores (the
-        # drawer's verdict judges each, verifier V-06).
+        # desk/integration: the tier-1 series the full refresh stores (the
+        # drawer's verdict judges each, verifier V-06); the curve tenors since desk/frame-3-api.
         conn.executemany("INSERT INTO desk_series VALUES (?,?,?,?)", [(sid, daily, v, "fred") for sid, v in
-                                                                       (("DGS10", 4.0), ("DGS2", 3.6), ("T10Y2Y", 0.4), ("VIXCLS", 15.0), ("BAMLH0A0HYM2", 3.0))])
+                                                                       (("DGS10", 4.0), ("DGS2", 3.6), ("T10Y2Y", 0.4), ("VIXCLS", 15.0), ("BAMLH0A0HYM2", 3.0),
+                                                                        ("DGS3MO", 4.5), ("DGS5", 3.7), ("DGS30", 4.4))])
     if watermarks:
         # B6: a full refresh records each FRED daily series' true last observation
         # (raw_series keeps month-stamped rows); checked within this run's window.
@@ -320,7 +321,7 @@ def test_summary_shows_the_watermark_table(tmp_path):
 
 # ── desk/hardening (2026-09-23): tier-2 Desk series warn, never block ────────
 
-TIER1_DESK = ("DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2")
+TIER1_DESK = ("DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS3MO", "DGS5", "DGS30")  # the tenors since desk/frame-3-api
 
 
 def _desk_rows(path, series: dict[str, tuple[str, str, int]], watermarks: dict[str, tuple[str, str]] = {}):
@@ -407,7 +408,7 @@ def test_the_same_faults_on_a_tier1_desk_series_still_fail(tmp_path):
     assert rep["verdict"] == "fail" and any(f.startswith("desk_series: max date regressed 2026-09-04 → 2026-09-03") for f in rep["failures"]), rep["failures"]
     _desk_rows(cur, {**{sid: ("fred", "2026-09-04", 30) for sid in TIER1_DESK}, "DGS10": ("fred", "2026-09-04", 2), "DGS2": ("fred", "2026-09-04", 2)})
     rep = v.validate(cur, prev, "full", now=NOW)
-    assert rep["verdict"] == "fail" and any(f.startswith("desk_series: rows fell 150 → 94") for f in rep["failures"]), rep["failures"]
+    assert rep["verdict"] == "fail" and any(f.startswith("desk_series: rows fell 240 → 184") for f in rep["failures"]), rep["failures"]
 
 
 # ── desk/hardening, review round 2: R-02 (per-series tier 1) and R-03 (future dates) ──
@@ -711,7 +712,7 @@ def test_a_row_no_committed_refresh_wrote_fails_tier1_and_warns_tier2(tmp_path):
     _make(cur)
     _desk_rows(cur, {**{sid: ("fred", "2026-09-03", 30) for sid in TIER1_DESK}, "JPY=X": ("eodhd", "2026-09-03", 30)})
     c = sqlite3.connect(cur)
-    assert provenance.migrate(c, datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)) == 6 * 30  # Friday 09-04, before the hand rows
+    assert provenance.migrate(c, datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)) == (len(TIER1_DESK) + 1) * 30  # Friday 09-04, before the hand rows
     c.executemany("INSERT INTO desk_series (series_id, date, value, provider) VALUES (?, '2026-09-04', 1.0, 'hand')", [("DGS10",), ("JPY=X",)])
     c.commit()
     c.close()

@@ -45,7 +45,8 @@ enters any target eight sessions later. USD/JPY is read at 20:00 ET
 (desk/hardening, 2026-09-23): Yahoo dates an FX daily bar by its London day
 and EODHD by its UTC day, so the bar closes 19:00 to 20:00 New York time, not
 at the 17:00 New York close; the later reading keeps a same-session entry from
-reading a value that was not yet printed.
+reading a value that was not yet printed. The curve tenors (DGS3MO, DGS5,
+DGS30) follow DGS10's rules.
 """
 
 from __future__ import annotations
@@ -168,6 +169,11 @@ SERIES: tuple[DeskSeries, ...] = (
     DeskSeries("hy_oas", "US HY OAS", "fred", "BAMLH0A0HYM2", "bp", 100.0, "2023-09-25", 1, _ALL, fixed=("close", -60), known=NEXT_OPEN,
                note="ICE BofA index OAS, published the next morning. FRED serves a rolling three years only "
                     "(since April 2026); the store keeps every observation it has been served, from 2023-09-25."),
+    # desk/frame-3-api (FRAME3_API_PLAN.md §4.5; DESK_FRAME3_SPEC §12.8): the curve tenors the Macro
+    # tab draws beside DGS2 and DGS10. No roles, so no study can select them; read and known as DGS10.
+    DeskSeries("us3m", "3M Treasury", "fred", "DGS3MO", "bp", 100.0, "1981-09-01", 1, (), fixed=("close", -30), known=NEXT_OPEN),
+    DeskSeries("us5y", "5Y Treasury", "fred", "DGS5", "bp", 100.0, "1962-01-02", 1, (), fixed=("close", -30), known=NEXT_OPEN),
+    DeskSeries("us30y", "30Y Treasury", "fred", "DGS30", "bp", 100.0, "1977-02-15", 1, (), fixed=("close", -30), known=NEXT_OPEN),
     # ── tier 2 ────────────────────────────────────────────────────────────
     DeskSeries("wti", "WTI crude", "fred", "DCOILWTICO", "log_return", 1.0, "1986-01-02", 2, _SC, fixed=clock(14, 30),
                known=session_clock(8, 13, 0), known_note="EIA publishes the WTI spot series weekly",

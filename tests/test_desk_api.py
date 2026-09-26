@@ -426,7 +426,7 @@ def test_pipeline_inventory_matches_freshness_report():
 
 # ── desk/integration: the desk_series rows in the inventory (Step 3) ────────
 
-REFRESH_IDS = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DCOILWTICO", "^NDX", "DX-Y.NYB", "JPY=X"]
+REFRESH_IDS = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS3MO", "DGS5", "DGS30", "DCOILWTICO", "^NDX", "DX-Y.NYB", "JPY=X"]
 MARKET_IDS = {"^NDX", "DX-Y.NYB", "JPY=X"}  # desk/hardening: tier 2, EODHD first, Yahoo disclosed fallback
 NOW = datetime(2026, 9, 22, 20, 0, tzinfo=timezone.utc)  # Tue 2026-09-22 16:00 ET, a bond and NYSE session
 
@@ -516,8 +516,9 @@ def test_inventory_lists_the_desk_series_rows_with_their_freshness(served):
     assert {s["id"] for s in desk_rows} == {f"desk:{sid}" for sid in stored} | {f"desk:{sid}" for sid in REFRESH_IDS}
     for s in desk_rows:
         sid = s["id"].split(":", 1)[1]
-        assert s["as_of"] == stored[sid], s
-        assert s["state"] in ("close", "stale") and s["cadence"] == "daily", s
+        # a series the refresh stores that this copy predates (the curve tenors) is listed, unknown
+        assert s["as_of"] == stored.get(sid), s
+        assert s["state"] in (("close", "stale") if sid in stored else ("unknown",)) and s["cadence"] == "daily", s
         assert s["source_id"] == sid and s["feeds"] == [desk_mod.DESK_EVENT_STUDY], s
         if sid in MARKET_IDS:  # desk/hardening: tier 2's market series
             assert s["source"].startswith("EODHD first, Yahoo disclosed fallback") and s["kind"] == "market", s
@@ -546,7 +547,7 @@ def test_desk_router_is_get_only():
 # asset_prices either). The API must boot and serve every route, and the
 # event study must say "awaiting the first full refresh", never an error.
 
-REFRESH_KEYS = ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "wti", "ndx", "dxy", "usdjpy"]  # tiers 1 and 2 (desk/hardening)
+REFRESH_KEYS = ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "us3m", "us5y", "us30y", "wti", "ndx", "dxy", "usdjpy"]  # tiers 1 and 2 (desk/hardening; the tenors, desk/frame-3-api)
 # Review R-03 (desk/hardening): the route inventory, kept by hand and never read
 # from the app under test. One entry per route the API serves: the request that
 # exercises it and the status it answers on a database that predates the first
@@ -885,6 +886,7 @@ def test_the_drawer_verdict_follows_the_series_the_refresh_stores():
             "market_intraday_ts": None, "news_published_at": None, "raw_series_date": "2026-10-01", "asset_prices_date": "2026-10-13"}
     now = datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc)
     latest = {"DGS10": "2026-10-09", "DGS2": "2026-10-09", "T10Y2Y": "2026-10-09", "BAMLH0A0HYM2": "2026-10-09", "VIXCLS": "2026-10-13",
+              "DGS3MO": "2026-10-09", "DGS5": "2026-10-09", "DGS30": "2026-10-09",
               "^NDX": "2026-09-21"}  # a tier-2 series weeks old; the other three tier-2 series not stored at all
 
     def verdict(latest_by_id):
@@ -895,10 +897,12 @@ def test_the_drawer_verdict_follows_the_series_the_refresh_stores():
     row = verdict(latest)
     assert row["verdict"] == "current", row
     states = freshness_mod.desk_series_states(stored=latest, specs=desk_mod.desk_series_specs(stored=latest), watermarks={}, now=now)
-    tier1 = {f"desk:{sid}" for sid in REFRESH_IDS[:5]}
+    tier1_ids = [sid for sid, meta in freshness_mod.DESK_REFRESH_SERIES.items() if meta["tier"] == 1]
+    assert tier1_ids == REFRESH_IDS[:8]
+    tier1 = {f"desk:{sid}" for sid in tier1_ids}
     assert all(s["state"] == "close" for s in states if s["id"] in tier1)
     # desk/hardening: tier 2 is named in the reason and never turns the verdict
-    assert {s["id"] for s in states if s["state"] != "close"} == {f"desk:{sid}" for sid in REFRESH_IDS[5:]}
+    assert {s["id"] for s in states if s["state"] != "close"} == {f"desk:{sid}" for sid in REFRESH_IDS[8:]}
     assert "Tier 2, reported and not judged" in row["reason"] and "Nasdaq 100" in row["reason"], row
     lagging = verdict({**latest, "DGS2": "2026-09-14"})
     assert lagging["verdict"] == "stale" and "2Y Treasury" in lagging["reason"], lagging

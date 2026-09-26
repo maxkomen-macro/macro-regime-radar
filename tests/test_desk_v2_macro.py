@@ -5,11 +5,11 @@ DESK_FRAME3_SPEC §12.8 and docs/desk/FRAME3_API_PLAN.md §7 commit 8: the
 rolling HY statistics on the engine's calendar, R5's band with its constant
 edges) and the route in the §12.0 envelope.
 
-The three FRED tenors (DGS3MO, DGS5, DGS30) are not registered on this branch
-(docs/desk/FRAME3_API_REPORT_B2A.md, item 1): /macro serves a tenor the Desk
-registry declares and nulls the rest, and one test declares a tenor to prove
-the path. Route tests run on the hermetic store (tests/desk_macro_store.py);
-the shape is also checked on the scratch and published copies when present.
+The three FRED tenors (DGS3MO, DGS5, DGS30) are registered in the Desk
+registry; /macro reads the tenors it declares, null until stored. Route tests
+run on the hermetic store (tests/desk_macro_store.py), which stores DGS2 and
+DGS10 only; the shape is also checked on the scratch and published copies
+when present.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
-from dataclasses import replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -188,22 +187,28 @@ def test_a_common_today_with_no_common_date_a_month_earlier(tmp_path, install_wo
     assert curve["2s10s_chg_bp"] is None and curve["10y_chg_bp"] is None
 
 
-def test_a_tenor_the_registry_declares_is_served(tmp_path, install_worker, monkeypatch):
-    """The three tenors wait on their registry rows (report item 1). Once one
-    is declared and stored, /macro serves it; one stored but undeclared stays
-    null, because the registry, not the table, decides what the Desk reads."""
+def test_the_registered_tenors_are_served_and_the_registry_decides(tmp_path, install_worker, monkeypatch):
+    """DGS3MO, DGS5 and DGS30 are registered (desk-v2: register DGS3MO, DGS5,
+    DGS30): once stored, /macro draws all five tenors on the common date. The
+    registry, not the table, decides what the Desk reads: a tenor stored but
+    taken out of the registry is null."""
     from src.desk import series as registry
 
     path = store.build(tmp_path / "macro_radar.db")
     days = store.bond_days("2026-01-02", store.DAILY_END)
-    rewrite(path, "DGS5", [(d, 4.2) for d in days])
-    rewrite(path, "DGS30", [(d, 4.9) for d in days])
-    five = replace(registry.get("us10y"), key="us5y", label="5Y Treasury", series_id="DGS5", roles=())
-    monkeypatch.setitem(registry.BY_SERIES_ID, "DGS5", five)
+    for sid, v in (("DGS3MO", 4.1), ("DGS5", 4.2), ("DGS30", 4.9)):
+        rewrite(path, sid, [(d, v) for d in days])
+    serve_macro(install_worker, monkeypatch, path)
+    curve = get_macro()["data"]["curve"]["data"]
+    t, m = curve["today"], curve["month_ago"]
+    assert (t["3m"], t["5y"], t["30y"]) == (4.1, 4.2, 4.9)
+    assert t["dates"] == {k: store.DAILY_END for k in TENOR_KEYS} and t["date"] == store.DAILY_END
+    assert m["date"] is not None and all(m["dates"][k] == m["date"] for k in TENOR_KEYS)
+
+    monkeypatch.delitem(registry.BY_SERIES_ID, "DGS30")
     serve_macro(install_worker, monkeypatch, path)
     t = get_macro()["data"]["curve"]["data"]["today"]
-    assert t["5y"] == 4.2 and t["dates"]["5y"] == t["date"] == store.DAILY_END
-    assert t["30y"] is None and t["dates"]["30y"] is None
+    assert t["30y"] is None and t["dates"]["30y"] is None and t["5y"] == 4.2
 
 
 # ── N7: the rolling HY statistics, R5 ───────────────────────────────────────
