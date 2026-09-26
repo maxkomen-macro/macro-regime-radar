@@ -1,50 +1,94 @@
 /**
- * The Desk shell (docs/desk/DESK_FRAME_SPEC.md §1, §2, §4): a top-level
- * section at /desk, titled "Desk", eyebrow "Analyst Workspace". The same grid
- * as the app shell (.mrr-app: sidebar beside a main column; MobileNav below
- * 860 px), with the Desk's own sidebar, top bar and pages. /desk lands on
- * Today; an unknown page does too. ?view=client is the client view and every
- * Desk link keeps it (desk-view.ts). Each page mounts inside its own
+ * The Desk v2 shell (docs/desk/DESK_FRAME3_SPEC.md §1): the sidebar (the only
+ * navigation) beside the page, the header with the breadcrumb, the Desk /
+ * Client toggle and the tab's one action, and the tab itself. /desk lands on
+ * Overview; an unknown page does too; an old frame-1/frame-2 slug redirects
+ * to the tab that replaced it with its query kept. ?view=client is carried
+ * by every Desk link (desk-view.ts). Each tab mounts inside its own
  * ErrorBoundary keyed by route, behind Suspense; document.title names the
- * page; navigation resets scroll unless the URL carries an anchor.
+ * tab; navigation resets scroll unless the URL carries an anchor.
  */
 
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
-import { useBreakpoint } from "../../lib/useBreakpoint";
+import { useQueryClient } from "@tanstack/react-query";
+import { MixedGenerations, usePageAsOf, usePageGenerations } from "./data/generations";
+import { dayLong } from "./kit/format";
 import ErrorBoundary from "../shared/ErrorBoundary";
-import DeskMobileNav from "./DeskMobileNav";
 import DeskSidebar from "./DeskSidebar";
 import DeskTopBar from "./DeskTopBar";
-import { DESK_HOME, deskPageBySlug } from "./desk-sections";
+import { PipelineBadge } from "./pipeline/badge";
+import { DESK_ALIASES, DESK_HOME, deskPageBySlug } from "./desk-sections";
 import { useDeskView, withView } from "./desk-view";
 import TourStrip from "./tour/TourStrip";
-import { DESK_ALIASES, parseTour } from "./tour/tour";
+import { parseTour } from "./tour/tour";
 import "../../styles/desk.css";
+import "../../styles/desk2.css";
 
-const TodayPage = lazy(() => import("./today/TodayPage"));
+const OverviewPage = lazy(() => import("./overview/OverviewPage"));
+const TechnicalsPage = lazy(() => import("./technicals/TechnicalsPage"));
 const EventStudyPage = lazy(() => import("./event-study/EventStudyPage"));
-const InternalsPage = lazy(() => import("./internals/InternalsPage"));
+const RegimePage = lazy(() => import("./regime/RegimePage"));
+const MacroPage = lazy(() => import("./macro/MacroPage"));
+const SectorsPage = lazy(() => import("./sectors/SectorsPage"));
+const LedgerPage = lazy(() => import("./ledger/LedgerPage"));
 const PositionMonitorPage = lazy(() => import("./positions/PositionMonitorPage"));
-const DataPipelinePage = lazy(() => import("./pipeline/DataPipelinePage"));
+const PipelinePage = lazy(() => import("./pipeline/PipelinePage"));
 const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
-const DesignedShellPage = lazy(() => import("./shells/DesignedShellPage"));
+const BasketHedgePage = lazy(() => import("./basket/BasketHedgePage"));
+const ClientView = lazy(() => import("./client/ClientView"));
+
+/** §1.1 (Codex R-22): the page footer names the one generation the page's answers share, or each when they differ. */
+function GenerationFooter({ ids }: { ids: readonly string[] }) {
+  if (!ids.length) return null;
+  return (
+    <footer className="dk-gen" data-testid="dk-gen">
+      <span>{ids.length > 1 ? "Generations" : "Generation"}</span> <span className="dk-gen-id">{ids.join(" · ")}</span>
+    </footer>
+  );
+}
+
+/** §1.1, §11 (S-32): the Client view's footer says only when the answer was staged, never the generation, and is not printed. */
+function SnapshotFooter() {
+  const asOf = dayLong(usePageAsOf());
+  if (!asOf) return null;
+  return (
+    <footer className="dk-gen" data-snapshot="" data-testid="dk-gen">
+      Snapshot · {asOf}
+    </footer>
+  );
+}
+
+/** The page's generations, and one refetch of its Desk answers for each disagreement (§1.1, v3 §18). */
+function useGenerationCheck(): string[] {
+  const qc = useQueryClient();
+  const ids = usePageGenerations();
+  const sig = ids.join(" ");
+  const refetched = useRef<string | null>(null);
+  useEffect(() => {
+    if (ids.length < 2 || refetched.current === sig) return;
+    refetched.current = sig;
+    void qc.refetchQueries({ queryKey: ["desk-v2"], type: "active" });
+  }, [qc, sig, ids.length]);
+  return ids;
+}
 
 function PageLoading({ label }: { label: string }) {
   return (
-    <div role="status" aria-live="polite" style={{ padding: "24px 0", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-3)" }}>
+    <p role="status" aria-live="polite" className="dk-await">
       Loading {label}…
-    </div>
+    </p>
   );
 }
 
 export default function DeskShell() {
   const { page: slug } = useParams();
   const location = useLocation();
-  const { shellCompact } = useBreakpoint();
   const { view, setView, pathTo } = useDeskView();
+  const [menu, setMenu] = useState(false);
   const page = deskPageBySlug(slug);
   const tour = parseTour(location.search);
+  const generations = useGenerationCheck();
 
   useEffect(() => {
     document.title = `${page?.label ?? "Desk"} · Desk · Macro Regime Radar`;
@@ -52,54 +96,47 @@ export default function DeskShell() {
 
   useEffect(() => {
     if (!location.hash && (window.scrollY > 0 || window.scrollX > 0)) window.scrollTo({ top: 0, left: 0 });
+    setMenu(false);
   }, [location.pathname, location.hash]);
 
-  // The walkthrough's short paths (§6) open their pages with the query kept.
   const alias = slug ? DESK_ALIASES[slug] : undefined;
   if (alias) return <Navigate to={{ pathname: `/desk/${alias}`, search: location.search, hash: location.hash }} replace />;
   if (!page) return <Navigate to={withView(`/desk/${DESK_HOME}`, view)} replace />;
 
+  const client = view === "client" && page.toggle !== false;
   let body;
-  switch (page.slug) {
-    case "today":
-      body = <TodayPage page={page} />;
-      break;
-    case "event-study":
-      body = <EventStudyPage page={page} />;
-      break;
-    case "sp-internals":
-      body = <InternalsPage page={page} />;
-      break;
-    case "position-monitor":
-      body = <PositionMonitorPage page={page} />;
-      break;
-    case "data-pipeline":
-      body = <DataPipelinePage page={page} />;
-      break;
-    case "build-notes":
-      body = <BuildNotesPage page={page} />;
-      break;
-    default:
-      body = <DesignedShellPage page={page} />;
-  }
+  if (client) body = <ClientView page={page} />;
+  else if (page.slug === "overview") body = <OverviewPage page={page} />;
+  else if (page.slug === "technicals") body = <TechnicalsPage page={page} />;
+  else if (page.slug === "event-study") body = <EventStudyPage page={page} />;
+  else if (page.slug === "regime") body = <RegimePage page={page} />;
+  else if (page.slug === "macro") body = <MacroPage page={page} />;
+  else if (page.slug === "sectors") body = <SectorsPage page={page} />;
+  else if (page.slug === "signal-ledger") body = <LedgerPage page={page} />;
+  else if (page.slug === "position-monitor") body = <PositionMonitorPage page={page} />;
+  else if (page.slug === "data-pipeline") body = <PipelinePage page={page} />;
+  else if (page.slug === "build-notes") body = <BuildNotesPage page={page} />;
+  else body = <BasketHedgePage page={page} />;
 
   return (
-    <div className="mrr-app mrr-desk" data-view={view} data-tour={tour ?? undefined} data-testid="desk-shell">
+    <div className="dk" data-view={view} data-client={client || undefined} data-menu={menu ? "open" : undefined} data-tour={tour ?? undefined} data-testid="desk-shell">
       <a href="#main-content" className="mrr-skip">
         Skip to content
       </a>
-      {shellCompact ? null : <DeskSidebar activeSlug={page.slug} pathTo={pathTo} />}
-      <div className="mrr-main">
-        {shellCompact ? <DeskMobileNav activeSlug={page.slug} pathTo={pathTo} /> : null}
-        <DeskTopBar view={view} onChangeView={setView} />
-        <main id="main-content" tabIndex={-1} style={{ outline: "none" }}>
-          <ErrorBoundary key={page.slug} label="This Desk page">
-            <Suspense fallback={<PageLoading label={page.label} />}>{body}</Suspense>
-          </ErrorBoundary>
-          <p className="mrr-desk-print-only">Automated briefing from Macro Regime Radar. Not investment advice.</p>
-        </main>
-        {tour ? <TourStrip step={tour} /> : null}
-      </div>
+      <DeskSidebar activeSlug={page.slug} pathTo={pathTo} onNavigate={() => setMenu(false)} />
+      <MixedGenerations.Provider value={generations.length > 1}>
+        <div className="dk-main">
+          <DeskTopBar page={page} view={view} onChangeView={setView} pathTo={pathTo} onMenu={() => setMenu((m) => !m)} menuOpen={menu} right={page.slug === "data-pipeline" ? <PipelineBadge /> : undefined} />
+          <main id="main-content" className="dk-page" tabIndex={-1} style={{ outline: "none" }} data-slug={page.slug}>
+            <ErrorBoundary key={page.slug} label="This Desk tab">
+              <Suspense fallback={<PageLoading label={page.label} />}>{body}</Suspense>
+            </ErrorBoundary>
+            {/* S-32: the Client view prints its snapshot date instead; the mixed-generation check still runs. */}
+            {client ? <SnapshotFooter /> : <GenerationFooter ids={generations} />}
+          </main>
+          {tour ? <TourStrip step={tour} /> : null}
+        </div>
+      </MixedGenerations.Provider>
     </div>
   );
 }

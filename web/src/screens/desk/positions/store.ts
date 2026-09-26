@@ -1,214 +1,321 @@
 /**
- * Saved positions (spec §5): the app has no accounts, so positions live in
- * this browser under `mrr.desk.positions.v1`, shaped
- * `{ version: 1, positions: [...] }`, seeded with nothing. Corrupt or missing
- * data reads as an empty list; a storage that throws keeps the list in
- * memory for the session. The `storage` event keeps two open tabs in sync.
- * `addPosition` runs the discipline gate itself (gate.ts): a draft the gate
- * refuses is never written, whatever called it.
+ * The position store (DESK_FRAME3_SPEC §1.8, §9; v3 §16, v4 B-10): positions
+ * live in this browser's localStorage under a versioned key, with Export /
+ * Import JSON, and nothing is posted. The record is §12.13's; §9's gate rule
+ * is its validation, published so a future server applies it identically.
+ * Validation runs on Save, on Import and on load: a stored or imported
+ * record that fails stays in storage and is listed as unreadable, never
+ * dropped. Pure except the storage calls.
  */
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { localStorageOrNull } from "../../shell/watchlist/storage";
-import { gateStatus, type Draft } from "./gate";
-import { seriesRef } from "./series";
+import type { Question } from "../data/types";
+import { isQuestion } from "../event-study/question";
+import { isCalendarDate } from "./sessions";
+import { findFlags } from "./wording";
 
 export const POSITIONS_KEY = "mrr.desk.positions.v1";
+export const POSITION_HORIZONS: readonly number[] = [5, 10, 20, 60];
 
-export interface Falsification {
-  series: string;
-  level: number;
-  direction: "above" | "below";
+export type Operator = "below" | "above";
+/** The two monitored quantities the Desk serves (B-10): the S&P against its 50-day, 2s10s against a bp level. */
+export type MonitoredSeries = "spx" | "curve_2s10s";
+
+export interface Trigger {
+  series: MonitoredSeries;
+  operator: Operator;
+  /** Frozen at entry. */
+  threshold: number;
+  policy: "frozen";
+  /** The date of the served value the threshold and the entry value were read on. */
+  observed_on: string;
 }
 
-export interface Position {
+export type Subject =
+  | { kind: "study"; question: Question }
+  | { kind: "basket"; legs: { symbol: string; weight: number }[]; benchmark: string | null }
+  | { kind: "instrument"; id: string };
+
+export type CloseType = "falsified" | "expired" | "closed";
+
+export interface CloseEvent {
+  type: CloseType;
+  ts: string;
+  /** The analyst's explicit yes or no at close; null when not judged. */
+  premortem_right: boolean | null;
+}
+
+export interface PositionRecord {
   id: string;
   instrument: string;
   direction: "long" | "short";
-  size: string;
-  horizon: string;
-  variant_view: string;
+  /** A share of NAV (0.02 = 2%), or null when saved without a size. */
+  size_nav: number | null;
+  horizon_days: number;
+  variant: string;
   pre_mortem: string;
-  falsification: Falsification;
-  created_at: string;
+  red_team: string | null;
+  wrong_if: { id: string; label: string };
+  subject: Subject;
+  monitoring: "automatic" | "manual";
+  entry_ts: string;
+  entry_date: string;
+  entry_value: number | null;
+  trigger: Trigger | null;
+  /** Signed distance at entry; positive for an automatic position, null for a manual one. */
+  original_room: number | null;
+  evaluation: "close";
+  closes: CloseEvent[];
 }
 
-interface PositionsFile {
-  version: 1;
-  positions: Position[];
+const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+const filled = (x: unknown): x is string => typeof x === "string" && x.trim().length > 0;
+const isTs = (x: unknown): x is string => typeof x === "string" && /^\d{4}-\d{2}-\d{2}T/.test(x) && !Number.isNaN(Date.parse(x));
+const CLOSE_TYPES: readonly string[] = ["falsified", "expired", "closed"];
+
+/** §9's signed distance: value − threshold for a below-level falsifier, threshold − value for an
+ * above-level one; the same orientation at entry and now, so room is positive until the level is crossed. */
+export function signedDistance(value: number, t: Pick<Trigger, "operator" | "threshold">): number {
+  return t.operator === "below" ? value - t.threshold : t.threshold - value;
 }
 
-function isPosition(x: unknown): x is Position {
-  if (!x || typeof x !== "object") return false;
-  const p = x as Record<string, unknown>;
-  const f = p.falsification as Record<string, unknown> | undefined;
-  return (
-    typeof p.id === "string" &&
-    typeof p.instrument === "string" &&
-    (p.direction === "long" || p.direction === "short") &&
-    typeof p.size === "string" &&
-    typeof p.horizon === "string" &&
-    typeof p.variant_view === "string" &&
-    typeof p.pre_mortem === "string" &&
-    typeof p.created_at === "string" &&
-    !!f &&
-    typeof f.series === "string" &&
-    typeof f.level === "number" &&
-    Number.isFinite(f.level) &&
-    (f.direction === "above" || f.direction === "below")
-  );
+const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
+/** The monitored series by their names: §12.7's `/technicals` describes the registry series `spx`
+ * (^GSPC) and §12.8 serves 2s10s. Exact names only (Codex R-08): SPY, an ES future or an SPX option
+ * is not the index, and "2s10s steepener" is a trade, not the curve. */
+const SERIES_NAMES: Readonly<Record<MonitoredSeries, readonly string[]>> = { spx: ["s&p 500", "spx", "^gspc"], curve_2s10s: ["2s10s", "curve_2s10s"] };
+
+/** The series a typed instrument is, or null for any other instrument. */
+export function monitoredSeriesOf(instrument: string): MonitoredSeries | null {
+  const typed = norm(instrument);
+  return (Object.keys(SERIES_NAMES) as MonitoredSeries[]).find((k) => SERIES_NAMES[k].includes(typed)) ?? null;
 }
 
-/** Why a stored position may not be shown (review R-05): the discipline gate
- * run on it as if it were a draft (a variant view and a pre-mortem written, no
- * flagged word, a numeric level tied to a series), and a series the catalogue
- * knows. Null when it passes. Storage is the visitor's to edit; the list shows
- * only what the gate would have saved. */
-export function positionProblem(p: Position): string | null {
-  const draft: Draft = {
-    instrument: p.instrument,
-    direction: p.direction,
-    size: p.size,
-    horizon: p.horizon,
-    variant_view: p.variant_view,
-    pre_mortem: p.pre_mortem,
-    falsification_series: p.falsification.series,
-    falsification_level: String(p.falsification.level),
-    falsification_direction: p.falsification.direction,
-  };
-  const gate = gateStatus(draft);
-  if (!gate.ok) return gate.reason;
-  if (!seriesRef(p.falsification.series)) return `the falsification series "${p.falsification.series}" is not one the Desk reads.`;
+/** The levels that monitor a series automatically, with the side of the level each falsifies on. */
+export const AUTOMATIC_LEVELS: Readonly<Record<string, { series: MonitoredSeries; operator: Operator }>> = {
+  below_50d: { series: "spx", operator: "below" },
+  above_50d: { series: "spx", operator: "above" },
+  curve_down_10: { series: "curve_2s10s", operator: "below" },
+  curve_down_25: { series: "curve_2s10s", operator: "below" },
+  curve_up_10: { series: "curve_2s10s", operator: "above" },
+  curve_up_25: { series: "curve_2s10s", operator: "above" },
+};
+
+function whySubject(v: unknown): string | null {
+  const s = v as Subject | null;
+  if (!s || typeof s !== "object") return "no subject";
+  if (s.kind === "study") return isQuestion(s.question) ? null : "a study subject without its full question";
+  if (s.kind === "basket") {
+    const legsOk = Array.isArray(s.legs) && s.legs.length > 0 && s.legs.every((l) => l && filled(l.symbol) && fin(l.weight));
+    return legsOk && (s.benchmark === null || typeof s.benchmark === "string") ? null : "a basket subject without readable legs";
+  }
+  if (s.kind === "instrument") return filled(s.id) ? null : "an instrument subject without its id";
+  return "a subject that is not a study, a basket or an instrument";
+}
+
+function whyTrigger(r: Record<string, unknown>, levelId: string): string | null {
+  const t = r.trigger as Trigger | null;
+  if (!t || typeof t !== "object") return "an automatic position without its level";
+  const rule = AUTOMATIC_LEVELS[levelId];
+  if (!rule || rule.series !== t.series || rule.operator !== t.operator) return "an automatic position on a level the Desk does not monitor";
+  // §9: automatic only when the subject's monitored quantity is the served series itself; a basket is not.
+  if ((r.subject as Subject).kind === "basket") return "a basket monitored automatically";
+  if (monitoredSeriesOf(String(r.instrument)) !== t.series) return "an automatic level on an instrument that is not its series";
+  // A long is wrong below its level, a short above it.
+  if ((r.direction === "long") !== (t.operator === "below")) return "a level on the wrong side for the direction";
+  if (!fin(t.threshold) || t.policy !== "frozen" || !isCalendarDate(t.observed_on)) return "an automatic position whose level cannot be read";
+  if (!fin(r.entry_value)) return "an automatic position without its value at entry";
+  if (!fin(r.original_room) || r.original_room <= 0) return "an automatic position without room at entry";
+  const d = signedDistance(r.entry_value, t);
+  if (Math.abs(d - r.original_room) > 1e-9 * Math.max(1, Math.abs(d))) return "a room at entry that does not match its level";
   return null;
 }
 
-/** Missing, malformed, wrong version: an empty list, never a throw. A
- * well-formed entry the gate or the series check refuses is dropped, with a
- * console note naming it and why. */
-export function parsePositions(raw: string | null): Position[] {
-  if (raw == null) return [];
+/**
+ * Why a record cannot be read, in words, or null when it passes §9's rule:
+ * the gate (instrument, variant view, pre-mortem, a "wrong if" level, a size
+ * from 0 to 100% of NAV or none, a horizon of 5, 10, 20 or 60 days, no
+ * certainty word), the subject, and the monitoring (automatic with a frozen
+ * level and a positive room at entry, or manual with no level and no room).
+ */
+export function whyUnreadable(v: unknown): string | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return "not a position record";
+  const r = v as Record<string, unknown>;
+  if (!filled(r.id)) return "a record without an id";
+  if (!filled(r.instrument)) return "no instrument";
+  if (r.direction !== "long" && r.direction !== "short") return "a direction that is not long or short";
+  if (!(r.size_nav === null || (fin(r.size_nav) && r.size_nav >= 0 && r.size_nav <= 1))) return "a size that is not a share of NAV from 0 to 100%";
+  if (!POSITION_HORIZONS.includes(r.horizon_days as number)) return "a horizon that is not 5, 10, 20 or 60 trading days";
+  if (!filled(r.variant)) return "no variant view";
+  if (!filled(r.pre_mortem)) return "no pre-mortem";
+  const words = [...findFlags(r.variant, "variant"), ...findFlags(r.pre_mortem, "pre_mortem")].map((f) => f.word);
+  if (words.length) return `certainty words in the variant view or the pre-mortem (${[...new Set(words)].join(", ")})`;
+  if (!(r.red_team === null || typeof r.red_team === "string")) return "a red team that is not text";
+  const w = r.wrong_if as { id?: unknown; label?: unknown } | null;
+  if (!w || typeof w !== "object" || !filled(w.id) || !filled(w.label)) return "no “wrong if” level";
+  const subject = whySubject(r.subject);
+  if (subject) return subject;
+  if (w.id === "signal_reverses" && (r.subject as Subject).kind !== "study") return "“the signal reverses” without the study it comes from";
+  if (!isTs(r.entry_ts)) return "no entry time";
+  if (!isCalendarDate(r.entry_date)) return "no entry date";
+  if (r.evaluation !== "close") return "an evaluation that is not at the close";
+  const closes = r.closes as CloseEvent[];
+  if (!Array.isArray(closes) || !closes.every((c) => c && CLOSE_TYPES.includes(c.type) && isTs(c.ts) && (c.premortem_right === null || typeof c.premortem_right === "boolean")))
+    return "a close that cannot be read";
+  if (r.monitoring === "manual") {
+    if (r.trigger !== null || r.original_room !== null) return "a manual position carrying an automatic level";
+    return r.entry_value === null || fin(r.entry_value) ? null : "an entry value that is not a number";
+  }
+  if (r.monitoring !== "automatic") return "a monitoring that is not automatic or manual";
+  return whyTrigger(r, w.id);
+}
+
+export const isOpen = (p: PositionRecord) => p.closes.length === 0;
+
+// ── Storage ──────────────────────────────────────────────────────────────
+
+export interface Unreadable {
+  /** The record exactly as stored or imported, kept so nothing is lost. */
+  raw: unknown;
+  why: string;
+}
+
+export interface PositionStore {
+  positions: PositionRecord[];
+  unreadable: Unreadable[];
+}
+
+export type SaveResult = "ok" | "off" | "full";
+
+function safeStorage(): Storage | null {
   try {
-    const doc: unknown = JSON.parse(raw);
-    if (!doc || typeof doc !== "object" || Array.isArray(doc)) return [];
-    const file = doc as Partial<PositionsFile>;
-    if (file.version !== 1 || !Array.isArray(file.positions)) return [];
-    return file.positions.filter(isPosition).filter((p) => {
-      const problem = positionProblem(p);
-      if (problem) console.warn(`Desk: a saved position (${p.instrument || p.id}) was not loaded: ${problem}`);
-      return problem == null;
-    });
+    return typeof window !== "undefined" ? window.localStorage : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
-export function serializePositions(positions: Position[]): string {
-  const file: PositionsFile = { version: 1, positions };
-  return JSON.stringify(file);
+/** Records read in order: the first of an id is kept, a second of the same id is unreadable. */
+export function sortOut(list: readonly unknown[]): PositionStore {
+  const positions: PositionRecord[] = [];
+  const unreadable: Unreadable[] = [];
+  for (const raw of list) {
+    const why = typeof raw === "string" ? "text that is not a position record" : whyUnreadable(raw);
+    if (why) unreadable.push({ raw, why });
+    else if (positions.some((p) => p.id === (raw as PositionRecord).id)) unreadable.push({ raw, why: "a second record with the same id" });
+    else positions.push(raw as PositionRecord);
+  }
+  return { positions, unreadable };
 }
 
-/* ── The store ───────────────────────────────────────────────────────────── */
-
-let memory: Position[] = [];
-let memoryRaw: string | null | undefined;
-/** True after a write storage refused: the in-memory list is then the truth
- * for this session and a stale storage value must not overwrite it. */
-let unsynced = false;
-const listeners = new Set<() => void>();
-
-function read(): Position[] {
-  const storage = localStorageOrNull();
-  if (!storage || unsynced) return memory;
-  let raw: string | null;
+/** The store as this browser keeps it; storage that is not a JSON list is kept whole, as one unreadable entry. */
+export function loadPositions(storage: Pick<Storage, "getItem"> | null = safeStorage()): PositionStore {
+  let text: string | null = null;
   try {
-    raw = storage.getItem(POSITIONS_KEY);
+    text = storage?.getItem(POSITIONS_KEY) ?? null;
   } catch {
-    return memory;
+    return { positions: [], unreadable: [] };
   }
-  if (raw !== memoryRaw) {
-    memoryRaw = raw;
-    memory = parsePositions(raw);
+  if (text === null) return { positions: [], unreadable: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return sortOut([text]);
   }
-  return memory;
+  return sortOut(Array.isArray(parsed) ? parsed : [text]);
 }
 
-/** Storage first, then the in-memory copy, then the subscribers: a listener
- * that reads synchronously (useSyncExternalStore does) must find the new
- * value in storage, or it would re-parse the old one and lose the write.
- * False when storage refused the write (the list still changes in memory). */
-function write(positions: Position[]): boolean {
-  const raw = serializePositions(positions);
-  let persisted = false;
-  const storage = localStorageOrNull();
-  if (storage) {
-    try {
-      storage.setItem(POSITIONS_KEY, raw);
-      persisted = true;
-    } catch {
-      persisted = false;
+/** Writes the whole store, unreadable entries kept as they came. */
+export function writePositions(store: PositionStore, storage: Pick<Storage, "setItem"> | null = safeStorage()): SaveResult {
+  if (!storage) return "off";
+  try {
+    storage.setItem(POSITIONS_KEY, JSON.stringify([...store.positions, ...store.unreadable.map((u) => u.raw)]));
+    return "ok";
+  } catch {
+    return "full";
+  }
+}
+
+/** An id for a new position, not taken in the store. */
+export function newPositionId(store: PositionStore, now: Date): string {
+  const base = `p${now.getTime().toString(36)}`;
+  const taken = (id: string) => store.positions.some((p) => p.id === id) || store.unreadable.some((u) => (u.raw as { id?: unknown } | null)?.id === id);
+  let id = base;
+  for (let n = 2; taken(id); n += 1) id = `${base}-${n}`;
+  return id;
+}
+
+/** The store with a position closed by an explicit event (§9: nothing closes on its own). */
+export function withClose(store: PositionStore, id: string, type: CloseType, premortemRight: boolean | null, now: Date): PositionStore {
+  return {
+    ...store,
+    positions: store.positions.map((p) => (p.id === id && isOpen(p) ? { ...p, closes: [...p.closes, { type, ts: now.toISOString(), premortem_right: premortemRight }] } : p)),
+  };
+}
+
+/** §9's CLOSED · LAST 90D: the stored close events of the last 90 days. */
+export function closed90d(store: PositionStore, now: Date): { falsified: number; expired: number; premortem_right: [number, number] } {
+  const since = now.getTime() - 90 * 86_400_000;
+  const events = store.positions.flatMap((p) => p.closes).filter((c) => {
+    const t = Date.parse(c.ts);
+    return t >= since && t <= now.getTime();
+  });
+  const judged = events.filter((c) => c.premortem_right !== null);
+  return {
+    falsified: events.filter((c) => c.type === "falsified").length,
+    expired: events.filter((c) => c.type === "expired").length,
+    premortem_right: [judged.filter((c) => c.premortem_right).length, judged.length],
+  };
+}
+
+// ── Export / Import JSON (§1.8) ──────────────────────────────────────────
+
+/** The whole store as a file's text, unreadable entries included, so an export loses nothing. */
+export function exportPositions(store: PositionStore): string {
+  return JSON.stringify({ kind: "mrr.desk.positions", version: 1, positions: [...store.positions, ...store.unreadable.map((u) => u.raw)] }, null, 2);
+}
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * A file's positions merged into the store, never replacing one: an id is a
+ * position (its time of entry), so a record whose id is already here is that
+ * position and is skipped, the one here kept, closes and all (a copy would
+ * count its closes twice). One that fails §9's rule joins the unreadable
+ * list (§9: validation on Import, never dropped). A file that is not a
+ * position list changes nothing.
+ */
+export function importPositions(store: PositionStore, text: string): { store: PositionStore; added: number; unreadable: number; skipped: number } | null {
+  let items: unknown;
+  try {
+    const doc = JSON.parse(text) as unknown;
+    items = Array.isArray(doc) ? doc : (doc as { positions?: unknown } | null)?.positions;
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(items)) return null;
+  let out: PositionStore = { positions: [...store.positions], unreadable: [...store.unreadable] };
+  let added = 0;
+  let unreadable = 0;
+  let skipped = 0;
+  for (const raw of items) {
+    const why = whyUnreadable(raw);
+    if (why) {
+      if (out.unreadable.some((u) => same(u.raw, raw))) skipped += 1;
+      else {
+        out = { ...out, unreadable: [...out.unreadable, { raw, why }] };
+        unreadable += 1;
+      }
+      continue;
     }
+    const p = raw as PositionRecord;
+    if (out.positions.some((q) => q.id === p.id)) {
+      skipped += 1;
+      continue;
+    }
+    out = { ...out, positions: [...out.positions, p] };
+    added += 1;
   }
-  unsynced = !persisted;
-  memory = positions;
-  memoryRaw = raw;
-  listeners.forEach((l) => l());
-  return persisted;
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === null || e.key === POSITIONS_KEY) listener();
-  };
-  window.addEventListener("storage", onStorage);
-  return () => {
-    listeners.delete(listener);
-    window.removeEventListener("storage", onStorage);
-  };
-}
-
-function newId(): string {
-  const c = globalThis.crypto as Crypto | undefined;
-  if (c && typeof c.randomUUID === "function") return c.randomUUID();
-  return `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-export type AddResult = { ok: true; position: Position; persisted: boolean } | { ok: false; reason: string };
-
-/** The one way in. Re-runs the gate; a refused draft is not written. */
-export function addPosition(draft: Draft, now: Date = new Date()): AddResult {
-  const gate = gateStatus(draft);
-  if (!gate.ok || gate.level == null) return { ok: false, reason: gate.reason || "Save is blocked by the discipline gate." };
-  const position: Position = {
-    id: newId(),
-    instrument: draft.instrument.trim(),
-    direction: draft.direction,
-    size: draft.size.trim(),
-    horizon: draft.horizon.trim(),
-    variant_view: draft.variant_view.trim(),
-    pre_mortem: draft.pre_mortem.trim(),
-    falsification: { series: draft.falsification_series.trim(), level: gate.level, direction: draft.falsification_direction },
-    created_at: now.toISOString(),
-  };
-  const persisted = write([...read(), position]);
-  return { ok: true, position, persisted };
-}
-
-export function removePosition(id: string): boolean {
-  return write(read().filter((p) => p.id !== id));
-}
-
-/** Test seam: forget the in-memory copy so the next read hits storage. */
-export function resetPositionsForTests(): void {
-  memory = [];
-  memoryRaw = undefined;
-  unsynced = false;
-}
-
-export function usePositions(): { positions: Position[]; add: (draft: Draft) => AddResult; remove: (id: string) => boolean; storageAvailable: boolean } {
-  const positions = useSyncExternalStore(subscribe, read, () => memory);
-  const add = useCallback((draft: Draft) => addPosition(draft), []);
-  const remove = useCallback((id: string) => removePosition(id), []);
-  const storageAvailable = localStorageOrNull() != null;
-  return useMemo(() => ({ positions, add, remove, storageAvailable }), [positions, add, remove, storageAvailable]);
+  return { store: out, added, unreadable, skipped };
 }

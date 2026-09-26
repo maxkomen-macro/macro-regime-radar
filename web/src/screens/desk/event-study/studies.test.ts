@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { EventStudyParams } from "../../../api/desk";
+import type { EventStudyParams } from "./studies";
 import slugs from "./__fixtures__/slugs.json";
 import { PRESET, PRESET_SLUG, PRESETS, numSlug, paramsFor, slugFor } from "./studies";
 

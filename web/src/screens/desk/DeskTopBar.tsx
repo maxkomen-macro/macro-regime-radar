@@ -1,54 +1,136 @@
 /**
- * The Desk top bar (spec §4): the Desk / Client toggle, persisted in the URL
- * by useDeskView, the "Export one-pager" control the client view adds, and
- * the Walkthrough control (frame-2 §6), which opens step 1 of the tour.
- * The left cell states the view's effect in words, so the toggle never
- * carries the meaning alone. Export prints the same DOM through the print
- * block in desk.css; there is no second template.
+ * The Desk v2 page header (DESK_FRAME3_SPEC §1.1): the breadcrumb
+ * `Radar › Desk › <Tab>` on the left; on the right the Desk / Client toggle
+ * (Desk by default; absent on Position Monitor and Data Pipeline) and at most
+ * one action button, per tab: Walkthrough on Overview, `Act on this →
+ * Position Monitor` on Technicals and Event Study, `Send to Position Monitor
+ * →` on Basket & Hedge. Data Pipeline's header carries its refresh badge in
+ * the toggle's place (its PNG). Below 900px a Menu button opens the sidebar,
+ * which stays the only navigation.
  */
 
-import { useLocation, useNavigate } from "react-router-dom";
-import { Segmented } from "../../components";
-import type { DeskView } from "./desk-view";
+import type { ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import type { DeskPage } from "./desk-sections";
+import { withParam, type DeskView } from "./desk-view";
+import { DESK_SIDEBAR_ID } from "./DeskSidebar";
 import { TOUR_BUTTON_ID, TOUR_STRIP_ID } from "./tour/TourStrip";
 import { parseTour, tourHref } from "./tour/tour";
+import { askFromSearch, askParams } from "./event-study/question";
+import { useMixedGenerations } from "./data/generations";
 
-const VIEW_OPTIONS = [
-  { id: "desk", label: "Desk", title: "Working detail: z-scores, N, intervals, method ids, the query builder" },
-  { id: "client", label: "Client", title: "Verdicts and headline numbers in words; working detail hidden" },
-];
-
-export default function DeskTopBar({ view, onChangeView }: { view: DeskView; onChangeView: (v: DeskView) => void }) {
-  const client = view === "client";
-  const navigate = useNavigate();
-  const touring = parseTour(useLocation().search) != null;
+export function ViewToggle({ view, onChange, labels = ["Desk", "Client"] }: { view: DeskView; onChange: (v: DeskView) => void; labels?: [string, string] }) {
   return (
-    <header className="mrr-desk-top">
-      <p className="mrr-desk-crumb" role="status">
-        <span>{client ? "Client view" : "Desk view"}</span>
-        <span aria-hidden="true">·</span>
-        <span style={{ color: "var(--text-4)" }}>{client ? "working detail hidden" : "working detail shown"}</span>
-      </p>
-      <div className="mrr-desk-top-r">
-        <button
-          type="button"
-          id={TOUR_BUTTON_ID}
-          className="mrr-btn"
-          aria-controls={touring ? TOUR_STRIP_ID : undefined}
-          onClick={() => navigate(tourHref(1))}
-          title={touring ? "Start the walkthrough again from step 1" : "Six steps through the Desk, each a real page; Back and Next, nothing plays by itself"}
-          data-print-hide="true"
-          data-testid="desk-walkthrough"
-        >
-          Walkthrough
+    <div className="dk-seg" role="group" aria-label="View" data-testid="dk-view-toggle">
+      <button type="button" aria-pressed={view === "desk"} onClick={() => onChange("desk")}>
+        {labels[0]}
+      </button>
+      <button type="button" aria-pressed={view === "client"} onClick={() => onChange("client")}>
+        {labels[1]}
+      </button>
+    </div>
+  );
+}
+
+function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => string }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const touring = parseTour(location.search) != null;
+  // From Event Study the action carries the question on screen, preset or six
+  // slots (§9: "Carried in from Event Study · any study can be carried in").
+  const monitor = page.slug === "event-study" ? askParams(askFromSearch(location.search)).reduce((href, [k, v]) => withParam(href, k === "preset" ? "from" : k, v), pathTo("position-monitor")) : pathTo("position-monitor");
+  if (page.action === "walkthrough")
+    return (
+      <button type="button" id={TOUR_BUTTON_ID} className="dk-btn" aria-controls={touring ? TOUR_STRIP_ID : undefined} onClick={() => navigate(tourHref(1))} data-testid="dk-walkthrough">
+        Walkthrough
+      </button>
+    );
+  if (page.action === "act")
+    return (
+      <Link className="dk-btn" data-kind="light" to={monitor} data-testid="dk-act">
+        Act on this → Position Monitor
+      </Link>
+    );
+  // §10: a basket kept in this browser is the subject sent; the page writes the open one in the address.
+  const basket = new URLSearchParams(location.search).get("basket");
+  if (page.action === "send")
+    return (
+      <Link className="dk-btn" data-kind="light" to={basket ? withParam(pathTo("position-monitor"), "basket", basket) : pathTo("position-monitor")} data-testid="dk-act">
+        Send to Position Monitor →
+      </Link>
+    );
+  return null;
+}
+
+export default function DeskTopBar({
+  page,
+  view,
+  onChangeView,
+  pathTo,
+  onMenu,
+  menuOpen,
+  right,
+}: {
+  page: DeskPage;
+  view: DeskView;
+  onChangeView: (v: DeskView) => void;
+  pathTo: (slug: string) => string;
+  onMenu: () => void;
+  menuOpen: boolean;
+  /** Replaces the toggle (Data Pipeline's refresh badge). */
+  right?: ReactNode;
+}) {
+  return (
+    <header className="dk-top">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+        <button type="button" className="dk-btn dk-menu-btn" aria-controls={DESK_SIDEBAR_ID} aria-expanded={menuOpen} onClick={onMenu}>
+          Menu
         </button>
-        {client ? (
-          <button type="button" className="mrr-btn" onClick={() => window.print()} title="Print this page as a one-page client note (the same page, print layout)" data-testid="desk-export">
-            Export one-pager
+        <nav aria-label="Breadcrumb" className="dk-crumb">
+          <Link to="/app/dashboard">Radar</Link>
+          <span className="dk-crumb-sep" aria-hidden="true">
+            ›
+          </span>
+          <Link to={pathTo("overview")}>Desk</Link>
+          <span className="dk-crumb-sep" aria-hidden="true">
+            ›
+          </span>
+          <span aria-current="page">{page.label}</span>
+        </nav>
+      </div>
+      <div className="dk-top-r">
+        {right ?? (page.toggle === false ? null : <ViewToggle view={view} onChange={onChangeView} />)}
+        {/* In the client view the tab's own action gives way to the one-pager (§11, the PNG). */}
+        {view === "client" && page.toggle !== false ? (
+          <button type="button" className="dk-btn" data-strong data-print-hide onClick={() => window.print()}>
+            Export one-pager (PDF)
           </button>
-        ) : null}
-        <Segmented label="View" options={VIEW_OPTIONS} value={view} onChange={(id) => onChangeView(id === "client" ? "client" : "desk")} data-testid="desk-view-toggle" />
+        ) : (
+          <Action page={page} pathTo={pathTo} />
+        )}
       </div>
     </header>
+  );
+}
+
+/** The page title row: h1 (serif), the gray one-liner, and the page's badge right. */
+export function PageTitle({ page, badge, title }: { page: DeskPage; badge?: ReactNode; title?: ReactNode }) {
+  // §1.1 (Codex R-22): answers from two generations on one page: the badge says so while the page refetches.
+  // Data Pipeline's page badge is its header badge (§11), which says it there.
+  const mixed = useMixedGenerations() && page.slug !== "data-pipeline";
+  const shown = mixed ? (
+    <span className="dk-live dk-live-off dk-live-boxed" data-testid="dk-gen-mixed">
+      <span className="dk-dot dk-dot-off" aria-hidden="true" />
+      mixed generations · refreshing
+    </span>
+  ) : (
+    badge
+  );
+  return (
+    <div className="dk-title">
+      <h1>{title ?? page.title ?? page.label}</h1>
+      {page.blurb ? <p className="dk-title-sub">{page.blurb}</p> : null}
+      {shown ? <div className="dk-title-badge">{shown}</div> : null}
+    </div>
   );
 }

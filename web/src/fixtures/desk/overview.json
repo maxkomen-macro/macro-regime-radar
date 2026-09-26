@@ -1,0 +1,234 @@
+{
+ "as_of": "2026-09-24",
+ "generation_id": "gen-fixture-2026-09-24",
+ "since_last_close": {
+  "comparison_session": "2026-09-23",
+  "prev_session": "2026-09-22",
+  "new_fires": [],
+  "still_firing": [],
+  "vol_change_pts": null,
+  "regime_from": "Goldilocks",
+  "regime_to": "Goldilocks",
+  "regime_changed": false,
+  "refreshed_at_utc": "2026-09-24T05:07:11Z"
+ },
+ "tiles": {
+  "regime": {
+   "label": "Goldilocks",
+   "print": "2026-07",
+   "growth": "rising",
+   "inflation": "falling",
+   "months_in": 1,
+   "since": "2026-07",
+   "freq": "monthly",
+   "source": "regimes table (src/regime.py)"
+  },
+  "recession": {
+   "score": 0.11644217590049129,
+   "probability_month": "2026-08",
+   "inputs_through": "2026-05",
+   "band": "low",
+   "band_edges": [
+    0.2,
+    0.4
+   ],
+   "freq": "monthly",
+   "source": "recession model (src/analytics/recession.py)"
+  },
+  "trend": {
+   "state": "unavailable",
+   "above_50": null,
+   "above_200": null,
+   "state_since": "2026-09-22",
+   "cross": {
+    "kind": "golden",
+    "date": "2025-07-01"
+   },
+   "date": "2026-09-23",
+   "freq": "daily",
+   "source": "asset_prices ^GSPC"
+  },
+  "vol": {
+   "vix": 14.21,
+   "date": "2026-09-22",
+   "freq": "daily",
+   "source": "FRED VIXCLS (desk_series)"
+  }
+ },
+ "active_signals": [
+  {
+   "slug": "spx-5d-2sigma",
+   "label": "S&P 5-day move over 2σ",
+   "short": "S&P 5-day move",
+   "group": "spx",
+   "available": true,
+   "unavailable": null,
+   "horizon": 20,
+   "last_fired": "2026-08-04",
+   "sample_start": "1996-07-01",
+   "n": 78,
+   "up_n": 49,
+   "up_pct": 0.6282051282051282,
+   "median": 0.01670694589331003,
+   "baseline_median": 0.013049186230246982,
+   "vs_normal": 0.3657759663063049,
+   "target_unit": "log_return",
+   "display_unit": "percent",
+   "verdict": "no_edge",
+   "firing_now": false,
+   "firing_day": null,
+   "evaluated_on": "2026-09-23",
+   "stale": false
+  },
+  {
+   "slug": "vix-spike-2sigma-5d",
+   "label": "VIX spike +2σ, 5 days",
+   "short": "VIX spike",
+   "group": "cross",
+   "available": true,
+   "unavailable": null,
+   "horizon": 20,
+   "last_fired": "2026-06-05",
+   "sample_start": "1996-07-01",
+   "n": 119,
+   "up_n": 79,
+   "up_pct": 0.6638655462184874,
+   "median": 0.01508565286913584,
+   "baseline_median": 0.013063600799436081,
+   "vs_normal": 0.2022052069699758,
+   "target_unit": "log_return",
+   "display_unit": "percent",
+   "verdict": "suggestive",
+   "firing_now": false,
+   "firing_day": null,
+   "evaluated_on": "2026-09-21",
+   "stale": true
+  },
+  {
+   "slug": "spx-20d-2sigma",
+   "label": "S&P 20-day move over 2σ",
+   "short": "S&P 20-day move",
+   "group": "spx",
+   "available": true,
+   "unavailable": null,
+   "horizon": 20,
+   "last_fired": "2026-04-20",
+   "sample_start": "1996-07-01",
+   "n": 34,
+   "up_n": 20,
+   "up_pct": 0.5882352941176471,
+   "median": 0.010298565566048952,
+   "baseline_median": 0.013049186230246982,
+   "vs_normal": -0.275062066419803,
+   "target_unit": "log_return",
+   "display_unit": "percent",
+   "verdict": "no_edge",
+   "firing_now": false,
+   "firing_day": null,
+   "evaluated_on": "2026-09-23",
+   "stale": false
+  },
+  {
+   "slug": "golden-cross",
+   "label": "S&P golden cross",
+   "short": "golden cross",
+   "group": "spx",
+   "available": true,
+   "unavailable": null,
+   "horizon": 20,
+   "last_fired": "2025-07-01",
+   "sample_start": "1996-07-01",
+   "n": 14,
+   "up_n": 11,
+   "up_pct": 0.7857142857142857,
+   "median": 0.026657099924122657,
+   "baseline_median": 0.013049186230246982,
+   "vs_normal": 1.3607913693875675,
+   "target_unit": "log_return",
+   "display_unit": "percent",
+   "verdict": "reliable",
+   "firing_now": false,
+   "firing_day": null,
+   "evaluated_on": "2026-09-21",
+   "stale": true
+  },
+  {
+   "slug": "2s10s-2sigma-steepening",
+   "label": "2s10s +2σ steepening",
+   "short": "2s10s steepening",
+   "group": "cross",
+   "available": true,
+   "unavailable": null,
+   "horizon": 20,
+   "last_fired": "2025-04-21",
+   "sample_start": "1996-07-01",
+   "n": 49,
+   "up_n": 35,
+   "up_pct": 0.7142857142857143,
+   "median": 0.0159106974650569,
+   "baseline_median": 0.012951380912405237,
+   "vs_normal": 0.2959316552651664,
+   "target_unit": "log_return",
+   "display_unit": "percent",
+   "verdict": "no_edge",
+   "firing_now": false,
+   "firing_day": null,
+   "evaluated_on": "2026-09-23",
+   "stale": false
+  }
+ ],
+ "data_status": {
+  "state": "current",
+  "contributors": [
+   {
+    "series": "^GSPC",
+    "observation_date": "2026-09-23",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "Stored histories include the last completed session (2026-09-23)."
+   },
+   {
+    "series": "GC=F",
+    "observation_date": "2026-09-23",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "Stored histories include the last completed session (2026-09-23)."
+   },
+   {
+    "series": "VIXCLS",
+    "observation_date": "2026-09-22",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "VIX observed 2026-09-22; 1 business day(s) behind the 2026-09-23 print."
+   },
+   {
+    "series": "BAMLH0A0HYM2",
+    "observation_date": "2026-09-23",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "US HY OAS observed 2026-09-23, the newest print due."
+   },
+   {
+    "series": "T10Y2Y",
+    "observation_date": "2026-09-23",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "2s10s curve observed 2026-09-23, the newest print due."
+   },
+   {
+    "series": "DGS2",
+    "observation_date": "2026-09-22",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "2Y Treasury observed 2026-09-22; 1 business day(s) behind the 2026-09-23 print."
+   },
+   {
+    "series": "DGS10",
+    "observation_date": "2026-09-22",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "10Y Treasury observed 2026-09-22; 1 business day(s) behind the 2026-09-23 print."
+   }
+  ]
+ }
+}

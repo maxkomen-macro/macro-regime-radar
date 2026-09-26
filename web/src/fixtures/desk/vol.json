@@ -1,0 +1,23 @@
+{
+ "as_of": "2026-09-24",
+ "generation_id": "gen-fixture-2026-09-24",
+ "source": "eodhd",
+ "skew_25d_1m_pts": 6.8,
+ "skew_pct_2y": 0.74,
+ "skew_trend": "rising since June",
+ "atm_iv_1m": 15.4,
+ "realized_20d": 11.9,
+ "term": {
+  "1m": 15.4,
+  "3m": 16.8,
+  "6m": 17.5
+ },
+ "history_from": "2023-10",
+ "dates": {
+  "skew_25d_1m_pts": "2026-09-23",
+  "skew_pct_2y": "2026-09-23",
+  "atm_iv_1m": "2026-09-23",
+  "realized_20d": "2026-09-23",
+  "term": "2026-09-23"
+ }
+}

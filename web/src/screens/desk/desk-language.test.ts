@@ -1,28 +1,65 @@
 /**
- * The language ban list (DESK_FRAME2_SPEC §8) over every string the Desk can
- * print: string literals, template text and JSX text in every .ts/.tsx file
- * under a `desk/` directory of web/src (plus api/desk.ts), and the Markdown
- * under content/desk/. Words: will, predicts, proves, guaranteed, always,
- * never, obviously, and model (or models) outside the recession label.
+ * The language ban list (DESK_FRAME2_SPEC §8, DESK_FRAME3_SPEC §1.5) over
+ * every string the Desk can print: string literals, template text and JSX
+ * text in every .ts/.tsx file under a `desk/` directory of web/src, the
+ * Markdown under content/desk/, and every string value in
+ * the Desk v2 fixtures (src/fixtures/desk/*.json), which stand in for what
+ * the API prints. Words: will, predicts, proves, guaranteed, always, never,
+ * obviously, and model (or models) outside the recession label; frame-3 adds
+ * "established" and "significant", which never appear anywhere (§1.5).
  *
  * Parsed with the TypeScript compiler, so comments never count and every
- * string does. Build Notes is scanned like every other file (review R-10).
+ * string does. Build Notes is scanned as the page prints it: the words of
+ * docs/desk/BUILD_NOTES.md after the page's holds (./notes/notes.ts). That
+ * file is the owner's prose, so of the list only frame-3's two words are
+ * enforced on it (DESK_FRAME3_SPEC §11: "of the Desk's banned words only
+ * 'established' and 'significant' are enforced on it"); the page's own
+ * §1.0.1 section is source (./notes/scope.ts) and takes the whole list.
  * Not scanned: tests and saved engine payloads (they carry the words on
  * purpose, as inputs to the gate or as the engine's own text); in gate.ts,
  * the ban list's own entries (a list of the words is the words). "model"
  * passes only in a sentence about the recession regression: one that names
- * the recession probability, a logistic regression or the logistic model.
+ * the recession probability, the recession model (the served `source`), a
+ * logistic regression or the logistic model, or §5's two Regime boxes.
  */
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { readNotes } from "./notes/notes";
 
-const BANNED = /\b(will|predicts|proves|guaranteed|always|never|obviously|models?)\b/gi;
+const BANNED = /\b(will|predicts|proves|guaranteed|always|never|obviously|models?|established|significant)\b/gi;
+/** Frame-3's two words (§1.5). */
+const FRAME3 = /^(established|significant)$/i;
 /** A sentence about the recession regression, the one thing the Desk calls a model. */
-const RECESSION_SENTENCE = /recession probability|logistic regression|logistic model/i;
+const RECESSION_SENTENCE = /recession probability|recession model|logistic regression|logistic model/i;
+/** The two Regime boxes, verbatim from DESK_FRAME3_SPEC §5: the one that says
+ * the regime rule is not a model, and the one that says the recession
+ * probability is the site's one fitted model. */
+const SPEC_MODEL_SENTENCES = [
+  /^No model, no fitting\.$/,
+  // §5 as folded: "…against NBER recession dates, trained <training.start> to <training.end>; historical scores are in-sample."
+  // In the source the served span is an expression, so the text before it stands alone.
+  /^a fitted model — five monthly indicators against NBER recession dates$/,
+];
+/** The Snowflake bridge's schema, "exactly as on the board" (DESK_FRAME3_SPEC §11): its two
+ * lines about the layers ("never edited", "never patched") describe the data, not a forecast. */
+const BOARD_LINES = [/^-- RAW: exact copy of source, never edited$/, /^-- MART: what Desk reads\. Rebuilt, never patched\.$/];
+const BOARD_FILES = ["/src/screens/desk/pipeline/PipelinePage.tsx", "/src/fixtures/desk/pipeline-ddl.ts"];
 
 // Read through Vite's import.meta.glob (raw, eager), as hook-coverage does, so
 // the scan needs no Node types and sees exactly the files the build sees.
-const SOURCES = import.meta.glob<string>(["/src/**/desk/**/*.{ts,tsx,md}", "/src/api/desk.ts"], { query: "?raw", import: "default", eager: true });
+const SOURCES = import.meta.glob<string>(["/src/**/desk/**/*.{ts,tsx,md}"], { query: "?raw", import: "default", eager: true });
+const FIXTURES = import.meta.glob<unknown>("/src/fixtures/desk/*.json", { import: "default", eager: true });
+const NOTES = import.meta.glob<string>("../../../../docs/desk/BUILD_NOTES.md", { query: "?raw", import: "default", eager: true });
+/** The notes' figures (docs/desk/screens/*.svg), whose words the page shows as drawn. */
+const FIGURES = import.meta.glob<string>("../../../../docs/desk/screens/*.svg", { query: "?raw", import: "default", eager: true });
+
+/** Every string value in a JSON document, keys excluded. */
+export function jsonStrings(v: unknown): string[] {
+  if (typeof v === "string") return [v];
+  if (Array.isArray(v)) return v.flatMap(jsonStrings);
+  if (v && typeof v === "object") return Object.values(v).flatMap(jsonStrings);
+  return [];
+}
 
 /** Every file the scan covers, as /src/... paths. */
 export function deskFiles(): string[] {
@@ -38,6 +75,18 @@ export function stringsOf(file: string, text: string): string[] {
   const out: string[] = [];
   const visit = (n: ts.Node) => {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) return;
+    // Data keys, never printed: a literal type, a case label, an operand of
+    // === / !==, an object key or an index (the engine's "established" value
+    // is compared and mapped, then printed in §1.5's words).
+    if (ts.isLiteralTypeNode(n)) return;
+    if (ts.isCaseClause(n)) return void n.statements.forEach(visit);
+    if (ts.isBinaryExpression(n) && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(n.operatorToken.kind)) {
+      // Only a literal operand is a data key; anything else is still scanned (verifier E-11).
+      for (const side of [n.left, n.right]) if (!ts.isStringLiteral(side) && !ts.isNoSubstitutionTemplateLiteral(side)) visit(side);
+      return;
+    }
+    if (ts.isPropertyAssignment(n) && ts.isStringLiteral(n.name)) return visit(n.initializer);
+    if (ts.isElementAccessExpression(n)) return visit(n.expression);
     if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) out.push(n.text);
     else if (ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) out.push(n.text);
     else if (ts.isJsxText(n)) out.push(n.text);
@@ -50,18 +99,26 @@ export function stringsOf(file: string, text: string): string[] {
 function offending(file: string, s: string): string[] {
   const words = s
     .split(/(?<=[.!?])\s+/)
-    .flatMap((sentence) => [...sentence.matchAll(BANNED)].map((m) => m[0]).filter((w) => !(/^models?$/i.test(w) && RECESSION_SENTENCE.test(sentence))));
-  // gate.ts: the ban list's entries are the words themselves.
-  if (file.endsWith("/positions/gate.ts") && /^[a-z]+$/.test(s.trim()) && words.length === 1) return [];
+    .flatMap((sentence) =>
+      [...sentence.matchAll(BANNED)].map((m) => m[0]).filter((w) => !(/^models?$/i.test(w) && (RECESSION_SENTENCE.test(sentence) || (file.endsWith("/regime/RegimePage.tsx") && SPEC_MODEL_SENTENCES.some((r) => r.test(sentence.trim())))))),
+    );
+  // wording.ts: the certainty list's entries are the words themselves (§9).
+  if (file.endsWith("/positions/wording.ts") && /^[a-z]+$/.test(s.trim()) && words.length === 1) return [];
+  // The board's schema lines, in the two files that quote them: "never" there and nowhere else.
+  if (BOARD_FILES.some((f) => file === f)) {
+    const lines = s.split("\n").map((l) => l.trim()).filter((l) => /\bnever\b/i.test(l));
+    if (lines.every((l) => BOARD_LINES.some((r) => r.test(l)))) return words.filter((w) => !/^never$/i.test(w));
+  }
   return words;
 }
 
 describe("the Desk's language ban list", () => {
   const files = deskFiles();
 
-  it("covers the Desk's pages, the adapter and the content", () => {
-    expect(files).toEqual(expect.arrayContaining(["/src/api/desk.ts", "/src/screens/desk/event-study/EventStudyPage.tsx", "/src/screens/desk/today/TodayPage.tsx", "/src/content/desk/schema.md", "/src/content/desk/BUILD_NOTES.md"]));
+  it("covers the Desk's pages and the content", () => {
+    expect(files).toEqual(expect.arrayContaining(["/src/screens/desk/overview/OverviewPage.tsx", "/src/screens/desk/kit/ui.tsx", "/src/screens/desk/pipeline/PipelinePage.tsx"]));
     expect(files.length).toBeGreaterThan(25);
+    expect(Object.keys(FIXTURES)).toEqual(expect.arrayContaining(["/src/fixtures/desk/overview.json", "/src/fixtures/desk/ledger.json"]));
   });
 
   it("no printable string uses a banned word", () => {
@@ -74,6 +131,51 @@ describe("the Desk's language ban list", () => {
       }
     }
     expect(hits).toEqual([]);
+  });
+
+  it("no string a fixture serves uses a banned word", () => {
+    const hits: string[] = [];
+    for (const [f, doc] of Object.entries(FIXTURES)) for (const str of jsonStrings(doc)) if (offending(f, str).length) hits.push(`${f}: ${str.slice(0, 120)}`);
+    expect(hits).toEqual([]);
+  });
+
+  it("Build Notes prints neither of frame-3's two words: the file as the page renders it (§11)", () => {
+    const md = Object.values(NOTES)[0];
+    expect(md, "docs/desk/BUILD_NOTES.md").toBeTruthy();
+    const n = readNotes(md);
+    const frame3 = (para: string) => offending("/docs/desk/BUILD_NOTES.md", para).filter((w) => FRAME3.test(w));
+    const hits = [n.title ?? "", n.lead, ...n.sections.flatMap((x) => [x.title, x.body])]
+      .flatMap((t) => t.split(/\n\s*\n/))
+      .map((para) => para.replace(/\s*\n\s*/g, " "))
+      .filter((para) => frame3(para).length)
+      .map((para) => `[${frame3(para).join(", ")}] ${para.slice(0, 120)}`);
+    expect(hits).toEqual([]);
+  });
+
+  it("the notes' figures draw neither of frame-3's two words: the words the page cannot hold (§1.5)", () => {
+    // A figure is shown as drawn, so its text is checked here; the owner's words, so the frame-3 two only.
+    const hits = Object.entries(FIGURES).flatMap(([f, svg]) =>
+      [...svg.matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/g)]
+        .map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+        .filter((t) => /(?<![\p{L}\p{N}])(established|significant)(?![\p{L}\p{N}])/iu.test(t))
+        .map((t) => `${f}: ${t.slice(0, 120)}`),
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("the owner's file is exempt from the frame-2 list, and only from it (§11)", () => {
+    // The frame-2 words pass in the notes file; the two frame-3 words are held by the page.
+    const n = readNotes("# Notes\n\n## One\nThe tape will move; a second model reads it. It never fails. It is established.\n");
+    const body = n.sections[0].body;
+    expect(body).toContain("The tape will move; a second model reads it. It never fails.");
+    expect(body).not.toMatch(/established/);
+    expect(n.held).toBe(1);
+  });
+
+  it("the scanner skips data keys: literal types, case labels, comparisons, object keys", () => {
+    const src = `type E = "established"; if (e === "established") x(); if (t("always") === k) y(); switch (e) { case "significant": say("never"); break; } const m = { "established": "Reliable" }; const v = m["established"];`;
+    const got = stringsOf("x.ts", src);
+    expect(got).toEqual(["always", "never", "Reliable"]);
   });
 
   it("the scanner sees strings and JSX text, never comments", () => {

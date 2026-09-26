@@ -1,0 +1,230 @@
+/* Build Notes (DESK_FRAME3_SPEC §11; geometry from screens/11-build-notes.png at 1440). */
+.bn {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bn-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 17px;
+  align-items: start;
+}
+.bn-side {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: calc(100vh - 140px);
+}
+.bn-toc {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dk .bn-toc a {
+  display: block;
+  padding: 5px 10px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.25;
+  color: var(--dk-t2);
+}
+.dk .bn-toc a[aria-current="location"] {
+  background: var(--dk-active);
+  color: #ffffff;
+}
+.dk .bn-toc a:hover {
+  color: var(--dk-t1);
+}
+.bn-source {
+  margin-top: 24px;
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--dk-t4);
+}
+.bn-card {
+  padding: 22px 26px 26px;
+}
+.bn-title {
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--dk-t1);
+}
+.bn-byline {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--dk-t3);
+}
+.bn-card .mrr-md,
+.bn-section {
+  margin-top: 14px;
+}
+.bn-section {
+  scroll-margin-top: 16px;
+}
+.bn-section h3,
+.bn-card .mrr-md h3 {
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--dk-t1);
+}
+.bn-card .mrr-md {
+  font-size: 14px;
+  line-height: 20.5px;
+  color: var(--dk-t1);
+}
+.bn-section .mrr-md {
+  margin-top: 5px;
+}
+.bn-card .mrr-md p + p,
+.bn-card .mrr-md ol,
+.bn-card .mrr-md ul {
+  margin-top: 10px;
+}
+.bn-card .mrr-md ol,
+.bn-card .mrr-md ul {
+  padding-left: 20px;
+}
+.bn-card .mrr-md li + li {
+  margin-top: 6px;
+}
+.bn-card .mrr-md strong {
+  color: var(--dk-t1);
+}
+.bn-card .mrr-md em {
+  color: inherit;
+}
+/* What the file may carry later, set in the Desk's tokens rather than the
+   app's analyst styles (verifier B-4): a `###` heading, inline and fenced
+   code, a rule, a link that reads as one. */
+.bn-card .mrr-md h4 {
+  margin: 12px 0 4px;
+  font-family: var(--dk-serif);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--dk-t1);
+}
+.bn-card .mrr-md-code,
+.bn-card .mrr-md pre {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t1);
+  background: var(--dk-card-2);
+  border: 1px solid var(--dk-box);
+  border-radius: 4px;
+}
+.bn-card .mrr-md pre {
+  margin-top: 10px;
+  padding: 10px 12px;
+  line-height: 17px;
+}
+.bn-card .mrr-md hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--dk-border);
+  color: var(--dk-border);
+}
+.dk .bn-card .mrr-md a {
+  color: var(--dk-t1);
+  text-decoration: underline;
+  text-decoration-color: var(--dk-t3);
+  text-underline-offset: 2px;
+}
+.bn-missing {
+  margin-top: 14px;
+}
+/* The file's tables and figures (§11: a markdown render of the file). A wide table scrolls
+   inside its own region, never the page. */
+.bn-card .mrr-md-table {
+  margin: 10px 0;
+  overflow-x: auto;
+  border: 1px solid var(--dk-box);
+  border-radius: 6px;
+}
+.bn-card .mrr-md-table:focus-visible {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: 1px;
+}
+.bn-card .mrr-md-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 18px;
+}
+.bn-card .mrr-md-table th {
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dk-t3);
+  background: var(--dk-card-2);
+  border-bottom: 1px solid var(--dk-box);
+}
+.bn-card .mrr-md-table td {
+  padding: 7px 10px;
+  vertical-align: top;
+  color: var(--dk-t2);
+  border-top: 1px solid var(--dk-row);
+  min-width: 96px;
+}
+.bn-card .mrr-md-table tr:first-child td {
+  border-top: 0;
+}
+.bn-card .mrr-md-figure {
+  margin: 12px 0;
+}
+/* A figure at its own size: its words are drawn for it (1200px and more), and scaled to the card
+   they fell under the 12px floor; a wider one scrolls inside its region. */
+.bn-card .mrr-md-figure-scroll {
+  overflow-x: auto;
+  border-radius: 6px;
+}
+.bn-card .mrr-md-figure-scroll:focus-visible {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: 1px;
+}
+.bn-card .mrr-md-figure img {
+  display: block;
+  max-width: none;
+  height: auto;
+  border-radius: 6px;
+}
+.bn-card .mrr-md-figure-missing {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--dk-t3);
+}
+/* §1.0.1's section: the two lists under their own small heads. */
+.bn-scope h4 {
+  margin: 12px 0 4px;
+  font-family: var(--dk-serif);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--dk-t1);
+}
+.bn-scope ul {
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 20.5px;
+  color: var(--dk-t1);
+}
+.bn-scope li + li {
+  margin-top: 6px;
+}
+@media (max-width: 900px) {
+  .bn-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bn-side {
+    position: static;
+    min-height: 0;
+  }
+}

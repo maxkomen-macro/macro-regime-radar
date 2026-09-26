@@ -1,0 +1,1241 @@
+/* Desk v2 (docs/desk/DESK_FRAME3_SPEC.md §1): the shell and the card kit.
+   Every color is a §1.3 token: five accents with one job each (green up /
+   Reliable / firing / current, red down, amber Suggestive / caution / a limit
+   / Overheating, blue the main line, gray No edge / quiet / second line) and
+   the listed neutrals. No other color. Geometry is measured from the approved
+   PNGs at 1440 wide (docs/desk/screens/*.png); where a measured size differs
+   from §1.2's stated size, the PNG wins (layout) and FRAME3_REPORT.md says so. */
+
+.dk {
+  --dk-green: #26dca0;
+  --dk-red: #e5534b;
+  --dk-amber: #e8b447;
+  --dk-blue: #58b8e6;
+  --dk-gray: #8b929e;
+
+  --dk-page: #0c0e11;
+  --dk-side: #0f1216;
+  --dk-card: #151920;
+  --dk-card-2: #12161b;
+  --dk-border: #262b33;
+  --dk-row: #1c2027;
+  --dk-box: #2a3038;
+  --dk-active: #1b2027;
+  --dk-t1: #e8e6e1;
+  --dk-t2: #c9cdd3;
+  --dk-t3: #8b929e;
+  --dk-t4: #6b7280;
+
+  --dk-rel-bg: #0f1a16;
+  --dk-rel-bd: #1f6b52;
+  --dk-sug-bg: #1a160f;
+  --dk-sug-bd: #5a4a1e;
+  --dk-no-bg: #171a1f;
+  --dk-no-bd: #2a3038;
+
+  --dk-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --dk-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --dk-mono: "IBM Plex Mono", "SF Mono", SFMono-Regular, Consolas, monospace;
+
+  --dk-side-w: 189px;
+  --dk-top-h: 48px;
+  --dk-pad: 22px;
+  --dk-gap: 12px;
+
+  display: grid;
+  grid-template-columns: var(--dk-side-w) minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--dk-page);
+  color: var(--dk-t1);
+  font-family: var(--dk-sans);
+  font-size: 14px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+}
+.dk *,
+.dk *::before,
+.dk *::after {
+  box-sizing: border-box;
+}
+/* Zero specificity, so any class's own margin wins (verifier R2-1). */
+:where(.dk h1, .dk h2, .dk h3, .dk p, .dk ul, .dk ol, .dk dl, .dk dd, .dk figure) {
+  margin: 0;
+}
+:where(.dk button) {
+  font: inherit;
+  color: inherit;
+}
+/* Links inherit their color and never underline unless a class says so;
+   the reset sets no hover color, so a class's own color (a light button's
+   dark text) holds on hover (verifier R2-1). Declared after the app's global
+   `a` and `a:hover`, so it wins their ties. */
+.dk a {
+  color: inherit;
+  text-decoration: none;
+}
+.dk a:hover {
+  text-decoration: none;
+}
+.dk :focus-visible {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: 2px;
+}
+
+/* ── Sidebar (§1.1) ───────────────────────────────────────────────────── */
+.dk-side {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--dk-side);
+  border-right: 1px solid var(--dk-border);
+  padding: 16px 16px 21px;
+  overflow-y: auto;
+}
+.dk .dk-back {
+  display: inline-block;
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--dk-t3);
+  text-decoration: none;
+  text-transform: uppercase;
+  padding-top: 3px;
+  white-space: nowrap;
+}
+.dk .dk-back:hover {
+  color: var(--dk-t1);
+}
+.dk-brand {
+  margin-top: 11.5px;
+}
+.dk-brand strong {
+  display: block;
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 29.5px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--dk-t1);
+}
+.dk-eyebrow,
+.dk-brand span {
+  display: block;
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--dk-t3);
+}
+.dk-brand span {
+  margin-top: 2.5px;
+}
+.dk-nav {
+  margin-top: 18px;
+}
+.dk-nav-group {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+  margin: 0 0 3.5px;
+  line-height: 16px;
+}
+.dk-nav [role="group"] + [role="group"] .dk-nav-group {
+  margin-top: 13.5px;
+}
+.dk-nav a {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 14.5px;
+  color: var(--dk-t2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dk-nav a:hover {
+  color: var(--dk-t1);
+}
+.dk-nav a[aria-current="page"] {
+  background: var(--dk-active);
+  border-color: var(--dk-box);
+  color: #fff;
+}
+.dk-side-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 16px;
+}
+.dk-side-card {
+  background: var(--dk-card-2);
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  padding: 7px 12px 10px;
+}
+.dk-side-card .dk-eyebrow,
+.dk-house .dk-eyebrow {
+  font-size: 11.5px;
+  color: var(--dk-t4);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.dk-today-regime {
+  margin-top: 7px;
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 1.1;
+  color: var(--dk-t1);
+}
+/* §1.3's exception (v2 D-36): the regime in its color, wherever it is named. */
+.dk-today-regime[data-regime="Goldilocks"] {
+  color: var(--dk-green);
+}
+.dk-today-regime[data-regime="Overheating"] {
+  color: var(--dk-amber);
+}
+.dk-today-regime[data-regime="Stagflation"] {
+  color: var(--dk-red);
+}
+.dk-today-regime[data-regime="Recession Risk"] {
+  color: var(--dk-t3);
+}
+.dk-today-sub {
+  font-size: 13px;
+  color: var(--dk-t3);
+  margin-top: 1px;
+}
+.dk-today-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--dk-mono);
+  font-size: 12.5px;
+  color: var(--dk-t3);
+  line-height: 1.16;
+}
+.dk-today-sub + .dk-today-kv {
+  margin-top: 6px;
+}
+.dk-house {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--dk-card-2);
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  padding: 9px 12px 11px;
+  cursor: pointer;
+}
+.dk-house:hover {
+  border-color: var(--dk-t4);
+}
+.dk-house .dk-today-kv {
+  margin-top: 7px;
+}
+.dk-on {
+  color: var(--dk-green);
+}
+.dk-house-pop {
+  position: fixed;
+  left: 200px;
+  bottom: 20px;
+  width: 360px;
+  z-index: 40;
+  background: var(--dk-card);
+  border: 1px solid var(--dk-box);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 12px 40px rgba(12, 14, 17, 0.7);
+  font-size: 13.5px;
+  color: var(--dk-t2);
+}
+.dk-house-pop ol {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.dk-house-pop li + li {
+  margin-top: 6px;
+}
+.dk-house-pop b {
+  color: var(--dk-t1);
+}
+
+/* ── Top bar and page title (§1.1) ────────────────────────────────────── */
+.dk-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.dk-top {
+  height: var(--dk-top-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 var(--dk-pad) 0 calc(var(--dk-pad) + 1px);
+  border-bottom: 1px solid var(--dk-border);
+}
+.dk-crumb {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t3);
+  white-space: nowrap;
+}
+.dk-crumb a {
+  text-decoration: none;
+  color: var(--dk-t3);
+}
+.dk-crumb a:hover {
+  color: var(--dk-t1);
+}
+.dk-crumb [aria-current] {
+  color: var(--dk-t3);
+}
+.dk-crumb-sep {
+  margin: 0 7px;
+}
+.dk-top-r {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.dk-seg {
+  display: inline-flex;
+  border: 1px solid var(--dk-box);
+  border-radius: 7px;
+  background: var(--dk-card-2);
+  padding: 0;
+  overflow: hidden;
+}
+.dk-seg button {
+  border: 0;
+  background: transparent;
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  padding: 0 9px;
+  height: 28px;
+  color: var(--dk-t3);
+  cursor: pointer;
+}
+.dk-seg button[aria-pressed="true"] {
+  background: var(--dk-active);
+  color: #fff;
+}
+.dk-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
+  border: 1px solid var(--dk-box);
+  background: var(--dk-card-2);
+  color: var(--dk-t1);
+  font-family: var(--dk-sans);
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dk-btn:hover {
+  border-color: var(--dk-t4);
+}
+/* The client view keeps the sidebar (the only navigation) but not the desk's
+   internals: the TODAY and HOUSE DISCIPLINE cards (the PNG: "internals hidden"). */
+.dk[data-client] .dk-side-foot {
+  display: none;
+}
+/* The client view's Export one-pager: the dark button, bold (screens/12-client-view.png). */
+.dk-btn[data-strong] {
+  font-weight: 600;
+}
+.dk-btn[data-kind="light"] {
+  background: var(--dk-t1);
+  border-color: var(--dk-t1);
+  color: var(--dk-page);
+  font-weight: 600;
+}
+.dk-btn[data-kind="primary"] {
+  background: var(--dk-green);
+  border-color: var(--dk-green);
+  color: var(--dk-page);
+  font-weight: 600;
+}
+.dk-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.dk-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 17px var(--dk-pad) 23px;
+  min-width: 0;
+}
+.dk-title {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-height: 36px;
+}
+.dk-title h1 {
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.005em;
+  color: var(--dk-t1);
+  white-space: nowrap;
+}
+.dk-title-sub {
+  font-size: 14.2px;
+  color: var(--dk-t3);
+  min-width: 0;
+}
+.dk-title-badge {
+  margin-left: auto;
+  align-self: center;
+  flex: none;
+}
+
+/* ── Card skeleton (§1.4) ─────────────────────────────────────────────── */
+.dk-card {
+  background: var(--dk-card);
+  border: 1px solid var(--dk-border);
+  border-radius: 10px;
+  padding: 9px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dk-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.dk-card-title {
+  font-family: var(--dk-sans);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--dk-t1);
+  min-width: 0;
+}
+.dk-card-sub {
+  font-weight: 400;
+  font-size: 13.5px;
+  color: var(--dk-t3);
+  margin-left: 10px;
+}
+.dk-card-sub[data-mono] {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+}
+.dk-card-badge {
+  margin-left: auto;
+  flex: none;
+}
+.dk-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dk-card-foot {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--dk-row);
+}
+
+.dk-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-green);
+  white-space: nowrap;
+}
+.dk-live-boxed {
+  border: 1px solid var(--dk-rel-bd);
+  background: var(--dk-rel-bg);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+.dk-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+/* §1.0.2: an unavailable card's badge, "○ Not yet served", gray with a hollow dot. */
+.dk-live-off {
+  color: var(--dk-t3);
+}
+.dk-live-off.dk-live-boxed {
+  border-color: var(--dk-box);
+  background: transparent;
+}
+.dk-dot-off {
+  background: transparent;
+  border: 1px solid currentColor;
+}
+
+.dk-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  border: 1px solid var(--dk-no-bd);
+  background: var(--dk-no-bg);
+  color: var(--dk-t3);
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.dk-pill[data-verdict="reliable"] {
+  border-color: var(--dk-rel-bd);
+  background: var(--dk-rel-bg);
+  color: var(--dk-green);
+}
+.dk-pill[data-verdict="insufficient"] {
+  border-style: dashed;
+}
+.dk-pill[data-verdict="suggestive"] {
+  border-color: var(--dk-sug-bd);
+  background: var(--dk-sug-bg);
+  color: var(--dk-amber);
+}
+.dk-verdict-word[data-verdict="reliable"] {
+  color: var(--dk-green);
+}
+.dk-verdict-word[data-verdict="suggestive"] {
+  color: var(--dk-amber);
+}
+.dk-verdict-word[data-verdict="no_edge"],
+.dk-verdict-word[data-verdict="insufficient"] {
+  color: var(--dk-t3);
+}
+
+.dk-stats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.dk-stat-label {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+  white-space: nowrap;
+}
+.dk-stat-value {
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 27px;
+  line-height: 1.2;
+  color: var(--dk-t1);
+  margin-top: 3px;
+  white-space: nowrap;
+}
+.dk-stat[data-size="lg"] .dk-stat-value {
+  font-size: 31px;
+}
+.dk-stat[data-size="sm"] .dk-stat-value {
+  font-size: 23px;
+}
+.dk-stat-sub {
+  font-size: 14px;
+  color: var(--dk-t3);
+  line-height: 1.25;
+  margin-top: 2px;
+}
+.dk-stat-await,
+.dk-await {
+  font-size: 14px;
+  color: var(--dk-t3);
+  margin-top: 6px;
+}
+.dk-await-why {
+  color: var(--dk-t4);
+}
+/* §1.0.2: the served reason an unavailable block prints, once. */
+.dk-unserved {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--dk-t3);
+  margin-top: 10px;
+}
+.dk-unserved-until {
+  color: var(--dk-t4);
+}
+.dk-unserved-inline {
+  color: var(--dk-t3);
+}
+/* Tones (§1.3) are scoped under .dk so they outrank any element's own
+   default color (verifier V-1: a later single-class rule used to win). */
+.dk [data-tone="up"],
+.dk [data-tone="green"] {
+  color: var(--dk-green);
+}
+.dk [data-tone="down"],
+.dk [data-tone="red"] {
+  color: var(--dk-red);
+}
+.dk [data-tone="amber"] {
+  color: var(--dk-amber);
+}
+.dk [data-tone="blue"] {
+  color: var(--dk-blue);
+}
+.dk [data-tone="gray"] {
+  color: var(--dk-t3);
+}
+.dk-b {
+  font-weight: 700;
+}
+
+.dk-read {
+  background: var(--dk-card-2);
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  padding: 11px 16px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--dk-t1);
+}
+.dk-read[data-warn] {
+  border-color: var(--dk-sug-bd);
+  background: var(--dk-sug-bg);
+}
+.dk-read b {
+  font-weight: 700;
+}
+
+.dk .dk-link,
+.dk a.dk-link,
+.dk a.dk-link:hover {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--dk-blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  font: inherit;
+}
+.dk .dk-link:disabled {
+  color: var(--dk-t4);
+  cursor: default;
+}
+.dk-adv {
+  font-size: 13.5px;
+  color: var(--dk-t3);
+}
+
+/* ── Narrow widths: the sidebar opens from a Menu button (§1.1: the sidebar
+   stays the only navigation; there is no tab strip). ───────────────────── */
+.dk-menu-btn {
+  display: none;
+}
+@media (max-width: 900px) {
+  .dk {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dk-side {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 260px;
+    z-index: 50;
+    transform: translateX(-100%);
+    visibility: hidden;
+  }
+  .dk[data-menu="open"] .dk-side {
+    transform: none;
+    visibility: visible;
+    box-shadow: 0 0 60px rgba(12, 14, 17, 0.8);
+  }
+  .dk-menu-btn {
+    display: inline-flex;
+  }
+  .dk-top {
+    padding: 0 14px;
+  }
+  .dk-crumb {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dk-page {
+    padding: 14px 14px 23px;
+  }
+  .dk-title {
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+  .dk-title h1 {
+    white-space: normal;
+  }
+  .dk-title-badge {
+    margin-left: 0;
+  }
+  .dk-house-pop {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+}
+@media (max-width: 560px) {
+  .dk-top-r .dk-btn {
+    display: none;
+  }
+  .dk-stats {
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dk * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ── Monitored rows (§2, §9) ──────────────────────────────────────────── */
+.dk-mon-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dk-mon {
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  background: var(--dk-card-2);
+}
+.dk-mon-open {
+  border-color: var(--dk-sug-bd);
+}
+.dk-mon-row {
+  display: grid;
+  grid-template-columns: 54px auto minmax(0, 1fr) 64px 14px;
+  grid-template-areas: "name name name name caret" "nav room . bar caret";
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 3px;
+  width: 100%;
+  padding: 7px 11px 8px 12px;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.dk-mon-name {
+  grid-area: name;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--dk-t1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dk-mon-nav {
+  grid-area: nav;
+}
+.dk-mon-room {
+  grid-area: room;
+  min-width: 0;
+}
+.dk-mon-nav,
+.dk-mon-room {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t3);
+  white-space: nowrap;
+}
+.dk-mon-room {
+  color: var(--dk-t2);
+}
+.dk .dk-mon-dim {
+  color: var(--dk-t3);
+}
+.dk-mon-bar {
+  grid-area: bar;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--dk-row);
+  overflow: hidden;
+}
+.dk-mon-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--dk-t3);
+}
+.dk-mon-bar span[data-tone="green"] {
+  background: var(--dk-green);
+}
+.dk-mon-bar span[data-tone="amber"] {
+  background: var(--dk-amber);
+}
+.dk-mon-caret {
+  grid-area: caret;
+  font-size: 10px;
+  color: var(--dk-t3);
+  text-align: right;
+}
+
+/* Narrow rows: the room words on their own line with the bar under them. After the base
+   rules above, so it wins (verifier P-9: placed before them, it never applied). */
+@media (max-width: 560px) {
+  .dk-mon-row {
+    grid-template-columns: auto minmax(0, 1fr) 14px;
+    grid-template-areas: "name name caret" "nav room caret" "bar bar caret";
+  }
+  .dk-mon-room {
+    white-space: normal;
+  }
+}
+
+/* ── Verdict definitions (§1.5) ───────────────────────────────────────── */
+/* Four definitions (§1.5, B-13), two by two. */
+.dk-defs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 22px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 15.8px;
+  color: var(--dk-t3);
+}
+.dk-defs div {
+  margin: 0;
+}
+/* One column on a phone, wherever the definitions sit (not only where the Overview's styles have loaded). */
+@media (max-width: 700px) {
+  .dk-defs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.dk-defs dt {
+  display: inline;
+}
+.dk-defs dd {
+  display: inline;
+  margin: 0 0 0 4px;
+}
+.dk-nowrap {
+  white-space: nowrap;
+}
+
+/* The frame-2 walkthrough strip and the skip link, in v2 tokens (verifier V-4). */
+.dk .mrr-desk-tour {
+  left: var(--dk-side-w);
+  background: var(--dk-card-2);
+  border-top: 1px solid var(--dk-border);
+  box-shadow: 0 -8px 24px rgba(12, 14, 17, 0.6);
+}
+.dk .mrr-desk-tour-count {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--dk-t4);
+}
+.dk .mrr-desk-tour-caption {
+  font-family: var(--dk-sans);
+  font-size: 14px;
+  color: var(--dk-t1);
+}
+.dk .mrr-desk-tour .mrr-btn {
+  font-weight: 400;
+  line-height: 1.35;
+  border: 1px solid var(--dk-box);
+  background: var(--dk-card-2);
+  color: var(--dk-t1);
+  font-family: var(--dk-sans);
+  font-size: 13.5px;
+  border-radius: 7px;
+}
+.dk .mrr-desk-tour .mrr-btn:hover {
+  border-color: var(--dk-t4);
+}
+.dk .mrr-desk-tour .mrr-btn-primary {
+  background: var(--dk-t1);
+  border-color: var(--dk-t1);
+  color: var(--dk-page);
+  font-weight: 600;
+}
+.dk .mrr-desk-tour .mrr-btn:disabled {
+  background: var(--dk-card-2);
+  border-color: var(--dk-box);
+  color: var(--dk-t4);
+}
+.dk .mrr-skip {
+  background: var(--dk-card);
+  color: var(--dk-t1);
+  border-color: var(--dk-blue);
+  font-family: var(--dk-sans);
+}
+@media (max-width: 900px) {
+  .dk .mrr-desk-tour {
+    left: 0;
+  }
+}
+
+/* ── Charts (kit/LineChart.tsx) ───────────────────────────────────────── */
+.dk-chart {
+  width: 100%;
+  min-width: 0;
+  position: relative;
+}
+.dk-chart svg {
+  display: block;
+  overflow: visible;
+  fill: none;
+}
+.dk-chart-grid {
+  stroke: var(--dk-row);
+  stroke-width: 1;
+}
+.dk-chart-zero {
+  stroke: var(--dk-box);
+  stroke-width: 1;
+}
+.dk-chart-axis {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  fill: var(--dk-t4);
+}
+.dk-chart-end {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+}
+.dk-chart-point {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  fill: var(--dk-t2);
+}
+.dk-chart-band {
+  font-family: var(--dk-sans);
+  font-size: 12px;
+  fill: var(--dk-t3);
+}
+
+/* ── Band gauge (kit/Gauge.tsx) ───────────────────────────────────────── */
+.dk-gauge {
+  position: relative;
+}
+.dk-gauge-names {
+  display: flex;
+  font-size: 13.5px;
+  line-height: 18px;
+  color: var(--dk-t3);
+}
+.dk-gauge-thick .dk-gauge-names {
+  font-size: 15px;
+}
+.dk-gauge-names [data-tone="green"] {
+  color: var(--dk-green);
+  font-weight: 700;
+}
+.dk-gauge-names [data-tone="amber"] {
+  color: var(--dk-amber);
+  font-weight: 700;
+}
+.dk-gauge-track {
+  position: relative;
+  display: flex;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 999px;
+  overflow: visible;
+}
+.dk-gauge-thick .dk-gauge-track {
+  height: 21px;
+  margin-top: 8px;
+}
+.dk-gauge-track > span[data-tone] {
+  height: 100%;
+}
+.dk-gauge-track > span[data-tone]:first-child {
+  border-radius: 999px 0 0 999px;
+}
+.dk-gauge-track > span[data-tone]:nth-last-child(2) {
+  border-radius: 0 999px 999px 0;
+}
+.dk-gauge-track > span[data-tone="green"] {
+  background: rgba(38, 220, 160, 0.55);
+}
+.dk-gauge-track > span[data-tone="amber"] {
+  background: rgba(232, 180, 71, 0.55);
+}
+.dk-gauge-track > span[data-tone="neutral"] {
+  background: var(--dk-border);
+}
+.dk-gauge-needle {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: #ffffff;
+}
+.dk-gauge-under {
+  position: relative;
+  height: 34px;
+}
+.dk-gauge-tick {
+  position: absolute;
+  top: 7px;
+  transform: translateX(-50%);
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t4);
+}
+.dk-gauge-tick[data-edge="start"] {
+  transform: none;
+}
+.dk-gauge-tick[data-edge="end"] {
+  transform: translateX(-100%);
+}
+.dk-gauge-caption {
+  position: absolute;
+  top: 7px;
+  transform: translateX(-50%);
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--dk-t1);
+  white-space: nowrap;
+}
+.dk-gauge-thick .dk-gauge-under {
+  height: 40px;
+}
+.dk-gauge-thick .dk-gauge-caption {
+  top: 10px;
+  font-size: 26px;
+}
+
+
+/* ── Ranked bars (kit/RankBars.tsx) ───────────────────────────────────── */
+.dk-rank {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.dk-rank li {
+  display: grid;
+  grid-template-columns: 38px 52px minmax(0, 1fr) 52px;
+  align-items: center;
+  column-gap: 8px;
+  height: 45px;
+}
+.dk-rank-ticker,
+.dk-rank-name,
+.dk-rank-value {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  color: var(--dk-t1);
+  white-space: nowrap;
+}
+.dk-rank-value {
+  text-align: right;
+  color: var(--dk-t3);
+}
+/* A labelled select with the Desk's chevron (Event Study's slots, the Position Monitor's fields). */
+.dk-select {
+  position: relative;
+}
+.dk-select::after {
+  content: "▾";
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--dk-t3);
+  pointer-events: none;
+}
+.dk-select select {
+  appearance: none;
+  width: 100%;
+  height: 32px;
+  padding: 0 26px 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--dk-box);
+  background: var(--dk-card-2);
+  color: var(--dk-t1);
+  font-family: var(--dk-sans);
+  font-size: 14px;
+  cursor: pointer;
+}
+.dk-select select:disabled {
+  color: var(--dk-t4);
+  cursor: default;
+}
+/* Text for screen readers only (every tab: the Event Study bars, the Sectors dots). */
+.dk-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.dk-rank-await {
+  grid-column: 3 / -1;
+}
+.dk-rank-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--dk-row);
+  overflow: hidden;
+}
+.dk-rank-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--dk-box);
+}
+.dk-rank-track span[data-tone="green"] {
+  background: var(--dk-green);
+}
+.dk-rank-track span[data-tone="red"] {
+  background: var(--dk-red);
+}
+.dk-rank-track span[data-tone="gray"] {
+  background: rgba(139, 146, 158, 0.4);
+}
+
+/* ── Advanced panel (kit/ui.tsx) ──────────────────────────────────────── */
+.dk-adv-panel {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  background: var(--dk-card-2);
+  font-size: 13px;
+  color: var(--dk-t2);
+}
+.dk-adv-missing {
+  color: var(--dk-t3);
+}
+.dk-lc {
+  text-transform: none;
+}
+.dk-stat[data-size="date"] .dk-stat-value {
+  font-size: 24px;
+}
+.dk-stat[data-size="xl"] .dk-stat-value {
+  font-size: 35px;
+  line-height: 1.12;
+}
+
+.dk-gauge-under-names .dk-gauge-names {
+  margin-top: 5px;
+}
+.dk-gauge-under-names .dk-gauge-names [data-tone] {
+  font-weight: 400;
+}
+/* The Regime and Macro PNGs: a 14 px track, a 30 px needle, and the
+   caption on the band names' row at the needle. */
+.dk-gauge-under-names .dk-gauge-track {
+  height: 14px;
+}
+.dk-gauge-under-names .dk-gauge-needle {
+  top: -8px;
+  bottom: -8px;
+}
+.dk-gauge-under-names .dk-gauge-under {
+  margin-top: -18px;
+  height: 18px;
+}
+.dk-gauge-under-names .dk-gauge-caption {
+  top: 0;
+  font-size: 15px;
+  line-height: 18px;
+}
+
+/* ── Chips (the Ledger's filters and any pill-shaped choice) ─────────── */
+.dk-chip {
+  height: 25px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--dk-box);
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--dk-t2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dk-chip:hover:not(:disabled) {
+  border-color: var(--dk-t4);
+}
+.dk-chip:disabled {
+  cursor: default;
+}
+.dk-chip[aria-pressed="true"] {
+  border-color: var(--dk-rel-bd);
+  background: var(--dk-rel-bg);
+  color: var(--dk-green);
+}
+
+/* Below the shell's menu width Data Pipeline's badge moves under the title (its page renders
+   the copy): the top bar keeps the breadcrumb. Here, not in the page's sheet, so it holds before
+   the page's chunk lands (R2-2, R2-5). */
+@media (max-width: 900px) {
+  .dk .dk-top .pl-badge {
+    display: none;
+  }
+}
+/* Data Pipeline's top-bar badge when the last refresh did not validate (§11). */
+.pl-badge[data-tone="amber"] {
+  border-color: var(--dk-sug-bd);
+  background: var(--dk-sug-bg);
+  color: var(--dk-amber);
+}
+
+/* §1.1 (Codex R-22): the page footer names the generation the page's answers share. */
+.dk-gen {
+  margin-top: 28px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dk-box);
+  font-family: var(--dk-sans);
+  font-size: 12px;
+  color: var(--dk-t4);
+}
+.dk-gen-id {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+/* S-32: the Client view's snapshot line is not printed with the one-pager. */
+@media print {
+  .dk-gen[data-snapshot] {
+    display: none;
+  }
+}

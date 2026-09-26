@@ -1,0 +1,105 @@
+/** Desk v2 formatting (kit/format.ts, kit/MonitoredRows.tsx): true minus signs, fractions as percents, served dates at their own frequency. */
+import { describe, expect, it } from "vitest";
+import { dayLong, dayShort, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, signed, utcTime, year } from "./format";
+import { levelText, roomTone, roomWords, sortByRoom } from "./MonitoredRows";
+
+describe("numbers", () => {
+  it("signs with a true minus and never signs a rounded zero", () => {
+    expect(signed(2.7)).toBe("+2.7");
+    expect(signed(-0.4)).toBe("−0.4");
+    expect(signed(-0.04)).toBe("0.0");
+    expect(num(-0.24, 2)).toBe("−0.24");
+    expect(num(16.2)).toBe("16.2");
+  });
+  it("spells fractions as percents and points", () => {
+    expect(pct(0.031)).toBe("+3.1%");
+    expect(pct(-0.006)).toBe("−0.6%");
+    expect(pctPlain(0.68)).toBe("68%");
+    expect(pctPlain(0.0312, 2)).toBe("3.12%");
+    expect(pts(1.4)).toBe("+1.4 pts");
+    expect(pts(-1.9)).toBe("−1.9 pts");
+    expect(grouped(6412)).toBe("6,412");
+  });
+  it("never prints a number for a value that is not a finite number (Codex R-01)", () => {
+    const bad = [null, undefined, Number.NaN, Number.POSITIVE_INFINITY, "12"] as unknown as number[];
+    for (const x of bad) {
+      expect(signed(x)).toBe("—");
+      expect(num(x)).toBe("—");
+      expect(pct(x)).toBe("—");
+      expect(pctPlain(x)).toBe("—");
+      expect(pts(x)).toBe("—");
+      expect(grouped(x)).toBe("—");
+    }
+    expect(pct(0)).toBe("0.0%");
+  });
+  it("turns numbers into ordinals", () => {
+    expect(ordinal(74)).toBe("74th");
+    expect(ordinal(1)).toBe("1st");
+    expect(ordinal(22)).toBe("22nd");
+    expect(ordinal(13)).toBe("13th");
+    expect(ordinalWord(3)).toBe("third");
+  });
+});
+
+describe("dates", () => {
+  it("prints days, months and years from ISO stamps without a timezone shift", () => {
+    expect(dayShort("2026-09-22")).toBe("Sep 22");
+    expect(dayLong("2025-07-01")).toBe("Jul 1, 2025");
+    expect(monthShort("2026-05")).toBe("May");
+    expect(monthLong("2026-06")).toBe("June");
+    expect(monthYear("2025-07-01")).toBe("Jul 2025");
+    expect(year("2000-01-03")).toBe("2000");
+    expect(utcTime("2026-09-22T00:23:00Z")).toBe("00:23 UTC");
+  });
+});
+
+describe("monitored rows", () => {
+  it("colors room green at 50% or more, amber under 30%, neutral between", () => {
+    expect(roomTone(0.68)).toBe("green");
+    expect(roomTone(0.5)).toBe("green");
+    expect(roomTone(0.22)).toBe("amber");
+    expect(roomTone(0.4)).toBeUndefined();
+  });
+  it("prints the distance to the level in its unit and sorts least room first, a row without room last, then by id", () => {
+    expect(levelText({ value: 3.4, unit: "%" })).toBe("3.4%");
+    expect(levelText({ value: 3, unit: "bp" })).toBe("3 bp");
+    const rows = [
+      { id: "c", room_pct: 0.68 },
+      { id: "m2", room_pct: null },
+      { id: "a", room_pct: 0.22 },
+      { id: "m1", room_pct: null },
+      { id: "b", room_pct: 0.22 },
+    ];
+    expect(sortByRoom(rows).map((r) => r.id)).toEqual(["a", "b", "c", "m1", "m2"]);
+  });
+  it("words the room cell: room and distance, through the level, manual, or not computed (§2, §9)", () => {
+    const row = { id: "x", name: "Long S&P 500", size_nav: 0.02, monitoring: "automatic" as const, room_pct: 0.3, to_level: { value: 2.06, unit: "%" as const } };
+    expect(roomWords(row)).toEqual({ room: "30% room", level: "2.1% to level" });
+    expect(roomWords({ ...row, room_pct: -0.12, to_level: null })).toEqual({ room: "−12% room", level: "through the level" });
+    expect(roomWords({ ...row, room_pct: null, to_level: null })).toEqual({ room: "room —", level: "" });
+    expect(roomWords({ ...row, monitoring: "manual", room_pct: null, to_level: null })).toEqual({ room: "manual", level: "" });
+  });
+});
+
+import { extentTicks, niceTicks, spreadLabels } from "./LineChart";
+
+describe("chart ticks", () => {
+  it("encloses the price range in at most three round ticks (§3: 5,000 / 6,000 / 7,000)", () => {
+    expect(extentTicks(5480, 6420, 3)).toEqual([5000, 6000, 7000]);
+    expect(extentTicks(4100, 6420, 4)).toEqual([4000, 5000, 6000, 7000]);
+    expect(extentTicks(3.8, 4.62, 4)).toEqual([3.5, 4, 4.5, 5]);
+  });
+  it("keeps right-end labels 14 px apart", () => {
+    expect(spreadLabels([100, 105, 200])).toEqual([100, 114, 200]);
+    expect(niceTicks(0, 10, 4)).toEqual([0, 2.5, 5, 7.5, 10]);
+  });
+});
+
+describe("endDay (D13)", () => {
+  it("says today only for New York's today, else the day, and 'latest' without a date", async () => {
+    const { endDay } = await import("./format");
+    expect(endDay("2026-09-24", "2026-09-24")).toBe("today");
+    expect(endDay("2026-09-22", "2026-09-24")).toBe("Sep 22");
+    expect(endDay(undefined, "2026-09-24")).toBe("latest");
+  });
+});

@@ -1,11 +1,16 @@
 /**
- * The walkthrough (DESK_FRAME2_SPEC §6): six steps, each a real route with
- * real state, the step carried in the URL as `?tour=N` so any step is a link.
- * The routes are the spec's own; the short paths (`/desk/internals`,
- * `/desk/monitor`, `/desk/pipeline`, `/desk/notes`) are aliases DeskShell
- * resolves to the pages' slugs with the query kept. Nothing autoplays: a step
- * changes only on Back, Next or an arrow key. Pure, no React.
+ * The walkthrough (DESK_FRAME2_SPEC §6, kept by DESK_FRAME3_SPEC §2): six
+ * steps, each a real route with real state, the step carried in the URL as
+ * `?tour=N` so any step is a link. Frame-3 moves the steps onto the v2 tabs;
+ * the short paths (`/desk/internals`, `/desk/monitor`, `/desk/pipeline`,
+ * `/desk/notes`) are aliases DeskShell resolves (desk-sections.ts) with the
+ * query kept. Nothing autoplays: a step changes only on Back, Next or an
+ * arrow key. Pure, no React.
  */
+
+import { DESK_ALIASES } from "../desk-sections";
+
+export { DESK_ALIASES };
 
 export interface TourStep {
   /** The step's route, query included, without `tour`. */
@@ -17,23 +22,15 @@ export interface TourStep {
 export const TOUR_PARAM = "tour";
 
 export const TOUR_STEPS: readonly TourStep[] = [
-  { route: "/desk/event-study?study=gold-2sigma-spx-weak", caption: "The setup you described, on live data since 2000." },
-  { route: "/desk/internals", caption: "The 50/200 cross, scored the same way." },
-  // The spec's caption reads "the gate will not save"; §8's ban list covers
-  // every Desk string, so the same sentence says "does not" (report, D17).
-  { route: "/desk/monitor?from=gold-2sigma-spx-weak", caption: "Promoting a signal: the gate does not save without a falsification level." },
-  { route: "/desk/pipeline", caption: "Where every number comes from." },
-  { route: "/desk/event-study?study=gold-2sigma-spx-weak&view=client", caption: "The same study, as a client would read it." },
-  { route: "/desk/notes", caption: "How it was built, and how it could be wrong." },
+  { route: "/desk/event-study?preset=gold-2sigma-spx-weak", caption: "The setup you described, on live data since 2000." },
+  { route: "/desk/technicals", caption: "The 50/200 cross, scored the same way." },
+  // The frame-2 caption said "the gate will not save"; the ban list covers
+  // every Desk string, so the sentence says "does not" (FRAME2 report, D17).
+  { route: "/desk/position-monitor?from=gold-2sigma-spx-weak", caption: "Promoting a signal: the gate does not save without a falsification level." },
+  { route: "/desk/data-pipeline", caption: "Where every number comes from." },
+  { route: "/desk/event-study?preset=gold-2sigma-spx-weak&view=client", caption: "The same study, as a client would read it." },
+  { route: "/desk/build-notes", caption: "How it was built, and how it could be wrong." },
 ];
-
-/** The spec's short paths and the page slugs they open. */
-export const DESK_ALIASES: Readonly<Record<string, string>> = {
-  internals: "sp-internals",
-  monitor: "position-monitor",
-  pipeline: "data-pipeline",
-  notes: "build-notes",
-};
 
 /** The step a query string names, 1-based; null for none or anything out of range. */
 export function parseTour(search: string | URLSearchParams): number | null {

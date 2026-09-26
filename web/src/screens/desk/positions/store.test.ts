@@ -1,65 +1,138 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EMPTY_DRAFT, type Draft } from "./gate";
-import { POSITIONS_KEY, addPosition, parsePositions, positionProblem, removePosition, resetPositionsForTests, serializePositions } from "./store";
+/**
+ * The position store (§1.8, §9, v3 §16, v4 B-10): §9's rule on every
+ * record, validation on load and on Import with the failures kept as
+ * unreadable (never dropped), writes that keep them, explicit closes and the
+ * last 90 days' counts.
+ */
+import { beforeEach, describe, expect, it } from "vitest";
+import sample from "../../../fixtures/desk/positions.json";
+import { POSITIONS_KEY, closed90d, exportPositions, importPositions, isOpen, loadPositions, newPositionId, signedDistance, whyUnreadable, withClose, writePositions, type PositionRecord } from "./store";
 
-const GOOD: Draft = {
-  ...EMPTY_DRAFT,
-  instrument: "TLT",
-  variant_view: "Duration is likely to cheapen.",
-  pre_mortem: "The curve bull-steepened through my level.",
-  falsification_series: "DGS10",
-  falsification_level: "3.8",
-};
+const RECORDS = (sample as { positions: PositionRecord[] }).positions;
+const auto = RECORDS.find((p) => p.id === "2s10s-steepener")!;
+const manual = RECORDS.find((p) => p.id === "ndx-vs-spx")!;
+const NOW = new Date("2026-09-22T21:00:00Z");
+
+function memory(text: string | null = null) {
+  const m = new Map<string, string>();
+  if (text !== null) m.set(POSITIONS_KEY, text);
+  return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), text: () => m.get(POSITIONS_KEY) ?? null };
+}
 
 beforeEach(() => {
-  window.localStorage.clear();
-  resetPositionsForTests();
+  try {
+    localStorage.removeItem(POSITIONS_KEY);
+  } catch {
+    /* no storage in this environment */
+  }
 });
 
-describe("positions store", () => {
-  it("seeds nothing", () => {
-    expect(parsePositions(null)).toEqual([]);
-    expect(window.localStorage.getItem(POSITIONS_KEY)).toBeNull();
+describe("§9's rule", () => {
+  it("passes every sample record: automatic with a frozen level and positive room, manual with neither", () => {
+    for (const p of RECORDS) expect(whyUnreadable(p), p.id).toBeNull();
+    expect(auto.monitoring).toBe("automatic");
+    expect(signedDistance(auto.entry_value as number, auto.trigger!)).toBe(auto.original_room);
   });
-  it("refuses a draft the gate refuses and writes nothing", () => {
-    const r = addPosition({ ...GOOD, variant_view: "" });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/variant view/);
-    expect(window.localStorage.getItem(POSITIONS_KEY)).toBeNull();
-    const flagged = addPosition({ ...GOOD, pre_mortem: "It will never fail." });
-    expect(flagged.ok).toBe(false);
-    expect(window.localStorage.getItem(POSITIONS_KEY)).toBeNull();
+  it("reads the signed distance the same way at entry and now: value − threshold below, threshold − value above", () => {
+    expect(signedDistance(6412, { operator: "below", threshold: 6280 })).toBe(132);
+    expect(signedDistance(6412, { operator: "above", threshold: 6500 })).toBe(88);
+    expect(signedDistance(6200, { operator: "below", threshold: 6280 })).toBe(-80);
   });
-  it("saves a passing draft under the versioned key and removes it again", () => {
-    const r = addPosition(GOOD, new Date("2026-09-21T12:00:00Z"));
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.persisted).toBe(true);
-    const stored = parsePositions(window.localStorage.getItem(POSITIONS_KEY));
-    expect(stored).toHaveLength(1);
-    expect(stored[0].falsification).toEqual({ series: "DGS10", level: 3.8, direction: "below" });
-    expect(stored[0].created_at).toBe("2026-09-21T12:00:00.000Z");
-    expect(removePosition(r.position.id)).toBe(true);
-    expect(parsePositions(window.localStorage.getItem(POSITIONS_KEY))).toEqual([]);
+  it("names what fails: the gate, the wording, the subject, the monitoring", () => {
+    const cases: [Partial<PositionRecord> | Record<string, unknown>, RegExp][] = [
+      [{ instrument: "  " }, /no instrument/],
+      [{ variant: "" }, /no variant view/],
+      [{ pre_mortem: " " }, /no pre-mortem/],
+      [{ variant: "It will rally." }, /certainty words .*\(will\)/],
+      [{ size_nav: 1.5 }, /size/],
+      [{ horizon_days: 30 }, /horizon/],
+      [{ wrong_if: { id: "", label: "x" } }, /“wrong if”/],
+      [{ subject: { kind: "study", question: { shock: "gold" } } }, /full question/],
+      [{ subject: { kind: "basket", legs: [], benchmark: null } }, /basket/],
+      [{ wrong_if: { id: "signal_reverses", label: "the signal reverses" } }, /signal reverses/],
+      [{ entry_date: "2026-02-30" }, /entry date/],
+      [{ closes: [{ type: "sold", ts: "2026-09-10T20:00:00Z", premortem_right: null }] }, /close/],
+    ];
+    for (const [change, why] of cases) expect(whyUnreadable({ ...manual, ...change }), JSON.stringify(change)).toMatch(why);
   });
-  it("reads corrupt, foreign-version or half-shaped data as empty", () => {
-    expect(parsePositions("{not json")).toEqual([]);
-    expect(parsePositions(JSON.stringify({ version: 2, positions: [] }))).toEqual([]);
-    expect(parsePositions(JSON.stringify({ version: 1, positions: [{ id: "x", instrument: "TLT" }] }))).toEqual([]);
-    const ok = { id: "a", instrument: "TLT", direction: "long", size: "", horizon: "3 months", variant_view: "v", pre_mortem: "p", falsification: { series: "DGS10", level: 3.8, direction: "below" }, created_at: "2026-01-01T00:00:00Z" };
-    expect(parsePositions(serializePositions([ok as never]))).toHaveLength(1);
+  it("B-10: automatic needs positive room at entry that matches its frozen level; manual carries no level", () => {
+    expect(whyUnreadable({ ...auto, original_room: 0 })).toMatch(/room at entry/);
+    expect(whyUnreadable({ ...auto, original_room: -3, entry_value: 35 })).toMatch(/room at entry/);
+    expect(whyUnreadable({ ...auto, original_room: 12 })).toMatch(/does not match/);
+    expect(whyUnreadable({ ...auto, trigger: { ...auto.trigger!, policy: "moving" } })).toMatch(/cannot be read/);
+    // The S&P's 200-day is not monitored automatically, whatever the record says.
+    expect(whyUnreadable({ ...auto, wrong_if: { id: "below_200d", label: "closes below its 200-day" } })).toMatch(/does not monitor/);
+    // §9: automatic only when the subject's monitored quantity is the served series itself.
+    expect(whyUnreadable({ ...auto, subject: { kind: "basket", legs: [{ symbol: "NVDA", weight: 100 }], benchmark: null } })).toMatch(/basket monitored automatically/);
+    expect(whyUnreadable({ ...auto, instrument: "TLT" })).toMatch(/not its series/);
+    expect(whyUnreadable({ ...auto, direction: "short" })).toMatch(/wrong side/);
+    expect(whyUnreadable({ ...manual, original_room: 3 })).toMatch(/manual position carrying/);
+    expect(whyUnreadable({ ...manual, monitoring: "sometimes" })).toMatch(/monitoring/);
   });
-  it("drops a stored position the gate or the series check refuses, with a console note (R-05)", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const base = { id: "a", instrument: "TLT", direction: "long", size: "", horizon: "3 months", variant_view: "Duration is likely to cheapen.", pre_mortem: "The curve steepened.", falsification: { series: "DGS10", level: 3.8, direction: "below" }, created_at: "2026-01-01T00:00:00Z" };
-    const flagged = { ...base, id: "b", variant_view: "This will definitely work." };
-    const empty = { ...base, id: "c", pre_mortem: "  " };
-    const foreign = { ...base, id: "d", falsification: { series: "NOT_A_SERIES", level: 1, direction: "above" } };
-    const kept = parsePositions(serializePositions([base, flagged, empty, foreign] as never));
-    expect(kept.map((p) => p.id)).toEqual(["a"]);
-    expect(warn).toHaveBeenCalledTimes(3);
-    expect(warn.mock.calls.map((c) => String(c[0])).join(" | ")).toMatch(/replace 2 flagged words[\s\S]*write the pre-mortem[\s\S]*not one the Desk reads/);
-    expect(positionProblem(base as never)).toBeNull();
-    warn.mockRestore();
+});
+
+describe("storage", () => {
+  it("keeps what it cannot read through load and write (§9: never dropped)", () => {
+    const bad = { ...manual, id: "bad", variant: "It always works." };
+    const dup = { ...auto };
+    const store = memory(JSON.stringify([manual, bad, auto, dup, 7]));
+    const s = loadPositions(store);
+    expect(s.positions.map((p) => p.id)).toEqual(["ndx-vs-spx", "2s10s-steepener"]);
+    expect(s.unreadable.map((u) => u.why)).toEqual(["certainty words in the variant view or the pre-mortem (always)", "a second record with the same id", "not a position record"]);
+    expect(writePositions(s, store)).toBe("ok");
+    expect(JSON.parse(store.text()!)).toEqual([manual, auto, bad, dup, 7]);
+  });
+  it("keeps storage that is not a JSON list whole, as one unreadable entry, and writes it back unchanged in content", () => {
+    const store = memory("{not json");
+    const s = loadPositions(store);
+    expect(s.positions).toEqual([]);
+    expect(s.unreadable).toEqual([{ raw: "{not json", why: "text that is not a position record" }]);
+    writePositions({ ...s, positions: [manual] }, store);
+    expect(JSON.parse(store.text()!)).toEqual([manual, "{not json"]);
+  });
+  it("says when the browser keeps nothing", () => {
+    expect(writePositions({ positions: [], unreadable: [] }, null)).toBe("off");
+    expect(writePositions({ positions: [], unreadable: [] }, { setItem: () => { throw new Error("quota"); } })).toBe("full");
+  });
+  it("gives a new position an id no stored record holds", () => {
+    const s = { positions: [{ ...manual, id: `p${NOW.getTime().toString(36)}` }], unreadable: [] };
+    expect(newPositionId(s, NOW)).toBe(`p${NOW.getTime().toString(36)}-2`);
+  });
+});
+
+describe("Export / Import JSON (§1.8)", () => {
+  it("exports everything, unreadable entries included, and imports without replacing or copying anything", () => {
+    const s = { positions: [manual], unreadable: [{ raw: { id: "odd" }, why: "no instrument" }] };
+    const text = exportPositions(s);
+    expect(JSON.parse(text)).toMatchObject({ kind: "mrr.desk.positions", version: 1, positions: [manual, { id: "odd" }] });
+    const changed = { ...manual, size_nav: 0.05 };
+    const r = importPositions(s, JSON.stringify({ positions: [manual, auto, changed, { id: "odd" }, { id: "new-odd" }] }))!;
+    // An id is a position: the same one, or a changed copy of it, is skipped and the one here kept; the unreadable kept once.
+    expect([r.added, r.skipped, r.unreadable]).toEqual([1, 3, 1]);
+    expect(r.store.positions).toEqual([manual, auto]);
+    expect(r.store.unreadable.map((u) => (u.raw as { id: string }).id)).toEqual(["odd", "new-odd"]);
+    expect(importPositions(s, "[not json")).toBeNull();
+    expect(importPositions(s, '{"questions": []}')).toBeNull();
+  });
+  it("a changed copy of a closed position never counts its close twice", () => {
+    const closed = RECORDS.find((p) => p.closes.length)!;
+    const s = { positions: [closed], unreadable: [] };
+    const r = importPositions(s, JSON.stringify([{ ...closed, size_nav: 0.09 }]))!;
+    expect(closed90d(r.store, NOW)).toEqual(closed90d(s, NOW));
+  });
+});
+
+describe("closes (§9)", () => {
+  it("closes only by an explicit event, once, and counts the last 90 days' closes", () => {
+    const s = { positions: RECORDS, unreadable: [] };
+    // The sample: two falsified, one expired; the pre-mortem judged twice, right once.
+    expect(closed90d(s, NOW)).toEqual({ falsified: 2, expired: 1, premortem_right: [1, 2] });
+    const closed = withClose(s, "ndx-vs-spx", "closed", true, NOW);
+    expect(isOpen(closed.positions.find((p) => p.id === "ndx-vs-spx")!)).toBe(false);
+    expect(closed90d(closed, NOW)).toEqual({ falsified: 2, expired: 1, premortem_right: [2, 3] });
+    // A second close of the same position records nothing.
+    expect(withClose(closed, "ndx-vs-spx", "falsified", null, NOW).positions.find((p) => p.id === "ndx-vs-spx")!.closes).toHaveLength(1);
+    // Closes older than 90 days leave the strip.
+    expect(closed90d(s, new Date("2027-01-01T00:00:00Z"))).toEqual({ falsified: 0, expired: 0, premortem_right: [0, 0] });
   });
 });

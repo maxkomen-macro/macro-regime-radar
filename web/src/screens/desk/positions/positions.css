@@ -1,0 +1,357 @@
+/* Position Monitor (DESK_FRAME3_SPEC §9; geometry from screens/08-position-monitor.png at 1440). */
+.pm {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.pm .dk-title h1 {
+  font-size: 36px;
+}
+.pm-sub {
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--dk-t3);
+  margin-top: 4px;
+}
+.pm-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 385px;
+  gap: 19px;
+  align-items: stretch;
+}
+.pm-left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pm-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pm-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 12px;
+  padding: 14px 14px 18px;
+}
+.pm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pm-input {
+  height: 36px;
+  width: 100%;
+  padding: 0 12px;
+  border-radius: 7px;
+  border: 1px solid var(--dk-box);
+  background: var(--dk-card-2);
+  color: var(--dk-t1);
+  font-family: var(--dk-sans);
+  font-size: 14px;
+}
+.pm-mono {
+  font-family: var(--dk-mono);
+}
+.pm-fields .dk-select select {
+  height: 36px;
+}
+.pm-gate {
+  flex: 1;
+  padding: 14px 14px 16px;
+}
+.pm-gate-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pm-progress {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  color: var(--dk-t4);
+}
+.pm-step-label {
+  display: block;
+  margin-top: 12px;
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dk-t3);
+}
+.pm-step-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--dk-t4);
+}
+.pm-text {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--dk-box);
+  background: var(--dk-card-2);
+  color: var(--dk-t1);
+  font-family: var(--dk-sans);
+  font-size: 14px;
+  line-height: 1.35;
+  resize: vertical;
+}
+.pm-text[data-done] {
+  border-color: var(--dk-rel-bd);
+}
+.pm-row3 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.pm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pm-chip {
+  /* A long suggested level wraps inside its pill (R2-4). */
+  min-height: 27px;
+  height: auto;
+  white-space: normal;
+  text-align: left;
+}
+.pm-more {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.1fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+/* Narrower than the design, the select and the typed level stack (R2-4, N-1). */
+@media (max-width: 1340px) {
+  .pm-more {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.pm-own {
+  height: 32px;
+  border-color: var(--dk-box);
+}
+.pm-wording {
+  margin-top: 12px;
+  padding: 10px 11px 10px;
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  background: var(--dk-card-2);
+}
+.pm-wording[data-flagged] {
+  border-color: var(--dk-sug-bd);
+  background: var(--dk-sug-bg);
+}
+.pm-wording .pm-step-label {
+  margin-top: 0;
+}
+.pm-wording-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 14px;
+}
+.pm-quote s {
+  text-decoration-thickness: 2px;
+}
+.pm-fix {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--dk-box);
+  background: transparent;
+  color: var(--dk-t1);
+  font-size: 13px;
+  cursor: pointer;
+}
+.pm-fix[data-kind="primary"] {
+  background: var(--dk-green);
+  border-color: var(--dk-green);
+  color: var(--dk-page);
+  font-weight: 700;
+}
+.pm-wording-note {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--dk-t3);
+}
+.pm-save {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 18px;
+}
+.pm-save-btn {
+  height: 36px;
+  padding: 0 20px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.pm-left-words {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+}
+.pm-mon {
+  flex: 1;
+  padding: 12px 17px 16px;
+}
+.pm-mon-sub {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  color: var(--dk-t3);
+  margin-top: 2px;
+}
+.pm-list {
+  margin-top: 12px;
+}
+/* The right column is 385 px: the room words take the row, the bar sits under them (P-9). */
+.pm-list .dk-mon-row {
+  grid-template-columns: 54px minmax(0, 1fr) 14px;
+  grid-template-areas: "name name caret" "nav room caret" "bar bar caret";
+}
+.pm-list .dk-mon-bar {
+  margin-top: 3px;
+}
+.pm-note {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--dk-t4);
+  margin-top: 10px;
+}
+.pm-exp {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--dk-box);
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--dk-t1);
+}
+.pm-exp .dk-stat-label {
+  margin-top: 8px;
+  font-size: 11px;
+}
+.pm-exp-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.pm-exp-links {
+  margin-top: 8px;
+}
+.pm-closed {
+  padding: 12px 17px 12px;
+}
+.pm-closed dl {
+  margin: 8px 0 0;
+}
+.pm-closed dl div {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--dk-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dk-t2);
+}
+.pm-closed dd {
+  margin: 0;
+  color: var(--dk-t1);
+}
+/* §9: a manual row names how it is watched, in words. */
+.pm-manual {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+/* Close…: an explicit close and the pre-mortem judged (§9). */
+.pm-close {
+  margin-top: 4px;
+}
+.pm-close .pm-chips {
+  margin-top: 4px;
+}
+.pm-close-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+/* Export / Import JSON of the store (§1.8) and the records it cannot read (§9). */
+.pm-store {
+  padding: 10px 17px 12px;
+}
+.pm-io {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  font-size: 12.5px;
+}
+.pm-io-words {
+  color: var(--dk-t3);
+  margin-right: auto;
+}
+.pm-io-note {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--dk-t3);
+}
+.pm-unreadable {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dk-box);
+}
+.pm-unreadable ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--dk-t2);
+}
+.pm-unreadable-id {
+  font-family: var(--dk-mono);
+  color: var(--dk-t1);
+}
+@media (max-width: 1100px) {
+  .pm-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pm-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pm-row3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .pm-fields,
+  .pm-more,
+  .pm-exp-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* In a window taller than the design's, the cards keep their content's height (P-10). */
+@media (min-height: 1100px) {
+  .pm-grid {
+    align-items: start;
+  }
+  .pm-gate,
+  .pm-mon {
+    flex: none;
+  }
+}

@@ -28,5 +28,6 @@ tests
 .claude
 scripts
 *.md
-# ...except the one document the web stage builds in (Desk Build Notes):
+# ...except the one document the web stage builds in (Desk Build Notes) and its figures:
 !docs/desk/BUILD_NOTES.md
+!docs/desk/screens/*.svg

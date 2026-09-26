@@ -1,0 +1,277 @@
+/* Technicals (DESK_FRAME3_SPEC §3; geometry from screens/02-technicals.png at 1440). */
+.te {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.te-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--dk-gap);
+}
+.te-vol {
+  grid-row: 1 / 3;
+  grid-column: 1;
+  padding: 11px 18px 14px 19px;
+}
+.te-price {
+  grid-row: 1;
+  grid-column: 2;
+}
+.te-signals {
+  grid-row: 1;
+  grid-column: 3;
+}
+.te-sectors {
+  grid-row: 2;
+  grid-column: 2;
+}
+.te-rsi {
+  grid-row: 2;
+  grid-column: 3;
+}
+.te .dk-card {
+  padding: 11px 17px 14px;
+}
+
+/* Vol column */
+.te-vol-head {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--dk-border);
+}
+.te-vol .dk-card-title {
+  font-size: 15.5px;
+}
+.te-vol-sub {
+  font-size: 13.5px;
+  color: var(--dk-t2);
+  margin-top: 3px;
+  line-height: 1.25;
+}
+.te-vol-sec {
+  padding: 18px 0 17px;
+  border-bottom: 1px solid var(--dk-border);
+}
+.te-vol-sec .dk-stat-value {
+  margin-top: 1px;
+}
+.te-vol-meaning {
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--dk-t1);
+  margin-top: 6px;
+}
+.te-vol-context {
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--dk-t3);
+  margin-top: 3px;
+}
+.te-vs {
+  font-size: 0.62em;
+  color: var(--dk-t3);
+}
+.te-vol-gauge .dk-gauge {
+  margin-top: 8px;
+}
+.te-vol-caption {
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--dk-t2);
+  margin-top: 6px;
+}
+.te-vol-foot {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.te-source {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--dk-t4);
+  margin-top: 8px;
+}
+
+/* Price card */
+.te-range {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+.te-range button {
+  height: 21px;
+  min-width: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--dk-box);
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t3);
+  cursor: pointer;
+}
+.te-range button[aria-pressed="true"] {
+  border-color: var(--dk-rel-bd);
+  background: var(--dk-rel-bg);
+  color: var(--dk-green);
+}
+.te .dk-stats {
+  margin-top: 9px;
+}
+.te-price .dk-chart {
+  margin-top: 8px;
+  flex: 1;
+  min-height: 200px;
+}
+.te-callout {
+  margin-top: 8px;
+  border: 1px solid var(--dk-no-bd);
+  background: var(--dk-no-bg);
+  border-radius: 8px;
+  padding: 8px 11px 9px;
+  font-size: 13.5px;
+  line-height: 17px;
+  color: var(--dk-t1);
+}
+.te-callout[data-verdict="reliable"] {
+  border-color: var(--dk-rel-bd);
+  background: var(--dk-rel-bg);
+}
+.te-callout[data-verdict="suggestive"] {
+  border-color: var(--dk-sug-bd);
+  background: var(--dk-sug-bg);
+}
+.te-callout .dk-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  color: var(--dk-green);
+  vertical-align: 0;
+}
+.te-callout[data-verdict="suggestive"] .dk-dot {
+  color: var(--dk-amber);
+}
+.te-callout[data-verdict="no_edge"] .dk-dot {
+  color: var(--dk-gray);
+}
+
+/* Signals card */
+.te-sig-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+.te-sig-list li {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 36px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--dk-row);
+}
+.te-sig-list li:last-child {
+  border-bottom: 0;
+}
+.te-sig-list li > b {
+  font-size: 14px;
+  line-height: 16px;
+}
+/* The sentence only: the verdict pill keeps the kit's own type and gray (§1.3). */
+.te-sig-list li > .te-sig-text {
+  font-size: 13px;
+  line-height: 14px;
+  color: var(--dk-t2);
+}
+.te-sig-list li > .te-sig-text b {
+  color: var(--dk-t1);
+}
+.te-signals .dk-stat-sub {
+  font-size: 13px;
+}
+/* The trend's words (§3) break between words in a narrow column; the numbers have no spaces to break at. */
+.te-signals .dk-stat-value {
+  white-space: normal;
+}
+.te-note {
+  margin-top: auto;
+  font-size: 13.5px;
+  line-height: 17.5px;
+  padding: 9px 11px 10px;
+}
+
+/* Sector card */
+.te-sectors .dk-card-title {
+  font-size: 15px;
+}
+.te-sect-read {
+  font-size: 13px;
+  line-height: 14px;
+  color: var(--dk-t3);
+  margin-top: 1px;
+}
+.te-sectors .dk-rank {
+  margin-top: 34px;
+}
+.te-foot {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+/* RSI card */
+.te-rsi .dk-stats {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--dk-border);
+}
+.te-rsi-gauge {
+  padding: 22px 0 24px;
+  border-bottom: 1px solid var(--dk-border);
+}
+.te-rsi-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 9px;
+}
+.te-rsi-note {
+  font-size: 13.5px;
+  line-height: 17px;
+  padding: 9px 12px 10px;
+}
+
+@media (max-width: 1180px) {
+  .te-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+  .te-vol,
+  .te-price,
+  .te-signals,
+  .te-sectors,
+  .te-rsi {
+    grid-row: auto;
+    grid-column: auto;
+  }
+}
+@media (max-width: 760px) {
+  .te-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .te-sig-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .te-sig-list li > .te-sig-text {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+/* The narrow vol column, unavailable: the title and subtitle get the width, the badge sits under them. */
+.te-vol[data-unserved] .dk-card-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}

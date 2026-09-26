@@ -1,0 +1,296 @@
+/* Regime (DESK_FRAME3_SPEC §5; geometry measured on screens/04-regime.png at
+   1440): stat values 23 px with 12.5 px notes on a 14 px line, every box
+   13.5 px on a 17 px line, the table's columns at the PNG's right edges; the
+   recession gauge is the kit's names-under gauge (desk2.css). */
+.rg {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+/* Two rows of equal height, each as tall as the taller content needs; the
+   cards never stretch to the viewport (verifier M-7). */
+.rg-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 13px var(--dk-gap);
+}
+.rg-card {
+  padding: 11px 17px 10px;
+}
+.rg-card .dk-card-body {
+  gap: 0;
+}
+.rg-card .dk-card-foot {
+  margin-top: 5.5px;
+  padding-top: 7px;
+  border-top-color: var(--dk-border);
+}
+.rg-big {
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 38.5px;
+  line-height: 1.07;
+  color: var(--dk-t1);
+  margin-top: 6px;
+}
+/* §5: the label, and beside it (separately) the newest stored row. */
+.rg-label-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 16px;
+}
+.rg-latest {
+  font-size: 13px;
+  color: var(--dk-t3);
+}
+.rg-lede {
+  font-size: 14px;
+  color: var(--dk-t1);
+  margin-top: 2px;
+}
+.rg-card .dk-stats {
+  margin-top: 10px;
+}
+.rg-card .dk-stat-value {
+  font-size: 23px;
+  margin-top: 1px;
+}
+.rg-card .dk-stat-sub {
+  font-size: 12.5px;
+  line-height: 1.12;
+}
+.rg-card .dk-read {
+  padding: 8px 13px 9px;
+  font-size: 13.5px;
+  line-height: 17px;
+  margin-top: auto;
+}
+.rg-rec-line {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.rg-rec-big {
+  font-size: 38px;
+  line-height: 1.15;
+}
+.rg-rec-words {
+  font-size: 14px;
+  color: var(--dk-t2);
+}
+.rg-rec-for {
+  font-size: 13px;
+  color: var(--dk-t3);
+}
+.rg-card .dk-gauge {
+  margin-top: 6px;
+}
+/* The PNG leaves 32 px from the band names to the stat labels. */
+.rg-card .dk-gauge + .dk-stats {
+  margin-top: 17.5px;
+}
+
+/* The last five years. */
+.rg-strip-wrap {
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+.rg-strip {
+  display: flex;
+  height: 21px;
+  margin-top: 6px;
+  border-radius: 5px;
+  overflow: hidden;
+  gap: 2px;
+}
+.rg-strip span {
+  height: 100%;
+  background: var(--dk-gray);
+}
+.rg-strip span[data-tone="green"] {
+  background: var(--dk-green);
+}
+.rg-strip span[data-tone="amber"] {
+  background: var(--dk-amber);
+}
+.rg-strip span[data-tone="red"] {
+  background: var(--dk-red);
+}
+/* A month with no stored regimes row keeps its slot, drawn empty (Codex R-25). */
+.rg-strip span[data-gap] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--dk-box);
+}
+.rg-strip-years {
+  position: relative;
+  height: 15px;
+  margin-top: 2px;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t4);
+}
+.rg-strip-years span {
+  position: absolute;
+  top: 0;
+}
+.rg-strip-years .rg-today {
+  right: 0;
+}
+.rg-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--dk-t2);
+  margin-top: 2px;
+}
+.rg-key i,
+.rg-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--dk-gray);
+}
+.rg-dot {
+  border-radius: 50%;
+  margin-right: 10px;
+}
+.rg-key i[data-tone="green"],
+.rg-dot[data-tone="green"] {
+  background: var(--dk-green);
+}
+.rg-key i[data-tone="amber"],
+.rg-dot[data-tone="amber"] {
+  background: var(--dk-amber);
+}
+.rg-key i[data-tone="red"],
+.rg-dot[data-tone="red"] {
+  background: var(--dk-red);
+}
+
+/* What each regime has meant: the columns end where the PNG's do (MONTHS at
+   216, S&P 308.5, UP 380.5, VIX 461.5, STOCK–BOND 556 of a 556 px table). */
+.rg-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.rg-col-regime {
+  width: 27%;
+}
+.rg-col-months {
+  width: 11.9%;
+}
+.rg-col-spx {
+  width: 16.6%;
+}
+.rg-col-up {
+  width: 12.9%;
+}
+.rg-col-vix {
+  width: 14.6%;
+}
+.rg-col-sb {
+  width: 17%;
+}
+.rg-table th,
+.rg-table td {
+  height: 30px;
+  padding-left: 6px;
+  text-align: right;
+  font-weight: 400;
+  border-bottom: 1px solid var(--dk-row);
+  color: var(--dk-t1);
+}
+.rg-table th[scope="row"],
+.rg-table thead th:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+.rg-table thead th {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+  height: 24px;
+}
+.rg-table td {
+  font-family: var(--dk-mono);
+  font-size: 13px;
+}
+.rg-table tbody tr:last-child th,
+.rg-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.rg-table tr[data-current] th {
+  font-weight: 700;
+}
+.rg-table th[scope="row"] {
+  white-space: nowrap;
+}
+
+/* What would change it. */
+.rg-changes-h {
+  margin-top: 8px;
+}
+.rg-changes {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+}
+.rg-changes li {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) auto;
+  align-items: center;
+  height: 29px;
+  border-bottom: 1px solid var(--dk-row);
+  font-size: 14px;
+}
+.rg-changes li:last-child {
+  border-bottom: 0;
+}
+.rg-changes li > :last-child {
+  font-family: var(--dk-mono);
+  font-size: 13px;
+}
+.rg-month {
+  font-family: var(--dk-mono);
+  font-size: 12.5px;
+  color: var(--dk-t3);
+}
+/* Narrower than the PNG: the columns size to their contents again. */
+@media (max-width: 1300px) {
+  .rg-table {
+    table-layout: auto;
+  }
+  .rg-table col {
+    width: auto;
+  }
+}
+@media (max-width: 1000px) {
+  .rg-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: auto;
+  }
+}
+/* §5: the served history note under the strip. */
+.rg-strip-note {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+/* §5: the "What would change it" card's sub-label, the print its next prints are read from. */
+.rg-from {
+  margin-top: -2px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--dk-t3);
+}
