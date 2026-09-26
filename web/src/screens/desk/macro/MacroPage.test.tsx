@@ -252,35 +252,59 @@ describe("Macro tab", () => {
   });
 });
 
-describe("the month ago's dates (§6, §12.8: S-29, S-30)", () => {
-  const grayPaths = (chart: HTMLElement) => [...chart.querySelectorAll("path")].filter((p) => p.getAttribute("stroke") === DESK_ACCENTS.gray);
-
-  it("with a common month-ago date the gray line joins its points, and its dates are said under the chart", async () => {
-    renderTab();
+describe("each snapshot checked on its own date (§6, §12.8: S-29, S-30)", () => {
+  const paths = (chart: HTMLElement, color: string) => [...chart.querySelectorAll("path")].filter((p) => p.getAttribute("stroke") === color);
+  const dots = (chart: HTMLElement, color: string) => [...chart.querySelectorAll("circle")].filter((c) => c.getAttribute("fill") === color);
+  const labels = (chart: HTMLElement) => [...chart.querySelectorAll("text")].map((t) => t.textContent);
+  const apart = { date: null, dates: { ...macroFixture.curve.month_ago.dates, "2y": "2026-08-21", "10y": "2026-08-20" } };
+  const serve = (curve: Record<string, unknown>) => stubDesk({ "/api/desk/macro": () => ({ ...macroFixture, curve: { ...macroFixture.curve, ...curve } }) });
+  const chartOf = async () => {
     const card = await screen.findByRole("region", { name: /Yield curve/ });
-    await waitFor(() => expect(card).toHaveTextContent("A month ago: 2y Aug 21 · 10y Aug 21"));
-    expect(grayPaths(within(card).getByRole("img", { name: /Treasury yields by tenor/ }))).toHaveLength(1);
+    await waitFor(() => expect(within(card).getByRole("img", { name: /Treasury yields by tenor/ })).toBeInTheDocument());
+    return { card, chart: within(card).getByRole("img", { name: /Treasury yields by tenor/ }) };
+  };
+
+  it("(3) both dates common: two curves, and the month ago's dates listed", async () => {
+    renderTab();
+    const { card, chart } = await chartOf();
+    expect([paths(chart, DESK_ACCENTS.blue), paths(chart, DESK_ACCENTS.gray)].map((x) => x.length)).toEqual([1, 1]);
+    expect(card).toHaveTextContent("A month ago: 2y Aug 21 · 10y Aug 21");
+    expect(card).not.toHaveTextContent("Today:");
   });
 
-  it("with month-ago dates apart the points are labelled markers with no line, and both changes are null", async () => {
-    const curve = {
-      ...macroFixture.curve,
-      month_ago: { ...macroFixture.curve.month_ago, date: null, dates: { ...macroFixture.curve.month_ago.dates, "2y": "2026-08-21", "10y": "2026-08-20" } },
-      "2s10s_chg_bp": null,
-      "10y_chg_bp": null,
-    };
-    stubDesk({ "/api/desk/macro": () => ({ ...macroFixture, curve }) });
+  it("(2) today common, the month ago dated apart: today one curve, the month ago labelled points with no line, its dates listed", async () => {
+    serve({ month_ago: { ...macroFixture.curve.month_ago, ...apart }, "2s10s_chg_bp": null, "10y_chg_bp": null });
     renderTab();
-    const card = await screen.findByRole("region", { name: /Yield curve/ });
+    const { card, chart } = await chartOf();
     await waitFor(() => expect(card).toHaveTextContent("A month ago: 2y Aug 21 · 10y Aug 20"));
-    const chart = within(card).getByRole("img", { name: /against a month ago, each tenor on its own date/ });
-    expect(grayPaths(chart)).toHaveLength(0);
-    expect([...chart.querySelectorAll("circle")].filter((c) => c.getAttribute("fill") === DESK_ACCENTS.gray)).toHaveLength(2);
-    const labels = [...chart.querySelectorAll("text")].map((t) => t.textContent);
-    // S-30: each point labelled with its tenor and date; the last also names the snapshot.
-    expect(labels).toEqual(expect.arrayContaining(["2y Aug 21", "a month ago · 10y Aug 20"]));
+    expect(chart.getAttribute("aria-label")).toContain("against a month ago, each tenor on its own date");
+    expect([paths(chart, DESK_ACCENTS.blue), paths(chart, DESK_ACCENTS.gray)].map((x) => x.length)).toEqual([1, 0]);
+    expect(dots(chart, DESK_ACCENTS.gray)).toHaveLength(2);
+    // Each point labelled with its tenor and date; the last also names the snapshot.
+    expect(labels(chart)).toEqual(expect.arrayContaining(["2y Aug 21", "a month ago · 10y Aug 20", "4.71", "4.96"]));
     // S-29: a difference whose month-ago date is null is null: no "on the month", no steepening word.
     expect(card).not.toHaveTextContent(/on the month|steepening|flattening/);
+  });
+
+  it("(1) both dates null, each tenor on its own date: both snapshots labelled points with no line, both sets of dates listed", async () => {
+    serve({
+      today: { ...macroFixture.curve.today, date: null, dates: { ...macroFixture.curve.today.dates, "2y": "2026-09-22", "10y": "2026-09-21" } },
+      month_ago: { ...macroFixture.curve.month_ago, ...apart },
+      "2s10s_bp": null,
+      "2s10s_chg_bp": null,
+      "10y_chg_bp": null,
+    });
+    renderTab();
+    const { card, chart } = await chartOf();
+    await waitFor(() => expect(card).toHaveTextContent("Today: 2y Sep 22 · 10y Sep 21"));
+    expect(card).toHaveTextContent("A month ago: 2y Aug 21 · 10y Aug 20");
+    expect(chart.getAttribute("aria-label")).toContain("today each tenor on its own date");
+    expect([paths(chart, DESK_ACCENTS.blue), paths(chart, DESK_ACCENTS.gray)].map((x) => x.length)).toEqual([0, 0]);
+    expect([dots(chart, DESK_ACCENTS.blue), dots(chart, DESK_ACCENTS.gray)].map((x) => x.length)).toEqual([2, 2]);
+    expect(labels(chart)).toEqual(expect.arrayContaining(["2y Sep 22", "today · 10y Sep 21", "2y Aug 21", "a month ago · 10y Aug 20"]));
+    // Today's values print on the stats, not on unjoined points.
+    expect(labels(chart)).not.toContain("4.71");
+    expect(card).toHaveTextContent(/2s10s\s*Awaiting refresh/);
   });
 });
 

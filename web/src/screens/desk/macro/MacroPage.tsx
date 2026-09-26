@@ -103,9 +103,10 @@ export function coverTicks(lo: number, hi: number, max: number): { v: number; te
   return [lo, hi].map((v) => ({ v, text: num(v, 2) }));
 }
 
-/** "Tenors dated apart: 2y Sep 22 · 10y Sep 21" (§6, §12.8); a tenor not stored is dated null and left out (S-24). */
+/** "Today: 2y Sep 22 · 10y Sep 21": today's tenors dated apart, listed under the chart (§6, §12.8: S-30); a tenor not
+ * stored is dated null and left out (S-24). */
 export function tenorDates(dates: Record<string, string | null>): string {
-  return `Tenors dated apart: ${TENORS.flatMap((t) => (dates[t] ? [`${t} ${dayShort(dates[t])}`] : [])).join(" · ")}`;
+  return `Today: ${TENORS.flatMap((t) => (dates[t] ? [`${t} ${dayShort(dates[t])}`] : [])).join(" · ")}`;
 }
 
 /** "A month ago: 2y Aug 21 · 10y Aug 20": each tenor's month-ago date, always disclosed under the chart (§6, S-30). */
@@ -138,11 +139,14 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const sc = c?.["2s10s_chg_bp"];
   const drawn = TENORS.filter((t) => fin(today?.[t])).length > 1;
   const agoDrawn = TENORS.filter((t) => fin(ago?.[t])).length > 1;
-  // §6 (S-30): with no common month-ago date, a month ago's points are labelled markers, never joined by a line.
+  // §6 (S-30): each snapshot is checked on its own date; one without a common date is drawn as labelled points, never joined by a line.
+  const todayJoined = !!today?.date;
   const agoJoined = !!ago?.date;
   const agoNote = ago?.dates ? monthAgoDates(ago.dates) : "";
   // S-30: each unjoined point is labelled with its tenor and date; the last also names the snapshot, whose end label goes with its line.
-  const agoLast = [...TENORS].reverse().find((t) => fin(ago?.[t]) && ago?.dates?.[t]);
+  const lastOf = (snap: typeof today) => [...TENORS].reverse().find((t) => fin(snap?.[t]) && snap?.dates?.[t]);
+  const todayLast = lastOf(today);
+  const agoLast = lastOf(ago);
   // §1.0.2: the block, or the whole answer, served awaiting.
   if (unserved) return <UnservedCard headingId="mc-curve" className="mc-card" title="Yield curve" sub="today against a month ago" labels={["10-year", "2s10s", "Front end"]} block={unserved} advanced />;
   return (
@@ -158,7 +162,7 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
           </StatRow>
           {drawn && today ? (
             <LineChart
-              ariaLabel={`Treasury yields by tenor${today.date ? ` on ${dayShort(today.date)}` : ""}${agoDrawn ? `, against a month ago${ago?.date ? ` (${dayShort(ago.date)})` : ", each tenor on its own date"}` : ""}`}
+              ariaLabel={`Treasury yields by tenor${today.date ? ` on ${dayShort(today.date)}` : ", today each tenor on its own date"}${agoDrawn ? `, against a month ago${ago?.date ? ` (${dayShort(ago.date)})` : ", each tenor on its own date"}` : ""}`}
               height={148}
               n={TENORS.length}
               yDomain={[ticks[0].v, ticks[ticks.length - 1].v]}
@@ -170,7 +174,7 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
                 // §6: today blue solid, a month ago gray dashed, each joining its served tenors; a month ago
                 // dated apart is left unjoined (S-30).
                 ...(agoJoined ? [{ key: "ago", values: TENORS.map((t) => (fin(ago?.[t]) ? (ago?.[t] as number) : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 1.5, label: "a month ago", connect: true }] : []),
-                { key: "today", values: TENORS.map((t) => (fin(today[t]) ? (today[t] as number) : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "today", connect: true },
+                ...(todayJoined ? [{ key: "today", values: TENORS.map((t) => (fin(today[t]) ? (today[t] as number) : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "today", connect: true }] : []),
               ]}
               // Both dates' points are marked, so a curve with tenors left out still shows each served point.
               markers={[
@@ -180,11 +184,12 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
               // Each value's label keeps clear of both lines (the kit places it); the first starts at its
               // point, clear of the y labels, and the last ends at it, clear of the two end labels.
               pointLabels={[
+                // Today's values on its one curve; with no common date, each point's tenor and date (S-30).
                 ...TENORS.map((t, i) => ({
                   i,
                   v: today[t] as number,
-                  text: fin(today[t]) ? num(today[t] as number, 2) : "",
-                  color: "#c9cdd3",
+                  text: !fin(today[t]) ? "" : todayJoined ? num(today[t] as number, 2) : today.dates?.[t] ? `${t === todayLast ? "today · " : ""}${t} ${dayShort(today.dates[t])}` : "",
+                  color: todayJoined ? "#c9cdd3" : DESK_ACCENTS.blue,
                   anchor: i === 0 ? ("start" as const) : i === TENORS.length - 1 ? ("end" as const) : undefined,
                   avoid: true,
                 })),

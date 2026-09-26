@@ -514,11 +514,13 @@ No action button. Badge `● Live · FRED · <date>`. 2×2.
 3m / 2y / 5y / 10y / 30y on x; today (blue solid) and a month ago (gray
 dashed), each labelled at its right end; a tenor not served leaves its point
 out and its label says so. Tenors share one `date` or carry their own and
-the chart labels the mismatch. When `month_ago.date` is null, the month-ago
-tenors are drawn as separate points, each labelled with its tenor and date,
-with no line joining them, and their dates (`month_ago.dates`) are listed
-under the chart. The page lists `month_ago.dates` under the chart when the
-date is common too (S-30).
+the chart labels the mismatch. Each snapshot is checked on its own date. When
+`today.date` is null, today's tenors are drawn as separate points, each
+labelled with its tenor and date, with no line joining them, and their dates
+(`today.dates`) are listed under the chart. When `month_ago.date` is null, the
+month-ago tenors are drawn and listed the same way from `month_ago.dates`. A
+snapshot with a date is drawn as one curve. The page lists `month_ago.dates`
+under the chart when the date is common too (S-30).
 
 **Do bonds still hedge stocks?**: UNAVAILABLE (§1.0), from `/macro`
 `stock_bond` (awaiting, reason "Treasury and credit price-return series not
@@ -1176,9 +1178,9 @@ DGS10 (v2 §12). Until then those tenors are null.
 |---|---|---|---|---|---|
 | `curve` | block envelope | required | — | — | — |
 | `curve.data.today` | `{"3m","2y","5y","10y","30y": number\|null, date, dates}` | required | percent (yield) | `date` shared, or null with per-tenor `dates` · daily · FRED | N curve snapshot alignment (B-12) over stored DGS*: `today.date` is the latest date on which every stored tenor has a value; `dates` names it per tenor (null for a tenor not stored); when no such date exists, `date` is null and each tenor its own newest |
-| `curve.data.today.dates` | object, tenor → date | required | — | — | N; the UI labels a mismatch |
+| `curve.data.today.dates` | object, tenor → date | required on every path | — | — | N: the common date, or each tenor's own date when that snapshot's `date` is null; null for a tenor not served (S-30). |
 | `curve.data.month_ago` | same shape | required | percent | the last common observation on or before `today.date` − 1 calendar month | N month-ago selection (B-12): same shape; the last common observation on or before `today.date` − 1 calendar month. When `today.date` is null, `date` is null and each tenor carries its newest observation on or before its own `today.dates` entry − 1 calendar month; with a common `today.date` but no common date a month earlier, `date` is null and each tenor carries its newest observation on or before `today.date` − 1 calendar month. |
-| `curve.data.month_ago.dates` | object, tenor → date | required on every path | — | — | N: the common date, or each tenor's own date when `month_ago.date` is null; null for a tenor not served (S-30). |
+| `curve.data.month_ago.dates` | object, tenor → date | required on every path | — | — | N: the common date, or each tenor's own date when that snapshot's `date` is null; null for a tenor not served (S-30). |
 | `curve.data.2s10s_bp` | number | required, nullable | bp | `today.date` | N: (DGS10 − DGS2) × 100 on `today.date`; null whenever a date it needs, `today.date` or `month_ago.date`, is null. |
 | `curve.data.2s10s_chg_bp`, `10y_chg_bp` | number | required, nullable | bp | the two dates | N dated differences (B-12); null whenever a date it needs, `today.date` or `month_ago.date`, is null (so both are null when the tenors share today's date but not a month ago's). |
 | `curve.data.freq`, `source` | `"daily"`, `"FRED"` | required | — | — | A |

@@ -4549,6 +4549,37 @@ What it raised:
 - V19-6 (nit) an RSI preset's card labelled itself "a month". **Fixed**
   (S-31's default clause).
 
+### S-30, today's curve — `frame-3: S-30 today curve`
+
+The plan's round 8 (`584a4af`) extends S-30 from the month ago to today, and
+it is folded in its words.
+- **§6.** Each snapshot is checked on its own date. When `today.date` is null,
+  today's tenors are drawn as separate points, each labelled with its tenor
+  and date, with no line joining them, and `today.dates` is listed under the
+  chart. The month ago follows the same rule from `month_ago.dates`, and a
+  snapshot with a date is drawn as one curve.
+- **§12.8.** The `today.dates` and `month_ago.dates` rows share the ruled text:
+  every path, the common date or each tenor's own when that snapshot's `date`
+  is null, null for a tenor not served.
+
+**The page.**
+- Today's snapshot is now judged apart from the month ago. With no common
+  date, the blue line is not drawn: its points are labelled "2y Sep 22", and
+  the last "today · 10y Sep 21".
+- The list under the chart reads "Today: 2y Sep 22 · 10y Sep 21", where it
+  read "Tenors dated apart: …".
+- A common date keeps today's one curve and its value labels.
+
+**Tests** (`MacroPage.test.tsx`), the plan's three cases, each date checked
+on its own:
+1. Both dates null, with disjoint per-tenor dates: no blue or gray line,
+   two markers each, the four tenor-and-date labels, both lists.
+2. Today common, the month ago null: one blue curve with its values, no
+   gray line, the month ago's labels and list.
+3. Both common: two curves.
+
+No compare shot changes: the fixture's tenors share both dates.
+
 ## Gate log
 
 Each commit ran all four gates on the tree as committed: `tsc -b --noEmit`,
@@ -4594,6 +4625,7 @@ tests against the fixture dev server.
 | frame-3: spec erratum last_refresh_utc | clean | 122 / 1,504 | ok | 54 / 54 |
 | frame-3: codex-3 fixes | clean | 123 / 1,524 | ok | 54 / 54 |
 | frame-3: spec S-29–S-32 and fixes | clean | 123 / 1,530 | ok | 54 / 54 |
+| frame-3: S-30 today curve | clean | 123 / 1,531 | ok | 54 / 54 |
 
 ## Finish
 
@@ -4684,6 +4716,12 @@ After S-29 to S-32 (above): the tip is the commit that carries this report,
 pushed; your notes file and SVGs are left out. The plan's round 8
 (`584a4af`, today's curve) waits on you. Gate summary at that tip: typecheck
 clean; unit 123 files / 1,530 tests; build ok; Desk browser tests 54 / 54.
+
+After S-30's today curve (above): the tip is the commit that carries this
+report, `frame-3: S-30 today curve` (parent `055d47a`), local only. Nothing is
+pushed; your notes file and SVGs are left out. Round 8 is folded. Gate
+summary at that tip: typecheck clean; unit 123 files / 1,531 tests; build ok;
+Desk browser tests 54 / 54.
 
 For Max, from the fold and alignment:
 - **Spec conflicts to settle:** §12.2 makes the Client title the catalog
