@@ -291,20 +291,34 @@ def regime_run(rows: list[dict], print_month: str) -> tuple[int, str]:
         since, n = prev, n + 1
 
 
-def _direction(trend: float | None) -> str:
-    return "rising" if trend is not None and trend > 0 else "falling"  # the classifier's own test (src/regime.py)
+def _direction(trend: Any) -> str | None:
+    """The classifier's own test (src/regime.py): rising iff the stored trend
+    is > 0. None when the row stores no finite trend (Codex round 2, R-03): a
+    NULL used to read as falling."""
+    if trend is None:
+        return None
+    try:
+        v = float(trend)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(v):
+        return None
+    return "rising" if v > 0 else "falling"
 
 
 def regime_tile(rows: list[dict], comparison: str) -> dict:
-    """tiles.regime: the stored K−2 row for comparison_session's month."""
+    """tiles.regime: the stored K−2 row for comparison_session's month;
+    awaiting when that row is not stored or either stored slope is not finite."""
     month = k_minus_2(comparison)
     row = next((r for r in rows if r["month"] == month), None)
     if row is None:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    growth, inflation = _direction(row["growth_trend"]), _direction(row["inflation_trend"])
+    if growth is None or inflation is None:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
     months_in, since = regime_run(rows, month)
-    return {"label": row["label"], "print": month, "growth": _direction(row["growth_trend"]),
-            "inflation": _direction(row["inflation_trend"]), "months_in": months_in, "since": since,
-            "freq": "monthly", "source": REGIMES_SOURCE}
+    return {"label": row["label"], "print": month, "growth": growth, "inflation": inflation,
+            "months_in": months_in, "since": since, "freq": "monthly", "source": REGIMES_SOURCE}
 
 
 def recession_tile(regime_item: dict) -> dict:

@@ -10,6 +10,7 @@ monthly inputs (raw_series) and the Desk's watermarks, so every block serves.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -194,6 +195,66 @@ def test_the_regime_run_stops_at_a_missing_month():
     assert desk_v2.regime_run(rows, "2026-01") == (3, "2025-11")
     assert desk_v2.regime_run(rows, "2025-09") == (2, "2025-08")
     assert desk_v2.k_minus_2("2026-01-05") == "2025-11" and desk_v2.k_minus_2("2026-09-18") == "2026-07"
+
+
+# ── Codex round 2, R-03: a direction only from a finite stored slope ────────
+
+@pytest.mark.parametrize(("trend", "word"), [
+    (0.4, "rising"), (1e-12, "rising"), (0.0, "falling"), (-0.3, "falling"), (None, None), (float("nan"), None),
+    (float("inf"), None), (float("-inf"), None), ("x", None)])
+def test_a_direction_is_read_only_from_a_finite_slope(trend, word):
+    assert desk_v2._direction(trend) == word
+    row = {"month": "2026-07", "label": "Goldilocks", "growth_trend": 0.2, "inflation_trend": 0.2}
+    for axis in ("growth_trend", "inflation_trend"):
+        rows = [{**row, axis: trend}]
+        if word is None:
+            with pytest.raises(env.Awaiting) as exc:
+                desk_v2.regime_tile(rows, "2026-09-18")
+            assert exc.value.reason == env.BLOCK_FAILED_REASON
+        else:
+            tile = desk_v2.regime_tile(rows, "2026-09-18")
+            assert tile[axis.removesuffix("_trend")] == word and tile["label"] == "Goldilocks"
+
+
+def _without_a_slope(src: Path, dst: Path, axis: str, value) -> Path:
+    """A byte copy of `src` whose 2026-07 regimes row (the K−2 print for
+    2026-09-18) stores `value` for `axis`."""
+    dst.write_bytes(src.read_bytes())
+    with sqlite3.connect(dst) as conn:
+        n = conn.execute(f"UPDATE regimes SET {axis} = ? WHERE substr(date, 1, 7) = '2026-07'", (value,)).rowcount
+    assert n == 1, "one stored 2026-07 row"
+    return dst
+
+
+def _regime_awaits(d: dict) -> None:
+    assert d["tiles"]["regime"] == {"status": "awaiting", "data": None, "unavailable": {
+        "reason": "Awaiting refresh: this could not be computed from the current data.", "until": None}}
+    assert d["tiles"]["recession"]["status"] == d["tiles"]["trend"]["status"] == "ready"
+    assert d["since_last_close"]["data"]["regime_to"] is not None, "the label is stored; only the tile's direction is not"
+
+
+@pytest.mark.parametrize("value", [None, float("inf"), float("-inf")])
+@pytest.mark.parametrize("axis", ["growth_trend", "inflation_trend"])
+def test_a_missing_slope_makes_the_regime_tile_await(install_worker, monkeypatch, overview_path, tmp_path, axis, value):
+    _serve(install_worker, monkeypatch, _without_a_slope(overview_path, tmp_path / "macro_radar.db", axis, value),
+           items=ITEMS)
+    _at(monkeypatch, 2026, 9, 18, 21, 0)
+    _regime_awaits(_overview())
+
+
+PUBLISHED = Path(os.environ.get("DESK_PUBLISHED_DB", Path(__file__).resolve().parent.parent / "data" / "macro_radar.db"))
+
+
+@pytest.mark.skipif(not PUBLISHED.exists(), reason="no published copy at data/macro_radar.db (DESK_PUBLISHED_DB)")
+@pytest.mark.parametrize("axis", ["growth_trend", "inflation_trend"])
+def test_on_a_scratch_copy_of_the_published_store_a_null_slope_awaits(install_worker, monkeypatch, tmp_path, axis):
+    """Codex's repro: the published copy's 2026-07 row (Goldilocks) with one slope NULL."""
+    _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
+    _at(monkeypatch, 2026, 9, 18, 21, 0)
+    tile = _overview()["tiles"]["regime"]
+    assert tile["status"] == "ready" and tile["data"]["label"] == "Goldilocks" and tile["data"]["print"] == "2026-07"
+    _serve(install_worker, monkeypatch, _without_a_slope(PUBLISHED, tmp_path / "macro_radar.db", axis, None), items=ITEMS)
+    _regime_awaits(_overview())
 
 
 # ── the recession tile: R4, N5 ──────────────────────────────────────────────
