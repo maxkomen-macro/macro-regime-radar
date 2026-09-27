@@ -570,6 +570,40 @@ export interface SectorRow {
   reason?: string | null;
 }
 
+/** One average's breadth: how many of the sector ETFs close above it, of how many it can be read for (§12.14). */
+export interface AboveAverage {
+  n: number | null;
+  of: number | null;
+  compared_on: string | null;
+  /** The session slots the average reads. */
+  window?: Window;
+  /** Each sector ETF the average can be read for: above (true) or not (false). */
+  by_etf?: Record<string, boolean>;
+  /** The ones it cannot be read for, with why ("no close on …: its history starts …"). */
+  not_available?: { etf: string; reason: string }[];
+}
+
+export interface SectorBreadth {
+  compared_on?: string;
+  /** How many sector ETFs breadth is measured over (11). */
+  of_total?: number;
+  above_50: AboveAverage;
+  above_200: AboveAverage;
+  /** RSP's 60-session log return less SPY's; null with `eqw_vs_cap_reason`. */
+  eqw_vs_cap_3m: number | null;
+  eqw_vs_cap_reason?: string | null;
+  eqw_vs_cap_series?: RelPoint[];
+  eqw_vs_cap_line_window?: Window | null;
+  /** IWM's 60-session log return less SPY's. */
+  small_vs_large_3m?: number | null;
+  small_vs_large_reason?: string | null;
+  small_vs_large_series?: RelPoint[];
+  small_vs_large_line_window?: Window | null;
+  relative_window?: Window;
+  date?: string;
+  providers?: string[];
+}
+
 /** `sector-pattern-v1` (§12.14): the cyclical group's mean `rel_ret` less the defensive group's, and its word by a ±`band` rule. */
 export interface SectorPattern {
   rule: string;
@@ -601,15 +635,8 @@ export interface SectorsResponse extends Envelope {
   source?: string;
   /** The providers of the rows read, in words ("Yahoo", "EODHD"). */
   providers?: string[];
-  breadth?: {
-    /** §12.13: breadth serves its comparison date. */
-    above_50: { n: number | null; of: number | null; compared_on: string | null; by_etf?: Record<string, boolean> };
-    above_200: { n: number | null; of: number | null; by_etf?: Record<string, boolean> };
-    eqw_vs_cap_3m: number | null;
-    eqw_vs_cap_series?: RelPoint[];
-    /** PROPOSED (§12.13) point shape: §12.7 leaves it as `["… 252"]`. */
-    small_vs_large_series?: RelPoint[];
-  };
+  /** §12.14's breadth block (desk/fill-etf): of the eleven sector ETFs, never stocks. */
+  breadth?: SectorBreadth;
 }
 
 // Basket & Hedge (§10) is unavailable: no page reads `/basket/:id`, `/basket/price` or `/hedge`,

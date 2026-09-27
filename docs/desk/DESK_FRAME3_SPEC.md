@@ -53,7 +53,8 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Macro: HY and IG levels, HY 3-year range and percentile, HY last 12 months | LIVE (the 3-year figures null, with the reason, while three-year coverage is incomplete) | v3 §12, v4 B-07 |
 | Macro: stock–bond correlation, "What moves with the S&P", the 12-asset matrix | UNAVAILABLE | Treasury and credit price-return series not ingested (v2 D-15) |
 | Sectors: leadership (LEADING, LAGGING, PATTERN, the eleven bars) | LIVE (desk/fill-etf, §12.14) | — |
-| Sectors: breadth | UNAVAILABLE | breadth is not computed yet |
+| Sectors: breadth, of the 11 sector ETFs (above the 50- and 200-day, RSP against SPY, IWM against SPY) | LIVE (desk/fill-etf, §12.14) | — |
+| Sectors: constituent-level breadth (the stocks inside the index) | UNAVAILABLE | constituent data is not ingested |
 | Signal Ledger | LIVE for the rows whose study completes; the two RSI rows, and any row whose inputs are not stored (WTI, DXY), unavailable | v3 §2, v4 B-02 |
 | Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
 | Basket & Hedge | UNAVAILABLE; local leg editing (legs, weights, save, export) remains | basket pricing and option structures not yet defined in the engine (v2 D-25–D-28) |
@@ -71,7 +72,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.
 - Macro & Correlations: the yield curve and the credit spreads.
-- Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule.
+- Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
 - Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.
 - Data Pipeline: the series inventory, generated from the registry.
@@ -80,7 +81,7 @@ Build Notes prints these two lists as their own section, word for word.
 **Designed, not yet served**
 - The VIX gap to realized volatility and the vol band word.
 - What protection costs: options skew, implied against realized volatility, the term structure.
-- Sector breadth.
+- Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
 - RSI, and the two RSI signals.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
@@ -566,10 +567,25 @@ within 1% · more than 1% behind. Stamp: "60 sessions to <window.end> (from
 <window.start>) · log returns ×100 · SPY <benchmark.ret> over the same
 sessions".
 
-**Breadth** (`is the rally wide or narrow?`): UNAVAILABLE, the `/sectors`
-`breadth` block (awaiting, "breadth is not computed yet."); the card keeps
-its labels (ABOVE 50-DAY · ABOVE 200-DAY · EQUAL vs CAP WEIGHT) and prints the
-reason.
+**Breadth** (`is the rally wide or narrow? · of 11 sectors`), the `/sectors`
+`breadth` block (§12.14), of the eleven sector ETFs only. Stats: ABOVE 50-DAY
+("<n> of <of> sectors"; sub-line "on <compared_on>", then "<etfs> not
+available" when a sector's average cannot be read) · ABOVE 200-DAY (the same)
+· EQUAL vs CAP WEIGHT (`eqw_vs_cap_3m` × 100, tooltip "log return, ×100",
+red when negative, green when positive; sub-line "RSP vs SPY · 60 sessions";
+"Awaiting refresh" and the served `eqw_vs_cap_reason` when null). Lines:
+"Equal weight vs cap weight · RSP against SPY, 60-session difference · one
+year" (`eqw_vs_cap_series`), zones "RSP ahead of SPY · equal weight leading"
+and "SPY ahead of RSP · cap weight leading"; dots "Which of the 11 sectors are
+above their 50-day" and "…and their 200-day" (`by_etf`; a sector not in the
+map is an unlit ring read "not available", never "below"); "Small caps vs
+large · IWM against SPY, 60-session difference · one year"
+(`small_vs_large_series`), zones "IWM ahead of SPY · small caps leading" and
+"SPY ahead of IWM · large caps leading". Gray note: "Counted over the 11
+sector ETFs, not stocks. Constituent-level breadth, the stocks inside the
+index, needs constituent data that is not ingested yet." Stamp: "on
+<compared_on> · averages over 50 and 200 sessions · log returns ×100 ·
+<providers>". A served awaiting block keeps the labels and prints its reason.
 
 While the store lacks the sector ETFs (a database older than the first full
 refresh that stores them), the route answers awaiting with "Awaiting refresh:
@@ -1286,7 +1302,17 @@ close is a gap, never filled. Adjusted closes, stored by the full refresh
 | `pattern.reason` | string | required, nullable | — | — | N: the members not served, when `word` is null |
 | `date`, `freq`, `source` | date, `"daily"`, `"asset_prices"` | required | — | — | A: `date` is `compared_on` |
 | `providers` | string[] | required | — | — | S: the providers of the rows read, in words ("Yahoo", "EODHD") |
-| `breadth` | block envelope | required | — | — | awaiting: "breadth is not computed yet." |
+| `breadth` | block envelope | required | — | — | N breadth, below; awaiting with the route's reason while the store lacks the ETFs |
+| `breadth.data.compared_on`, `date` | date | required | — | `compared_on` of the route | N: the same session as leadership |
+| `breadth.data.of_total` | `11` | required | sector ETFs | — | A |
+| `breadth.data.above_50`, `above_200` | `{n, of, compared_on, window, by_etf, not_available}` | required | sector ETFs | `window` · daily | N: for each sector ETF, above = close(`compared_on`) > the simple mean of its closes over the 50 (200) XNYS session slots ending there (strict; every slot must hold a close, the §12.7 rule); `by_etf` holds the ETFs it can be read for, `not_available` the others with the reason; `n` counts true, `of` the ETFs in `by_etf` (a sector not available is counted in neither) |
+| `breadth.data.eqw_vs_cap_3m` | number | required, nullable | log fraction | `relative_window` | N: ln(RSP(end) / RSP(start)) − ln(SPY(end) / SPY(start)) over the 60 sessions |
+| `breadth.data.eqw_vs_cap_reason` | string | required, nullable | — | — | N: non-null exactly when `eqw_vs_cap_3m` is null |
+| `breadth.data.eqw_vs_cap_series` | array of `{date, rel}` | required | log fraction | `eqw_vs_cap_line_window` | N: the same 60-session difference on every XNYS session after `compared_on` − 12 calendar months, through `compared_on`; `rel` null where a close it needs is not stored |
+| `breadth.data.eqw_vs_cap_line_window` | `{start, end, n}` | required, nullable (no RSP) | sessions | — | N |
+| `breadth.data.small_vs_large_3m`, `small_vs_large_reason`, `small_vs_large_series`, `small_vs_large_line_window` | as the four above | required | as above | as above | N: IWM against SPY |
+| `breadth.data.relative_window` | `{start, end, n: 60}` | required | sessions | XNYS | N |
+| `breadth.data.unit`, `freq`, `source`, `providers` | `"log_return"`, `"daily"`, `"asset_prices"`, string[] | required | — | — | A, S |
 
 The route answers `awaiting` with "Awaiting refresh: the full refresh stores
 <symbols>; this database predates it." when SPY or every sector ETF is
@@ -1341,8 +1367,8 @@ value's date. Needs stored SPY option snapshots and a versioned skew
 method; `realized_20d` needs its method specified, and the Overview's
 `tiles.vol` `gap_pts` and `band` wait on it (v2 §13).
 
-**Sectors — leadership served since desk/fill-etf (§12.14); the rest
-`status: deferred`** (`/technicals` `sectors` block; `GET /sectors`). `{window_months: 3, leadership: [{etf, name, short, rel_ret}]
+**Sectors — served since desk/fill-etf (§12.14); this deferred shape is
+kept for the history** (`/technicals` `sectors` block; `GET /sectors`). `{window_months: 3, leadership: [{etf, name, short, rel_ret}]
 (sorted best first), breadth: {above_50: {n, of, compared_on, by_etf},
 above_200: {n, of, by_etf}, eqw_vs_cap_3m, eqw_vs_cap_series: [{date, rel}],
 small_vs_large_series: [{date, rel}]}}`. When activated: relative return =
@@ -1434,7 +1460,7 @@ differences (§12.8); `vol_change_pts`, `regime_from`, `regime_to` and
 `regime_changed` (§12.1); the three FRED tenor series. These do not
 authorize any conditional-improvement judgment. Added by desk/fill-etf
 (2026-09-27): the 24 ETF series in `asset_prices`; sector leadership and
-its pattern rule (§12.14).
+its pattern rule, and breadth of the 11 sector ETFs (§12.14).
 
 **Not allowed for Monday** (the blocks are unavailable): RSI; confidence
 80% / 95%; the regime statistics table and change outcomes; the

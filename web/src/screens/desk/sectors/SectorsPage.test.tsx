@@ -41,7 +41,8 @@ describe("Sectors tab", () => {
     expect(sectors.leadership.map((r) => r.etf)).toEqual(ORDER);
     expect(sectors.window).toEqual({ start: "2026-06-29", end: "2026-09-23", n: 60 });
     expect(sectors.pattern.word).toBe("cyclical");
-    expect(sectors.breadth).toEqual({ status: "awaiting", data: null, unavailable: { reason: "breadth is not computed yet.", until: null } });
+    expect(sectors.breadth.status).toBe("ready");
+    expect(sectors.breadth.data.of_total).toBe(11);
   });
   it("leadership: all eleven, ranked, with the leader, the laggard and the pattern by its rule", async () => {
     renderTab();
@@ -75,6 +76,7 @@ describe("Sectors tab", () => {
     expect(lead).toHaveTextContent(/Pattern\s*Awaiting refresh\s*XLE not served, so the groups cannot be compared\./);
   });
   it("breadth is its own block: served awaiting, its card keeps its labels and prints the reason once", async () => {
+    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { status: "awaiting", data: null, unavailable: { reason: "breadth is not computed yet.", until: null } } }) });
     renderTab();
     // The card is replaced by its unserved form once the answer arrives: read it after that.
     await waitFor(() => expect(screen.getByRole("region", { name: /^Breadth/ })).toHaveTextContent("breadth is not computed yet."));
@@ -86,10 +88,60 @@ describe("Sectors tab", () => {
     // The leadership card stands beside it.
     expect(screen.getByRole("region", { name: /Sector leadership/ })).toHaveTextContent("Energy");
   });
+  it("breadth: every count says of how many sectors, dated; RSP against SPY; the dots; the two lines; the note", async () => {
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Breadth/ })).toHaveTextContent("4 of 11 sectors"));
+    const card = screen.getByRole("region", { name: /^Breadth/ });
+    expect(card).toHaveTextContent(/Above 50-day\s*4 of 11 sectors\s*on Sep 23/);
+    expect(card).toHaveTextContent(/Above 200-day\s*5 of 11 sectors\s*on Sep 23/);
+    expect(card).toHaveTextContent(/Equal vs cap weight\s*−4\.2%\s*RSP vs SPY · 60 sessions/);
+    expect(within(card).getByText("−4.2%")).toHaveAttribute("title", "log return, ×100");
+    expect(within(card).getByText("4 of 11 sectors")).toHaveAttribute("data-tone", "default");
+    const lit = (name: string) =>
+      within(within(card).getByRole("list", { name }))
+        .getAllByRole("listitem")
+        .filter((li) => li.getAttribute("data-state") === "on")
+        .map((li) => li.textContent);
+    expect(lit("Which of the 11 sectors are above their 50-day")).toEqual(["Enrgabove", "Techabove", "Hlthabove", "Commabove"]);
+    expect(lit("Which of the 11 sectors are above their 200-day")).toEqual(["Enrgabove", "Techabove", "Hlthabove", "Finabove", "Matabove"]);
+    expect(within(card).getByRole("img", { name: /Equal weight vs cap weight · RSP against SPY, 60-session difference · one year: −4\.2% on Sep 23/ })).toBeInTheDocument();
+    expect(within(card).getByRole("img", { name: /Small caps vs large · IWM against SPY, 60-session difference · one year: −9\.4% on Sep 23/ })).toBeInTheDocument();
+    expect(card).toHaveTextContent("Counted over the 11 sector ETFs, not stocks. Constituent-level breadth, the stocks inside the index, needs constituent data that is not ingested yet.");
+    expect(card).toHaveTextContent("on Sep 23 · averages over 50 and 200 sessions · log returns ×100 · Yahoo");
+    expect(card).not.toHaveTextContent("Read:");
+  });
+  it("a sector a count cannot be read for is named, counted in neither n nor of, and drawn as a ring (never below)", async () => {
+    const b = sectors.breadth.data;
+    const { XLC: _c, ...by } = b.above_200.by_etf;
+    void _c;
+    const above_200 = { ...b.above_200, n: 5, of: 10, by_etf: by, not_available: [{ etf: "XLC", reason: "no close on 2025-11-05: its history starts 2026-01-02" }] };
+    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, data: { ...b, above_200 } } }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Breadth/ })).toHaveTextContent(/Above 200-day\s*5 of 10 sectors\s*on Sep 23 · XLC not available/));
+    const dots = within(screen.getByRole("region", { name: /^Breadth/ })).getByRole("list", { name: "Which of the 11 sectors are above their 200-day" });
+    const comm = within(dots).getAllByRole("listitem")[3];
+    expect(comm).toHaveAttribute("data-state", "unknown");
+    expect(comm).toHaveTextContent("not available");
+  });
+  it("equal weight not served says why; the rest of breadth stands", async () => {
+    const reason = "Awaiting refresh: the full refresh stores RSP; this database predates it.";
+    const b = { ...sectors.breadth.data, eqw_vs_cap_3m: null, eqw_vs_cap_reason: reason, eqw_vs_cap_series: [], eqw_vs_cap_line_window: null };
+    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, data: b } }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Breadth/ })).toHaveTextContent(/Equal vs cap weight\s*Awaiting refresh\s*Awaiting refresh: the full refresh stores RSP/));
+    expect(screen.getByRole("region", { name: /^Breadth/ })).toHaveTextContent("4 of 11 sectors");
+  });
+  it("the ±5% axis steps to ±15% for a wider series", async () => {
+    const b = sectors.breadth.data;
+    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, data: { ...b, eqw_vs_cap_series: b.eqw_vs_cap_series.map((p, i) => (i === 100 ? { ...p, rel: 0.12 } : p)) } } }) });
+    renderTab();
+    // On the fixture the equal-weight line (8.4% at most) reads ±10% and the small-caps line (10.2%) ±15%; 12% steps the first to ±15% too.
+    await waitFor(() => expect(within(screen.getByRole("region", { name: /^Breadth/ })).getAllByText("+15%")).toHaveLength(2));
+  });
   it("names each card by its title and subtitle", async () => {
     renderTab();
     expect(await screen.findByRole("region", { name: "Sector leadership 3-month return relative to the S&P · all eleven" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Breadth is the rally wide or narrow?" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Breadth is the rally wide or narrow? · of 11 sectors" })).toBeInTheDocument();
   });
   it("while loading, both cards are busy and neither says Awaiting refresh (D14)", async () => {
     stubDesk({ "/api/desk/sectors": () => new Promise(() => {}) });

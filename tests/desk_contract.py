@@ -274,7 +274,19 @@ LEADERSHIP = dict(
     leadership=Arr(SECTOR_ROW, min=11, max=11), pattern=SECTOR_PATTERN,
     date=DATE, freq=Const("daily"), source=Const("asset_prices"), providers=Arr(STR),
 )
-SECTORS = Obj(dict(LEADERSHIP, breadth=Deferred("breadth is not computed yet.")))
+_SPAN = obj(start=DATE, end=DATE, n=INT)
+ABOVE = obj(n=INT, of=INT, compared_on=DATE, window=_SPAN, by_etf=MapOf(BOOL),
+            not_available=Arr(obj(etf=STR, reason=STR)))
+REL_POINT = obj(date=DATE, rel=null(NUM))
+BREADTH = obj(
+    compared_on=DATE, of_total=Const(11), above_50=ABOVE, above_200=ABOVE,
+    eqw_vs_cap_3m=null(NUM), eqw_vs_cap_reason=null(STR), eqw_vs_cap_series=Arr(REL_POINT), eqw_vs_cap_line_window=null(_SPAN),
+    small_vs_large_3m=null(NUM), small_vs_large_reason=null(STR), small_vs_large_series=Arr(REL_POINT),
+    small_vs_large_line_window=null(_SPAN),
+    relative_window=obj(start=DATE, end=DATE, n=Const(60)),
+    unit=Const("log_return"), date=DATE, freq=Const("daily"), source=Const("asset_prices"), providers=Arr(STR),
+)
+SECTORS = Obj(dict(LEADERSHIP, breadth=Block(BREADTH)))
 
 # ── §12.7 GET /technicals ───────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@
 
 import type { ReactNode } from "react";
 import { unavailableOf, useSectors } from "../data/api";
-import type { RelPoint, SectorPattern, SectorsResponse } from "../data/types";
+import type { AboveAverage, RelPoint, SectorPattern, SectorsResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { dayShort, endDay, pct } from "../kit/format";
@@ -142,7 +142,7 @@ function Dots({ label, name, byEtf, order }: { label: ReactNode; name: string; b
               <li key={o.etf} data-state={state}>
                 <i aria-hidden="true" />
                 <span>{o.short}</span>
-                <span className="dk-sr">{state === "on" ? "above" : state === "off" ? "below" : "not served"}</span>
+                <span className="dk-sr">{state === "on" ? "above" : state === "off" ? "below" : "not available"}</span>
               </li>
             );
           })}
@@ -195,10 +195,22 @@ function RelChart({ label, name, points, bands, height, pad, ends = true }: { la
   );
 }
 
-const count = (x: { n: number | null; of: number | null } | undefined) => (x && fin(x.n) && fin(x.of) ? `${x.n} of ${x.of}` : undefined);
+/** "7 of 11 sectors": a served count, always naming what it is counted over (the sector ETFs, never stocks). */
+export function countWords(x: AboveAverage | undefined): string | undefined {
+  return x && fin(x.n) && fin(x.of) ? `${x.n} of ${x.of} sectors` : undefined;
+}
 
-/** §7's gray note under the breadth read: fixed copy about what breadth is measured from. */
-const BREADTH_NOTE = "Measured from sector ETFs; stock-level breadth needs constituent data that is not ingested yet.";
+/** "on Sep 23 · XLC not available": the count's date, and the sectors it could not be read for. */
+export function countSub(x: AboveAverage | undefined): string | undefined {
+  if (!x) return undefined;
+  const lost = Array.isArray(x.not_available) ? x.not_available.map((r) => r.etf) : [];
+  const parts = [x.compared_on ? `on ${dayShort(x.compared_on)}` : "", lost.length ? `${lost.join(", ")} not available` : ""].filter(Boolean);
+  return parts.join(" · ") || undefined;
+}
+
+/** §7's gray note under breadth: what it is counted over, and what is not (desk/fill-etf). */
+export const BREADTH_NOTE =
+  "Counted over the 11 sector ETFs, not stocks. Constituent-level breadth, the stocks inside the index, needs constituent data that is not ingested yet.";
 
 function Breadth({ s, state }: { s: SectorsResponse | undefined; state: State }) {
   const adv = useAdvanced();
@@ -210,13 +222,14 @@ function Breadth({ s, state }: { s: SectorsResponse | undefined; state: State })
   const a50 = b?.above_50;
   const a200 = b?.above_200;
   const eqw = b?.eqw_vs_cap_3m;
+  const total = b && fin(b.of_total) ? b.of_total : 11;
   if (off)
     return (
       <UnservedCard
         headingId="sc-breadth"
         className="sc-card"
         title="Breadth"
-        sub="is the rally wide or narrow?"
+        sub={`is the rally wide or narrow? · of ${total} sectors`}
         labels={["Above 50-day", "Above 200-day", vs("Equal", "cap weight")]}
         block={off}
         advanced
@@ -224,18 +237,19 @@ function Breadth({ s, state }: { s: SectorsResponse | undefined; state: State })
     );
   return (
     <section className="dk-card sc-card" aria-labelledby="sc-breadth" aria-busy={quiet}>
-      <CardHead id="sc-breadth" title="Breadth" sub="is the rally wide or narrow?" />
+      <CardHead id="sc-breadth" title="Breadth" sub={`is the rally wide or narrow? · of ${total} sectors`} />
       {quiet ? null : (
         <StatRow cols={3}>
-          {/* §12.13: breadth serves its comparison date; no month-ago count or engine words are served. */}
-          <Stat label="Above 50-day" awaiting={!count(a50)} value={count(a50)} sub={count(a50) ? `sectors${a50 && dayShort(a50.compared_on) ? ` · on ${dayShort(a50.compared_on)}` : ""}` : undefined} />
-          <Stat label="Above 200-day" awaiting={!count(a200)} value={count(a200)} sub={count(a200) ? "sectors" : undefined} />
+          {/* §12.14: each count says what it is counted over, and when; no month-ago count and no words are served. */}
+          <Stat label="Above 50-day" awaiting={!countWords(a50)} value={countWords(a50)} sub={countSub(a50)} />
+          <Stat label="Above 200-day" awaiting={!countWords(a200)} value={countWords(a200)} sub={countSub(a200)} />
           <Stat
             label={vs("Equal", "cap weight")}
             awaiting={!fin(eqw)}
-            value={fin(eqw) ? pct(eqw) : undefined}
+            value={fin(eqw) ? <span title={LOG_TIP}>{pct(eqw)}</span> : undefined}
             tone={fin(eqw) ? (eqw < 0 ? "down" : eqw > 0 ? "up" : undefined) : undefined}
-            sub={fin(eqw) ? "3 months" : undefined}
+            sub={fin(eqw) ? "RSP vs SPY · 60 sessions" : undefined}
+            why={b?.eqw_vs_cap_reason ?? undefined}
           />
         </StatRow>
       )}
@@ -244,31 +258,36 @@ function Breadth({ s, state }: { s: SectorsResponse | undefined; state: State })
           <RelChart
             label={
               <>
-                Average stock <span className="dk-lc">vs</span> the index · one year
+                Equal weight <span className="dk-lc">vs</span> cap weight · RSP against SPY, 60-session difference · one year
               </>
             }
-            name="Average stock vs the index · one year"
+            name="Equal weight vs cap weight · RSP against SPY, 60-session difference · one year"
             points={b.eqw_vs_cap_series}
-            bands={["average stock beating the index · broad rally", "index beating the average stock · narrow rally"]}
+            bands={["RSP ahead of SPY · equal weight leading", "SPY ahead of RSP · cap weight leading"]}
             height={165}
             pad={{ t: 19, r: 54, b: 40 }}
           />
-          <Dots label="Which sectors are above their 50-day" name="Which sectors are above their 50-day" byEtf={a50?.by_etf} order={order} />
-          <Dots label="…and their 200-day" name="Which sectors are above their 200-day" byEtf={a200?.by_etf} order={order} />
+          <Dots label={`Which of the ${total} sectors are above their 50-day`} name={`Which of the ${total} sectors are above their 50-day`} byEtf={a50?.by_etf} order={order} />
+          <Dots label="…and their 200-day" name={`Which of the ${total} sectors are above their 200-day`} byEtf={a200?.by_etf} order={order} />
           <RelChart
             label={
               <>
-                Small caps <span className="dk-lc">vs</span> large · Russell 2000 against the S&amp;P · one year
+                Small caps <span className="dk-lc">vs</span> large · IWM against SPY, 60-session difference · one year
               </>
             }
-            name="Small caps vs large · Russell 2000 against the S&P · one year"
+            name="Small caps vs large · IWM against SPY, 60-session difference · one year"
             points={b.small_vs_large_series}
-            bands={["small caps leading · risk appetite broad", "large caps leading · crowded into the biggest names"]}
+            bands={["IWM ahead of SPY · small caps leading", "SPY ahead of IWM · large caps leading"]}
             height={98}
             pad={{ t: 19, r: 54, b: 6 }}
             ends={false}
           />
           <p className="sc-note sc-gray">{BREADTH_NOTE}</p>
+          {b.compared_on ? (
+            <p className="dk-asof">
+              {`on ${dayShort(b.compared_on)} · averages over 50 and 200 sessions · log returns ×100${Array.isArray(b.providers) && b.providers.length ? ` · ${b.providers.join("/")}` : ""}`}
+            </p>
+          ) : null}
         </>
       ) : quiet ? null : (
         <Awaiting>the breadth measures</Awaiting>

@@ -16,7 +16,7 @@ export const SCOPE_LISTS: readonly { title: string; items: readonly string[] }[]
       "Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.",
       "Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.",
       "Macro & Correlations: the yield curve and the credit spreads.",
-      "Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule.",
+      "Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.",
       "Signal Ledger: the twelve fixed signals, each scored when its study completes.",
       "Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.",
       "Data Pipeline: the series inventory, generated from the registry.",
@@ -28,7 +28,7 @@ export const SCOPE_LISTS: readonly { title: string; items: readonly string[] }[]
     items: [
       "The VIX gap to realized volatility and the vol band word.",
       "What protection costs: options skew, implied against realized volatility, the term structure.",
-      "Sector breadth.",
+      "Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.",
       "RSI, and the two RSI signals.",
       "Confidence levels other than 90%.",
       "The comparison with the study's condition dropped.",

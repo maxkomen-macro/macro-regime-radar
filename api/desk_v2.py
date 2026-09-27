@@ -495,14 +495,15 @@ def etf_block(route: str, path: str, part: str) -> dict:
 
 def sectors_answer(params: list[tuple[str, str]]) -> dict:
     """§12.14: the leadership part of the desk_etf item, with breadth as its
-    own block; the route is awaiting, with the reason, when leadership could
-    not be computed on this generation (the ETFs not stored yet)."""
+    own block (the item's breadth part); the route is awaiting, with the
+    reason, when leadership could not be computed on this generation (the ETFs
+    not stored yet)."""
     if params:
         raise env.Unsupported(f"{params[0][0]} is not a parameter of /sectors.")
     value = _result("desk_etf")["sectors"]
     if not value.get("ok"):
         raise env.Awaiting(value["reason"])
-    return {**value["data"], "breadth": env.block_deferred("/sectors", "breadth")}
+    return {**value["data"], "breadth": etf_block("/sectors", "breadth", "breadth")}
 
 
 # ── §12.5 GET /ledger ───────────────────────────────────────────────────────

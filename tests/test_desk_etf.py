@@ -166,7 +166,7 @@ def test_sectors_and_the_technicals_card_serve_one_leadership(tmp_path, install_
     block = t["data"]["sectors"]
     assert block["status"] == "ready"
     assert block["data"] == {k: v for k, v in s["data"].items() if k != "breadth"}
-    assert s["data"]["breadth"] == {"status": "awaiting", "data": None, "unavailable": {"reason": "breadth is not computed yet.", "until": None}}
+    assert s["data"]["breadth"]["status"] == "ready"  # item 3
     assert s["generation_id"] == t["generation_id"]
     assert client.get("/api/desk/sectors?window=3").status_code == 422
 
@@ -213,3 +213,97 @@ def test_the_pipeline_says_which_tabs_read_the_leadership_series():
     for sym in pipe.LEADERSHIP_SERIES:
         assert {"Technicals", "Sectors"} <= set(pipe.feeds_of(sym)), sym
         assert sym not in pipe.NO_LIVE_READER, sym
+
+
+# ── Item 3: breadth, of the eleven sector ETFs (§12.14) ─────────────────────
+
+def _above(c: dict, days: list[str], sym: str, t: str, w: int) -> bool | None:
+    i = days.index(t)
+    slots = days[i - w + 1:i + 1]
+    p = c.get(sym, {})
+    if not all(d in p for d in slots):
+        return None
+    return p[t] > sum(p[d] for d in slots) / w
+
+
+def _rel(c: dict, days: list[str], sym: str, i: int) -> float | None:
+    t, t0 = days[i], days[i - 60]
+    p, spy = c.get(sym, {}), c["SPY"]
+    if not all(d in p and d in spy for d in (t, t0)):
+        return None
+    return math.log(p[t] / p[t0]) - math.log(spy[t] / spy[t0])
+
+
+def test_breadth_counts_the_eleven_sector_etfs_above_their_averages(tmp_path, monkeypatch):
+    path = _db(tmp_path)
+    c, days = store.closes(path), store.sessions()
+    t = max(c["SPY"])
+    b = _item(monkeypatch, path)["breadth"]
+    assert b["ok"], b
+    d = b["data"]
+    assert (d["compared_on"], d["of_total"]) == (t, 11)
+    for w in (50, 200):
+        want = {s: _above(c, days, s, t, w) for s in store.SECTORS}
+        got = d[f"above_{w}"]
+        assert got["by_etf"] == want and got["n"] == sum(want.values()) and got["of"] == 11
+        assert got["window"] == {"start": days[days.index(t) - w + 1], "end": t, "n": w} and got["not_available"] == []
+
+
+def test_a_sector_without_the_history_or_the_close_is_not_available_never_below(tmp_path, monkeypatch):
+    """XLC listed 100 sessions before t: its 50-day is read, its 200-day is not
+    available; XLK without a close inside its 50 slots is not available there.
+    Neither is counted as below: `of` drops by one where it is not available."""
+    days = store.sessions()
+    t = max(store.closes(_db(tmp_path, "probe.db"))["SPY"])
+    i = days.index(t)
+    path = _db(tmp_path, starts={"XLC": days[i - 99]}, drop={"XLK": (days[i - 10],)})
+    d = _item(monkeypatch, path)["breadth"]["data"]
+    a50, a200 = d["above_50"], d["above_200"]
+    assert "XLC" in a50["by_etf"] and "XLC" not in a200["by_etf"]
+    assert {"etf": "XLC", "reason": f"no close on {days[i - 199]}: its history starts {days[i - 99]}"} in a200["not_available"]
+    assert a50["not_available"] == [{"etf": "XLK", "reason": f"no close stored for {days[i - 10]}"}]
+    assert (a50["of"], a200["of"]) == (10, 9)  # XLK is out of both windows' reach; XLC of the 200-day only
+    assert a50["n"] == sum(a50["by_etf"].values()) and a200["n"] == sum(a200["by_etf"].values())
+
+
+def test_equal_and_small_against_spy_are_60_session_log_differences_with_a_one_year_line(tmp_path, monkeypatch):
+    path = _db(tmp_path)
+    c, days = store.closes(path), store.sessions()
+    t = max(c["SPY"])
+    i = days.index(t)
+    d = _item(monkeypatch, path)["breadth"]["data"]
+    import pandas as pd
+
+    since = (pd.Timestamp(t) - pd.DateOffset(months=12)).strftime("%Y-%m-%d")
+    line = [x for x in days if since < x <= t]
+    for name, sym in (("eqw_vs_cap", "RSP"), ("small_vs_large", "IWM")):
+        assert d[f"{name}_3m"] == pytest.approx(_rel(c, days, sym, i), abs=1e-12) and d[f"{name}_reason"] is None
+        pts = d[f"{name}_series"]
+        assert [p["date"] for p in pts] == line
+        assert pts[-1]["rel"] == pytest.approx(d[f"{name}_3m"], abs=1e-12)
+        assert pts[0]["rel"] == pytest.approx(_rel(c, days, sym, days.index(line[0])), abs=1e-12)
+        assert d[f"{name}_line_window"] == {"start": line[0], "end": t, "n": len(line)}
+    assert d["relative_window"] == {"start": days[i - 60], "end": t, "n": 60}
+
+
+def test_without_rsp_the_equal_weight_line_awaits_the_refresh_and_the_rest_stands(tmp_path, monkeypatch):
+    path = _db(tmp_path, only=tuple(x for x in store.ETFS if x != "RSP"))
+    d = _item(monkeypatch, path)["breadth"]["data"]
+    assert d["eqw_vs_cap_3m"] is None and d["eqw_vs_cap_series"] == [] and d["eqw_vs_cap_line_window"] is None
+    assert d["eqw_vs_cap_reason"] == "Awaiting refresh: the full refresh stores RSP; this database predates it."
+    assert d["small_vs_large_3m"] is not None and d["above_50"]["of"] == 11
+
+
+def test_the_sectors_route_serves_breadth_as_its_block(tmp_path, install_worker, monkeypatch):
+    _serve(install_worker, monkeypatch, _db(tmp_path), items=ITEMS)
+    s = dc.check_response("/sectors", client.get("/api/desk/sectors"))
+    b = s["data"]["breadth"]
+    assert b["status"] == "ready" and b["data"]["of_total"] == 11 and b["data"]["compared_on"] == s["data"]["compared_on"]
+
+
+def test_the_pipeline_says_the_breadth_series_feed_sectors():
+    from src.desk import series as registry
+
+    assert set(pipe.BREADTH_SERIES) == {registry.get(k).series_id for k in (etf.BENCHMARK, *etf.SECTOR_KEYS, "rsp", "iwm")}
+    for sym in ("RSP", "IWM"):
+        assert "Sectors" in pipe.feeds_of(sym) and sym not in pipe.NO_LIVE_READER, sym

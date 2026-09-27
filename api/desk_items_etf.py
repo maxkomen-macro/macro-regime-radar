@@ -25,6 +25,15 @@ Rules (the spec names each):
   (XLB, XLE, XLF, XLI, XLK, XLY) less the mean rel of the three defensive ones
   (XLP, XLU, XLV); XLC and XLRE are in neither group. Above +0.01 "cyclical",
   below −0.01 "defensive", otherwise "mixed"; null unless all nine are served.
+- Breadth (§12.14), on the same session `t`, of the eleven sector ETFs only
+  (never stocks): a sector is above its 50-day (200-day) average when its close
+  on `t` is strictly above the simple mean of its closes over the 50 (200)
+  XNYS session slots ending at `t`, every slot holding a close (the §12.7 rule
+  for the S&P's averages); one without that close or those slots is "not
+  available" with the reason, counted in neither `n` nor `of`. Equal against
+  cap weight is RSP's 60-session log return less SPY's, small caps against
+  large IWM's; each one-year line is that same 60-session difference on every
+  session of the twelve months to `t`.
 
 Stdlib at import; numpy, pandas and the engine are imported at the point of
 use. The connection is closed in a `finally` (verifier V-54).
@@ -209,6 +218,91 @@ def pattern(rows: list[dict]) -> dict:
     return out
 
 
+# ── Breadth (§12.14) ────────────────────────────────────────────────────────
+
+MA_WINDOWS = (50, 200)
+LINE_MONTHS = 12
+
+
+def above_average(store: Store, key: str, t: int, w: int) -> tuple[bool | None, str | None]:
+    """Whether `key`'s close on session t is strictly above the mean of its
+    closes over the w session slots ending at t; null with the reason when
+    that close or any slot's close is not stored."""
+    lo = t - w + 1
+    if lo < 0:
+        return None, "no session that far back in the stored calendar"
+    px = store.px.get(key)
+    if px is None:
+        return None, "not stored in this database"
+    window = px[lo:t + 1]
+    gaps = [i for i, v in enumerate(window) if not math.isfinite(float(v))]
+    if gaps:
+        return None, store.gap_reason(key, lo + gaps[0])
+    return bool(float(px[t]) > float(window.mean())), None
+
+
+def relative_line(store: Store, key: str, t: int) -> tuple[float | None, str | None, list[dict], dict]:
+    """`key` against SPY: its 60-session log return less SPY's on t (with the
+    reason when null), and the same difference on every session of the twelve
+    months to t, a point null where a close it needs is not stored."""
+    import pandas as pd
+
+    rel, why = None, None
+    own, why = store.log_ret(key, t, t - WINDOW_SESSIONS)
+    spy, why_spy = store.log_ret(BENCHMARK, t, t - WINDOW_SESSIONS)
+    if own is not None and spy is not None:
+        rel = own - spy
+    else:
+        why = why or why_spy
+    since = store.sessions[t] - pd.DateOffset(months=LINE_MONTHS)
+    first = int(store.sessions.searchsorted(since, side="right"))
+    points = []
+    for i in range(first, t + 1):
+        a, _ = store.log_ret(key, i, i - WINDOW_SESSIONS)
+        b, _ = store.log_ret(BENCHMARK, i, i - WINDOW_SESSIONS)
+        points.append({"date": store.iso[i], "rel": None if a is None or b is None else a - b})
+    window = {"start": store.iso[first], "end": store.iso[t], "n": len(points)}
+    return rel, why, points, window
+
+
+def breadth(store: Store) -> dict:
+    """The /sectors breadth block: the eleven sector ETFs against their 50-
+    and 200-day averages, RSP and IWM against SPY, all on session t."""
+    from src.desk import series as registry
+
+    keys = [t.lower() for t, *_ in registry.SECTOR_ETFS]
+    if not store.has(BENCHMARK) or not any(store.has(k) for k in keys):
+        raise awaiting_refresh([registry.get(k).series_id for k in (BENCHMARK, *keys) if not store.has(k)])
+    t = store.newest(BENCHMARK)
+    if t is None or t - WINDOW_SESSIONS < 0:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    out: dict[str, Any] = {"compared_on": store.iso[t], "of_total": len(keys)}
+    for w in MA_WINDOWS:
+        by, lost = {}, []
+        for (tick, *_rest), k in zip(registry.SECTOR_ETFS, keys):
+            above, why = above_average(store, k, t, w)
+            if above is None:
+                lost.append({"etf": tick, "reason": why})
+            else:
+                by[tick] = above
+        out[f"above_{w}"] = {"n": sum(by.values()), "of": len(by), "compared_on": store.iso[t],
+                             "window": {"start": store.iso[max(t - w + 1, 0)], "end": store.iso[t], "n": w},
+                             "by_etf": by, "not_available": lost}
+    for name, key in (("eqw_vs_cap", "rsp"), ("small_vs_large", "iwm")):
+        if store.has(key):
+            rel, why, points, window = relative_line(store, key, t)
+        else:
+            rel, why, points, window = None, awaiting_refresh([key.upper()]).reason, [], None
+        out[f"{name}_3m"] = rel
+        out[f"{name}_reason"] = why if rel is None else None
+        out[f"{name}_series"] = points
+        out[f"{name}_line_window"] = window
+    out["relative_window"] = {"start": store.iso[t - WINDOW_SESSIONS], "end": store.iso[t], "n": WINDOW_SESSIONS}
+    out.update({"unit": "log_return", "date": store.iso[t], "freq": "daily", "source": SOURCE,
+                "providers": provider_words(store.providers)})
+    return out
+
+
 # ── The item ────────────────────────────────────────────────────────────────
 
 SECTOR_KEYS = ("xlb", "xlc", "xle", "xlf", "xli", "xlk", "xlp", "xlre", "xlu", "xlv", "xly")
@@ -222,7 +316,7 @@ def desk_etf(ctx: dict) -> dict:
     cutoff = es.resolve_as_of(None, es.DB_PATH)
     conn = _connect()
     try:
-        store = Store(conn, [BENCHMARK, *SECTOR_KEYS], cutoff)
+        store = Store(conn, [BENCHMARK, *SECTOR_KEYS, "rsp", "iwm"], cutoff)
     finally:
         conn.close()
-    return {"sectors": part("sectors", lambda: leadership(store))}
+    return {"sectors": part("sectors", lambda: leadership(store)), "breadth": part("breadth", lambda: breadth(store))}

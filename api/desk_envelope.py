@@ -94,7 +94,6 @@ def route_of(path: str) -> str:
 
 # ── Served sentences (§1.0, §12.3, §12.6–§12.8, §12.13; plan §6 S-17, S-27) ──
 
-BREADTH_REASON = "breadth is not computed yet."  # desk/fill-etf item 2: /sectors serves leadership first
 VOL_REASON = "needs stored SPY option snapshots and a versioned skew method."
 POSITIONS_REASON = "Positions are kept in this browser; there is no server position store."
 BASKET_REASON = "basket pricing and option structures not yet defined in the engine."
@@ -121,7 +120,6 @@ DEFERRED_BLOCKS: dict[tuple[str, str], str] = {
     ("/regime", "stats"): REGIME_STATS_REASON,
     ("/regime", "changes"): REGIME_STATS_REASON,
     ("/technicals", "vol"): VOL_REASON,
-    ("/sectors", "breadth"): BREADTH_REASON,
     ("/macro", "stock_bond"): CORRELATIONS_REASON,
     ("/macro", "correlations"): CORRELATIONS_REASON,
     ("/macro", "matrix"): CORRELATIONS_REASON,
