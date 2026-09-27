@@ -321,6 +321,32 @@ def _desk_preset(name: str):
 DESK_PRESETS = ("gold-2sigma-spx-weak", "spx-golden-cross", "spx-death-cross")
 
 
+def _desk_regime(ctx: dict) -> dict:
+    """The Desk v2 regime item (api/desk_items_macro.py), one for /regime and
+    /overview: the stored regimes rows, the recession block with its provenance
+    (both routes serve it), the next-print thresholds. Reads the `recession`
+    item above, so it is listed after it."""
+    from api.desk_items_macro import desk_regime
+
+    return desk_regime(ctx)
+
+
+def _desk_macro(ctx: dict) -> dict:
+    """The Desk v2 /macro item (api/desk_items_macro.py): the curve today and a
+    month ago, and HY/IG credit with the rolling three-year HY statistics."""
+    from api.desk_items_macro import desk_macro
+
+    return desk_macro(ctx)
+
+
+def _desk_pipeline(ctx: dict) -> dict:
+    """The Desk v2 /pipeline item (api/desk_pipeline.py): every Data Pipeline
+    row's dates, provider, feeds and note, and the watermarks its statuses read."""
+    from api.desk_pipeline import desk_pipeline
+
+    return desk_pipeline(ctx)
+
+
 ITEMS = [
     ("credit", _credit),
     ("recession", _recession),
@@ -340,7 +366,11 @@ ITEMS = [
     *[(f"desk_preset:{name}", _desk_preset(name)) for name in DESK_PRESETS],
     ("desk_technicals", desk_items.desk_technicals),
     ("desk_facts", desk_items.desk_facts),
-    ("desk_regime", desk_items.desk_regime),
+    # Desk v2 (desk/frame-3-api-b2a): the one desk_regime item, which /regime and /overview's
+    # regime and recession tiles read (after `recession`); then /macro's and /pipeline's
+    ("desk_regime", _desk_regime),
+    ("desk_macro", _desk_macro),
+    ("desk_pipeline", _desk_pipeline),
 ]
 
 

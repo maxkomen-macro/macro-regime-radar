@@ -115,28 +115,6 @@ def desk_facts(ctx: dict) -> dict:
     return {"newest": newest, "vix_recent": vix_recent}
 
 
-def desk_regime(ctx: dict) -> dict:
-    """The regime and recession facts /overview reads (plan §1.1, §1.6): the
-    stored regimes rows by month, and the recession model's provenance (N5,
-    `recession_provenance`), built beside the `recession` item in the same
-    generation. /regime (plan §7 commit 7) adds the next-print thresholds. A
-    provenance that cannot be built (no stored model inputs) is logged and
-    None, so the regime rows still serve."""
-    import logging
-
-    from api import db
-    from src.analytics.recession import recession_provenance
-
-    rows = [{"month": r["date"][:7], "label": r["label"], "growth_trend": r["growth_trend"],
-             "inflation_trend": r["inflation_trend"]} for r in db.regime_history(None, None, None)]
-    try:
-        provenance = recession_provenance()
-    except Exception:  # logged; the recession tile then reads awaiting
-        logging.getLogger("mrr.desk").exception("desk_regime: the recession provenance could not be built")
-        provenance = None
-    return {"rows": rows, "recession": provenance}
-
-
 TECH_CHART_MONTHS = {"6m": 6, "1y": 12, "3y": 36}
 
 

@@ -734,13 +734,15 @@ def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp
     a = es.assets_with_coverage(db)
     by = {x["key"]: x for x in a["shocks"]}
     stored_by_refresh = [s.key for s in registry.fetched(registry.REFRESH_TIER)]
-    assert stored_by_refresh == ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "wti", "ndx", "dxy", "usdjpy"]
+    assert stored_by_refresh == ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "us3m", "us5y", "us30y", "wti", "ndx", "dxy", "usdjpy"]
     assert set(stored_by_refresh) <= set(a["awaiting_refresh"])
     for k in a["awaiting_refresh"]:
-        assert by[k]["status"] == "awaiting_refresh" and registry.stored_by_refresh(registry.get(k)), k
+        assert registry.stored_by_refresh(registry.get(k)), k
+        # the curve tenors (desk/frame-3-api) have no role, so no shock list carries them
+        assert by[k]["status"] == "awaiting_refresh" if k in by else not registry.get(k).roles, k
     assert by["ndx"]["status"] == "awaiting_refresh" and by["wti"]["status"] == "awaiting_refresh" and by["spx"]["status"] == "stored"
     # ^RUT is not in the synthetic store, nor are the four tier-2 desk_series series
-    assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["wti", "ndx", "rut", "dxy", "usdjpy"]
+    assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["us3m", "us5y", "us30y", "wti", "ndx", "rut", "dxy", "usdjpy"]
 
     # A tier the refresh does not store is planned: not stored, and it says why.
     monkeypatch.setattr(registry, "REFRESH_TIER", 1)
@@ -1393,6 +1395,8 @@ def _codex_providers(monkeypatch, state: dict):
                    for s in registry.fetched(2)}
     finally:
         conn.close()
+    for sid in ("DGS3MO", "DGS5", "DGS30"):  # the curve tenors (desk/frame-3-api): not in the scratch store
+        history[sid] = history[sid] or history["DGS10"]
 
     def fred(series_id, start):
         rows = {d: float(x) for d, x in history[series_id] if d <= state["end"]}

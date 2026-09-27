@@ -527,6 +527,16 @@ def main():
         conns.append(conn)
         return FailsMidway(conn)
 
+    from api import desk_items_macro
+
+    real_desk = desk_items_macro._connect  # desk_regime's own connection (desk/frame-3-api-b2a)
+
+    def failing_desk():
+        conn = real_desk()
+        conns.append(conn)
+        return FailsMidway(conn)
+
+    desk_items_macro._connect = failing_desk
     real_recession = recession._get_conn
 
     def failing_recession():
@@ -589,9 +599,12 @@ def test_a_desk_item_that_fails_midway_leaves_no_connection_to_the_copy(tmp_path
     assert lines, (proc.returncode, proc.stdout[-2000:], proc.stderr[-4000:])
     res = json.loads(lines[-1][len("RESULT "):])
     items = sorted(n for n, _ in analytics_cache.ITEMS if n.startswith(FAILING_ITEM_PREFIXES))
-    # desk_regime logs a provenance it cannot build and serves its rows (the recession tile reads awaiting)
-    assert res["failed"] == [n for n in items if n != "desk_regime"], res
-    assert res["regime_recession"] is None, res
+    # every builder fails, desk_regime included: since the merge with desk/frame-3-api-b2a it is the one
+    # regime item, whose own regimes read fails the whole item (its recession block, which fails alone
+    # and leaves the rows served, is tests/test_desk_v2_regime.py's
+    # test_a_recession_block_that_fails_leaves_the_rows_served)
+    assert res["failed"] == items, res
+    assert res["regime_recession"] == "absent", res
     assert res["opened"] == len(items) and res["left_open"] == 0 and res["rows"] > 0 and not res["hung"], res
 
 

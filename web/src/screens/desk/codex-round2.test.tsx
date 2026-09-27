@@ -89,8 +89,8 @@ describe("R-16: rows the boundary drops are said; no total and no 'none' is read
     const inv = await screen.findByRole("region", { name: /Series inventory/ });
     await waitFor(() => expect(inv).toHaveTextContent("1 series could not be read."));
     expect(inv).not.toHaveTextContent("No series in this group yet.");
-    // 27 served: the lost series is counted, the four readable Credit rows are not there.
-    expect(inv).toHaveTextContent(/23 series · grouped/);
+    // 22 served: the lost series is counted, the two readable Credit rows are not there.
+    expect(inv).toHaveTextContent(/21 series · grouped/);
     expect(within(inv).getByRole("button", { name: /^Credit/ })).toHaveTextContent("1 series");
   });
 

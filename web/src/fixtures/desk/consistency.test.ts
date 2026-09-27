@@ -279,8 +279,7 @@ describe("the API plan's spec errata (§6, S-02–S-27) as the fixtures carry th
       const pts = series[key];
       const start = after(months);
       expect(pts[0].date > start && pts.at(-1)!.date === technicals.date, key).toBe(true);
-      // The holiday table covers 2024 on; the 3-year window reaches 2023.
-      if (start >= "2024-01-01") expect(pts.length, key).toBe(sessionCount(pts[0].date, technicals.date));
+      expect(pts.length, key).toBe(sessionCount(pts[0].date, technicals.date));
       expect(pts.filter((p) => p.close === null).map((p) => p.date), key).toEqual(["2026-09-22"]);
     }
   });
@@ -303,11 +302,15 @@ describe("the API plan's spec errata (§6, S-02–S-27) as the fixtures carry th
   });
 
   it("S-03: a FRED daily series stored month-stamped has its newest observation as last and its first month stamp as first", () => {
-    const rows = pipeline.groups.flatMap((g) => g.series as { id: string; first: string | null; last: string | null; note: string | null }[]).filter((r) => ["BAMLC0A0CM", "BAMLH0A1HYBB", "BAMLH0A2HYB", "BAMLH0A3HYC"].includes(r.id));
-    expect(rows).toHaveLength(4);
-    for (const r of rows) expect([r.id, r.first, r.last]).toEqual([r.id, "1996-12-01", macro.credit.ig.date]);
-    // The page prints a monthly series' dates by month (§1.7), so the note names the true date.
-    for (const r of rows) expect(r.note, r.id).toContain(r.last!);
+    // IG and the two breakevens: daily at FRED, stored one row a month in raw_series (the served row set, plan §1.9)
+    const rows = pipeline.groups.flatMap((g) => g.series as { id: string; freq: string; first: string | null; last: string | null }[]).filter((r) => ["BAMLC0A0CM", "T10YIE", "T5YIE"].includes(r.id));
+    expect(rows.map((r) => r.id).sort()).toEqual(["BAMLC0A0CM", "T10YIE", "T5YIE"]);
+    for (const r of rows) {
+      expect(r.freq, r.id).toBe("daily"); // dated to the day on the page
+      expect(r.first, r.id).toMatch(/^\d{4}-\d{2}-01$/);
+      expect(r.last! > r.first!, r.id).toBe(true);
+    }
+    expect(rows.find((r) => r.id === "BAMLC0A0CM")!.last).toBe(macro.credit.ig.date);
   });
 
   it("S-08 as amended: no served template leads a number with a hyphen", () => {

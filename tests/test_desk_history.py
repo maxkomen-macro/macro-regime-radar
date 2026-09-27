@@ -26,7 +26,8 @@ from src.market_data import desk_history
 
 ROOT = Path(__file__).resolve().parent.parent
 NOW = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)  # Monday; last completed session Fri 2026-09-18
-TIER1 = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2"]  # gold is GC=F from asset_prices (decision 2026-09-21)
+TIER1 = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS3MO", "DGS5", "DGS30"]  # gold is GC=F from asset_prices (decision 2026-09-21)
+TENORS = ["DGS3MO", "DGS5", "DGS30"]  # desk/frame-3-api: the curve tenors /macro draws, tier 1 with no roles
 TIER2 = ["DCOILWTICO", "^NDX", "DX-Y.NYB", "JPY=X"]  # desk/hardening: the full refresh stores tier 2 (^RUT is asset_prices)
 
 
@@ -131,7 +132,8 @@ def test_registry_tier1_is_the_agreed_list_and_the_vocabularies_hold():
         assert s.unit in registry.UNITS and s.source in registry.SOURCES and s.known_by in registry.KNOWN_BY
         assert s.fixed[0] in registry.ANCHORS and s.known[0] in registry.ANCHORS, s.key
         assert isinstance(s.defer_as_target, bool)
-        assert set(s.roles) <= set(registry.ROLES) and (bool(s.roles) == s.available), s.key
+        # an available series is a study input, except the curve tenors, which only /macro reads
+        assert set(s.roles) <= set(registry.ROLES) and (bool(s.roles) == s.available or s.series_id in TENORS), s.key
         assert (s.reason is not None) == (not s.available), s.key
         assert (s.scale == 100.0) == (s.unit == "bp"), s.key  # FRED serves yields and OAS in percent
         if s.source != "market":
@@ -191,7 +193,7 @@ def test_registry_is_keyless():
 def test_tier1_stores_the_fred_series_only_and_records_watermarks(tmp_path, fred, providers):
     db = tmp_path / "t.db"
     out = desk_history.refresh(db, now=NOW, tier=1)
-    assert out["status"] == "ok" and out["stored"] == TIER1 and out["providers"] == {"fred": 5}
+    assert out["status"] == "ok" and out["stored"] == TIER1 and out["providers"] == {"fred": 8}
     assert out["short"] == {sid: "2020-01-02" for sid in TIER1 if sid != "BAMLH0A0HYM2"}, "the stub serves from 2020; HY OAS declares 2023-09-25"
     assert providers.calls == [], "tier 1 never calls the provider layer"
     assert [c[0] for c in fred.calls] == TIER1
@@ -201,7 +203,7 @@ def test_tier1_stores_the_fred_series_only_and_records_watermarks(tmp_path, fred
     assert all(r["provider"] == "fred" and r["last"] == "2026-09-18" for r in rows.values())
     wm = _wm(db)
     assert wm["desk_series"]["status"] == "ok" and wm["desk_series"]["last_obs"] == "2026-09-18"
-    assert wm["desk_series"]["detail"].startswith("fred 5; short history: DGS10 (from 2020-01-02), DGS2 (from 2020-01-02)")
+    assert wm["desk_series"]["detail"].startswith("fred 8; short history: DGS10 (from 2020-01-02), DGS2 (from 2020-01-02)")
     assert wm["desk:DGS10"]["last_obs"] == "2026-09-18" and wm["desk:DGS10"]["status"] == "short"
     assert wm["desk:DGS10"]["detail"] == "fred; served from 2020-01-02; stored from 2020-01-02; 1752 rows; declared 1962-01-02"
 
@@ -286,7 +288,7 @@ def test_tier2_adds_the_market_series_through_the_provider_layer(tmp_path, fred,
     assert "(fallback: JPY=X)" in _wm(db)["desk_series"]["detail"]
 
 
-def test_a_tier2_run_makes_six_fred_calls_and_one_provider_call_per_market_series(tmp_path, fred, providers):
+def test_a_tier2_run_makes_nine_fred_calls_and_one_provider_call_per_market_series(tmp_path, fred, providers):
     """desk/hardening: the call counts the report and the workflow state. The
     default run is the refresh tier; each market series is one call into the
     provider layer (EODHD first with a token, the disclosed Yahoo fallback
@@ -297,7 +299,7 @@ def test_a_tier2_run_makes_six_fred_calls_and_one_provider_call_per_market_serie
     assert [(c[0], c[1]) for c in providers.calls] == [("NDX.INDX", "^NDX"), ("DXY.INDX", "DX-Y.NYB"), ("USDJPY.FOREX", "JPY=X")]
     assert set(_rows(db)) == set(TIER1 + TIER2)
     wf = (ROOT / ".github/workflows/refresh-data.yml").read_text()
-    assert "six FRED calls" in wf and "three market series" in wf
+    assert "nine FRED calls" in wf and "three market series" in wf
 
 
 def test_with_a_token_a_tier2_run_bills_three_eodhd_requests_and_reaches_yahoo_for_none(tmp_path, fred, monkeypatch):
@@ -333,7 +335,7 @@ def test_with_a_token_a_tier2_run_bills_three_eodhd_requests_and_reaches_yahoo_f
     assert [p.rsplit("/", 1)[-1] for p in seen] == ["NDX.INDX", "DXY.INDX", "USDJPY.FOREX"]
     assert snap["requests"] == 3 and snap["units"] == 3
     assert [c[0] for c in fred.calls] == TIER1 + ["DCOILWTICO"]
-    assert out["providers"] == {"fred": 6, "eodhd": 3} and out["fallbacks"] == []
+    assert out["providers"] == {"fred": 9, "eodhd": 3} and out["fallbacks"] == []
 
 
 def test_a_bar_fixed_on_the_clock_after_the_close_is_stored_only_once_it_prints(tmp_path, fred, providers):
@@ -587,7 +589,7 @@ def test_a_non_numeric_future_tier2_row_is_quarantined_as_text_and_tier1_still_r
     db = tmp_path / "t.db"
     _seed(db, [("DCOILWTICO", "2099-12-31", "not-a-number", "fred")])
     assert desk_history.main(["--db", str(db), "--tier", "2"]) == 0
-    assert [c[0] for c in fred.calls][:5] == TIER1, "every tier-1 fetch ran"
+    assert [c[0] for c in fred.calls][:len(TIER1)] == TIER1, "every tier-1 fetch ran"
     rows = _rows(db)
     assert all(rows[sid]["last"] >= "2026-09-18" for sid in TIER1), rows
     assert "DCOILWTICO" in rows and rows["DCOILWTICO"]["last"] < "2099-12-31"
@@ -619,7 +621,7 @@ def test_a_quarantine_that_fails_fails_its_series_only_and_tier1_still_refreshes
     monkeypatch.setattr(desk_history, "_quarantine_stored_series", breaks_on_wti)
     assert desk_history.main(["--db", str(db), "--tier", "2"]) == 0
     fetched = [c[0] for c in fred.calls]
-    assert fetched[:5] == TIER1 and "DCOILWTICO" not in fetched, "tier 1 fetched; the series whose quarantine failed was not"
+    assert fetched[:len(TIER1)] == TIER1 and "DCOILWTICO" not in fetched, "tier 1 fetched; the series whose quarantine failed was not"
     rows = _rows(db)
     assert all(rows[sid]["last"] >= "2026-09-18" for sid in TIER1)
     assert rows["DCOILWTICO"]["last"] == "2099-12-31", "its quarantine rolled back; the engine's as-of still never reads it"
@@ -1285,3 +1287,33 @@ def test_a_repair_of_an_unreadable_database_refuses_in_both_modes(tmp_path, caps
         out = capsys.readouterr().out
         assert "refused: database unreadable: " in out and "; nothing changed" in out, out
     assert _hashed(path) == before, "the file is untouched"
+
+
+def test_the_three_curve_tenors_are_stored_as_tier_1_fred_series(tmp_path, fred, providers):
+    """desk/frame-3-api (FRAME3_API_PLAN.md §4.5): DGS3MO, DGS5 and DGS30 are
+    tier-1 FRED series in basis points like DGS10, with no role, so no study
+    can select them. A tier-1 run fetches each from its declared start (FRED
+    serves them from 1981-09-01, 1962-01-02 and 1977-02-15), stores it and
+    records its `desk:<id>` watermark."""
+    declared = {sid: (s.key, s.tier, s.source, s.unit, s.scale, s.history_from, s.roles, s.fixed, s.known)
+                for sid in TENORS for s in [registry.BY_SERIES_ID[sid]]}
+    assert declared == {
+        "DGS3MO": ("us3m", 1, "fred", "bp", 100.0, "1981-09-01", (), ("close", -30), registry.NEXT_OPEN),
+        "DGS5": ("us5y", 1, "fred", "bp", 100.0, "1962-01-02", (), ("close", -30), registry.NEXT_OPEN),
+        "DGS30": ("us30y", 1, "fred", "bp", 100.0, "1977-02-15", (), ("close", -30), registry.NEXT_OPEN),
+    }
+    assert all(registry.BY_SERIES_ID[sid] in registry.fetched(1) and registry.stored_by_refresh(registry.BY_SERIES_ID[sid])
+               for sid in TENORS)
+    for role in registry.ROLES:
+        assert not {s.series_id for s in registry.with_role(role)} & set(TENORS), role
+    db = tmp_path / "t.db"
+    out = desk_history.refresh(db, now=NOW, tier=1)
+    assert out["status"] == "ok" and set(TENORS) <= set(out["stored"])
+    calls = dict(fred.calls)
+    assert {sid: calls[sid] for sid in TENORS} == {"DGS3MO": "1981-09-01", "DGS5": "1962-01-02", "DGS30": "1977-02-15"}
+    rows = _rows(db)
+    assert all(rows[sid]["provider"] == "fred" and rows[sid]["last"] == "2026-09-18" for sid in TENORS)
+    wm = _wm(db)
+    for sid in TENORS:
+        assert wm[f"desk:{sid}"]["last_obs"] == "2026-09-18", sid
+        assert wm[f"desk:{sid}"]["status"] == "short", sid  # the stub serves from 2020 only

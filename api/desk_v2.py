@@ -45,6 +45,8 @@ from starlette.responses import Response
 from api import calendar as nyse
 from api import desk_catalog as catalog
 from api import desk_envelope as env
+# the one direction rule and the one recession band, shared with /regime (desk/frame-3-api-b2a)
+from api.desk_items_macro import direction as _direction, recession_band
 from src.desk import series as registry
 
 log = logging.getLogger("mrr.desk")
@@ -243,9 +245,7 @@ def desk_overview(request: Request) -> Response:
 # ── §12.1 GET /overview ─────────────────────────────────────────────────────
 
 REGIMES_SOURCE = "regimes table (src/regime.py)"
-RECESSION_SOURCE = "recession model (src/analytics/recession.py)"
 VIX_SOURCE = "FRED VIXCLS (desk_series)"
-RECESSION_BAND_EDGES = (0.20, 0.40)
 # N9: the Desk feed set, by series id, in the plan's order; the five FRED inputs, then the two prices
 DATA_STATUS_FRED = ("T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS2", "DGS10")
 DATA_STATUS_PRICES = ("^GSPC", "GC=F")
@@ -256,12 +256,6 @@ def _result(name: str) -> Any:
     from api.worker import get_worker
 
     return get_worker().result(name)
-
-
-def recession_band(score: float) -> str:
-    """R4 (v3 §11): src/analytics/recession._classify_prob's own edges, on a fraction."""
-    lo, hi = RECESSION_BAND_EDGES
-    return "low" if score < lo else ("elevated" if score < hi else "high_risk")
 
 
 def k_minus_2(session: str) -> str:
@@ -291,21 +285,6 @@ def regime_run(rows: list[dict], print_month: str) -> tuple[int, str]:
         since, n = prev, n + 1
 
 
-def _direction(trend: Any) -> str | None:
-    """The classifier's own test (src/regime.py): rising iff the stored trend
-    is > 0. None when the row stores no finite trend (Codex round 2, R-03): a
-    NULL used to read as falling."""
-    if trend is None:
-        return None
-    try:
-        v = float(trend)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(v):
-        return None
-    return "rising" if v > 0 else "falling"
-
-
 def regime_tile(rows: list[dict], comparison: str) -> dict:
     """tiles.regime: the stored K−2 row for comparison_session's month;
     awaiting when that row is not stored or either stored slope is not finite."""
@@ -322,15 +301,15 @@ def regime_tile(rows: list[dict], comparison: str) -> dict:
 
 
 def recession_tile(regime_item: dict) -> dict:
-    """tiles.recession: the recession model's score, dated by N5; awaiting when the model has no data."""
-    metrics = _result("recession")
-    prov = regime_item.get("recession")
-    if metrics.get("recession_prob") is None or prov is None:
-        raise env.Awaiting(env.BLOCK_FAILED_REASON)
-    score = metrics["recession_prob"] / 100
-    return {"score": score, "probability_month": prov["probability_month"], "inputs_through": prov["inputs_through"],
-            "band": recession_band(score), "band_edges": list(RECESSION_BAND_EDGES), "freq": "monthly",
-            "source": RECESSION_SOURCE}
+    """tiles.recession: the seven tile fields of the one recession block the
+    desk_regime item holds, which /regime serves whole (the score, its N5
+    provenance, R4's band); awaiting with its reason when the block could not
+    be built (the model has no data)."""
+    part = regime_item["recession"]
+    if not part.get("ok"):
+        raise env.Awaiting(part["reason"])
+    data = part["data"]
+    return {k: data[k] for k in ("score", "probability_month", "inputs_through", "band", "band_edges", "freq", "source")}
 
 
 def trend_tile() -> dict:

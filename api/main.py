@@ -37,6 +37,7 @@ from api import assistant_budget, bootstrap, db, security, stream
 from api import worker as worker_mod
 from api.db import NotStored
 from api import freshness as freshness_mod
+from api import desk_v2_macro
 from api.chat import router as assistant_router
 from api import desk as desk_mod
 from api import provenance
@@ -1660,6 +1661,8 @@ def api_calendar_recent(
 
 
 app.include_router(api)
+# The Desk v2 /regime and /macro (api/desk_v2_macro.py, DESK_FRAME3_SPEC §12.6, §12.8): the envelope.
+app.include_router(desk_v2_macro.router)
 app.include_router(assistant_router)
 # The Desk (api/desk.py): /api/desk/event-study[/assets] (desk/event-study) and
 # /api/desk/pipeline/inventory (desk/frame), one router.

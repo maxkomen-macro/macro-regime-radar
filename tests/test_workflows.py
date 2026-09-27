@@ -350,3 +350,34 @@ def test_the_hook_step_is_bounded_and_cannot_fail_the_refresh():
     assert "--max-time" in step["run"]
     assert step.get("timeout-minutes") and int(step["timeout-minutes"]) <= 5
     assert step.get("continue-on-error") is True
+
+
+def test_both_writers_publish_the_validation_verdict_in_a_step_that_never_blocks():
+    """FRAME3_API_PLAN.md S-01 (R-07): right after each database publish step,
+    under the same condition, a separate step writes publish/validation.json
+    with exactly {verdict, mode, timestamp, db_sha256} (the sha256 of
+    data/macro_radar.db, scripts/validation_asset.py) and uploads it with
+    --clobber; bounded at one minute and continue-on-error, so a failure only
+    leaves the verdict absent. The database's publish step never mentions it."""
+    for name, mode in (("refresh-data.yml", None), ("intraday-refresh.yml", "intraday")):
+        steps = next(iter(_load(name)["jobs"].values()))["steps"]
+        names = [s.get("name", "") for s in steps]
+        u = next(i for i, n in enumerate(names) if n.startswith("Publish") and "DB snapshot" in n)
+        publish, step = steps[u], steps[u + 1]
+        assert step["name"] == "Publish the validation verdict", (name, names[u + 1])
+        assert step["if"] == publish["if"], name
+        assert int(step["timeout-minutes"]) == 1 and step["continue-on-error"] is True, name
+        assert step["env"]["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}", name
+        run = step["run"]
+        assert "python scripts/validation_asset.py validation.json data/macro_radar.db publish/validation.json" in run, name
+        assert "gh release upload data-latest publish/validation.json --clobber" in run, name
+        assert "validation.json" not in publish["run"], f"{name}: a verdict failure must never reach the database upload"
+        validate = next(s for s in steps if s.get("name") == "Validate the refreshed database")
+        assert "--json validation.json" in validate["run"], name
+        if mode:
+            assert f"--mode {mode}" in validate["run"], "the intraday validator stays in its own mode"
+    # the script the steps run: stdlib only, so the lean market install runs it
+    tree = ast.parse((ROOT / "scripts" / "validation_asset.py").read_text())
+    mods = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    mods |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    assert mods <= {"__future__", "hashlib", "json", "sys", "pathlib"}, mods

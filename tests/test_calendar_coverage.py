@@ -109,9 +109,12 @@ def test_each_year_equals_the_bounded_definitions():
 
 
 def test_the_generated_files_are_up_to_date():
-    table = gen.holidays_by_year()
-    for path in gen.TARGETS:
-        assert gen.rendered(path.read_text(), table) == path.read_text(), path
+    """The two Python tables and the web's copy (web/.../positions/sessions.ts,
+    every year of api/calendar.py's HOLIDAYS) are a fresh run of the generator."""
+    fresh = gen.outputs(gen.holidays_by_year())
+    assert set(fresh) == {*gen.TARGETS, gen.WEB}
+    for path, text in fresh.items():
+        assert text == path.read_text(), path
 
 
 def test_the_lean_copy_is_the_same_tables():
