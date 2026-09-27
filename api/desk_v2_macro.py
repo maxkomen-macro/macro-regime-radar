@@ -98,10 +98,11 @@ def run_ending_at(rows: list[dict], month: str) -> tuple[int, str]:
         n, first = n + 1, prev
 
 
-def current_block(rows: list[dict], comparison: date) -> dict:
+def current_block(rows: list[dict], comparison: date, classifier: dict | None = None) -> dict:
     """§12.6 `current.data`: the stored K−2 row for the month of the
     comparison session. Awaiting (S-27) when that row is not stored, or does
-    not store both trends."""
+    not store both trends. `classifier` (desk/fill-compute) is the home page's
+    classifier reading on the newest row, and whether its label is this one."""
     from api.desk_items_macro import direction
 
     month = print_for(comparison)
@@ -121,6 +122,7 @@ def current_block(rows: list[dict], comparison: date) -> dict:
         "freq": "monthly",
         "source": REGIMES_SOURCE,
         "latest_print": rows[-1]["month"],
+        "classifier": None if classifier is None else {**classifier, "agrees": classifier["label"] == row["label"]},
     }
 
 
@@ -175,7 +177,7 @@ def regime_payload(now: datetime) -> dict:
     rows = item["rows"]
     comparison = cal.last_completed_session(now)
     return {
-        "current": env.block_from("/regime", "current", lambda: current_block(rows, comparison)),
+        "current": env.block_from("/regime", "current", lambda: current_block(rows, comparison, item.get("classifier"))),
         "history": [{"month": r["month"], "regime": r["label"]} for r in rows[-HISTORY_ROWS:]],
         "history_note": HISTORY_NOTE,
         "history_freq": "monthly",

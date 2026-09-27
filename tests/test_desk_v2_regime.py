@@ -833,3 +833,39 @@ def test_a_print_already_made_is_said_from_the_displayed_row(tmp_path, install_w
 
 def test_the_routes_next_print_keys_mirror_the_items():
     assert v2m.NEXT_PRINT_KEYS == items.NEXT_PRINTS
+
+
+# ── The home page's classifier beside the rule-based label (desk/fill-compute) ──
+
+def _odds_store(tmp_path: Path, rows: list[tuple]) -> sqlite3.Connection:
+    conn = sqlite3.connect(tmp_path / "odds.db")
+    conn.execute("CREATE TABLE regimes (date TEXT, label TEXT, growth_trend REAL, inflation_trend REAL, prob_goldilocks REAL, "
+                 "prob_overheating REAL, prob_stagflation REAL, prob_recession REAL)")
+    conn.executemany("INSERT INTO regimes VALUES (?,?,?,?,?,?,?,?)", rows)
+    return conn
+
+
+def test_the_classifier_reading_is_the_newest_rows_dominant_odds(tmp_path):
+    conn = _odds_store(tmp_path, [("2026-07-01", "Goldilocks", 1, -1, 0.61, 0.01, 0.01, 0.37),
+                                  ("2026-08-01", "Overheating", 1, 1, 0.11, 0.4246, 0.3698, 0.0957)])
+    try:
+        assert items.classifier_latest(conn) == {"month": "2026-08", "label": "Overheating", "odds": 0.4246}
+        conn.execute("UPDATE regimes SET prob_recession = 0.9 WHERE date = '2026-08-01'")
+        # the Desk never shows regimes.prob_recession: the label is named, its odds are not
+        assert items.classifier_latest(conn) == {"month": "2026-08", "label": "Recession Risk", "odds": None}
+        conn.execute("UPDATE regimes SET prob_goldilocks = NULL WHERE date = '2026-08-01'")
+        assert items.classifier_latest(conn) is None
+    finally:
+        conn.close()
+
+
+def test_the_route_serves_the_classifier_beside_the_k_minus_2_label(install_worker, monkeypatch):
+    if not PUBLISHED.exists() or PUBLISHED.stat().st_size == 0:
+        pytest.skip("no published copy")
+    serve(install_worker, monkeypatch, PUBLISHED)
+    at(monkeypatch, datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc))
+    cur = get_regime()["data"]["current"]["data"]
+    if cur["latest_print"] != "2026-08":
+        pytest.skip("not the audit's store")
+    assert cur["label"] == "Goldilocks" and cur["print"] == "2026-07"
+    assert cur["classifier"] == {"month": "2026-08", "label": "Overheating", "odds": 0.4246, "agrees": False}

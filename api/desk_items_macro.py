@@ -133,6 +133,40 @@ def regime_rows(conn: sqlite3.Connection) -> list[dict]:
     return [by_month[m] for m in sorted(by_month)]
 
 
+# The classifier's four stored odds, by the label each is for (src/regime.py's softmax columns).
+CLASSIFIER_ODDS = (("Goldilocks", "prob_goldilocks"), ("Overheating", "prob_overheating"),
+                   ("Stagflation", "prob_stagflation"), ("Recession Risk", "prob_recession"))
+
+
+def classifier_latest(conn: sqlite3.Connection) -> dict | None:
+    """The home page's classifier reading (desk/fill-compute): the newest stored
+    regimes row's four-way odds, and the label with the largest (the home
+    page's dominant odds, /api/regime/latest). `odds` is null when that label
+    is Recession Risk: the Desk never shows regimes.prob_recession (CLAUDE.md).
+    None when the row stores no finite odds."""
+    from api import provenance
+
+    if not provenance.table_exists(conn, "regimes"):
+        return None
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(regimes)")}
+    if not all(c in cols for _, c in CLASSIFIER_ODDS):
+        return None
+    row = conn.execute(f"SELECT date, {', '.join(c for _, c in CLASSIFIER_ODDS)} FROM regimes ORDER BY date DESC LIMIT 1").fetchone()
+    if row is None:
+        return None
+    odds = []
+    for (label, _col), v in zip(CLASSIFIER_ODDS, row[1:]):
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(x):
+            return None
+        odds.append((x, label))
+    top, label = max(odds, key=lambda t: t[0])  # the first of equal odds, in the table's order
+    return {"month": str(row[0])[:7], "label": label, "odds": None if label == "Recession Risk" else top}
+
+
 def _month_after(month: str, n: int = 1) -> str:
     y, m = int(month[:4]), int(month[5:7])
     y, m = divmod((y * 12 + m - 1) + n, 12)
@@ -430,6 +464,7 @@ def desk_regime(ctx: dict) -> dict:
     conn = _connect()
     try:
         rows = regime_rows(conn)
+        classifier = classifier_latest(conn)
         prints = part("next_prints", lambda: next_prints(conn, rows))
         releases = release_times(conn)
         levels = part("levels", lambda: _levels(conn))
@@ -443,7 +478,7 @@ def desk_regime(ctx: dict) -> dict:
             return fn(*levels["data"])
         return build
 
-    return {"rows": rows, "recession": part("recession", lambda: recession_block(ctx)),
+    return {"rows": rows, "classifier": classifier, "recession": part("recession", lambda: recession_block(ctx)),
             "next_prints": prints, "release_times": releases,
             "stats": part("stats", with_levels(lambda spx, vix: regime_stats(rows, spx, vix))),
             "changes": part("changes", with_levels(lambda spx, vix: regime_changes(rows, spx)))}

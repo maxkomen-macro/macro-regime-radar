@@ -373,7 +373,19 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/regime": o({
     ...envelope,
     // The page words a missing label on its own (Regime R-2); the rest of the block still reads.
-    current: o({ label: "s", print: "s", latest_print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", freq: "s", source: "s" }),
+    current: o({
+      label: "s",
+      print: "s",
+      latest_print: "s",
+      growth: "s",
+      inflation: "s",
+      months_in: "n",
+      since: "s",
+      freq: "s",
+      source: "s",
+      // desk/fill-compute: a classifier reading without its month, label and verdict claims nothing.
+      classifier: o({ month: "s!", label: "s!", odds: "n", agrees: "b!" }, { nul: true }),
+    }),
     history: l(o({ month: "s!", regime: "s!" })),
     history_note: "s",
     history_freq: "s",

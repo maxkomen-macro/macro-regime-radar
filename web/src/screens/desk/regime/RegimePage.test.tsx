@@ -12,7 +12,7 @@ import DeskShell from "../DeskShell";
 import regime from "../../../fixtures/desk/regime.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { flipTone, flipWords, mom, momSigned, printedWords, REGIMES, runs, trendTone } from "./RegimePage";
+import { classifierWords, flipTone, flipWords, mom, momSigned, printedWords, REGIMES, runs, trendTone } from "./RegimePage";
 
 type Over = Record<string, unknown>;
 /** The fixture with some blocks replaced (or removed with `undefined`). */
@@ -106,8 +106,13 @@ describe("Regime tab", () => {
     const card = await screen.findByRole("region", { name: "Where we are rule-based · two-month lag" });
     await waitFor(() => expect(card).toHaveTextContent("Goldilocks"));
     // §5: the Jul row (Goldilocks, as stored) governs a September session; the newest stored row (Aug, Overheating) sits beside it, never classifying.
-    // §5's lede, "<Nth> month in a row", in its first month too (the audit's Q13: 1 month in).
-    expect(card).toHaveTextContent("Growth rising and inflation falling. First month in a row.");
+    // §5's lede, "<Nth> month in this regime" (desk/fill-compute), in its first month too (the audit's Q13: 1 month in).
+    expect(card).toHaveTextContent("Growth rising and inflation falling. First month in this regime.");
+    expect(card).not.toHaveTextContent("in a row");
+    // desk/fill-compute: the home page's classifier beside this label, as served on the audit's store.
+    expect(card.querySelector(".rg-classifier")).toHaveTextContent(
+      "The home page's classifier puts Overheating at 42% for the Aug 2026 row; this tab's rule-based label is Goldilocks for the Jul 2026 row, the one governing today. They disagree this month.",
+    );
     // §1.3's exception (v2 D-36) and §5: the label in its regime's color.
     expect(card.querySelector(".rg-big")).toHaveAttribute("data-tone", "green");
     expect(card).toHaveTextContent(/In this regime\s*1 mo\s*since the July row/);
@@ -332,4 +337,20 @@ describe("both cards read one label (desk/fill-compute): the flip text matches W
       expect(card).not.toHaveTextContent(`flips growth to ${a.growth}`);
     });
   }
+});
+
+describe("the classifier line (desk/fill-compute)", () => {
+  const cur = { ...regime.current };
+  it("names both rows and whether they agree; says 'classifier', never the other word", () => {
+    const words = classifierWords(cur as never)!;
+    expect(words).toContain("They disagree this month.");
+    expect(words).not.toMatch(/\bmodels?\b/i);
+    const same = { ...cur, print: "2026-08", label: "Overheating", classifier: { ...cur.classifier!, agrees: true } };
+    expect(classifierWords(same as never)).toBe("The home page's classifier puts Overheating at 42% for the Aug 2026 row; this tab's rule-based label is Overheating. They agree this month.");
+  });
+  it("leaves the odds out when the classifier's label is Recession Risk (served null)", () => {
+    const rr = { ...cur, classifier: { month: "2026-08", label: "Recession Risk", odds: null, agrees: false } };
+    expect(classifierWords(rr as never)).toBe("The home page's classifier puts Recession Risk for the Aug 2026 row; this tab's rule-based label is Goldilocks for the Jul 2026 row, the one governing today. They disagree this month.");
+    expect(classifierWords({ ...cur, classifier: null } as never)).toBeNull();
+  });
 });

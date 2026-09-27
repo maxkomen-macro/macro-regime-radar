@@ -486,7 +486,14 @@ No action button. Badge `● Live · <Mon> row · <date>`. Symmetric 2×2.
 **Where we are** (`rule-based · two-month lag`). Big label (regime color,
 serif 30px): `current.label`, the stored row stamped K−2 for the current
 session month K (`current.print`, v2 §9.1). Sentence "Growth <rising|falling>
-and inflation <rising|falling>. <Nth> month in a row." Stats: GROWTH
+and inflation <rising|falling>. <Nth> month in this regime." (desk/fill-compute;
+it was "in a row"). Under it one line reconciles the home page's classifier
+with this label, from `current.classifier` (desk/fill-compute): "The home
+page's classifier puts <classifier.label> at <odds>% for the <Mon YYYY> row;
+this tab's rule-based label is <label> for the <print> row, the one governing
+today. They <agree|disagree> this month." (the row clause is left out when the
+two rows are one; the odds are left out when served null). The word is
+"classifier", never the other one. Stats: GROWTH
 (industrial production, 3-mo slope) · INFLATION (CPI, 3-mo slope) · IN THIS
 REGIME `months_in` mo (since the <since> row). Beside the label, separately:
 "Latest print: <latest_print>" (never used to classify). LAST FIVE YEARS
@@ -1223,6 +1230,7 @@ cells; booleans `true` / `false`.
 | `current.data.label` | regime label | required | — | row `print` · monthly · `regimes` | E stored row (`classify_regime`) |
 | `current.data.print` | month | required | — | K−2 for the current session month | A (v2 §9.1) |
 | `current.data.latest_print` | month | required | — | the newest stored row | E; shown on Regime only, never used to classify |
+| `current.data.classifier` | `{month, label, odds, agrees}` | required, nullable (null when the newest row stores no finite odds) | —, —, fraction, — | the newest stored row · monthly · `regimes` | S (desk/fill-compute): the home page's classifier reading (`/api/regime/latest`): the newest row's four stored odds (`prob_goldilocks` … `prob_recession`, src/regime.py's softmax), its dominant label (the first of equal odds in that order) and those odds; `odds` is null when the label is Recession Risk (the Desk never shows `regimes.prob_recession`); `agrees` is `label` equal to `current.label` |
 | `current.data.growth`, `inflation` | `"rising"` \| `"falling"` | required | — | as `print` | E signs of the stored trends |
 | `current.data.months_in` | integer | required | months | — | A: the run of equal labels in consecutive stored months ending at `print`; a missing month ends the run |
 | `current.data.since` | month | required | — | — | A |

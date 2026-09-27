@@ -10,7 +10,13 @@
   "since": "2026-07",
   "freq": "monthly",
   "source": "regimes table (src/regime.py)",
-  "latest_print": "2026-08"
+  "latest_print": "2026-08",
+  "classifier": {
+   "month": "2026-08",
+   "label": "Overheating",
+   "odds": 0.4246,
+   "agrees": false
+  }
  },
  "history": [
   {

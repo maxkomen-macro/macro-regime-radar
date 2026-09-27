@@ -253,6 +253,14 @@
   white-space: nowrap;
 }
 
+/* Where we are: the home page's classifier beside this label (desk/fill-compute). */
+.rg-classifier {
+  margin: 4px 0 2px;
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--dk-t2);
+}
+
 /* What would change it. */
 .rg-next-row {
   margin: 6px 0 2px;

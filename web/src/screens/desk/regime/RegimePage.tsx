@@ -160,6 +160,19 @@ function AwaitingStats({ labels, quiet }: { labels: string[]; quiet: boolean }) 
   );
 }
 
+/**
+ * desk/fill-compute: the home page's classifier odds beside this tab's rule-based label, in one line: which row each
+ * reads and whether they name the same regime this month. The odds are left out when the classifier's label is
+ * Recession Risk (served null: the Desk never shows the classifier's recession odds).
+ */
+export function classifierWords(c: NonNullable<RegimeResponse["current"]>): string | null {
+  const k = c.classifier;
+  if (!k || !c.label || !monthYear(k.month) || !monthYear(c.print)) return null;
+  const odds = fin(k.odds) ? ` at ${pctPlain(k.odds)}` : "";
+  const same = k.month === c.print;
+  return `The home page's classifier puts ${k.label}${odds} for the ${monthYear(k.month)} row; this tab's rule-based label is ${c.label}${same ? "" : ` for the ${monthYear(c.print)} row, the one governing today`}. They ${k.agrees ? "agree" : "disagree"} this month.`;
+}
+
 function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
@@ -191,9 +204,10 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
       ) : null}
       {c && g && i ? (
         <p className="rg-lede">
-          Growth {g} and inflation {i}.{fin(c.months_in) && c.months_in >= 1 ? ` ${capitalize(ordinalWord(c.months_in))} month in a row.` : ""}
+          Growth {g} and inflation {i}.{fin(c.months_in) && c.months_in >= 1 ? ` ${capitalize(ordinalWord(c.months_in))} month in this regime.` : ""}
         </p>
       ) : null}
+      {c?.classifier ? <p className="rg-classifier">{classifierWords(c)}</p> : null}
       {c ? (
         <StatRow cols={3}>
           <Stat label="Growth" value={g ? capitalize(g) : undefined} awaiting={!g} tone={trendTone("growth", g)} sub="industrial production, 3-mo slope" />

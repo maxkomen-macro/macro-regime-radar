@@ -250,7 +250,8 @@ NEXT_PRINT = obj(
     freq=Const("monthly"), source=STR,
 )
 REGIME_ROUTE = obj(
-    current=Block(Obj(dict(REGIME_TILE_FIELDS, latest_print=MONTH))),
+    current=Block(Obj(dict(REGIME_TILE_FIELDS, latest_print=MONTH,
+                           classifier=null(obj(month=MONTH, label=REGIME, odds=null(FRAC), agrees=BOOL))))),
     history=Arr(obj(month=MONTH, regime=REGIME), max=60),
     history_note=Const("labels as stored; revisions are not replayed."),
     history_freq=Const("monthly"), history_source=REGIMES_SOURCE,

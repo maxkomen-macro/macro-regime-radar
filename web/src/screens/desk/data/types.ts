@@ -519,7 +519,11 @@ export interface RegimeChange {
 
 export interface RegimeResponse extends Envelope {
   /** The K−2 row governing today, and the newest stored row beside it (`latest_print`, shown, never used to classify). */
-  current?: Partial<RegimeRow> & { latest_print?: string };
+  current?: Partial<RegimeRow> & {
+    latest_print?: string;
+    /** desk/fill-compute: the home page's classifier on the newest row, its dominant label and odds (null for Recession Risk), and whether it is this label. */
+    classifier?: { month: string; label: string; odds: number | null; agrees: boolean } | null;
+  };
   /** The last 60 stored rows, with how they are to be read (§12.6). */
   history?: { month: string; regime: string }[];
   history_note?: string;
