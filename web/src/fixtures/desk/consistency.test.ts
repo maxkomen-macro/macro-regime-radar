@@ -279,8 +279,7 @@ describe("the API plan's spec errata (§6, S-02–S-27) as the fixtures carry th
       const pts = series[key];
       const start = after(months);
       expect(pts[0].date > start && pts.at(-1)!.date === technicals.date, key).toBe(true);
-      // The holiday table covers 2024 on; the 3-year window reaches 2023.
-      if (start >= "2024-01-01") expect(pts.length, key).toBe(sessionCount(pts[0].date, technicals.date));
+      expect(pts.length, key).toBe(sessionCount(pts[0].date, technicals.date));
       expect(pts.filter((p) => p.close === null).map((p) => p.date), key).toEqual(["2026-09-22"]);
     }
   });

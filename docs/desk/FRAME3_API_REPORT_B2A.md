@@ -639,7 +639,7 @@ B1's report (`docs/desk/FRAME3_API_REPORT.md`, last section). CLAUDE.md merged w
   fails identically in a detached `origin/main` worktree. `sessions.test.ts` "holds
   api/calendar.py's NYSE holidays, year for year" fails because B1's S-12 carries
   `api/calendar.py` back to 1962, while `web/src/screens/desk/positions/sessions.ts` still holds
-  2024–2027. It is not a merge conflict and is not fixed here.
+  2024–2027. It is not a merge conflict. The next commit fixes it (below).
 - **Regression: `scripts/desk_native_ab.py --base origin/main` prints "byte-identical: 16/16"**,
   on the audit copy and on hardening's scratch store.
 
@@ -659,3 +659,24 @@ JSON routes answered on one `generation_id`):
     fixture, and `inputs_hash` depends on the generation. `entry_rule` carries hardening's R-01
     wording ("else the first later session whose fixing is") where the fixture has "else the
     next session's close".
+
+## Commit: `desk: web session calendar matches api/calendar 1962–2027`
+
+The web failure above, fixed with the generator that wrote B1's tables. `scripts/gen_nyse_holidays.py`
+still writes 1962–2023 into `api/calendar.py` and `src/market_data/session.py`. It then writes the
+web's table in `web/src/screens/desk/positions/sessions.ts` from the fresh `api/calendar.py`: every
+year of its HOLIDAYS, 1962–2027. The published 2024–2027 lines come through byte for byte, and the
+web table cannot drift from the Python ones. `--check` covers all three files.
+
+**The pins:**
+- `sessions.test.ts` holds the web table equal to `api/calendar.py` year for year, as before.
+- `tests/test_calendar_coverage.py`'s up-to-date test now covers the web file as well.
+- `sessions.test.ts` adds three checks: a pre-1962 span gives no count, a week across
+  Christmas 2023 counts 3, and a 1968 paperwork-crisis Wednesday is not a session.
+- `consistency.test.ts` drops its guard, whose comment said the table began in 2024. The 3-year
+  technicals window now counts sessions against the table too.
+
+**The gate:**
+- Web: typecheck clean, 1535/1535.
+- Python: 1585 passed, 3 skipped, 2 failed (the same base `test_asset_history` pair).
+- Nothing under `src/desk/` changed, so the native regression gate does not apply.

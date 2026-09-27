@@ -26,6 +26,10 @@ describe("the session calendar", () => {
     expect(sessionCount("2026-09-19", "2026-09-20")).toBe(0);
     expect(sessionCount("2026-09-19", "2026-09-21")).toBe(1);
     expect(sessionCount("2027-12-30", "2028-01-03")).toBeNull();
+    expect(sessionCount("1961-12-29", "1962-01-02")).toBeNull();
+    // Christmas 2023 on a Monday: Dec 22, 26 and 27.
+    expect(sessionCount("2023-12-22", "2023-12-27")).toBe(3);
+    expect(isSession("1968-06-12")).toBe(false); // the 1968 paperwork crisis closed Wednesdays
     expect(sessionCount("2026-02-30", "2026-03-02")).toBeNull();
   });
   it("dates an instant in New York, where a close belongs", () => {
