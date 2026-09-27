@@ -280,20 +280,138 @@ def recession_block(ctx: dict) -> dict:
     }
 
 
+# ── What each regime has meant, and the last changes (desk/fill-compute) ───
+# FRAME3_DATA_AUDIT.md §2.4's method: every stored regimes row counts once, as
+# stored (Q8's months, Q9's changes: a row whose label differs from the
+# previous stored row's), no K−2 lag. Each row is paired with its own calendar
+# month of the S&P and the VIX: a label describes the market of its month, it
+# does not trade it (the label is known only after the month's prints).
+REGIME_ORDER = ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
+CHANGES_SHOWN = 5
+
+
+def month_returns(spx: Any) -> dict[str, float]:
+    """The S&P's simple return over each calendar month, close on the month's
+    last XNYS session over close on the previous month's last XNYS session;
+    a month whose last session, or whose previous month's, has no stored close
+    (a month not over yet included) has none."""
+    import math
+
+    import pandas as pd
+
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    start = spx.index[0].strftime("%Y-%m-%d")
+    end = (spx.index[-1] + pd.offsets.MonthEnd(0)).strftime("%Y-%m-%d")
+    sessions = es.sessions_between(es.session_calendar(start, end), start, end)
+    al, _off, _missing = es.align(spx, sessions)
+    al, _bad, _why = es.validate_values(al, registry.get("spx"))
+    last = pd.Series(sessions, index=sessions).groupby(sessions.to_period("M")).max()
+    close = {str(m): float(al.loc[d]) for m, d in last.items()}
+    out: dict[str, float] = {}
+    for m in last.index:
+        a, b = close.get(str(m - 1)), close.get(str(m))
+        if a is not None and b is not None and math.isfinite(a) and math.isfinite(b) and a > 0:
+            out[str(m)] = b / a - 1.0
+    return out
+
+
+def month_vix(vix: Any) -> dict[str, tuple[float, int]]:
+    """Each calendar month's stored VIX closes: (their sum, their count)."""
+    out: dict[str, tuple[float, int]] = {}
+    for d, v in vix.items():
+        if v == v:
+            m = d.strftime("%Y-%m")
+            total, n = out.get(m, (0.0, 0))
+            out[m] = (total + float(v), n + 1)
+    return out
+
+
+def _levels(conn: sqlite3.Connection) -> tuple[Any, Any]:
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    try:
+        return es.load_level(conn, registry.get("spx")), es.load_level(conn, registry.get("vix"))
+    except es.NotStored:
+        raise absent() from None
+
+
+def regime_stats(rows: list[dict], spx: Any, vix: Any) -> dict:
+    """§12.6 `stats.data` (desk/fill-compute): per regime, its stored months,
+    the S&P's median and mean simple monthly return and the share of months up
+    over those with a complete month, and the mean of the VIX's daily closes
+    in those months."""
+    import statistics
+
+    if not rows:
+        raise absent()
+    rets, vx = month_returns(spx), month_vix(vix)
+    out = []
+    for label in REGIME_ORDER:
+        months = [r["month"] for r in rows if r["label"] == label]
+        r_ = [rets[m] for m in months if m in rets]
+        total = sum(vx[m][0] for m in months if m in vx)
+        days = sum(vx[m][1] for m in months if m in vx)
+        out.append({
+            "regime": label, "months": len(months), "spx_n": len(r_),
+            "spx_median_mo": statistics.median(r_) if r_ else None,
+            "spx_mean_mo": statistics.fmean(r_) if r_ else None,
+            "up_pct": sum(1 for x in r_ if x > 0) / len(r_) if r_ else None,
+            "vix_avg": total / days if days else None, "vix_days": days,
+        })
+    from src.desk import series as registry
+
+    return {"rows": out, "window": {"start": rows[0]["month"], "end": rows[-1]["month"], "n": len(rows)},
+            "freq": "monthly",
+            "source": f"regimes table (src/regime.py); asset_prices ^GSPC; {registry.get('vix').series_id} ({registry.get('vix').table})"}
+
+
+def regime_changes(rows: list[dict], spx: Any) -> dict:
+    """§12.6 `changes.data` (desk/fill-compute): every stored row whose label
+    differs from the previous stored row's (Q9), the last five newest first,
+    each with the S&P's simple return over the calendar month after it (null
+    until that month is over); `n` counts them all."""
+    if not rows:
+        raise absent()
+    rets = month_returns(spx)
+    changes = [(prev, row) for prev, row in zip(rows, rows[1:]) if prev["label"] != row["label"]]
+    shown = []
+    for prev, row in reversed(changes[-CHANGES_SHOWN:]):
+        after = _month_after(row["month"])
+        shown.append({"month": row["month"], "from": prev["label"], "to": row["label"], "from_month": prev["month"],
+                      "spx_1m": rets.get(after), "spx_1m_month": after})
+    return {"rows": shown, "n": len(changes), "window": {"start": rows[0]["month"], "end": rows[-1]["month"], "n": len(rows)},
+            "freq": "monthly", "source": "regimes table (src/regime.py); asset_prices ^GSPC"}
+
+
 def desk_regime(ctx: dict) -> dict:
     """The desk_regime item, the one /regime and /overview read: the stored
     regimes rows, the recession block (the recession tile is its seven tile
-    fields), the next-print thresholds, and the stored release times. The K−2
-    selection and the release date are the routes', per response (plan §0.5)."""
+    fields), the next-print thresholds, the stored release times, and what
+    each regime has meant and the last changes. The K−2 selection and the
+    release date are the routes', per response (plan §0.5)."""
     conn = _connect()
     try:
         rows = regime_rows(conn)
         prints = part("next_prints", lambda: next_prints(conn, rows))
         releases = release_times(conn)
+        levels = part("levels", lambda: _levels(conn))
     finally:
         conn.close()
+
+    def with_levels(fn: Callable[[Any, Any], dict]) -> Callable[[], dict]:
+        def build() -> dict:
+            if not levels["ok"]:
+                raise env.Awaiting(levels["reason"])
+            return fn(*levels["data"])
+        return build
+
     return {"rows": rows, "recession": part("recession", lambda: recession_block(ctx)),
-            "next_prints": prints, "release_times": releases}
+            "next_prints": prints, "release_times": releases,
+            "stats": part("stats", with_levels(lambda spx, vix: regime_stats(rows, spx, vix))),
+            "changes": part("changes", with_levels(lambda spx, vix: regime_changes(rows, spx)))}
 
 
 # ── /macro: the desk_macro item (plan §1.8, N7, N8, R5) ─────────────────────

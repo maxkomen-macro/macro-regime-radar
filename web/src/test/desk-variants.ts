@@ -4,9 +4,7 @@
  * can be checked in a unit that is not a percent.
  */
 import deferredMacro from "../fixtures/desk/deferred-macro.json" with { type: "json" };
-import deferredRegime from "../fixtures/desk/deferred-regime.json" with { type: "json" };
 import macro from "../fixtures/desk/macro.json" with { type: "json" };
-import regime from "../fixtures/desk/regime.json" with { type: "json" };
 import sectors from "../fixtures/desk/sectors.json" with { type: "json" };
 import study from "../fixtures/desk/study.json" with { type: "json" };
 import technicals from "../fixtures/desk/technicals.json" with { type: "json" };
@@ -77,11 +75,6 @@ export function bpEvents(): Record<string, unknown> {
 export function servedMacro(): Record<string, unknown> {
   const m = macro as { stock_bond: { data: unknown }; correlations: { data: unknown } };
   return { ...macro, stock_bond: m.stock_bond.data, correlations: m.correlations.data, matrix: deferredMacro.matrix };
-}
-
-/** /regime with its stats and changes blocks served. */
-export function servedRegime(): Record<string, unknown> {
-  return { ...regime, stats: deferredRegime.stats, changes: deferredRegime.changes };
 }
 
 /** /technicals with its vol block served (the /vol deferred shape); its sectors block is served in the fixture (§12.14). */

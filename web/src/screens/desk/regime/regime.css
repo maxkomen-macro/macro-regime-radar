@@ -174,8 +174,8 @@
   background: var(--dk-red);
 }
 
-/* What each regime has meant: the columns end where the PNG's do (MONTHS at
-   216, S&P 308.5, UP 380.5, VIX 461.5, STOCK–BOND 556 of a 556 px table). */
+/* What each regime has meant: PNG 04's six columns, with S&P MEAN where the
+   PNG draws STOCK–BOND (no bond price series is stored, §6). */
 .rg-table {
   width: 100%;
   table-layout: fixed;
@@ -198,8 +198,24 @@
 .rg-col-vix {
   width: 14.6%;
 }
-.rg-col-sb {
+.rg-col-mean {
   width: 17%;
+}
+/* The six columns scroll in their own region at a phone's width; the page never scrolls sideways. */
+.rg-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.rg-meant-note {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dk-t3);
+}
+.rg-pending {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t3);
 }
 .rg-table th,
 .rg-table td {
@@ -240,6 +256,8 @@
 /* What would change it. */
 .rg-changes-h {
   margin-top: 8px;
+  /* "Last five of <n> regime changes · S&P a month later" wraps at a phone's width. */
+  white-space: normal;
 }
 .rg-changes {
   list-style: none;

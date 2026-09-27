@@ -133,9 +133,9 @@ test.describe("desk v2", () => {
     const macro = payloadOf(deskFixture("GET", "/api/desk/macro")!);
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await open(page, "/desk/regime", { "/api/desk/regime": { status: 200, body: { ...regime, stats: off("regime statistics not yet defined in the engine."), changes: off("regime statistics not yet defined in the engine.") } } });
+      await open(page, "/desk/regime", { "/api/desk/regime": { status: 200, body: { ...regime, stats: off("no stored S&P history in this database."), changes: off("no stored S&P history in this database.") } } });
       const meant = page.getByRole("region", { name: /^What each regime has meant/ });
-      await expect(meant).toContainText("regime statistics not yet defined in the engine.");
+      await expect(meant).toContainText("no stored S&P history in this database.");
       await expect(meant.getByTestId("dk-live")).toHaveText("Not yet served");
       await expect(page.getByRole("region", { name: /^Where we are/ })).toContainText("Overheating");
       expect(await auditPalette(page)).toEqual([]);

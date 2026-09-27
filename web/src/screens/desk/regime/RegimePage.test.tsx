@@ -12,8 +12,7 @@ import DeskShell from "../DeskShell";
 import regime from "../../../fixtures/desk/regime.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { servedRegime } from "../../../test/desk-variants";
-import { flipTone, flipWords, mom, runs, stockBondTone, trendTone } from "./RegimePage";
+import { flipTone, flipWords, mom, runs, trendTone } from "./RegimePage";
 
 type Over = Record<string, unknown>;
 /** The fixture with some blocks replaced (or removed with `undefined`). */
@@ -88,7 +87,6 @@ describe("Regime words", () => {
     // §1.3: green only ever means up, Reliable, firing or current; a falling inflation trend is down.
     expect(trendTone("inflation", "falling")).toBe("red");
     expect(trendTone("inflation", null)).toBeUndefined();
-    expect([stockBondTone(-0.2), stockBondTone(0.3), stockBondTone(0)]).toEqual(["green", "amber", undefined]);
   });
 });
 
@@ -152,19 +150,21 @@ describe("Regime tab", () => {
     expect(card).toHaveTextContent(/A year ago\s*—/);
     expect(card).not.toHaveTextContent(/A year ago\s*Awaiting refresh/);
   });
-  it("what each regime has meant, served (§12.13's deferred shape): the table with the current row marked", async () => {
-    stubDesk({ "/api/desk/regime": servedRegime });
+  it("what each regime has meant (desk/fill-compute): months, the S&P's median and mean month, up, the VIX, the current row marked", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What each regime has meant/ });
     await waitFor(() => expect(within(card).getAllByRole("row")).toHaveLength(5));
+    expect(within(card).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Regime", "Months", "S&P median", "S&P mean", "Up", "VIX avg"]);
     const cur = within(card).getAllByRole("row").find((r) => r.getAttribute("aria-current") === "true");
-    // The current row is the governing (K−2) label, Goldilocks; its months are the stored record's (27).
-    expect(cur?.textContent).toContain("Goldilocks27+1.4%66%15−0.2");
-    // §12.13's deferred shape carries no read (§1.4: no read is served).
-    expect(card).not.toHaveTextContent("Read for the desk");
+    // The current row is the governing (K−2) label, Goldilocks; its numbers are the API's on the audit's store.
+    expect(cur?.textContent).toBe("Goldilocks27+0.7%+0.1%56%18.0");
+    expect(within(card).getAllByRole("row")[2].textContent).toBe("Overheating213+1.5%+1.2%66%19.5");
+    expect(card).toHaveTextContent("since 1996 · 363 stored months, each with its own month of the S&P and the VIX");
+    expect(card).toHaveTextContent("Labels as stored, each paired with its own calendar month");
+    // No read is served (§1.4), and no stock–bond column: no bond price series is stored (§6).
+    expect(card).not.toHaveTextContent(/Read for the desk|Stock–bond|not yet defined/);
   });
-  it("what would change it: the next prints, and the last five changes once served", async () => {
-    stubDesk({ "/api/desk/regime": servedRegime });
+  it("what would change it: the next prints, and the last five changes with the S&P the month after each", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What would change it/ });
     await waitFor(() => expect(card).toHaveTextContent("Oct 14"));
@@ -172,13 +172,15 @@ describe("Regime tab", () => {
     expect(card.querySelector(".rg-from")).toHaveTextContent("from the latest print · Aug 2026");
     // §5: the calendar has no INDPRO release, so its date says so.
     expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · a print ≤ −0.02% m\/m flips growth to falling → Stagflation/);
+    // The API's answer on the audit's store (Q9): August's month after is September, not over yet.
     expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "Jun 2026Goldilocks → Overheating+2.1%",
-      "Oct 2025Stagflation → Goldilocks+3.8%",
-      "Mar 2025Overheating → Stagflation−4.2%",
-      "Aug 2024Goldilocks → Overheating+1.1%",
-      "Jan 2024Recession Risk → Goldilocks+5.3%",
+      "Aug 2026Goldilocks → Overheatingmonth not over",
+      "Jul 2026Overheating → Goldilocks+2.6%",
+      "Jan 2026Stagflation → Overheating−0.9%",
+      "Sep 2025Overheating → Stagflation+2.3%",
+      "Jun 2025Stagflation → Overheating+2.2%",
     ]);
+    expect(card).toHaveTextContent("Last five of 123 regime changes · S&P a month later");
   });
   it("the bands follow band_edges, and a missing band word is left out", async () => {
     stubDesk({ "/api/desk/regime": () => served({ recession: { ...regime.recession, band: null, band_edges: [0.3, 0.6] } }) });
@@ -190,10 +192,10 @@ describe("Regime tab", () => {
   });
 
   it("a different current regime moves the marked row", async () => {
-    stubDesk({ "/api/desk/regime": () => ({ ...servedRegime(), current: { ...regime.current, label: "Goldilocks" } }) });
+    stubDesk({ "/api/desk/regime": () => ({ ...regime, current: { ...regime.current, label: "Overheating" } }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /What each regime has meant/ });
-    await waitFor(() => expect(within(card).getAllByRole("row").find((r) => r.getAttribute("aria-current") === "true")?.textContent).toContain("Goldilocks"));
+    await waitFor(() => expect(within(card).getAllByRole("row").find((r) => r.getAttribute("aria-current") === "true")?.textContent).toContain("Overheating"));
   });
 
   it("while loading, every card is busy and none says Awaiting refresh (D14)", async () => {
@@ -215,7 +217,7 @@ describe("Regime tab", () => {
     expect(rec).toHaveTextContent(/Inputs through\s*Awaiting refresh/);
     expect(rec).toHaveTextContent(/Peak since 2015\s*Awaiting refresh/);
     const meant = screen.getByRole("region", { name: /What each regime has meant/ });
-    expect(meant).toHaveTextContent(/Stock–bond/);
+    expect(meant).toHaveTextContent(/S&P mean/);
     expect(meant).toHaveTextContent("Awaiting refresh");
     const change = screen.getByRole("region", { name: /What would change it/ });
     expect(change).toHaveTextContent(/Next CPI\s*Awaiting refresh/);
@@ -260,20 +262,19 @@ describe("Regime tab", () => {
 });
 
 describe("blocks served awaiting inside a ready answer (§12.6, §1.0.2)", () => {
-  it("the statistics card keeps its labels, prints its reason once and says Not yet served; the next prints stand beside the changes' reason", async () => {
-    // Monday's /regime as the fixture serves it (§1.0, §12.6): stats and changes awaiting.
-    stubDesk();
+  it("stats and changes served awaiting keep their labels and print the reason once; the next prints stand beside the changes' reason", async () => {
+    const off = { status: "awaiting", data: null, unavailable: { reason: "Awaiting refresh: this could not be computed from the current data.", until: null } };
+    stubDesk({ "/api/desk/regime": () => ({ ...regime, stats: off, changes: off }) });
     renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: /^What each regime has meant/ })).toHaveTextContent("regime statistics not yet defined in the engine."));
+    const reason = "Awaiting refresh: this could not be computed from the current data.";
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What each regime has meant/ })).toHaveTextContent(reason));
     const meant = screen.getByRole("region", { name: /^What each regime has meant/ });
-    for (const l of ["Regime", "Months", "Up", "VIX avg"]) expect(meant).toHaveTextContent(new RegExp(l, "i"));
-    expect(within(meant).getAllByText("regime statistics not yet defined in the engine.")).toHaveLength(1);
-    expect(within(meant).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    for (const l of ["Regime", "Months", "S&P median", "S&P mean", "Up", "VIX avg"]) expect(meant).toHaveTextContent(new RegExp(l.replace("&", "&"), "i"));
+    expect(within(meant).getAllByText(reason)).toHaveLength(1);
+    expect(within(meant).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
     expect(within(meant).getByTestId("dk-advanced")).toBeDisabled();
-    expect(meant).not.toHaveTextContent("Awaiting refresh");
     const change = screen.getByRole("region", { name: /^What would change it/ });
     expect(change).toHaveTextContent("Oct 14");
-    expect(within(change).getAllByText("regime statistics not yet defined in the engine.")).toHaveLength(1);
-    expect(change).not.toHaveTextContent("Awaiting refresh");
+    expect(within(change).getAllByText(reason)).toHaveLength(1);
   });
 });

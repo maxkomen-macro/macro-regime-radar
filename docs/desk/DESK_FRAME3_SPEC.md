@@ -48,7 +48,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Event Study: confidence 80% / 95% | UNAVAILABLE; intervals are the engine's 90% | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
 | Event Study: the line without the condition (`without_condition`) | UNAVAILABLE | conditional-versus-unconditional comparison is not defined (v4 B-11, C-01) |
 | Regime: current label, history strip, recession score, next prints | LIVE | — |
-| Regime: "What each regime has meant" table, and the S&P a month after each change | UNAVAILABLE | regime statistics not yet defined in the engine (v3 A-16 withdraws v2 §9.4) |
+| Regime: "What each regime has meant" table, and the S&P a month after each change | LIVE (desk/fill-compute) | FRAME3_DATA_AUDIT.md §2.4's method: every stored row, as stamped, with its own calendar month of the S&P and the VIX (§12.6 `stats`, `changes`) |
 | Macro: yield curve | LIVE with 2y, 10y and 2s10s; 3m, 5y and 30y LIVE once DGS3MO, DGS5 and DGS30 are registered (§12.8) | v2 D-16 |
 | Macro: HY and IG levels, HY 3-year range and percentile, HY last 12 months | LIVE (the 3-year figures null, with the reason, while three-year coverage is incomplete) | v3 §12, v4 B-07 |
 | Macro: stock–bond correlation (SPY against TLT, 60 daily log returns) | LIVE (desk/fill-etf, §12.8) | — |
@@ -72,7 +72,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.
 - Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
-- Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.
+- Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P the month after each.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, and what moves with the S&P.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
@@ -85,7 +85,6 @@ Build Notes prints these two lists as their own section, word for word.
 - Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
-- What each regime has meant, and the S&P after each regime change.
 - The 12-asset correlation matrix.
 - Positions kept on a server, and DV01.
 - Basket pricing, the residual chart and the hedge structures.
@@ -511,9 +510,15 @@ indicators against NBER recession dates, trained <training.start> to
 on the site, and it is labeled as one wherever it appears." Footer
 `Advanced ▸` disabled, "not yet served".
 
-**What each regime has meant**: UNAVAILABLE (§1.0), from `/regime` `stats`
-(awaiting, reason "regime statistics not yet defined in the engine."). Labels
-kept: REGIME / MONTHS / S&P / MO / UP / VIX AVG.
+**What each regime has meant** (desk/fill-compute), from `/regime` `stats`.
+Sub-label "since <window.start year> · <window.n> stored months, each with its
+own month of the S&P and the VIX". Columns REGIME / MONTHS / S&P MEDIAN / S&P
+MEAN / UP / VIX AVG: `months`; `spx_median_mo` and `spx_mean_mo` (simple
+monthly returns, × 100, signed); `up_pct`; `vix_avg` (one decimal). The
+current label's row is marked. PNG 04's STOCK–BOND column is not drawn: no
+bond price series is stored (§6). A footnote says what a row is: "Labels as
+stored, each paired with its own calendar month; a label is known only after
+its month's prints, so this describes, it does not time." No read box.
 
 **What would change it** (`the next two prints`). The card carries the
 sub-label "from the latest print · <latest_print>", and the page prints it:
@@ -523,8 +528,11 @@ the K−2 row (both stay; ruling of item 14). NEXT CPI · NEXT INDPRO, each
 print <operator> <threshold_mom × 100>% m/m flips <inflation|growth> to
 <falling|rising> → <flips_to>, effective from the <first_effective_month>
 label." (`operator` `<=` flips a rising axis to falling, `>` a falling axis
-to rising; v3 §9.3). LAST FIVE REGIME CHANGES · S&P A MONTH LATER:
-UNAVAILABLE (`/regime` `changes`, awaiting).
+to rising; v3 §9.3). LAST FIVE REGIME CHANGES · S&P A MONTH LATER
+(desk/fill-compute), from `/regime` `changes`: each row "<Mon YYYY> ·
+<from> → <to> · <spx_1m>" (the S&P's simple return over `spx_1m_month`, the
+calendar month after the change; "month not over" while null); the list's
+label reads "Last five of <n> regime changes · S&P a month later".
 
 ---
 
@@ -1236,8 +1244,21 @@ cells; booleans `true` / `false`.
 | `next_prints.data.<k>.flips_to` | regime label | required, nullable (null when not evaluable) | — | — | N: from the latest reference row's other-axis sign |
 | `next_prints.data.<k>.first_effective_month` | month | required | — | — | N: `reference_month` + 2 months |
 | `next_prints.data.<k>.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, the FRED series id; the release date's source is `event_calendar` |
-| `stats` | block envelope | required | — | — | awaiting: "regime statistics not yet defined in the engine." |
-| `changes` | block envelope | required | — | — | awaiting: same reason |
+| `stats` | block envelope | required | — | — | — |
+| `stats.data.rows` | array of 4, in the order Goldilocks, Overheating, Stagflation, Recession Risk | required | — | monthly · `regimes`, `asset_prices` ^GSPC, the registry's `vix` | N regime statistics (desk/fill-compute; FRAME3_DATA_AUDIT.md §2.4's method): every stored regimes row counts once, as stamped, no K−2 lag |
+| `stats.data.rows[].regime`, `months` | regime label, integer | required | months | — | S: the stored rows with that label (Q8) |
+| `stats.data.rows[].spx_n` | integer | required | months | — | N: those months with a complete S&P month: the close on the month's last XNYS session and on the previous month's last XNYS session both stored |
+| `stats.data.rows[].spx_median_mo`, `spx_mean_mo` | fraction | required, nullable (null when `spx_n` is 0) | simple return | — | N: median and mean of close(last session of m) / close(last session of m − 1) − 1 over the `spx_n` months |
+| `stats.data.rows[].up_pct` | fraction | required, nullable | — | — | N: the share of the `spx_n` months above zero |
+| `stats.data.rows[].vix_avg`, `vix_days` | number, integer | required (`vix_avg` nullable when `vix_days` is 0) | VIX points, sessions | — | N: the mean of every stored VIX daily close dated in those months, and how many there are |
+| `stats.data.window` | `{start, end, n}` | required | months | — | S: the first and last stored rows and their count |
+| `stats.data.freq`, `.source` | `"monthly"`, string | required | — | — | A |
+| `changes` | block envelope | required | — | — | — |
+| `changes.data.rows` | array of ≤ 5, newest first | required | — | monthly · `regimes`, `asset_prices` ^GSPC | N (desk/fill-compute): the stored rows whose label differs from the previous stored row's (Q9; a missing month is not bridged into a change of its own, the change is dated by the row that carries the new label) |
+| `changes.data.rows[].month`, `from`, `to`, `from_month` | month, regime label, regime label, month | required | — | — | S: the row, the previous stored row's label, its label, the previous stored row's month |
+| `changes.data.rows[].spx_1m`, `spx_1m_month` | fraction, month | required (`spx_1m` nullable until that month is over) | simple return | — | N: the S&P's simple return over the calendar month after `month`, on the rule of `stats` |
+| `changes.data.n` | integer | required | changes | — | N: every change in the stored rows |
+| `changes.data.window`, `.freq`, `.source` | `{start, end, n}`, `"monthly"`, string | required | — | — | A |
 
 ### 12.7 `GET /technicals`
 
@@ -1529,13 +1550,15 @@ stock–bond correlation and what moves with the S&P (§12.8).
 
 **Not allowed for Monday** (the blocks are unavailable): RSI (added after
 Monday, below); confidence
-80% / 95%; the regime statistics table and change outcomes; the
+80% / 95%; the regime statistics table and change outcomes (added after
+Monday, below); the
 without-condition comparison; everything §1.0 lists as unavailable. No
 implementation may broaden scope to satisfy an illustrative shape.
 
 **Added after Monday (desk/fill-compute, 2026-09-27, by the owner's brief).**
 Each is a new calculation from stored data, listed in §12 with its rule:
 - the 14-day RSI on ^GSPC, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), served by `/technicals` (§12.7);
+- what each regime has meant and the last five changes on `/regime` (`stats`, `changes`, §12.6), on the audit's §2.4 method;
 - the S&P's 21-day realized volatility, `src/analytics/technicals.realized_vol`, and the VIX's band word and gap to it on `/overview` `tiles.vol` (§12.1);
 - the two RSI studies, the engine's `kind` `rsi` (strict crossings of 70 and 30, a 14-session cooldown), scored by the
   existing engine and the v1 verdict rule like every catalog study (§12.3, §12.5). Existing studies' native results and

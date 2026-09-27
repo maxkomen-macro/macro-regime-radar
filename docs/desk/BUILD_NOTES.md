@@ -75,7 +75,8 @@ Nothing else on the site is fitted.
 
 Live on the published snapshot: Overview, Technicals (price, averages,
 crosses, S&P signals, sector leadership, the 14-day RSI), Event Study for the catalog of
-questions, Regime (label, history, recession score, next prints), Macro
+questions, Regime (label, history, recession score, next prints, what each
+regime has meant since 1996, the last changes), Macro
 (curve, credit, the stock–bond correlation, what moves with the S&P), Sectors (leadership and breadth), Signal Ledger (the two RSI signals included), Position Monitor (in
 your browser), the Client view, Data Pipeline, and this page. The sector
 ETFs and the other Desk ETFs are stored by the same refresh step as the

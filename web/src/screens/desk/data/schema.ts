@@ -373,9 +373,20 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       training: o({ start: "s!", end: "s!" }, { nul: true }),
       methodology: "s",
     }),
-    stats: l(o({ regime: "s!", months: "n", spx_mo: "n", up_pct: "n", vix_avg: "n", stock_bond_corr: "n" })),
+    stats: o({
+      rows: l(o({ regime: "s!", months: "n", spx_n: "n", spx_median_mo: "n", spx_mean_mo: "n", up_pct: "n", vix_avg: "n", vix_days: "n" }), { req: true }),
+      window: o({ start: "s!", end: "s!", n: "n!" }),
+      freq: "s",
+      source: "s",
+    }),
     next_prints: o({ cpi: nextPrint, indpro: nextPrint }),
-    changes: l(o({ month: "s!", from: "s!", to: "s!", spx_1m: "n" })),
+    changes: o({
+      rows: l(o({ month: "s!", from: "s!", to: "s!", from_month: "s?", spx_1m: "n", spx_1m_month: "s?" }), { req: true }),
+      n: "n",
+      window: o({ start: "s!", end: "s!", n: "n!" }),
+      freq: "s",
+      source: "s",
+    }),
     reads: reads(["stats", "changes"]),
   }),
   "/macro": o({

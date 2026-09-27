@@ -283,44 +283,42 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
   );
 }
 
-/** The stock–bond column's color, §5 and §6's reading of the sign: below zero bonds hedge (green), above it they do not (amber). */
-export function stockBondTone(x: number): "green" | "amber" | undefined {
-  return x < 0 ? "green" : x > 0 ? "amber" : undefined;
-}
-
 function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
   const current = r?.current?.label;
-  const stats = Array.isArray(r?.stats) ? r.stats : [];
+  const block = r?.stats;
+  const stats = Array.isArray(block?.rows) ? block.rows : [];
+  const since = year(block?.window?.start) || "1996";
   const unserved = useBlockUnserved(r, "stats");
-  if (unserved) return <UnservedCard headingId="rg-meant" className="rg-card" title="What each regime has meant" sub="since 1996 · why a derivatives desk cares" labels={["Regime", "Months", "S&P / mo", "Up", "VIX avg"]} block={unserved} advanced />;
+  if (unserved) return <UnservedCard headingId="rg-meant" className="rg-card" title="What each regime has meant" sub={`since ${since}`} labels={["Regime", "Months", "S&P median", "S&P mean", "Up", "VIX avg"]} block={unserved} advanced />;
   return (
     <Card
       id="rg-meant"
       title="What each regime has meant"
-      sub="since 1996 · why a derivatives desk cares"
+      sub={`since ${since}${fin(block?.window?.n) ? ` · ${block.window.n} stored months, each with its own month of the S&P and the VIX` : ""}`}
       busy={quiet}
       footer={<AdvancedPanel adv={adv} items="by regime: sector leaders · curve shape · credit spreads · skew (since 2023)" missing="The by-regime sector, curve, credit and skew tables are not served yet." />}
     >
       {stats.length || !quiet ? (
+        <div className="rg-table-wrap" role="region" aria-label="Statistics by regime" tabIndex={0}>
         <table className="rg-table">
           <colgroup>
             <col className="rg-col-regime" />
             <col className="rg-col-months" />
             <col className="rg-col-spx" />
+            <col className="rg-col-mean" />
             <col className="rg-col-up" />
             <col className="rg-col-vix" />
-            <col className="rg-col-sb" />
           </colgroup>
           <thead>
             <tr>
               <th scope="col">Regime</th>
               <th scope="col">Months</th>
-              <th scope="col">S&amp;P / mo</th>
+              <th scope="col">S&amp;P median</th>
+              <th scope="col">S&amp;P mean</th>
               <th scope="col">Up</th>
               <th scope="col">VIX avg</th>
-              <th scope="col">Stock–bond</th>
             </tr>
           </thead>
           <tbody>
@@ -331,17 +329,19 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
                   {s.regime}
                 </th>
                 <td>{fin(s.months) ? s.months : "—"}</td>
-                <td>{fin(s.spx_mo) ? <Signed value={s.spx_mo}>{pct(s.spx_mo)}</Signed> : "—"}</td>
+                <td>{fin(s.spx_median_mo) ? <Signed value={s.spx_median_mo}>{pct(s.spx_median_mo)}</Signed> : "—"}</td>
+                <td>{fin(s.spx_mean_mo) ? <Signed value={s.spx_mean_mo}>{pct(s.spx_mean_mo)}</Signed> : "—"}</td>
                 <td>{fin(s.up_pct) ? pctPlain(s.up_pct) : "—"}</td>
-                <td>{fin(s.vix_avg) ? s.vix_avg : "—"}</td>
-                <td data-tone={fin(s.stock_bond_corr) ? stockBondTone(s.stock_bond_corr) : undefined}>{fin(s.stock_bond_corr) ? (s.stock_bond_corr > 0 ? `+${num(s.stock_bond_corr)}` : num(s.stock_bond_corr)) : "—"}</td>
+                <td>{fin(s.vix_avg) ? num(s.vix_avg) : "—"}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       ) : null}
       {!stats.length && !quiet ? <Awaiting>what each regime has meant</Awaiting> : null}
-      <DroppedNote n={droppedOf(r, "stats")} one="regime row" />
+      <DroppedNote n={droppedOf(block, "rows")} one="regime row" />
+      {stats.length ? <p className="rg-meant-note">Labels as stored, each paired with its own calendar month; a label is known only after its month&apos;s prints, so this describes, it does not time.</p> : null}
       <ServedRead read={r?.reads?.stats} />
     </Card>
   );
@@ -389,7 +389,8 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
   const adv = useAdvanced();
   const quiet = state === "loading";
   const np = r?.next_prints;
-  const changes = Array.isArray(r?.changes) ? r.changes : [];
+  const changes = Array.isArray(r?.changes?.rows) ? r.changes.rows : [];
+  const nChanges = r?.changes?.n;
   // Two blocks in one card: the next prints and the last five changes, each served on its own (§12.6).
   const whole = useUnserved();
   const npOff = useBlockUnserved(r, "next_prints");
@@ -401,7 +402,7 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
       title="What would change it"
       sub="the next two prints, and the last five changes"
       busy={quiet}
-      footer={<AdvancedPanel adv={adv} items="all regime changes since 1996 · S&P at 1 / 3 / 6 months after each" missing="The full list of changes and their 3- and 6-month S&P moves are not served yet." />}
+      footer={<AdvancedPanel adv={adv} items={`all ${fin(nChanges) ? `${nChanges} ` : ""}changes since ${year(r?.changes?.window?.start) || "1996"} · S&P at 1 / 3 / 6 months after each`} missing="The full list of changes and their 3- and 6-month S&P moves are not served yet." />}
     >
       {quiet ? null : (
         <>
@@ -421,7 +422,7 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
               <NextPrint label="Next INDPRO" kind="indpro" p={np?.indpro} />
             </StatRow>
           )}
-          <p className="dk-stat-label rg-changes-h">Last five regime changes · S&amp;P a month later</p>
+          <p className="dk-stat-label rg-changes-h">{fin(nChanges) ? `Last five of ${nChanges} regime changes` : "Last five regime changes"} · S&amp;P a month later</p>
           {chOff ? (
             <UnservedLine block={chOff} />
           ) : changes.length ? (
@@ -432,14 +433,15 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
                   <span>
                     {c.from} → {c.to}
                   </span>
-                  {fin(c.spx_1m) ? <Signed value={c.spx_1m}>{pct(c.spx_1m)}</Signed> : <span>—</span>}
+                  {/* §5: the S&P over the calendar month after the change; "month not over" until it is. */}
+                  {fin(c.spx_1m) ? <Signed value={c.spx_1m} title={c.spx_1m_month ? `S&P over ${monthYear(c.spx_1m_month)}` : undefined}>{pct(c.spx_1m)}</Signed> : <span className="rg-pending">month not over</span>}
                 </li>
               ))}
             </ul>
           ) : (
             <Awaiting />
           )}
-          <DroppedNote n={droppedOf(r, "changes")} one="regime change" />
+          <DroppedNote n={droppedOf(r?.changes, "rows")} one="regime change" />
         </>
       )}
       <ServedRead read={r?.reads?.changes} />

@@ -169,8 +169,8 @@ def regime_payload(now: datetime) -> dict:
         "recession": stored_block(item["recession"]),
         "next_prints": env.block_from("/regime", "next_prints",
                                       lambda: next_prints_block(item["next_prints"], item["release_times"], now)),
-        "stats": env.block_deferred("/regime", "stats"),
-        "changes": env.block_deferred("/regime", "changes"),
+        "stats": stored_block(item["stats"]),
+        "changes": stored_block(item["changes"]),
     }
 
 

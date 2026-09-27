@@ -491,6 +491,27 @@ export interface NextPrint {
   source?: string;
 }
 
+export interface RegimeStat {
+  regime: string;
+  months: number | null;
+  spx_n?: number | null;
+  spx_median_mo: number | null;
+  spx_mean_mo: number | null;
+  up_pct: number | null;
+  vix_avg: number | null;
+  vix_days?: number | null;
+}
+
+export interface RegimeChange {
+  month: string;
+  from: string;
+  to: string;
+  from_month?: string | null;
+  /** The S&P's simple return over `spx_1m_month`, the calendar month after the change; null until it is over. */
+  spx_1m: number | null;
+  spx_1m_month?: string | null;
+}
+
 export interface RegimeResponse extends Envelope {
   /** The K−2 row governing today, and the newest stored row beside it (`latest_print`, shown, never used to classify). */
   current?: Partial<RegimeRow> & { latest_print?: string };
@@ -506,9 +527,11 @@ export interface RegimeResponse extends Envelope {
     training?: { start: string; end: string } | null;
     methodology?: string;
   };
-  stats?: { regime: string; months: number | null; spx_mo: number | null; up_pct: number | null; vix_avg: number | null; stock_bond_corr: number | null }[];
+  /** §12.6 (desk/fill-compute): every stored row as stamped, with its own month of the S&P (simple returns) and the VIX. */
+  stats?: { rows: RegimeStat[]; window?: { start: string; end: string; n: number }; freq?: string; source?: string };
   next_prints?: { cpi?: NextPrint | null; indpro?: NextPrint | null };
-  changes?: { month: string; from: string; to: string; spx_1m: number | null }[];
+  /** §12.6 (desk/fill-compute): the last five changes, newest first, and how many there are. */
+  changes?: { rows: RegimeChange[]; n?: number | null; window?: { start: string; end: string; n: number }; freq?: string; source?: string };
   /** PROPOSED (§12.13): the cards' sentences (`stats`, `changes`). */
   reads?: { stats?: Read; changes?: Read };
 }

@@ -12,7 +12,6 @@ import ledger from "./ledger.json";
 import overview from "./overview.json";
 import record from "./regime-record.json";
 import regime from "./regime.json";
-import deferredRegime from "./deferred-regime.json";
 import studyEvents from "./study-events.json";
 import study from "./study.json";
 import macro from "./macro.json";
@@ -55,10 +54,16 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
   const months = record.months;
   const byMonth = new Map(months.map((r) => [r.month, r.regime]));
 
-  it("the record's months by regime are the deferred stats' months (What each regime has meant · since 1996); Monday serves the block awaiting", () => {
+  it("the record's months by regime are the served stats' months (What each regime has meant · since 1996, desk/fill-compute), and its changes are the served changes", () => {
     expect(months[0].month.startsWith("1996")).toBe(true);
-    for (const row of deferredRegime.stats) expect([row.regime, row.months]).toEqual([row.regime, months.filter((m) => m.regime === row.regime).length]);
-    expect(regime.stats).toEqual({ status: "awaiting", data: null, unavailable: { reason: "regime statistics not yet defined in the engine.", until: null } });
+    const stats = regime.stats;
+    for (const row of stats.rows) expect([row.regime, row.months]).toEqual([row.regime, months.filter((m) => m.regime === row.regime).length]);
+    expect(stats.window).toEqual({ start: months[0].month, end: months[months.length - 1].month, n: months.length });
+    // Q9: a change is a row whose label differs from the previous stored row's.
+    const changes = months.slice(1).flatMap((m, i) => (m.regime !== months[i].regime ? [{ month: m.month, from: months[i].regime, to: m.regime }] : []));
+    const served = regime.changes;
+    expect(served.n).toBe(changes.length);
+    expect(served.rows.map((c) => ({ month: c.month, from: c.from, to: c.to }))).toEqual(changes.slice(-5).reverse());
   });
 
   it("the record is one row a month but the one month the store lacks, and its last 60 rows are /regime's history exactly", () => {

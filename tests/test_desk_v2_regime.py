@@ -80,9 +80,9 @@ def test_regime_shape(hermetic, monkeypatch):
     body = get_regime()
     assert body["status"] == "ready"
     d = body["data"]
-    for k in ("stats", "changes"):
+    for k in ("stats", "changes"):  # the hermetic store holds no S&P closes: the S-27 sentence (desk/fill-compute)
         assert d[k] == {"status": "awaiting", "data": None,
-                        "unavailable": {"reason": "regime statistics not yet defined in the engine.", "until": None}}
+                        "unavailable": {"reason": "Awaiting refresh: this could not be computed from the current data.", "until": None}}
     months = [h["month"] for h in d["history"]]
     assert len(months) == 60 and months == sorted(months) and months[-1] == store.END_MONTH
     assert d["current"]["status"] == d["recession"]["status"] == d["next_prints"]["status"] == "ready"
@@ -683,3 +683,72 @@ def test_the_b2a_modules_never_import_src_config():
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env_, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip().splitlines()[-1] == "False"
+
+
+
+# ── What each regime has meant, and the last changes (desk/fill-compute) ────
+
+def _rows(labels: list[tuple[str, str]]) -> list[dict]:
+    return [{"month": m, "label": lab, "growth_trend": 1.0, "inflation_trend": 1.0} for m, lab in labels]
+
+
+def test_month_returns_are_last_session_closes_and_skip_an_unfinished_month():
+    import pandas as pd
+
+    from src.desk import event_study as es
+
+    sessions = es.sessions_between(es.session_calendar("2026-05-01", "2026-09-18"), "2026-05-01", "2026-09-18")
+    spx = pd.Series([100.0 + i for i in range(len(sessions))], index=sessions)
+    rets = items.month_returns(spx)
+    last = lambda m: max(d for d in sessions if d.strftime("%Y-%m") == m)  # noqa: E731
+    assert rets["2026-07"] == pytest.approx(spx[last("2026-07")] / spx[last("2026-06")] - 1, rel=1e-12)
+    assert "2026-05" not in rets and "2026-09" not in rets  # no April close; September is not over
+    held = items.month_returns(spx.drop(last("2026-07")))
+    assert "2026-07" not in held and "2026-08" not in held  # a missing month-end close voids both months it closes
+
+
+def test_the_stats_and_the_changes_follow_the_audits_method():
+    import pandas as pd
+
+    from src.desk import event_study as es
+
+    sessions = es.sessions_between(es.session_calendar("2025-12-01", "2026-06-30"), "2025-12-01", "2026-06-30")
+    spx = pd.Series([100.0 * (1.01 ** i) for i in range(len(sessions))], index=sessions)
+    vix = pd.Series(20.0, index=sessions)
+    vix[vix.index.month == 3] = 30.0
+    rows = _rows([("2026-01", "Goldilocks"), ("2026-02", "Goldilocks"), ("2026-03", "Stagflation"),
+                  ("2026-05", "Stagflation"), ("2026-06", "Overheating")])  # April missing
+    st = items.regime_stats(rows, spx, vix)
+    by = {r["regime"]: r for r in st["rows"]}
+    assert [r["regime"] for r in st["rows"]] == ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"]
+    assert (by["Goldilocks"]["months"], by["Stagflation"]["months"], by["Recession Risk"]["months"]) == (2, 2, 0)
+    assert by["Recession Risk"]["spx_median_mo"] is None and by["Recession Risk"]["vix_avg"] is None
+    assert by["Stagflation"]["vix_avg"] == pytest.approx(25.0, rel=0.1) and by["Goldilocks"]["up_pct"] == 1.0
+    assert st["window"] == {"start": "2026-01", "end": "2026-06", "n": 5}
+    ch = items.regime_changes(rows, spx)
+    assert ch["n"] == 2 and [(c["month"], c["from"], c["to"], c["from_month"]) for c in ch["rows"]] == [
+        ("2026-06", "Stagflation", "Overheating", "2026-05"), ("2026-03", "Goldilocks", "Stagflation", "2026-02")]
+    assert ch["rows"][0]["spx_1m_month"] == "2026-07" and ch["rows"][0]["spx_1m"] is None
+    assert ch["rows"][1]["spx_1m"] is not None and ch["rows"][1]["spx_1m_month"] == "2026-04"
+
+
+@pytest.mark.parametrize("path", [PUBLISHED], ids=["published"])
+def test_the_stats_and_the_changes_on_the_audits_store(path, install_worker, monkeypatch):
+    """FRAME3_DATA_AUDIT.md §2.4 on the audit's store: Q8's months, Q9's 123 changes and its last five."""
+    if not path.exists() or path.stat().st_size == 0:
+        pytest.skip(f"{path.name} is not in this tree")
+    serve(install_worker, monkeypatch, path)
+    at(monkeypatch, datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]
+    if d["history"][-1]["month"] != "2026-08":
+        pytest.skip("not the audit's store")
+    st, ch = d["stats"]["data"], d["changes"]["data"]
+    assert [(r["regime"], r["months"]) for r in st["rows"]] == [("Goldilocks", 27), ("Overheating", 213),
+                                                                ("Stagflation", 102), ("Recession Risk", 21)]
+    assert st["window"] == {"start": "1996-05", "end": "2026-08", "n": 363}
+    assert ch["n"] == 123 and [(c["month"], c["from"], c["to"]) for c in ch["rows"]] == [
+        ("2026-08", "Goldilocks", "Overheating"), ("2026-07", "Overheating", "Goldilocks"),
+        ("2026-01", "Stagflation", "Overheating"), ("2025-09", "Overheating", "Stagflation"),
+        ("2025-06", "Stagflation", "Overheating")]
+    assert ch["rows"][1]["spx_1m"] == pytest.approx(0.0262252682664592, rel=1e-12)  # Aug 2026, by SQL
+    assert st["rows"][0]["vix_avg"] == pytest.approx(18.0074645390071, rel=1e-12)   # 564 VIX days, by SQL

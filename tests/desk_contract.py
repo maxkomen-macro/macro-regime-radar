@@ -143,6 +143,7 @@ REGIME_TILE_FIELDS = dict(
 )
 
 SPAN = obj(start=DATE, end=DATE, n=INT)
+MONTH_SPAN = obj(start=MONTH, end=MONTH, n=INT)
 
 # ── §12.1 GET /overview ─────────────────────────────────────────────────────
 
@@ -261,8 +262,16 @@ REGIME_ROUTE = obj(
         methodology=Const("in-sample fitted scores"),
     ))),
     next_prints=Block(obj(cpi=null(NEXT_PRINT), indpro=null(NEXT_PRINT))),
-    stats=Deferred("regime statistics not yet defined in the engine."),
-    changes=Deferred("regime statistics not yet defined in the engine."),
+    stats=Block(obj(
+        rows=Arr(obj(regime=REGIME, months=INT, spx_n=INT, spx_median_mo=null(NUM), spx_mean_mo=null(NUM),
+                     up_pct=null(FRAC), vix_avg=null(NUM), vix_days=INT), min=4, max=4),
+        window=MONTH_SPAN, freq=Const("monthly"), source=STR,
+    )),
+    changes=Block(obj(
+        rows=Arr(obj(month=MONTH, to=REGIME, from_month=MONTH, spx_1m=null(NUM), spx_1m_month=MONTH,
+                     **{"from": REGIME}), max=5),
+        n=INT, window=MONTH_SPAN, freq=Const("monthly"), source=STR,
+    )),
 )
 
 # ── §12.14 sector leadership (desk/fill-etf), served by /sectors and /technicals ──
