@@ -7,6 +7,8 @@
  */
 
 import { ordinal, signed } from "../kit/format";
+import { basketInputs, sampleBasket } from "./basket-inputs";
+import { hedge, usd } from "./options";
 import { costText, protection, strikeText } from "./protection";
 
 function protectionMarkers(): string[] {
@@ -14,6 +16,16 @@ function protectionMarkers(): string[] {
   return [`${signed(p.skew)} pts`, costText(p.put.cost), costText(p.call.cost), strikeText(p.put.strike), strikeText(p.call.strike), `${ordinal(Math.round(p.percentile * 100))} percentile`];
 }
 
+/** The sample basket's routes: each structure's cost and payoff in dollars (the ETF's ticker is also a served
+ * benchmark's, so it is no marker). */
+function optionsMarkers(): string[] {
+  const i = basketInputs(sampleBasket());
+  if (!i) return [];
+  const h = hedge(i);
+  return h.routes.flatMap((r) => r.rows.flatMap((p) => [usd(p.costUsd), usd(p.payoffUsd)]));
+}
+
 export const PROTOTYPE_MARKERS: Readonly<Record<string, readonly string[]>> = {
   protection: protectionMarkers(),
+  "options-hedge": [...new Set(optionsMarkers())],
 };

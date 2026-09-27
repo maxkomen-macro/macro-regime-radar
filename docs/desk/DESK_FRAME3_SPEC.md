@@ -69,7 +69,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
 | Basket & Hedge: a basket kept in this browser priced as one index (buy-and-hold or monthly), its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), contribution, concentration, liquidity | LIVE, computed on request from EODHD's daily bars (§12.15); the baskets stay in the browser (§1.8) | desk/books |
 | Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.16) | desk/books |
-| Basket & Hedge: hedging with options | UNAVAILABLE; the slot "Hedge with options" is kept for the options card (desk/prototypes) | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
+| Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
 | Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
 | Client view | LIVE for Event Study's current study, at h = 20 | — |
@@ -1002,6 +1002,33 @@ sessions, step 3 says so in amber (Codex R-08).
   no mode button, stat or Advanced control that cannot act. The deferred
   option shapes, with the corrections that apply when they are built, are in
   §12.13.
+
+**Hedge with options** (the hedge's step 3, under the two cards, for the
+basket open; none when no basket is open): PROTOTYPE (§1.0.3). An inputs row
+labelled `from your basket · live` reads the basket engine's fields (desk/books'
+`GET /basket/hedge`, its §12.15): NOTIONAL (`notional`); TOP HEDGE ETF (`top`,
+the first of `etfs[]` ranked by R²); HEDGE RATIO (that row's `hedge_ratio`);
+R² (that row's, on its `basis` window, with the window). Until desk/books is
+on main they come from `proto-books-basket.json`, desk/books' own fixture
+answer for the sample basket (`web/src/screens/desk/prototypes/basket-inputs.ts`
+is the one module that switches to the served answer at the rebase, through
+`inputsFrom`, and the card then fills desk/books' `data-slot="hedge-options"`);
+for any other basket the row says "Awaiting refresh" and nothing is priced. Three
+routes, each as a 1M 95 put, a 3M 95 put and a 1M 95/85 put spread (strikes
+as the basket's level), with the cost in % and $ of notional, the breakeven
+(the basket's fall by expiry that repays the premium) and the payoff at
+expiry if the basket falls 10%, then a one-line trade-off: (a) puts on the
+top-ranked hedge ETF, hedge ratio × notional of it, each strike moved by the
+ratio (the basket's K is 1 − (1 − K) ÷ ratio of the ETF), the ETF assumed to
+move by the basket's move ÷ the ratio, basis risk shown by R²; (b) puts on
+the three largest names, each sized to its weight, each moving with the
+basket; (c) an OTC basket put from a dealer, an exact hedge, dealer-priced at
+the ETF's vol at the strike × hedge ratio ÷ √R² plus a stated margin, with the
+basket swap named as the alternative. Black-Scholes
+at the volatilities of `proto-options.json`, stated in Advanced. Footnote:
+"Illustrative values · In production: EODHD option chains for the hedge ETF
+and the names, and a dealer's quote for the basket put, stored with each
+basket."
 
 ---
 

@@ -489,3 +489,54 @@ describe("Basket & Hedge tab", () => {
     expect(JSON.parse(localStorage.getItem(SAVED_BASKETS_KEY) ?? "[]")).toContainEqual(bad);
   });
 });
+
+describe("Hedge with options (PROTOTYPE, §1.0.3): the hedge's step 3 for the basket open here", () => {
+  it("reads the basket engine's inputs, live, and prices three routes three ways; no badge, its footnote last", async () => {
+    seed();
+    const { calls } = stubDesk();
+    renderTab();
+    await loaded();
+    const c = await screen.findByRole("region", { name: /^Hedge with options/ });
+    expect(c).toHaveAttribute("data-prototype", "options-hedge");
+    expect(c).toHaveTextContent("from your basket · live");
+    // §12.15's fields (desk/books /basket/hedge): notional; top, XLK; its row's hedge ratio and one-year R².
+    expect(c).toHaveTextContent(/Notional\s*\$1\.0M\s*AI infrastructure/);
+    expect(c).toHaveTextContent(/Top hedge ETF\s*XLK\s*first of 8 by R², ahead of SMH at 0\.68/);
+    expect(c).toHaveTextContent(/Hedge ratio\s*1\.38/);
+    expect(c).toHaveTextContent(/R²\s*0\.69\s*252 sessions to Sep 23/);
+    for (const t of ["(a) Puts on XLK, the top-ranked hedge ETF", "(b) Puts on the three largest names", "(c) An OTC basket put from a dealer"]) expect(within(c).getByRole("heading", { name: t })).toBeInTheDocument();
+    expect(within(c).getAllByRole("table")).toHaveLength(3);
+    expect(c).toHaveTextContent("strikes moved by it, so 95/85 is 96.4%/89.2% of XLK");
+    expect(c).toHaveTextContent(/1M 95 put\s*1\.90%\s*\$19,000\s*basket down 6\.9%\s*\$50,000 · 5\.00%/);
+    expect(c).toHaveTextContent("NVDA, AVGO, VRT, each sized to its weight: 52% of the basket");
+    expect(c).toHaveTextContent(/1M 95\/85 put spread\s*1\.83%\s*\$18,300\s*basket down 6\.8%\s*\$50,000 · 5\.00%/);
+    expect(c).toHaveTextContent("an R² of 0.69 leaves 31% of the basket's variance unhedged");
+    expect(within(c).getAllByText("Trade-off:")).toHaveLength(3);
+    expect(within(c).queryByTestId("dk-live")).toBeNull();
+    const foot = c.querySelector("[data-prototype-foot]")!;
+    expect(foot.textContent).toBe("Illustrative values · In production: EODHD option chains for the hedge ETF and the names, and a dealer's quote for the basket put, stored with each basket.");
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    expect(c).toHaveTextContent("vol = XLK's at the strike × 1.38 ÷ √0.69, plus 1.5 points of dealer margin");
+    expect(c).toHaveTextContent("the engine's realized basket vol over the same window: 44.1%");
+    // Priced in the browser from the prototype's fixtures: nothing asked of the server.
+    expect(calls.filter((x) => /\/api\/desk\/(basket|hedge)/.test(x))).toEqual([]);
+  });
+
+  it("a basket the engine has no answer for: the inputs await a refresh and nothing is priced", async () => {
+    seed([{ ...BASKETS[0], legs: BASKETS[0].legs.map((l) => (l.symbol === "SMCI" ? { ...l, weight: 8 } : l.symbol === "NVDA" ? { ...l, weight: 26 } : l)) }]);
+    renderTab();
+    await loaded();
+    const c = await screen.findByRole("region", { name: /^Hedge with options/ });
+    expect(c).toHaveTextContent(/Notional\s*Awaiting refresh/);
+    expect(c).toHaveTextContent("Nothing is priced until the basket's inputs arrive.");
+    expect(within(c).queryAllByRole("table")).toHaveLength(0);
+    expect(within(c).getByTestId("dk-advanced")).toBeDisabled();
+    expect(c.querySelector("[data-prototype-foot]")).not.toBeNull();
+  });
+
+  it("with no basket open, no step 3", async () => {
+    renderTab();
+    await waitFor(() => expect(basketCard()).toHaveTextContent("No basket is saved in this browser yet"));
+    expect(screen.queryByRole("region", { name: /^Hedge with options/ })).toBeNull();
+  });
+});

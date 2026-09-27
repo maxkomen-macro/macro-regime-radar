@@ -1,0 +1,149 @@
+{
+ "kind": "mrr.desk.prototype.options",
+ "note": "Illustrative: the assumed volatilities, dividend yields, rate and day counts the Basket & Hedge card 'Hedge with options' prices at, with Black-Scholes (DESK_FRAME3_SPEC §1.0.3). Volatilities in points, keyed by the basket strike they stand for (1m_95: one month, the basket at 95%); an ETF's is at the basket strike moved by the hedge ratio. Not a reading of any market.",
+ "rate": 0.041,
+ "days": {
+  "1m": 30,
+  "3m": 91
+ },
+ "put_strike": 0.95,
+ "spread_short_strike": 0.85,
+ "basket_move": -0.1,
+ "etfs": {
+  "SMH": {
+   "q": 0.004,
+   "vol": {
+    "1m_95": 34.0,
+    "1m_85": 39.5,
+    "3m_95": 34.8
+   }
+  },
+  "SOXX": {
+   "q": 0.006,
+   "vol": {
+    "1m_95": 35.1,
+    "1m_85": 40.8,
+    "3m_95": 35.9
+   }
+  },
+  "XLK": {
+   "q": 0.006,
+   "vol": {
+    "1m_95": 26.0,
+    "1m_85": 30.6,
+    "3m_95": 26.8
+   }
+  },
+  "IGV": {
+   "q": 0.0,
+   "vol": {
+    "1m_95": 27.0,
+    "1m_85": 31.9,
+    "3m_95": 27.6
+   }
+  },
+  "XLU": {
+   "q": 0.028,
+   "vol": {
+    "1m_95": 17.8,
+    "1m_85": 21.5,
+    "3m_95": 18.4
+   }
+  },
+  "QQQ": {
+   "q": 0.006,
+   "vol": {
+    "1m_95": 20.6,
+    "1m_85": 24.3,
+    "3m_95": 21.5
+   }
+  },
+  "SPY": {
+   "q": 0.012,
+   "vol": {
+    "1m_95": 15.2,
+    "1m_85": 18.6,
+    "3m_95": 16.3
+   }
+  },
+  "IWM": {
+   "q": 0.011,
+   "vol": {
+    "1m_95": 23.9,
+    "1m_85": 28.2,
+    "3m_95": 24.8
+   }
+  }
+ },
+ "names": {
+  "NVDA": {
+   "q": 0.0003,
+   "vol": {
+    "1m_95": 46.1,
+    "1m_85": 51.8,
+    "3m_95": 47.0
+   }
+  },
+  "AVGO": {
+   "q": 0.013,
+   "vol": {
+    "1m_95": 41.3,
+    "1m_85": 46.9,
+    "3m_95": 42.2
+   }
+  },
+  "VRT": {
+   "q": 0.001,
+   "vol": {
+    "1m_95": 55.2,
+    "1m_85": 61.0,
+    "3m_95": 55.8
+   }
+  },
+  "CRWV": {
+   "q": 0.0,
+   "vol": {
+    "1m_95": 78.4,
+    "1m_85": 86.0,
+    "3m_95": 76.5
+   }
+  },
+  "ANET": {
+   "q": 0.0,
+   "vol": {
+    "1m_95": 44.0,
+    "1m_85": 49.6,
+    "3m_95": 44.8
+   }
+  },
+  "CEG": {
+   "q": 0.005,
+   "vol": {
+    "1m_95": 43.1,
+    "1m_85": 48.3,
+    "3m_95": 43.9
+   }
+  },
+  "SMCI": {
+   "q": 0.0,
+   "vol": {
+    "1m_95": 68.7,
+    "1m_85": 75.9,
+    "3m_95": 67.8
+   }
+  }
+ },
+ "name_default": {
+  "q": 0.0,
+  "vol": {
+   "1m_95": 45.0,
+   "1m_85": 50.0,
+   "3m_95": 46.0
+  }
+ },
+ "basket": {
+  "q": 0.003,
+  "dealer_margin_pts": 1.5
+ },
+ "swap_spread_bp": 45
+}

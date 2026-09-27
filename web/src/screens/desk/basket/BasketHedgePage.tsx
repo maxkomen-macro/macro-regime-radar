@@ -6,8 +6,10 @@
  * to exactly 100% is priced by /basket/price (§12.15, desk/books) from
  * EODHD's daily bars: step 2, how the basket trades (./BasketTrades.tsx).
  * The hedge's option structures are not yet defined in the engine (v2
- * D-25–D-28): step 3 ranks the ETF hedge (/basket/hedge, §12.16) and keeps
- * the options card's slot, which prints §1.0's reason (§1.0.2).
+ * D-25–D-28): step 3 ranks the ETF hedge (/basket/hedge, §12.16), then, in
+ * the options slot, the PROTOTYPE cards of §1.0.3 (../prototypes/, mounted
+ * by ./BasketHedgeStep.tsx): "Hedge with options", priced in the browser
+ * from the basket engine's inputs and assumed volatilities.
  * Send to Position Monitor carries the basket as a manual subject (§9).
  */
 
@@ -605,7 +607,7 @@ function StepThree({ local, q, priceAsOf }: { local: SavedBasket | null; q: Retu
           </button>
         </p>
       ) : null}
-      <BasketHedgeStep h={q.data} state={state} />
+      <BasketHedgeStep h={q.data} state={state} basket={local} />
     </section>
   );
 }

@@ -16,6 +16,8 @@ import type { BasketHedgeResponse, HedgeEtf } from "../data/types";
 import { num, pct, pctPlain } from "../kit/format";
 import { Awaiting, NotServedBadge, UnservedLine, cx } from "../kit/ui";
 import { excludedWords, hedgeLead, stressLead, stressShortWords, stressWindowWords, usd } from "./trades";
+import type { SavedBasket } from "./weights";
+import { OptionsHedgeCard } from "../prototypes/OptionsHedgeCard";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -155,13 +157,19 @@ function OptionsSlot() {
   );
 }
 
-/** Step 3's cards for one saved basket. */
-export default function BasketHedgeStep({ h, state }: { h: BasketHedgeResponse | undefined; state: State }) {
+/** Step 3's cards for one saved basket; the options slot holds the PROTOTYPE card (§1.0.3), for a saved basket. */
+export default function BasketHedgeStep({ h, state, basket }: { h: BasketHedgeResponse | undefined; state: State; basket?: SavedBasket | null }) {
   return (
     <div className="bh-hedge-step">
       <RankCard h={h} state={state} />
       <StressCard h={h} state={state} />
-      <OptionsSlot />
+      {basket ? (
+        <div className="bh-options-slot" data-slot="hedge-options">
+          <OptionsHedgeCard basket={basket} />
+        </div>
+      ) : (
+        <OptionsSlot />
+      )}
     </div>
   );
 }

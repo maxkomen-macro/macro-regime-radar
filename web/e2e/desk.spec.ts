@@ -690,7 +690,7 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("main")).not.toContainText("7,625");
   });
 
-  test("basket & hedge: the saved basket priced (step 2) and hedged (step 3), the options slot unavailable, the weights kept in the browser, the hand-off; every width", async ({ page }) => {
+  test("basket & hedge: the saved basket priced (step 2) and hedged (step 3), the options slot holding the PROTOTYPE, the weights kept in the browser, the hand-off; every width", async ({ page }) => {
     const asked: string[] = [];
     page.on("request", (r) => {
       if (/\/api\/desk\/(basket|hedge)/.test(r.url())) asked.push(`${r.method()} ${new URL(r.url()).pathname}${new URL(r.url()).search}`);
@@ -712,10 +712,14 @@ test.describe("desk v2", () => {
     await expect(step3.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("XLK fits the basket best (R² 0.69 over a year)");
     await expect(step3.locator('tr[aria-current="true"]')).toHaveCount(1);
     await expect(step3.getByRole("region", { name: /^Stress test/ })).toContainText("With the table's hedge, short $1,384,473 of XLK: if QQQ falls 10% the basket loses $170,542 unhedged");
-    // §10 (Codex R-14): the options slot is plain: no control that cannot act, the reason printed.
-    await expect(hedge.getByRole("button")).toHaveCount(0);
-    await expect(hedge.locator('[data-slot="hedge-options"]')).toHaveCount(1);
-    await expect(hedge).toContainText("Option structures for a basket are not yet defined in the engine.");
+    // §10, §1.0.3: step 3's options slot holds the PROTOTYPE for the saved basket: the engine's inputs, live; three
+    // routes; its one control (Advanced) opens something (Codex R-14: no control that cannot act).
+    await expect(page.locator('[data-slot="hedge-options"] [data-prototype="options-hedge"]')).toHaveCount(1);
+    await expect(hedge.getByRole("button")).toHaveCount(1);
+    await expect(hedge).toContainText("from your basket · live");
+    await expect(hedge.getByRole("heading", { level: 3 })).toHaveText(["(a) Puts on XLK, the top-ranked hedge ETF", "(b) Puts on the three largest names", "(c) An OTC basket put from a dealer"]);
+    await expect(hedge.getByRole("table")).toHaveCount(3);
+    await expect(hedge.getByTestId("dk-live")).toHaveCount(0);
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
     // Weights as typed, saved in this browser.
