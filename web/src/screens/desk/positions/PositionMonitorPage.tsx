@@ -18,6 +18,12 @@
  * row opens to its gate text and Close…, and `?open=<id>` opens one from a
  * link. Under them, the closes of the last 90 days, Export / Import JSON of
  * the store, and any record the store cannot read, kept and listed.
+ *
+ * desk/usability §14.4: the saved positions come first. The page opens on
+ * the monitored rows (wide), the closes and the store; the Promote form and
+ * the gate are behind "+ New position" (`?new=1`), and open at once when
+ * something is carried in (a study, a basket, an instrument from
+ * Technicals). The gate itself is unchanged.
  */
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -25,7 +31,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useStudy, useTechnicals } from "../data/api";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { useDeskView } from "../desk-view";
+import { useDeskView, withParam } from "../desk-view";
 import { MonitoredRow, sortByRoom } from "../kit/MonitoredRows";
 import { apiParams, askFromSearch, questionWords, searchFor, slotsOf, targetLabel, type Ask } from "../event-study/question";
 import { readSaved } from "../basket/weights";
@@ -183,7 +189,12 @@ function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose }:
       ) : unreadable ? (
         <p className="dk-await">{`No readable open position; ${droppedWords(unreadable, "kept position").replace(/\.$/, "")}.`}</p>
       ) : (
-        <p className="dk-await">No open positions in this browser.</p>
+        <p className="dk-await">
+          No open positions in this browser.{" "}
+          <Link className="dk-link" to={withParam(pathTo("position-monitor"), "new", "1")}>
+            + New position
+          </Link>
+        </p>
       )}
       {views.length ? (
         <p className="pm-note">
@@ -250,9 +261,12 @@ function StoreCard({ store, onImport }: { store: PositionStore; onImport: (text:
     <section className="dk-card pm-store" aria-label="Positions kept in this browser">
       <p className="pm-io">
         <span className="pm-io-words">Kept in this browser only.</span>
-        <button type="button" className="dk-link" onClick={download} disabled={!count}>
-          Export JSON
-        </button>
+        {/* §14.4: nothing kept, nothing to export: the control is not shown. */}
+        {count ? (
+          <button type="button" className="dk-link" onClick={download}>
+            Export JSON
+          </button>
+        ) : null}
         <button type="button" className="dk-link" onClick={() => fileRef.current?.click()}>
           Import JSON
         </button>
@@ -367,6 +381,17 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
 
   // desk/usability §14.2: Technicals' "Open as position" names the instrument (`?instrument=`); it fills an empty field.
   const instrumentAsked = search.get("instrument");
+  // §14.4: the form opens from "+ New position" (`?new=1`) or when something is carried in.
+  const formOpen = search.get("new") === "1" || !!carriedAsk || !!basketId || !!(instrumentAsked && instrumentAsked.trim());
+  const closeForm = () =>
+    setSearch(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        for (const k of ["new", "from", "horizon", "basket", "instrument", "shock", "window", "move", "while", "target"]) q.delete(k);
+        return q;
+      },
+      { replace: false },
+    );
   useEffect(() => {
     if (!instrumentAsked || !instrumentAsked.trim() || carriedAsk || sent) return;
     setDraft((d) => (d.instrument ? d : { ...d, instrument: instrumentAsked.trim() }));
@@ -511,13 +536,43 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
             ? `Opened from Technicals · ${instrumentAsked.trim()} · the gate is the same for every position.`
             : "Any study can be carried in from Event Study; the gate is the same for every position.";
 
+  const monitor = (
+    <>
+      <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} />
+      <Closed store={store} />
+      <StoreCard store={store} onImport={onImport} />
+    </>
+  );
+  if (!formOpen)
+    return (
+      <div className="pm" data-form="closed">
+        <div className="pm-head">
+          <PageTitle page={page} title="Position Monitor" />
+        </div>
+        <div className="pm-saved">
+          <div className="pm-saved-main">
+            <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} />
+          </div>
+          <div className="pm-right">
+            <Closed store={store} />
+            <StoreCard store={store} onImport={onImport} />
+          </div>
+        </div>
+      </div>
+    );
+
   return (
-    <div className="pm">
+    <div className="pm" data-form="open">
       <div className="pm-grid">
         <div className="pm-left">
           <div className="pm-head">
             <PageTitle page={{ ...page, blurb: "" }} title="Promote to position" />
-            <p className="pm-sub">{sub}</p>
+            <p className="pm-sub">
+              {sub}{" "}
+              <button type="button" className="dk-link pm-close-form" onClick={closeForm}>
+                Back to the monitor
+              </button>
+            </p>
           </div>
           <form
             className="dk-card pm-fields"
@@ -650,11 +705,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
             </div>
           </section>
         </div>
-        <div className="pm-right">
-          <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} />
-          <Closed store={store} />
-          <StoreCard store={store} onImport={onImport} />
-        </div>
+        <div className="pm-right">{monitor}</div>
       </div>
     </div>
   );

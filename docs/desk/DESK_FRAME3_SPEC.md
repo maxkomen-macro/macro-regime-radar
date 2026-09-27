@@ -862,7 +862,10 @@ baseline over its own sample." + `a month = 20 sessions · engine as of
 
 No Desk/Client toggle (desk-only). Two columns. Positions live in this
 browser (§1.8): there is no server position store and nothing is posted
-(v2 D-21, v3 §16).
+(v2 D-21, v3 §16). *Amended by desk/usability §14.4:* the page opens on the
+saved positions (title "Position Monitor"); the Promote form and the gate below
+are behind the header's **+ New position** (`?new=1`) and open at once when
+something is carried in.
 
 **Promote to position** (left). Subtitle names what was carried in (a study
 from Event Study, a basket from Basket & Hedge) or "any study can be carried
@@ -2172,3 +2175,19 @@ amended in place where it is short, and the report
   of the saved questions while none is saved.
 - **Fixtures.** `web/src/fixtures/desk/studies/` carries three such questions
   answered by the real route on the audit's store (PROVENANCE.md).
+
+### 14.4 Position Monitor: the saved positions first
+
+- **Default view** (`/desk/position-monitor`): the title "Position Monitor"
+  and its line ("Your positions, and how far each is from being wrong."); the
+  MONITORED rows take the wide column, CLOSED · LAST 90D and the store's Export
+  / Import beside them. No form and no gate on this view. An empty monitor
+  says "No open positions in this browser." with a **+ New position** link; the
+  store's Export JSON is shown only when something is kept.
+- **The form** opens from the header's **+ New position** (`?new=1`), or at
+  once when something is carried in (`from`, the six slots, `basket`,
+  `instrument`). Its title stays "Promote to position"; the line under it ends
+  with **Back to the monitor**, which clears the carried parameters. While the
+  form is open the header's action gives way.
+- **The gate is unchanged**: the three answers, the WORDING check, Save off
+  until complete, the helper naming what is left, the rule of §9.

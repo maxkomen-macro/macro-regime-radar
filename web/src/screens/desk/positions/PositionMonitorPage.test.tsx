@@ -29,7 +29,8 @@ import { completeTechnicals } from "../../../test/desk-variants";
 
 const RECORDS = (sample as { positions: PositionRecord[] }).positions;
 
-function renderTab(route = "/desk/position-monitor") {
+/** desk/usability §14.4: the form is behind "+ New position" (`?new=1`); these tests exercise the form. */
+function renderTab(route = "/desk/position-monitor?new=1") {
   return renderWithProviders(
     <Routes>
       <Route path="/desk/:page?" element={<DeskShell />} />
@@ -527,5 +528,35 @@ describe("opened from Technicals (§14.2)", () => {
     await waitFor(() => expect(field).toHaveValue("NVDA"));
     expect(screen.getByText(/Opened from Technicals · NVDA/)).toBeInTheDocument();
     expect(screen.getByTestId("pm-save")).toBeDisabled();
+  });
+});
+
+describe("saved positions first (§14.4)", () => {
+  it("opens on the monitored rows, the closes and the store; the form and the gate wait behind + New position", async () => {
+    seed(RECORDS);
+    stubDesk();
+    renderTab("/desk/position-monitor");
+    expect(await screen.findByRole("heading", { level: 1, name: "Position Monitor" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("region", { name: /Monitored/ })).toHaveTextContent("2s10s"));
+    expect(screen.queryByRole("form", { name: "Promote to position" })).toBeNull();
+    expect(screen.queryByText(/Discipline gate/)).toBeNull();
+    expect(screen.getByRole("region", { name: "Closed in the last 90 days" })).toBeInTheDocument();
+  });
+
+  it("an empty monitor points at + New position, and shows no Export for nothing kept", async () => {
+    stubDesk();
+    renderTab("/desk/position-monitor");
+    const mon = await screen.findByRole("region", { name: /Monitored/ });
+    expect(within(mon).getByRole("link", { name: "+ New position" })).toHaveAttribute("href", "/desk/position-monitor?new=1");
+    expect(screen.queryByRole("button", { name: "Export JSON" })).toBeNull();
+  });
+
+  it("the form opens with ?new=1, and Back to the monitor closes it, carried parameters included", async () => {
+    stubDesk();
+    renderTab("/desk/position-monitor?new=1&instrument=NVDA");
+    expect(await screen.findByRole("form", { name: "Promote to position" })).toBeInTheDocument();
+    expect(screen.getByText(/Discipline gate/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to the monitor" }));
+    await waitFor(() => expect(screen.queryByRole("form", { name: "Promote to position" })).toBeNull());
   });
 });

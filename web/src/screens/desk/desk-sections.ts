@@ -50,7 +50,7 @@ export const DESK_GROUPS: DeskGroup[] = [
     pages: [
       { slug: "event-study", label: "Event Study", blurb: "Ask what the market did after a defined shock. Get a scored answer, not an opinion.", action: "act" },
       { slug: "signal-ledger", label: "Signal Ledger", blurb: "every signal the engine scores, on one page · click a row to open it in Event Study" },
-      { slug: "position-monitor", label: "Position Monitor", title: "Promote to position", blurb: "", toggle: false },
+      { slug: "position-monitor", label: "Position Monitor", title: "Position Monitor", blurb: "Your positions, and how far each is from being wrong.", toggle: false },
     ],
   },
   {

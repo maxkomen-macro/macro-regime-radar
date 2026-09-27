@@ -571,7 +571,8 @@ test.describe("desk v2", () => {
     page.on("request", (r) => {
       if (r.url().includes("/api/desk/positions")) asked.push(`${r.method()} ${r.url()}`);
     });
-    await open(page, "/desk/position-monitor");
+    // §14.4: the form is behind "+ New position" (`?new=1`).
+    await open(page, "/desk/position-monitor?new=1");
     await page.getByLabel("Instrument", { exact: true }).fill("TLT");
     await page.getByLabel(/Variant view/).fill("The market thinks rates stay high, I think they fall, because growth is slowing.");
     await page.getByLabel(/Pre-mortem/).fill("It lost money because inflation surprised up.");
@@ -683,7 +684,7 @@ test.describe("desk v2", () => {
 
   test("SPY gets no index numbers; the S&P 500 does (Codex R-08)", async ({ page }) => {
     // A session whose 50 closes are all stored; the fixture's Sep 23 reads the average null (Codex R-24).
-    await open(page, "/desk/position-monitor", { "/api/desk/technicals": { status: 200, body: completeTechnicals() } });
+    await open(page, "/desk/position-monitor?new=1", { "/api/desk/technicals": { status: 200, body: completeTechnicals() } });
     await page.getByLabel("Instrument", { exact: true }).fill("S&P 500");
     await expect(page.getByRole("button", { name: "closes below its 50-day (7,625)" })).toBeVisible();
     await page.getByLabel("Instrument", { exact: true }).fill("SPY");

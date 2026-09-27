@@ -11,6 +11,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { settle } from "./lib/drive";
 import { auditPalette, bannedWordsOnPage, routeDesk, type Override } from "./lib/desk-fixtures";
 import { DESK_PAGES } from "../src/screens/desk/desk-sections";
+import positionSample from "../src/fixtures/desk/positions.json" with { type: "json" };
+import { POSITIONS_KEY } from "../src/screens/desk/positions/store";
 
 /** What /api/market/search answers on the Desk's scope in these tests: a mixed upstream list, as EODHD sends it. */
 export const SEARCH_N: Override = {
@@ -185,4 +187,26 @@ test.describe("desk usability", () => {
       expect(await auditPalette(page)).toEqual([]);
       expect(await bannedWordsOnPage(page)).toEqual([]);
     });
+
+  // ── Item 4: Position Monitor, saved positions first ──────────────────────
+
+  test("item 4: the Position Monitor opens on the saved positions; + New position opens the form and the gate, unchanged", async ({ page }) => {
+    await page.addInitScript(([key, text]) => localStorage.setItem(key, text), [POSITIONS_KEY, JSON.stringify((positionSample as { positions: unknown[] }).positions)] as const);
+    await open(page, "/desk/position-monitor");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Position Monitor");
+    await expect(page.getByRole("region", { name: /Monitored/ }).getByTestId("dk-mon-row")).toHaveCount(3);
+    await expect(page.getByRole("form", { name: "Promote to position" })).toHaveCount(0);
+    await expect(page.getByText(/Discipline gate/)).toHaveCount(0);
+    expect(await auditPalette(page)).toEqual([]);
+    await page.getByTestId("dk-act").click();
+    await expect(page).toHaveURL(/\/desk\/position-monitor\?new=1$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Promote to position");
+    await expect(page.getByText(/Discipline gate/)).toBeVisible();
+    // The gate is as it was: Save stays off until the three answers are in.
+    await expect(page.getByTestId("pm-save")).toBeDisabled();
+    await expect(page.getByRole("region", { name: /Monitored/ }).getByTestId("dk-mon-row")).toHaveCount(3);
+    await page.getByRole("button", { name: "Back to the monitor" }).click();
+    await expect(page).toHaveURL(/\/desk\/position-monitor$/);
+    await expect(page.getByText(/Discipline gate/)).toHaveCount(0);
+  });
 });

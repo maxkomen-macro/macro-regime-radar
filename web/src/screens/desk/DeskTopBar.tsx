@@ -67,6 +67,16 @@ function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => st
         Walkthrough
       </button>
     );
+  // desk/usability §14.4: the Position Monitor opens on the saved positions; its action opens the form.
+  if (page.slug === "position-monitor") {
+    const q = new URLSearchParams(location.search);
+    const open = q.get("new") === "1" || ["from", "basket", "instrument", "shock"].some((k) => q.get(k));
+    return open ? null : (
+      <Link className="dk-btn" data-kind="light" to={withParam(pathTo("position-monitor"), "new", "1")} data-testid="dk-act">
+        + New position
+      </Link>
+    );
+  }
   // desk/usability §14.2: Technicals opens the instrument on screen as a position (the S&P 500 by default).
   if (page.slug === "technicals") {
     const sym = symbolOf(location.search);

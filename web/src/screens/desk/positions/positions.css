@@ -21,6 +21,20 @@
   gap: 19px;
   align-items: stretch;
 }
+/* desk/usability §14.4: the saved positions first; the monitored rows take the width. */
+.pm-saved {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 385px;
+  gap: 19px;
+  align-items: start;
+  margin-top: 4px;
+}
+.pm-saved-main {
+  min-width: 0;
+}
+.pm-close-form {
+  margin-left: 4px;
+}
 .pm-left {
   display: flex;
   flex-direction: column;
@@ -340,6 +354,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .pm-row3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 1100px) {
+  .pm-saved {
     grid-template-columns: minmax(0, 1fr);
   }
 }

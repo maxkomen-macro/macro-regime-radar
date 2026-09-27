@@ -110,6 +110,10 @@ describe("Desk v2 shell", () => {
     renderDesk("/desk/position-monitor");
     await screen.findByRole("navigation", { name: "Breadcrumb" });
     expect(screen.queryByTestId("dk-view-toggle")).toBeNull();
+    // §14.4: the monitor's one action opens the form; once it is open, the action gives way.
+    expect(await screen.findByTestId("dk-act")).toHaveTextContent("+ New position");
+    fireEvent.click(screen.getByTestId("dk-act"));
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/position-monitor?new=1"));
     expect(screen.queryByTestId("dk-act")).toBeNull();
   });
 
