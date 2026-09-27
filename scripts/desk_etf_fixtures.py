@@ -12,7 +12,8 @@ refreshed 2026-09-24 05:07 UTC). That store predates the ETFs, so this script
 2. serves the Desk routes on it through the API (one worker generation, the
    clock frozen at 2026-09-24 16:00 UTC, as pipeline.json was generated) and
    writes what they serve into the fixtures: pipeline.json and sectors.json
-   whole; technicals.json's sectors block.
+   whole; technicals.json's sectors block; macro.json's stock_bond,
+   correlations and matrix blocks.
 
 Read-only on both inputs; the fixture store is written to --store (never
 under data/, never committed). Needs the repo's Python environment.
@@ -138,6 +139,9 @@ def main(argv: list[str] | None = None) -> int:
         # item 2: sector leadership, /sectors whole and /technicals' sectors block as served
         write("sectors.json", get(client, "/sectors"))
         splice("technicals.json", {"sectors": client.get("/api/desk/technicals").json()["data"]["sectors"]})
+        # items 4 and 5: /macro's ETF blocks as served (stock_bond, correlations, and matrix, still awaiting)
+        macro = client.get("/api/desk/macro").json()["data"]
+        splice("macro.json", {k: macro[k] for k in ("stock_bond", "correlations", "matrix")})
     finally:
         w.stop()
     return 0

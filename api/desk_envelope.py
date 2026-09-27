@@ -100,7 +100,7 @@ BASKET_REASON = "basket pricing and option structures not yet defined in the eng
 RSI_REASON = "RSI is not computed yet."
 WITHOUT_CONDITION_REASON = "conditional-versus-unconditional comparison is not defined"
 REGIME_STATS_REASON = "regime statistics not yet defined in the engine."
-CORRELATIONS_REASON = "Treasury and credit price-return series not ingested."
+CORRELATIONS_REASON = "the correlations are not computed yet."  # desk/fill-etf: stock_bond is served
 # S-27: a block whose computation failed on this generation.
 BLOCK_FAILED_REASON = "Awaiting refresh: this could not be computed from the current data."
 
@@ -120,7 +120,6 @@ DEFERRED_BLOCKS: dict[tuple[str, str], str] = {
     ("/regime", "stats"): REGIME_STATS_REASON,
     ("/regime", "changes"): REGIME_STATS_REASON,
     ("/technicals", "vol"): VOL_REASON,
-    ("/macro", "stock_bond"): CORRELATIONS_REASON,
     ("/macro", "correlations"): CORRELATIONS_REASON,
     ("/macro", "matrix"): CORRELATIONS_REASON,
 }

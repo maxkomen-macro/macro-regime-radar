@@ -76,7 +76,7 @@ Nothing else on the site is fitted.
 Live on the published snapshot: Overview, Technicals (price, averages,
 crosses, S&P signals, sector leadership), Event Study for the catalog of
 questions, Regime (label, history, recession score, next prints), Macro
-(curve, credit), Sectors (leadership and breadth), Signal Ledger, Position Monitor (in
+(curve, credit, the stock–bond correlation), Sectors (leadership and breadth), Signal Ledger, Position Monitor (in
 your browser), the Client view, Data Pipeline, and this page. The sector
 ETFs and the other Desk ETFs are stored by the same refresh step as the
 S&P's closes, with their volume, full history back to each fund's first
@@ -87,8 +87,9 @@ Designed and drawn, not yet served, each for a stated reason:
 - Options and skew: needs a stored history of SPY option snapshots and a
   written method for picking strikes and expiries. A number without that
   isn't auditable, so there isn't one.
-- Correlations to Treasuries and credit: the store holds yields and
-  spreads, not bond prices. A negated yield change is not a bond return.
+- What moves with the S&P, beyond bonds: the stock–bond card reads SPY
+  against TLT's own prices now (a negated yield change is not a bond
+  return, so it waited for the ETF); the list of other assets comes next.
 - Breadth from the stocks themselves: the Sectors card counts the 11
   sector ETFs above their 50- and 200-day averages and says so on every
   count. Counting the index's own stocks needs constituent data, which the

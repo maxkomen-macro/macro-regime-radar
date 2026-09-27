@@ -307,3 +307,84 @@ def test_the_pipeline_says_the_breadth_series_feed_sectors():
     assert set(pipe.BREADTH_SERIES) == {registry.get(k).series_id for k in (etf.BENCHMARK, *etf.SECTOR_KEYS, "rsp", "iwm")}
     for sym in ("RSP", "IWM"):
         assert "Sectors" in pipe.feeds_of(sym) and sym not in pipe.NO_LIVE_READER, sym
+
+
+# ── Item 4: do bonds still hedge stocks? (§12.8 stock_bond) ─────────────────
+
+import numpy as np  # noqa: E402
+
+from api import desk_v2_macro  # noqa: E402
+
+MACRO_ITEMS = [(n, f) for n, f in analytics_cache.ITEMS if n in ("desk_etf", "desk_macro")]
+
+
+def _returns(c: dict, days: list[str], sym: str) -> list[float | None]:
+    p = c.get(sym, {})
+    return [None] + [math.log(p[b] / p[a]) if a in p and b in p else None for a, b in zip(days, days[1:])]
+
+
+def _pearson(x: list, y: list) -> float | None:
+    if any(v is None for v in x + y):
+        return None
+    return float(np.corrcoef(np.array(x), np.array(y))[0, 1])
+
+
+def _corr(c: dict, days: list[str], a: str, b: str, i: int) -> float | None:
+    ra, rb = _returns(c, days, a), _returns(c, days, b)
+    return _pearson(ra[i - 59:i + 1], rb[i - 59:i + 1])
+
+
+def test_stock_bond_is_the_60_date_correlation_of_daily_log_returns(tmp_path, monkeypatch):
+    path = _db(tmp_path)
+    c, days = store.closes(path), store.sessions()
+    t = max(set(c["SPY"]) & set(c["TLT"]))
+    i = days.index(t)
+    part = _item(monkeypatch, path)["stock_bond"]
+    assert part["ok"], part
+    d = part["data"]
+    assert d["today_date"] == t and d["today"] == pytest.approx(_corr(c, days, "SPY", "TLT", i), abs=1e-12)
+    assert d["window"] == {"start": days[i - 59], "end": t, "n": 60} and d["today_reason"] is None
+    import pandas as pd
+
+    ago = max(x for x in days if x <= (pd.Timestamp(t) - pd.DateOffset(months=12)).strftime("%Y-%m-%d"))
+    assert d["year_ago_date"] == ago and d["year_ago"] == pytest.approx(_corr(c, days, "SPY", "TLT", days.index(ago)), abs=1e-12)
+    line = [x for x in days if ago < x <= t]
+    assert [p["date"] for p in d["series"]] == line and d["line_window"] == {"start": line[0], "end": t, "n": len(line)}
+    k = days.index(line[len(line) // 2])
+    assert d["series"][len(line) // 2]["corr"] == pytest.approx(_corr(c, days, "SPY", "TLT", k), abs=1e-12)
+    # the newest change of sign, over every session with a complete window, zeros skipped
+    signs = [(x, _corr(c, days, "SPY", "TLT", j)) for j, x in enumerate(days) if 60 <= j <= i]
+    signs = [(x, v > 0) for x, v in signs if v is not None and v != 0]
+    flips = [x for (_, a), (x, b) in zip(signs, signs[1:]) if a != b]
+    assert d["flipped_on"] == (flips[-1] if flips else None)
+    if flips:
+        assert d["flipped"] == flips[-1][:7] and d["flipped_to"] == ("positive" if signs[-1][1] else "negative")
+    assert (d["stock"]["etf"], d["bond"]["etf"], d["transform"]) == ("SPY", "TLT", "daily log return")
+
+
+def test_a_missing_close_inside_the_window_makes_today_null_with_its_reason(tmp_path, monkeypatch):
+    """No forward fill: a TLT session without a close leaves two returns
+    incomplete, and the window that holds them has no correlation."""
+    days = store.sessions()
+    t = max(store.closes(_db(tmp_path, "probe.db"))["SPY"])
+    i = days.index(t)
+    d = _item(monkeypatch, _db(tmp_path, drop={"TLT": (days[i - 5],)}))["stock_bond"]["data"]
+    assert d["today"] is None and d["today_reason"] == f"fewer than 60 complete daily return pairs in the window to {t}"
+    assert d["series"][-1]["corr"] is None and d["year_ago"] is not None
+
+
+def test_without_tlt_the_block_awaits_the_refresh_and_macro_stands(tmp_path, install_worker, monkeypatch):
+    path = _db(tmp_path, only=ALLOCATION_ETFS)  # the allocation ETFs: SPY stored, TLT not
+    _serve(install_worker, monkeypatch, path, items=MACRO_ITEMS)
+    m = dc.check_response("/macro", client.get("/api/desk/macro"))
+    assert m["status"] == "ready"
+    assert m["data"]["stock_bond"]["unavailable"]["reason"] == "Awaiting refresh: the full refresh stores TLT; this database predates it."
+
+
+def test_the_macro_route_serves_stock_bond_from_the_etf_item(tmp_path, install_worker, monkeypatch):
+    _serve(install_worker, monkeypatch, _db(tmp_path), items=MACRO_ITEMS)
+    m = dc.check_response("/macro", client.get("/api/desk/macro"))
+    sb = m["data"]["stock_bond"]
+    assert sb["status"] == "ready" and sb["data"]["today"] is not None
+    assert desk_v2_macro.macro_payload()["stock_bond"] == sb
+    assert "SPY" in pipe.STOCK_BOND_SERIES and "Macro" in pipe.feeds_of("TLT") and "TLT" not in pipe.NO_LIVE_READER

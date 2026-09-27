@@ -140,8 +140,8 @@ test.describe("desk v2", () => {
       await expect(page.getByRole("region", { name: /^Where we are/ })).toContainText("Overheating");
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-      await open(page, "/desk/macro", { "/api/desk/macro": { status: 200, body: { ...macro, stock_bond: off("Treasury and credit price-return series not ingested."), correlations: off("Treasury and credit price-return series not ingested."), matrix: off("Treasury and credit price-return series not ingested.") } } });
-      await expect(page.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toContainText("not ingested");
+      await open(page, "/desk/macro", { "/api/desk/macro": { status: 200, body: { ...macro, stock_bond: off("Awaiting refresh: the full refresh stores TLT; this database predates it."), correlations: off("the correlations are not computed yet."), matrix: off("the correlations are not computed yet.") } } });
+      await expect(page.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toContainText("the full refresh stores TLT");
       await expect(page.getByRole("region", { name: /^Credit/ })).toContainText("%");
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);

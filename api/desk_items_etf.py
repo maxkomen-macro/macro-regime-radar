@@ -34,6 +34,14 @@ Rules (the spec names each):
   cap weight is RSP's 60-session log return less SPY's, small caps against
   large IWM's; each one-year line is that same 60-session difference on every
   session of the twelve months to `t`.
+- Stock–bond correlation (§12.8 `stock_bond`): Pearson's correlation of SPY's
+  and TLT's daily log returns (a return on a session needs that session's
+  close and the previous session's) over the 60 XNYS return dates ending at
+  `t`, the newest session both close on, every pair complete (no forward
+  fill); null otherwise. A year ago: the same on the last session on or
+  before `t` − 12 calendar months. Flipped: the session whose correlation
+  took the sign it holds today, the newest change of sign among the sessions
+  with a complete window (a zero or incomplete one is skipped).
 
 Stdlib at import; numpy, pandas and the engine are imported at the point of
 use. The connection is closed in a `finally` (verifier V-54).
@@ -303,6 +311,96 @@ def breadth(store: Store) -> dict:
     return out
 
 
+# ── Correlations (§12.8) ────────────────────────────────────────────────────
+
+CORR_WINDOW = 60
+
+
+def daily_returns(store: Store, key: str):
+    """Log returns on the calendar: r[i] = ln(P(i) / P(i−1)), NaN unless both closes are stored."""
+    import numpy as np
+
+    px = store.px[key]
+    r = np.full(len(px), np.nan)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        r[1:] = np.log(px[1:] / px[:-1])
+    return r
+
+
+def rolling_corr(x, y, w: int = CORR_WINDOW):
+    """Pearson's r over each run of w return dates ending at i (NaN before w,
+    with any pair incomplete, or with no variance)."""
+    import numpy as np
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    out = np.full(len(x), np.nan)
+    if len(x) < w:
+        return out
+    wx, wy = sliding_window_view(x, w), sliding_window_view(y, w)
+    ok = np.isfinite(wx).all(axis=1) & np.isfinite(wy).all(axis=1)
+    dx = wx - wx.mean(axis=1, keepdims=True)
+    dy = wy - wy.mean(axis=1, keepdims=True)
+    sxy, sxx, syy = (dx * dy).sum(axis=1), (dx * dx).sum(axis=1), (dy * dy).sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        r = sxy / np.sqrt(sxx * syy)
+    r[~ok | (sxx == 0) | (syy == 0)] = np.nan
+    out[w - 1:] = r
+    return out
+
+
+def both_close(store: Store, a: str, b: str) -> int | None:
+    """The newest session on which both series hold a value."""
+    import numpy as np
+
+    both = np.flatnonzero(np.isfinite(store.px[a]) & np.isfinite(store.px[b]))
+    return int(both[-1]) if len(both) else None
+
+
+def _corr_at(corr, i: int) -> float | None:
+    v = float(corr[i]) if 0 <= i < len(corr) else float("nan")
+    return v if math.isfinite(v) else None
+
+
+def incomplete(store: Store, t: int) -> str:
+    return f"fewer than {CORR_WINDOW} complete daily return pairs in the window to {store.iso[t]}"
+
+
+def stock_bond(store: Store) -> dict:
+    """The /macro stock_bond block: SPY against TLT, today, a year ago, the
+    last change of sign, and the one-year line."""
+    import numpy as np
+    import pandas as pd
+
+    missing = [k.upper() for k in (BENCHMARK, "tlt") if not store.has(k)]
+    if missing:
+        raise awaiting_refresh(missing)
+    corr = rolling_corr(daily_returns(store, BENCHMARK), daily_returns(store, "tlt"))
+    t = both_close(store, BENCHMARK, "tlt")
+    if t is None:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    today = _corr_at(corr, t)
+    ago = int(store.sessions.searchsorted(store.sessions[t] - pd.DateOffset(months=12), side="right")) - 1
+    year_ago = _corr_at(corr, ago) if ago >= 0 else None
+    first = ago + 1
+    series = [{"date": store.iso[i], "corr": _corr_at(corr, i)} for i in range(max(first, 0), t + 1)]
+    flipped_on, flipped_to = None, None
+    signs = [(i, 1 if corr[i] > 0 else -1) for i in np.flatnonzero(np.isfinite(corr[:t + 1])) if corr[i] != 0]
+    for (_, prev), (i, now) in zip(signs, signs[1:]):
+        if now != prev:
+            flipped_on, flipped_to = store.iso[int(i)], ("positive" if now > 0 else "negative")
+    return {
+        "today": today, "today_date": store.iso[t], "today_reason": None if today is not None else incomplete(store, t),
+        "year_ago": year_ago, "year_ago_date": store.iso[ago] if ago >= 0 else None,
+        "flipped": flipped_on[:7] if flipped_on else None, "flipped_on": flipped_on, "flipped_to": flipped_to,
+        "series": series,
+        "window": {"start": store.iso[max(t - CORR_WINDOW + 1, 0)], "end": store.iso[t], "n": CORR_WINDOW},
+        "line_window": {"start": series[0]["date"] if series else store.iso[t], "end": store.iso[t], "n": len(series)},
+        "stock": {"etf": "SPY", "name": "S&P 500 ETF"}, "bond": {"etf": "TLT", "name": "20+ year Treasury ETF"},
+        "transform": "daily log return", "unit": "correlation", "date": store.iso[t], "freq": "daily", "source": SOURCE,
+        "providers": provider_words(store.providers),
+    }
+
+
 # ── The item ────────────────────────────────────────────────────────────────
 
 SECTOR_KEYS = ("xlb", "xlc", "xle", "xlf", "xli", "xlk", "xlp", "xlre", "xlu", "xlv", "xly")
@@ -316,7 +414,8 @@ def desk_etf(ctx: dict) -> dict:
     cutoff = es.resolve_as_of(None, es.DB_PATH)
     conn = _connect()
     try:
-        store = Store(conn, [BENCHMARK, *SECTOR_KEYS, "rsp", "iwm"], cutoff)
+        store = Store(conn, [BENCHMARK, *SECTOR_KEYS, "rsp", "iwm", "tlt"], cutoff)
     finally:
         conn.close()
-    return {"sectors": part("sectors", lambda: leadership(store)), "breadth": part("breadth", lambda: breadth(store))}
+    return {"sectors": part("sectors", lambda: leadership(store)), "breadth": part("breadth", lambda: breadth(store)),
+            "stock_bond": part("stock_bond", lambda: stock_bond(store))}

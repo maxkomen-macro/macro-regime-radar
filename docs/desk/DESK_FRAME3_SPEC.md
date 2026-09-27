@@ -51,7 +51,8 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Regime: "What each regime has meant" table, and the S&P a month after each change | UNAVAILABLE | regime statistics not yet defined in the engine (v3 A-16 withdraws v2 §9.4) |
 | Macro: yield curve | LIVE with 2y, 10y and 2s10s; 3m, 5y and 30y LIVE once DGS3MO, DGS5 and DGS30 are registered (§12.8) | v2 D-16 |
 | Macro: HY and IG levels, HY 3-year range and percentile, HY last 12 months | LIVE (the 3-year figures null, with the reason, while three-year coverage is incomplete) | v3 §12, v4 B-07 |
-| Macro: stock–bond correlation, "What moves with the S&P", the 12-asset matrix | UNAVAILABLE | Treasury and credit price-return series not ingested (v2 D-15) |
+| Macro: stock–bond correlation (SPY against TLT, 60 daily log returns) | LIVE (desk/fill-etf, §12.8) | — |
+| Macro: "What moves with the S&P", the 12-asset matrix | UNAVAILABLE | the correlations are not computed yet |
 | Sectors: leadership (LEADING, LAGGING, PATTERN, the eleven bars) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: breadth, of the 11 sector ETFs (above the 50- and 200-day, RSP against SPY, IWM against SPY) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: constituent-level breadth (the stocks inside the index) | UNAVAILABLE | constituent data is not ingested |
@@ -71,7 +72,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.
-- Macro & Correlations: the yield curve and the credit spreads.
+- Macro & Correlations: the yield curve, the credit spreads, and whether bonds still hedge stocks.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
 - Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.
@@ -86,7 +87,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
 - What each regime has meant, and the S&P after each regime change.
-- Stock–bond correlation, what moves with the S&P, the 12-asset matrix.
+- What moves with the S&P, the 12-asset matrix.
 - Positions kept on a server, and DV01.
 - Basket pricing, the residual chart and the hedge structures.
 
@@ -531,9 +532,17 @@ month-ago tenors are drawn and listed the same way from `month_ago.dates`. A
 snapshot with a date is drawn as one curve. The page lists `month_ago.dates`
 under the chart when the date is common too (S-30).
 
-**Do bonds still hedge stocks?**: UNAVAILABLE (§1.0), from `/macro`
-`stock_bond` (awaiting, reason "Treasury and credit price-return series not
-ingested."). Labels kept: TODAY · A YEAR AGO · FLIPPED.
+**Do bonds still hedge stocks?** (`60-day correlation of daily returns, one
+year`): LIVE (desk/fill-etf), from `/macro` `stock_bond` (§12.8): SPY against
+TLT. Stats: TODAY (`today`, signed to two decimals; sub-line "SPY vs TLT ·
+<today_date>", or "Awaiting refresh" and the served `today_reason`) · A YEAR
+AGO (`year_ago`; sub-line `year_ago_date`) · FLIPPED (`flipped` as "<Mon>
+<year>", "None" when served null; sub-line "to <flipped_to> on
+<flipped_on>"). No word and no hedging call is served; the numbers take no
+color. Chart: `series` (blue) on −1…+1 with the zones "bonds move WITH stocks
+· no hedge" (above zero) and "bonds move AGAINST stocks · hedge works" (below
+zero). Stamp: "60 daily log returns to <window.end> · SPY vs TLT, adjusted
+closes · <providers>".
 
 **Credit** (`high-yield spread over Treasuries`). Stats: HY SPREAD (`hy.value`
 %, dated) · 3-YEAR RANGE (`hy_range_3y`, or the served `reason` "coverage
@@ -1246,7 +1255,16 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `credit.data.series` | array of `{date, hy}` | required | percent | `line_window` | N: the 12-month line window |
 | `credit.data.line_window` | `{start, end, n}` | required | — | — | N: [HY date − 12 months, HY date] |
 | `credit.data.peak_12m` | `{date, hy}` | required, nullable | percent | — | N: in-window maximum, earliest date on ties |
-| `stock_bond`, `correlations`, `matrix` | block envelope | required | — | — | awaiting: "Treasury and credit price-return series not ingested." |
+| `stock_bond` | block envelope | required | — | — | N stock–bond correlation (desk/fill-etf); awaiting with "Awaiting refresh: the full refresh stores <symbols>; this database predates it." while SPY or TLT is not stored |
+| `stock_bond.data.today` | number | required, nullable | correlation | `today_date` · daily · `asset_prices` SPY, TLT | N: Pearson's r of SPY's and TLT's daily log returns (ln P(s) / P(s−1), both closes stored) over the 60 XNYS return dates ending at `today_date`, the newest session both close on; null unless all 60 pairs are complete (no forward fill) |
+| `stock_bond.data.today_date`, `today_reason` | date, string | required, nullable | — | — | N: `today_reason` non-null exactly when `today` is null |
+| `stock_bond.data.year_ago`, `year_ago_date` | number, date | required, nullable | correlation | the last XNYS session on or before `today_date` − 12 calendar months | N: the same correlation on that session |
+| `stock_bond.data.flipped`, `flipped_on`, `flipped_to` | month, date, `"positive"` \| `"negative"` | required, nullable (null when the stored history holds no change of sign) | — | — | N: among the sessions with a complete window, in order, zeros skipped, the newest session whose sign differs from the one before; `flipped` its month |
+| `stock_bond.data.series` | array of `{date, corr}` | required | correlation | `line_window` | N: the correlation on every XNYS session after `today_date` − 12 calendar months, through `today_date`; `corr` null where the window is incomplete |
+| `stock_bond.data.window`, `line_window` | `{start, end, n}` | required | sessions | XNYS | N: the 60 return dates of `today`; the line's sessions |
+| `stock_bond.data.stock`, `bond` | `{etf, name}` | required | — | — | A: SPY, TLT |
+| `stock_bond.data.transform`, `unit`, `date`, `freq`, `source`, `providers` | `"daily log return"`, `"correlation"`, date, `"daily"`, `"asset_prices"`, string[] | required | — | — | A, S |
+| `correlations`, `matrix` | block envelope | required | — | — | awaiting: "the correlations are not computed yet." |
 
 ### 12.9 `GET /pipeline` and `GET /pipeline/ddl`
 
@@ -1377,8 +1395,8 @@ log(P_ETF(t) / P_ETF(t−60)) − log(P_SPY(t) / P_SPY(t−60)) on adjusted clos
 breadth serves its comparison date; missing history is "not available",
 never "below".
 
-**Correlations — `status: deferred`** (`/macro` `stock_bond`,
-`correlations`, `matrix`). `stock_bond: {today, year_ago, flipped, series:
+**Correlations — `stock_bond` served since desk/fill-etf (§12.8); the rest
+`status: deferred`** (`/macro` `stock_bond`, `correlations`, `matrix`). `stock_bond: {today, year_ago, flipped, series:
 [{date, corr}]}`, `correlations: [{asset, symbol, quantity, transform,
 corr}]`, `matrix: {assets, labels, window, values}`. Each asset declares
 `symbol`, `quantity` and `transform`; Pearson over the same trailing 60 XNYS
@@ -1460,7 +1478,8 @@ differences (§12.8); `vol_change_pts`, `regime_from`, `regime_to` and
 `regime_changed` (§12.1); the three FRED tenor series. These do not
 authorize any conditional-improvement judgment. Added by desk/fill-etf
 (2026-09-27): the 24 ETF series in `asset_prices`; sector leadership and
-its pattern rule, and breadth of the 11 sector ETFs (§12.14).
+its pattern rule, and breadth of the 11 sector ETFs (§12.14); the
+stock–bond correlation (§12.8).
 
 **Not allowed for Monday** (the blocks are unavailable): RSI; confidence
 80% / 95%; the regime statistics table and change outcomes; the

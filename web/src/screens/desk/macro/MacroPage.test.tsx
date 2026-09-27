@@ -100,13 +100,20 @@ describe("Macro tab", () => {
     // §1.4: no read is served on Monday, so the box is omitted.
     expect(card).not.toHaveTextContent("Read:");
   });
-  it("stock–bond, served (§12.13's deferred shape): today, a year ago, when it flipped; no read is served", async () => {
+  it("stock–bond, served (§12.8, desk/fill-etf): today, a year ago, when it flipped, each dated; no read is served", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Do bonds still hedge stocks/ });
-    await waitFor(() => expect(card).toHaveTextContent("+0.31"));
-    // §12.13's shape is the three numbers and the series: no words, no hedging call, no read (§12.0).
-    expect(card).toHaveTextContent(/Today\s*\+0\.31\s*A year ago\s*−0\.24\s*Flipped\s*Mar 2026/);
+    await waitFor(() => expect(card).toHaveTextContent("+0.44"));
+    // The API's answer on the fixture store: SPY against TLT, 60 daily log returns to Sep 23. No words, no hedging call.
+    expect(card).toHaveTextContent(/Today\s*\+0\.44\s*SPY vs TLT · Sep 23\s*A year ago\s*\+0\.04\s*Sep 23, 2025\s*Flipped\s*Jan 2026\s*to positive on Jan 7, 2026/);
+    expect(card).toHaveTextContent("60 daily log returns to Sep 23 · SPY vs TLT, adjusted closes · Yahoo");
     expect(card).not.toHaveTextContent(/hedging|was working|Read for the desk/);
+  });
+  it("a stock–bond window with a missing close says why, with no number (no forward fill)", async () => {
+    const reason = "fewer than 60 complete daily return pairs in the window to 2026-09-23";
+    stubDesk({ "/api/desk/macro": () => withBlock("stock_bond", { today: null, today_reason: reason }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /Do bonds still hedge/ })).toHaveTextContent(new RegExp(`Today\\s*Awaiting refresh\\s*${reason}`)));
   });
   it("credit: the spread, its three-year range, IG, the gauge and the year", async () => {
     renderTab();
@@ -157,7 +164,7 @@ describe("Macro tab", () => {
   it("TODAY takes no color of its own (§12.13 serves no hedging call); 2s10s is colored by the month's change", async () => {
     renderTab();
     const sb = await screen.findByRole("region", { name: /Do bonds still hedge/ });
-    await waitFor(() => expect(within(sb).getByText("+0.31")).toHaveAttribute("data-tone", "default"));
+    await waitFor(() => expect(within(sb).getByText("+0.44")).toHaveAttribute("data-tone", "default"));
     const curve = screen.getByRole("region", { name: /Yield curve/ });
     // A month of flattening colors 2s10s down.
     expect(within(curve).getByText("+25 bp")).toHaveAttribute("data-tone", "down");
@@ -326,20 +333,28 @@ describe("a route served awaiting (§12.0, §1.0.2)", () => {
 
 describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () => {
   const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
-  it("stock–bond and the correlations say Not yet served with the reason once; the matrix's Advanced says not yet served; the curve and credit stand", async () => {
-    // Monday's /macro as the fixture serves it (§1.0, §12.8): the three blocks awaiting.
-    const why = "Treasury and credit price-return series not ingested.";
+  it("the correlations say Not yet served with the reason once; the matrix's Advanced says not yet served; the curve, stock–bond and credit stand", async () => {
+    // /macro as the fixture serves it (desk/fill-etf item 4): stock–bond served, the correlations and the matrix awaiting.
+    const why = "the correlations are not computed yet.";
     stubDesk();
     renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent(why));
-    for (const name of [/^Do bonds still hedge stocks/, /^What moves with the S&P/]) {
-      const card = screen.getByRole("region", { name });
-      expect(within(card).getAllByText(why)).toHaveLength(1);
-      expect(within(card).getByTestId("dk-live")).toHaveTextContent("Not yet served");
-      expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
-    }
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent(why));
+    const card = screen.getByRole("region", { name: /^What moves with the S&P/ });
+    expect(within(card).getAllByText(why)).toHaveLength(1);
+    expect(within(card).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
+    expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent("+0.44");
     expect(screen.getByRole("region", { name: /^Yield curve/ })).toHaveTextContent("4.96%");
     expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent("2.73%");
+  });
+  it("stock–bond served awaiting a refresh prints its reason and badges Awaiting refresh (§1.7)", async () => {
+    const why = "Awaiting refresh: the full refresh stores TLT; this database predates it.";
+    stubDesk({ "/api/desk/macro": () => ({ ...macro, stock_bond: off(why) }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent(why));
+    const card = screen.getByRole("region", { name: /^Do bonds still hedge stocks/ });
+    expect(within(card).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
+    for (const l of ["Today", "A year ago", "Flipped"]) expect(card).toHaveTextContent(l);
   });
   it("the matrix alone served awaiting disables its Advanced with not yet served; the six rows stand", async () => {
     stubDesk({ "/api/desk/macro": () => ({ ...macro, matrix: off("not ingested.") }) });

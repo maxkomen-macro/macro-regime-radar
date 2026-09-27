@@ -330,9 +330,17 @@ MACRO = obj(
         reason=null(STR), band=null(E("tight", "normal", "wide")), band_edges=Const([0.30, 0.70]),
         series=Arr(obj(date=DATE, hy=NUM)), line_window=SPAN, peak_12m=null(obj(date=DATE, hy=NUM)),
     )),
-    stock_bond=Deferred("Treasury and credit price-return series not ingested."),
-    correlations=Deferred("Treasury and credit price-return series not ingested."),
-    matrix=Deferred("Treasury and credit price-return series not ingested."),
+    stock_bond=Block(obj(
+        today=null(NUM), today_date=null(DATE), today_reason=null(STR),
+        year_ago=null(NUM), year_ago_date=null(DATE),
+        flipped=null(MONTH), flipped_on=null(DATE), flipped_to=null(E("positive", "negative")),
+        series=Arr(obj(date=DATE, corr=null(NUM))), window=SPAN, line_window=SPAN,
+        stock=obj(etf=Const("SPY"), name=STR), bond=obj(etf=Const("TLT"), name=STR),
+        transform=Const("daily log return"), unit=Const("correlation"), date=DATE, freq=Const("daily"),
+        source=Const("asset_prices"), providers=Arr(STR),
+    )),
+    correlations=Deferred("the correlations are not computed yet."),
+    matrix=Deferred("the correlations are not computed yet."),
 )
 
 # ── §12.9 GET /pipeline ─────────────────────────────────────────────────────

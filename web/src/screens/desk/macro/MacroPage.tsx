@@ -228,6 +228,18 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
   );
 }
 
+type StockBondBlock = NonNullable<MacroResponse["stock_bond"]>;
+
+/** "SPY vs TLT": the served pair. */
+const pair = (sb: StockBondBlock) => `${sb.stock?.etf ?? "SPY"} vs ${sb.bond?.etf ?? "TLT"}`;
+
+/** "60 daily log returns to Sep 23 · SPY vs TLT, adjusted closes · Yahoo": what the correlation reads, from the served window. */
+export function sbStamp(sb: StockBondBlock): string {
+  if (!sb.window?.end) return "";
+  const prov = Array.isArray(sb.providers) && sb.providers.length ? ` · ${sb.providers.join("/")}` : "";
+  return `${fin(sb.window.n) ? sb.window.n : 60} daily log returns to ${dayShort(sb.window.end)} · ${pair(sb)}, adjusted closes${prov}`;
+}
+
 function StockBond({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
@@ -245,10 +257,21 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
       {sb ? (
         <>
           <StatRow cols={3}>
-            {/* §12.13's shape carries the three numbers only; no words and no hedging call are served. */}
-            <Stat label="Today" value={fin(sb.today) ? corrText(sb.today) : undefined} awaiting={!fin(sb.today)} />
-            <Stat label="A year ago" value={fin(sb.year_ago) ? corrText(sb.year_ago) : undefined} awaiting={!fin(sb.year_ago)} />
-            <Stat label="Flipped" value={flipServed ? (sb.flipped ? monthYear(sb.flipped) : "None") : undefined} awaiting={!flipServed} />
+            {/* §12.8: the three numbers, each dated by its served session; no words and no hedging call are served. */}
+            <Stat
+              label="Today"
+              value={fin(sb.today) ? corrText(sb.today) : undefined}
+              awaiting={!fin(sb.today)}
+              sub={fin(sb.today) && sb.today_date ? `${pair(sb)} · ${dayShort(sb.today_date)}` : undefined}
+              why={sb.today_reason ?? undefined}
+            />
+            <Stat label="A year ago" value={fin(sb.year_ago) ? corrText(sb.year_ago) : undefined} awaiting={!fin(sb.year_ago)} sub={fin(sb.year_ago) && sb.year_ago_date ? dayLong(sb.year_ago_date) : undefined} />
+            <Stat
+              label="Flipped"
+              value={flipServed ? (sb.flipped ? monthYear(sb.flipped) : "None") : undefined}
+              awaiting={!flipServed}
+              sub={flipServed && sb.flipped && sb.flipped_on && sb.flipped_to ? `to ${sb.flipped_to} on ${dayLong(sb.flipped_on)}` : undefined}
+            />
           </StatRow>
           {drawn ? (
             <LineChart
@@ -275,6 +298,7 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
           ) : (
             <Awaiting>the year of correlations</Awaiting>
           )}
+          {sb.window?.end ? <p className="dk-asof">{sbStamp(sb)}</p> : null}
           <ServedRead read={m?.reads?.stock_bond} />
         </>
       ) : (
@@ -454,6 +478,12 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
   );
 }
 
+/** "FRED", or "FRED/Yahoo" when a served ETF block names its provider. */
+export function sources(m: MacroResponse): string {
+  const prov = new Set<string>(m.stock_bond?.providers ?? []);
+  return ["FRED", ...prov].join("/");
+}
+
 export default function MacroPage({ page }: { page: DeskPage }) {
   const q = useMacro();
   const m = q.data;
@@ -462,8 +492,9 @@ export default function MacroPage({ page }: { page: DeskPage }) {
   const unserved = unavailableOf(q.error);
   return (
     <div className="mc">
-      {/* §6: `● Live · FRED · <date>`, the curve's own date (the HY date when the tenors are dated apart). */}
-      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : m ? <LiveBadge boxed parts={["FRED", dayShort(m.curve?.today?.date ?? m.credit?.hy?.date) || null]} /> : null} />
+      {/* §6: `● Live · FRED · <date>`, the curve's own date (the HY date when the tenors are dated apart); the ETF blocks'
+          provider joins the source once one is served (desk/fill-etf). */}
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : m ? <LiveBadge boxed parts={[sources(m), dayShort(m.curve?.today?.date ?? m.credit?.hy?.date) || null]} /> : null} />
       <Unserved block={unserved}>
         <div className="mc-grid">
           <Curve m={m} state={state} />

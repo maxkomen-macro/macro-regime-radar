@@ -507,12 +507,26 @@ export interface DatedValue {
 
 export interface MacroResponse extends Envelope {
   curve?: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null; freq?: string; source?: string };
+  /** §12.8 (desk/fill-etf): SPY's daily log returns against TLT's, 60 return dates, every pair complete. */
   stock_bond?: {
     today: number | null;
+    today_date?: string | null;
+    /** Why `today` is null ("fewer than 60 complete daily return pairs …"). */
+    today_reason?: string | null;
     year_ago: number | null;
-    /** The month the sign last changed; null when it has not changed within the served year (§12.13). */
+    year_ago_date?: string | null;
+    /** The month of the newest change of sign; null when the served history has none. */
     flipped: string | null;
+    flipped_on?: string | null;
+    flipped_to?: "positive" | "negative" | null;
     series: { date: string; corr: number | null }[];
+    window?: Window;
+    line_window?: Window;
+    stock?: { etf: string; name: string };
+    bond?: { etf: string; name: string };
+    transform?: string;
+    date?: string;
+    providers?: string[];
   };
   /** §12.8: HY and IG as dated observations; the three-year figures over `rank_window`, null with a `reason` when coverage is short. */
   credit?: {
