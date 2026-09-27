@@ -1,6 +1,6 @@
 /** Basket & Hedge's weights (DESK_FRAME3_SPEC §10): typed, tidied, keyed, kept in this browser. */
 import { describe, expect, it } from "vitest";
-import { apiLegs, equalWeight, exportSaved, importSaved, decimal, legsKey, newBasketId, normalize, parseTicker, parseWeight, readSaved, removeSaved, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
+import { addLeg, apiLegs, equalWeight, exportSaved, importSaved, decimal, isEqualWeight, legsKey, methodOf, newBasketId, normalize, notionalOf, notionalText, parseNotional, parseTicker, parseWeight, PRESET, readSaved, removeSaved, seedPreset, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
 
 const legs = (ws: string[]): WorkLeg[] => ws.map((w, i) => ({ symbol: `T${i}`, name: null, weight: w }));
 
@@ -131,5 +131,43 @@ describe("basket weights", () => {
     expect(unreadableSaved(st)).toEqual(["{oops"]);
     writeSaved(ok, st);
     expect(JSON.parse(m.get(SAVED_BASKETS_KEY)!)).toEqual([ok, "{oops"]);
+  });
+
+  it("adds a name at equal weight while the weights are equal, at 0% once they are typed (desk/books)", () => {
+    const eq = equalWeight(toWork([{ symbol: "A", name: null, weight: 1 }, { symbol: "B", name: null, weight: 1 }]));
+    expect(isEqualWeight(eq)).toBe(true);
+    expect(addLeg(eq, "C")).toEqual({ equal: true, legs: equalWeight([...eq, { symbol: "C", name: null, weight: "0" }]) });
+    expect(addLeg(eq, "C").legs.map((l) => l.weight)).toEqual(["33.4", "33.3", "33.3"]);
+    expect(addLeg([], "A").legs).toEqual([{ symbol: "A", name: null, weight: "100" }]);
+    const typed = [{ symbol: "A", name: null, weight: "60" }, { symbol: "B", name: null, weight: "40" }];
+    expect(addLeg(typed, "C")).toEqual({ equal: false, legs: [...typed, { symbol: "C", name: null, weight: "0" }] });
+  });
+
+  it("reads a notional as typed, and saves method and notional with a basket (desk/books)", () => {
+    expect(parseNotional("1,000,000")).toBe(1_000_000);
+    expect(parseNotional("$2500000.50")).toBe(2_500_000.5);
+    for (const bad of ["", "abc", "0", "-5", "1e6", "2,000,000,000,000"]) expect(parseNotional(bad), bad).toBeNull();
+    expect(notionalText(1_000_000)).toBe("1,000,000");
+    expect(methodOf({})).toBe("hold");
+    expect(notionalOf({})).toBe(1_000_000);
+    const store = new Map<string, string>();
+    const s = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+    writeSaved({ id: "local-1", name: "X", legs: [{ symbol: "A", name: null, weight: "100" }], saved_at: "t", method: "monthly", notional: 5e6 }, s);
+    expect(readSaved(s)[0]).toMatchObject({ method: "monthly", notional: 5e6 });
+    s.setItem(SAVED_BASKETS_KEY, JSON.stringify([{ id: "x", name: "Y", legs: [], saved_at: "t", method: "weekly" }]));
+    expect(readSaved(s)).toEqual([]);
+    expect(unreadableSaved(s)).toHaveLength(1);
+  });
+
+  it("writes the AI Infrastructure 10 preset only where there is no store at all (desk/books)", () => {
+    const store = new Map<string, string>();
+    const s = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+    seedPreset(s);
+    expect(readSaved(s)).toEqual([PRESET]);
+    expect(PRESET).toMatchObject({ name: "AI Infrastructure 10", method: "hold", notional: 1_000_000 });
+    expect(PRESET.legs.map((l) => `${l.symbol}:${l.weight}`).join(",")).toBe("NVDA:10,AVGO:10,AMD:10,TSM:10,MU:10,ANET:10,VRT:10,CEG:10,CRWV:10,NBIS:10");
+    s.setItem(SAVED_BASKETS_KEY, "[]");
+    seedPreset(s);
+    expect(readSaved(s)).toEqual([]);
   });
 });

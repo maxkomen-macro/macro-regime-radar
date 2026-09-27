@@ -238,6 +238,8 @@ refresh" (§1.7). The `MOCKUP · values illustrative` amber badge is NOT built.
 ### 1.8 Storage
 Saved questions, baskets and positions live in `localStorage` per browser,
 each under a versioned key with an Export / Import JSON control. No accounts.
+A basket carries its method and notional (desk/books); one saved before them
+reads as buy-and-hold, $1,000,000.
 Positions are validated on save, on import and on load; a record that fails
 is kept in an "unreadable" list the page shows, never dropped (§9). While one
 is kept, no total and no empty state is drawn from the readable records alone
@@ -832,12 +834,27 @@ Desk/Client toggle. Action button **Send to Position Monitor →** (a basket
 subject, monitored manually, §9). Badge `● Live · <provider> · <prices_as_of>`
 once the saved basket is priced, else `○ Not yet served`.
 
-**Basket**. The selector of this browser's baskets and `+ New basket`. The
-LEGS table with Equal-weight / Normalize to 100%, typed weights, `+ Add a
-ticker…`, the total, **Save basket** and Export / Import JSON. A weight keeps
-every digit it is typed with; a total counts as 100% only when it is exactly
-100. Only a saved basket whose weights add to exactly 100% is priced: Save is
-what computes.
+**Basket** (step 1). Named baskets kept in this browser (§1.8), each
+`{id, name, legs, method, notional, saved_at}`. The header: the selector
+of this browser's baskets (switching never drops unsaved changes unseen),
+**Rename** and **+ New basket**, each an inline name field (a name is
+required and unique here). Below it NOTIONAL (dollars, default
+$1,000,000) and METHOD (Buy-and-hold, the default, or Monthly rebalance),
+with the method in words. The LEGS table with Equal-weight / Normalize to
+100%, typed weights, `+ Add a ticker…`, the total, **Save basket** and
+Export / Import JSON; **Delete this basket** asks a second time. A weight
+keeps every digit it is typed with; a total counts as 100% only when it is
+exactly 100. A name added while the weights are equal keeps them equal;
+once weights are typed it comes in at 0%. A ticker is checked against the
+price endpoint (`/api/market/candles/{SYM}?range=2Y`): one it does not list
+is not added, in its words; when the check cannot be made the name is added
+and the note says so (desk/usability's InstrumentSearch replaces this
+input). `/desk/basket-hedge?add=XYZ` (Technicals links here) adds XYZ to the
+open basket the same way, as unsaved work, and the address forgets it. A
+browser with no basket store starts with **AI Infrastructure 10**: NVDA AVGO
+AMD TSM MU ANET VRT CEG CRWV NBIS at 10% each, buy-and-hold, $1,000,000
+(written once; a deleted preset is not written back). Only a saved basket
+whose weights add to exactly 100% is priced: Save computes everything.
 
 **How the basket trades** (step 2). Each card leads with one plain sentence
 stating its answer with its numbers, then its stats and body, all served

@@ -680,7 +680,7 @@ test.describe("desk v2", () => {
     await basket.getByRole("button", { name: "Normalize to 100%" }).click();
     await expect(basket).toContainText("total 100%");
     await basket.getByRole("button", { name: "Save basket" }).click();
-    await expect(basket).toContainText("Saved in this browser.");
+    await expect(basket).toContainText("Saved in this browser; priced below.");
     // Save prices the saved weights; the fixtures carry no answer for them, and the page says so in the server's words.
     await expect(step).toContainText("This basket could not be priced: no fixture for this basket");
     // The hand-off: Position Monitor reads the basket, a manual subject (§9).
@@ -716,6 +716,26 @@ test.describe("desk v2", () => {
     expect(asked.every((a) => /^GET \/api\/desk\/basket\/(price|hedge)\?legs=/.test(a))).toBe(true);
     expect(asked).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
     expect(asked).toContain("GET /api/desk/basket/price?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
+  });
+
+  test("basket & hedge: a first visit starts with AI Infrastructure 10, priced; ?add= from Technicals joins the basket at equal weight", async ({ page }) => {
+    await open(page, "/desk/basket-hedge");
+    const basket = page.getByRole("region", { name: "Basket", exact: true });
+    await expect(basket.getByLabel("Basket", { exact: true })).toHaveValue("local-1");
+    await expect(basket).toContainText("10 names · saved in this browser");
+    await expect(basket.getByLabel("Notional, dollars")).toHaveValue("1,000,000");
+    await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("since Mar 28, 2025");
+    await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best");
+    expect(await auditPalette(page)).toEqual([]);
+    expect(await bannedWordsOnPage(page)).toEqual([]);
+    // Technicals links here with ?add=: the name is checked against the price endpoint (not served in these tests, so
+    // not checked, and said), joins the open basket as unsaved work, and the address forgets it.
+    await page.goto("/desk/basket-hedge?add=ORCL");
+    // Eleven equal weights at a tenth that add to 100: ten at 9.1 and the last at 9.
+    await expect(basket.getByLabel("Weight of ORCL, percent")).toHaveValue("9");
+    await expect(basket.getByLabel("Weight of NVDA, percent")).toHaveValue("9.1");
+    await expect(basket).toContainText("ORCL added; the 11 names are at equal weight.");
+    await expect(page).toHaveURL(/\/desk\/basket-hedge\?basket=local-1$/);
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

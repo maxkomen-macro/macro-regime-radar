@@ -142,6 +142,7 @@ describe("Basket & Hedge tab", () => {
 
   it("weights as typed: an off total says so; normalize and equal-weight tidy them; a ticker added and one dropped", async () => {
     seed();
+    const { calls } = stubDesk({ "/api/market/candles/MSFT": () => ({ status: 200, body: { symbol: "MSFT", interval: "1d", bars: [{ ts: "2026-09-23T00:00:00Z", close: 1 }] } }) });
     renderTab();
     const b = await loaded();
     fireEvent.change(within(b).getByLabelText("Weight of SMCI, percent"), { target: { value: "8" } });
@@ -154,11 +155,21 @@ describe("Basket & Hedge tab", () => {
     const input = within(b).getByLabelText("Add a ticker");
     fireEvent.change(input, { target: { value: "msft" } });
     fireEvent.submit(input.closest("form")!);
-    expect(within(b).getByLabelText("Weight of MSFT, percent")).toHaveValue("0");
-    expect(b).toHaveTextContent("MSFT added at 0%: type its weight.");
+    // Checked against the price endpoint; the weights were equal, so they stay equal with MSFT in.
+    await waitFor(() => expect(within(b).getByLabelText("Weight of MSFT, percent")).toHaveValue("12.5"));
+    expect(calls).toContain("GET /api/market/candles/MSFT?range=2Y");
+    expect(b).toHaveTextContent("MSFT added; the 8 names are at equal weight. Save to price it.");
+    expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("12.5");
+    // Typed weights are kept: a name added then comes in at 0%.
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "20" } });
+    fireEvent.change(input, { target: { value: "AAPL" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(within(b).getByLabelText("Weight of AAPL, percent")).toHaveValue("0"));
+    expect(b).toHaveTextContent("AAPL added at 0%: type its weight.");
+    fireEvent.click(within(b).getByRole("button", { name: "Drop AAPL" }));
     fireEvent.change(input, { target: { value: "NVDA" } });
     fireEvent.submit(input.closest("form")!);
-    expect(b).toHaveTextContent("NVDA is already in the basket.");
+    await waitFor(() => expect(b).toHaveTextContent("NVDA is already in the basket."));
     fireEvent.click(within(b).getByRole("button", { name: "Drop NVDA" }));
     expect(within(b).queryByLabelText("Weight of NVDA, percent")).toBeNull();
     expect(b).toHaveTextContent("7 names");
@@ -175,11 +186,11 @@ describe("Basket & Hedge tab", () => {
     expect(b).toHaveTextContent("The weights add to 96%; normalize them to 100% to save.");
     expect(stored()[0].legs.find((l) => l.symbol === "SMCI")?.weight).toBe(12);
     fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "26" } });
-    expect(b).toHaveTextContent("unsaved weights");
+    expect(b).toHaveTextContent("unsaved changes");
     fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
-    expect(b).toHaveTextContent("Saved in this browser.");
-    // Saved as the exact decimals typed (Codex R-20).
-    expect(stored()[0]).toMatchObject({ id: "local-1", name: "AI infrastructure", legs: expect.arrayContaining([{ symbol: "NVDA", name: "Nvidia", weight: "26" }, { symbol: "SMCI", name: "Supermicro", weight: "8" }]) });
+    expect(b).toHaveTextContent("Saved in this browser; priced below.");
+    // Saved as the exact decimals typed (Codex R-20), with the method and the notional (desk/books).
+    expect(stored()[0]).toMatchObject({ id: "local-1", name: "AI infrastructure", method: "hold", notional: 1_000_000, legs: expect.arrayContaining([{ symbol: "NVDA", name: "Nvidia", weight: "26" }, { symbol: "SMCI", name: "Supermicro", weight: "8" }]) });
     expect(b).toHaveTextContent("kept in this browser only");
   });
 
@@ -196,7 +207,23 @@ describe("Basket & Hedge tab", () => {
     expect(b).toHaveTextContent("This browser's storage is full; nothing was saved.");
   });
 
-  it("with no basket saved, says so and starts one with + New basket", async () => {
+  it("a browser with no basket store starts with the AI Infrastructure 10 preset, priced (desk/books)", async () => {
+    const { calls } = stubDesk();
+    renderTab();
+    const b = await loaded();
+    expect(within(b).getByLabelText("Basket")).toHaveDisplayValue("AI Infrastructure 10");
+    expect(b).toHaveTextContent("10 names · saved in this browser");
+    for (const s of ["NVDA", "AVGO", "AMD", "TSM", "MU", "ANET", "VRT", "CEG", "CRWV", "NBIS"]) expect(within(b).getByLabelText(`Weight of ${s}, percent`)).toHaveValue("10");
+    expect(within(b).getByLabelText("Notional, dollars")).toHaveValue("1,000,000");
+    expect(within(b).getByLabelText("Method")).toHaveDisplayValue("Buy-and-hold");
+    const step = await screen.findByRole("region", { name: /^How the basket trades/ });
+    await waitFor(() => expect(within(step).getByRole("region", { name: /^Basket index/ })).toHaveTextContent("since Mar 28, 2025"));
+    expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000");
+    expect(stored()).toHaveLength(1);
+  });
+
+  it("with no basket saved, says so and starts one with + New basket, named", async () => {
+    seed([]);
     renderTab();
     const b = basketCard();
     expect(b).toHaveTextContent("No basket is saved in this browser yet: start one with + New basket, or import a file.");
@@ -206,31 +233,91 @@ describe("Basket & Hedge tab", () => {
     expect(within(b).queryByLabelText("Basket")).toBeNull();
     expect(within(b).getByLabelText("Add a ticker")).toBeDisabled();
     fireEvent.click(within(b).getByRole("button", { name: "+ New basket" }));
+    fireEvent.click(within(b).getByRole("button", { name: "Create" }));
+    expect(b).toHaveTextContent("Name the basket first.");
+    fireEvent.change(within(b).getByLabelText("Name of the new basket"), { target: { value: "  Grid names " } });
+    fireEvent.click(within(b).getByRole("button", { name: "Create" }));
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-1"));
     expect(basketCard()).toHaveTextContent("0 names · saved in this browser");
-    expect(stored()).toEqual([expect.objectContaining({ id: "local-1", name: "New basket 1", legs: [] })]);
+    expect(stored()).toEqual([expect.objectContaining({ id: "local-1", name: "Grid names", legs: [], method: "hold", notional: 1_000_000 })]);
   });
 
-  it("+ New basket waits for typed weights, reuses an empty one, and a deleted basket gives way to the next", async () => {
+  it("+ New basket waits for unsaved changes; a basket is named, renamed, and deleted after a second click", async () => {
     seed();
+    stubDesk({ "/api/market/candles/MSFT": () => ({ status: 200, body: { bars: [{ ts: "2026-09-23T00:00:00Z" }] } }) });
     renderTab();
     const b = await loaded();
     fireEvent.change(within(b).getByLabelText("Add a ticker"), { target: { value: "MSFT" } });
     fireEvent.submit(within(b).getByLabelText("Add a ticker").closest("form")!);
+    await waitFor(() => expect(within(b).getByLabelText("Weight of MSFT, percent")).toBeInTheDocument());
     // Typed weights are never dropped unseen: a new basket waits for them to be saved or put back.
     fireEvent.click(within(b).getByRole("button", { name: "+ New basket" }));
-    expect(b).toHaveTextContent("This basket has unsaved weights: save them, or put them back, before starting another.");
+    expect(b).toHaveTextContent("This basket has unsaved changes: save them, or put them back, before starting another.");
     fireEvent.click(within(b).getByRole("button", { name: "Drop MSFT" }));
     fireEvent.click(within(b).getByRole("button", { name: "+ New basket" }));
+    fireEvent.change(within(b).getByLabelText("Name of the new basket"), { target: { value: "AI infrastructure" } });
+    fireEvent.click(within(b).getByRole("button", { name: "Create" }));
+    expect(b).toHaveTextContent("A basket named “AI infrastructure” is already saved here.");
+    fireEvent.change(within(b).getByLabelText("Name of the new basket"), { target: { value: "Power" } });
+    fireEvent.click(within(b).getByRole("button", { name: "Create" }));
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-2"));
     expect(basketCard()).toHaveTextContent("0 names · saved in this browser");
     // The note about the last basket's ticker does not follow into this one.
     expect(basketCard()).not.toHaveTextContent("MSFT added");
-    fireEvent.click(within(basketCard()).getByRole("button", { name: "+ New basket" }));
+    fireEvent.click(within(basketCard()).getByRole("button", { name: "Rename" }));
+    fireEvent.change(within(basketCard()).getByLabelText("Basket name"), { target: { value: "Power and cooling" } });
+    fireEvent.click(within(basketCard()).getByRole("button", { name: "Save name" }));
+    await waitFor(() => expect(within(basketCard()).getByLabelText("Basket")).toHaveDisplayValue("Power and cooling"));
+    expect(stored().map((x) => `${x.id} ${x.name}`)).toEqual(["local-1 AI infrastructure", "local-2 Power and cooling"]);
+    // Deleting asks once more, and can be kept.
+    fireEvent.click(within(basketCard()).getByRole("button", { name: "Delete this basket" }));
+    fireEvent.click(within(basketCard()).getByRole("button", { name: "Keep it" }));
     expect(stored()).toHaveLength(2);
     fireEvent.click(within(basketCard()).getByRole("button", { name: "Delete this basket" }));
+    fireEvent.click(within(basketCard()).getByRole("button", { name: "Delete “Power and cooling” from this browser" }));
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-1"));
     expect(stored().map((x) => x.id)).toEqual(["local-1"]);
+  });
+
+  it("the notional and the method are saved with the basket and priced with it", async () => {
+    seed();
+    const { calls } = stubDesk();
+    renderTab();
+    const b = await loaded();
+    fireEvent.change(within(b).getByLabelText("Notional, dollars"), { target: { value: "abc" } });
+    fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
+    expect(b).toHaveTextContent("The notional is not a dollar amount above $0; fix it to save.");
+    fireEvent.change(within(b).getByLabelText("Notional, dollars"), { target: { value: "$2,500,000" } });
+    fireEvent.change(within(b).getByLabelText("Method"), { target: { value: "monthly" } });
+    expect(b).toHaveTextContent("back to the target weights at each month's last session");
+    expect(b).toHaveTextContent("unsaved changes");
+    fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
+    expect(stored()[0]).toMatchObject({ method: "monthly", notional: 2_500_000 });
+    await waitFor(() => expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=monthly&notional=2500000"));
+  });
+
+  it("?add=XYZ (from Technicals) adds the ticker to the open basket, checked; the address forgets it", async () => {
+    const { calls } = stubDesk({ "/api/market/candles/ORCL": () => ({ status: 200, body: { bars: [{ ts: "2026-09-23T00:00:00Z" }] } }) });
+    renderTab("/desk/basket-hedge?add=orcl");
+    const b = await loaded();
+    await waitFor(() => expect(within(b).getByLabelText("Weight of ORCL, percent")).toBeInTheDocument());
+    // The preset's weights were equal, so all eleven are.
+    expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("9.1");
+    expect(b).toHaveTextContent("ORCL added; the 11 names are at equal weight. Save to price it.");
+    expect(b).toHaveTextContent("unsaved changes");
+    expect(calls).toContain("GET /api/market/candles/ORCL?range=2Y");
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-1"));
+  });
+
+  it("a ticker the price endpoint does not list is not added, in its words", async () => {
+    seed();
+    stubDesk({ "/api/market/candles/ZZZZ": () => ({ status: 404, body: { detail: "No listing found for 'ZZZZ' on EODHD.", kind: "unknown_symbol", provider: "api", retryable: false } }) });
+    renderTab();
+    const b = await loaded();
+    fireEvent.change(within(b).getByLabelText("Add a ticker"), { target: { value: "zzzz" } });
+    fireEvent.submit(within(b).getByLabelText("Add a ticker").closest("form")!);
+    await waitFor(() => expect(b).toHaveTextContent("ZZZZ was not added: No listing found for 'ZZZZ' on EODHD."));
+    expect(within(b).queryByLabelText("Weight of ZZZZ, percent")).toBeNull();
   });
 
   it("a save in another window of this browser reaches the card", async () => {
@@ -299,7 +386,7 @@ describe("Basket & Hedge tab", () => {
     const b = await loaded();
     fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "26" } });
     fireEvent.change(within(b).getByLabelText("Basket"), { target: { value: "local-2" } });
-    expect(b).toHaveTextContent("This basket has unsaved weights: save them, or put them back, before opening another.");
+    expect(b).toHaveTextContent("This basket has unsaved changes: save them, or put them back, before opening another.");
     expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-1");
     expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("26");
   });
@@ -311,7 +398,7 @@ describe("Basket & Hedge tab", () => {
     const b = await loaded();
     expect(b).toHaveTextContent("1 saved basket could not be read; kept in this browser, and in an export, not shown.");
     fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
-    expect(b).toHaveTextContent("Saved in this browser.");
+    expect(b).toHaveTextContent("Saved in this browser; priced below.");
     expect(JSON.parse(localStorage.getItem(SAVED_BASKETS_KEY) ?? "[]")).toContainEqual(bad);
   });
 });

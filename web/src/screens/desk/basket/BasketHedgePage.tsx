@@ -20,7 +20,17 @@ import { dayShort } from "../kit/format";
 import { Card, LiveBadge, NotServedBadge } from "../kit/ui";
 import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
+import { checkTicker } from "./check";
 import {
+  DEFAULT_METHOD,
+  DEFAULT_NOTIONAL,
+  METHOD_WORDS,
+  addLeg,
+  methodOf,
+  notionalOf,
+  notionalText,
+  parseNotional,
+  seedPreset,
   savedLegs,
   equalWeight,
   exportSaved,
@@ -38,6 +48,7 @@ import {
   unreadableSaved,
   writeAllSaved,
   writeSaved,
+  type Method,
   type SaveResult,
   type SavedBasket,
   type WorkLeg,
@@ -48,7 +59,7 @@ import "./basket.css";
  * null until the basket has legs whose weights add to exactly 100%. */
 export function priceParams(b: SavedBasket | null): { legs: string; method: string; notional: string } | null {
   if (!b || !b.legs.length || !sumsToHundred(b.legs)) return null;
-  return { legs: legsKey(b.legs), method: "hold", notional: "1000000" };
+  return { legs: legsKey(b.legs), method: methodOf(b), notional: String(notionalOf(b)) };
 }
 
 /** A total as printed: its exact digits ("100%", "96.5%", "99.97%"), so the words never say 100% of
@@ -60,19 +71,23 @@ const STORAGE_WORDS: Record<Exclude<SaveResult, "ok">, string> = {
   full: "This browser's storage is full; nothing was saved.",
 };
 
-function Legs({ legs, onChange, empty }: { legs: WorkLeg[] | null; onChange: (legs: WorkLeg[]) => void; empty: ReactNode }) {
+function Legs({ legs, onChange, onAdd, empty }: { legs: WorkLeg[] | null; onChange: (legs: WorkLeg[]) => void; onAdd: (symbol: string) => Promise<string>; empty: ReactNode }) {
   const uid = useId();
   const [ticker, setTicker] = useState("");
   const [note, setNote] = useState("");
+  const [checking, setChecking] = useState(false);
   const tot = legs ? totalText(legs) : null;
-  const add = () => {
+  const add = async () => {
     const t = parseTicker(ticker);
-    if (!legs) return;
+    if (!legs || checking) return;
     if (!t) return setNote(ticker.trim() ? `“${ticker.trim()}” is not a ticker.` : "");
     if (legs.some((l) => l.symbol === t)) return setNote(`${t} is already in the basket.`);
-    onChange([...legs, { symbol: t, name: null, weight: "0" }]);
-    setTicker("");
-    setNote(`${t} added at 0%: type its weight.`);
+    setChecking(true);
+    setNote(`Checking ${t}…`);
+    const words = await onAdd(t);
+    setChecking(false);
+    setNote(words);
+    if (!words.includes("not added")) setTicker("");
   };
   return (
     <div className="bh-legs">
@@ -136,13 +151,13 @@ function Legs({ legs, onChange, empty }: { legs: WorkLeg[] | null; onChange: (le
           className="bh-add"
           onSubmit={(e) => {
             e.preventDefault();
-            add();
+            void add();
           }}
         >
           <label htmlFor={`${uid}-t`} className="bh-add-plus" aria-hidden="true">
             +
           </label>
-          <input id={`${uid}-t`} className="bh-add-input" placeholder="Add a ticker…" aria-label="Add a ticker" value={ticker} disabled={!legs} onChange={(e) => setTicker(e.target.value)} autoComplete="off" />
+          <input id={`${uid}-t`} className="bh-add-input" placeholder="Add a ticker…" aria-label="Add a ticker" value={ticker} disabled={!legs} aria-busy={checking || undefined} onChange={(e) => setTicker(e.target.value)} autoComplete="off" />
           <span className="bh-add-hint">any US-listed name</span>
         </form>
         <p className="bh-total">
@@ -156,53 +171,144 @@ function Legs({ legs, onChange, empty }: { legs: WorkLeg[] | null; onChange: (le
   );
 }
 
-function BasketCard({ basketId, saved, unreadable, onSelect, onSaved }: { basketId: string | null; saved: SavedBasket[]; unreadable: number; onSelect: (id: string) => void; onSaved: () => void }) {
+/** A name's short form for the header's inline forms. */
+const MAX_NAME = 60;
+
+function BasketCard({
+  basketId,
+  saved,
+  unreadable,
+  onSelect,
+  onSaved,
+  pendingAdd,
+  onAddDone,
+}: {
+  basketId: string | null;
+  saved: SavedBasket[];
+  unreadable: number;
+  onSelect: (id: string) => void;
+  onSaved: () => void;
+  /** A ticker the address asks to add (`?add=XYZ`, from Technicals). */
+  pendingAdd: string | null;
+  onAddDone: () => void;
+}) {
   const uid = useId();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const local = saved.find((b) => b.id === basketId) ?? null;
   const base = local ? toWork(local.legs) : null;
   const [work, setWork] = useState<WorkLeg[] | null>(null);
+  const [methodWork, setMethodWork] = useState<Method | null>(null);
+  const [notionalWork, setNotionalWork] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [naming, setNaming] = useState<"new" | "rename" | null>(null);
+  const [draft, setDraft] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // Another basket starts from its own saved legs, with nothing said yet.
   useEffect(() => {
     setWork(null);
+    setMethodWork(null);
+    setNotionalWork(null);
     setStatus("");
+    setNaming(null);
+    setConfirmDelete(false);
   }, [basketId]);
   const legs = work ?? base;
+  const legsRef = useRef<WorkLeg[] | null>(legs);
+  legsRef.current = legs;
+  const method = methodWork ?? methodOf(local);
+  const notionalTyped = notionalWork ?? notionalText(notionalOf(local));
+  const notional = parseNotional(notionalTyped);
   const tot = legs ? totalText(legs) : null;
-  const dirty = !!work && !!base && legsKey(work) !== legsKey(base);
+  const dirty = !!local && ((!!work && !!base && legsKey(work) !== legsKey(base)) || method !== methodOf(local) || notional !== notionalOf(local));
   const save = () => {
     if (!legs || !local) return;
     if (!legs.length) return setStatus("Add a ticker to save the basket.");
     if (tot !== "100") return setStatus(tot == null ? "A weight is not a number; fix it to save." : `The weights add to ${totalWords(tot)}; normalize them to 100% to save.`);
+    if (notional == null) return setStatus("The notional is not a dollar amount above $0; fix it to save.");
     // Each weight saved as the exact decimal typed, so the basket adds to exactly 100% when read back (Codex R-20).
-    const r = writeSaved({ id: local.id, name: local.name, legs: savedLegs(legs), saved_at: new Date().toISOString() });
+    const r = writeSaved({ id: local.id, name: local.name, legs: savedLegs(legs), saved_at: new Date().toISOString(), method, notional });
     if (r !== "ok") return setStatus(STORAGE_WORDS[r]);
     onSaved();
     setWork(null);
-    setStatus("Saved in this browser.");
+    setMethodWork(null);
+    setNotionalWork(null);
+    setStatus("Saved in this browser; priced below.");
   };
   const remove = () => {
     if (!local) return;
+    if (!confirmDelete) return setConfirmDelete(true);
     const r = removeSaved(local.id);
+    setConfirmDelete(false);
     if (r !== "ok") return setStatus(STORAGE_WORDS[r]);
     onSaved();
   };
-  const newBasket = () => {
+  const startNaming = (kind: "new" | "rename") => {
     // Typed weights are the analyst's work: starting another basket never drops them unseen.
-    if (dirty) return setStatus("This basket has unsaved weights: save them, or put them back, before starting another.");
-    // An empty basket already waiting (this one, or another) is reused, so the list does not fill with empties.
-    const empty = saved.find((b) => !b.legs.length && !(b.id === basketId && legs?.length));
-    if (empty) {
-      if (empty.id === basketId) setStatus("This basket is empty: add a ticker to start it.");
-      return onSelect(empty.id);
+    if (kind === "new" && dirty) return setStatus("This basket has unsaved changes: save them, or put them back, before starting another.");
+    setDraft(kind === "rename" && local ? local.name : "");
+    setNaming(kind);
+    setStatus("");
+  };
+  const submitName = () => {
+    const name = draft.trim().slice(0, MAX_NAME);
+    if (!name) return setStatus("Name the basket first.");
+    if (saved.some((b) => b.name === name && b.id !== (naming === "rename" ? local?.id : undefined))) return setStatus(`A basket named “${name}” is already saved here.`);
+    if (naming === "rename" && local) {
+      const r = writeSaved({ ...local, name });
+      if (r !== "ok") return setStatus(STORAGE_WORDS[r]);
+      onSaved();
+      setNaming(null);
+      return setStatus(`Renamed ${name}.`);
     }
     const id = newBasketId(saved);
-    const r = writeSaved({ id, name: `New basket ${id.slice(6)}`, legs: [], saved_at: new Date().toISOString() });
+    const r = writeSaved({ id, name, legs: [], saved_at: new Date().toISOString(), method: DEFAULT_METHOD, notional: DEFAULT_NOTIONAL });
     if (r !== "ok") return setStatus(STORAGE_WORDS[r]);
+    setNaming(null);
     onSaved();
     onSelect(id);
   };
+  /** A ticker checked against the price endpoint, then added (equal weights stay equal); the words for the note. */
+  const addTicker = async (symbol: string): Promise<string> => {
+    const check = await checkTicker(symbol);
+    const said = (w: string) => w.replace(/\.+$/, "");
+    if (check.state === "unlisted") return `${symbol} was not added: ${said(check.words)}.`;
+    // The legs as they stand once the check has answered (typing may have gone on meanwhile).
+    const current = legsRef.current ?? [];
+    if (current.some((l) => l.symbol === symbol)) return `${symbol} is already in the basket.`;
+    const next = addLeg(current, symbol);
+    setWork(next.legs);
+    const words = next.equal ? `${symbol} added; the ${next.legs.length} names are at equal weight.` : `${symbol} added at 0%: type its weight.`;
+    const unchecked = check.state === "unchecked" ? ` Not checked (${said(check.words)}); the price says whether it is listed.` : "";
+    return `${words}${unchecked} Save to price it.`;
+  };
+  // `?add=XYZ` (Technicals' link): the ticker joins the open basket as unsaved work; with no basket, a new one holds it.
+  const adding = useRef(false);
+  useEffect(() => {
+    if (!pendingAdd || adding.current) return;
+    const t = parseTicker(pendingAdd);
+    if (!t) {
+      onAddDone();
+      return setStatus(`“${pendingAdd}” is not a ticker; nothing was added.`);
+    }
+    if (!local) {
+      if (saved.length) return; // the address's basket opens first
+      const id = newBasketId(saved);
+      const r = writeSaved({ id, name: `${t} basket`, legs: [], saved_at: new Date().toISOString(), method: DEFAULT_METHOD, notional: DEFAULT_NOTIONAL });
+      if (r !== "ok") {
+        onAddDone();
+        return setStatus(STORAGE_WORDS[r]);
+      }
+      onSaved();
+      return onSelect(id);
+    }
+    adding.current = true;
+    void addTicker(t).then((words) => {
+      adding.current = false;
+      setStatus(words);
+      onAddDone();
+    });
+    // addTicker reads the basket's own state; the effect runs once per asked ticker.
+  }, [pendingAdd, local?.id, saved.length]);
   const download = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([exportSaved(saved)], { type: "application/json" }));
@@ -228,13 +334,32 @@ function BasketCard({ basketId, saved, unreadable, onSelect, onSaved }: { basket
   ) : !local ? (
     <p className="bh-why">This basket is not saved in this browser; pick another above or start a new one.</p>
   ) : null;
+  const nameForm = naming ? (
+    <form
+      className="bh-name-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submitName();
+      }}
+    >
+      <input className="bh-name-input" aria-label={naming === "new" ? "Name of the new basket" : "Basket name"} placeholder={naming === "new" ? "Name the basket…" : undefined} value={draft} maxLength={MAX_NAME} onChange={(e) => setDraft(e.target.value)} autoFocus />
+      <button type="submit" className="dk-btn">
+        {naming === "new" ? "Create" : "Save name"}
+      </button>
+      <button type="button" className="dk-link" onClick={() => setNaming(null)}>
+        Cancel
+      </button>
+    </form>
+  ) : null;
   return (
     <Card
       className="bh-card bh-basket"
       title="Basket"
       headExtra={
         <div className="bh-head-extra">
-          {saved.length ? (
+          {naming === "rename" ? (
+            nameForm
+          ) : saved.length ? (
             <>
               <label className="dk-sr" htmlFor={`${uid}-sel`}>
                 Basket
@@ -245,7 +370,7 @@ function BasketCard({ basketId, saved, unreadable, onSelect, onSaved }: { basket
                   value={local ? local.id : ""}
                   onChange={(e) => {
                     // Typed weights are the analyst's work: another basket never drops them unseen.
-                    if (dirty) return setStatus("This basket has unsaved weights: save them, or put them back, before opening another.");
+                    if (dirty) return setStatus("This basket has unsaved changes: save them, or put them back, before opening another.");
                     onSelect(e.target.value);
                   }}
                 >
@@ -260,18 +385,29 @@ function BasketCard({ basketId, saved, unreadable, onSelect, onSaved }: { basket
             </>
           ) : null}
           <span className="bh-meta">{[legs ? `${legs.length} names` : null, local ? "saved in this browser" : null].filter(Boolean).join(" · ")}</span>
-          <button type="button" className="dk-link bh-new" onClick={newBasket}>
-            + New basket
-          </button>
+          <span className="bh-head-actions">
+            {local && naming !== "rename" ? (
+              <button type="button" className="dk-link" onClick={() => startNaming("rename")}>
+                Rename
+              </button>
+            ) : null}
+            {naming === "new" ? (
+              nameForm
+            ) : (
+              <button type="button" className="dk-link bh-new" onClick={() => startNaming("new")}>
+                + New basket
+              </button>
+            )}
+          </span>
         </div>
       }
       footer={
         <div className="bh-foot">
           <div className="bh-save">
-            <button type="button" className="dk-btn" data-kind="light" onClick={save} disabled={!legs}>
+            <button type="button" className="dk-btn" data-kind="light" onClick={save} disabled={!legs || !local}>
               Save basket
             </button>
-            <span className="bh-save-hint">{dirty ? "unsaved weights" : "kept in this browser only"}</span>
+            <span className="bh-save-hint">{dirty ? "unsaved changes" : "Save computes everything below · kept in this browser only"}</span>
           </div>
           {/* §1.8, §10: the basket's local controls sit with Save; they need no endpoint. */}
           <p className="bh-adv-row bh-local">
@@ -287,16 +423,47 @@ function BasketCard({ basketId, saved, unreadable, onSelect, onSaved }: { basket
               <>
                 {" · "}
                 <button type="button" className="dk-link" onClick={remove}>
-                  Delete this basket
+                  {confirmDelete ? `Delete “${local.name}” from this browser` : "Delete this basket"}
                 </button>
+                {confirmDelete ? (
+                  <>
+                    {" · "}
+                    <button type="button" className="dk-link" onClick={() => setConfirmDelete(false)}>
+                      Keep it
+                    </button>
+                  </>
+                ) : null}
               </>
             ) : null}
           </p>
-
         </div>
       }
     >
-      <Legs key={basketId ?? ""} legs={legs} onChange={(l) => setWork(l)} empty={empty} />
+      {local ? (
+        <div className="bh-settings">
+          <label className="bh-field">
+            <span className="dk-stat-label">Notional</span>
+            <span className="bh-money">
+              <span aria-hidden="true">$</span>
+              <input className="bh-input bh-notional" inputMode="decimal" aria-label="Notional, dollars" aria-invalid={notional == null || undefined} value={notionalTyped} onChange={(e) => setNotionalWork(e.target.value)} />
+            </span>
+          </label>
+          <label className="bh-field">
+            <span className="dk-stat-label">Method</span>
+            <span className="dk-select bh-select">
+              <select aria-label="Method" value={method} onChange={(e) => setMethodWork(e.target.value === "monthly" ? "monthly" : "hold")}>
+                {(["hold", "monthly"] as const).map((m) => (
+                  <option key={m} value={m}>
+                    {METHOD_WORDS[m]}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </label>
+          <p className="bh-settings-hint">{method === "monthly" ? "back to the target weights at each month's last session" : "share counts fixed at the start; weights drift with price"}</p>
+        </div>
+      ) : null}
+      <Legs key={basketId ?? ""} legs={legs} onChange={(l) => setWork(l)} onAdd={addTicker} empty={empty} />
       {unreadable ? (
         <p className="bh-why">
           {unreadable === 1 ? "1 saved basket" : `${unreadable} saved baskets`} could not be read; kept in this browser, and in an export, not shown.
@@ -369,7 +536,11 @@ function StepThree({ local, q }: { local: SavedBasket | null; q: ReturnType<type
 
 export default function BasketHedgePage({ page }: { page: DeskPage }) {
   const [search, setSearch] = useSearchParams();
-  const [saved, setSaved] = useState<SavedBasket[]>(() => readSaved());
+  // A browser with no basket store at all starts with the preset (desk/books).
+  const [saved, setSaved] = useState<SavedBasket[]>(() => {
+    seedPreset();
+    return readSaved();
+  });
   const [unreadable, setUnreadable] = useState(() => unreadableSaved().length);
   // A save in another window of this browser reaches this page too.
   useEffect(() => {
@@ -420,6 +591,16 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
         { replace: true },
       );
   };
+  const pendingAdd = search.get("add");
+  const addDone = () =>
+    setSearch(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        q.delete("add");
+        return q;
+      },
+      { replace: true },
+    );
   const local = saved.find((b) => b.id === basketId) ?? null;
   const pq = useBasketPrice(priceParams(local));
   const hq = useBasketHedge(priceParams(local));
@@ -431,7 +612,7 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
     <div className="bh">
       <PageTitle page={page} badge={priced ? <LiveBadge boxed parts={[priced.provider ?? null, dayShort(priced.prices_as_of) || null]} /> : <NotServedBadge boxed />} />
       <div className="bh-grid">
-        <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} />
+        <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} pendingAdd={pendingAdd} onAddDone={addDone} />
       </div>
       <StepTwo local={local} q={pq} state={state} range={range} setRange={setRange} names={names} />
       <StepThree local={local} q={hq} />
