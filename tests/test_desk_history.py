@@ -26,7 +26,8 @@ from src.market_data import desk_history
 
 ROOT = Path(__file__).resolve().parent.parent
 NOW = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)  # Monday; last completed session Fri 2026-09-18
-TIER1 = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS3MO", "DGS5", "DGS30"]  # gold is GC=F from asset_prices (decision 2026-09-21)
+# gold is GC=F from asset_prices (decision 2026-09-21); the VIX is ^VIX there too (desk/fill-compute, owner's item 7)
+TIER1 = ["DGS10", "DGS2", "T10Y2Y", "BAMLH0A0HYM2", "DGS3MO", "DGS5", "DGS30"]
 TENORS = ["DGS3MO", "DGS5", "DGS30"]  # desk/frame-3-api: the curve tenors /macro draws, tier 1 with no roles
 TIER2 = ["DCOILWTICO", "^NDX", "DX-Y.NYB", "JPY=X"]  # desk/hardening: the full refresh stores tier 2 (^RUT is asset_prices)
 
@@ -194,7 +195,7 @@ def test_registry_is_keyless():
 def test_tier1_stores_the_fred_series_only_and_records_watermarks(tmp_path, fred, providers):
     db = tmp_path / "t.db"
     out = desk_history.refresh(db, now=NOW, tier=1)
-    assert out["status"] == "ok" and out["stored"] == TIER1 and out["providers"] == {"fred": 8}
+    assert out["status"] == "ok" and out["stored"] == TIER1 and out["providers"] == {"fred": 7}
     assert out["short"] == {sid: "2020-01-02" for sid in TIER1 if sid != "BAMLH0A0HYM2"}, "the stub serves from 2020; HY OAS declares 2023-09-25"
     assert providers.calls == [], "tier 1 never calls the provider layer"
     assert [c[0] for c in fred.calls] == TIER1
@@ -204,7 +205,7 @@ def test_tier1_stores_the_fred_series_only_and_records_watermarks(tmp_path, fred
     assert all(r["provider"] == "fred" and r["last"] == "2026-09-18" for r in rows.values())
     wm = _wm(db)
     assert wm["desk_series"]["status"] == "ok" and wm["desk_series"]["last_obs"] == "2026-09-18"
-    assert wm["desk_series"]["detail"].startswith("fred 8; short history: DGS10 (from 2020-01-02), DGS2 (from 2020-01-02)")
+    assert wm["desk_series"]["detail"].startswith("fred 7; short history: DGS10 (from 2020-01-02), DGS2 (from 2020-01-02)")
     assert wm["desk:DGS10"]["last_obs"] == "2026-09-18" and wm["desk:DGS10"]["status"] == "short"
     assert wm["desk:DGS10"]["detail"] == "fred; served from 2020-01-02; stored from 2020-01-02; 1752 rows; declared 1962-01-02"
 
@@ -222,19 +223,19 @@ def test_a_failed_series_keeps_its_previous_rows_and_the_watermark_says_so(tmp_p
     db = tmp_path / "t.db"
     desk_history.refresh(db, now=NOW, tier=1)
     before = _rows(db)
-    fred.failing.add("VIXCLS")
+    fred.failing.add("DGS5")
     fred.end[""] = "2026-09-21"  # the others advance
     out = desk_history.refresh(db, now=NOW + timedelta(days=1), tier=1)
-    assert out["status"] == "partial" and out["failed"] == ["VIXCLS"]
+    assert out["status"] == "partial" and out["failed"] == ["DGS5"]
     after = _rows(db)
-    assert after["VIXCLS"] == before["VIXCLS"], "previous rows kept"
+    assert after["DGS5"] == before["DGS5"], "previous rows kept"
     assert after["DGS10"]["last"] == "2026-09-21"
     wm = _wm(db)
-    assert wm["desk:VIXCLS"]["status"] == "error" and wm["desk:VIXCLS"]["detail"] == "RuntimeError"
-    assert wm["desk:VIXCLS"]["last_obs"] == "2026-09-18", "the last good observation stands"
+    assert wm["desk:DGS5"]["status"] == "error" and wm["desk:DGS5"]["detail"] == "RuntimeError"
+    assert wm["desk:DGS5"]["last_obs"] == "2026-09-18", "the last good observation stands"
     assert wm["desk_series"]["status"] == "partial"
     assert wm["desk_series"]["last_obs"] == "2026-09-18", "the table's as-of is the oldest newest observation"
-    assert "failed: VIXCLS (RuntimeError)" in wm["desk_series"]["detail"]
+    assert "failed: DGS5 (RuntimeError)" in wm["desk_series"]["detail"]
 
 
 def test_fred_rows_merge_so_a_rolling_window_never_forgets(tmp_path, fred, providers):
@@ -289,7 +290,7 @@ def test_tier2_adds_the_market_series_through_the_provider_layer(tmp_path, fred,
     assert "(fallback: JPY=X)" in _wm(db)["desk_series"]["detail"]
 
 
-def test_a_tier2_run_makes_nine_fred_calls_and_one_provider_call_per_market_series(tmp_path, fred, providers):
+def test_a_tier2_run_makes_eight_fred_calls_and_one_provider_call_per_market_series(tmp_path, fred, providers):
     """desk/hardening: the call counts the report and the workflow state. The
     default run is the refresh tier; each market series is one call into the
     provider layer (EODHD first with a token, the disclosed Yahoo fallback
@@ -300,7 +301,7 @@ def test_a_tier2_run_makes_nine_fred_calls_and_one_provider_call_per_market_seri
     assert [(c[0], c[1]) for c in providers.calls] == [("NDX.INDX", "^NDX"), ("DXY.INDX", "DX-Y.NYB"), ("USDJPY.FOREX", "JPY=X")]
     assert set(_rows(db)) == set(TIER1 + TIER2)
     wf = (ROOT / ".github/workflows/refresh-data.yml").read_text()
-    assert "nine FRED calls" in wf and "three market series" in wf
+    assert "eight FRED calls" in wf and "three market series" in wf
 
 
 def test_with_a_token_a_tier2_run_bills_three_eodhd_requests_and_reaches_yahoo_for_none(tmp_path, fred, monkeypatch):
@@ -336,7 +337,7 @@ def test_with_a_token_a_tier2_run_bills_three_eodhd_requests_and_reaches_yahoo_f
     assert [p.rsplit("/", 1)[-1] for p in seen] == ["NDX.INDX", "DXY.INDX", "USDJPY.FOREX"]
     assert snap["requests"] == 3 and snap["units"] == 3
     assert [c[0] for c in fred.calls] == TIER1 + ["DCOILWTICO"]
-    assert out["providers"] == {"fred": 9, "eodhd": 3} and out["fallbacks"] == []
+    assert out["providers"] == {"fred": 8, "eodhd": 3} and out["fallbacks"] == []
 
 
 def test_a_bar_fixed_on_the_clock_after_the_close_is_stored_only_once_it_prints(tmp_path, fred, providers):

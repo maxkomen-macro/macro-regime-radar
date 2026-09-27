@@ -34,7 +34,7 @@ NEWS_SLA_MIN_OFFHOURS = 6 * 60
 #   live      streaming during the session (delay_min 0)
 #   delayed   a quote or bar N minutes old (delay_min = N)
 #   close     the newest official close or print that is due (cycles_behind 0
-#             for markets and monthly prints; FRED daily within 2 business days)
+#             for markets and monthly prints; FRED daily within DAILY_TOLERANCE business days)
 #   stale     behind the newest expected publication (cycles_behind says by how many)
 #   fallback  a stated default, not data
 #   unknown   the as-of cannot be established (no true observation date yet,
@@ -63,7 +63,9 @@ SERIES_REGISTRY: dict[str, dict[str, Any]] = {
     "USREC": {"label": "NBER recession indicator", "cadence": "monthly", "rule": "day", "day": 3},
     "USSLIND": {"label": "Leading index", "cadence": "monthly", "discontinued": True},
 }
-DAILY_TOLERANCE = 2  # FRED daily: current within 2 business days (FRED posts next day)
+# FRED daily: current within 3 business days of the newest print due (FRED posts a day or more after the
+# close; owner's item 7, desk/fill-compute: "a FRED daily series 1–3 business days behind is current").
+DAILY_TOLERANCE = 3
 
 
 def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, state: str, *, delay_min: int | None = None,
@@ -133,7 +135,6 @@ DESK_REFRESH_SERIES: dict[str, dict] = {
     "DGS10": {"label": "10Y Treasury", "kind": "fred", "calendar": "bond", "tier": 1},
     "DGS2": {"label": "2Y Treasury", "kind": "fred", "calendar": "bond", "tier": 1},
     "T10Y2Y": {"label": "2s10s curve", "kind": "fred", "calendar": "bond", "tier": 1},
-    "VIXCLS": {"label": "VIX", "kind": "fred", "calendar": "nyse", "tier": 1},
     "BAMLH0A0HYM2": {"label": "US HY OAS", "kind": "fred", "calendar": "bond", "tier": 1},
     "DGS3MO": {"label": "3M Treasury", "kind": "fred", "calendar": "bond", "tier": 1},
     "DGS5": {"label": "5Y Treasury", "kind": "fred", "calendar": "bond", "tier": 1},
@@ -422,7 +423,7 @@ def assess(
     delayed_ok = np_ is not None and now - np_ <= timedelta(hours=24)
     rows.append(_verdict("news", db_fresh.get("news_published_at"), (now - timedelta(minutes=sla)).strftime("%Y-%m-%dT%H:%M:%SZ"), ok, delayed_ok, f"Newest stored headline is within the {sla}-minute window." if ok else (f"Newest stored headline is older than {sla} minutes ({'US business hours' if business_hours else 'off-hours window'})." if delayed_ok else "No headline stored in the last 24 hours; the news pipeline is not running.")))
 
-    # ── FRED daily series: within 2 business days of the last business day ──
+    # ── FRED daily series: within DAILY_TOLERANCE business days of the last business day ──
     # Treasury yields (DGS*) follow the bond-market calendar: no print exists
     # for Columbus Day or Veterans Day, so those days never count as missed.
     daily_rows = []
@@ -436,7 +437,7 @@ def assess(
             r = by_series.get(sid)
             d = _parse_date(r.get("date")) if r else None
             lag = between(d, exp) if d else None
-            ok = d is not None and lag is not None and lag <= 2
+            ok = d is not None and lag is not None and lag <= DAILY_TOLERANCE
             delayed_ok = d is not None and lag is not None and lag <= 5
             daily_rows.append(_verdict(f"fred:{sid}", r.get("date") if r else None, exp.isoformat(), ok, delayed_ok, f"{sid} is {lag} business day(s) behind the last business day (FRED posts next day)." if d else f"{sid} has no stored observations."))
             continue
@@ -446,7 +447,7 @@ def assess(
             daily_rows.append(_verdict(f"fred:{sid}", None, exp.isoformat(), False, False, f"{sid}: observation date not recorded yet; the refresh that writes source watermarks has not run."))
             continue
         lag = between(d, exp)
-        ok, delayed_ok = lag <= 2, lag <= 5
+        ok, delayed_ok = lag <= DAILY_TOLERANCE, lag <= 5
         checked = _parse_dt(wm.get("checked_at"))
         if ok:
             reason = f"{sid} observed {d.isoformat()}; {lag} business day(s) behind {exp.isoformat()} (FRED posts next day)."

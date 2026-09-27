@@ -673,8 +673,10 @@ this order (v3 §2, v4 B-03): 2s10s-2sigma-steepening, dollar-2sigma-20d,
 golden-cross, rsi-below-30, vix-spike-2sigma-5d, gold-2sigma-spx-weak,
 hy-2sigma-20d, spx-20d-2sigma, death-cross, rsi-above-70, oil-2sigma-20d,
 spx-5d-2sigma. A firing row is green-tinted. NOW: `● Firing · day <n>`
-(green text), `○ Quiet` (gray), or `○ Stale · <evaluated_on>` when the row's
-`evaluated_on` is not the comparison session (v3 §3); the NOW cell's tooltip
+(green text), `○ Quiet` (gray), or `○ Stale · <evaluated_on>` when the row is
+served `stale`: its `evaluated_on` trails the comparison session by more than
+its inputs' publication allowance (§12.5; desk/fill-compute: a FRED daily input
+1–3 sessions behind is current); the NOW cell's tooltip
 reads "evaluated on <evaluated_on>". An unavailable row keeps its label and
 prints its reason across the value columns, with no pill.
 
@@ -951,7 +953,7 @@ two sessions; v2 §21's `data_status {state, worst_series, date}` is
 | `since_last_close.data.prev_session` | date | required | — | XNYS | N: the XNYS session before `comparison_session` (`api/calendar.previous_trading_day`) |
 | `since_last_close.data.new_fires` | array of `{slug, label, short}` | required (may be empty) | — | the two sessions | N firing state: `firing_now` false → true between `prev_session` and `comparison_session`, both evaluated in this generation; a signal whose `evaluated_on` is not `comparison_session`, or whose state is null, is excluded |
 | `since_last_close.data.still_firing` | array of `{slug, label, short, firing_day}` | required (may be empty) | sessions | the two sessions | N firing state: true → true; `firing_day` as §12.5 |
-| `since_last_close.data.vol_change_pts` | number | required, nullable | VIX points | the two sessions · daily · FRED VIXCLS | N (v4 B-12): VIX on `comparison_session` minus VIX on `prev_session`; null if either observation is missing |
+| `since_last_close.data.vol_change_pts` | number | required, nullable | VIX points | the two sessions · daily · `asset_prices` ^VIX (FRED VIXCLS before desk/fill-compute) | N (v4 B-12): VIX on `comparison_session` minus VIX on `prev_session`; null if either observation is missing |
 | `since_last_close.data.regime_from` | regime label | required, nullable | — | the K−2 row governing `prev_session` | N (B-12): stored `regimes` row |
 | `since_last_close.data.regime_to` | regime label | required, nullable | — | the K−2 row governing `comparison_session` | N (B-12) |
 | `since_last_close.data.regime_changed` | boolean | required, nullable | — | — | N (B-12): `regime_from ≠ regime_to`; null if either is null |
@@ -975,7 +977,7 @@ two sessions; v2 §21's `data_status {state, worst_series, date}` is
 | `tiles.trend.data.date` | date | required | — | daily · `asset_prices` ^GSPC | S: the session the state is read at |
 | `tiles.trend.data.freq`, `.source` | `"daily"`, string | required | — | — | A: `"daily"`, `"asset_prices ^GSPC"` |
 | `tiles.vol` | block envelope | required | — | — | — |
-| `tiles.vol.data.vix` | number | required | index points | `date` · daily · FRED VIXCLS (`desk_series`) | E: newest stored observation |
+| `tiles.vol.data.vix` | number | required | index points | `date` · daily · `asset_prices` ^VIX (desk/fill-compute, owner's item 7: the CBOE close from ^GSPC's path, EODHD first where a token exists, else Yahoo; FRED's VIXCLS lagged the S&P by up to three sessions) | E: newest stored observation; `source` "asset_prices ^VIX" |
 | `tiles.vol.data.date` | date | required | — | — | E |
 | `tiles.vol.data.freq`, `.source` | `"daily"`, string | required | — | — | A |
 | `tiles.vol.data.band` | `"calm"` \| `"subdued"` \| `"stressed"` | required | — | `date` | A rule (desk/fill-compute): calm < 15 ≤ subdued < 25 ≤ stressed on `vix`, the home page's VIX words and edges (web `DashboardScreen.tsx`; `src/analytics/volatility.py`'s 15 / 25) |
@@ -984,11 +986,11 @@ two sessions; v2 §21's `data_status {state, worst_series, date}` is
 | `active_signals` | array of Ledger rows (§12.5) | required (may be empty) | — | each row's own | A: the deduplicated union of every row with `firing_now` true and `stale` false and the five rows with the latest non-null `last_fired`, ordered firing first, then `last_fired` descending, then `slug` (v2 §19) |
 | `data_status` | block envelope | required | — | — | — |
 | `data_status.data.state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N data status (v4 B-06): the worst contributor, missing > stale > current |
-| `data_status.data.contributors` | array | required | — | — | N: one per series of the Desk feed set, the tier-1 inputs of the twelve Ledger studies plus DGS2 and DGS10 |
+| `data_status.data.contributors` | array | required | — | — | N: one per series of the Desk feed set, the tier-1 inputs of the twelve Ledger studies plus DGS2 and DGS10: T10Y2Y, BAMLH0A0HYM2, DGS2, DGS10, then the closes ^GSPC, GC=F, ^VIX |
 | `…contributors[].series` | string (series id) | required | — | — | A |
-| `…contributors[].observation_date` | date | required, nullable | — | the series' newest stored observation | S: `desk_series` for the FRED inputs, `asset_prices` for ^GSPC and GC=F (the symbol's own newest row) |
-| `…contributors[].expected_observation_date` | date | required, nullable | — | the observation the series' existing freshness policy expects (C-02); never a publication timestamp | E: for the FRED inputs, `api/freshness._daily_expected_and_lag`'s expected date (bond calendar for rates and spreads, FRED tolerance kept); for ^GSPC and GC=F, the completed session the `asset_prices` rule of `api/freshness.assess` expects, applied to the symbol |
-| `…contributors[].state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N: each series through its existing policy: `desk_series_states` for the FRED inputs, close/current → `current`, stale or delayed past its window → `stale`, absent/unknown → `missing`; the `asset_prices` rule for ^GSPC and GC=F, `current` and `delayed` within the grace → `current`; `stale` → `stale`; absent → `missing`; never a bare comparison with the latest XNYS session outside that policy (B-06) |
+| `…contributors[].observation_date` | date | required, nullable | — | the series' newest stored observation | S: `desk_series` for the FRED inputs, `asset_prices` for ^GSPC, GC=F and ^VIX (the symbol's own newest row) |
+| `…contributors[].expected_observation_date` | date | required, nullable | — | the observation the series' existing freshness policy expects (C-02); never a publication timestamp | E: for the FRED inputs, `api/freshness._daily_expected_and_lag`'s expected date (bond calendar for rates and spreads, FRED tolerance kept: current within 3 business days since desk/fill-compute); for ^GSPC, GC=F and ^VIX, the completed session the `asset_prices` rule of `api/freshness.assess` expects, applied to the symbol |
+| `…contributors[].state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N: each series through its existing policy: `desk_series_states` for the FRED inputs, close/current → `current`, stale or delayed past its window → `stale`, absent/unknown → `missing` (a FRED daily series 1–3 business days behind the print due is current, `api/freshness.DAILY_TOLERANCE` = 3, desk/fill-compute); the `asset_prices` rule for ^GSPC, GC=F and ^VIX, `current` and `delayed` within the grace → `current`; `stale` → `stale`; absent → `missing`; never a bare comparison with the latest XNYS session outside that policy (B-06) |
 | `…contributors[].reason` | string | required | — | — | E: the freshness policy's reason sentence |
 
 ### 12.2 `GET /study`
@@ -1034,7 +1036,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `evaluated_on` | date | required, nullable | — | — | N firing state: the study's latest evaluable session |
 | `comparison_session` | date | required | — | XNYS | N firing state: as §12.5 |
 | `prev_session` | date | required | — | XNYS | N firing state: as §12.1 |
-| `stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; a stale study is never called firing today (v3 §3) |
+| `stale` | boolean | required | — | — | N (desk/fill-compute, owner's item 7): `evaluated_on` trails `comparison_session` by more XNYS sessions than the study's publication allowance, the most any of its inputs allows: 0 for a close an exchange prints (^GSPC, GC=F, ^VIX, ^NDX, the dollar index, USD/JPY), 3 for a FRED daily series (`api/freshness.DAILY_TOLERANCE`), 8 for WTI (`DESK_SLOW_PUBLICATION`, published weekly); before, any `evaluated_on` other than `comparison_session` was stale; a stale study is never called firing today (v3 §3) |
 | `verdict` | `reliable` \| `suggestive` \| `no_edge` \| `insufficient` | required | — | `selected_horizon` | A: `verdict_rule` v1 (§1.5) at `selected_horizon` |
 | `verdict_rule` | `"v1"` | required | — | — | A |
 | `verdict_confidence` | `0.90` | required | — | — | E `CI_LEVEL` |
@@ -1220,7 +1222,7 @@ cells; booleans `true` / `false`.
 | `signals[].firing_now` | boolean | required, nullable | — | `evaluated_on` | N firing state: shocks — the raw trigger and the condition hold on `evaluated_on`, regardless of cooldown; crosses — true only on the strict crossing session; RSI crossings — the RSI is in the zone (strictly above 70, strictly below 30) on `evaluated_on`, regardless of the crossing rule and the cooldown |
 | `signals[].firing_day` | integer | required, nullable (null unless `firing_now` is true) | sessions | — | N: consecutive qualifying XNYS sessions including `evaluated_on`, reset after any false or unevaluable session, never bridging a missing session; 1 for a cross |
 | `signals[].evaluated_on` | date | required, nullable | — | — | N: the row's own latest evaluable session |
-| `signals[].stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; false for an unavailable row; a stale row is never called firing today |
+| `signals[].stale` | boolean | required | — | — | N (desk/fill-compute, owner's item 7): `evaluated_on` trails `comparison_session` by more XNYS sessions than the study's publication allowance, the most any of its inputs allows: 0 for a close an exchange prints (^GSPC, GC=F, ^VIX, ^NDX, the dollar index, USD/JPY), 3 for a FRED daily series (`api/freshness.DAILY_TOLERANCE`), 8 for WTI (`DESK_SLOW_PUBLICATION`, published weekly); before, any `evaluated_on` other than `comparison_session` was stale; false for an unavailable row; a stale row is never called firing today |
 
 ### 12.6 `GET /regime`
 
@@ -1579,6 +1581,8 @@ implementation may broaden scope to satisfy an illustrative shape.
 Each is a new calculation from stored data, listed in §12 with its rule:
 - the 14-day RSI on ^GSPC, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), served by `/technicals` (§12.7);
 - what each regime has meant and the last five changes on `/regime` (`stats`, `changes`, §12.6), on the audit's §2.4 method;
+- the VIX read from `asset_prices` ^VIX (^GSPC's path) instead of FRED VIXCLS, and `stale` judged per study by its inputs'
+  publication cadence (§12.2, §12.5; the owner's item 7);
 - the S&P's 21-day realized volatility, `src/analytics/technicals.realized_vol`, and the VIX's band word and gap to it on `/overview` `tiles.vol` (§12.1);
 - the two RSI studies, the engine's `kind` `rsi` (strict crossings of 70 and 30, a 14-session cooldown), scored by the
   existing engine and the v1 verdict rule like every catalog study (§12.3, §12.5). Existing studies' native results and

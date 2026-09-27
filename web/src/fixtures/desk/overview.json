@@ -6,7 +6,7 @@
   "prev_session": "2026-09-22",
   "new_fires": [],
   "still_firing": [],
-  "vol_change_pts": null,
+  "vol_change_pts": 0.9700002670288086,
   "regime_from": "Goldilocks",
   "regime_to": "Goldilocks",
   "regime_changed": false,
@@ -49,20 +49,20 @@
    "source": "asset_prices ^GSPC"
   },
   "vol": {
-   "vix": 14.21,
-   "date": "2026-09-22",
+   "vix": 15.180000305175781,
+   "date": "2026-09-23",
    "freq": "daily",
-   "source": "FRED VIXCLS (desk_series)",
-   "band": "calm",
+   "source": "asset_prices ^VIX",
+   "band": "subdued",
    "band_edges": [
     15.0,
     25.0
    ],
    "gap": {
     "date": "2026-09-21",
-    "vix": 14.87,
+    "vix": 14.869999885559082,
     "realized_21d": 10.471265206802181,
-    "gap_pts": 4.398734793197818,
+    "gap_pts": 4.398734678756901,
     "window": {
      "start": "2026-08-20",
      "end": "2026-09-21",
@@ -110,15 +110,15 @@
    "up_n": 79,
    "up_pct": 0.6638655462184874,
    "median": 0.01508565286913584,
-   "baseline_median": 0.013063600799436081,
-   "vs_normal": 0.2022052069699758,
+   "baseline_median": 0.013035603130456319,
+   "vs_normal": 0.20500497386795202,
    "target_unit": "log_return",
    "display_unit": "percent",
    "verdict": "suggestive",
    "firing_now": false,
    "firing_day": null,
-   "evaluated_on": "2026-09-21",
-   "stale": true
+   "evaluated_on": "2026-09-23",
+   "stale": false
   },
   {
    "slug": "rsi-above-70",
@@ -197,39 +197,18 @@
   "state": "current",
   "contributors": [
    {
-    "series": "^GSPC",
+    "series": "T10Y2Y",
     "observation_date": "2026-09-23",
     "expected_observation_date": "2026-09-23",
     "state": "current",
-    "reason": "Stored histories include the last completed session (2026-09-23)."
-   },
-   {
-    "series": "GC=F",
-    "observation_date": "2026-09-23",
-    "expected_observation_date": "2026-09-23",
-    "state": "current",
-    "reason": "Stored histories include the last completed session (2026-09-23)."
-   },
-   {
-    "series": "VIXCLS",
-    "observation_date": "2026-09-22",
-    "expected_observation_date": "2026-09-23",
-    "state": "current",
-    "reason": "VIX observed 2026-09-22; 1 business day(s) behind the 2026-09-23 print."
+    "reason": "2s10s curve observed 2026-09-23, the newest print due."
    },
    {
     "series": "BAMLH0A0HYM2",
     "observation_date": "2026-09-23",
     "expected_observation_date": "2026-09-23",
     "state": "current",
-    "reason": "US HY OAS observed 2026-09-23, the newest print due."
-   },
-   {
-    "series": "T10Y2Y",
-    "observation_date": "2026-09-23",
-    "expected_observation_date": "2026-09-23",
-    "state": "current",
-    "reason": "2s10s curve observed 2026-09-23, the newest print due."
+    "reason": "US HY OAS observed 2026-09-23, the newest print due. The source serves less history than the registry declares (fred; served from 2023-09-25; stored from 2023-09-25; 787 rows; declared 2023-09-22)."
    },
    {
     "series": "DGS2",
@@ -244,6 +223,27 @@
     "expected_observation_date": "2026-09-23",
     "state": "current",
     "reason": "10Y Treasury observed 2026-09-22; 1 business day(s) behind the 2026-09-23 print."
+   },
+   {
+    "series": "^GSPC",
+    "observation_date": "2026-09-23",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "Stored histories include the last completed session (2026-09-23). Providers: yfinance 25 (fallback: AGG, ARKK, CEW, DJP, DX-Y.NYB, EEM, EFA, EURUSD=X, GBPUSD=X, GC=F, GLD, HYG, IEF, IWD, IWF, IWM, JPY=X, LQD, MTUM, QUAL, SPY, USMV, VTI, ^GSPC, ^RUT)."
+   },
+   {
+    "series": "GC=F",
+    "observation_date": "2026-09-23",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "Stored histories include the last completed session (2026-09-23). Providers: yfinance 25 (fallback: AGG, ARKK, CEW, DJP, DX-Y.NYB, EEM, EFA, EURUSD=X, GBPUSD=X, GC=F, GLD, HYG, IEF, IWD, IWF, IWM, JPY=X, LQD, MTUM, QUAL, SPY, USMV, VTI, ^GSPC, ^RUT)."
+   },
+   {
+    "series": "^VIX",
+    "observation_date": "2026-09-23",
+    "expected_observation_date": "2026-09-23",
+    "state": "current",
+    "reason": "Stored histories include the last completed session (2026-09-23). Providers: yfinance 25 (fallback: AGG, ARKK, CEW, DJP, DX-Y.NYB, EEM, EFA, EURUSD=X, GBPUSD=X, GC=F, GLD, HYG, IEF, IWD, IWF, IWM, JPY=X, LQD, MTUM, QUAL, SPY, USMV, VTI, ^GSPC, ^RUT)."
    }
   ]
  }

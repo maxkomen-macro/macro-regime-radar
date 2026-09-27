@@ -180,8 +180,12 @@ SERIES: tuple[DeskSeries, ...] = (
     DeskSeries("us10y", "10Y Treasury", "fred", "DGS10", "bp", 100.0, "1962-01-02", 1, _ALL, fixed=("close", -30), known=NEXT_OPEN),
     DeskSeries("us2y", "2Y Treasury", "fred", "DGS2", "bp", 100.0, "1976-06-01", 1, _SC, fixed=("close", -30), known=NEXT_OPEN),
     DeskSeries("curve_2s10s", "2s10s curve", "fred", "T10Y2Y", "bp", 100.0, "1976-06-01", 1, _SC, fixed=("close", -30), known=NEXT_OPEN),
-    DeskSeries("vix", "VIX", "fred", "VIXCLS", "log_change", 1.0, "1990-01-02", 1, _ALL, fixed=("close", 15), known=("close", 15),
-               note="CBOE close via FRED VIXCLS; settles 16:15 ET, so a VIX-dated event enters the target the next session."),
+    # desk/fill-compute (owner's item 7): the CBOE close from the path ^GSPC takes (asset_prices, the
+    # allocation refresh: EODHD first where a token exists, else Yahoo), not FRED's VIXCLS, whose
+    # publication lagged the S&P's close by up to three sessions.
+    DeskSeries("vix", "VIX", "asset_prices", "^VIX", "log_change", 1.0, "1990-01-02", 1, _ALL, fixed=("close", 15), known=("close", 15),
+               note="CBOE close (^VIX), stored from 1990 beside ^GSPC by the allocation refresh (asset_prices); settles 16:15 ET, "
+                    "so a VIX-dated event enters the target the next session."),
     # desk/hardening (2026-09-23): FRED's three-year window starts 2023-09-25 since
     # 2026-09-22, the day the deployed store's first full refresh ran; a store filled
     # earlier holds 2023-09-22 on, which is inside the declaration.

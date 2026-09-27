@@ -73,6 +73,9 @@ def _synthetic_db(path: Path, seed: int = 3, *, regimes: bool = True, spx_end: s
     desk_history.write_series(conn, "DGS2", [(dd, v) for dd, v in zip(d, dgs2.tolist()) if dd[5:] not in BOND_HOLIDAYS], provider="fred", merge=False)
     desk_history.write_series(conn, "T10Y2Y", [(dd, v) for dd, v in zip(d, (dgs10 - dgs2).tolist()) if dd[5:] not in BOND_HOLIDAYS], provider="fred", merge=False)
     desk_history.write_series(conn, "VIXCLS", list(zip(d, vix.tolist())), provider="fred", merge=False)
+    # desk/fill-compute: the registry reads the VIX from asset_prices (^VIX); the same values, so a study
+    # reads one VIX whichever way it is addressed (tests/test_desk_native_regression.py compares the two)
+    asset_history.write_series(conn, "^VIX", "1d", list(zip(d, vix.tolist())), provider="test")
     h0 = int(days.searchsorted(pd.Timestamp("2023-09-22")))
     desk_history.write_series(conn, "BAMLH0A0HYM2", list(zip(d[h0:], hy[h0:].tolist())) + [(OAS_WEEKEND, 4.2)], provider="fred", merge=False)
     conn.execute(REGIMES_DDL)

@@ -208,7 +208,7 @@ def study_answer(params: list[tuple[str, str]], t0: float) -> dict:
         raise env.Awaiting(item["reason"])
     hit, (payload, trace) = memo(("/study", study.slug, h), lambda: (study_projection(study, h, item), item["trace"]))
     out = dict(payload)
-    out.update(now_fields(trace, cross=study.question.move.startswith("cross")))
+    out.update(now_fields(trace, cross=study.question.move.startswith("cross"), allowance=publication_allowance(study)))
     out["provenance"] = {**payload["provenance"], "engine_version": env.ENGINE_VERSION}
     out["served_from_cache"] = hit
     out["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 1)
@@ -242,10 +242,11 @@ def desk_overview(request: Request) -> Response:
 # ── §12.1 GET /overview ─────────────────────────────────────────────────────
 
 REGIMES_SOURCE = "regimes table (src/regime.py)"
-VIX_SOURCE = "FRED VIXCLS (desk_series)"
-# N9: the Desk feed set, by series id, in the plan's order; the five FRED inputs, then the two prices
-DATA_STATUS_FRED = ("T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS2", "DGS10")
-DATA_STATUS_PRICES = ("^GSPC", "GC=F")
+VIX_SOURCE = "asset_prices ^VIX"
+# N9: the Desk feed set, by series id, in the plan's order; the four FRED inputs, then the three closes
+# (the VIX joined the closes when it moved to asset_prices, desk/fill-compute)
+DATA_STATUS_FRED = ("T10Y2Y", "BAMLH0A0HYM2", "DGS2", "DGS10")
+DATA_STATUS_PRICES = ("^GSPC", "GC=F", "^VIX")
 STATE_RANK = {"current": 0, "stale": 1, "missing": 2}
 
 
@@ -330,7 +331,7 @@ def vix_band(vix: float) -> str:
 
 
 def vol_tile(facts: dict) -> dict:
-    vix = facts["newest"].get("VIXCLS")
+    vix = facts["newest"].get(registry.get("vix").series_id)
     if vix is None:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
     return {"vix": vix["value"], "date": vix["date"], "freq": "daily", "source": VIX_SOURCE,
@@ -362,7 +363,7 @@ def data_status(*, now: datetime, stored: dict | None, watermarks: dict | None, 
     """N9 (v4 B-06, C-02, S-23): each contributor through its existing policy.
     The FRED inputs by api/freshness.desk_series_states (close → current, stale
     → stale, unknown → missing), expected on _daily_expected_and_lag's date;
-    ^GSPC and GC=F by api/freshness.assess's asset_prices rule applied to the
+    ^GSPC, GC=F and ^VIX by api/freshness.assess's asset_prices rule applied to the
     symbol's own newest row (current and delayed → current, stale → stale,
     unstored → missing), expected on that rule's session. The state is the
     worst contributor: missing, then stale, then current."""
@@ -555,7 +556,7 @@ def _ledger_static() -> list[tuple[dict, Any, bool]]:
             up_pct=H["hit_rate"], median=H["median"], baseline_median=H["baseline_median"],
             vs_normal=vs_normal(H["delta"], unit), target_unit=unit, display_unit=display_unit(unit),
             verdict=verdict_v1(by_h, 20))
-        out.append((row, item["trace"], s.question.move.startswith("cross")))
+        out.append((row, item["trace"], s.question.move.startswith("cross")))  # (see ledger_rows for the allowance)
     return out
 
 
@@ -571,7 +572,7 @@ def ledger_rows(comparison: str, prev: str) -> list[tuple[dict, dict | None]]:
             row.update(firing_now=None, firing_day=None, evaluated_on=None, stale=False)
             rows.append(({k: row[k] for k in LEDGER_KEYS}, None))
             continue
-        f = firing_state(trace, comparison, prev, cross=cross)
+        f = firing_state(trace, comparison, prev, cross=cross, allowance=publication_allowance(catalog.BY_SLUG[row["slug"]]))
         row.update(firing_now=f["firing_now"], firing_day=f["firing_day"], evaluated_on=f["evaluated_on"], stale=f["stale"])
         rows.append(({k: row[k] for k in LEDGER_KEYS}, f))
     return rows
@@ -699,7 +700,34 @@ def sessions_now(now: datetime | None = None) -> tuple[str, str]:
     return cmp_.isoformat(), nyse.previous_trading_day(cmp_).isoformat()
 
 
-def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool) -> dict:
+def publication_allowance(study: catalog.Study) -> int:
+    """desk/fill-compute (owner's item 7): the XNYS sessions a study's
+    evaluated_on may trail the comparison session and still be current, by
+    its inputs' publication cadence: the most any input allows. A close the
+    exchange prints (asset_prices, market: ^GSPC, GC=F, ^VIX, ^NDX, the dollar,
+    USD/JPY) allows none; a FRED daily series api/freshness.DAILY_TOLERANCE
+    (3: FRED posts a day or more after the close); a series published less
+    often its own tolerance (api/freshness.DESK_SLOW_PUBLICATION: WTI, 8)."""
+    from api import desk_pipeline
+    from api import freshness as fr
+
+    out = 0
+    for key in desk_pipeline.CATALOG_INPUTS.get(study.slug, ()):
+        spec = registry.get(key)
+        if spec.source == "fred":
+            slow = fr.DESK_SLOW_PUBLICATION.get(spec.series_id, {})
+            out = max(out, int(slow.get("tolerance", fr.DAILY_TOLERANCE)))
+    return out
+
+
+def sessions_behind(evaluated_on: str, comparison: str) -> int:
+    """XNYS sessions after `evaluated_on` up to and including `comparison`."""
+    from datetime import date as _date
+
+    return nyse.business_days_between(_date.fromisoformat(evaluated_on), _date.fromisoformat(comparison))
+
+
+def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowance: int = 0) -> dict:
     """A study's firing state from its signal trace: `fires = trigger and holds`
     per session (the raw trigger, before any cooldown; a cross only on its
     strict crossing session). `evaluated_on` is the last evaluable session and
@@ -707,7 +735,8 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool) -> dict
     session is evaluable and fires (1 for a cross), so a missing session ends
     the count; null unless firing. The state at a session is null when the
     session is not the run's or is not evaluable. `stale` when `evaluated_on`
-    is not the comparison session."""
+    trails the comparison session by more than `allowance` XNYS sessions (its
+    inputs' publication cadence, desk/fill-compute: 0 for exchange closes)."""
     import numpy as np
 
     ev = trace.evaluable
@@ -733,14 +762,15 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool) -> dict
         i = bisect.bisect_left(sessions, iso)
         return bool(fires[i]) if i < len(sessions) and sessions[i] == iso and ev[i] else None
 
+    stale = sessions[last] != comparison and sessions_behind(sessions[last], comparison) > allowance
     return {"evaluated_on": sessions[last], "firing_now": firing_now, "firing_day": firing_day,
-            "stale": sessions[last] != comparison, "state_comparison": state(comparison), "state_prev": state(prev)}
+            "stale": stale, "state_comparison": state(comparison), "state_prev": state(prev)}
 
 
-def now_fields(trace: Any, *, cross: bool) -> dict:
+def now_fields(trace: Any, *, cross: bool, allowance: int = 0) -> dict:
     """The /study fields that depend on "now" (plan §0.5), for this response."""
     comparison, prev = sessions_now()
-    f = firing_state(trace, comparison, prev, cross=cross)
+    f = firing_state(trace, comparison, prev, cross=cross, allowance=allowance)
     return {"firing_now": f["firing_now"], "firing_day": f["firing_day"], "evaluated_on": f["evaluated_on"],
             "comparison_session": comparison, "prev_session": prev, "stale": f["stale"]}
 

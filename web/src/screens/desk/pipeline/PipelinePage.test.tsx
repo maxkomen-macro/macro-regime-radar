@@ -50,7 +50,8 @@ describe("Pipeline words", () => {
     expect(refreshWords(null)).toBe("");
   });
   it("finds a series by name, id or note, and opens its group", () => {
-    expect(findSeries(groups, "VIX")).toEqual({ group: "Equities & vol", id: "VIXCLS" });
+    // desk/fill-compute: the Desk's VIX is ^VIX, stored beside ^GSPC (asset_prices).
+    expect(findSeries(groups, "VIX")).toEqual({ group: "Equities & vol", id: "^VIX" });
     expect(findSeries(groups, "dgs10")).toEqual({ group: "Rates", id: "DGS10" });
     expect(findSeries(groups, "gold")).toEqual({ group: "FX & commodities", id: "GC=F" });
     // a series no live tab reads says so in its note (desk-v2: feeds)
@@ -125,7 +126,7 @@ describe("Data Pipeline tab", () => {
     await waitFor(() => expect(input).toBeEnabled());
     fireEvent.change(input, { target: { value: "VIX" } });
     const rows = await screen.findByRole("region", { name: "Equities & vol series" });
-    expect(rows.querySelector("tr[data-hit]")?.textContent).toContain("VIXCLS");
+    expect(rows.querySelector("tr[data-hit]")?.textContent).toContain("^VIX");
     fireEvent.change(input, { target: { value: "zzz" } });
     expect(within(screen.getByRole("region", { name: /Series inventory/ })).getByRole("status")).toHaveTextContent("No series matches “zzz”.");
   });

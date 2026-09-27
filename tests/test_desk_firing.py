@@ -116,3 +116,38 @@ def test_10_the_comparison_session_at_a_frozen_now(now, comparison, prev):
 def test_a_session_outside_the_run_is_a_null_state():
     f = state(trace([0] * 8), comparison="2026-09-22", prev="2026-09-21")
     assert f["state_comparison"] is None and f["state_prev"] is False and f["stale"] is True
+
+
+# ── stale by publication cadence (desk/fill-compute, the owner's item 7) ────
+
+@pytest.mark.parametrize(("allowance", "last", "stale"), [
+    (0, "2026-09-18", True),    # an exchange close one session behind is stale
+    (3, "2026-09-18", False),   # a FRED daily input one session behind is current
+    (3, "2026-09-16", False),   # three sessions behind (17th, 18th, 21st): still current
+    (3, "2026-09-15", True),    # four behind: stale
+    (8, "2026-09-10", False),   # WTI, published weekly: five behind is current
+])
+def test_stale_is_judged_by_the_studys_publication_allowance(allowance, last, stale):
+    ev = [s <= last for s in SESSIONS]
+    t = trace([0] * len(SESSIONS), evaluable=ev)
+    f = desk_v2.firing_state(t, "2026-09-21", "2026-09-18", cross=False, allowance=allowance)
+    assert (f["evaluated_on"], f["stale"]) == (last, stale)
+
+
+def test_the_allowance_is_the_slowest_inputs():
+    from api import desk_catalog as catalog
+
+    got = {slug: desk_v2.publication_allowance(catalog.BY_SLUG[slug]) for slug in catalog.LEDGER_ORDER}
+    assert got["golden-cross"] == got["rsi-above-70"] == got["gold-2sigma-spx-weak"] == 0   # closes only
+    assert got["vix-spike-2sigma-5d"] == 0                                                  # ^VIX is a close now
+    assert got["hy-2sigma-20d"] == got["2s10s-2sigma-steepening"] == 3                      # FRED daily
+    assert got["oil-2sigma-20d"] == 8                                                        # WTI, weekly
+    assert got["dollar-2sigma-20d"] == 0
+
+
+def test_a_fred_study_a_session_behind_is_not_stale_on_the_ledger(monkeypatch):
+    """The Ledger passes each row its allowance: a 2s10s row evaluated a session
+    before the comparison session is current; its firing state is its own session's."""
+    t = trace([0, 0, 0, 0, 0, 0, 1, 0], evaluable=[1, 1, 1, 1, 1, 1, 1, 0])
+    f = desk_v2.firing_state(t, "2026-09-21", "2026-09-18", cross=False, allowance=3)
+    assert f["stale"] is False and f["firing_now"] is True and f["firing_day"] == 1

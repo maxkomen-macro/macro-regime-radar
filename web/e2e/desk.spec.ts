@@ -210,11 +210,11 @@ test.describe("desk v2", () => {
     await open(page, "/desk/overview");
     // §2: the K−2 row governing today (a September session reads the July row).
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Jul row");
-    // The audit's values (§2.2, §2.1, Q7): the July row is Goldilocks; the S&P dated Sep 23; the VIX Sep 22.
+    // The audit's values (§2.2, §2.1): the July row is Goldilocks; the S&P dated Sep 23; the VIX (^VIX, desk/fill-compute) Sep 23.
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Goldilocks");
     await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("12%");
     await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Live · Sep 23");
-    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("14.2");
+    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("15.2");
     await expect(page.getByTestId("dk-live")).toHaveCount(4);
     // Nothing is firing in the audit's snapshot, so the line names no signal.
     await expect(page.getByTestId("ov-since")).toContainText("regime unchanged");

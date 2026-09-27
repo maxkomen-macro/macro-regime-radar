@@ -164,7 +164,7 @@ OVERVIEW = obj(
             state=TREND_STATE, above_50=null(BOOL), above_200=null(BOOL), state_since=null(DATE),
             cross=null(CROSS), date=DATE, freq=Const("daily"), source=Const("asset_prices ^GSPC"),
         )),
-        vol=Block(obj(vix=NUM, date=DATE, freq=Const("daily"), source=Const("FRED VIXCLS (desk_series)"),
+        vol=Block(obj(vix=NUM, date=DATE, freq=Const("daily"), source=Const("asset_prices ^VIX"),
                       band=E("calm", "subdued", "stressed"), band_edges=Const([15.0, 25.0]),
                       gap=null(obj(date=DATE, vix=NUM, realized_21d=NUM, gap_pts=NUM, window=SPAN)))),
     ),

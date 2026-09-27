@@ -17,7 +17,7 @@ rows would splice two adjustment bases together.
 Since desk/fill-etf (2026-09-27) the same step stores the Desk's ETFs: every
 registry series whose store is `asset_prices` (src/desk/series.py: the eleven
 sector ETFs, SPY, RSP, IWM, QQQ, SMH, SOXX, IGV, TLT, IEF, HYG, LQD, GLD,
-UUP, beside ^GSPC, GC=F and ^RUT), daily, fetched from 1990 so the row set is
+UUP, beside ^GSPC, GC=F, ^RUT and, since desk/fill-compute, the VIX's ^VIX), daily, fetched from 1990 so the row set is
 the provider's whole history. Each daily row carries the session's volume as
 the same provider serves it (NULL where it serves none, and on the monthly
 rows); the column is added in place to a table that predates it. A series

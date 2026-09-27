@@ -45,9 +45,10 @@ def _make(path: Path, *, daily="2026-09-04", news="2026-09-05 19:00:00", regime=
         conn.execute("CREATE TABLE desk_series (series_id TEXT NOT NULL, date TEXT NOT NULL, value REAL NOT NULL,"
                      " provider TEXT NOT NULL, PRIMARY KEY (series_id, date))")
         # desk/integration: the tier-1 series the full refresh stores (the
-        # drawer's verdict judges each, verifier V-06); the curve tenors since desk/frame-3-api.
+        # drawer's verdict judges each, verifier V-06); the curve tenors since desk/frame-3-api; the VIX
+        # left for asset_prices (^VIX) in desk/fill-compute.
         conn.executemany("INSERT INTO desk_series VALUES (?,?,?,?)", [(sid, daily, v, "fred") for sid, v in
-                                                                       (("DGS10", 4.0), ("DGS2", 3.6), ("T10Y2Y", 0.4), ("VIXCLS", 15.0), ("BAMLH0A0HYM2", 3.0),
+                                                                       (("DGS10", 4.0), ("DGS2", 3.6), ("T10Y2Y", 0.4), ("BAMLH0A0HYM2", 3.0),
                                                                         ("DGS3MO", 4.5), ("DGS5", 3.7), ("DGS30", 4.4))])
     if watermarks:
         # B6: a full refresh records each FRED daily series' true last observation
@@ -321,7 +322,8 @@ def test_summary_shows_the_watermark_table(tmp_path):
 
 # ── desk/hardening (2026-09-23): tier-2 Desk series warn, never block ────────
 
-TIER1_DESK = ("DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS3MO", "DGS5", "DGS30")  # the tenors since desk/frame-3-api
+# the tenors since desk/frame-3-api; the VIX left for asset_prices (^VIX) in desk/fill-compute
+TIER1_DESK = ("DGS10", "DGS2", "T10Y2Y", "BAMLH0A0HYM2", "DGS3MO", "DGS5", "DGS30")
 
 
 def _desk_rows(path, series: dict[str, tuple[str, str, int]], watermarks: dict[str, tuple[str, str]] = {}):
@@ -408,7 +410,7 @@ def test_the_same_faults_on_a_tier1_desk_series_still_fail(tmp_path):
     assert rep["verdict"] == "fail" and any(f.startswith("desk_series: max date regressed 2026-09-04 → 2026-09-03") for f in rep["failures"]), rep["failures"]
     _desk_rows(cur, {**{sid: ("fred", "2026-09-04", 30) for sid in TIER1_DESK}, "DGS10": ("fred", "2026-09-04", 2), "DGS2": ("fred", "2026-09-04", 2)})
     rep = v.validate(cur, prev, "full", now=NOW)
-    assert rep["verdict"] == "fail" and any(f.startswith("desk_series: rows fell 240 → 184") for f in rep["failures"]), rep["failures"]
+    assert rep["verdict"] == "fail" and any(f.startswith("desk_series: rows fell 210 → 154") for f in rep["failures"]), rep["failures"]
 
 
 # ── desk/hardening, review round 2: R-02 (per-series tier 1) and R-03 (future dates) ──
@@ -447,9 +449,9 @@ def test_each_tier1_desk_series_fails_on_its_own_before_any_aggregate(tmp_path):
     aggregate = rep["failures"].index("desk_series: max date regressed 2026-09-03 → 2026-09-02")
     assert len(per_series) == len(TIER1_DESK) and max(per_series) < aggregate, rep["failures"]
     # and without a previous snapshot, a tier-1 series the table lacks still fails in full mode
-    _desk_rows(cur, {k: x for k, x in tier1.items() if k != "VIXCLS"})
+    _desk_rows(cur, {k: x for k, x in tier1.items() if k != "DGS30"})
     rep = v.validate(cur, None, "full", now=NOW)
-    assert rep["verdict"] == "fail" and "desk:VIXCLS (tier 1): not stored; the full refresh stores it" in rep["failures"]
+    assert rep["verdict"] == "fail" and "desk:DGS30 (tier 1): not stored; the full refresh stores it" in rep["failures"]
 
 
 def test_a_future_dated_desk_row_fails_for_tier1_and_warns_for_tier2(tmp_path):

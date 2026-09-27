@@ -344,8 +344,8 @@
     "spx_median_mo": 0.007068230956284616,
     "spx_mean_mo": 0.0008045017377785035,
     "up_pct": 0.5555555555555556,
-    "vix_avg": 18.007464539007092,
-    "vix_days": 564
+    "vix_avg": 18.010390733952633,
+    "vix_days": 563
    },
    {
     "regime": "Overheating",
@@ -354,8 +354,8 @@
     "spx_median_mo": 0.015324602525288444,
     "spx_mean_mo": 0.011530371983384352,
     "up_pct": 0.6572769953051644,
-    "vix_avg": 19.519691482226694,
-    "vix_days": 4473
+    "vix_avg": 19.52735545057077,
+    "vix_days": 4462
    },
    {
     "regime": "Stagflation",
@@ -364,8 +364,8 @@
     "spx_median_mo": 0.004985810353885012,
     "spx_mean_mo": 0.00312358029528761,
     "up_pct": 0.5980392156862745,
-    "vix_avg": 20.04557149467839,
-    "vix_days": 2161
+    "vix_avg": 20.063789097549645,
+    "vix_days": 2143
    },
    {
     "regime": "Recession Risk",
@@ -374,7 +374,7 @@
     "spx_median_mo": 0.016466656343095964,
     "spx_mean_mo": 0.0005954200991002544,
     "up_pct": 0.6190476190476191,
-    "vix_avg": 29.98423076923077,
+    "vix_avg": 29.982963795036213,
     "vix_days": 442
    }
   ],
@@ -384,7 +384,7 @@
    "n": 363
   },
   "freq": "monthly",
-  "source": "regimes table (src/regime.py); asset_prices ^GSPC; VIXCLS (desk_series)"
+  "source": "regimes table (src/regime.py); asset_prices ^GSPC; ^VIX (asset_prices)"
  },
  "changes": {
   "rows": [

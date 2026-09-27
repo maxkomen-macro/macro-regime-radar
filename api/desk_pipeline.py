@@ -43,7 +43,7 @@ from typing import Any
 PIPELINE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Rates", ("DGS3MO", "DGS2", "T10Y2Y", "DGS5", "DGS10", "DGS30", "T10YIE", "T5YIE")),
     ("Credit", ("BAMLH0A0HYM2", "BAMLC0A0CM")),
-    ("Equities & vol", ("^GSPC", "^NDX", "^RUT", "VIXCLS")),
+    ("Equities & vol", ("^GSPC", "^NDX", "^RUT", "^VIX")),
     ("FX & commodities", ("DX-Y.NYB", "JPY=X", "GC=F", "DCOILWTICO")),
     ("Macro (monthly)", ("CPIAUCSL", "INDPRO", "UNRATE", "USREC")),
     # desk/fill-etf: the ETFs the full refresh stores in asset_prices (src/desk/series.py)
@@ -95,7 +95,7 @@ LEDGER_STUDIES: tuple[str, ...] = (
 TECHNICALS_STUDIES: tuple[str, ...] = ("golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma",
                                         "spx-5d-2sigma")
 # /overview's data_status contributors (spec §12.1, N9)
-DATA_STATUS_SERIES: tuple[str, ...] = ("T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS2", "DGS10", "^GSPC", "GC=F")
+DATA_STATUS_SERIES: tuple[str, ...] = ("T10Y2Y", "BAMLH0A0HYM2", "DGS2", "DGS10", "^GSPC", "GC=F", "^VIX")
 CURVE_SERIES: tuple[str, ...] = ("DGS3MO", "DGS2", "DGS5", "DGS10", "DGS30")  # /macro curve (api/desk_items_macro.TENORS)
 # desk/fill-etf: the ETF blocks (api/desk_items_etf.py), by what each reads
 SECTOR_ETFS: tuple[str, ...] = ("XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY")
@@ -120,7 +120,7 @@ def tab_readers() -> dict[str, set[str]]:
     return {
         # tiles (the K−2 regime, the recession score, the trend, VIX), the Ledger's signals
         # (active_signals, since_last_close), VIX's change and data_status
-        "Overview": set(REGIME_INPUTS) | set(RECESSION_MODEL) | {"^GSPC", "VIXCLS"} | ledger | set(DATA_STATUS_SERIES),
+        "Overview": set(REGIME_INPUTS) | set(RECESSION_MODEL) | {"^GSPC", "^VIX"} | ledger | set(DATA_STATUS_SERIES),
         "Technicals": {"^GSPC"} | _studies_read(TECHNICALS_STUDIES) | set(LEADERSHIP_SERIES),
         "Event Study": _studies_read(CATALOG_INPUTS),
         "Regime": set(REGIME_INPUTS) | set(RECESSION_MODEL),   # the rows, the next prints, the recession score
