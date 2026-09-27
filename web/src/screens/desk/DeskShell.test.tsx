@@ -103,7 +103,9 @@ describe("Desk v2 shell", () => {
 
   it("each tab's header carries its own action, and Position Monitor has no toggle", async () => {
     const { unmount } = renderDesk("/desk/technicals");
-    expect(await screen.findByTestId("dk-act")).toHaveTextContent("Act on this → Position Monitor");
+    // §14.2: Technicals opens its instrument as a position, the S&P 500 by default.
+    expect(await screen.findByTestId("dk-act")).toHaveTextContent("Open as position →");
+    expect(screen.getByTestId("dk-act")).toHaveAttribute("href", "/desk/position-monitor?new=1&instrument=S%26P+500");
     unmount();
     renderDesk("/desk/position-monitor");
     await screen.findByRole("navigation", { name: "Breadcrumb" });

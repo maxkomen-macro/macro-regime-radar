@@ -518,3 +518,14 @@ describe("Position Monitor tab", () => {
     expect(screen.getByText(/Carried in from Event Study · Gold \(COMEX front month\) up 2σ or more over 20 days while S&P below its 50-day → S&P 500 over the next 1 month/)).toBeInTheDocument();
   });
 });
+
+describe("opened from Technicals (§14.2)", () => {
+  it("`?instrument=` fills the empty instrument field and says where it came from; the gate is unchanged", async () => {
+    stubDesk();
+    renderTab("/desk/position-monitor?new=1&instrument=NVDA");
+    const field = await screen.findByRole("combobox", { name: "Instrument" });
+    await waitFor(() => expect(field).toHaveValue("NVDA"));
+    expect(screen.getByText(/Opened from Technicals · NVDA/)).toBeInTheDocument();
+    expect(screen.getByTestId("pm-save")).toBeDisabled();
+  });
+});

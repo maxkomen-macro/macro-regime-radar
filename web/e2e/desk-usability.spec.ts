@@ -94,4 +94,49 @@ test.describe("desk usability", () => {
     await field.press("Escape");
     await expect(field).toHaveValue("TLT basis trade");
   });
+
+  // ── Item 2: Technicals for any stock ─────────────────────────────────────
+
+  test("item 2: a stock's Technicals: price and averages, crosses not scored, RSI, drawdown, vol, 1-year return, strength vs the S&P", async ({ page }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/technicals?symbol=NVDA");
+      const main = page.getByRole("main");
+      const price = main.getByRole("region", { name: /^NVDA · NVIDIA Corporation/ });
+      await expect(price).toContainText("226");
+      await expect(price.getByRole("img")).toBeVisible();
+      await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("RSI (14)");
+      await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("+23.1%");
+      await expect(main.getByRole("region", { name: /^Relative strength vs the S&P 500/ }).getByRole("img")).toBeVisible();
+      // The S&P-only cards are the S&P's; one line points there.
+      await expect(main.getByRole("region", { name: /^Signals/ })).toHaveCount(0);
+      await expect(main.getByRole("region", { name: /^Sector leadership/ })).toHaveCount(0);
+      await expect(main.getByRole("region", { name: /^What protection costs/ })).toHaveCount(0);
+      await expect(main).toContainText("Signals are scored on the S&P 500 → view");
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await bannedWordsOnPage(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `overflow at ${width}`).toBeLessThanOrEqual(1);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
+  });
+
+  test("item 2: a stored ETF's cross is labelled not scored; the S&P link goes back to the scored page", async ({ page }) => {
+    await open(page, "/desk/technicals?symbol=GLD");
+    const price = page.getByRole("region", { name: /^GLD · SPDR Gold Shares/ });
+    await expect(price).toContainText("the 50-day crossed below the 200-day. Not scored");
+    await page.getByRole("link", { name: "→ view" }).click();
+    await expect(page).toHaveURL(/\/desk\/technicals$/);
+    await expect(page.getByRole("region", { name: /^Signals/ })).toBeVisible();
+  });
+
+  test("item 2: Open as position fills the instrument; Add to basket puts it in the open basket", async ({ page }) => {
+    await open(page, "/desk/technicals?symbol=NVDA");
+    await page.getByTestId("dk-act").click();
+    await expect(page).toHaveURL(/\/desk\/position-monitor\?new=1&instrument=NVDA$/);
+    await expect(page.getByRole("combobox", { name: "Instrument", exact: true })).toHaveValue("NVDA");
+    await open(page, "/desk/technicals?symbol=NVDA");
+    await page.getByTestId("te-add-basket").click();
+    await expect(page).toHaveURL(/\/desk\/basket-hedge/);
+    await expect(page.getByRole("region", { name: "Basket" })).toContainText("NVDA added from Technicals at 0%");
+  });
 });

@@ -221,6 +221,10 @@ const question = o(
 );
 
 const pricePoint = o({ date: "s!", close: "n", ma50: "n", ma200: "n" });
+// desk/usability §14.2: the relative-strength line, rebased to 100 at each range's first point.
+const rsPoint = o({ date: "s!", rs: "n", rs_ma50: "n" });
+// desk/usability §14.2: the drawdown's and the realized volatility's windows (books' `span` below is the basket's, nullable).
+const techSpan = o({ start: "s!", end: "s!", n: "n" });
 const relPoint = o({ date: "s!", rel: "n" });
 const regimeTrend = o({ label: "s!", print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", freq: "s", source: "s" });
 const BANDS = ["low", "elevated", "high_risk"] as const;
@@ -371,6 +375,25 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/ledger": o({ ...envelope, verdict_rule: "s", horizon: "n", comparison_session: "s?", prev_session: "s?", scored_n: "n", unavailable_n: "n", signals: l(ledgerRow) }),
   "/technicals": o({
     ...envelope,
+    // desk/usability §14.2: which instrument, and whether its signals are scored (the S&P 500 only).
+    symbol: "s",
+    name: "s",
+    scored: "b",
+    drawdown: o({ value: "n", peak: o({ date: "s!", close: "n" }, { nul: true }), window: techSpan }, { nul: true }),
+    realized_vol: o({ value: "n", window: techSpan, annualization: "n" }, { nul: true }),
+    rs: o(
+      {
+        benchmark: "s",
+        date: "s",
+        value: "n",
+        ma50: "n",
+        vs_ma50: "n",
+        chg_3m: "n",
+        chg_3m_dates: o({ from: "s!", to: "s!" }, { nul: true }),
+        series: o({ "6m": l(rsPoint), "1y": l(rsPoint), "3y": l(rsPoint) }),
+      },
+      { nul: true },
+    ),
     price: "n",
     // §12.7: the session the price and the averages are dated to.
     date: "s",

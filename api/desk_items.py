@@ -23,9 +23,12 @@ The connection is closed on every path. Every heavy import is lazy.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from api import desk_catalog
+
+log = logging.getLogger("mrr.desk")
 
 
 def desk_study(slug: str) -> Callable[[dict], dict]:
@@ -78,7 +81,8 @@ def desk_technicals(ctx: dict) -> dict:
         conn.close()
     out = technicals_from_level(raw)
     out.pop("_sessions")
-    return {"ok": True, **out}
+    # The S&P's own closes, kept for the relative strength of every other instrument (never served).
+    return {"ok": True, **out, "_level": raw}
 
 
 # The instruments this store prices from its own daily history (desk/usability): the US-listed ETFs
@@ -104,28 +108,56 @@ INSTRUMENT_NAMES: dict[str, tuple[str, str]] = {
 def desk_instruments(ctx: dict) -> dict:
     """The /instruments item: every named instrument with stored daily closes
     in asset_prices, its first and last stored session; an instrument the store
-    does not hold is left out. A store without the table lists none."""
+    does not hold is left out. A store without the table lists none.
+
+    desk/usability item 2: each stored ETF's technicals too, by the shared
+    function over its stored closes, its relative strength against the stored
+    S&P 500 (the `desk_technicals` item's level, listed before this one), so
+    /technicals?symbol=<a stored ETF> is a lookup. An ETF whose technicals
+    cannot be computed is left out of `technicals`, and the route then asks
+    the provider like any other stock."""
+    import pandas as pd
+
     from src.analytics import dbpath
     from src.desk import event_study as es
 
     conn = dbpath.connect_ro(es.DB_PATH)
     try:
         if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'asset_prices'").fetchone():
-            return {"instruments": []}
+            return {"instruments": [], "technicals": {}}
         cutoff = es.resolve_as_of(None, es.DB_PATH)
         rows = conn.execute(
             "SELECT symbol, MIN(date), MAX(date) FROM asset_prices WHERE interval = '1d' AND date <= ? GROUP BY symbol",
             (cutoff,),
         ).fetchall()
+        stored = {sym: (first, last) for sym, first, last in rows}
+        out, closes = [], {}
+        for sym, (name, kind) in INSTRUMENT_NAMES.items():
+            if sym in stored:
+                first, last = stored[sym]
+                out.append({"symbol": sym, "name": name, "kind": kind, "first": first, "last": last, "source": "asset_prices"})
+                if kind == "etf":
+                    closes[sym] = conn.execute(
+                        "SELECT date, close FROM asset_prices WHERE symbol = ? AND interval = '1d' AND date <= ? ORDER BY date",
+                        (sym, cutoff),
+                    ).fetchall()
     finally:
         conn.close()
-    stored = {sym: (first, last) for sym, first, last in rows}
-    out = []
-    for sym, (name, kind) in INSTRUMENT_NAMES.items():
-        if sym in stored:
-            first, last = stored[sym]
-            out.append({"symbol": sym, "name": name, "kind": kind, "first": first, "last": last, "source": "asset_prices"})
-    return {"instruments": out}
+    from src.desk.technicals import PRICE_SPEC
+
+    spx = ctx.get("desk_technicals") or {}
+    bench = spx.get("_level") if spx.get("ok") else None
+    technicals = {}
+    for sym, pairs in closes.items():
+        level = pd.Series([float(c) for _, c in pairs], index=pd.DatetimeIndex([d for d, _ in pairs]))
+        try:
+            t = technicals_from_level(level, spec=PRICE_SPEC, bench=bench, source=f"asset_prices {sym}")
+        except (ValueError, IndexError) as exc:  # too short a history for the calendar's slots
+            log.warning("desk: technicals for %s not computed: %s", sym, exc)
+            continue
+        t.pop("_sessions")
+        technicals[sym] = t
+    return {"instruments": out, "technicals": technicals}
 
 
 # /overview's data_status contributors (plan N9): the tier-1 inputs of the twelve Ledger
@@ -217,25 +249,40 @@ def trend_states(price, ma50, ma200) -> list[str]:
     return technicals.trend_states(price, ma50, ma200)
 
 
-def technicals_from_level(raw: Any) -> dict:
-    """N2 and N3 over a ^GSPC level series (the engine's load_level output): the
-    shared `src.desk.technicals.level_technicals` at /technicals' three chart
-    ranges, which Basket & Hedge reads for its index too (desk/books), then
-    /technicals' RSI, MACD and seasonality (desk/fill-compute) from the shared
-    indicators in `src.analytics.technicals`, over the same extended XNYS
-    calendar (see `level_technicals`). `_sessions` (the calendar) is for tests
-    and is not served."""
+# desk/usability item 2: the figures /technicals adds for any symbol, beside main's.
+HIGH_WINDOW = 252   # the drawdown from the high of the last 252 session slots (one year)
+RS_CHANGE_N = 63    # relative strength's change over 63 sessions (three months)
+
+
+def technicals_from_level(raw: Any, *, spec: Any = None, ranges: dict[str, int] | None = None, bench: Any = None,
+                          source: str = "asset_prices ^GSPC") -> dict:
+    """N2 and N3 over a level series (the engine's load_level output for
+    ^GSPC; desk/usability: any stock's or stored ETF's daily closes, `spec`
+    `src.desk.technicals.PRICE_SPEC`): the shared
+    `src.desk.technicals.level_technicals` at /technicals' chart ranges, which
+    Basket & Hedge reads for its index too (desk/books), then /technicals' RSI,
+    MACD and seasonality (desk/fill-compute) from the shared indicators in
+    `src.analytics.technicals`, over the same extended XNYS calendar (see
+    `level_technicals`), for whatever symbol the closes are.
+
+    desk/usability adds (`usability_fields`), on the same calendar: the
+    drawdown from the high of the last 252 slots, the 21-day realized
+    volatility (the shared `realized_vol`) as a fraction, and, given a `bench`
+    level (the stored S&P 500), the relative strength. `_sessions` (the
+    calendar) is for tests and is not served."""
     import pandas as pd
 
     from src.analytics import technicals
     from src.desk import technicals as level
 
-    out = level.level_technicals(raw, ranges=TECH_CHART_MONTHS)
+    ranges = ranges if ranges is not None else TECH_CHART_MONTHS
+    out = level.level_technicals(raw, spec=spec, ranges=ranges)
     al = out.pop("_aligned")
     iso = out.pop("_sessions")
     sessions = al.index
     px = al.to_numpy(dtype=float)
-    date_ = sessions[iso.index(out["date"])]
+    i = iso.index(out["date"])
+    date_ = sessions[i]
     rsi = technicals.rsi(al).to_numpy(dtype=float)
     macd = technicals.macd(al)
     chart = [k for k in range(len(sessions)) if date_ - pd.DateOffset(months=TECH_CHART_MONTHS["6m"]) < sessions[k] <= date_]
@@ -243,9 +290,73 @@ def technicals_from_level(raw: Any) -> dict:
         **out,
         **rsi_fields(rsi, px, iso),
         "macd": macd_fields(macd, iso, chart),
-        "seasonality": seasonality_fields(raw),
+        "seasonality": seasonality_fields(raw, source),
+        **usability_fields(al, px, iso, i, ranges, bench),
         "_sessions": iso,
     }
+
+
+def usability_fields(al: Any, px: Any, iso: list[str], i: int, ranges: dict[str, int], bench: Any) -> dict:
+    """desk/usability item 2's figures for any symbol, each null when a slot it
+    reads has no close: `drawdown` from the high of the last 252 slots (the
+    earliest session on a tie); `realized_vol`, the shared
+    `src.analytics.technicals.realized_vol` (21 daily log returns, none
+    missing) as a fraction; and, given `bench` (the stored S&P 500), `rs`: the
+    close divided by the benchmark's on each session, its 50-session average,
+    its 63-session change and the chart series rebased to 100."""
+    import math
+
+    import numpy as np
+    import pandas as pd
+
+    from src.analytics import technicals
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    sessions = al.index
+    date_ = sessions[i]
+
+    def f(x: float) -> float | None:
+        return float(x) if math.isfinite(x) else None
+
+    def window(w: int) -> dict:
+        lo = i - w + 1
+        return {"start": iso[lo], "end": iso[i], "n": int(np.isfinite(px[lo:i + 1]).sum())}
+
+    def in_range(months: int) -> list[int]:
+        lo = date_ - pd.DateOffset(months=months)
+        return [k for k in range(len(sessions)) if lo < sessions[k] <= date_]
+
+    lo = i - HIGH_WINDOW + 1
+    hi_k = lo + int(np.nanargmax(px[lo:i + 1]))
+    drawdown = {"value": float(px[i] / px[hi_k] - 1), "peak": {"date": iso[hi_k], "close": float(px[hi_k])}, "window": window(HIGH_WINDOW)}
+
+    w = technicals.REALIZED_WINDOW
+    rv = technicals.realized_vol(al).to_numpy(dtype=float)
+    realized_vol = {"value": f(rv[i] / 100.0), "window": {"start": iso[i - w], "end": iso[i], "n": w},
+                    "annualization": technicals.PERIODS_PER_YEAR}
+
+    rs = None
+    if bench is not None and len(bench):
+        bl, _o, _m = es.align(bench, sessions)
+        bl, _b, _w = es.validate_values(bl, registry.get("spx"))
+        bx = bl.to_numpy(dtype=float)
+        ratio = np.where(np.isfinite(px) & np.isfinite(bx), px / np.where(bx == 0, np.nan, bx), np.nan)
+        rma = pd.Series(ratio).rolling(50, min_periods=50).mean().to_numpy(dtype=float)
+        both = np.flatnonzero(np.isfinite(ratio[: i + 1]))
+        if len(both):
+            k = int(both[-1])
+            chg = ratio[k] / ratio[k - RS_CHANGE_N] - 1 if k >= RS_CHANGE_N and math.isfinite(ratio[k - RS_CHANGE_N]) else math.nan
+            rs_series = {}
+            for name, months in ranges.items():
+                ks = in_range(months)
+                base = next((ratio[x] for x in ks if math.isfinite(ratio[x])), math.nan)
+                rs_series[name] = [{"date": iso[x], "rs": f(100 * ratio[x] / base), "rs_ma50": f(100 * rma[x] / base)} for x in ks]
+            rs = {"benchmark": "^GSPC", "date": iso[k], "value": float(ratio[k]), "ma50": f(rma[k]),
+                  "vs_ma50": f(ratio[k] / rma[k] - 1) if math.isfinite(rma[k]) else None,
+                  "chg_3m": f(chg), "chg_3m_dates": {"from": iso[k - RS_CHANGE_N], "to": iso[k]} if k >= RS_CHANGE_N else None,
+                  "series": rs_series}
+    return {"drawdown": drawdown, "realized_vol": realized_vol, "rs": rs}
 
 
 def macd_fields(m: Any, iso: list[str], chart: list[int]) -> dict | None:
@@ -284,7 +395,7 @@ def macd_fields(m: Any, iso: list[str], chart: list[int]) -> dict | None:
     }
 
 
-def seasonality_fields(raw: Any) -> dict | None:
+def seasonality_fields(raw: Any, source: str = "asset_prices ^GSPC") -> dict | None:
     """/technicals' seasonality (spec §12.7, desk/fill-compute, the owner's
     item 10): the shared `src/analytics/technicals.monthly_seasonality` over
     every stored close, on the XNYS calendar through the end of the newest
@@ -296,7 +407,7 @@ def seasonality_fields(raw: Any) -> dict | None:
     s = technicals.monthly_seasonality(month_closes(raw))
     if not s["window"]["n"]:
         return None
-    return {**s, "freq": "monthly", "source": "asset_prices ^GSPC"}
+    return {**s, "freq": "monthly", "source": source}
 
 
 RSI_AFTER = 20  # sessions: the S&P's move after the last session in each RSI zone

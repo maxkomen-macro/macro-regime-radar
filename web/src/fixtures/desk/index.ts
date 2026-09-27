@@ -24,6 +24,8 @@ import studyHorizons from "./study-horizons.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
 import basketPrice from "./basket-price.json" with { type: "json" };
 import basketHedge from "./basket-hedge.json" with { type: "json" };
+import technicalsGLD from "./technicals-GLD.json" with { type: "json" };
+import technicalsNVDA from "./technicals-NVDA.json" with { type: "json" };
 import { isQuestion, questionFromEngine } from "../../screens/desk/event-study/question";
 import { isAnswerable, studyFor } from "../../screens/desk/event-study/catalog";
 import type { CatalogStudy, Question } from "../../screens/desk/data/types";
@@ -67,6 +69,9 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
 };
 
 const CATALOG = (studyCatalog as { studies: CatalogStudy[] }).studies;
+
+/** §14.2: the stocks the fixtures carry, by symbol. */
+export const TECHNICALS_BY_SYMBOL: Readonly<Record<string, unknown>> = { GLD: technicalsGLD, NVDA: technicalsNVDA };
 
 /** The catalog study a /study request names (§12.2): its preset, or its six slots; the question too, for the horizon check.
  * A preset may also be an engine slug that parses to a catalog study's query (S-20). */
@@ -197,6 +202,13 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
   if ((path === "/positions" || path === "/basket/price") && method.toUpperCase() !== "GET") return json(405, { error: "method not allowed" });
   // §12.13: `GET /basket/:id` is a deferred stub like the others.
   if (method.toUpperCase() === "GET" && routeOf(path) === "/basket") return json(200, awaitingEnvelope({ reason: BASKET_REASON, until: null }, FIXTURE_META));
+  // §14.2 (desk/usability): Technicals for one stock; the fixtures carry a stored ETF (GLD) and one stock (NVDA).
+  if (method.toUpperCase() === "GET" && path === "/technicals" && u.searchParams.has("symbol")) {
+    const sym = (u.searchParams.get("symbol") ?? "").trim().toUpperCase();
+    if (["^GSPC", "GSPC", "SPX", "^SPX", "GSPC.INDX"].includes(sym)) return json(200, technicals);
+    const doc = TECHNICALS_BY_SYMBOL[sym];
+    return doc ? json(200, doc) : json(404, { error: "unknown_symbol", message: `No listing found for '${sym}' on EODHD.` });
+  }
   if (method.toUpperCase() === "GET" && path in DESK_JSON_FIXTURES) return json(200, DESK_JSON_FIXTURES[path]);
   // §12.15, §12.16: a basket the fixtures priced answers; any other basket has no fixture (never a made-up price).
   if (method.toUpperCase() === "GET" && path in BASKET_ANSWERS) {

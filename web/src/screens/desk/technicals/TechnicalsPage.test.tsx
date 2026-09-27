@@ -15,7 +15,9 @@ import technicals from "../../../fixtures/desk/technicals.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
-import { aboveBelow, allowlistRows, dayInYear, dayMove, macdCrossWords, macdSide, monthTicks, quarterOf, rsiDirection, rsiZone, sevenOf, trendWord, yearsLine } from "./TechnicalsPage";
+import TechnicalsPage, { aboveBelow, allowlistRows, dayInYear, dayMove, macdCrossWords, macdSide, monthTicks, quarterOf, rsiDirection, rsiZone, sevenOf, trendWord, yearsLine } from "./TechnicalsPage";
+import { symbolOf } from "./symbol";
+import { deskPageBySlug } from "../desk-sections";
 import { servedTechnicals } from "../../../test/desk-variants";
 import { DESK_ACCENTS } from "../kit/palette";
 
@@ -159,6 +161,17 @@ describe("Technicals tab", () => {
     expect(within(seven).getAllByTitle("log return, ×100")).toHaveLength(7);
     fireEvent.click(within(card).getByTestId("dk-advanced"));
     expect(within(within(card).getByRole("list", { name: /All eleven/ })).getAllByRole("listitem")).toHaveLength(11);
+  });
+
+  it("the Risk card reads the drawdown from the one-year high and the 21-day realized vol (§14.2)", async () => {
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Risk · drawdown and volatility/ });
+    // The fixture's S&P has no Sep 22 close (the audit's §2.1): the realized vol needs 22 unbroken closes, so it says why.
+    await waitFor(() => expect(card).toHaveTextContent("From 1-year high−1.2%"));
+    expect(card).toHaveTextContent("high 7,799 on Aug 13");
+    expect(card).toHaveTextContent("Realized vol needs the last 22 closes; one is missing.");
+    // The S&P's 1-year return is on its Signals card.
+    expect(card).not.toHaveTextContent("1-year return");
   });
 
   it("Codex R-01: a sector without a return is shown with why, never hidden, and the ends are among the sectors with data", async () => {
@@ -430,6 +443,8 @@ describe("routes served awaiting (§12.0, §1.0.2)", () => {
     const season = screen.getByRole("region", { name: /^Seasonality/ });
     expect(within(season).getAllByText("no generation stored yet.")).toHaveLength(1);
     expect(season.textContent).not.toMatch(/\d+\.\d|%/);
+    // §14.2: so is the Risk card (desk/usability).
+    expect(within(screen.getByRole("region", { name: /^Risk · drawdown/ })).getAllByText("no generation stored yet.")).toHaveLength(1);
     expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Not yet served");
   });
 });
@@ -466,5 +481,73 @@ describe("Codex R-03: the protection PROTOTYPE stands only in a ready answer's n
     await waitFor(() => expect(vol()).toHaveTextContent("Awaiting refresh"));
     expect(vol()).not.toHaveAttribute("data-prototype");
     expect(vol().textContent).not.toMatch(illustrative);
+  });
+});
+
+describe("Technicals for any stock (§14.2)", () => {
+  function renderAt(route: string) {
+    return renderWithProviders(
+      <Routes>
+        <Route path="/desk/:page" element={<TechnicalsPage page={deskPageBySlug("technicals")!} />} />
+      </Routes>,
+      { route },
+    );
+  }
+
+  it("a stock shows its price, averages and crosses not scored, its momentum and risk, and its strength against the S&P", async () => {
+    const { calls } = stubDesk();
+    renderAt("/desk/technicals?symbol=nvda");
+    const price = await screen.findByRole("region", { name: /^NVDA · NVIDIA Corporation/ });
+    await waitFor(() => expect(price).toHaveTextContent("Price226"));
+    expect(price).toHaveTextContent("No 50-day and 200-day cross in the history served.");
+    // Two years of daily bars: 6M and 1Y only; no chip that asks what is not served.
+    expect(within(price).getAllByRole("button").map((b) => b.textContent)).toEqual(["6M", "1Y"]);
+    // Main's RSI, MACD and seasonality cards read the stock's own figures (the shared functions), and name it.
+    const rsi = screen.getByRole("region", { name: /^Momentum · RSI/ });
+    expect(rsi).toHaveTextContent("is NVDA stretched, either way?");
+    expect(rsi).toHaveTextContent("Now55.9");
+    expect(rsi).toHaveTextContent("NVDA −12.9% 20 sessions later");
+    expect(screen.getByRole("region", { name: /^Momentum · MACD/ })).toHaveTextContent("12, 26, 9 on NVDA's closes");
+    expect(screen.getByRole("region", { name: /^Seasonality · NVDA by calendar month/ })).toBeInTheDocument();
+    const risk = screen.getByRole("region", { name: /^Risk · drawdown and volatility/ });
+    expect(risk).toHaveTextContent("21-day realized vol44.0%");
+    expect(risk).toHaveTextContent("1-year return+23.1%");
+    const rs = screen.getByRole("region", { name: /^Relative strength vs the S&P 500/ });
+    expect(rs).toHaveTextContent("3-month change+8.3%");
+    // The S&P-only cards are not drawn; one line says where the signals are scored.
+    expect(screen.queryByRole("region", { name: /^Signals/ })).toBeNull();
+    expect(screen.queryByRole("region", { name: /^What protection costs/ })).toBeNull();
+    expect(screen.queryByRole("region", { name: /^Sector leadership/ })).toBeNull();
+    expect(screen.getByText(/Signals are scored on the S&P 500/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "→ view" })).toHaveAttribute("href", "/desk/technicals");
+    expect(screen.getByTestId("te-add-basket")).toHaveAttribute("href", "/desk/basket-hedge?add=NVDA");
+    expect(calls.some((c) => c === "GET /api/desk/technicals?symbol=NVDA")).toBe(true);
+  });
+
+  it("a stored ETF's cross is shown and labelled not scored", async () => {
+    stubDesk();
+    renderAt("/desk/technicals?symbol=GLD&range=3y");
+    const price = await screen.findByRole("region", { name: /^GLD · SPDR Gold Shares/ });
+    await waitFor(() => expect(price).toHaveTextContent("Jun 30, 2026 — the 50-day crossed below the 200-day."));
+    expect(price).toHaveTextContent("Not scored: the engine scores crosses of the S&P 500 only.");
+    expect(within(price).getByRole("button", { name: "3Y" })).toHaveAttribute("aria-pressed", "true");
+    expect(price.querySelector("[data-verdict]")).toBeNull();
+  });
+
+  it("the S&P 500's spellings open the page's default", () => {
+    expect(symbolOf("symbol=^GSPC")).toBeNull();
+    expect(symbolOf("symbol=spx")).toBeNull();
+    expect(symbolOf("symbol=brk.b")).toBe("BRK.B");
+    expect(symbolOf("symbol=not a symbol")).toBeNull();
+    expect(symbolOf("")).toBeNull();
+  });
+
+  it("a symbol the provider does not know keeps the cards' labels", async () => {
+    stubDesk();
+    renderAt("/desk/technicals?symbol=ZZZZ");
+    const risk = await screen.findByRole("region", { name: /^Risk · drawdown and volatility/ });
+    await waitFor(() => expect(risk).toHaveTextContent("Awaiting refresh"));
+    for (const l of ["From 1-year high", "21-day realized vol", "1-year return"]) expect(risk).toHaveTextContent(l);
+    expect(screen.getByRole("region", { name: /^Momentum · RSI/ })).toHaveTextContent(/Now\s*Awaiting refresh/);
   });
 });

@@ -160,7 +160,8 @@ RANGES: dict[str, dict[str, Any]] = {
     "6M": {"kind": "eod", "period": "d", "lookback_days": 183, "yf": ("6mo", "1d")},
     "1Y": {"kind": "eod", "period": "d", "lookback_days": 366, "yf": ("1y", "1d")},
     # desk/books: two years of daily bars, so a 200-day average has history across a one-year
-    # chart (Basket & Hedge). Completed sessions only, cached per ticker per New York session.
+    # chart (Basket & Hedge), and desk/usability's Technicals for any US stock (the 1-year return,
+    # RSI). Completed sessions only, cached per ticker per New York session.
     "2Y": {"kind": "eod", "period": "d", "lookback_days": 731, "yf": ("2y", "1d")},
     "5Y": {"kind": "eod", "period": "w", "lookback_days": 1830, "yf": ("5y", "1wk")},
     "MAX": {"kind": "eod", "period": "m", "lookback_days": None, "yf": ("max", "1mo")},

@@ -365,6 +365,14 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     setDraft((d) => (d.instrument ? d : { ...d, instrument: typeof target === "string" ? target : "", horizon: HORIZONS.includes(carried.question.horizon) ? carried.question.horizon : d.horizon }));
   }, [carried]);
 
+  // desk/usability §14.2: Technicals' "Open as position" names the instrument (`?instrument=`); it fills an empty field.
+  const instrumentAsked = search.get("instrument");
+  useEffect(() => {
+    if (!instrumentAsked || !instrumentAsked.trim() || carriedAsk || sent) return;
+    setDraft((d) => (d.instrument ? d : { ...d, instrument: instrumentAsked.trim() }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instrumentAsked]);
+
   useEffect(() => {
     if (!sent || carriedAsk) return;
     // A basket saved without a name fills nothing (Codex G1-8).
@@ -499,7 +507,9 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
         ? `The basket sent from Basket & Hedge (${basketId}) is not saved in this browser; the gate is the same for every position.`
         : carriedFailed
           ? `The study carried in from Event Study (${from ?? "the question in the address"}) is awaiting refresh; the gate is the same for every position.`
-          : "Any study can be carried in from Event Study; the gate is the same for every position.";
+          : instrumentAsked && instrumentAsked.trim()
+            ? `Opened from Technicals · ${instrumentAsked.trim()} · the gate is the same for every position.`
+            : "Any study can be carried in from Event Study; the gate is the same for every position.";
 
   return (
     <div className="pm">

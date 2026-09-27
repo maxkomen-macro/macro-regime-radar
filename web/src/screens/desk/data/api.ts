@@ -243,7 +243,9 @@ function useDesk<T>(path: string, params?: Params, opts: { enabled?: boolean } =
 
 export const useOverview = () => useDesk<OverviewResponse>("/overview");
 export const useLedger = () => useDesk<LedgerResponse>("/ledger");
-export const useTechnicals = (opts: { enabled?: boolean } = {}) => useDesk<TechnicalsResponse>("/technicals", undefined, opts);
+/** §12.7 for the S&P 500; with a symbol, §14.2's technicals for that US stock or ETF (desk/usability). */
+export const useTechnicals = (opts: { enabled?: boolean; symbol?: string | null } = {}) =>
+  useDesk<TechnicalsResponse>("/technicals", opts.symbol ? { symbol: opts.symbol } : undefined, { enabled: opts.enabled });
 export const useSectors = () => useDesk<SectorsResponse>("/sectors");
 export const useRegime = () => useDesk<RegimeResponse>("/regime");
 export const useMacro = (opts: { enabled?: boolean } = {}) => useDesk<MacroResponse>("/macro", undefined, opts);

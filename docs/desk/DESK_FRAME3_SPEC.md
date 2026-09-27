@@ -51,6 +51,8 @@ drawn finished with illustrative values and a footnote saying so.
 | Technicals: RSI card | LIVE (desk/fill-compute) | Wilder's RSI(14) on the stored ^GSPC closes, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy) (§12.7) |
 | Technicals: MACD card | LIVE (desk/fill-compute) | MACD(12, 26, 9) on the stored ^GSPC closes, `src/analytics/technicals.macd` (the shared, symbol-agnostic copy) (§12.7 `macd`) |
 | Technicals: seasonality card | LIVE (desk/fill-compute) | each calendar month's average return and share of years up over every stored ^GSPC close, `src/analytics/technicals.monthly_seasonality` (the shared, symbol-agnostic copy) (§12.7 `seasonality`) |
+| Technicals: Risk card | LIVE (desk/usability, §14.2) | the drawdown from the one-year high and 21-day realized volatility (the shared `realized_vol`), on the stored ^GSPC closes (§12.7 `drawdown`, `realized_vol`) |
+| Technicals for any US stock or ETF (`?symbol=`) | LIVE (desk/usability, §14.2) | the same shared figures (averages, RSI, MACD, seasonality, the Risk card) on a stored ETF's closes or two years of EODHD daily candles, with its strength against the S&P |
 | Event Study: studies in the catalog (§4, §12.3) | LIVE when every input's coverage is stored in the current generation; otherwise that study is awaiting with the missing series named | v3 §2 |
 | Event Study: any other combination of slots | refused, 422 `unsupported` | v3 §2 |
 | Event Study: confidence 80% / 95% | UNAVAILABLE; intervals are the engine's 90% | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
@@ -83,7 +85,7 @@ Build Notes prints these two lists as their own section, word for word.
 
 **Live**
 - Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.
-- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month.
+- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month; the drawdown from the one-year high and 21-day realized volatility; the same figures for any US stock or ETF, with its strength against the S&P.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P over the month each took effect.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, what moves with the S&P, and the 12-asset correlation matrix.
@@ -475,6 +477,14 @@ whole percent) · YEARS (`n`, with `first_year`–`last_year` in its tooltip).
 Foot: "<fewest n>–<most n> years a month · a month counts once it is
 complete" and the source line. A null `seasonality` keeps the labels and says
 "Awaiting refresh". No read is served, so none is printed.
+
+**Risk · drawdown and volatility** (desk/usability, §14.2), from
+`/technicals` `drawdown` and `realized_vol`: FROM 1-YEAR HIGH (sub-line the
+high and its day) · 21-DAY REALIZED VOL (annualized), and on a stock's page
+1-YEAR RETURN (the S&P's is on its Signals card). A figure served null says
+why in one line (realized volatility needs the last 22 closes). On a stock's
+page (`?symbol=`) the RSI, MACD and seasonality cards read that stock's own
+figures from the same shared functions, and name it.
 
 ---
 
@@ -1614,7 +1624,16 @@ cells; booleans `true` / `false`.
 
 ### 12.7 `GET /technicals`
 
-Every field describes the registry series `spx` (^GSPC).
+Every field describes the registry series `spx` (^GSPC), unless the request
+names another instrument with `symbol` (desk/usability, §14.2): then every
+field describes that instrument, `scored` is false, `series` carries `6m` and
+`1y` (two years of daily bars; a stored ETF carries `3y` too),
+`move_20d_sigma` and `move_20d_date` are null and `signals_allowlist` is
+empty. The one parameter is `symbol`; any other, a repeated one, or a
+symbol that is not a US-listed equity or ETF is refused 422 `unsupported`; a
+provider failure is an error envelope with the provider layer's status and
+`kind` as its `code` (`unknown_symbol` 404, `unavailable` 502, `missing_token`
+503, …) and its public sentence as the message.
 
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
@@ -1647,7 +1666,12 @@ Every field describes the registry series `spx` (^GSPC).
 | `seasonality.freq`, `.source` | `"monthly"`, `"asset_prices ^GSPC"` | required | — | — | A |
 | `macd.series` | array of `{date, macd, signal, hist}` | required | index points | daily | N chart series: one point per session of `series.6m` (the XNYS sessions after `date` − 6 calendar months, through `date`); each value null where undefined |
 | `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13): the XNYS sessions after `date` − 6, 12 and 36 calendar months, through `date`; a missing close is a point with `close: null`; `ma50`/`ma200` nullable per point |
-| `signals_allowlist` | `["golden-cross","death-cross","rsi-above-70","rsi-below-30","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows since desk/fill-compute). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
+| `signals_allowlist` | `["golden-cross","death-cross","rsi-above-70","rsi-below-30","spx-20d-2sigma","spx-5d-2sigma"]`, `[]` for any other instrument (desk/usability) | required | — | — | A (v2 §13; the RSI rows since desk/fill-compute). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
+| `symbol`, `name` | string | required | — | — | A: `"^GSPC"`, `"S&P 500"` by default; the stored name table (§12.17), else EODHD's search index, else the symbol |
+| `scored` | boolean | required | — | — | A: true only for the S&P 500 (the engine scores its signals) |
+| `drawdown` | `{value, peak: {date, close}, window}` | required | fraction ≤ 0 | the last 252 session slots | N: close / the window's highest close − 1, the earliest session on a tie |
+| `realized_vol` | `{value, window, annualization: 252}` | required (`value` nullable) | fraction | the last 22 closes | N: the shared `src/analytics/technicals.realized_vol` (the sample standard deviation of 21 daily log returns × √252) as a fraction; null when a close in the window is missing |
+| `rs` | `{benchmark: "^GSPC", date, value, ma50, vs_ma50, chg_3m, chg_3m_dates, series}` | required, nullable (null for the S&P 500) | ratio | sessions where both closed | N: close / the stored S&P 500's close; its 50-session mean; `chg_3m` over 63 sessions; `series` per range, rebased to 100 at the range's first point |
 | `vol` | block envelope | required | — | — | awaiting: "needs stored SPY option snapshots and a versioned skew method." |
 | `sectors` | block envelope | required | — | — | N sector leadership (§12.14, desk/fill-etf): the `/sectors` fields without `breadth`, from the same worker item, so the two agree; awaiting with the route's reason while the store lacks the ETFs |
 
@@ -2079,3 +2103,33 @@ amended in place where it is short, and the report
   matched on the ticker, then on a word of the name, under the line "Search
   did not answer · series this store prices". The stored list is asked for
   only once something has been typed.
+
+### 14.2 Technicals for any stock
+
+- **Address.** `/desk/technicals?symbol=<ticker>`; no symbol, or a spelling of
+  the S&P 500 (`^GSPC`, `SPX`), is the page's default. `&range=6m|3y` keeps the
+  chart's range (1Y by default, and only a range the answer serves has a chip).
+- **One function.** `api/desk_items.technicals_from_level` computes every figure
+  for the S&P 500 (the `desk_technicals` item), for each stored ETF (the
+  `desk_instruments` item, from `asset_prices`) and for any other US-listed
+  stock or ETF: two years of daily candles from the dashboard's candles
+  endpoint's provider path (`/api/market/candles/{sym}?range=2Y`, EODHD, added
+  here; branch desk/books adds the same range), computed on request (arbitrary
+  symbols cannot be precomputed; the provider cache holds the candles) and
+  bounded by the provider ceiling. Relative strength reads the stored S&P 500
+  of the request's generation.
+- **Cards.** For the S&P 500: §3's cards, the RSI card live. For any other
+  symbol: the price card (its title the ticker and name; a cross is shown and
+  labelled "Not scored: the engine scores crosses of the S&P 500 only."; no
+  cross in the served history says so), MOMENTUM · RSI (the S&P's figures plus
+  the 1-year return) and RELATIVE STRENGTH VS THE S&P 500 (against its 50-day,
+  3-month change, as of; the line and its 50-day average). The S&P-only cards
+  (Signals, Sector leadership, What protection costs) are not drawn; one line
+  reads "Signals are scored on the S&P 500 → view".
+- **Actions.** The header's action is **Open as position →**
+  (`/desk/position-monitor?new=1&instrument=<ticker>`, "S&P 500" on the
+  default page; the Position Monitor fills an empty instrument field from it).
+  Beside the title, **Add to basket →** (`/desk/basket-hedge?add=<ticker>`;
+  "Add SPY to basket →" on the S&P 500, the index's ETF): the basket page adds
+  the ticker to the open basket at 0%, unsaved, or starts a basket when none is
+  kept (branch desk/books replaces the basket page and keeps the address).

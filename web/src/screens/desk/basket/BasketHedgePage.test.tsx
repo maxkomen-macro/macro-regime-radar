@@ -661,3 +661,21 @@ describe("Codex R-01: Positioning never prints NaN or counts a name without data
       expect(c.textContent).not.toMatch(/NaN|\d%\s*of float|names with data/);
     });
 });
+
+describe("added from Technicals (§14.2)", () => {
+  it("`?add=` puts the ticker in the open basket at 0%, unsaved, and leaves the address", async () => {
+    seed();
+    renderTab("/desk/basket-hedge?add=nvda&basket=" + (BASKETS[0] as SavedBasket).id);
+    const basket = await screen.findByRole("region", { name: "Basket" });
+    await waitFor(() => expect(basket).toHaveTextContent(/NVDA (added from Technicals at 0%|is already in this basket)/));
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).not.toMatch(/add=/));
+    expect(stored()).toEqual(BASKETS);
+  });
+
+  it("with no basket kept here, one is started for the ticker", async () => {
+    renderTab("/desk/basket-hedge?add=AAPL");
+    const basket = await screen.findByRole("region", { name: "Basket" });
+    await waitFor(() => expect(basket).toHaveTextContent("AAPL added from Technicals at 0%: type its weight, then save."));
+    expect(stored()).toHaveLength(1);
+  });
+});

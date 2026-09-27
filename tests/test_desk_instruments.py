@@ -49,10 +49,12 @@ def test_the_item_lists_the_named_instruments_the_store_holds(monkeypatch, tmp_p
 
     monkeypatch.setattr(es, "DB_PATH", path)
     out = desk_items.desk_instruments({})
-    assert out == {"instruments": [
+    assert out["instruments"] == [
         {"symbol": "SPY", "name": "SPDR S&P 500 ETF Trust", "kind": "etf", "first": "2020-01-02", "last": "2026-09-23", "source": "asset_prices"},
         {"symbol": "GLD", "name": "SPDR Gold Shares", "kind": "etf", "first": "2010-01-04", "last": "2010-01-04", "source": "asset_prices"},
-    ]}
+    ]
+    # desk/usability item 2: each stored ETF's technicals ride with the list; two closes are too few for any.
+    assert set(out["technicals"]) <= {"SPY", "GLD"}
 
 
 def test_a_store_without_the_table_lists_none(monkeypatch, tmp_path):
@@ -61,7 +63,7 @@ def test_a_store_without_the_table_lists_none(monkeypatch, tmp_path):
     from src.desk import event_study as es
 
     monkeypatch.setattr(es, "DB_PATH", path)
-    assert desk_items.desk_instruments({}) == {"instruments": []}
+    assert desk_items.desk_instruments({}) == {"instruments": [], "technicals": {}}
 
 
 @pytest.fixture()

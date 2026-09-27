@@ -23,6 +23,7 @@ import { parseTour, tourHref } from "./tour/tour";
 import { askFromSearch, askParams } from "./event-study/question";
 import { useMixedGenerations } from "./data/generations";
 import { InstrumentSearch } from "./kit/InstrumentSearch";
+import { symbolOf } from "./technicals/symbol";
 
 /** Technicals for a picked stock (item 2: `?symbol=`); the S&P 500 is the page's default, so it takes none. */
 export function technicalsHref(pathTo: (slug: string) => string, symbol: string): string {
@@ -66,6 +67,15 @@ function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => st
         Walkthrough
       </button>
     );
+  // desk/usability §14.2: Technicals opens the instrument on screen as a position (the S&P 500 by default).
+  if (page.slug === "technicals") {
+    const sym = symbolOf(location.search);
+    return (
+      <Link className="dk-btn" data-kind="light" to={withParam(withParam(pathTo("position-monitor"), "new", "1"), "instrument", sym ?? "S&P 500")} data-testid="dk-act">
+        Open as position →
+      </Link>
+    );
+  }
   if (page.action === "act")
     return (
       <Link className="dk-btn" data-kind="light" to={monitor} data-testid="dk-act">

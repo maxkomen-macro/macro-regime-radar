@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import httpx
 import pytest
@@ -350,6 +350,19 @@ def test_search_maps_and_orders_us_first(up):
     assert r["provider"] == "eodhd" and r["fallback_used"] is False
     assert r["hits"][0]["symbol"] == "NVDA" and r["hits"][0]["type"] == "Equity" and r["hits"][0]["currency"] == "USD"
     assert r["hits"][1]["symbol"] != "NVD"  # non-US listing keeps its exchange in the canonical spelling
+
+
+def test_the_2y_range_is_two_years_of_daily_eod_bars(up):
+    """desk/usability item 2: 2Y asks EODHD's end-of-day endpoint for daily bars from 731 days back."""
+    up.script["/api/eod/NVDA.US"] = [(200, _eod_rows(3, close=100.0, adj=50.0))]
+    r = market.candles("NVDA", "2Y")
+    assert (r["range"], r["interval"], r["count"]) == ("2Y", "1d", 3)
+    (call,) = up.calls
+    assert call.url.params.get("period") == "d"
+    frm = date.fromisoformat(call.url.params.get("from"))
+    assert (datetime.now(timezone.utc).date() - frm).days == 731
+    # Adjusted: close × adjusted_close / close.
+    assert r["bars"][0]["close"] == 50.0
 
 
 def test_search_us_scope_one_letter_returns_only_us_equities_and_etfs(up):

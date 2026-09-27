@@ -472,11 +472,16 @@ def overview_answer(params: list[tuple[str, str]]) -> dict:
 
 # ── §12.7 GET /technicals ───────────────────────────────────────────────────
 
-TECHNICALS_KEYS = ("price", "date", "freq", "source", "chg_1d", "chg_1d_dates", "ret_1y", "ret_1y_dates", "ma50",
-                   "ma200", "ma50_window", "ma200_window", "vs_ma50", "vs_ma200", "trend", "cross", "move_20d_sigma",
-                   "move_20d_date", "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70",
-                   "rsi_last_below_30", "macd", "seasonality", "series", "signals_allowlist", "vol", "sectors")
+TECHNICALS_KEYS = ("symbol", "name", "scored", "price", "date", "freq", "source", "chg_1d", "chg_1d_dates", "ret_1y",
+                   "ret_1y_dates", "ma50", "ma200", "ma50_window", "ma200_window", "vs_ma50", "vs_ma200", "trend", "cross",
+                   "move_20d_sigma", "move_20d_date", "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70",
+                   "rsi_last_below_30", "macd", "seasonality", "series", "drawdown", "realized_vol", "rs",
+                   "signals_allowlist", "vol", "sectors")
 SPX_SOURCE = "asset_prices ^GSPC"
+# desk/usability item 2: the spellings that name the S&P 500 itself, the page's default.
+SPX_SYMBOLS = frozenset({"^GSPC", "GSPC", "SPX", "^SPX", "GSPC.INDX"})
+CANDLES_SOURCE = "EODHD daily candles (2Y), split- and dividend-adjusted"
+STOCK_RANGES = {"6m": 6, "1y": 12}  # two years of daily bars carry the 200-day average across a year's chart
 
 
 def _technicals_item() -> dict:
@@ -502,19 +507,89 @@ def move_20d() -> tuple[float | None, str | None]:
     return (z if math.isfinite(z) else None), tr.sessions[int(ev[-1])]
 
 
+def technicals_symbol(params: list[tuple[str, str]]) -> str | None:
+    """The one `symbol` parameter (desk/usability item 2), upper-cased; None
+    for the S&P 500 itself, the page's default. Any other parameter, or a
+    repeated one, is refused."""
+    symbol = None
+    for i, (key, value) in enumerate(params):
+        if key != "symbol":
+            raise env.Unsupported(f"{key} is not a parameter of /technicals.")
+        if i:
+            raise env.Unsupported("symbol is given more than once.")
+        symbol = value.strip().upper()
+    if not symbol:
+        if params:
+            raise env.Unsupported("symbol is empty.")
+        return None
+    return None if symbol in SPX_SYMBOLS else symbol
+
+
 def technicals_answer(params: list[tuple[str, str]]) -> dict:
-    if params:
-        raise env.Unsupported(f"{params[0][0]} is not a parameter of /technicals.")
+    """§12.7 for the S&P 500 (a lookup), or desk/usability's §14.2 for any
+    US-listed stock or ETF: a stored ETF is a lookup of the instruments item;
+    any other symbol reads two years of EODHD daily candles (the provider
+    cache holds them) and runs the same technicals function, its relative
+    strength against the stored S&P of the request's generation."""
+    symbol = technicals_symbol(params)
     item = _technicals_item()
-    if not item["ok"]:
-        raise env.Awaiting(item["reason"])
-    sigma, sigma_date = move_20d()
-    out = {**item, "freq": "daily", "source": SPX_SOURCE, "move_20d_sigma": sigma, "move_20d_date": sigma_date,
-           "signals_allowlist": list(catalog.TECHNICALS_ALLOWLIST),
+    if symbol is None:
+        if not item["ok"]:
+            raise env.Awaiting(item["reason"])
+        sigma, sigma_date = move_20d()
+        out = {**item, "symbol": "^GSPC", "name": "S&P 500", "scored": True, "freq": "daily", "source": SPX_SOURCE,
+               "move_20d_sigma": sigma, "move_20d_date": sigma_date, "rs": None,
+               "signals_allowlist": list(catalog.TECHNICALS_ALLOWLIST),
+               "vol": env.block_deferred("/technicals", "vol"),
+               # desk/fill-etf: the sector leadership /sectors serves, from the same item (§12.7, §12.14)
+               "sectors": etf_block("/technicals", "sectors", "sectors")}
+        return {k: out[k] for k in TECHNICALS_KEYS}
+    stored = _result("desk_instruments")
+    names = {r["symbol"]: r["name"] for r in stored["instruments"]}
+    if symbol in stored.get("technicals", {}):
+        t, name, source = stored["technicals"][symbol], names[symbol], f"asset_prices {symbol}"
+    else:
+        t, name = stock_technicals(symbol, item.get("_level") if item.get("ok") else None)
+        source = CANDLES_SOURCE
+    # desk/usability §14.2: a stock's page reads its own figures and main's shared RSI, MACD and seasonality for it;
+    # the S&P-only parts (the scored signals, the options) are not a stock's, and its sector bars are the index's.
+    out = {**t, "symbol": symbol, "name": name, "scored": False, "freq": "daily", "source": source,
+           "move_20d_sigma": None, "move_20d_date": None, "signals_allowlist": [],
            "vol": env.block_deferred("/technicals", "vol"),
-           # desk/fill-etf: the sector leadership /sectors serves, from the same item (§12.7, §12.14)
            "sectors": etf_block("/technicals", "sectors", "sectors")}
     return {k: out[k] for k in TECHNICALS_KEYS}
+
+
+def stock_technicals(symbol: str, bench: Any) -> tuple[dict, str]:
+    """A US-listed stock's technicals from two years of EODHD daily candles
+    (the dashboard's /api/market/candles, range 2Y) and its name from the
+    search index, or a refusal: a symbol that is not a US equity or ETF is
+    422 `unsupported`; a provider failure is its typed error (map_exception).
+    The figures are the shared ones (api/desk_items.technicals_from_level):
+    main's averages, RSI, MACD and seasonality, and desk/usability's drawdown,
+    realized volatility and relative strength."""
+    import pandas as pd
+
+    from api.desk_items import technicals_from_level
+    from api.providers import market
+    from api.providers.symbols import SymbolError, parse
+    from src.desk.technicals import PRICE_SPEC
+
+    try:
+        inst = parse(symbol)
+    except SymbolError as exc:
+        raise env.Unsupported(str(exc)) from exc
+    if not inst.is_us_equity:
+        raise env.Unsupported(f"Technicals read US-listed stocks and ETFs; {symbol} is not one.")
+    candles = market.candles(inst.canonical, "2Y")
+    pairs = sorted({b["ts"][:10]: float(b["close"]) for b in candles["bars"] if b.get("close") is not None}.items())
+    if not pairs:
+        raise env.Awaiting(f"EODHD holds no daily closes for {symbol}.")
+    level = pd.Series([c for _, c in pairs], index=pd.DatetimeIndex([d for d, _ in pairs]))
+    out = technicals_from_level(level, spec=PRICE_SPEC, ranges=STOCK_RANGES, bench=bench, source=CANDLES_SOURCE)
+    out.pop("_sessions")
+    name = (market._identity(inst) or {}).get("name") or symbol
+    return out, name
 
 
 # ── §12.14 GET /sectors (desk/fill-etf) ─────────────────────────────────────

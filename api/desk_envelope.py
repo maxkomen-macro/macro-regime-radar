@@ -374,6 +374,11 @@ def map_exception(route: str, exc: BaseException, gen: Any = _UNPINNED) -> Reply
         return error_reply(422, "unsupported", str(exc), gen=gen)
     if _is(exc, "api.db", "DBUnavailable"):
         return error_reply(503, "db_unavailable", sanitized(exc), gen=gen)
+    # desk/usability item 2: a provider's typed error (Technicals on any stock reads EODHD) keeps its status
+    # and kind; the message is the provider layer's public sentence (no URL, no token).
+    if _is(exc, "api.providers.errors", "ProviderError"):
+        return error_reply(int(getattr(exc, "http_status", 502)), str(getattr(exc, "kind", "unavailable")),
+                           str(getattr(exc, "public", "") or "The data provider did not answer."), gen=gen)
     log.error("desk %s: unhandled %s", route, type(exc).__name__, exc_info=exc)
     return error_reply(500, "internal", INTERNAL_MESSAGE, gen=gen)
 

@@ -329,7 +329,57 @@
   padding: 9px 12px 10px;
 }
 
+/* desk/usability §14.2: a stock's page. The price chart beside the momentum and risk card, then
+   relative strength against the S&P 500 across the width. */
+.te-grid-stock {
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+}
+.te-grid-stock .te-price {
+  grid-row: 1;
+  grid-column: 1;
+}
+.te-grid-stock .te-rsi {
+  grid-row: 1;
+  grid-column: 2;
+}
+.te-grid-stock .te-rs {
+  grid-row: 2;
+  grid-column: 1 / -1;
+}
+.te-actions {
+  margin-top: -6px;
+  font-size: 13.5px;
+}
+.te-scored-line {
+  font-size: 13.5px;
+  color: var(--dk-t3);
+}
+.te-scored-line a {
+  color: var(--dk-blue);
+}
+.te-nocross,
+.te-note-line {
+  font-size: 12.5px;
+  color: var(--dk-t3);
+  margin-top: 8px;
+}
+.te-callout[data-unscored] {
+  border-color: var(--dk-box);
+  background: var(--dk-card-2);
+}
+
 @media (max-width: 1180px) {
+  .te-grid-stock .te-price,
+  .te-grid-stock .te-rsi,
+  .te-grid-stock .te-rs {
+    grid-row: auto;
+    grid-column: auto;
+  }
+  .te-grid-stock .te-price,
+  .te-grid-stock .te-rs {
+    grid-column: 1 / -1;
+  }
   .te-grid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-rows: auto;

@@ -97,6 +97,22 @@ copy the refresh step filled on 2026-09-27 (Yahoo, cut at 2026-09-23). Only
 feed Macro now) changed; every other value, the correlation list's ^VIX row
 included, is as it was.
 
+## Added by desk/usability (2026-09-27; rebuilt on the fixture store 2026-09-28)
+
+Built by `scripts/desk_usability_fixtures.py`, read-only on the fixture
+store above (the one `scripts/desk_etf_fixtures.py` builds: the audit's store
+with the ETFs' and ^VIX's rows), with the same functions the API serves. On
+that store the builder reproduces every figure `technicals.json` already
+carried (main's averages, RSI, MACD and seasonality included) before adding
+its own.
+
+| Fixture | Real | Illustrative or stand-in |
+|---|---|---|
+| `instruments.json` | Every row: the named instruments with daily `asset_prices` rows in the audit's store, their first and last stored sessions (the `desk_instruments` item) | none |
+| `technicals.json`, the §14.2 fields (`symbol`, `name`, `scored`, `drawdown`, `realized_vol`, `rs`) | Computed by the shared technicals function on the store's ^GSPC closes (the audit's): the 21-day volatility is null because Sep 22 has no close (it needs 22), and the drawdown is from the Aug 13 high, over 251 of the year's 252 sessions | none |
+| `technicals-GLD.json` | Everything: the instruments item's answer for GLD on the fixture store (its RSI, MACD and seasonality by the shared functions), its relative strength against the stored S&P (its 50-day average null across Sep 22) | none |
+| `technicals-NVDA.json` | Computed by the shared function, RSI, MACD and seasonality included; relative strength against the store's S&P | The closes: two years of Yahoo daily adjusted closes (yfinance, fetched 2026-09-28 on the build machine, cut at Sep 23), standing in for EODHD's 2Y candles, which that machine cannot reach (no EODHD token); its `source` says so |
+
 `consistency.test.ts` holds the fixtures to each other (one label per slug,
 one comparison session, the firing rows, the regime lag) and to the audit's
 real values.
