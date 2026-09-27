@@ -90,7 +90,7 @@ def main() -> None:
         parsed = [(s, float(w)) for s, w in legs]
         prices[key] = db.price_answer(hist, parsed, method, float(notional), provider="Yahoo", source=SOURCE)
         if hasattr(db, "hedge_answer"):
-            hedges[key] = db.hedge_answer(hist, parsed, method, float(notional))
+            hedges[key] = db.hedge_answer(hist, parsed, method, float(notional), provider="Yahoo", source=SOURCE)
     (OUT / "basket-price.json").write_text(json.dumps({"note": note, "answers": prices}, separators=(",", ":"), allow_nan=False) + "\n")
     print("wrote basket-price.json")
     if hedges:

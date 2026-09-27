@@ -940,3 +940,54 @@ export interface BasketPriceResponse extends Envelope {
   benchmarks?: { qqq?: BasketBenchmark; spy?: BasketBenchmark };
   compare?: { "6m"?: { base_date: string | null; points: ComparePoint[] }; "1y"?: { base_date: string | null; points: ComparePoint[] } };
 }
+
+// ── §12.15 /basket/hedge (desk/books) ─────────────────────────────────────
+
+export interface HedgeEtf {
+  symbol: string;
+  label: string;
+  rank: number;
+  /** The window the hedge ratio, dollars and volatilities come from: one year, or 60 days for a young basket. */
+  basis: "1y" | "60d" | null;
+  r2_1y: number | null;
+  r2_60d: number | null;
+  beta_1y: number | null;
+  beta_60d: number | null;
+  /** Dollars of the ETF to short per dollar of basket (beta). */
+  hedge_ratio: number | null;
+  short_usd: number | null;
+  basket_vol: number | null;
+  residual_vol: number | null;
+  vol_reduction: number | null;
+  window_1y?: { start: string | null; end: string | null; n: number | null };
+  window_60d?: { start: string | null; end: string | null; n: number | null };
+  reason: string | null;
+}
+
+export interface StressRow {
+  shock: "QQQ" | "SPY";
+  move: number | null;
+  window: { start: string | null; end: string | null; n: number | null } | null;
+  basket_beta: number | null;
+  basket_move: number | null;
+  unhedged_usd: number | null;
+  hedge: string | null;
+  hedge_beta: number | null;
+  hedge_move: number | null;
+  hedge_usd: number | null;
+  hedged_usd: number | null;
+  hedged_move: number | null;
+}
+
+export interface BasketHedgeResponse extends Envelope {
+  method?: BasketMethod;
+  notional: number | null;
+  provider?: string;
+  source?: string;
+  prices_as_of?: string;
+  start?: string;
+  ranked_by?: "r2_1y" | "r2_60d";
+  etfs?: HedgeEtf[];
+  top: string | null;
+  stress?: StressRow[];
+}

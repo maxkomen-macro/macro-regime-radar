@@ -443,6 +443,29 @@ BASKET_PRICE = obj(
 )
 
 
+# ── §12.15 GET /basket/hedge (desk/books) ───────────────────────────────────
+
+LOOSE_SPAN = obj(start=null(DATE), end=null(DATE), n=INT)
+HEDGE_ETF = E("SMH", "SOXX", "QQQ", "XLK", "IGV", "XLU", "SPY", "IWM")
+BASKET_HEDGE = obj(
+    method=E("hold", "monthly"), notional=NUM, provider=STR, source=STR, freq=Const("daily"),
+    prices_as_of=DATE, start=DATE, ranked_by=E("r2_1y", "r2_60d"),
+    etfs=Arr(obj(
+        symbol=HEDGE_ETF, label=STR, rank=INT, basis=null(E("1y", "60d")),
+        r2_1y=null(FRAC), r2_60d=null(FRAC), beta_1y=null(NUM), beta_60d=null(NUM),
+        hedge_ratio=null(NUM), short_usd=null(NUM), basket_vol=null(NUM), residual_vol=null(NUM), vol_reduction=null(NUM),
+        window_1y=LOOSE_SPAN, window_60d=LOOSE_SPAN, reason=null(STR),
+    ), min=8, max=8),
+    top=null(HEDGE_ETF),
+    stress=Arr(obj(
+        shock=E("QQQ", "SPY"), move=Const(-0.1), window=null(LOOSE_SPAN),
+        basket_beta=null(NUM), basket_move=null(NUM), unhedged_usd=null(NUM),
+        hedge=null(HEDGE_ETF), hedge_beta=null(NUM), hedge_move=null(NUM), hedge_usd=null(NUM),
+        hedged_usd=null(NUM), hedged_move=null(NUM),
+    ), min=2, max=2),
+)
+
+
 # ── The routes ──────────────────────────────────────────────────────────────
 
 # The live routes' ready payloads (the nine of §12.1–§12.9, /sectors since desk/fill-etf, Basket & Hedge's since desk/books).
@@ -458,6 +481,7 @@ ROUTES: dict[str, Obj] = {
     "/pipeline": PIPELINE,
     "/sectors": SECTORS,  # desk/fill-etf (§12.14)
     "/basket/price": BASKET_PRICE,  # desk/books
+    "/basket/hedge": BASKET_HEDGE,  # desk/books
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons
@@ -465,8 +489,8 @@ ROUTES: dict[str, Obj] = {
 STUBS: dict[str, str] = {
     "/vol": "needs stored SPY option snapshots and a versioned skew method.",
     "/positions": "Positions are kept in this browser; there is no server position store.",
-    "/basket": "basket pricing and option structures not yet defined in the engine.",
-    "/hedge": "basket pricing and option structures not yet defined in the engine.",
+    "/basket": "Baskets are kept in this browser; there is no server basket store.",
+    "/hedge": "option structures for a basket not yet defined in the engine.",
 }
 
 ENVELOPE_KEYS = ("status", "generation_id", "as_of", "engine_version", "data", "unavailable", "error")

@@ -31,7 +31,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
-import type { BasketPriceResponse, DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { BasketHedgeResponse, BasketPriceResponse, DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -275,6 +275,17 @@ export function useBasketPrice(params: { legs: string; method: string; notional:
   return useQuery<BasketPriceResponse, DeskApiError>({
     queryKey: ["desk-v2", "/basket/price", params],
     queryFn: ({ signal: s }) => deskGet<BasketPriceResponse>("/basket/price", params ?? undefined, { signal: s }),
+    staleTime: 5 * 60_000,
+    retry,
+    enabled: !!params,
+  });
+}
+
+/** §12.15: the ETF hedge for the same saved basket, ranked by fit, and the linear stress test. */
+export function useBasketHedge(params: { legs: string; method: string; notional: string } | null) {
+  return useQuery<BasketHedgeResponse, DeskApiError>({
+    queryKey: ["desk-v2", "/basket/hedge", params],
+    queryFn: ({ signal: s }) => deskGet<BasketHedgeResponse>("/basket/hedge", params ?? undefined, { signal: s }),
     staleTime: 5 * 60_000,
     retry,
     enabled: !!params,

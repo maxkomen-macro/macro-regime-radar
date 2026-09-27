@@ -62,7 +62,8 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Signal Ledger | LIVE for the rows whose study completes, the two RSI rows included (desk/fill-compute); any row whose inputs are not stored (WTI, DXY) unavailable | v3 §2, v4 B-02 |
 | Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
 | Basket & Hedge: a basket kept in this browser priced as one index (buy-and-hold or monthly), its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), contribution, concentration, liquidity | LIVE, computed on request from EODHD's daily bars (§12.14); the baskets stay in the browser (§1.8) | desk/books |
-| Basket & Hedge: the hedge | UNAVAILABLE | basket pricing and option structures not yet defined in the engine (v2 D-25–D-28) |
+| Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.15) | desk/books |
+| Basket & Hedge: hedging with options | UNAVAILABLE; the slot "Hedge with options" is kept for the options card (desk/prototypes) | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
 | Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
 | Client view | LIVE for Event Study's current study, at h = 20 | — |
@@ -80,7 +81,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
 - Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.
-- Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity.
+- Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity; the ETF that hedges it best, and a 10% fall in QQQ or SPY, unhedged and hedged.
 - Data Pipeline: the series inventory, generated from the registry.
 - Client view: the current study in plain words, a month out.
 
@@ -91,7 +92,7 @@ Build Notes prints these two lists as their own section, word for word.
 - The comparison with the study's condition dropped.
 - The 12-asset correlation matrix.
 - Positions kept on a server, and DV01.
-- The hedge structures for a basket.
+- Option structures for a basket's hedge.
 
 #### 1.0.2 The unavailable state
 
@@ -861,10 +862,20 @@ fields of §12.14:
 - **Liquidity**: days to trade each name at 20% of its 20-day average dollar
   volume for its target share of the notional; the slowest name amber.
 
-**Hedge · express or protect**: UNAVAILABLE. Title, subtitle and the three
-mode labels kept; the reason printed; no structures, no ratio, no scenarios.
-The deferred option shapes, with the corrections that apply when they are
-built, are in §12.13.
+**Hedge it** (step 3), each card leading with its sentence:
+- **Hedge with an ETF**: §12.15's eight ETFs ranked by one-year R² (60
+  days for a basket younger than a year, said in the subtitle), columns R²
+  1Y · R² 60D · HEDGE RATIO (beta, "1.38×") · SHORT (dollars for the
+  notional) · VOL LEFT · VOL CUT; the top pick marked "top pick" on the
+  Reliable tint with a green edge.
+- **Stress test**: QQQ −10% and SPY −10%: the basket's move, unhedged P&L,
+  the short leg's P&L, hedged P&L; linear in the fitted one-year betas.
+- **Hedge with options**: the slot for the options card (desk/prototypes).
+  UNAVAILABLE here: title, subtitle, the three mode labels (Protect the
+  basket, Express the S&P lean, Neutralize NDX beta) and HEDGE RATIO · COST
+  OF WAITING · ROLL kept, the reason printed, Advanced disabled. The deferred
+  option shapes, with the corrections that apply when they are built, are in
+  §12.13.
 
 ---
 
@@ -932,10 +943,11 @@ still runs on the Client view (S-32).
 **Routes.** JSON, GET only, under `/api/desk/`: `/overview`, `/study`,
 `/study/catalog`, `/study/events`, `/ledger`, `/regime`, `/technicals`,
 `/macro`, `/pipeline`, since desk/fill-etf `/sectors` (§12.14), and Basket
-& Hedge's `/basket/price` (§12.14, desk/books). Two text exceptions:
-`/study/events` with `Accept: text/csv` (§12.4) and `/pipeline/ddl`
-(`text/plain; charset=utf-8`). The deferred resources of §12.13 (`/vol`,
-`/positions`, `/basket/:id`, `/hedge`) are GET-only stubs answering the
+& Hedge's `/basket/price` and `/basket/hedge` (§12.14, §12.15, desk/books).
+Two text exceptions: `/study/events` with `Accept: text/csv` (§12.4) and
+`/pipeline/ddl` (`text/plain; charset=utf-8`). The deferred resources of
+§12.13 (`/vol`, `/positions`, `/basket/:id`, `/hedge`) are GET-only stubs
+answering the
 awaiting envelope; a removed write (`POST /positions`, `POST /basket/price`)
 answers 405. Every existing endpoint keeps its contract, those under
 `/api/desk/` included (`/api/desk/event-study`, `/api/desk/event-study/assets`,
@@ -958,7 +970,7 @@ HTTP: `ready` 200; `computing` 202 with `Retry-After: 2`, and the client polls
 the same URL; `awaiting` 200 with `data: null`; `error` 4xx/5xx. A study
 outside the catalog is 422 with `error.code: "unsupported"` and a message
 naming what is not supported, never a silent parameter drop. A basket
-route (§12.14) adds two codes: `unknown_symbol` (422) for a ticker the
+route (§12.14, §12.15) adds two codes: `unknown_symbol` (422) for a ticker the
 provider does not list, and `provider` (the provider's own status: 403,
 429, 502, 503 or 504) for any other failure of the provider, each message
 naming the ticker. The client
@@ -1553,7 +1565,13 @@ expired, premortem_right: [yes, judged]}`. `dv01` is null until a notional
 exists. The gate rule of §9 is the server's rule.
 
 **Basket — `status: deferred`** (`GET /basket/:id`, `POST /basket/price`
-answering 405). `{id, name, short, instrument, rebalance, prices_as_of,
+answering 405). desk/books: a basket is priced live by `GET /basket/price`
+(§12.14) and hedged with ETFs by `GET /basket/hedge` (§12.15); the baskets
+stay in the browser (§1.8), so `/basket/:id` answers awaiting with
+"Baskets are kept in this browser; there is no server basket store.", and
+`/hedge` (options) with
+"option structures for a basket not yet defined in the engine."
+The shape below is kept for the history. `{id, name, short, instrument, rebalance, prices_as_of,
 baskets: [{id, name}], legs: [{symbol, name|null, weight}]}` (weight in
 percent) plus the priced fields `{benchmark: {symbol, label}, ret_3m,
 bench_ret_3m, residual, residual_window, falsifies_at, month_ago, vol,
@@ -1650,6 +1668,24 @@ ceiling. No block envelopes.
 | `index.series.6m`, `.1y` | array of `{date, close, ma50, ma200, rsi, drawdown}` | required | index points | daily | N: §12.7's chart series rule, 6 and 12 months |
 | `benchmarks.qqq`, `.spy` | `{symbol, label, price, date, ret_1y, beta_1y, corr_1y, window_1y, reason_1y, beta_60d, corr_60d, window_60d, reason_60d}` | required | — | own `date` | N `src/desk/basket.regression`: daily simple returns between consecutive sessions both have a close; the last 252 (1y) or 60 (60d) of them, complete or null with `reason` ("needs 252 daily returns; there are 201 since <date>"); beta = cov / var of the benchmark; `ret_1y` the benchmark over `index.ret_1y_dates` |
 | `compare.6m`, `.1y` | `{base_date, points: [{date, basket, qqq, spy, rs_qqq, rs_qqq_ma50, rs_spy, rs_spy_ma50}]}` | required | 100 at `base_date` | daily | N `relative_series`: the chart range's sessions; basket, QQQ and SPY rebased to 100 on the range's first session all three have a close; `rs_*` = basket ÷ benchmark over its value on `base_date` × 100, with its 50-session average (null unless all 50 slots have both closes) |
+
+### 12.15 `GET /basket/hedge` (desk/books)
+
+The same parameters, refusals, prices and envelope as §12.14. The ETFs are
+fitted to the basket's index by least squares on daily simple returns
+between consecutive sessions both have a close (`src/desk/basket.regression`),
+over the last 252 (1y) and 60 (60d) of them, each window complete or not
+served. The one-year R² ranks them (the 60-day one when no ETF has a year:
+`ranked_by`); the row's hedge ratio, dollars and volatilities come from its
+`basis` window.
+
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `method`, `notional`, `provider`, `source`, `freq`, `prices_as_of`, `start` | as §12.14 | required | — | — | A, N |
+| `ranked_by` | `"r2_1y"` \| `"r2_60d"` | required | — | — | N |
+| `etfs[]` | exactly the eight, ranked: `{symbol, label, rank, basis, r2_1y, r2_60d, beta_1y, beta_60d, hedge_ratio, short_usd, basket_vol, residual_vol, vol_reduction, window_1y, window_60d, reason}` | required | R² fraction; beta; USD; annualized vol fractions | own windows | N `hedge_rows`: symbols SMH SOXX QQQ XLK IGV XLU SPY IWM (A: fixed, with their names); `hedge_ratio` = beta = cov / var of the ETF; `short_usd` = beta × notional; `basket_vol` and `residual_vol` = sample sd × √252 of the basket's returns and of basket − beta × ETF; `vol_reduction` = 1 − residual / basket (= 1 − √(1 − R²)); ties keep the list's order; `reason` when no window is complete |
+| `top` | symbol | required, nullable | — | — | N: the first ranked ETF with a hedge ratio |
+| `stress[]` | `{shock: "QQQ"\|"SPY", move: −0.1, window, basket_beta, basket_move, unhedged_usd, hedge, hedge_beta, hedge_move, hedge_usd, hedged_usd, hedged_move}` | required, two rows | fractions; USD | the top pick's `basis` window | N `stress`, linear: basket move = beta(basket, shock) × −10%; unhedged = notional × that; the short `hedge_ratio` × notional of `top` moves beta(top, shock) × −10% (exactly −10% when `top` is the shock); hedged = unhedged + the short's P&L. No convexity, no costs |
 
 ---
 

@@ -349,3 +349,78 @@ def relative_series(sessions: Sequence[str], basket: Mapping[str, float], bench:
             pts.append(p)
         out[name] = {"base_date": None if base is None else sessions[base], "points": pts}
     return out
+
+
+# ── The ETF hedge (desk/books, item 4) ───────────────────────────────────────
+#
+# Each ETF is fitted to the basket by least squares on daily returns (the
+# regression above): R² says how much of the basket's daily variance it
+# explains, beta is the hedge ratio (dollars of ETF to short per dollar of
+# basket), and the residual volatility is what is left after that short.
+# The one-year window decides the rank; the 60-day one is served beside it.
+# A basket too young for a year is ranked on 60 days, and says so.
+
+STRESS_MOVE = -0.10
+
+
+def hedge_rows(basket: Mapping[str, float], etfs: Mapping[str, Mapping[str, float]], notional: float) -> list[dict]:
+    """One row per ETF, ranked: R² over a year first (60 days when no ETF has
+    a year), then the ETF's order. Each row carries both windows' fits and
+    `basis`, the window its hedge ratio, dollars and volatilities come from."""
+    rows = []
+    for order, (sym, levels) in enumerate(etfs.items()):
+        fits = {w: regression(basket, levels, n) for w, n in WINDOWS.items()}
+        basis = "1y" if fits["1y"]["beta"] is not None else "60d" if fits["60d"]["beta"] is not None else None
+        head = fits[basis] if basis else None
+        rows.append({
+            "symbol": sym,
+            "order": order,
+            "basis": basis,
+            "r2_1y": fits["1y"]["r2"], "r2_60d": fits["60d"]["r2"],
+            "beta_1y": fits["1y"]["beta"], "beta_60d": fits["60d"]["beta"],
+            "hedge_ratio": head["beta"] if head else None,
+            "short_usd": head["beta"] * notional if head else None,
+            "basket_vol": head["vol"] if head else None,
+            "residual_vol": head["resid_vol"] if head else None,
+            "vol_reduction": head["vol_reduction"] if head else None,
+            "window_1y": fits["1y"]["window"], "window_60d": fits["60d"]["window"],
+            "reason": None if head else fits["60d"]["reason"],
+        })
+    key = "r2_1y" if any(r["r2_1y"] is not None for r in rows) else "r2_60d"
+    rows.sort(key=lambda r: (r[key] is None, -(r[key] or 0.0), r["order"]))
+    for rank, r in enumerate(rows, 1):
+        r["rank"] = rank
+        r.pop("order")
+    return rows
+
+
+def stress(basket: Mapping[str, float], shocks: Mapping[str, Mapping[str, float]], top: str | None,
+           top_levels: Mapping[str, float] | None, top_ratio: float | None, basis: str | None, notional: float,
+           move: float = STRESS_MOVE) -> list[dict]:
+    """The basket's P&L if a benchmark moves `move` (−10%), linear in the
+    fitted betas over `basis`'s window: unhedged, notional × β(basket,
+    benchmark) × move; the hedge, short `top_ratio` × notional of the top
+    ETF, which moves β(ETF, benchmark) × move (exactly the move when it is
+    the benchmark); hedged, the two added."""
+    n = WINDOWS.get(basis or "", None)
+    out = []
+    for sym, levels in shocks.items():
+        row = {"shock": sym, "move": move, "window": None, "basket_beta": None, "basket_move": None, "unhedged_usd": None,
+               "hedge": top, "hedge_beta": None, "hedge_move": None, "hedge_usd": None, "hedged_usd": None, "hedged_move": None}
+        if n is not None:
+            fb = regression(basket, levels, n)
+            row["window"] = fb["window"]
+            if fb["beta"] is not None:
+                row["basket_beta"] = fb["beta"]
+                row["basket_move"] = fb["beta"] * move
+                row["unhedged_usd"] = notional * fb["beta"] * move
+                if top is not None and top_levels is not None and top_ratio is not None:
+                    be = 1.0 if top == sym else regression(top_levels, levels, n)["beta"]
+                    if be is not None:
+                        row["hedge_beta"] = be
+                        row["hedge_move"] = be * move
+                        row["hedge_usd"] = -top_ratio * notional * be * move
+                        row["hedged_usd"] = row["unhedged_usd"] + row["hedge_usd"]
+                        row["hedged_move"] = row["hedged_usd"] / notional
+        out.append(row)
+    return out

@@ -5,7 +5,7 @@
  * whose numbers are not all served says what is missing instead. Pure.
  */
 
-import type { BasketIndex, BasketLegPriced, BasketMethod, BasketPriceResponse, ComparePoint, TrendState } from "../data/types";
+import type { BasketHedgeResponse, BasketIndex, BasketLegPriced, BasketMethod, BasketPriceResponse, ComparePoint, TrendState } from "../data/types";
 import { dayLong, dayShort, grouped, num, nyToday, pct, pctPlain } from "../kit/format";
 
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -177,4 +177,35 @@ export function liquidityLead(p: BasketPriceResponse): string | null {
   const q = p.liquidity;
   if (!q || !fin(q.basket_days) || !q.binding || !fin(p.notional)) return null;
   return `At ${usd(p.notional)} the slowest name to trade is ${q.binding}: ${daysText(q.basket_days)} at ${pctPlain(q.participation ?? 0.2, 0)} of its ${q.adv_sessions ?? 20}-day average dollar volume.`;
+}
+
+// ── Step 3: the ETF hedge (§12.15) ────────────────────────────────────────
+
+/** A dollar P&L as a verb: "loses $223,092", "makes $222", "is flat". */
+export function pnlWords(usdPnl: number): string {
+  if (!fin(usdPnl)) return "—";
+  const r = Math.round(usdPnl);
+  return r === 0 ? "is flat" : r < 0 ? `loses ${usd(-r)}` : `makes ${usd(r)}`;
+}
+
+/** The ETF table's lead: the top pick, its fit, the short and what it does to the basket's volatility. */
+export function hedgeLead(h: BasketHedgeResponse): string | null {
+  const top = h.etfs?.find((e) => e.symbol === h.top);
+  if (!top || !fin(top.hedge_ratio) || !fin(top.short_usd) || !fin(top.basket_vol) || !fin(top.residual_vol) || !fin(top.vol_reduction) || !fin(h.notional)) return null;
+  const r2 = top.basis === "1y" ? top.r2_1y : top.r2_60d;
+  if (!fin(r2)) return null;
+  const over = top.basis === "1y" ? "a year" : "60 sessions";
+  return `${top.symbol} fits the basket best (R² ${num(r2, 2)} over ${over}): short ${usd(top.short_usd)} of it against ${usd(h.notional)} and the basket's volatility falls from ${pctPlain(top.basket_vol, 0)} to ${pctPlain(top.residual_vol, 0)}, ${pctPlain(top.vol_reduction, 0)} less.`;
+}
+
+/** The stress card's lead: each shock, unhedged and hedged with the top pick. */
+export function stressLead(h: BasketHedgeResponse): string | null {
+  const rows = (h.stress ?? []).filter((s) => fin(s.unhedged_usd) && fin(s.move));
+  if (!rows.length) return null;
+  const parts = rows.map((s) => {
+    const head = `if ${s.shock} falls ${pctPlain(Math.abs(s.move as number), 0)} the basket ${pnlWords(s.unhedged_usd as number)} unhedged`;
+    return fin(s.hedged_usd) && s.hedge ? `${head} and ${pnlWords(s.hedged_usd)} hedged with ${s.hedge}` : head;
+  });
+  const s = parts.join("; ");
+  return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
 }

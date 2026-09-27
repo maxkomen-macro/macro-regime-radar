@@ -180,3 +180,65 @@ def test_the_basket_routes_share_the_provider_ceiling():
 
     assert "/api/desk/basket/price" in security.DESK_BASKET_PATHS
     assert not env.DEFERRED_REASONS.get("/basket/price")
+
+
+# ── §12.15 /basket/hedge ────────────────────────────────────────────────────
+
+def hedge(**q):
+    return client.get("/api/desk/basket/hedge", params=q)
+
+
+def test_the_hedge_keeps_the_contract_ranks_by_one_year_r2_and_names_its_top_pick(served):
+    r = hedge(legs="NVDA:40,AVGO:35,CRWV:25", notional="2000000")
+    body = dc.check_response("/basket/hedge", r)
+    d = body["data"]
+    assert d["ranked_by"] == "r2_1y" and [e["rank"] for e in d["etfs"]] == list(range(1, 9))
+    r2 = [e["r2_1y"] for e in d["etfs"]]
+    assert r2 == sorted(r2, reverse=True) and d["top"] == d["etfs"][0]["symbol"]
+    top = d["etfs"][0]
+    assert top["basis"] == "1y" and top["short_usd"] == pytest.approx(top["hedge_ratio"] * 2e6)
+    assert top["vol_reduction"] == pytest.approx(1 - top["residual_vol"] / top["basket_vol"])
+    # With a least-squares beta, what is left is sqrt(1 − R²) of the basket's volatility.
+    assert top["residual_vol"] == pytest.approx(top["basket_vol"] * np.sqrt(1 - top["r2_1y"]), rel=1e-9)
+    assert {s["shock"] for s in d["stress"]} == {"QQQ", "SPY"} and all(s["hedge"] == d["top"] for s in d["stress"])
+    assert sorted(served) == sorted({"NVDA", "AVGO", "CRWV", "SMH", "SOXX", "QQQ", "XLK", "IGV", "XLU", "SPY", "IWM"})
+
+
+def test_a_basket_that_is_all_qqq_is_hedged_by_qqq_one_for_one(served):
+    d = hedge(legs="QQQ:100").json()["data"]
+    top = d["etfs"][0]
+    assert d["top"] == "QQQ" and top["r2_1y"] == pytest.approx(1.0) and top["hedge_ratio"] == pytest.approx(1.0)
+    assert top["short_usd"] == pytest.approx(1e6) and top["residual_vol"] == pytest.approx(0.0, abs=1e-9)
+    q = next(s for s in d["stress"] if s["shock"] == "QQQ")
+    # QQQ −10%: the basket loses $100,000, the short QQQ makes it back.
+    assert q["unhedged_usd"] == pytest.approx(-100_000.0) and q["hedge_usd"] == pytest.approx(100_000.0)
+    assert q["hedged_usd"] == pytest.approx(0.0, abs=1e-6) and q["hedge_beta"] == 1.0
+
+
+def test_the_stress_is_linear_in_the_fitted_betas(served):
+    from src.desk import basket as bk
+
+    d = hedge(legs="NVDA:50,AVGO:50").json()["data"]
+    h = {s: desk_basket.history_of(_bars(s)) for s in ("NVDA", "AVGO", "QQQ", "SPY", d["top"])}
+    ref = bk.price_basket({s: h[s] for s in ("NVDA", "AVGO")}, {"NVDA": 0.5, "AVGO": 0.5})
+    level = dict(zip(ref["dates"], ref["index"]))
+    top_lv = dict(zip(h[d["top"]].dates, h[d["top"]].close))
+    ratio = d["etfs"][0]["hedge_ratio"]
+    for s in d["stress"]:
+        bench = dict(zip(h[s["shock"]].dates, h[s["shock"]].close))
+        bb = bk.regression(level, bench, 252)["beta"]
+        be = 1.0 if s["shock"] == d["top"] else bk.regression(top_lv, bench, 252)["beta"]
+        assert s["unhedged_usd"] == pytest.approx(1e6 * bb * -0.1)
+        assert s["hedged_usd"] == pytest.approx(1e6 * (bb - ratio * be) * -0.1)
+        assert s["hedged_move"] == pytest.approx(s["hedged_usd"] / 1e6)
+
+
+def test_a_young_basket_is_ranked_on_sixty_days_and_says_so(served):
+    d = hedge(legs="NBIS:100").json()["data"]
+    assert d["ranked_by"] == "r2_60d" and all(e["r2_1y"] is None for e in d["etfs"])
+    assert d["etfs"][0]["basis"] == "60d" and d["etfs"][0]["window_60d"]["n"] == 60
+
+
+def test_the_hedge_refuses_as_the_price_does(served):
+    r = hedge(legs="NVDA:60")
+    assert r.status_code == 422 and dc.check_response("/basket/hedge", r)["error"]["code"] == "unsupported"

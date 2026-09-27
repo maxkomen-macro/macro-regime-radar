@@ -6,11 +6,14 @@
  */
 import { describe, expect, it } from "vitest";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
-import type { BasketPriceResponse } from "../data/types";
-import { compareLead, concentrationLead, contributionLead, daysText, indexLead, listWords, liquidityLead, momentumLead, rsLead, startSentence, startWhy, trendPhrase, upDown, usd } from "./trades";
+import basketHedge from "../../../fixtures/desk/basket-hedge.json";
+import type { BasketHedgeResponse, BasketPriceResponse } from "../data/types";
+import { hedgeLead, pnlWords, stressLead, compareLead, concentrationLead, contributionLead, daysText, indexLead, listWords, liquidityLead, momentumLead, rsLead, startSentence, startWhy, trendPhrase, upDown, usd } from "./trades";
 
 const ANSWERS = (basketPrice as unknown as { answers: Record<string, BasketPriceResponse> }).answers;
 const SAMPLE = ANSWERS["NVDA:22,AVGO:16,VRT:14,CRWV:12,ANET:12,CEG:12,SMCI:12|hold|1000000"];
+const HEDGES = (basketHedge as unknown as { answers: Record<string, BasketHedgeResponse> }).answers;
+const PRESET = "NVDA:10,AVGO:10,AMD:10,TSM:10,MU:10,ANET:10,VRT:10,CEG:10,CRWV:10,NBIS:10|hold|1000000";
 
 describe("Basket & Hedge's lead sentences", () => {
   it("the fixture answers the sample basket", () => {
@@ -59,5 +62,17 @@ describe("Basket & Hedge's lead sentences", () => {
     expect(upDown(0.00001)).toBe("Flat");
     expect(trendPhrase({ state: "mixed", state_since: "2026-09-01" })).toBe("between its 50- and 200-day averages since Sep 1");
     expect(trendPhrase({ state: "unavailable", state_since: null })).toBe("its 200-day average needs 200 sessions of the index");
+  });
+
+  it("the hedge's sentences: the top pick with its fit, short and volatility; the stress, unhedged and hedged", () => {
+    const h = HEDGES[PRESET];
+    expect(hedgeLead(h)).toBe("SMH fits the basket best (R² 0.74 over a year): short $1,233,779 of it against $1,000,000 and the basket's volatility falls from 57% to 29%, 49% less.");
+    expect(stressLead(h)).toBe("If QQQ falls 10% the basket loses $223,092 unhedged and makes $222 hedged with SMH; if SPY falls 10% the basket loses $286,219 unhedged and makes $6,534 hedged with SMH.");
+    expect(pnlWords(-0.4)).toBe("is flat");
+    expect(pnlWords(-1234.6)).toBe("loses $1,235");
+    // A young basket is ranked on 60 sessions and says so.
+    const young = { ...h, etfs: h.etfs!.map((e, i) => (i === 0 ? { ...e, basis: "60d" as const, r2_1y: null } : e)) };
+    expect(hedgeLead(young)).toMatch(/^SMH fits the basket best \(R² 0\.77 over 60 sessions\)/);
+    expect(hedgeLead({ ...h, top: null })).toBeNull();
   });
 });

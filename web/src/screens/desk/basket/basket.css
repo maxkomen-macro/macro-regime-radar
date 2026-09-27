@@ -6,7 +6,7 @@
 }
 .bh-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 13px;
   align-items: stretch;
 }
@@ -476,5 +476,63 @@
   }
   .bh-mini {
     font-size: 11.5px;
+  }
+}
+
+/* ── Step 3: hedge it ── */
+.bh-hedge-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+}
+.bh-etfs {
+  grid-row: span 2;
+}
+.bh-scroll {
+  overflow-x: auto;
+}
+.bh-etf-table th[scope="row"] {
+  white-space: nowrap;
+}
+.bh-etf-sym {
+  display: inline-block;
+  min-width: 42px;
+  color: var(--dk-t1);
+}
+.bh-etf-name {
+  font-family: var(--dk-sans);
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+.bh-top {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--dk-rel-bd);
+  border-radius: 999px;
+  font-family: var(--dk-mono);
+  font-size: 10px;
+  color: var(--dk-green);
+}
+/* The top pick: the Reliable tint, green on the left (§1.3: green is "current"). */
+.bh-etf-table tr[data-top] th,
+.bh-etf-table tr[data-top] td {
+  background: var(--dk-rel-bg);
+}
+.bh-etf-table tr[data-top] th {
+  box-shadow: inset 2px 0 0 var(--dk-green);
+}
+.bh-stress-table td[data-tone="down"] {
+  color: var(--dk-red);
+}
+.bh-options-slot .bh-modes + .dk-stats {
+  margin-top: 12px;
+}
+@media (max-width: 1100px) {
+  .bh-hedge-step {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bh-etfs {
+    grid-row: auto;
   }
 }

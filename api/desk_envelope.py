@@ -66,17 +66,17 @@ ENGINE_VERSION = resolve_engine_version(os.environ)
 # ── The frame-3 client's routes and block paths ─────────────────────────────
 
 # The routes that answer the envelope (§12.0): the live ones (/sectors since desk/fill-etf, /basket/price
-# since desk/books), then the
+# and /basket/hedge since desk/books), then the
 # §12.13 stubs. `/basket` stands for `/basket/:id` (route_of). The existing
 # /api/desk endpoints (/event-study, /event-study/assets, /pipeline/inventory)
 # keep their own contracts.
 ENVELOPED_ROUTES: tuple[str, ...] = (
     "/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline",
-    "/sectors", "/basket/price",
+    "/sectors", "/basket/price", "/basket/hedge",
     "/vol", "/positions", "/basket", "/hedge",
 )
-# The live routes' count: the nine of §12.1–§12.9, /sectors (desk/fill-etf), then Basket & Hedge's (desk/books).
-LIVE_ROUTES = 11
+# The live routes' count: the nine of §12.1–§12.9, /sectors (desk/fill-etf), then Basket & Hedge's two (desk/books).
+LIVE_ROUTES = 12
 
 # The only paths that carry block envelopes (§12.0, v4 B-08, C-01). Every
 # other object and array in a payload is an ordinary field.
@@ -90,17 +90,24 @@ NESTED_PATHS: dict[str, tuple[str, ...]] = {
 }
 
 
+BASKET_ROUTES = ("/basket/price", "/basket/hedge")
+
+
 def route_of(path: str) -> str:
     """The route a path under /api/desk answers for: `/basket/ai-infra` is
-    `/basket`, as the client's routeOf reads it."""
-    return "/basket" if path.startswith("/basket/") and path != "/basket/price" else path
+    `/basket`, as the client's routeOf reads it; Basket & Hedge's two live
+    routes are their own."""
+    return "/basket" if path.startswith("/basket/") and path not in BASKET_ROUTES else path
 
 
 # ── Served sentences (§1.0, §12.3, §12.6–§12.8, §12.13; plan §6 S-17, S-27) ──
 
 VOL_REASON = "needs stored SPY option snapshots and a versioned skew method."
 POSITIONS_REASON = "Positions are kept in this browser; there is no server position store."
-BASKET_REASON = "basket pricing and option structures not yet defined in the engine."
+# desk/books: a basket is priced live (§12.14, §12.15); what stays deferred is a basket kept on a
+# server (baskets live in the browser, §1.8) and the hedge's option structures.
+BASKET_REASON = "Baskets are kept in this browser; there is no server basket store."
+OPTIONS_REASON = "option structures for a basket not yet defined in the engine."
 WITHOUT_CONDITION_REASON = "conditional-versus-unconditional comparison is not defined"
 # desk/fill-etf: stock_bond and correlations are served; the matrix's assets and method are open
 MATRIX_REASON = "the 12-asset matrix's assets and method are not specified yet."
@@ -113,7 +120,7 @@ DEFERRED_REASONS: dict[str, str] = {
     "/vol": VOL_REASON,
     "/positions": POSITIONS_REASON,
     "/basket": BASKET_REASON,
-    "/hedge": BASKET_REASON,
+    "/hedge": OPTIONS_REASON,
 }
 
 # The blocks deferred on Monday (§13.2 "not allowed"), by route and path.

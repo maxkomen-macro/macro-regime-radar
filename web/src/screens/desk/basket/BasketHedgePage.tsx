@@ -6,17 +6,19 @@
  * to exactly 100% is priced by /basket/price (§12.14, desk/books) from
  * EODHD's daily bars: step 2, how the basket trades (./BasketTrades.tsx).
  * The hedge's option structures are not yet defined in the engine (v2
- * D-25–D-28): that card keeps its labels and prints §1.0's reason (§1.0.2).
+ * D-25–D-28): step 3 ranks the ETF hedge (/basket/hedge, §12.15) and keeps
+ * the options card's slot, which prints §1.0's reason (§1.0.2).
  * Send to Position Monitor carries the basket as a manual subject (§9).
  */
 
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { useBasketPrice } from "../data/api";
+import { useBasketHedge, useBasketPrice } from "../data/api";
 import { useSearchParams } from "react-router-dom";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { dayShort } from "../kit/format";
-import { AdvancedPanel, Card, LiveBadge, NotServedBadge, Stat, StatRow, useAdvanced } from "../kit/ui";
+import { Card, LiveBadge, NotServedBadge } from "../kit/ui";
+import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
 import {
   savedLegs,
@@ -42,18 +44,12 @@ import {
 } from "./weights";
 import "./basket.css";
 
-/** §1.0: the hedge's option structures have no served envelope, so the card prints §1.0's reason (§1.0.2). */
-export const BASKET_UNAVAILABLE = { reason: "Basket pricing and option structures are not yet defined in the engine.", until: null } as const;
-
 /** What /basket/price is asked for a saved basket (§12.14): its legs as saved, the method, the notional;
  * null until the basket has legs whose weights add to exactly 100%. */
 export function priceParams(b: SavedBasket | null): { legs: string; method: string; notional: string } | null {
   if (!b || !b.legs.length || !sumsToHundred(b.legs)) return null;
   return { legs: legsKey(b.legs), method: "hold", notional: "1000000" };
 }
-
-/** The hedge's three modes (§10: the labels are kept). */
-export const MODES = ["Protect the basket", "Express the S&P lean", "Neutralize NDX beta"] as const;
 
 /** A total as printed: its exact digits ("100%", "96.5%", "99.97%"), so the words never say 100% of
  * weights that do not add to it (Codex R-14). */
@@ -313,27 +309,6 @@ function BasketCard({ basketId, saved, unreadable, onSelect, onSaved }: { basket
   );
 }
 
-/** The hedge (§10): title, subtitle and the three mode labels kept; the reason printed; no structures, no ratio, no scenarios. */
-function HedgeCard() {
-  const adv = useAdvanced();
-  return (
-    <Card className="bh-card bh-hedge" title="Hedge · express or protect" sub="priced off the SPY / QQQ surface" unavailable={BASKET_UNAVAILABLE} footer={<AdvancedPanel adv={adv} items="full chain · greeks · roll dates · what the hedge does under −10% / −20%" />}>
-      <div className="bh-modes" role="group" aria-label="Hedge mode">
-        {MODES.map((m) => (
-          <button key={m} type="button" disabled>
-            {m}
-          </button>
-        ))}
-      </div>
-      <StatRow cols={3}>
-        {["Hedge ratio", "Cost of waiting", "Roll"].map((l) => (
-          <Stat key={l} label={l} />
-        ))}
-      </StatRow>
-    </Card>
-  );
-}
-
 /** Step 2 (§10): how the saved basket trades, or why it is not priced yet. */
 function StepTwo({ local, q, state, range, setRange, names }: { local: SavedBasket | null; q: ReturnType<typeof useBasketPrice>; state: "loading" | "awaiting" | "ready"; range: BasketRange; setRange: (r: BasketRange) => void; names: Record<string, string | null> }) {
   const hid = useId();
@@ -361,6 +336,33 @@ function StepTwo({ local, q, state, range, setRange, names }: { local: SavedBask
           <BasketTrades p={q.data} state={state} range={range} setRange={setRange} names={names} />
         </>
       )}
+    </section>
+  );
+}
+
+/** Step 3 (§10): hedge it; the ETF hedge and the stress test for the saved basket, then the options slot. */
+function StepThree({ local, q }: { local: SavedBasket | null; q: ReturnType<typeof useBasketHedge> }) {
+  const hid = useId();
+  const priced = !!priceParams(local);
+  const state = q.data ? "ready" : q.isError || !priced ? "awaiting" : "loading";
+  return (
+    <section className="bh-step" aria-labelledby={hid}>
+      <h2 className="bh-step-title" id={hid}>
+        <span className="bh-step-n" aria-hidden="true">
+          3
+        </span>
+        Hedge it <span className="bh-step-sub">the closest ETF and what it does in a 10% fall, then options</span>
+      </h2>
+      {!priced ? <p className="bh-why">A saved basket at exactly 100% is hedged here.</p> : null}
+      {q.isError ? (
+        <p className="bh-why" role="status">
+          {`The hedge could not be computed: ${q.error.message}`}{" "}
+          <button type="button" className="dk-link" onClick={() => void q.refetch()}>
+            Try again
+          </button>
+        </p>
+      ) : null}
+      <BasketHedgeStep h={q.data} state={state} />
     </section>
   );
 }
@@ -420,6 +422,7 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
   };
   const local = saved.find((b) => b.id === basketId) ?? null;
   const pq = useBasketPrice(priceParams(local));
+  const hq = useBasketHedge(priceParams(local));
   const [range, setRange] = useState<BasketRange>("1y");
   const priced = pq.data;
   const state = pq.data ? "ready" : pq.isError ? "awaiting" : "loading";
@@ -429,9 +432,9 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
       <PageTitle page={page} badge={priced ? <LiveBadge boxed parts={[priced.provider ?? null, dayShort(priced.prices_as_of) || null]} /> : <NotServedBadge boxed />} />
       <div className="bh-grid">
         <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} />
-        <HedgeCard />
       </div>
       <StepTwo local={local} q={pq} state={state} range={range} setRange={setRange} names={names} />
+      <StepThree local={local} q={hq} />
     </div>
   );
 }

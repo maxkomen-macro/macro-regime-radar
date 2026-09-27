@@ -645,7 +645,7 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("main")).not.toContainText("7,625");
   });
 
-  test("basket & hedge: the saved basket priced (step 2), the hedge's structures unavailable, the weights kept in the browser, the hand-off; every width", async ({ page }) => {
+  test("basket & hedge: the saved basket priced (step 2) and hedged (step 3), the options slot unavailable, the weights kept in the browser, the hand-off; every width", async ({ page }) => {
     const asked: string[] = [];
     page.on("request", (r) => {
       if (/\/api\/desk\/(basket|hedge)/.test(r.url())) asked.push(`${r.method()} ${new URL(r.url()).pathname}${new URL(r.url()).search}`);
@@ -653,8 +653,9 @@ test.describe("desk v2", () => {
     await seedBaskets(page);
     await open(page, "/desk/basket-hedge");
     const basket = page.getByRole("region", { name: "Basket", exact: true });
-    const hedge = page.getByRole("region", { name: /^Hedge · express or protect/ });
+    const hedge = page.getByRole("region", { name: /^Hedge with options/ });
     const step = page.getByRole("region", { name: /^How the basket trades/ });
+    const step3 = page.getByRole("region", { name: /^Hedge it/ });
     // §12.14: the saved basket priced from the fixture's real closes; the badge names whose.
     await expect(page.getByRole("main").getByTestId("dk-live").first()).toHaveText("Live · Yahoo · Sep 23");
     await expect(step.getByRole("region", { name: /^Basket index/ })).toContainText("Up 113.8% since Mar 28, 2025");
@@ -662,11 +663,15 @@ test.describe("desk v2", () => {
     await expect(step.getByRole("img", { name: /^The basket, QQQ and SPY rebased to 100/ })).toBeVisible();
     await expect(step.getByRole("region", { name: /^Liquidity/ })).toContainText("the slowest name to trade is CEG");
     await expect(basket.getByRole("img")).toHaveCount(0);
-    // §10: the hedge's structures keep their labels and print the reason.
+    // §12.15: the ETFs ranked, the top pick marked, the stress test.
+    await expect(step3.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("XLK fits the basket best (R² 0.69 over a year)");
+    await expect(step3.locator('tr[aria-current="true"]')).toHaveCount(1);
+    await expect(step3.getByRole("region", { name: /^Stress test/ })).toContainText("If QQQ falls 10% the basket loses $170,542 unhedged");
+    // §10: the options slot keeps its labels and prints the reason.
     await expect(hedge.getByRole("group", { name: "Hedge mode" }).getByRole("button")).toHaveCount(3);
     for (const b of await hedge.getByRole("group", { name: "Hedge mode" }).getByRole("button").all()) await expect(b).toBeDisabled();
     await expect(hedge.getByRole("radio")).toHaveCount(0);
-    await expect(hedge).toContainText("Basket pricing and option structures are not yet defined in the engine.");
+    await expect(hedge).toContainText("Option structures for a basket are not yet defined in the engine.");
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
     // Weights as typed, saved in this browser.
@@ -707,8 +712,9 @@ test.describe("desk v2", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await open(page, "/desk/basket-hedge");
     expect(await page.evaluate(() => [...document.querySelectorAll(".dk *")].filter((el) => getComputedStyle(el).animationName !== "none").length)).toBe(0);
-    // Only the saved basket's price is asked, as GETs: the fixture's legs, then the normalized ones.
-    expect(asked.every((a) => a.startsWith("GET /api/desk/basket/price?legs="))).toBe(true);
+    // Only the saved basket's price and hedge are asked, as GETs: the fixture's legs, then the normalized ones.
+    expect(asked.every((a) => /^GET \/api\/desk\/basket\/(price|hedge)\?legs=/.test(a))).toBe(true);
+    expect(asked).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
     expect(asked).toContain("GET /api/desk/basket/price?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
   });
 

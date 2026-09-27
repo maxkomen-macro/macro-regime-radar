@@ -16,7 +16,7 @@ import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
 import { deskFixture } from "../../../fixtures/desk";
 import { SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
-import { BASKET_UNAVAILABLE } from "./BasketHedgePage";
+import { OPTIONS_UNAVAILABLE } from "./BasketHedgeStep";
 
 const BASKETS = (sample as { baskets: SavedBasket[] }).baskets;
 
@@ -52,14 +52,14 @@ afterEach(() => {
 });
 
 const basketCard = () => screen.getByRole("region", { name: "Basket" });
-const hedgeCard = () => screen.getByRole("region", { name: /^Hedge · express or protect/ });
+const optionsCard = () => screen.getByRole("region", { name: /^Hedge with options/ });
 const loaded = async () => {
   await waitFor(() => expect(within(basketCard()).getByLabelText("Weight of NVDA, percent")).toBeInTheDocument());
   return basketCard();
 };
 
 describe("Basket & Hedge tab", () => {
-  it("prices the saved basket: step 2 from /basket/price, its badge; the hedge's structures unavailable (§10, §12.14, §1.0.2)", async () => {
+  it("prices the saved basket: step 2 from /basket/price, step 3 from /basket/hedge, its badge; the options slot unavailable (§10, §12.14, §12.15, §1.0.2)", async () => {
     seed();
     const { calls } = stubDesk();
     renderTab();
@@ -83,13 +83,26 @@ describe("Basket & Hedge tab", () => {
     expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
     // §10: no Desk / Client toggle.
     expect(screen.queryByTestId("dk-view-toggle")).toBeNull();
-    const h = hedgeCard();
-    expect(h).toHaveTextContent("Hedge · express or protect priced off the SPY / QQQ surface");
+    // Step 3 (§12.15): the ETFs ranked by one-year R², the top pick marked, the stress test.
+    const hedge = await screen.findByRole("region", { name: /^Hedge it/ });
+    const etfs = within(hedge).getByRole("region", { name: /^Hedge with an ETF/ });
+    await waitFor(() => expect(etfs).toHaveTextContent("XLK fits the basket best (R² 0.69 over a year): short $1,384,473 of it against $1,000,000 and the basket's volatility falls from 44% to 25%, 44% less."));
+    const rows = within(etfs).getAllByRole("row").slice(1);
+    expect(rows.map((r) => r.querySelector(".bh-etf-sym")?.textContent)).toEqual(["XLK", "SMH", "SOXX", "QQQ", "SPY", "IWM", "IGV", "XLU"]);
+    expect(rows[0]).toHaveAttribute("aria-current", "true");
+    expect(rows[0]).toHaveTextContent("top pick");
+    const stress = within(hedge).getByRole("region", { name: /^Stress test/ });
+    expect(stress).toHaveTextContent("If QQQ falls 10% the basket loses $170,542 unhedged and makes $5,810 hedged with XLK; if SPY falls 10% the basket loses $238,851 unhedged and makes $1,924 hedged with XLK.");
+    expect(calls).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
+    // The options slot keeps its title, modes and labels, and prints why it is not served (§1.0.2).
+    const h = optionsCard();
+    expect(h).toHaveTextContent("Hedge with options priced off the SPY / QQQ surface");
+    expect(h.querySelector('[data-slot="hedge-options"]')).not.toBeNull();
     const modes = within(within(h).getByRole("group", { name: "Hedge mode" })).getAllByRole("button");
     expect(modes.map((m) => m.textContent)).toEqual(["Protect the basket", "Express the S&P lean", "Neutralize NDX beta"]);
     for (const m of modes) expect(m).toBeDisabled();
     expect(h).toHaveTextContent(/Hedge ratio\s*—\s*Cost of waiting\s*—\s*Roll\s*—/);
-    expect(within(h).getAllByText(BASKET_UNAVAILABLE.reason)).toHaveLength(1);
+    expect(within(h).getAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(1);
     expect(within(h).getByTestId("dk-advanced")).toBeDisabled();
     expect(calls.some((c) => c.startsWith("POST"))).toBe(false);
   });
@@ -254,7 +267,9 @@ describe("Basket & Hedge tab", () => {
   });
 
   it("the fixture server prices the baskets it carries, no other; the hedge and a stored basket are stubs; the price's POST is 405 (§12.0, §12.13, §12.14)", () => {
-    for (const path of ["/api/desk/basket/local-1", "/api/desk/hedge?mode=protect"]) expect(JSON.parse(deskFixture("GET", path)!.body), path).toMatchObject({ status: "awaiting", unavailable: { reason: "basket pricing and option structures not yet defined in the engine." } });
+    expect(JSON.parse(deskFixture("GET", "/api/desk/basket/local-1")!.body)).toMatchObject({ status: "awaiting", unavailable: { reason: "Baskets are kept in this browser; there is no server basket store." } });
+    expect(JSON.parse(deskFixture("GET", "/api/desk/hedge?mode=protect")!.body)).toMatchObject({ status: "awaiting", unavailable: { reason: "option structures for a basket not yet defined in the engine." } });
+    expect(JSON.parse(deskFixture("GET", "/api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000")!.body)).toMatchObject({ status: "ready", data: { top: "XLK" } });
     const ready = JSON.parse(deskFixture("GET", "/api/desk/basket/price?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000")!.body);
     expect(ready).toMatchObject({ status: "ready", data: { start: "2025-03-28", start_binding: ["CRWV"], provider: "Yahoo" } });
     const other = deskFixture("GET", "/api/desk/basket/price?legs=NVDA%3A100")!;

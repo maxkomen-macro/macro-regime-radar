@@ -4,7 +4,8 @@
 prices a basket the browser keeps (DESK_FRAME3_SPEC §10, §12.14): the index
 and its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY),
 contribution, concentration and liquidity. `GET /api/desk/basket/hedge` with
-the same parameters ranks the hedge ETFs (§12.15).
+the same parameters ranks the hedge ETFs and runs the linear stress test
+(§12.15).
 
 Every number comes from EODHD's daily bars (api/providers/market.daily_bars:
 two years, split- and dividend-adjusted, completed sessions only, cached per
@@ -30,6 +31,13 @@ from api import desk_envelope as env
 # The two benchmarks every basket is read against (§12.14), key → (ticker, label).
 BENCHMARKS: dict[str, tuple[str, str]] = {"qqq": ("QQQ", "Nasdaq 100 (QQQ)"), "spy": ("SPY", "S&P 500 (SPY)")}
 CHART_RANGES = {"6m": 6, "1y": 12}
+# §12.15: the ETFs a basket's hedge is chosen from, in this order, with their names.
+HEDGE_ETFS: dict[str, str] = {
+    "SMH": "VanEck Semiconductor", "SOXX": "iShares Semiconductor", "QQQ": "Nasdaq 100", "XLK": "Technology Select Sector",
+    "IGV": "iShares Expanded Tech-Software", "XLU": "Utilities Select Sector", "SPY": "S&P 500", "IWM": "Russell 2000",
+}
+# The two benchmarks the stress test moves, and by how much.
+STRESS_SHOCKS = ("QQQ", "SPY")
 MAX_LEGS = 25
 MAX_NOTIONAL = 1e12
 PROVIDER = "EODHD"
@@ -203,7 +211,50 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
     }
 
 
+def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], method: str, notional: float, *,
+                 provider: str = PROVIDER, source: str = SOURCE) -> dict:
+    """§12.15's payload: the ETFs ranked by how well each fits the basket's
+    daily returns, the top pick, and the linear stress test."""
+    from src.desk import basket as bk
+
+    names = {s: histories[s] for s, _ in legs}
+    try:
+        priced = bk.price_basket(names, {s: w / 100.0 for s, w in legs}, method, notional)
+    except bk.BasketError as exc:
+        raise env.Unsupported(str(exc)) from exc
+    level = dict(zip(priced["dates"], priced["index"]))
+    etf_levels = {sym: dict(zip(histories[sym].dates, histories[sym].close)) for sym in HEDGE_ETFS}
+    rows = bk.hedge_rows(level, etf_levels, notional)
+    for r in rows:
+        r["label"] = HEDGE_ETFS[r["symbol"]]
+    top = next((r for r in rows if r["hedge_ratio"] is not None), None)
+    shocks = {sym: etf_levels[sym] for sym in STRESS_SHOCKS}
+    return {
+        "method": method,
+        "notional": notional,
+        "provider": provider,
+        "source": source,
+        "freq": "daily",
+        "prices_as_of": priced["end"],
+        "start": priced["start"],
+        "ranked_by": "r2_1y" if any(r["r2_1y"] is not None for r in rows) else "r2_60d",
+        "etfs": rows,
+        "top": top["symbol"] if top else None,
+        "stress": bk.stress(level, shocks, top["symbol"] if top else None, etf_levels[top["symbol"]] if top else None,
+                            top["hedge_ratio"] if top else None, top["basis"] if top else None, notional),
+    }
+
+
+def _symbols(legs: list[tuple[str, float]], extra: list[str]) -> list[str]:
+    held = [s for s, _ in legs]
+    return held + [s for s in extra if s not in held]
+
+
 def price(params: list[tuple[str, str]]) -> dict:
     legs, method, notional = parse_params(params)
-    symbols = [s for s, _ in legs] + [sym for sym, _ in BENCHMARKS.values() if sym not in {s for s, _ in legs}]
-    return price_answer(fetch(symbols), legs, method, notional)
+    return price_answer(fetch(_symbols(legs, [sym for sym, _ in BENCHMARKS.values()])), legs, method, notional)
+
+
+def hedge(params: list[tuple[str, str]]) -> dict:
+    legs, method, notional = parse_params(params)
+    return hedge_answer(fetch(_symbols(legs, list(HEDGE_ETFS))), legs, method, notional)
