@@ -143,14 +143,14 @@ describe("Event Study tab", () => {
     renderTab();
     const rail = await screen.findByRole("complementary", { name: "Verdict and detail" });
     await waitFor(() => expect(rail).toHaveTextContent("Verdict · Suggestive"));
-    // §4: the box is the label, the served headline and why, and Price it; nothing else (no advice drawn from a verdict).
+    // §4: the box is the label, the served headline and why; nothing else (no advice drawn from a verdict).
     expect([...rail.querySelectorAll(".es-verdict > p")].map((p) => p.textContent?.replace(/\s+/g, " ").trim()).join(" ")).toBe(
-      "Verdict · Suggestive Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met. 18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −1.6% to +4.1%; 14.6% of resampled medians are adverse against a 3% bar. Price it → not yet served",
+      "Verdict · Suggestive Suggestive at 1 month: 10+ completed outcomes; excess medians lean the same way at 5, 10 and 20 sessions, but not all Reliable criteria are met. 18 completed outcomes in 18 overlap blocks; the 90% interval on the excess median runs −1.6% to +4.1%; 14.6% of resampled medians are adverse against a 3% bar.",
     );
     // Rule v1 reads the lean at 5, 10 and 20 sessions whatever the horizon, so 3 months is Suggestive too.
     expect(rail).toHaveTextContent(/3 months\s*−4\.2 to \+6\.3 pts\s*Suggestive/);
-    // §4: disabled with "not yet served" while Basket & Hedge is unavailable (§10).
-    expect(within(rail).getByRole("button", { name: "Price it →" })).toBeDisabled();
+    // §14.3: no control does nothing: Price it (Basket & Hedge prices nothing yet) is not drawn.
+    expect(within(rail).queryByRole("button", { name: /Price it/ })).toBeNull();
     expect(within(rail).queryByRole("link", { name: /Price it/ })).toBeNull();
     const rows = within(rail).getAllByRole("row");
     // By regime from the events at their K−2 rows of the regime record (Codex R-05).
@@ -163,8 +163,9 @@ describe("Event Study tab", () => {
     expect(rail).toHaveTextContent("Today is Goldilocks: two events, too few to read alone.");
     expect(rail).toHaveTextContent("Apr 16, 2025Overheating+12.0%");
     expect(rail).toHaveTextContent("−1.6 to +4.1 pts");
-    expect(within(within(rail).getByRole("group", { name: "Confidence" })).getByRole("button", { name: "90%" })).toHaveAttribute("aria-pressed", "true");
-    // §12.2 serves no confidence note; the chips say not yet served.
+    // §14.3: the engine's one level, in words; no chip for another.
+    expect(within(rail).getByTestId("es-conf")).toHaveTextContent("90% interval");
+    expect(within(rail).queryByRole("group", { name: "Confidence" })).toBeNull();
     expect(rail).not.toHaveTextContent("All four include zero");
   });
 
@@ -180,21 +181,13 @@ describe("Event Study tab", () => {
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=60"));
   });
 
-  it("the confidence chips are disabled, not yet served; 90% is marked as the engine's level, and nothing asks with a confidence (§4, §12.2)", async () => {
+  it("there is no confidence control and nothing asks with a confidence (§14.3, §12.2)", async () => {
     const { calls } = stubDesk();
     renderTab();
     const rail = await screen.findByRole("complementary", { name: "Verdict and detail" });
     await waitFor(() => expect(rail).toHaveTextContent("Verdict"));
-    const chips = within(within(rail).getByRole("group", { name: "Confidence" })).getAllByRole("button");
-    expect(chips.map((c) => [c.textContent, (c as HTMLButtonElement).disabled, c.getAttribute("aria-pressed")])).toEqual([
-      ["80%", true, "false"],
-      ["90%", true, "true"],
-      ["95%", true, "false"],
-    ]);
-    expect(within(rail).getByRole("group", { name: "Confidence" })).toHaveTextContent("not yet served");
-    // §1.0.2: no envelope of their own, so the rail prints §1.0's reason for them.
-    expect(rail).toHaveTextContent("Confidence levels other than 90%: interval projection at other quantiles is new plumbing.");
-    fireEvent.click(chips[0]);
+    expect(within(rail).queryAllByRole("button", { name: /^(80|90|95)%$/ })).toHaveLength(0);
+    expect(rail).not.toHaveTextContent("not yet served");
     expect(calls.some((c) => c.includes("confidence"))).toBe(false);
   });
 
@@ -333,7 +326,7 @@ describe("a study with a block missing (Codex R-10)", () => {
     expect(answer()).toHaveTextContent(/Events\s*18\s*count awaiting refresh/);
     expect(answer()).toHaveTextContent(/Up a month later\s*Awaiting refresh/);
     expect(answer()).toHaveTextContent(/Median at a month\s*Awaiting refresh/);
-    expect(rail()).toHaveTextContent(/80%90%95%\s*not yet served\s*Confidence levels other than 90%: interval projection at other quantiles is new plumbing\.\s*Awaiting refresh/);
+    expect(rail()).toHaveTextContent(/Range vs normal\s*90% interval\s*Awaiting refresh/);
     expect(rail()).toHaveTextContent(/By regime · a month later.*Goldilocks/);
   });
 
@@ -410,33 +403,51 @@ describe("the study's firing pill (§4, v3 §3)", () => {
 });
 
 describe("the catalog drives the chips and the slots (§4, §12.3)", () => {
-  it("each chip is its catalog label; a study not stored is disabled with its reason", async () => {
+  it("each chip is its catalog label; a study not stored is not shown, and one line says why (§14.3)", async () => {
     renderTab();
     const chips = await screen.findByRole("group", { name: "Common questions" });
     await waitFor(() => expect(within(chips).getByRole("button", { name: "S&P golden cross" })).toBeInTheDocument());
-    const dollar = within(chips).getByRole("button", { name: "Dollar −2σ, 20 days" });
-    expect(dollar).toBeDisabled();
-    expect(dollar).toHaveAttribute("title", "US Dollar Index (DX-Y.NYB) is not stored in this database: it is a tier 2 series, and the full refresh stores tier 1 only.");
-    expect(within(chips).getByRole("button", { name: "Oil +2σ → gold" })).toBeDisabled();
+    expect(within(chips).queryByRole("button", { name: "Dollar −2σ, 20 days" })).toBeNull();
+    expect(within(chips).queryByRole("button", { name: "Oil +2σ → gold" })).toBeNull();
     expect(within(chips).getByRole("button", { name: "HY spreads +2σ, 20 days" })).toBeEnabled();
+    expect(within(chips).getAllByRole("button").every((b) => !(b as HTMLButtonElement).disabled)).toBe(true);
+    expect(chips).toHaveTextContent("Not shown: Dollar −2σ, 20 days (US Dollar Index (DX-Y.NYB) is not stored in this database");
+    expect(chips).toHaveTextContent("Oil +2σ → gold (WTI crude (DCOILWTICO) is not stored in this database");
   });
 
-  it("a slot's option is disabled unless, with the others as they are, it leads to an available catalog study", async () => {
+  it("every slot option is enabled; shock and target list the series of their role that the store holds (§14.3)", async () => {
     renderTab();
     await waitFor(() => expect(screen.getByLabelText("Shock")).toHaveValue("gold"));
-    const enabled = (label: string) => [...(screen.getByLabelText(label) as HTMLSelectElement).options].filter((o) => !o.disabled).map((o) => o.value);
-    await waitFor(() => expect(enabled("Shock")).toEqual(["gold"]));
-    expect(enabled("Window")).toEqual(["20"]);
-    expect(enabled("While")).toEqual(["spx_below_50"]);
-    expect(enabled("Over the next")).toEqual(["5", "10", "20", "60"]);
-    expect([...(screen.getByLabelText("Window") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["5", "20", "60", "none"]);
+    const all = (label: string) => [...(screen.getByLabelText(label) as HTMLSelectElement).options];
+    for (const l of ["Shock", "Window", "Move", "While", "What happens to", "Over the next"]) expect(all(l).every((o) => !o.disabled), l).toBe(true);
+    // The fixture store's series with a role, the sector ETFs included (shocks and conditions only).
+    expect(all("Shock").map((o) => o.value)).toEqual(["spx", "gold", "us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "rut", "xlb", "xle", "xlf", "xli", "xlk", "xlp", "xlu", "xlv", "xly"]);
+    expect(all("What happens to").map((o) => o.value)).toEqual(["spx", "gold", "us10y", "vix", "hy_oas"]);
+    expect(all("Window").map((o) => o.value)).toEqual(["5", "20", "60", "none"]);
   });
 
-  it("an unavailable chip's reason is printed, not only a tooltip: a disabled chip takes no focus and a phone shows no tooltip", async () => {
+  it("a slot change that the engine cannot ask moves the other slots and says so (§14.3)", async () => {
     renderTab();
-    const chips = await screen.findByRole("group", { name: "Common questions" });
-    await waitFor(() => expect(chips).toHaveTextContent("Dollar −2σ, 20 days: US Dollar Index (DX-Y.NYB) is not stored in this database"));
-    expect(chips).toHaveTextContent("Oil +2σ → gold: WTI crude (DCOILWTICO) is not stored in this database");
+    await waitFor(() => expect(screen.getByLabelText("Shock")).toHaveValue("gold"));
+    fireEvent.change(screen.getByLabelText("Move"), { target: { value: "cross_above" } });
+    expect(screen.getByLabelText("Shock")).toHaveValue("spx");
+    expect(screen.getByLabelText("What happens to")).toHaveValue("spx");
+    expect(screen.getByLabelText("While")).toHaveValue("none");
+    expect(screen.getByLabelText("Window")).toHaveValue("none");
+    expect(screen.getByText(/A cross is the S&P 500's own averages/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Window"), { target: { value: "60" } });
+    expect(screen.getByLabelText("Move")).toHaveValue("up2s");
+    expect(screen.getByLabelText("Window")).toHaveValue("60");
+    fireEvent.click(screen.getByTestId("es-run"));
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?shock=spx&window=60&move=up2s&while=none&target=spx&horizon=20"));
+  });
+
+  it("a question outside the catalog is answered like any study (§14.3)", async () => {
+    renderTab("/desk/event-study?shock=gold&window=60&move=up2s&while=none&target=spx&horizon=20");
+    const card = () => screen.getByRole("region", { name: "The answer" });
+    await waitFor(() => expect(card()).toHaveTextContent("Suggestive at 1 month"));
+    expect(card()).toHaveTextContent(/Events\s*23/);
+    expect(screen.getByText(/slug gold-w60-z2\.0-up-none-spx/)).toBeInTheDocument();
   });
 
   it("before anything is asked the window slot is blank, never 'none (a cross)'", async () => {
@@ -611,22 +622,19 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     expect(rail()).toHaveTextContent(/Last five events · S&P 500 a month later\s*No events/);
   });
 
-  it("Codex R-03, R-04: the Shock and Target slots offer only the catalog's inputs, whatever else a study serves, and the hint counts those", async () => {
-    const extra = { key: "xlk", label: "Technology sector ETF (XLK)", roles: ["shock", "condition"], ops: [], unit: "log_return" };
-    // The fixture's eight series (the catalog's inputs) plus XLK: nine served, eight offered.
-    expect(study.series).toHaveLength(8);
-    stubDesk({ "/api/desk/study": () => ({ ...study, series: [...study.series, extra] }) });
+  it("the builder offers every series the store holds with a role, in the slot its role allows, and the hint counts them (desk/usability §14.3; supersedes desk/fill-etf's Codex R-03, R-04 by the owner's rebase ruling)", async () => {
+    // The builder computes any question on request, so its served list wins over a catalog-only filter: a stored
+    // sector ETF is a shock (and a condition), never a target, and the hint counts each slot's own choices.
     renderTab();
     const card = await screen.findByRole("region", { name: "The answer" });
     await waitFor(() => expect(card).toHaveTextContent("at 1 month"));
-    for (const slot of ["Shock", "What happens to"]) {
-      const values = [...(screen.getByLabelText(slot) as HTMLSelectElement).options].map((o) => o.value).filter(Boolean);
-      expect(values, slot).not.toContain("xlk");
-      expect(values, slot).toContain("gold");
-      expect(values, slot).toHaveLength(8);
-    }
-    expect(document.body).toHaveTextContent("every slot lists the same 8 series");
-    expect(document.body).not.toHaveTextContent("every slot lists the same 9 series");
+    const values = (slot: string) => [...(screen.getByLabelText(slot) as HTMLSelectElement).options].map((o) => o.value).filter(Boolean);
+    expect(values("Shock")).toContain("xlk");
+    expect(values("What happens to")).not.toContain("xlk");
+    expect(document.body).toHaveTextContent("17 series can be a shock, 5 a target, each one this store holds");
+    // Nothing the store lacks is offered: the Dollar and WTI rows the catalog names are not stored.
+    for (const slot of ["Shock", "What happens to"]) expect(values(slot), slot).not.toEqual(expect.arrayContaining(["dxy"]));
+    for (const slot of ["Shock", "What happens to"]) expect(values(slot), slot).not.toEqual(expect.arrayContaining(["wti"]));
   });
 
   it("Codex R-23: a preset link keeps its horizon through the address, the request, the answer and the export", async () => {

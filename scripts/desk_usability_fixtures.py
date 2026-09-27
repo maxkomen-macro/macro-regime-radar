@@ -18,8 +18,16 @@ Writes, under web/src/fixtures/desk/, from the real functions the API serves:
   function over two years of Yahoo daily adjusted closes (yfinance, keyless,
   run here only, never by the API), the fixture's `source` saying so.
 
+- studies/<engine slug>.json for each --study (six slots, as the page's
+  address writes them): the real GET /api/desk/study at each of the four
+  horizons and GET /api/desk/study/events, run through the app on a worker
+  over the store, the clock frozen at the fixture world's 2026-09-24 16:00
+  UTC (comparison session Sep 23); `provenance.engine_version` is this
+  checkout's HEAD.
+
 Read-only on the store. Usage:
   python scripts/desk_usability_fixtures.py --db <copy of the audit store> [--etf GLD] [--stock NVDA]
+      [--study "shock=gold&window=60&move=up2s&while=none&target=spx"]
 """
 
 from __future__ import annotations
@@ -59,6 +67,7 @@ def main() -> int:
     ap.add_argument("--stock", action="append", default=[])
     ap.add_argument("--yahoo-standin", action="store_true")
     ap.add_argument("--name", action="append", default=[], help="SYM=Name for a Yahoo stand-in")
+    ap.add_argument("--study", action="append", default=[], help="six slots as a query string, no horizon")
     a = ap.parse_args()
 
     from api import desk_items
@@ -66,6 +75,10 @@ def main() -> int:
     from src.desk import event_study as es
 
     es.DB_PATH = Path(a.db)
+    if a.study:
+        studies(Path(a.db), a.study)
+        if not (a.etf or a.stock):
+            return 0
     spx = desk_items.desk_technicals({})
     assert spx["ok"], spx
     level = spx["_level"]
@@ -122,6 +135,50 @@ def main() -> int:
         _write(f"technicals-{sym}.json", _served(t, sectors, symbol=sym, name=name, scored=False, source=CANDLES_SOURCE,
                                                  move_20d_sigma=None, move_20d_date=None, signals_allowlist=[]))
     return 0
+
+
+def studies(db: Path, asks: list[str]) -> None:
+    """Each ad-hoc question's answers, through the app, as §14.3 serves them."""
+    import os
+    import subprocess
+    from datetime import datetime, timezone
+
+    os.environ["ENGINE_VERSION"] = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    from fastapi.testclient import TestClient
+
+    from api import analytics_cache, db as api_db, desk_envelope as env, desk_v2
+    from api import worker as worker_mod
+    from api.main import app
+
+    env.ENGINE_VERSION = os.environ["ENGINE_VERSION"]
+    api_db.DB_PATH = db
+    api_db.reset_connections_for_tests()
+    desk_v2._now = lambda: datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc)
+    items = [(n, f) for n, f in analytics_cache.ITEMS if n == "desk_assets"]
+    w = worker_mod.AnalyticsWorker(items, poll_s=0.05, preload=False)
+    worker_mod._worker = w
+    w.start(serving=True)
+    assert w.wait_published(timeout=180)
+    try:
+        client = TestClient(app)
+        out_dir = OUT / "studies"
+        out_dir.mkdir(exist_ok=True)
+        for ask in asks:
+            answers = {}
+            for h in (5, 10, 20, 60):
+                r = client.get(f"/api/desk/study?{ask}&horizon={h}")
+                body = r.json()
+                assert r.status_code == 200 and body["status"] == "ready", (ask, h, r.status_code, body.get("error") or body.get("unavailable"))
+                answers[str(h)] = body["data"]
+            ev = client.get(f"/api/desk/study/events?{ask}")
+            assert ev.status_code == 200, ev.text
+            slug = answers["20"]["slug"]
+            doc = {"note": "desk/usability §14.3: a question outside the catalog, answered on request by the real route "
+                           "on the audit's store at each horizon, and its events (scripts/desk_usability_fixtures.py).",
+                   "ask": ask, "answers": answers, "events": ev.json()["data"]}
+            _write(f"studies/{slug}.json", doc)
+    finally:
+        w.stop()
 
 
 if __name__ == "__main__":

@@ -139,4 +139,50 @@ test.describe("desk usability", () => {
     await expect(page).toHaveURL(/\/desk\/basket-hedge/);
     await expect(page.getByRole("region", { name: "Basket" })).toContainText("NVDA added from Technicals at 0%");
   });
+
+  // ── Item 3: Event Study builder ──────────────────────────────────────────
+
+  /** Three questions outside the catalog, built in the slots (§14.3), answered from the real route's fixtures. */
+  const BUILT_QUESTIONS: { slots: Record<string, string>; address: string; headline: string; events: string; label: RegExp }[] = [
+    {
+      slots: { Shock: "gold", Window: "60", Move: "up2s", While: "none", "What happens to": "spx", "Over the next": "20" },
+      address: "shock=gold&window=60&move=up2s&while=none&target=spx&horizon=20",
+      headline: "Suggestive at 1 month",
+      events: "23",
+      label: /slug gold-w60-z2\.0-up-none-spx/,
+    },
+    {
+      slots: { Shock: "vix", Window: "20", Move: "up2s", While: "regime:Overheating", "What happens to": "gold", "Over the next": "20" },
+      address: "shock=vix&window=20&move=up2s&while=regime%3AOverheating&target=gold&horizon=20",
+      headline: "No edge at 1 month",
+      events: "27",
+      label: /slug vix-w20-z2\.0-up-regime=overheating-gold/,
+    },
+    {
+      slots: { Shock: "us10y", Window: "5", Move: "down2s", While: "spx_below_50", "What happens to": "us10y", "Over the next": "20" },
+      address: "shock=us10y&window=5&move=down2s&while=spx_below_50&target=us10y&horizon=20",
+      headline: "Suggestive at 1 month",
+      events: "54",
+      label: /slug us10y-w5-z2\.0-down-spx_below_50dma-us10y/,
+    },
+  ];
+
+  for (const [i, q] of BUILT_QUESTIONS.entries())
+    test(`item 3: a question outside the catalog, built in the slots, is answered with the same rules (${i + 1} of 3)`, async ({ page }) => {
+      await open(page, "/desk/event-study");
+      await expect(page.getByLabel("Shock")).toHaveValue("gold");
+      // Every option in every slot is enabled (§14.3).
+      expect(await page.locator("select option[disabled]").count()).toBe(0);
+      for (const [label, value] of Object.entries(q.slots)) await page.getByLabel(label, { exact: true }).selectOption(value);
+      await page.getByTestId("es-run").click();
+      await expect(page).toHaveURL(new RegExp(`\\?${q.address.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+      const answer = page.getByRole("region", { name: "The answer" });
+      await expect(answer).toContainText(q.headline);
+      await expect(answer.locator(".dk-stat").first()).toContainText(q.events);
+      await expect(page.getByRole("complementary", { name: "Verdict and detail" })).toContainText(`Verdict · ${q.headline.split(" at ")[0]}`);
+      await expect(page.getByText(q.label)).toBeVisible();
+      expect(await page.locator("button:disabled:visible").count()).toBe(0);
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await bannedWordsOnPage(page)).toEqual([]);
+    });
 });

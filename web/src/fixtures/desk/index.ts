@@ -26,7 +26,10 @@ import basketPrice from "./basket-price.json" with { type: "json" };
 import basketHedge from "./basket-hedge.json" with { type: "json" };
 import technicalsGLD from "./technicals-GLD.json" with { type: "json" };
 import technicalsNVDA from "./technicals-NVDA.json" with { type: "json" };
-import { isQuestion, questionFromEngine } from "../../screens/desk/event-study/question";
+import studyGold60 from "./studies/gold-w60-z2.0-up-none-spx.json" with { type: "json" };
+import studyVixOverheatingGold from "./studies/vix-w20-z2.0-up-regime=overheating-gold.json" with { type: "json" };
+import studyTenYearDown from "./studies/us10y-w5-z2.0-down-spx_below_50dma-us10y.json" with { type: "json" };
+import { engineSlugOf, isCross, isQuestion, questionFromEngine } from "../../screens/desk/event-study/question";
 import { isAnswerable, studyFor } from "../../screens/desk/event-study/catalog";
 import type { CatalogStudy, Question } from "../../screens/desk/data/types";
 import { awaitingEnvelope, onTheWire, routeOf, type EnvelopeMeta } from "../../screens/desk/data/envelope";
@@ -69,6 +72,15 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
 };
 
 const CATALOG = (studyCatalog as { studies: CatalogStudy[] }).studies;
+
+/** §14.3 (desk/usability): the questions outside the catalog the fixtures carry, answered by the real route on the
+ * audit's store at each horizon, with their events, by the engine's slug (scripts/desk_usability_fixtures.py). */
+export const STUDY_FIXTURES: Readonly<Record<string, { answers: Record<string, unknown>; events: unknown }>> = Object.fromEntries(
+  [studyGold60, studyVixOverheatingGold, studyTenYearDown].map((doc) => [(doc.answers["20"] as { slug: string }).slug, doc]),
+);
+
+/** §14.3: the served refusal of a cross on anything but the S&P 500 (api/desk_catalog.CROSS_RULE). */
+export const CROSS_RULE = "A cross is the S&P 500's own 50- and 200-day averages crossing: the shock and the target are spx, with no condition.";
 
 /** §14.2: the stocks the fixtures carry, by symbol. */
 export const TECHNICALS_BY_SYMBOL: Readonly<Record<string, unknown>> = { GLD: technicalsGLD, NVDA: technicalsNVDA };
@@ -222,6 +234,16 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
     const refused = paramRefusal(u);
     if (refused) return json(422, { error: "unsupported", message: refused });
     const { study: c, question } = catalogAsk(u);
+    // §14.3: a well-formed question outside the catalog is answered on request; the fixtures carry three.
+    if (!c && question) {
+      if (isCross(question.move) && (question.shock !== "spx" || question.target !== "spx" || question.while !== "none")) return json(422, { error: "unsupported", message: CROSS_RULE });
+      if (![5, 10, 20, 60].includes(question.horizon)) return json(422, { error: "unsupported", message: `horizon ${question.horizon} is not one of 5, 10, 20, 60.` });
+      const doc = STUDY_FIXTURES[engineSlugOf(question)];
+      if (!doc) return json(404, { error: "no_fixture", message: `The fixtures carry no answer for ${engineSlugOf(question)}; the API computes it on request.` });
+      if (path === "/study") return json(200, doc.answers[String(question.horizon)]);
+      if (/text\/csv/.test(accept ?? "")) return { status: 200, contentType: "text/csv", body: eventsCsv(doc.events as { events: Record<string, unknown>[] }) };
+      return json(200, doc.events);
+    }
     // A row with a question checks the asked horizon against its allowed ones (§12.3); a row with none (the RSI rows)
     // refuses any horizon parameter and, asked without one, answers awaiting (§12.2, S-31).
     const asked = c && (c.question || u.searchParams.has("horizon")) ? askedHorizon(u, c) : null;

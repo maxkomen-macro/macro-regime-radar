@@ -54,8 +54,8 @@ drawn finished with illustrative values and a footnote saying so.
 | Technicals: Risk card | LIVE (desk/usability, §14.2) | the drawdown from the one-year high and 21-day realized volatility (the shared `realized_vol`), on the stored ^GSPC closes (§12.7 `drawdown`, `realized_vol`) |
 | Technicals for any US stock or ETF (`?symbol=`) | LIVE (desk/usability, §14.2) | the same shared figures (averages, RSI, MACD, seasonality, the Risk card) on a stored ETF's closes or two years of EODHD daily candles, with its strength against the S&P |
 | Event Study: studies in the catalog (§4, §12.3) | LIVE when every input's coverage is stored in the current generation; otherwise that study is awaiting with the missing series named | v3 §2 |
-| Event Study: any other combination of slots | refused, 422 `unsupported` | v3 §2 |
-| Event Study: confidence 80% / 95% | UNAVAILABLE; intervals are the engine's 90% | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
+| Event Study: any other combination of slots | LIVE (desk/usability, §14.3): computed on request, the same verdict rules | — |
+| Event Study: confidence 80% / 95% | not shown (desk/usability, §14.3); intervals are the engine's 90%, said in words | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
 | Event Study: the line without the condition (`without_condition`) | UNAVAILABLE | conditional-versus-unconditional comparison is not defined (v4 B-11, C-01) |
 | Regime: current label, history strip, recession score, next prints | LIVE | — |
 | Regime: "What each regime has meant" table, and the S&P over the month each change took effect | LIVE (desk/fill-compute) | every stored row measured from when it was known (Codex R-01): each label with the S&P and the VIX of the month it governed, two months after its stamp, the return sample and VIX coverage served apart from the label count (§12.6 `stats`, `changes`) |
@@ -86,7 +86,7 @@ Build Notes prints these two lists as their own section, word for word.
 **Live**
 - Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.
 - Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month; the drawdown from the one-year high and 21-day realized volatility; the same figures for any US stock or ETF, with its strength against the S&P.
-- Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
+- Event Study: every catalog study whose inputs are stored, and any other question its six slots ask, computed on request, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P over the month each took effect.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, what moves with the S&P, and the 12-asset correlation matrix.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
@@ -515,6 +515,10 @@ study (§12.3), given the other slots, is disabled; a cross or an RSI
 crossing requires shock = S&P, target = S&P, while = none and no window. Series labels, roles and ops
 come from `/study` `series[]`. Buttons **Run** (primary) and **Save**. A
 request the server refuses (422 `unsupported`) prints the served message.
+*Amended by desk/usability §14.3:* no option is disabled; the shock slot lists
+the series that can be a shock and the target slot those that can be a
+target; a change the engine cannot ask moves the dependent slots and says so;
+an unavailable chip is not shown.
 
 **Answer card** (left, ~62%), all for `selected_horizon` (the OVER THE NEXT
 slot). Headline (serif 17px): the served `headline`. Pills `○ Not firing today
@@ -533,8 +537,8 @@ reason "conditional-versus-unconditional comparison is not defined").
 
 **Rail** (right, ~38%), top to bottom:
 1. VERDICT box (amber border for Suggestive): `VERDICT · <label>` / the served
-   `headline` / `why` / `Price it →`, disabled with "not yet served" while
-   Basket & Hedge is unavailable.
+   `headline` / `why`. (`Price it →` is not drawn while Basket & Hedge prices
+   nothing, §14.3.)
 2. BY REGIME · A MONTH LATER: REGIME / N / UP / MEDIAN, four regimes at
    h = 20; a regime with n < 10 prints its count and "too few cases to say"
    (v2 §9.2). Beneath: "Unlabeled: <unlabeled_n> events whose K−2 month has
@@ -543,8 +547,8 @@ reason "conditional-versus-unconditional comparison is not defined").
 3. LAST FIVE EVENTS · <target label> A MONTH LATER: event date · regime ·
    `value_20`.
 4. RANGE vs NORMAL: four rows horizon · interval (§1.9) · that horizon's pill.
-   Confidence chips 80% / 90% / 95% render disabled with "not yet served";
-   90% is the served level (`verdict_confidence`).
+   The level is said in words, "90% interval" (`verdict_confidence`); there is
+   no confidence control (§14.3).
 5. `Advanced ▸ all <matched_n> events · resampling detail · entry rules ·
    provenance` · `Export →` (the CSV of §12.4). Provenance line (mono 10px):
    `Engine as of <as_of> · <method> <draws> · entry <rule> · cooldown <n |
@@ -1330,7 +1334,12 @@ Parameters: `preset=<slug>`, or the six slots `shock`, `window` (5 | 20 |
 `cross_above` | `cross_below` | `rsi_above_70` | `rsi_below_30`), `while` (`none` | `spx_below_50` | `regime:<Goldilocks |
 Overheating | Stagflation | Recession Risk>`), `target`, `horizon` (5 | 10 |
 20 | 60, default 20). A request must normalize to one catalog study (§12.3);
-`horizon` then selects that study's results. There is no `confidence`
+`horizon` then selects that study's results. *desk/usability §14.3:* the six
+slots may also ask any other well-formed question (a cross only on the S&P
+500 itself, refused otherwise with `CROSS_RULE`'s sentence); it is computed
+on request and served in the same shape, its `slug` the engine's
+(`gold-w60-z2.0-up-none-spx`), its `label`, `short` and `client.headline`
+written from the registry's labels. There is no `confidence`
 parameter. `while` defaults to `none`; `window` is required for
 `up2s`/`down2s` and refused for a cross or an RSI crossing; `preset` also accepts an engine slug
 that parses to a catalog study's query. `horizon` also rides with a preset,
@@ -1404,7 +1413,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `last_events[].regime` | regime label | required | — | the K−2 row of the event's month | P (regime at K−2, already in the run): a retained event always carries its K−2 label; events whose K−2 month has no stored regimes row are counted in `unlabeled_n` and not listed. |
 | `last_events[].value_20` | number | required, nullable (incomplete) | `target_unit` | — | P |
 | `without_condition` | block envelope | required | — | — | awaiting, reason "conditional-versus-unconditional comparison is not defined" (v4 B-11, C-01); the shape once defined is §12.13 |
-| `provenance.entry_rule` | string | required | — | — | E `provenance.entry_rule` |
+| `provenance.entry_rule` | string | required | — | — | E `provenance.entry_rule`, served with one rewording (desk/usability §14.3): a deferred target's "so entry is never the event's own session" reads "so entry is a later session than the event's own" (the Desk's language list; the native payload is unchanged) |
 | `provenance.cooldown` | integer | required, nullable (null for a cross; 14 for an RSI crossing) | sessions | — | E `cooldown_sessions` |
 | `provenance.seed` | integer | required | — | — | E |
 | `provenance.engine_version` | string | required | — | — | A |
@@ -1413,7 +1422,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `series` | array | required | — | — | E registry (`series.with_role`), limited to the series some catalog study reads: its shock, its target, or the S&P of `spx_below_50` (Codex R-03, desk/fill-etf; the legacy `/api/desk/event-study` keeps every role). The page's Shock and Target slots offer these only |
 | `series[].key`, `label` | string | required | — | — | E |
 | `series[].roles` | array of `shock` \| `target` \| `condition` | required | — | — | E registry `roles` |
-| `series[].ops` | array of `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A: the moves the catalog allows for that series as shock |
+| `series[].ops` | array of `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A (desk/usability §14.3): `up2s` and `down2s` for every series that can be a shock, and the two crosses for `spx`; `series[]` lists only the series whose history this generation stores (the `desk_assets` item's status) |
 | `series[].unit` | `log_return` \| `log_change` \| `bp` | required | — | — | E |
 | `client` | `{horizon, headline, summary}` | required, nullable | — | h = 20 | A: template (below) |
 | `client.horizon` | `20` | required | sessions | — | A (B-01) |
@@ -1421,7 +1430,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `empty_state` | `{horizon, sentence, fixes[]}` | required, nullable (non-null iff `horizons[selected].n < 10`) | — | `selected_horizon` | A: template (below) |
 | `empty_state.horizon` | 5 \| 10 \| 20 \| 60 | required | sessions | — | A: `selected_horizon` |
 | `empty_state.sentence` | string | required | — | — | A: template (below) |
-| `empty_state.fixes[]` | `widen_window` \| `drop_condition` | required (may be empty) | — | — | A: offered only when the result is a catalog study |
+| `empty_state.fixes[]` | `widen_window` \| `drop_condition` | required (may be empty) | — | — | A: `widen_window` when a wider window exists, `drop_condition` when there is a condition (desk/usability §14.3: every such question is answered) |
 | `inputs_hash` | string | required | — | — | E `provenance.inputs_hash`, native (B-09) |
 | `served_from_cache` | boolean | required | — | — | A |
 | `elapsed_ms` | number | required | ms | — | A |
@@ -1504,7 +1513,9 @@ position store."; `/basket/:id`, `/basket/price`, `/hedge`: "basket pricing
 and option structures not yet defined in the engine."
 
 The Event Study's slots enable an option only when some available catalog
-row agrees with it and with the other slots' values. WTI (`wti`) and the
+row agrees with it and with the other slots' values. *Withdrawn by
+desk/usability §14.3:* every option is enabled; the server answers any
+well-formed question. WTI (`wti`) and the
 dollar index (`dxy`) are tier 2; the three studies that read them are
 available only when a generation stores their coverage.
 
@@ -2133,3 +2144,31 @@ amended in place where it is short, and the report
   "Add SPY to basket →" on the S&P 500, the index's ETF): the basket page adds
   the ticker to the open basket at 0%, unsaved, or starts a basket when none is
   kept (branch desk/books replaces the basket page and keeps the address).
+
+### 14.3 Event Study: any question, on request
+
+- **Measured.** The engine computes an arbitrary six-slot question in 0.1 to
+  0.4 s on the audit's store (six combinations timed on 2026-09-27: gold 60-day
+  → S&P 0.26 s, VIX in Overheating → gold 0.13 s, 10-year 5-day down while the
+  S&P is weak → 10-year 0.37 s, …). So every option is enabled and the answer
+  comes on request.
+- **Where it runs.** `/study` and `/study/events` (no new route): a catalog
+  study is its worker item, as before; any other well-formed question runs the
+  engine's traced run through `api/desk.py`'s existing pool, single-flight
+  cache and study ceiling (`DESK_STUDY_PATHS`), leased to the request's pinned
+  generation, cached by (generation, cutoff, canonical query). Past
+  `COMPUTE_TIMEOUT_S` it answers 202 `computing` (the client polls); a full
+  queue is 429 `busy`. The projection, the v1 verdict rule, the templates and
+  the memo are the catalog study's.
+- **The slots.** Shock lists the stored series that can be a shock, target
+  those that can be a target, every option enabled. A cross is the S&P 500's
+  own 50- and 200-day averages: choosing one sets shock and target to the S&P,
+  while to none and window to none; choosing a window, another shock or
+  target, or a condition while a cross is asked makes the move a 2σ rise. The
+  change is said under the slots.
+- **Removed controls.** The 80% / 90% / 95% chips (the level is "90%
+  interval", in words), `Price it →`, a disabled chip (an unavailable study is
+  not shown; one line names each hidden chip and its reason), and Export JSON
+  of the saved questions while none is saved.
+- **Fixtures.** `web/src/fixtures/desk/studies/` carries three such questions
+  answered by the real route on the audit's store (PROVENANCE.md).

@@ -113,6 +113,9 @@ its own.
 | `technicals-GLD.json` | Everything: the instruments item's answer for GLD on the fixture store (its RSI, MACD and seasonality by the shared functions), its relative strength against the stored S&P (its 50-day average null across Sep 22) | none |
 | `technicals-NVDA.json` | Computed by the shared function, RSI, MACD and seasonality included; relative strength against the store's S&P | The closes: two years of Yahoo daily adjusted closes (yfinance, fetched 2026-09-28 on the build machine, cut at Sep 23), standing in for EODHD's 2Y candles, which that machine cannot reach (no EODHD token); its `source` says so |
 
+| `studies/*.json` (three questions outside the catalog, desk/usability §14.3) | Everything: `GET /api/desk/study` at each of the four horizons and `/study/events`, run through the app on a worker over a copy of the audit's store, the clock frozen at 2026-09-24 16:00 UTC (comparison session Sep 23); `provenance.engine_version` is the building checkout's HEAD, not the audit's commit | none |
+| `study.json`, `series` | Since desk/usability: what the route serves on the audit's store, the stored series with a role and each shock's two 2σ moves (the S&P's crosses too) | none |
+
 `consistency.test.ts` holds the fixtures to each other (one label per slug,
 one comparison session, the firing rows, the regime lag) and to the audit's
 real values.

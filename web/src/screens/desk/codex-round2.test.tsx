@@ -102,21 +102,21 @@ describe("R-16: rows the boundary drops are said; no total and no 'none' is read
     expect(rail).not.toHaveTextContent("No events");
   });
 
-  it("a catalog that lost a row gates no slot, says so, and the rows it read still gate their chips (§4)", async () => {
+  it("a catalog that lost a row says so, and the rows it read still keep their chips (§4, §14.3)", async () => {
     stubDesk({ "/api/desk/study/catalog": () => catalogWithout("death-cross") });
     renderTab("/desk/event-study");
     await waitFor(() => expect(screen.getByText("1 catalog study could not be read.")).toBeInTheDocument());
     const chips = screen.getByRole("group", { name: "Common questions" });
-    expect(within(chips).getByRole("button", { name: "Dollar −2σ, 20 days" })).toBeDisabled();
-    expect(within(chips).getByRole("button", { name: "Oil +2σ → gold" })).toBeDisabled();
-    expect(chips).toHaveTextContent("Dollar −2σ, 20 days: US Dollar Index (DX-Y.NYB) is not stored in this database");
+    // §14.3: an unavailable study's chip is not shown; its reason is said.
+    expect(within(chips).queryByRole("button", { name: "Dollar −2σ, 20 days" })).toBeNull();
+    expect(chips).toHaveTextContent("Dollar −2σ, 20 days (US Dollar Index (DX-Y.NYB) is not stored in this database");
   });
 
   it("the slots' hint counts no series from a partial list", async () => {
     stubDesk({ "/api/desk/study": () => ({ ...study, series: [{ label: "no key" }, ...study.series] }) });
     renderTab("/desk/event-study");
-    await waitFor(() => expect(screen.getByText(/every slot lists the same series; 1 series could not be read/)).toBeInTheDocument());
-    expect(screen.queryByText(/every slot lists the same 12 series/)).toBeNull();
+    await waitFor(() => expect(screen.getByText(/the series this store holds; 1 series could not be read/)).toBeInTheDocument());
+    expect(screen.queryByText(/can be a shock/)).toBeNull();
   });
 
   it("Data Pipeline's search never says a lost series does not exist", async () => {

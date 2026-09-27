@@ -349,16 +349,18 @@ test.describe("desk v2", () => {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
 
-  test("event study: the catalog drives the chips and the slots; a question outside it is refused with the served message (§4, §12.2, §12.3)", async ({ page }) => {
+  test("event study: the catalog drives the chips; every slot option works; a cross on anything but the S&P is refused with the served message (§4, §12.2, §14.3)", async ({ page }) => {
     await open(page, "/desk/event-study");
     const chips = page.getByRole("group", { name: "Common questions" });
     await expect(chips.getByRole("button", { name: "S&P golden cross" })).toBeEnabled();
-    await expect(chips.getByRole("button", { name: "Dollar −2σ, 20 days" })).toBeDisabled();
+    // §14.3: a study this store cannot answer is not shown; one line says why.
+    await expect(chips.getByRole("button", { name: "Dollar −2σ, 20 days" })).toHaveCount(0);
+    await expect(chips).toContainText("Not shown: Dollar −2σ, 20 days");
     await expect(page.getByLabel("Shock")).toHaveValue("gold");
-    await expect.poll(() => page.getByLabel("Window").locator("option:not([disabled])").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))).toEqual(["20"]);
-    await open(page, "/desk/event-study?shock=gold&window=60&move=up2s&while=none&target=spx&horizon=20");
+    await expect.poll(() => page.locator("select option[disabled]").count()).toBe(0);
+    await open(page, "/desk/event-study?shock=gold&move=cross_above&while=none&target=spx&horizon=20");
     // §12.0: the refusal names what is not supported.
-    await expect(page.getByRole("region", { name: "The answer" })).toContainText("No study in the catalog asks shock gold, window 60, move up2s, while none, target spx, horizon 20.");
+    await expect(page.getByRole("region", { name: "The answer" })).toContainText("A cross is the S&P 500's own 50- and 200-day averages crossing");
     expect(await auditPalette(page)).toEqual([]);
   });
 
@@ -379,7 +381,7 @@ test.describe("desk v2", () => {
     expect(await bannedWordsOnPage(page)).toEqual([]);
   });
 
-  test("event study: Export downloads the events as CSV; the confidence chips are disabled and ask nothing (§4, §12.2)", async ({ page }) => {
+  test("event study: Export downloads the events as CSV; there is no confidence control, and nothing asks with one (§4, §12.2, §14.3)", async ({ page }) => {
     const calls = await routeDesk(page);
     await page.goto("/desk/event-study", { waitUntil: "domcontentloaded" });
     await settle(page, 500);
@@ -390,11 +392,9 @@ test.describe("desk v2", () => {
     // §12.4's columns: the event, its entry, its regime, then exit, value and completeness per horizon.
     expect(text.split("\n")[0]).toBe("event_date,entry_date,regime,exit_5,value_5,complete_5,exit_10,value_10,complete_10,exit_20,value_20,complete_20,exit_60,value_60,complete_60");
     expect(text.trim().split("\n")).toHaveLength(19);
-    const chips = page.getByRole("group", { name: "Confidence" });
-    await expect(chips.getByRole("button", { name: "80%" })).toBeDisabled();
-    await expect(chips.getByRole("button", { name: "90%" })).toHaveAttribute("aria-pressed", "true");
-    await expect(chips).toContainText("not yet served");
-    await expect(page.getByRole("complementary", { name: "Verdict and detail" })).toContainText("Confidence levels other than 90%: interval projection at other quantiles is new plumbing.");
+    // §14.3: the engine's one level, in words; no confidence control.
+    await expect(page.getByRole("group", { name: "Confidence" })).toHaveCount(0);
+    await expect(page.getByTestId("es-conf")).toHaveText("90% interval");
     expect(calls.some((c) => c.includes("confidence"))).toBe(false);
     await expect(page).not.toHaveURL(/confidence/);
     // "Act on this" carries the question to the Position Monitor.

@@ -212,9 +212,72 @@ def catalog_answer(params: list[tuple[str, str]]) -> dict:
     return {"studies": rows}
 
 
+# ── desk/usability §14.3: any well-formed question, computed on request ─────
+
+MOVE_SIGN = {"up2s": "+2σ", "down2s": "−2σ"}
+CLIENT_MOVE = {"up2s": "jumps", "down2s": "falls sharply"}
+CLIENT_SPAN = {5: "within a week", 20: "over a month", 60: "over three months"}
+
+
+def _label(key: str) -> str:
+    spec = registry.BY_KEY.get(key)
+    return spec.label if spec is not None else key
+
+
+def question_label(q: catalog.Question) -> str:
+    """A question outside the catalog in the catalog's style: "Gold +2σ, 60 days → S&P 500"."""
+    cond = "" if q.while_ == "none" else (" while the S&P is below its 50-day" if q.while_ == "spx_below_50"
+                                          else f", in {q.while_.split(':', 1)[1]}")
+    return f"{_label(q.shock)} {MOVE_SIGN[q.move]}, {q.window} days{cond} → {_label(q.target)}"
+
+
+def question_short(q: catalog.Question) -> str:
+    return f"{_label(q.shock)} {MOVE_SIGN[q.move]} {q.window}d → {_label(q.target)}"
+
+
+def question_client(q: catalog.Question) -> str:
+    """The Client view's title in plain words (§11: no σ, no engine terms)."""
+    regime = q.while_.split(":", 1)[1] if q.while_.startswith("regime:") else ""
+    cond = "" if q.while_ == "none" else (", while the S&P 500 is below its 50-day average" if q.while_ == "spx_below_50"
+                                          else f", in {'an' if regime[:1] in 'AEIOU' else 'a'} {regime} economy")
+    return f"{_label(q.shock)} {CLIENT_MOVE[q.move]} {CLIENT_SPAN[q.window]}{cond}, and what the {_label(q.target)} does next"
+
+
+def named(study: catalog.Study) -> catalog.Study:
+    """A catalog row as it is; a question outside the catalog with its engine
+    slug (a permalink the engine parses back) and its words."""
+    if study.slug:
+        return study
+    from dataclasses import replace
+
+    from api.desk import es
+
+    q = study.question
+    return replace(study, slug=es.slug_for(es.Query(**study.engine_kwargs)), label=question_label(q),
+                   short=question_short(q), client_label=question_client(q))
+
+
+def study_item(study: catalog.Study) -> dict:
+    """A catalog study's worker item (a lookup); any other question computed on
+    request against the request's generation through api/desk.py's pool and
+    cache (computing past its wait, busy when the queue is full)."""
+    if study.slug in catalog.BY_SLUG:
+        return _item(study.slug)
+    from api import desk as desk_mod
+
+    try:
+        item = desk_mod.traced_result(desk_mod.es.Query(**study.engine_kwargs), env._generation())
+    except desk_mod.QueueFull as exc:
+        raise env.Busy(f"{desk_mod.CACHE_MAX} studies are computing; retry in a few seconds.") from exc
+    if item is None:
+        raise env.Computing()
+    return item
+
+
 def study_answer(params: list[tuple[str, str]], t0: float) -> dict:
-    study, h = catalog.normalize(params, "/study", resolve_alias=engine_alias)
-    item = _item(study.slug)
+    study, h = catalog.normalize(params, "/study", resolve_alias=engine_alias, allow_any=True)
+    study = named(study)
+    item = study_item(study)
     if not item["ok"]:
         raise env.Awaiting(item["reason"])
     hit, (payload, trace) = memo(("/study", study.slug, h), lambda: (study_projection(study, h, item), item["trace"]))
@@ -712,8 +775,9 @@ def fire_lists(entries: list[tuple[dict, dict | None]]) -> tuple[list[dict], lis
 
 def events_answer(params: list[tuple[str, str]]) -> dict:
     """§12.4 as JSON: the study's full event table, newest first (plan §2)."""
-    study, h = catalog.normalize(params, "/study/events", resolve_alias=engine_alias)
-    item = _item(study.slug)
+    study, h = catalog.normalize(params, "/study/events", resolve_alias=engine_alias, allow_any=True)
+    study = named(study)
+    item = study_item(study)
     if not item["ok"]:
         raise env.Awaiting(item["reason"])
     _hit, rows = memo(("/study/events", study.slug), lambda: event_rows(item["events"]))
@@ -991,15 +1055,32 @@ def share(x: float) -> str:
 # ── The /study projection (plan §1.2, §2) ───────────────────────────────────
 
 def _series_list() -> list[dict]:
-    """§12.2 `series`: the registry's available tier-1 and tier-2 series with a
-    role that some catalog study reads, in registry order (Codex R-03,
-    desk/fill-etf: the Event Study page offers only what the catalog can ask,
-    so the nine sector ETFs, whose roles the legacy /api/desk/event-study
-    keeps, are not listed)."""
-    ops = catalog.ops_by_shock()
-    read = catalog.series_read()
-    return [{"key": s.key, "label": s.label, "roles": list(s.roles), "ops": ops.get(s.key, []), "unit": s.unit}
-            for s in registry.SERIES if s.available and s.roles and s.tier <= 2 and s.key in read]
+    """§12.2 `series`, as desk/usability §14.3 amends it: the registry's tier-1
+    and tier-2 series with a role whose history this generation stores (the
+    `desk_assets` item's status), in order, each with the moves the Event
+    Study asks with it as the shock: a 2σ move either way, the S&P 500's own
+    crosses, and any other move a catalog study asks with it (desk/fill-compute's
+    RSI crossings). A series the store lacks is not offered at all.
+
+    Rebase ruling (owner, 2026-09-28): the builder computes any well-formed
+    question on request, so its list wins over desk/fill-etf's catalog-only
+    filter (Codex R-03 there): a stored series with a role is offered even
+    when no catalog study reads it, the sector ETFs included."""
+    ops_catalog = catalog.ops_by_shock()
+    try:
+        assets = _result("desk_assets")
+        stored = {r["key"] for r in [*assets["shocks"], *assets["targets"]] if r.get("status") == "stored"}
+    except Exception as exc:  # a worker without the assets item (a test's) lists the registry's series
+        if env._route_level(exc):
+            raise
+        stored = None
+
+    def ops_of(s: Any) -> list[str]:
+        base = (["up2s", "down2s"] + (["cross_above", "cross_below"] if s.key == "spx" else [])) if "shock" in s.roles else []
+        return base + [m for m in ops_catalog.get(s.key, []) if m not in base]
+
+    return [{"key": s.key, "label": s.label, "roles": list(s.roles), "ops": ops_of(s), "unit": s.unit}
+            for s in registry.SERIES if s.available and s.roles and s.tier <= 2 and (stored is None or s.key in stored)]
 
 
 def served_warnings(provenance: dict, pre1970: dict[str, int]) -> list[str]:
@@ -1064,6 +1145,18 @@ def why_sentence(row: dict, unit: str) -> str:
                    f"{share(row['adverse_share'])} of resampled medians are adverse against a 3% bar.")
 
 
+# desk/usability §14.3: a question may target gold now, and the engine's entry rule for a deferred target says
+# "never"; the Desk's language list keeps the word off the page, so the served copy says the same thing without it
+# (as /pipeline serves the registry's gold note, api/desk_pipeline.DESK_WORDING). The native payload is untouched.
+ENTRY_RULE_WORDING = (("so entry is never the event's own session", "so entry is a later session than the event's own"),)
+
+
+def entry_rule_words(rule: str) -> str:
+    for before, after in ENTRY_RULE_WORDING:
+        rule = rule.replace(before, after)
+    return rule
+
+
 def study_projection(study: catalog.Study, h: int, item: dict) -> dict:
     """The generation-dependent part of a /study answer (what the memo holds)."""
     native, table = item["native"], item["events"]
@@ -1114,7 +1207,7 @@ def study_projection(study: catalog.Study, h: int, item: dict) -> dict:
              "value_20": None if math.isnan(table.value[20][i]) else float(table.value[20][i])}
             for i in range(k - 1, max(-1, k - 6), -1)],
         "without_condition": env.block_deferred("/study", "without_condition"),
-        "provenance": {"entry_rule": P["entry_rule"], "cooldown": P["cooldown_sessions"], "seed": P["seed"],
+        "provenance": {"entry_rule": entry_rule_words(P["entry_rule"]), "cooldown": P["cooldown_sessions"], "seed": P["seed"],
                        "engine_version": env.ENGINE_VERSION,
                        "series_start": {m["key"]: m["history_from"] for m in P["inputs"]}},
         "warnings": served_warnings(P, item.get("pre1970", {})),
