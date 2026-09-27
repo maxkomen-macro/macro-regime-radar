@@ -359,13 +359,12 @@ REGIME_ORDER = ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
 CHANGES_SHOWN = 5
 
 
-def month_returns(spx: Any) -> dict[str, float]:
-    """The S&P's simple return over each calendar month, close on the month's
-    last XNYS session over close on the previous month's last XNYS session;
-    a month whose last session, or whose previous month's, has no stored close
-    (a month not over yet included) has none."""
-    import math
-
+def month_closes(spx: Any) -> Any:
+    """The S&P's closes aligned on the XNYS calendar from its first stored
+    close through the last day of the newest close's month, validated as the
+    engine validates them: NaN on a session without a close, so a month not
+    over yet ends on a session with none (desk/fill-compute: the one input of
+    `month_returns` and of /technicals' seasonality)."""
     import pandas as pd
 
     from src.desk import event_study as es
@@ -376,14 +375,19 @@ def month_returns(spx: Any) -> dict[str, float]:
     sessions = es.sessions_between(es.session_calendar(start, end), start, end)
     al, _off, _missing = es.align(spx, sessions)
     al, _bad, _why = es.validate_values(al, registry.get("spx"))
-    last = pd.Series(sessions, index=sessions).groupby(sessions.to_period("M")).max()
-    close = {str(m): float(al.loc[d]) for m, d in last.items()}
-    out: dict[str, float] = {}
-    for m in last.index:
-        a, b = close.get(str(m - 1)), close.get(str(m))
-        if a is not None and b is not None and math.isfinite(a) and math.isfinite(b) and a > 0:
-            out[str(m)] = b / a - 1.0
-    return out
+    return al
+
+
+def month_returns(spx: Any) -> dict[str, float]:
+    """The S&P's simple return over each calendar month, close on the month's
+    last XNYS session over close on the previous month's last XNYS session;
+    a month whose last session, or whose previous month's, has no stored close
+    (a month not over yet included) has none. The shared
+    `src/analytics/technicals.monthly_returns` on `month_closes`."""
+    from src.analytics import technicals
+
+    r = technicals.monthly_returns(month_closes(spx)).dropna()
+    return {str(m): float(v) for m, v in r.items()}
 
 
 def month_vix(vix: Any) -> dict[str, tuple[float, int]]:

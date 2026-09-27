@@ -261,6 +261,7 @@ def technicals_from_level(raw: Any) -> dict:
         "series": series,
         **rsi_fields(rsi, px, iso),
         "macd": macd_fields(macd, iso, [k for k in range(len(sessions)) if date_ - pd.DateOffset(months=TECH_CHART_MONTHS["6m"]) < sessions[k] <= date_]),
+        "seasonality": seasonality_fields(raw),
         "_sessions": iso,
     }
 
@@ -299,6 +300,21 @@ def macd_fields(m: Any, iso: list[str], chart: list[int]) -> dict | None:
         "params": {"fast": technicals.MACD_FAST, "slow": technicals.MACD_SLOW, "signal": technicals.MACD_SIGNAL},
         "series": [{"date": iso[i], "macd": f(line[i]), "signal": f(sig[i]), "hist": f(hist[i])} for i in chart],
     }
+
+
+def seasonality_fields(raw: Any) -> dict | None:
+    """/technicals' seasonality (spec §12.7, desk/fill-compute, the owner's
+    item 10): the shared `src/analytics/technicals.monthly_seasonality` over
+    every stored close, on the XNYS calendar through the end of the newest
+    close's month (`desk_items_macro.month_closes`, the regime table's input),
+    so a month counts once it is complete. None when no month is."""
+    from api.desk_items_macro import month_closes
+    from src.analytics import technicals
+
+    s = technicals.monthly_seasonality(month_closes(raw))
+    if not s["window"]["n"]:
+        return None
+    return {**s, "freq": "monthly", "source": "asset_prices ^GSPC"}
 
 
 RSI_AFTER = 20  # sessions: the S&P's move after the last session in each RSI zone

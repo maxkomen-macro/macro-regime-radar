@@ -82,7 +82,13 @@ test.describe("desk v2", () => {
       expect(overflow).toBeLessThanOrEqual(1);
       // §1.5: there is no universal normal month (the tabs that read Ledger rows).
       if (["overview", "technicals", "signal-ledger"].includes(slug)) {
-        const text = (await page.locator("main").textContent()) ?? "";
+        // desk/fill-compute: the seasonality card is left out; its May average prints "+1.3%" as a calendar
+        // month's own average over its own years, not the universal normal month §1.5 forbids.
+        const text = await page.locator("main").evaluate((m) => {
+          const c = m.cloneNode(true) as HTMLElement;
+          c.querySelector('[aria-labelledby="te-season-title"]')?.remove();
+          return c.textContent ?? "";
+        });
         expect(text).not.toMatch(/normal month|\+1\.3%/);
       }
     });
@@ -91,7 +97,7 @@ test.describe("desk v2", () => {
   // Codex R-09: a completed 200 whose body is null is Awaiting refresh on every tab, never a loading state.
   const NULL_ANSWERS: { slug: string; path: string; labels: string[] }[] = [
     { slug: "overview", path: "/api/desk/overview", labels: ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX", "Active signals", "Monitored"] },
-    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now", "Last crossover"] },
+    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now", "Last crossover", "Years"] },
     { slug: "event-study", path: "/api/desk/study", labels: ["Events", "Up a month later", "Median at a month", "Worst · best"] },
     { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession score", "Next CPI", "Next INDPRO"] },
     { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
@@ -263,7 +269,7 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: the vol block keeps its labels, prints its reason and says Not yet served; the sector bars and the RSI and MACD cards are served (§1.0, §12.7, §12.14)", async ({ page }) => {
+  test("technicals: the vol block keeps its labels, prints its reason and says Not yet served; the sector bars and the RSI, MACD and seasonality cards are served (§1.0, §12.7, §12.14)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/technicals");
@@ -295,6 +301,11 @@ test.describe("desk v2", () => {
       await expect(macd).toContainText("MACD above its signal");
       await expect(macd).toContainText("MACD crossed above its signal");
       await expect(macd.getByRole("img", { name: /^MACD, its signal line and the histogram, 6M/ })).toBeVisible();
+      // §12.7 (desk/fill-compute): seasonality by calendar month over every stored close, its window stated.
+      const season = page.getByRole("region", { name: /^Seasonality · S&P 500 by calendar month/ });
+      await expect(season).toContainText("Feb 1990 to Aug 2026");
+      await expect(season.getByRole("row")).toHaveCount(13);
+      await expect(season).toContainText("36–37 years a month");
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }

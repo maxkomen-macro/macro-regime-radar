@@ -5,7 +5,7 @@
  * sectors block the sector leadership /sectors serves, §12.14) and /ledger
  * (§12.5, the rows in `signals_allowlist` order). Grid:
  * the vol card spans the left column; price and signals on top; sector
- * leadership and RSI below; MACD across the third row (desk/fill-compute). Every number is a served field, formatted, and
+ * leadership and RSI below; MACD and seasonality in a third row (desk/fill-compute). Every number is a served field, formatted, and
  * dated by its own served dates; the trend's words spell the served
  * `trend.state` (§3).
  * A card stays quiet while its first answer is on its way, and keeps its
@@ -20,7 +20,7 @@ import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, Vo
 import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { capitalize, dayLong, dayShort, grouped, leadershipGaps, num, ordinal, pct, pctPlain, signed, year } from "../kit/format";
+import { capitalize, dayLong, dayShort, grouped, leadershipGaps, monthYear, num, ordinal, pct, pctPlain, signed, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
@@ -530,7 +530,7 @@ function MacdCard({ t, state }: { t: TechnicalsResponse | undefined; state: Card
       {m && pts.filter((p) => fin(p.macd)).length > 1 ? (
         <LineChart
           ariaLabel={`MACD, its signal line and the histogram, 6M${crossI >= 0 && lc ? `; last crossover on ${dayLong(lc.date)}` : ""}`}
-          height={170}
+          height={220}
           n={pts.length}
           yDomain={domain}
           yTicks={ticks.map((v) => ({ v, text: num(v, 0) }))}
@@ -547,6 +547,94 @@ function MacdCard({ t, state }: { t: TechnicalsResponse | undefined; state: Card
         />
       ) : state === "loading" ? null : (
         <Awaiting />
+      )}
+    </section>
+  );
+}
+
+// ── Seasonality ─────────────────────────────────────────────────────────
+
+/** A served month ("1990-02") as "Feb 1990". */
+const monthOf = (ym: string | undefined) => (typeof ym === "string" ? monthYear(`${ym}-01`) : "");
+
+/** §3: the years line under the table, from the served counts ("36–37 years a month"; one number when they agree). */
+export function yearsLine(rows: readonly { n: number | null }[]): string | null {
+  const ns = rows.map((r) => r.n).filter(fin);
+  if (!ns.length) return null;
+  const lo = Math.min(...ns);
+  const hi = Math.max(...ns);
+  return `${lo === hi ? lo : `${lo}–${hi}`} years a month · a month counts once it is complete`;
+}
+
+const SEASON_LABELS = ["Average", "Up", "Years"];
+
+function SeasonalityCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardState }) {
+  const ready = state === "ready" && !!t;
+  const s = ready ? (t.seasonality ?? null) : null;
+  const rows = Array.isArray(s?.rows) ? s.rows : [];
+  // §3: each bar's length is |avg| over the largest |avg| of the twelve.
+  const big = Math.max(0, ...rows.map((r) => (fin(r.avg) ? Math.abs(r.avg) : 0)));
+  const w = s?.window;
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-season-title" className="te-season" title="Seasonality · S&P 500 by calendar month" labels={SEASON_LABELS} cols={3} block={unserved} />;
+  return (
+    <section className="dk-card te-season" aria-labelledby="te-season-title" aria-busy={state === "loading"}>
+      <div className="dk-card-head">
+        <h2 className="dk-card-title" id="te-season-title">
+          Seasonality · S&amp;P 500 by calendar month
+        </h2>
+      </div>
+      {s && rows.length ? (
+        <>
+          {w && monthOf(w.start) && monthOf(w.end) ? (
+            <p className="te-season-sub">
+              Average monthly return and share of years up, {monthOf(w.start)} to {monthOf(w.end)}.
+            </p>
+          ) : null}
+          <div className="te-season-wrap" role="region" aria-label="Seasonality by calendar month" tabIndex={0}>
+            <table className="te-season-table">
+              <colgroup>
+                <col className="te-season-col-month" />
+                <col className="te-season-col-avg" />
+                <col />
+                <col className="te-season-col-up" />
+                <col className="te-season-col-n" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">Month</th>
+                  <th scope="col">Average</th>
+                  <td aria-hidden="true" />
+                  <th scope="col">Up</th>
+                  <th scope="col">Years</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={`${r.label}-${i}`}>
+                    <th scope="row">{r.label}</th>
+                    <td>{fin(r.avg) ? <Signed value={r.avg}>{pct(r.avg)}</Signed> : "—"}</td>
+                    <td className="te-season-barcell" aria-hidden="true">
+                      {fin(r.avg) && big > 0 ? <span className="te-season-bar" data-sign={r.avg >= 0 ? "up" : "down"} style={{ width: `${(Math.abs(r.avg) / big) * 50}%` }} /> : null}
+                    </td>
+                    <td>{fin(r.pct_up) ? pctPlain(r.pct_up) : "—"}</td>
+                    <td title={fin(r.first_year) && fin(r.last_year) ? `${r.first_year}–${r.last_year}` : undefined}>{fin(r.n) ? r.n : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="te-foot">
+            {yearsLine(rows) ? <p className="te-season-note">{yearsLine(rows)}</p> : null}
+            {s.source ? <p className="te-source">Source: {s.source}, monthly</p> : null}
+          </div>
+        </>
+      ) : state === "loading" ? null : (
+        <StatRow cols={3}>
+          {SEASON_LABELS.map((l) => (
+            <Stat key={l} label={l} awaiting />
+          ))}
+        </StatRow>
       )}
     </section>
   );
@@ -580,6 +668,7 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
         <Unserved block={unavailableOf(tq.error)}>
           <RsiCard t={t} state={stateOf(tq)} />
           <MacdCard t={t} state={stateOf(tq)} />
+          <SeasonalityCard t={t} state={stateOf(tq)} />
         </Unserved>
       </div>
     </div>

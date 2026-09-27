@@ -44,6 +44,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Technicals: sector bars | LIVE (desk/fill-etf): the eleven sector ETFs' 60-session log returns less SPY's, `/technicals` `sectors` (§12.14) | — |
 | Technicals: RSI card | LIVE (desk/fill-compute) | Wilder's RSI(14) on the stored ^GSPC closes, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy) (§12.7) |
 | Technicals: MACD card | LIVE (desk/fill-compute) | MACD(12, 26, 9) on the stored ^GSPC closes, `src/analytics/technicals.macd` (the shared, symbol-agnostic copy) (§12.7 `macd`) |
+| Technicals: seasonality card | LIVE (desk/fill-compute) | each calendar month's average return and share of years up over every stored ^GSPC close, `src/analytics/technicals.monthly_seasonality` (the shared, symbol-agnostic copy) (§12.7 `seasonality`) |
 | Event Study: studies in the catalog (§4, §12.3) | LIVE when every input's coverage is stored in the current generation; otherwise that study is awaiting with the missing series named | v3 §2 |
 | Event Study: any other combination of slots | refused, 422 `unsupported` | v3 §2 |
 | Event Study: confidence 80% / 95% | UNAVAILABLE; intervals are the engine's 90% | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
@@ -71,7 +72,7 @@ Build Notes prints these two lists as their own section, word for word.
 
 **Live**
 - Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.
-- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover.
+- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P the month after each.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, and what moves with the S&P.
@@ -324,7 +325,8 @@ Action button: **Act on this → Position Monitor**. Badge `● Live · <date>` 
 
 Grid: left column (two rows) = the vol column; top-middle = price; top-right =
 Signals; bottom-middle = Sector leadership; bottom-right = RSI; a third row
-(desk/fill-compute) = MACD across the three columns.
+(desk/fill-compute) = MACD across the vol column and the middle, seasonality
+on the right.
 
 **What protection costs right now** (vol column): UNAVAILABLE (§1.0), from
 `/technicals` `vol` (awaiting). Labels kept: PUTS vs CALLS · 1 MONTH OUT ·
@@ -386,6 +388,18 @@ signed, green above zero and red below; sub-line "MACD above its signal" or
 dashed), a zero line, month ticks, a marker on the last crossover when it is
 in range. A null `macd` keeps the labels and says "Awaiting refresh", with no
 chart. No read of what the crossover means is served, so none is printed.
+
+**Seasonality · S&P 500 by calendar month** (desk/fill-compute), from
+`/technicals` `seasonality` (§12.7). Sub-line: "Average monthly return and
+share of years up, <window.start> to <window.end>." (months written "Feb 1990").
+A table of the twelve months in calendar order, one row each: MONTH (`label`)
+· AVERAGE (`avg` × 100, signed, one decimal) · a bar from a center zero line,
+green right for a positive average and red left for a negative one, its
+length `|avg|` over the largest `|avg|` of the twelve · UP (`pct_up` × 100,
+whole percent) · YEARS (`n`, with `first_year`–`last_year` in its tooltip).
+Foot: "<fewest n>–<most n> years a month · a month counts once it is
+complete" and the source line. A null `seasonality` keeps the labels and says
+"Awaiting refresh". No read is served, so none is printed.
 
 ---
 
@@ -1326,6 +1340,10 @@ Every field describes the registry series `spx` (^GSPC).
 | `macd.date`, `.macd`, `.signal`, `.hist` | date, numbers | required | index points | — | N: the newest session with a defined histogram (a gap in the closes holds it on the last session before the gap until the averages re-seed), and the three values there |
 | `macd.last_cross` | `{date, kind: "above"\|"below"}` | required, nullable (null when the line has never crossed its signal) | — | — | N: the latest strict crossing, `technicals.macd_crossings`: a session whose histogram is strictly positive (negative) after the side carried was the other one; a zero histogram keeps the carried side; an undefined session resets it, so a crossing never bridges one (the rule of the 50/200-day crosses) |
 | `macd.params` | `{fast: 12, slow: 26, signal: 9}` | required | sessions | — | A |
+| `seasonality` | object | required, nullable (null when no calendar month is complete) | — | `seasonality.window` · monthly · `asset_prices` ^GSPC | N seasonality (desk/fill-compute, owner's item 10): `src/analytics/technicals.monthly_seasonality` (the shared, symbol-agnostic copy, series in) over every stored close aligned on the XNYS calendar from the first stored close through the last day of the newest close's month (`api/desk_items_macro.month_closes`, the regime table's input): a month's simple return is its last session's close over the previous month's last session's close, less one; a month whose last session has no stored close (a month not over yet included), or the month after one, has none |
+| `seasonality.rows` | array of 12 `{month, label, n, avg, pct_up, first_year, last_year}` | required | —, —, years, simple return, fraction, year, year | — | N: calendar order; `n` the years with a return for that month, `avg` their mean, `pct_up` the share strictly above zero, `first_year`/`last_year` the first and last of them; `avg`, `pct_up` and the years null when `n` is 0 |
+| `seasonality.window` | `{start, end, n}` (months) | required | months | — | N: the first and last months with a return, and how many there are |
+| `seasonality.freq`, `.source` | `"monthly"`, `"asset_prices ^GSPC"` | required | — | — | A |
 | `macd.series` | array of `{date, macd, signal, hist}` | required | index points | daily | N chart series: one point per session of `series.6m` (the XNYS sessions after `date` − 6 calendar months, through `date`); each value null where undefined |
 | `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13): the XNYS sessions after `date` − 6, 12 and 36 calendar months, through `date`; a missing close is a point with `close: null`; `ma50`/`ma200` nullable per point |
 | `signals_allowlist` | `["golden-cross","death-cross","rsi-above-70","rsi-below-30","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows since desk/fill-compute). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
@@ -1602,6 +1620,9 @@ Each is a new calculation from stored data, listed in §12 with its rule:
 - the 14-day RSI on ^GSPC, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), served by `/technicals` (§12.7);
 - MACD (12, 26, 9) on ^GSPC and its last crossover, `src/analytics/technicals.macd` and `macd_crossings` (symbol-agnostic:
   a close series in, MACD out), served by `/technicals` `macd` (§12.7; the owner's item 9);
+- the S&P's seasonality by calendar month, `src/analytics/technicals.monthly_returns` and `monthly_seasonality`
+  (symbol-agnostic; the regime table's month returns now read the same `monthly_returns`), served by `/technicals`
+  `seasonality` (§12.7; the owner's item 10);
 - what each regime has meant and the last five changes on `/regime` (`stats`, `changes`, §12.6), on the audit's §2.4 method;
 - the VIX read from `asset_prices` ^VIX (^GSPC's path) instead of FRED VIXCLS, and `stale` judged per study by its inputs'
   publication cadence (§12.2, §12.5; the owner's item 7);

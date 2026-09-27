@@ -316,6 +316,11 @@ RSI_VISIT = obj(date=DATE, rsi=NUM, after_20d=null(NUM), after_20d_to=null(DATE)
 MACD_POINT = obj(date=DATE, macd=null(NUM), signal=null(NUM), hist=null(NUM))
 MACD = obj(date=DATE, macd=NUM, signal=NUM, hist=NUM, last_cross=null(obj(date=DATE, kind=E("above", "below"))),
            params=Const({"fast": 12, "slow": 26, "signal": 9}), series=Arr(MACD_POINT))
+# desk/fill-compute item 10: seasonality by calendar month, src/analytics/technicals.monthly_seasonality.
+SEASON_ROW = obj(month=INT, label=E("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+                 n=INT, avg=null(NUM), pct_up=null(FRAC), first_year=null(INT), last_year=null(INT))
+SEASONALITY = obj(rows=Arr(SEASON_ROW, min=12, max=12), window=MONTH_SPAN, freq=Const("monthly"),
+                  source=Const("asset_prices ^GSPC"))
 TECHNICALS = obj(
     price=null(NUM), date=DATE, freq=Const("daily"), source=Const("asset_prices ^GSPC"),
     chg_1d=null(NUM), chg_1d_dates=Obj({"from": DATE, "to": DATE}),
@@ -328,6 +333,7 @@ TECHNICALS = obj(
     rsi=null(NUM), rsi_date=null(DATE), rsi_prev=null(NUM), rsi_prev_date=null(DATE),
     rsi_last_above_70=null(RSI_VISIT), rsi_last_below_30=null(RSI_VISIT),
     macd=null(MACD),
+    seasonality=null(SEASONALITY),
     series=Obj({"6m": Arr(POINT), "1y": Arr(POINT), "3y": Arr(POINT)}),
     signals_allowlist=Const(["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma", "spx-5d-2sigma"]),
     vol=Deferred("needs stored SPY option snapshots and a versioned skew method."),

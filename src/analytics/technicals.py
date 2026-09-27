@@ -135,3 +135,42 @@ def macd_crossings(hist: pd.Series) -> list[tuple[int, str]]:
         side = s
     return out
 
+
+def monthly_returns(close: pd.Series) -> pd.Series:
+    """Each calendar month's simple return: its value on the month's last
+    index entry over the previous month's, less one (a PeriodIndex of
+    months). Give the closes on their session calendar, NaN where a session
+    has no close and running to the end of the current month: then a month
+    whose last session has no close, or a month not over yet, has no return,
+    and neither does the month after a missing one."""
+    months = close.index.to_period("M")
+    last = pd.Series(close.index, index=close.index).groupby(months).max()  # each month's last index entry
+    ends = pd.Series(close.loc[last.to_numpy()].to_numpy(dtype=float), index=last.index)
+    prev = ends.shift(1)
+    consecutive = pd.Series(ends.index, index=ends.index).diff().apply(lambda d: getattr(d, "n", None) == 1)
+    out = ends / prev - 1.0
+    return out.where(consecutive & prev.gt(0) & np.isfinite(ends) & np.isfinite(prev))
+
+
+MONTH_NAMES = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def monthly_seasonality(close: pd.Series) -> dict:
+    """Seasonality by calendar month over the full history given: for each of
+    the twelve months, how many years have a complete return for it, their
+    mean simple return, the share of those years above zero, and the first and
+    last of those years; and the months the whole sample spans."""
+    rets = monthly_returns(close).dropna()
+    rows = []
+    for m in range(1, 13):
+        r = rets[rets.index.month == m]
+        rows.append({
+            "month": m, "label": MONTH_NAMES[m - 1], "n": int(len(r)),
+            "avg": float(r.mean()) if len(r) else None,
+            "pct_up": float((r > 0).mean()) if len(r) else None,
+            "first_year": int(r.index[0].year) if len(r) else None,
+            "last_year": int(r.index[-1].year) if len(r) else None,
+        })
+    window = ({"start": str(rets.index[0]), "end": str(rets.index[-1]), "n": int(len(rets))} if len(rets)
+              else {"start": None, "end": None, "n": 0})
+    return {"rows": rows, "window": window}

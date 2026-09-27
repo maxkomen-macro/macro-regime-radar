@@ -285,6 +285,25 @@ export interface Macd {
   series?: MacdPoint[];
 }
 
+/** §12.7: one calendar month over the stored history; avg and pct_up are fractions, null with no complete year. */
+export interface SeasonRow {
+  month: number | null;
+  label: string;
+  n: number | null;
+  avg: number | null;
+  pct_up: number | null;
+  first_year: number | null;
+  last_year: number | null;
+}
+
+/** §12.7 (desk/fill-compute): the S&P's seasonality by calendar month; `window` is in months ("1990-02"). */
+export interface Seasonality {
+  rows: SeasonRow[];
+  window?: { start: string; end: string; n: number };
+  freq?: string;
+  source?: string;
+}
+
 /** §12.7: every field describes the registry series `spx` (^GSPC). */
 export interface TechnicalsResponse extends Envelope {
   price: number | null;
@@ -317,6 +336,8 @@ export interface TechnicalsResponse extends Envelope {
   rsi_last_below_30?: RsiVisit | null;
   /** §12.7: MACD(12, 26, 9); null when no session has one. */
   macd?: Macd | null;
+  /** §12.7: each calendar month's average return and share of years up; null when no month is complete. */
+  seasonality?: Seasonality | null;
   cross: {
     kind: "golden" | "death";
     date: string;

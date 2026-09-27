@@ -246,6 +246,7 @@ const nextPrint = o(
 );
 // §12.8 (S-24): `dates` names each tenor's date, null for a tenor not stored.
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s?") });
+const seasonRow = o({ month: "n", label: "s!", n: "n", avg: "n", pct_up: "n", first_year: "n", last_year: "n" });
 const macdPoint = o({ date: "s!", macd: "n", signal: "n", hist: "n" });
 const rsiVisit = o({ date: "s!", rsi: "n", after_20d: "n", after_20d_to: "s?" }, { nul: true });
 /** The deferred vol and sectors shapes (§12.13), served as `/technicals` blocks and as their own stubs. */
@@ -374,6 +375,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       },
       { nul: true },
     ),
+    // §12.7: the twelve calendar months; a month without its name claims nothing.
+    seasonality: o({ rows: l(seasonRow, { req: true }), window: o({ start: "s!", end: "s!", n: "n!" }), freq: "s", source: "s" }, { nul: true }),
     signals_allowlist: l("s!"),
     // A cross without its kind and day claims nothing (Codex G1-9).
     cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),

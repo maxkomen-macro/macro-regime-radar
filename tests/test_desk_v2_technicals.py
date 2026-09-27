@@ -277,7 +277,7 @@ def test_the_route_serves_the_rsi_fields(served):
     d = _tech()["data"]
     assert d["rsi_date"] is not None and 0 <= d["rsi"] <= 100
     assert list(d)[list(d).index("move_20d_date") + 1:list(d).index("series")] == [
-        "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70", "rsi_last_below_30", "macd"]
+        "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70", "rsi_last_below_30", "macd", "seasonality"]
 
 
 @published
@@ -397,3 +397,83 @@ def test_the_published_copy_macd(install_worker, monkeypatch):
     assert m["date"] == "2026-09-21" and m["last_cross"] == {"date": "2026-09-21", "kind": "above"}
     assert (m["macd"], m["signal"], m["hist"]) == pytest.approx((3.9720, 3.6872, 0.2849), abs=5e-5)
     assert [(p["date"], p["hist"]) for p in m["series"][-2:]] == [("2026-09-22", None), ("2026-09-23", None)]
+
+
+# ── Seasonality (desk/fill-compute, owner's item 10; spec §12.7) ────────────
+
+def _month_closes(values: dict[str, float], end: str) -> pd.Series:
+    """Closes on the XNYS calendar from the first key through `end`, NaN where not given."""
+    idx = _xnys(min(values), end)
+    return pd.Series([values.get(d.strftime("%Y-%m-%d"), np.nan) for d in idx], index=idx)
+
+
+def test_monthly_returns_read_each_months_last_session():
+    s = _month_closes({"2026-01-02": 90.0, "2026-01-30": 100.0, "2026-02-27": 110.0, "2026-03-31": 99.0, "2026-04-15": 120.0},
+                      "2026-04-30")
+    r = technicals.monthly_returns(s)
+    assert [str(m) for m in r.index] == ["2026-01", "2026-02", "2026-03", "2026-04"]
+    assert math.isnan(r.iloc[0])                              # nothing before January
+    assert r.iloc[1] == pytest.approx(0.10) and r.iloc[2] == pytest.approx(99 / 110 - 1)
+    assert math.isnan(r.iloc[3])                              # April's last session (the 30th) has no close: not over
+
+
+def test_a_month_ending_without_a_close_has_no_return_and_neither_does_the_next():
+    s = _month_closes({"2026-01-30": 100.0, "2026-02-26": 105.0, "2026-03-31": 99.0, "2026-04-30": 101.0}, "2026-04-30")
+    r = technicals.monthly_returns(s)   # Feb 27, February's last session, has no close
+    assert math.isnan(r["2026-02"]) and math.isnan(r["2026-03"]) and r["2026-04"] == pytest.approx(101 / 99 - 1)
+
+
+def test_monthly_seasonality_groups_by_calendar_month():
+    idx = pd.period_range("2019-12", "2022-03", freq="M")
+    ends = pd.Series(100 * np.cumprod(1 + np.random.default_rng(13).normal(0.005, 0.04, len(idx))), index=idx.to_timestamp("M"))
+    got = technicals.monthly_seasonality(ends)
+    r = (ends / ends.shift(1) - 1).dropna()
+    assert got["window"] == {"start": "2020-01", "end": "2022-03", "n": 27}
+    jan = got["rows"][0]
+    want = r[r.index.month == 1]
+    assert (jan["label"], jan["n"], jan["first_year"], jan["last_year"]) == ("Jan", 3, 2020, 2022)
+    assert jan["avg"] == pytest.approx(float(want.mean())) and jan["pct_up"] == pytest.approx(float((want > 0).mean()))
+    assert [x["n"] for x in got["rows"]] == [3, 3, 3] + [2] * 9
+    empty = technicals.monthly_seasonality(ends.iloc[:1])
+    assert empty["window"] == {"start": None, "end": None, "n": 0} and all(x["avg"] is None for x in empty["rows"])
+
+
+def test_the_seasonality_fields_on_a_level_skip_the_unfinished_month():
+    dates = _xnys("2023-01-03", "2026-09-18")
+    lvl = _level(dates, seed=14)
+    s = desk_items.technicals_from_level(lvl)["seasonality"]
+    assert (s["freq"], s["source"]) == ("monthly", "asset_prices ^GSPC")
+    assert s["window"] == {"start": "2023-02", "end": "2026-08", "n": 43}   # September 2026 is not over
+    month_ends = lvl.groupby(lvl.index.to_period("M")).last()
+    r = (month_ends / month_ends.shift(1) - 1).loc["2023-02":"2026-08"]
+    for row in s["rows"]:
+        want = r[r.index.month == row["month"]]
+        assert row["n"] == len(want) and row["avg"] == pytest.approx(float(want.mean()), rel=1e-12)
+    # The regime table reads the same month returns (one copy, src/analytics/technicals.monthly_returns).
+    from api import desk_items_macro
+    mr = desk_items_macro.month_returns(lvl)
+    assert len(mr) == 43 and mr["2026-08"] == pytest.approx(float(r["2026-08"]), rel=1e-12)
+
+
+def test_a_history_without_a_complete_month_has_no_seasonality():
+    t = desk_items.technicals_from_level(_level(_xnys("2026-08-03", "2026-09-18"), seed=15))
+    assert t["seasonality"] is None
+
+
+def test_the_route_serves_the_seasonality(served):
+    d = _tech()["data"]
+    assert [r["label"] for r in d["seasonality"]["rows"]] == ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+                                                              "Oct", "Nov", "Dec"]
+    assert list(d).index("seasonality") == list(d).index("macd") + 1
+
+
+@published
+def test_the_published_copy_seasonality(install_worker, monkeypatch):
+    """Every stored ^GSPC close, 1990 on: Feb 1990 to Aug 2026 (September not over), checked against a month-end resample."""
+    _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
+    s = _tech()["data"]["seasonality"]
+    assert s["window"] == {"start": "1990-02", "end": "2026-08", "n": 439}
+    by = {r["label"]: r for r in s["rows"]}
+    assert (by["Jan"]["n"], by["Jan"]["first_year"], by["Sep"]["last_year"]) == (36, 1991, 2025)
+    assert by["Nov"]["avg"] == pytest.approx(0.021739, abs=5e-7) and by["Nov"]["pct_up"] == pytest.approx(0.75)
+    assert by["Sep"]["avg"] == pytest.approx(-0.007177, abs=5e-7) and by["Sep"]["pct_up"] == pytest.approx(0.5)

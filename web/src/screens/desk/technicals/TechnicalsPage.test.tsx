@@ -14,7 +14,7 @@ import technicals from "../../../fixtures/desk/technicals.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
-import { aboveBelow, allowlistRows, dayInYear, dayMove, macdCrossWords, macdSide, monthTicks, quarterOf, rsiDirection, rsiZone, sevenOf, trendWord } from "./TechnicalsPage";
+import { aboveBelow, allowlistRows, dayInYear, dayMove, macdCrossWords, macdSide, monthTicks, quarterOf, rsiDirection, rsiZone, sevenOf, trendWord, yearsLine } from "./TechnicalsPage";
 import { servedTechnicals } from "../../../test/desk-variants";
 import { DESK_ACCENTS } from "../kit/palette";
 
@@ -54,6 +54,10 @@ describe("Technicals words", () => {
     // §3 (desk/fill-compute): the MACD's words come from the served histogram and crossover kind only.
     expect([macdSide(0.28), macdSide(-1), macdSide(0), macdSide(null)]).toEqual(["MACD above its signal", "MACD below its signal", "MACD on its signal", null]);
     expect([macdCrossWords("above"), macdCrossWords("below"), macdCrossWords(undefined)]).toEqual(["MACD crossed above its signal", "MACD crossed below its signal", null]);
+    // §3: the years line from the served counts.
+    expect(yearsLine([{ n: 36 }, { n: 37 }, { n: null }])).toBe("36–37 years a month · a month counts once it is complete");
+    expect(yearsLine([{ n: 5 }, { n: 5 }])).toBe("5 years a month · a month counts once it is complete");
+    expect(yearsLine([{ n: null }])).toBeNull();
   });
   it("lists the Ledger's rows in `signals_allowlist` order, leaving out what the Ledger does not serve (§3)", () => {
     const l = { ...ledger, signals: ledger.signals as LedgerRow[] };
@@ -247,6 +251,37 @@ describe("Technicals tab", () => {
     expect(within(card).getByRole("img", { name: "MACD, its signal line and the histogram, 6M" })).toBeInTheDocument();
   });
 
+  it("the seasonality card reads /technicals' seasonality (§12.7): twelve months, their average, share up and years, the window", async () => {
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Seasonality · S&P 500 by calendar month/ });
+    await waitFor(() => expect(card).toHaveTextContent("Average monthly return and share of years up, Feb 1990 to Aug 2026."));
+    const table = within(card).getByRole("table");
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows.map((r) => within(r).getByRole("rowheader").textContent)).toEqual(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]);
+    const nov = rows[10];
+    expect(nov).toHaveTextContent("+2.2%");
+    expect(nov).toHaveTextContent("75%");
+    expect(nov).toHaveTextContent("36");
+    expect(within(nov).getByText("36")).toHaveAttribute("title", "1990–2025");
+    expect(rows[8]).toHaveTextContent(`${"\u2212"}0.7%`);
+    // One bar a month, its side by the sign; the largest average (November) is the full half-width.
+    const bars = [...table.querySelectorAll<HTMLElement>(".te-season-bar")];
+    expect(bars).toHaveLength(12);
+    expect(bars.filter((b) => b.dataset.sign === "down")).toHaveLength(2);
+    expect(bars[10].style.width).toBe("50%");
+    expect(card).toHaveTextContent("36–37 years a month · a month counts once it is complete");
+    expect(card).toHaveTextContent("Source: asset_prices ^GSPC, monthly");
+  });
+
+  it("a seasonality the store cannot compute keeps its labels and says Awaiting refresh", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, seasonality: null }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Seasonality · S&P 500 by calendar month/ });
+    await waitFor(() => expect(within(card).getAllByText("Awaiting refresh")).toHaveLength(3));
+    for (const l of ["Average", "Up", "Years"]) expect(card).toHaveTextContent(l);
+    expect(within(card).queryByRole("table")).toBeNull();
+  });
+
   it("a zone's last session within 20 sessions of the data says they have not passed yet", async () => {
     stubDesk({ "/api/desk/technicals": () => ({ ...technicals, rsi_last_above_70: { date: "2026-09-15", rsi: 71.2, after_20d: null, after_20d_to: null } }) });
     renderTab();
@@ -337,6 +372,9 @@ describe("routes served awaiting (§12.0, §1.0.2)", () => {
     const macd = screen.getByRole("region", { name: /^Momentum · MACD/ });
     expect(within(macd).getAllByText("no generation stored yet.")).toHaveLength(1);
     expect(macd.textContent).not.toMatch(/\d+\.\d/);
+    const season = screen.getByRole("region", { name: /^Seasonality/ });
+    expect(within(season).getAllByText("no generation stored yet.")).toHaveLength(1);
+    expect(season.textContent).not.toMatch(/\d+\.\d|%/);
     expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Not yet served");
   });
 });
