@@ -127,7 +127,7 @@ def _executor() -> ThreadPoolExecutor:
 
 
 def clear_caches() -> None:
-    for c in (_search_cache, _identity_cache, _profile_cache, _candles_cache, _actions_cache, _exp_cache, _chain_cache, _ticks_cache, _fundamentals_cache):
+    for c in (_search_cache, _identity_cache, _profile_cache, _candles_cache, _actions_cache, _exp_cache, _chain_cache, _ticks_cache, _fundamentals_cache, _daily_cache):
         c.clear()
 
 
@@ -159,6 +159,9 @@ RANGES: dict[str, dict[str, Any]] = {
     "1M": {"kind": "intraday", "interval": "1h", "lookback_days": 32, "yf": ("1mo", "1h")},
     "6M": {"kind": "eod", "period": "d", "lookback_days": 183, "yf": ("6mo", "1d")},
     "1Y": {"kind": "eod", "period": "d", "lookback_days": 366, "yf": ("1y", "1d")},
+    # desk/books: two years of daily bars, so a 200-day average has history across a one-year
+    # chart (Basket & Hedge). Completed sessions only, cached per ticker per New York session.
+    "2Y": {"kind": "eod", "period": "d", "lookback_days": 731, "yf": ("2y", "1d")},
     "5Y": {"kind": "eod", "period": "w", "lookback_days": 1830, "yf": ("5y", "1wk")},
     "MAX": {"kind": "eod", "period": "m", "lookback_days": None, "yf": ("max", "1mo")},
 }
@@ -193,6 +196,9 @@ def _eodhd_candles(inst: Instrument, range_key: str) -> tuple[list[dict], str]:
                     "low": a(r.get("low")),
                     "close": round(close * factor, 6),
                     "volume": _f(r.get("volume")),
+                    # EODHD's own close, unadjusted: with the day's volume, the dollars traded that
+                    # day (Basket & Hedge's liquidity). Not part of the served candle shape.
+                    "close_raw": close,
                 }
             )
         return bars, INTERVAL_LABEL[spec["period"]]
@@ -246,12 +252,63 @@ def candles(symbol: str, range_key: str) -> dict:
     """OHLCV bars for one symbol over a named range, from EODHD."""
     if range_key not in RANGES:
         raise KeyError(range_key)
+    if range_key == DAILY_RANGE:
+        return daily_bars(symbol)
     try:
         inst = parse(symbol)
     except SymbolError as exc:
         raise UnknownSymbol("api", str(exc)) from exc
     ttl = RANGE_TTL.get(range_key, 900.0)
     return _candles_cache.get(f"{inst.canonical}:{range_key}", lambda: _candles_compute(inst, range_key), ttl=ttl)
+
+
+# ── two years of daily bars, per ticker per session (desk/books) ──────────────
+
+DAILY_RANGE = "2Y"
+# One entry per ticker per completed New York session: a new session is a new key. An answer
+# whose newest bar is older than that session (EODHD has not posted the close yet) is asked
+# again after DAILY_RETRY_S instead of standing for the day.
+DAILY_TTL = 36 * 3600.0
+DAILY_RETRY_S = 900.0
+_daily_cache = KeyedTTLCache(DAILY_TTL, 512)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def last_session() -> str:
+    """The most recent New York session whose close is past (api/calendar)."""
+    from api.calendar import last_completed_session
+
+    return last_completed_session(_utcnow()).isoformat()
+
+
+def _daily_compute(inst: Instrument, session: str) -> dict:
+    s = _candles_compute(inst, DAILY_RANGE)
+    # Completed sessions only (the B6 rule the stored bars follow): a bar dated after the last
+    # completed session is a session still trading.
+    bars = [b for b in s["bars"] if b["ts"][:10] <= session]
+    if not bars:
+        raise EmptyResult(eod.PROVIDER, f"EODHD holds no completed daily bars for {inst.canonical}.")
+    return {**s, "bars": bars, "count": len(bars), "market_ts": bars[-1]["ts"], "session": session}
+
+
+def daily_bars(symbol: str) -> dict:
+    """Two years of split- and dividend-adjusted daily bars with volume, through the last
+    completed session, from EODHD, cached per ticker per session. Each bar also carries
+    `close_raw`, EODHD's unadjusted close (the route's candle shape leaves it out)."""
+    try:
+        inst = parse(symbol)
+    except SymbolError as exc:
+        raise UnknownSymbol("api", str(exc)) from exc
+    session = last_session()
+    key = f"{inst.canonical}:{DAILY_RANGE}:{session}"
+    out = _daily_cache.get(key, lambda: _daily_compute(inst, session))
+    if out["bars"][-1]["ts"][:10] < session and (_daily_cache.age(key) or 0.0) > DAILY_RETRY_S:
+        out = _daily_compute(inst, session)
+        _daily_cache.put(key, out)
+    return out
 
 
 def refresh_candles(symbol: str, range_key: str, margin_s: float) -> bool:

@@ -170,7 +170,7 @@ def test_candles_envelope_and_range_validation(client, monkeypatch):
     assert body["interval"] == "1d" and body["adjustment"] == "split_dividend_adjusted"
     # range is a closed vocabulary — anything else fails validation, and the
     # stub above proves the 422 comes from the route, not the provider layer.
-    assert client.get("/api/market/candles/NVDA", params={"range": "2Y"}).status_code == 422
+    assert client.get("/api/market/candles/NVDA", params={"range": "3Y"}).status_code == 422
 
 
 def test_candles_eodhd_failure_is_a_typed_error_never_a_fallback(client, monkeypatch):
