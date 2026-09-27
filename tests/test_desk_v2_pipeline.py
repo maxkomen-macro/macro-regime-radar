@@ -140,7 +140,7 @@ def test_the_feeds_are_the_codes_readers():
     assert rows == {k: set(v) for k, v in pipe.CATALOG_INPUTS.items()}, rows
     ledger = spec[spec.index("The twelve rows in exactly"):spec.index("A firing row is green-tinted")]
     order = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)+", ledger.split(":", 1)[1])
-    assert tuple(s for s in order if not s.startswith("rsi-")) == pipe.LEDGER_STUDIES
+    assert tuple(order) == pipe.LEDGER_STUDIES  # the RSI rows read the S&P since desk/fill-compute
 
 
 def test_every_served_note_speaks_the_desks_language(hermetic, monkeypatch):

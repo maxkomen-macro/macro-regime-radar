@@ -39,7 +39,7 @@ def test_the_ledger_rows_order_and_counts(served):
     d = _ledger()
     assert d["verdict_rule"] == "v1" and d["horizon"] == 20
     assert [r["slug"] for r in d["signals"]] == list(catalog.LEDGER_ORDER)
-    unavailable = {"rsi-above-70", "rsi-below-30", "dollar-2sigma-20d", "oil-2sigma-20d"}  # the synthetic store has no WTI, DXY
+    unavailable = {"dollar-2sigma-20d", "oil-2sigma-20d"}  # the synthetic store has no WTI, DXY; the RSI rows are scored
     assert d["scored_n"] == 12 - len(unavailable) and d["scored_n"] + d["unavailable_n"] == 12
     for r in d["signals"]:
         assert r["group"] == catalog.LEDGER_GROUP[r["slug"]] and r["horizon"] == 20
@@ -48,7 +48,9 @@ def test_the_ledger_rows_order_and_counts(served):
             assert all(r[k] is None for k in desk_v2.LEDGER_STATS + ("firing_now", "firing_day", "evaluated_on")), r
         else:
             assert r["available"] is True and r["unavailable"] is None and r["n"] is not None
-    assert next(r for r in d["signals"] if r["slug"] == "rsi-below-30")["unavailable"]["reason"] == "RSI is not computed yet."
+    for slug in ("rsi-above-70", "rsi-below-30"):
+        r = next(r for r in d["signals"] if r["slug"] == slug)
+        assert r["available"] is True and r["group"] == "spx" and r["target_unit"] == "log_return" and r["verdict"]
 
 
 @pytest.mark.parametrize("slug", [s for s in catalog.LEDGER_ORDER if catalog.BY_SLUG[s].question and s not in TIER2])

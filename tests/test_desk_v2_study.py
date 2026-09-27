@@ -100,7 +100,7 @@ def test_the_engine_slugs_are_slug_for_of_the_catalog_queries():
 
 def test_the_lookup_slugs_and_items_are_registered():
     assert security.DESK_CATALOG_SLUGS == frozenset(catalog.CATALOG_SLUGS) >= frozenset(catalog.CATALOG_QUERY_SLUGS)
-    assert len(catalog.CATALOG_QUERY_SLUGS) == 13
+    assert len(catalog.CATALOG_QUERY_SLUGS) == 15  # every row asks a question since desk/fill-compute
     assert {"/api/desk/study", "/api/desk/study/catalog"} <= security.DESK_STUDY_PATHS
     names = [n for n, _ in analytics_cache.ITEMS]
     first_preset = names.index("desk_preset:gold-2sigma-spx-weak")
@@ -114,8 +114,9 @@ def test_the_ledger_order_groups_and_allowlist_are_the_specs():
     assert tuple(s.strip() for s in listed.replace("\n", " ").split(",")) == catalog.LEDGER_ORDER
     spx = {s for s, g in catalog.LEDGER_GROUP.items() if g == "spx"}
     assert spx == {"golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma", "rsi-above-70", "rsi-below-30"}
-    assert '["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]' in SPEC
-    assert list(catalog.TECHNICALS_ALLOWLIST) == ["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]
+    assert '["golden-cross","death-cross","rsi-above-70","rsi-below-30","spx-20d-2sigma","spx-5d-2sigma"]' in SPEC
+    assert list(catalog.TECHNICALS_ALLOWLIST) == ["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30",
+                                                  "spx-20d-2sigma", "spx-5d-2sigma"]
 
 
 def test_the_verdict_definitions_are_section_1_5s_word_for_word():
@@ -142,7 +143,9 @@ def test_a_request_normalizes_to_one_catalog_study():
     assert _norm("shock=spx&move=cross_above&target=spx&horizon=60") == (catalog.BY_SLUG["golden-cross"], 60)
     assert _norm("shock=gold&window=20&move=up2s&while=spx_below_50&target=spx")[0].slug == "gold-2sigma-spx-weak"
     assert _norm("shock=spx&window=5&move=up2s&target=spx&while=none")[0].slug == "spx-5d-2sigma"   # while defaults to none
-    assert _norm("preset=rsi-above-70") == (catalog.BY_SLUG["rsi-above-70"], None)
+    assert _norm("preset=rsi-above-70") == (catalog.BY_SLUG["rsi-above-70"], 20)
+    assert _norm("preset=spx-rsi-below-30&horizon=5") == (catalog.BY_SLUG["rsi-below-30"], 5)          # the engine's slug
+    assert _norm("shock=spx&move=rsi_above_70&target=spx&horizon=60") == (catalog.BY_SLUG["rsi-above-70"], 60)
 
 
 @pytest.mark.parametrize(("qs", "names"), [
@@ -159,8 +162,9 @@ def test_a_request_normalizes_to_one_catalog_study():
     ("preset=golden-cross&preset=death-cross", "preset is given more than once"),
     ("preset=not-a-study", "not-a-study"),
     ("preset=vix-w5-z2.0-up-none-spx-overheating", "vix-w5-z2.0-up-none-spx-overheating"),
-    ("preset=rsi-above-70&horizon=20", "horizon"),
-    ("preset=rsi-below-30&horizon=abc", "horizon"),
+    ("preset=rsi-below-30&horizon=abc", "horizon abc"),
+    ("shock=spx&window=20&move=rsi_above_70&target=spx", "An RSI crossing takes no window"),
+    ("shock=gold&move=rsi_above_70&target=spx", "No study in the catalog asks"),
     ("", "needs preset"),
 ])
 def test_anything_else_is_unsupported_naming_what(qs, names):
@@ -173,7 +177,8 @@ def test_anything_else_is_unsupported_naming_what(qs, names):
 
 def test_ops_and_fixes():
     ops = catalog.ops_by_shock()
-    assert ops["spx"] == ["up2s", "down2s", "cross_above", "cross_below"] and ops["dxy"] == ["down2s"]
+    assert ops["spx"] == ["up2s", "down2s", "cross_above", "cross_below", "rsi_above_70", "rsi_below_30"]
+    assert ops["dxy"] == ["down2s"]
     assert ops.get("us2y") is None
     assert catalog.fixes_for(catalog.BY_SLUG["spx-5d-2sigma"]) == ["widen_window"]
     assert catalog.fixes_for(catalog.BY_SLUG["gold-2sigma-spx-weak"]) == []
@@ -223,9 +228,10 @@ def test_the_study_catalog(served):
     rows = body["data"]["studies"]
     assert [r["slug"] for r in rows] == list(catalog.CATALOG_SLUGS)
     by = {r["slug"]: r for r in rows}
-    for slug in ("rsi-above-70", "rsi-below-30"):
-        assert by[slug]["question"] is None and by[slug]["available"] is False and by[slug]["client_label"] is None
-        assert by[slug]["unavailable"] == {"reason": "RSI is not computed yet.", "until": None} and by[slug]["allowed_horizons"] == []
+    for slug, move in (("rsi-above-70", "rsi_above_70"), ("rsi-below-30", "rsi_below_30")):
+        assert by[slug]["question"] == {"shock": "spx", "window": None, "move": move, "while": "none", "target": "spx"}
+        assert by[slug]["available"] is True and by[slug]["unavailable"] is None and by[slug]["allowed_horizons"] == [5, 10, 20, 60]
+        assert by[slug]["client_label"] == catalog.BY_SLUG[slug].client_label and "RSI" in by[slug]["client_label"]
     for slug in TIER2:  # the synthetic store holds no WTI or DXY
         assert by[slug]["available"] is False and "desk_series" in by[slug]["unavailable"]["reason"], by[slug]
         assert by[slug]["allowed_horizons"] == [5, 10, 20, 60]
@@ -314,13 +320,21 @@ def test_the_stubs_and_the_study_routes_share_one_generation(served):
     assert ids == {env.generation_id(served.current)}
 
 
-def test_rsi_presets_follow_s31(served):
-    for slug in ("rsi-above-70", "rsi-below-30"):
-        b = _study(f"preset={slug}")
-        assert b["status"] == "awaiting" and b["unavailable"] == {"reason": "RSI is not computed yet.", "until": None}
-        for h in ("20", "5", "abc"):
-            r = client.get(f"/api/desk/study?preset={slug}&horizon={h}")
-            assert r.status_code == 422 and "horizon" in r.json()["error"]["message"], (slug, h)
+def test_the_rsi_studies_are_the_engines_rsi_crossings(served):
+    """desk/fill-compute: an RSI row is a catalog study like any other, the engine's kind rsi, every horizon."""
+    for slug, side in (("rsi-above-70", "above"), ("rsi-below-30", "below")):
+        for h in (5, 20, 60):
+            d = _study(f"preset={slug}&horizon={h}")["data"]
+            assert d["selected_horizon"] == h and d["question"]["move"] == f"rsi_{side}_{'70' if side == 'above' else '30'}"
+        item = analytics_cache_item(served, slug)
+        native = item["native"]
+        assert native["study"]["slug"] == f"spx-rsi-{side}-{'70' if side == 'above' else '30'}"
+        assert native["study"]["kind"] == "rsi" and native["provenance"]["cooldown_sessions"] == 14
+        assert d["provenance"]["cooldown"] == 14 and d["inputs_hash"] == native["provenance"]["inputs_hash"]
+        gen = served.current
+        with dbpath.pinned(gen):
+            direct = es.run(es.Query(kind="rsi", cross=side, target="spx"))
+        assert json.dumps(direct, sort_keys=True) == json.dumps(native, sort_keys=True), slug
 
 
 def test_the_preset_items_reuse_the_catalog_run_byte_for_byte(served):

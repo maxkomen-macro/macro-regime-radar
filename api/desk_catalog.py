@@ -3,8 +3,8 @@
 DESK_FRAME3_SPEC §12.3: fifteen studies, each with one canonical label and
 short reused by every tab, a Client-view title, the question its five slots
 ask, and the engine query that answers it (`engine_kwargs`, plain
-`src.desk.event_study.Query` keyword arguments). Two rows (RSI) have no
-question: RSI is not computed.
+`src.desk.event_study.Query` keyword arguments). The two RSI rows ask the
+S&P's RSI(14) crossing 70 or 30 (desk/fill-compute), scored like every row.
 
 Also here: the Ledger's order and groups (§8, §12.5), the Technicals
 allowlist (§12.7), the Data Pipeline's groups (§12.9), and `normalize`, the
@@ -26,12 +26,13 @@ from typing import Iterable
 from api.desk_envelope import Unsupported  # 422 `unsupported`: the request does not normalize to a catalog study
 
 REGIMES = ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
-MOVES = ("up2s", "down2s", "cross_above", "cross_below")
+MOVES = ("up2s", "down2s", "cross_above", "cross_below", "rsi_above_70", "rsi_below_30")
+# The moves that take no window: the two 50/200-day crosses and the two RSI crossings.
+NO_WINDOW_MOVES = ("cross_above", "cross_below", "rsi_above_70", "rsi_below_30")
 WINDOWS = (5, 20, 60)
 HORIZONS = (5, 10, 20, 60)
 WHILE = ("none", "spx_below_50", *(f"regime:{r}" for r in REGIMES))
-Z = 2.0  # every catalog study (§12.3)
-RSI_REASON = "RSI is not computed yet."
+Z = 2.0  # every shock study in the catalog (§12.3)
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,8 @@ def engine_kwargs(q: Question) -> dict:
     """The engine query a question asks (§12.2's slots → `Query`)."""
     if q.move in ("cross_above", "cross_below"):
         return {"kind": "cross", "cross": "golden" if q.move == "cross_above" else "death", "target": q.target}
+    if q.move in ("rsi_above_70", "rsi_below_30"):
+        return {"kind": "rsi", "cross": "above" if q.move == "rsi_above_70" else "below", "target": q.target}
     kw: dict = {"shock": q.shock, "w": q.window, "z": Z, "sign": "+" if q.move == "up2s" else "-", "target": q.target}
     if q.while_ == "spx_below_50":
         kw["cond"] = "spx_below_50dma"
@@ -109,8 +112,10 @@ CATALOG: tuple[Study, ...] = (
           "The yield curve steepens sharply over a month", _q("curve_2s10s", 20, "up2s", "none", "spx")),
     Study("oil-2sigma-20d", "Oil +2σ, 20 days", "oil spike",
           "Oil jumps over a month", _q("wti", 20, "up2s", "none", "spx")),
-    Study("rsi-above-70", "RSI above 70", "RSI > 70", None, None),
-    Study("rsi-below-30", "RSI below 30", "RSI < 30", None, None),
+    Study("rsi-above-70", "RSI above 70", "RSI > 70",
+          "The S&P's 14-day momentum gauge (RSI) climbs above 70", _q("spx", None, "rsi_above_70", "none", "spx")),
+    Study("rsi-below-30", "RSI below 30", "RSI < 30",
+          "The S&P's 14-day momentum gauge (RSI) drops below 30", _q("spx", None, "rsi_below_30", "none", "spx")),
 )
 BY_SLUG: dict[str, Study] = {s.slug: s for s in CATALOG}
 CATALOG_SLUGS: tuple[str, ...] = tuple(s.slug for s in CATALOG)
@@ -132,6 +137,8 @@ ENGINE_SLUGS: dict[str, str] = {
     "spx-5d-2sigma": "spx-w5-z2.0-up-none-spx",
     "2s10s-2sigma-steepening": "curve_2s10s-w20-z2.0-up-none-spx",
     "oil-2sigma-20d": "wti-w20-z2.0-up-none-spx",
+    "rsi-above-70": "spx-rsi-above-70",
+    "rsi-below-30": "spx-rsi-below-30",
 }
 BY_ENGINE_SLUG: dict[str, str] = {v: k for k, v in ENGINE_SLUGS.items()}
 
@@ -144,8 +151,9 @@ LEDGER_ORDER: tuple[str, ...] = (
 _SPX_GROUP = {"golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma", "rsi-above-70", "rsi-below-30"}
 # §12.5
 LEDGER_GROUP: dict[str, str] = {s: ("spx" if s in _SPX_GROUP else "cross") for s in LEDGER_ORDER}
-# §12.7 (v2 §13; the RSI rows are omitted while unavailable)
-TECHNICALS_ALLOWLIST: tuple[str, ...] = ("golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma")
+# §12.7 (v2 §13): the S&P rows, the two RSI rows among them (desk/fill-compute)
+TECHNICALS_ALLOWLIST: tuple[str, ...] = ("golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma",
+                                         "spx-5d-2sigma")
 # §12.9 (plan §1.9: the names of A's fixture and audit §1)
 PIPELINE_GROUPS: tuple[str, ...] = ("Rates", "Credit", "Equities & vol", "FX & commodities", "Macro (monthly)")
 
@@ -171,8 +179,9 @@ def _one(params: Iterable[tuple[str, str]], route: str) -> dict[str, str]:
 
 def _horizon(study: Study, raw: str | None) -> int | None:
     """§12.2: `horizon` selects the study's results, default 20; one outside
-    the row's allowed horizons is refused. A row with none (RSI, S-31) takes no
-    horizon at all, and the default is never applied to it."""
+    the row's allowed horizons is refused. A row with none (S-31) takes no
+    horizon at all, and the default is never applied to it (every catalog row
+    has all four since desk/fill-compute gave the RSI rows their question)."""
     if not study.allowed_horizons:
         if raw is not None:
             raise Unsupported(f"horizon is not allowed for {study.slug}: the study has no horizons.")
@@ -216,9 +225,9 @@ def normalize(params: Iterable[tuple[str, str]], route: str = "/study",
     move = p["move"]
     if move not in MOVES:
         raise Unsupported(f"move {move} is not one of {', '.join(MOVES)}.")
-    cross = move in ("cross_above", "cross_below")
+    cross = move in NO_WINDOW_MOVES
     if cross and "window" in p:
-        raise Unsupported("A cross takes no window.")
+        raise Unsupported("A cross takes no window." if move.startswith("cross") else "An RSI crossing takes no window.")
     if not cross and "window" not in p:
         raise Unsupported(f"The move {move} needs a window (5, 20 or 60 sessions).")
     window = None

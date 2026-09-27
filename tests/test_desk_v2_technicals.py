@@ -59,7 +59,8 @@ def served(install_worker, monkeypatch, synth_path):  # noqa: F811
 
 def test_the_technicals_shape(served):
     d = _tech()["data"]
-    assert d["signals_allowlist"] == ["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]
+    assert d["signals_allowlist"] == ["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma",
+                                      "spx-5d-2sigma"]
     assert d["vol"]["unavailable"]["reason"] == "needs stored SPY option snapshots and a versioned skew method."
     # desk/fill-etf: the synthetic store predates the ETFs, so the served leadership awaits the refresh
     assert d["sectors"]["unavailable"]["reason"].startswith("Awaiting refresh: the full refresh stores SPY, XLB, XLC")

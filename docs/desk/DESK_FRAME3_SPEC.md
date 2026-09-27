@@ -57,7 +57,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Sectors: leadership (LEADING, LAGGING, PATTERN, the eleven bars) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: breadth, of the 11 sector ETFs (above the 50- and 200-day, RSP against SPY, IWM against SPY) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: constituent-level breadth (the stocks inside the index) | UNAVAILABLE | constituent data is not ingested |
-| Signal Ledger | LIVE for the rows whose study completes; the two RSI rows, and any row whose inputs are not stored (WTI, DXY), unavailable | v3 §2, v4 B-02 |
+| Signal Ledger | LIVE for the rows whose study completes, the two RSI rows included (desk/fill-compute); any row whose inputs are not stored (WTI, DXY) unavailable | v3 §2, v4 B-02 |
 | Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
 | Basket & Hedge | UNAVAILABLE; local leg editing (legs, weights, save, export) remains | basket pricing and option structures not yet defined in the engine (v2 D-25–D-28) |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
@@ -84,7 +84,6 @@ Build Notes prints these two lists as their own section, word for word.
 - The VIX gap to realized volatility and the vol band word.
 - What protection costs: options skew, implied against realized volatility, the term structure.
 - Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
-- The two RSI signals.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
 - What each regime has meant, and the S&P after each regime change.
@@ -345,7 +344,7 @@ count, up share and h = 20 verdict.
 `ret_1y_dates`) · TREND (`trend.state` in words: above both / below both /
 mixed; since `state_since`) · LAST 20 DAYS (`move_20d_sigma`σ). Rows: the
 Ledger rows in `signals_allowlist` order — golden-cross, death-cross,
-spx-20d-2sigma, spx-5d-2sigma (the RSI rows are omitted while unavailable) —
+rsi-above-70, rsi-below-30, spx-20d-2sigma, spx-5d-2sigma —
 each `label · N× since <sample_start year> · up P% · a month later +M% ·
 pill`. Note box: "vs normal compares each study to its own baseline over its
 own sample."
@@ -393,14 +392,15 @@ render as chips under `Yours`.
 
 **Row 2 — THE QUESTION, SPELLED OUT.** Sub-label "change any slot and it
 becomes your own". Six labelled slots: SHOCK (series) · WINDOW (5 / 20 / 60
-sessions; none for a cross) · MOVE ⓘ (up 2σ or more / down 2σ or more /
-50-day crosses above the 200-day / crosses below; tooltip "σ measured over
-the last 252 sessions") · WHILE ⓘ (none / S&P below its 50-day / regime = X;
+sessions; none for a cross or an RSI crossing) · MOVE ⓘ (up 2σ or more /
+down 2σ or more / 50-day crosses above the 200-day / crosses below / RSI
+crosses above 70 / RSI crosses below 30; tooltip "σ measured over the last
+252 sessions") · WHILE ⓘ (none / S&P below its 50-day / regime = X;
 tooltip "Entry at the event close when every input is available by then;
 otherwise the next close.") · WHAT HAPPENS TO (series) · OVER THE NEXT (1 week
 / 2 weeks / 1 month / 3 months). Every option that does not lead to a catalog
-study (§12.3), given the other slots, is disabled; a cross requires shock =
-S&P, target = S&P, while = none and no window. Series labels, roles and ops
+study (§12.3), given the other slots, is disabled; a cross or an RSI
+crossing requires shock = S&P, target = S&P, while = none and no window. Series labels, roles and ops
 come from `/study` `series[]`. Buttons **Run** (primary) and **Save**. A
 request the server refuses (422 `unsupported`) prints the served message.
 
@@ -455,7 +455,10 @@ show the same calculation; the frame-2 engine panel is retired (v2 §8).
   XNYS sessions later. Baseline observations use the identical rule.
 - **Cooldown.** After every retained threshold hit at session t, sessions t+1
   … t+w are excluded, even if the condition later fails. Crosses have no
-  window and no cooldown; `provenance.cooldown` is null for them.
+  window and no cooldown; `provenance.cooldown` is null for them. An RSI
+  crossing (desk/fill-compute) has no window; after each retained crossing
+  the next 14 sessions (the RSI period) are its cooldown, so
+  `provenance.cooldown` is 14.
 - **Baseline.** Each horizon's baseline is the engine's evaluable baseline for
   that exact study and horizon: the condition computable on the baseline dates
   but not required to hold; the same entry and completeness rules; not
@@ -966,19 +969,19 @@ two sessions; v2 §21's `data_status {state, worst_series, date}` is
 ### 12.2 `GET /study`
 
 Parameters: `preset=<slug>`, or the six slots `shock`, `window` (5 | 20 |
-60; omitted for a cross), `move` (`up2s` | `down2s` | `cross_above` |
-`cross_below`), `while` (`none` | `spx_below_50` | `regime:<Goldilocks |
+60; omitted for a cross or an RSI crossing), `move` (`up2s` | `down2s` |
+`cross_above` | `cross_below` | `rsi_above_70` | `rsi_below_30`), `while` (`none` | `spx_below_50` | `regime:<Goldilocks |
 Overheating | Stagflation | Recession Risk>`), `target`, `horizon` (5 | 10 |
 20 | 60, default 20). A request must normalize to one catalog study (§12.3);
 `horizon` then selects that study's results. There is no `confidence`
 parameter. `while` defaults to `none`; `window` is required for
-`up2s`/`down2s` and refused for a cross; `preset` also accepts an engine slug
+`up2s`/`down2s` and refused for a cross or an RSI crossing; `preset` also accepts an engine slug
 that parses to a catalog study's query. `horizon` also rides with a preset,
 and a preset link keeps it (Codex round 3, R-23). An unknown parameter, a
 repeated one, a preset asked with slot parameters, or a horizon outside the
 study's `allowed_horizons` is refused 422 `unsupported`, the message naming
-what (R-27). A preset for a row whose `allowed_horizons` is `[]` (the RSI
-rows) is awaiting, with the row's served reason, when the request carries no
+what (R-27). A preset for a row whose `allowed_horizons` is `[]` (none since
+desk/fill-compute gave the RSI rows a question) is awaiting, with the row's served reason, when the request carries no
 `horizon`; with any `horizon` parameter it is refused 422 `unsupported`, the
 message naming `horizon`. The default horizon is never applied to such a row.
 `/study/events` follows the same rule (S-31). Anything else: 422
@@ -989,8 +992,8 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `slug` | string | required | — | — | A: the catalog slug the request normalizes to (public aliases; the engine's `slug_for` is unchanged, v3 §2) |
 | `label`, `short` | string | required | — | — | A: catalog (§12.3) |
 | `question.shock` | series key | required | — | — | A → E `Query.shock` |
-| `question.window` | 5 \| 20 \| 60 | required, nullable (null for a cross) | sessions | — | E `Query.w` |
-| `question.move` | `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A → E `Query.sign` / `Query.kind`+`cross` |
+| `question.window` | 5 \| 20 \| 60 | required, nullable (null for a cross or an RSI crossing) | sessions | — | E `Query.w` |
+| `question.move` | `up2s` \| `down2s` \| `cross_above` \| `cross_below` \| `rsi_above_70` \| `rsi_below_30` | required | — | — | A → E `Query.sign` / `Query.kind`+`cross` (`kind` `rsi`, `cross` `above` \| `below` for the RSI moves) |
 | `question.while` | `none` \| `spx_below_50` \| `regime:<label>` | required | — | — | A → E `Query.cond` (`spx_below_50dma`, `regime`) |
 | `question.target` | series key | required | — | — | E `Query.target` |
 | `question.horizon` | 5 \| 10 \| 20 \| 60 | required | sessions | — | A: the request's horizon |
@@ -1044,7 +1047,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `last_events[].value_20` | number | required, nullable (incomplete) | `target_unit` | — | P |
 | `without_condition` | block envelope | required | — | — | awaiting, reason "conditional-versus-unconditional comparison is not defined" (v4 B-11, C-01); the shape once defined is §12.13 |
 | `provenance.entry_rule` | string | required | — | — | E `provenance.entry_rule` |
-| `provenance.cooldown` | integer | required, nullable (null for a cross) | sessions | — | E `cooldown_sessions` |
+| `provenance.cooldown` | integer | required, nullable (null for a cross; 14 for an RSI crossing) | sessions | — | E `cooldown_sessions` |
 | `provenance.seed` | integer | required | — | — | E |
 | `provenance.engine_version` | string | required | — | — | A |
 | `provenance.series_start` | object, key → date | required | — | each input's first stored observation | E `provenance.inputs` |
@@ -1095,11 +1098,11 @@ served string as is.
 | `studies` | array of 15 | required | — | — | A: the catalog below |
 | `studies[].slug` | string | required | — | — | A |
 | `studies[].label`, `short` | string | required | — | — | A: one canonical label and short per slug, reused by every tab (v2 §19) |
-| `studies[].client_label` | string | required, nullable (null for the RSI definitions) | — | — | A: the Client view's title in plain words, no σ and no engine terms (§11; ruled in item 14, the 13 titles below approved in item 15) |
+| `studies[].client_label` | string | required, nullable (no catalog row is null since desk/fill-compute) | — | — | A: the Client view's title in plain words, no σ and no engine terms (§11; ruled in item 14, the 13 titles below approved in item 15) |
 | `studies[].available` | boolean | required | — | the current generation | A: true when the engine completes on the pinned generation (v4 B-07): every input's coverage stored |
 | `studies[].unavailable` | `{reason, until\|null}` | required, nullable (null when available) | — | — | E: the engine's `not_stored` reason, or the §1.0 reason |
-| `studies[].question` | `{shock, window, move, while, target}` | required, nullable (null for the RSI definitions) | — | — | A |
-| `studies[].allowed_horizons` | subset of [5, 10, 20, 60] | required | sessions | — | A: [5, 10, 20, 60] for every row with a question, available or not; [] for the RSI rows. |
+| `studies[].question` | `{shock, window, move, while, target}` | required, nullable (no catalog row is null since desk/fill-compute) | — | — | A |
+| `studies[].allowed_horizons` | subset of [5, 10, 20, 60] | required | sessions | — | A: [5, 10, 20, 60] for every row with a question, available or not (every row since desk/fill-compute). |
 
 A study is `ready` when the existing engine completes on the pinned
 generation; missing required inputs, or no evaluable history, is `awaiting`
@@ -1125,11 +1128,17 @@ allows all four horizons):
 | spx-5d-2sigma | S&P 5-day move over 2σ | S&P 5-day move | The S&P rallies sharply within a week | spx | 5 | up2s | none | spx | `spx-w5-z2.0-up-none-spx` |
 | 2s10s-2sigma-steepening | 2s10s +2σ steepening | 2s10s steepening | The yield curve steepens sharply over a month | curve_2s10s | 20 | up2s | none | spx | `curve_2s10s-w20-z2.0-up-none-spx` |
 | oil-2sigma-20d | Oil +2σ, 20 days | oil spike | Oil jumps over a month | wti | 20 | up2s | none | spx | `wti-w20-z2.0-up-none-spx` |
-| rsi-above-70 | RSI above 70 | RSI > 70 | — | — | — | — | — | — | none: `available: false` (RSI not computed) |
-| rsi-below-30 | RSI below 30 | RSI < 30 | — | — | — | — | — | — | none: `available: false` |
+| rsi-above-70 | RSI above 70 | RSI > 70 | The S&P's 14-day momentum gauge (RSI) climbs above 70 | spx | — | rsi_above_70 | none | spx | `spx-rsi-above-70` |
+| rsi-below-30 | RSI below 30 | RSI < 30 | The S&P's 14-day momentum gauge (RSI) drops below 30 | spx | — | rsi_below_30 | none | spx | `spx-rsi-below-30` |
 
-Served reasons: RSI rows: `unavailable.reason` "RSI is not computed yet.";
-`/positions`: "Positions are kept in this browser; there is no server
+The two RSI rows (desk/fill-compute): the engine's `kind` `rsi` on the S&P,
+the RSI of §12.7 crossing strictly above 70 (strictly below 30) on a session
+whose preceding session's RSI was defined and not in that zone, a 14-session
+cooldown after each retained crossing, entry and horizons as every S&P study.
+Their client labels are drafted by this branch and await the owner's
+approval (item 15 approved the other 13).
+
+Served reasons: `/positions`: "Positions are kept in this browser; there is no server
 position store."; `/basket/:id`, `/basket/price`, `/hedge`: "basket pricing
 and option structures not yet defined in the engine."
 
@@ -1183,7 +1192,7 @@ cells; booleans `true` / `false`.
 | `signals[].vs_normal` | number | required, nullable | log pp or bp (§1.9) | — | A: v3 §6 formula |
 | `signals[].target_unit`, `display_unit` | as §12.2 | required, nullable (null when unavailable) | — | — | E, A |
 | `signals[].verdict` | verdict enum | required, nullable (null when unavailable) | — | h = 20 | A: v1 |
-| `signals[].firing_now` | boolean | required, nullable | — | `evaluated_on` | N firing state: shocks — the raw trigger and the condition hold on `evaluated_on`, regardless of cooldown; crosses — true only on the strict crossing session |
+| `signals[].firing_now` | boolean | required, nullable | — | `evaluated_on` | N firing state: shocks — the raw trigger and the condition hold on `evaluated_on`, regardless of cooldown; crosses — true only on the strict crossing session; RSI crossings — the RSI is in the zone (strictly above 70, strictly below 30) on `evaluated_on`, regardless of the crossing rule and the cooldown |
 | `signals[].firing_day` | integer | required, nullable (null unless `firing_now` is true) | sessions | — | N: consecutive qualifying XNYS sessions including `evaluated_on`, reset after any false or unevaluable session, never bridging a missing session; 1 for a cross |
 | `signals[].evaluated_on` | date | required, nullable | — | — | N: the row's own latest evaluable session |
 | `signals[].stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; false for an unavailable row; a stale row is never called firing today |
@@ -1254,7 +1263,7 @@ Every field describes the registry series `spx` (^GSPC).
 | `rsi_prev`, `rsi_prev_date` | number, date | required, nullable | index points | — | N: the RSI on the XNYS session before `rsi_date` (null when undefined there), and that session |
 | `rsi_last_above_70`, `rsi_last_below_30` | `{date, rsi, after_20d, after_20d_to}` | required, nullable (null when the RSI has never been in that zone) | —, index points, simple return, — | — | N: the last session with the RSI strictly above 70 (strictly below 30), its RSI, and the S&P's simple return from that close to the close 20 XNYS sessions later (`after_20d_to`); both null until that session has a stored close |
 | `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13): the XNYS sessions after `date` − 6, 12 and 36 calendar months, through `date`; a missing close is a point with `close: null`; `ma50`/`ma200` nullable per point |
-| `signals_allowlist` | `["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows are omitted while unavailable). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
+| `signals_allowlist` | `["golden-cross","death-cross","rsi-above-70","rsi-below-30","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows since desk/fill-compute). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
 | `vol` | block envelope | required | — | — | awaiting: "needs stored SPY option snapshots and a versioned skew method." |
 | `sectors` | block envelope | required | — | — | N sector leadership (§12.14, desk/fill-etf): the `/sectors` fields without `breadth`, from the same worker item, so the two agree; awaiting with the route's reason while the store lacks the ETFs |
 
@@ -1440,13 +1449,9 @@ corr}]`, `matrix: {assets, labels, window, values}`. Each asset declares
 `symbol`, `quantity` and `transform`; Pearson over the same trailing 60 XNYS
 return dates, 60 complete pairs, no forward fill (v2 §12).
 
-**RSI — the rsi-above-70 and rsi-below-30 studies and Ledger rows:
-`status: deferred`.** The `/technicals` RSI fields are served
-(desk/fill-compute, §12.7), on this rule: RSI(14) with Wilder smoothing,
-initialized from 14 changes over 15 contiguous valid closes; no losses with
-gains → 100; no gains with losses → 0; both zero → 50; any gap invalidates it
-until re-initialized (v3 §13). The card's words ("rising", "falling") come
-only from the two served numbers.
+(The RSI shape once deferred here is served since desk/fill-compute: the
+`/technicals` fields in §12.7, the two studies and Ledger rows in §12.3 and
+§12.5.)
 
 **Confidence — `status: deferred`** (`/study?confidence=0.80|0.90|0.95`,
 `confidence_note`). Changes only the interval quantiles, on identical seeded
@@ -1528,7 +1533,10 @@ implementation may broaden scope to satisfy an illustrative shape.
 
 **Added after Monday (desk/fill-compute, 2026-09-27, by the owner's brief).**
 Each is a new calculation from stored data, listed in §12 with its rule:
-- the 14-day RSI on ^GSPC, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), served by `/technicals` (§12.7).
+- the 14-day RSI on ^GSPC, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), served by `/technicals` (§12.7);
+- the two RSI studies, the engine's `kind` `rsi` (strict crossings of 70 and 30, a 14-session cooldown), scored by the
+  existing engine and the v1 verdict rule like every catalog study (§12.3, §12.5). Existing studies' native results and
+  hashes are unchanged: the RSI's own parameters enter only an RSI study's `inputs_hash`.
 
 ### 13.3 Session A
 Fixtures under `web/src/fixtures/desk/` in the §12 shapes (envelopes

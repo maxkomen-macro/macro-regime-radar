@@ -250,8 +250,8 @@ test.describe("desk v2", () => {
     await expect(price.locator(".dk-chart-axis")).toContainText(["6,000", "7,000", "8,000", "Oct 25", "Apr 26", "Sep 26"]);
     await price.getByRole("button", { name: "3Y" }).click();
     await expect(price.getByRole("img", { name: /3Y/ })).toBeVisible();
-    // §3: the S&P rows the Ledger scores; the RSI rows are omitted while unavailable.
-    await expect(page.getByRole("region", { name: /^Signals/ }).getByRole("listitem")).toHaveCount(4);
+    // §3: the S&P rows the Ledger scores, the two RSI rows among them (desk/fill-compute).
+    await expect(page.getByRole("region", { name: /^Signals/ }).getByRole("listitem")).toHaveCount(6);
     // A light action button keeps its dark text on hover (verifier R2-1).
     const act = page.getByTestId("dk-act");
     await act.hover();
@@ -437,14 +437,14 @@ test.describe("desk v2", () => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/signal-ledger");
-      await expect(page.locator(".lg-stats")).toContainText("8 scored · 4 not yet served");
+      await expect(page.locator(".lg-stats")).toContainText("10 scored · 2 not yet served");
       // NOW's words are whole, never cut (§8).
       const cutNow = await page.locator(".lg-table td.lg-now").evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
       expect(cutNow, `NOW cells whole at ${width}`).toBe(0);
       const oil = page.locator(".lg-table tr[data-unavailable]", { hasText: "Oil" });
       await expect(oil).toContainText("WTI crude (DCOILWTICO) is not stored in this database");
       await expect(oil.locator(".dk-pill")).toHaveCount(0);
-      await expect(page.locator(".lg-table tr[data-unavailable]")).toHaveCount(4);
+      await expect(page.locator(".lg-table tr[data-unavailable]")).toHaveCount(2);
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }

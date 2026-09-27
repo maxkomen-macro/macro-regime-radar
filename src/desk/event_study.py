@@ -102,6 +102,7 @@ import numpy as np
 import pandas as pd
 
 from src.analytics import dbpath
+from src.analytics import technicals
 from src.desk import series as registry
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -118,6 +119,13 @@ PRIMARY_HORIZON = 20
 Z_WINDOW = 252
 Z_MIN_PRESENT = 240  # moves that must be present in the 252-session z window (R-04, bond holidays)
 MA_FAST, MA_SLOW = 50, 200
+# The RSI study (desk/fill-compute): the S&P's RSI(14) (src/analytics/technicals.rsi,
+# the one copy) crossing strictly above 70 or below 30; after each retained
+# crossing the next RSI_PERIOD sessions are a cooldown, so one visit that dips
+# back and forth across the level counts once.
+RSI_UPPER, RSI_LOWER = technicals.RSI_UPPER, technicals.RSI_LOWER
+RSI_PERIOD = technicals.RSI_PERIOD
+RSI_SIDES = ("above", "below")
 N_BOOT = 10000                  # Monte Carlo draws above EXACT_MAX_BLOCKS (R-18, round 3)
 OPPOSITE_SIGN_MAX = 0.03        # R-18: a zero-exclusion claim also needs fewer than this share of resampled medians on the other side of the point estimate
 CI_LEVEL = 0.90
@@ -173,7 +181,7 @@ class NotStored(RuntimeError):
 
 @dataclass(frozen=True)
 class Query:
-    kind: str = "shock"              # shock | cross
+    kind: str = "shock"              # shock | cross | rsi
     shock: str = "gold"
     w: int = 20
     z: float = 2.0
@@ -182,7 +190,7 @@ class Query:
     cond_value: float | str | None = None
     regime: str = "all"              # all | a label: an AND filter on the event set
     target: str = "spx"
-    cross: str | None = None         # golden | death (kind == "cross")
+    cross: str | None = None         # golden | death (kind == "cross"); above | below (kind == "rsi": RSI crossing 70 / 30)
     seed: int = DEFAULT_SEED
 
 
@@ -222,8 +230,8 @@ def _integer(x: Any, what: str) -> int:
 
 
 def validate(q: Query) -> Query:
-    if q.kind not in ("shock", "cross"):
-        raise StudyError(f"kind must be shock or cross, not {q.kind!r}")
+    if q.kind not in ("shock", "cross", "rsi"):
+        raise StudyError(f"kind must be shock, cross or rsi, not {q.kind!r}")
     targets = {s.key for s in registry.with_role("target")}
     if q.target not in targets:
         raise StudyError(f"target must be one of {', '.join(sorted(targets))}; got {q.target!r}")
@@ -241,6 +249,13 @@ def validate(q: Query) -> Query:
         if q.target != MASTER:
             raise StudyError("the cross study is defined on the S&P 500 (target=spx)")
         return replace(q, shock=MASTER, w=20, z=2.0, sign="+", cond=None, cond_value=None, seed=seed)
+    if q.kind == "rsi":
+        if q.cross not in RSI_SIDES:
+            raise StudyError("an RSI study crosses above (70) or below (30)")
+        if q.target != MASTER:
+            raise StudyError("the RSI study is defined on the S&P 500 (target=spx)")
+        # w is the cooldown after each crossing (the RSI period); z and sign are unused, as for a cross
+        return replace(q, shock=MASTER, w=RSI_PERIOD, z=2.0, sign="+", cond=None, cond_value=None, seed=seed)
     shocks = {s.key for s in registry.with_role("shock")}
     if q.shock not in shocks:
         raise StudyError(f"shock must be one of {', '.join(sorted(shocks))}; got {q.shock!r}")
@@ -282,6 +297,9 @@ def slug_for(q: Query) -> str:
             return name
     if q.kind == "cross":
         return f"{q.target}-{q.cross}-cross" + ("" if q.regime == "all" else f"-{_REGIME_SLUG[q.regime]}")
+    if q.kind == "rsi":
+        level = f"{RSI_UPPER:g}" if q.cross == "above" else f"{RSI_LOWER:g}"
+        return f"{q.target}-rsi-{q.cross}-{level}" + ("" if q.regime == "all" else f"-{_REGIME_SLUG[q.regime]}")
     cond = "none" if q.cond is None else q.cond
     if q.cond_value is not None:
         cond += "=" + (_REGIME_SLUG[q.cond_value] if q.cond == "regime" else _num_slug(q.cond_value))
@@ -293,6 +311,7 @@ _SLUG_RE = re.compile(
     rf"^(?P<shock>[a-z0-9_]+)-w(?P<w>\d+)-z(?P<z>{_NUM})-(?P<sign>up|down|abs)-(?P<cond>[a-z0-9_]+)(?:=(?P<val>{_NUM}|[a-z_]+))?-(?P<target>[a-z0-9_]+)(?:-(?P<regime>goldilocks|overheating|stagflation|recession_risk))?$"
 )
 _CROSS_RE = re.compile(r"^(?P<target>[a-z0-9_]+)-(?P<cross>golden|death)-cross(?:-(?P<regime>goldilocks|overheating|stagflation|recession_risk))?$")
+_RSI_RE = re.compile(r"^(?P<target>[a-z0-9_]+)-rsi-(?P<side>above-70|below-30)(?:-(?P<regime>goldilocks|overheating|stagflation|recession_risk))?$")
 
 
 def parse_slug(slug: str) -> Query:
@@ -301,6 +320,9 @@ def parse_slug(slug: str) -> Query:
     m = _CROSS_RE.match(slug)
     if m:
         return Query(kind="cross", cross=m["cross"], target=m["target"], regime=_SLUG_REGIME.get(m["regime"] or "", "all"))
+    m = _RSI_RE.match(slug)
+    if m:
+        return Query(kind="rsi", cross=m["side"].split("-")[0], target=m["target"], regime=_SLUG_REGIME.get(m["regime"] or "", "all"))
     m = _SLUG_RE.match(slug)
     if not m:
         raise StudyError(f"unknown study {slug!r}")
@@ -653,16 +675,45 @@ def trigger_mask(z: pd.Series, thr: float, sign: str) -> np.ndarray:
     return fire.fillna(False).to_numpy().astype(bool)
 
 
-def detect_events(z: pd.Series, thr: float, sign: str, w: int) -> tuple[np.ndarray, int]:
-    """Event positions after the cooldown, and the raw count before it."""
-    hits = np.flatnonzero(trigger_mask(z, thr, sign))
+def _after_cooldown(hits: np.ndarray, w: int) -> np.ndarray:
     kept: list[int] = []
     next_ok = -1
     for i in hits:
         if i >= next_ok:
             kept.append(int(i))
             next_ok = int(i) + w + 1  # sessions i+1 … i+w are the cooldown
-    return np.array(kept, dtype=int), int(len(hits))
+    return np.array(kept, dtype=int)
+
+
+def detect_events(z: pd.Series, thr: float, sign: str, w: int) -> tuple[np.ndarray, int]:
+    """Event positions after the cooldown, and the raw count before it."""
+    hits = np.flatnonzero(trigger_mask(z, thr, sign))
+    return _after_cooldown(hits, w), int(len(hits))
+
+
+def rsi_zone_mask(r: pd.Series, side: str) -> np.ndarray:
+    """The sessions whose RSI is strictly in the zone (above 70, or below 30):
+    the raw trigger the Desk's firing state reads for an RSI study."""
+    v = r.to_numpy(dtype=float)
+    ok = np.isfinite(v)
+    inside = np.zeros(len(v), dtype=bool)
+    inside[ok] = v[ok] > RSI_UPPER if side == "above" else v[ok] < RSI_LOWER
+    return inside
+
+
+def rsi_crossings(r: pd.Series, side: str, cooldown: int = RSI_PERIOD) -> tuple[np.ndarray, int]:
+    """Strict crossings into the zone (desk/fill-compute): a session whose RSI
+    is in the zone when the preceding session's RSI was defined and not in it,
+    so a crossing never bridges an undefined session and the level itself
+    (70, 30) is outside the zone. After each retained crossing the next
+    `cooldown` sessions are excluded. The positions after the cooldown, and
+    the raw count before it."""
+    inside = rsi_zone_mask(r, side)
+    ok = np.isfinite(r.to_numpy(dtype=float))
+    prev_ok = np.concatenate([[False], ok[:-1]])
+    prev_in = np.concatenate([[False], inside[:-1]])
+    hits = np.flatnonzero(inside & prev_ok & ~prev_in)
+    return _after_cooldown(hits, cooldown), int(len(hits))
 
 
 def cross_positions(level: pd.Series, kind: str) -> tuple[np.ndarray, pd.Series]:
@@ -928,7 +979,8 @@ def zero_event_sentence(stages: list[dict], shock_label: str) -> str:
 
 def verdict_sentences(*, unit: str, horizons: list[dict], regimes: list[dict], data_start: pd.Timestamp,
                       sample_start: pd.Timestamp, sample_end: pd.Timestamp, n_events: int, n_raw: int, w: int | None,
-                      shock_label: str, target_label: str, stages: list[dict] | None = None) -> list[str]:
+                      shock_label: str, target_label: str, stages: list[dict] | None = None,
+                      raw_word: str = "shock sessions") -> list[str]:
     """Rule-generated sentences. Vocabulary: "modest", "material",
     "concentrated in", "not distinguishable from baseline", "insufficient
     data", "too few independent blocks to judge exclusion", "exclusion not established". Never predicts,
@@ -1005,7 +1057,7 @@ def verdict_sentences(*, unit: str, horizons: list[dict], regimes: list[dict], d
         out.append("n<10: " + ", ".join(small) + ".")
     tail = f"{n_events} events"
     if w is not None:
-        tail += f" after a {w}-session cooldown ({n_raw} shock sessions before it)"
+        tail += f" after a {w}-session cooldown ({n_raw} {raw_word} before it)"
     else:
         tail += "; no cooldown, a cross cannot recur before the opposite cross"
     prim = next((r for r in horizons if r["h"] == PRIMARY_HORIZON), None)
@@ -1055,6 +1107,9 @@ def _inputs_hash(q: Query, metas: list[dict], months: pd.Series, generation: Any
                    "min_blocks_interval": MIN_BLOCKS_INTERVAL, "min_blocks_exclusion": MIN_BLOCKS_EXCLUSION,
                    "opposite_sign_max": OPPOSITE_SIGN_MAX, "master": MASTER},
     }
+    if q.kind == "rsi":  # desk/fill-compute; absent for every other kind, so they hash as before
+        payload["rsi"] = {"period": RSI_PERIOD, "upper": RSI_UPPER, "lower": RSI_LOWER, "smoothing": "wilder",
+                          "event": "strict crossing", "cooldown": q.w}
     if future_excluded:
         payload["future_excluded"] = dict(sorted(future_excluded.items()))
     if non_numeric_excluded:  # V-14; absent when none, so a clean store hashes as before
@@ -1213,7 +1268,16 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
     n_sessions = len(sessions)
 
     # events on the session calendar
-    if q.kind == "cross":
+    if q.kind == "rsi":
+        r = technicals.rsi(shock)
+        ev_pos, n_raw = rsi_crossings(r, q.cross or "above", q.w)
+        n_shocks = int(len(ev_pos))
+        w = q.w
+        input_ok = r.notna()
+        level = RSI_UPPER if q.cross == "above" else RSI_LOWER
+        study_label = f"S&P 500 {RSI_PERIOD}-session RSI (Wilder) crossing {q.cross} {level:g}, strict"
+        z = None
+    elif q.kind == "cross":
         ev_pos, rule_ok = cross_positions(shock, q.cross or "golden")
         n_raw = n_shocks = int(len(ev_pos))
         w = None
@@ -1294,7 +1358,8 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
     regimes = regime_split(labels, moves_by_h, base_labels, base_by_h, unl_by_h)
 
     stages = [
-        {"stage": "threshold", "n": n_raw, "what": f"sessions where {shock_spec.label} met the threshold" if q.kind == "shock" else "strict crosses"},
+        {"stage": "threshold", "n": n_raw, "what": (f"sessions where {shock_spec.label} met the threshold" if q.kind == "shock" else
+                                                     "strict RSI crossings" if q.kind == "rsi" else "strict crosses")},
         {"stage": "cooldown", "n": n_shocks, "what": f"first sessions after a {w}-session cooldown" if w else "crosses"},
         {"stage": "evaluable", "n": n_evaluable_events, "what": "on an evaluable session (z, condition, target and lagged regime label present)"},
         {"stage": "condition", "n": n_after_condition, "what": f"with the condition holding ({cond_label})" if cond_label else "no condition"},
@@ -1322,6 +1387,8 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
         if q.kind == "cross":
             trigger = np.zeros(n_sessions, dtype=bool)
             trigger[cross_positions(shock, q.cross or "golden")[0]] = True
+        elif q.kind == "rsi":
+            trigger = rsi_zone_mask(r, q.cross or "above")  # the zone, before the crossing rule and the cooldown
         else:
             trigger = trigger_mask(z, q.z, q.sign)
         trace.update(
@@ -1338,6 +1405,7 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
         unit=target_spec.unit, horizons=horizons, regimes=regimes, data_start=data_start,
         sample_start=sample_start, sample_end=sample_end, n_events=n_events, n_raw=n_raw, w=w,
         shock_label=shock_spec.label, target_label=target_spec.label, stages=stages,
+        **({"raw_word": "RSI crossings"} if q.kind == "rsi" else {}),
     )
     # review R-01: an input known sessions after its date says so, and what it does to the entry
     for spec in inputs:
@@ -1429,8 +1497,12 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
             "event_rule": ("the shock defines the event date; the condition is evaluated on that date and a shock whose condition "
                            "fails is dropped and still starts the cooldown (stages: threshold → cooldown → evaluable → condition → "
                            "regime filter → entry → complete window per horizon)" if q.kind == "shock" else
-                           "a strict cross: the first session the 50-day average is strictly on the other side of the 200-day; equality never fires"),
-            "cooldown": (f"{w} sessions on the session calendar" if w is not None else "no cooldown (a cross cannot recur before the opposite cross)"),
+                           (f"a strict RSI crossing: the first session the S&P's {RSI_PERIOD}-session RSI (Wilder) is strictly "
+                            f"{q.cross} {RSI_UPPER if q.cross == 'above' else RSI_LOWER:g} after a session it was defined and not; "
+                            "the level itself never fires" if q.kind == "rsi" else
+                            "a strict cross: the first session the 50-day average is strictly on the other side of the 200-day; equality never fires")),
+            "cooldown": (f"{w} sessions on the session calendar" + (" (the RSI period)" if q.kind == "rsi" else "") if w is not None
+                         else "no cooldown (a cross cannot recur before the opposite cross)"),
             "cooldown_sessions": w,
             "seed": q.seed,
             "n_boot": n_boot,

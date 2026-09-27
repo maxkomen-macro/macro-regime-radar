@@ -129,14 +129,15 @@ describe("Overview tab", () => {
     await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(5));
     const rows = within(card).getAllByRole("listitem");
     // §12.1: nothing firing, so the five latest last fires, newest first.
-    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P 5-day move over 2σ", "VIX spike +2σ, 5 days", "S&P 20-day move over 2σ", "S&P golden cross", "2s10s +2σ steepening"]);
+    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P 5-day move over 2σ", "VIX spike +2σ, 5 days", "RSI above 70", "S&P 20-day move over 2σ", "RSI below 30"]);
     expect(rows[0]).toHaveTextContent("last fired Aug 4, 2026");
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Fired 78× since 1996 · S&P up 63% of the time · 20-day median +1.7% (+0.4 pts vs normal)");
     expect(within(rows[0]).getByText("No edge")).toBeInTheDocument();
-    expect(rows[3].textContent?.replace(/\s+/g, " ")).toContain("Fired 14× since 1996 · S&P up 79% of the time · 20-day median +2.7% (+1.4 pts vs normal)");
-    expect(within(rows[3]).getByText("Reliable")).toBeInTheDocument();
+    // desk/fill-compute: the RSI rows are scored, and their last fires are among the five latest.
+    expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("Fired 89× since 1996 · S&P up 63% of the time · 20-day median +1.4% (+0.1 pts vs normal)");
+    expect(within(rows[2]).getByText("No edge")).toBeInTheDocument();
     expect(within(rows[1]).getByText("Suggestive")).toBeInTheDocument();
-    expect(rows[4].textContent?.replace(/\s+/g, " ")).toContain("20-day median +1.6% (+0.3 pts vs normal)");
+    expect(rows[4].textContent?.replace(/\s+/g, " ")).toContain("20-day median +2.8% (+1.5 pts vs normal)");
     expect(within(card).getByRole("link", { name: "Full Signal Ledger →" })).toHaveAttribute("href", "/desk/signal-ledger");
     // The four §1.5 definitions (B-13), word for word.
     const defs = [...card.querySelectorAll(".dk-defs > div")].map((d) => [...d.children].map((c) => c.textContent?.trim()).join(" "));

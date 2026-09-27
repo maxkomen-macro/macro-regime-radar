@@ -29,7 +29,6 @@ export const SCOPE_LISTS: readonly { title: string; items: readonly string[] }[]
       "The VIX gap to realized volatility and the vol band word.",
       "What protection costs: options skew, implied against realized volatility, the term structure.",
       "Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.",
-      "The two RSI signals.",
       "Confidence levels other than 90%.",
       "The comparison with the study's condition dropped.",
       "What each regime has meant, and the S&P after each regime change.",

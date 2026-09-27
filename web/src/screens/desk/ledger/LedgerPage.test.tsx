@@ -65,11 +65,11 @@ describe("Signal Ledger tab", () => {
   it("the four counts and the table in the served fixed order, with no groups", async () => {
     renderTab();
     // §8, v4 B-02: SIGNALS SCORED is scored_n, "<scored_n> scored · <unavailable_n> not yet served"; the rest count available rows only.
-    await waitFor(() => expect(screen.getByText("Signals scored").parentElement?.textContent).toBe("Signals scored88 scored · 4 not yet served"));
+    await waitFor(() => expect(screen.getByText("Signals scored").parentElement?.textContent).toBe("Signals scored1010 scored · 2 not yet served"));
     expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/);
     expect(screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/1\s*golden cross/);
     // §8: NO EDGE is the count alone; v2 §7's withdrawn "shown so you know it was checked" is gone.
-    expect(screen.getByText("No edge", { selector: ".dk-stat-label" }).parentElement?.textContent).toBe("No edge4");
+    expect(screen.getByText("No edge", { selector: ".dk-stat-label" }).parentElement?.textContent).toBe("No edge6");
     const table = screen.getByRole("table");
     // §8: exactly the fixed order, one body, no group rows.
     expect(within(table).getAllByRole("rowgroup")).toHaveLength(2);
@@ -85,6 +85,9 @@ describe("Signal Ledger tab", () => {
     expect(rowOf("2s10s +2σ steepening").textContent).toBe("2s10s +2σ steepeningApr 21, 20254971%+1.6%+0.3 ptsNo edge○ Quiet");
     // The golden cross last evaluated on Sep 21 (the 2026-09-22 close is missing): stale, never quiet or firing (v3 §3).
     expect(rowOf("S&P golden cross").textContent).toBe("S&P golden crossJul 1, 20251479%+2.7%+1.4 ptsReliable○ Stale · Sep 21");
+    // desk/fill-compute: the two RSI rows are scored like the others (the engine on the audit's store).
+    expect(rowOf("RSI below 30").textContent).toBe("RSI below 30Mar 20, 20264573%+2.8%+1.5 ptsNo edge○ Stale · Sep 21");
+    expect(rowOf("RSI above 70").textContent).toBe("RSI above 70May 26, 20268963%+1.4%+0.1 ptsNo edge○ Stale · Sep 21");
     // §8's footer: no universal normal month; each row is against its own baseline.
     const note = document.querySelector(".lg-note")!;
     expect(note.textContent?.replace(/\u00a0/g, " ")).toBe("vs normal compares each study to its own baseline over its own sample. a month = 20 sessions · engine as of Sep 24");
@@ -269,7 +272,7 @@ describe("Signal Ledger tab", () => {
   it("counts are green only above zero", async () => {
     stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: firingRows().map((r) => ({ ...r, verdict: r.verdict === "reliable" ? "suggestive" : r.verdict })) }) });
     renderTab();
-    await waitFor(() => expect(screen.getByText("Signals scored").parentElement).toHaveTextContent("8 scored"));
+    await waitFor(() => expect(screen.getByText("Signals scored").parentElement).toHaveTextContent("10 scored"));
     const reliable = screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement;
     expect(reliable).toHaveTextContent(/0\s*none/);
     expect(reliable?.querySelector(".dk-stat-value")).not.toHaveAttribute("data-tone", "green");

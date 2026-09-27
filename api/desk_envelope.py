@@ -97,7 +97,6 @@ def route_of(path: str) -> str:
 VOL_REASON = "needs stored SPY option snapshots and a versioned skew method."
 POSITIONS_REASON = "Positions are kept in this browser; there is no server position store."
 BASKET_REASON = "basket pricing and option structures not yet defined in the engine."
-RSI_REASON = "RSI is not computed yet."
 WITHOUT_CONDITION_REASON = "conditional-versus-unconditional comparison is not defined"
 REGIME_STATS_REASON = "regime statistics not yet defined in the engine."
 # desk/fill-etf: stock_bond and correlations are served; the matrix's assets and method are open

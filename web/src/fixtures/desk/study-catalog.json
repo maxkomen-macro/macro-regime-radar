@@ -288,27 +288,43 @@
    "slug": "rsi-above-70",
    "label": "RSI above 70",
    "short": "RSI > 70",
-   "client_label": null,
-   "available": false,
-   "unavailable": {
-    "reason": "RSI is not computed yet.",
-    "until": null
+   "client_label": "The S&P's 14-day momentum gauge (RSI) climbs above 70",
+   "available": true,
+   "unavailable": null,
+   "question": {
+    "shock": "spx",
+    "window": null,
+    "move": "rsi_above_70",
+    "while": "none",
+    "target": "spx"
    },
-   "question": null,
-   "allowed_horizons": []
+   "allowed_horizons": [
+    5,
+    10,
+    20,
+    60
+   ]
   },
   {
    "slug": "rsi-below-30",
    "label": "RSI below 30",
    "short": "RSI < 30",
-   "client_label": null,
-   "available": false,
-   "unavailable": {
-    "reason": "RSI is not computed yet.",
-    "until": null
+   "client_label": "The S&P's 14-day momentum gauge (RSI) drops below 30",
+   "available": true,
+   "unavailable": null,
+   "question": {
+    "shock": "spx",
+    "window": null,
+    "move": "rsi_below_30",
+    "while": "none",
+    "target": "spx"
    },
-   "question": null,
-   "allowed_horizons": []
+   "allowed_horizons": [
+    5,
+    10,
+    20,
+    60
+   ]
   }
  ]
 }

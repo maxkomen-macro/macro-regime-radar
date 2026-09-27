@@ -10,6 +10,7 @@ const REGIME_ID: Record<string, string> = { Goldilocks: "goldilocks", Overheatin
 function pageParams(q: EngineQuery): EventStudyParams {
   const regime = q.regime === "all" ? "all" : REGIME_ID[q.regime];
   if (q.kind === "cross") return { kind: "cross", cross: q.cross as "golden" | "death", shock: "spx", w: 20, z: 2, sign: "+", cond: "none", regime, target: q.target };
+  if (q.kind === "rsi") return { kind: "rsi", cross: q.cross as "above" | "below", shock: "spx", w: 14, z: 2, sign: "+", cond: "none", regime, target: q.target };
   const cond = q.cond == null ? "none" : q.cond_value == null ? q.cond : `${q.cond}=${q.cond === "regime" ? REGIME_ID[String(q.cond_value)] : numSlug(Number(q.cond_value))}`;
   return { kind: "shock", cross: null, shock: q.shock, w: q.w, z: q.z, sign: q.sign as EventStudyParams["sign"], cond, regime, target: q.target };
 }

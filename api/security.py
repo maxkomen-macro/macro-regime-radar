@@ -48,8 +48,8 @@ DESK_STUDY_PATHS = {"/api/desk/event-study", "/api/desk/study", "/api/desk/study
 # stored-read ceiling, never behind other visitors' studies (verifier V-13).
 # Mirrors src/desk/event_study.PRESETS (parity pinned by tests/test_desk_api.py).
 DESK_PRESET_SLUGS = frozenset({"gold-2sigma-spx-weak", "spx-golden-cross", "spx-death-cross"})
-# desk/frame-3-api (plan §4.3, ruled S-25): every catalog study is a worker item, and the two RSI
-# rows compute nothing either, so `preset=<catalog slug>` (with an optional `horizon`) on /study,
+# desk/frame-3-api (plan §4.3, ruled S-25): every catalog study is a worker item (the two RSI
+# rows too, since desk/fill-compute), so `preset=<catalog slug>` (with an optional `horizon`) on /study,
 # and a bare /study/catalog, are lookups too. Parity with api/desk_catalog is pinned by a test.
 DESK_CATALOG_SLUGS = frozenset(desk_catalog.CATALOG_SLUGS)
 PROVIDER_PREFIX = "/api/market/"

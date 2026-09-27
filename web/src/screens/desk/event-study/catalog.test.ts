@@ -16,10 +16,11 @@ describe("the study catalog (§12.3)", () => {
     expect(studies).toHaveLength(15);
     for (const c of PRESET_CHIPS) expect(studies.find((s) => s.slug === c.slug)?.label).toBe(c.label);
     expect(studyFor(studies, { ...(study.question as unknown as Question) })?.slug).toBe("gold-2sigma-spx-weak");
-    // Every available row allows all four horizons; the RSI rows have no question yet.
-    for (const s of studies.filter((x) => x.available)) expect(s.allowed_horizons).toEqual([5, 10, 20, 60]);
-    expect(studies.filter((s) => !s.question).map((s) => s.slug)).toEqual(["rsi-above-70", "rsi-below-30"]);
-    expect(studies.filter((s) => !s.available).map((s) => s.slug)).toEqual(["dollar-2sigma-20d", "oil-2sigma-gold", "oil-2sigma-20d", "rsi-above-70", "rsi-below-30"]);
+    // Every row allows all four horizons; the RSI rows ask the S&P's RSI crossing 70 or 30 (desk/fill-compute).
+    for (const s of studies) expect(s.allowed_horizons).toEqual([5, 10, 20, 60]);
+    expect(studies.filter((s) => !s.question).map((s) => s.slug)).toEqual([]);
+    expect(studyFor(studies, { shock: "spx", window: null, move: "rsi_below_30", while: "none", target: "spx", horizon: 20 })?.slug).toBe("rsi-below-30");
+    expect(studies.filter((s) => !s.available).map((s) => s.slug)).toEqual(["dollar-2sigma-20d", "oil-2sigma-gold", "oil-2sigma-20d"]);
   });
 
   it("a question is answerable only as an available catalog study at an allowed horizon (§12.2)", () => {

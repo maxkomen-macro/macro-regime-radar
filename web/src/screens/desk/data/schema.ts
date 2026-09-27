@@ -171,6 +171,8 @@ export function checkAnswer(body: unknown, spec: Obj): Record<string, unknown> |
 // ── The shapes (§12, §12.13) ──────────────────────────────────────────────
 
 const VERDICTS = ["reliable", "suggestive", "no_edge", "insufficient"] as const;
+/** §12.2: the six moves (the two RSI crossings since desk/fill-compute). */
+const MOVES = ["up2s", "down2s", "cross_above", "cross_below", "rsi_above_70", "rsi_below_30"] as const;
 /** §12.2, §12.4 (S-06): a listed event always carries its K−2 label; one whose K−2 month has no stored regimes row is counted, never listed. */
 const REGIME_LABELS = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"] as const;
 // §12.0: a read names the rule that produced it; a read without one is not served.
@@ -206,9 +208,9 @@ const ledgerRow = o({
 const question = o(
   {
     shock: "s!",
-    // §12.2: null for a cross.
+    // §12.2: null for a cross or an RSI crossing.
     window: "n",
-    move: e(["up2s", "down2s", "cross_above", "cross_below"], { req: true }),
+    move: e(MOVES, { req: true }),
     while: "s!",
     target: "s!",
     horizon: "n!",
@@ -481,11 +483,11 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         slug: "s!",
         label: "s!",
         short: "s",
-        // §12.3 (item 14): the Client view's title, in plain words; null for the RSI definitions.
+        // §12.3 (item 14): the Client view's title, in plain words.
         client_label: "s?",
         available: "b!",
         unavailable: o({ reason: "s!", until: "s?" }, { nul: true }),
-        question: o({ shock: "s!", window: "n", move: e(["up2s", "down2s", "cross_above", "cross_below"], { req: true }), while: "s!", target: "s!" }, { nul: true }),
+        question: o({ shock: "s!", window: "n", move: e(MOVES, { req: true }), while: "s!", target: "s!" }, { nul: true }),
         allowed_horizons: l("n!"),
       }),
     ),

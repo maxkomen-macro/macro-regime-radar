@@ -35,6 +35,8 @@ import type { DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, Pi
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
+/** §12.2: the moves that ask no window (a cross, an RSI crossing). */
+const NO_WINDOW: readonly string[] = ["cross_above", "cross_below", "rsi_above_70", "rsi_below_30"];
 
 export class DeskApiError extends Error {
   readonly status: number;
@@ -81,9 +83,9 @@ export function readBody<T>(body: unknown, path: string, status = 200): T {
   if (!spec) return body as T;
   const out = checkAnswer(body, spec);
   if (!out) throw unreadable(status);
-  // §12.2: `question.window` is null for a cross, and only for one; a study asking a 2σ move with no window cannot be labelled.
+  // §12.2: `question.window` is null for a cross or an RSI crossing, and only for those; a study asking a 2σ move with no window cannot be labelled.
   const q = (out as { question?: { window?: unknown; move?: unknown } }).question;
-  if (path === "/study" && q && q.window === null && q.move !== "cross_above" && q.move !== "cross_below") throw unreadable(status);
+  if (path === "/study" && q && q.window === null && !NO_WINDOW.includes(String(q.move))) throw unreadable(status);
   return out as T;
 }
 

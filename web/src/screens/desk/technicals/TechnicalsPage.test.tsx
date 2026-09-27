@@ -54,8 +54,8 @@ describe("Technicals words", () => {
   });
   it("lists the Ledger's rows in `signals_allowlist` order, leaving out what the Ledger does not serve (§3)", () => {
     const l = { ...ledger, signals: ledger.signals as LedgerRow[] };
-    expect(allowlistRows(l as never, technicals.signals_allowlist).map((r) => r.slug)).toEqual(["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]);
-    expect(allowlistRows(l as never, ["rsi-above-70", "golden-cross", "nope"]).map((r) => r.slug)).toEqual(["golden-cross"]);
+    expect(allowlistRows(l as never, technicals.signals_allowlist).map((r) => r.slug)).toEqual(["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma", "spx-5d-2sigma"]);
+    expect(allowlistRows(l as never, ["dollar-2sigma-20d", "golden-cross", "nope"]).map((r) => r.slug)).toEqual(["golden-cross"]);
   });
   it("keeps the top three, the middle one and the bottom three", () => {
     expect(sevenOf([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])).toEqual([1, 2, 3, 6, 9, 10, 11]);
@@ -86,15 +86,15 @@ describe("Technicals tab", () => {
     expect(within(card).getByRole("img", { name: /3Y/ })).toBeInTheDocument();
   });
 
-  it("lists the Ledger's S&P signals, the RSI rows omitted while unavailable, with §3's note", async () => {
+  it("lists the Ledger's S&P signals, the two RSI rows among them, with §3's note", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /^Signals/ });
-    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(4));
-    expect(card.textContent).not.toMatch(/RSI/);
+    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(6));
     const rows = within(card).getAllByRole("listitem");
     // §3: the allowlist's order; the audit's real counts (14 golden crosses since the regime labels begin).
     // §12.3: one canonical label per slug, the catalog's, on every tab (v2 §19).
-    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P golden cross", "S&P death cross", "S&P 20-day move over 2σ", "S&P 5-day move over 2σ"]);
+    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P golden cross", "S&P death cross", "RSI above 70", "RSI below 30", "S&P 20-day move over 2σ", "S&P 5-day move over 2σ"]);
+    expect(rows[3].textContent?.replace(/\s+/g, " ")).toBe("RSI below 3045× since 1996 · up 73% · a month later +2.8%No edge");
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toBe("S&P golden cross14× since 1996 · up 79% · a month later +2.7%Reliable");
     // §12.7: 252 XNYS sessions back, Sep 22, 2025.
     expect(card).toHaveTextContent(/1-year return\s*\+15\.1%\s*since Sep 22, 2025/);

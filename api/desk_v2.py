@@ -172,10 +172,8 @@ def engine_alias(name: str) -> str | None:
 
 def availability(study: catalog.Study) -> tuple[bool, dict | None]:
     """(available, unavailable) for a catalog row on this generation (§12.3, v4
-    B-07): an RSI row never; a study whose item refused, with the engine's
-    words; a study whose item failed, with the S-27 sentence (logged)."""
-    if study.question is None:
-        return False, env.unavailable(catalog.RSI_REASON)
+    B-07): a study whose item refused, with the engine's words; a study whose
+    item failed, with the S-27 sentence (logged)."""
     try:
         item = _item(study.slug)
     except Exception as exc:
@@ -205,8 +203,6 @@ def catalog_answer(params: list[tuple[str, str]]) -> dict:
 
 def study_answer(params: list[tuple[str, str]], t0: float) -> dict:
     study, h = catalog.normalize(params, "/study", resolve_alias=engine_alias)
-    if h is None:  # a row with no horizons, asked without one (S-31)
-        raise env.Awaiting(catalog.RSI_REASON)
     item = _item(study.slug)
     if not item["ok"]:
         raise env.Awaiting(item["reason"])
@@ -599,8 +595,6 @@ def fire_lists(entries: list[tuple[dict, dict | None]]) -> tuple[list[dict], lis
 def events_answer(params: list[tuple[str, str]]) -> dict:
     """§12.4 as JSON: the study's full event table, newest first (plan §2)."""
     study, h = catalog.normalize(params, "/study/events", resolve_alias=engine_alias)
-    if h is None:  # a row with no horizons, asked without one (S-31)
-        raise env.Awaiting(catalog.RSI_REASON)
     item = _item(study.slug)
     if not item["ok"]:
         raise env.Awaiting(item["reason"])

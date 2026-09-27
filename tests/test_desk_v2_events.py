@@ -88,20 +88,21 @@ def test_the_csv_rows_are_the_json_rows(served):
 
 
 def test_an_answer_that_is_not_ready_keeps_its_envelope_under_accept_csv(served):
-    for qs, status, state in (("preset=rsi-above-70", 200, "awaiting"), ("preset=oil-2sigma-20d", 200, "awaiting"),
-                              ("preset=rsi-above-70&horizon=20", 422, "error"), ("preset=golden-cross&window=5", 422, "error")):
+    for qs, status, state in (("preset=oil-2sigma-20d", 200, "awaiting"), ("preset=rsi-above-70&horizon=7", 422, "error"),
+                              ("preset=golden-cross&window=5", 422, "error")):
         r = client.get(f"/api/desk/study/events?{qs}", headers=CSV)
         body = dc.check_response("/study/events", r)
         assert r.status_code == status and body["status"] == state, qs
 
 
-def test_rsi_presets_follow_s31_on_study_events(served):
+def test_the_rsi_studies_serve_their_events(served):
+    """desk/fill-compute: the RSI rows answer every retained crossing, newest first, like any study."""
     for slug in ("rsi-above-70", "rsi-below-30"):
-        b = _events(f"preset={slug}")
-        assert b["status"] == "awaiting" and b["unavailable"] == {"reason": "RSI is not computed yet.", "until": None}
-        for h in ("20", "5", "abc"):
-            r = client.get(f"/api/desk/study/events?preset={slug}&horizon={h}")
-            assert r.status_code == 422 and "horizon" in r.json()["error"]["message"], (slug, h)
+        d = _events(f"preset={slug}")["data"]
+        assert d["slug"] == slug and d["events"], slug
+        dates = [e["event_date"] for e in d["events"]]
+        assert dates == sorted(dates, reverse=True)
+        assert _events(f"preset={slug}&horizon=60")["data"] == d
 
 
 def test_the_six_slots_answer_the_same_events(served):

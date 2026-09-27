@@ -332,10 +332,10 @@ def test_the_sentences_are_the_specs():
             if isinstance(node, dc.Deferred):
                 declared[(route, path)] = node.reason
     assert env.DEFERRED_BLOCKS == declared
-    assert env.RSI_REASON == "RSI is not computed yet."
+    assert not hasattr(env, "RSI_REASON"), "the RSI rows are scored since desk/fill-compute"
     # The spec, or the plan's §6 (S-17, S-27) until this tree carries the spec's errata fold.
     docs = "".join((ROOT / "docs" / "desk" / name).read_text() for name in ("DESK_FRAME3_SPEC.md", "FRAME3_API_PLAN.md"))
-    for sentence in {*env.DEFERRED_REASONS.values(), *env.DEFERRED_BLOCKS.values(), env.RSI_REASON, env.BLOCK_FAILED_REASON}:
+    for sentence in {*env.DEFERRED_REASONS.values(), *env.DEFERRED_BLOCKS.values(), env.BLOCK_FAILED_REASON}:
         assert sentence.rstrip(".") in docs, sentence
 
 

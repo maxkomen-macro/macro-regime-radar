@@ -106,7 +106,7 @@ REGIME = E("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
 VERDICT = E("reliable", "suggestive", "no_edge", "insufficient")
 TARGET_UNIT = E("log_return", "log_change", "bp")
 DISPLAY_UNIT = E("percent", "bp")
-MOVE = E("up2s", "down2s", "cross_above", "cross_below")
+MOVE = E("up2s", "down2s", "cross_above", "cross_below", "rsi_above_70", "rsi_below_30")
 WHILE = E("none", "spx_below_50", *(f"regime:{r}" for r in REGIME.values))
 HORIZON = E(5, 10, 20, 60)
 WINDOW = E(5, 20, 60)
@@ -306,7 +306,7 @@ TECHNICALS = obj(
     rsi=null(NUM), rsi_date=null(DATE), rsi_prev=null(NUM), rsi_prev_date=null(DATE),
     rsi_last_above_70=null(RSI_VISIT), rsi_last_below_30=null(RSI_VISIT),
     series=Obj({"6m": Arr(POINT), "1y": Arr(POINT), "3y": Arr(POINT)}),
-    signals_allowlist=Const(["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]),
+    signals_allowlist=Const(["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma", "spx-5d-2sigma"]),
     vol=Deferred("needs stored SPY option snapshots and a versioned skew method."),
     sectors=Block(Obj(dict(LEADERSHIP))),
 )

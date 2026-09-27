@@ -1647,3 +1647,38 @@ def test_r27_a_schema_check_that_raises_never_reads_the_store_without_provenance
     finally:
         reader.close()
         writer.close()
+
+
+# ── the RSI study (desk/fill-compute) ────────────────────────────────────────
+
+def test_rsi_crossings_are_strict_skip_a_gap_and_keep_a_14_session_cooldown():
+    import numpy as np
+    import pandas as pd
+
+    nan = float("nan")
+    # 0: 69 · 1: 70 (the level is outside the zone) · 2: 71 (crosses) · 3: 69 · 4: 72 (inside the cooldown)
+    # 5..18: 65 · 19: 75 (crosses again, after the cooldown) · 20: nan · 21: 80 (no crossing: after an undefined session)
+    v = [69, 70, 71, 69, 72] + [65] * 14 + [75, nan, 80]
+    r = pd.Series(v, dtype=float)
+    pos, raw = es.rsi_crossings(r, "above", cooldown=14)
+    assert raw == 3 and pos.tolist() == [2, 19]
+    assert es.rsi_zone_mask(r, "above").tolist() == [x > 70 if x == x else False for x in v]
+    low = pd.Series([31, 30, 29, 31, 29.5], dtype=float)
+    assert es.rsi_crossings(low, "below", cooldown=1)[0].tolist() == [2, 4]
+    assert np.flatnonzero(es.rsi_zone_mask(low, "below")).tolist() == [2, 4]
+
+
+def test_an_rsi_study_runs_on_the_engine_and_hashes_apart(synth):
+    q = es.Query(kind="rsi", cross="above", target="spx")
+    out, table, trace = es.run_traced(q, synth)
+    assert out["study"]["slug"] == "spx-rsi-above-70" and out["study"]["kind"] == "rsi"
+    assert out["provenance"]["cooldown_sessions"] == 14 and out["provenance"]["z_window"] is None
+    assert len(table) == out["provenance"]["n_events"] and trace.z is None
+    # the trigger is the zone; every event is a session in it
+    assert all(trace.trigger[int(i)] for i in table.event_idx)
+    below = es.run(es.Query(kind="rsi", cross="below", target="spx"), synth)
+    assert below["provenance"]["inputs_hash"] != out["provenance"]["inputs_hash"]
+    with pytest.raises(es.StudyError):
+        es.validate(es.Query(kind="rsi", cross="above", target="gold"))
+    with pytest.raises(es.StudyError):
+        es.validate(es.Query(kind="rsi", cross="sideways", target="spx"))

@@ -296,7 +296,7 @@ export interface TechnicalsResponse extends Envelope {
 
 // ── §12.2 /study ──────────────────────────────────────────────────────────
 
-export type Move = "up2s" | "down2s" | "cross_above" | "cross_below";
+export type Move = "up2s" | "down2s" | "cross_above" | "cross_below" | "rsi_above_70" | "rsi_below_30";
 
 /** The six slots (§4, §12.2): `while` is none | spx_below_50 | regime:<name>; `window` is 5 | 20 | 60, null for a cross. */
 export interface Question {
@@ -421,11 +421,11 @@ export interface CatalogStudy {
   slug: string;
   label: string;
   short: string;
-  /** §12.3 (item 14): the Client view's title in plain words, no σ and no engine terms; null for the RSI rows. */
+  /** §12.3 (item 14): the Client view's title in plain words, no σ and no engine terms. */
   client_label?: string | null;
   available: boolean;
   unavailable: Unavailable | null;
-  /** The five non-horizon slots; null for a definition with no question yet (the RSI rows). */
+  /** The five non-horizon slots; null for a definition with no question (none since desk/fill-compute). */
   question: { shock: string; window: number | null; move: Move; while: string; target: string } | null;
   allowed_horizons: number[];
 }

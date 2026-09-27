@@ -180,6 +180,36 @@
         "cross": null
       },
       "slug": "curve_2s10s-w60-z1.5-abs-vix_above=20.0-hy_oas-overheating"
+    },
+    {
+      "query": {
+        "kind": "rsi",
+        "shock": "spx",
+        "w": 14,
+        "z": 2.0,
+        "sign": "+",
+        "cond": null,
+        "cond_value": null,
+        "regime": "all",
+        "target": "spx",
+        "cross": "above"
+      },
+      "slug": "spx-rsi-above-70"
+    },
+    {
+      "query": {
+        "kind": "rsi",
+        "shock": "spx",
+        "w": 14,
+        "z": 2.0,
+        "sign": "+",
+        "cond": null,
+        "cond_value": null,
+        "regime": "Goldilocks",
+        "target": "spx",
+        "cross": "below"
+      },
+      "slug": "spx-rsi-below-30-goldilocks"
     }
   ]
 }

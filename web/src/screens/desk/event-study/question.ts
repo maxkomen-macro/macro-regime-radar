@@ -28,12 +28,18 @@ export const WINDOWS: readonly number[] = [5, 20, 60];
 
 /** A cross is the S&P's own 50/200-day averages crossing: it has no window (§4, §12.2). */
 export const isCross = (m: Move) => m === "cross_above" || m === "cross_below";
+/** An RSI crossing is the S&P's RSI(14) crossing 70 or 30 (§12.3, desk/fill-compute): no window either. */
+export const isRsi = (m: Move) => m === "rsi_above_70" || m === "rsi_below_30";
+/** The moves that take no window (§12.2): the two crosses and the two RSI crossings. */
+export const takesNoWindow = (m: Move) => isCross(m) || isRsi(m);
 
 export const MOVES: readonly { id: Move; label: string }[] = [
   { id: "up2s", label: "up 2σ or more" },
   { id: "down2s", label: "down 2σ or more" },
   { id: "cross_above", label: "crosses above MA" },
   { id: "cross_below", label: "crosses below MA" },
+  { id: "rsi_above_70", label: "RSI crosses above 70" },
+  { id: "rsi_below_30", label: "RSI crosses below 30" },
 ];
 
 export const REGIMES: readonly string[] = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
@@ -93,7 +99,7 @@ export function askFromSearch(search: string | URLSearchParams): Ask {
   const horizon = Number(p.get("horizon"));
   const move = p.get("move") as Move | null;
   // A cross has no window (§12.2: omitted for a cross); any other move needs one of 5, 20, 60.
-  const window = move && isCross(move) ? null : Number(p.get("window"));
+  const window = move && takesNoWindow(move) ? null : Number(p.get("window"));
   const wh = p.get("while") ?? "none";
   const shock = p.get("shock");
   const target = p.get("target");
@@ -165,6 +171,7 @@ export function questionFromEngine(slug: string | null): Question | null {
   // The six slots ask 2σ moves over every regime; any other engine study is a different question.
   if (!e || e.z !== 2 || e.regime !== "all") return null;
   if (e.kind === "cross") return { shock: e.target, window: null, move: e.cross === "death" ? "cross_below" : "cross_above", while: "none", target: e.target, horizon: 20 };
+  if (e.kind === "rsi") return { shock: e.target, window: null, move: e.cross === "below" ? "rsi_below_30" : "rsi_above_70", while: "none", target: e.target, horizon: 20 };
   if (e.sign === "both" || !WINDOWS.includes(e.w)) return null;
   const regime = e.cond.startsWith("regime=") ? REGIMES.find((r) => r.toLowerCase().replace(/ /g, "_") === e.cond.slice(7)) : undefined;
   const wh = e.cond === "none" ? "none" : e.cond === "spx_below_50dma" ? "spx_below_50" : regime ? `regime:${regime}` : null;
@@ -214,7 +221,7 @@ export function isQuestion(v: unknown): v is Question {
   const q = v as Question;
   if (!q || typeof q.shock !== "string" || typeof q.target !== "string" || !MOVE_IDS.has(q.move)) return false;
   // A cross has no window; every other move has one of 5, 20, 60 (§12.2).
-  const windowOk = isCross(q.move) ? q.window === null : typeof q.window === "number" && WINDOWS.includes(q.window);
+  const windowOk = takesNoWindow(q.move) ? q.window === null : typeof q.window === "number" && WINDOWS.includes(q.window);
   return windowOk && HORIZONS.some((h) => h.h === q.horizon) && WHILE_IDS.has(q.while);
 }
 
@@ -227,7 +234,7 @@ function isSaved(v: unknown): v is SavedQuestion {
 function normalized(v: unknown): unknown {
   const s = v as SavedQuestion;
   if (!s || typeof s !== "object" || !s.question || typeof s.question !== "object") return v;
-  return isCross(s.question.move) && s.question.window != null ? { ...s, question: { ...s.question, window: null } } : v;
+  return takesNoWindow(s.question.move) && s.question.window != null ? { ...s, question: { ...s.question, window: null } } : v;
 }
 
 function readRaw(storage: Pick<Storage, "getItem"> | null): unknown[] {

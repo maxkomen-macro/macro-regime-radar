@@ -254,7 +254,7 @@ export function trendWord(state: string | undefined): string | null {
 const bySlug = (ledger: LedgerResponse | undefined, slug: string) => (Array.isArray(ledger?.signals) ? ledger.signals.find((r) => r.slug === slug && fin(r.n)) : undefined);
 
 function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | undefined; tState: CardState; ledger: LedgerResponse | undefined; lState: CardState }) {
-  // §3: the Ledger rows in `signals_allowlist` order; the RSI rows are omitted while unavailable.
+  // §3: the Ledger rows in `signals_allowlist` order, the two RSI rows among them.
   const rows = allowlistRows(ledger, t?.signals_allowlist);
   const ready = tState === "ready" && !!t;
   const aw = tState === "awaiting";
