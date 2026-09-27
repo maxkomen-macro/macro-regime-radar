@@ -22,6 +22,9 @@ import positionSample from "../src/fixtures/desk/positions.json" with { type: "j
 import { POSITIONS_KEY } from "../src/screens/desk/positions/store";
 import basketSample from "../src/fixtures/desk/baskets.json" with { type: "json" };
 import { SAVED_BASKETS_KEY } from "../src/screens/desk/basket/weights";
+import { PROTOTYPES } from "../src/screens/desk/prototypes/registry";
+import { PROTOTYPE_MARKERS } from "../src/screens/desk/prototypes/markers";
+import { PROTOTYPE_LEAD } from "../src/screens/desk/kit/Prototype";
 
 /** A fixture answer's payload: the envelope's `data` (§12.0), for an override to change and serve again. */
 function payloadOf(reply: { body: string }): Record<string, unknown> {
@@ -93,6 +96,43 @@ test.describe("desk v2", () => {
       }
     });
   }
+
+  // §1.0.3: a PROTOTYPE card is drawn finished with illustrative values: no badge, its footnote its last line,
+  // and none of its values printed outside it. Run this against a preview of `vite build` too (E2E_BASE_URL):
+  // routeDesk answers in the browser, so the production bundle reads the same fixtures.
+  test("PROTOTYPE cards (§1.0.3): each ends with its footnote and carries no badge; no prototype value is printed outside one", async ({ page }) => {
+    await seedBaskets(page);
+    const all = Object.values(PROTOTYPE_MARKERS).flat();
+    for (const slug of BUILT) {
+      await open(page, `/desk/${slug}`);
+      const here = PROTOTYPES.filter((p) => p.page === slug);
+      await expect(page.locator("[data-prototype]"), slug).toHaveCount(here.length);
+      for (const p of here) {
+        const card = page.locator(`[data-prototype="${p.id}"]`);
+        await expect(card.locator("[data-prototype-foot]")).toHaveCount(1);
+        await expect(card.locator("[data-prototype-foot]")).toHaveText(`${PROTOTYPE_LEAD}${p.production}`);
+        await expect(card.getByTestId("dk-live")).toHaveCount(0);
+        const last = await card.evaluate((el) => {
+          const nodes = el.querySelectorAll("*");
+          return nodes[nodes.length - 1]?.closest("[data-prototype-foot]") !== null;
+        });
+        expect(last, `${p.id}: the footnote is the last line`).toBe(true);
+        for (const m of PROTOTYPE_MARKERS[p.id]) await expect(card, `${p.id} prints ${m}`).toContainText(m);
+        // The footnote reads as the as-of stamp does: mono, small, the muted gray.
+        const foot = await card.locator("[data-prototype-foot]").evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return { mono: /Plex Mono/.test(cs.fontFamily), size: parseFloat(cs.fontSize), color: cs.color };
+        });
+        expect(foot).toEqual({ mono: true, size: 11, color: "rgb(107, 114, 128)" });
+      }
+      const outside = await page.evaluate(() => {
+        const root = document.querySelector(".dk")?.cloneNode(true) as HTMLElement | undefined;
+        root?.querySelectorAll("[data-prototype]").forEach((n) => n.remove());
+        return root?.textContent ?? "";
+      });
+      expect(all.filter((m) => outside.includes(m)), `${slug}: prototype values outside a PROTOTYPE card`).toEqual([]);
+    }
+  });
 
   // Codex R-09: a completed 200 whose body is null is Awaiting refresh on every tab, never a loading state.
   const NULL_ANSWERS: { slug: string; path: string; labels: string[] }[] = [

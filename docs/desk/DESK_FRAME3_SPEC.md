@@ -13,7 +13,9 @@ withdrawn by a later one, it is not repeated here.
 and the counts, dates and units needed to display them honestly. A field the
 engine cannot produce is served as an explicit **unavailable** state, never as
 an illustrative number, and Build Notes lists it under "Designed, not yet
-served". When this file and a PNG disagree, the PNG wins for layout and this
+served". The one exception is a **PROTOTYPE** card (§1.0.3): a block drawn
+finished with illustrative values, footnoted as such, never mixed with a
+served one. When this file and a PNG disagree, the PNG wins for layout and this
 file wins for numbers, labels and API shape (v2 §20, D-35). Every
 illustrative number below is the mockup's; the build renders what the API
 returns.
@@ -32,7 +34,11 @@ Neither A nor B changes §12 without writing the change into this file first.
 
 ## 1. Scope and site-wide rules
 
-### 1.0 Scope for Monday: live and unavailable
+### 1.0 Scope for Monday: live, unavailable and prototype
+
+A block is LIVE (served, badged `● Live`), UNAVAILABLE (§1.0.2) or, for the
+few blocks that would take many hours to build for real, PROTOTYPE (§1.0.3):
+drawn finished with illustrative values and a footnote saying so.
 
 | Tab / block | Monday state | Reason |
 |---|---|---|
@@ -102,6 +108,52 @@ served, "Until: <`unavailable.until`>". No number, no chart, no gauge. Its
 `○ Not yet served` (`○ Awaiting refresh` when the reason begins "Awaiting
 refresh", §1.7). A block that is unavailable by §1.0 but has no served
 envelope prints the reason in §1.0's table (the confidence chips).
+
+#### 1.0.3 The prototype state
+
+A PROTOTYPE card shows, finished, a part of the Desk that would take many
+hours to build for real, so the Desk can be walked through end to end. It
+is not served; its numbers are illustrative, and it says so in one place.
+
+1. **Drawn finished.** Title, subtitle, stats, body and `Advanced ▸` as §1.4.
+   No badge (neither `● Live` nor `○ Not yet served`), no banner, no
+   `MOCKUP` label (§1.6).
+2. **One footnote, last.** Its last line is exactly one small, muted
+   footnote, `Illustrative values · In production: <one line on how it would
+   be built>`, in the style of a card's as-of stamp (mono 11px, #6b7280),
+   drawn by the shared `PrototypeFootnote`
+   (`web/src/screens/desk/kit/Prototype.tsx`).
+3. **Illustrative but consistent.** Every figure it prints follows from its
+   fixture's stated inputs by the rule the card states: an option value is
+   Black-Scholes at an assumed volatility, a share is its count over its
+   total, a verdict is §1.5's rule on the card's own numbers. Its
+   `Advanced ▸` is enabled and opens those inputs (the assumed volatilities,
+   rates, day counts, rules and thresholds).
+4. **Kept apart.** Its values come only from the prototype fixtures,
+   `web/src/fixtures/desk/proto-*.json` and `vol.json` (§12.13's vol shape,
+   for the Technicals card), read only by modules under
+   `web/src/screens/desk/prototypes/`. A LIVE card imports none of them, and
+   no prototype value is printed outside a PROTOTYPE card (the page's
+   `[data-prototype]` element).
+5. **A live input says so.** An input the engine serves, drawn inside a
+   PROTOTYPE card, is labelled live (`from your basket · live`) and reads the
+   engine's field; only the outputs are illustrative. (§10: until desk/books
+   is on main, the basket's inputs are read from `proto-books-basket.json`,
+   shaped like its answer.)
+6. **In the block's place.** A PROTOTYPE card stands where the block it
+   prototypes stands, and gives way to the LIVE card once that block is
+   served (`ready`, or `awaiting` with a reason beginning "Awaiting
+   refresh"). It asks the API nothing.
+7. **Outside the claims.** A page's claims about its served data (Data
+   Pipeline's "Nothing is synthetic") cover its served panels, not its
+   PROTOTYPE cards; §1.0.1's lists are unchanged: a prototyped block stays
+   "Designed, not yet served" until it is served.
+8. **Same rules otherwise.** §1.3's five colors, the ban list, §1.9's units.
+9. **Tests.** `web/src/screens/desk/prototypes/prototypes.test.tsx` and
+   `e2e/desk.spec.ts`: every PROTOTYPE card ends with the footnote and
+   carries no badge; no module outside `prototypes/` imports a prototype
+   fixture; no prototype value is printed outside a PROTOTYPE card, on the
+   fixture dev server and on a preview of the production build.
 
 ### 1.1 Navigation
 - The sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
@@ -209,7 +261,8 @@ A card that reads live data carries `● Live · <source> · <date>` (green dot,
 mono 10px) top-right, dating only what it covers; a separately dated block
 carries its own date (v2 D-36). An unavailable card carries `○ Not yet
 served`, or `○ Awaiting refresh` when its served reason begins "Awaiting
-refresh" (§1.7). The `MOCKUP · values illustrative` amber badge is NOT built.
+refresh" (§1.7). The `MOCKUP · values illustrative` amber badge is NOT built;
+a PROTOTYPE card (§1.0.3) carries no badge and ends with its footnote.
 
 ### 1.7 Empty, busy and awaiting states
 - `computing` (202): the card stays quiet and busy while the client polls.
@@ -1863,6 +1916,6 @@ included), with the real values of `FRAME3_DATA_AUDIT.md` wherever it marks
 a value COMPUTABLE and illustrative values, marked as such, elsewhere. Per
 tab: build from the PNG and this file; screenshot at 1440 wide; compare with
 the PNG; verifier; commit. Acceptance: every tab renders from fixtures;
-every number on screen traces to a §12 field; no color outside §1.3; no
+every number on screen traces to a §12 field (outside a PROTOTYPE card, §1.0.3); no color outside §1.3; no
 "established" or "significant"; typecheck, unit, build and the Desk browser
 tests green.
