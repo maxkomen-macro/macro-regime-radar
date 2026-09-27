@@ -19,6 +19,7 @@ import ledger from "../../../fixtures/desk/ledger.json";
 import macro from "../../../fixtures/desk/macro.json";
 import overview from "../../../fixtures/desk/overview.json";
 import pipeline from "../../../fixtures/desk/pipeline.json";
+import basketPrice from "../../../fixtures/desk/basket-price.json";
 import regime from "../../../fixtures/desk/regime.json";
 import sectors from "../../../fixtures/desk/sectors.json";
 import studyCatalog from "../../../fixtures/desk/study-catalog.json";
@@ -148,6 +149,8 @@ describe("the response boundary", () => {
       "/study/events": studyEvents,
       "/study/catalog": studyCatalog,
       "/pipeline": pipeline,
+      // §12.14 (desk/books): the sample basket's real answer.
+      "/basket/price": Object.values((basketPrice as { answers: Record<string, Record<string, unknown>> }).answers)[0],
     };
     expect(Object.keys(fixtures).length).toBe(Object.keys(SCHEMAS).length);
     const required: Record<string, string[]> = { "/study": ["question"] };
@@ -223,9 +226,9 @@ describe("the response boundary", () => {
   });
 
   it("knows every endpoint the Desk asks, and none it does not", () => {
-    for (const p of ["/overview", "/ledger", "/technicals", "/vol", "/sectors", "/regime", "/macro", "/study", "/study/events", "/pipeline"]) expect(schemaFor(p), p).toBeDefined();
-    // §9, §10: no server position store, no basket pricing, no hedge: nothing to read.
-    for (const p of ["/positions", "/basket/local-1", "/basket/price", "/hedge"]) expect(schemaFor(p), p).toBeUndefined();
+    for (const p of ["/overview", "/ledger", "/technicals", "/vol", "/sectors", "/regime", "/macro", "/study", "/study/events", "/pipeline", "/basket/price"]) expect(schemaFor(p), p).toBeDefined();
+    // §9, §10: no server position store, no basket kept on a server, no option hedge: nothing to read.
+    for (const p of ["/positions", "/basket/local-1", "/hedge"]) expect(schemaFor(p), p).toBeUndefined();
   });
 
   it("a completed 200 that is null, not JSON or a list rejects as unreadable", async () => {

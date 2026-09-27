@@ -154,3 +154,52 @@ def test_refusals_name_what_is_wrong():
         H(D5[:2], [1, -2])
     with pytest.raises(bk.BasketError, match="ascending"):
         H([D5[1], D5[0]], [1, 2])
+
+
+# ── Against a benchmark (item 3) ─────────────────────────────────────────────
+
+def _levels(dates, rets, start=100.0):
+    out, v = {}, start
+    for d, r in zip(dates, [0.0] + list(rets)):
+        v *= 1 + r
+        out[d] = v
+    return out
+
+
+def test_regression_by_hand_a_basket_that_moves_twice_its_benchmark():
+    dates = [f"S{i:03d}" for i in range(61)]
+    rng = np.random.default_rng(1)
+    x = rng.normal(0, 0.01, 60)
+    r = bk.regression(_levels(dates, 2 * x), _levels(dates, x), 60)
+    assert r["beta"] == pytest.approx(2.0) and r["corr"] == pytest.approx(1.0) and r["r2"] == pytest.approx(1.0)
+    assert r["resid_vol"] == pytest.approx(0.0, abs=1e-12) and r["vol_reduction"] == pytest.approx(1.0)
+    assert r["vol"] == pytest.approx(2 * r["vol_x"])
+    assert r["window"] == {"start": "S000", "end": "S060", "n": 60} and r["reason"] is None
+
+
+def test_regression_needs_a_full_window_and_reads_only_common_sessions():
+    dates = [f"S{i:03d}" for i in range(40)]
+    y = _levels(dates, np.full(39, 0.01))
+    x = _levels(dates[5:], np.full(34, 0.005))
+    r = bk.regression(y, x, 60)
+    assert r["beta"] is None and r["window"] == {"start": "S005", "end": "S039", "n": 34}
+    assert r["reason"] == "needs 60 daily returns; there are 34 since S005"
+    # A session one side lacks: the return spans the gap on both sides alike.
+    common, ry, rx = bk.paired_returns({"a": 1.0, "b": 2.0, "c": 3.0}, {"a": 10.0, "c": 20.0})
+    assert common == ["a", "c"] and list(ry) == [2.0] and list(rx) == [1.0]
+
+
+def test_relative_series_by_hand():
+    sessions = [f"S{i:03d}" for i in range(60)]
+    bench = {d: 50.0 + i for i, d in enumerate(sessions)}
+    basket = {d: 2 * v for d, v in bench.items()}  # always twice the benchmark
+    out = bk.relative_series(sessions, basket, {"qqq": bench}, {"r": sessions[-5:]})["r"]
+    assert out["base_date"] == "S055"
+    first, last = out["points"][0], out["points"][-1]
+    assert first["basket"] == pytest.approx(100.0) and first["qqq"] == pytest.approx(100.0)
+    # S055: basket 210, QQQ 105; S059: 218 and 109. Both rebase to 100 × 109 / 105.
+    assert last["basket"] == pytest.approx(100.0 * 109 / 105) and last["qqq"] == pytest.approx(100.0 * 109 / 105)
+    assert last["rs_qqq"] == pytest.approx(100.0) and last["rs_qqq_ma50"] == pytest.approx(100.0)
+    # The ratio's 50-session average needs 50 slots with both closes.
+    early = bk.relative_series(sessions, basket, {"qqq": bench}, {"r": sessions[:3]})["r"]["points"]
+    assert all(p["rs_qqq_ma50"] is None for p in early)

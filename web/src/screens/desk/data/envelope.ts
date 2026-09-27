@@ -149,12 +149,13 @@ export function errorEnvelope(code: string, message: string, meta: EnvelopeMeta,
   return { status: "error", ...meta, data: null, unavailable: null, error: { code, message, ...extra } };
 }
 
-/** The routes that answer the envelope (§12.0): the nine live ones and the deferred stubs.
- * The existing endpoints under /api/desk (the frame-2 engine's `/event-study`,
+/** The routes that answer the envelope (§12.0): the live ones (the nine of §12.1–§12.9, /sectors of §12.14
+ * since desk/fill-etf, then Basket & Hedge's, desk/books) and the deferred stubs. The existing endpoints under /api/desk (the frame-2 engine's `/event-study`,
  * `/pipeline/inventory`) keep their own contracts. */
 export const ENVELOPED_ROUTES: readonly string[] = [
   "/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline",
-  "/sectors", "/vol", "/positions", "/basket", "/basket/price", "/hedge",
+  "/sectors", "/basket/price",
+  "/vol", "/positions", "/basket", "/hedge",
 ];
 
 /** The route an /api/desk URL path answers for (`/basket/ai-infra` reads as `/basket`). */

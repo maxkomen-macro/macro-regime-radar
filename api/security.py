@@ -53,6 +53,9 @@ DESK_PRESET_SLUGS = frozenset({"gold-2sigma-spx-weak", "spx-golden-cross", "spx-
 # and a bare /study/catalog, are lookups too. Parity with api/desk_catalog is pinned by a test.
 DESK_CATALOG_SLUGS = frozenset(desk_catalog.CATALOG_SLUGS)
 PROVIDER_PREFIX = "/api/market/"
+# desk/books: Basket & Hedge prices a visitor's basket from EODHD's daily bars on request,
+# so its routes share the provider calls' ceiling, never the stored-data one.
+DESK_BASKET_PATHS = {"/api/desk/basket/price", "/api/desk/basket/hedge"}
 # Everything else under the API prefixes is a stored-data read: bounded by
 # the `db` ceiling so a burst sheds load as 429s instead of wedging the
 # worker pool (review P0-1).
@@ -404,7 +407,7 @@ class SecurityMiddleware:
             sem = self.expensive
         elif path in DESK_STUDY_PATHS:
             sem = self.db if self._preset_lookup(scope, path) else self.desk_study
-        elif path.startswith(PROVIDER_PREFIX):
+        elif path.startswith(PROVIDER_PREFIX) or path in DESK_BASKET_PATHS:
             sem = self.provider
         elif is_question:
             sem = self.assistant  # launch-1: a sync route needs its own ceiling

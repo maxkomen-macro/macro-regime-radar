@@ -31,7 +31,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
-import type { DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { BasketPriceResponse, DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -268,3 +268,15 @@ export const useStudyCatalog = () => useDesk<StudyCatalogResponse>("/study/catal
 
 /** §12.3: the events behind a study (the Advanced panel). */
 export const useStudyEvents = (params: Params) => useDesk<StudyEventsResponse>("/study/events", params);
+
+/** §12.14: a basket kept in this browser, priced by the API from EODHD's daily bars. `legs` is
+ * `TICKER:weight,…` in percent (the saved weights' digits); asked only for a saved basket. */
+export function useBasketPrice(params: { legs: string; method: string; notional: string } | null) {
+  return useQuery<BasketPriceResponse, DeskApiError>({
+    queryKey: ["desk-v2", "/basket/price", params],
+    queryFn: ({ signal: s }) => deskGet<BasketPriceResponse>("/basket/price", params ?? undefined, { signal: s }),
+    staleTime: 5 * 60_000,
+    retry,
+    enabled: !!params,
+  });
+}

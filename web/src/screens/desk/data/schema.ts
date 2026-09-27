@@ -305,6 +305,28 @@ const SECTORS = {
   }),
 } as const;
 
+/** §12.14's pieces (desk/books). */
+const span = o({ start: "s!", end: "s!", n: "n" }, { nul: true });
+const basketPoint = o({ date: "s!", close: "n", ma50: "n", ma200: "n", rsi: "n", drawdown: "n" });
+const comparePoint = o({ date: "s!", basket: "n", qqq: "n", spy: "n", rs_qqq: "n", rs_qqq_ma50: "n", rs_spy: "n", rs_spy_ma50: "n" });
+const compareRange = o({ base_date: "s?", points: l(comparePoint) });
+const loose = o({ start: "s?", end: "s?", n: "n" });
+const benchmark = o({
+  symbol: "s!",
+  label: "s!",
+  price: "n",
+  date: "s",
+  ret_1y: "n",
+  beta_1y: "n",
+  corr_1y: "n",
+  window_1y: loose,
+  reason_1y: "s?",
+  beta_60d: "n",
+  corr_60d: "n",
+  window_60d: loose,
+  reason_60d: "s?",
+});
+
 export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/overview": o({
     ...envelope,
@@ -589,6 +611,53 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         ...Object.fromEntries([5, 10, 20, 60].flatMap((h) => [[`exit_${h}`, "s?"], [`value_${h}`, "n"], [`complete_${h}`, "b"]])),
       }),
     ),
+  }),
+  "/basket/price": o({
+    ...envelope,
+    method: e(["hold", "monthly"]),
+    notional: "n",
+    provider: "s",
+    source: "s",
+    freq: "s",
+    prices_as_of: "s",
+    history_from: "s",
+    start: "s",
+    start_binding: l("s!"),
+    start_is_first_close: "b",
+    end: "s",
+    sessions: "n",
+    missing_sessions: l("s!"),
+    rebalances: "n",
+    total_return: "n",
+    legs: l(o({ symbol: "s!", target_weight: "n", weight_now: "n", first_close: "s?", price_end: "n", return: "n", contribution: "n", dollars: "n", adv_usd: "n", adv_window: span, days_to_trade: "n" })),
+    concentration: o({ top3_share: "n", top3: l("s!"), effective_n: "n", avg_pairwise_corr: "n", corr_window: span }),
+    liquidity: o({ participation: "n", adv_sessions: "n", basket_days: "n", binding: "s?" }),
+    // The index card reads nothing without its session.
+    index: o({
+      price: "n",
+      date: "s!",
+      chg_1d: "n",
+      chg_1d_dates: o({ from: "s!", to: "s!" }),
+      ret_1y: "n",
+      ret_1y_dates: o({ from: "s!", to: "s!" }),
+      ma50: "n",
+      ma200: "n",
+      ma50_window: o({ start: "s!", end: "s!", n: "n!" }),
+      ma200_window: o({ start: "s!", end: "s!", n: "n!" }),
+      vs_ma50: "n",
+      vs_ma200: "n",
+      trend: o({ state: e(TREND_STATES, { req: true }), state_since: "s?" }),
+      cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),
+      crosses: l(o({ kind: e(["golden", "death"], { req: true }), date: "s!" })),
+      series: o({ "6m": l(basketPoint), "1y": l(basketPoint) }),
+      rsi: "n",
+      rsi_date: "s?",
+      drawdown: o({ now: "n", peak_date: "s!", peak: "n", max: "n", max_date: "s!", max_peak_date: "s!", since: "s!" }),
+      realized_vol_21d: "n",
+      realized_vol_window: span,
+    }),
+    benchmarks: o({ qqq: benchmark, spy: benchmark }),
+    compare: o({ "6m": compareRange, "1y": compareRange }),
   }),
   "/pipeline": o({
     ...envelope,

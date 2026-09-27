@@ -284,3 +284,197 @@
     display: none;
   }
 }
+
+/* ── Steps (desk/books): numbered sections, top to bottom ── */
+.bh-step {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+.bh-step-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+  font-family: var(--dk-sans);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--dk-t1);
+}
+.bh-step-n {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--dk-box);
+  border-radius: 50%;
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t2);
+  transform: translateY(-1px);
+}
+.bh-step-sub {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--dk-t3);
+}
+/* A card's answer, in one sentence, before its numbers. */
+.bh-lead {
+  margin: 6px 0 2px;
+  font-size: 13.5px;
+  line-height: 19px;
+  color: var(--dk-t1);
+}
+.bh-foot-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 15px;
+  color: var(--dk-t4);
+}
+
+/* ── Step 2: how the basket trades ── */
+.bh-trades {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 13px;
+  align-items: stretch;
+}
+.bh-trades .dk-card-title {
+  font-size: 15px;
+}
+.bh-trades .dk-stats {
+  margin-top: 8px;
+}
+.bh-trades .dk-chart {
+  margin-top: 8px;
+}
+.bh-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  min-width: 0;
+}
+.bh-rs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+.bh-rs .dk-stat-label {
+  margin: 0 0 2px;
+}
+.bh-mini {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.bh-mini th,
+.bh-mini td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--dk-row);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.bh-mini thead th {
+  font-family: var(--dk-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+}
+.bh-mini th:first-child,
+.bh-mini td:first-child {
+  text-align: left;
+}
+.bh-mini tbody th {
+  font-family: var(--dk-mono);
+  font-weight: 400;
+  color: var(--dk-t2);
+}
+.bh-mini td {
+  font-family: var(--dk-mono);
+  color: var(--dk-t1);
+}
+.bh-liq-table tr[data-binding] th,
+.bh-liq-table tr[data-binding] td {
+  color: var(--dk-amber);
+}
+/* Contribution rows: ticker · name · weights · a bar from zero · points. */
+.bh-contrib-rows {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.bh-contrib-rows li {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 76px minmax(80px, 1.3fr) 54px;
+  align-items: center;
+  gap: 10px;
+  min-height: 29px;
+  border-bottom: 1px solid var(--dk-row);
+}
+.bh-c-sym {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t2);
+}
+.bh-c-name {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--dk-t1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bh-c-w {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t4);
+  text-align: right;
+  white-space: nowrap;
+}
+.bh-c-track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--dk-row);
+}
+.bh-c-track span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  background: var(--dk-green);
+}
+.bh-c-track span[data-tone="red"] {
+  background: var(--dk-red);
+}
+.bh-c-val {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  text-align: right;
+  color: var(--dk-green);
+}
+.bh-c-val[data-tone="red"] {
+  color: var(--dk-red);
+}
+@media (max-width: 1100px) {
+  .bh-trades {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .bh-contrib-rows li {
+    grid-template-columns: 44px minmax(0, 1fr) 54px;
+  }
+  .bh-c-name,
+  .bh-c-w {
+    display: none;
+  }
+  .bh-mini {
+    font-size: 11.5px;
+  }
+}

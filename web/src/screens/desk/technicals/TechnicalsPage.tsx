@@ -25,6 +25,7 @@ import { moveText, tipOf } from "../kit/units";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import Gauge from "../kit/Gauge";
+import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart";
 import RankBars from "../kit/RankBars";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
 import "./technicals.css";
@@ -142,22 +143,9 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
 
 type Range = "6m" | "1y" | "3y";
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** Up to three x labels ("Oct 25", "Apr 26", "Sep 26"): the first new month, a middle one, the last; never the same month twice. */
-export function monthTicks(dates: readonly string[]): { i: number; text: string }[] {
-  if (dates.length < 2) return [];
-  const label = (d: string) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(2, 4)}`;
-  const firstNew = dates.findIndex((d, i) => i > 0 && d.slice(0, 7) !== dates[i - 1].slice(0, 7));
-  const a = firstNew > 0 ? firstNew : 0;
-  const last = dates.length - 1;
-  const mid = Math.round((a + last) / 2);
-  const midMonth = dates.findIndex((d, i) => i >= mid && i > 0 && d.slice(0, 7) !== dates[i - 1].slice(0, 7));
-  const m = midMonth > 0 ? midMonth : mid;
-  const out: { i: number; text: string }[] = [];
-  for (const i of [a, m, last]) if (!out.some((t) => t.text === label(dates[i]))) out.push({ i, text: label(dates[i]) });
-  return out;
-}
+/** The month ticks the charts read live in the kit (desk/books: Basket & Hedge draws the same price chart);
+ * the MACD chart (desk/fill-compute) reads them too. */
+export { monthTicks };
 
 /** "+0.4% today", or the session's own day when it is not New York's today (D13). */
 /** "+0.4% on Sep 22" (§3: `chg_1d` "on <chg_1d_dates.to>"), "today" for today's session. */
@@ -175,14 +163,6 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
   const [range, setRange] = useState<Range>("1y");
   // §12.7: a missing close is a point with close null; the line breaks there, never bridging the slot (Codex R-25).
   const pts = (t?.series?.[range] ?? []).filter((p) => typeof p?.date === "string");
-  const all = pts.flatMap((p) => [p.close, p.ma50, p.ma200]).filter(fin);
-  const lo = all.length ? Math.min(...all) : 0;
-  const hi = all.length ? Math.max(...all) : 1;
-  const ticks = extentTicks(lo, hi, range === "3y" ? 4 : 3);
-  const domain: [number, number] = [ticks[0], ticks[ticks.length - 1]];
-  const served = t?.cross ?? null;
-  const crossI = served ? pts.findIndex((p) => p.date === served.date) : -1;
-  const crossWord = t?.cross?.kind === "death" ? "Death" : "Golden";
   const ready = state === "ready" && !!t;
   const unserved = useUnserved();
   if (unserved) return <UnservedCard headingId="te-price-title" className="te-price" title="S&P 500" sub="price and its two trend lines" labels={["Price", "50-day average", "200-day average"]} block={unserved} />;
@@ -192,35 +172,20 @@ function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; sta
         <h2 className="dk-card-title" id="te-price-title">
           S&amp;P 500<span className="dk-card-sub"> price and its two trend lines</span>
         </h2>
-        <div className="te-range" role="group" aria-label="Range">
-          {(["6m", "1y", "3y"] as Range[]).map((r) => (
-            <button key={r} type="button" aria-pressed={range === r} onClick={() => setRange(r)}>
-              {r.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        <RangeChips className="te-range" ranges={["6m", "1y", "3y"] as const} value={range} onChange={setRange} />
       </div>
       <StatRow cols={3}>
         <Stat label="Price" awaiting={state === "awaiting" || (ready && !fin(t.price))} value={ready && fin(t.price) ? grouped(t.price) : undefined} sub={ready && fin(t.chg_1d) && t.chg_1d_dates ? <Signed value={t.chg_1d}>{dayMove(t.chg_1d, t.chg_1d_dates.to)}</Signed> : undefined} />
         <Stat label="50-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma50))} value={ready && fin(t.ma50) ? grouped(t.ma50) : undefined} tone="green" sub={ready && fin(t.vs_ma50) ? aboveBelow(t.vs_ma50) : undefined} />
         <Stat label="200-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma200))} value={ready && fin(t.ma200) ? grouped(t.ma200) : undefined} tone="gray" sub={ready && fin(t.vs_ma200) ? aboveBelow(t.vs_ma200) : undefined} />
       </StatRow>
-      {ready && pts.filter((p) => fin(p.close)).length > 1 ? (
-        <LineChart
-          ariaLabel={`S&P 500 with its 50-day and 200-day averages, ${range.toUpperCase()}${crossI >= 0 && t.cross ? `; ${crossWord.toLowerCase()} cross on ${dayLong(t.cross.date)}` : ""}`}
-          height={230}
-          n={pts.length}
-          yDomain={domain}
-          yTicks={ticks.map((v) => ({ v, text: grouped(v) }))}
-          xTicks={monthTicks(pts.map((p) => p.date))}
-          series={[
-            { key: "ma200", values: pts.map((p) => (fin(p.ma200) ? p.ma200 : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 2, label: "200-day" },
-            { key: "ma50", values: pts.map((p) => (fin(p.ma50) ? p.ma50 : null)), color: DESK_ACCENTS.green, dash: "4 4", width: 2, label: "50-day" },
-            { key: "close", values: pts.map((p) => (fin(p.close) ? p.close : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "S&P 500" },
-          ]}
-          endDot="close"
-          markers={crossI >= 0 && fin(pts[crossI].ma50) ? [{ i: crossI, v: pts[crossI].ma50, color: crossWord === "Death" ? DESK_ACCENTS.red : DESK_ACCENTS.green, r: 5 }] : []}
-          pad={{ l: 46, r: 70, t: 12, b: 26 }}
+      {ready && drawable(pts) ? (
+        <TrendChart
+          ariaLabel={`S&P 500 with its 50-day and 200-day averages, ${range.toUpperCase()}`}
+          mainLabel="S&P 500"
+          points={pts}
+          crosses={t.cross ? [t.cross] : []}
+          ticks={range === "3y" ? 4 : 3}
         />
       ) : state === "loading" ? null : (
         <Awaiting />

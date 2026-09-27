@@ -19,6 +19,7 @@ export const SCOPE_LISTS: readonly { title: string; items: readonly string[] }[]
       "Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.",
       "Signal Ledger: the twelve fixed signals, each scored when its study completes.",
       "Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.",
+      "Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity.",
       "Data Pipeline: the series inventory, generated from the registry.",
       "Client view: the current study in plain words, a month out.",
     ],
@@ -32,7 +33,7 @@ export const SCOPE_LISTS: readonly { title: string; items: readonly string[] }[]
       "The comparison with the study's condition dropped.",
       "The 12-asset correlation matrix.",
       "Positions kept on a server, and DV01.",
-      "Basket pricing, the residual chart and the hedge structures.",
+      "The hedge structures for a basket.",
     ],
   },
 ];

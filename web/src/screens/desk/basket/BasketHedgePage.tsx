@@ -1,21 +1,23 @@
 /**
- * Basket & Hedge (DESK_FRAME3_SPEC §10, screens/09-basket-hedge.png):
- * UNAVAILABLE (§1.0): basket pricing and option structures are not yet
- * defined in the engine (v2 D-25–D-28). What stays is the analyst's own
- * work, kept in this browser (§1.8): the baskets, their legs as typed
- * weights (Equal-weight, Normalize to 100%, × to drop, a ticker to add),
- * Save basket and Export / Import JSON. The stats, the residual chart, the
- * beta read and the whole hedge keep their titles and labels and print
- * §1.0's reason (§1.0.2); nothing is priced and nothing is asked of the
- * server. Send to Position Monitor carries the basket as a manual subject
- * (§9).
+ * Basket & Hedge (DESK_FRAME3_SPEC §10, screens/09-basket-hedge.png). The
+ * analyst's own work is kept in this browser (§1.8): the baskets, their legs
+ * as typed weights (Equal-weight, Normalize to 100%, × to drop, a ticker to
+ * add), Save basket and Export / Import JSON. A saved basket whose weights add
+ * to exactly 100% is priced by /basket/price (§12.14, desk/books) from
+ * EODHD's daily bars: step 2, how the basket trades (./BasketTrades.tsx).
+ * The hedge's option structures are not yet defined in the engine (v2
+ * D-25–D-28): that card keeps its labels and prints §1.0's reason (§1.0.2).
+ * Send to Position Monitor carries the basket as a manual subject (§9).
  */
 
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useBasketPrice } from "../data/api";
 import { useSearchParams } from "react-router-dom";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { AdvancedPanel, Card, NotServedBadge, Stat, StatRow, Unserved, UnservedLine, useAdvanced } from "../kit/ui";
+import { dayShort } from "../kit/format";
+import { AdvancedPanel, Card, LiveBadge, NotServedBadge, Stat, StatRow, useAdvanced } from "../kit/ui";
+import BasketTrades, { type BasketRange } from "./BasketTrades";
 import {
   savedLegs,
   equalWeight,
@@ -28,6 +30,7 @@ import {
   parseWeight,
   readSaved,
   removeSaved,
+  sumsToHundred,
   toWork,
   totalText,
   unreadableSaved,
@@ -39,8 +42,15 @@ import {
 } from "./weights";
 import "./basket.css";
 
-/** §1.0: the block has no served envelope for a basket kept in the browser, so the page prints §1.0's reason (§1.0.2). */
+/** §1.0: the hedge's option structures have no served envelope, so the card prints §1.0's reason (§1.0.2). */
 export const BASKET_UNAVAILABLE = { reason: "Basket pricing and option structures are not yet defined in the engine.", until: null } as const;
+
+/** What /basket/price is asked for a saved basket (§12.14): its legs as saved, the method, the notional;
+ * null until the basket has legs whose weights add to exactly 100%. */
+export function priceParams(b: SavedBasket | null): { legs: string; method: string; notional: string } | null {
+  if (!b || !b.legs.length || !sumsToHundred(b.legs)) return null;
+  return { legs: legsKey(b.legs), method: "hold", notional: "1000000" };
+}
 
 /** The hedge's three modes (§10: the labels are kept). */
 export const MODES = ["Protect the basket", "Express the S&P lean", "Neutralize NDX beta"] as const;
@@ -165,7 +175,6 @@ function BasketCard({ basketId, saved, unreadable, onSelect, onSaved }: { basket
   const legs = work ?? base;
   const tot = legs ? totalText(legs) : null;
   const dirty = !!work && !!base && legsKey(work) !== legsKey(base);
-  const adv = useAdvanced();
   const save = () => {
     if (!legs || !local) return;
     if (!legs.length) return setStatus("Add a ticker to save the basket.");
@@ -287,23 +296,11 @@ function BasketCard({ basketId, saved, unreadable, onSelect, onSaved }: { basket
               </>
             ) : null}
           </p>
-          {/* §1.4: what Advanced promises (the rebalance rule, the index since inception) is not served: disabled. */}
-          <AdvancedPanel adv={adv} items="rebalance rule · index since inception" />
+
         </div>
       }
     >
-      {/* §10: the stats keep their labels with no number, and the reason is printed (§1.0.2). */}
-      <Unserved block={BASKET_UNAVAILABLE}>
-        <StatRow cols={3}>
-          {["3-month", "vs NDX · residual", "Basket vol"].map((l) => (
-            <Stat key={l} label={l} />
-          ))}
-        </StatRow>
-      </Unserved>
-      <UnservedLine block={BASKET_UNAVAILABLE} className="bh-unserved" />
       <Legs key={basketId ?? ""} legs={legs} onChange={(l) => setWork(l)} empty={empty} />
-      {/* §10: the chart's title kept for an open basket; its reason is the one printed above (§1.0.2: one sentence). */}
-      {local ? <p className="bh-chart-title">{`Is the ${local.name} bet working?`}</p> : null}
       {unreadable ? (
         <p className="bh-why">
           {unreadable === 1 ? "1 saved basket" : `${unreadable} saved baskets`} could not be read; kept in this browser, and in an export, not shown.
@@ -334,6 +331,37 @@ function HedgeCard() {
         ))}
       </StatRow>
     </Card>
+  );
+}
+
+/** Step 2 (§10): how the saved basket trades, or why it is not priced yet. */
+function StepTwo({ local, q, state, range, setRange, names }: { local: SavedBasket | null; q: ReturnType<typeof useBasketPrice>; state: "loading" | "awaiting" | "ready"; range: BasketRange; setRange: (r: BasketRange) => void; names: Record<string, string | null> }) {
+  const hid = useId();
+  const why = !local ? "Open or start a basket to price it." : !local.legs.length ? "Add a ticker and save the basket to price it." : !sumsToHundred(local.legs) ? "Save the basket with its weights at exactly 100% to price it." : null;
+  return (
+    <section className="bh-step" aria-labelledby={hid}>
+      <h2 className="bh-step-title" id={hid}>
+        <span className="bh-step-n" aria-hidden="true">
+          2
+        </span>
+        How the basket trades <span className="bh-step-sub">technicals against the Nasdaq and the S&amp;P, contribution, concentration, liquidity</span>
+      </h2>
+      {why ? (
+        <p className="bh-why">{why}</p>
+      ) : (
+        <>
+          {q.isError ? (
+            <p className="bh-why" role="status">
+              {`This basket could not be priced: ${q.error.message}`}{" "}
+              <button type="button" className="dk-link" onClick={() => void q.refetch()}>
+                Try again
+              </button>
+            </p>
+          ) : null}
+          <BasketTrades p={q.data} state={state} range={range} setRange={setRange} names={names} />
+        </>
+      )}
+    </section>
   );
 }
 
@@ -390,13 +418,20 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
         { replace: true },
       );
   };
+  const local = saved.find((b) => b.id === basketId) ?? null;
+  const pq = useBasketPrice(priceParams(local));
+  const [range, setRange] = useState<BasketRange>("1y");
+  const priced = pq.data;
+  const state = pq.data ? "ready" : pq.isError ? "awaiting" : "loading";
+  const names = Object.fromEntries((local?.legs ?? []).map((l) => [l.symbol, l.name]));
   return (
     <div className="bh">
-      <PageTitle page={page} badge={<NotServedBadge boxed />} />
+      <PageTitle page={page} badge={priced ? <LiveBadge boxed parts={[priced.provider ?? null, dayShort(priced.prices_as_of) || null]} /> : <NotServedBadge boxed />} />
       <div className="bh-grid">
         <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} />
         <HedgeCard />
       </div>
+      <StepTwo local={local} q={pq} state={state} range={range} setRange={setRange} names={names} />
     </div>
   );
 }

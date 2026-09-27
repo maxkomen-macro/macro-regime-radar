@@ -26,12 +26,13 @@ ROOT = Path(__file__).resolve().parent.parent
 WEB_SRC = Path(os.environ.get("DESK_WEB_SRC", ROOT / "web" / "src"))
 FIXTURES = WEB_SRC / "fixtures" / "desk"
 LIVE = ("/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline",
-        "/sectors")  # /sectors served since desk/fill-etf (§12.14)
+        "/sectors",  # /sectors served since desk/fill-etf (§12.14)
+        "/basket/price")  # desk/books
 
 
 def test_the_contract_covers_every_enveloped_route():
-    assert tuple(dc.ROUTES) == LIVE == env.ENVELOPED_ROUTES[:10]
-    assert tuple(dc.STUBS) == env.ENVELOPED_ROUTES[10:]
+    assert tuple(dc.ROUTES) == LIVE == env.ENVELOPED_ROUTES[:env.LIVE_ROUTES]
+    assert tuple(dc.STUBS) == env.ENVELOPED_ROUTES[env.LIVE_ROUTES:]
 
 
 def test_the_block_paths_read_off_the_tables_are_section_12_0s():
@@ -246,7 +247,8 @@ def test_fractions_and_integers_are_what_they_say():
 FIXTURE_FILES = {"/overview": "overview.json", "/study": "study.json", "/study/catalog": "study-catalog.json",
                  "/study/events": "study-events.json", "/ledger": "ledger.json", "/regime": "regime.json",
                  "/technicals": "technicals.json", "/macro": "macro.json", "/pipeline": "pipeline.json",
-                 "/sectors": "sectors.json"}  # desk/fill-etf
+                 "/sectors": "sectors.json",  # desk/fill-etf
+                 "/basket/price": "basket-price.json"}  # desk/books
 
 
 def _wire(route: str, payload: dict) -> dict:
@@ -264,9 +266,17 @@ def _wire(route: str, payload: dict) -> dict:
     return {"status": "ready", **meta, "engine_version": "fixture", "data": payload, "unavailable": None, "error": None}
 
 
+# desk/books: a basket route's fixture holds one answer per request the page makes (`answers`).
+MULTI = {"/basket/price"}
+
+
 @pytest.mark.parametrize("route", LIVE)
 def test_the_clients_fixtures_keep_the_contract(route):
     f = FIXTURES / FIXTURE_FILES[route]
     if not f.exists():
         pytest.skip(f"no frame-3 fixtures at {FIXTURES} (set DESK_WEB_SRC to a web/src that carries them)")
-    dc.check(route, json.dumps(_wire(route, json.loads(f.read_text()))))
+    doc = json.loads(f.read_text())
+    payloads = list(doc["answers"].values()) if route in MULTI else [doc]
+    assert payloads, f"{f.name} carries no answer"
+    for payload in payloads:
+        dc.check(route, json.dumps(_wire(route, payload)))

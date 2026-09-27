@@ -65,14 +65,18 @@ ENGINE_VERSION = resolve_engine_version(os.environ)
 
 # ── The frame-3 client's routes and block paths ─────────────────────────────
 
-# The routes that answer the envelope (§12.0): the ten live ones (/sectors since desk/fill-etf), then the
+# The routes that answer the envelope (§12.0): the live ones (/sectors since desk/fill-etf, /basket/price
+# since desk/books), then the
 # §12.13 stubs. `/basket` stands for `/basket/:id` (route_of). The existing
 # /api/desk endpoints (/event-study, /event-study/assets, /pipeline/inventory)
 # keep their own contracts.
 ENVELOPED_ROUTES: tuple[str, ...] = (
     "/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline",
-    "/sectors", "/vol", "/positions", "/basket", "/basket/price", "/hedge",
+    "/sectors", "/basket/price",
+    "/vol", "/positions", "/basket", "/hedge",
 )
+# The live routes' count: the nine of §12.1–§12.9, /sectors (desk/fill-etf), then Basket & Hedge's (desk/books).
+LIVE_ROUTES = 11
 
 # The only paths that carry block envelopes (§12.0, v4 B-08, C-01). Every
 # other object and array in a payload is an ordinary field.
@@ -109,7 +113,6 @@ DEFERRED_REASONS: dict[str, str] = {
     "/vol": VOL_REASON,
     "/positions": POSITIONS_REASON,
     "/basket": BASKET_REASON,
-    "/basket/price": BASKET_REASON,
     "/hedge": BASKET_REASON,
 }
 
@@ -129,6 +132,18 @@ class Unsupported(ValueError):
     """422 `unsupported`: the request does not normalize to a catalog study
     (plan R11), or names a parameter the route does not take. The message
     names what is not supported; nothing is silently dropped (§12.0)."""
+
+
+class Refused(Exception):
+    """A refusal a handler states itself, with its HTTP status, `error.code`
+    and words (desk/books: a ticker EODHD does not list is 422
+    `unknown_symbol`; a provider failure keeps its status, code `provider`)."""
+
+    def __init__(self, status: int, code: str, message: str) -> None:
+        if not (400 <= status < 600) or not code or not message:
+            raise ValueError("a refusal needs a 4xx or 5xx status, a code and its words")
+        self.status, self.code, self.message = status, code, message
+        super().__init__(message)
 
 
 class Awaiting(Exception):
@@ -347,6 +362,8 @@ def map_exception(route: str, exc: BaseException, gen: Any = _UNPINNED) -> Reply
     if _is(exc, "api.worker", "Warming"):
         # S-11: before the first generation, the answer is computing and names none.
         return reply(202, envelope("computing"), {"Retry-After": str(RETRY_AFTER_S)})
+    if isinstance(exc, Refused):
+        return error_reply(exc.status, exc.code, exc.message, gen=gen)
     if isinstance(exc, Unsupported) or _is(exc, "src.desk.event_study", "StudyError"):
         return error_reply(422, "unsupported", str(exc), gen=gen)
     if _is(exc, "api.db", "DBUnavailable"):

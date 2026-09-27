@@ -254,3 +254,98 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
             "binding": worst[1] if worst else None,
         },
     }
+
+
+# ── Against a benchmark (desk/books, item 3) ─────────────────────────────────
+#
+# Returns against a benchmark are simple returns between consecutive sessions
+# on which both have a close. A window is the last n of them, complete or not
+# served: 252 returns is the one-year figure, 60 the 60-day one.
+
+WINDOWS = {"1y": 252, "60d": 60}
+RS_MA = 50
+
+
+def paired_returns(y: Mapping[str, float], x: Mapping[str, float]) -> tuple[list[str], np.ndarray, np.ndarray]:
+    """The common dates, and the two series' returns between consecutive common
+    dates (each return dated by its end; one fewer than the dates)."""
+    common = sorted(set(y) & set(x))
+    ly = np.array([y[d] for d in common], dtype=float)
+    lx = np.array([x[d] for d in common], dtype=float)
+    if len(common) < 2:
+        return common, np.empty(0), np.empty(0)
+    return common, ly[1:] / ly[:-1] - 1.0, lx[1:] / lx[:-1] - 1.0
+
+
+def regression(y: Mapping[str, float], x: Mapping[str, float], n: int) -> dict:
+    """y's daily returns against x's over the last n common returns: beta
+    (cov / var of x), Pearson correlation, R², each side's annualized
+    volatility (sample standard deviation × √252), and the volatility of
+    `y − beta × x`, what is left after shorting beta of x per unit of y. With
+    fewer than n returns every statistic is None and `reason` says how many
+    there are."""
+    common, ry, rx = paired_returns(y, x)
+    have = len(ry)
+    if have < n:
+        since = common[0] if common else None
+        return {"beta": None, "corr": None, "r2": None, "vol": None, "vol_x": None, "resid_vol": None,
+                "vol_reduction": None, "window": {"start": since, "end": common[-1] if common else None, "n": have},
+                "reason": f"needs {n} daily returns; there are {have}" + (f" since {since}" if since else "")}
+    ry, rx = ry[-n:], rx[-n:]
+    vx, vy = float(np.var(rx, ddof=1)), float(np.var(ry, ddof=1))
+    cov = float(np.cov(ry, rx, ddof=1)[0, 1])
+    ann = math.sqrt(252.0)
+    if vx == 0.0 or vy == 0.0:
+        return {"beta": None, "corr": None, "r2": None, "vol": math.sqrt(vy) * ann, "vol_x": math.sqrt(vx) * ann,
+                "resid_vol": None, "vol_reduction": None, "window": {"start": common[-n - 1], "end": common[-1], "n": n},
+                "reason": "one of the two did not move over the window"}
+    beta = cov / vx
+    corr = cov / math.sqrt(vx * vy)
+    resid = float(np.std(ry - beta * rx, ddof=1)) * ann
+    vol = math.sqrt(vy) * ann
+    return {"beta": beta, "corr": corr, "r2": corr * corr, "vol": vol, "vol_x": math.sqrt(vx) * ann,
+            "resid_vol": resid, "vol_reduction": 1.0 - resid / vol,
+            "window": {"start": common[-n - 1], "end": common[-1], "n": n}, "reason": None}
+
+
+def _rolling_mean(v: np.ndarray, w: int) -> np.ndarray:
+    """The mean of the last w slots, NaN unless all w are finite (the averages' rule)."""
+    out = np.full(len(v), np.nan)
+    for i in range(w - 1, len(v)):
+        s = v[i - w + 1:i + 1]
+        if np.all(np.isfinite(s)):
+            out[i] = float(s.mean())
+    return out
+
+
+def relative_series(sessions: Sequence[str], basket: Mapping[str, float], bench: Mapping[str, Mapping[str, float]],
+                    ranges: Mapping[str, Sequence[str]]) -> dict[str, dict]:
+    """For each chart range (its sessions, a tail of `sessions`): the basket and
+    each benchmark rebased to 100 on the range's first session where all of
+    them have a close, and basket ÷ benchmark with its 50-session average,
+    both over 100 × the ratio on that session. The ratio's average reads the
+    whole calendar, so it is complete from a range's first session when the
+    history is long enough; a slot without both closes is a gap."""
+    b = np.array([basket.get(d, np.nan) for d in sessions], dtype=float)
+    xs = {k: np.array([lv.get(d, np.nan) for d in sessions], dtype=float) for k, lv in bench.items()}
+    ratio = {k: b / x for k, x in xs.items()}
+    ratio_ma = {k: _rolling_mean(r, RS_MA) for k, r in ratio.items()}
+    at = {d: i for i, d in enumerate(sessions)}
+
+    def f(v: float) -> float | None:
+        return float(v) if math.isfinite(v) else None
+
+    out = {}
+    for name, dates in ranges.items():
+        rows = [at[d] for d in dates]
+        base = next((i for i in rows if math.isfinite(b[i]) and all(math.isfinite(x[i]) for x in xs.values())), None)
+        pts = []
+        for i in rows:
+            p = {"date": sessions[i], "basket": None if base is None else f(100.0 * b[i] / b[base])}
+            for k, x in xs.items():
+                p[k] = None if base is None else f(100.0 * x[i] / x[base])
+                p[f"rs_{k}"] = None if base is None else f(100.0 * ratio[k][i] / ratio[k][base])
+                p[f"rs_{k}_ma50"] = None if base is None else f(100.0 * ratio_ma[k][i] / ratio[k][base])
+            pts.append(p)
+        out[name] = {"base_date": None if base is None else sessions[base], "points": pts}
+    return out

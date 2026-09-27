@@ -38,7 +38,6 @@ STUB_PATHS = {  # (/api/desk/sectors is served since desk/fill-etf, tests/test_d
     "/api/desk/vol": "/vol",
     "/api/desk/positions": "/positions",
     "/api/desk/basket/ai-infra": "/basket",
-    "/api/desk/basket/price": "/basket/price",
     "/api/desk/hedge?mode=protect": "/hedge",
 }
 

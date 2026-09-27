@@ -627,7 +627,8 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/sectors"): ("/api/desk/sectors", 200, None),
     ("GET", "/api/desk/vol"): ("/api/desk/vol", 200, None),
     ("GET", "/api/desk/positions"): ("/api/desk/positions", 200, None),
-    ("GET", "/api/desk/basket/price"): ("/api/desk/basket/price", 200, None),
+    # desk/books: the basket routes price a basket the request names (legs=…); a bare GET names none: 422.
+    ("GET", "/api/desk/basket/price"): ("/api/desk/basket/price", 422, None),
     ("GET", "/api/desk/basket/{basket_id}"): ("/api/desk/basket/ai-infra", 200, None),
     ("GET", "/api/desk/hedge"): ("/api/desk/hedge?mode=protect", 200, None),
     # a catalog study by preset (asset_prices and regimes only: ready before the refresh), and the catalog

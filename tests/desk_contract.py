@@ -409,9 +409,43 @@ PIPELINE = obj(
     )),
 )
 
+# ── §12.14 GET /basket/price (desk/books) ───────────────────────────────────
+
+REGRESSION_FIELDS = {}
+for _w in ("1y", "60d"):
+    REGRESSION_FIELDS.update({f"beta_{_w}": null(NUM), f"corr_{_w}": null(NUM),
+                              f"window_{_w}": obj(start=null(DATE), end=null(DATE), n=INT), f"reason_{_w}": null(STR)})
+BASKET_POINT = obj(date=DATE, close=null(NUM), ma50=null(NUM), ma200=null(NUM), rsi=null(NUM), drawdown=null(NUM))
+COMPARE_POINT = obj(date=DATE, basket=null(NUM), qqq=null(NUM), spy=null(NUM), rs_qqq=null(NUM), rs_qqq_ma50=null(NUM),
+                    rs_spy=null(NUM), rs_spy_ma50=null(NUM))
+BASKET_PRICE = obj(
+    method=E("hold", "monthly"), notional=NUM, provider=STR, source=STR, freq=Const("daily"),
+    prices_as_of=DATE, history_from=DATE, start=DATE, start_binding=Arr(STR, min=1), start_is_first_close=BOOL,
+    end=DATE, sessions=INT, missing_sessions=Arr(DATE), rebalances=INT, total_return=NUM,
+    legs=Arr(obj(symbol=STR, target_weight=FRAC, weight_now=FRAC, first_close=DATE, price_end=NUM, **{"return": NUM},
+                 contribution=NUM, dollars=NUM, adv_usd=null(NUM), adv_window=null(SPAN), days_to_trade=null(NUM)), min=1),
+    concentration=obj(top3_share=FRAC, top3=Arr(STR, min=1, max=3), effective_n=NUM, avg_pairwise_corr=null(NUM),
+                      corr_window=null(SPAN)),
+    liquidity=obj(participation=Const(0.2), adv_sessions=Const(20), basket_days=null(NUM), binding=null(STR)),
+    index=obj(
+        price=NUM, date=DATE, chg_1d=null(NUM), chg_1d_dates=Obj({"from": DATE, "to": DATE}),
+        ret_1y=null(NUM), ret_1y_dates=Obj({"from": DATE, "to": DATE}),
+        ma50=null(NUM), ma200=null(NUM), ma50_window=SPAN, ma200_window=SPAN, vs_ma50=null(NUM), vs_ma200=null(NUM),
+        trend=obj(state=TREND_STATE, state_since=null(DATE)), cross=null(CROSS), crosses=Arr(CROSS),
+        series=obj(**{"6m": Arr(BASKET_POINT), "1y": Arr(BASKET_POINT)}),
+        rsi=null(NUM), rsi_date=null(DATE),
+        drawdown=obj(now=null(NUM), peak_date=DATE, peak=NUM, max=null(NUM), max_date=DATE, max_peak_date=DATE, since=DATE),
+        realized_vol_21d=null(NUM), realized_vol_window=null(SPAN),
+    ),
+    benchmarks=obj(**{k: obj(symbol=STR, label=STR, price=NUM, date=DATE, ret_1y=null(NUM), **REGRESSION_FIELDS)
+                      for k in ("qqq", "spy")}),
+    compare=obj(**{r: obj(base_date=null(DATE), points=Arr(COMPARE_POINT)) for r in ("6m", "1y")}),
+)
+
+
 # ── The routes ──────────────────────────────────────────────────────────────
 
-# The live routes' ready payloads (the nine of §12.1–§12.9, and /sectors since desk/fill-etf).
+# The live routes' ready payloads (the nine of §12.1–§12.9, /sectors since desk/fill-etf, Basket & Hedge's since desk/books).
 ROUTES: dict[str, Obj] = {
     "/overview": OVERVIEW,
     "/study": STUDY,
@@ -423,6 +457,7 @@ ROUTES: dict[str, Obj] = {
     "/macro": MACRO,
     "/pipeline": PIPELINE,
     "/sectors": SECTORS,  # desk/fill-etf (§12.14)
+    "/basket/price": BASKET_PRICE,  # desk/books
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons
@@ -431,7 +466,6 @@ STUBS: dict[str, str] = {
     "/vol": "needs stored SPY option snapshots and a versioned skew method.",
     "/positions": "Positions are kept in this browser; there is no server position store.",
     "/basket": "basket pricing and option structures not yet defined in the engine.",
-    "/basket/price": "basket pricing and option structures not yet defined in the engine.",
     "/hedge": "basket pricing and option structures not yet defined in the engine.",
 }
 
