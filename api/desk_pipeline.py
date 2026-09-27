@@ -123,7 +123,9 @@ def tab_readers() -> dict[str, set[str]]:
         "Overview": set(REGIME_INPUTS) | set(RECESSION_MODEL) | {"^GSPC", "^VIX"} | ledger | set(DATA_STATUS_SERIES),
         "Technicals": {"^GSPC"} | _studies_read(TECHNICALS_STUDIES) | set(LEADERSHIP_SERIES),
         "Event Study": _studies_read(CATALOG_INPUTS),
-        "Regime": set(REGIME_INPUTS) | set(RECESSION_MODEL),   # the rows, the next prints, the recession score
+        # the rows, the next prints, the recession score; the stats and the changes read the S&P's and the
+        # VIX's months (desk/fill-compute)
+        "Regime": set(REGIME_INPUTS) | set(RECESSION_MODEL) | {"^GSPC", "^VIX"},
         "Macro": set(CURVE_SERIES) | set(CREDIT_SERIES) | set(STOCK_BOND_SERIES) | set(CORRELATION_SERIES),
         "Sectors": set(LEADERSHIP_SERIES) | set(BREADTH_SERIES),
         "Ledger": ledger,

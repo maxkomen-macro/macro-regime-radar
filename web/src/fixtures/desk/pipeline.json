@@ -187,6 +187,7 @@
       "Overview",
       "Technicals",
       "Event Study",
+      "Regime",
       "Ledger",
       "Position Monitor"
      ],
@@ -228,7 +229,7 @@
      "feeds": [
       "Overview",
       "Event Study",
-      "Macro",
+      "Regime",
       "Ledger"
      ],
      "status": "current",

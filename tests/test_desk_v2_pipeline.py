@@ -174,6 +174,8 @@ def test_the_feeds_carry_every_real_reader():
         assert "Position Monitor" in pipe.feeds_of(sid) and "Regime" in pipe.feeds_of(sid), sid
     assert pipe.feeds_of("DGS10").count("Ledger") == 0, "no Ledger row reads the 10-year"
     assert all(pipe.feeds_of(sid) == [] for sid in ("^NDX", "^RUT", "JPY=X", *UNREAD_ETFS))
+    # desk/fill-compute: Regime's stats and changes read the S&P's and the VIX's calendar months.
+    assert "Regime" in pipe.feeds_of("^GSPC") and "Regime" in pipe.feeds_of("^VIX")
 
 
 def test_each_row_carries_its_registry_or_raw_series_fields(hermetic, monkeypatch):
