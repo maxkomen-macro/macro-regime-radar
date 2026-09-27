@@ -339,6 +339,14 @@ def _desk_macro(ctx: dict) -> dict:
     return desk_macro(ctx)
 
 
+def _desk_etf(ctx: dict) -> dict:
+    """The Desk's ETF blocks (api/desk_items_etf.py): sector leadership, and
+    the blocks items 3 to 5 of desk/fill-etf add, each a part of its own."""
+    from api.desk_items_etf import desk_etf
+
+    return desk_etf(ctx)
+
+
 def _desk_pipeline(ctx: dict) -> dict:
     """The Desk v2 /pipeline item (api/desk_pipeline.py): every Data Pipeline
     row's dates, provider, feeds and note, and the watermarks its statuses read."""
@@ -371,6 +379,8 @@ ITEMS = [
     ("desk_regime", _desk_regime),
     ("desk_macro", _desk_macro),
     ("desk_pipeline", _desk_pipeline),
+    # desk/fill-etf: the Sectors, Technicals and Macro tabs' ETF blocks, one item (api/desk_items_etf.py)
+    ("desk_etf", _desk_etf),
 ]
 
 

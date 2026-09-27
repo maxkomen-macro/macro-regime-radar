@@ -249,6 +249,7 @@ export function Stat({
   tone = "default",
   size,
   awaiting,
+  why,
 }: {
   label: ReactNode;
   value?: ReactNode;
@@ -257,6 +258,8 @@ export function Stat({
   size?: "xl" | "lg" | "md" | "sm" | "date";
   /** No value served: the label stays, no number (§1.7). */
   awaiting?: boolean;
+  /** The served reason an awaiting value is not computed, printed under "Awaiting refresh" (desk/fill-etf). */
+  why?: ReactNode;
 }) {
   const unserved = useUnserved();
   return (
@@ -268,7 +271,10 @@ export function Stat({
           —
         </div>
       ) : awaiting ? (
-        <div className="dk-stat-await">Awaiting refresh</div>
+        <>
+          <div className="dk-stat-await">Awaiting refresh</div>
+          {why ? <div className="dk-stat-sub">{why}</div> : null}
+        </>
       ) : (
         <>
           <div className="dk-stat-value" data-tone={tone}>

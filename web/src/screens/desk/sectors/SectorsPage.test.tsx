@@ -1,17 +1,20 @@
 /**
- * Sectors (DESK_FRAME3_SPEC §7) against the §12.7 fixture, and §12.7's
- * "series not ingested" answer: all eleven sectors ranked with LEADING,
- * LAGGING and PATTERN; breadth with its two lines and the two rows of dots;
- * and, until the sector ETFs are ingested, both cards keep their labels and
- * say Awaiting refresh.
+ * Sectors (DESK_FRAME3_SPEC §7, §12.14) against the served fixture
+ * (desk/fill-etf: the API's answer on the fixture store, PROVENANCE.md): all
+ * eleven sectors ranked as served with LEADING, LAGGING and PATTERN; a row the
+ * store cannot compute says why ("not available"), never a value; the breadth
+ * block and the whole route, served awaiting, keep their labels and print the
+ * served reason (§1.0.2).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
-import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
+import { deskAwaiting, stubDesk } from "../../../test/desk";
 import sectors from "../../../fixtures/desk/sectors.json";
+import { patternWords, windowLine } from "./SectorsPage";
+import type { SectorPattern, SectorsResponse } from "../data/types";
 
 function renderTab() {
   return renderWithProviders(
@@ -24,165 +27,69 @@ function renderTab() {
 
 const realFetch = globalThis.fetch;
 beforeEach(() => {
-  // The card tests render /sectors served (§12.13's deferred shape); Monday serves it awaiting (tested below).
   stubDesk({ "/api/desk/sectors": () => sectors });
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
+const ORDER = ["XLE", "XLK", "XLV", "XLC", "XLF", "XLB", "XLP", "XLY", "XLRE", "XLI", "XLU"];
+const REFRESH = "Awaiting refresh: the full refresh stores XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY; this database predates it.";
+
 describe("Sectors tab", () => {
-  it("Monday's /sectors answers the awaiting envelope: both cards keep their labels and each prints §7's reason once (§1.0)", async () => {
-    stubDesk();
-    renderTab();
-    const why = "sector ETFs, RSP and IWM not ingested.";
-    await waitFor(() => expect(screen.getAllByText(why)).toHaveLength(2));
-    for (const l of ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"]) expect(document.body).toHaveTextContent(l);
+  it("the fixture is the API's answer: eleven ranked as served, the window dated, breadth its own block", () => {
+    expect(sectors.leadership.map((r) => r.etf)).toEqual(ORDER);
+    expect(sectors.window).toEqual({ start: "2026-06-29", end: "2026-09-23", n: 60 });
+    expect(sectors.pattern.word).toBe("cyclical");
+    expect(sectors.breadth).toEqual({ status: "awaiting", data: null, unavailable: { reason: "breadth is not computed yet.", until: null } });
   });
-  it("leadership: all eleven, ranked, with the leader, the laggard and the pattern", async () => {
+  it("leadership: all eleven, ranked, with the leader, the laggard and the pattern by its rule", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Sector leadership/ });
     const list = await within(card).findByRole("list", { name: /All eleven/ });
-    expect(within(list).getAllByRole("listitem").map((li) => li.textContent?.slice(0, 4))).toEqual(["XLKT", "XLII", "XLFF", "XLCC", "XLYD", "XLEE", "XLBM", "XLRE", "XLVH", "XLPS", "XLUU"]);
-    expect(card).toHaveTextContent(/Leading\s*Technology\s*\+6\.1% vs the index/);
-    expect(card).toHaveTextContent(/Lagging\s*Utilities\s*−4\.8% vs the index/);
-    // §12.13's shape serves no pattern word and §12.0 no read without a rule: the label stays, nothing is made up.
-    expect(card).toHaveTextContent(/Pattern\s*Awaiting refresh/);
+    expect(within(list).getAllByRole("listitem").map((li) => li.querySelector(".dk-rank-ticker")?.textContent)).toEqual(ORDER);
+    expect(card).toHaveTextContent(/Leading\s*Energy\s*\+12\.0% vs the index/);
+    expect(card).toHaveTextContent(/Lagging\s*Utilities\s*−17\.7% vs the index/);
+    expect(card).toHaveTextContent(/Pattern\s*Cyclical\s*cyclical sectors ahead of defensives by 5\.2%/);
+    // §1.9: a log fraction prints ×100 with its hover text; the window says what the bars measure.
+    expect(within(list).getAllByTitle("log return, ×100")).toHaveLength(11);
+    expect(card).toHaveTextContent("60 sessions to Sep 23 (from Jun 29) · log returns ×100 · SPY +3.8% over the same sessions");
+    // §12.0: no read without a rule.
     expect(card).not.toHaveTextContent("Read:");
   });
-  it("breadth: the three stats, the two lines and the dots", async () => {
+  it("the badge dates the served comparison session and names the served provider (§1.6)", async () => {
     renderTab();
-    const card = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(card).toHaveTextContent("7 of 11"));
-    // §12.13: breadth serves its comparison date; no month-ago count and no words.
-    expect(card).toHaveTextContent(/Above 50-day\s*7 of 11\s*sectors · on Sep 23/);
-    expect(card).toHaveTextContent(/Above 200-day\s*9 of 11\s*sectors/);
-    expect(card).toHaveTextContent(/Equal vs cap weight\s*−2\.4%\s*3 months/);
-    expect(within(card).getByRole("img", { name: /Average stock vs the index · one year: −2\.4% on Sep 22/ })).toBeInTheDocument();
-    // D13: the chart's right end names the served day, not "today" (the fixture is Sep 22).
-    expect(within(card).getAllByText("Sep 22").length).toBeGreaterThan(0);
-    expect(within(card).getByRole("img", { name: /Small caps vs large/ })).toBeInTheDocument();
-    const above50 = within(card).getByRole("list", { name: "Which sectors are above their 50-day" });
-    const lit = (l: HTMLElement) => within(l).getAllByRole("listitem").filter((li) => li.getAttribute("data-state") === "on");
-    expect(lit(above50)).toHaveLength(7);
-    expect(lit(above50).map((li) => li.textContent)).toEqual(["Techabove", "Indabove", "Finabove", "Commabove", "Discabove", "Enrgabove", "REabove"]);
-    const above200 = within(card).getByRole("list", { name: "Which sectors are above their 200-day" });
-    expect(lit(above200)).toHaveLength(9);
-    expect(card).toHaveTextContent("Measured from sector ETFs; stock-level breadth needs constituent data that is not ingested yet.");
+    await waitFor(() => expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Live · Yahoo · Sep 23"));
   });
-  it("§12.7's 'series not ingested' leaves both cards awaiting with their labels", async () => {
-    stubDesk({ "/api/desk/sectors": deskError(503, "series not ingested", { missing: ["XLK", "RSP", "IWM"] }) });
+  it("a row the store cannot compute says why and ranks last; the leader and laggard are the served ends (S-4)", async () => {
+    const reason = "no close on 2026-06-29: its history starts 2026-08-01";
+    const rows = [...sectors.leadership.filter((r) => r.etf !== "XLE"), { ...sectors.leadership[0], rel_ret: null, ret: null, reason }];
+    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, leadership: rows, pattern: { ...sectors.pattern, word: null, spread: null, reason: "XLE not served, so the groups cannot be compared." } }) });
     renderTab();
     const lead = await screen.findByRole("region", { name: /Sector leadership/ });
-    await waitFor(() => expect(lead).toHaveTextContent("Awaiting refresh"));
-    expect(lead).toHaveTextContent("Leading");
-    expect(lead).not.toHaveTextContent("Technology");
-    const breadth = screen.getByRole("region", { name: /Breadth/ });
-    expect(breadth).toHaveTextContent("Above 50-day");
-    expect(breadth).not.toHaveTextContent("7 of 11");
-    expect(lead).toHaveTextContent("Awaiting refresh · the sector ETFs are not ingested yet");
-    expect(breadth).toHaveTextContent("Awaiting refresh · the sector ETFs are not ingested yet");
+    await waitFor(() => expect(lead).toHaveTextContent(/Leading\s*Technology/));
+    expect(lead).toHaveTextContent(/Lagging\s*Utilities/);
+    const items = within(within(lead).getByRole("list", { name: /All eleven/ })).getAllByRole("listitem");
+    expect(items[10]).toHaveTextContent(`XLEEnergynot available · ${reason}`);
+    expect(items[10]).not.toHaveTextContent("%");
+    expect(lead).toHaveTextContent(/Pattern\s*Awaiting refresh\s*XLE not served, so the groups cannot be compared\./);
+  });
+  it("breadth is its own block: served awaiting, its card keeps its labels and prints the reason once", async () => {
+    renderTab();
+    // The card is replaced by its unserved form once the answer arrives: read it after that.
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Breadth/ })).toHaveTextContent("breadth is not computed yet."));
+    const breadth = screen.getByRole("region", { name: /^Breadth/ });
+    expect(within(breadth).getAllByText("breadth is not computed yet.")).toHaveLength(1);
+    for (const l of ["Above 50-day", "Above 200-day", "Equal vs cap weight"]) expect(breadth).toHaveTextContent(new RegExp(l, "i"));
+    expect(within(breadth).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(within(breadth).getByTestId("dk-advanced")).toBeDisabled();
+    // The leadership card stands beside it.
+    expect(screen.getByRole("region", { name: /Sector leadership/ })).toHaveTextContent("Energy");
   });
   it("names each card by its title and subtitle", async () => {
     renderTab();
     expect(await screen.findByRole("region", { name: "Sector leadership 3-month return relative to the S&P · all eleven" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Breadth is the rally wide or narrow?" })).toBeInTheDocument();
-  });
-  it("the page picks no words and no colors of its own: the counts are plain, equal weight's color is its sign (§12.13, §1.3)", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, eqw_vs_cap_3m: 0.012 } }) });
-    renderTab();
-    const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(within(breadth).getByText("+1.2%")).toHaveAttribute("data-tone", "up"));
-    expect(within(breadth).getByText("7 of 11")).toHaveAttribute("data-tone", "default");
-    expect(within(breadth).getByText("9 of 11")).toHaveAttribute("data-tone", "default");
-    expect(breadth).toHaveTextContent(/Equal vs cap weight\s*\+1\.2%\s*3 months/);
-  });
-  it("the fixture's colors: equal weight down; the counts carry none", async () => {
-    renderTab();
-    const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(within(breadth).getByText("−2.4%")).toHaveAttribute("data-tone", "down"));
-    expect(within(breadth).getByText("7 of 11")).toHaveAttribute("data-tone", "default");
-  });
-  it("a 200 answer carrying the not-ingested error says why on both cards", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ error: "series not ingested", missing: ["XLK"] }) });
-    renderTab();
-    const lead = await screen.findByRole("region", { name: /Sector leadership/ });
-    await waitFor(() => expect(lead).toHaveTextContent("Awaiting refresh · the sector ETFs are not ingested yet"));
-    expect(screen.getByRole("region", { name: /Breadth/ })).toHaveTextContent("Awaiting refresh · the sector ETFs are not ingested yet");
-  });
-  it("the leader and laggard are the served first and last rows; a null one says Awaiting refresh (S-4)", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, leadership: sectors.leadership.map((r) => (r.etf === "XLK" ? { ...r, rel_ret: null } : r)) }) });
-    renderTab();
-    const lead = await screen.findByRole("region", { name: /Sector leadership/ });
-    await waitFor(() => expect(lead).toHaveTextContent(/Leading\s*Awaiting refresh/));
-    expect(lead).not.toHaveTextContent(/Leading\s*Industrials/);
-    const items = within(within(lead).getByRole("list", { name: /All eleven/ })).getAllByRole("listitem");
-    expect(items[0]).toHaveTextContent(/XLK\s*Technology\s*Awaiting refresh/);
-  });
-  it("without the leadership block, the served breadth still shows; the dots follow the map's keys (S-3)", async () => {
-    const { leadership: _l, ...rest } = sectors;
-    void _l;
-    stubDesk({ "/api/desk/sectors": () => rest });
-    renderTab();
-    const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(breadth).toHaveTextContent(/Above 50-day\s*7 of 11/));
-    const dots = within(breadth).getByRole("list", { name: "Which sectors are above their 50-day" });
-    expect(within(dots).getAllByRole("listitem")[0]).toHaveTextContent("XLK");
-    expect(screen.getByRole("region", { name: /Sector leadership/ })).toHaveTextContent(/Leading\s*Awaiting refresh/);
-  });
-  it("equal weight's window is its own three months, whatever the leadership window (S-6)", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, window_months: 6 }) });
-    renderTab();
-    const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(breadth).toHaveTextContent(/Equal vs cap weight\s*−2\.4%\s*3 months/));
-    expect(screen.getByRole("region", { name: /Sector leadership/ })).toHaveTextContent("6-month return relative to the S&P");
-  });
-  it("a dot the map does not serve is a ring, not a gray 'below'; a null comparison date drops only its clause (S-7)", async () => {
-    const { XLU: _u, ...partial } = sectors.breadth.above_50.by_etf;
-    void _u;
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, above_50: { ...sectors.breadth.above_50, by_etf: partial, compared_on: null } } }) });
-    renderTab();
-    const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    const dots = await within(breadth).findByRole("list", { name: "Which sectors are above their 50-day" });
-    const util = within(dots).getAllByRole("listitem")[10];
-    expect(util).toHaveAttribute("data-state", "unknown");
-    expect(util).toHaveTextContent("not served");
-    expect(breadth).toHaveTextContent(/Above 50-day\s*7 of 11\s*sectors(?! · on)/);
-  });
-  it("the ±5% axis steps to ±15% for a wider series", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, eqw_vs_cap_series: sectors.breadth.eqw_vs_cap_series.map((p, i) => (i === 100 ? { ...p, rel: 0.12 } : p)) } }) });
-    renderTab();
-    const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(within(breadth).getByText("+15%")).toBeInTheDocument());
-  });
-  it("§7's gray note stands, and no read is drawn: none is served (§12.0, S-11)", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors }) });
-    renderTab();
-    const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(breadth).toHaveTextContent("Measured from sector ETFs; stock-level breadth needs constituent data that is not ingested yet."));
-  });
-  it("a sector without a value keeps its row and says so; absent breadth keeps its labels", async () => {
-    const { breadth: _b, ...rest } = sectors;
-    void _b;
-    stubDesk({ "/api/desk/sectors": () => ({ ...rest, leadership: sectors.leadership.map((r) => (r.etf === "XLE" ? { ...r, rel_ret: null } : r)) }) });
-    renderTab();
-    const lead = await screen.findByRole("region", { name: /Sector leadership/ });
-    const list = await within(lead).findByRole("list", { name: /All eleven/ });
-    const items = within(list).getAllByRole("listitem");
-    expect(items).toHaveLength(11);
-    expect(items[5]).toHaveTextContent(/XLE\s*Energy\s*Awaiting refresh/);
-    const breadth = screen.getByRole("region", { name: /Breadth/ });
-    expect(breadth).toHaveTextContent(/Above 50-day\s*Awaiting refresh/);
-    expect(breadth).toHaveTextContent(/Equal vs cap weight\s*Awaiting refresh/);
-    expect(breadth).not.toHaveTextContent("narrowing. The index");
-  });
-  it("empty series and a missing dots map keep their labels and say Awaiting refresh", async () => {
-    stubDesk({ "/api/desk/sectors": () => ({ ...sectors, breadth: { ...sectors.breadth, eqw_vs_cap_series: [], small_vs_large_series: [], above_200: { n: 9, of: 11 } } }) });
-    renderTab();
-    const breadth = await screen.findByRole("region", { name: /Breadth/ });
-    await waitFor(() => expect(breadth).toHaveTextContent(/Average stock vs the index · one year\s*Awaiting refresh/));
-    expect(breadth).toHaveTextContent(/Small caps vs large · Russell 2000 against the S&P · one year\s*Awaiting refresh/);
-    expect(breadth).toHaveTextContent(/…and their 200-day\s*Awaiting refresh/);
   });
   it("while loading, both cards are busy and neither says Awaiting refresh (D14)", async () => {
     stubDesk({ "/api/desk/sectors": () => new Promise(() => {}) });
@@ -193,21 +100,36 @@ describe("Sectors tab", () => {
   });
 });
 
+describe("the pattern words and the window line (§12.14)", () => {
+  const p = (word: SectorPattern["word"], spread: number | null): SectorPattern => ({ ...(sectors.pattern as SectorPattern), word, spread });
+  it("each word with its sub-line from the served spread; nothing without a word", () => {
+    expect(patternWords(p("cyclical", 0.0516))).toEqual({ value: "Cyclical", sub: "cyclical sectors ahead of defensives by 5.2%" });
+    expect(patternWords(p("defensive", -0.031))).toEqual({ value: "Defensive", sub: "defensives ahead of cyclical sectors by 3.1%" });
+    expect(patternWords(p("mixed", 0.004))).toEqual({ value: "Mixed", sub: "neither group ahead by more than 1%" });
+    expect(patternWords(p(null, null))).toBeNull();
+    expect(patternWords(undefined)).toBeNull();
+  });
+  it("the window line reads the served window and SPY's own return", () => {
+    expect(windowLine(sectors as unknown as SectorsResponse)).toBe("60 sessions to Sep 23 (from Jun 29) · log returns ×100 · SPY +3.8% over the same sessions");
+    expect(windowLine({ ...(sectors as unknown as SectorsResponse), window: undefined })).toBe("");
+  });
+});
+
 describe("a route served awaiting (§12.0, §1.0.2)", () => {
-  it("both cards keep their labels, print the served reason once each, and say Not yet served", async () => {
-    stubDesk({ "/api/desk/sectors": deskAwaiting("sector ETFs, RSP and IWM not ingested.") });
+  it("before the refresh stores the ETFs: both cards keep their labels, print the reason once each, and say Awaiting refresh", async () => {
+    stubDesk({ "/api/desk/sectors": deskAwaiting(REFRESH) });
     renderTab();
     const lead = await screen.findByRole("region", { name: /^Sector leadership/ });
-    await waitFor(() => expect(lead).toHaveTextContent("sector ETFs, RSP and IWM not ingested."));
+    await waitFor(() => expect(lead).toHaveTextContent(REFRESH));
     const breadth = screen.getByRole("region", { name: /^Breadth/ });
     for (const [card, labels] of [
       [lead, ["Leading", "Lagging", "Pattern"]],
       [breadth, ["Above 50-day", "Above 200-day", "Equal vs cap weight"]],
     ] as const) {
       for (const l of labels) expect(card).toHaveTextContent(new RegExp(l, "i"));
-      expect(within(card).getAllByText("sector ETFs, RSP and IWM not ingested.")).toHaveLength(1);
-      expect(card).not.toHaveTextContent("Awaiting refresh");
+      expect(within(card).getAllByText(REFRESH)).toHaveLength(1);
     }
-    expect(screen.getAllByTestId("dk-live").map((b) => b.textContent)).toContain("Not yet served");
+    // §1.7: a reason that begins "Awaiting refresh" badges as such.
+    expect(screen.getAllByTestId("dk-live").map((b) => b.textContent)).toContain("Awaiting refresh");
   });
 });

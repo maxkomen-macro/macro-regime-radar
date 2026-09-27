@@ -93,11 +93,6 @@ def _now() -> datetime:
 # ── §12.13 deferred stubs: GET-only, awaiting at once ───────────────────────
 # /basket/price is declared before /basket/{basket_id}, which would match it.
 
-@router.get("/sectors")
-def desk_sectors() -> Response:
-    return _response(env.deferred("/sectors"))
-
-
 @router.get("/vol")
 def desk_vol() -> Response:
     return _response(env.deferred("/vol"))
@@ -234,6 +229,12 @@ def desk_ledger(request: Request) -> Response:
 def desk_technicals(request: Request) -> Response:
     params = list(request.query_params.multi_items())
     return _response(env.answer("/technicals", lambda: technicals_answer(params)))
+
+
+@router.get("/sectors")
+def desk_sectors(request: Request) -> Response:
+    params = list(request.query_params.multi_items())
+    return _response(env.answer("/sectors", lambda: sectors_answer(params)))
 
 
 @router.get("/overview")
@@ -470,8 +471,38 @@ def technicals_answer(params: list[tuple[str, str]]) -> dict:
     sigma, sigma_date = move_20d()
     out = {**item, "freq": "daily", "source": SPX_SOURCE, "move_20d_sigma": sigma, "move_20d_date": sigma_date,
            "signals_allowlist": list(catalog.TECHNICALS_ALLOWLIST),
-           "vol": env.block_deferred("/technicals", "vol"), "sectors": env.block_deferred("/technicals", "sectors")}
+           "vol": env.block_deferred("/technicals", "vol"),
+           # desk/fill-etf: the sector leadership /sectors serves, from the same item (§12.7, §12.14)
+           "sectors": etf_block("/technicals", "sectors", "sectors")}
     return {k: out[k] for k in TECHNICALS_KEYS}
+
+
+# ── §12.14 GET /sectors (desk/fill-etf) ─────────────────────────────────────
+
+def etf_block(route: str, path: str, part: str) -> dict:
+    """One part of the desk_etf item as a block of `route`: ready with its
+    data, awaiting with the reason it was refused on this generation, and
+    awaiting with the S-27 sentence when the item itself failed, so the rest
+    of the answer stands (§12.0)."""
+    def data() -> Any:
+        value = _result("desk_etf")[part]
+        if not value.get("ok"):
+            raise env.Awaiting(value["reason"])
+        return value["data"]
+
+    return env.block_from(route, path, data)
+
+
+def sectors_answer(params: list[tuple[str, str]]) -> dict:
+    """§12.14: the leadership part of the desk_etf item, with breadth as its
+    own block; the route is awaiting, with the reason, when leadership could
+    not be computed on this generation (the ETFs not stored yet)."""
+    if params:
+        raise env.Unsupported(f"{params[0][0]} is not a parameter of /sectors.")
+    value = _result("desk_etf")["sectors"]
+    if not value.get("ok"):
+        raise env.Awaiting(value["reason"])
+    return {**value["data"], "breadth": env.block_deferred("/sectors", "breadth")}
 
 
 # ── §12.5 GET /ledger ───────────────────────────────────────────────────────

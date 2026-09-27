@@ -25,12 +25,13 @@ from tests import desk_contract as dc
 ROOT = Path(__file__).resolve().parent.parent
 WEB_SRC = Path(os.environ.get("DESK_WEB_SRC", ROOT / "web" / "src"))
 FIXTURES = WEB_SRC / "fixtures" / "desk"
-LIVE = ("/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline")
+LIVE = ("/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline",
+        "/sectors")  # /sectors served since desk/fill-etf (§12.14)
 
 
 def test_the_contract_covers_every_enveloped_route():
-    assert tuple(dc.ROUTES) == LIVE == env.ENVELOPED_ROUTES[:9]
-    assert tuple(dc.STUBS) == env.ENVELOPED_ROUTES[9:]
+    assert tuple(dc.ROUTES) == LIVE == env.ENVELOPED_ROUTES[:10]
+    assert tuple(dc.STUBS) == env.ENVELOPED_ROUTES[10:]
 
 
 def test_the_block_paths_read_off_the_tables_are_section_12_0s():
@@ -242,7 +243,8 @@ def test_fractions_and_integers_are_what_they_say():
 
 FIXTURE_FILES = {"/overview": "overview.json", "/study": "study.json", "/study/catalog": "study-catalog.json",
                  "/study/events": "study-events.json", "/ledger": "ledger.json", "/regime": "regime.json",
-                 "/technicals": "technicals.json", "/macro": "macro.json", "/pipeline": "pipeline.json"}
+                 "/technicals": "technicals.json", "/macro": "macro.json", "/pipeline": "pipeline.json",
+                 "/sectors": "sectors.json"}  # desk/fill-etf
 
 
 def _wire(route: str, payload: dict) -> dict:

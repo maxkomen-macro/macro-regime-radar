@@ -551,14 +551,34 @@ export interface VolResponse extends Envelope {
   dates?: Record<string, string>;
 }
 
-// ── §12.7 /sectors ────────────────────────────────────────────────────────
+// ── §12.14 /sectors (desk/fill-etf) ───────────────────────────────────────
 
 export interface SectorRow {
   etf: string;
   name: string;
-  /** PROPOSED (§12.13): a four-letter name for the bars and dots ("Tech", "Stpl"). */
+  /** A four-letter name for the bars and dots ("Tech", "Stpl"). */
   short?: string;
+  /** The pattern rule's group; null for XLC and XLRE, which it leaves out. */
+  group?: "cyclical" | "defensive" | null;
+  /** 60-session log return less SPY's (a log fraction; §1.9 prints it ×100 as a log-return percentage). */
   rel_ret: number | null;
+  /** The ETF's own 60-session log return. */
+  ret?: number | null;
+  /** Its first stored close. */
+  first?: string | null;
+  /** Why `rel_ret` is null ("no close on …: its history starts …"), else null. */
+  reason?: string | null;
+}
+
+/** `sector-pattern-v1` (§12.14): the cyclical group's mean `rel_ret` less the defensive group's, and its word by a ±`band` rule. */
+export interface SectorPattern {
+  rule: string;
+  band: number;
+  cyclicals: string[];
+  defensives: string[];
+  word: "cyclical" | "defensive" | "mixed" | null;
+  spread: number | null;
+  reason: string | null;
 }
 
 export interface RelPoint {
@@ -568,7 +588,19 @@ export interface RelPoint {
 
 export interface SectorsResponse extends Envelope {
   window_months: number | null;
+  /** The 60 XNYS sessions the returns span. */
+  window?: Window;
+  compared_on?: string;
+  unit?: string;
+  band?: number;
+  benchmark?: { etf: string; name: string; ret: number | null };
   leadership?: SectorRow[];
+  pattern?: SectorPattern;
+  date?: string;
+  freq?: string;
+  source?: string;
+  /** The providers of the rows read, in words ("Yahoo", "EODHD"). */
+  providers?: string[];
   breadth?: {
     /** §12.13: breadth serves its comparison date. */
     above_50: { n: number | null; of: number | null; compared_on: string | null; by_etf?: Record<string, boolean> };

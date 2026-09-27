@@ -50,3 +50,166 @@ def test_every_etf_is_a_row_of_the_data_pipeline_inventory():
     assert groups["Sector ETFs"] == SECTORS
     assert set(groups["Equity ETFs"]) | set(groups["Bond, gold & dollar ETFs"]) == set(OTHERS)
     assert set(ETFS) <= set(pipe.row_ids())
+
+
+# ── Item 2: sector leadership (§12.14; /sectors and /technicals' sectors block) ──
+
+import math  # noqa: E402
+import os  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from api import analytics_cache, db, desk_items_etf as etf  # noqa: E402
+from api.main import app  # noqa: E402
+from tests import desk_contract as dc  # noqa: E402
+from tests import desk_etf_store as store  # noqa: E402
+from tests.test_desk_v2_study import _serve  # noqa: E402
+from tests.test_event_study import _synthetic_db  # noqa: E402
+
+client = TestClient(app)
+ITEMS = [(n, f) for n, f in analytics_cache.ITEMS
+         if n in ("desk_etf", "desk_technicals", "desk_study:spx-20d-2sigma", "desk_study:golden-cross", "desk_study:death-cross")]
+ALLOCATION_ETFS = ("SPY", "IWM", "IEF", "LQD", "HYG", "GLD")  # the ones the allocation refresh stored before desk/fill-etf
+
+
+def _db(tmp_path: Path, name: str = "macro_radar.db", **kw) -> Path:
+    return store.add_etfs(_synthetic_db(tmp_path / name), **kw)
+
+
+def _item(monkeypatch, path: Path) -> dict:
+    """The desk_etf item built on `path` directly (no generation)."""
+    monkeypatch.setattr(db, "DB_PATH", path)
+    return etf.desk_etf({})
+
+
+def _expected(path: Path) -> tuple[str, str, dict[str, float | None]]:
+    c = store.closes(path)
+    days = store.sessions()
+    t = max(c["SPY"])
+    t0 = days[days.index(t) - 60]
+    spy = math.log(c["SPY"][t] / c["SPY"][t0])
+    rel = {}
+    for s in store.SECTORS:
+        p = c.get(s, {})
+        rel[s] = math.log(p[t] / p[t0]) - spy if t in p and t0 in p else None
+    return t, t0, rel
+
+
+def test_leadership_is_each_sectors_60_session_log_return_less_spys(tmp_path, monkeypatch):
+    path = _db(tmp_path)
+    t, t0, rel = _expected(path)
+    part = _item(monkeypatch, path)["sectors"]
+    assert part["ok"], part
+    d = part["data"]
+    assert (d["compared_on"], d["window"], d["window_months"], d["unit"]) == (t, {"start": t0, "end": t, "n": 60}, 3, "log_return")
+    rows = d["leadership"]
+    assert [r["etf"] for r in rows] == sorted(rel, key=lambda s: -rel[s])  # best first
+    for r in rows:
+        assert r["rel_ret"] == pytest.approx(rel[r["etf"]], abs=1e-12), r["etf"]
+        assert r["reason"] is None
+    assert d["providers"] == ["Yahoo"] and d["source"] == "asset_prices" and d["date"] == t
+
+
+def test_a_short_history_or_a_gap_is_null_with_its_reason_and_ranked_last(tmp_path, monkeypatch):
+    """XLC listed within the window (as it would be for a window before June
+    2018) and XLE without its latest close: each is null with the reason, never
+    a value, and ranked after every served row; the pattern, which reads XLE,
+    is not computed; XLC is in neither group."""
+    days = store.sessions()
+    probe = _db(tmp_path, "probe.db")
+    t = max(store.closes(probe)["SPY"])
+    i = days.index(t)
+    path = _db(tmp_path, starts={"XLC": days[i - 30]}, drop={"XLE": (t,)})
+    d = _item(monkeypatch, path)["sectors"]["data"]
+    rows = {r["etf"]: r for r in d["leadership"]}
+    assert rows["XLC"]["rel_ret"] is None and rows["XLC"]["reason"] == f"no close on {days[i - 60]}: its history starts {days[i - 30]}"
+    assert rows["XLE"]["rel_ret"] is None and rows["XLE"]["reason"] == f"no close stored for {t}"
+    assert [r["etf"] for r in d["leadership"][-2:]] == ["XLC", "XLE"]
+    assert all(r["rel_ret"] is not None for r in d["leadership"][:-2])
+    assert d["pattern"]["word"] is None and d["pattern"]["spread"] is None
+    assert d["pattern"]["reason"] == "XLE not served, so the groups cannot be compared."
+
+
+def test_a_spread_of_exactly_the_band_is_mixed(monkeypatch):
+    """The rule is strict both ways; 0.5 keeps the arithmetic exact in binary."""
+    monkeypatch.setattr(etf, "BAND", 0.5)
+    rows = ([{"etf": s, "group": "cyclical", "rel_ret": 0.5} for s in ("XLB", "XLE", "XLF", "XLI", "XLK", "XLY")]
+            + [{"etf": s, "group": "defensive", "rel_ret": 0.0} for s in ("XLP", "XLU", "XLV")])
+    assert etf.pattern(rows)["spread"] == 0.5 and etf.pattern(rows)["word"] == "mixed"
+    rows = [{**r, "rel_ret": -r["rel_ret"]} for r in rows]
+    assert etf.pattern(rows)["word"] == "mixed"
+
+
+def test_the_pattern_rule_names_its_groups_and_its_band():
+    def rows(cyc: float, dfn: float) -> list[dict]:
+        return ([{"etf": s, "group": "cyclical", "rel_ret": cyc} for s in ("XLB", "XLE", "XLF", "XLI", "XLK", "XLY")]
+                + [{"etf": s, "group": "defensive", "rel_ret": dfn} for s in ("XLP", "XLU", "XLV")]
+                + [{"etf": "XLC", "group": None, "rel_ret": None}, {"etf": "XLRE", "group": None, "rel_ret": 0.5}])
+
+    assert etf.pattern(rows(0.02, 0.0))["word"] == "cyclical"
+    assert etf.pattern(rows(-0.02, 0.0))["word"] == "defensive"
+    assert etf.pattern(rows(0.005, 0.0))["word"] == "mixed"
+    assert etf.pattern(rows(0.0, 0.02))["word"] == "defensive"
+    p = etf.pattern(rows(0.03, 0.01))
+    assert p["spread"] == pytest.approx(0.02) and p["cyclicals"] == ["XLB", "XLE", "XLF", "XLI", "XLK", "XLY"]
+    assert p["defensives"] == ["XLP", "XLU", "XLV"] and p["rule"] == "sector-pattern-v1" and p["band"] == 0.01
+
+
+def test_sectors_and_the_technicals_card_serve_one_leadership(tmp_path, install_worker, monkeypatch):
+    path = _db(tmp_path)
+    _serve(install_worker, monkeypatch, path, items=ITEMS)
+    s = dc.check_response("/sectors", client.get("/api/desk/sectors"))
+    assert s["status"] == "ready"
+    t = dc.check_response("/technicals", client.get("/api/desk/technicals"))
+    block = t["data"]["sectors"]
+    assert block["status"] == "ready"
+    assert block["data"] == {k: v for k, v in s["data"].items() if k != "breadth"}
+    assert s["data"]["breadth"] == {"status": "awaiting", "data": None, "unavailable": {"reason": "breadth is not computed yet.", "until": None}}
+    assert s["generation_id"] == t["generation_id"]
+    assert client.get("/api/desk/sectors?window=3").status_code == 422
+
+
+def test_before_the_refresh_stores_them_sectors_awaits_it_and_technicals_stands(tmp_path, install_worker, monkeypatch):
+    """A published database that predates the first full refresh after this
+    change holds SPY and the other allocation ETFs but no sector ETF: /sectors
+    is awaiting that refresh, in words that begin "Awaiting refresh", and
+    /technicals serves everything else with its sectors block awaiting."""
+    path = _db(tmp_path, only=ALLOCATION_ETFS)
+    _serve(install_worker, monkeypatch, path, items=ITEMS)
+    s = dc.check_response("/sectors", client.get("/api/desk/sectors"))
+    reason = "Awaiting refresh: the full refresh stores " + ", ".join(store.SECTORS) + "; this database predates it."
+    assert s["status"] == "awaiting" and s["unavailable"] == {"reason": reason, "until": None}
+    t = dc.check_response("/technicals", client.get("/api/desk/technicals"))
+    assert t["status"] == "ready" and t["data"]["price"] is not None
+    assert t["data"]["sectors"] == {"status": "awaiting", "data": None, "unavailable": {"reason": reason, "until": None}}
+
+
+ETF_STORE = os.environ.get("DESK_ETF_STORE")  # the fixture store scripts/desk_etf_fixtures.py builds
+
+
+@pytest.mark.skipif(not ETF_STORE or not Path(ETF_STORE).exists(), reason="DESK_ETF_STORE (the fixture store) is not set")
+def test_the_web_fixtures_are_what_the_api_serves_on_the_fixture_store(install_worker, monkeypatch):
+    """web/src/fixtures/desk/sectors.json and technicals.json's sectors block are
+    the API's answers on the fixture store (PROVENANCE.md), value for value."""
+    import json
+
+    fixtures = Path(__file__).resolve().parent.parent / "web" / "src" / "fixtures" / "desk"
+    _serve(install_worker, monkeypatch, Path(ETF_STORE), items=ITEMS)
+    served = client.get("/api/desk/sectors").json()["data"]
+    fixture = json.loads((fixtures / "sectors.json").read_text())
+    assert {k: v for k, v in fixture.items() if k not in ("as_of", "generation_id")} == served
+    tech = json.loads((fixtures / "technicals.json").read_text())
+    assert tech["sectors"] == client.get("/api/desk/technicals").json()["data"]["sectors"]
+
+
+def test_the_pipeline_says_which_tabs_read_the_leadership_series():
+    """The Data Pipeline's feeds (api/desk_pipeline.tab_readers) name what the
+    ETF item reads: SPY and the eleven sector ETFs feed Sectors and Technicals."""
+    from src.desk import series as registry
+
+    assert set(pipe.LEADERSHIP_SERIES) == {registry.get(k).series_id for k in (etf.BENCHMARK, *etf.SECTOR_KEYS)}
+    for sym in pipe.LEADERSHIP_SERIES:
+        assert {"Technicals", "Sectors"} <= set(pipe.feeds_of(sym)), sym
+        assert sym not in pipe.NO_LIVE_READER, sym

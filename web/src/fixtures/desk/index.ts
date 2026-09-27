@@ -13,6 +13,7 @@ import ledger from "./ledger.json" with { type: "json" };
 import macro from "./macro.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
 import pipeline from "./pipeline.json" with { type: "json" };
+import sectors from "./sectors.json" with { type: "json" };
 import { PIPELINE_DDL } from "./pipeline-ddl";
 import regime from "./regime.json" with { type: "json" };
 import studyCatalog from "./study-catalog.json" with { type: "json" };
@@ -56,6 +57,8 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
   "/macro": macro,
   "/pipeline": pipeline,
   "/study/catalog": studyCatalog,
+  // desk/fill-etf: served since §12.14, from the API's answer on the fixture store (PROVENANCE.md)
+  "/sectors": sectors,
 };
 
 const CATALOG = (studyCatalog as { studies: CatalogStudy[] }).studies;
@@ -85,11 +88,11 @@ function catalogAsk(u: URL): { study: CatalogStudy | null; question: Question | 
 }
 
 /** The deferred resources of §12.13 that are GET-only stubs on Monday (§12.0): each answers the awaiting
- * envelope with §1.0's reason. The shapes Monday's pages still render once served (vol.json,
- * sectors.json) stay for their unit tests; basket, price and hedge have no page that reads them. */
+ * envelope with §1.0's reason. The vol shape Monday's page still renders once served (vol.json)
+ * stays for its unit tests; basket, price and hedge have no page that reads them. /sectors is
+ * served since desk/fill-etf (§12.14). */
 const DEFERRED: Readonly<Record<string, string>> = {
   "/vol": "needs stored SPY option snapshots and a versioned skew method.",
-  "/sectors": "sector ETFs, RSP and IWM not ingested.",
   // §9, §12.3's served reasons (S-17): positions are kept in the browser (v2 D-21).
   "/positions": "Positions are kept in this browser; there is no server position store.",
   // §10, §12.3's served reasons (S-17): basket pricing and option structures (v2 D-25–D-28).

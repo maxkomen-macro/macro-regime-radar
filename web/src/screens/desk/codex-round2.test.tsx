@@ -135,7 +135,7 @@ describe("R-16: rows the boundary drops are said; no total and no 'none' is read
     const lead = await screen.findByRole("region", { name: /Sector leadership/ });
     await waitFor(() => expect(lead).toHaveTextContent("1 sector could not be read."));
     expect(lead).toHaveTextContent(/Leading\s*Awaiting refresh/);
-    expect(lead).not.toHaveTextContent(/Leading\s*Industrials/);
+    expect(lead).not.toHaveTextContent(/Leading\s*Technology/);
   });
 });
 

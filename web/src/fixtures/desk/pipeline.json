@@ -385,9 +385,12 @@
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Communication Services sector ETF (XLC)",
@@ -397,9 +400,12 @@
      "freq": "daily",
      "first": "2018-06-19",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Launched June 2018: stored from 2018-06-19, so a statistic that needs an earlier close is not available for it. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Launched June 2018: stored from 2018-06-19, so a statistic that needs an earlier close is not available for it."
     },
     {
      "label": "Energy sector ETF (XLE)",
@@ -409,9 +415,12 @@
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Financials sector ETF (XLF)",
@@ -421,9 +430,12 @@
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Industrials sector ETF (XLI)",
@@ -433,9 +445,12 @@
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Technology sector ETF (XLK)",
@@ -445,9 +460,12 @@
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Consumer Staples sector ETF (XLP)",
@@ -457,9 +475,12 @@
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Real Estate sector ETF (XLRE)",
@@ -469,9 +490,12 @@
      "freq": "daily",
      "first": "2015-10-08",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Launched October 2015: stored from 2015-10-08, so a statistic that needs an earlier close is not available for it. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Launched October 2015: stored from 2015-10-08, so a statistic that needs an earlier close is not available for it."
     },
     {
      "label": "Utilities sector ETF (XLU)",
@@ -481,9 +505,12 @@
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Health Care sector ETF (XLV)",
@@ -493,9 +520,12 @@
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Consumer Discretionary sector ETF (XLY)",
@@ -505,9 +535,12 @@
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
     }
    ]
   },
@@ -523,9 +556,12 @@
      "freq": "daily",
      "first": "1993-01-29",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
      "status": "current",
-     "note": "Stored from 1993-01-29 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership, breadth and the correlations are not served."
+     "note": "Stored from 1993-01-29 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "S&P 500 equal weight ETF (RSP)",
@@ -537,7 +573,7 @@
      "last": "2026-09-23",
      "feeds": [],
      "status": "current",
-     "note": "Stored from 2003-05-01 (asset_prices), with each session's volume. No Desk tab reads it yet: sector leadership and breadth are not served."
+     "note": "Stored from 2003-05-01 (asset_prices), with each session's volume. No Desk tab reads it yet: breadth is not served."
     },
     {
      "label": "Russell 2000 ETF (IWM)",

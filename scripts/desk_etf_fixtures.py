@@ -11,8 +11,8 @@ refreshed 2026-09-24 05:07 UTC). That store predates the ETFs, so this script
    refreshed, so the ETFs join the same snapshot and nothing else changes;
 2. serves the Desk routes on it through the API (one worker generation, the
    clock frozen at 2026-09-24 16:00 UTC, as pipeline.json was generated) and
-   writes what they serve into the fixtures: pipeline.json whole; the ETF
-   blocks of the other routes (see WRITES).
+   writes what they serve into the fixtures: pipeline.json and sectors.json
+   whole; technicals.json's sectors block.
 
 Read-only on both inputs; the fixture store is written to --store (never
 under data/, never committed). Needs the repo's Python environment.
@@ -135,6 +135,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         client = TestClient(app)
         write("pipeline.json", get(client, "/pipeline"))
+        # item 2: sector leadership, /sectors whole and /technicals' sectors block as served
+        write("sectors.json", get(client, "/sectors"))
+        splice("technicals.json", {"sectors": client.get("/api/desk/technicals").json()["data"]["sectors"]})
     finally:
         w.stop()
     return 0

@@ -263,13 +263,17 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: Monday's vol and sectors blocks and the RSI card keep their labels, print their reasons and say Not yet served (§1.0, §12.7)", async ({ page }) => {
+  test("technicals: the vol block and the RSI card keep their labels, print their reasons and say Not yet served; the sector bars are served (§1.0, §12.7, §12.14)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/technicals");
+      // desk/fill-etf: the sector leadership is served, seven bars from the API's answer on the fixture store.
+      const sect = page.getByRole("region", { name: /^Sector leadership/ });
+      await expect(sect.getByRole("list", { name: /top three/ }).getByRole("listitem")).toHaveCount(7);
+      await expect(sect).toContainText("60 sessions to Sep 23 · log returns ×100 · Yahoo");
+      await expect(sect.getByTestId("dk-advanced")).toBeEnabled();
       const cards: [RegExp, string, string][] = [
         [/^What protection costs right now/, "needs stored SPY option snapshots and a versioned skew method.", "PUTS vs CALLS · 1 MONTH OUT"],
-        [/^Sector leadership/, "sector ETFs, RSP and IWM not ingested.", "Sector leadership"],
         [/^Momentum · RSI/, "RSI is not computed yet.", "Last below 30"],
       ];
       for (const [name, reason, label] of cards) {

@@ -617,7 +617,8 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/event-study/assets"): ("/api/desk/event-study/assets", 200, None),
     ("GET", "/api/desk/event-study"): ("/api/desk/event-study", 200, None),
     ("GET", "/api/desk/pipeline/inventory"): ("/api/desk/pipeline/inventory", 200, None),
-    # the Desk v2 routes (api/desk_v2.py, desk/frame-3-api): the §12.13 stubs answer awaiting
+    # the Desk v2 routes (api/desk_v2.py, desk/frame-3-api): the §12.13 stubs answer awaiting, and so
+    # does /sectors (desk/fill-etf) on a database the ETF refresh has not reached
     ("GET", "/api/desk/sectors"): ("/api/desk/sectors", 200, None),
     ("GET", "/api/desk/vol"): ("/api/desk/vol", 200, None),
     ("GET", "/api/desk/positions"): ("/api/desk/positions", 200, None),

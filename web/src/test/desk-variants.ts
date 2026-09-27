@@ -82,15 +82,14 @@ export function servedRegime(): Record<string, unknown> {
   return { ...regime, stats: deferredRegime.stats, changes: deferredRegime.changes };
 }
 
-/** /technicals with its vol and sectors blocks served (the /vol and /sectors deferred shapes). */
+/** /technicals with its vol block served (the /vol deferred shape); its sectors block is served in the fixture (§12.14). */
 export function servedTechnicals(): Record<string, unknown> {
   const { as_of: _va, generation_id: _vg, ...v } = vol;
-  const { as_of: _sa, generation_id: _sg, ...s } = sectors;
-  void [_va, _vg, _sa, _sg];
-  return { ...technicals, vol: v, sectors: s };
+  void [_va, _vg];
+  return { ...technicals, vol: v };
 }
 
-/** The deferred /sectors shape, as a served answer. */
+/** /sectors as served (§12.14). */
 export function servedSectors(): Record<string, unknown> {
   return { ...sectors };
 }

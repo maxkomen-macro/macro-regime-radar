@@ -74,10 +74,13 @@ Nothing else on the site is fitted.
 ## What's live, and why the rest isn't yet
 
 Live on the published snapshot: Overview, Technicals (price, averages,
-crosses, S&P signals), Event Study for the catalog of questions, Regime
-(label, history, recession score, next prints), Macro (curve, credit),
-Signal Ledger, Position Monitor (in your browser), the Client view, Data
-Pipeline, and this page.
+crosses, S&P signals, sector leadership), Event Study for the catalog of
+questions, Regime (label, history, recession score, next prints), Macro
+(curve, credit), Sectors (leadership), Signal Ledger, Position Monitor (in
+your browser), the Client view, Data Pipeline, and this page. The sector
+ETFs and the other Desk ETFs are stored by the same refresh step as the
+S&P's closes, with their volume, full history back to each fund's first
+close.
 
 Designed and drawn, not yet served, each for a stated reason:
 
@@ -86,7 +89,8 @@ Designed and drawn, not yet served, each for a stated reason:
   isn't auditable, so there isn't one.
 - Correlations to Treasuries and credit: the store holds yields and
   spreads, not bond prices. A negated yield change is not a bond return.
-- Sector leadership and breadth: the sector ETFs aren't ingested yet.
+- Sector breadth: the sector ETFs are stored; the breadth measures come
+  next.
 - The RSI card and the two RSI signals: no RSI calculation exists in the
   engine yet.
 - The confidence selector: verdicts are fixed at 90%, so the chips would

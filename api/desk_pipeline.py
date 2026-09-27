@@ -93,6 +93,9 @@ TECHNICALS_STUDIES: tuple[str, ...] = ("golden-cross", "death-cross", "spx-20d-2
 # /overview's data_status contributors (spec §12.1, N9)
 DATA_STATUS_SERIES: tuple[str, ...] = ("T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS2", "DGS10", "^GSPC", "GC=F")
 CURVE_SERIES: tuple[str, ...] = ("DGS3MO", "DGS2", "DGS5", "DGS10", "DGS30")  # /macro curve (api/desk_items_macro.TENORS)
+# desk/fill-etf: the ETF blocks (api/desk_items_etf.py), by what each reads
+SECTOR_ETFS: tuple[str, ...] = ("XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY")
+LEADERSHIP_SERIES: tuple[str, ...] = ("SPY", *SECTOR_ETFS)   # /sectors and /technicals' sectors block
 CREDIT_SERIES: tuple[str, ...] = ("BAMLH0A0HYM2", "BAMLC0A0CM")                # /macro credit: HY stored, IG's watermark
 
 
@@ -105,34 +108,32 @@ def _studies_read(slugs) -> set[str]:
 
 def tab_readers() -> dict[str, set[str]]:
     """Each Desk tab and the series its served values are computed from.
-    Sectors and Basket & Hedge serve nothing yet (§12.13), nor do /macro's
-    correlations, so they read nothing."""
+    Basket & Hedge serves nothing yet (§12.13), so it reads nothing."""
     ledger = _studies_read(LEDGER_STUDIES)
     return {
         # tiles (the K−2 regime, the recession score, the trend, VIX), the Ledger's signals
         # (active_signals, since_last_close), VIX's change and data_status
         "Overview": set(REGIME_INPUTS) | set(RECESSION_MODEL) | {"^GSPC", "VIXCLS"} | ledger | set(DATA_STATUS_SERIES),
-        "Technicals": {"^GSPC"} | _studies_read(TECHNICALS_STUDIES),
+        "Technicals": {"^GSPC"} | _studies_read(TECHNICALS_STUDIES) | set(LEADERSHIP_SERIES),
         "Event Study": _studies_read(CATALOG_INPUTS),
         "Regime": set(REGIME_INPUTS) | set(RECESSION_MODEL),   # the rows, the next prints, the recession score
         "Macro": set(CURVE_SERIES) | set(CREDIT_SERIES),
+        "Sectors": set(LEADERSHIP_SERIES),
         "Ledger": ledger,
         "Position Monitor": {"^GSPC", "DGS2", "DGS10"},        # the S&P from /technicals, 2s10s from /macro
     }
 
 
-TAB_ORDER: tuple[str, ...] = ("Overview", "Technicals", "Event Study", "Regime", "Macro", "Ledger", "Position Monitor")
+TAB_ORDER: tuple[str, ...] = ("Overview", "Technicals", "Event Study", "Regime", "Macro", "Sectors", "Ledger", "Position Monitor")
 
 # A registered series no live tab reads yet says so, in its row's note.
-_SECTORS_UNSERVED = "No Desk tab reads it yet: sector leadership and breadth are not served."
 _CORRELATIONS_UNSERVED = "No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
 NO_LIVE_READER: dict[str, str] = {
     "^NDX": "No Desk tab reads it yet: the correlations on Macro & Correlations and Basket & Hedge are not served.",
     "^RUT": "No Desk tab reads it yet: Sectors and its breadth are not served.",
     "JPY=X": _CORRELATIONS_UNSERVED,
-    # desk/fill-etf, item 1: stored; the tabs that read them are served by items 2 to 5
-    **{t: _SECTORS_UNSERVED for t in ("XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY", "RSP")},
-    "SPY": "No Desk tab reads it yet: sector leadership, breadth and the correlations are not served.",
+    # desk/fill-etf: stored; the tabs that read them are served by items 3 to 5
+    "RSP": "No Desk tab reads it yet: breadth is not served.",
     "IWM": "No Desk tab reads it yet: breadth and the correlations are not served.",
     **{t: _CORRELATIONS_UNSERVED for t in ("QQQ", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP")},
     **{t: "No Desk tab reads it yet: Basket & Hedge is not served." for t in ("SMH", "SOXX", "IGV")},

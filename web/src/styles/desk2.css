@@ -1106,8 +1106,20 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+/* A card's as-of stamp (desk/fill-etf): what a served statistic covers and when, as the vol card's source line. */
+.dk-asof {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--dk-t4);
+  margin: 6px 0 0;
+}
 .dk-rank-await {
   grid-column: 3 / -1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dk-rank-track {
   height: 8px;

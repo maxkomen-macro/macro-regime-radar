@@ -245,7 +245,17 @@ const VOL = {
 } as const;
 const SECTORS = {
   window_months: "n",
-  leadership: l(o({ etf: "s!", name: "s!", short: "s", rel_ret: "n" })),
+  window: o({ start: "s!", end: "s!", n: "n" }),
+  compared_on: "s",
+  unit: "s",
+  band: "n",
+  benchmark: o({ etf: "s!", name: "s", ret: "n" }),
+  leadership: l(o({ etf: "s!", name: "s!", short: "s", group: "s?", rel_ret: "n", ret: "n", first: "s?", reason: "s?" })),
+  pattern: o({ rule: "s", band: "n", cyclicals: l("s"), defensives: l("s"), word: e(["cyclical", "defensive", "mixed"], { nul: true }), spread: "n", reason: "s?" }),
+  date: "s",
+  freq: "s",
+  source: "s",
+  providers: l("s"),
   breadth: o({
     above_50: o({ n: "n", of: "n", compared_on: "s?", by_etf: m("b") }),
     above_200: o({ n: "n", of: "n", by_etf: m("b") }),

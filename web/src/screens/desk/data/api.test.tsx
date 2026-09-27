@@ -58,13 +58,13 @@ describe("the response boundary", () => {
     for (const body of [null, [], [1, 2], 3, "text", undefined]) expect(tryRead(body, "/study")).toBe("unreadable");
   });
 
-  it("the deferred shapes (§12.13) pass their schemas unchanged, as a stub and as a /technicals block", () => {
+  it("the deferred vol shape (§12.13) and the served sectors (§12.14) pass their schemas unchanged, as a route and as a /technicals block", () => {
     const { as_of: _va, generation_id: _vg, ...v } = vol;
-    const { as_of: _sa, generation_id: _sg, ...s } = sectors;
-    void [_va, _vg, _sa, _sg];
+    void [_va, _vg];
     expect(readBody(vol, "/vol")).toEqual(vol);
-    expect(readBody(sectors, "/sectors")).toEqual(sectors);
-    const t = { ...technicals, vol: v, sectors: s };
+    const { data: s } = unwrapBlocks("/sectors", sectors as unknown as Record<string, unknown>);
+    expect(readBody(s, "/sectors")).toEqual(s);
+    const t = { ...technicals, vol: v, sectors: (technicals.sectors as { data: unknown }).data };
     expect(readBody(t, "/technicals")).toEqual(t);
   });
 
@@ -379,8 +379,9 @@ describe("the envelope (§12.0)", () => {
     const env = ready("/technicals", { ...technicals, vol: { status: "awaiting", data: null, unavailable: null } });
     const t = readAnswer<Record<string, unknown>>(env, "/technicals");
     expect("vol" in t).toBe(false);
-    // Only the sectors block, served awaiting with its reason, is recorded.
-    expect(t._blocks).toEqual({ sectors: { reason: "sector ETFs, RSP and IWM not ingested.", until: null } });
+    // The sectors block is served ready (§12.14), so no reason is recorded at all.
+    expect(t._blocks).toEqual({});
+    expect("sectors" in t).toBe(true);
   });
 
   it("an error served with a 2xx is not retried; a 5xx once; no answer once (I1-10)", () => {
