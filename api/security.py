@@ -27,6 +27,8 @@ from collections import OrderedDict
 from typing import Any, Awaitable, Callable
 from urllib.parse import parse_qs, urlsplit
 
+from api import desk_catalog
+
 MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", str(64 * 1024)))
 ASSISTANT_MAX_BODY_BYTES = 16 * 1024
 API_PREFIXES = ("/api", "/health", "/regime", "/signals", "/series")
@@ -41,11 +43,15 @@ EXPENSIVE_PATHS = {"/api/lbo/run", "/api/regime/scenario", "/api/recession/scena
 # request holds its slot while it waits on the engine (api/desk.COMPUTE_TIMEOUT_S),
 # and four slow studies sharing the calculators' slots answered the LBO and
 # the scenario POSTs 429.
-DESK_STUDY_PATHS = {"/api/desk/event-study"}
+DESK_STUDY_PATHS = {"/api/desk/event-study", "/api/desk/study", "/api/desk/study/catalog", "/api/desk/study/events"}
 # A preset by its slug alone is a worker item, a lookup: it reads under the
 # stored-read ceiling, never behind other visitors' studies (verifier V-13).
 # Mirrors src/desk/event_study.PRESETS (parity pinned by tests/test_desk_api.py).
 DESK_PRESET_SLUGS = frozenset({"gold-2sigma-spx-weak", "spx-golden-cross", "spx-death-cross"})
+# desk/frame-3-api (plan §4.3, ruled S-25): every catalog study is a worker item, and the two RSI
+# rows compute nothing either, so `preset=<catalog slug>` (with an optional `horizon`) on /study,
+# and a bare /study/catalog, are lookups too. Parity with api/desk_catalog is pinned by a test.
+DESK_CATALOG_SLUGS = frozenset(desk_catalog.CATALOG_SLUGS)
 PROVIDER_PREFIX = "/api/market/"
 # Everything else under the API prefixes is a stored-data read: bounded by
 # the `db` ceiling so a burst sheds load as 429s instead of wedging the
@@ -397,7 +403,7 @@ class SecurityMiddleware:
         if path in EXPENSIVE_PATHS:
             sem = self.expensive
         elif path in DESK_STUDY_PATHS:
-            sem = self.db if self._preset_lookup(scope) else self.desk_study
+            sem = self.db if self._preset_lookup(scope, path) else self.desk_study
         elif path.startswith(PROVIDER_PREFIX):
             sem = self.provider
         elif is_question:
@@ -429,9 +435,17 @@ class SecurityMiddleware:
                 sem.release()
 
     @staticmethod
-    def _preset_lookup(scope: dict) -> bool:
-        """`?study=<preset>` and nothing else: the worker's precomputed item."""
+    def _preset_lookup(scope: dict, path: str = "/api/desk/event-study") -> bool:
+        """A request a worker item answers, which never waits behind a study.
+        /api/desk/event-study: `?study=<preset>` and nothing else. /api/desk/study
+        (and /study/events): `?preset=<catalog slug>`, with an optional `horizon`,
+        and nothing else. /api/desk/study/catalog: no query at all (S-25)."""
         q = parse_qs((scope.get("query_string") or b"").decode("latin-1"), keep_blank_values=True)
+        if path == "/api/desk/study/catalog":
+            return not q
+        if path in ("/api/desk/study", "/api/desk/study/events"):
+            return (set(q) in ({"preset"}, {"preset", "horizon"}) and all(len(v) == 1 for v in q.values())
+                    and q["preset"][0] in DESK_CATALOG_SLUGS)
         return set(q) == {"study"} and len(q["study"]) == 1 and q["study"][0] in DESK_PRESET_SLUGS
 
     @staticmethod

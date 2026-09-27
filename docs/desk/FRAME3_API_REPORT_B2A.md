@@ -597,3 +597,65 @@ Against the unfixed module, all eight of those cases fail.
 
 On the audit copy every raw series is stored, so the fixture is unchanged: regenerating it gives
 no diff.
+
+## The merge of main (B1 merged, `94e606d`)
+
+`git fetch origin && git merge origin/main`. The six conflicts were resolved as laid out in
+B1's report (`docs/desk/FRAME3_API_REPORT.md`, last section). CLAUDE.md merged without a conflict.
+
+**The resolutions:**
+- **`api/desk_envelope.py`:** main's version wins. `/regime`, `/macro` and `/pipeline` already
+  answer through `env.answer`, so they take B1's pinned-generation rule (Codex R-01: `fn` runs
+  under `dbpath.pinned(request_generation())`) with no change of their own.
+- **`src/analytics/recession.py`:** main's version, which has one `recession_provenance()`. It
+  returns the same five keys as B2a's (`probability_month`, `inputs_through`, `feature_months`,
+  `training`, `scoring_index`), so `/regime`'s block and its pinned tests are unchanged.
+- **`api/analytics_cache.py`:** one `desk_regime` item, B2a's `api/desk_items_macro.desk_regime`,
+  registered after `recession`. B1's builder in `api/desk_items.py` is deleted.
+  - The item keeps the stored slopes (`growth_trend`, `inflation_trend`) on each row. `direction()`
+    (the classifier's own `> 0` test, which reads None for a slope that is NULL or non-finite, per
+    B1's R-03) is the one rule. `/regime`'s rows and next print read it, and so does `/overview`'s
+    regime tile.
+  - `recession_band` is the one R4 band. `recession_tile` takes seven fields of the item's
+    recession block, the same block `/regime` serves whole, so the Overview tile and `/regime`
+    agree by construction.
+  - A block that fails awaits with its own reason, and the regime rows still serve. The new test
+    `test_a_recession_block_that_fails_leaves_the_rows_served` covers this.
+  - The item opens the generation's copy through one named opener, `_connect`. B1's
+    failing-build test wraps it the way it wraps the other openers. That test now expects
+    `desk_regime` among the builds that fail, since its own `regimes` read fails the whole item.
+- **`tests/desk_contract.py`, `tests/test_desk_api.py`, `deploy/api.env.example`:** the union.
+  - The contract is main's, which adds the strict S-28 error schemas; B2a's schemas were already
+    in it.
+  - `ROUTES` lists every v2 route, B1's and B2a's.
+  - The builder-close scan covers both routers' modules.
+  - The env template carries B1's `ENGINE_VERSION` and `RENDER_GIT_COMMIT` lines.
+
+**The gate on the merged tree:**
+- **Python: 1585 passed, 3 skipped, 2 failed.** The two failures are the base
+  `test_asset_history` pair (the endpoint 503 and `validate_db`'s full mode), which read the
+  data/ DB's state and fail the same way on main.
+- **Web: typecheck clean; 1534 of 1535 unit tests pass.** The one failure is on main too: it
+  fails identically in a detached `origin/main` worktree. `sessions.test.ts` "holds
+  api/calendar.py's NYSE holidays, year for year" fails because B1's S-12 carries
+  `api/calendar.py` back to 1962, while `web/src/screens/desk/positions/sessions.ts` still holds
+  2024–2027. It is not a merge conflict and is not fixed here.
+- **Regression: `scripts/desk_native_ab.py --base origin/main` prints "byte-identical: 16/16"**,
+  on the audit copy and on hardening's scratch store.
+
+**Every v2 route on the audit copy, against A's fixtures** (`now` = 2026-09-24 16:00 UTC; all
+JSON routes answered on one `generation_id`):
+- **No differences:** `/regime`, `/macro`, `/pipeline`, `/study/events`, and `/overview`'s regime
+  and recession tiles. `/pipeline/ddl` is byte-equal to `pipeline-ddl.ts`. The stubs answer
+  awaiting with their sentences.
+- **Differences, each explained:**
+  - `/overview`'s `data_status`: B1 orders the contributors as N9 does (FRED first) and gives
+    fuller reasons (HY's "short" watermark note, the providers list). Every date and state is the
+    same.
+  - `/ledger` and `/study/catalog`: the tier-2 unavailable reasons for DXY and WTI. The fixture
+    predates hardening's `REFRESH_TIER` 2.
+  - `/technicals`: `move_20d_sigma` is −0.28049… where the fixture shows an illustrative −0.28.
+  - `/study`: `elapsed_ms`, `served_from_cache` and `engine_version` are illustrative in the
+    fixture, and `inputs_hash` depends on the generation. `entry_rule` carries hardening's R-01
+    wording ("else the first later session whose fixing is") where the fixture has "else the
+    next session's close".

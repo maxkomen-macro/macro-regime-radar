@@ -26,6 +26,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from api import desk_catalog, desk_items
+
 
 # ── JSON conversion ───────────────────────────────────────────────────────────
 
@@ -298,10 +300,16 @@ def _desk_assets(ctx: dict) -> dict:
 
 
 def _desk_preset(name: str):
-    """One precomputed event study (desk/event-study, 2026-09-21): the
-    presets are the only studies computed ahead of a request."""
+    """One precomputed event study (desk/event-study, 2026-09-21). Since
+    desk/frame-3-api the catalog study that asks the same query is built first
+    (api/desk_items.py) and its native payload, the one `es.run` returns, is
+    reused; a refused catalog item falls through to `es.run`, so the legacy
+    routes answer exactly as before (their NotStored included)."""
 
     def build(ctx: dict) -> dict:
+        item = ctx.get(f"desk_study:{desk_catalog.BY_ENGINE_SLUG[name]}")
+        if item is not None and "native" in item:
+            return item["native"]
         from src.desk import event_study as es
 
         return es.run(es.PRESETS[name])
@@ -314,9 +322,10 @@ DESK_PRESETS = ("gold-2sigma-spx-weak", "spx-golden-cross", "spx-death-cross")
 
 
 def _desk_regime(ctx: dict) -> dict:
-    """The Desk v2 /regime item (api/desk_items_macro.py): the stored regimes
-    rows, the recession block with its provenance, the next-print thresholds.
-    Reads the `recession` item above, so it is listed after it."""
+    """The Desk v2 regime item (api/desk_items_macro.py), one for /regime and
+    /overview: the stored regimes rows, the recession block with its provenance
+    (both routes serve it), the next-print thresholds. Reads the `recession`
+    item above, so it is listed after it."""
     from api.desk_items_macro import desk_regime
 
     return desk_regime(ctx)
@@ -352,8 +361,13 @@ ITEMS = [
     ("scenario_defs", _scenario_defs),
     ("allocation", _allocation),
     ("desk_assets", _desk_assets),
+    # desk/frame-3-api: the catalog's thirteen studies, before the presets that reuse them
+    *[(f"desk_study:{slug}", desk_items.desk_study(slug)) for slug in desk_catalog.CATALOG_QUERY_SLUGS],
     *[(f"desk_preset:{name}", _desk_preset(name)) for name in DESK_PRESETS],
-    # Desk v2 (desk/frame-3-api-b2a)
+    ("desk_technicals", desk_items.desk_technicals),
+    ("desk_facts", desk_items.desk_facts),
+    # Desk v2 (desk/frame-3-api-b2a): the one desk_regime item, which /regime and /overview's
+    # regime and recession tiles read (after `recession`); then /macro's and /pipeline's
     ("desk_regime", _desk_regime),
     ("desk_macro", _desk_macro),
     ("desk_pipeline", _desk_pipeline),

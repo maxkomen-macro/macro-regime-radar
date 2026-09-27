@@ -27,8 +27,9 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -41,6 +42,7 @@ from api.chat import router as assistant_router
 from api import desk as desk_mod
 from api import provenance
 from api.desk import router as desk_router
+from api import desk_v2
 from api.providers import entitlements
 from api.providers import market as market_layer
 from api.providers.errors import ProviderError
@@ -232,12 +234,25 @@ async def _not_stored(_: Request, exc: NotStored) -> JSONResponse:
 
 
 @app.exception_handler(provenance.SchemaCheckFailed)
-async def _schema_check_failed(_: Request, exc: provenance.SchemaCheckFailed) -> JSONResponse:
+async def _schema_check_failed(request: Request, exc: provenance.SchemaCheckFailed) -> Response:
     """Codex R-27, verifier V-47: whether the Desk's store carries provenance could not be read.
     Nothing is read without it; a route that reached the check (/api/freshness, the pipeline
     inventory) fails closed with the Desk studies' structured 503, never a bare 500. A freshness
-    block elsewhere never reaches here: it says it is awaiting the check (verifier V-53)."""
+    block elsewhere never reaches here: it says it is awaiting the check (verifier V-53).
+    On a Desk v2 route it steps aside for the envelope's own 503 (desk/frame-3-api)."""
+    enveloped = desk_v2.schema_check_failed(request, exc)
+    if enveloped is not None:
+        return enveloped
     return JSONResponse(status_code=503, headers={"Cache-Control": "no-store"}, content=desk_mod.schema_error_body(exc))
+
+
+@app.exception_handler(405)
+async def _method_not_allowed(request: Request, exc: Exception) -> Response:
+    """A removed write on a Desk v2 route (`POST /positions`, `POST
+    /basket/price`, DESK_FRAME3_SPEC §12.0) answers the enveloped 405 with
+    `Allow: GET`; every other 405 keeps FastAPI's own answer."""
+    enveloped = desk_v2.method_not_allowed(request)
+    return enveloped if enveloped is not None else await http_exception_handler(request, exc)
 
 
 @app.exception_handler(Exception)
@@ -1652,6 +1667,8 @@ app.include_router(assistant_router)
 # The Desk (api/desk.py): /api/desk/event-study[/assets] (desk/event-study) and
 # /api/desk/pipeline/inventory (desk/frame), one router.
 app.include_router(desk_router)
+# The Desk v2 routes (api/desk_v2.py, DESK_FRAME3_SPEC §12): the envelope.
+app.include_router(desk_v2.router)
 
 
 @app.websocket("/api/stream/ws")

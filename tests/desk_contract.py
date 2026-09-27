@@ -349,8 +349,11 @@ STUBS: dict[str, str] = {
 
 ENVELOPE_KEYS = ("status", "generation_id", "as_of", "engine_version", "data", "unavailable", "error")
 BLOCK_KEYS = frozenset({"status", "data", "unavailable"})
-# The extra keys an error may carry (plan §3: a failed schema check).
-ERROR_EXTRAS = {"retryable": BOOL, "provider": STR}
+# §12.0 (plan §6 S-28, round 6's R-16): an error is exactly {code, message},
+# except on code "schema_check", which carries exactly provider "api" and
+# retryable true besides.
+ERROR = obj(code=STR, message=STR)
+SCHEMA_CHECK_ERROR = obj(code=Const("schema_check"), message=STR, provider=Const("api"), retryable=Const(True))
 
 
 def block_paths(t: Any, prefix: str = "") -> list[str]:
@@ -569,9 +572,10 @@ def problems(route: str, body: Any) -> list[str]:
     if status == "awaiting" and body["unavailable"] is not None:
         _unavailable_ok(body["unavailable"], "unavailable", errs)
     if status == "error" and body["error"] is not None:
-        _walk(Obj(dict(code=STR, message=STR, **{k: F(t, opt=True) for k, t in ERROR_EXTRAS.items()})),
-              body["error"], "error", errs)
-        if isinstance(body["error"], dict) and not str(body["error"].get("code") or "").strip():
+        e = body["error"]
+        schema = SCHEMA_CHECK_ERROR if isinstance(e, dict) and e.get("code") == "schema_check" else ERROR
+        _walk(schema, e, "error", errs)
+        if isinstance(e, dict) and not str(e.get("code") or "").strip():
             errs.append("error.code: empty")
     if route in STUBS:
         if status == "ready":

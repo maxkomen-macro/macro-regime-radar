@@ -89,11 +89,23 @@ def absent() -> env.Awaiting:
     return env.Awaiting(env.BLOCK_FAILED_REASON)
 
 
+def _connect() -> sqlite3.Connection:
+    """A read-only connection to the generation's copy for one build (the
+    caller closes it in a `finally`); one opener, which the failing-build tests
+    wrap (tests/test_desk_v2_study.py, plan §5)."""
+    from api import db
+    from src.analytics import dbpath
+
+    return dbpath.connect_ro(db.DB_PATH)
+
+
 # ── /regime: the desk_regime item (plan §1.6, N5, N6) ───────────────────────
 
-def _direction(trend: Any) -> str | None:
+def direction(trend: Any) -> str | None:
     """The classifier's own test (src/regime.py classify_regime): rising iff
-    the stored trend is > 0. None when the row stores no finite trend."""
+    the stored trend is > 0. None when the row stores no finite trend (a NULL
+    never reads as falling: desk/frame-3-api's Codex R-03). The one rule
+    /regime and /overview's regime tile read a direction by."""
     if trend is None:
         return None
     try:
@@ -106,8 +118,9 @@ def _direction(trend: Any) -> str | None:
 
 
 def regime_rows(conn: sqlite3.Connection) -> list[dict]:
-    """Every stored regimes row, ascending, one per month: its label and the
-    signs of its stored trends. An older database without the table has none."""
+    """Every stored regimes row, ascending, one per month: its label and its
+    stored slopes as stored (`direction` reads them). An older database without
+    the table has none."""
     from api import provenance
 
     if not provenance.table_exists(conn, "regimes"):
@@ -116,7 +129,7 @@ def regime_rows(conn: sqlite3.Connection) -> list[dict]:
     for date, label, growth, inflation in conn.execute(
             "SELECT date, label, growth_trend, inflation_trend FROM regimes ORDER BY date"):
         month = str(date)[:7]
-        by_month[month] = {"month": month, "label": label, "growth": _direction(growth), "inflation": _direction(inflation)}
+        by_month[month] = {"month": month, "label": label, "growth_trend": growth, "inflation_trend": inflation}
     return [by_month[m] for m in sorted(by_month)]
 
 
@@ -141,7 +154,7 @@ def next_print(key: str, series_id: str, axis: str, joint, raw, latest: dict) ->
     already has a value for m+1 (the next row waits on the other series).
     None when the latest row or the joint frame cannot place it."""
     other = "growth" if axis == "inflation" else "inflation"
-    own_sign, other_sign = latest.get(axis), latest.get(other)
+    own_sign, other_sign = direction(latest.get(f"{axis}_trend")), direction(latest.get(f"{other}_trend"))
     if own_sign is None or other_sign is None:
         return None
     import pandas as pd
@@ -268,13 +281,11 @@ def recession_block(ctx: dict) -> dict:
 
 
 def desk_regime(ctx: dict) -> dict:
-    """The desk_regime item: the stored regimes rows, the recession block, the
-    next-print thresholds, and the stored release times. The K−2 selection and
-    the release date are the route's, per response (plan §0.5)."""
-    from api import db
-    from src.analytics import dbpath
-
-    conn = dbpath.connect_ro(db.DB_PATH)
+    """The desk_regime item, the one /regime and /overview read: the stored
+    regimes rows, the recession block (the recession tile is its seven tile
+    fields), the next-print thresholds, and the stored release times. The K−2
+    selection and the release date are the routes', per response (plan §0.5)."""
+    conn = _connect()
     try:
         rows = regime_rows(conn)
         prints = part("next_prints", lambda: next_prints(conn, rows))
@@ -509,10 +520,7 @@ def credit(conn: sqlite3.Connection) -> dict:
 def desk_macro(ctx: dict) -> dict:
     """The desk_macro item: the curve and credit blocks. Nothing in /macro
     depends on "now", so the route serves the item as it is."""
-    from api import db
-    from src.analytics import dbpath
-
-    conn = dbpath.connect_ro(db.DB_PATH)
+    conn = _connect()
     try:
         return {"curve": part("curve", lambda: curve(tenor_levels(conn))), "credit": part("credit", lambda: credit(conn))}
     finally:

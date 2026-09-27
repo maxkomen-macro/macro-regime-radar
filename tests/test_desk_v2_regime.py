@@ -104,7 +104,8 @@ def test_current_is_the_k_minus_2_row_and_moves_at_a_month_boundary_inside_one_g
     for body, month in ((a, "2026-07"), (b, "2026-07"), (c, "2026-08")):
         cur = body["data"]["current"]["data"]
         assert cur["print"] == month and cur["label"] == rows[month]["label"]
-        assert (cur["growth"], cur["inflation"]) == (rows[month]["growth"], rows[month]["inflation"])
+        assert (cur["growth"], cur["inflation"]) == (items.direction(rows[month]["growth_trend"]),
+                                                     items.direction(rows[month]["inflation_trend"]))
         assert cur["latest_print"] == store.END_MONTH
 
 
@@ -128,6 +129,29 @@ def test_without_a_recession_result_the_recession_block_is_awaiting(tmp_path, in
     d = get_regime()["data"]
     assert d["recession"] == {"status": "awaiting", "data": None, "unavailable": {"reason": AWAITING_REFRESH, "until": None}}
     assert d["current"]["status"] == "ready"
+
+
+def test_a_recession_block_that_fails_leaves_the_rows_served(tmp_path, install_worker, monkeypatch):
+    """desk/frame-3-api's rule, kept through the merge: a recession provenance
+    that cannot be built leaves the regime rows served; /regime's recession
+    block and /overview's recession tile both read awaiting (S-27)."""
+    from src.analytics import recession
+
+    def broken():
+        raise RuntimeError("the provenance could not be built")
+
+    monkeypatch.setattr(recession, "recession_provenance", broken)
+    w = serve(install_worker, monkeypatch, store.build(tmp_path / "macro_radar.db"))
+    item = w.current.results["desk_regime"]
+    assert item["rows"] and item["recession"] == {"ok": False, "reason": AWAITING_REFRESH}
+    at(monkeypatch, datetime(2026, 9, 25, 21, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]
+    assert d["recession"]["status"] == "awaiting" and d["current"]["status"] == "ready"
+    from api import desk_v2
+
+    with pytest.raises(env.Awaiting) as exc:
+        desk_v2.recession_tile(item)
+    assert exc.value.reason == AWAITING_REFRESH
 
 
 def test_an_empty_regimes_table_serves_an_empty_history_and_awaiting_blocks(tmp_path, install_worker, monkeypatch):
@@ -385,7 +409,7 @@ def _label_with(regime, path: Path, axis: str, value: float, latest: dict) -> st
     other = "growth" if axis == "inflation" else "inflation"
     nxt = joint.index[-1] + pd.offsets.MonthBegin(1)
     prev_other = joint[other].iloc[-2]
-    keep = prev_other * (1.05 if latest[other] == "rising" else 0.95)
+    keep = prev_other * (1.05 if items.direction(latest[f"{other}_trend"]) == "rising" else 0.95)
     joint.loc[nxt] = {axis: value, other: keep}
     g = regime.compute_trends(joint["growth"]).iloc[-1]
     i = regime.compute_trends(joint["inflation"]).iloc[-1]
@@ -411,7 +435,7 @@ def test_next_print_threshold_is_the_classifiers_boundary(tmp_path, classifier, 
     latest = rows[-1]
     p = np_[key]
     sid = "CPIAUCSL" if key == "cpi" else "INDPRO"
-    rising = latest[axis] == "rising"
+    rising = items.direction(latest[f"{axis}_trend"]) == "rising"
     assert p["operator"] == ("<=" if rising else ">")
     unchanged = latest["label"]
     assert p["flips_to"] != unchanged

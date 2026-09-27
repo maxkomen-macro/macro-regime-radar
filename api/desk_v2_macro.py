@@ -102,16 +102,20 @@ def current_block(rows: list[dict], comparison: date) -> dict:
     """§12.6 `current.data`: the stored K−2 row for the month of the
     comparison session. Awaiting (S-27) when that row is not stored, or does
     not store both trends."""
+    from api.desk_items_macro import direction
+
     month = print_for(comparison)
     row = next((r for r in rows if r["month"] == month), None)
-    if row is None or row["growth"] is None or row["inflation"] is None:
+    growth = direction(row["growth_trend"]) if row is not None else None
+    inflation = direction(row["inflation_trend"]) if row is not None else None
+    if growth is None or inflation is None:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
     months_in, since = run_ending_at(rows, month)
     return {
         "label": row["label"],
         "print": month,
-        "growth": row["growth"],
-        "inflation": row["inflation"],
+        "growth": growth,
+        "inflation": inflation,
         "months_in": months_in,
         "since": since,
         "freq": "monthly",

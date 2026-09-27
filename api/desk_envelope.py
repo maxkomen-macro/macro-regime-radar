@@ -337,39 +337,81 @@ def sanitized(exc: BaseException) -> str:
     return text if ("/" not in text and "\\" not in text) else "The database is not available on this server."
 
 
-def map_exception(route: str, exc: BaseException) -> Reply:
+_UNPINNED = object()
+
+
+def map_exception(route: str, exc: BaseException, gen: Any = _UNPINNED) -> Reply:
     """The error map's rows, in order (plan §3). A 413 or 429 is refused by
-    api/security.py before the route runs and keeps its `{detail}` (S-26)."""
+    api/security.py before the route runs and keeps its `{detail}` (S-26).
+    `gen` is the request's pinned generation when `answer` has one."""
+    if gen is _UNPINNED:
+        gen = _safe_generation()
     # Hardening's SchemaCheckFailed subclasses sqlite3.OperationalError: it is
     # matched first, and only by its own class.
     if _is(exc, "api.provenance", "SchemaCheckFailed"):
-        return error_reply(503, "schema_check", str(exc), gen=_safe_generation(), retryable=True, provider="api")
+        return error_reply(503, "schema_check", str(exc), gen=gen, retryable=True, provider="api")
     if _is(exc, "api.worker", "Warming"):
         # S-11: before the first generation, the answer is computing and names none.
         return reply(202, envelope("computing"), {"Retry-After": str(RETRY_AFTER_S)})
     if isinstance(exc, Unsupported) or _is(exc, "src.desk.event_study", "StudyError"):
-        return error_reply(422, "unsupported", str(exc), gen=_safe_generation())
+        return error_reply(422, "unsupported", str(exc), gen=gen)
     if _is(exc, "api.db", "DBUnavailable"):
-        return error_reply(503, "db_unavailable", sanitized(exc), gen=_safe_generation())
+        return error_reply(503, "db_unavailable", sanitized(exc), gen=gen)
     log.error("desk %s: unhandled %s", route, type(exc).__name__, exc_info=exc)
-    return error_reply(500, "internal", INTERNAL_MESSAGE, gen=_safe_generation())
+    return error_reply(500, "internal", INTERNAL_MESSAGE, gen=gen)
+
+
+def request_generation() -> Any:
+    """The one generation a request reads (Codex R-01): the request's pin
+    (api/worker.PinGeneration pins a request that arrives after a publication),
+    else the first usable published generation, waited for up to the worker's
+    wait (a request that arrived before it), else `Warming`. A cold request used
+    to read its items from the generation `result()` waited for and name
+    whichever generation was current later, in its memo key and envelope; a
+    publication in between served one generation's numbers under the next
+    one's id, and memoized them under it."""
+    import time
+
+    from api.worker import Warming, get_worker
+    from src.analytics import dbpath
+
+    w = get_worker()
+    w.ensure_started()
+    pinned = dbpath.pinned_generation()
+    if pinned is not None and getattr(pinned, "owner", None) is w:
+        return pinned
+    deadline = time.monotonic() + w.wait_s
+    while not w.ready():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise Warming()
+        w.poke()  # as result() does; an unusable published generation waits for the next one
+        stale = w.current
+        w.wait_published(min_id=stale.id + 1 if stale is not None else 1, timeout=min(remaining, 0.25))
+    return w.current
 
 
 def answer(route: str, fn: Callable[[], dict]) -> Reply:
     """Run one handler body inside the error map and put what it returns in
     the envelope: a payload dict is ready; `Awaiting` is awaiting; every other
-    outcome is mapped by `map_exception`. The generation named is the one the
-    request read (its pin), taken after the body ran."""
+    outcome is mapped by `map_exception`. One generation is pinned before the
+    body runs (Codex R-01) and held through every item read, the projection,
+    the memo key and the envelope."""
+    from src.analytics import dbpath
+
+    gen = None
     try:
-        data = fn()
+        gen = request_generation()
+        with dbpath.pinned(gen):
+            data = fn()
         if not isinstance(data, dict):
             raise TypeError(f"a desk handler returned {type(data).__name__}, not a payload")
         _assert_finite(data)
-        return reply(200, envelope("ready", gen=_generation(), data=data))
+        return reply(200, envelope("ready", gen=gen, data=data))
     except Awaiting as a:
-        return awaiting_reply(a.reason, a.until, gen=_safe_generation())
+        return awaiting_reply(a.reason, a.until, gen=gen)
     except Exception as exc:  # noqa: BLE001 — every outcome is an envelope
-        return map_exception(route, exc)
+        return map_exception(route, exc, gen=gen)
 
 
 def _assert_finite(obj: Any) -> None:
