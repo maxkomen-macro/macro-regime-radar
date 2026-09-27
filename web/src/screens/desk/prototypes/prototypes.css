@@ -263,3 +263,48 @@
     row-gap: 10px;
   }
 }
+
+/* ── Basket & Hedge: positioning ── */
+.pr-below {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 13px;
+  align-items: stretch;
+}
+@media (max-width: 1100px) {
+  .pr-below {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.pr-positioning .dk-stats {
+  margin-top: 8px;
+}
+.pr-positioning .pr-table-wrap {
+  margin-top: 12px;
+}
+.pr-name {
+  font-weight: 400;
+  font-size: 12px;
+}
+.pr-table td.pr-left {
+  text-align: left;
+  font-family: var(--dk-sans);
+}
+.pr-flag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--dk-sug-bd);
+  border-radius: 5px;
+  background: var(--dk-sug-bg);
+  color: var(--dk-amber);
+  font-family: var(--dk-mono);
+  font-size: 11px;
+}
+.pr-adv-line {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--dk-t2);
+}

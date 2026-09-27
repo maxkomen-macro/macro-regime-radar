@@ -70,6 +70,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Basket & Hedge: a basket kept in this browser priced as one index (buy-and-hold or monthly), its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), contribution, concentration, liquidity | LIVE, computed on request from EODHD's daily bars (§12.15); the baskets stay in the browser (§1.8) | desk/books |
 | Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.16) | desk/books |
 | Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
+| Basket & Hedge: "Positioning" (step 3, below the options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket | short interest, open interest and 13F holdings not ingested |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
 | Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
 | Client view | LIVE for Event Study's current study, at h = 20 | — |
@@ -1029,6 +1030,17 @@ at the volatilities of `proto-options.json`, stated in Advanced. Footnote:
 "Illustrative values · In production: EODHD option chains for the hedge ETF
 and the names, and a dealer's quote for the basket put, stored with each
 basket."
+
+**Positioning** (under the step 3, left, for the basket open): PROTOTYPE
+(§1.0.3), from `proto-positioning.json`. Stats: SHORT INTEREST (of float,
+weighted by the basket's weights) · DAYS TO COVER (weighted) · CROWDED
+(<n> of <names>). One row per name: weight, short interest % of float, days
+to cover, put/call open-interest ratio, and a crowding flag by the rule
+Advanced states: Crowded short at a short interest of 10% of float or more,
+else Crowded long when at least 25% of the funds a 13F sample tracks hold the
+name in their top ten. A name the fixture has no row for is listed without
+numbers. Footnote: "Illustrative values · In production: exchange
+short-interest files, OCC open interest, 13F holdings."
 
 ---
 

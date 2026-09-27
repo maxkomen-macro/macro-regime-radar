@@ -9,7 +9,8 @@
  * D-25–D-28): step 3 ranks the ETF hedge (/basket/hedge, §12.16), then, in
  * the options slot, the PROTOTYPE cards of §1.0.3 (../prototypes/, mounted
  * by ./BasketHedgeStep.tsx): "Hedge with options", priced in the browser
- * from the basket engine's inputs and assumed volatilities.
+ * from the basket engine's inputs and assumed volatilities; below the slot,
+ * "Positioning", per name.
  * Send to Position Monitor carries the basket as a manual subject (§9).
  */
 
@@ -25,6 +26,7 @@ import { Card, LiveBadge, NotServedBadge } from "../kit/ui";
 import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
 import { checkTicker } from "./check";
+import { PositioningCard } from "../prototypes/PositioningCard";
 import {
   DEFAULT_METHOD,
   DEFAULT_NOTIONAL,
@@ -608,6 +610,12 @@ function StepThree({ local, q, priceAsOf }: { local: SavedBasket | null; q: Retu
         </p>
       ) : null}
       <BasketHedgeStep h={q.data} state={state} basket={local} />
+      {/* §10, §1.0.3: Positioning, a PROTOTYPE per name in the saved basket (none when none is open). */}
+      {local?.legs.length ? (
+        <div className="pr-below">
+          <PositioningCard basket={local} />
+        </div>
+      ) : null}
     </section>
   );
 }

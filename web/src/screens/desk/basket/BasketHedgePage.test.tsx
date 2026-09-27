@@ -540,3 +540,33 @@ describe("Hedge with options (PROTOTYPE, §1.0.3): the hedge's step 3 for the ba
     expect(screen.queryByRole("region", { name: /^Hedge with options/ })).toBeNull();
   });
 });
+
+describe("Positioning (PROTOTYPE, §1.0.3): per name in the basket open here", () => {
+  it("short interest, days to cover, put/call and the crowding flag per name, the basket's weighted figures; its footnote last", async () => {
+    seed();
+    renderTab();
+    await loaded();
+    const c = await screen.findByRole("region", { name: /^Positioning/ });
+    expect(c).toHaveAttribute("data-prototype", "positioning");
+    expect(c).toHaveTextContent(/Short interest\s*5\.3%\s*of float, weighted/);
+    expect(c).toHaveTextContent(/Days to cover\s*1\.8\s*weighted/);
+    expect(c).toHaveTextContent(/Crowded\s*4 of 7\s*names flagged/);
+    const rows = within(within(c).getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(7);
+    expect(rows[3]).toHaveTextContent(/CRWV\s*CoreWeave\s*12%\s*17\.8%\s*2\.4\s*1\.36\s*Crowded short/);
+    expect(rows[0]).toHaveTextContent(/NVDA\s*Nvidia\s*22%\s*1\.1%\s*0\.6\s*0\.78\s*Crowded long/);
+    expect(within(c).queryByTestId("dk-live")).toBeNull();
+    expect(c.querySelector("[data-prototype-foot]")!.textContent).toBe("Illustrative values · In production: exchange short-interest files, OCC open interest, 13F holdings.");
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    expect(c).toHaveTextContent("short interest at or above 10% of float");
+    expect(c).toHaveTextContent("13F top-ten share: NVDA 38%");
+  });
+
+  it("a name the prototype has no row for is listed without numbers", async () => {
+    seed([{ id: "local-1", name: "Mixed", legs: [{ symbol: "MSFT", name: "Microsoft", weight: 50 }, { symbol: "SMCI", name: "Supermicro", weight: 50 }], saved_at: "2026-09-22T20:00:00Z" }]);
+    renderTab();
+    const c = await screen.findByRole("region", { name: /^Positioning/ });
+    expect(c).toHaveTextContent(/MSFT\s*50%\s*no illustrative row for this name/);
+    expect(c).toHaveTextContent(/Crowded\s*1 of 2/);
+  });
+});

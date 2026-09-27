@@ -722,6 +722,11 @@ test.describe("desk v2", () => {
     await expect(hedge.getByTestId("dk-live")).toHaveCount(0);
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
+    // §1.0.3: Positioning, per name in the saved basket, in step 3 below the options slot.
+    const positions = step3.getByRole("region", { name: /^Positioning/ });
+    await expect(positions).toHaveAttribute("data-prototype", "positioning");
+    await expect(positions.getByRole("table").getByRole("row")).toHaveCount(8);
+    await expect(positions).toContainText("Crowded short");
     // Weights as typed, saved in this browser.
     await basket.getByLabel("Weight of SMCI, percent").fill("8");
     await expect(basket).toContainText("total 96%");

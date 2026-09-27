@@ -28,6 +28,12 @@ export const PROTOTYPES: readonly PrototypeEntry[] = [
     title: "Hedge with options",
     production: "EODHD option chains for the hedge ETF and the names, and a dealer's quote for the basket put, stored with each basket.",
   },
+  {
+    id: "positioning",
+    page: "basket-hedge",
+    title: "Positioning",
+    production: "exchange short-interest files, OCC open interest, 13F holdings.",
+  },
 ];
 
 /** A registry row by id; throws on an unknown id, so a card cannot ship without its row. */
@@ -43,4 +49,4 @@ export function isPrototypeFixture(path: string): boolean {
 }
 
 /** The names a module outside prototypes/ may import from it: the cards themselves, which a page places. */
-export const PROTOTYPE_CARD_EXPORTS: readonly string[] = ["ProtectionCard", "OptionsHedgeCard"];
+export const PROTOTYPE_CARD_EXPORTS: readonly string[] = ["ProtectionCard", "OptionsHedgeCard", "PositioningCard"];
