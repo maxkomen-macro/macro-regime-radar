@@ -24,6 +24,7 @@ import { capitalize, dayLong, dayShort, grouped, leadershipGaps, num, ordinal, p
 import { moveText, tipOf } from "../kit/units";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
+import Gauge from "../kit/Gauge";
 import RankBars from "../kit/RankBars";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
 import "./technicals.css";
@@ -401,11 +402,79 @@ export function dayInYear(iso: string | null | undefined, asOf: string): string 
   return iso.slice(0, 4) === asOf.slice(0, 4) ? dayShort(iso) : dayLong(iso);
 }
 
-/** §1.0: RSI is not computed, and the card has no served envelope, so it prints the RSI rows' served reason (§1.0.2, §12.3). */
-export const RSI_UNAVAILABLE = { reason: "RSI is not computed yet.", until: null } as const;
+/** §3: the zone a served RSI sits in, by the two levels the RSI studies cross: strictly above 70
+ * overbought, strictly below 30 oversold, neutral between. */
+export function rsiZone(x: number): "overbought" | "oversold" | "neutral" {
+  return x > 70 ? "overbought" : x < 30 ? "oversold" : "neutral";
+}
 
-function RsiCard() {
-  return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub="is the S&P stretched, either way?" labels={["Now", "Last above 70", "Last below 30"]} block={RSI_UNAVAILABLE} advanced />;
+/** §12.13: "rising" and "falling" come only from the two served numbers, the RSI and the one before it; null without both. */
+export function rsiDirection(now: number | null | undefined, prev: number | null | undefined): "rising" | "falling" | "flat" | null {
+  if (!fin(now) || !fin(prev)) return null;
+  return now > prev ? "rising" : now < prev ? "falling" : "flat";
+}
+
+/** A zone's last session: its day, and the S&P's simple return over the next 20 sessions once they have passed. */
+function visitSub(v: TechnicalsResponse["rsi_last_above_70"]) {
+  if (!v) return undefined;
+  if (fin(v.after_20d))
+    return (
+      <>
+        S&amp;P <Signed value={v.after_20d}>{pct(v.after_20d)}</Signed> 20 sessions later
+      </>
+    );
+  return "20 sessions have not passed yet";
+}
+
+function RsiCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardState }) {
+  const adv = useAdvanced();
+  const ready = state === "ready" && !!t;
+  const aw = state === "awaiting";
+  const r = ready && fin(t.rsi) ? t.rsi : null;
+  const zone = r != null ? rsiZone(r) : null;
+  const words = r != null ? [zone, rsiDirection(t?.rsi, t?.rsi_prev)].filter(Boolean).join(", ") : "";
+  const day = (v: TechnicalsResponse["rsi_last_above_70"]) => (ready && v?.date ? dayInYear(v.date, t.as_of) : "");
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub="is the S&P stretched, either way?" labels={["Now", "Last above 70", "Last below 30"]} block={unserved} advanced />;
+  return (
+    <section className="dk-card te-rsi" aria-labelledby="te-rsi-title" aria-busy={state === "loading"}>
+      <div className="dk-card-head">
+        <h2 className="dk-card-title" id="te-rsi-title">
+          Momentum · RSI<span className="dk-card-sub"> is the S&amp;P stretched, either way?</span>
+        </h2>
+        {/* §1.6: the RSI is dated by its own session, which a gap in the closes can hold before the price's. */}
+        {r != null && dayShort(t?.rsi_date) ? <LiveBadge parts={[dayShort(t?.rsi_date)]} /> : null}
+      </div>
+      <StatRow cols={3}>
+        <Stat label="Now" awaiting={aw || (ready && r == null)} value={r != null ? num(r) : undefined} sub={words || undefined} />
+        <Stat label="Last above 70" size="date" tone="amber" awaiting={aw || (ready && !day(t.rsi_last_above_70))} value={day(t?.rsi_last_above_70) || undefined} sub={ready ? visitSub(t.rsi_last_above_70) : undefined} />
+        <Stat label="Last below 30" size="date" tone="green" awaiting={aw || (ready && !day(t.rsi_last_below_30))} value={day(t?.rsi_last_below_30) || undefined} sub={ready ? visitSub(t.rsi_last_below_30) : undefined} />
+      </StatRow>
+      <div className="te-rsi-gauge">
+        {r != null ? (
+          <Gauge
+            thick
+            min={0}
+            max={100}
+            value={r}
+            ticks={[0, 30, 70, 100]}
+            bands={[
+              { label: "Oversold", to: 30, tone: "green" },
+              { label: "Neutral", to: 70, tone: "neutral" },
+              { label: "Overbought", to: 100, tone: "amber" },
+            ]}
+            caption={num(r)}
+            label={`RSI ${num(r)}, ${zone}`}
+          />
+        ) : aw || ready ? (
+          <Awaiting />
+        ) : null}
+      </div>
+      <div className="te-foot">
+        <AdvancedPanel adv={adv} items="full RSI line · every crossing · regime split" missing="The full RSI line is not served yet." />
+      </div>
+    </section>
+  );
 }
 
 export default function TechnicalsPage({ page }: { page: DeskPage }) {
@@ -433,7 +502,9 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
         <Unserved block={sectorsOff}>
           <SectorCard s={t?.sectors} state={stateOf(tq, Array.isArray(t?.sectors?.leadership))} />
         </Unserved>
-        <RsiCard />
+        <Unserved block={unavailableOf(tq.error)}>
+          <RsiCard t={t} state={stateOf(tq)} />
+        </Unserved>
       </div>
     </div>
   );

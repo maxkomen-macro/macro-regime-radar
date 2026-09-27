@@ -153,6 +153,7 @@ def technicals_from_level(raw: Any) -> dict:
     import numpy as np
     import pandas as pd
 
+    from src.analytics import technicals
     from src.desk import event_study as es
     from src.desk import series as registry
 
@@ -199,6 +200,7 @@ def technicals_from_level(raw: Any) -> dict:
     if crosses:
         p, kind = max(crosses)
         cross = {"kind": kind, "date": iso[p]}
+    rsi = technicals.rsi(al).to_numpy(dtype=float)
     series = {}
     for name, months in TECH_CHART_MONTHS.items():
         lo = date_ - pd.DateOffset(months=months)
@@ -216,7 +218,54 @@ def technicals_from_level(raw: Any) -> dict:
         "trend": {"state": states[i], "state_since": iso[j]},
         "cross": cross,
         "series": series,
+        **rsi_fields(rsi, px, iso),
         "_sessions": iso,
+    }
+
+
+RSI_AFTER = 20  # sessions: the S&P's move after the last session in each RSI zone
+
+
+def rsi_fields(rsi: Any, px: Any, iso: list[str]) -> dict:
+    """/technicals' RSI fields (spec §12.7, desk/fill-compute) from the shared
+    RSI (src/analytics/technicals.rsi) on the extended calendar. `rsi` is the newest defined value and
+    `rsi_date` its session (a gap in the closes leaves the last one before it
+    until fifteen contiguous closes re-seed it); `rsi_prev` is the RSI on the
+    session before `rsi_date`, null when it is not defined there. The last
+    session strictly above 70, and strictly below 30, each with its RSI and
+    the S&P's simple return over the next 20 sessions (null until 20 sessions
+    with a close on the twentieth have passed)."""
+    import math
+
+    import numpy as np
+
+    from src.analytics import technicals
+
+    def f(x: float) -> float | None:
+        return float(x) if math.isfinite(x) else None
+
+    defined = np.flatnonzero(np.isfinite(rsi))
+    if not len(defined):
+        return {"rsi": None, "rsi_date": None, "rsi_prev": None, "rsi_prev_date": None,
+                "rsi_last_above_70": None, "rsi_last_below_30": None}
+    k = int(defined[-1])
+
+    def last_where(mask: Any) -> dict | None:
+        hits = np.flatnonzero(mask)
+        if not len(hits):
+            return None
+        j = int(hits[-1])
+        end = j + RSI_AFTER
+        after = f(px[end] / px[j] - 1) if end < len(px) and math.isfinite(px[j]) else None
+        return {"date": iso[j], "rsi": float(rsi[j]), "after_20d": after,
+                "after_20d_to": iso[end] if after is not None else None}
+
+    valid = np.isfinite(rsi)
+    return {
+        "rsi": float(rsi[k]), "rsi_date": iso[k],
+        "rsi_prev": f(rsi[k - 1]) if k >= 1 else None, "rsi_prev_date": iso[k - 1] if k >= 1 else None,
+        "rsi_last_above_70": last_where(valid & (np.nan_to_num(rsi, nan=0.0) > technicals.RSI_UPPER)),
+        "rsi_last_below_30": last_where(valid & (np.nan_to_num(rsi, nan=100.0) < technicals.RSI_LOWER)),
     }
 
 

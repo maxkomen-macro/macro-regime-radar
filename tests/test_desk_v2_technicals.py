@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from api import analytics_cache, desk_catalog as catalog, desk_items, desk_v2
 from api.main import app
+from src.analytics import technicals
 from src.desk import event_study as es
 from tests import desk_contract as dc
 from tests.test_desk_v2_study import _serve, synth_path  # noqa: F401 (fixture)
@@ -196,3 +197,94 @@ def test_the_published_copy(install_worker, monkeypatch):
     assert gap == {"date": "2026-09-22", "close": None, "ma50": None, "ma200": None}
     assert catalog.TECHNICALS_ALLOWLIST == tuple(d["signals_allowlist"])
     assert desk_v2.TECHNICALS_KEYS == tuple(d)
+
+
+# ── RSI (desk/fill-compute; spec §12.7, §12.13's rule) ──────────────────────
+
+def _wilder(closes: list[float], n: int = 14) -> list[float]:
+    """A plain transcription of Wilder's rule on one contiguous run of closes."""
+    ch = [b - a for a, b in zip(closes, closes[1:])]
+    out = [math.nan] * len(closes)
+    if len(ch) < n:
+        return out
+    g = sum(max(c, 0.0) for c in ch[:n]) / n
+    lo = sum(max(-c, 0.0) for c in ch[:n]) / n
+    for i in range(n, len(ch) + 1):
+        if i > n:
+            c = ch[i - 1]
+            g, lo = (g * (n - 1) + max(c, 0.0)) / n, (lo * (n - 1) + max(-c, 0.0)) / n
+        out[i] = 50.0 if g == lo == 0 else (100.0 if lo == 0 else (0.0 if g == 0 else 100 - 100 / (1 + g / lo)))
+    return out
+
+
+def test_rsi_is_seeded_from_fourteen_changes_and_smoothed_by_wilder():
+    closes = list(100 + np.cumsum(np.random.default_rng(3).normal(0, 1, 60)))
+    got = technicals.rsi(pd.Series(closes)).to_numpy()
+    want = _wilder(closes)
+    assert np.isnan(got[:14]).all() and not np.isnan(got[14])
+    np.testing.assert_allclose(got[14:], want[14:], rtol=1e-12)
+
+
+def test_rsi_edge_values():
+    up = pd.Series([float(i) for i in range(1, 20)])
+    assert technicals.rsi(up).iloc[-1] == 100.0          # gains, no losses
+    assert technicals.rsi(up[::-1].reset_index(drop=True)).iloc[-1] == 0.0  # losses, no gains
+    assert technicals.rsi(pd.Series([5.0] * 20)).iloc[-1] == 50.0          # neither
+
+
+def test_a_gap_invalidates_the_rsi_until_fifteen_contiguous_closes_reseed_it():
+    closes = list(100 + np.cumsum(np.random.default_rng(4).normal(0, 1, 80)))
+    s = pd.Series(closes)
+    s.iloc[40] = np.nan
+    got = technicals.rsi(s).to_numpy()
+    assert not np.isnan(got[39])
+    assert np.isnan(got[40:55]).all(), "nothing bridges the gap: 14 new changes are needed"
+    np.testing.assert_allclose(got[55:], _wilder(closes[41:])[14:], rtol=1e-12)
+
+
+def test_the_rsi_fields_on_a_level():
+    dates = _xnys("2025-01-01", "2026-09-18")
+    lvl = _level(dates, seed=5)
+    t = desk_items.technicals_from_level(lvl)
+    r = technicals.rsi(lvl.reindex(pd.DatetimeIndex(pd.to_datetime(t["_sessions"])))).dropna()
+    assert t["rsi_date"] == "2026-09-18" and t["rsi"] == pytest.approx(float(r.iloc[-1]), rel=1e-12)
+    assert t["rsi_prev_date"] == r.index[-2].strftime("%Y-%m-%d") and t["rsi_prev"] == pytest.approx(float(r.iloc[-2]))
+    for key, hits in (("rsi_last_above_70", r[r > 70]), ("rsi_last_below_30", r[r < 30])):
+        v = t[key]
+        if not len(hits):
+            assert v is None
+            continue
+        day = hits.index[-1]
+        assert v["date"] == day.strftime("%Y-%m-%d") and v["rsi"] == pytest.approx(float(hits.iloc[-1]))
+        later = [d for d in lvl.index if d > day]
+        if len(later) >= 20:
+            assert v["after_20d_to"] == later[19].strftime("%Y-%m-%d")
+            assert v["after_20d"] == pytest.approx(float(lvl[later[19]] / lvl[day] - 1), rel=1e-12)
+        else:
+            assert v["after_20d"] is None and v["after_20d_to"] is None
+
+
+def test_a_gap_holds_the_rsi_on_the_session_before_it():
+    dates = _xnys("2025-01-01", "2026-09-18")
+    lvl = _level(dates, seed=6).drop(pd.Timestamp("2026-09-16"))
+    t = desk_items.technicals_from_level(lvl)
+    assert t["date"] == "2026-09-18" and t["rsi_date"] == "2026-09-15"
+    assert t["rsi_prev_date"] == "2026-09-14" and t["rsi_prev"] is not None
+
+
+def test_the_route_serves_the_rsi_fields(served):
+    d = _tech()["data"]
+    assert d["rsi_date"] is not None and 0 <= d["rsi"] <= 100
+    assert list(d)[list(d).index("move_20d_date") + 1:list(d).index("series")] == [
+        "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70", "rsi_last_below_30"]
+
+
+@published
+def test_the_published_copy_rsi(install_worker, monkeypatch):
+    """The audit's store has no Sep 22 close, so the RSI is held on Sep 21 (the value A's fixture records)."""
+    _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
+    d = _tech()["data"]
+    assert (d["rsi_date"], d["rsi_prev_date"]) == ("2026-09-21", "2026-09-18")
+    assert d["rsi"] == pytest.approx(59.2768, abs=5e-5) and d["rsi_prev"] == pytest.approx(50.7136, abs=5e-5)
+    assert d["rsi_last_above_70"]["date"] == "2026-06-02" and d["rsi_last_above_70"]["after_20d_to"] == "2026-07-01"
+    assert d["rsi_last_below_30"]["date"] == "2026-03-30" and d["rsi_last_below_30"]["after_20d_to"] == "2026-04-28"

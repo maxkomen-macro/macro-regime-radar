@@ -263,7 +263,7 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: the vol block and the RSI card keep their labels, print their reasons and say Not yet served; the sector bars are served (§1.0, §12.7, §12.14)", async ({ page }) => {
+  test("technicals: the vol block keeps its labels, prints its reason and says Not yet served; the sector bars and the RSI card are served (§1.0, §12.7, §12.14)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/technicals");
@@ -274,7 +274,6 @@ test.describe("desk v2", () => {
       await expect(sect.getByTestId("dk-advanced")).toBeEnabled();
       const cards: [RegExp, string, string][] = [
         [/^What protection costs right now/, "needs stored SPY option snapshots and a versioned skew method.", "PUTS vs CALLS · 1 MONTH OUT"],
-        [/^Momentum · RSI/, "RSI is not computed yet.", "Last below 30"],
       ];
       for (const [name, reason, label] of cards) {
         const card = page.getByRole("region", { name });
@@ -284,6 +283,12 @@ test.describe("desk v2", () => {
         await expect(card.getByTestId("dk-advanced")).toBeDisabled();
         await expect(card.getByRole("img")).toHaveCount(0);
       }
+      // §12.7: RSI(14), its zone and direction, each zone's last session and the gauge, dated by its own session.
+      const rsi = page.getByRole("region", { name: /^Momentum · RSI/ });
+      await expect(rsi.getByTestId("dk-live")).toContainText("Sep 21");
+      await expect(rsi).toContainText("neutral, rising");
+      await expect(rsi).toContainText("Jun 2");
+      await expect(rsi.getByRole("img", { name: "RSI 59.3, neutral" })).toBeVisible();
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }

@@ -42,7 +42,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Technicals: price, 50- and 200-day averages, trend, cross, chart, 1-year return, day change, last 20 days in σ, signals (the §3 allowlist) | LIVE | — |
 | Technicals: vol column ("What protection costs right now") | UNAVAILABLE | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
 | Technicals: sector bars | LIVE (desk/fill-etf): the eleven sector ETFs' 60-session log returns less SPY's, `/technicals` `sectors` (§12.14) | — |
-| Technicals: RSI card | UNAVAILABLE | RSI is not computed in `src/desk/` or `api/`; adding it is a new calculation outside Monday's scope (v3 A-16) |
+| Technicals: RSI card | LIVE (desk/fill-compute) | Wilder's RSI(14) on the stored ^GSPC closes, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy) (§12.7) |
 | Event Study: studies in the catalog (§4, §12.3) | LIVE when every input's coverage is stored in the current generation; otherwise that study is awaiting with the missing series named | v3 §2 |
 | Event Study: any other combination of slots | refused, 422 `unsupported` | v3 §2 |
 | Event Study: confidence 80% / 95% | UNAVAILABLE; intervals are the engine's 90% | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
@@ -70,7 +70,7 @@ Build Notes prints these two lists as their own section, word for word.
 
 **Live**
 - Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, active signals, data status.
-- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership.
+- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, and what moves with the S&P.
@@ -84,7 +84,7 @@ Build Notes prints these two lists as their own section, word for word.
 - The VIX gap to realized volatility and the vol band word.
 - What protection costs: options skew, implied against realized volatility, the term structure.
 - Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
-- RSI, and the two RSI signals.
+- The two RSI signals.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
 - What each regime has meant, and the S&P after each regime change.
@@ -100,8 +100,7 @@ served, "Until: <`unavailable.until`>". No number, no chart, no gauge. Its
 `Advanced ▸` control is disabled and says "not yet served". Its badge reads
 `○ Not yet served` (`○ Awaiting refresh` when the reason begins "Awaiting
 refresh", §1.7). A block that is unavailable by §1.0 but has no served
-envelope prints the reason in §1.0's table (the confidence chips) or, for the
-RSI card, the RSI rows' served reason, "RSI is not computed yet." (§12.3).
+envelope prints the reason in §1.0's table (the confidence chips).
 
 ### 1.1 Navigation
 - The sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
@@ -363,9 +362,18 @@ sector without `rel_ret` is never hidden (Codex R-01): its row follows the
 seven, the sub-line adds ", among the <ranked_n> sectors with data", and
 the note of §7 names it with its reason.
 
-**Momentum · RSI**: UNAVAILABLE (§1.0; no served envelope, §1.0.2). Labels
-kept: NOW · LAST ABOVE 70 · LAST BELOW 30. PNG 02's two RSI context boxes are
-the layout once RSI is served (§12.13).
+**Momentum · RSI** (desk/fill-compute), from `/technicals` (§12.7). Badge
+`● Live · <rsi_date>` (the RSI's own session, §1.6). Stats: NOW (`rsi`, one
+decimal; sub-line its zone and direction: "overbought" strictly above 70,
+"oversold" strictly below 30, "neutral" otherwise, then "rising", "falling" or
+"flat" from `rsi` against `rsi_prev`, the two served numbers and nothing
+else) · LAST ABOVE 70 and LAST BELOW 30 (each zone's last session,
+`rsi_last_above_70.date` and `rsi_last_below_30.date`; sub-line "S&P
+<after_20d> 20 sessions later", or "20 sessions have not passed yet" while
+`after_20d` is null). Gauge 0 · 30 · 70 · 100 with the bands
+Oversold (green) · Neutral · Overbought (amber) and the needle at `rsi`. A null
+`rsi` keeps the labels and says "Awaiting refresh", with no gauge. PNG 02's
+two context boxes are not drawn: no read is served (§12.0).
 
 ---
 
@@ -1241,6 +1249,10 @@ Every field describes the registry series `spx` (^GSPC).
 | `cross` | `{kind: "golden"\|"death", date}` | required, nullable | — | — | E `cross_positions` |
 | `move_20d_sigma` | number | required, nullable | σ | `move_20d_date` | N firing state: the spx-20d-2sigma study's z (`zscore(move(level, spx, 20))`) on its `evaluated_on` |
 | `move_20d_date` | date | required, nullable | — | — | N |
+| `rsi` | number | required, nullable (null when no session has a defined RSI) | index points 0–100 | `rsi_date` · daily · `asset_prices` ^GSPC | N RSI (desk/fill-compute): `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), Wilder's RSI(14): seeded from the plain means of 14 close-to-close changes over 15 contiguous valid closes, then avg = (avg × 13 + x) / 14; no losses with gains → 100, no gains with losses → 0, both zero → 50; a missing close breaks the run and the RSI is undefined until 14 new changes re-seed it; the newest defined value |
+| `rsi_date` | date | required, nullable | — | — | N: the session of `rsi` (a gap in the closes holds it on the last session before the gap until the RSI re-seeds) |
+| `rsi_prev`, `rsi_prev_date` | number, date | required, nullable | index points | — | N: the RSI on the XNYS session before `rsi_date` (null when undefined there), and that session |
+| `rsi_last_above_70`, `rsi_last_below_30` | `{date, rsi, after_20d, after_20d_to}` | required, nullable (null when the RSI has never been in that zone) | —, index points, simple return, — | — | N: the last session with the RSI strictly above 70 (strictly below 30), its RSI, and the S&P's simple return from that close to the close 20 XNYS sessions later (`after_20d_to`); both null until that session has a stored close |
 | `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13): the XNYS sessions after `date` − 6, 12 and 36 calendar months, through `date`; a missing close is a point with `close: null`; `ma50`/`ma200` nullable per point |
 | `signals_allowlist` | `["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows are omitted while unavailable). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
 | `vol` | block envelope | required | — | — | awaiting: "needs stored SPY option snapshots and a versioned skew method." |
@@ -1428,12 +1440,13 @@ corr}]`, `matrix: {assets, labels, window, values}`. Each asset declares
 `symbol`, `quantity` and `transform`; Pearson over the same trailing 60 XNYS
 return dates, 60 complete pairs, no forward fill (v2 §12).
 
-**RSI — `status: deferred`** (`/technicals` `rsi`, `rsi_date`, `rsi_prev`;
-the rsi-above-70 and rsi-below-30 studies and Ledger rows). RSI(14) with
-Wilder smoothing, initialized from 14 changes over 15 contiguous valid
-closes; no losses with gains → 100; no gains with losses → 0; both zero →
-50; any gap invalidates it until re-initialized (v3 §13). The card's words
-("rising", "falling") come only from the two served numbers.
+**RSI — the rsi-above-70 and rsi-below-30 studies and Ledger rows:
+`status: deferred`.** The `/technicals` RSI fields are served
+(desk/fill-compute, §12.7), on this rule: RSI(14) with Wilder smoothing,
+initialized from 14 changes over 15 contiguous valid closes; no losses with
+gains → 100; no gains with losses → 0; both zero → 50; any gap invalidates it
+until re-initialized (v3 §13). The card's words ("rising", "falling") come
+only from the two served numbers.
 
 **Confidence — `status: deferred`** (`/study?confidence=0.80|0.90|0.95`,
 `confidence_note`). Changes only the interval quantiles, on identical seeded
@@ -1507,10 +1520,15 @@ authorize any conditional-improvement judgment. Added by desk/fill-etf
 its pattern rule, and breadth of the 11 sector ETFs (§12.14); the
 stock–bond correlation and what moves with the S&P (§12.8).
 
-**Not allowed for Monday** (the blocks are unavailable): RSI; confidence
+**Not allowed for Monday** (the blocks are unavailable): RSI (added after
+Monday, below); confidence
 80% / 95%; the regime statistics table and change outcomes; the
 without-condition comparison; everything §1.0 lists as unavailable. No
 implementation may broaden scope to satisfy an illustrative shape.
+
+**Added after Monday (desk/fill-compute, 2026-09-27, by the owner's brief).**
+Each is a new calculation from stored data, listed in §12 with its rule:
+- the 14-day RSI on ^GSPC, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), served by `/technicals` (§12.7).
 
 ### 13.3 Session A
 Fixtures under `web/src/fixtures/desk/` in the §12 shapes (envelopes

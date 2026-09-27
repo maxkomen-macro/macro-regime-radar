@@ -231,6 +231,7 @@ const nextPrint = o(
 );
 // §12.8 (S-24): `dates` names each tenor's date, null for a tenor not stored.
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s?") });
+const rsiVisit = o({ date: "s!", rsi: "n", after_20d: "n", after_20d_to: "s?" }, { nul: true });
 /** The deferred vol and sectors shapes (§12.13), served as `/technicals` blocks and as their own stubs. */
 const VOL = {
   source: "s",
@@ -328,6 +329,13 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     trend: o({ state: e(TREND_STATES, { req: true }), state_since: "s?" }),
     move_20d_sigma: "n",
     move_20d_date: "s?",
+    // §12.7: RSI(14) and its two zones' last sessions; a visit without its day claims nothing.
+    rsi: "n",
+    rsi_date: "s?",
+    rsi_prev: "n",
+    rsi_prev_date: "s?",
+    rsi_last_above_70: rsiVisit,
+    rsi_last_below_30: rsiVisit,
     signals_allowlist: l("s!"),
     // A cross without its kind and day claims nothing (Codex G1-9).
     cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),

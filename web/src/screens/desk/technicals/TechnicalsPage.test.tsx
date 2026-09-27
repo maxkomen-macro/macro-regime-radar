@@ -14,7 +14,7 @@ import technicals from "../../../fixtures/desk/technicals.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
-import { aboveBelow, allowlistRows, dayInYear, dayMove, monthTicks, quarterOf, RSI_UNAVAILABLE, sevenOf, trendWord } from "./TechnicalsPage";
+import { aboveBelow, allowlistRows, dayInYear, dayMove, monthTicks, quarterOf, rsiDirection, rsiZone, sevenOf, trendWord } from "./TechnicalsPage";
 import { servedTechnicals } from "../../../test/desk-variants";
 import { DESK_ACCENTS } from "../kit/palette";
 
@@ -44,6 +44,9 @@ describe("Technicals words", () => {
     expect(dayInYear("2026-06-12", "2026-09-22")).toBe("Jun 12");
     expect(dayInYear("2025-04-08", "2026-09-22")).toBe("Apr 8, 2025");
     expect(quarterOf("2023")).toBe("");
+    // §3: the zone by the two levels the RSI studies cross (strictly); the direction only from the two served numbers.
+    expect([rsiZone(70), rsiZone(70.01), rsiZone(30), rsiZone(29.99), rsiZone(55)]).toEqual(["neutral", "overbought", "neutral", "oversold", "neutral"]);
+    expect([rsiDirection(58, 55), rsiDirection(55, 58), rsiDirection(55, 55), rsiDirection(55, null)]).toEqual(["rising", "falling", "flat", null]);
     expect(dayMove(0.004, "2026-09-22", "2026-09-22")).toBe("+0.4% today");
     expect(dayMove(0.004, "2026-09-22", "2026-09-24")).toBe("+0.4% on Sep 22");
     // §3: `trend.state` in words.
@@ -177,16 +180,38 @@ describe("Technicals tab", () => {
     expect(within(sect).queryByRole("list")).toBeNull();
   });
 
-  it("the RSI card is unavailable (§1.0): its labels, §1.0's reason once, Not yet served, Advanced disabled, no number or gauge", async () => {
+  it("the RSI card reads /technicals' RSI (§12.7): now, its zone and direction from the two served numbers, each zone's last session, the gauge", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Momentum · RSI/ });
-    await waitFor(() => expect(card).toHaveTextContent(RSI_UNAVAILABLE.reason));
-    expect(within(card).getAllByText(RSI_UNAVAILABLE.reason)).toHaveLength(1);
-    for (const l of ["Now", "Last above 70", "Last below 30"]) expect(card).toHaveTextContent(l);
-    expect(within(card).getByTestId("dk-live")).toHaveTextContent("Not yet served");
-    expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
+    // The fixture's store has no Sep 22 close, so the RSI is held on Sep 21 and dated by its own badge (§1.6).
+    await waitFor(() => expect(within(card).getByTestId("dk-live")).toHaveTextContent("Sep 21"));
+    const [now, above, below] = within(card).getAllByText(/^(Now|Last above 70|Last below 30)$/).map((l) => l.parentElement as HTMLElement);
+    expect(now).toHaveTextContent("59.3");
+    expect(now).toHaveTextContent("neutral, rising");
+    expect(above).toHaveTextContent("Jun 2");
+    expect(above).toHaveTextContent(`S&P ${"\u2212"}1.7% 20 sessions later`);
+    expect(below).toHaveTextContent("Mar 30");
+    expect(below).toHaveTextContent("S&P +12.5% 20 sessions later");
+    expect(within(card).getByRole("img", { name: "RSI 59.3, neutral" })).toBeInTheDocument();
+    expect(card).not.toHaveTextContent("not computed");
+  });
+
+  it("an RSI the store cannot define says Awaiting refresh and draws no gauge; a zone never visited says so under its label", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, rsi: null, rsi_date: null, rsi_prev: null, rsi_prev_date: null, rsi_last_above_70: null }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · RSI/ });
+    await waitFor(() => expect(card).toHaveTextContent("Mar 30"));
     expect(within(card).queryByRole("img")).toBeNull();
-    expect(card.textContent).not.toMatch(/\d+×|\bneutral\b/);
+    expect(within(card).queryByTestId("dk-live")).toBeNull();
+    expect(within(card).getAllByText("Awaiting refresh").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("a zone's last session within 20 sessions of the data says they have not passed yet", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, rsi_last_above_70: { date: "2026-09-15", rsi: 71.2, after_20d: null, after_20d_to: null } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · RSI/ });
+    await waitFor(() => expect(card).toHaveTextContent("Sep 15"));
+    expect(card).toHaveTextContent("20 sessions have not passed yet");
   });
 
   it("/technicals serves the vol block awaiting (its card keeps its labels and prints its §12.7 reason once) and the sectors block ready", async () => {
@@ -263,8 +288,10 @@ describe("routes served awaiting (§12.0, §1.0.2)", () => {
       expect(within(card).getAllByText("no generation stored yet.")).toHaveLength(1);
       expect(card.textContent).not.toMatch(/\d+×|Reliable|No edge/);
     }
-    // RSI is unavailable for its own reason (§1.0), whatever /technicals answers.
-    expect(screen.getByRole("region", { name: /^Momentum · RSI/ })).toHaveTextContent(RSI_UNAVAILABLE.reason);
+    // RSI is a /technicals field (§12.7): the route's reason, once, and no number.
+    const rsi = screen.getByRole("region", { name: /^Momentum · RSI/ });
+    expect(within(rsi).getAllByText("no generation stored yet.")).toHaveLength(1);
+    expect(rsi.textContent).not.toMatch(/\d+\.\d/);
     expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Not yet served");
   });
 });

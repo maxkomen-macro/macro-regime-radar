@@ -293,6 +293,7 @@ SECTORS = Obj(dict(LEADERSHIP, breadth=Block(BREADTH)))
 
 SPAN = obj(start=DATE, end=DATE, n=INT)
 POINT = obj(date=DATE, close=null(NUM), ma50=null(NUM), ma200=null(NUM))
+RSI_VISIT = obj(date=DATE, rsi=NUM, after_20d=null(NUM), after_20d_to=null(DATE))
 TECHNICALS = obj(
     price=null(NUM), date=DATE, freq=Const("daily"), source=Const("asset_prices ^GSPC"),
     chg_1d=null(NUM), chg_1d_dates=Obj({"from": DATE, "to": DATE}),
@@ -302,6 +303,8 @@ TECHNICALS = obj(
     trend=obj(state=TREND_STATE, state_since=null(DATE)),
     cross=null(CROSS),
     move_20d_sigma=null(NUM), move_20d_date=null(DATE),
+    rsi=null(NUM), rsi_date=null(DATE), rsi_prev=null(NUM), rsi_prev_date=null(DATE),
+    rsi_last_above_70=null(RSI_VISIT), rsi_last_below_30=null(RSI_VISIT),
     series=Obj({"6m": Arr(POINT), "1y": Arr(POINT), "3y": Arr(POINT)}),
     signals_allowlist=Const(["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]),
     vol=Deferred("needs stored SPY option snapshots and a versioned skew method."),

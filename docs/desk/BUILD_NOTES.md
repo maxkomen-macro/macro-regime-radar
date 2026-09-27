@@ -74,7 +74,7 @@ Nothing else on the site is fitted.
 ## What's live, and why the rest isn't yet
 
 Live on the published snapshot: Overview, Technicals (price, averages,
-crosses, S&P signals, sector leadership), Event Study for the catalog of
+crosses, S&P signals, sector leadership, the 14-day RSI), Event Study for the catalog of
 questions, Regime (label, history, recession score, next prints), Macro
 (curve, credit, the stock–bond correlation, what moves with the S&P), Sectors (leadership and breadth), Signal Ledger, Position Monitor (in
 your browser), the Client view, Data Pipeline, and this page. The sector
@@ -94,8 +94,8 @@ Designed and drawn, not yet served, each for a stated reason:
   sector ETFs above their 50- and 200-day averages and says so on every
   count. Counting the index's own stocks needs constituent data, which the
   store doesn't hold.
-- The RSI card and the two RSI signals: no RSI calculation exists in the
-  engine yet.
+- The two RSI signals: the RSI itself is computed (the Technicals card),
+  but its two signals are not scored yet.
 - The confidence selector: verdicts are fixed at 90%, so the chips would
   only move the whiskers, and that plumbing isn't built.
 - Position Monitor stores positions in your browser. There is no server

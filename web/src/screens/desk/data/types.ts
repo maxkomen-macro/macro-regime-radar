@@ -244,6 +244,14 @@ export interface Window {
   n: number;
 }
 
+/** §12.7: one RSI zone's last session. */
+export interface RsiVisit {
+  date: string;
+  rsi: number | null;
+  after_20d: number | null;
+  after_20d_to: string | null;
+}
+
 /** §12.7: every field describes the registry series `spx` (^GSPC). */
 export interface TechnicalsResponse extends Envelope {
   price: number | null;
@@ -266,6 +274,14 @@ export interface TechnicalsResponse extends Envelope {
   /** The spx-20d-2sigma study's z on its `evaluated_on`. */
   move_20d_sigma: number | null;
   move_20d_date?: string | null;
+  /** §12.7: Wilder's RSI(14) on its own session (a gap in the closes leaves the last one before it), and on the session before. */
+  rsi?: number | null;
+  rsi_date?: string | null;
+  rsi_prev?: number | null;
+  rsi_prev_date?: string | null;
+  /** §12.7: the last session strictly above 70 / below 30, its RSI, and the S&P's simple return over the next 20 sessions (null until they have passed). */
+  rsi_last_above_70?: RsiVisit | null;
+  rsi_last_below_30?: RsiVisit | null;
   cross: {
     kind: "golden" | "death";
     date: string;
