@@ -376,13 +376,32 @@ export function flipTone(to: string): "green" | "amber" | undefined {
   return k === "green" ? "green" : k === "amber" || k === "red" ? "amber" : undefined;
 }
 
+/** A signed m/m change to two decimals: 0.00396 → "+0.40%", −0.0012 → "−0.12%". */
+export function momSigned(x: number): string {
+  return `${x < 0 ? "−" : "+"}${Math.abs(x * 100).toFixed(2)}%`;
+}
+
+/**
+ * desk/fill-compute: a print the series has already made for the month after the row the card reads from (the K−2
+ * row WHERE WE ARE shows): "the <Mon YYYY> print (+0.40% m/m) flipped inflation to rising." or "… kept growth rising.",
+ * against that row's own axis (`from_direction`). Null unless served.
+ */
+export function printedWords(kind: "cpi" | "indpro", p: Pick<NextPrintRow, "printed_mom" | "printed_direction" | "from_direction" | "reference_month">): string | null {
+  const to = trend(p.printed_direction);
+  const from = trend(p.from_direction);
+  if (!fin(p.printed_mom) || !to || !from || !monthYear(p.reference_month)) return null;
+  const what = kind === "cpi" ? "inflation" : "growth";
+  return `the ${monthYear(p.reference_month)} print (${momSigned(p.printed_mom)} m/m) ${to === from ? `kept ${what} ${to}` : `flipped ${what} to ${to}`}.`;
+}
+
 function NextPrint({ label, kind, p }: { label: string; kind: "cpi" | "indpro"; p: NextPrintRow | null | undefined }) {
-  const words = p ? flipWords(kind, p) : null;
+  const words = p ? (printedWords(kind, p) ?? flipWords(kind, p)) : null;
   if (!p || !words) return <Stat label={label} awaiting />;
   // §5: the release date, "release date unavailable" when the calendar has no record.
   const date = dayShort(p.release_date);
   // The dash for a date not served is no signal, so it takes no color.
-  return <Stat label={label} value={date || "—"} tone={date && p.flips_to ? flipTone(p.flips_to) : undefined} sub={date ? words : `release date unavailable · ${words}`} />;
+  // A print already made describes the next row, not this release: the date keeps no regime's color.
+  return <Stat label={label} value={date || "—"} tone={date && p.flips_to && fin(p.threshold_mom) ? flipTone(p.flips_to) : undefined} sub={date ? words : `release date unavailable · ${words}`} />;
 }
 
 function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State }) {
@@ -406,8 +425,14 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
     >
       {quiet ? null : (
         <>
-          {/* §5: the next prints are read from the newest stored row, not the K−2 row the label above shows. */}
-          <p className="rg-from">{`from the latest print${monthYear(r?.current?.latest_print) ? ` · ${monthYear(r?.current?.latest_print)}` : ""}`}</p>
+          {/* §5 (desk/fill-compute): read from the row WHERE WE ARE shows, so both cards read one label. */}
+          <p className="rg-from">{np?.basis && monthYear(np.basis.month) ? `from the ${monthYear(np.basis.month)} row · ${np.basis.label}` : "from the row governing today"}</p>
+          {np?.next_row && monthYear(np.next_row.month) ? (
+            <p className="rg-next-row">
+              Already printed: the {monthYear(np.next_row.month)} row reads <b data-tone={REGIME_KEY[np.next_row.label]}>{np.next_row.label}</b>
+              {monthYear(np.next_row.first_effective_month) ? `, the label from ${monthYear(np.next_row.first_effective_month)}` : ""}.
+            </p>
+          ) : null}
           {npOff ? (
             <Unserved block={npOff}>
               <StatRow cols={2}>

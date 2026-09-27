@@ -109,7 +109,8 @@ def test_current_is_the_k_minus_2_row_and_moves_at_a_month_boundary_inside_one_g
         assert cur["latest_print"] == store.END_MONTH
 
 
-def test_a_missing_k_minus_2_row_leaves_current_awaiting_and_the_rest_served(tmp_path, install_worker, monkeypatch):
+def test_a_missing_k_minus_2_row_leaves_current_and_the_next_prints_awaiting_and_the_rest_served(tmp_path, install_worker, monkeypatch):
+    """desk/fill-compute: the next prints are read from the K−2 row too, so without it both cards await together."""
     path = store.build(tmp_path / "macro_radar.db")
     conn = sqlite3.connect(path)
     conn.execute("DELETE FROM regimes WHERE date = '2026-07-01'")
@@ -119,7 +120,8 @@ def test_a_missing_k_minus_2_row_leaves_current_awaiting_and_the_rest_served(tmp
     at(monkeypatch, datetime(2026, 9, 25, 21, 0, tzinfo=timezone.utc))
     d = get_regime()["data"]
     assert d["current"] == {"status": "awaiting", "data": None, "unavailable": {"reason": AWAITING_REFRESH, "until": None}}
-    assert d["recession"]["status"] == d["next_prints"]["status"] == "ready"
+    assert d["next_prints"] == d["current"]
+    assert d["recession"]["status"] == "ready"
     assert "2026-07" not in [h["month"] for h in d["history"]]
 
 
@@ -387,11 +389,12 @@ def _oracle_store(tmp_path: Path, regime, growth: list[float], inflation: list[f
     return path
 
 
-def _next(path: Path) -> tuple[dict, list[dict]]:
+def _next(path: Path, basis: str | None = None) -> tuple[dict, list[dict]]:
+    """N6 read from `basis` (default the newest stored row)."""
     conn = sqlite3.connect(path)
     try:
         rows = items.regime_rows(conn)
-        return items.next_prints(conn, rows), rows
+        return items.next_prints(conn, rows)["by_basis"][basis or rows[-1]["month"]], rows
     finally:
         conn.close()
 
@@ -510,13 +513,18 @@ def test_the_release_date_is_the_first_stored_release_after_now(hermetic, monkey
     inside one generation; INDPRO has no stored release event."""
     cases = ((datetime(2026, 9, 26, 15, 0, tzinfo=timezone.utc), "2026-10-14"),
              (datetime(2026, 10, 14, 12, 29, tzinfo=timezone.utc), "2026-10-14"),
-             (datetime(2026, 10, 14, 12, 30, tzinfo=timezone.utc), "2026-11-10"),
-             (datetime(2027, 2, 1, 15, 0, tzinfo=timezone.utc), None))
+             (datetime(2026, 10, 14, 12, 30, tzinfo=timezone.utc), "2026-11-10"))
     for now, want in cases:
         at(monkeypatch, now)
         d = get_regime()["data"]["next_prints"]["data"]
         assert d["cpi"]["release_date"] == want, now
         assert d["indpro"]["release_date"] is None
+    # past the last stored release: none (and in Feb 2027 the K−2 row is not stored, so the block awaits with `current`)
+    times = hermetic.current.results["desk_regime"]["release_times"]["cpi"]
+    assert v2m.release_date(times, datetime(2027, 2, 1, 15, 0, tzinfo=timezone.utc)) is None
+    at(monkeypatch, datetime(2027, 2, 1, 15, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]
+    assert d["next_prints"]["status"] == d["current"]["status"] == "awaiting"
 
 
 def test_release_date_reads_new_york_dates():
@@ -538,7 +546,9 @@ def test_regime_shape_on_a_real_store(path, install_worker, monkeypatch):
     if d["current"]["status"] == "ready":
         assert d["current"]["data"]["print"] == "2026-07"
     if d["next_prints"]["status"] == "ready":
-        for p in d["next_prints"]["data"].values():
+        assert d["next_prints"]["data"]["basis"]["month"] == d["current"]["data"]["print"]
+        for k in ("cpi", "indpro"):
+            p = d["next_prints"]["data"][k]
             if p is not None and p["threshold_mom"] is not None:
                 assert -0.5 < p["threshold_mom"] < 0.5
 
@@ -752,3 +762,74 @@ def test_the_stats_and_the_changes_on_the_audits_store(path, install_worker, mon
         ("2025-06", "Stagflation", "Overheating")]
     assert ch["rows"][1]["spx_1m"] == pytest.approx(0.0262252682664592, rel=1e-12)  # Aug 2026, by SQL
     assert st["rows"][0]["vix_avg"] == pytest.approx(18.0074645390071, rel=1e-12)   # 564 VIX days, by SQL
+
+
+
+# ── Both cards read one label (desk/fill-compute) ───────────────────────────
+
+REGIME_AXES = {"Goldilocks": ("rising", "falling"), "Overheating": ("rising", "rising"),
+               "Stagflation": ("falling", "rising"), "Recession Risk": ("falling", "falling")}
+FOUR = [("Goldilocks", UP, DOWN), ("Overheating", UP, UP), ("Stagflation", DOWN, UP), ("Recession Risk", DOWN, DOWN)]
+
+
+def _flip(d: str) -> str:
+    return "falling" if d == "rising" else "rising"
+
+
+def _regime(growth: str, inflation: str) -> str:
+    return next(k for k, v in REGIME_AXES.items() if v == (growth, inflation))
+
+
+@pytest.mark.parametrize("label,gsteps,isteps", FOUR, ids=[f[0] for f in FOUR])
+def test_the_flip_text_matches_the_displayed_label_for_every_regime(tmp_path, install_worker, monkeypatch, classifier,
+                                                                    label, gsteps, isteps):
+    """The next prints are read from the row WHERE WE ARE shows (the K−2 row
+    for the response's session), so their flips start from its label: a CPI
+    print flips inflation away from that row's inflation, an INDPRO print
+    growth away from its growth, and each lands on the regime the table gives."""
+    path = _oracle_store(tmp_path, classifier, _levels(100.0, gsteps), _levels(250.0, isteps))
+    conn = sqlite3.connect(path)
+    last = conn.execute("SELECT date, label FROM regimes ORDER BY date DESC LIMIT 1").fetchone()
+    conn.close()
+    assert last[1] == label, "the oracle store's newest row carries the regime under test"
+    serve(install_worker, monkeypatch, path)
+    y, m = int(last[0][:4]), int(last[0][5:7]) + 2  # the session month K whose K−2 row is the newest
+    y, m = (y + 1, m - 12) if m > 12 else (y, m)
+    at(monkeypatch, datetime(y, m, 15, 21, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]
+    cur, np_ = d["current"]["data"], d["next_prints"]["data"]
+    assert np_["basis"] == {"month": cur["print"], "label": cur["label"]} and cur["label"] == label
+    growth, inflation = REGIME_AXES[label]
+    assert (cur["growth"], cur["inflation"]) == (growth, inflation)
+    cpi, ind = np_["cpi"], np_["indpro"]
+    assert (cpi["from_direction"], ind["from_direction"]) == (inflation, growth)
+    assert cpi["operator"] == ("<=" if inflation == "rising" else ">") and cpi["flips_to"] == _regime(growth, _flip(inflation))
+    assert ind["operator"] == ("<=" if growth == "rising" else ">") and ind["flips_to"] == _regime(_flip(growth), inflation)
+    assert label not in (cpi["flips_to"], ind["flips_to"])
+
+
+def test_a_print_already_made_is_said_from_the_displayed_row(tmp_path, install_worker, monkeypatch, classifier):
+    """When the displayed K−2 row's next month is stored (mid-month K, before the
+    K−2 row stops governing), the card reads that print from the displayed row:
+    no threshold, the print's m/m change, the axis it gave, and the stored next
+    row's own label."""
+    growth, infl = _levels(100.0, UP), _levels(250.0, DOWN + [0.01])  # the last CPI print jumps: inflation turns rising
+    growth = growth + [growth[-1] * 1.003]
+    path = _oracle_store(tmp_path, classifier, growth, infl)
+    conn = sqlite3.connect(path)
+    rows = items.regime_rows(conn)
+    conn.close()
+    basis, after = rows[-2], rows[-1]
+    np_, _ = _next(path, basis["month"])
+    assert np_["basis"] == {"month": basis["month"], "label": basis["label"]}
+    assert np_["next_row"] == {"month": after["month"], "label": after["label"],
+                               "first_effective_month": v2m.months_before(after["month"], -2)}
+    cpi = np_["cpi"]
+    assert cpi["threshold_mom"] is None and cpi["flips_to"] is None
+    assert cpi["printed_mom"] == pytest.approx(infl[-1] / infl[-2] - 1, rel=1e-12)
+    assert cpi["printed_direction"] == items.direction(after["inflation_trend"])
+    assert cpi["from_direction"] == items.direction(basis["inflation_trend"])
+
+
+def test_the_routes_next_print_keys_mirror_the_items():
+    assert v2m.NEXT_PRINT_KEYS == items.NEXT_PRINTS

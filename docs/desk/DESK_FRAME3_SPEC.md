@@ -520,15 +520,23 @@ bond price series is stored (§6). A footnote says what a row is: "Labels as
 stored, each paired with its own calendar month; a label is known only after
 its month's prints, so this describes, it does not time." No read box.
 
-**What would change it** (`the next two prints`). The card carries the
-sub-label "from the latest print · <latest_print>", and the page prints it:
-the next prints are read from the newest stored row, while WHERE WE ARE shows
-the K−2 row (both stay; ruling of item 14). NEXT CPI · NEXT INDPRO, each
-`release_date` ("release date unavailable" when null) and the sentence "a
-print <operator> <threshold_mom × 100>% m/m flips <inflation|growth> to
-<falling|rising> → <flips_to>, effective from the <first_effective_month>
-label." (`operator` `<=` flips a rising axis to falling, `>` a falling axis
-to rising; v3 §9.3). LAST FIVE REGIME CHANGES · S&P A MONTH LATER
+**What would change it** (`the next two prints`). Both cards read one label
+(desk/fill-compute, the owner's brief, superseding item 14's ruling that read
+the next prints from the newest row): the next prints are read from the row
+WHERE WE ARE shows, the K−2 row (`next_prints.basis`, always
+`current.print`), and the card carries the sub-label "from the <basis month>
+row · <basis label>". When the stored row after it exists (`next_row`), a line
+says "Already printed: the <Mon YYYY> row reads <label>, the label from
+<first_effective_month>." NEXT CPI · NEXT INDPRO, each `release_date`
+("release date unavailable" when null) and, for a print not yet made, the
+sentence "a print <operator> <threshold_mom × 100>% m/m flips
+<inflation|growth> to <falling|rising> → <flips_to>, effective from the
+<first_effective_month> label." (`operator` `<=` flips a rising axis to
+falling, `>` a falling axis to rising; v3 §9.3), or, for a print already made,
+"the <Mon YYYY> print (<printed_mom × 100, two decimals, signed>% m/m) flipped
+<axis> to <printed_direction>." (or "kept <axis> <printed_direction>." when it
+equals `from_direction`). Every flip starts from the displayed label: a
+test holds it for all four regimes. LAST FIVE REGIME CHANGES · S&P A MONTH LATER
 (desk/fill-compute), from `/regime` `changes`: each row "<Mon YYYY> ·
 <from> → <to> · <spx_1m>" (the S&P's simple return over `spx_1m_month`, the
 calendar month after the change; "month not over" while null); the list's
@@ -1235,13 +1243,17 @@ cells; booleans `true` / `false`.
 | `recession.data.methodology` | string | required | — | — | A: "in-sample fitted scores" |
 | `recession.data.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, `"recession model (src/analytics/recession.py)"` |
 | `next_prints` | block envelope | required | — | — | — |
+| `next_prints.data.basis` | `{month, label}` | required | — | the K−2 row for the session month of the response | N (desk/fill-compute): the row the thresholds are read from, the one `current` shows; the block is awaiting whenever `current` is (no K−2 row) |
+| `next_prints.data.next_row` | `{month, label, first_effective_month}` | required, nullable (null when the month after `basis` is not stored) | — | monthly · `regimes` | S: the stored row after `basis`, its label, and the first month it governs (`month` + 2) |
 | `next_prints.data.cpi`, `.indpro` | object | required, nullable | — | — | N next-print thresholds (§13.2) |
 | `next_prints.data.<k>.release_date` | date | required, nullable (null when the calendar has no record) | — | `event_calendar` | E |
 | `next_prints.data.<k>.reference_month` | month | required | — | — | N |
 | `next_prints.data.<k>.series` | `"CPIAUCSL"` \| `"INDPRO"` | required | — | — | A |
-| `next_prints.data.<k>.threshold_mom` | fraction | required, nullable | m/m change | — | N: m is the month of the latest stored regimes row; x_prev is the series' value on the joint INDPRO–CPIAUCSL row before m; `threshold_mom = x_prev / x(m) − 1` (valid for the three-month window only); `threshold_mom` and `flips_to` are null when the series already has a value for m+1; equality is falling |
+| `next_prints.data.<k>.threshold_mom` | fraction | required, nullable | m/m change | — | N: m is the `basis` month (desk/fill-compute: the K−2 row, no longer the latest stored row); x_prev is the series' value on the joint INDPRO–CPIAUCSL row before m; `threshold_mom = x_prev / x(m) − 1` (valid for the three-month window only); `threshold_mom` and `flips_to` are null when the series already has a value for m+1; equality is falling |
+| `next_prints.data.<k>.from_direction` | `"rising"` \| `"falling"` | required | — | as `basis` | E: the sign of the basis row's own stored trend for this series' axis |
+| `next_prints.data.<k>.printed_mom`, `printed_direction` | fraction, `"rising"` \| `"falling"` | required, nullable (null unless the series already has a value for m+1) | m/m change | `reference_month` | N: x(m+1) / x(m) − 1, and the axis row m+1 takes: the stored row's own trend sign when m+1 is stored, else rising iff x(m+1) > x_prev |
 | `next_prints.data.<k>.operator` | `"<="` \| `">"` | required | — | — | N: `<=` flips a rising axis to falling; `>` a falling axis to rising |
-| `next_prints.data.<k>.flips_to` | regime label | required, nullable (null when not evaluable) | — | — | N: from the latest reference row's other-axis sign |
+| `next_prints.data.<k>.flips_to` | regime label | required, nullable (null when not evaluable) | — | — | N: from the `basis` row's other-axis sign |
 | `next_prints.data.<k>.first_effective_month` | month | required | — | — | N: `reference_month` + 2 months |
 | `next_prints.data.<k>.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, the FRED series id; the release date's source is `event_calendar` |
 | `stats` | block envelope | required | — | — | — |

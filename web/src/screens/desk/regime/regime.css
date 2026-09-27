@@ -254,6 +254,24 @@
 }
 
 /* What would change it. */
+.rg-next-row {
+  margin: 6px 0 2px;
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--dk-t2);
+}
+.rg-next-row b[data-tone="green"] {
+  color: var(--dk-green);
+}
+.rg-next-row b[data-tone="amber"] {
+  color: var(--dk-amber);
+}
+.rg-next-row b[data-tone="red"] {
+  color: var(--dk-red);
+}
+.rg-next-row b[data-tone="gray"] {
+  color: var(--dk-gray);
+}
 .rg-changes-h {
   margin-top: 8px;
   /* "Last five of <n> regime changes · S&P a month later" wraps at a phone's width. */

@@ -246,6 +246,7 @@ LEDGER = obj(
 NEXT_PRINT = obj(
     release_date=null(DATE), reference_month=MONTH, series=E("CPIAUCSL", "INDPRO"),
     threshold_mom=null(NUM), operator=E("<=", ">"), flips_to=null(REGIME), first_effective_month=MONTH,
+    from_direction=DIRECTION, printed_mom=null(NUM), printed_direction=null(DIRECTION),
     freq=Const("monthly"), source=STR,
 )
 REGIME_ROUTE = obj(
@@ -261,7 +262,11 @@ REGIME_ROUTE = obj(
         training=obj(start=MONTH, end=MONTH),
         methodology=Const("in-sample fitted scores"),
     ))),
-    next_prints=Block(obj(cpi=null(NEXT_PRINT), indpro=null(NEXT_PRINT))),
+    next_prints=Block(obj(
+        basis=obj(month=MONTH, label=REGIME),
+        next_row=null(obj(month=MONTH, label=REGIME, first_effective_month=MONTH)),
+        cpi=null(NEXT_PRINT), indpro=null(NEXT_PRINT),
+    )),
     stats=Block(obj(
         rows=Arr(obj(regime=REGIME, months=INT, spx_n=INT, spx_median_mo=null(NUM), spx_mean_mo=null(NUM),
                      up_pct=null(FRAC), vix_avg=null(NUM), vix_days=INT), min=4, max=4),

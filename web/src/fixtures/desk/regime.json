@@ -291,25 +291,40 @@
   "source": "recession model (src/analytics/recession.py)"
  },
  "next_prints": {
+  "basis": {
+   "month": "2026-07",
+   "label": "Goldilocks"
+  },
+  "next_row": {
+   "month": "2026-08",
+   "label": "Overheating",
+   "first_effective_month": "2026-10"
+  },
   "cpi": {
    "release_date": "2026-10-14",
-   "reference_month": "2026-09",
+   "reference_month": "2026-08",
    "series": "CPIAUCSL",
-   "threshold_mom": -0.003944560666325425,
-   "operator": "<=",
-   "flips_to": "Goldilocks",
-   "first_effective_month": "2026-11",
+   "threshold_mom": null,
+   "operator": ">",
+   "flips_to": null,
+   "first_effective_month": "2026-10",
+   "from_direction": "falling",
+   "printed_mom": 0.003960181843858157,
+   "printed_direction": "rising",
    "freq": "monthly",
    "source": "CPIAUCSL"
   },
   "indpro": {
    "release_date": null,
-   "reference_month": "2026-09",
+   "reference_month": "2026-08",
    "series": "INDPRO",
-   "threshold_mom": -0.00022121275039244104,
+   "threshold_mom": null,
    "operator": "<=",
-   "flips_to": "Stagflation",
-   "first_effective_month": "2026-11",
+   "flips_to": null,
+   "first_effective_month": "2026-10",
+   "from_direction": "rising",
+   "printed_mom": 0.00022126169630087844,
+   "printed_direction": "rising",
    "freq": "monthly",
    "source": "INDPRO"
   }

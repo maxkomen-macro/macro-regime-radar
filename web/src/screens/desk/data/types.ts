@@ -487,6 +487,11 @@ export interface NextPrint {
   operator: "<=" | ">";
   flips_to: string | null;
   first_effective_month: string;
+  /** desk/fill-compute: the axis on the row the card reads from (the K−2 row WHERE WE ARE shows). */
+  from_direction?: "rising" | "falling" | null;
+  /** When the series has already printed `reference_month`: that print's m/m change and the axis it gave the next row. */
+  printed_mom?: number | null;
+  printed_direction?: "rising" | "falling" | null;
   freq?: string;
   source?: string;
 }
@@ -529,7 +534,13 @@ export interface RegimeResponse extends Envelope {
   };
   /** §12.6 (desk/fill-compute): every stored row as stamped, with its own month of the S&P (simple returns) and the VIX. */
   stats?: { rows: RegimeStat[]; window?: { start: string; end: string; n: number }; freq?: string; source?: string };
-  next_prints?: { cpi?: NextPrint | null; indpro?: NextPrint | null };
+  /** §12.6 (desk/fill-compute): read from `basis`, the same K−2 row `current` shows; `next_row` is the stored row after it, when there is one. */
+  next_prints?: {
+    basis?: { month: string; label: string } | null;
+    next_row?: { month: string; label: string; first_effective_month: string } | null;
+    cpi?: NextPrint | null;
+    indpro?: NextPrint | null;
+  };
   /** §12.6 (desk/fill-compute): the last five changes, newest first, and how many there are. */
   changes?: { rows: RegimeChange[]; n?: number | null; window?: { start: string; end: string; n: number }; freq?: string; source?: string };
   /** PROPOSED (§12.13): the cards' sentences (`stats`, `changes`). */

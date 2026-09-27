@@ -139,27 +139,32 @@ def _month_after(month: str, n: int = 1) -> str:
     return f"{y:04d}-{m + 1:02d}"
 
 
-def next_print(key: str, series_id: str, axis: str, joint, raw, latest: dict) -> dict | None:
-    """N6 for one series (§12.6, FRAME3_API_PLAN.md N6). The classifier reads
+def next_print(key: str, series_id: str, axis: str, joint, raw, basis: dict, next_row: dict | None = None) -> dict | None:
+    """N6 for one series (§12.6, FRAME3_API_PLAN.md N6), read from `basis`, the
+    row the page shows as governing today (desk/fill-compute: the K−2 row, the
+    one WHERE WE ARE shows, so both cards read one label). The classifier reads
     3-point OLS slopes over the rows of the joint INDPRO–CPIAUCSL frame
-    (src/regime.py), which for rows y₀, y₁, y₂ is (y₂ − y₀)/2: the next row
-    m+1 rises iff x(m+1) > x_prev, the series' value on the joint row before
-    m (not always m−1: a month one series skipped has no joint row). So a
-    print at or below `threshold_mom = x_prev / x(m) − 1` m/m makes the axis
-    falling, and one above it rising; equality is falling (a zero slope).
+    (src/regime.py), which for rows y₀, y₁, y₂ is (y₂ − y₀)/2: the row m+1
+    after the basis m rises iff x(m+1) > x_prev, the series' value on the joint
+    row before m (not always m−1: a month one series skipped has no joint row).
+    So a print at or below `threshold_mom = x_prev / x(m) − 1` m/m makes the
+    axis falling, and one above it rising; equality is falling (a zero slope).
 
-    `operator` is "<=" when the latest row's own axis is rising (such a print
-    flips it), ">" when falling. `flips_to` holds the other axis at the latest
-    row's sign. Both `threshold_mom` and `flips_to` are null when the series
-    already has a value for m+1 (the next row waits on the other series).
-    None when the latest row or the joint frame cannot place it."""
+    `operator` is "<=" when the basis row's own axis is rising (such a print
+    flips it), ">" when falling; `from_direction` is that axis. `flips_to`
+    holds the other axis at the basis row's sign. When the series has already
+    printed m+1, `threshold_mom` and `flips_to` are null and the print is
+    served instead: `printed_mom`, its m/m change, and `printed_direction`, the
+    axis it gives row m+1 (the stored row's own when m+1 is stored, else the
+    sign of x(m+1) − x_prev). None when the basis row or the joint frame cannot
+    place it."""
     other = "growth" if axis == "inflation" else "inflation"
-    own_sign, other_sign = direction(latest.get(f"{axis}_trend")), direction(latest.get(f"{other}_trend"))
+    own_sign, other_sign = direction(basis.get(f"{axis}_trend")), direction(basis.get(f"{other}_trend"))
     if own_sign is None or other_sign is None:
         return None
     import pandas as pd
 
-    m = latest["month"]
+    m = basis["month"]
     at = pd.Timestamp(f"{m}-01")
     if at not in joint.index:
         return None
@@ -171,10 +176,16 @@ def next_print(key: str, series_id: str, axis: str, joint, raw, latest: dict) ->
         return None
     reference = _month_after(m)
     printed = raw.dropna()
-    has_next = bool(len(printed)) and reference in {d.strftime("%Y-%m") for d in printed.index}
+    by_month = {d.strftime("%Y-%m"): float(v) for d, v in printed.items()}
     rising = own_sign == "rising"
-    if has_next:
+    printed_mom = printed_dir = None
+    if reference in by_month:
         threshold, flips = None, None
+        x_next = by_month[reference]
+        if math.isfinite(x_next):
+            printed_mom = x_next / x_m - 1.0
+            stored = direction(next_row.get(f"{axis}_trend")) if next_row is not None and next_row["month"] == reference else None
+            printed_dir = stored or ("rising" if x_next > x_prev else "falling")
     else:
         threshold = x_prev / x_m - 1.0
         flipped = {axis: not rising, other: other_sign == "rising"}
@@ -186,14 +197,38 @@ def next_print(key: str, series_id: str, axis: str, joint, raw, latest: dict) ->
         "operator": "<=" if rising else ">",
         "flips_to": flips,
         "first_effective_month": _month_after(reference, 2),
+        "from_direction": own_sign,
+        "printed_mom": printed_mom,
+        "printed_direction": printed_dir,
         "freq": "monthly",
         "source": series_id,
     }
 
 
+# The rows a page may show as governing today: the K−2 row is the newest or one of the two before it
+# while the refresh keeps up (the K−1 and K rows print during month K); the route picks per response.
+NEXT_PRINT_BASES = 3
+
+
+def next_prints_for(joint, raw: dict, rows: list[dict], basis_month: str) -> dict:
+    """§12.6 `next_prints.data` read from the row `basis_month`: the basis row,
+    the stored row after it when there is one (its label is what the next print
+    already decided), and N6 for CPIAUCSL and INDPRO."""
+    by = {r["month"]: r for r in rows}
+    basis = by[basis_month]
+    after = by.get(_month_after(basis_month))
+    return {
+        "basis": {"month": basis_month, "label": basis["label"]},
+        "next_row": None if after is None else {"month": after["month"], "label": after["label"],
+                                                "first_effective_month": _month_after(after["month"], 2)},
+        **{k: next_print(k, sid, axis, joint, raw[sid], basis, after) for k, sid, axis, _ in NEXT_PRINTS},
+    }
+
+
 def next_prints(conn: sqlite3.Connection, rows: list[dict]) -> dict:
-    """N6 for CPIAUCSL and INDPRO from the newest stored regimes row (§12.6:
-    the next prints are read from the latest print, never from the K−2 row)."""
+    """N6 from each of the last NEXT_PRINT_BASES stored rows, by month (§12.6,
+    desk/fill-compute: the route serves the one for the K−2 row the page shows,
+    never a later row's reading beside an earlier row's label)."""
     if REGIME_WINDOW != 3:  # the closed form below is the 3-point slope's
         raise RuntimeError(f"the next-print threshold is defined for a window of 3, not {REGIME_WINDOW}")
     if not rows:
@@ -206,7 +241,7 @@ def next_prints(conn: sqlite3.Connection, rows: list[dict]) -> dict:
     by_axis = {axis: raw[sid] for _, sid, axis, _ in NEXT_PRINTS}
     # the classifier's joint frame (src/regime.py run_regime_classification's `base`)
     joint = pd.DataFrame({"growth": by_axis["growth"], "inflation": by_axis["inflation"]}).dropna()
-    return {k: next_print(k, sid, axis, joint, raw[sid], rows[-1]) for k, sid, axis, _ in NEXT_PRINTS}
+    return {"by_basis": {r["month"]: next_prints_for(joint, raw, rows, r["month"]) for r in rows[-NEXT_PRINT_BASES:]}}
 
 
 def release_times(conn: sqlite3.Connection) -> dict[str, list[str]]:

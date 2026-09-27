@@ -12,7 +12,7 @@ import DeskShell from "../DeskShell";
 import regime from "../../../fixtures/desk/regime.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { flipTone, flipWords, mom, runs, trendTone } from "./RegimePage";
+import { flipTone, flipWords, mom, momSigned, printedWords, REGIMES, runs, trendTone } from "./RegimePage";
 
 type Over = Record<string, unknown>;
 /** The fixture with some blocks replaced (or removed with `undefined`). */
@@ -64,8 +64,18 @@ describe("Regime words", () => {
     ]);
   });
   it("spells the flip from the served threshold and operator, never a typed one (§5)", () => {
-    expect(flipWords("cpi", regime.next_prints.cpi as never)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
-    expect(flipWords("indpro", regime.next_prints.indpro as never)).toBe("a print ≤ −0.02% m/m flips growth to falling → Stagflation, effective from the Nov 2026 label.");
+    const p = { threshold_mom: -0.0039, operator: "<=" as const, flips_to: "Goldilocks", first_effective_month: "2026-11" };
+    expect(flipWords("cpi", p)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
+    expect(flipWords("indpro", { ...p, threshold_mom: -0.0002, flips_to: "Stagflation" })).toBe("a print ≤ −0.02% m/m flips growth to falling → Stagflation, effective from the Nov 2026 label.");
+  });
+  it("desk/fill-compute: a print already made is said against the row the card reads from (the fixture's July row)", () => {
+    // The API's answer on the audit's store: from the July Goldilocks row, August's two prints are stored.
+    expect(regime.next_prints.basis).toEqual({ month: "2026-07", label: "Goldilocks" });
+    expect(flipWords("cpi", regime.next_prints.cpi as never)).toBeNull();
+    expect(printedWords("cpi", regime.next_prints.cpi as never)).toBe("the Aug 2026 print (+0.40% m/m) flipped inflation to rising.");
+    expect(printedWords("indpro", regime.next_prints.indpro as never)).toBe("the Aug 2026 print (+0.02% m/m) kept growth rising.");
+    expect([momSigned(-0.0012), momSigned(0.00396)]).toEqual(["−0.12%", "+0.40%"]);
+    expect(printedWords("cpi", { ...regime.next_prints.cpi, printed_mom: null } as never)).toBeNull();
   });
   it("`>` flips a falling axis to rising (v3 §9.3)", () => {
     const p = { threshold_mom: 0.004, operator: ">" as const, flips_to: "Overheating", first_effective_month: "2026-11" };
@@ -168,10 +178,13 @@ describe("Regime tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What would change it/ });
     await waitFor(() => expect(card).toHaveTextContent("Oct 14"));
-    // §5 (item 14): the next prints are read from the newest stored row, and the card says which.
-    expect(card.querySelector(".rg-from")).toHaveTextContent("from the latest print · Aug 2026");
+    // §5 (desk/fill-compute): read from the row WHERE WE ARE shows, the July Goldilocks row, and the card says which.
+    expect(card.querySelector(".rg-from")).toHaveTextContent("from the Jul 2026 row · Goldilocks");
+    expect(card.querySelector(".rg-next-row")).toHaveTextContent("Already printed: the Aug 2026 row reads Overheating, the label from Oct 2026.");
+    expect(card).toHaveTextContent(/Next CPI\s*Oct 14\s*the Aug 2026 print \(\+0\.40% m\/m\) flipped inflation to rising\./);
     // §5: the calendar has no INDPRO release, so its date says so.
-    expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · a print ≤ −0.02% m\/m flips growth to falling → Stagflation/);
+    expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · the Aug 2026 print \(\+0\.02% m\/m\) kept growth rising\./);
+    expect(card).not.toHaveTextContent(/flips inflation to falling/);
     // The API's answer on the audit's store (Q9): August's month after is September, not over yet.
     expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "Aug 2026Goldilocks → Overheatingmonth not over",
@@ -277,4 +290,46 @@ describe("blocks served awaiting inside a ready answer (§12.6, §1.0.2)", () =>
     expect(change).toHaveTextContent("Oct 14");
     expect(within(change).getAllByText(reason)).toHaveLength(1);
   });
+});
+
+/** The four regimes by their two axes (src/regime.py's table, mirrored in api/desk_items_macro.REGIME_TABLE). */
+const AXES: Record<string, { growth: "rising" | "falling"; inflation: "rising" | "falling" }> = {
+  Goldilocks: { growth: "rising", inflation: "falling" },
+  Overheating: { growth: "rising", inflation: "rising" },
+  Stagflation: { growth: "falling", inflation: "rising" },
+  "Recession Risk": { growth: "falling", inflation: "falling" },
+};
+const regimeOf = (growth: string, inflation: string) => Object.entries(AXES).find(([, a]) => a.growth === growth && a.inflation === inflation)![0];
+const flip = (d: string) => (d === "rising" ? "falling" : "rising");
+
+describe("both cards read one label (desk/fill-compute): the flip text matches WHERE WE ARE for every regime", () => {
+  for (const label of REGIMES) {
+    it(`${label}`, async () => {
+      const a = AXES[label];
+      // The server's rule (api/desk_items_macro.next_print): from the basis row's own axis, `<=` flips rising to falling
+      // and `>` falling to rising; flips_to holds the other axis at the basis row's sign.
+      const next = (axis: "growth" | "inflation", sid: string) => ({
+        release_date: axis === "inflation" ? "2026-10-14" : null, reference_month: "2026-08", series: sid, threshold_mom: 0.001,
+        operator: a[axis] === "rising" ? "<=" : ">", flips_to: axis === "inflation" ? regimeOf(a.growth, flip(a.inflation)) : regimeOf(flip(a.growth), a.inflation),
+        first_effective_month: "2026-10", from_direction: a[axis], printed_mom: null, printed_direction: null, freq: "monthly", source: sid,
+      });
+      stubDesk({
+        "/api/desk/regime": () => ({
+          ...regime,
+          current: { ...regime.current, label, growth: a.growth, inflation: a.inflation, latest_print: "2026-07" },
+          next_prints: { basis: { month: "2026-07", label }, next_row: null, cpi: next("inflation", "CPIAUCSL"), indpro: next("growth", "INDPRO") },
+        }),
+      });
+      renderTab();
+      const where = await screen.findByRole("region", { name: /Where we are/ });
+      await waitFor(() => expect(where.querySelector(".rg-big")).toHaveTextContent(label));
+      const card = screen.getByRole("region", { name: /What would change it/ });
+      expect(card.querySelector(".rg-from")).toHaveTextContent(`from the Jul 2026 row · ${label}`);
+      expect(card).toHaveTextContent(`flips inflation to ${flip(a.inflation)} → ${regimeOf(a.growth, flip(a.inflation))}`);
+      expect(card).toHaveTextContent(`flips growth to ${flip(a.growth)} → ${regimeOf(flip(a.growth), a.inflation)}`);
+      // Never a flip to the state the label already has.
+      expect(card).not.toHaveTextContent(`flips inflation to ${a.inflation}`);
+      expect(card).not.toHaveTextContent(`flips growth to ${a.growth}`);
+    });
+  }
 });

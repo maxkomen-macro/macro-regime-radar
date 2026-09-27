@@ -228,7 +228,20 @@ const TREND_STATES = ["above_both", "below_both", "mixed", "unavailable"] as con
 const FRESH_STATES = ["current", "stale", "missing"] as const;
 const recessionScore = { score: "n", probability_month: "s", inputs_through: "s", band: e(BANDS), band_edges: t(["n!", "n!"], { nul: true }), freq: "s", source: "s" } as const;
 const nextPrint = o(
-  { release_date: "s?", reference_month: "s!", series: "s", threshold_mom: "n", operator: e(["<=", ">"], { req: true }), flips_to: "s?", first_effective_month: "s!", freq: "s", source: "s" },
+  {
+    release_date: "s?",
+    reference_month: "s!",
+    series: "s",
+    threshold_mom: "n",
+    operator: e(["<=", ">"], { req: true }),
+    flips_to: "s?",
+    first_effective_month: "s!",
+    from_direction: e(["rising", "falling"], { nul: true }),
+    printed_mom: "n",
+    printed_direction: e(["rising", "falling"], { nul: true }),
+    freq: "s",
+    source: "s",
+  },
   { nul: true },
 );
 // §12.8 (S-24): `dates` names each tenor's date, null for a tenor not stored.
@@ -379,7 +392,12 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       freq: "s",
       source: "s",
     }),
-    next_prints: o({ cpi: nextPrint, indpro: nextPrint }),
+    next_prints: o({
+      basis: o({ month: "s!", label: "s!" }, { nul: true }),
+      next_row: o({ month: "s!", label: "s!", first_effective_month: "s!" }, { nul: true }),
+      cpi: nextPrint,
+      indpro: nextPrint,
+    }),
     changes: o({
       rows: l(o({ month: "s!", from: "s!", to: "s!", from_month: "s?", spx_1m: "n", spx_1m_month: "s?" }), { req: true }),
       n: "n",

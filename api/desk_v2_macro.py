@@ -126,6 +126,12 @@ def current_block(rows: list[dict], comparison: date) -> dict:
 
 # ── The next release date (§12.6, per response) ─────────────────────────────
 
+# api/desk_items_macro.NEXT_PRINTS, by key (stdlib here: the module is imported lazily).
+NEXT_PRINT_KEYS: tuple[tuple[str, str, str, str | None], ...] = (
+    ("cpi", "CPIAUCSL", "inflation", "CPI Release"),
+    ("indpro", "INDPRO", "growth", None),
+)
+
 def _utc(stamp: str) -> datetime | None:
     try:
         t = datetime.fromisoformat(stamp.strip().replace("Z", "+00:00"))
@@ -144,14 +150,22 @@ def release_date(times: list[str], now: datetime) -> str | None:
     return None
 
 
-def next_prints_block(value: dict, times: dict[str, list[str]], now: datetime) -> dict:
-    """§12.6 `next_prints.data`: the item's thresholds, each with the release
-    date of its next print as of `now` (null for INDPRO: no such event is
-    stored)."""
+def next_prints_block(value: dict, times: dict[str, list[str]], now: datetime, basis_month: str) -> dict:
+    """§12.6 `next_prints.data`, read from `basis_month`, the K−2 row `current`
+    shows (desk/fill-compute: both cards read one label): the item's reading
+    from that row, each series with the release date of its next print as of
+    `now` (null for INDPRO: no such event is stored). Awaiting (S-27) when the
+    item holds no reading from that row."""
     if not value.get("ok"):
         raise env.Awaiting(value["reason"])
-    return {k: (None if p is None else {"release_date": release_date(times.get(k, []), now), **p})
-            for k, p in value["data"].items()}
+    read = value["data"]["by_basis"].get(basis_month)
+    if read is None:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    out = {"basis": read["basis"], "next_row": read["next_row"]}
+    for k, _sid, _axis, _event in NEXT_PRINT_KEYS:
+        p = read[k]
+        out[k] = None if p is None else {"release_date": release_date(times.get(k, []), now), **p}
+    return out
 
 
 # ── GET /regime (§12.6) ─────────────────────────────────────────────────────
@@ -168,7 +182,8 @@ def regime_payload(now: datetime) -> dict:
         "history_source": REGIMES_SOURCE,
         "recession": stored_block(item["recession"]),
         "next_prints": env.block_from("/regime", "next_prints",
-                                      lambda: next_prints_block(item["next_prints"], item["release_times"], now)),
+                                      lambda: next_prints_block(item["next_prints"], item["release_times"], now,
+                                                                print_for(comparison))),
         "stats": stored_block(item["stats"]),
         "changes": stored_block(item["changes"]),
     }
