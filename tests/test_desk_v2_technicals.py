@@ -277,7 +277,7 @@ def test_the_route_serves_the_rsi_fields(served):
     d = _tech()["data"]
     assert d["rsi_date"] is not None and 0 <= d["rsi"] <= 100
     assert list(d)[list(d).index("move_20d_date") + 1:list(d).index("series")] == [
-        "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70", "rsi_last_below_30"]
+        "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70", "rsi_last_below_30", "macd"]
 
 
 @published
@@ -289,3 +289,111 @@ def test_the_published_copy_rsi(install_worker, monkeypatch):
     assert d["rsi"] == pytest.approx(59.2768, abs=5e-5) and d["rsi_prev"] == pytest.approx(50.7136, abs=5e-5)
     assert d["rsi_last_above_70"]["date"] == "2026-06-02" and d["rsi_last_above_70"]["after_20d_to"] == "2026-07-01"
     assert d["rsi_last_below_30"]["date"] == "2026-03-30" and d["rsi_last_below_30"]["after_20d_to"] == "2026-04-28"
+
+
+# ── MACD (desk/fill-compute, owner's item 9; spec §12.7) ────────────────────
+
+def _ema(xs: list[float], span: int) -> list[float]:
+    """A plain transcription on one contiguous run: the SMA of the first `span`
+    values seeds it, then alpha = 2 / (span + 1)."""
+    out = [math.nan] * len(xs)
+    if len(xs) < span:
+        return out
+    a = 2 / (span + 1)
+    e = sum(xs[:span]) / span
+    out[span - 1] = e
+    for i in range(span, len(xs)):
+        e = a * xs[i] + (1 - a) * e
+        out[i] = e
+    return out
+
+
+def test_macd_is_the_sma_seeded_emas_of_twelve_twenty_six_and_nine():
+    closes = list(100 + np.cumsum(np.random.default_rng(7).normal(0, 1, 120)))
+    got = technicals.macd(pd.Series(closes))
+    fast, slow = _ema(closes, 12), _ema(closes, 26)
+    line = [f - s_ for f, s_ in zip(fast, slow)]
+    sig = [math.nan] * 25 + _ema(line[25:], 9)
+    assert np.isnan(got["macd"].to_numpy()[:25]).all() and not math.isnan(got["macd"].iloc[25])
+    assert np.isnan(got["signal"].to_numpy()[:33]).all() and not math.isnan(got["signal"].iloc[33])
+    np.testing.assert_allclose(got["macd"].to_numpy()[25:], line[25:], rtol=1e-12)
+    np.testing.assert_allclose(got["signal"].to_numpy()[33:], sig[33:], rtol=1e-12)
+    np.testing.assert_allclose(got["hist"].to_numpy()[33:], np.array(line[33:]) - np.array(sig[33:]), rtol=1e-9, atol=1e-12)
+
+
+def test_macd_converges_on_the_common_first_value_seeded_ewm():
+    """The seed stops mattering on a long run: the textbook pandas ewm(adjust=False) agrees at the end."""
+    s = pd.Series(100 + np.cumsum(np.random.default_rng(8).normal(0, 1, 1500)))
+    got = technicals.macd(s)
+    line = s.ewm(span=12, adjust=False).mean() - s.ewm(span=26, adjust=False).mean()
+    sig = line.ewm(span=9, adjust=False).mean()
+    np.testing.assert_allclose(got["macd"].tail(100), line.tail(100), rtol=1e-9)
+    np.testing.assert_allclose(got["signal"].tail(100), sig.tail(100), rtol=1e-9)
+
+
+def test_a_gap_invalidates_the_macd_until_the_averages_reseed():
+    closes = list(100 + np.cumsum(np.random.default_rng(9).normal(0, 1, 140)))
+    s = pd.Series(closes)
+    s.iloc[60] = np.nan
+    got = technicals.macd(s)
+    assert not math.isnan(got["hist"].iloc[59])
+    # 26 new closes (61..86) for the line, then 9 line values for the signal (86..94).
+    assert np.isnan(got["macd"].to_numpy()[60:86]).all() and not math.isnan(got["macd"].iloc[86])
+    assert np.isnan(got["hist"].to_numpy()[60:94]).all() and not math.isnan(got["hist"].iloc[94])
+    fresh = technicals.macd(pd.Series(closes[61:]))
+    np.testing.assert_allclose(got["hist"].to_numpy()[94:], fresh["hist"].to_numpy()[33:], rtol=1e-12)
+
+
+def test_macd_crossings_are_strict_carry_through_zero_and_reset_on_a_gap():
+    hist = pd.Series([math.nan, 1, 0, -1, -2, math.nan, -1, 1, 0, 0, 2, -1])
+    assert technicals.macd_crossings(hist) == [(3, "below"), (7, "above"), (11, "below")]
+    assert technicals.macd_crossings(pd.Series([0.0, 0.0, 1.0])) == []  # no side before the first sign
+    assert technicals.macd_crossings(pd.Series([1.0, math.nan, -1.0])) == []  # never across a gap
+
+
+def test_the_macd_fields_on_a_level():
+    dates = _xnys("2025-01-01", "2026-09-18")
+    lvl = _level(dates, seed=10)
+    t = desk_items.technicals_from_level(lvl)
+    m = technicals.macd(lvl.reindex(pd.DatetimeIndex(pd.to_datetime(t["_sessions"]))))
+    got = t["macd"]
+    assert got["date"] == "2026-09-18" and got["params"] == {"fast": 12, "slow": 26, "signal": 9}
+    for k in ("macd", "signal", "hist"):
+        assert got[k] == pytest.approx(float(m[k].iloc[-1]), rel=1e-12)
+    cr = technicals.macd_crossings(m["hist"])
+    assert got["last_cross"] == {"date": m.index[cr[-1][0]].strftime("%Y-%m-%d"), "kind": cr[-1][1]}
+    # The chart is the price chart's 6M sessions, point for point.
+    assert [p["date"] for p in got["series"]] == [p["date"] for p in t["series"]["6m"]]
+    last = got["series"][-1]
+    assert last == {"date": "2026-09-18", "macd": got["macd"], "signal": got["signal"], "hist": got["hist"]}
+
+
+def test_a_gap_holds_the_macd_on_the_session_before_it():
+    dates = _xnys("2025-01-01", "2026-09-18")
+    lvl = _level(dates, seed=11).drop(pd.Timestamp("2026-09-16"))
+    t = desk_items.technicals_from_level(lvl)
+    assert t["date"] == "2026-09-18" and t["macd"]["date"] == "2026-09-15"
+    tail = {p["date"]: p for p in t["macd"]["series"][-3:]}
+    assert all(tail[d]["macd"] is None and tail[d]["hist"] is None for d in ("2026-09-16", "2026-09-17", "2026-09-18"))
+
+
+def test_no_macd_is_null():
+    dates = _xnys("2026-01-02", "2026-02-10")  # fewer than 34 closes
+    t = desk_items.technicals_from_level(_level(dates, seed=12))
+    assert t["macd"] is None
+
+
+def test_the_route_serves_the_macd(served):
+    m = _tech()["data"]["macd"]
+    assert m is not None and m["params"] == {"fast": 12, "slow": 26, "signal": 9}
+    assert m["hist"] == pytest.approx(m["macd"] - m["signal"], abs=1e-9)
+
+
+@published
+def test_the_published_copy_macd(install_worker, monkeypatch):
+    """The audit's store has no Sep 22 close, so the MACD is held on Sep 21, the day the line crossed above its signal."""
+    _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
+    m = _tech()["data"]["macd"]
+    assert m["date"] == "2026-09-21" and m["last_cross"] == {"date": "2026-09-21", "kind": "above"}
+    assert (m["macd"], m["signal"], m["hist"]) == pytest.approx((3.9720, 3.6872, 0.2849), abs=5e-5)
+    assert [(p["date"], p["hist"]) for p in m["series"][-2:]] == [("2026-09-22", None), ("2026-09-23", None)]

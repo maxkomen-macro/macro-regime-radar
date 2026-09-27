@@ -312,6 +312,10 @@ SECTORS = Obj(dict(LEADERSHIP, breadth=Block(BREADTH)))
 
 POINT = obj(date=DATE, close=null(NUM), ma50=null(NUM), ma200=null(NUM))
 RSI_VISIT = obj(date=DATE, rsi=NUM, after_20d=null(NUM), after_20d_to=null(DATE))
+# desk/fill-compute item 9: MACD(12, 26, 9), src/analytics/technicals.macd.
+MACD_POINT = obj(date=DATE, macd=null(NUM), signal=null(NUM), hist=null(NUM))
+MACD = obj(date=DATE, macd=NUM, signal=NUM, hist=NUM, last_cross=null(obj(date=DATE, kind=E("above", "below"))),
+           params=Const({"fast": 12, "slow": 26, "signal": 9}), series=Arr(MACD_POINT))
 TECHNICALS = obj(
     price=null(NUM), date=DATE, freq=Const("daily"), source=Const("asset_prices ^GSPC"),
     chg_1d=null(NUM), chg_1d_dates=Obj({"from": DATE, "to": DATE}),
@@ -323,6 +327,7 @@ TECHNICALS = obj(
     move_20d_sigma=null(NUM), move_20d_date=null(DATE),
     rsi=null(NUM), rsi_date=null(DATE), rsi_prev=null(NUM), rsi_prev_date=null(DATE),
     rsi_last_above_70=null(RSI_VISIT), rsi_last_below_30=null(RSI_VISIT),
+    macd=null(MACD),
     series=Obj({"6m": Arr(POINT), "1y": Arr(POINT), "3y": Arr(POINT)}),
     signals_allowlist=Const(["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma", "spx-5d-2sigma"]),
     vol=Deferred("needs stored SPY option snapshots and a versioned skew method."),

@@ -5,7 +5,7 @@
  * sectors block the sector leadership /sectors serves, §12.14) and /ledger
  * (§12.5, the rows in `signals_allowlist` order). Grid:
  * the vol card spans the left column; price and signals on top; sector
- * leadership and RSI below. Every number is a served field, formatted, and
+ * leadership and RSI below; MACD across the third row (desk/fill-compute). Every number is a served field, formatted, and
  * dated by its own served dates; the trend's words spell the served
  * `trend.state` (§3).
  * A card stays quiet while its first answer is on its way, and keeps its
@@ -477,6 +477,81 @@ function RsiCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardS
   );
 }
 
+// ── Momentum · MACD ──────────────────────────────────────────────────────
+
+/** §3: the histogram's side in words, from the served `hist` only. */
+export function macdSide(hist: number | null | undefined): string | null {
+  if (!fin(hist)) return null;
+  return hist > 0 ? "MACD above its signal" : hist < 0 ? "MACD below its signal" : "MACD on its signal";
+}
+
+/** §3: the last crossover in words, from its served kind. */
+export function macdCrossWords(kind: string | undefined): string | null {
+  return kind === "above" ? "MACD crossed above its signal" : kind === "below" ? "MACD crossed below its signal" : null;
+}
+
+/** One decimal, signed ("+8.1", "−10.4"): the MACD's three values are index points either side of zero. */
+const pts1 = (x: number) => signed(x, 1);
+
+function MacdCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardState }) {
+  const ready = state === "ready" && !!t;
+  const aw = state === "awaiting";
+  const m = ready ? (t.macd ?? null) : null;
+  const pts = (m?.series ?? []).filter((p) => typeof p?.date === "string");
+  const all = pts.flatMap((p) => [p.macd, p.signal, p.hist]).filter(fin);
+  const ticks = extentTicks(all.length ? Math.min(0, ...all) : -1, all.length ? Math.max(0, ...all) : 1, 5);
+  const domain: [number, number] = [ticks[0], ticks[ticks.length - 1]];
+  const lc = m?.last_cross ?? null;
+  const crossI = lc ? pts.findIndex((p) => p.date === lc.date) : -1;
+  const day = (iso: string | undefined) => (ready && iso ? dayInYear(iso, t.as_of) : "");
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-macd-title" className="te-macd" title="Momentum · MACD" sub="12, 26, 9 on the S&P's closes" labels={["MACD", "Signal", "Histogram", "Last crossover"]} block={unserved} />;
+  return (
+    <section className="dk-card te-macd" aria-labelledby="te-macd-title" aria-busy={state === "loading"}>
+      <div className="dk-card-head">
+        <h2 className="dk-card-title" id="te-macd-title">
+          Momentum · MACD<span className="dk-card-sub"> 12, 26, 9 on the S&amp;P&apos;s closes</span>
+        </h2>
+        {/* §1.6: the MACD is dated by its own session, which a gap in the closes can hold before the price's. */}
+        {m && dayShort(m.date) ? <LiveBadge parts={[dayShort(m.date)]} /> : null}
+      </div>
+      <StatRow cols={4}>
+        <Stat label="MACD" awaiting={aw || (ready && !fin(m?.macd))} value={m && fin(m.macd) ? pts1(m.macd) : undefined} tone="blue" />
+        <Stat label="Signal" awaiting={aw || (ready && !fin(m?.signal))} value={m && fin(m.signal) ? pts1(m.signal) : undefined} tone="gray" />
+        <Stat
+          label="Histogram"
+          awaiting={aw || (ready && !fin(m?.hist))}
+          value={m && fin(m.hist) ? pts1(m.hist) : undefined}
+          tone={m && fin(m.hist) ? (m.hist > 0 ? "up" : m.hist < 0 ? "down" : undefined) : undefined}
+          sub={m ? (macdSide(m.hist) ?? undefined) : undefined}
+        />
+        <Stat label="Last crossover" size="date" awaiting={aw || (ready && !day(lc?.date))} value={day(lc?.date) || undefined} sub={macdCrossWords(lc?.kind) ?? undefined} />
+      </StatRow>
+      {m && pts.filter((p) => fin(p.macd)).length > 1 ? (
+        <LineChart
+          ariaLabel={`MACD, its signal line and the histogram, 6M${crossI >= 0 && lc ? `; last crossover on ${dayLong(lc.date)}` : ""}`}
+          height={170}
+          n={pts.length}
+          yDomain={domain}
+          yTicks={ticks.map((v) => ({ v, text: num(v, 0) }))}
+          xTicks={monthTicks(pts.map((p) => p.date))}
+          zero
+          bars={{ values: pts.map((p) => (fin(p.hist) ? p.hist : null)), up: DESK_ACCENTS.green, down: DESK_ACCENTS.red }}
+          series={[
+            { key: "signal", values: pts.map((p) => (fin(p.signal) ? p.signal : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 2, label: "Signal" },
+            { key: "macd", values: pts.map((p) => (fin(p.macd) ? p.macd : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "MACD" },
+          ]}
+          endDot="macd"
+          markers={crossI >= 0 && fin(pts[crossI].macd) ? [{ i: crossI, v: pts[crossI].macd as number, color: lc?.kind === "below" ? DESK_ACCENTS.red : DESK_ACCENTS.green, r: 5 }] : []}
+          pad={{ l: 40, r: 64, t: 10, b: 26 }}
+        />
+      ) : state === "loading" ? null : (
+        <Awaiting />
+      )}
+    </section>
+  );
+}
+
 export default function TechnicalsPage({ page }: { page: DeskPage }) {
   const tq = useTechnicals();
   const lq = useLedger();
@@ -504,6 +579,7 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
         </Unserved>
         <Unserved block={unavailableOf(tq.error)}>
           <RsiCard t={t} state={stateOf(tq)} />
+          <MacdCard t={t} state={stateOf(tq)} />
         </Unserved>
       </div>
     </div>

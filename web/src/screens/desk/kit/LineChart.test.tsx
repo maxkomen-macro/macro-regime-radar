@@ -37,3 +37,17 @@ describe("LineChart band labels", () => {
     expect(t?.style.fill).toBe("#26dca0");
   });
 });
+
+describe("LineChart bars", () => {
+  it("draws one bar from zero per served value, colored by its side, none for a null", () => {
+    const { container } = render(
+      <LineChart ariaLabel="bars" height={100} n={4} series={[]} yDomain={[-2, 2]} yTicks={[]} pad={{ l: 0, r: 0, t: 0, b: 0 }} bars={{ values: [1, -2, null, 0.5], up: "#26dca0", down: "#e5534b" }} />,
+    );
+    const rects = [...container.querySelectorAll<SVGRectElement>("rect.dk-chart-bar")];
+    expect(rects.map((r) => r.getAttribute("fill"))).toEqual(["#26dca0", "#e5534b", "#26dca0"]);
+    // y(0) is the plot's middle (50 of 100): a bar above zero ends there, one below starts there.
+    expect(Number(rects[0].getAttribute("y")) + Number(rects[0].getAttribute("height"))).toBeCloseTo(50);
+    expect(Number(rects[1].getAttribute("y"))).toBeCloseTo(50);
+    expect(Number(rects[1].getAttribute("height"))).toBeCloseTo(50);
+  });
+});

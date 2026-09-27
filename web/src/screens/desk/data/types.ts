@@ -266,6 +266,25 @@ export interface RsiVisit {
   after_20d_to: string | null;
 }
 
+/** §12.7: one session of the MACD chart; each value null where the MACD is undefined. */
+export interface MacdPoint {
+  date: string;
+  macd: number | null;
+  signal: number | null;
+  hist: number | null;
+}
+
+/** §12.7 (desk/fill-compute): MACD(12, 26, 9) on its own session, its last crossover and the 6M chart. */
+export interface Macd {
+  date: string;
+  macd: number | null;
+  signal: number | null;
+  hist: number | null;
+  last_cross: { date: string; kind: "above" | "below" } | null;
+  params?: { fast: number | null; slow: number | null; signal: number | null };
+  series?: MacdPoint[];
+}
+
 /** §12.7: every field describes the registry series `spx` (^GSPC). */
 export interface TechnicalsResponse extends Envelope {
   price: number | null;
@@ -296,6 +315,8 @@ export interface TechnicalsResponse extends Envelope {
   /** §12.7: the last session strictly above 70 / below 30, its RSI, and the S&P's simple return over the next 20 sessions (null until they have passed). */
   rsi_last_above_70?: RsiVisit | null;
   rsi_last_below_30?: RsiVisit | null;
+  /** §12.7: MACD(12, 26, 9); null when no session has one. */
+  macd?: Macd | null;
   cross: {
     kind: "golden" | "death";
     date: string;

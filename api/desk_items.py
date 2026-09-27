@@ -241,6 +241,7 @@ def technicals_from_level(raw: Any) -> dict:
         p, kind = max(crosses)
         cross = {"kind": kind, "date": iso[p]}
     rsi = technicals.rsi(al).to_numpy(dtype=float)
+    macd = technicals.macd(al)
     series = {}
     for name, months in TECH_CHART_MONTHS.items():
         lo = date_ - pd.DateOffset(months=months)
@@ -259,7 +260,44 @@ def technicals_from_level(raw: Any) -> dict:
         "cross": cross,
         "series": series,
         **rsi_fields(rsi, px, iso),
+        "macd": macd_fields(macd, iso, [k for k in range(len(sessions)) if date_ - pd.DateOffset(months=TECH_CHART_MONTHS["6m"]) < sessions[k] <= date_]),
         "_sessions": iso,
+    }
+
+
+def macd_fields(m: Any, iso: list[str], chart: list[int]) -> dict | None:
+    """/technicals' MACD block (spec §12.7, desk/fill-compute): the shared
+    MACD(12, 26, 9) (src/analytics/technicals.macd) on the extended calendar.
+    `date` is its newest defined session (a gap in the closes holds it on the
+    last session before the gap until the averages re-seed, as the RSI is
+    held); the line, the signal and the histogram there; the latest strict
+    crossing of the line over its signal; and `series`, one point per session
+    of the price chart's 6M range (`chart`), null where the MACD is not
+    defined. None when it is defined on no session."""
+    import math
+
+    import numpy as np
+
+    from src.analytics import technicals
+
+    hist = m["hist"].to_numpy(dtype=float)
+    line = m["macd"].to_numpy(dtype=float)
+    sig = m["signal"].to_numpy(dtype=float)
+    defined = np.flatnonzero(np.isfinite(hist))
+    if not len(defined):
+        return None
+    k = int(defined[-1])
+
+    def f(x: float) -> float | None:
+        return float(x) if math.isfinite(x) else None
+
+    crosses = technicals.macd_crossings(m["hist"])
+    last = crosses[-1] if crosses else None
+    return {
+        "date": iso[k], "macd": float(line[k]), "signal": float(sig[k]), "hist": float(hist[k]),
+        "last_cross": None if last is None else {"date": iso[last[0]], "kind": last[1]},
+        "params": {"fast": technicals.MACD_FAST, "slow": technicals.MACD_SLOW, "signal": technicals.MACD_SIGNAL},
+        "series": [{"date": iso[i], "macd": f(line[i]), "signal": f(sig[i]), "hist": f(hist[i])} for i in chart],
     }
 
 

@@ -74,7 +74,7 @@ Nothing else on the site is fitted.
 ## What's live, and why the rest isn't yet
 
 Live on the published snapshot: Overview, Technicals (price, averages,
-crosses, S&P signals, sector leadership, the 14-day RSI), Event Study for the catalog of
+crosses, S&P signals, sector leadership, the 14-day RSI, MACD and its last crossover), Event Study for the catalog of
 questions, Regime (label, history, recession score, next prints, what each
 regime has meant since 1996, the last changes), Macro
 (curve, credit, the stock–bond correlation, what moves with the S&P), Sectors (leadership and breadth), Signal Ledger (the two RSI signals included), Position Monitor (in

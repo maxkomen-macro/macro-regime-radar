@@ -445,7 +445,7 @@ def overview_answer(params: list[tuple[str, str]]) -> dict:
 TECHNICALS_KEYS = ("price", "date", "freq", "source", "chg_1d", "chg_1d_dates", "ret_1y", "ret_1y_dates", "ma50",
                    "ma200", "ma50_window", "ma200_window", "vs_ma50", "vs_ma200", "trend", "cross", "move_20d_sigma",
                    "move_20d_date", "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70",
-                   "rsi_last_below_30", "series", "signals_allowlist", "vol", "sectors")
+                   "rsi_last_below_30", "macd", "series", "signals_allowlist", "vol", "sectors")
 SPX_SOURCE = "asset_prices ^GSPC"
 
 

@@ -10,7 +10,8 @@
   flex: 1;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  /* desk/fill-compute: a third row, sized by its content, for MACD. */
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: var(--dk-gap);
 }
 .te-vol {
@@ -33,6 +34,10 @@
 .te-rsi {
   grid-row: 2;
   grid-column: 3;
+}
+.te-macd {
+  grid-row: 3;
+  grid-column: 1 / -1;
 }
 .te .dk-card {
   padding: 11px 17px 14px;
@@ -222,6 +227,11 @@
   padding-top: 8px;
 }
 
+/* MACD card */
+.te-macd .dk-chart {
+  margin-top: 8px;
+}
+
 /* RSI card */
 .te-rsi .dk-stats {
   padding-bottom: 12px;
@@ -255,6 +265,10 @@
   .te-rsi {
     grid-row: auto;
     grid-column: auto;
+  }
+  .te-macd {
+    grid-row: auto;
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 760px) {

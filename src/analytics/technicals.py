@@ -77,3 +77,61 @@ def realized_vol(close: pd.Series, window: int = REALIZED_WINDOW, periods_per_ye
     r = np.log(close.astype(float)).diff()
     sd = r.rolling(window, min_periods=window).std(ddof=1)
     return 100.0 * math.sqrt(periods_per_year) * sd
+
+
+MACD_FAST, MACD_SLOW, MACD_SIGNAL = 12, 26, 9
+
+
+def ema(values: pd.Series, span: int) -> pd.Series:
+    """Exponential moving average, alpha = 2 / (span + 1), seeded at the
+    span-th contiguous valid value with the plain mean of those span values
+    (the SMA seed). A missing value (NaN) breaks the run and the average is
+    NaN until span new values re-seed it: nothing bridges a gap."""
+    x = values.to_numpy(dtype=float)
+    out = np.full(len(x), np.nan)
+    alpha = 2.0 / (span + 1.0)
+    run, total, prev = 0, 0.0, 0.0
+    for i, v in enumerate(x):
+        if not math.isfinite(v):
+            run, total = 0, 0.0
+            continue
+        run += 1
+        if run < span:
+            total += v
+            continue
+        prev = (total + v) / span if run == span else alpha * v + (1.0 - alpha) * prev
+        out[i] = prev
+    return pd.Series(out, index=values.index)
+
+
+def macd(close: pd.Series, fast: int = MACD_FAST, slow: int = MACD_SLOW, signal: int = MACD_SIGNAL) -> pd.DataFrame:
+    """MACD(fast, slow, signal) on a close series: `macd` = EMA(fast) −
+    EMA(slow) of the closes, `signal` = EMA(signal) of `macd`, `hist` =
+    `macd` − `signal`, each EMA seeded by its SMA (`ema`). A missing close
+    breaks every average that reads it, so the three are NaN until the runs
+    re-seed (slow closes for `macd`, signal more for `signal`)."""
+    line = ema(close, fast) - ema(close, slow)
+    sig = ema(line, signal)
+    return pd.DataFrame({"macd": line, "signal": sig, "hist": line - sig}, index=close.index)
+
+
+def macd_crossings(hist: pd.Series) -> list[tuple[int, str]]:
+    """Strict crossings of the MACD line over its signal line, as (position,
+    "above" | "below"): a session whose histogram is strictly positive
+    (negative) after the side carried was the other one. A zero histogram
+    keeps the carried side; an undefined session resets it, so a crossing
+    never bridges one (the rule of the 50/200-day crosses)."""
+    out: list[tuple[int, str]] = []
+    side: int | None = None
+    for i, h in enumerate(hist.to_numpy(dtype=float)):
+        if not math.isfinite(h):
+            side = None
+            continue
+        s = 1 if h > 0 else (-1 if h < 0 else 0)
+        if s == 0:
+            continue
+        if side is not None and s != side:
+            out.append((i, "above" if s > 0 else "below"))
+        side = s
+    return out
+

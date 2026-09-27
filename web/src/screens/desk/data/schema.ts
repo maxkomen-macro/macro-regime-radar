@@ -246,6 +246,7 @@ const nextPrint = o(
 );
 // §12.8 (S-24): `dates` names each tenor's date, null for a tenor not stored.
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s?") });
+const macdPoint = o({ date: "s!", macd: "n", signal: "n", hist: "n" });
 const rsiVisit = o({ date: "s!", rsi: "n", after_20d: "n", after_20d_to: "s?" }, { nul: true });
 /** The deferred vol and sectors shapes (§12.13), served as `/technicals` blocks and as their own stubs. */
 const VOL = {
@@ -360,6 +361,19 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     rsi_prev_date: "s?",
     rsi_last_above_70: rsiVisit,
     rsi_last_below_30: rsiVisit,
+    // §12.7: MACD(12, 26, 9) on its own session; a crossover without its kind and day claims nothing.
+    macd: o(
+      {
+        date: "s!",
+        macd: "n",
+        signal: "n",
+        hist: "n",
+        last_cross: o({ date: "s!", kind: e(["above", "below"], { req: true }) }, { nul: true }),
+        params: o({ fast: "n", slow: "n", signal: "n" }),
+        series: l(macdPoint),
+      },
+      { nul: true },
+    ),
     signals_allowlist: l("s!"),
     // A cross without its kind and day claims nothing (Codex G1-9).
     cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),

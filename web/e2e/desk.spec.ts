@@ -91,7 +91,7 @@ test.describe("desk v2", () => {
   // Codex R-09: a completed 200 whose body is null is Awaiting refresh on every tab, never a loading state.
   const NULL_ANSWERS: { slug: string; path: string; labels: string[] }[] = [
     { slug: "overview", path: "/api/desk/overview", labels: ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX", "Active signals", "Monitored"] },
-    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now"] },
+    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now", "Last crossover"] },
     { slug: "event-study", path: "/api/desk/study", labels: ["Events", "Up a month later", "Median at a month", "Worst · best"] },
     { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession score", "Next CPI", "Next INDPRO"] },
     { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
@@ -263,7 +263,7 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: the vol block keeps its labels, prints its reason and says Not yet served; the sector bars and the RSI card are served (§1.0, §12.7, §12.14)", async ({ page }) => {
+  test("technicals: the vol block keeps its labels, prints its reason and says Not yet served; the sector bars and the RSI and MACD cards are served (§1.0, §12.7, §12.14)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/technicals");
@@ -289,6 +289,12 @@ test.describe("desk v2", () => {
       await expect(rsi).toContainText("neutral, rising");
       await expect(rsi).toContainText("Jun 2");
       await expect(rsi.getByRole("img", { name: "RSI 59.3, neutral" })).toBeVisible();
+      // §12.7 (desk/fill-compute): MACD(12, 26, 9), held on Sep 21 like the RSI, its last crossover, the histogram chart.
+      const macd = page.getByRole("region", { name: /^Momentum · MACD/ });
+      await expect(macd.getByTestId("dk-live")).toContainText("Sep 21");
+      await expect(macd).toContainText("MACD above its signal");
+      await expect(macd).toContainText("MACD crossed above its signal");
+      await expect(macd.getByRole("img", { name: /^MACD, its signal line and the histogram, 6M/ })).toBeVisible();
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }

@@ -14,7 +14,7 @@ import technicals from "../../../fixtures/desk/technicals.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
-import { aboveBelow, allowlistRows, dayInYear, dayMove, monthTicks, quarterOf, rsiDirection, rsiZone, sevenOf, trendWord } from "./TechnicalsPage";
+import { aboveBelow, allowlistRows, dayInYear, dayMove, macdCrossWords, macdSide, monthTicks, quarterOf, rsiDirection, rsiZone, sevenOf, trendWord } from "./TechnicalsPage";
 import { servedTechnicals } from "../../../test/desk-variants";
 import { DESK_ACCENTS } from "../kit/palette";
 
@@ -51,6 +51,9 @@ describe("Technicals words", () => {
     expect(dayMove(0.004, "2026-09-22", "2026-09-24")).toBe("+0.4% on Sep 22");
     // §3: `trend.state` in words.
     expect([trendWord("above_both"), trendWord("below_both"), trendWord("mixed"), trendWord("unavailable"), trendWord("sideways")]).toEqual(["Above both", "Below both", "Mixed", "Unavailable", null]);
+    // §3 (desk/fill-compute): the MACD's words come from the served histogram and crossover kind only.
+    expect([macdSide(0.28), macdSide(-1), macdSide(0), macdSide(null)]).toEqual(["MACD above its signal", "MACD below its signal", "MACD on its signal", null]);
+    expect([macdCrossWords("above"), macdCrossWords("below"), macdCrossWords(undefined)]).toEqual(["MACD crossed above its signal", "MACD crossed below its signal", null]);
   });
   it("lists the Ledger's rows in `signals_allowlist` order, leaving out what the Ledger does not serve (§3)", () => {
     const l = { ...ledger, signals: ledger.signals as LedgerRow[] };
@@ -206,6 +209,44 @@ describe("Technicals tab", () => {
     expect(within(card).getAllByText("Awaiting refresh").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("the MACD card reads /technicals' macd (§12.7): the three values, the side, the last crossover and the 6M chart", async () => {
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · MACD/ });
+    // The fixture's store has no Sep 22 close, so the MACD is held on Sep 21 and dated by its own badge (§1.6).
+    await waitFor(() => expect(within(card).getByTestId("dk-live")).toHaveTextContent("Sep 21"));
+    const [line, signal, hist, cross] = within(card).getAllByText(/^(MACD|Signal|Histogram|Last crossover)$/).map((l) => l.parentElement as HTMLElement);
+    expect(line).toHaveTextContent("+4.0");
+    expect(signal).toHaveTextContent("+3.7");
+    expect(hist).toHaveTextContent("+0.3");
+    expect(hist).toHaveTextContent("MACD above its signal");
+    expect(cross).toHaveTextContent("Sep 21");
+    expect(cross).toHaveTextContent("MACD crossed above its signal");
+    const chart = within(card).getByRole("img", { name: /^MACD, its signal line and the histogram, 6M; last crossover on / });
+    const served = technicals.macd.series.filter((p) => p.hist != null).length;
+    expect(chart.querySelectorAll("rect.dk-chart-bar")).toHaveLength(served);
+    // The two sessions after the gap have no MACD: no bar is drawn for them.
+    expect(technicals.macd.series.slice(-2).map((p) => p.hist)).toEqual([null, null]);
+  });
+
+  it("a MACD the store cannot define says Awaiting refresh and draws no chart", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, macd: null }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · MACD/ });
+    await waitFor(() => expect(within(card).getAllByText("Awaiting refresh").length).toBeGreaterThanOrEqual(4));
+    expect(within(card).queryByRole("img")).toBeNull();
+    expect(within(card).queryByTestId("dk-live")).toBeNull();
+  });
+
+  it("a MACD that has never crossed its signal leaves the last crossover awaiting, the rest served", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, macd: { ...technicals.macd, last_cross: null } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · MACD/ });
+    await waitFor(() => expect(card).toHaveTextContent("+4.0"));
+    const cross = within(card).getByText("Last crossover").parentElement as HTMLElement;
+    expect(cross).toHaveTextContent("Awaiting refresh");
+    expect(within(card).getByRole("img", { name: "MACD, its signal line and the histogram, 6M" })).toBeInTheDocument();
+  });
+
   it("a zone's last session within 20 sessions of the data says they have not passed yet", async () => {
     stubDesk({ "/api/desk/technicals": () => ({ ...technicals, rsi_last_above_70: { date: "2026-09-15", rsi: 71.2, after_20d: null, after_20d_to: null } }) });
     renderTab();
@@ -292,6 +333,10 @@ describe("routes served awaiting (§12.0, §1.0.2)", () => {
     const rsi = screen.getByRole("region", { name: /^Momentum · RSI/ });
     expect(within(rsi).getAllByText("no generation stored yet.")).toHaveLength(1);
     expect(rsi.textContent).not.toMatch(/\d+\.\d/);
+    // So is the MACD (desk/fill-compute).
+    const macd = screen.getByRole("region", { name: /^Momentum · MACD/ });
+    expect(within(macd).getAllByText("no generation stored yet.")).toHaveLength(1);
+    expect(macd.textContent).not.toMatch(/\d+\.\d/);
     expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Not yet served");
   });
 });
