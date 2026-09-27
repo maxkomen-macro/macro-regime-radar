@@ -12,7 +12,7 @@
  */
 
 import { useId, type ReactNode } from "react";
-import type { BasketBenchmark, BasketLegPriced, BasketPriceResponse, ComparePoint } from "../data/types";
+import type { BasketBenchmark, BasketLegPriced, BasketPoint, BasketPriceResponse, ComparePoint } from "../data/types";
 import { dayLong, dayShort, grouped, num, pct, pctPlain } from "../kit/format";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
@@ -60,10 +60,10 @@ function IndexCard({ p, state, range, setRange }: { p: BasketPriceResponse | und
       <StatRow cols={3}>
         <Stat label="Index" awaiting={aw || (ready && !fin(ix.price))} value={ready && fin(ix.price) ? num(ix.price, 1) : undefined} sub={ready && fin(ix.chg_1d) && ix.chg_1d_dates ? <Signed value={ix.chg_1d}>{dayChange(ix.chg_1d, ix.chg_1d_dates.to)}</Signed> : undefined} />
         <Stat label="50-day average" awaiting={aw || (ready && !fin(ix.ma50))} value={ready && fin(ix.ma50) ? num(ix.ma50, 1) : undefined} tone="green" sub={ready && fin(ix.vs_ma50) ? vsAverage(ix.vs_ma50) : undefined} />
-        <Stat label="200-day average" awaiting={aw || (ready && !fin(ix.ma200))} value={ready && fin(ix.ma200) ? num(ix.ma200, 1) : undefined} tone="gray" sub={ready && fin(ix.vs_ma200) ? vsAverage(ix.vs_ma200) : undefined} />
+        <Stat label="200-day average" awaiting={aw} value={ready ? (fin(ix.ma200) ? num(ix.ma200, 1) : "—") : undefined} tone="gray" sub={ready ? (fin(ix.vs_ma200) ? vsAverage(ix.vs_ma200) : "needs 200 sessions of the index") : undefined} />
       </StatRow>
       {ready && drawable(pts) ? (
-        <TrendChart ariaLabel={`The basket index with its 50-day and 200-day averages, ${range.toUpperCase()}`} mainLabel="Basket" points={pts} crosses={ix.crosses ?? []} />
+        <TrendChart ariaLabel={`The basket index with its 50-day and 200-day averages, ${range.toUpperCase()}`} mainLabel="Basket" points={pts} crosses={ix.crosses ?? []} height={330} ticks={4} />
       ) : state === "loading" ? null : (
         <Awaiting />
       )}
@@ -72,7 +72,56 @@ function IndexCard({ p, state, range, setRange }: { p: BasketPriceResponse | und
   );
 }
 
-function MomentumCard({ p, state }: { p: BasketPriceResponse | undefined; state: State }) {
+/** RSI and drawdown over the range, from the served series (§12.14): RSI with its 30 and 70 lines, drawdown below zero. */
+function MomentumCharts({ pts, range }: { pts: readonly BasketPoint[]; range: BasketRange }) {
+  const rsi = pts.map((q) => (fin(q.rsi) ? q.rsi : null));
+  const dd = pts.map((q) => (fin(q.drawdown) ? q.drawdown * 100 : null));
+  const ddLo = Math.min(0, ...dd.filter(fin));
+  const ddTicks = extentTicks(ddLo, 0, 3);
+  const xt = monthTicks(pts.map((q) => q.date));
+  return (
+    <div className="bh-mom-charts">
+      {rsi.some(fin) ? (
+        <div>
+          <p className="dk-stat-label">RSI (14) · 30 and 70 marked</p>
+          <LineChart
+            ariaLabel={`The index's 14-day RSI, ${range.toUpperCase()}, with the 30 and 70 lines`}
+            height={118}
+            n={pts.length}
+            yDomain={[0, 100]}
+            yTicks={[30, 70].map((v) => ({ v, text: String(v) }))}
+            xTicks={xt}
+            bands={[
+              { from: 70, to: 100, fill: "rgba(139, 146, 158, 0.08)" },
+              { from: 0, to: 30, fill: "rgba(139, 146, 158, 0.08)" },
+            ]}
+            series={[{ key: "rsi", values: rsi, color: DESK_ACCENTS.blue, width: 2, label: "RSI" }]}
+            endDot="rsi"
+            pad={{ l: 34, r: 44, t: 8, b: 24 }}
+          />
+        </div>
+      ) : null}
+      {dd.some(fin) ? (
+        <div>
+          <p className="dk-stat-label">Drawdown from peak, %</p>
+          <LineChart
+            ariaLabel={`The index's drawdown from its running peak, ${range.toUpperCase()}`}
+            height={118}
+            n={pts.length}
+            yDomain={[ddTicks[0], 0]}
+            yTicks={ddTicks.map((v) => ({ v, text: v === 0 ? "0" : num(v, 0) }))}
+            xTicks={xt}
+            series={[{ key: "dd", values: dd, color: DESK_ACCENTS.blue, width: 2, label: "From peak" }]}
+            endDot="dd"
+            pad={{ l: 34, r: 72, t: 8, b: 24 }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MomentumCard({ p, state, range }: { p: BasketPriceResponse | undefined; state: State; range: BasketRange }) {
   const ix = p?.index;
   const ready = state === "ready" && !!ix;
   const aw = state === "awaiting" || (state === "ready" && !ix);
@@ -80,7 +129,14 @@ function MomentumCard({ p, state }: { p: BasketPriceResponse | undefined; state:
   return (
     <TradeCard className="bh-momentum" title="Momentum and risk" sub="the index's own technicals" lead={momentumLead(ix)} state={state}>
       <StatRow cols={2}>
-        <Stat label="1-year return" awaiting={aw || (ready && !fin(ix.ret_1y))} value={ready && fin(ix.ret_1y) ? pct(ix.ret_1y) : undefined} tone={ready && fin(ix.ret_1y) ? (ix.ret_1y >= 0 ? "up" : "down") : undefined} sub={ready && ix.ret_1y_dates ? `since ${dayLong(ix.ret_1y_dates.from)}` : undefined} />
+        {/* A basket younger than 252 sessions has no one-year return: a dash and why, not "Awaiting refresh". */}
+        <Stat
+          label="1-year return"
+          awaiting={aw}
+          value={ready ? (fin(ix.ret_1y) ? pct(ix.ret_1y) : "—") : undefined}
+          tone={ready && fin(ix.ret_1y) ? (ix.ret_1y >= 0 ? "up" : "down") : undefined}
+          sub={ready ? (fin(ix.ret_1y) && ix.ret_1y_dates ? `since ${dayLong(ix.ret_1y_dates.from)}` : `needs 252 sessions of the index; it has ${p?.sessions ?? "fewer"}`) : undefined}
+        />
         <Stat label="RSI (14)" awaiting={aw || (ready && !fin(ix.rsi))} value={ready && fin(ix.rsi) ? num(ix.rsi, 0) : undefined} sub={ready && ix.rsi_date ? `Wilder, on ${dayShort(ix.rsi_date)}` : undefined} />
         <Stat
           label="From peak"
@@ -91,6 +147,7 @@ function MomentumCard({ p, state }: { p: BasketPriceResponse | undefined; state:
         />
         <Stat label="21-day realized vol" awaiting={aw || (ready && !fin(ix.realized_vol_21d))} value={ready && fin(ix.realized_vol_21d) ? pctPlain(ix.realized_vol_21d, 1) : undefined} sub={ready && ix.realized_vol_window ? `annualized, ${dayShort(ix.realized_vol_window.start)} to ${dayShort(ix.realized_vol_window.end)}` : undefined} />
       </StatRow>
+      {ready && ix.series?.[range]?.length ? <MomentumCharts pts={ix.series[range] ?? []} range={range} /> : null}
     </TradeCard>
   );
 }
@@ -308,7 +365,7 @@ export default function BasketTrades({ p, state, range, setRange, names }: { p: 
   return (
     <div className="bh-trades">
       <IndexCard p={p} state={state} range={range} setRange={setRange} />
-      <MomentumCard p={p} state={state} />
+      <MomentumCard p={p} state={state} range={range} />
       <CompareCard p={p} state={state} range={range} />
       <RelativeCard p={p} state={state} range={range} />
       <ContributionCard p={p} state={state} names={names} />

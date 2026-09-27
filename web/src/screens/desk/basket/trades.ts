@@ -25,7 +25,7 @@ export function methodSentence(m: BasketMethod | undefined): string {
 export function startWhy(p: Pick<BasketPriceResponse, "start_binding" | "start_is_first_close">): string {
   const who = p.start_binding ?? [];
   if (p.start_is_first_close && who.length) return who.length === 1 ? `${who[0]}'s first close` : `the first closes of ${listWords(who)}`;
-  return "the start of the two-year daily history";
+  return "the start of the daily history the API reads";
 }
 
 /** "the first session every name has a price: CRWV's first close" (§10: the start date and why). */
@@ -38,9 +38,11 @@ export function startSentence(p: BasketPriceResponse): string | null {
 export function usd(x: number, compact = false): string {
   if (!fin(x)) return "—";
   if (compact) {
-    if (Math.abs(x) >= 1e9) return `$${num(x / 1e9, 1)}B`;
-    if (Math.abs(x) >= 1e6) return `$${num(x / 1e6, 1)}M`;
-    if (Math.abs(x) >= 1e3) return `$${num(x / 1e3, 1)}K`;
+    const sign = x < 0 ? "−" : "";
+    const a = Math.abs(x);
+    if (a >= 1e9) return `${sign}$${num(a / 1e9, 1)}B`;
+    if (a >= 1e6) return `${sign}$${num(a / 1e6, 1)}M`;
+    if (a >= 1e3) return `${sign}$${num(a / 1e3, 1)}K`;
   }
   return `${x < 0 ? "−" : ""}$${grouped(Math.abs(x))}`;
 }
@@ -208,4 +210,30 @@ export function stressLead(h: BasketHedgeResponse): string | null {
   });
   const s = parts.join("; ");
   return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+}
+
+// ── Step 1: the basket (§10) ──────────────────────────────────────────────
+
+/** "10% each", or "the largest NVDA at 22%": the saved weights in words. */
+export function weightsWords(legs: readonly { symbol: string; weight: number | string }[]): string {
+  const w = legs.map((l) => ({ s: l.symbol, v: Number(l.weight) }));
+  if (!w.length) return "";
+  if (w.every((x) => x.v === w[0].v)) return `${num(w[0].v, Number.isInteger(w[0].v) ? 0 : 1)}% each`;
+  const top = [...w].sort((a, b) => b.v - a.v)[0];
+  return `the largest ${top.s} at ${num(top.v, Number.isInteger(top.v) ? 0 : 1)}%`;
+}
+
+/** The basket card's lead: what the basket is, and, once priced, what it has done since its start. */
+export function basketLead(
+  b: { name: string; legs: readonly { symbol: string; weight: number | string }[] },
+  method: BasketMethod,
+  notional: number,
+  p: BasketPriceResponse | undefined,
+): string {
+  const n = b.legs.length;
+  if (!n) return `${b.name} holds no name yet: add tickers, then Save to price it.`;
+  const held = method === "monthly" ? "rebalanced monthly" : "bought and held";
+  const head = `${b.name} holds ${n} ${n === 1 ? "name" : "names"}, ${weightsWords(b.legs)}, ${held}, ${usd(notional)}`;
+  if (!p || !p.start || !fin(p.total_return)) return `${head}.`;
+  return `${head}: ${upDown(p.total_return).toLowerCase()} since ${dayLong(p.start)}, the first session every name has a price (${startWhy(p)}).`;
 }

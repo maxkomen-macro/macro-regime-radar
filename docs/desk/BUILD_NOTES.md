@@ -81,7 +81,9 @@ regime has meant since 1996, the last changes), Macro
 your browser), the Client view, Data Pipeline, and this page. The sector
 ETFs and the other Desk ETFs are stored by the same refresh step as the
 S&P's closes, with their volume, full history back to each fund's first
-close.
+close. Live on request: Basket & Hedge, a basket you keep in your browser
+priced as one index from daily closes, read against the Nasdaq and the S&P,
+and hedged with the ETF that fits it best.
 
 Designed and drawn, not yet served, each for a stated reason:
 
@@ -101,9 +103,9 @@ Designed and drawn, not yet served, each for a stated reason:
   store and no login, and I'm not putting a shared one on a public site.
   The discipline gate in the browser is a workflow check, not a server
   rule.
-- Basket & Hedge pricing: the arithmetic for a beta-adjusted put spread on
-  a basket has to be exactly right or absent. It's absent until it's
-  right.
+- Hedging a basket with options: the arithmetic for a beta-adjusted put
+  spread on a basket has to be exactly right or absent. It's absent until
+  it's right; the card has its slot on the page.
 
 ## Review log
 
@@ -121,8 +123,8 @@ more than the engine computes, and the honest fix was to label them.
 
 In order: constituent-level breadth, the stocks inside the index rather
 than the 11 sector ETFs (it needs a constituent list and a price per
-stock); a stored options surface so the vol card and the
-hedge pricing can go live; the 12-asset correlation matrix; then the
+stock); a stored options surface so the vol card and the options hedge on
+a basket can go live; the 12-asset correlation matrix; then the
 per-study confidence selector. After that, a server-side position store with accounts, so the
 discipline gate can be shared across a desk instead of living in one
 browser.
@@ -166,6 +168,30 @@ Tables: `desk_series` (observations), `desk_series_runs` (runs and their status)
 | Verdict | `verdict_rule: v1`, in the adapter | Under 10 completed outcomes at this horizon → Too few. Else the engine's exclusion decision at 90% (≥10 blocks, interval on one side of zero, adverse share < 3% with zero adverse) → Reliable. Else excess median the same sign at 5, 10 and 20 → Suggestive. Else No edge. The verdict follows the selected horizon; Ledger and Client use 20. |
 | Regime | `regime_at`, `regime_split` | Each event's regime is the stored row stamped two months before the event's month. By-regime stats are null under n < 10. |
 | Identity | `cache_key`, `inputs_hash` | The engine's native hash covers query, generation and cutoff; different cutoffs do not share a cache entry. Exclusions are part of the hash, so a study on a store with a quarantined row is a different study. |
+
+### Basket & Hedge
+
+A basket is a list of US-listed tickers with weights, a method and a
+notional, kept in your browser. Nothing about it is stored on the server;
+the API prices it on request from two years of EODHD's daily bars
+(split- and dividend-adjusted, completed sessions only, fetched once per
+ticker per trading day).
+
+| Step | Where | Rule |
+|---|---|---|
+| Start | `src/desk/basket.py` `common_start` | Base 100 on the first session every name has a close. The page says whose first close it is (CoreWeave's, March 2025, for the AI Infrastructure 10), or that every history starts there. A later session one name is missing is dropped from the index and counted, not filled in. |
+| Buy-and-hold | `price_basket` | The default. Weights become share counts at the start's closes and stay fixed, so a name that runs becomes a bigger part of the basket. |
+| Monthly rebalance | `rebalance_rows` | The same at the start, then at the close of each month's last session the counts reset so every name is back at its target weight. |
+| Contribution | `price_basket` | Each name's share count times its price change, per holding period, over the notional. The names add up to the index's return exactly. |
+| Concentration | `price_basket` | At the last close: the top three weights, the effective number of names (1 over the sum of squared weights), and the average pairwise correlation of the names' daily returns over the last year. |
+| Liquidity | `price_basket` | Days to trade each name's target dollars at 20% of its 20-day average dollar volume (EODHD's unadjusted close times volume). The basket's figure is its slowest name. |
+| Technicals | `src/desk/technicals.py` | The same function that draws the S&P on Technicals: 50- and 200-day averages, trend, crosses, the one-year return, plus RSI(14) by Wilder's rule, drawdown from the running peak, and 21-day realized volatility (sample sd of daily log returns, annualized with √252). |
+| Against QQQ and SPY | `regression`, `relative_series` | Beta and correlation of daily returns over the last 252 and the last 60 sessions both traded; a window with fewer returns shows a dash and says how many there are. The relative lines are basket over benchmark, 100 at the chart's first session, each with its 50-day average. |
+| ETF hedge | `hedge_rows` | SMH, SOXX, QQQ, XLK, IGV, XLU, SPY and IWM, each fitted to the basket by least squares on daily returns. R² over a year ranks them; the hedge ratio is the beta (dollars of ETF to short per dollar of basket); what's left is the volatility of the basket minus beta times the ETF. With a least-squares beta that is the basket's volatility times √(1 − R²). |
+| Stress | `stress` | Linear in the one-year betas: if QQQ or SPY falls 10%, the basket moves its beta times that; the short moves the ETF's own beta times that. No convexity, no costs, stated on the card. |
+
+The options hedge sits in its own slot at the end of the page, labeled
+as not served until the option arithmetic is.
 
 ### Deployment
 

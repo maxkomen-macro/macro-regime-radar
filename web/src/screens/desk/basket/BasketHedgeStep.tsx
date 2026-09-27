@@ -85,7 +85,7 @@ function EtfTable({ rows, top }: { rows: HedgeEtf[]; top: string | null }) {
 function RankCard({ h, state }: { h: BasketHedgeResponse | undefined; state: State }) {
   const rows = h?.etfs ?? [];
   const top = rows.find((e) => e.symbol === h?.top);
-  const basisWords = top?.basis === "60d" ? "60 sessions (the basket is younger than a year)" : "one year";
+  const basisWords = top?.basis === "60d" ? "60 sessions (fewer than 252 daily returns so far)" : "one year";
   return (
     <HedgeCard className="bh-etfs" title="Hedge with an ETF" sub={`ranked by R² of daily returns over ${basisWords}`} lead={h ? hedgeLead(h) : null} state={state}>
       {state === "ready" && rows.length ? <EtfTable rows={rows} top={h?.top ?? null} /> : state === "loading" ? null : <Awaiting />}

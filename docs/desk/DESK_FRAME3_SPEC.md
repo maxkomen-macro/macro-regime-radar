@@ -828,9 +828,17 @@ Export / Import JSON of the store.
 ## 10. Basket & Hedge  (`screens/09-basket-hedge.png`, 1040px)
 
 LIVE for the basket (desk/books, §1.0): a basket kept in this browser is
-priced as one index by `/basket/price` (§12.14) from EODHD's daily bars.
-The hedge's option structures stay UNAVAILABLE (v2 D-25–D-28). No
-Desk/Client toggle. Action button **Send to Position Monitor →** (a basket
+priced as one index by `/basket/price` (§12.14) from EODHD's daily bars,
+and hedged with ETFs by `/basket/hedge` (§12.15). The hedge's option
+structures stay UNAVAILABLE (v2 D-25–D-28). Layout (desk/books; it replaces
+the PNG's two columns, and the PNG still sets the cards' visual language):
+three numbered steps, top to bottom, each an `h2` with a gray subtitle and
+its cards `h3`: **1 Build the basket** · **2 How the basket trades**
+(technicals against the Nasdaq and the S&P, contribution, concentration,
+liquidity) · **3 Hedge it** (the ranked ETFs and the stress test, then the
+slot "Hedge with options"). Every card leads with one plain sentence
+stating its answer with its served numbers; a sentence whose numbers are not
+all served is not written. No Desk/Client toggle. Action button **Send to Position Monitor →** (a basket
 subject, monitored manually, §9). Badge `● Live · <provider> · <prices_as_of>`
 once the saved basket is priced, else `○ Not yet served`.
 

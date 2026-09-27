@@ -16,7 +16,9 @@ import { useBasketHedge, useBasketPrice } from "../data/api";
 import { useSearchParams } from "react-router-dom";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { dayShort } from "../kit/format";
+import { dayShort, pct, pctPlain } from "../kit/format";
+import type { BasketPriceResponse } from "../data/types";
+import { basketLead } from "./trades";
 import { Card, LiveBadge, NotServedBadge } from "../kit/ui";
 import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
@@ -71,7 +73,15 @@ const STORAGE_WORDS: Record<Exclude<SaveResult, "ok">, string> = {
   full: "This browser's storage is full; nothing was saved.",
 };
 
-function Legs({ legs, onChange, onAdd, empty }: { legs: WorkLeg[] | null; onChange: (legs: WorkLeg[]) => void; onAdd: (symbol: string) => Promise<string>; empty: ReactNode }) {
+/** The priced legs by ticker: weight at the last close and return since the start (§12.14). */
+type Live = Record<string, { weight_now: number | null; ret: number | null }>;
+function liveOf(p: BasketPriceResponse | undefined): Live | null {
+  if (!p?.legs?.length) return null;
+  return Object.fromEntries(p.legs.map((l) => [l.symbol, { weight_now: l.weight_now, ret: l.return }]));
+}
+const finite = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+
+function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; onChange: (legs: WorkLeg[]) => void; onAdd: (symbol: string) => Promise<string>; empty: ReactNode; live: Live | null }) {
   const uid = useId();
   const [ticker, setTicker] = useState("");
   const [note, setNote] = useState("");
@@ -107,12 +117,26 @@ function Legs({ legs, onChange, onAdd, empty }: { legs: WorkLeg[] | null; onChan
       {legs ? (
         <table className="bh-table">
           <caption className="dk-sr">The basket's legs and their weights</caption>
-          <thead className="dk-sr">
+          <thead className={live ? "bh-legs-thead" : "dk-sr"}>
             <tr>
               <th scope="col">Ticker</th>
               <th scope="col">Name</th>
-              <th scope="col">Weight</th>
-              <th scope="col">Drop</th>
+              {live ? (
+                <>
+                  <th scope="col" className="bh-live">
+                    Now
+                  </th>
+                  <th scope="col" className="bh-live">
+                    Since start
+                  </th>
+                </>
+              ) : null}
+              <th scope="col" className="bh-w-h">
+                Weight
+              </th>
+              <th scope="col">
+                <span className="dk-sr">Drop</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -122,6 +146,16 @@ function Legs({ legs, onChange, onAdd, empty }: { legs: WorkLeg[] | null; onChan
                 <tr key={l.symbol}>
                   <td className="bh-sym">{l.symbol}</td>
                   <td className="bh-name">{l.name ?? "—"}</td>
+                  {live ? (
+                    <>
+                      <td className="bh-live" title="weight at the last close">
+                        {finite(live[l.symbol]?.weight_now) ? pctPlain(live[l.symbol].weight_now as number, 1) : "—"}
+                      </td>
+                      <td className="bh-live" data-tone={finite(live[l.symbol]?.ret) ? ((live[l.symbol].ret as number) < 0 ? "down" : "up") : undefined}>
+                        {finite(live[l.symbol]?.ret) ? pct(live[l.symbol].ret as number) : "—"}
+                      </td>
+                    </>
+                  ) : null}
                   <td className="bh-w">
                     <input
                       className="bh-input"
@@ -182,6 +216,7 @@ function BasketCard({
   onSaved,
   pendingAdd,
   onAddDone,
+  priced,
 }: {
   basketId: string | null;
   saved: SavedBasket[];
@@ -191,6 +226,8 @@ function BasketCard({
   /** A ticker the address asks to add (`?add=XYZ`, from Technicals). */
   pendingAdd: string | null;
   onAddDone: () => void;
+  /** The saved basket's price answer, for the lead and the legs' live columns. */
+  priced?: BasketPriceResponse;
 }) {
   const uid = useId();
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -439,6 +476,7 @@ function BasketCard({
         </div>
       }
     >
+      {local ? <p className="bh-lead">{basketLead(local, methodOf(local), notionalOf(local), priced)}</p> : null}
       {local ? (
         <div className="bh-settings">
           <label className="bh-field">
@@ -463,7 +501,7 @@ function BasketCard({
           <p className="bh-settings-hint">{method === "monthly" ? "back to the target weights at each month's last session" : "share counts fixed at the start; weights drift with price"}</p>
         </div>
       ) : null}
-      <Legs key={basketId ?? ""} legs={legs} onChange={(l) => setWork(l)} onAdd={addTicker} empty={empty} />
+      <Legs key={basketId ?? ""} legs={legs} onChange={(l) => setWork(l)} onAdd={addTicker} empty={empty} live={liveOf(priced)} />
       {unreadable ? (
         <p className="bh-why">
           {unreadable === 1 ? "1 saved basket" : `${unreadable} saved baskets`} could not be read; kept in this browser, and in an export, not shown.
@@ -473,6 +511,22 @@ function BasketCard({
         {status}
       </p>
     </Card>
+  );
+}
+
+/** Step 1 (§10): build the basket. */
+function StepOne({ children }: { children: ReactNode }) {
+  const hid = useId();
+  return (
+    <section className="bh-step bh-step-1" aria-labelledby={hid}>
+      <h2 className="bh-step-title" id={hid}>
+        <span className="bh-step-n" aria-hidden="true">
+          1
+        </span>
+        Build the basket <span className="bh-step-sub">name it, add names, weight them; Save computes everything below</span>
+      </h2>
+      {children}
+    </section>
   );
 }
 
@@ -611,9 +665,9 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
   return (
     <div className="bh">
       <PageTitle page={page} badge={priced ? <LiveBadge boxed parts={[priced.provider ?? null, dayShort(priced.prices_as_of) || null]} /> : <NotServedBadge boxed />} />
-      <div className="bh-grid">
-        <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} pendingAdd={pendingAdd} onAddDone={addDone} />
-      </div>
+      <StepOne>
+        <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} pendingAdd={pendingAdd} onAddDone={addDone} priced={pq.data} />
+      </StepOne>
       <StepTwo local={local} q={pq} state={state} range={range} setRange={setRange} names={names} />
       <StepThree local={local} q={hq} />
     </div>

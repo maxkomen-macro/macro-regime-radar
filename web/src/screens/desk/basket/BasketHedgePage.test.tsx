@@ -107,6 +107,23 @@ describe("Basket & Hedge tab", () => {
     expect(calls.some((c) => c.startsWith("POST"))).toBe(false);
   });
 
+  it("is three numbered steps, top to bottom; the basket card leads with its sentence and shows each name's weight now and return (§10)", async () => {
+    seed();
+    renderTab();
+    const b = await loaded();
+    const steps = screen.getAllByRole("heading", { level: 2 }).filter((h) => h.classList.contains("bh-step-title"));
+    expect(steps.map((h) => h.textContent)).toEqual([
+      "1Build the basket name it, add names, weight them; Save computes everything below",
+      "2How the basket trades technicals against the Nasdaq and the S&P, contribution, concentration, liquidity",
+      "3Hedge it the closest ETF and what it does in a 10% fall, then options",
+    ]);
+    await waitFor(() => expect(b).toHaveTextContent("AI infrastructure holds 7 names, the largest NVDA at 22%, bought and held, $1,000,000: up 113.8% since Mar 28, 2025, the first session every name has a price (CRWV's first close)."));
+    const nvda = within(b).getByLabelText("Weight of NVDA, percent").closest("tr")!;
+    expect(nvda).toHaveTextContent(/NVDA\s*Nvidia\s*21\.2%\s*\+106\.1%/);
+    // Every card of steps 2 and 3 leads with its answer in one sentence.
+    for (const card of document.querySelectorAll(".bh-trades .dk-card, .bh-etfs, .bh-stress")) expect(card.querySelector(".bh-lead"), card.querySelector("h3")?.textContent ?? "").not.toBeNull();
+  });
+
   it("asks nothing for a basket whose weights are not at 100%, and says what prices it", async () => {
     seed([{ ...BASKETS[0], legs: BASKETS[0].legs.map((l, i) => (i === 0 ? { ...l, weight: 20 } : l)) }]);
     const { calls } = stubDesk();

@@ -34,7 +34,7 @@ describe("Basket & Hedge's lead sentences", () => {
   it("the start says whose first close it is, or that every history starts there", () => {
     expect(startSentence(SAMPLE)).toBe("Base 100 on Mar 28, 2025, the first session every name has a price (CRWV's first close).");
     expect(startWhy({ start_binding: ["CRWV", "NBIS"], start_is_first_close: true })).toBe("the first closes of CRWV and NBIS");
-    expect(startWhy({ start_binding: ["NVDA", "AVGO"], start_is_first_close: false })).toBe("the start of the two-year daily history");
+    expect(startWhy({ start_binding: ["NVDA", "AVGO"], start_is_first_close: false })).toBe("the start of the daily history the API reads");
   });
 
   it("a sentence whose numbers are not served is not written", () => {
@@ -56,6 +56,7 @@ describe("Basket & Hedge's lead sentences", () => {
     expect(usd(1_000_000)).toBe("$1,000,000");
     expect(usd(792_500_000, true)).toBe("$792.5M");
     expect(usd(29_200_000_000, true)).toBe("$29.2B");
+    expect(usd(-46_071, true)).toBe("−$46.1K");
     expect(listWords(["A"])).toBe("A");
     expect(listWords(["A", "B", "C"])).toBe("A, B and C");
     expect(upDown(-0.123)).toBe("Down 12.3%");

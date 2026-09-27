@@ -573,7 +573,7 @@
 .bh-settings {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 8px 22px;
   margin: 10px 0 4px;
   padding-bottom: 10px;
@@ -593,10 +593,65 @@
 }
 .bh-input.bh-notional {
   width: 130px;
+  height: 30px;
+  font-size: 13px;
   text-align: right;
 }
 .bh-settings-hint {
-  margin: 0 0 5px;
+  align-self: flex-end;
+  margin: 0 0 7px;
   font-size: 12px;
   color: var(--dk-t4);
+}
+
+/* The legs' live columns once the basket is priced: weight at the last close, return since the start. */
+.bh-legs-thead th {
+  padding: 0 0 4px;
+  font-family: var(--dk-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+}
+.bh-legs-thead th.bh-live {
+  padding-right: 22px;
+  text-align: right;
+}
+.bh-legs-thead th.bh-w-h {
+  padding-right: 22px;
+  text-align: right;
+}
+td.bh-live {
+  width: 104px;
+  padding-right: 22px;
+  font-family: var(--dk-mono);
+  font-size: 12.5px;
+  text-align: right;
+  color: var(--dk-t2);
+}
+td.bh-live[data-tone="up"] {
+  color: var(--dk-green);
+}
+td.bh-live[data-tone="down"] {
+  color: var(--dk-red);
+}
+.bh-step-1 .bh-lead {
+  margin-top: 8px;
+}
+@media (max-width: 600px) {
+  .bh-live {
+    display: none;
+  }
+}
+
+.bh-mom-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  margin-top: 10px;
+}
+.bh-mom-charts .dk-stat-label {
+  margin: 0;
 }
