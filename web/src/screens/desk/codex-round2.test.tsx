@@ -89,8 +89,8 @@ describe("R-16: rows the boundary drops are said; no total and no 'none' is read
     const inv = await screen.findByRole("region", { name: /Series inventory/ });
     await waitFor(() => expect(inv).toHaveTextContent("1 series could not be read."));
     expect(inv).not.toHaveTextContent("No series in this group yet.");
-    // 22 served: the lost series is counted, the two readable Credit rows are not there.
-    expect(inv).toHaveTextContent(/21 series · grouped/);
+    // 46 served (22, and the 24 ETFs since desk/fill-etf): the lost series is counted, the two readable Credit rows are not there.
+    expect(inv).toHaveTextContent(/45 series · grouped/);
     expect(within(inv).getByRole("button", { name: /^Credit/ })).toHaveTextContent("1 series");
   });
 

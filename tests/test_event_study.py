@@ -742,7 +742,10 @@ def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp
         assert by[k]["status"] == "awaiting_refresh" if k in by else not registry.get(k).roles, k
     assert by["ndx"]["status"] == "awaiting_refresh" and by["wti"]["status"] == "awaiting_refresh" and by["spx"]["status"] == "stored"
     # ^RUT is not in the synthetic store, nor are the four tier-2 desk_series series
-    assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["us3m", "us5y", "us30y", "wti", "ndx", "rut", "dxy", "usdjpy"]
+    # nor, since desk/fill-etf, the 24 ETFs the refresh stores in asset_prices
+    etfs = ["xlb", "xle", "xlf", "xli", "xlk", "xlp", "xlu", "xlv", "xly", "xlc", "xlre", "spy", "rsp", "iwm", "qqq", "smh", "soxx",
+            "igv", "tlt", "ief", "hyg", "lqd", "gld", "uup"]
+    assert es.assets_with_coverage(_synthetic_db(tmp_path / "full.db"))["awaiting_refresh"] == ["us3m", "us5y", "us30y", "wti", "ndx", "rut", "dxy", "usdjpy", *etfs]
 
     # A tier the refresh does not store is planned: not stored, and it says why.
     monkeypatch.setattr(registry, "REFRESH_TIER", 1)
@@ -1211,7 +1214,7 @@ def _add_future_rows(path: Path) -> Path:
     """Rows dated after any real observation: WTI in desk_series and the S&P in asset_prices."""
     conn = sqlite3.connect(path)
     conn.execute("INSERT INTO desk_series VALUES ('DCOILWTICO', '2026-12-31', 99.0, 'fred')")
-    conn.execute("INSERT INTO asset_prices VALUES ('^GSPC', '1d', '2026-12-31', 9999.0, 'test')")
+    conn.execute("INSERT INTO asset_prices (symbol, interval, date, close, provider) VALUES ('^GSPC', '1d', '2026-12-31', 9999.0, 'test')")
     conn.commit()
     conn.close()
     return path

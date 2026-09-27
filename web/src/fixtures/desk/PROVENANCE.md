@@ -56,10 +56,29 @@ condition and every study with the S&P as its target cannot be read on Sep
 | `deferred-macro.json`, `vol.json`, `sectors.json` | none | §12.13's deferred shapes with the mockup's values, for the cards built for them: vol with each value's date (`dates`), sectors with breadth's comparison date (`compared_on`), each correlation with its symbol, quantity and transform (illustrative choices). No reads and no words: §12.0 serves a read only with a named rule, and none exists |
 | `baskets.json`, `pipeline-ddl.ts` | none | `baskets.json` is an Export of this browser's store; the DDL is the proposed export schema, its first line saying so, generated from `api/static/snowflake_proposed.sql` (the one copy `/pipeline/ddl` serves) by `web/scripts/gen-ddl-fixture.mjs`; `pipeline-ddl.test.ts` holds it equal to the file byte for byte (S-04, R-02) |
 
+## The ETFs (desk/fill-etf)
+
+The audit's store predates the Desk's ETFs, so their values come from the
+**fixture store**: the audit's store with the 24 ETFs' `asset_prices` rows
+(XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY, SPY, RSP, IWM,
+QQQ, SMH, SOXX, IGV, TLT, IEF, HYG, LQD, GLD, UUP) taken from a copy this
+branch's refresh step filled on 2026-09-27
+(`python -m src.market_data.asset_history`, Yahoo, as in the workflow), cut
+at 2026-09-23, the last completed session when the audit's store was
+refreshed. Nothing else in the store changes, so every other value above is
+as it was. `scripts/desk_etf_fixtures.py` builds that store and writes what
+the API serves on it into the fixtures, the clock frozen at 16:00 UTC on
+Sep 24: `pipeline.json` whole (its three ETF groups are the only change),
+and the ETF blocks of the other routes as each is served. The adjusted
+closes are the provider's as of 2026-09-27; a dividend paid after Sep 23
+restates earlier adjusted closes, so a later rebuild can move the last
+digits.
+
 `consistency.test.ts` holds the fixtures to each other (one label per slug,
 one comparison session, the firing rows, the regime lag) and to the audit's
 real values.
 
 To rebuild them: `web/node_modules/.cache/desk-align/build_fixtures.py`
 (scratch, outside the repo) reads the engine run and the direct queries and
-writes the files above.
+writes the files above; the ETF values, `scripts/desk_etf_fixtures.py
+--audit <audit copy> --etf-db <refreshed copy> --store <scratch path>`.

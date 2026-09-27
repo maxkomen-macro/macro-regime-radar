@@ -271,7 +271,9 @@ def daily_history(eodhd_code: str | None, yahoo_code: str, start: str, end: str 
     """Full daily adjusted-close history for one series, for the refresh
     pipeline's stored histories (src/market_data/asset_history.py): EODHD
     first where it carries the instrument, Yahoo only when the caller allows
-    it, one provider per series, the envelope saying which. The API never
+    it, one provider per series, the envelope saying which. `volume` maps a
+    row's date to the shares traded that session, as the same provider serves
+    it (desk/fill-etf); a date it serves none for is absent. The API never
     calls this."""
     primary_err: ProviderError
     if eodhd_code is None:
@@ -282,6 +284,7 @@ def daily_history(eodhd_code: str | None, yahoo_code: str, start: str, end: str 
         try:
             raw = client().eod(eodhd_code, from_=start, to=end, period="d")
             rows = []
+            volume: dict[str, float] = {}
             for r in raw:
                 d = r.get("date")
                 adj = _f(r.get("adjusted_close"))
@@ -289,9 +292,12 @@ def daily_history(eodhd_code: str | None, yahoo_code: str, start: str, end: str 
                     adj = _f(r.get("close"))
                 if d and adj is not None and adj > 0:
                     rows.append((str(d)[:10], adj))
+                    vol = _f(r.get("volume"))
+                    if vol is not None and vol >= 0:
+                        volume[str(d)[:10]] = vol
             if not rows:
                 raise EmptyResult(eod.PROVIDER, f"EODHD holds no daily history for {eodhd_code}.")
-            return {"provider": eod.PROVIDER, "fallback_used": False, "fallback_reason": None, "rows": rows}
+            return {"provider": eod.PROVIDER, "fallback_used": False, "fallback_reason": None, "rows": rows, "volume": volume}
         except ProviderError as exc:
             primary_err = exc
     if not allow_yahoo:
@@ -299,7 +305,8 @@ def daily_history(eodhd_code: str | None, yahoo_code: str, start: str, end: str 
     rows = yf.daily_closes(yahoo_code, start, end)
     if not rows:
         raise EmptyResult(yf.PROVIDER, f"No daily history for {yahoo_code} from either provider.")
-    return {"provider": yf.PROVIDER, "fallback_used": True, "fallback_reason": primary_err.kind, "rows": rows}
+    return {"provider": yf.PROVIDER, "fallback_used": True, "fallback_reason": primary_err.kind, "rows": list(rows),
+            "volume": dict(getattr(rows, "volume", None) or {})}
 
 
 def _series(inst: Instrument, range_key: str, bars: list[dict], interval: str, provider: str, fallback_used: bool | None, reason: str | None) -> dict:

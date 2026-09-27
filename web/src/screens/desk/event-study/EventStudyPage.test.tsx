@@ -616,7 +616,8 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     const urls = globalThis.URL as unknown as { createObjectURL?: unknown; revokeObjectURL?: unknown };
     const [c0, r0] = [urls.createObjectURL, urls.revokeObjectURL];
     urls.createObjectURL = () => "blob:x";
-    urls.revokeObjectURL = () => {};
+    const revoke = vi.fn();
+    urls.revokeObjectURL = revoke;
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     try {
       renderTab("/desk/event-study?preset=gold-2sigma-spx-weak&horizon=5");
@@ -626,6 +627,9 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
       fireEvent.click(await screen.findByTestId("es-export"));
       await waitFor(() => expect(calls.some((c) => c.startsWith("GET /api/desk/study/events?preset=gold-2sigma-spx-weak&horizon=5"))).toBe(true));
       await waitFor(() => expect(click).toHaveBeenCalled());
+      // The object URL is released a second after the click; restore the stubs only after that,
+      // or the timer fires on jsdom's URL, which has no revokeObjectURL (desk/fill-etf gate).
+      await waitFor(() => expect(revoke).toHaveBeenCalledWith("blob:x"), { timeout: 3000 });
     } finally {
       click.mockRestore();
       urls.createObjectURL = c0;

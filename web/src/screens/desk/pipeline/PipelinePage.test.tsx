@@ -85,7 +85,7 @@ describe("Data Pipeline tab", () => {
     expect(await screen.findByTestId("pl-badge")).toHaveTextContent("Last full refresh Sep 24, 15:52 UTC · validation unknown");
     expect(await screen.findByRole("heading", { level: 1, name: "Where every number comes from" })).toBeInTheDocument();
     const inv = screen.getByRole("region", { name: /Series inventory/ });
-    await waitFor(() => expect(inv).toHaveTextContent("22 series · grouped · generated from the registry"));
+    await waitFor(() => expect(inv).toHaveTextContent("46 series · grouped · generated from the registry"));
     const heads = within(inv).getAllByRole("button", { expanded: false });
     // §12.9: each group's status is the worst of its series; a series not stored is missing.
     expect(heads.map((b) => b.textContent)).toEqual([
@@ -94,6 +94,10 @@ describe("Data Pipeline tab", () => {
       "▸Equities & vol4 series ● missing",
       "▸FX & commodities4 series ● missing",
       "▸Macro (monthly)4 series ● current",
+      // desk/fill-etf: the ETFs the full refresh stores in asset_prices
+      "▸Sector ETFs11 series ● current",
+      "▸Equity ETFs7 series ● current",
+      "▸Bond, gold & dollar ETFs6 series ● current",
     ]);
     expect(within(inv).getAllByText("● current")[0]).toHaveAttribute("data-tone", "green");
     expect(within(inv).getAllByText("● missing")[0]).toHaveAttribute("data-tone", "amber");

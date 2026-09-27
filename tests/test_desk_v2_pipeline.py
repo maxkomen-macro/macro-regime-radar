@@ -45,8 +45,12 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRATCH = Path(os.environ.get("DESK_DB", ROOT / "data" / "desk_scratch.db"))
 PUBLISHED = ROOT / "data" / "macro_radar.db"
 AUDIT_SHA = "9a8b857968b8de22"
+# desk/fill-etf: the stored ETFs no served Desk value reads yet (items 2 to 5 serve the rest)
+UNREAD_ETFS = ("XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY", "SPY", "RSP", "IWM", "QQQ",
+               "SMH", "SOXX", "IGV", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP")
 client = TestClient(app)
-GROUPS = ["Rates", "Credit", "Equities & vol", "FX & commodities", "Macro (monthly)"]
+GROUPS = ["Rates", "Credit", "Equities & vol", "FX & commodities", "Macro (monthly)",
+          "Sector ETFs", "Equity ETFs", "Bond, gold & dollar ETFs"]  # the last three since desk/fill-etf
 
 
 def serve_pipeline(install_worker, monkeypatch, path: Path):
@@ -90,7 +94,7 @@ def test_the_rows_are_the_registry_and_its_raw_series_readers():
     assert len(pipe.row_ids()) == len(set(pipe.row_ids()))
     assert set(pipe.row_ids()) == desk | set(pipe.RAW_SERIES_ROWS)
     no_reader = {sid for sid in pipe.row_ids() if not pipe.feeds_of(sid)}
-    assert no_reader == set(pipe.NO_LIVE_READER) == {"^NDX", "^RUT", "JPY=X"}
+    assert no_reader == set(pipe.NO_LIVE_READER) == {"^NDX", "^RUT", "JPY=X", *UNREAD_ETFS}
     assert {"DGS3MO", "DGS5", "DGS30"} <= desk, "the three tenors are registered"
     assert set(pipe.RAW_SERIES_ROWS) == {"INDPRO", "CPIAUCSL", "UNRATE", "T10YIE", "T5YIE", "USREC", "BAMLC0A0CM"}
     from api import main
@@ -170,7 +174,7 @@ def test_the_feeds_carry_every_real_reader():
     for sid in ("DGS2", "DGS10"):
         assert "Position Monitor" in pipe.feeds_of(sid) and "Regime" in pipe.feeds_of(sid), sid
     assert pipe.feeds_of("DGS10").count("Ledger") == 0, "no Ledger row reads the 10-year"
-    assert all(pipe.feeds_of(sid) == [] for sid in ("^NDX", "^RUT", "JPY=X"))
+    assert all(pipe.feeds_of(sid) == [] for sid in ("^NDX", "^RUT", "JPY=X", *UNREAD_ETFS))
 
 
 def test_each_row_carries_its_registry_or_raw_series_fields(hermetic, monkeypatch):

@@ -548,6 +548,9 @@ def test_desk_router_is_get_only():
 # event study must say "awaiting the first full refresh", never an error.
 
 REFRESH_KEYS = ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "us3m", "us5y", "us30y", "wti", "ndx", "dxy", "usdjpy"]  # tiers 1 and 2 (desk/hardening; the tenors, desk/frame-3-api)
+# desk/fill-etf: the Desk ETFs the full refresh stores in asset_prices that the scratch copy lacks
+# (allocation already stores SPY, IWM, IEF, LQD, HYG and GLD there), in registry order
+ETF_AWAITING = ["xlb", "xle", "xlf", "xli", "xlk", "xlp", "xlu", "xlv", "xly", "xlc", "xlre", "rsp", "qqq", "smh", "soxx", "igv", "tlt", "uup"]
 # Review R-03 (desk/hardening): the route inventory, kept by hand and never read
 # from the app under test. One entry per route the API serves: the request that
 # exercises it and the status it answers on a database that predates the first
@@ -764,7 +767,7 @@ def test_before_the_first_refresh_the_event_study_says_it_is_awaiting_it(served_
     assets = client.get("/api/desk/event-study/assets")
     assert assets.status_code == 200, assets.text
     a = assets.json()
-    assert a["awaiting_refresh"] == REFRESH_KEYS
+    assert a["awaiting_refresh"] == REFRESH_KEYS + ETF_AWAITING
     by = {x["key"]: x for x in a["shocks"]}
     assert all(by[k]["status"] == "awaiting_refresh" for k in REFRESH_KEYS if k in by)
     assert by["spx"]["status"] == "stored" and by["gold"]["status"] == "stored" and by["ndx"]["status"] == "awaiting_refresh"

@@ -123,6 +123,10 @@ jobs:
       # downloads them. EODHD first where a token is configured (none is here,
       # deliberately), Yahoo as the disclosed fallback, one provider per
       # series. The step never fails the refresh; validate_db judges the table.
+      # desk/fill-etf: the same step stores the Desk's 24 ETFs (the sector
+      # ETFs, SPY, RSP, IWM, QQQ, SMH, SOXX, IGV, TLT, IEF, HYG, LQD, GLD, UUP)
+      # with full history and each session's volume, and adds the nullable
+      # volume column to a published table that predates it (ensure_table).
       - name: Store allocation price histories
         if: steps.mode.outputs.mode == 'full'
         run: python -m src.market_data.asset_history

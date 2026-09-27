@@ -14,6 +14,19 @@ Full history is refetched on every run: adjusted closes are rewritten back
 through history whenever a dividend is paid, so appending only the newest
 rows would splice two adjustment bases together.
 
+Since desk/fill-etf (2026-09-27) the same step stores the Desk's ETFs: every
+registry series whose store is `asset_prices` (src/desk/series.py: the eleven
+sector ETFs, SPY, RSP, IWM, QQQ, SMH, SOXX, IGV, TLT, IEF, HYG, LQD, GLD,
+UUP, beside ^GSPC, GC=F and ^RUT), daily, fetched from 1990 so the row set is
+the provider's whole history. Each daily row carries the session's volume as
+the same provider serves it (NULL where it serves none, and on the monthly
+rows); the column is added in place to a table that predates it. A series
+whose first stored close is later than the registry's declared
+`history_from` is named `short` in the watermark's detail: the declaration
+is the provider's first close (XLC 2018-06-19, XLRE 2015-10-08), so a later
+one means history went missing, and the Desk's statistics read the stored
+rows only.
+
 Where a token exists (a laptop, the API host) EODHD answers first. The Actions
 workflow deliberately carries no EODHD token (tests/test_workflows.py pins
 that), so there every series comes from the Yahoo fallback and the watermark
@@ -55,6 +68,7 @@ CREATE TABLE IF NOT EXISTS asset_prices (
     date     TEXT NOT NULL,   -- YYYY-MM-DD; '1mo' rows are dated the 1st and hold the month's last close
     close    REAL NOT NULL,   -- split- and dividend-adjusted
     provider TEXT NOT NULL,   -- eodhd | yfinance
+    volume   REAL,            -- shares traded that session, as the provider serves it; NULL on '1mo' rows (desk/fill-etf)
     PRIMARY KEY (symbol, interval, date)
 ) WITHOUT ROWID
 """
@@ -70,6 +84,7 @@ _EODHD_OVERRIDES: dict[str, str | None] = {
 }
 
 MAX_HISTORY_START = "1970-01-01"  # the monthly series were yfinance period="max"
+DESK_HISTORY_START = "1990-01-01"  # desk/fill-etf: before every Desk ETF's first close, so the provider serves its whole history
 
 
 @dataclass(frozen=True)
@@ -115,6 +130,28 @@ def _build_series() -> list[SeriesSpec]:
         add(sym, "1mo", MAX_HISTORY_START)
     for sym in CURRENCY_PAIRS.values():
         add(sym, "1mo", MAX_HISTORY_START)
+    # Daily: the Desk registry's asset_prices series (desk/fill-etf). Those allocation
+    # already stores keep allocation's start (each its first close).
+    for spec in desk_specs():
+        add(spec.series_id, "1d", DESK_HISTORY_START)
+    return out
+
+
+def desk_specs() -> list:
+    """The Desk registry series this step stores (store `asset_prices`)."""
+    from src.desk import series as registry
+
+    return [s for s in registry.SERIES if s.available and s.source == "asset_prices"]
+
+
+def short_histories(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
+    """{symbol: (first stored close, declared history_from)} for every Desk
+    series whose stored daily history starts after its declaration."""
+    out: dict[str, tuple[str, str]] = {}
+    for spec in desk_specs():
+        first = conn.execute("SELECT MIN(date) FROM asset_prices WHERE symbol = ? AND interval = '1d'", (spec.series_id,)).fetchone()[0]
+        if first and first > spec.history_from:
+            out[spec.series_id] = (first, spec.history_from)
     return out
 
 
@@ -128,7 +165,12 @@ DAILY_SYMBOLS: list[str] = [s.symbol for s in SERIES if s.interval == "1d"]
 
 
 def ensure_table(conn: sqlite3.Connection) -> None:
+    """The table, with the volume column added in place to one that predates
+    it (desk/fill-etf; SQLite adds a nullable column without a rewrite)."""
     conn.execute(DDL)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(asset_prices)")}
+    if "volume" not in cols:
+        conn.execute("ALTER TABLE asset_prices ADD COLUMN volume REAL")
 
 
 def month_end_closes(rows: list[tuple[str, float]]) -> list[tuple[str, float]]:
@@ -140,12 +182,16 @@ def month_end_closes(rows: list[tuple[str, float]]) -> list[tuple[str, float]]:
     return [(f"{m}-01", c) for m, c in sorted(last.items())]
 
 
-def write_series(conn: sqlite3.Connection, symbol: str, interval: str, rows: list[tuple[str, float]], *, provider: str) -> int:
-    """Replace one series whole (never mixed with an earlier provider's rows)."""
+def write_series(conn: sqlite3.Connection, symbol: str, interval: str, rows: list[tuple[str, float]], *, provider: str,
+                 volume: dict[str, float] | None = None) -> int:
+    """Replace one series whole (never mixed with an earlier provider's rows).
+    `volume` maps a daily row's date to its session volume, from the same
+    provider response; a monthly row stores none."""
+    vol = (volume or {}) if interval == "1d" else {}
     conn.execute("DELETE FROM asset_prices WHERE symbol = ? AND interval = ?", (symbol, interval))
     conn.executemany(
-        "INSERT INTO asset_prices (symbol, interval, date, close, provider) VALUES (?, ?, ?, ?, ?)",
-        [(symbol, interval, d, float(c), provider) for d, c in rows if c is not None and c > 0],
+        "INSERT INTO asset_prices (symbol, interval, date, close, provider, volume) VALUES (?, ?, ?, ?, ?, ?)",
+        [(symbol, interval, d, float(c), provider, vol.get(d)) for d, c in rows if c is not None and c > 0],
     )
     return len(rows)
 
@@ -189,7 +235,7 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None) -> di
                 rows = [r for r in env["rows"] if s.start <= r[0] <= last_session]
                 if s.interval == "1mo":
                     rows = month_end_closes(rows)
-                write_series(conn, s.symbol, s.interval, rows, provider=env["provider"])
+                write_series(conn, s.symbol, s.interval, rows, provider=env["provider"], volume=env.get("volume"))
                 stored.append(f"{s.symbol}:{s.interval}")
             provider_of[ticker] = env["provider"]
 
@@ -207,6 +253,9 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None) -> di
             detail += f" (fallback: {', '.join(fallbacks)})"
         if failed:
             detail += f"; failed: {', '.join(f'{s} ({k})' for s, k in sorted(failed.items()))}"
+        short = short_histories(conn)
+        if short:
+            detail += "; short: " + ", ".join(f"{sym} from {first} (declared {decl})" for sym, (first, decl) in sorted(short.items()))
         status = "ok" if not failed else ("partial" if stored else "error")
         watermarks.record(conn, WATERMARK, as_of if stored else None, status=status, detail=detail or None, now=now)
         conn.commit()
@@ -219,6 +268,7 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None) -> di
         "fallbacks": fallbacks,
         "as_of": as_of,
         "status": status,
+        "short": sorted(short),
     }
 
 
@@ -231,6 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         f"asset_prices: {s['stored']} series stored as of {s['as_of']} · providers {s['providers']}"
         + (f" · fallback {', '.join(s['fallbacks'])}" if s["fallbacks"] else "")
         + (f" · FAILED {', '.join(s['failed'])}" if s["failed"] else "")
+        + (f" · SHORT {', '.join(s['short'])}" if s["short"] else "")
     )
     return 0  # never fails the refresh; validate_db judges the result
 

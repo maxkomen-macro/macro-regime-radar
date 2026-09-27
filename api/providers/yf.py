@@ -16,9 +16,22 @@ from api.providers.errors import ProviderUnavailable, UnknownSymbol
 PROVIDER = "yfinance"
 
 
-def daily_closes(code: str, start: str, end: str | None = None) -> list[tuple[str, float]]:
+class Closes(list):
+    """[(YYYY-MM-DD, close)] with the session's traded volume beside it in
+    `volume` ({date: shares}, as Yahoo serves it), so every caller that reads
+    the list as closes keeps working (desk/fill-etf)."""
+
+    volume: dict[str, float]
+
+    def __init__(self, rows=(), volume: dict[str, float] | None = None) -> None:
+        super().__init__(rows)
+        self.volume = dict(volume or {})
+
+
+def daily_closes(code: str, start: str, end: str | None = None) -> Closes:
     """Daily split- and dividend-adjusted closes (auto_adjust=True), start
-    inclusive and end exclusive, as [(YYYY-MM-DD, close)]."""
+    inclusive and end exclusive, as [(YYYY-MM-DD, close)], with each date's
+    volume in `.volume` where Yahoo serves one."""
     import pandas as pd
     import yfinance as yf
 
@@ -37,8 +50,19 @@ def daily_closes(code: str, start: str, end: str | None = None) -> list[tuple[st
         closes = raw["Close"]
     else:
         raise UnknownSymbol(PROVIDER, f"Yahoo returned no closes for {code}.")
-    out: list[tuple[str, float]] = []
+    vols = None
+    if isinstance(raw.columns, pd.MultiIndex):
+        vol_cols = [c for c in raw.columns if c[0] == "Volume"]
+        vols = raw[vol_cols[0]] if vol_cols else None
+    elif "Volume" in raw.columns:
+        vols = raw["Volume"]
+    out = Closes()
     for idx, v in closes.dropna().items():
         if v and v > 0:
-            out.append((pd.Timestamp(idx).strftime("%Y-%m-%d"), float(v)))
+            d = pd.Timestamp(idx).strftime("%Y-%m-%d")
+            out.append((d, float(v)))
+            if vols is not None:
+                vol = vols.get(idx)
+                if vol is not None and vol == vol and vol >= 0:  # NaN is not a volume
+                    out.volume[d] = float(vol)
     return out

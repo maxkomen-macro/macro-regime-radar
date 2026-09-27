@@ -700,7 +700,12 @@ number, one truth). Series inventory: generated from the registry and its
 consumers, counts derived; each group expands to a table SERIES / ID / FROM
 / AS OF / FEEDS / STATUS (provider, `freq`, first and last stored
 observation, feeds), scrolls inside the group; search jumps to a series. WTI
-is the daily `DCOILWTICO`; USD/JPY is the registry's instrument. The bridge
+is the daily `DCOILWTICO`; USD/JPY is the registry's instrument. Since
+desk/fill-etf the inventory also lists the 24 ETFs the full refresh stores
+in `asset_prices` with each session's volume, in three groups: Sector ETFs
+(the eleven SPDR sectors; XLC from 2018-06-19 and XLRE from 2015-10-08, their
+listing dates), Equity ETFs (SPY, RSP, IWM, QQQ, SMH, SOXX, IGV) and Bond,
+gold & dollar ETFs (TLT, IEF, HYG, LQD, GLD, UUP). The bridge
 card is titled "Proposed export schema (not the current SQLite layout)", with
 the DDL block and the buttons **Export current study → CSV** (§12.4) and
 **Generate Snowflake DDL** (`/pipeline/ddl`).
@@ -1204,7 +1209,7 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `last_refresh_utc` | ts | required, nullable ("unknown" in the UI when null) | — | `source_watermarks` row `"desk_series"` | S: that row's `checked_at` (the Desk store runs only in the full refresh), never the run artifact |
 | `validation` | `"pass"` \| `"fail"` | required, nullable | — | the published `validation.json` | S: the verdict of the `validation.json` published with the served database. Both writers publish it: `refresh-data.yml` and `intraday-refresh.yml`, each in the mode it validates in, as `{verdict, mode, timestamp, db_sha256}`, uploaded after the database. The API binds a verdict by one procedure, run at the download (on the downloaded file) and at every poll (on the served file): read the file's key (k1); require the file's `-wal` to be absent or empty (at a download, `<DB_PATH>-wal` too); hash the file and compare with `db_sha256`; read the key again (k2) and check that the WAL of step 2 (at a download, both) is still absent or empty; bind only when the sha matches, k1 equals k2 and the WAL is still empty, binding exactly k1, with no further sample of the key. It serves the verdict only for the generation with that key; missing, mismatched, WAL-present or re-keyed → null (the UI prints "unknown"). |
 | `groups` | array | required | — | — | E registry and its consumers (`/api/desk/pipeline/inventory`) |
-| `groups[].name` | string | required | — | — | A |
+| `groups[].name` | string | required | — | — | A: Rates, Credit, Equities & vol, FX & commodities, Macro (monthly), Sector ETFs, Equity ETFs, Bond, gold & dollar ETFs (the last three since desk/fill-etf) |
 | `groups[].status` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | A: the worst of its series |
 | `groups[].series` | array | required | — | — | E |
 | `…series[].label`, `id`, `key` | string (`key` nullable for a non-Desk series) | required | — | — | E registry |
