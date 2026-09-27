@@ -9,6 +9,7 @@
  * Unit tests import the JSON directly.
  */
 
+import instruments from "./instruments.json" with { type: "json" };
 import ledger from "./ledger.json" with { type: "json" };
 import macro from "./macro.json" with { type: "json" };
 import overview from "./overview.json" with { type: "json" };
@@ -61,6 +62,8 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
   "/study/catalog": studyCatalog,
   // desk/fill-etf: served since §12.14, from the API's answer on the fixture store (PROVENANCE.md)
   "/sectors": sectors,
+  // desk/usability §12.17: the instruments this store prices, the stock search fallback
+  "/instruments": instruments,
 };
 
 const CATALOG = (studyCatalog as { studies: CatalogStudy[] }).studies;

@@ -138,6 +138,22 @@ export interface PipelineResponse extends Envelope {
   groups?: PipelineGroup[];
 }
 
+// ── §12.17 /instruments (desk/usability) ──────────────────────────────────
+
+/** An instrument this store prices from its own daily closes: the list the Desk's search falls back to. */
+export interface Instrument {
+  symbol: string;
+  name: string;
+  kind: "etf" | "index";
+  first: string;
+  last: string;
+  source: string;
+}
+
+export interface InstrumentsResponse extends Envelope {
+  instruments?: Instrument[];
+}
+
 // ── §12.1 /overview ───────────────────────────────────────────────────────
 
 /** §12.1: what changed between the two XNYS sessions (B-05); only signals evaluated on `comparison_session` appear. */

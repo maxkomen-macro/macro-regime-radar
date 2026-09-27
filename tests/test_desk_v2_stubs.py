@@ -175,6 +175,8 @@ def test_the_v2_router_is_get_only_and_every_route_is_enveloped():
         ("/api/desk/hedge", ["GET"]),
         ("/api/desk/study", ["GET"]), ("/api/desk/study/catalog", ["GET"]), ("/api/desk/study/events", ["GET"]),
         ("/api/desk/ledger", ["GET"]), ("/api/desk/technicals", ["GET"]), ("/api/desk/overview", ["GET"]),
+        # desk/usability item 1 (§12.14)
+        ("/api/desk/instruments", ["GET"]),
     ])
     for path, _ in routes:
         route = env.route_of(re.sub(r"\{[^}]+\}", "x", path)[len(desk_v2.PREFIX):])

@@ -27,7 +27,8 @@ WEB_SRC = Path(os.environ.get("DESK_WEB_SRC", ROOT / "web" / "src"))
 FIXTURES = WEB_SRC / "fixtures" / "desk"
 LIVE = ("/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline",
         "/sectors",  # /sectors served since desk/fill-etf (§12.14)
-        "/basket/price", "/basket/hedge")  # desk/books
+        "/basket/price", "/basket/hedge",  # desk/books
+        "/instruments")  # desk/usability (§12.17)
 
 
 def test_the_contract_covers_every_enveloped_route():
@@ -248,7 +249,8 @@ FIXTURE_FILES = {"/overview": "overview.json", "/study": "study.json", "/study/c
                  "/study/events": "study-events.json", "/ledger": "ledger.json", "/regime": "regime.json",
                  "/technicals": "technicals.json", "/macro": "macro.json", "/pipeline": "pipeline.json",
                  "/sectors": "sectors.json",  # desk/fill-etf
-                 "/basket/price": "basket-price.json", "/basket/hedge": "basket-hedge.json"}  # desk/books
+                 "/basket/price": "basket-price.json", "/basket/hedge": "basket-hedge.json",  # desk/books
+                 "/instruments": "instruments.json"}  # desk/usability
 
 
 def _wire(route: str, payload: dict) -> dict:

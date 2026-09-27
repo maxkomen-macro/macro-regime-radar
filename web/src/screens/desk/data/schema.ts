@@ -328,6 +328,11 @@ const benchmark = o({
 });
 
 export const SCHEMAS: Readonly<Record<string, Obj>> = {
+  // §12.17 (desk/usability): the stored instruments; a row without its symbol and name is dropped.
+  "/instruments": o({
+    ...envelope,
+    instruments: l(o({ symbol: "s!", name: "s!", kind: e(["etf", "index"]), first: "s?", last: "s?", source: "s" })),
+  }),
   "/overview": o({
     ...envelope,
     since_last_close: o({

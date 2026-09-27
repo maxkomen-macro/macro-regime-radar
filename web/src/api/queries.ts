@@ -465,13 +465,16 @@ export function providerRetry(failureCount: number, error: unknown): boolean {
   return failureCount < 2;
 }
 
-export function useSymbolSearch(q: string, limit = 10) {
+/** `scope` "us" (the Desk's instrument search, desk/usability): US-listed equities and ETFs only,
+ * primary listings first, asked once so a failure reaches the Desk's stored-series fallback at once. */
+export function useSymbolSearch(q: string, limit = 10, scope: "all" | "us" = "all") {
   const query = q.trim();
   return useQuery({
-    queryKey: ["symbol", "search", query.toLowerCase(), limit],
-    queryFn: () => getJson<SearchResponse>("/api/market/search", { q: query, limit }),
+    queryKey: ["symbol", "search", query.toLowerCase(), limit, scope],
+    queryFn: () => getJson<SearchResponse>("/api/market/search", scope === "us" ? { q: query, limit, scope } : { q: query, limit }),
     enabled: query.length >= 1,
     staleTime: 60 * MINUTE,
+    ...(scope === "us" ? { retry: false } : {}),
     // No placeholder from the previous query: a list of hits must belong to
     // the text in the box, or Enter picks a symbol the reader never typed
     // (rapid-switching regression, 2026-09-06).

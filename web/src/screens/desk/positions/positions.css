@@ -59,6 +59,12 @@
 .pm-fields .dk-select select {
   height: 36px;
 }
+/* The instrument field is the Desk's stock search (desk/usability item 1), sized as its neighbours. */
+.pm-isearch input {
+  min-height: 36px !important;
+  font-family: var(--dk-sans) !important;
+  font-size: 14px !important;
+}
 .pm-gate {
   flex: 1;
   padding: 14px 14px 16px;

@@ -102,12 +102,22 @@ _SERIES = {
 
 
 def test_search_maps_hits(client, monkeypatch):
-    monkeypatch.setattr(lookup, "search", lambda q, limit=10: dict(_SEARCH))
+    monkeypatch.setattr(lookup, "search", lambda q, limit=10, scope="all": dict(_SEARCH))
     r = client.get("/api/market/search", params={"q": "nvidia"})
     assert r.status_code == 200
     body = r.json()
     assert body["provider"] == "eodhd" and body["fallback_used"] is False
     assert body["hits"] == [_HIT]
+
+
+def test_search_scope_reaches_the_provider_layer(client, monkeypatch):
+    """desk/usability: the Desk's instrument search asks `scope=us`; any other scope is refused."""
+    seen = []
+    monkeypatch.setattr(lookup, "search", lambda q, limit=10, scope="all": seen.append(scope) or dict(_SEARCH))
+    assert client.get("/api/market/search", params={"q": "n", "scope": "us"}).status_code == 200
+    assert client.get("/api/market/search", params={"q": "n"}).status_code == 200
+    assert seen == ["us", "all"]
+    assert client.get("/api/market/search", params={"q": "n", "scope": "world"}).status_code == 422
 
 
 def test_search_requires_query(client):
@@ -116,7 +126,7 @@ def test_search_requires_query(client):
 
 
 def test_search_upstream_failure_is_typed_502(client, monkeypatch):
-    def boom(q, limit=10):
+    def boom(q, limit=10, scope="all"):
         raise ProviderUnavailable("eodhd", "Symbol search is unavailable right now.", detail="https://eodhd.com/api/search/x?api_token=SECRET")
 
     monkeypatch.setattr(lookup, "search", boom)

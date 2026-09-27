@@ -37,6 +37,7 @@ import { saveWords, useLevels, usePositionStore } from "./usePositionStore";
 import { CERTAINTY_WORDS, REPLACEMENTS, context, gateState, replaceFlag, type Flag } from "./wording";
 import "./positions.css";
 import { DroppedNote, droppedWords } from "../kit/ui";
+import { InstrumentSearch } from "../kit/InstrumentSearch";
 
 const HORIZONS = [5, 10, 20, 60];
 
@@ -520,7 +521,8 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
               <label htmlFor={`${uid}-inst`} className="dk-stat-label">
                 Instrument
               </label>
-              <input id={`${uid}-inst`} className="pm-input" value={draft.instrument} onChange={(e) => set("instrument", e.target.value)} autoComplete="off" />
+              {/* desk/usability item 1: the Desk's stock search; what is typed stays, a pick fills the ticker. */}
+              <InstrumentSearch inputId={`${uid}-inst`} className="pm-isearch" value={draft.instrument} onTextChange={(t) => set("instrument", t)} onSelect={(hit) => set("instrument", hit.symbol)} placeholder="Ticker or name" dense />
             </div>
             <div className="pm-field">
               <label htmlFor={`${uid}-dir`} className="dk-stat-label">

@@ -17,7 +17,8 @@ export async function saveServed(url: string, accept: "text/csv" | "text/plain",
     a.href = URL.createObjectURL(new Blob([await res.text()], { type: accept }));
     a.download = name;
     a.click();
-    window.setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    // A browser without revokeObjectURL (a test's DOM) keeps the object URL until the page goes.
+    window.setTimeout(() => (typeof URL.revokeObjectURL === "function" ? URL.revokeObjectURL(a.href) : undefined), 1000);
     return name;
   } finally {
     clearTimeout(timer);

@@ -30,9 +30,10 @@ def _valid_symbol(symbol: str) -> str:
         raise UnknownSymbol("api", str(exc)) from exc
 
 
-def search(q: str, limit: int = 10) -> dict:
-    """Search envelope: {provider, fallback_used, fallback_reason, fetched_at, hits}."""
-    return _market.search(q, limit)
+def search(q: str, limit: int = 10, scope: str = "all") -> dict:
+    """Search envelope: {provider, fallback_used, fallback_reason, fetched_at, hits}.
+    `scope="us"`: US equities and ETFs only, primary listings first (the Desk)."""
+    return _market.search(q, limit, scope)
 
 
 def profile(symbol: str) -> dict:

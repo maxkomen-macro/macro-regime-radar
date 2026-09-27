@@ -178,8 +178,9 @@ is not served; its numbers are illustrative, and it says so in one place.
     York's today); then `Data ● <state>` from `/overview` `data_status`.
   - **HOUSE DISCIPLINE ▸**: `Gate ● on`. Click opens the gate text (§9).
 - Page header, every tab: breadcrumb `Radar › Desk › <Tab>` (mono 11.5px, gray)
-  left; right side the Desk / Client segmented toggle on the tabs in §11's
-  allowlist, and at most one action button (listed per tab).
+  left; then the stock search (§14.1); right side the Desk / Client segmented
+  toggle on the tabs in §11's allowlist, and at most one action button
+  (listed per tab).
 - The page footer shows the one `generation_id` the page's responses share
   (the Client view prints `Snapshot · <as_of>` instead, §11). If two
   responses on a page carry different ids, the page badge reads "mixed
@@ -851,7 +852,8 @@ browser (§1.8): there is no server position store and nothing is posted
 
 **Promote to position** (left). Subtitle names what was carried in (a study
 from Event Study, a basket from Basket & Hedge) or "any study can be carried
-in". Fields: INSTRUMENT (text) · DIRECTION (Long / Short) · SIZE · % NAV
+in". Fields: INSTRUMENT (the stock search, §14.1: what is typed stays, a
+pick fills the ticker) · DIRECTION (Long / Short) · SIZE · % NAV
 (number, optional) · HORIZON 5 / 10 / 20 / 60 trading days.
 
 **Discipline gate** — "three short answers, then Save turns on" with progress
@@ -1166,7 +1168,8 @@ still runs on the Client view (S-32).
 **Routes.** JSON, GET only, under `/api/desk/`: `/overview`, `/study`,
 `/study/catalog`, `/study/events`, `/ledger`, `/regime`, `/technicals`,
 `/macro`, `/pipeline`, since desk/fill-etf `/sectors` (§12.14), and Basket
-& Hedge's `/basket/price` and `/basket/hedge` (§12.15, §12.16, desk/books).
+& Hedge's `/basket/price` and `/basket/hedge` (§12.15, §12.16, desk/books), and the stock search's `/instruments` (§12.17,
+desk/usability).
 Two text exceptions: `/study/events` with `Accept: text/csv` (§12.4) and
 `/pipeline/ddl` (`text/plain; charset=utf-8`). The deferred resources of
 §12.13 (`/vol`, `/positions`, `/basket/:id`, `/hedge`) are GET-only stubs
@@ -1929,6 +1932,21 @@ R-01). The one-year R² ranks them (the 60-day one when no ETF has a year:
 
 ---
 
+### 12.17 `GET /instruments` (desk/usability)
+
+The instruments this store prices from its own daily closes: the list the
+Desk's stock search (§14.1) offers when the upstream search does not answer.
+A worker item (`desk_instruments`), rebuilt with every generation. No
+parameters; any is refused 422 `unsupported`.
+
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `instruments` | array | required (may be empty) | — | — | S: the named instruments with `interval = '1d'` rows in `asset_prices`, in the adapter's order (the S&P 500, then the allocation ETFs); a store without the table lists none |
+| `instruments[].symbol`, `name` | string | required | — | — | A: the adapter's name table (`api/desk_items.INSTRUMENT_NAMES`), pinned to every stored daily ETF |
+| `instruments[].kind` | `"etf"` \| `"index"` | required | — | — | A |
+| `instruments[].first`, `last` | date | required | — | daily · `asset_prices` | S: the first and last stored session on or before the generation's as-of |
+| `instruments[].source` | `"asset_prices"` | required | — | — | A |
+
 ## 13. Build order, engine scope and acceptance
 
 ### 13.1 Session B's order
@@ -2024,3 +2042,40 @@ the PNG; verifier; commit. Acceptance: every tab renders from fixtures;
 every number on screen traces to a §12 field (outside a PROTOTYPE card, §1.0.3); no color outside §1.3; no
 "established" or "significant"; typecheck, unit, build and the Desk browser
 tests green.
+
+---
+
+## 14. Usability (desk/usability, 2026-09-27)
+
+The owner's brief: an analyst walks the Desk cold with no confusion, and
+every stock is one search away. One rule for the whole Desk: no control on
+screen does nothing; every visible option works or is not shown. Where this
+section and an earlier one disagree, this section wins; the earlier text is
+amended in place where it is short, and the report
+(`docs/desk/USABILITY_REPORT.md`) lists every amendment.
+
+### 14.1 The stock search
+
+- **Where.** In the header of every Desk page, between the breadcrumb and the
+  toggle; on a phone it takes its own row under the breadcrumb. Also the
+  Position Monitor's INSTRUMENT field (§9); branch `desk/books` adopts it on
+  the basket page. The component is `InstrumentSearch`
+  (`web/src/screens/desk/kit/InstrumentSearch.tsx`), the main dashboard's
+  `SymbolSearch` reused, not a copy.
+- **What it asks.** `GET /api/market/search?q=<text>&limit=10&scope=us`: the
+  dashboard's endpoint, EODHD's search index. `scope=us` asks EODHD for US
+  listings and keeps equities and ETFs, primary listings first; the client
+  keeps the same filter, so an API that predates the scope cannot show
+  another listing.
+- **How it behaves.** Suggestions on the first keystroke (after the
+  dashboard's 250 ms settle), each the ticker and the name; ↑ / ↓ move,
+  Enter or a click picks; Escape closes the list (and, in the header, clears
+  the box). In the header a pick opens Technicals for that stock
+  (`/desk/technicals?symbol=<ticker>`; the S&P 500 itself opens the page's
+  default). In the Position Monitor the field keeps what is typed and a pick
+  fills the ticker.
+- **When the search does not answer.** The list offers the instruments this
+  store prices from its own closes (`GET /api/desk/instruments`, §12.17),
+  matched on the ticker, then on a word of the name, under the line "Search
+  did not answer · series this store prices". The stored list is asked for
+  only once something has been typed.

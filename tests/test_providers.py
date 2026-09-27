@@ -352,6 +352,34 @@ def test_search_maps_and_orders_us_first(up):
     assert r["hits"][1]["symbol"] != "NVD"  # non-US listing keeps its exchange in the canonical spelling
 
 
+def test_search_us_scope_one_letter_returns_only_us_equities_and_etfs(up):
+    """desk/usability: a one-letter query on the Desk's scope returns US
+    listings only, equities and ETFs, primary listings first; EODHD is asked
+    for exchange=US, and the other listings it sends anyway are dropped."""
+    up.script["/api/search/N"] = [(200, [
+        {"Code": "NVDL", "Exchange": "US", "Name": "GraniteShares 2x Long NVDA Daily ETF", "Type": "ETF", "isPrimary": True},
+        {"Code": "NVD", "Exchange": "XETRA", "Name": "NVIDIA Corp", "Type": "Common Stock", "isPrimary": False},
+        {"Code": "NVL", "Exchange": "VN", "Name": "No Va Land Investment Group Corp", "Type": "Common Stock", "isPrimary": True},
+        {"Code": "NVDA", "Exchange": "US", "Name": "NVIDIA Corporation", "Type": "Common Stock", "isPrimary": True},
+        {"Code": "NWLI", "Exchange": "US", "Name": "National Western", "Type": "Common Stock", "isPrimary": False},
+        {"Code": "NFFFX", "Exchange": "US", "Name": "American Funds New World", "Type": "FUND", "isPrimary": True},
+        {"Code": "N", "Exchange": "LSE", "Name": "N Brown Group", "Type": "Common Stock", "isPrimary": True},
+        {"Code": "NAN", "Exchange": "US", "Name": "Nuveen NY Quality Muni", "Type": "Mutual Fund", "isPrimary": True},
+    ])]
+    r = market.search("N", 10, "us")
+    assert [h["symbol"] for h in r["hits"]] == ["NVDL", "NVDA", "NWLI"]
+    assert all(h["exchange"] == "US" and h["type"] in ("Equity", "ETF") for h in r["hits"])
+    # Primary listings first.
+    assert [h["primary"] for h in r["hits"]] == [True, True, False]
+    (call,) = up.calls
+    assert call.url.params.get("exchange") == "US"
+    # The unscoped search is cached apart and keeps every listing.
+    up.script["/api/search/N"] = [(200, [{"Code": "N", "Exchange": "LSE", "Name": "N Brown Group", "Type": "Common Stock"}])]
+    assert [h["exchange"] for h in market.search("N", 10)["hits"]] == ["LSE"]
+    with pytest.raises(ValueError):
+        market.search("N", 10, "world")
+
+
 def test_search_eodhd_failure_is_typed_never_a_yahoo_fallback(up):
     """Was test_search_falls_back_to_yfinance (fix/prelaunch-1)."""
     up.script["/api/search/"] = [(500, "down")]

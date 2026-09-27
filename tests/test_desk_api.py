@@ -638,6 +638,8 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/study/events"): ("/api/desk/study/events?preset=golden-cross", 200, None),
     ("GET", "/api/desk/ledger"): ("/api/desk/ledger", 200, None),
     ("GET", "/api/desk/technicals"): ("/api/desk/technicals", 200, None),
+    # desk/usability item 1 (§12.17): the stored instruments the stock search falls back to.
+    ("GET", "/api/desk/instruments"): ("/api/desk/instruments", 200, None),
     ("GET", "/api/desk/overview"): ("/api/desk/overview", 200, None),
     # Desk v2 in the envelope (desk/frame-3-api-b2a): ready, or awaiting blocks, before the first refresh
     ("GET", "/api/desk/regime"): ("/api/desk/regime", 200, None),

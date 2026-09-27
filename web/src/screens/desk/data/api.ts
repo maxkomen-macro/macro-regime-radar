@@ -31,7 +31,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
-import type { BasketHedgeResponse, BasketPriceResponse, DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { BasketHedgeResponse, BasketPriceResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
@@ -259,6 +259,9 @@ export function useStudy(params: Params, opts: { enabled?: boolean } = {}) {
     enabled: opts.enabled ?? true,
   });
 }
+
+/** §12.17: the instruments this store prices from its own closes (the Desk search's fallback). */
+export const useInstruments = (opts: { enabled?: boolean } = {}) => useDesk<InstrumentsResponse>("/instruments", undefined, opts);
 
 /** §12.11: the series inventory, grouped, from the pipeline config. */
 export const usePipeline = () => useDesk<PipelineResponse>("/pipeline");

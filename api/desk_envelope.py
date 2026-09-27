@@ -73,10 +73,12 @@ ENGINE_VERSION = resolve_engine_version(os.environ)
 ENVELOPED_ROUTES: tuple[str, ...] = (
     "/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline",
     "/sectors", "/basket/price", "/basket/hedge",
+    "/instruments",
     "/vol", "/positions", "/basket", "/hedge",
 )
-# The live routes' count: the nine of §12.1–§12.9, /sectors (desk/fill-etf), then Basket & Hedge's two (desk/books).
-LIVE_ROUTES = 12
+# The live routes' count: the nine of §12.1–§12.9, /sectors (desk/fill-etf), Basket & Hedge's two (desk/books), then
+# /instruments (desk/usability §12.17, the stock search's fallback).
+LIVE_ROUTES = 13
 
 # The only paths that carry block envelopes (§12.0, v4 B-08, C-01). Every
 # other object and array in a payload is an ordinary field.

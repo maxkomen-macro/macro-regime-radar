@@ -480,9 +480,17 @@ BASKET_HEDGE = obj(
 )
 
 
+# ── §12.17 GET /instruments (desk/usability) ───────────────────────────────
+
+INSTRUMENTS = obj(instruments=Arr(obj(
+    symbol=STR, name=STR, kind=E("etf", "index"), first=DATE, last=DATE, source=Const("asset_prices"),
+)))
+
+
 # ── The routes ──────────────────────────────────────────────────────────────
 
-# The live routes' ready payloads (the nine of §12.1–§12.9, /sectors since desk/fill-etf, Basket & Hedge's since desk/books).
+# The live routes' ready payloads (the nine of §12.1–§12.9, /sectors since desk/fill-etf, Basket & Hedge's since desk/books,
+# /instruments since desk/usability).
 ROUTES: dict[str, Obj] = {
     "/overview": OVERVIEW,
     "/study": STUDY,
@@ -496,6 +504,7 @@ ROUTES: dict[str, Obj] = {
     "/sectors": SECTORS,  # desk/fill-etf (§12.14)
     "/basket/price": BASKET_PRICE,  # desk/books
     "/basket/hedge": BASKET_HEDGE,  # desk/books
+    "/instruments": INSTRUMENTS,  # desk/usability (§12.17)
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons

@@ -374,6 +374,8 @@ ITEMS = [
     *[(f"desk_preset:{name}", _desk_preset(name)) for name in DESK_PRESETS],
     ("desk_technicals", desk_items.desk_technicals),
     ("desk_facts", desk_items.desk_facts),
+    # desk/usability: the stored instruments the Desk search falls back to
+    ("desk_instruments", desk_items.desk_instruments),
     # Desk v2 (desk/frame-3-api-b2a): the one desk_regime item, which /regime and /overview's
     # regime and recession tiles read (after `recession`); then /macro's and /pipeline's
     ("desk_regime", _desk_regime),

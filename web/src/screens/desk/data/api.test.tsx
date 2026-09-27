@@ -21,6 +21,7 @@ import overview from "../../../fixtures/desk/overview.json";
 import pipeline from "../../../fixtures/desk/pipeline.json";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
+import instruments from "../../../fixtures/desk/instruments.json";
 import regime from "../../../fixtures/desk/regime.json";
 import sectors from "../../../fixtures/desk/sectors.json";
 import studyCatalog from "../../../fixtures/desk/study-catalog.json";
@@ -153,6 +154,7 @@ describe("the response boundary", () => {
       // §12.15 (desk/books): the sample basket's real answer.
       "/basket/price": Object.values((basketPrice as { answers: Record<string, Record<string, unknown>> }).answers)[0],
       "/basket/hedge": Object.values((basketHedge as { answers: Record<string, Record<string, unknown>> }).answers)[0],
+      "/instruments": instruments,
     };
     expect(Object.keys(fixtures).length).toBe(Object.keys(SCHEMAS).length);
     const required: Record<string, string[]> = { "/study": ["question"] };

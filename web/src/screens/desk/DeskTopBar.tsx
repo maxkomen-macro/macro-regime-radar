@@ -7,6 +7,10 @@
  * →` on Basket & Hedge. Data Pipeline's header carries its refresh badge in
  * the toggle's place (its PNG). Below 900px a Menu button opens the sidebar,
  * which stays the only navigation.
+ *
+ * desk/usability item 1: between the breadcrumb and the toggle, the stock
+ * search (InstrumentSearch) on every page; a pick opens Technicals for that
+ * stock, the S&P 500 itself on the page's default.
  */
 
 import type { ReactNode } from "react";
@@ -18,6 +22,23 @@ import { TOUR_BUTTON_ID, TOUR_STRIP_ID } from "./tour/TourStrip";
 import { parseTour, tourHref } from "./tour/tour";
 import { askFromSearch, askParams } from "./event-study/question";
 import { useMixedGenerations } from "./data/generations";
+import { InstrumentSearch } from "./kit/InstrumentSearch";
+
+/** Technicals for a picked stock (item 2: `?symbol=`); the S&P 500 is the page's default, so it takes none. */
+export function technicalsHref(pathTo: (slug: string) => string, symbol: string): string {
+  const sym = symbol.trim().toUpperCase();
+  return sym === "^GSPC" || sym === "GSPC" || sym === "SPX" || !sym ? pathTo("technicals") : withParam(pathTo("technicals"), "symbol", sym);
+}
+
+/** The header's stock search: a pick opens Technicals for it. */
+function HeaderSearch({ pathTo }: { pathTo: (slug: string) => string }) {
+  const navigate = useNavigate();
+  return (
+    <div className="dk-top-search" role="search" aria-label="Stocks">
+      <InstrumentSearch dense ariaLabel="Search a stock" onSelect={(hit) => navigate(technicalsHref(pathTo, hit.symbol))} />
+    </div>
+  );
+}
 
 export function ViewToggle({ view, onChange, labels = ["Desk", "Client"] }: { view: DeskView; onChange: (v: DeskView) => void; labels?: [string, string] }) {
   return (
@@ -98,6 +119,7 @@ export default function DeskTopBar({
           <span aria-current="page">{page.label}</span>
         </nav>
       </div>
+      <HeaderSearch pathTo={pathTo} />
       <div className="dk-top-r">
         {right ?? (page.toggle === false ? null : <ViewToggle view={view} onChange={onChangeView} />)}
         {/* In the client view the tab's own action gives way to the one-pager (§11, the PNG). */}

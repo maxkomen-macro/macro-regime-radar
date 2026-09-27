@@ -745,7 +745,7 @@ test.describe("desk v2", () => {
     // The hand-off: Position Monitor reads the basket, a manual subject (§9).
     await page.getByTestId("dk-act").click();
     await expect(page).toHaveURL(/\/desk\/position-monitor\?basket=local-1$/);
-    await expect(page.getByRole("textbox", { name: "Instrument" })).toHaveValue("AI infrastructure basket");
+    await expect(page.getByRole("combobox", { name: "Instrument", exact: true })).toHaveValue("AI infrastructure basket");
     // A phone gets both cards, one under the other, and never scrolls sideways.
     for (const width of [1440, 1200, 1101, 390]) {
       await page.setViewportSize({ width, height: 900 });

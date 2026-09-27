@@ -250,6 +250,23 @@ def desk_overview(request: Request) -> Response:
     return _response(env.answer("/overview", lambda: overview_answer(params)))
 
 
+# ── §12.17 GET /instruments (desk/usability) ───────────────────────────────
+
+@router.get("/instruments")
+def desk_instruments(request: Request) -> Response:
+    params = list(request.query_params.multi_items())
+    return _response(env.answer("/instruments", lambda: instruments_answer(params)))
+
+
+def instruments_answer(params: list[tuple[str, str]]) -> dict:
+    """The instruments this store prices from its own daily closes: the list
+    the Desk's instrument search falls back to when the upstream search does
+    not answer (a lookup of the generation's item)."""
+    if params:
+        raise env.Unsupported(f"{params[0][0]} is not a parameter of /instruments.")
+    return {"instruments": _result("desk_instruments")["instruments"]}
+
+
 # ── §12.1 GET /overview ─────────────────────────────────────────────────────
 
 REGIMES_SOURCE = "regimes table (src/regime.py)"

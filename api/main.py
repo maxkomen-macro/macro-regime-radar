@@ -1178,10 +1178,11 @@ def _symbol_arg(symbol: str) -> str:
 def api_market_search(
     q: str = Query(..., min_length=1, max_length=40, description="Free-text symbol/name query"),
     limit: int = Query(10, ge=1, le=25),
+    scope: str = Query("all", pattern="^(all|us)$", description="us: US-listed equities and ETFs only, primary listings first"),
 ) -> SearchResponse:
     from api import lookup
 
-    return SearchResponse(**lookup.search(_search_query_arg(q), limit))
+    return SearchResponse(**lookup.search(_search_query_arg(q), limit, scope))
 
 
 @api.get("/market/profile/{symbol}", response_model=SymbolProfile)

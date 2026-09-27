@@ -1,0 +1,92 @@
+{
+ "instruments": [
+  {
+   "symbol": "^GSPC",
+   "name": "S&P 500",
+   "kind": "index",
+   "first": "1990-01-02",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "SPY",
+   "name": "SPDR S&P 500 ETF Trust",
+   "kind": "etf",
+   "first": "1993-01-29",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "IWM",
+   "name": "iShares Russell 2000 ETF",
+   "kind": "etf",
+   "first": "2000-05-26",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "EFA",
+   "name": "iShares MSCI EAFE ETF",
+   "kind": "etf",
+   "first": "2001-08-27",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "EEM",
+   "name": "iShares MSCI Emerging Markets ETF",
+   "kind": "etf",
+   "first": "2003-04-14",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "AGG",
+   "name": "iShares Core US Aggregate Bond ETF",
+   "kind": "etf",
+   "first": "2003-09-29",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "IEF",
+   "name": "iShares 7-10 Year Treasury Bond ETF",
+   "kind": "etf",
+   "first": "2002-07-30",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "LQD",
+   "name": "iShares iBoxx $ Investment Grade Corporate Bond ETF",
+   "kind": "etf",
+   "first": "2002-07-30",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "HYG",
+   "name": "iShares iBoxx $ High Yield Corporate Bond ETF",
+   "kind": "etf",
+   "first": "2007-04-11",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "DJP",
+   "name": "iPath Bloomberg Commodity Index Total Return ETN",
+   "kind": "etf",
+   "first": "2006-10-30",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "GLD",
+   "name": "SPDR Gold Shares",
+   "kind": "etf",
+   "first": "2004-11-18",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  }
+ ]
+}

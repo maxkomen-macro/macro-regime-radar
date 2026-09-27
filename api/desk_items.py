@@ -81,6 +81,53 @@ def desk_technicals(ctx: dict) -> dict:
     return {"ok": True, **out}
 
 
+# The instruments this store prices from its own daily history (desk/usability): the US-listed ETFs
+# the full refresh stores in asset_prices for allocation, and the S&P 500 itself. The Desk's
+# instrument search falls back to this list when the upstream search does not answer. Names are
+# written out here (api/ never imports src.analytics.allocation, which configures the symbols);
+# tests/test_desk_instruments.py pins that every stored daily ETF has one.
+INSTRUMENT_NAMES: dict[str, tuple[str, str]] = {
+    "^GSPC": ("S&P 500", "index"),
+    "SPY": ("SPDR S&P 500 ETF Trust", "etf"),
+    "IWM": ("iShares Russell 2000 ETF", "etf"),
+    "EFA": ("iShares MSCI EAFE ETF", "etf"),
+    "EEM": ("iShares MSCI Emerging Markets ETF", "etf"),
+    "AGG": ("iShares Core US Aggregate Bond ETF", "etf"),
+    "IEF": ("iShares 7-10 Year Treasury Bond ETF", "etf"),
+    "LQD": ("iShares iBoxx $ Investment Grade Corporate Bond ETF", "etf"),
+    "HYG": ("iShares iBoxx $ High Yield Corporate Bond ETF", "etf"),
+    "DJP": ("iPath Bloomberg Commodity Index Total Return ETN", "etf"),
+    "GLD": ("SPDR Gold Shares", "etf"),
+}
+
+
+def desk_instruments(ctx: dict) -> dict:
+    """The /instruments item: every named instrument with stored daily closes
+    in asset_prices, its first and last stored session; an instrument the store
+    does not hold is left out. A store without the table lists none."""
+    from src.analytics import dbpath
+    from src.desk import event_study as es
+
+    conn = dbpath.connect_ro(es.DB_PATH)
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'asset_prices'").fetchone():
+            return {"instruments": []}
+        cutoff = es.resolve_as_of(None, es.DB_PATH)
+        rows = conn.execute(
+            "SELECT symbol, MIN(date), MAX(date) FROM asset_prices WHERE interval = '1d' AND date <= ? GROUP BY symbol",
+            (cutoff,),
+        ).fetchall()
+    finally:
+        conn.close()
+    stored = {sym: (first, last) for sym, first, last in rows}
+    out = []
+    for sym, (name, kind) in INSTRUMENT_NAMES.items():
+        if sym in stored:
+            first, last = stored[sym]
+            out.append({"symbol": sym, "name": name, "kind": kind, "first": first, "last": last, "source": "asset_prices"})
+    return {"instruments": out}
+
+
 # /overview's data_status contributors (plan N9): the tier-1 inputs of the twelve Ledger
 # studies plus DGS2 and DGS10, by registry key, in the plan's order.
 FACT_KEYS = ("curve_2s10s", "vix", "hy_oas", "us2y", "us10y", "spx", "gold")
