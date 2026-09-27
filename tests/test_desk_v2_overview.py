@@ -20,11 +20,12 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from api import analytics_cache, desk_catalog as catalog, desk_envelope as env, desk_v2
+from api import analytics_cache, desk_catalog as catalog, desk_envelope as env, desk_items, desk_v2
 from api import calendar as nyse
 from api import freshness as fr
 from api.main import app
 from src.analytics import dbpath
+from src.desk import event_study as es
 from tests import desk_contract as dc
 from tests.test_desk_v2_study import _serve
 from tests.test_event_study import _synthetic_db
@@ -371,3 +372,64 @@ def test_the_route_judges_at_the_responses_now(served, monkeypatch):
     b = _overview()["data_status"]["data"]
     assert a["state"] == "current" and b["state"] == "stale"
     assert all(c["state"] == "stale" for c in b["contributors"])
+
+
+# ── the VIX's band and its gap to realized volatility (desk/fill-compute) ──
+
+def test_realized_vol_is_21_log_returns_annualized_and_a_gap_voids_its_windows():
+    import math
+    import statistics
+
+    from src.analytics import technicals
+
+    px = pd.Series(100 * np.cumprod(1 + np.random.default_rng(9).normal(0, 0.01, 40)))
+    rv = technicals.realized_vol(px)
+    r = [math.log(b / a) for a, b in zip(px[:-1], px[1:])]
+    assert np.isnan(rv.iloc[:21]).all()
+    assert rv.iloc[21] == pytest.approx(100 * math.sqrt(252) * statistics.stdev(r[:21]), rel=1e-12)
+    assert rv.iloc[39] == pytest.approx(100 * math.sqrt(252) * statistics.stdev(r[-21:]), rel=1e-12)
+    gappy = px.copy()
+    gappy.iloc[30] = np.nan
+    g = technicals.realized_vol(gappy)
+    assert np.isnan(g.iloc[30:40]).all() and g.iloc[29] == pytest.approx(rv.iloc[29])
+
+
+@pytest.mark.parametrize(("vix", "band"), [(14.99, "calm"), (15.0, "subdued"), (24.99, "subdued"), (25.0, "stressed")])
+def test_the_vix_band_is_the_home_pages_words(vix, band):
+    assert desk_v2.vix_band(vix) == band and desk_v2.VIX_BAND_EDGES == (15.0, 25.0)
+
+
+def test_the_gap_is_on_the_latest_session_with_both():
+    dates = es.sessions_between(es.session_calendar("2026-06-01", "2026-09-18"), "2026-06-01", "2026-09-18")
+    spx = pd.Series(100 * np.cumprod(1 + np.random.default_rng(2).normal(0, 0.01, len(dates))), index=dates)
+    vix = pd.Series(15.0 + np.arange(len(dates)) * 0.01, index=dates)
+    g = desk_items.vol_gap(spx, vix)
+    assert g["date"] == "2026-09-18" and g["gap_pts"] == pytest.approx(g["vix"] - g["realized_21d"])
+    assert g["window"] == {"start": dates[-22].strftime("%Y-%m-%d"), "end": "2026-09-18", "n": 21}
+    # a missing S&P close holds the gap on the session before it: no window may read it
+    held = desk_items.vol_gap(spx.drop(dates[-3]), vix)
+    assert held["date"] == dates[-4].strftime("%Y-%m-%d") and held["vix"] == vix.iloc[-4]
+    assert desk_items.vol_gap(spx.iloc[:10], vix) is None
+
+
+def test_the_vol_tile_serves_the_band_and_the_gap(served, monkeypatch, overview_path):
+    _at(monkeypatch, 2026, 9, 18, 21, 0)
+    v = _overview()["tiles"]["vol"]["data"]
+    assert v["band"] == desk_v2.vix_band(v["vix"]) and v["band_edges"] == [15.0, 25.0]
+    g = v["gap"]
+    assert g is not None and g["date"] <= v["date"] and g["gap_pts"] == pytest.approx(g["vix"] - g["realized_21d"])
+    conn = sqlite3.connect(f"file:{overview_path}?mode=ro", uri=True)
+    try:
+        stored = dict(conn.execute("SELECT date, close FROM asset_prices WHERE symbol = '^GSPC' AND interval = '1d' "
+                                   "AND date BETWEEN ? AND ?", (g["window"]["start"], g["date"])).fetchall())
+    finally:
+        conn.close()
+    # the XNYS sessions of the window (the synthetic store holds off-session rows the engine drops)
+    sessions = es.sessions_between(es.session_calendar(g["window"]["start"], g["date"]), g["window"]["start"], g["date"])
+    closes = [stored[d.strftime("%Y-%m-%d")] for d in sessions]
+    import math
+    import statistics
+
+    assert len(closes) == 22
+    rets = [math.log(b / a) for a, b in zip(closes, closes[1:])]
+    assert g["realized_21d"] == pytest.approx(100 * math.sqrt(252) * statistics.stdev(rets), rel=1e-12)

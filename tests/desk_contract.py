@@ -142,6 +142,8 @@ REGIME_TILE_FIELDS = dict(
     months_in=INT, since=MONTH, freq=Const("monthly"), source=REGIMES_SOURCE,
 )
 
+SPAN = obj(start=DATE, end=DATE, n=INT)
+
 # ── §12.1 GET /overview ─────────────────────────────────────────────────────
 
 FIRE = obj(slug=STR, label=STR, short=STR)
@@ -161,7 +163,9 @@ OVERVIEW = obj(
             state=TREND_STATE, above_50=null(BOOL), above_200=null(BOOL), state_since=null(DATE),
             cross=null(CROSS), date=DATE, freq=Const("daily"), source=Const("asset_prices ^GSPC"),
         )),
-        vol=Block(obj(vix=NUM, date=DATE, freq=Const("daily"), source=Const("FRED VIXCLS (desk_series)"))),
+        vol=Block(obj(vix=NUM, date=DATE, freq=Const("daily"), source=Const("FRED VIXCLS (desk_series)"),
+                      band=E("calm", "subdued", "stressed"), band_edges=Const([15.0, 25.0]),
+                      gap=null(obj(date=DATE, vix=NUM, realized_21d=NUM, gap_pts=NUM, window=SPAN)))),
     ),
     active_signals=Arr(LEDGER_ROW),
     data_status=Block(obj(
@@ -291,7 +295,6 @@ SECTORS = Obj(dict(LEADERSHIP, breadth=Block(BREADTH)))
 
 # ── §12.7 GET /technicals ───────────────────────────────────────────────────
 
-SPAN = obj(start=DATE, end=DATE, n=INT)
 POINT = obj(date=DATE, close=null(NUM), ma50=null(NUM), ma200=null(NUM))
 RSI_VISIT = obj(date=DATE, rsi=NUM, after_20d=null(NUM), after_20d_to=null(DATE))
 TECHNICALS = obj(

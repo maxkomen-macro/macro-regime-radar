@@ -90,14 +90,16 @@ VIX_RECENT_ROWS = 40
 def desk_facts(ctx: dict) -> dict:
     """/overview's stored facts (plan §7 commit 9): the newest stored date and
     value of each data_status contributor, read through the engine's
-    `load_level` (provenance-aware; None for a series the store lacks), and
-    the last VIX rows, for the change between the two comparison sessions."""
+    `load_level` (provenance-aware; None for a series the store lacks), the
+    last VIX rows, for the change between the two comparison sessions, and
+    the VIX's gap to the S&P's realized volatility (`vol_gap`)."""
     from src.desk import event_study as es
     from src.desk import series as registry
 
     cutoff = es.resolve_as_of(None, es.DB_PATH)
     newest: dict[str, dict | None] = {}
     vix_recent: dict[str, float] = {}
+    loaded: dict[str, Any] = {}
     conn = es._connect(es.DB_PATH)
     try:
         for key in FACT_KEYS:
@@ -107,12 +109,50 @@ def desk_facts(ctx: dict) -> dict:
             except es.NotStored:
                 newest[spec.series_id] = None
                 continue
+            loaded[key] = s
             newest[spec.series_id] = {"date": s.index[-1].strftime("%Y-%m-%d"), "value": float(s.iloc[-1])}
             if key == "vix":
                 vix_recent = {d.strftime("%Y-%m-%d"): float(v) for d, v in s.iloc[-VIX_RECENT_ROWS:].items()}
     finally:
         conn.close()
-    return {"newest": newest, "vix_recent": vix_recent}
+    gap = vol_gap(loaded["spx"], loaded["vix"]) if "spx" in loaded and "vix" in loaded else None
+    return {"newest": newest, "vix_recent": vix_recent, "vol_gap": gap}
+
+
+def vol_gap(spx: Any, vix: Any) -> dict | None:
+    """/overview's VIX gap to realized volatility (spec §12.1, desk/fill-compute):
+    on the XNYS calendar, the S&P's 21-day realized volatility
+    (src/analytics/technicals.realized_vol: annualized, in VIX points, from 21
+    daily log returns, every one of them needing both its closes) and the VIX
+    on the latest session where both exist; the gap is VIX minus realized.
+    None when no session has both."""
+    import math
+
+    import numpy as np
+
+    from src.analytics import technicals
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    start = min(spx.index[0], vix.index[0]).strftime("%Y-%m-%d")
+    end = max(spx.index[-1], vix.index[-1]).strftime("%Y-%m-%d")
+    sessions = es.sessions_between(es.session_calendar(start, end), start, end)
+    px, _off, _missing = es.align(spx, sessions)
+    px, _bad, _why = es.validate_values(px, registry.get("spx"))
+    vx, _off, _missing = es.align(vix, sessions)
+    rv = technicals.realized_vol(px).to_numpy(dtype=float)
+    v = vx.to_numpy(dtype=float)
+    both = np.flatnonzero(np.isfinite(rv) & np.isfinite(v))
+    if not len(both):
+        return None
+    i = int(both[-1])
+    w = technicals.REALIZED_WINDOW
+    iso = [d.strftime("%Y-%m-%d") for d in sessions]
+    realized = float(rv[i])
+    if not math.isfinite(realized):
+        return None
+    return {"date": iso[i], "vix": float(v[i]), "realized_21d": realized, "gap_pts": float(v[i]) - realized,
+            "window": {"start": iso[i - w], "end": iso[i], "n": w}}
 
 
 TECH_CHART_MONTHS = {"6m": 6, "1y": 12, "3y": 36}

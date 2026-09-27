@@ -37,7 +37,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Tab / block | Monday state | Reason |
 |---|---|---|
 | Overview: since-last-close line, regime tile, recession tile, trend tile, VIX level, active signals, data status | LIVE | — |
-| Overview: VIX "gap vs realized" and the vol band word | UNAVAILABLE | realized-volatility method not specified (v2 D-17) |
+| Overview: VIX "gap vs realized" and the vol band word | LIVE (desk/fill-compute) | the S&P's 21-day realized volatility (`src/analytics/technicals.realized_vol`) and the home page's VIX words (§12.1 `tiles.vol`) |
 | Overview: Monitored rows | LIVE from the browser's position store (§9) | no server position store (v2 D-21) |
 | Technicals: price, 50- and 200-day averages, trend, cross, chart, 1-year return, day change, last 20 days in σ, signals (the §3 allowlist) | LIVE | — |
 | Technicals: vol column ("What protection costs right now") | UNAVAILABLE | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
@@ -69,7 +69,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 Build Notes prints these two lists as their own section, word for word.
 
 **Live**
-- Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, active signals, data status.
+- Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.
 - Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.
@@ -81,7 +81,6 @@ Build Notes prints these two lists as their own section, word for word.
 - Client view: the current study in plain words, a month out.
 
 **Designed, not yet served**
-- The VIX gap to realized volatility and the vol band word.
 - What protection costs: options skew, implied against realized volatility, the term structure.
 - Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
 - Confidence levels other than 90%.
@@ -295,7 +294,7 @@ signal still firing with its `firing_day`; the VIX change in points
 | REGIME | `● Live · <Mon> row` | Overheating (regime color, serif 26px) | Growth rising, inflation rising · rule-based, two-month lag |
 | RECESSION · LOGISTIC MODEL | `● Live` | 12% | <band> · score for <probability_month> · inputs through <inputs_through> |
 | S&P 500 · TREND | `● Live · <date>` | Above 50 & 200 (from `trend.state`) | since <state_since> · last cross <golden\|death>, <date> |
-| VOL · VIX | `● Live · <date>` | 16.2 | VIX <level> · <date> (the gap to realized and the band word are unavailable, §1.0) |
+| VOL · VIX | `● Live · <date>` | 16.2 | VIX <level> · <date> · <band> (calm, subdued, stressed), then "<\|gap_pts\|> pts above\|below 21-day realized (<realized_21d>)", with "on <gap.date>" when that is not `date`; "no session has both the VIX and 21 S&P returns" when `gap` is null |
 
 **Active signals** (left, ~60%). Subtitle `what fired, how it has played out
 before · engine as of <as_of>`. Rows are `/overview` `active_signals` in the
@@ -956,6 +955,9 @@ two sessions; v2 §21's `data_status {state, worst_series, date}` is
 | `tiles.vol.data.vix` | number | required | index points | `date` · daily · FRED VIXCLS (`desk_series`) | E: newest stored observation |
 | `tiles.vol.data.date` | date | required | — | — | E |
 | `tiles.vol.data.freq`, `.source` | `"daily"`, string | required | — | — | A |
+| `tiles.vol.data.band` | `"calm"` \| `"subdued"` \| `"stressed"` | required | — | `date` | A rule (desk/fill-compute): calm < 15 ≤ subdued < 25 ≤ stressed on `vix`, the home page's VIX words and edges (web `DashboardScreen.tsx`; `src/analytics/volatility.py`'s 15 / 25) |
+| `tiles.vol.data.band_edges` | `[15, 25]` | required | VIX points | — | A |
+| `tiles.vol.data.gap` | `{date, vix, realized_21d, gap_pts, window: {start, end, n}}` | required, nullable (null when no session has both) | VIX points | `gap.date` · daily · the VIX's store and `asset_prices` ^GSPC | N realized volatility (desk/fill-compute): on the XNYS calendar, the latest session where the VIX and the S&P's 21-day realized volatility both exist; `realized_21d` = 100 × √252 × the sample standard deviation (ddof 1) of the 21 daily log returns ending that session, each return needing both its closes (`src/analytics/technicals.realized_vol`, symbol-agnostic); `gap_pts` = `vix` − `realized_21d`; `window` names the first close read and the session, `n` 21 returns |
 | `active_signals` | array of Ledger rows (§12.5) | required (may be empty) | — | each row's own | A: the deduplicated union of every row with `firing_now` true and `stale` false and the five rows with the latest non-null `last_fired`, ordered firing first, then `last_fired` descending, then `slug` (v2 §19) |
 | `data_status` | block envelope | required | — | — | — |
 | `data_status.data.state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N data status (v4 B-06): the worst contributor, missing > stale > current |
@@ -1429,7 +1431,7 @@ strikes, expiry, quantity, quote timestamps and signed Greeks are served;
 atm_iv_1m, realized_20d, term: {"1m","3m","6m"}, history_from}` with each
 value's date. Needs stored SPY option snapshots and a versioned skew
 method; `realized_20d` needs its method specified, and the Overview's
-`tiles.vol` `gap_pts` and `band` wait on it (v2 §13).
+`tiles.vol` `gap` and `band` are served since desk/fill-compute (§12.1, realized over 21 daily log returns; the Technicals vol column still waits on the option snapshots).
 
 **Sectors — served since desk/fill-etf (§12.14); this deferred shape is
 kept for the history** (`/technicals` `sectors` block; `GET /sectors`). `{window_months: 3, leadership: [{etf, name, short, rel_ret}]
@@ -1534,6 +1536,7 @@ implementation may broaden scope to satisfy an illustrative shape.
 **Added after Monday (desk/fill-compute, 2026-09-27, by the owner's brief).**
 Each is a new calculation from stored data, listed in §12 with its rule:
 - the 14-day RSI on ^GSPC, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), served by `/technicals` (§12.7);
+- the S&P's 21-day realized volatility, `src/analytics/technicals.realized_vol`, and the VIX's band word and gap to it on `/overview` `tiles.vol` (§12.1);
 - the two RSI studies, the engine's `kind` `rsi` (strict crossings of 70 and 30, a 14-session cooldown), scored by the
   existing engine and the v1 verdict rule like every catalog study (§12.3, §12.5). Existing studies' native results and
   hashes are unchanged: the RSI's own parameters enter only an RSI study's `inputs_hash`.

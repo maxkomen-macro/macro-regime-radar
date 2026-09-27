@@ -180,6 +180,15 @@ export interface RecessionScore {
   source?: string;
 }
 
+/** §12.1: VIX against the S&P's 21-day realized volatility, in VIX points, on one session. */
+export interface VolGap {
+  date: string;
+  vix: number | null;
+  realized_21d: number | null;
+  gap_pts: number | null;
+  window?: Window;
+}
+
 export interface OverviewTiles {
   regime?: RegimeRow;
   recession?: RecessionScore;
@@ -195,12 +204,17 @@ export interface OverviewTiles {
     freq?: string;
     source?: string;
   };
-  /** §12.1: the VIX level and its day; the gap to realized and the band word are unavailable (§1.0). */
+  /** §12.1: the VIX level and its day, its band word, and its gap to the S&P's 21-day realized volatility (desk/fill-compute). */
   vol?: {
     vix: number | null;
     date: string;
     freq?: string;
     source?: string;
+    /** calm < 15 ≤ subdued < 25 ≤ stressed, the home page's VIX words (§12.1). */
+    band?: "calm" | "subdued" | "stressed" | null;
+    band_edges?: [number, number] | null;
+    /** On the latest session where both exist; null when none has. */
+    gap?: VolGap | null;
   };
 }
 

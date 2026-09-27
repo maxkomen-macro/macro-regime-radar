@@ -96,11 +96,11 @@ describe("Overview tab", () => {
     expect(trend).toHaveTextContent("since Sep 22, 2026 · last cross golden, Jul 1, 2025");
     const vol = screen.getByRole("region", { name: "Vol · VIX" });
     expect(vol).toHaveTextContent("14.2");
-    // §2: the level and its day; the gap to realized and the band word are unavailable (§1.0).
-    expect(vol).toHaveTextContent("VIX 14.2 · Sep 22");
-    // §1.0.2: no envelope of its own, so the unserved half prints §1.0's reason.
-    expect(vol).toHaveTextContent("The gap to realized and the band word: realized-volatility method not specified.");
-    expect(vol).not.toHaveTextContent(/Calm|protection costs/);
+    // §2 (desk/fill-compute): the level, its day and its band; the gap to the S&P's 21-day realized volatility,
+    // on Sep 21 in the fixture's store (it has no Sep 22 S&P close, so no window ends there).
+    expect(vol).toHaveTextContent("VIX 14.2 · Sep 22 · calm");
+    expect(vol).toHaveTextContent("4.4 pts above 21-day realized (10.5) on Sep 21");
+    expect(vol).not.toHaveTextContent(/not specified|protection costs/);
   });
 
   it("a row whose h = 20 study has fewer than ten completed outcomes carries the dashed Too few pill (§1.5)", async () => {
@@ -224,5 +224,15 @@ describe("blocks served awaiting inside a ready answer (§12.1, §1.0.2)", () =>
     expect(within(screen.getByRole("region", { name: "Vol · VIX" })).getByTestId("dk-live")).toHaveTextContent(/^Not yet served$/);
     expect(screen.getByTestId("dk-today")).toHaveTextContent("Regime awaiting refresh");
     expect(screen.getByTestId("dk-today")).not.toHaveTextContent("not yet served");
+  });
+});
+
+describe("the VIX's gap to realized (desk/fill-compute)", () => {
+  it("says above or below, the realized figure, and the gap's session only when it is not the level's", async () => {
+    const { gapWords } = await import("./OverviewPage");
+    const vol = { vix: 14.21, date: "2026-09-22", gap: { date: "2026-09-22", vix: 14.21, realized_21d: 16.4, gap_pts: -2.19 } };
+    expect(gapWords(vol)).toBe("2.2 pts below 21-day realized (16.4)");
+    expect(gapWords({ ...vol, gap: { ...vol.gap, date: "2026-09-21", gap_pts: 4.4 } })).toBe("4.4 pts above 21-day realized (16.4) on Sep 21");
+    expect(gapWords({ ...vol, gap: null })).toBe("No session has both the VIX and 21 S&P returns stored.");
   });
 });

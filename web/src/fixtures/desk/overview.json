@@ -52,7 +52,23 @@
    "vix": 14.21,
    "date": "2026-09-22",
    "freq": "daily",
-   "source": "FRED VIXCLS (desk_series)"
+   "source": "FRED VIXCLS (desk_series)",
+   "band": "calm",
+   "band_edges": [
+    15.0,
+    25.0
+   ],
+   "gap": {
+    "date": "2026-09-21",
+    "vix": 14.87,
+    "realized_21d": 10.471265206802181,
+    "gap_pts": 4.398734793197818,
+    "window": {
+     "start": "2026-08-20",
+     "end": "2026-09-21",
+     "n": 21
+    }
+   }
   }
  },
  "active_signals": [

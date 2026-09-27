@@ -302,7 +302,16 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       recession: o({ ...recessionScore }),
       // §12.1: the served state names the trend; without it the tile says nothing (Codex G1-9).
       trend: o({ state: e(TREND_STATES, { req: true }), above_50: "b?", above_200: "b?", state_since: "s?", cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }), date: "s", freq: "s", source: "s" }),
-      vol: o({ vix: "n", date: "s", freq: "s", source: "s" }),
+      vol: o({
+        vix: "n",
+        date: "s",
+        freq: "s",
+        source: "s",
+        // §12.1 (desk/fill-compute): the band on the VIX, and the gap on its own session; a gap without its day claims nothing.
+        band: e(["calm", "subdued", "stressed"], { nul: true }),
+        band_edges: t(["n!", "n!"], { nul: true }),
+        gap: o({ date: "s!", vix: "n", realized_21d: "n", gap_pts: "n", window: o({ start: "s!", end: "s!", n: "n!" }) }, { nul: true }),
+      }),
     }),
     active_signals: l(ledgerRow),
     data_status: o({

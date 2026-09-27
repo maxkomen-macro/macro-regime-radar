@@ -11,7 +11,7 @@ export const SCOPE_LISTS: readonly { title: string; items: readonly string[] }[]
   {
     title: "Live",
     items: [
-      "Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, active signals, data status.",
+      "Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.",
       "Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI.",
       "Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.",
       "Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.",
@@ -26,7 +26,6 @@ export const SCOPE_LISTS: readonly { title: string; items: readonly string[] }[]
   {
     title: "Designed, not yet served",
     items: [
-      "The VIX gap to realized volatility and the vol band word.",
       "What protection costs: options skew, implied against realized volatility, the term structure.",
       "Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.",
       "Confidence levels other than 90%.",

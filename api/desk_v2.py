@@ -318,11 +318,23 @@ def trend_tile() -> dict:
             "source": SPX_SOURCE}
 
 
+# The home page's VIX words and edges (web/src/screens/dashboard/DashboardScreen.tsx: under 15 calm,
+# under 25 subdued, else stressed; src/analytics/volatility.py's 15 / 25 edges), on the tile's VIX.
+VIX_BAND_EDGES = (15.0, 25.0)
+
+
+def vix_band(vix: float) -> str:
+    """spec §12.1 (desk/fill-compute): calm < 15 ≤ subdued < 25 ≤ stressed."""
+    lo, hi = VIX_BAND_EDGES
+    return "calm" if vix < lo else ("subdued" if vix < hi else "stressed")
+
+
 def vol_tile(facts: dict) -> dict:
     vix = facts["newest"].get("VIXCLS")
     if vix is None:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
-    return {"vix": vix["value"], "date": vix["date"], "freq": "daily", "source": VIX_SOURCE}
+    return {"vix": vix["value"], "date": vix["date"], "freq": "daily", "source": VIX_SOURCE,
+            "band": vix_band(vix["value"]), "band_edges": list(VIX_BAND_EDGES), "gap": facts.get("vol_gap")}
 
 
 def active_signals(rows: list[dict]) -> list[dict]:

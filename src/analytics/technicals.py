@@ -62,3 +62,18 @@ def rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
             avg_loss = (avg_loss * (period - 1) + loss) / period
         out[i] = _rsi_value(avg_gain, avg_loss)
     return pd.Series(out, index=close.index)
+
+
+REALIZED_WINDOW = 21     # daily log returns in a realized-volatility window
+PERIODS_PER_YEAR = 252   # trading sessions a year, the annualization
+
+
+def realized_vol(close: pd.Series, window: int = REALIZED_WINDOW, periods_per_year: int = PERIODS_PER_YEAR) -> pd.Series:
+    """Annualized realized volatility, in percentage points (VIX's unit):
+    100 × √periods_per_year × the sample standard deviation (ddof = 1) of the
+    last `window` daily log returns ending on each session. A return needs
+    both of its closes, and the value needs all `window` returns: a missing
+    close (NaN) makes every window that reads it NaN, never a shorter one."""
+    r = np.log(close.astype(float)).diff()
+    sd = r.rolling(window, min_periods=window).std(ddof=1)
+    return 100.0 * math.sqrt(periods_per_year) * sd
