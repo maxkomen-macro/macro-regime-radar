@@ -1,0 +1,196 @@
+/* PROTOTYPE cards (DESK_FRAME3_SPEC §1.0.3): §1.3's palette only, the kit's type ramp. */
+
+.pr-muted {
+  color: var(--dk-t3);
+}
+.pr-assume {
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.pr-assume > div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 10px;
+}
+.pr-assume dt {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--dk-t4);
+  padding-top: 2px;
+}
+.pr-assume dd {
+  color: var(--dk-t2);
+  min-width: 0;
+}
+.pr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pr-table th,
+.pr-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--dk-row);
+  text-align: right;
+  white-space: nowrap;
+}
+.pr-table thead th {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+}
+.pr-table th:first-child,
+.pr-table td:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+.pr-table tbody th {
+  font-weight: 600;
+  color: var(--dk-t1);
+}
+.pr-table td {
+  font-family: var(--dk-mono);
+  color: var(--dk-t2);
+}
+.pr-table tr:last-child th,
+.pr-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ── Technicals: what protection costs (the vol column's place) ── */
+.pr-protection .pr-sub {
+  margin-top: 3px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--dk-border);
+}
+.pr-protection .te-vol-sec {
+  padding: 14px 0 13px;
+}
+.pr-protection .te-vol-sec:last-child {
+  border-bottom: 0;
+}
+.pr-sides {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pr-sides th,
+.pr-sides td {
+  padding: 3px 0;
+  text-align: right;
+}
+.pr-sides thead th {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+}
+.pr-sides tbody th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--dk-t1);
+}
+.pr-sides td {
+  font-family: var(--dk-mono);
+  color: var(--dk-t2);
+}
+.pr-tenors {
+  margin-top: 12px;
+}
+.pr-bars {
+  margin-top: 6px;
+  display: grid;
+  gap: 7px;
+}
+.pr-bar-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto 34px;
+  align-items: center;
+  gap: 8px;
+}
+.pr-bar-tenor {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t3);
+}
+.pr-bar-pair {
+  display: grid;
+  gap: 3px;
+}
+.pr-bar-pair i,
+.pr-legend i {
+  display: block;
+  height: 6px;
+}
+.pr-bar-iv {
+  background: var(--dk-blue);
+}
+.pr-bar-rv {
+  background: rgba(139, 146, 158, 0.55);
+}
+.pr-bar-nums {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t2);
+  white-space: nowrap;
+}
+.pr-bar-gap {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  text-align: right;
+}
+.pr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--dk-t3);
+}
+.pr-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pr-legend i {
+  width: 12px;
+}
+.pr-spark {
+  fill: none;
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+}
+.pr-spark-line {
+  fill: none;
+  stroke: var(--dk-blue);
+  stroke-width: 1.6;
+}
+.pr-spark-today {
+  stroke: var(--dk-amber);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.7;
+}
+.pr-spark-dot {
+  fill: var(--dk-t1);
+}
+.pr-range {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t4);
+}

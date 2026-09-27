@@ -309,26 +309,23 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: the vol block keeps its labels, prints its reason and says Not yet served; the sector bars and the RSI, MACD and seasonality cards are served (§1.0, §12.7, §12.14)", async ({ page }) => {
+  test("technicals: the vol column is the PROTOTYPE; the sector bars and the RSI, MACD and seasonality cards are served (§1.0, §1.0.3, §12.7, §12.14)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/technicals");
+      // §1.0.3: the vol block is served awaiting as not yet served, so its PROTOTYPE stands there: finished, no badge, its footnote last.
+      const vol = page.getByRole("region", { name: /^What protection costs right now/ });
+      await expect(vol).toHaveAttribute("data-prototype", "protection");
+      await expect(vol).toContainText("PUTS vs CALLS · 1 MONTH OUT");
+      await expect(vol).not.toContainText("needs stored SPY option snapshots");
+      await expect(vol.getByTestId("dk-live")).toHaveCount(0);
+      await expect(vol.getByTestId("dk-advanced")).toBeEnabled();
+      await expect(vol.getByRole("img")).toHaveCount(2);
       // desk/fill-etf: the sector leadership is served, seven bars from the API's answer on the fixture store.
       const sect = page.getByRole("region", { name: /^Sector leadership/ });
       await expect(sect.getByRole("list", { name: /top three/ }).getByRole("listitem")).toHaveCount(7);
       await expect(sect).toContainText("60 sessions to Sep 23 · log returns ×100 · Yahoo");
       await expect(sect.getByTestId("dk-advanced")).toBeEnabled();
-      const cards: [RegExp, string, string][] = [
-        [/^What protection costs right now/, "needs stored SPY option snapshots and a versioned skew method.", "PUTS vs CALLS · 1 MONTH OUT"],
-      ];
-      for (const [name, reason, label] of cards) {
-        const card = page.getByRole("region", { name });
-        await expect(card).toContainText(reason);
-        await expect(card).toContainText(label);
-        await expect(card.getByTestId("dk-live")).toContainText("Not yet served");
-        await expect(card.getByTestId("dk-advanced")).toBeDisabled();
-        await expect(card.getByRole("img")).toHaveCount(0);
-      }
       // §12.7: RSI(14), its zone and direction, each zone's last session and the gauge, dated by its own session.
       const rsi = page.getByRole("region", { name: /^Momentum · RSI/ });
       await expect(rsi.getByTestId("dk-live")).toContainText("Sep 21");

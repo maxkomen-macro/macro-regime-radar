@@ -46,7 +46,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Overview: VIX "gap vs realized" and the vol band word | LIVE (desk/fill-compute) | the S&P's 21-day realized volatility (`src/analytics/technicals.realized_vol`) and the home page's VIX words (§12.1 `tiles.vol`) |
 | Overview: Monitored rows | LIVE from the browser's position store (§9) | no server position store (v2 D-21) |
 | Technicals: price, 50- and 200-day averages, trend, cross, chart, 1-year return, day change, last 20 days in σ, signals (the §3 allowlist) | LIVE | — |
-| Technicals: vol column ("What protection costs right now") | UNAVAILABLE | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
+| Technicals: vol column ("What protection costs right now") | PROTOTYPE (§1.0.3) until `/technicals` serves its vol block; UNAVAILABLE for an instrument other than the S&P | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
 | Technicals: sector bars | LIVE (desk/fill-etf): the eleven sector ETFs' 60-session log returns less SPY's, `/technicals` `sectors` (§12.14) | — |
 | Technicals: RSI card | LIVE (desk/fill-compute) | Wilder's RSI(14) on the stored ^GSPC closes, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy) (§12.7) |
 | Technicals: MACD card | LIVE (desk/fill-compute) | MACD(12, 26, 9) on the stored ^GSPC closes, `src/analytics/technicals.macd` (the shared, symbol-agnostic copy) (§12.7 `macd`) |
@@ -385,10 +385,18 @@ Signals; bottom-middle = Sector leadership; bottom-right = RSI; a third row
 (desk/fill-compute) = MACD across the vol column and the middle, seasonality
 on the right.
 
-**What protection costs right now** (vol column): UNAVAILABLE (§1.0), from
-`/technicals` `vol` (awaiting). Labels kept: PUTS vs CALLS · 1 MONTH OUT ·
+**What protection costs right now** (vol column): PROTOTYPE (§1.0.3), shown
+for the S&P only, once `/technicals` has answered without serving its `vol`
+block (awaiting on Monday); a served block (ready, or awaiting a refresh)
+draws the LIVE card below instead. Labels: PUTS vs CALLS · 1 MONTH OUT ·
 WHAT OPTIONS EXPECT vs WHAT HAPPENED · 1 MONTH · 3 MONTHS · 6 MONTHS · SKEW ·
-WHERE IT SITS.
+WHERE IT SITS. The PROTOTYPE reads `vol.json` (§12.13's vol shape) and
+`proto-protection.json`: the 25-delta put and call a month out (vol, strike
+and cost, Black-Scholes at the stated vols), implied against realized at 1, 3
+and 6 months, and the two-year weekly skew line with today's percentile.
+Footnote: "Illustrative values · In production: daily SPY chain snapshots
+from the EODHD options add-on, stored and versioned." The LIVE card, once
+served, prints the §12.13 fields.
 
 **S&P 500 — price and its two trend lines**. Range chips 6M / 1Y / 3Y. Stats:
 PRICE (`price`; sub `chg_1d` × 100 "on <chg_1d_dates.to>") · 50-DAY AVERAGE

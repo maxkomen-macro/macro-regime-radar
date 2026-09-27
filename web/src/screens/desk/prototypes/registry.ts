@@ -15,7 +15,14 @@ export interface PrototypeEntry {
   production: string;
 }
 
-export const PROTOTYPES: readonly PrototypeEntry[] = [];
+export const PROTOTYPES: readonly PrototypeEntry[] = [
+  {
+    id: "protection",
+    page: "technicals",
+    title: "What protection costs right now",
+    production: "daily SPY chain snapshots from the EODHD options add-on, stored and versioned.",
+  },
+];
 
 /** A registry row by id; throws on an unknown id, so a card cannot ship without its row. */
 export function prototype(id: string): PrototypeEntry {
@@ -30,4 +37,4 @@ export function isPrototypeFixture(path: string): boolean {
 }
 
 /** The names a module outside prototypes/ may import from it: the cards themselves, which a page places. */
-export const PROTOTYPE_CARD_EXPORTS: readonly string[] = [];
+export const PROTOTYPE_CARD_EXPORTS: readonly string[] = ["ProtectionCard"];

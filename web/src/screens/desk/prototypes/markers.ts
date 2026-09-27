@@ -6,4 +6,14 @@
  * React, no CSS), so the browser tests can import it.
  */
 
-export const PROTOTYPE_MARKERS: Readonly<Record<string, readonly string[]>> = {};
+import { ordinal, signed } from "../kit/format";
+import { costText, protection, strikeText } from "./protection";
+
+function protectionMarkers(): string[] {
+  const p = protection();
+  return [`${signed(p.skew)} pts`, costText(p.put.cost), costText(p.call.cost), strikeText(p.put.strike), strikeText(p.call.strike), `${ordinal(Math.round(p.percentile * 100))} percentile`];
+}
+
+export const PROTOTYPE_MARKERS: Readonly<Record<string, readonly string[]>> = {
+  protection: protectionMarkers(),
+};
