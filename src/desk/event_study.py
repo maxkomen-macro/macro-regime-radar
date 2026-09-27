@@ -640,15 +640,22 @@ def zscore(m: pd.Series, window: int = Z_WINDOW, min_present: int = Z_MIN_PRESEN
     return (m - mu) / sd.replace(0.0, np.nan)
 
 
-def detect_events(z: pd.Series, thr: float, sign: str, w: int) -> tuple[np.ndarray, int]:
-    """Event positions after the cooldown, and the raw count before it."""
+def trigger_mask(z: pd.Series, thr: float, sign: str) -> np.ndarray:
+    """The sessions whose z meets the threshold, before any cooldown: the
+    comparison detect_events applies, and the Desk's firing state reads
+    (desk/frame-3-api)."""
     if sign == "+":
         fire = z >= thr
     elif sign == "-":
         fire = z <= -thr
     else:
         fire = z.abs() >= thr
-    hits = np.flatnonzero(fire.fillna(False).to_numpy())
+    return fire.fillna(False).to_numpy().astype(bool)
+
+
+def detect_events(z: pd.Series, thr: float, sign: str, w: int) -> tuple[np.ndarray, int]:
+    """Event positions after the cooldown, and the raw count before it."""
+    hits = np.flatnonzero(trigger_mask(z, thr, sign))
     kept: list[int] = []
     next_ok = -1
     for i in hits:
@@ -1079,7 +1086,100 @@ def run_on(conn: sqlite3.Connection, q: Query, *, generation: Any, n_boot: int =
     return _run(q, conn, n_boot=n_boot, generation=generation, clamped=clamped, as_of=resolve_as_of(as_of))
 
 
-def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, clamped: bool = False, as_of: str) -> dict:
+@dataclass(frozen=True)
+class EventTable:
+    """A run's retained events, ascending, one row per event (desk/frame-3-api
+    plan §2): the event set the run's own statistics are computed from, so the
+    Desk's counts, extrema and CSV are projections of it and nothing is rebuilt
+    from `recent_events`. Arrays are read-only; `sessions` is the study's
+    calendar as ISO dates, shared with the run's SignalTrace."""
+
+    sessions: tuple[str, ...]
+    event_idx: np.ndarray               # int[k], positions on `sessions`
+    entry_idx: np.ndarray               # int[k], event + delay; −1 when the entry is after the stored data
+    entry_delay: np.ndarray             # int[k], for every event, entry-less ones included
+    same_session: np.ndarray            # bool[k], entry_delay == 0
+    regime: tuple[str, ...]             # the K−2 label per event
+    exit_idx: dict[int, np.ndarray]     # h → int[k], entry + h when value[h] is finite, else −1
+    value: dict[int, np.ndarray]        # h → float[k], the native outcome, NaN when incomplete
+    n_unlabeled: int
+
+    def __len__(self) -> int:
+        return len(self.event_idx)
+
+
+@dataclass(frozen=True)
+class SignalTrace:
+    """Per session of the study's calendar: the evaluability mask, the raw
+    trigger (the threshold comparison before the cooldown, or the strict
+    crossing sessions), whether the condition holds, and the shock's z (None
+    for a cross). Read-only arrays; the firing state is computed from them."""
+
+    sessions: tuple[str, ...]
+    evaluable: np.ndarray               # bool[n]
+    trigger: np.ndarray                 # bool[n]
+    holds: np.ndarray                   # bool[n]
+    z: np.ndarray | None                # float[n]
+
+
+def _frozen(a: np.ndarray, dtype: Any) -> np.ndarray:
+    out = np.array(a, dtype=dtype, copy=True)
+    out.setflags(write=False)
+    return out
+
+
+def _traced(t: dict) -> tuple[EventTable, SignalTrace]:
+    sessions = tuple(np.datetime_as_string(t["sessions"].to_numpy(dtype="datetime64[ns]"), unit="D").tolist())
+    entry = np.where(t["has_entry"], t["entry"], -1)
+    value = {h: _frozen(v, float) for h, v in t["moves_by_h"].items()}
+    table = EventTable(
+        sessions=sessions,
+        event_idx=_frozen(t["ev_pos"], np.int64),
+        entry_idx=_frozen(entry, np.int64),
+        entry_delay=_frozen(t["ev_delay"], np.int64),
+        same_session=_frozen(t["same"], bool),
+        regime=tuple(str(x) for x in t["labels"]),
+        exit_idx={h: _frozen(np.where(np.isfinite(v), entry + h, -1), np.int64) for h, v in value.items()},
+        value=value,
+        n_unlabeled=int(t["n_unlabeled"]),
+    )
+    trace = SignalTrace(
+        sessions=sessions,
+        evaluable=_frozen(t["evaluable"], bool),
+        trigger=_frozen(t["trigger"], bool),
+        holds=_frozen(t["holds"], bool),
+        z=None if t["z"] is None else _frozen(t["z"], float),
+    )
+    return table, trace
+
+
+def run_traced(q: Query, db_path: Path | str = DB_PATH, *, n_boot: int = N_BOOT,
+               as_of: str | None = None) -> tuple[dict, EventTable, SignalTrace]:
+    """`run`, also returning the run's full event table and signal trace
+    (desk/frame-3-api). The dict is the one `run` returns, byte for byte."""
+    cutoff = resolve_as_of(as_of, db_path)
+    conn = _connect(db_path)
+    try:
+        return run_on_traced(conn, q, generation=dbpath.current_key(db_path), n_boot=n_boot, as_of=cutoff)
+    finally:
+        conn.close()
+
+
+def run_on_traced(conn: sqlite3.Connection, q: Query, *, generation: Any, n_boot: int = N_BOOT,
+                  as_of: str | None = None) -> tuple[dict, EventTable, SignalTrace]:
+    """`run_on`, also returning the event table and signal trace, which leave
+    `_run` on a side channel and are never keys of the dict."""
+    raw_cv = q.cond_value
+    q = validate(q)
+    clamped = (isinstance(q.cond_value, float) and raw_cv is not None and not isinstance(raw_cv, str)
+               and abs(float(raw_cv)) > COND_VALUE_BOUND)
+    t: dict = {}
+    out = _run(q, conn, n_boot=n_boot, generation=generation, clamped=clamped, as_of=resolve_as_of(as_of), trace=t)
+    return (out, *_traced(t))
+
+
+def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, clamped: bool = False, as_of: str,
+         trace: dict | None = None) -> dict:
     target_spec = registry.get(q.target)
     shock_spec = registry.get(q.shock)
     cond_meta = CONDITIONS.get(q.cond or "") if q.kind == "shock" else None
@@ -1215,6 +1315,21 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
             "moves": {str(h): (None if np.isnan(moves_by_h[h][i]) else float(moves_by_h[h][i])) for h in HORIZONS},
         })
     recent.reverse()
+
+    if trace is not None:
+        # desk/frame-3-api: the run's own arrays, copied onto a side channel; nothing here reaches
+        # the returned dict, so the native payload and inputs_hash are unchanged
+        if q.kind == "cross":
+            trigger = np.zeros(n_sessions, dtype=bool)
+            trigger[cross_positions(shock, q.cross or "golden")[0]] = True
+        else:
+            trigger = trigger_mask(z, q.z, q.sign)
+        trace.update(
+            sessions=sessions, ev_pos=ev_pos.copy(), labels=labels.copy(), entry=entry.copy(), same=same.copy(),
+            has_entry=has_entry.copy(), ev_delay=ev_delay.copy(), moves_by_h={h: m.copy() for h, m in moves_by_h.items()},
+            n_unlabeled=int(len(unl_pos)), z=None if z is None else z.to_numpy(dtype=float).copy(),
+            evaluable=evaluable.copy(), trigger=trigger, holds=holds_arr.astype(bool),
+        )
 
     metas = [_series_meta(k, raw[k], off[k], missing[k], invalid[k], invalid_reason[k]) for k in sorted(raw)]
     as_of_by = {m["key"]: m["last"] for m in metas}

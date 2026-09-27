@@ -1,0 +1,520 @@
+{
+ "base": "9979fe960f6798dd10e62225d92f2b4f5c949d29",
+ "method": "sha256 of json.dumps(run_on(conn, q, **pins), sort_keys=True, separators=(',', ':'), ensure_ascii=False); a refusal is 'NotStored:<series>' or 'StudyError:<message>'",
+ "pins": {
+  "as_of": "2026-09-24",
+  "generation": "golden"
+ },
+ "queries": {
+  "curve_2s10s-w20-z2.0-up-hy_oas_20d_change_above=-50.0-us10y": {
+   "kwargs": {
+    "cond": "hy_oas_20d_change_above",
+    "cond_value": -50.0,
+    "shock": "curve_2s10s",
+    "sign": "+",
+    "target": "us10y",
+    "w": 20,
+    "z": 2.0
+   },
+   "sha256": "72ae81fd40b58c9f6c11ea2750f8124816828b337eefb830e0715bee3991cdb1"
+  },
+  "curve_2s10s-w20-z2.0-up-none-spx": {
+   "sha256": "a10f08fda9bb1dd98791e753d13893af3eb00b83309d04e4d24b20efdd72b06c",
+   "slug": "curve_2s10s-w20-z2.0-up-none-spx"
+  },
+  "dxy-w20-z2.0-down-none-spx": {
+   "sha256": "e75354c39242a318eb82613d217801e9fd46a2f4cc9f8ba89fec5b321e3ba44f",
+   "slug": "dxy-w20-z2.0-down-none-spx"
+  },
+  "gold-2sigma-spx-weak": {
+   "sha256": "97a030f16b0f8e244dd60010a0f4e7146836fcfb6bb0ad390860f8d2bec865e2",
+   "slug": "gold-2sigma-spx-weak"
+  },
+  "gold-w20-z1.5-abs-none-spx": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "both",
+    "target": "spx",
+    "w": 20,
+    "z": 1.5
+   },
+   "sha256": "25891c8802b65747dfcfcffd30124a654f1f4bc2d84cff3a72c42814698053a2"
+  },
+  "gold-w20-z2.0-up-vix_above=0.1-spx": {
+   "kwargs": {
+    "cond": "vix_above",
+    "cond_value": 0.1,
+    "shock": "gold",
+    "sign": "+",
+    "target": "spx",
+    "w": 20,
+    "z": 2.0
+   },
+   "sha256": "0cc5d07196e3bb857c1689535c17f3edd4675c6a9de79ebb6bcb43e91793597b"
+  },
+  "gold-w5-z1.5-abs-none-spx": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "both",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "dbba5b1edfdbcd0024be7c6757dbdbef63d5478d4d5fcde56d5d9aae01129eb6"
+  },
+  "gold-w5-z1.5-down-none-gold": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "-",
+    "target": "gold",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "9c0874176d8747ac902e337b9849a3309a7e6f28fdcd9942dd04eeb361ef2eb7"
+  },
+  "gold-w5-z1.5-down-none-spx": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "-",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "88840cb8cfd05d8059063943f87c7018367fdf76e3ba04a05ba1bc857287d91b"
+  },
+  "gold-w5-z1.5-up-none-gold": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "+",
+    "target": "gold",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "a2c92fde72f8eddf5586b68005d7258c8a5584048c19f537848ea937450ef25b"
+  },
+  "gold-w5-z1.5-up-none-spx": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "+",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "697d474409baaaec884319771db010e63e481c41101e72b2b9441a726de3936d"
+  },
+  "gold-w5-z2.5-down-none-us10y": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "-",
+    "target": "us10y",
+    "w": 5,
+    "z": 2.5
+   },
+   "sha256": "23c10c053edee7e017d092c4f8b4a7df97e9d8496ae968f7967298cb31798a14"
+  },
+  "gold-w60-z1.5-down-none-gold": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "-",
+    "target": "gold",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "ae76b129b30b94d0adcead0580ba5955fa7289a0493f8fe0d09ceee25b735888"
+  },
+  "gold-w60-z1.5-down-none-spx": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "-",
+    "target": "spx",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "9023000bdaab9ffed69113800b1b15c6a3f5d5c800f0336845e28addd1ca0d1c"
+  },
+  "gold-w60-z1.5-up-none-gold": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "+",
+    "target": "gold",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "afe06dbf3ee8a7f9db05309c7f2ac86993e00e502f678407cce6a57102fc6c2a"
+  },
+  "gold-w60-z1.5-up-none-spx": {
+   "kwargs": {
+    "shock": "gold",
+    "sign": "+",
+    "target": "spx",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "e002426931761bdd178cc19e974183cea5961b58e9259b8608e205dda9f319fb"
+  },
+  "hy_oas-w20-z2.0-up-none-spx": {
+   "sha256": "bab0148836bdb402e78a79343c4a949d42bfd62229c2a05fc83d364756e4fd6a",
+   "slug": "hy_oas-w20-z2.0-up-none-spx"
+  },
+  "spx-death-cross": {
+   "sha256": "f65c34738bc493a1cb6090c352bd290681f30d16d950c828643fcd722104e69d",
+   "slug": "spx-death-cross"
+  },
+  "spx-death-cross-overheating": {
+   "kwargs": {
+    "cross": "death",
+    "kind": "cross",
+    "regime": "Overheating",
+    "target": "spx"
+   },
+   "sha256": "f305883a282ed04252e12c81dfb74b9be652dbf24754ccf160a05268f32b33cb"
+  },
+  "spx-golden-cross": {
+   "sha256": "afd24545561ee423d6ba7b0d412634728eb864ef5678241943100c8b06cc28b9",
+   "slug": "spx-golden-cross"
+  },
+  "spx-w20-z1.5-abs-none-gold": {
+   "kwargs": {
+    "shock": "spx",
+    "sign": "both",
+    "target": "gold",
+    "w": 20,
+    "z": 1.5
+   },
+   "sha256": "d9dae15d2d83a0a500523974a35b42f395544e8e90526d1b0cc3e7e117617b3a"
+  },
+  "spx-w20-z1.5-abs-none-vix": {
+   "kwargs": {
+    "shock": "spx",
+    "sign": "both",
+    "target": "vix",
+    "w": 20,
+    "z": 1.5
+   },
+   "sha256": "4587a5c275219ce670c424887c319107d5a8d135cbef0952d5a0999bf1da5fd2"
+  },
+  "spx-w20-z1.5-abs-vix_above=10.0-spx": {
+   "kwargs": {
+    "cond": "vix_above",
+    "cond_value": 10,
+    "shock": "spx",
+    "sign": "both",
+    "target": "spx",
+    "w": 20,
+    "z": 1.5
+   },
+   "sha256": "0a75c5245a7c9213df1e05d4af4a435df17a3980a6fb5000d29398b84ef82010"
+  },
+  "spx-w20-z2.0-down-none-us10y": {
+   "sha256": "72b0fde8bd5348cf5d6bedb484c76e626d5a2aeb14dabeea7dbf32da74210ff2",
+   "slug": "spx-w20-z2.0-down-none-us10y"
+  },
+  "spx-w20-z2.0-up-none-spx": {
+   "sha256": "e745a417944b80e995658e5cf8e67cd739430947582f604d3746b21e8a7f5b64",
+   "slug": "spx-w20-z2.0-up-none-spx"
+  },
+  "spx-w5-z1.5-abs-none-us10y": {
+   "kwargs": {
+    "shock": "spx",
+    "sign": "both",
+    "target": "us10y",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "e30223ece4105fee99e65a07afc9d19f6fbb5f74de6057c4864ea886e6632cc9"
+  },
+  "spx-w5-z1.5-abs-none-vix": {
+   "kwargs": {
+    "shock": "spx",
+    "sign": "both",
+    "target": "vix",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "1de4c6599913ba3618070ffb946bcc30da8569efe528617abd26d13cf6a47143"
+  },
+  "spx-w5-z2.0-up-none-spx": {
+   "sha256": "1cda42f254174f7dec9b910e5158f0089675378059a7cd49f8500add656c7b26",
+   "slug": "spx-w5-z2.0-up-none-spx"
+  },
+  "us10y-w20-z1.5-abs-none-spx": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "both",
+    "target": "spx",
+    "w": 20,
+    "z": 1.5
+   },
+   "sha256": "4812aa8060ed68cbaaad735eefd3eadf8a23710ee8b6c6d86945cc29710e97f8"
+  },
+  "us10y-w20-z2.0-up-none-spx": {
+   "sha256": "d0415c565627ce4d17e8f9edece87bd123af6cbf30a1aa863a67ec77e8ef77ed",
+   "slug": "us10y-w20-z2.0-up-none-spx"
+  },
+  "us10y-w20-z2.0-up-none-spx-overheating": {
+   "kwargs": {
+    "regime": "Overheating",
+    "shock": "us10y",
+    "sign": "+",
+    "target": "spx",
+    "w": 20,
+    "z": 2.0
+   },
+   "sha256": "abb6a1a6c902072020d73dab1a0d3b1f2e463a146d89a3fc5f401189573fcfbd"
+  },
+  "us10y-w20-z2.0-up-regime=overheating-spx": {
+   "kwargs": {
+    "cond": "regime",
+    "cond_value": "Overheating",
+    "shock": "us10y",
+    "sign": "+",
+    "target": "spx",
+    "w": 20,
+    "z": 2.0
+   },
+   "sha256": "ad22524a081cdf9034fe8f6b56b25943dcb8daea8b1a13f70e47744991feb5cb"
+  },
+  "us10y-w5-z1.5-abs-hy_oas_20d_change_above=0.0-spx": {
+   "kwargs": {
+    "cond": "hy_oas_20d_change_above",
+    "cond_value": 0,
+    "shock": "us10y",
+    "sign": "both",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "2673155d3f9b507ce9ab7c8b0cf718e0593d308d91f6fbced859ca54d76b85b9"
+  },
+  "us10y-w5-z1.5-abs-none-spx": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "both",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "3a0f73ddc7234f237287ded84a2e16e24fff84a324402354d20022d778085b8e"
+  },
+  "us10y-w5-z1.5-down-none-gold": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "-",
+    "target": "gold",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "26281a43c35a801d59555fa8cbb4d7fde959b47490ebf2aeca48a10f7afa4f4f"
+  },
+  "us10y-w5-z1.5-down-none-spx": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "-",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "1800892eb897b4c5068f02bb557aabb72db1ac2e8c00c4c23f18fa71a33b16e4"
+  },
+  "us10y-w5-z1.5-down-vix_above=25.0-gold-stagflation": {
+   "kwargs": {
+    "cond": "vix_above",
+    "cond_value": 25,
+    "regime": "Stagflation",
+    "shock": "us10y",
+    "sign": "-",
+    "target": "gold",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "bbc1622ae025a2c9e0447e8a4bfd46b008870f57a2944893f65114459c8ad157"
+  },
+  "us10y-w5-z1.5-up-none-gold": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "+",
+    "target": "gold",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "49abea0795df4f203b978cfdd17bc698748ea7d698cf85f12f162dc31c0bb595"
+  },
+  "us10y-w5-z1.5-up-none-spx": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "+",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "3740608cc415f2a36e82fbcaafbfa8f3cb895fc18d7b1d9a176ec09922cdde3d"
+  },
+  "us10y-w5-z2.5-up-vix_above=1000.0-spx": {
+   "kwargs": {
+    "cond": "vix_above",
+    "cond_value": 1000.0,
+    "shock": "us10y",
+    "sign": "+",
+    "target": "spx",
+    "w": 5,
+    "z": 2.5
+   },
+   "sha256": "ed97e908cdb18e94621df8924c60400031b25b5beb1b6777f40f2dbe43a0d229"
+  },
+  "us10y-w60-z1.5-down-none-gold": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "-",
+    "target": "gold",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "eeec8273c08545fcd859598f2ce6913047ac9cc16f70820e1afe12e5fb1f02cb"
+  },
+  "us10y-w60-z1.5-down-none-spx": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "-",
+    "target": "spx",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "d3f6fa695885abe2be31efbade87b52d45449d3a46f6911fa81d4aa3221d0b66"
+  },
+  "us10y-w60-z1.5-up-none-gold": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "+",
+    "target": "gold",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "7eb68dddc1e372038d60528022db5f3afaa5eafb4dee0bcb82601ff19790bf35"
+  },
+  "us10y-w60-z1.5-up-none-spx": {
+   "kwargs": {
+    "shock": "us10y",
+    "sign": "+",
+    "target": "spx",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "e5b9bbab56e6beb697e7c6cf1326fba225af4bf1d55151b852b4b3c6f344546e"
+  },
+  "vix-w5-z1.5-abs-none-spx": {
+   "kwargs": {
+    "shock": "vix",
+    "sign": "both",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "5f1c9bd96c3e05683d6b3b72d0f93c3344748425e7812937449b121ae29ca904"
+  },
+  "vix-w5-z1.5-down-none-gold": {
+   "kwargs": {
+    "shock": "vix",
+    "sign": "-",
+    "target": "gold",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "fb2b6907f46a525a0bc92cbc71d2061925d641033d06d35265057200bb2a295c"
+  },
+  "vix-w5-z1.5-down-none-spx": {
+   "kwargs": {
+    "shock": "vix",
+    "sign": "-",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "16f2b63b957bcd1624c37b06607b4e6a59f46c9fa99e74b4ea73f71161f6308b"
+  },
+  "vix-w5-z1.5-up-none-gold": {
+   "kwargs": {
+    "shock": "vix",
+    "sign": "+",
+    "target": "gold",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "980b57d0e6566768621e55df4701334c9b11ce0d6ad82426125056acae2006dd"
+  },
+  "vix-w5-z1.5-up-none-spx": {
+   "kwargs": {
+    "shock": "vix",
+    "sign": "+",
+    "target": "spx",
+    "w": 5,
+    "z": 1.5
+   },
+   "sha256": "47fb26f591aa8b3eb704406dafa91a241ae21601ebc139cba198baf689972bef"
+  },
+  "vix-w5-z2.0-up-none-spx": {
+   "sha256": "4e03b1b78b1a7829ff9351388272b58f292cde4e55f444570526ecd4c743fac7",
+   "slug": "vix-w5-z2.0-up-none-spx"
+  },
+  "vix-w60-z1.5-down-none-gold": {
+   "kwargs": {
+    "shock": "vix",
+    "sign": "-",
+    "target": "gold",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "149f338f711ccf83ed14e5a5a4754be877592922b7b557eab569a9d24f052b41"
+  },
+  "vix-w60-z1.5-down-none-spx": {
+   "kwargs": {
+    "shock": "vix",
+    "sign": "-",
+    "target": "spx",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "63b1683ff029964257cd422ef4ee8c96476802068681e188a018f64f5ab08a10"
+  },
+  "vix-w60-z1.5-up-none-gold": {
+   "kwargs": {
+    "shock": "vix",
+    "sign": "+",
+    "target": "gold",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "442d85aba3bd3f7338eba33626b8ed9f6614597013cdc536946b0f28266242e6"
+  },
+  "vix-w60-z1.5-up-none-spx": {
+   "kwargs": {
+    "shock": "vix",
+    "sign": "+",
+    "target": "spx",
+    "w": 60,
+    "z": 1.5
+   },
+   "sha256": "ea4d09ca41146de54714f6676019a9c80fbf6b2f819e4bf5acf3815b0370110a"
+  },
+  "vix-w60-z2.5-abs-regime=recession_risk-hy_oas": {
+   "kwargs": {
+    "cond": "regime",
+    "cond_value": "Recession Risk",
+    "shock": "vix",
+    "sign": "both",
+    "target": "hy_oas",
+    "w": 60,
+    "z": 2.5
+   },
+   "sha256": "4e3a6b410c07484cb30499b71b7d6eb474a86b56d3f9c7745dd985d40abd9f68"
+  },
+  "wti-w20-z2.0-up-none-gold": {
+   "sha256": "d6ca60a5245edf5e5c85bfb38ed8b1d12adeb3b64c0f8910632e267111af5617",
+   "slug": "wti-w20-z2.0-up-none-gold"
+  },
+  "wti-w20-z2.0-up-none-spx": {
+   "sha256": "d6ca60a5245edf5e5c85bfb38ed8b1d12adeb3b64c0f8910632e267111af5617",
+   "slug": "wti-w20-z2.0-up-none-spx"
+  }
+ },
+ "store": "tests/test_event_study._synthetic_db(seed=3), built by the base checkout"
+}

@@ -613,6 +613,20 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/event-study/assets"): ("/api/desk/event-study/assets", 200, None),
     ("GET", "/api/desk/event-study"): ("/api/desk/event-study", 200, None),
     ("GET", "/api/desk/pipeline/inventory"): ("/api/desk/pipeline/inventory", 200, None),
+    # the Desk v2 routes (api/desk_v2.py, desk/frame-3-api): the §12.13 stubs answer awaiting
+    ("GET", "/api/desk/sectors"): ("/api/desk/sectors", 200, None),
+    ("GET", "/api/desk/vol"): ("/api/desk/vol", 200, None),
+    ("GET", "/api/desk/positions"): ("/api/desk/positions", 200, None),
+    ("GET", "/api/desk/basket/price"): ("/api/desk/basket/price", 200, None),
+    ("GET", "/api/desk/basket/{basket_id}"): ("/api/desk/basket/ai-infra", 200, None),
+    ("GET", "/api/desk/hedge"): ("/api/desk/hedge?mode=protect", 200, None),
+    # a catalog study by preset (asset_prices and regimes only: ready before the refresh), and the catalog
+    ("GET", "/api/desk/study"): ("/api/desk/study?preset=golden-cross", 200, None),
+    ("GET", "/api/desk/study/catalog"): ("/api/desk/study/catalog", 200, None),
+    ("GET", "/api/desk/study/events"): ("/api/desk/study/events?preset=golden-cross", 200, None),
+    ("GET", "/api/desk/ledger"): ("/api/desk/ledger", 200, None),
+    ("GET", "/api/desk/technicals"): ("/api/desk/technicals", 200, None),
+    ("GET", "/api/desk/overview"): ("/api/desk/overview", 200, None),
     # diagnostics, open in development (no DEPLOY_PUBLIC, no CORS_ORIGINS)
     ("GET", "/api/ops/whoami"): ("/api/ops/whoami", 200, None),
     ("GET", "/api/stream/debug"): ("/api/stream/debug", 200, None),
@@ -729,12 +743,13 @@ def test_the_route_sweep_fails_on_a_missing_endpoint_and_on_a_wrong_status(serve
     """The sweep itself: an endpoint that is not served is a failure even where
     404 is what the entry says, and any other status than the stated one is."""
     tc = TestClient(app, raise_server_exceptions=False)
+    # (/api/desk/positions, the example here before desk/frame-3-api, is a served stub now.)
     failed = route_sweep_failures(tc, {
-        ("GET", "/api/desk/positions"): ("/api/desk/positions", 404, None),
+        ("GET", "/api/desk/not-a-route"): ("/api/desk/not-a-route", 404, None),
         ("GET", "/api/desk/event-study/assets"): ("/api/desk/event-study/assets", 503, None),
         ("GET", "/health"): ("/health", 200, None),
     })
-    assert failed["GET /api/desk/positions"][:2] == (404, "not served")
+    assert failed["GET /api/desk/not-a-route"][:2] == (404, "not served")
     assert failed["GET /api/desk/event-study/assets"][:2] == (200, "expected 503")
     assert "GET /health" not in failed
 
@@ -1020,7 +1035,10 @@ def test_a_failed_first_import_of_the_engine_recovers_by_rebuilding_the_same_fil
     monkeypatch.setattr(db, "DB_PATH", SCRATCH)
     db.reset_connections_for_tests()
     items = [(n, fn) for n, fn in analytics_cache.ITEMS if n.startswith("desk")]
-    assert [n for n, _ in items][0] == "desk_assets" and len(items) == 1 + len(analytics_cache.DESK_PRESETS)
+    # desk/frame-3-api: the Desk v2 items (the catalog's thirteen studies, /technicals' and /overview's)
+    # sit among them; desk_assets is still the first to import the engine
+    assert [n for n, _ in items][0] == "desk_assets"
+    assert {f"desk_preset:{n}" for n in analytics_cache.DESK_PRESETS} <= {n for n, _ in items}
     w = install_worker(worker_mod.AnalyticsWorker(items=items, poll_s=0.05))
     w.import_retry_s = 1.5
     w.start(serving=True)
@@ -1974,7 +1992,9 @@ def test_every_builder_closes_its_connection_on_every_path():
     openers = {"_get_conn", "connect_ro", "open_generation", "_connect", "get_connection"}
     factories = {"_get_conn", "_connect", "get_connection"}
     files = (sorted((ROOT / "src" / "analytics").glob("*.py")) + sorted((ROOT / "src" / "desk").glob("*.py"))
-             + [ROOT / "api" / "desk.py", ROOT / "api" / "assistant_budget.py"])
+             + [ROOT / "api" / "desk.py", ROOT / "api" / "assistant_budget.py"]
+             # desk/frame-3-api (plan §5): the Desk v2 builders, router and bootstrap
+             + [ROOT / "api" / "desk_items.py", ROOT / "api" / "desk_v2.py", ROOT / "api" / "bootstrap.py"])
     factory_only = [f for d in ("utils", "market_data", "events") for f in sorted((ROOT / "src" / d).glob("*.py"))]
     unclosed, withs, setups = [], [], []
 
