@@ -179,6 +179,15 @@ describe("Regime tab", () => {
     // No read is served (§1.4), and no stock–bond column: no bond price series is stored (§6).
     expect(card).not.toHaveTextContent(/Read for the desk|Stock–bond|not yet defined/);
   });
+  it("before the store's first full refresh stores ^VIX, the S&P columns are served and the VIX column is a dash", async () => {
+    const rows = regime.stats.rows.map((r) => ({ ...r, vix_avg: null, vix_days: 0 }));
+    stubDesk({ "/api/desk/regime": () => served({ stats: { ...regime.stats, rows } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /What each regime has meant/ });
+    await waitFor(() => expect(within(card).getAllByRole("row")).toHaveLength(5));
+    expect(within(card).getAllByRole("row")[1].textContent).toBe("Goldilocks27+0.7%+0.1%56%—");
+    expect(card).not.toHaveTextContent("Awaiting refresh");
+  });
   it("what would change it: the next prints, and the last five changes with the S&P the month after each", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What would change it/ });

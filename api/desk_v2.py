@@ -331,9 +331,11 @@ def vix_band(vix: float) -> str:
 
 
 def vol_tile(facts: dict) -> dict:
-    vix = facts["newest"].get(registry.get("vix").series_id)
+    sid = registry.get("vix").series_id
+    vix = facts["newest"].get(sid)
     if vix is None:
-        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+        # A store its next full refresh reaches (^VIX, desk/fill-compute) says so, in the engine's words.
+        raise env.Awaiting(facts.get("awaiting", {}).get(sid) or env.BLOCK_FAILED_REASON)
     return {"vix": vix["value"], "date": vix["date"], "freq": "daily", "source": VIX_SOURCE,
             "band": vix_band(vix["value"]), "band_edges": list(VIX_BAND_EDGES), "gap": facts.get("vol_gap")}
 
@@ -736,7 +738,8 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
     the count; null unless firing. The state at a session is null when the
     session is not the run's or is not evaluable. `stale` when `evaluated_on`
     trails the comparison session by more than `allowance` XNYS sessions (its
-    inputs' publication cadence, desk/fill-compute: 0 for exchange closes)."""
+    inputs' publication cadence, desk/fill-compute: 0 for exchange closes), or
+    is dated after it."""
     import numpy as np
 
     ev = trace.evaluable
@@ -762,7 +765,8 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
         i = bisect.bisect_left(sessions, iso)
         return bool(fires[i]) if i < len(sessions) and sessions[i] == iso and ev[i] else None
 
-    stale = sessions[last] != comparison and sessions_behind(sessions[last], comparison) > allowance
+    # Dated after the comparison session (a clock behind the data) is stale as before: never firing today.
+    stale = sessions[last] != comparison and (sessions[last] > comparison or sessions_behind(sessions[last], comparison) > allowance)
     return {"evaluated_on": sessions[last], "firing_now": firing_now, "firing_day": firing_day,
             "stale": stale, "state_comparison": state(comparison), "state_prev": state(prev)}
 

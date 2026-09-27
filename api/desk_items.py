@@ -92,7 +92,9 @@ def desk_facts(ctx: dict) -> dict:
     value of each data_status contributor, read through the engine's
     `load_level` (provenance-aware; None for a series the store lacks), the
     last VIX rows, for the change between the two comparison sessions, and
-    the VIX's gap to the S&P's realized volatility (`vol_gap`)."""
+    the VIX's gap to the S&P's realized volatility (`vol_gap`). `awaiting`
+    holds the engine's words for a contributor the store has not reached yet
+    (a series its next full refresh stores, desk/fill-compute: ^VIX)."""
     from src.desk import event_study as es
     from src.desk import series as registry
 
@@ -100,14 +102,17 @@ def desk_facts(ctx: dict) -> dict:
     newest: dict[str, dict | None] = {}
     vix_recent: dict[str, float] = {}
     loaded: dict[str, Any] = {}
+    awaiting: dict[str, str] = {}
     conn = es._connect(es.DB_PATH)
     try:
         for key in FACT_KEYS:
             spec = registry.get(key)
             try:
                 s = es.load_level(conn, spec, cutoff)
-            except es.NotStored:
+            except es.NotStored as exc:
                 newest[spec.series_id] = None
+                if getattr(exc, "awaiting_refresh", False):
+                    awaiting[spec.series_id] = str(exc)
                 continue
             loaded[key] = s
             newest[spec.series_id] = {"date": s.index[-1].strftime("%Y-%m-%d"), "value": float(s.iloc[-1])}
@@ -116,7 +121,7 @@ def desk_facts(ctx: dict) -> dict:
     finally:
         conn.close()
     gap = vol_gap(loaded["spx"], loaded["vix"]) if "spx" in loaded and "vix" in loaded else None
-    return {"newest": newest, "vix_recent": vix_recent, "vol_gap": gap}
+    return {"newest": newest, "vix_recent": vix_recent, "vol_gap": gap, "awaiting": awaiting}
 
 
 def vol_gap(spx: Any, vix: Any) -> dict | None:

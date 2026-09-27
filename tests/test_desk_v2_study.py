@@ -355,12 +355,15 @@ def test_a_refused_catalog_item_falls_through_to_the_legacy_preset(install_worke
     with sqlite3.connect(path) as c:
         c.execute("DROP TABLE desk_series")
     w = _serve(install_worker, monkeypatch, path)
-    assert w.current.results["desk_study:vix-spike-2sigma-5d"]["kind"] == "not_stored"
+    assert w.current.results["desk_study:hy-2sigma-20d"]["kind"] == "not_stored"
     assert "native" in w.current.results["desk_study:golden-cross"]
+    # desk/fill-compute (item 7): the VIX is ^VIX in asset_prices, so its study no longer needs desk_series.
+    assert "native" in w.current.results["desk_study:vix-spike-2sigma-5d"]
     assert client.get("/api/desk/event-study", params={"study": "spx-golden-cross"}).status_code == 200
-    r = client.get("/api/desk/event-study", params={"study": "vix-w5-z2.0-up-none-spx"})
+    r = client.get("/api/desk/event-study", params={"study": "us10y-w5-z2.0-up-none-spx"})
     assert r.status_code == 200 and r.json()["status"] == "awaiting_refresh"
-    assert _study("preset=vix-spike-2sigma-5d")["status"] == "awaiting"
+    assert _study("preset=hy-2sigma-20d")["status"] == "awaiting"
+    assert _study("preset=vix-spike-2sigma-5d")["status"] == "ready"
 
 
 def test_no_evaluable_session_is_awaiting(install_worker, monkeypatch, tmp_path):

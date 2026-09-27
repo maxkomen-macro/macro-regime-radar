@@ -743,11 +743,24 @@ def test_the_stats_and_the_changes_follow_the_audits_method():
 
 
 @pytest.mark.parametrize("path", [PUBLISHED], ids=["published"])
-def test_the_stats_and_the_changes_on_the_audits_store(path, install_worker, monkeypatch):
-    """FRAME3_DATA_AUDIT.md §2.4 on the audit's store: Q8's months, Q9's 123 changes and its last five."""
+def test_the_stats_and_the_changes_on_the_audits_store(path, install_worker, monkeypatch, tmp_path):
+    """FRAME3_DATA_AUDIT.md §2.4 on the audit's store: Q8's months, Q9's 123 changes and its last five. The
+    store predates the ^VIX close (desk/fill-compute, item 7), so its VIX column is null until the next full
+    refresh stores it; with that close added the refresh's way (tests/desk_vix.py), Q8's VIX average."""
     if not path.exists() or path.stat().st_size == 0:
         pytest.skip(f"{path.name} is not in this tree")
+    from tests.desk_vix import with_vix_close
+
     serve(install_worker, monkeypatch, path)
+    at(monkeypatch, datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]
+    if d["history"][-1]["month"] != "2026-08":
+        pytest.skip("not the audit's store")
+    if d["stats"]["data"]["rows"][0]["vix_days"] == 0:
+        before = d["stats"]["data"]
+        assert all(r["vix_avg"] is None and r["vix_days"] == 0 for r in before["rows"]) and "not stored yet" in before["source"]
+        assert before["rows"][0]["spx_n"] == 27 and d["changes"]["status"] == "ready"
+        serve(install_worker, monkeypatch, with_vix_close(path, tmp_path / "with-vix.db"))
     at(monkeypatch, datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc))
     d = get_regime()["data"]
     if d["history"][-1]["month"] != "2026-08":
@@ -762,6 +775,7 @@ def test_the_stats_and_the_changes_on_the_audits_store(path, install_worker, mon
         ("2025-06", "Stagflation", "Overheating")]
     assert ch["rows"][1]["spx_1m"] == pytest.approx(0.0262252682664592, rel=1e-12)  # Aug 2026, by SQL
     assert st["rows"][0]["vix_avg"] == pytest.approx(18.0074645390071, rel=1e-12)   # 564 VIX days, by SQL
+    assert st["rows"][0]["vix_days"] == 564
 
 
 

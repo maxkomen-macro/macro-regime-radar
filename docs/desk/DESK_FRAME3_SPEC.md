@@ -1065,7 +1065,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `evaluated_on` | date | required, nullable | — | — | N firing state: the study's latest evaluable session |
 | `comparison_session` | date | required | — | XNYS | N firing state: as §12.5 |
 | `prev_session` | date | required | — | XNYS | N firing state: as §12.1 |
-| `stale` | boolean | required | — | — | N (desk/fill-compute, owner's item 7): `evaluated_on` trails `comparison_session` by more XNYS sessions than the study's publication allowance, the most any of its inputs allows: 0 for a close an exchange prints (^GSPC, GC=F, ^VIX, ^NDX, the dollar index, USD/JPY), 3 for a FRED daily series (`api/freshness.DAILY_TOLERANCE`), 8 for WTI (`DESK_SLOW_PUBLICATION`, published weekly); before, any `evaluated_on` other than `comparison_session` was stale; a stale study is never called firing today (v3 §3) |
+| `stale` | boolean | required | — | — | N (desk/fill-compute, owner's item 7): `evaluated_on` trails `comparison_session` by more XNYS sessions than the study's publication allowance, the most any of its inputs allows: 0 for a close an exchange prints (^GSPC, GC=F, ^VIX, ^NDX, the dollar index, USD/JPY), 3 for a FRED daily series (`api/freshness.DAILY_TOLERANCE`), 8 for WTI (`DESK_SLOW_PUBLICATION`, published weekly), or is dated after it; before, any `evaluated_on` other than `comparison_session` was stale; a stale study is never called firing today (v3 §3) |
 | `verdict` | `reliable` \| `suggestive` \| `no_edge` \| `insufficient` | required | — | `selected_horizon` | A: `verdict_rule` v1 (§1.5) at `selected_horizon` |
 | `verdict_rule` | `"v1"` | required | — | — | A |
 | `verdict_confidence` | `0.90` | required | — | — | E `CI_LEVEL` |
@@ -1251,7 +1251,7 @@ cells; booleans `true` / `false`.
 | `signals[].firing_now` | boolean | required, nullable | — | `evaluated_on` | N firing state: shocks — the raw trigger and the condition hold on `evaluated_on`, regardless of cooldown; crosses — true only on the strict crossing session; RSI crossings — the RSI is in the zone (strictly above 70, strictly below 30) on `evaluated_on`, regardless of the crossing rule and the cooldown |
 | `signals[].firing_day` | integer | required, nullable (null unless `firing_now` is true) | sessions | — | N: consecutive qualifying XNYS sessions including `evaluated_on`, reset after any false or unevaluable session, never bridging a missing session; 1 for a cross |
 | `signals[].evaluated_on` | date | required, nullable | — | — | N: the row's own latest evaluable session |
-| `signals[].stale` | boolean | required | — | — | N (desk/fill-compute, owner's item 7): `evaluated_on` trails `comparison_session` by more XNYS sessions than the study's publication allowance, the most any of its inputs allows: 0 for a close an exchange prints (^GSPC, GC=F, ^VIX, ^NDX, the dollar index, USD/JPY), 3 for a FRED daily series (`api/freshness.DAILY_TOLERANCE`), 8 for WTI (`DESK_SLOW_PUBLICATION`, published weekly); before, any `evaluated_on` other than `comparison_session` was stale; false for an unavailable row; a stale row is never called firing today |
+| `signals[].stale` | boolean | required | — | — | N (desk/fill-compute, owner's item 7): `evaluated_on` trails `comparison_session` by more XNYS sessions than the study's publication allowance, the most any of its inputs allows: 0 for a close an exchange prints (^GSPC, GC=F, ^VIX, ^NDX, the dollar index, USD/JPY), 3 for a FRED daily series (`api/freshness.DAILY_TOLERANCE`), 8 for WTI (`DESK_SLOW_PUBLICATION`, published weekly), or is dated after it; before, any `evaluated_on` other than `comparison_session` was stale; false for an unavailable row; a stale row is never called firing today |
 
 ### 12.6 `GET /regime`
 
@@ -1301,7 +1301,7 @@ cells; booleans `true` / `false`.
 | `stats.data.rows[].spx_n` | integer | required | months | — | N: those months with a complete S&P month: the close on the month's last XNYS session and on the previous month's last XNYS session both stored |
 | `stats.data.rows[].spx_median_mo`, `spx_mean_mo` | fraction | required, nullable (null when `spx_n` is 0) | simple return | — | N: median and mean of close(last session of m) / close(last session of m − 1) − 1 over the `spx_n` months |
 | `stats.data.rows[].up_pct` | fraction | required, nullable | — | — | N: the share of the `spx_n` months above zero |
-| `stats.data.rows[].vix_avg`, `vix_days` | number, integer | required (`vix_avg` nullable when `vix_days` is 0) | VIX points, sessions | — | N: the mean of every stored VIX daily close dated in those months, and how many there are |
+| `stats.data.rows[].vix_avg`, `vix_days` | number, integer | required (`vix_avg` nullable when `vix_days` is 0) | VIX points, sessions | — | N: the mean of every stored VIX daily close (`asset_prices` ^VIX) dated in those months, and how many there are; `vix_avg` null and `vix_days` 0 while ^VIX is not stored (a store before its first full refresh after desk/fill-compute), the S&P columns served and `source` saying so |
 | `stats.data.window` | `{start, end, n}` | required | months | — | S: the first and last stored rows and their count |
 | `stats.data.freq`, `.source` | `"monthly"`, string | required | — | — | A |
 | `changes` | block envelope | required | — | — | — |
@@ -1625,7 +1625,10 @@ Each is a new calculation from stored data, listed in §12 with its rule:
   `seasonality` (§12.7; the owner's item 10);
 - what each regime has meant and the last five changes on `/regime` (`stats`, `changes`, §12.6), on the audit's §2.4 method;
 - the VIX read from `asset_prices` ^VIX (^GSPC's path) instead of FRED VIXCLS, and `stale` judged per study by its inputs'
-  publication cadence (§12.2, §12.5; the owner's item 7);
+  publication cadence (§12.2, §12.5; the owner's item 7). A store its first full refresh after desk/fill-compute has not
+  reached holds no ^VIX rows: the vol tile awaits with the engine's words ("awaiting the next full refresh"), the VIX
+  studies are unavailable with the same reason, `data_status` names ^VIX missing, and the regime table serves its S&P
+  columns with `vix_avg` null. The stored VIXCLS rows are kept (never deleted), no longer refreshed or read by the Desk;
 - the S&P's 21-day realized volatility, `src/analytics/technicals.realized_vol`, and the VIX's band word and gap to it on `/overview` `tiles.vol` (§12.1);
 - the two RSI studies, the engine's `kind` `rsi` (strict crossings of 70 and 30, a 14-session cooldown), scored by the
   existing engine and the v1 verdict rule like every catalog study (§12.3, §12.5). Existing studies' native results and

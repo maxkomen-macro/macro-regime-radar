@@ -737,7 +737,8 @@ def test_a_series_the_refresh_stores_is_awaiting_it_and_a_planned_one_is_not(tmp
     a = es.assets_with_coverage(db)
     by = {x["key"]: x for x in a["shocks"]}
     stored_by_refresh = [s.key for s in registry.fetched(registry.REFRESH_TIER)]
-    assert stored_by_refresh == ["us10y", "us2y", "curve_2s10s", "vix", "hy_oas", "us3m", "us5y", "us30y", "wti", "ndx", "dxy", "usdjpy"]
+    # desk/fill-compute (item 7): the VIX left the desk_series refresh; it is ^VIX in asset_prices.
+    assert stored_by_refresh == ["us10y", "us2y", "curve_2s10s", "hy_oas", "us3m", "us5y", "us30y", "wti", "ndx", "dxy", "usdjpy"]
     assert set(stored_by_refresh) <= set(a["awaiting_refresh"])
     for k in a["awaiting_refresh"]:
         assert registry.stored_by_refresh(registry.get(k)), k

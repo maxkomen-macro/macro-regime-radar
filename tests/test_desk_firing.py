@@ -134,6 +134,16 @@ def test_stale_is_judged_by_the_studys_publication_allowance(allowance, last, st
     assert (f["evaluated_on"], f["stale"]) == (last, stale)
 
 
+def test_a_study_dated_after_the_comparison_session_is_stale_whatever_its_allowance():
+    """A clock behind the data (the comparison session before the study's last
+    one) is stale as before: a study is never called firing today for a session
+    that is not today's."""
+    t = trace([0] * len(SESSIONS), evaluable=[1] * len(SESSIONS))
+    for allowance in (0, 3, 8):
+        f = desk_v2.firing_state(t, SESSIONS[-3], SESSIONS[-4], cross=False, allowance=allowance)
+        assert (f["evaluated_on"], f["stale"]) == (SESSIONS[-1], True), allowance
+
+
 def test_the_allowance_is_the_slowest_inputs():
     from api import desk_catalog as catalog
 

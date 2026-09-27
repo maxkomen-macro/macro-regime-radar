@@ -402,25 +402,35 @@ def month_vix(vix: Any) -> dict[str, tuple[float, int]]:
 
 
 def _levels(conn: sqlite3.Connection) -> tuple[Any, Any]:
+    """The S&P's and the VIX's levels. The S&P is required; the VIX is None
+    while it is not stored (^VIX in asset_prices, which a store reaches with its
+    first full refresh after desk/fill-compute), so the changes, which read the
+    S&P only, and the stats' S&P columns never wait on it."""
     from src.desk import event_study as es
     from src.desk import series as registry
 
     try:
-        return es.load_level(conn, registry.get("spx")), es.load_level(conn, registry.get("vix"))
+        spx = es.load_level(conn, registry.get("spx"))
     except es.NotStored:
         raise absent() from None
+    try:
+        vix = es.load_level(conn, registry.get("vix"))
+    except es.NotStored:
+        vix = None
+    return spx, vix
 
 
 def regime_stats(rows: list[dict], spx: Any, vix: Any) -> dict:
     """§12.6 `stats.data` (desk/fill-compute): per regime, its stored months,
     the S&P's median and mean simple monthly return and the share of months up
     over those with a complete month, and the mean of the VIX's daily closes
-    in those months."""
+    in those months; with the VIX not stored (`vix` None), `vix_avg` null and
+    `vix_days` 0."""
     import statistics
 
     if not rows:
         raise absent()
-    rets, vx = month_returns(spx), month_vix(vix)
+    rets, vx = month_returns(spx), (month_vix(vix) if vix is not None else {})
     out = []
     for label in REGIME_ORDER:
         months = [r["month"] for r in rows if r["label"] == label]
@@ -436,9 +446,10 @@ def regime_stats(rows: list[dict], spx: Any, vix: Any) -> dict:
         })
     from src.desk import series as registry
 
+    v = registry.get("vix")
+    vix_source = f"{v.series_id} ({v.table})" if vix is not None else f"{v.series_id} ({v.table}) not stored yet"
     return {"rows": out, "window": {"start": rows[0]["month"], "end": rows[-1]["month"], "n": len(rows)},
-            "freq": "monthly",
-            "source": f"regimes table (src/regime.py); asset_prices ^GSPC; {registry.get('vix').series_id} ({registry.get('vix').table})"}
+            "freq": "monthly", "source": f"regimes table (src/regime.py); asset_prices ^GSPC; {vix_source}"}
 
 
 def regime_changes(rows: list[dict], spx: Any) -> dict:
