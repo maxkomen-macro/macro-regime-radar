@@ -51,6 +51,9 @@ describe("Regime words", () => {
       "VIX: 150 of 152 sessions stored; 1 stored row set aside as off-session or invalid.",
     ]);
     expect(meantNote({ rows: [] })).toBeNull();
+    // Codex R-09, the repro: a Feb 2026 Goldilocks label governs April; the VIX stored on Apr 15 and 16 only.
+    const r09 = meantNote({ rows: [], lag_months: 2, totals: { months: 1, spx_n: 1, spx_pending: 0, spx_missing: 0, vix_days: 2, vix_sessions: 21 }, vix_coverage: { stored: true, first: "2026-04-15", last: "2026-04-16", off_session_dropped: 0, invalid: 0 } });
+    expect(r09?.[2]).toBe("VIX: 2 of 21 sessions stored.");
     expect([returnWords("pending"), returnWords("missing")]).toEqual(["month not over", "a month-end close is missing"]);
   });
   it("groups the monthly history into runs", () => {

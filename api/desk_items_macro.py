@@ -477,12 +477,29 @@ class MonthReturns:
         return "missing", None
 
 
-def month_vix(vix: Any, *, through: str | None = None) -> tuple[dict[str, dict], dict]:
+def month_sessions(months: list[str]) -> dict[str, int]:
+    """Codex R-09: each calendar month's XNYS sessions, the whole month,
+    whatever the VIX's stored range: the denominator of its coverage."""
+    from src.desk import event_study as es
+
+    if not months:
+        return {}
+    start, end = f"{min(months)}-01", _month_after(max(months))
+    sessions = es.sessions_between(es.session_calendar(start, end), start, end)
+    out = {m: 0 for m in months}
+    for d in sessions:
+        m = d.strftime("%Y-%m")
+        if m in out:
+            out[m] += 1
+    return out
+
+
+def month_vix(vix: Any) -> tuple[dict[str, dict], dict]:
     """Codex R-07: the VIX aligned on the XNYS calendar and validated as the
     engine does for every input (src/desk/event_study.align, validate_values)
     before aggregating. Per calendar month: the sum and count of the stored
-    closes on its sessions, and the sessions the month has within the stored
-    span; with the rows set aside (off-session, invalid) counted apart."""
+    closes on its sessions (`month_sessions` counts the sessions due, R-09);
+    with the rows set aside (off-session, invalid) counted apart."""
     from src.desk import event_study as es
     from src.desk import series as registry
 
@@ -493,8 +510,7 @@ def month_vix(vix: Any, *, through: str | None = None) -> tuple[dict[str, dict],
     out: dict[str, dict] = {}
     for d, v in al.items():
         m = d.strftime("%Y-%m")
-        cell = out.setdefault(m, {"sum": 0.0, "days": 0, "sessions": 0})
-        cell["sessions"] += 1
+        cell = out.setdefault(m, {"sum": 0.0, "days": 0})
         if v == v:
             cell["sum"] += float(v)
             cell["days"] += 1
@@ -527,15 +543,18 @@ def regime_stats(rows: list[dict], spx: Any, vix: Any) -> dict:
     return and the share up over `spx_n` complete months, with the governed
     months whose window is not complete yet (`spx_pending`) and those missing
     a close (`spx_missing`) counted apart; the mean of the VIX's validated
-    closes on the sessions of the complete governed months (`vix_days` of
-    `vix_sessions`). With the VIX not stored (`vix` None), `vix_avg` null and
-    the VIX counts 0."""
+    closes on the sessions of the governed months whose window is complete
+    (`vix_days`), against every XNYS session of those whole months
+    (`vix_sessions`, Codex R-09: whatever the VIX's stored range, so a missing
+    session stays in the denominator). With the VIX not stored (`vix` None),
+    `vix_avg` null and `vix_days` 0 of the sessions due."""
     import statistics
 
     if not rows:
         raise absent()
     returns = MonthReturns(spx)
     vx, vix_cov = month_vix(vix) if vix is not None else ({}, None)
+    due = month_sessions([governed_month(r["month"]) for r in rows])
     out = []
     for label in REGIME_ORDER:
         governed = [governed_month(r["month"]) for r in rows if r["label"] == label]
@@ -544,7 +563,7 @@ def regime_stats(rows: list[dict], spx: Any, vix: Any) -> dict:
         done = [g for g, (st, _v) in zip(governed, status) if st != "pending"]
         total = sum(vx[g]["sum"] for g in done if g in vx)
         days = sum(vx[g]["days"] for g in done if g in vx)
-        sessions = sum(vx[g]["sessions"] for g in done if g in vx)
+        sessions = sum(due[g] for g in done)
         out.append({
             "regime": label, "months": len(governed), "spx_n": len(r_),
             "spx_pending": sum(1 for st, _ in status if st == "pending"),

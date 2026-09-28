@@ -856,6 +856,22 @@ def test_codex_r04_r07_the_vix_is_validated_aligned_and_its_coverage_served():
     assert none["vix_coverage"]["stored"] is False and all(r["vix_avg"] is None for r in none["rows"])
 
 
+def test_codex_r09_the_vix_denominator_is_every_session_of_the_governed_months():
+    """Codex R-09, the repro: a Feb 2026 Goldilocks label governs April 2026; the
+    VIX is stored only on Apr 15 and 16. The sessions due were counted over the
+    VIX's own stored range (2 of 2); they are every XNYS session of April (21:
+    Good Friday, Apr 3, is closed), missing sessions kept in the denominator."""
+    import pandas as pd
+
+    spx, _ = _stepped_spx()  # through July: April complete
+    vix = pd.Series([18.0, 19.0], index=pd.DatetimeIndex(["2026-04-15", "2026-04-16"]))
+    st = items.regime_stats(_rows([("2026-02", "Goldilocks")]), spx, vix)
+    g = {r["regime"]: r for r in st["rows"]}["Goldilocks"]
+    assert (g["vix_days"], g["vix_sessions"], g["vix_avg"]) == (2, 21, pytest.approx(18.5))
+    assert (st["totals"]["vix_days"], st["totals"]["vix_sessions"]) == (2, 21)
+    assert items.month_sessions(["2026-04", "2026-02"]) == {"2026-04": 21, "2026-02": 19}
+
+
 @pytest.mark.parametrize("path", [PUBLISHED], ids=["published"])
 def test_the_stats_and_the_changes_on_the_audits_store(path, install_worker, monkeypatch, tmp_path):
     """FRAME3_DATA_AUDIT.md §2.4 on the audit's store: Q8's labels and Q9's 123 changes, each measured over the
