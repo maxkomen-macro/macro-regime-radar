@@ -188,11 +188,22 @@ export function isEqualWeight(legs: readonly WorkLeg[]): boolean {
   return !legs.length || legsKey(legs) === legsKey(equalWeight(legs));
 }
 
-/** A name added to the basket (desk/books): while the weights are equal they stay equal, the new name
- * included; weights the analyst has typed are kept and the new name comes in at 0%. */
-export function addLeg(legs: readonly WorkLeg[], symbol: string, name: string | null = null): { legs: WorkLeg[]; equal: boolean } {
-  const next = [...legs, { symbol, name, weight: "0" }];
-  return isEqualWeight(legs) ? { legs: equalWeight(next), equal: true } : { legs: next, equal: false };
+/** A name added to the basket (desk/books, Codex R-10): the weights are re-spread to equal, the new name
+ * included, so no leg is ever added at 0%; the analyst can type other weights after. */
+export function addLeg(legs: readonly WorkLeg[], symbol: string, name: string | null = null): { legs: WorkLeg[]; equal: true } {
+  return { legs: equalWeight([...legs, { symbol, name, weight: "0" }]), equal: true };
+}
+
+/** The API's limit on a basket's names (api/desk_basket.MAX_LEGS). */
+export const MAX_LEGS = 25;
+
+/** Why these legs cannot be saved as a basket the API prices (Codex R-10), or null: every weight above 0%,
+ * at most 25 names. (The total is checked on its own: exactly 100%.) */
+export function saveRefusal(legs: readonly WorkLeg[]): string | null {
+  if (legs.length > MAX_LEGS) return `A basket holds at most ${MAX_LEGS} names; this one has ${legs.length}.`;
+  const zero = legs.find((l) => (parseWeight(l.weight) ?? 0) <= 0);
+  if (zero) return `${zero.symbol}'s weight is ${zero.weight.trim() || "empty"}${parseWeight(zero.weight) == null ? "" : "%"}: every name needs a weight above 0% to save.`;
+  return null;
 }
 
 /** Scaled to 100% in proportion, never coarser than the weights as typed (at least a tenth:

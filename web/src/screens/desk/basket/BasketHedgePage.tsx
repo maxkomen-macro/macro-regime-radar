@@ -33,6 +33,7 @@ import {
   notionalText,
   parseNotional,
   seedPreset,
+  saveRefusal,
   savedLegs,
   equalWeight,
   exportSaved,
@@ -261,6 +262,9 @@ function BasketCard({
     if (!legs || !local) return;
     if (!legs.length) return setStatus("Add a ticker to save the basket.");
     if (tot !== "100") return setStatus(tot == null ? "A weight is not a number; fix it to save." : `The weights add to ${totalWords(tot)}; normalize them to 100% to save.`);
+    // Codex R-10: the API prices only positive weights (and at most 25 names); Save refuses what it would refuse.
+    const refused = saveRefusal(legs);
+    if (refused) return setStatus(refused);
     if (notional == null) return setStatus("The notional is not a dollar amount above $0; fix it to save.");
     // Each weight saved as the exact decimal typed, so the basket adds to exactly 100% when read back (Codex R-20).
     const r = writeSaved({ id: local.id, name: local.name, legs: savedLegs(legs), saved_at: new Date().toISOString(), method, notional });
@@ -304,9 +308,15 @@ function BasketCard({
     onSaved();
     onSelect(id);
   };
-  /** A ticker checked against the price endpoint, then added (equal weights stay equal); the words for the note. */
+  // Codex R-12: a ticker check is bound to the basket it started on.
+  const basketRef = useRef(basketId);
+  basketRef.current = basketId;
+  /** A ticker checked against the price endpoint, then added with the weights re-spread to equal; the words for the note.
+   * The check answers for the basket it was asked on: when another basket is open by then, nothing is added. */
   const addTicker = async (symbol: string): Promise<string> => {
+    const origin = basketRef.current;
     const check = await checkTicker(symbol);
+    if (basketRef.current !== origin) return `${symbol} was not added: another basket was opened while it was checked.`;
     const said = (w: string) => w.replace(/\.+$/, "");
     if (check.state === "unlisted") return `${symbol} was not added: ${said(check.words)}.`;
     // The legs as they stand once the check has answered (typing may have gone on meanwhile).
@@ -314,7 +324,7 @@ function BasketCard({
     if (current.some((l) => l.symbol === symbol)) return `${symbol} is already in the basket.`;
     const next = addLeg(current, symbol);
     setWork(next.legs);
-    const words = next.equal ? `${symbol} added; the ${next.legs.length} names are at equal weight.` : `${symbol} added at 0%: type its weight.`;
+    const words = `${symbol} added; the ${next.legs.length} names are at equal weight.`;
     const unchecked = check.state === "unchecked" ? ` Not checked (${said(check.words)}); the price says whether it is listed.` : "";
     return `${words}${unchecked} Save to price it.`;
   };

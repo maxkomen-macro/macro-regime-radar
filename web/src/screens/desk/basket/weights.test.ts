@@ -1,6 +1,6 @@
 /** Basket & Hedge's weights (DESK_FRAME3_SPEC §10): typed, tidied, keyed, kept in this browser. */
 import { describe, expect, it } from "vitest";
-import { addLeg, apiLegs, equalWeight, exportSaved, importSaved, decimal, isEqualWeight, legsKey, methodOf, newBasketId, normalize, notionalOf, notionalText, parseNotional, parseTicker, parseWeight, PRESET, readSaved, removeSaved, seedPreset, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
+import { addLeg, saveRefusal, apiLegs, equalWeight, exportSaved, importSaved, decimal, isEqualWeight, legsKey, methodOf, newBasketId, normalize, notionalOf, notionalText, parseNotional, parseTicker, parseWeight, PRESET, readSaved, removeSaved, seedPreset, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
 
 const legs = (ws: string[]): WorkLeg[] => ws.map((w, i) => ({ symbol: `T${i}`, name: null, weight: w }));
 
@@ -139,8 +139,18 @@ describe("basket weights", () => {
     expect(addLeg(eq, "C")).toEqual({ equal: true, legs: equalWeight([...eq, { symbol: "C", name: null, weight: "0" }]) });
     expect(addLeg(eq, "C").legs.map((l) => l.weight)).toEqual(["33.4", "33.3", "33.3"]);
     expect(addLeg([], "A").legs).toEqual([{ symbol: "A", name: null, weight: "100" }]);
-    const typed = [{ symbol: "A", name: null, weight: "60" }, { symbol: "B", name: null, weight: "40" }];
-    expect(addLeg(typed, "C")).toEqual({ equal: false, legs: [...typed, { symbol: "C", name: null, weight: "0" }] });
+  });
+
+  it("Codex R-10: adding a name never leaves it at 0%, and Save refuses a leg at or below 0%", () => {
+    // Codex's repro: NVDA 60%, AVGO 40%, add QQQ. It came in at 0% with the total still exactly 100%, and the API refused it.
+    const typed = [{ symbol: "NVDA", name: null, weight: "60" }, { symbol: "AVGO", name: null, weight: "40" }];
+    const added = addLeg(typed, "QQQ").legs;
+    expect(added.map((l) => `${l.symbol}:${l.weight}`)).toEqual(["NVDA:33.4", "AVGO:33.3", "QQQ:33.3"]);
+    expect(saveRefusal(added)).toBeNull();
+    expect(saveRefusal([{ symbol: "NVDA", name: null, weight: "100" }, { symbol: "QQQ", name: null, weight: "0" }])).toBe("QQQ's weight is 0%: every name needs a weight above 0% to save.");
+    expect(saveRefusal([{ symbol: "NVDA", name: null, weight: "100" }, { symbol: "QQQ", name: null, weight: "" }])).toBe("QQQ's weight is empty: every name needs a weight above 0% to save.");
+    const many = Array.from({ length: 26 }, (_, i) => ({ symbol: `T${i}`, name: null, weight: "1" }));
+    expect(saveRefusal(many)).toBe("A basket holds at most 25 names; this one has 26.");
   });
 
   it("reads a notional as typed, and saves method and notional with a basket (desk/books)", () => {

@@ -158,6 +158,39 @@ describe("Basket & Hedge tab", () => {
     expect(within(step3).getByRole("region", { name: /^Stress test/ })).toHaveTextContent("Betas fitted on the 252 sessions from Sep 22, 2025 to Sep 23, 2026 (one year)");
   });
 
+  it("Codex R-10: Save refuses a leg at 0%, which the API would refuse", async () => {
+    seed();
+    renderTab();
+    const b = await loaded();
+    fireEvent.change(within(b).getByLabelText("Weight of SMCI, percent"), { target: { value: "0" } });
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "34" } });
+    expect(b).toHaveTextContent("total 100%");
+    fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
+    expect(b).toHaveTextContent("SMCI's weight is 0%: every name needs a weight above 0% to save.");
+    expect(stored()[0].legs.find((l) => l.symbol === "SMCI")?.weight).toBe(12);
+  });
+
+  it("Codex R-12: a ticker check answered after another basket was opened adds nothing to it", async () => {
+    // Codex's repro: start adding QQQ to basket A, hold the check, open basket B (SPY), then let the check answer.
+    seed([...BASKETS, { id: "local-2", name: "Broad", legs: [{ symbol: "SPY", name: null, weight: 100 }], saved_at: "2026-09-22T00:00:00Z" }]);
+    let answer: (v: unknown) => void = () => {};
+    const held = new Promise((resolve) => (answer = resolve));
+    stubDesk({ "/api/market/candles/QQQ": () => held });
+    renderTab();
+    const b = await loaded();
+    const input = within(b).getByLabelText("Add a ticker");
+    fireEvent.change(input, { target: { value: "QQQ" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(b).toHaveTextContent("Checking QQQ…"));
+    fireEvent.change(within(b).getByLabelText("Basket"), { target: { value: "local-2" } });
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-2"));
+    answer({ status: 200, body: { bars: [{ ts: "2026-09-23T00:00:00Z" }] } });
+    await waitFor(() => expect(within(basketCard()).getByLabelText("Weight of SPY, percent")).toHaveValue("100"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(basketCard()).queryByLabelText("Weight of QQQ, percent")).toBeNull();
+    expect(basketCard()).not.toHaveTextContent("unsaved changes");
+  });
+
   it("asks nothing for a basket whose weights are not at 100%, and says what prices it", async () => {
     seed([{ ...BASKETS[0], legs: BASKETS[0].legs.map((l, i) => (i === 0 ? { ...l, weight: 20 } : l)) }]);
     const { calls } = stubDesk();
@@ -211,12 +244,13 @@ describe("Basket & Hedge tab", () => {
     expect(calls).toContain("GET /api/market/candles/MSFT?range=2Y");
     expect(b).toHaveTextContent("MSFT added; the 8 names are at equal weight. Save to price it.");
     expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("12.5");
-    // Typed weights are kept: a name added then comes in at 0%.
+    // Codex R-10: a name added to typed weights re-spreads them to equal too; it never comes in at 0%.
     fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "20" } });
     fireEvent.change(input, { target: { value: "AAPL" } });
     fireEvent.submit(input.closest("form")!);
-    await waitFor(() => expect(within(b).getByLabelText("Weight of AAPL, percent")).toHaveValue("0"));
-    expect(b).toHaveTextContent("AAPL added at 0%: type its weight.");
+    await waitFor(() => expect(within(b).getByLabelText("Weight of AAPL, percent")).toHaveValue("11.1"));
+    expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("11.2");
+    expect(b).toHaveTextContent("AAPL added; the 9 names are at equal weight.");
     fireEvent.click(within(b).getByRole("button", { name: "Drop AAPL" }));
     fireEvent.change(input, { target: { value: "NVDA" } });
     fireEvent.submit(input.closest("form")!);
@@ -304,7 +338,9 @@ describe("Basket & Hedge tab", () => {
     // Typed weights are never dropped unseen: a new basket waits for them to be saved or put back.
     fireEvent.click(within(b).getByRole("button", { name: "+ New basket" }));
     expect(b).toHaveTextContent("This basket has unsaved changes: save them, or put them back, before starting another.");
-    fireEvent.click(within(b).getByRole("button", { name: "Drop MSFT" }));
+    // Adding MSFT re-spread every weight (Codex R-10), so dropping it does not put them back: save them instead.
+    fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
+    expect(b).toHaveTextContent("Saved in this browser; priced below.");
     fireEvent.click(within(b).getByRole("button", { name: "+ New basket" }));
     fireEvent.change(within(b).getByLabelText("Name of the new basket"), { target: { value: "AI infrastructure" } });
     fireEvent.click(within(b).getByRole("button", { name: "Create" }));

@@ -852,12 +852,14 @@ with the method in words. The LEGS table with Equal-weight / Normalize to
 100%, typed weights, `+ Add a ticker…`, the total, **Save basket** and
 Export / Import JSON; **Delete this basket** asks a second time. A weight
 keeps every digit it is typed with; a total counts as 100% only when it is
-exactly 100. A name added while the weights are equal keeps them equal;
-once weights are typed it comes in at 0%. A ticker is checked against the
-price endpoint (`/api/market/candles/{SYM}?range=2Y`): one it does not list
-is not added, in its words; when the check cannot be made the name is added
-and the note says so (desk/usability's InstrumentSearch replaces this
-input). `/desk/basket-hedge?add=XYZ` (Technicals links here) adds XYZ to the
+exactly 100. A name added re-spreads the weights to equal, the new name
+included (the analyst can type other weights after); Save refuses a weight
+at or below 0% and a basket of more than 25 names, which the API would
+refuse (Codex R-10). A ticker is checked against the price endpoint
+(`/api/market/candles/{SYM}?range=2Y`): one it does not list is not added,
+in its words; when the check cannot be made the name is added and the note
+says so; a check answered after another basket was opened adds nothing
+(Codex R-12). desk/usability's InstrumentSearch replaces this input. `/desk/basket-hedge?add=XYZ` (Technicals links here) adds XYZ to the
 open basket the same way, as unsaved work, and the address forgets it. A
 browser with no basket store starts with **AI Infrastructure 10**: NVDA AVGO
 AMD TSM MU ANET VRT CEG CRWV NBIS at 10% each, buy-and-hold, $1,000,000
