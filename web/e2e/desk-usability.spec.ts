@@ -82,11 +82,21 @@ async function guardProblems(page: Page, where: string): Promise<string[]> {
   for (let i = 0; i < (await toggles.count()); i++) {
     const t = toggles.nth(i);
     if ((await t.getAttribute("aria-expanded")) !== "true") await t.click();
-    const id = await t.getAttribute("aria-controls");
-    const panel = id ? page.locator(`[id="${id}"]`) : null;
-    const all = panel && (await panel.count()) ? (await panel.innerText()).trim() : "";
-    const missing = panel && (await panel.count()) ? (await panel.locator(".dk-adv-missing").allInnerTexts()).join("") : "";
-    if (all.replace(missing, "").trim().length < 20) bad.push(`${where}: Advanced ${i + 1} opens onto nothing`);
+    // The control names its panel once it has re-rendered open; the panel's served content may still be arriving.
+    await expect(t).toHaveAttribute("aria-expanded", "true");
+    await expect(t).toHaveAttribute("aria-controls", /\S/);
+    const panel = page.locator(`[id="${await t.getAttribute("aria-controls")}"]`);
+    const own = async () => {
+      if (!(await panel.count())) return 0;
+      const missing = (await panel.locator(".dk-adv-missing").allInnerTexts()).join("");
+      return (await panel.innerText()).replace(missing, "").trim().length;
+    };
+    const opened = await expect
+      .poll(own, { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(20)
+      .then(() => true)
+      .catch(() => false);
+    if (!opened) bad.push(`${where}: Advanced ${i + 1} opens onto nothing`);
   }
   return bad;
 }
