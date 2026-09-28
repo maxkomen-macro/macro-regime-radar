@@ -111,9 +111,14 @@ function CloseForm({ onClose, onCancel }: { onClose: (type: CloseType, premortem
         ))}
       </div>
       <p className="pm-close-actions">
-        <button type="button" className="dk-btn" data-kind={type ? "light" : undefined} disabled={!type} onClick={() => type && onClose(type, judged)}>
-          Close position
-        </button>
+        {/* §14.13: no control that does nothing. Close position shows once a close type is picked, never disabled. */}
+        {type ? (
+          <button type="button" className="dk-btn" data-kind="light" onClick={() => onClose(type, judged)}>
+            Close position
+          </button>
+        ) : (
+          <span className="pm-close-hint">Pick how it closed to close it.</span>
+        )}
         <button type="button" className="dk-link" onClick={onCancel}>
           Cancel
         </button>

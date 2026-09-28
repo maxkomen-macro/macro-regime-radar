@@ -492,9 +492,11 @@ test.describe("desk usability", () => {
     await expect(signals.getByRole("listitem").first()).toBeVisible();
     await expect(main.getByTestId("dk-failed")).toHaveCount(0);
 
-    // Macro reads one endpoint: all four cards fail, the page's title, header and sidebar stand.
+    // Macro reads one endpoint: all five cards fail (the 2×2 and desk/matrix's matrix), the page's title, header and
+    // sidebar stand.
     await open(page, "/desk/macro", { "/api/desk/macro": { status: 503, body: { detail: "forced failure" } } });
-    await expect(main.getByTestId("dk-failed")).toHaveCount(4);
+    await expect(main.getByTestId("dk-failed")).toHaveCount(5);
+    await expect(main.getByRole("region", { name: /^Correlation matrix/ }).getByTestId("dk-failed")).toHaveText("Couldn't load · Retry");
     for (const l of ["10-year", "2s10s", "HY spread", "Today"]) await expect(main).toContainText(l);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Macro & Correlations");
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
@@ -537,8 +539,20 @@ test.describe("desk usability", () => {
       await open(page, r);
       bad.push(...(await guardProblems(page, r)));
     }
+    // A saved position opened, and its Close… form (the merge review: its Close position was disabled until a type
+    // was picked); then with a type picked.
+    await open(page, "/desk/position-monitor?open=ndx-vs-spx");
+    const mon = page.getByRole("region", { name: /^Monitored/ });
+    await mon.getByRole("button", { name: "Close…" }).click();
+    const close = mon.getByRole("group", { name: "Close as" });
+    await expect(close).toContainText("Pick how it closed to close it.");
+    bad.push(...(await guardProblems(page, "/desk/position-monitor Close…")));
+    await close.getByRole("button", { name: "Expired at horizon" }).click();
+    await expect(close.getByRole("button", { name: "Close position" })).toBeEnabled();
+    bad.push(...(await guardProblems(page, "/desk/position-monitor Close… (a type picked)")));
     expect(bad).toEqual([]);
     // The whitelist is the gate's Save only, and it is on the form, waiting for the gate.
+    await open(page, "/desk/position-monitor?new=1");
     await expect(page.locator(".pm-save-btn")).toBeDisabled();
   });
 

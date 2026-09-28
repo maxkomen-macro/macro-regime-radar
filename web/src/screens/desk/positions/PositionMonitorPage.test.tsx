@@ -329,8 +329,12 @@ describe("Position Monitor tab", () => {
     const mon = await screen.findByRole("region", { name: /Monitored/ });
     fireEvent.click(await within(mon).findByRole("button", { name: "Close…" }));
     const close = within(mon).getByRole("group", { name: "Close as" });
-    expect(within(close).getByRole("button", { name: "Close position" })).toBeDisabled();
+    // §14.13 (the merge review): no disabled Close position; it shows once a close type is picked.
+    expect(within(close).queryByRole("button", { name: "Close position" })).toBeNull();
+    expect(close).toHaveTextContent("Pick how it closed to close it.");
+    expect(close.querySelectorAll("button:disabled")).toHaveLength(0);
     fireEvent.click(within(close).getByRole("button", { name: "Expired at horizon" }));
+    expect(close).not.toHaveTextContent("Pick how it closed to close it.");
     fireEvent.click(within(close).getByRole("button", { name: "Yes" }));
     fireEvent.click(within(close).getByRole("button", { name: "Close position" }));
     await waitFor(() => expect(within(mon).getAllByTestId("dk-mon-row").map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "ai-infra-hedged"]));

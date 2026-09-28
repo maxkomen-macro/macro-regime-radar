@@ -2458,3 +2458,21 @@ question pushes one.
   served in `/instruments`' `excluded` (`{symbol, reason}`), and every other
   instrument, and its technicals, stands. Before, one text close or bad date
   failed the whole item, and the search's fallback list with it.
+
+### 14.15 Codex merge review (on `4df5cfe1`, after the rebase onto `2c62d403`)
+
+- **Adjusted closes only.** A stock's technicals read only the bars EODHD
+  served with an adjusted close, as Basket & Hedge does (desk/books' R-07):
+  a bar without one carries its raw close and would mix unadjusted prices
+  into every return. `/technicals` serves `unadjusted_bars` (`{n}`, null when
+  none), printed under the price chart ("3 bars without an adjusted close
+  from the provider are not read."); a symbol with no adjusted close is 502
+  `provider`, in those words.
+- **Macro's five cards.** The item-12 e2e forces `/macro` to fail and counts
+  five failed cards: the 2×2 and desk/matrix's matrix card, which sits in the
+  page's failed scope.
+- **Close position.** The Position Monitor's Close… form shows "Close
+  position" only once a close type is picked, with "Pick how it closed to
+  close it." until then; before, the button was visible and disabled. The
+  guard's saved-positions e2e opens a position's Close… form, with and
+  without a type picked.
