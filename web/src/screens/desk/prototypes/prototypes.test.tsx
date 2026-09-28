@@ -91,7 +91,12 @@ describe("§1.0.3: the PROTOTYPE card and its footnote", () => {
   function Sample() {
     const adv = useAdvanced();
     return (
-      <PrototypeCard id="sample" title="A card" sub="drawn finished" production="one line on how it would be built." advanced={<AdvancedPanel enabled adv={adv} items="assumptions" />}>
+      <PrototypeCard id="sample" title="A card" sub="drawn finished" production="one line on how it would be built." advanced={
+          // desk/usability §14.13: an Advanced shows only when it opens something, so the sample's opens a line.
+          <AdvancedPanel enabled adv={adv} items="assumptions">
+            <p>the assumptions</p>
+          </AdvancedPanel>
+        }>
         <p>body</p>
       </PrototypeCard>
     );
