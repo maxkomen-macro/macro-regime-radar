@@ -10,7 +10,11 @@ pushed. One commit per item, then this report.
 | 3 | `85b649e` | Breadth of the 11 sector ETFs, RSP and IWM against SPY |
 | 4 | `8eb64a9` | Do bonds still hedge stocks? SPY against TLT |
 | 5 | `8f7fa80` | What moves with the S&P: TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ and VIX against SPY |
-| — | (this report) | `docs/desk/FILL_ETF_REPORT.md` and the real-API shots in `docs/desk/shots/desk-fill-etf/` |
+| — | `0e9edfb` | This report and the real-API shots in `docs/desk/shots/desk-fill-etf/` |
+| R-01 | `fb44944` | Codex: a partial sector ranking says so, on both cards |
+| R-02 | `c679aa3` | Codex: `asset_prices`' publication fingerprint covers volume and the layout |
+| R-03 | `e541569` | Codex: the Event Study page offers only the catalog's inputs |
+| — | (this update) | The findings table below and the final gates at the new head |
 
 **Final gates passed at head `8f7fa80`** (the last code commit; this report
 adds documents only). Under the machine-wide lock `/tmp/mrr-full-gates.lock`
@@ -148,9 +152,9 @@ CLAUDE.md updated.
   on 5196 (compare shots) and the gate's on 5211, each checked by its cwd.
 - **The nine sector ETFs listed from 1998 keep their event-study roles**
   (`tests/fixtures/desk_entries_cc721f0.json` freezes them as shocks); the
-  other fifteen ETFs have none. So the nine are now selectable in the
-  legacy `/api/desk/event-study` and appear in `/study`'s `series[]`
-  (tier 2 with roles); the catalog-based `/study` is unchanged.
+  other fifteen ETFs have none. So the nine are selectable in the legacy
+  `/api/desk/event-study`; since Codex R-03, `/study`'s `series[]` and the
+  Event Study page list only the series some catalog study reads.
 - **Small caps vs large** reads IWM against SPY (both ingested) rather than
   ^RUT against ^GSPC; ^RUT's inventory note says so.
 - **The chart zones** in the mockup ("broad rally", "risk appetite broad")
@@ -197,6 +201,24 @@ failure below is a timing test; none touches this branch's code path.
 | vitest: an unhandled `URL.revokeObjectURL` timer (Event Study export) | item 1 | fixed in the test (it now waits for the release) |
 | vitest: Basket & Hedge "Send to Position Monitor" | one working-tree run at load 31 | passed alone |
 
+## Codex review of `0e9edfb`: DO NOT PUSH, three findings
+
+Each fixed in its own commit with a test built from Codex's repro. Gates
+per commit under the owner's policy: tsc, vitest `--minWorkers=1
+--maxWorkers=2`, build, and the related pytest files; the full suites once
+at the head (above).
+
+| ID | Finding | Fix | Test (from Codex's repro) |
+|---|---|---|---|
+| R-01 | With any sector's return unavailable, both cards presented a definitive ranking, and the Technicals card hid the missing sector | `fb44944`: the API serves `ranked_n` and `missing` (§12.14); the Sectors card reads "<n> of 11 with data" and "among the <n> sectors with data" on LEADING and LAGGING, and names each missing sector with its reason; the Technicals card shows the missing sector's row after the seven, qualifies its ends line and names it | `tests/test_desk_etf.py::test_codex_r01_the_ranking_says_how_many_sectors_it_ranks_and_names_the_rest` (XLC listed inside the window, XLE without its latest close); `SectorsPage.test.tsx` "Codex R-01" (three cases, with and without the new fields); `TechnicalsPage.test.tsx` "Codex R-01: a sector without a return is shown with why, never hidden…" |
+| R-02 | `validate_db`'s `asset_prices` fingerprint omitted volume, so a volume-only correction never published | `c679aa3`: `_asset_prices_fingerprint` hashes the column list and every column (volume and provider included), backward-compatible with the older layout; `asset_history.STORED_COLUMNS` names the layout | `tests/test_validate_db.py::test_codex_r02_a_volume_only_correction_is_published` (changed=true, upload=true; the committed code gave false, false), `…_the_volume_columns_arrival_is_published_and_the_old_layout_still_fingerprints`, `…_every_column_the_refresh_stores_is_in_the_fingerprint` |
+| R-03 | `/study`'s `series[]`, the Event Study page's Shock and Target choices, listed the nine sector ETFs with `ops: []` | `e541569`: `series[]` is limited to `desk_catalog.series_read()` (each catalog study's shock, target, and the S&P of `spx_below_50`), and the page filters its options by the catalog too; the registry keeps their roles for the legacy endpoint | `tests/test_desk_etf.py::test_codex_r03_the_study_series_are_the_catalogs_inputs_and_the_legacy_roles_stay`; `EventStudyPage.test.tsx` "Codex R-03" (fails with the page's filter removed) |
+
+R-03 also takes `us2y`, `ndx`, `rut` and `usdjpy` out of the page's lists:
+they were served there before this branch, as disabled options no catalog
+study asks. The compare shots are unchanged by the three fixes (the fixture
+world has every sector's return; a select's options are not in a shot).
+
 ## Merging with the other Desk branches of the day
 
 `desk/books` (`f5d98c2`) and `desk/prototypes` (`d1e0ab4`) branch from the
@@ -217,6 +239,3 @@ fixed the same Event Study export timer leak in
 - The shots' pre-refresh copy is the Sep 24 asset; once the workflow has
   run, a check against the live API (`/api/desk/sectors` ready) confirms
   the publish.
-- `/study`'s `series[]` now lists the nine older sector ETFs (tier 2 with
-  roles, ops `[]`); if the Event Study page should not show them anywhere,
-  filter to catalog shocks in `_series_list`.
