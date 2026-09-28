@@ -74,9 +74,10 @@ Nothing else on the site is fitted.
 ## What's live, and why the rest isn't yet
 
 Live on the published snapshot: Overview, Technicals (price, averages,
-crosses, S&P signals, sector leadership), Event Study for the catalog of
-questions, Regime (label, history, recession score, next prints), Macro
-(curve, credit, the stock–bond correlation, what moves with the S&P), Sectors (leadership and breadth), Signal Ledger, Position Monitor (in
+crosses, S&P signals, sector leadership, the 14-day RSI, MACD and its last crossover, seasonality by calendar month), Event Study for the catalog of
+questions, Regime (label, history, recession score, next prints, what each
+regime has meant since 1996, the last changes), Macro
+(curve, credit, the stock–bond correlation, what moves with the S&P), Sectors (leadership and breadth), Signal Ledger (the two RSI signals included), Position Monitor (in
 your browser), the Client view, Data Pipeline, and this page. The sector
 ETFs and the other Desk ETFs are stored by the same refresh step as the
 S&P's closes, with their volume, full history back to each fund's first
@@ -94,8 +95,6 @@ Designed and drawn, not yet served, each for a stated reason:
   sector ETFs above their 50- and 200-day averages and says so on every
   count. Counting the index's own stocks needs constituent data, which the
   store doesn't hold.
-- The RSI card and the two RSI signals: no RSI calculation exists in the
-  engine yet.
 - The confidence selector: verdicts are fixed at 90%, so the chips would
   only move the whiskers, and that plumbing isn't built.
 - Position Monitor stores positions in your browser. There is no server
@@ -122,7 +121,7 @@ more than the engine computes, and the honest fix was to label them.
 
 In order: constituent-level breadth, the stocks inside the index rather
 than the 11 sector ETFs (it needs a constituent list and a price per
-stock); the RSI signals; a stored options surface so the vol card and the
+stock); a stored options surface so the vol card and the
 hedge pricing can go live; the 12-asset correlation matrix; then the
 per-study confidence selector. After that, a server-side position store with accounts, so the
 discipline gate can be shared across a desk instead of living in one

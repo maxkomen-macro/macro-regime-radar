@@ -30,7 +30,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from dataclasses import replace
+
 from src.desk import event_study as es
+from src.desk import series as registry
 from tests.test_event_study import _synthetic_db
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -79,8 +82,21 @@ def test_the_golden_is_the_bases_pinned_run_over_the_catalog():
     assert ZERO_EVENTS in names and len(names) > len(CATALOG_QUERIES)
 
 
-def test_heads_pinned_output_matches_the_golden(synth):
-    """Layer 2: every query's canonical JSON hashes to the base engine's."""
+# desk/fill-compute (owner's item 7): the registry's `vix` moved from FRED VIXCLS (desk_series) to ^VIX
+# (asset_prices). The golden was written with the base's entry; layer 2 runs HEAD's engine with that entry,
+# so it still proves the engine unchanged, and the next test proves the move changes only the series' identity.
+BASE_VIX = replace(registry.BY_KEY["vix"], source="fred", series_id="VIXCLS",
+                   note="CBOE close via FRED VIXCLS; settles 16:15 ET, so a VIX-dated event enters the target the next session.")
+
+
+@pytest.fixture()
+def base_vix(monkeypatch):
+    monkeypatch.setitem(registry.BY_KEY, "vix", BASE_VIX)
+
+
+def test_heads_pinned_output_matches_the_golden(synth, base_vix):
+    """Layer 2: every query's canonical JSON hashes to the base engine's (the
+    VIX read as the base registry declared it, BASE_VIX)."""
     conn = es._connect(synth)
     moved = {}
     try:
@@ -254,3 +270,52 @@ def test_a_ready_but_insufficient_study_projects_without_an_interval():
     H20 = next(H for H in native["horizons"] if H["h"] == 20)
     assert 0 < len(table) < 10 and H20["n_blocks"] < es.MIN_BLOCKS_INTERVAL and H20["ci90"] is None
     assert projection_problems(native, table, trace) == []
+
+
+
+def _reads_vix(q) -> bool:
+    q = es.validate(q)
+    return "vix" in (q.shock, q.target) or q.cond == "vix_above"
+
+
+def _without_vix_identity(r: dict) -> dict:
+    """A run with the VIX's identity (its series id, store, note and the hash that covers them) set aside."""
+    out = json.loads(_canonical(r))
+    p = out["provenance"]
+    p.pop("inputs_hash")
+    for m in p["inputs"]:
+        if m["key"] == "vix":
+            for k in ("series_id", "table", "note"):
+                m.pop(k)
+    return out
+
+
+def test_the_vix_move_changes_only_the_series_identity(synth, monkeypatch):
+    """desk/fill-compute (owner's item 7): on identical values, every golden
+    query that reads the VIX answers the same from ^VIX in asset_prices as
+    from VIXCLS in desk_series: events, horizons, baselines, verdict text; only
+    the series id, its store, its note and the inputs hash differ."""
+    conn = es._connect(synth)
+    moved, compared = [], 0
+    try:
+        for name, spec in _golden()["queries"].items():
+            q = es.parse_slug(spec["slug"]) if "slug" in spec else es.Query(**spec["kwargs"])
+            if not _reads_vix(q):
+                continue
+            try:
+                now = _without_vix_identity(_run_pinned(conn, q))
+            except (es.NotStored, es.StudyError) as exc:
+                now = f"{type(exc).__name__}:{exc}"
+            with monkeypatch.context() as m:
+                m.setitem(registry.BY_KEY, "vix", BASE_VIX)
+                try:
+                    then = _without_vix_identity(_run_pinned(conn, q))
+                except (es.NotStored, es.StudyError) as exc:
+                    then = f"{type(exc).__name__}:{exc}"
+            compared += 1
+            moved.append(name) if now != then else None
+            assert isinstance(now, dict) or now == then, name
+    finally:
+        conn.close()
+    assert compared >= 5, compared  # the catalog's VIX spike and the free-form VIX queries
+    assert moved == [], f"the VIX's move changed more than its identity: {moved}"

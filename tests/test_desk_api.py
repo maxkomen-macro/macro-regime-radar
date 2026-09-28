@@ -129,7 +129,10 @@ def test_preset_carries_the_contract(served):
         assert word not in body["verdict"]["text"].lower()
 
 
-def test_free_form_query_computes_once_per_generation_then_hits_the_cache(served):
+def test_free_form_query_computes_once_per_generation_then_hits_the_cache(tmp_path, install_worker, monkeypatch):
+    from tests.desk_vix import add_vix_close
+
+    _served_copy_with(tmp_path, install_worker, monkeypatch, [], prepare=add_vix_close)
     before = dict(desk_mod.stats)
     params = {"shock": "vix", "w": 5, "z": 2.0, "sign": "+", "target": "spx"}
     r1 = client.get("/api/desk/event-study", params=params)
@@ -426,7 +429,8 @@ def test_pipeline_inventory_matches_freshness_report():
 
 # ── desk/integration: the desk_series rows in the inventory (Step 3) ────────
 
-REFRESH_IDS = ["DGS10", "DGS2", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS3MO", "DGS5", "DGS30", "DCOILWTICO", "^NDX", "DX-Y.NYB", "JPY=X"]
+# desk/fill-compute (item 7): the VIX left the FRED set; it is ^VIX in asset_prices, stored beside ^GSPC.
+REFRESH_IDS = ["DGS10", "DGS2", "T10Y2Y", "BAMLH0A0HYM2", "DGS3MO", "DGS5", "DGS30", "DCOILWTICO", "^NDX", "DX-Y.NYB", "JPY=X"]
 MARKET_IDS = {"^NDX", "DX-Y.NYB", "JPY=X"}  # desk/hardening: tier 2, EODHD first, Yahoo disclosed fallback
 NOW = datetime(2026, 9, 22, 20, 0, tzinfo=timezone.utc)  # Tue 2026-09-22 16:00 ET, a bond and NYSE session
 
@@ -471,8 +475,9 @@ def test_desk_series_states_judge_each_stored_series():
     }
     rows = freshness_mod.desk_series_states(stored=stored, specs=desk_mod.desk_series_specs(stored=stored), watermarks=marks, now=NOW)
     by = {r["id"]: r for r in rows}
-    # the refresh set in registry order, then any other stored series
-    assert list(by) == [f"desk:{sid}" for sid in REFRESH_IDS] + ["desk:SOMETHING"]
+    # the refresh set in registry order, then any other stored series: VIXCLS among them since desk/fill-compute
+    # (stored by earlier refreshes and kept, no longer refreshed or read; the VIX is ^VIX in asset_prices)
+    assert list(by) == [f"desk:{sid}" for sid in REFRESH_IDS] + ["desk:SOMETHING", "desk:VIXCLS"]
     assert by["desk:DGS10"]["as_of"] == "2026-09-21" and by["desk:DGS10"]["state"] == "close" and by["desk:DGS10"]["cycles_behind"] == 0
     lag = cal.bond_business_days_between(date(2026, 9, 14), date(2026, 9, 21))
     assert by["desk:DGS2"]["state"] == "stale" and by["desk:DGS2"]["stale"] is True and by["desk:DGS2"]["cycles_behind"] == lag > freshness_mod.DAILY_TOLERANCE
@@ -773,12 +778,16 @@ def test_before_the_first_refresh_the_event_study_says_it_is_awaiting_it(served_
     assert all(by[k]["status"] == "awaiting_refresh" for k in REFRESH_KEYS if k in by)
     assert by["spx"]["status"] == "stored" and by["gold"]["status"] == "stored" and by["ndx"]["status"] == "awaiting_refresh"
 
-    r = client.get("/api/desk/event-study", params={"shock": "vix", "w": 5, "z": 2.0, "sign": "+", "target": "spx"})
+    r = client.get("/api/desk/event-study", params={"shock": "us10y", "w": 5, "z": 2.0, "sign": "+", "target": "spx"})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["status"] == "awaiting_refresh" and body["slug"] == "vix-w5-z2.0-up-none-spx" and body["series"] == "vix"
+    assert body["status"] == "awaiting_refresh" and body["slug"] == "us10y-w5-z2.0-up-none-spx" and body["series"] == "us10y"
     assert "first full refresh" in body["detail"] and "no such table" not in body["detail"]
     assert r.headers["cache-control"] == "no-store"
+    # desk/fill-compute (item 7): the VIX is ^VIX in asset_prices, a table this store has without its rows.
+    r = client.get("/api/desk/event-study", params={"shock": "vix", "w": 5, "z": 2.0, "sign": "+", "target": "spx"})
+    body = r.json()
+    assert body["status"] == "awaiting_refresh" and body["series"] == "vix" and "next full refresh" in body["detail"], body
     # The same study by its slug.
     r = client.get("/api/desk/event-study", params={"study": "vix-w5-z2.0-up-none-spx"})
     assert r.status_code == 200 and r.json()["status"] == "awaiting_refresh"
@@ -906,7 +915,7 @@ def test_the_drawer_verdict_follows_the_series_the_refresh_stores():
     base = {"regimes_date": "2026-09-01", "signals_date": "2026-10-01", "market_daily_date": "2026-10-13",
             "market_intraday_ts": None, "news_published_at": None, "raw_series_date": "2026-10-01", "asset_prices_date": "2026-10-13"}
     now = datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc)
-    latest = {"DGS10": "2026-10-09", "DGS2": "2026-10-09", "T10Y2Y": "2026-10-09", "BAMLH0A0HYM2": "2026-10-09", "VIXCLS": "2026-10-13",
+    latest = {"DGS10": "2026-10-09", "DGS2": "2026-10-09", "T10Y2Y": "2026-10-09", "BAMLH0A0HYM2": "2026-10-09",
               "DGS3MO": "2026-10-09", "DGS5": "2026-10-09", "DGS30": "2026-10-09",
               "^NDX": "2026-09-21"}  # a tier-2 series weeks old; the other three tier-2 series not stored at all
 
@@ -919,11 +928,11 @@ def test_the_drawer_verdict_follows_the_series_the_refresh_stores():
     assert row["verdict"] == "current", row
     states = freshness_mod.desk_series_states(stored=latest, specs=desk_mod.desk_series_specs(stored=latest), watermarks={}, now=now)
     tier1_ids = [sid for sid, meta in freshness_mod.DESK_REFRESH_SERIES.items() if meta["tier"] == 1]
-    assert tier1_ids == REFRESH_IDS[:8]
+    assert tier1_ids == REFRESH_IDS[:7]
     tier1 = {f"desk:{sid}" for sid in tier1_ids}
     assert all(s["state"] == "close" for s in states if s["id"] in tier1)
     # desk/hardening: tier 2 is named in the reason and never turns the verdict
-    assert {s["id"] for s in states if s["state"] != "close"} == {f"desk:{sid}" for sid in REFRESH_IDS[8:]}
+    assert {s["id"] for s in states if s["state"] != "close"} == {f"desk:{sid}" for sid in REFRESH_IDS[7:]}
     assert "Tier 2, reported and not judged" in row["reason"] and "Nasdaq 100" in row["reason"], row
     lagging = verdict({**latest, "DGS2": "2026-09-14"})
     assert lagging["verdict"] == "stale" and "2Y Treasury" in lagging["reason"], lagging
@@ -940,9 +949,18 @@ def test_a_series_missing_from_an_existing_table_awaits_the_next_refresh_not_the
     conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE desk_series (series_id TEXT, date TEXT, value REAL, provider TEXT)")
     with pytest.raises(es.NotStored) as exc:
-        es.load_level(conn, registry.get("vix"))
+        es.load_level(conn, registry.get("us10y"))
     assert exc.value.awaiting_refresh and "next full refresh" in str(exc.value) and "first" not in str(exc.value)
     conn.execute("DROP TABLE desk_series")
+    with pytest.raises(es.NotStored) as exc:
+        es.load_level(conn, registry.get("us10y"))
+    assert exc.value.awaiting_refresh and "first full refresh" in str(exc.value)
+    # desk/fill-compute (item 7): the VIX, ^VIX in asset_prices, by the same rule on its own table.
+    conn.execute("CREATE TABLE asset_prices (symbol TEXT, interval TEXT, date TEXT, close REAL, provider TEXT)")
+    with pytest.raises(es.NotStored) as exc:
+        es.load_level(conn, registry.get("vix"))
+    assert exc.value.awaiting_refresh and "next full refresh" in str(exc.value) and "first" not in str(exc.value)
+    conn.execute("DROP TABLE asset_prices")
     with pytest.raises(es.NotStored) as exc:
         es.load_level(conn, registry.get("vix"))
     assert exc.value.awaiting_refresh and "first full refresh" in str(exc.value)
@@ -1078,7 +1096,8 @@ def test_a_failed_first_import_of_the_engine_recovers_by_rebuilding_the_same_fil
     assert r.status_code == 200 and {x["key"] for x in r.json()["shocks"]} >= {"spx", "gold", "ndx"}, r.text[:200]
     deadline = time.monotonic() + 60
     while True:  # a free-form study, which waited on desk_assets and answered 500 before
-        r = tc.get("/api/desk/event-study", params={"shock": "vix", "w": 5, "z": 2.0, "sign": "+", "target": "spx"})
+        # desk/fill-compute: the 10-year, which the scratch copy stores (its VIX is FRED's, which the Desk no longer reads)
+        r = tc.get("/api/desk/event-study", params={"shock": "us10y", "w": 5, "z": 2.0, "sign": "+", "target": "spx"})
         if r.status_code != 202 or time.monotonic() > deadline:
             break
         time.sleep(0.5)
@@ -1152,7 +1171,7 @@ def _one_event_store(path: Path) -> Path:
 
     import numpy as np
 
-    from src.market_data import desk_history
+    from src.market_data import asset_history, desk_history
     from tests.test_event_study import _synthetic_db
 
     _synthetic_db(path, spx_end="2026-09-14")
@@ -1161,8 +1180,10 @@ def _one_event_store(path: Path) -> Path:
     level = np.log(20.0) + 0.01 * (np.arange(len(sessions)) % 2)
     level[len(sessions) - 7:] += np.log(2.0)
     conn = sqlite3.connect(path)
-    desk_history.write_series(conn, "VIXCLS", [(d.strftime("%Y-%m-%d"), float(np.exp(v))) for d, v in zip(sessions, level)],
-                              provider="fred", merge=False)
+    vix = [(d.strftime("%Y-%m-%d"), float(np.exp(v))) for d, v in zip(sessions, level)]
+    desk_history.write_series(conn, "VIXCLS", vix, provider="fred", merge=False)
+    # desk/fill-compute (item 7): the engine reads ^VIX from asset_prices; the same one-event level there.
+    asset_history.write_series(conn, "^VIX", "1d", vix, provider="test")
     conn.commit()
     conn.close()
     return path
@@ -1448,10 +1469,12 @@ def test_each_assets_row_names_what_the_reader_left_out(tmp_path, install_worker
     stored while rows of it were being set aside. Each asset row now carries
     the counts and the warnings, here DGS10's four faults (a non-numeric
     value, a malformed date, a date before the floor, a date after the as-of)."""
+    from tests.desk_vix import add_vix_close
+
     w, _ = _served_copy_with(tmp_path, install_worker, monkeypatch, [
         ("DGS10", "2010-06-05", "n/a", "fred"), ("DGS10", "1999-99-99", 4.0, "fred"),
         ("DGS10", "1000-01-01", 4.0, "fred"), ("DGS10", "2099-12-31", 4.0, "fred"),
-    ])
+    ], prepare=add_vix_close)
     r = client.get("/api/desk/event-study/assets")
     assert r.status_code == 200, r.text[:300]
     us10y = next(x for x in r.json()["shocks"] if x["key"] == "us10y")

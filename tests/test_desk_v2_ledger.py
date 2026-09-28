@@ -39,7 +39,7 @@ def test_the_ledger_rows_order_and_counts(served):
     d = _ledger()
     assert d["verdict_rule"] == "v1" and d["horizon"] == 20
     assert [r["slug"] for r in d["signals"]] == list(catalog.LEDGER_ORDER)
-    unavailable = {"rsi-above-70", "rsi-below-30", "dollar-2sigma-20d", "oil-2sigma-20d"}  # the synthetic store has no WTI, DXY
+    unavailable = {"dollar-2sigma-20d", "oil-2sigma-20d"}  # the synthetic store has no WTI, DXY; the RSI rows are scored
     assert d["scored_n"] == 12 - len(unavailable) and d["scored_n"] + d["unavailable_n"] == 12
     for r in d["signals"]:
         assert r["group"] == catalog.LEDGER_GROUP[r["slug"]] and r["horizon"] == 20
@@ -48,7 +48,9 @@ def test_the_ledger_rows_order_and_counts(served):
             assert all(r[k] is None for k in desk_v2.LEDGER_STATS + ("firing_now", "firing_day", "evaluated_on")), r
         else:
             assert r["available"] is True and r["unavailable"] is None and r["n"] is not None
-    assert next(r for r in d["signals"] if r["slug"] == "rsi-below-30")["unavailable"]["reason"] == "RSI is not computed yet."
+    for slug in ("rsi-above-70", "rsi-below-30"):
+        r = next(r for r in d["signals"] if r["slug"] == slug)
+        assert r["available"] is True and r["group"] == "spx" and r["target_unit"] == "log_return" and r["verdict"]
 
 
 @pytest.mark.parametrize("slug", [s for s in catalog.LEDGER_ORDER if catalog.BY_SLUG[s].question and s not in TIER2])
@@ -131,3 +133,19 @@ def test_the_ledger_rows_feed_the_firing_lists(served, monkeypatch):
         assert r["available"] and not r["stale"] and f["state_comparison"] is True
     for item in still:
         assert item["firing_day"] == rows[item["slug"]][0]["firing_day"] >= 2
+
+
+def test_codex_r03_the_ledger_judges_each_input_on_its_own_calendar(served, monkeypatch):
+    """Codex R-03 on the route: the synthetic store ends Friday 2026-09-18 for
+    every series. On Tuesday the 22nd, the 2s10s and HY rows read FRED series
+    two business days behind (within FRED's grace) and the S&P two sessions
+    behind (an exchange close has none): stale, as every S&P row is."""
+    monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 22, 21, 0, tzinfo=timezone.utc))
+    d = _ledger()
+    by = {r["slug"]: r for r in d["signals"] if r["available"]}
+    assert d["comparison_session"] == "2026-09-22"
+    for slug in ("2s10s-2sigma-steepening", "hy-2sigma-20d", "golden-cross", "spx-20d-2sigma"):
+        assert by[slug]["evaluated_on"] == "2026-09-18" and by[slug]["stale"] is True, slug
+    # One session later than the data, the FRED rows' own grace and the S&P's are both honoured.
+    monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 18, 21, 0, tzinfo=timezone.utc))
+    assert all(r["stale"] is False for r in _ledger()["signals"] if r["available"])

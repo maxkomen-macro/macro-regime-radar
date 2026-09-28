@@ -106,13 +106,15 @@ REGIME = E("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
 VERDICT = E("reliable", "suggestive", "no_edge", "insufficient")
 TARGET_UNIT = E("log_return", "log_change", "bp")
 DISPLAY_UNIT = E("percent", "bp")
-MOVE = E("up2s", "down2s", "cross_above", "cross_below")
+MOVE = E("up2s", "down2s", "cross_above", "cross_below", "rsi_above_70", "rsi_below_30")
 WHILE = E("none", "spx_below_50", *(f"regime:{r}" for r in REGIME.values))
 HORIZON = E(5, 10, 20, 60)
 WINDOW = E(5, 20, 60)
 DIRECTION = E("rising", "falling")
 FEED_STATE = E("current", "stale", "missing")
 TREND_STATE = E("above_both", "below_both", "mixed", "unavailable")
+# Codex R-08: a return is complete, its window not complete yet (pending), or missing a stored close.
+RETURN_STATUS = E("complete", "pending", "missing")
 CROSS = obj(kind=E("golden", "death"), date=DATE)
 UNAVAILABLE = obj(reason=STR, until=null(STR))
 BAND_EDGES_RECESSION = Const([0.20, 0.40])
@@ -142,6 +144,9 @@ REGIME_TILE_FIELDS = dict(
     months_in=INT, since=MONTH, freq=Const("monthly"), source=REGIMES_SOURCE,
 )
 
+SPAN = obj(start=DATE, end=DATE, n=INT)
+MONTH_SPAN = obj(start=MONTH, end=MONTH, n=INT)
+
 # ── §12.1 GET /overview ─────────────────────────────────────────────────────
 
 FIRE = obj(slug=STR, label=STR, short=STR)
@@ -161,7 +166,9 @@ OVERVIEW = obj(
             state=TREND_STATE, above_50=null(BOOL), above_200=null(BOOL), state_since=null(DATE),
             cross=null(CROSS), date=DATE, freq=Const("daily"), source=Const("asset_prices ^GSPC"),
         )),
-        vol=Block(obj(vix=NUM, date=DATE, freq=Const("daily"), source=Const("FRED VIXCLS (desk_series)"))),
+        vol=Block(obj(vix=NUM, date=DATE, freq=Const("daily"), source=Const("asset_prices ^VIX"),
+                      band=E("calm", "subdued", "stressed"), band_edges=Const([15.0, 25.0]),
+                      gap=null(obj(date=DATE, vix=NUM, realized_21d=NUM, gap_pts=NUM, window=SPAN)))),
     ),
     active_signals=Arr(LEDGER_ROW),
     data_status=Block(obj(
@@ -195,6 +202,7 @@ STUDY = obj(
     first_event=null(DATE), last_event=null(DATE),
     firing_now=null(BOOL), firing_day=null(INT), evaluated_on=null(DATE),
     comparison_session=DATE, prev_session=DATE, stale=BOOL,
+    stale_inputs=Arr(STR),  # Codex R-03: the registry keys of the inputs behind their own tolerance
     verdict=VERDICT, verdict_rule=Const("v1"), verdict_confidence=Const(0.90),
     headline=STR, why=STR,
     horizons=Arr(HORIZON_ROW, min=4, max=4),
@@ -238,13 +246,23 @@ LEDGER = obj(
 
 # ── §12.6 GET /regime ───────────────────────────────────────────────────────
 
+PRINT_SERIES = E("CPIAUCSL", "INDPRO")
+# Codex R-05: an upcoming print, its release bound to its own reference month; R-06: the other axis it assumes.
 NEXT_PRINT = obj(
-    release_date=null(DATE), reference_month=MONTH, series=E("CPIAUCSL", "INDPRO"),
+    release_date=null(DATE), released=null(BOOL), reference_month=MONTH, series=PRINT_SERIES,
     threshold_mom=null(NUM), operator=E("<=", ">"), flips_to=null(REGIME), first_effective_month=MONTH,
+    from_direction=DIRECTION, printed_mom=null(NUM), printed_direction=null(DIRECTION),
+    other=obj(axis=E("growth", "inflation"), series=PRINT_SERIES, reference_month=MONTH, direction=DIRECTION,
+              status=E("published", "assumed")),
     freq=Const("monthly"), source=STR,
 )
+# Codex R-05: a stored row after the one shown, already published, with the two prints that made it.
+PUBLISHED_PRINT = obj(reference_month=MONTH, series=PRINT_SERIES, mom=null(NUM), direction=null(DIRECTION),
+                      from_direction=null(DIRECTION))
+PUBLISHED_ROW = obj(month=MONTH, label=REGIME, first_effective_month=MONTH, cpi=PUBLISHED_PRINT, indpro=PUBLISHED_PRINT)
 REGIME_ROUTE = obj(
-    current=Block(Obj(dict(REGIME_TILE_FIELDS, latest_print=MONTH))),
+    current=Block(Obj(dict(REGIME_TILE_FIELDS, latest_print=MONTH,
+                           classifier=null(obj(month=MONTH, label=REGIME, odds=null(FRAC), agrees=BOOL))))),
     history=Arr(obj(month=MONTH, regime=REGIME), max=60),
     history_note=Const("labels as stored; revisions are not replayed."),
     history_freq=Const("monthly"), history_source=REGIMES_SOURCE,
@@ -256,9 +274,27 @@ REGIME_ROUTE = obj(
         training=obj(start=MONTH, end=MONTH),
         methodology=Const("in-sample fitted scores"),
     ))),
-    next_prints=Block(obj(cpi=null(NEXT_PRINT), indpro=null(NEXT_PRINT))),
-    stats=Deferred("regime statistics not yet defined in the engine."),
-    changes=Deferred("regime statistics not yet defined in the engine."),
+    next_prints=Block(obj(
+        basis=obj(month=MONTH, label=REGIME),
+        published=Arr(PUBLISHED_ROW, max=2),
+        upcoming_from=obj(month=MONTH, label=REGIME),
+        cpi=null(NEXT_PRINT), indpro=null(NEXT_PRINT),
+    )),
+    # Codex R-01, R-04, R-07, R-08 (desk/fill-compute): each label over the month it governed (K−2), the
+    # return sample and the VIX coverage apart from the label count, each change by its effective month.
+    stats=Block(obj(
+        rows=Arr(obj(regime=REGIME, months=INT, spx_n=INT, spx_pending=INT, spx_missing=INT, spx_median_mo=null(NUM),
+                     spx_mean_mo=null(NUM), up_pct=null(FRAC), vix_avg=null(NUM), vix_days=INT, vix_sessions=INT), min=4, max=4),
+        window=MONTH_SPAN, governed=MONTH_SPAN, lag_months=Const(2),
+        totals=obj(months=INT, spx_n=INT, spx_pending=INT, spx_missing=INT, vix_days=INT, vix_sessions=INT),
+        vix_coverage=obj(stored=BOOL, first=null(DATE), last=null(DATE), off_session_dropped=INT, invalid=INT),
+        freq=Const("monthly"), source=STR,
+    )),
+    changes=Block(obj(
+        rows=Arr(obj(effective_month=MONTH, stamp_month=MONTH, to=REGIME, from_month=MONTH, spx_1m=null(NUM),
+                     spx_1m_status=RETURN_STATUS, **{"from": REGIME}), max=5),
+        n=INT, window=MONTH_SPAN, lag_months=Const(2), freq=Const("monthly"), source=STR,
+    )),
 )
 
 # ── §12.14 sector leadership (desk/fill-etf), served by /sectors and /technicals ──
@@ -291,8 +327,17 @@ SECTORS = Obj(dict(LEADERSHIP, breadth=Block(BREADTH)))
 
 # ── §12.7 GET /technicals ───────────────────────────────────────────────────
 
-SPAN = obj(start=DATE, end=DATE, n=INT)
 POINT = obj(date=DATE, close=null(NUM), ma50=null(NUM), ma200=null(NUM))
+RSI_VISIT = obj(date=DATE, rsi=NUM, after_20d=null(NUM), after_20d_to=null(DATE), after_20d_status=RETURN_STATUS)
+# desk/fill-compute item 9: MACD(12, 26, 9), src/analytics/technicals.macd.
+MACD_POINT = obj(date=DATE, macd=null(NUM), signal=null(NUM), hist=null(NUM))
+MACD = obj(date=DATE, macd=NUM, signal=NUM, hist=NUM, last_cross=null(obj(date=DATE, kind=E("above", "below"))),
+           params=Const({"fast": 12, "slow": 26, "signal": 9}), series=Arr(MACD_POINT))
+# desk/fill-compute item 10: seasonality by calendar month, src/analytics/technicals.monthly_seasonality.
+SEASON_ROW = obj(month=INT, label=E("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+                 n=INT, avg=null(NUM), pct_up=null(FRAC), first_year=null(INT), last_year=null(INT))
+SEASONALITY = obj(rows=Arr(SEASON_ROW, min=12, max=12), window=MONTH_SPAN, freq=Const("monthly"),
+                  source=Const("asset_prices ^GSPC"))
 TECHNICALS = obj(
     price=null(NUM), date=DATE, freq=Const("daily"), source=Const("asset_prices ^GSPC"),
     chg_1d=null(NUM), chg_1d_dates=Obj({"from": DATE, "to": DATE}),
@@ -302,8 +347,12 @@ TECHNICALS = obj(
     trend=obj(state=TREND_STATE, state_since=null(DATE)),
     cross=null(CROSS),
     move_20d_sigma=null(NUM), move_20d_date=null(DATE),
+    rsi=null(NUM), rsi_date=null(DATE), rsi_prev=null(NUM), rsi_prev_date=null(DATE),
+    rsi_last_above_70=null(RSI_VISIT), rsi_last_below_30=null(RSI_VISIT),
+    macd=null(MACD),
+    seasonality=null(SEASONALITY),
     series=Obj({"6m": Arr(POINT), "1y": Arr(POINT), "3y": Arr(POINT)}),
-    signals_allowlist=Const(["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]),
+    signals_allowlist=Const(["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma", "spx-5d-2sigma"]),
     vol=Deferred("needs stored SPY option snapshots and a versioned skew method."),
     sectors=Block(Obj(dict(LEADERSHIP))),
 )

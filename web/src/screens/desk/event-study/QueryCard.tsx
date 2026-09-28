@@ -100,7 +100,7 @@ export default function QueryCard({
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [note, setNote] = useState("");
-  // The window slot's "none (a cross)" is its own value, never the blank shown before anything is asked.
+  // The window slot's "none (a cross or RSI)" is its own value, never the blank shown before anything is asked.
   const parse = (k: SlotKey, v: string): Question[SlotKey] => (k === "window" ? (v === "none" ? null : Number(v)) : k === "horizon" ? Number(v) : v);
   const set = <K extends keyof Question>(k: K) => (v: string) => {
     if (!draft) return;
@@ -213,7 +213,7 @@ export default function QueryCard({
       </p>
       <div className="es-slots">
         <Slot label="Shock" value={draft?.shock ?? ""} options={opts("shock", seriesList)} onChange={set("shock")} disabled={!draft || !series} awaiting={seriesFailed} />
-        <Slot label="Window" value={!draft ? "" : draft.window == null ? "none" : String(draft.window)} options={opts("window", [...WINDOWS.map((w) => ({ id: String(w), label: `${w} days` })), { id: "none", label: "none (a cross)" }])} onChange={set("window")} disabled={!draft} />
+        <Slot label="Window" value={!draft ? "" : draft.window == null ? "none" : String(draft.window)} options={opts("window", [...WINDOWS.map((w) => ({ id: String(w), label: `${w} days` })), { id: "none", label: "none (a cross or RSI)" }])} onChange={set("window")} disabled={!draft} />
         <Slot label="Move" tip="σ measured over the last 252 sessions" value={draft?.move ?? ""} options={opts("move", MOVES.map((m) => ({ id: m.id as Move, label: m.label })))} onChange={set("move")} disabled={!draft} />
         <Slot label="While" tip="Entry at the event close when every input is available by then; otherwise the next close." value={draft?.while ?? ""} options={opts("while", [...WHILES])} onChange={set("while")} disabled={!draft} />
         <Slot label="What happens to" value={draft?.target ?? ""} options={opts("target", seriesList)} onChange={set("target")} disabled={!draft || !series} awaiting={seriesFailed} />

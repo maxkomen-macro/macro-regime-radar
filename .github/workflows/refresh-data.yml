@@ -134,8 +134,9 @@ jobs:
       # desk/event-study: the Desk's daily series (src/market_data/desk_history.py),
       # FRED direct (the .env above carries the key) plus, at tier 2, market
       # series through the same EODHD-first/Yahoo-fallback path as the step
-      # above. Tier 2 since desk/hardening: nine FRED calls (the five rates and
-      # spreads, the three curve tenors DGS3MO, DGS5 and DGS30, plus WTI) and
+      # above. Tier 2 since desk/hardening: eight FRED calls (the four rates and
+      # spreads, the three curve tenors DGS3MO, DGS5 and DGS30, plus WTI; the
+      # VIX is ^VIX, stored by the step above since desk/fill-compute) and
       # three market series (^NDX, DX-Y.NYB, JPY=X), which go to Yahoo here
       # because this workflow carries no EODHD token. Never fails
       # the refresh: each series is written in its own savepoint, the command

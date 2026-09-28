@@ -90,29 +90,74 @@ VIX_RECENT_ROWS = 40
 def desk_facts(ctx: dict) -> dict:
     """/overview's stored facts (plan §7 commit 9): the newest stored date and
     value of each data_status contributor, read through the engine's
-    `load_level` (provenance-aware; None for a series the store lacks), and
-    the last VIX rows, for the change between the two comparison sessions."""
+    `load_level` (provenance-aware; None for a series the store lacks), the
+    last VIX rows, for the change between the two comparison sessions, and
+    the VIX's gap to the S&P's realized volatility (`vol_gap`). `awaiting`
+    holds the engine's words for a contributor the store has not reached yet
+    (a series its next full refresh stores, desk/fill-compute: ^VIX)."""
     from src.desk import event_study as es
     from src.desk import series as registry
 
     cutoff = es.resolve_as_of(None, es.DB_PATH)
     newest: dict[str, dict | None] = {}
     vix_recent: dict[str, float] = {}
+    loaded: dict[str, Any] = {}
+    awaiting: dict[str, str] = {}
     conn = es._connect(es.DB_PATH)
     try:
         for key in FACT_KEYS:
             spec = registry.get(key)
             try:
                 s = es.load_level(conn, spec, cutoff)
-            except es.NotStored:
+            except es.NotStored as exc:
                 newest[spec.series_id] = None
+                if getattr(exc, "awaiting_refresh", False):
+                    awaiting[spec.series_id] = str(exc)
                 continue
+            loaded[key] = s
             newest[spec.series_id] = {"date": s.index[-1].strftime("%Y-%m-%d"), "value": float(s.iloc[-1])}
             if key == "vix":
                 vix_recent = {d.strftime("%Y-%m-%d"): float(v) for d, v in s.iloc[-VIX_RECENT_ROWS:].items()}
     finally:
         conn.close()
-    return {"newest": newest, "vix_recent": vix_recent}
+    gap = vol_gap(loaded["spx"], loaded["vix"]) if "spx" in loaded and "vix" in loaded else None
+    return {"newest": newest, "vix_recent": vix_recent, "vol_gap": gap, "awaiting": awaiting}
+
+
+def vol_gap(spx: Any, vix: Any) -> dict | None:
+    """/overview's VIX gap to realized volatility (spec §12.1, desk/fill-compute):
+    on the XNYS calendar, the S&P's 21-day realized volatility
+    (src/analytics/technicals.realized_vol: annualized, in VIX points, from 21
+    daily log returns, every one of them needing both its closes) and the VIX
+    on the latest session where both exist; the gap is VIX minus realized.
+    None when no session has both."""
+    import math
+
+    import numpy as np
+
+    from src.analytics import technicals
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    start = min(spx.index[0], vix.index[0]).strftime("%Y-%m-%d")
+    end = max(spx.index[-1], vix.index[-1]).strftime("%Y-%m-%d")
+    sessions = es.sessions_between(es.session_calendar(start, end), start, end)
+    px, _off, _missing = es.align(spx, sessions)
+    px, _bad, _why = es.validate_values(px, registry.get("spx"))
+    vx, _off, _missing = es.align(vix, sessions)
+    rv = technicals.realized_vol(px).to_numpy(dtype=float)
+    v = vx.to_numpy(dtype=float)
+    both = np.flatnonzero(np.isfinite(rv) & np.isfinite(v))
+    if not len(both):
+        return None
+    i = int(both[-1])
+    w = technicals.REALIZED_WINDOW
+    iso = [d.strftime("%Y-%m-%d") for d in sessions]
+    realized = float(rv[i])
+    if not math.isfinite(realized):
+        return None
+    return {"date": iso[i], "vix": float(v[i]), "realized_21d": realized, "gap_pts": float(v[i]) - realized,
+            "window": {"start": iso[i - w], "end": iso[i], "n": w}}
 
 
 TECH_CHART_MONTHS = {"6m": 6, "1y": 12, "3y": 36}
@@ -153,6 +198,7 @@ def technicals_from_level(raw: Any) -> dict:
     import numpy as np
     import pandas as pd
 
+    from src.analytics import technicals
     from src.desk import event_study as es
     from src.desk import series as registry
 
@@ -199,6 +245,8 @@ def technicals_from_level(raw: Any) -> dict:
     if crosses:
         p, kind = max(crosses)
         cross = {"kind": kind, "date": iso[p]}
+    rsi = technicals.rsi(al).to_numpy(dtype=float)
+    macd = technicals.macd(al)
     series = {}
     for name, months in TECH_CHART_MONTHS.items():
         lo = date_ - pd.DateOffset(months=months)
@@ -216,7 +264,111 @@ def technicals_from_level(raw: Any) -> dict:
         "trend": {"state": states[i], "state_since": iso[j]},
         "cross": cross,
         "series": series,
+        **rsi_fields(rsi, px, iso),
+        "macd": macd_fields(macd, iso, [k for k in range(len(sessions)) if date_ - pd.DateOffset(months=TECH_CHART_MONTHS["6m"]) < sessions[k] <= date_]),
+        "seasonality": seasonality_fields(raw),
         "_sessions": iso,
+    }
+
+
+def macd_fields(m: Any, iso: list[str], chart: list[int]) -> dict | None:
+    """/technicals' MACD block (spec §12.7, desk/fill-compute): the shared
+    MACD(12, 26, 9) (src/analytics/technicals.macd) on the extended calendar.
+    `date` is its newest defined session (a gap in the closes holds it on the
+    last session before the gap until the averages re-seed, as the RSI is
+    held); the line, the signal and the histogram there; the latest strict
+    crossing of the line over its signal; and `series`, one point per session
+    of the price chart's 6M range (`chart`), null where the MACD is not
+    defined. None when it is defined on no session."""
+    import math
+
+    import numpy as np
+
+    from src.analytics import technicals
+
+    hist = m["hist"].to_numpy(dtype=float)
+    line = m["macd"].to_numpy(dtype=float)
+    sig = m["signal"].to_numpy(dtype=float)
+    defined = np.flatnonzero(np.isfinite(hist))
+    if not len(defined):
+        return None
+    k = int(defined[-1])
+
+    def f(x: float) -> float | None:
+        return float(x) if math.isfinite(x) else None
+
+    crosses = technicals.macd_crossings(m["hist"])
+    last = crosses[-1] if crosses else None
+    return {
+        "date": iso[k], "macd": float(line[k]), "signal": float(sig[k]), "hist": float(hist[k]),
+        "last_cross": None if last is None else {"date": iso[last[0]], "kind": last[1]},
+        "params": {"fast": technicals.MACD_FAST, "slow": technicals.MACD_SLOW, "signal": technicals.MACD_SIGNAL},
+        "series": [{"date": iso[i], "macd": f(line[i]), "signal": f(sig[i]), "hist": f(hist[i])} for i in chart],
+    }
+
+
+def seasonality_fields(raw: Any) -> dict | None:
+    """/technicals' seasonality (spec §12.7, desk/fill-compute, the owner's
+    item 10): the shared `src/analytics/technicals.monthly_seasonality` over
+    every stored close, on the XNYS calendar through the end of the newest
+    close's month (`desk_items_macro.month_closes`, the regime table's input),
+    so a month counts once it is complete. None when no month is."""
+    from api.desk_items_macro import month_closes
+    from src.analytics import technicals
+
+    s = technicals.monthly_seasonality(month_closes(raw))
+    if not s["window"]["n"]:
+        return None
+    return {**s, "freq": "monthly", "source": "asset_prices ^GSPC"}
+
+
+RSI_AFTER = 20  # sessions: the S&P's move after the last session in each RSI zone
+
+
+def rsi_fields(rsi: Any, px: Any, iso: list[str]) -> dict:
+    """/technicals' RSI fields (spec §12.7, desk/fill-compute) from the shared
+    RSI (src/analytics/technicals.rsi) on the extended calendar. `rsi` is the newest defined value and
+    `rsi_date` its session (a gap in the closes leaves the last one before it
+    until fifteen contiguous closes re-seed it); `rsi_prev` is the RSI on the
+    session before `rsi_date`, null when it is not defined there. The last
+    session strictly above 70, and strictly below 30, each with its RSI and
+    the S&P's simple return over the next 20 sessions, and that return's
+    status (Codex R-08): `complete`; `pending` while the twentieth session is
+    after the newest stored close (the window is not complete yet); `missing`
+    when it is not, but its close, or the visit's own, is not stored."""
+    import math
+
+    import numpy as np
+
+    from src.analytics import technicals
+
+    def f(x: float) -> float | None:
+        return float(x) if math.isfinite(x) else None
+
+    defined = np.flatnonzero(np.isfinite(rsi))
+    if not len(defined):
+        return {"rsi": None, "rsi_date": None, "rsi_prev": None, "rsi_prev_date": None,
+                "rsi_last_above_70": None, "rsi_last_below_30": None}
+    k = int(defined[-1])
+
+    def last_where(mask: Any) -> dict | None:
+        hits = np.flatnonzero(mask)
+        if not len(hits):
+            return None
+        j = int(hits[-1])
+        end = j + RSI_AFTER
+        if end >= len(px):
+            return {"date": iso[j], "rsi": float(rsi[j]), "after_20d": None, "after_20d_to": None, "after_20d_status": "pending"}
+        after = f(px[end] / px[j] - 1) if math.isfinite(px[j]) else None
+        return {"date": iso[j], "rsi": float(rsi[j]), "after_20d": after, "after_20d_to": iso[end],
+                "after_20d_status": "complete" if after is not None else "missing"}
+
+    valid = np.isfinite(rsi)
+    return {
+        "rsi": float(rsi[k]), "rsi_date": iso[k],
+        "rsi_prev": f(rsi[k - 1]) if k >= 1 else None, "rsi_prev_date": iso[k - 1] if k >= 1 else None,
+        "rsi_last_above_70": last_where(valid & (np.nan_to_num(rsi, nan=0.0) > technicals.RSI_UPPER)),
+        "rsi_last_below_30": last_where(valid & (np.nan_to_num(rsi, nan=100.0) < technicals.RSI_LOWER)),
     }
 
 

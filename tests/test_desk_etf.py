@@ -398,18 +398,19 @@ def _vix(path: Path) -> dict[str, float]:
 
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        return dict(conn.execute("SELECT date, value FROM desk_series WHERE series_id = 'VIXCLS'"))
+        # desk/fill-compute: the Desk's VIX is ^VIX in asset_prices
+        return dict(conn.execute("SELECT date, close FROM asset_prices WHERE symbol = '^VIX' AND interval = '1d'"))
     finally:
         conn.close()
 
 
-CORR_ORDER = ["TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "IWM", "QQQ", "VIXCLS"]
+CORR_ORDER = ["TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "IWM", "QQQ", "^VIX"]
 
 
 def test_each_asset_is_correlated_with_spy_over_60_daily_returns_to_its_own_date(tmp_path, monkeypatch):
     path = _db(tmp_path)
     c, days = store.closes(path), store.sessions()
-    c["VIXCLS"] = {d: v for d, v in _vix(path).items() if d in set(days)}  # on the XNYS calendar, as aligned
+    c["^VIX"] = {d: v for d, v in _vix(path).items() if d in set(days)}  # on the XNYS calendar, as aligned
     rows = _item(monkeypatch, path)["correlations"]["data"]
     assert [r["symbol"] for r in rows] == CORR_ORDER
     for r in rows:
@@ -421,7 +422,7 @@ def test_each_asset_is_correlated_with_spy_over_60_daily_returns_to_its_own_date
         assert (r["corr"] is None) == (want_r is None) and (want_r is None or r["corr"] == pytest.approx(want_r, abs=1e-12)), sym
         # the synthetic VIX sits at its 9.0 floor through the window: complete pairs, no variation
         assert r["reason"] == (None if want_r is not None else f"no variation in one of the two series in the window to {t}"), sym
-        want = ("index level (FRED VIXCLS)", "daily log change") if sym == "VIXCLS" else ("adjusted close", "daily log return")
+        want = ("index level (^VIX)", "daily log change") if sym == "^VIX" else ("adjusted close", "daily log return")
         assert (r["quantity"], r["transform"]) == want, sym
     assert rows[-1]["asset"] == "VIX" and rows[0]["asset"] == "20+ year Treasuries"
 
@@ -444,7 +445,7 @@ def test_without_vix_stored_the_list_leaves_it_out(tmp_path, monkeypatch):
 
     path = _db(tmp_path)
     conn = sqlite3.connect(path)
-    conn.execute("DELETE FROM desk_series WHERE series_id = 'VIXCLS'")
+    conn.execute("DELETE FROM asset_prices WHERE symbol = '^VIX'")
     conn.commit()
     conn.close()
     rows = _item(monkeypatch, path)["correlations"]["data"]
@@ -501,3 +502,19 @@ def test_codex_r03_the_study_series_are_the_catalogs_inputs_and_the_legacy_roles
     assets = es.assets_with_coverage(_db(tmp_path))
     assert nine <= {a["key"] for a in assets["shocks"]}
     assert all(registry.get(k).roles == ("shock", "condition") for k in nine)
+
+
+def test_each_block_names_only_its_own_series_providers(tmp_path, monkeypatch):
+    """desk/fill-compute moved the Desk's VIX into asset_prices (^VIX), stored
+    here by another provider than the ETFs: the store the ETF items share now
+    holds it, so each block names the providers of the series it reads, never
+    the VIX's on a card that does not read it."""
+    import sqlite3
+
+    path = _db(tmp_path)
+    with sqlite3.connect(path) as c:
+        vix_providers = {r[0] for r in c.execute("SELECT DISTINCT provider FROM asset_prices WHERE symbol = '^VIX'")}
+    assert vix_providers and "yfinance" not in vix_providers
+    item = _item(monkeypatch, path)
+    for block in ("sectors", "stock_bond"):
+        assert item[block]["data"]["providers"] == ["Yahoo"], block

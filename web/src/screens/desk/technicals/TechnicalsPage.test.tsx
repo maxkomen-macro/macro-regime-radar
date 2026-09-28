@@ -14,7 +14,7 @@ import technicals from "../../../fixtures/desk/technicals.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
-import { aboveBelow, allowlistRows, dayInYear, dayMove, monthTicks, quarterOf, RSI_UNAVAILABLE, sevenOf, trendWord } from "./TechnicalsPage";
+import { aboveBelow, allowlistRows, dayInYear, dayMove, macdCrossWords, macdSide, monthTicks, quarterOf, rsiDirection, rsiZone, sevenOf, trendWord, yearsLine } from "./TechnicalsPage";
 import { servedTechnicals } from "../../../test/desk-variants";
 import { DESK_ACCENTS } from "../kit/palette";
 
@@ -44,15 +44,25 @@ describe("Technicals words", () => {
     expect(dayInYear("2026-06-12", "2026-09-22")).toBe("Jun 12");
     expect(dayInYear("2025-04-08", "2026-09-22")).toBe("Apr 8, 2025");
     expect(quarterOf("2023")).toBe("");
+    // §3: the zone by the two levels the RSI studies cross (strictly); the direction only from the two served numbers.
+    expect([rsiZone(70), rsiZone(70.01), rsiZone(30), rsiZone(29.99), rsiZone(55)]).toEqual(["neutral", "overbought", "neutral", "oversold", "neutral"]);
+    expect([rsiDirection(58, 55), rsiDirection(55, 58), rsiDirection(55, 55), rsiDirection(55, null)]).toEqual(["rising", "falling", "flat", null]);
     expect(dayMove(0.004, "2026-09-22", "2026-09-22")).toBe("+0.4% today");
     expect(dayMove(0.004, "2026-09-22", "2026-09-24")).toBe("+0.4% on Sep 22");
     // §3: `trend.state` in words.
     expect([trendWord("above_both"), trendWord("below_both"), trendWord("mixed"), trendWord("unavailable"), trendWord("sideways")]).toEqual(["Above both", "Below both", "Mixed", "Unavailable", null]);
+    // §3 (desk/fill-compute): the MACD's words come from the served histogram and crossover kind only.
+    expect([macdSide(0.28), macdSide(-1), macdSide(0), macdSide(null)]).toEqual(["MACD above its signal", "MACD below its signal", "MACD on its signal", null]);
+    expect([macdCrossWords("above"), macdCrossWords("below"), macdCrossWords(undefined)]).toEqual(["MACD crossed above its signal", "MACD crossed below its signal", null]);
+    // §3: the years line from the served counts.
+    expect(yearsLine([{ n: 36 }, { n: 37 }, { n: null }])).toBe("36–37 years a month · a month counts once it is complete");
+    expect(yearsLine([{ n: 5 }, { n: 5 }])).toBe("5 years a month · a month counts once it is complete");
+    expect(yearsLine([{ n: null }])).toBeNull();
   });
   it("lists the Ledger's rows in `signals_allowlist` order, leaving out what the Ledger does not serve (§3)", () => {
     const l = { ...ledger, signals: ledger.signals as LedgerRow[] };
-    expect(allowlistRows(l as never, technicals.signals_allowlist).map((r) => r.slug)).toEqual(["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]);
-    expect(allowlistRows(l as never, ["rsi-above-70", "golden-cross", "nope"]).map((r) => r.slug)).toEqual(["golden-cross"]);
+    expect(allowlistRows(l as never, technicals.signals_allowlist).map((r) => r.slug)).toEqual(["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma", "spx-5d-2sigma"]);
+    expect(allowlistRows(l as never, ["dollar-2sigma-20d", "golden-cross", "nope"]).map((r) => r.slug)).toEqual(["golden-cross"]);
   });
   it("keeps the top three, the middle one and the bottom three", () => {
     expect(sevenOf([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])).toEqual([1, 2, 3, 6, 9, 10, 11]);
@@ -83,15 +93,15 @@ describe("Technicals tab", () => {
     expect(within(card).getByRole("img", { name: /3Y/ })).toBeInTheDocument();
   });
 
-  it("lists the Ledger's S&P signals, the RSI rows omitted while unavailable, with §3's note", async () => {
+  it("lists the Ledger's S&P signals, the two RSI rows among them, with §3's note", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /^Signals/ });
-    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(4));
-    expect(card.textContent).not.toMatch(/RSI/);
+    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(6));
     const rows = within(card).getAllByRole("listitem");
     // §3: the allowlist's order; the audit's real counts (14 golden crosses since the regime labels begin).
     // §12.3: one canonical label per slug, the catalog's, on every tab (v2 §19).
-    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P golden cross", "S&P death cross", "S&P 20-day move over 2σ", "S&P 5-day move over 2σ"]);
+    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P golden cross", "S&P death cross", "RSI above 70", "RSI below 30", "S&P 20-day move over 2σ", "S&P 5-day move over 2σ"]);
+    expect(rows[3].textContent?.replace(/\s+/g, " ")).toBe("RSI below 3045× since 1996 · up 73% · a month later +2.8%No edge");
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toBe("S&P golden cross14× since 1996 · up 79% · a month later +2.7%Reliable");
     // §12.7: 252 XNYS sessions back, Sep 22, 2025.
     expect(card).toHaveTextContent(/1-year return\s*\+15\.1%\s*since Sep 22, 2025/);
@@ -177,16 +187,124 @@ describe("Technicals tab", () => {
     expect(within(sect).queryByRole("list")).toBeNull();
   });
 
-  it("the RSI card is unavailable (§1.0): its labels, §1.0's reason once, Not yet served, Advanced disabled, no number or gauge", async () => {
+  it("the RSI card reads /technicals' RSI (§12.7): now, its zone and direction from the two served numbers, each zone's last session, the gauge", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Momentum · RSI/ });
-    await waitFor(() => expect(card).toHaveTextContent(RSI_UNAVAILABLE.reason));
-    expect(within(card).getAllByText(RSI_UNAVAILABLE.reason)).toHaveLength(1);
-    for (const l of ["Now", "Last above 70", "Last below 30"]) expect(card).toHaveTextContent(l);
-    expect(within(card).getByTestId("dk-live")).toHaveTextContent("Not yet served");
-    expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
+    // The fixture's store has no Sep 22 close, so the RSI is held on Sep 21 and dated by its own badge (§1.6).
+    await waitFor(() => expect(within(card).getByTestId("dk-live")).toHaveTextContent("Sep 21"));
+    const [now, above, below] = within(card).getAllByText(/^(Now|Last above 70|Last below 30)$/).map((l) => l.parentElement as HTMLElement);
+    expect(now).toHaveTextContent("59.3");
+    expect(now).toHaveTextContent("neutral, rising");
+    expect(above).toHaveTextContent("Jun 2");
+    expect(above).toHaveTextContent(`S&P ${"\u2212"}1.7% 20 sessions later`);
+    expect(below).toHaveTextContent("Mar 30");
+    expect(below).toHaveTextContent("S&P +12.5% 20 sessions later");
+    expect(within(card).getByRole("img", { name: "RSI 59.3, neutral" })).toBeInTheDocument();
+    expect(card).not.toHaveTextContent("not computed");
+  });
+
+  it("an RSI the store cannot define says Awaiting refresh and draws no gauge; a zone never visited says so under its label", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, rsi: null, rsi_date: null, rsi_prev: null, rsi_prev_date: null, rsi_last_above_70: null }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · RSI/ });
+    await waitFor(() => expect(card).toHaveTextContent("Mar 30"));
     expect(within(card).queryByRole("img")).toBeNull();
-    expect(card.textContent).not.toMatch(/\d+×|\bneutral\b/);
+    expect(within(card).queryByTestId("dk-live")).toBeNull();
+    expect(within(card).getAllByText("Awaiting refresh").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("the MACD card reads /technicals' macd (§12.7): the three values, the side, the last crossover and the 6M chart", async () => {
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · MACD/ });
+    // The fixture's store has no Sep 22 close, so the MACD is held on Sep 21 and dated by its own badge (§1.6).
+    await waitFor(() => expect(within(card).getByTestId("dk-live")).toHaveTextContent("Sep 21"));
+    const [line, signal, hist, cross] = within(card).getAllByText(/^(MACD|Signal|Histogram|Last crossover)$/).map((l) => l.parentElement as HTMLElement);
+    expect(line).toHaveTextContent("+4.0");
+    expect(signal).toHaveTextContent("+3.7");
+    expect(hist).toHaveTextContent("+0.3");
+    expect(hist).toHaveTextContent("MACD above its signal");
+    expect(cross).toHaveTextContent("Sep 21");
+    expect(cross).toHaveTextContent("MACD crossed above its signal");
+    const chart = within(card).getByRole("img", { name: /^MACD, its signal line and the histogram, 6M; last crossover on / });
+    const served = technicals.macd.series.filter((p) => p.hist != null).length;
+    expect(chart.querySelectorAll("rect.dk-chart-bar")).toHaveLength(served);
+    // The two sessions after the gap have no MACD: no bar is drawn for them.
+    expect(technicals.macd.series.slice(-2).map((p) => p.hist)).toEqual([null, null]);
+  });
+
+  it("a MACD the store cannot define says Awaiting refresh and draws no chart", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, macd: null }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · MACD/ });
+    await waitFor(() => expect(within(card).getAllByText("Awaiting refresh").length).toBeGreaterThanOrEqual(4));
+    expect(within(card).queryByRole("img")).toBeNull();
+    expect(within(card).queryByTestId("dk-live")).toBeNull();
+  });
+
+  it("a MACD that has never crossed its signal leaves the last crossover awaiting, the rest served", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, macd: { ...technicals.macd, last_cross: null } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · MACD/ });
+    await waitFor(() => expect(card).toHaveTextContent("+4.0"));
+    const cross = within(card).getByText("Last crossover").parentElement as HTMLElement;
+    expect(cross).toHaveTextContent("Awaiting refresh");
+    expect(within(card).getByRole("img", { name: "MACD, its signal line and the histogram, 6M" })).toBeInTheDocument();
+  });
+
+  it("the seasonality card reads /technicals' seasonality (§12.7): twelve months, their average, share up and years, the window", async () => {
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Seasonality · S&P 500 by calendar month/ });
+    await waitFor(() => expect(card).toHaveTextContent("Average monthly return and share of years up, Feb 1990 to Aug 2026."));
+    const table = within(card).getByRole("table");
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows.map((r) => within(r).getByRole("rowheader").textContent)).toEqual(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]);
+    const nov = rows[10];
+    expect(nov).toHaveTextContent("+2.2%");
+    expect(nov).toHaveTextContent("75%");
+    expect(nov).toHaveTextContent("36");
+    expect(within(nov).getByText("36")).toHaveAttribute("title", "1990–2025");
+    expect(rows[8]).toHaveTextContent(`${"\u2212"}0.7%`);
+    // One bar a month, its side by the sign; the largest average (November) is the full half-width.
+    const bars = [...table.querySelectorAll<HTMLElement>(".te-season-bar")];
+    expect(bars).toHaveLength(12);
+    expect(bars.filter((b) => b.dataset.sign === "down")).toHaveLength(2);
+    expect(bars[10].style.width).toBe("50%");
+    expect(card).toHaveTextContent("36–37 years a month · a month counts once it is complete");
+    expect(card).toHaveTextContent("Source: asset_prices ^GSPC, monthly");
+  });
+
+  it("a seasonality the store cannot compute keeps its labels and says Awaiting refresh", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, seasonality: null }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Seasonality · S&P 500 by calendar month/ });
+    await waitFor(() => expect(within(card).getAllByText("Awaiting refresh")).toHaveLength(3));
+    for (const l of ["Average", "Up", "Years"]) expect(card).toHaveTextContent(l);
+    expect(within(card).queryByRole("table")).toBeNull();
+  });
+
+  it("Codex R-08: a visit whose 20th session has no stored close says so, not that the sessions have not passed", async () => {
+    stubDesk({
+      "/api/desk/technicals": () => ({
+        ...technicals,
+        rsi_last_above_70: { ...technicals.rsi_last_above_70, after_20d: null, after_20d_status: "missing" },
+        rsi_last_below_30: { ...technicals.rsi_last_below_30, after_20d: null, after_20d_to: null, after_20d_status: "pending" },
+      }),
+    });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · RSI/ });
+    await waitFor(() => expect(card).toHaveTextContent("Jun 2"));
+    const [above, below] = within(card).getAllByText(/^(Last above 70|Last below 30)$/).map((l) => l.parentElement as HTMLElement);
+    expect(above).toHaveTextContent("the close 20 sessions later (Jul 1) is not stored");
+    expect(above).not.toHaveTextContent("have not passed");
+    expect(below).toHaveTextContent("20 sessions have not passed yet");
+  });
+
+  it("a zone's last session within 20 sessions of the data says they have not passed yet", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, rsi_last_above_70: { date: "2026-09-15", rsi: 71.2, after_20d: null, after_20d_to: null } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · RSI/ });
+    await waitFor(() => expect(card).toHaveTextContent("Sep 15"));
+    expect(card).toHaveTextContent("20 sessions have not passed yet");
   });
 
   it("/technicals serves the vol block awaiting (its card keeps its labels and prints its §12.7 reason once) and the sectors block ready", async () => {
@@ -263,8 +381,17 @@ describe("routes served awaiting (§12.0, §1.0.2)", () => {
       expect(within(card).getAllByText("no generation stored yet.")).toHaveLength(1);
       expect(card.textContent).not.toMatch(/\d+×|Reliable|No edge/);
     }
-    // RSI is unavailable for its own reason (§1.0), whatever /technicals answers.
-    expect(screen.getByRole("region", { name: /^Momentum · RSI/ })).toHaveTextContent(RSI_UNAVAILABLE.reason);
+    // RSI is a /technicals field (§12.7): the route's reason, once, and no number.
+    const rsi = screen.getByRole("region", { name: /^Momentum · RSI/ });
+    expect(within(rsi).getAllByText("no generation stored yet.")).toHaveLength(1);
+    expect(rsi.textContent).not.toMatch(/\d+\.\d/);
+    // So is the MACD (desk/fill-compute).
+    const macd = screen.getByRole("region", { name: /^Momentum · MACD/ });
+    expect(within(macd).getAllByText("no generation stored yet.")).toHaveLength(1);
+    expect(macd.textContent).not.toMatch(/\d+\.\d/);
+    const season = screen.getByRole("region", { name: /^Seasonality/ });
+    expect(within(season).getAllByText("no generation stored yet.")).toHaveLength(1);
+    expect(season.textContent).not.toMatch(/\d+\.\d|%/);
     expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Not yet served");
   });
 });

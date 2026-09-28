@@ -116,3 +116,86 @@ def test_10_the_comparison_session_at_a_frozen_now(now, comparison, prev):
 def test_a_session_outside_the_run_is_a_null_state():
     f = state(trace([0] * 8), comparison="2026-09-22", prev="2026-09-21")
     assert f["state_comparison"] is None and f["state_prev"] is False and f["stale"] is True
+
+
+# ── stale by publication cadence (desk/fill-compute, the owner's item 7) ────
+
+@pytest.mark.parametrize(("allowance", "last", "stale"), [
+    (0, "2026-09-18", True),    # an exchange close one session behind is stale
+    (3, "2026-09-18", False),   # a FRED daily input one session behind is current
+    (3, "2026-09-16", False),   # three sessions behind (17th, 18th, 21st): still current
+    (3, "2026-09-15", True),    # four behind: stale
+    (8, "2026-09-10", False),   # WTI, published weekly: five behind is current
+])
+def test_stale_is_judged_by_the_studys_publication_allowance(allowance, last, stale):
+    ev = [s <= last for s in SESSIONS]
+    t = trace([0] * len(SESSIONS), evaluable=ev)
+    f = desk_v2.firing_state(t, "2026-09-21", "2026-09-18", cross=False, allowance=allowance)
+    assert (f["evaluated_on"], f["stale"]) == (last, stale)
+
+
+def test_a_study_dated_after_the_comparison_session_is_stale_whatever_its_allowance():
+    """A clock behind the data (the comparison session before the study's last
+    one) is stale as before: a study is never called firing today for a session
+    that is not today's."""
+    t = trace([0] * len(SESSIONS), evaluable=[1] * len(SESSIONS))
+    for allowance in (0, 3, 8):
+        f = desk_v2.firing_state(t, SESSIONS[-3], SESSIONS[-4], cross=False, allowance=allowance)
+        assert (f["evaluated_on"], f["stale"]) == (SESSIONS[-1], True), allowance
+
+
+def test_the_allowance_is_the_slowest_inputs():
+    from api import desk_catalog as catalog
+
+    got = {slug: desk_v2.publication_allowance(catalog.BY_SLUG[slug]) for slug in catalog.LEDGER_ORDER}
+    assert got["golden-cross"] == got["rsi-above-70"] == got["gold-2sigma-spx-weak"] == 0   # closes only
+    assert got["vix-spike-2sigma-5d"] == 0                                                  # ^VIX is a close now
+    assert got["hy-2sigma-20d"] == got["2s10s-2sigma-steepening"] == 3                      # FRED daily
+    assert got["oil-2sigma-20d"] == 8                                                        # WTI, weekly
+    assert got["dollar-2sigma-20d"] == 0
+
+
+def test_a_fred_study_a_session_behind_is_not_stale_on_the_ledger(monkeypatch):
+    """The Ledger passes each row its allowance: a 2s10s row evaluated a session
+    before the comparison session is current; its firing state is its own session's."""
+    t = trace([0, 0, 0, 0, 0, 0, 1, 0], evaluable=[1, 1, 1, 1, 1, 1, 1, 0])
+    f = desk_v2.firing_state(t, "2026-09-21", "2026-09-18", cross=False, allowance=3)
+    assert f["stale"] is False and f["firing_now"] is True and f["firing_day"] == 1
+
+
+# ── Codex R-03: each input on its own calendar and tolerance ────────────────
+
+def _inputs(**last):
+    return [{"key": k, "last": d} for k, d in last.items()]
+
+
+def test_codex_r03_a_fred_grace_never_covers_a_stale_exchange_close():
+    """The repro: the 2s10s study reads a FRED series (grace 3) and the S&P (an
+    exchange close, no grace). Both two sessions behind: the study-wide
+    allowance of 3 called it current; the S&P alone makes it stale."""
+    t = trace([0] * len(SESSIONS), evaluable=[s <= "2026-09-16" for s in SESSIONS])
+    old = desk_v2.firing_state(t, "2026-09-18", "2026-09-17", cross=False, allowance=3)
+    assert old["stale"] is False  # what the allowance alone says
+    f = desk_v2.firing_state(t, "2026-09-18", "2026-09-17", cross=False, allowance=3,
+                             inputs=_inputs(curve_2s10s="2026-09-16", spx="2026-09-16"))
+    assert f["stale"] is True and f["stale_inputs"] == ["spx"]
+
+
+def test_a_fred_input_within_its_grace_and_a_current_close_are_current():
+    t = trace([0] * len(SESSIONS), evaluable=[s <= "2026-09-16" for s in SESSIONS])
+    f = desk_v2.firing_state(t, "2026-09-18", "2026-09-17", cross=False, allowance=3,
+                             inputs=_inputs(curve_2s10s="2026-09-16", spx="2026-09-18"))
+    assert f["stale"] is False and f["stale_inputs"] == []
+    four = desk_v2.firing_state(t, "2026-09-21", "2026-09-18", cross=False, allowance=3,
+                                inputs=_inputs(curve_2s10s="2026-09-15", spx="2026-09-21"))
+    assert four["stale"] is True and four["stale_inputs"] == ["curve_2s10s"]
+
+
+def test_each_input_counts_on_its_own_calendar():
+    """DGS10 follows the bond market: from Wed Oct 7 to Tue Oct 13, 2026 is three
+    bond days (Columbus Day is not one) though four NYSE sessions, so it is
+    current; an exchange close dated Oct 7 is four sessions behind, stale."""
+    got = {m["key"]: m for m in desk_v2.inputs_behind(_inputs(us10y="2026-10-07", spx="2026-10-07"), "2026-10-13")}
+    assert (got["us10y"]["calendar"], got["us10y"]["lag"], got["us10y"]["stale"]) == ("bond", 3, False)
+    assert (got["spx"]["calendar"], got["spx"]["lag"], got["spx"]["stale"]) == ("nyse", 4, True)
+    assert desk_v2.input_rule("wti") == ("nyse", 8) and desk_v2.input_rule("vix") == ("nyse", 0)

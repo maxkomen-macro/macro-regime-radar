@@ -133,33 +133,80 @@ def regime_rows(conn: sqlite3.Connection) -> list[dict]:
     return [by_month[m] for m in sorted(by_month)]
 
 
+# The classifier's four stored odds, by the label each is for (src/regime.py's softmax columns).
+CLASSIFIER_ODDS = (("Goldilocks", "prob_goldilocks"), ("Overheating", "prob_overheating"),
+                   ("Stagflation", "prob_stagflation"), ("Recession Risk", "prob_recession"))
+
+
+def classifier_latest(conn: sqlite3.Connection) -> dict | None:
+    """The home page's classifier reading (desk/fill-compute): the newest stored
+    regimes row's four-way odds, and the label with the largest (the home
+    page's dominant odds, /api/regime/latest). `odds` is null when that label
+    is Recession Risk: the Desk never shows regimes.prob_recession (CLAUDE.md).
+    None when the row stores no finite odds."""
+    from api import provenance
+
+    if not provenance.table_exists(conn, "regimes"):
+        return None
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(regimes)")}
+    if not all(c in cols for _, c in CLASSIFIER_ODDS):
+        return None
+    row = conn.execute(f"SELECT date, {', '.join(c for _, c in CLASSIFIER_ODDS)} FROM regimes ORDER BY date DESC LIMIT 1").fetchone()
+    if row is None:
+        return None
+    odds = []
+    for (label, _col), v in zip(CLASSIFIER_ODDS, row[1:]):
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(x):
+            return None
+        odds.append((x, label))
+    top, label = max(odds, key=lambda t: t[0])  # the first of equal odds, in the table's order
+    return {"month": str(row[0])[:7], "label": label, "odds": None if label == "Recession Risk" else top}
+
+
 def _month_after(month: str, n: int = 1) -> str:
     y, m = int(month[:4]), int(month[5:7])
     y, m = divmod((y * 12 + m - 1) + n, 12)
     return f"{y:04d}-{m + 1:02d}"
 
 
-def next_print(key: str, series_id: str, axis: str, joint, raw, latest: dict) -> dict | None:
-    """N6 for one series (§12.6, FRAME3_API_PLAN.md N6). The classifier reads
-    3-point OLS slopes over the rows of the joint INDPRO–CPIAUCSL frame
-    (src/regime.py), which for rows y₀, y₁, y₂ is (y₂ − y₀)/2: the next row
-    m+1 rises iff x(m+1) > x_prev, the series' value on the joint row before
-    m (not always m−1: a month one series skipped has no joint row). So a
-    print at or below `threshold_mom = x_prev / x(m) − 1` m/m makes the axis
-    falling, and one above it rising; equality is falling (a zero slope).
+def _printed(raw) -> dict[str, float]:
+    """A series' printed values by month (`YYYY-MM`), finite only."""
+    return {d.strftime("%Y-%m"): float(v) for d, v in raw.dropna().items() if math.isfinite(float(v))}
 
-    `operator` is "<=" when the latest row's own axis is rising (such a print
-    flips it), ">" when falling. `flips_to` holds the other axis at the latest
-    row's sign. Both `threshold_mom` and `flips_to` are null when the series
-    already has a value for m+1 (the next row waits on the other series).
-    None when the latest row or the joint frame cannot place it."""
+
+def next_print(key: str, series_id: str, axis: str, joint, raw, basis: dict, next_row: dict | None = None,
+               other_raw=None) -> dict | None:
+    """N6 for one series (§12.6, FRAME3_API_PLAN.md N6): the next month's print
+    after the row `basis`. The classifier reads 3-point OLS slopes over the rows
+    of the joint INDPRO–CPIAUCSL frame (src/regime.py), which for rows y₀, y₁, y₂
+    is (y₂ − y₀)/2: the row m+1 after the basis m rises iff x(m+1) > x_prev,
+    the series' value on the joint row before m (not always m−1: a month one
+    series skipped has no joint row). So a print at or below `threshold_mom =
+    x_prev / x(m) − 1` m/m makes the axis falling, and one above it rising;
+    equality is falling (a zero slope).
+
+    `operator` is "<=" when the basis row's own axis is rising (such a print
+    flips it), ">" when falling; `from_direction` is that axis. `flips_to` is
+    the label the flipped axis gives with the other axis at row m+1 (Codex
+    R-06): `other` says where that comes from, `published` when the other
+    series has printed m+1 (its direction there, x(m+1) against its x_prev), or
+    `assumed` when it has not (the basis row's sign, kept). When this series
+    has already printed m+1, `threshold_mom` and `flips_to` are null and the
+    print is served instead: `printed_mom`, its m/m change, and
+    `printed_direction`, the axis it gives row m+1 (the stored row's own when
+    m+1 is stored, else the sign of x(m+1) − x_prev). None when the basis row
+    or the joint frame cannot place it."""
     other = "growth" if axis == "inflation" else "inflation"
-    own_sign, other_sign = direction(latest.get(f"{axis}_trend")), direction(latest.get(f"{other}_trend"))
+    own_sign, other_sign = direction(basis.get(f"{axis}_trend")), direction(basis.get(f"{other}_trend"))
     if own_sign is None or other_sign is None:
         return None
     import pandas as pd
 
-    m = latest["month"]
+    m = basis["month"]
     at = pd.Timestamp(f"{m}-01")
     if at not in joint.index:
         return None
@@ -170,14 +217,29 @@ def next_print(key: str, series_id: str, axis: str, joint, raw, latest: dict) ->
     if not (math.isfinite(x_m) and math.isfinite(x_prev)) or x_m == 0.0:
         return None
     reference = _month_after(m)
-    printed = raw.dropna()
-    has_next = bool(len(printed)) and reference in {d.strftime("%Y-%m") for d in printed.index}
+    by_month = _printed(raw)
+    stored = next_row if next_row is not None and next_row["month"] == reference else None
+    # Codex R-06: the other axis at row m+1, published when its series has printed m+1, else assumed kept.
+    o_prev = float(joint[other].iloc[pos - 1])
+    o_next = _printed(other_raw).get(reference) if other_raw is not None else None
+    if stored is not None and direction(stored.get(f"{other}_trend")) is not None:
+        other_info = {"direction": direction(stored.get(f"{other}_trend")), "status": "published"}
+    elif o_next is not None and math.isfinite(o_prev):
+        other_info = {"direction": "rising" if o_next > o_prev else "falling", "status": "published"}
+    else:
+        other_info = {"direction": other_sign, "status": "assumed"}
+    other_series = next(sid for _k, sid, ax, _e in NEXT_PRINTS if ax == other)
     rising = own_sign == "rising"
-    if has_next:
+    printed_mom = printed_dir = None
+    if reference in by_month:
         threshold, flips = None, None
+        x_next = by_month[reference]
+        printed_mom = x_next / x_m - 1.0
+        printed_dir = direction(stored.get(f"{axis}_trend")) if stored is not None else None
+        printed_dir = printed_dir or ("rising" if x_next > x_prev else "falling")
     else:
         threshold = x_prev / x_m - 1.0
-        flipped = {axis: not rising, other: other_sign == "rising"}
+        flipped = {axis: not rising, other: other_info["direction"] == "rising"}
         flips = REGIME_TABLE[(flipped["growth"], flipped["inflation"])]
     return {
         "reference_month": reference,
@@ -186,14 +248,65 @@ def next_print(key: str, series_id: str, axis: str, joint, raw, latest: dict) ->
         "operator": "<=" if rising else ">",
         "flips_to": flips,
         "first_effective_month": _month_after(reference, 2),
+        "from_direction": own_sign,
+        "printed_mom": printed_mom,
+        "printed_direction": printed_dir,
+        "other": {"axis": other, "series": other_series, "reference_month": reference, **other_info},
         "freq": "monthly",
         "source": series_id,
     }
 
 
+# The rows a page may show as governing today: the K−2 row is the newest or one of the two before it
+# while the refresh keeps up (the K−1 and K rows print during month K); the route picks per response.
+NEXT_PRINT_BASES = 3
+
+
+def published_row(row: dict, prev: dict | None, raw: dict) -> dict:
+    """Codex R-05: a stored row after the one the page shows, already
+    published: its label, the month it governs from, and the two prints that
+    made it, each with its own reference month, its m/m change (against the
+    series' previous month, null when that month is not printed), the axis it
+    gave the row and the previous row's."""
+    prints = {}
+    for key, sid, axis, _event in NEXT_PRINTS:
+        vals = _printed(raw[sid])
+        x, x_before = vals.get(row["month"]), vals.get(_month_after(row["month"], -1))
+        prints[key] = {
+            "reference_month": row["month"], "series": sid,
+            "mom": x / x_before - 1.0 if x is not None and x_before not in (None, 0.0) else None,
+            "direction": direction(row.get(f"{axis}_trend")),
+            "from_direction": direction(prev.get(f"{axis}_trend")) if prev is not None else None,
+        }
+    return {"month": row["month"], "label": row["label"], "first_effective_month": _month_after(row["month"], 2), **prints}
+
+
+def next_prints_for(joint, raw: dict, rows: list[dict], basis_month: str) -> dict:
+    """§12.6 `next_prints.data` for the row `basis_month` the page shows
+    (Codex R-05): the stored rows after it, already published, each with the
+    prints that made it; and the upcoming prints, N6 read from the newest
+    stored row (`upcoming_from`), for the month after it."""
+    by = {r["month"]: r for r in rows}
+    basis = by[basis_month]
+    later = [r for r in rows if r["month"] > basis_month]
+    published = [published_row(r, prev, raw) for prev, r in zip([basis] + later, later)]
+    latest = rows[-1]
+    other = {axis: raw[sid] for _k, sid, axis, _e in NEXT_PRINTS}
+    upcoming = {k: next_print(k, sid, axis, joint, raw[sid], latest, None,
+                              other_raw=other["growth" if axis == "inflation" else "inflation"])
+                for k, sid, axis, _ in NEXT_PRINTS}
+    return {
+        "basis": {"month": basis_month, "label": basis["label"]},
+        "published": published,
+        "upcoming_from": {"month": latest["month"], "label": latest["label"]},
+        **upcoming,
+    }
+
+
 def next_prints(conn: sqlite3.Connection, rows: list[dict]) -> dict:
-    """N6 for CPIAUCSL and INDPRO from the newest stored regimes row (§12.6:
-    the next prints are read from the latest print, never from the K−2 row)."""
+    """The next prints for each of the last NEXT_PRINT_BASES stored rows as the
+    row shown, by month (§12.6; the route serves the one for the K−2 row the
+    page shows)."""
     if REGIME_WINDOW != 3:  # the closed form below is the 3-point slope's
         raise RuntimeError(f"the next-print threshold is defined for a window of 3, not {REGIME_WINDOW}")
     if not rows:
@@ -206,7 +319,7 @@ def next_prints(conn: sqlite3.Connection, rows: list[dict]) -> dict:
     by_axis = {axis: raw[sid] for _, sid, axis, _ in NEXT_PRINTS}
     # the classifier's joint frame (src/regime.py run_regime_classification's `base`)
     joint = pd.DataFrame({"growth": by_axis["growth"], "inflation": by_axis["inflation"]}).dropna()
-    return {k: next_print(k, sid, axis, joint, raw[sid], rows[-1]) for k, sid, axis, _ in NEXT_PRINTS}
+    return {"by_basis": {r["month"]: next_prints_for(joint, raw, rows, r["month"]) for r in rows[-NEXT_PRINT_BASES:]}}
 
 
 def release_times(conn: sqlite3.Connection) -> dict[str, list[str]]:
@@ -280,20 +393,252 @@ def recession_block(ctx: dict) -> dict:
     }
 
 
+# ── What each regime has meant, and the last changes (desk/fill-compute) ───
+# Codex R-01: measured from when each regime was known, the engine's K−2 rule.
+# A row stamped M needs the prints published during M+1, so it governs month
+# M+2 (a session in month K reads the row stamped K−2): each stored label is
+# paired with the S&P's return and the VIX of the month it governed, and a
+# change is dated by the month it took effect. Every stored row counts once
+# (Q8's labels, Q9's changes: a row whose label differs from the previous
+# stored row's).
+REGIME_ORDER = ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
+CHANGES_SHOWN = 5
+
+
+def governed_month(stamp: str) -> str:
+    """The month a row stamped `stamp` governs (event_study.REGIME_LAG_MONTHS later)."""
+    from src.desk import event_study as es
+
+    return _month_after(stamp, es.REGIME_LAG_MONTHS)
+
+
+def month_closes(spx: Any) -> Any:
+    """The S&P's closes aligned on the XNYS calendar from its first stored
+    close through the last day of the newest close's month, validated as the
+    engine validates them: NaN on a session without a close, so a month not
+    over yet ends on a session with none (desk/fill-compute: the one input of
+    `month_returns` and of /technicals' seasonality)."""
+    import pandas as pd
+
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    start = spx.index[0].strftime("%Y-%m-%d")
+    end = (spx.index[-1] + pd.offsets.MonthEnd(0)).strftime("%Y-%m-%d")
+    sessions = es.sessions_between(es.session_calendar(start, end), start, end)
+    al, _off, _missing = es.align(spx, sessions)
+    al, _bad, _why = es.validate_values(al, registry.get("spx"))
+    return al
+
+
+def month_returns(spx: Any) -> dict[str, float]:
+    """The S&P's simple return over each calendar month, close on the month's
+    last XNYS session over close on the previous month's last XNYS session;
+    a month whose last session, or whose previous month's, has no stored close
+    (a month not over yet included) has none. The shared
+    `src/analytics/technicals.monthly_returns` on `month_closes`."""
+    from src.analytics import technicals
+
+    r = technicals.monthly_returns(month_closes(spx)).dropna()
+    return {str(m): float(v) for m, v in r.items()}
+
+
+RETURN_STATUSES = ("complete", "pending", "missing")
+
+
+class MonthReturns:
+    """Each month's S&P return and its status (Codex R-08): `complete` with a
+    value; `pending` when the month's window is not complete yet (its last
+    XNYS session is after the newest stored close, or the month is later
+    still); `missing` when the window is complete but a close it needs (the
+    month's last session's, or the previous month's) is not stored."""
+
+    def __init__(self, spx: Any) -> None:
+        import pandas as pd
+
+        from src.analytics import technicals
+
+        al = month_closes(spx)
+        self.values = {str(m): float(v) for m, v in technicals.monthly_returns(al).dropna().items()}
+        idx = al.index
+        self.month_end = {str(m): d.strftime("%Y-%m-%d") for m, d in pd.Series(idx, index=idx).groupby(idx.to_period("M")).max().items()}
+        closes = al.dropna()
+        self.newest = closes.index[-1].strftime("%Y-%m-%d") if len(closes) else ""
+        self.first_month = str(idx[0].to_period("M")) if len(idx) else ""
+
+    def status(self, month: str) -> tuple[str, float | None]:
+        if month in self.values:
+            return "complete", self.values[month]
+        end = self.month_end.get(month)
+        if month > max(self.month_end, default=""):
+            return "pending", None
+        if end is not None and end > self.newest:
+            return "pending", None
+        return "missing", None
+
+
+def month_sessions(months: list[str]) -> dict[str, int]:
+    """Codex R-09: each calendar month's XNYS sessions, the whole month,
+    whatever the VIX's stored range: the denominator of its coverage."""
+    from src.desk import event_study as es
+
+    if not months:
+        return {}
+    start, end = f"{min(months)}-01", _month_after(max(months))
+    sessions = es.sessions_between(es.session_calendar(start, end), start, end)
+    out = {m: 0 for m in months}
+    for d in sessions:
+        m = d.strftime("%Y-%m")
+        if m in out:
+            out[m] += 1
+    return out
+
+
+def month_vix(vix: Any) -> tuple[dict[str, dict], dict]:
+    """Codex R-07: the VIX aligned on the XNYS calendar and validated as the
+    engine does for every input (src/desk/event_study.align, validate_values)
+    before aggregating. Per calendar month: the sum and count of the stored
+    closes on its sessions (`month_sessions` counts the sessions due, R-09);
+    with the rows set aside (off-session, invalid) counted apart."""
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    start, end = vix.index[0].strftime("%Y-%m-%d"), vix.index[-1].strftime("%Y-%m-%d")
+    sessions = es.sessions_between(es.session_calendar(start, end), start, end)
+    al, off, _missing = es.align(vix, sessions)
+    al, bad, _why = es.validate_values(al, registry.get("vix"))
+    out: dict[str, dict] = {}
+    for d, v in al.items():
+        m = d.strftime("%Y-%m")
+        cell = out.setdefault(m, {"sum": 0.0, "days": 0})
+        if v == v:
+            cell["sum"] += float(v)
+            cell["days"] += 1
+    return out, {"first": start, "last": end, "off_session_dropped": int(off), "invalid": int(bad)}
+
+
+def _levels(conn: sqlite3.Connection) -> tuple[Any, Any]:
+    """The S&P's and the VIX's levels. The S&P is required; the VIX is None
+    while it is not stored (^VIX in asset_prices, which a store reaches with its
+    first full refresh after desk/fill-compute), so the changes, which read the
+    S&P only, and the stats' S&P columns never wait on it."""
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    try:
+        spx = es.load_level(conn, registry.get("spx"))
+    except es.NotStored:
+        raise absent() from None
+    try:
+        vix = es.load_level(conn, registry.get("vix"))
+    except es.NotStored:
+        vix = None
+    return spx, vix
+
+
+def regime_stats(rows: list[dict], spx: Any, vix: Any) -> dict:
+    """§12.6 `stats.data` (desk/fill-compute; Codex R-01, R-04, R-07): per
+    regime, its stored labels (`months`), and over the months those labels
+    governed (`governed_month`): the S&P's median and mean simple monthly
+    return and the share up over `spx_n` complete months, with the governed
+    months whose window is not complete yet (`spx_pending`) and those missing
+    a close (`spx_missing`) counted apart; the mean of the VIX's validated
+    closes on the sessions of the governed months whose window is complete
+    (`vix_days`), against every XNYS session of those whole months
+    (`vix_sessions`, Codex R-09: whatever the VIX's stored range, so a missing
+    session stays in the denominator). With the VIX not stored (`vix` None),
+    `vix_avg` null and `vix_days` 0 of the sessions due."""
+    import statistics
+
+    if not rows:
+        raise absent()
+    returns = MonthReturns(spx)
+    vx, vix_cov = month_vix(vix) if vix is not None else ({}, None)
+    due = month_sessions([governed_month(r["month"]) for r in rows])
+    out = []
+    for label in REGIME_ORDER:
+        governed = [governed_month(r["month"]) for r in rows if r["label"] == label]
+        status = [returns.status(g) for g in governed]
+        r_ = [v for st, v in status if st == "complete"]
+        done = [g for g, (st, _v) in zip(governed, status) if st != "pending"]
+        total = sum(vx[g]["sum"] for g in done if g in vx)
+        days = sum(vx[g]["days"] for g in done if g in vx)
+        sessions = sum(due[g] for g in done)
+        out.append({
+            "regime": label, "months": len(governed), "spx_n": len(r_),
+            "spx_pending": sum(1 for st, _ in status if st == "pending"),
+            "spx_missing": sum(1 for st, _ in status if st == "missing"),
+            "spx_median_mo": statistics.median(r_) if r_ else None,
+            "spx_mean_mo": statistics.fmean(r_) if r_ else None,
+            "up_pct": sum(1 for x in r_ if x > 0) / len(r_) if r_ else None,
+            "vix_avg": total / days if days else None, "vix_days": days, "vix_sessions": sessions,
+        })
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    v = registry.get("vix")
+    vix_source = f"{v.series_id} ({v.table})" if vix is not None else f"{v.series_id} ({v.table}) not stored yet"
+    return {"rows": out, "window": {"start": rows[0]["month"], "end": rows[-1]["month"], "n": len(rows)},
+            "governed": {"start": governed_month(rows[0]["month"]), "end": governed_month(rows[-1]["month"]), "n": len(rows)},
+            "lag_months": es.REGIME_LAG_MONTHS,
+            "totals": {k: sum(r[k] for r in out) for k in ("months", "spx_n", "spx_pending", "spx_missing", "vix_days", "vix_sessions")},
+            "vix_coverage": {"stored": vix is not None, **(vix_cov or {"first": None, "last": None, "off_session_dropped": 0, "invalid": 0})},
+            "freq": "monthly", "source": f"regimes table (src/regime.py); asset_prices ^GSPC; {vix_source}"}
+
+
+def regime_changes(rows: list[dict], spx: Any) -> dict:
+    """§12.6 `changes.data` (desk/fill-compute; Codex R-01, R-08): every stored
+    row whose label differs from the previous stored row's (Q9), the last five
+    newest first, each dated by the month it took effect (`effective_month`,
+    the month the new label governed) with the S&P's simple return over that
+    month and its status (`MonthReturns.status`); `n` counts them all."""
+    if not rows:
+        raise absent()
+    returns = MonthReturns(spx)
+    changes = [(prev, row) for prev, row in zip(rows, rows[1:]) if prev["label"] != row["label"]]
+    shown = []
+    for prev, row in reversed(changes[-CHANGES_SHOWN:]):
+        effective = governed_month(row["month"])
+        st, value = returns.status(effective)
+        shown.append({"effective_month": effective, "stamp_month": row["month"], "from": prev["label"], "to": row["label"],
+                      "from_month": prev["month"], "spx_1m": value, "spx_1m_status": st})
+    return {"rows": shown, "n": len(changes), "window": {"start": rows[0]["month"], "end": rows[-1]["month"], "n": len(rows)},
+            "lag_months": _lag(), "freq": "monthly", "source": "regimes table (src/regime.py); asset_prices ^GSPC"}
+
+
+def _lag() -> int:
+    from src.desk import event_study as es
+
+    return es.REGIME_LAG_MONTHS
+
+
 def desk_regime(ctx: dict) -> dict:
     """The desk_regime item, the one /regime and /overview read: the stored
     regimes rows, the recession block (the recession tile is its seven tile
-    fields), the next-print thresholds, and the stored release times. The K−2
-    selection and the release date are the routes', per response (plan §0.5)."""
+    fields), the next-print thresholds, the stored release times, and what
+    each regime has meant and the last changes. The K−2 selection and the
+    release date are the routes', per response (plan §0.5)."""
     conn = _connect()
     try:
         rows = regime_rows(conn)
+        classifier = classifier_latest(conn)
         prints = part("next_prints", lambda: next_prints(conn, rows))
         releases = release_times(conn)
+        levels = part("levels", lambda: _levels(conn))
     finally:
         conn.close()
-    return {"rows": rows, "recession": part("recession", lambda: recession_block(ctx)),
-            "next_prints": prints, "release_times": releases}
+
+    def with_levels(fn: Callable[[Any, Any], dict]) -> Callable[[], dict]:
+        def build() -> dict:
+            if not levels["ok"]:
+                raise env.Awaiting(levels["reason"])
+            return fn(*levels["data"])
+        return build
+
+    return {"rows": rows, "classifier": classifier, "recession": part("recession", lambda: recession_block(ctx)),
+            "next_prints": prints, "release_times": releases,
+            "stats": part("stats", with_levels(lambda spx, vix: regime_stats(rows, spx, vix))),
+            "changes": part("changes", with_levels(lambda spx, vix: regime_changes(rows, spx)))}
 
 
 # ── /macro: the desk_macro item (plan §1.8, N7, N8, R5) ─────────────────────

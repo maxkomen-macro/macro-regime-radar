@@ -172,10 +172,8 @@ def engine_alias(name: str) -> str | None:
 
 def availability(study: catalog.Study) -> tuple[bool, dict | None]:
     """(available, unavailable) for a catalog row on this generation (§12.3, v4
-    B-07): an RSI row never; a study whose item refused, with the engine's
-    words; a study whose item failed, with the S-27 sentence (logged)."""
-    if study.question is None:
-        return False, env.unavailable(catalog.RSI_REASON)
+    B-07): a study whose item refused, with the engine's words; a study whose
+    item failed, with the S-27 sentence (logged)."""
     try:
         item = _item(study.slug)
     except Exception as exc:
@@ -205,14 +203,12 @@ def catalog_answer(params: list[tuple[str, str]]) -> dict:
 
 def study_answer(params: list[tuple[str, str]], t0: float) -> dict:
     study, h = catalog.normalize(params, "/study", resolve_alias=engine_alias)
-    if h is None:  # a row with no horizons, asked without one (S-31)
-        raise env.Awaiting(catalog.RSI_REASON)
     item = _item(study.slug)
     if not item["ok"]:
         raise env.Awaiting(item["reason"])
     hit, (payload, trace) = memo(("/study", study.slug, h), lambda: (study_projection(study, h, item), item["trace"]))
     out = dict(payload)
-    out.update(now_fields(trace, cross=study.question.move.startswith("cross")))
+    out.update(now_fields(trace, cross=study.question.move.startswith("cross"), allowance=publication_allowance(study)))
     out["provenance"] = {**payload["provenance"], "engine_version": env.ENGINE_VERSION}
     out["served_from_cache"] = hit
     out["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 1)
@@ -246,10 +242,11 @@ def desk_overview(request: Request) -> Response:
 # ── §12.1 GET /overview ─────────────────────────────────────────────────────
 
 REGIMES_SOURCE = "regimes table (src/regime.py)"
-VIX_SOURCE = "FRED VIXCLS (desk_series)"
-# N9: the Desk feed set, by series id, in the plan's order; the five FRED inputs, then the two prices
-DATA_STATUS_FRED = ("T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS2", "DGS10")
-DATA_STATUS_PRICES = ("^GSPC", "GC=F")
+VIX_SOURCE = "asset_prices ^VIX"
+# N9: the Desk feed set, by series id, in the plan's order; the four FRED inputs, then the three closes
+# (the VIX joined the closes when it moved to asset_prices, desk/fill-compute)
+DATA_STATUS_FRED = ("T10Y2Y", "BAMLH0A0HYM2", "DGS2", "DGS10")
+DATA_STATUS_PRICES = ("^GSPC", "GC=F", "^VIX")
 STATE_RANK = {"current": 0, "stale": 1, "missing": 2}
 
 
@@ -322,11 +319,25 @@ def trend_tile() -> dict:
             "source": SPX_SOURCE}
 
 
+# The home page's VIX words and edges (web/src/screens/dashboard/DashboardScreen.tsx: under 15 calm,
+# under 25 subdued, else stressed; src/analytics/volatility.py's 15 / 25 edges), on the tile's VIX.
+VIX_BAND_EDGES = (15.0, 25.0)
+
+
+def vix_band(vix: float) -> str:
+    """spec §12.1 (desk/fill-compute): calm < 15 ≤ subdued < 25 ≤ stressed."""
+    lo, hi = VIX_BAND_EDGES
+    return "calm" if vix < lo else ("subdued" if vix < hi else "stressed")
+
+
 def vol_tile(facts: dict) -> dict:
-    vix = facts["newest"].get("VIXCLS")
+    sid = registry.get("vix").series_id
+    vix = facts["newest"].get(sid)
     if vix is None:
-        raise env.Awaiting(env.BLOCK_FAILED_REASON)
-    return {"vix": vix["value"], "date": vix["date"], "freq": "daily", "source": VIX_SOURCE}
+        # A store its next full refresh reaches (^VIX, desk/fill-compute) says so, in the engine's words.
+        raise env.Awaiting(facts.get("awaiting", {}).get(sid) or env.BLOCK_FAILED_REASON)
+    return {"vix": vix["value"], "date": vix["date"], "freq": "daily", "source": VIX_SOURCE,
+            "band": vix_band(vix["value"]), "band_edges": list(VIX_BAND_EDGES), "gap": facts.get("vol_gap")}
 
 
 def active_signals(rows: list[dict]) -> list[dict]:
@@ -354,7 +365,7 @@ def data_status(*, now: datetime, stored: dict | None, watermarks: dict | None, 
     """N9 (v4 B-06, C-02, S-23): each contributor through its existing policy.
     The FRED inputs by api/freshness.desk_series_states (close → current, stale
     → stale, unknown → missing), expected on _daily_expected_and_lag's date;
-    ^GSPC and GC=F by api/freshness.assess's asset_prices rule applied to the
+    ^GSPC, GC=F and ^VIX by api/freshness.assess's asset_prices rule applied to the
     symbol's own newest row (current and delayed → current, stale → stale,
     unstored → missing), expected on that rule's session. The state is the
     worst contributor: missing, then stale, then current."""
@@ -435,7 +446,8 @@ def overview_answer(params: list[tuple[str, str]]) -> dict:
 
 TECHNICALS_KEYS = ("price", "date", "freq", "source", "chg_1d", "chg_1d_dates", "ret_1y", "ret_1y_dates", "ma50",
                    "ma200", "ma50_window", "ma200_window", "vs_ma50", "vs_ma200", "trend", "cross", "move_20d_sigma",
-                   "move_20d_date", "series", "signals_allowlist", "vol", "sectors")
+                   "move_20d_date", "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70",
+                   "rsi_last_below_30", "macd", "seasonality", "series", "signals_allowlist", "vol", "sectors")
 SPX_SOURCE = "asset_prices ^GSPC"
 
 
@@ -562,7 +574,7 @@ def ledger_rows(comparison: str, prev: str) -> list[tuple[dict, dict | None]]:
             row.update(firing_now=None, firing_day=None, evaluated_on=None, stale=False)
             rows.append(({k: row[k] for k in LEDGER_KEYS}, None))
             continue
-        f = firing_state(trace, comparison, prev, cross=cross)
+        f = firing_state(trace, comparison, prev, cross=cross, allowance=publication_allowance(catalog.BY_SLUG[row["slug"]]))
         row.update(firing_now=f["firing_now"], firing_day=f["firing_day"], evaluated_on=f["evaluated_on"], stale=f["stale"])
         rows.append(({k: row[k] for k in LEDGER_KEYS}, f))
     return rows
@@ -598,8 +610,6 @@ def fire_lists(entries: list[tuple[dict, dict | None]]) -> tuple[list[dict], lis
 def events_answer(params: list[tuple[str, str]]) -> dict:
     """§12.4 as JSON: the study's full event table, newest first (plan §2)."""
     study, h = catalog.normalize(params, "/study/events", resolve_alias=engine_alias)
-    if h is None:  # a row with no horizons, asked without one (S-31)
-        raise env.Awaiting(catalog.RSI_REASON)
     item = _item(study.slug)
     if not item["ok"]:
         raise env.Awaiting(item["reason"])
@@ -647,7 +657,7 @@ def events_csv(rows: list[dict]) -> str:
 STUDY_KEYS = (
     "slug", "label", "short", "question", "selected_horizon", "matched_n", "data_start", "sample_start", "sample_end",
     "first_event", "last_event", "firing_now", "firing_day", "evaluated_on", "comparison_session", "prev_session",
-    "stale", "verdict", "verdict_rule", "verdict_confidence", "headline", "why", "horizons", "by_regime",
+    "stale", "stale_inputs", "verdict", "verdict_rule", "verdict_confidence", "headline", "why", "horizons", "by_regime",
     "unlabeled_n", "last_events", "without_condition", "provenance", "warnings", "series", "client", "empty_state",
     "inputs_hash", "served_from_cache", "elapsed_ms",
 )
@@ -692,7 +702,83 @@ def sessions_now(now: datetime | None = None) -> tuple[str, str]:
     return cmp_.isoformat(), nyse.previous_trading_day(cmp_).isoformat()
 
 
-def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool) -> dict:
+def publication_allowance(study: catalog.Study) -> int:
+    """desk/fill-compute (owner's item 7): the XNYS sessions a study's
+    evaluated_on may trail the comparison session and still be current, by
+    its inputs' publication cadence: the most any input allows. A close the
+    exchange prints (asset_prices, market: ^GSPC, GC=F, ^VIX, ^NDX, the dollar,
+    USD/JPY) allows none; a FRED daily series api/freshness.DAILY_TOLERANCE
+    (3: FRED posts a day or more after the close); a series published less
+    often its own tolerance (api/freshness.DESK_SLOW_PUBLICATION: WTI, 8)."""
+    from api import desk_pipeline
+    from api import freshness as fr
+
+    out = 0
+    for key in desk_pipeline.CATALOG_INPUTS.get(study.slug, ()):
+        spec = registry.get(key)
+        if spec.source == "fred":
+            slow = fr.DESK_SLOW_PUBLICATION.get(spec.series_id, {})
+            out = max(out, int(slow.get("tolerance", fr.DAILY_TOLERANCE)))
+    return out
+
+
+def input_rule(key: str) -> tuple[str, int]:
+    """Codex R-03: one input's own publication calendar and tolerance. An
+    exchange close (asset_prices, market) is due on the XNYS session itself,
+    no grace; a FRED daily series within `api/freshness.DAILY_TOLERANCE`
+    business days on its own calendar (the bond market's for rates and
+    spreads, api/freshness.DESK_REFRESH_SERIES); a slower one its own
+    tolerance (DESK_SLOW_PUBLICATION: WTI, 8)."""
+    from api import freshness as fr
+
+    spec = registry.get(key)
+    if spec.source != "fred":
+        return "nyse", 0
+    meta = fr.DESK_REFRESH_SERIES.get(spec.series_id, {})
+    slow = fr.DESK_SLOW_PUBLICATION.get(spec.series_id, {})
+    return meta.get("calendar", "nyse"), int(slow.get("tolerance", fr.DAILY_TOLERANCE))
+
+
+def inputs_behind(inputs: list[dict], comparison: str) -> list[dict]:
+    """Each input judged on its own calendar and tolerance against the
+    comparison session: how many of its business days its newest VALIDATED
+    observation trails the comparison session by (Codex R-03, round 2: the
+    engine's trace, `SignalTrace.inputs_last`, after alignment and validation,
+    never the newest raw row, so a stored close of −1 is not a fresh close),
+    and whether that is more than its tolerance. An input with no validated
+    observation is stale."""
+    from datetime import date as _date
+
+    out = []
+    cmp_ = _date.fromisoformat(comparison)
+    for m in inputs:
+        calendar, tolerance = input_rule(m["key"])
+        if m.get("last") is None:
+            out.append({"key": m["key"], "last": None, "calendar": calendar, "lag": None, "tolerance": tolerance, "stale": True})
+            continue
+        last = _date.fromisoformat(str(m["last"])[:10])
+        between = nyse.bond_business_days_between if calendar == "bond" else nyse.business_days_between
+        lag = between(last, cmp_)
+        out.append({"key": m["key"], "last": last.isoformat(), "calendar": calendar, "lag": lag, "tolerance": tolerance,
+                    "stale": lag > tolerance})
+    return out
+
+
+def trace_inputs(trace: Any) -> list[dict]:
+    """The study's inputs with their newest validated observation, from the
+    engine's trace (`SignalTrace.inputs_last`)."""
+    return [{"key": k, "last": d} for k, d in getattr(trace, "inputs_last", ())]
+
+
+def sessions_behind(evaluated_on: str, comparison: str) -> int:
+    """XNYS sessions after `evaluated_on` up to and including `comparison`."""
+    from datetime import date as _date
+
+    return nyse.business_days_between(_date.fromisoformat(evaluated_on), _date.fromisoformat(comparison))
+
+
+def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowance: int = 0,
+                 inputs: list[dict] | None = None) -> dict:
     """A study's firing state from its signal trace: `fires = trigger and holds`
     per session (the raw trigger, before any cooldown; a cross only on its
     strict crossing session). `evaluated_on` is the last evaluable session and
@@ -700,7 +786,14 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool) -> dict
     session is evaluable and fires (1 for a cross), so a missing session ends
     the count; null unless firing. The state at a session is null when the
     session is not the run's or is not evaluable. `stale` when `evaluated_on`
-    is not the comparison session."""
+    trails the comparison session by more than `allowance` XNYS sessions (its
+    inputs' publication cadence, desk/fill-compute: 0 for exchange closes), or
+    is dated after it, or (Codex R-03) when any input's newest validated
+    observation (`inputs`, by default the trace's own, `trace_inputs`) trails
+    the comparison session by more than its own tolerance on its own calendar
+    (`inputs_behind`), so a FRED series' grace never covers a stale exchange
+    close. A stale study is never reported firing: `firing_now` false and
+    `firing_day` null (Codex R-03, round 2)."""
     import numpy as np
 
     ev = trace.evaluable
@@ -708,7 +801,7 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool) -> dict
     sessions = trace.sessions
     evaluable = np.flatnonzero(ev)
     if not len(evaluable):
-        return {"evaluated_on": None, "firing_now": None, "firing_day": None, "stale": True,
+        return {"evaluated_on": None, "firing_now": None, "firing_day": None, "stale": True, "stale_inputs": [],
                 "state_comparison": None, "state_prev": None}
     last = int(evaluable[-1])
     firing_now = bool(fires[last])
@@ -726,16 +819,23 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool) -> dict
         i = bisect.bisect_left(sessions, iso)
         return bool(fires[i]) if i < len(sessions) and sessions[i] == iso and ev[i] else None
 
+    # Dated after the comparison session (a clock behind the data) is stale as before: never firing today.
+    stale = sessions[last] != comparison and (sessions[last] > comparison or sessions_behind(sessions[last], comparison) > allowance)
+    stale_inputs = [m["key"] for m in inputs_behind(trace_inputs(trace) if inputs is None else inputs, comparison) if m["stale"]]
+    stale = stale or bool(stale_inputs)
+    if stale:
+        firing_now, firing_day = False, None
     return {"evaluated_on": sessions[last], "firing_now": firing_now, "firing_day": firing_day,
-            "stale": sessions[last] != comparison, "state_comparison": state(comparison), "state_prev": state(prev)}
+            "stale": stale, "stale_inputs": stale_inputs,
+            "state_comparison": state(comparison), "state_prev": state(prev)}
 
 
-def now_fields(trace: Any, *, cross: bool) -> dict:
+def now_fields(trace: Any, *, cross: bool, allowance: int = 0, inputs: list[dict] | None = None) -> dict:
     """The /study fields that depend on "now" (plan §0.5), for this response."""
     comparison, prev = sessions_now()
-    f = firing_state(trace, comparison, prev, cross=cross)
+    f = firing_state(trace, comparison, prev, cross=cross, allowance=allowance, inputs=inputs)
     return {"firing_now": f["firing_now"], "firing_day": f["firing_day"], "evaluated_on": f["evaluated_on"],
-            "comparison_session": comparison, "prev_session": prev, "stale": f["stale"]}
+            "comparison_session": comparison, "prev_session": prev, "stale": f["stale"], "stale_inputs": f["stale_inputs"]}
 
 
 # ── The rules the spec states (plan §1.10) ──────────────────────────────────

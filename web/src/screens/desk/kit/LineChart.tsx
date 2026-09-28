@@ -55,6 +55,8 @@ export interface LineChartProps {
   grid?: boolean;
   /** Gray x-axis captions left and right under the plot ("a year ago" · "today"). */
   xEnds?: [string, string];
+  /** Bars from zero, one per x index (the MACD histogram, §3): `up` above zero, `down` below; a null value draws none. */
+  bars?: { values: readonly (number | null)[]; up: string; down: string; opacity?: number };
 }
 
 /** The width and height of a container, measured (fallbacks before layout and in tests). */
@@ -145,7 +147,7 @@ export function spreadLabels(ys: number[], gap = 14, bottom = Infinity): number[
 }
 
 export default function LineChart(props: LineChartProps) {
-  const { ariaLabel, height, n, series, yDomain, yTicks, xTicks = [], bands = [], zero = false, endDot, markers = [], pointLabels = [], grid = true, xEnds } = props;
+  const { ariaLabel, height, n, series, yDomain, yTicks, xTicks = [], bands = [], zero = false, endDot, markers = [], pointLabels = [], grid = true, xEnds, bars } = props;
   const pad = props.pad ?? { l: 44, r: 64, t: 10, b: 26 };
   const [ref, width] = useWidth<HTMLDivElement>();
   const [lo, hi] = yDomain;
@@ -228,6 +230,14 @@ export default function LineChart(props: LineChartProps) {
         })}
         {grid
           ? yTicks.map((t) => <line key={`g${t.v}`} className="dk-chart-grid" x1={pad.l} x2={pad.l + pw} y1={y(t.v)} y2={y(t.v)} />)
+          : null}
+        {bars
+          ? bars.values.map((v, i) => {
+              if (v == null || !Number.isFinite(v)) return null;
+              const bw = Math.max(1, (pw / Math.max(1, n - 1)) * 0.7);
+              const base = y(Math.min(hi, Math.max(lo, 0)));
+              return <rect key={`r${i}`} className="dk-chart-bar" x={x(i) - bw / 2} y={Math.min(y(v), base)} width={bw} height={Math.abs(y(v) - base)} fill={v >= 0 ? bars.up : bars.down} fillOpacity={bars.opacity ?? 0.6} />;
+            })
           : null}
         {zero && lo < 0 && hi > 0 ? <line className="dk-chart-zero" x1={pad.l} x2={pad.l + pw} y1={y(0)} y2={y(0)} /> : null}
         {yTicks.map((t) => (

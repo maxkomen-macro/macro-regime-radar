@@ -100,7 +100,7 @@ def test_the_engine_slugs_are_slug_for_of_the_catalog_queries():
 
 def test_the_lookup_slugs_and_items_are_registered():
     assert security.DESK_CATALOG_SLUGS == frozenset(catalog.CATALOG_SLUGS) >= frozenset(catalog.CATALOG_QUERY_SLUGS)
-    assert len(catalog.CATALOG_QUERY_SLUGS) == 13
+    assert len(catalog.CATALOG_QUERY_SLUGS) == 15  # every row asks a question since desk/fill-compute
     assert {"/api/desk/study", "/api/desk/study/catalog"} <= security.DESK_STUDY_PATHS
     names = [n for n, _ in analytics_cache.ITEMS]
     first_preset = names.index("desk_preset:gold-2sigma-spx-weak")
@@ -114,8 +114,9 @@ def test_the_ledger_order_groups_and_allowlist_are_the_specs():
     assert tuple(s.strip() for s in listed.replace("\n", " ").split(",")) == catalog.LEDGER_ORDER
     spx = {s for s, g in catalog.LEDGER_GROUP.items() if g == "spx"}
     assert spx == {"golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma", "rsi-above-70", "rsi-below-30"}
-    assert '["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]' in SPEC
-    assert list(catalog.TECHNICALS_ALLOWLIST) == ["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]
+    assert '["golden-cross","death-cross","rsi-above-70","rsi-below-30","spx-20d-2sigma","spx-5d-2sigma"]' in SPEC
+    assert list(catalog.TECHNICALS_ALLOWLIST) == ["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30",
+                                                  "spx-20d-2sigma", "spx-5d-2sigma"]
 
 
 def test_the_verdict_definitions_are_section_1_5s_word_for_word():
@@ -142,7 +143,9 @@ def test_a_request_normalizes_to_one_catalog_study():
     assert _norm("shock=spx&move=cross_above&target=spx&horizon=60") == (catalog.BY_SLUG["golden-cross"], 60)
     assert _norm("shock=gold&window=20&move=up2s&while=spx_below_50&target=spx")[0].slug == "gold-2sigma-spx-weak"
     assert _norm("shock=spx&window=5&move=up2s&target=spx&while=none")[0].slug == "spx-5d-2sigma"   # while defaults to none
-    assert _norm("preset=rsi-above-70") == (catalog.BY_SLUG["rsi-above-70"], None)
+    assert _norm("preset=rsi-above-70") == (catalog.BY_SLUG["rsi-above-70"], 20)
+    assert _norm("preset=spx-rsi-below-30&horizon=5") == (catalog.BY_SLUG["rsi-below-30"], 5)          # the engine's slug
+    assert _norm("shock=spx&move=rsi_above_70&target=spx&horizon=60") == (catalog.BY_SLUG["rsi-above-70"], 60)
 
 
 @pytest.mark.parametrize(("qs", "names"), [
@@ -159,8 +162,9 @@ def test_a_request_normalizes_to_one_catalog_study():
     ("preset=golden-cross&preset=death-cross", "preset is given more than once"),
     ("preset=not-a-study", "not-a-study"),
     ("preset=vix-w5-z2.0-up-none-spx-overheating", "vix-w5-z2.0-up-none-spx-overheating"),
-    ("preset=rsi-above-70&horizon=20", "horizon"),
-    ("preset=rsi-below-30&horizon=abc", "horizon"),
+    ("preset=rsi-below-30&horizon=abc", "horizon abc"),
+    ("shock=spx&window=20&move=rsi_above_70&target=spx", "An RSI crossing takes no window"),
+    ("shock=gold&move=rsi_above_70&target=spx", "No study in the catalog asks"),
     ("", "needs preset"),
 ])
 def test_anything_else_is_unsupported_naming_what(qs, names):
@@ -173,7 +177,8 @@ def test_anything_else_is_unsupported_naming_what(qs, names):
 
 def test_ops_and_fixes():
     ops = catalog.ops_by_shock()
-    assert ops["spx"] == ["up2s", "down2s", "cross_above", "cross_below"] and ops["dxy"] == ["down2s"]
+    assert ops["spx"] == ["up2s", "down2s", "cross_above", "cross_below", "rsi_above_70", "rsi_below_30"]
+    assert ops["dxy"] == ["down2s"]
     assert ops.get("us2y") is None
     assert catalog.fixes_for(catalog.BY_SLUG["spx-5d-2sigma"]) == ["widen_window"]
     assert catalog.fixes_for(catalog.BY_SLUG["gold-2sigma-spx-weak"]) == []
@@ -223,9 +228,10 @@ def test_the_study_catalog(served):
     rows = body["data"]["studies"]
     assert [r["slug"] for r in rows] == list(catalog.CATALOG_SLUGS)
     by = {r["slug"]: r for r in rows}
-    for slug in ("rsi-above-70", "rsi-below-30"):
-        assert by[slug]["question"] is None and by[slug]["available"] is False and by[slug]["client_label"] is None
-        assert by[slug]["unavailable"] == {"reason": "RSI is not computed yet.", "until": None} and by[slug]["allowed_horizons"] == []
+    for slug, move in (("rsi-above-70", "rsi_above_70"), ("rsi-below-30", "rsi_below_30")):
+        assert by[slug]["question"] == {"shock": "spx", "window": None, "move": move, "while": "none", "target": "spx"}
+        assert by[slug]["available"] is True and by[slug]["unavailable"] is None and by[slug]["allowed_horizons"] == [5, 10, 20, 60]
+        assert by[slug]["client_label"] == catalog.BY_SLUG[slug].client_label and "RSI" in by[slug]["client_label"]
     for slug in TIER2:  # the synthetic store holds no WTI or DXY
         assert by[slug]["available"] is False and "desk_series" in by[slug]["unavailable"]["reason"], by[slug]
         assert by[slug]["allowed_horizons"] == [5, 10, 20, 60]
@@ -314,13 +320,21 @@ def test_the_stubs_and_the_study_routes_share_one_generation(served):
     assert ids == {env.generation_id(served.current)}
 
 
-def test_rsi_presets_follow_s31(served):
-    for slug in ("rsi-above-70", "rsi-below-30"):
-        b = _study(f"preset={slug}")
-        assert b["status"] == "awaiting" and b["unavailable"] == {"reason": "RSI is not computed yet.", "until": None}
-        for h in ("20", "5", "abc"):
-            r = client.get(f"/api/desk/study?preset={slug}&horizon={h}")
-            assert r.status_code == 422 and "horizon" in r.json()["error"]["message"], (slug, h)
+def test_the_rsi_studies_are_the_engines_rsi_crossings(served):
+    """desk/fill-compute: an RSI row is a catalog study like any other, the engine's kind rsi, every horizon."""
+    for slug, side in (("rsi-above-70", "above"), ("rsi-below-30", "below")):
+        for h in (5, 20, 60):
+            d = _study(f"preset={slug}&horizon={h}")["data"]
+            assert d["selected_horizon"] == h and d["question"]["move"] == f"rsi_{side}_{'70' if side == 'above' else '30'}"
+        item = analytics_cache_item(served, slug)
+        native = item["native"]
+        assert native["study"]["slug"] == f"spx-rsi-{side}-{'70' if side == 'above' else '30'}"
+        assert native["study"]["kind"] == "rsi" and native["provenance"]["cooldown_sessions"] == 14
+        assert d["provenance"]["cooldown"] == 14 and d["inputs_hash"] == native["provenance"]["inputs_hash"]
+        gen = served.current
+        with dbpath.pinned(gen):
+            direct = es.run(es.Query(kind="rsi", cross=side, target="spx"))
+        assert json.dumps(direct, sort_keys=True) == json.dumps(native, sort_keys=True), slug
 
 
 def test_the_preset_items_reuse_the_catalog_run_byte_for_byte(served):
@@ -341,12 +355,15 @@ def test_a_refused_catalog_item_falls_through_to_the_legacy_preset(install_worke
     with sqlite3.connect(path) as c:
         c.execute("DROP TABLE desk_series")
     w = _serve(install_worker, monkeypatch, path)
-    assert w.current.results["desk_study:vix-spike-2sigma-5d"]["kind"] == "not_stored"
+    assert w.current.results["desk_study:hy-2sigma-20d"]["kind"] == "not_stored"
     assert "native" in w.current.results["desk_study:golden-cross"]
+    # desk/fill-compute (item 7): the VIX is ^VIX in asset_prices, so its study no longer needs desk_series.
+    assert "native" in w.current.results["desk_study:vix-spike-2sigma-5d"]
     assert client.get("/api/desk/event-study", params={"study": "spx-golden-cross"}).status_code == 200
-    r = client.get("/api/desk/event-study", params={"study": "vix-w5-z2.0-up-none-spx"})
+    r = client.get("/api/desk/event-study", params={"study": "us10y-w5-z2.0-up-none-spx"})
     assert r.status_code == 200 and r.json()["status"] == "awaiting_refresh"
-    assert _study("preset=vix-spike-2sigma-5d")["status"] == "awaiting"
+    assert _study("preset=hy-2sigma-20d")["status"] == "awaiting"
+    assert _study("preset=vix-spike-2sigma-5d")["status"] == "ready"
 
 
 def test_no_evaluable_session_is_awaiting(install_worker, monkeypatch, tmp_path):
@@ -622,3 +639,41 @@ def test_the_catalog_and_items_modules_import_nothing_heavy():
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=base, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip().splitlines()[-1] == "[]"
+
+
+# ── Codex R-03, round 2: freshness from each input's latest VALIDATED observation ──
+
+def _r03_store(tmp_path: Path) -> Path:
+    """Codex's repro: every series through Friday 2026-09-25, then the S&P's
+    closes of Sep 23, 24 and 25 stored as −1 (not a price: the reader sets
+    them aside) and HY OAS on Sep 22 stored as 100 (a spike the HY study fires
+    on). The newest raw S&P row is Sep 25; its newest validated one Sep 22."""
+    path = _synthetic_db(tmp_path / "macro_radar.db", spx_end="2026-09-25")
+    with sqlite3.connect(path) as c:
+        c.execute("UPDATE asset_prices SET close = -1 WHERE symbol = '^GSPC' AND date IN ('2026-09-23', '2026-09-24', '2026-09-25')")
+        c.execute("UPDATE desk_series SET value = 100 WHERE series_id = 'BAMLH0A0HYM2' AND date = '2026-09-22'")
+    return path
+
+
+def test_codex_r03_round2_the_trace_carries_each_inputs_latest_validated_observation(tmp_path):
+    path = _r03_store(tmp_path)
+    _out, _table, trace = es.run_traced(es.parse_slug(catalog.ENGINE_SLUGS["hy-2sigma-20d"]), path)
+    assert dict(trace.inputs_last) == {"hy_oas": "2026-09-25", "spx": "2026-09-22"}
+    f = desk_v2.firing_state(trace, "2026-09-25", "2026-09-24", cross=False, allowance=desk_v2.publication_allowance(catalog.BY_SLUG["hy-2sigma-20d"]))
+    assert f["evaluated_on"] == "2026-09-22" and trace.trigger[trace.sessions.index("2026-09-22")]  # the spike fires there
+    assert f["stale"] is True and f["stale_inputs"] == ["spx"]
+    assert f["firing_now"] is False and f["firing_day"] is None  # a stale study is never reported firing
+
+
+def test_codex_r03_round2_the_route_reports_the_sp_stale_and_no_firing(tmp_path, install_worker, monkeypatch):
+    """The repro on /study, evaluated against Friday Sep 25: the raw rows made the
+    S&P look current and the study, three sessions behind within the HY input's
+    FRED grace, read firing today."""
+    _serve(install_worker, monkeypatch, _r03_store(tmp_path))
+    monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 25, 21, 0, tzinfo=timezone.utc))
+    d = _study("preset=hy-2sigma-20d")["data"]
+    assert (d["comparison_session"], d["evaluated_on"]) == ("2026-09-25", "2026-09-22")
+    assert d["stale"] is True and d["stale_inputs"] == ["spx"]
+    assert d["firing_now"] is not True and d["firing_day"] is None
+    row = next(r for r in dc.check_response("/ledger", client.get("/api/desk/ledger"))["data"]["signals"] if r["slug"] == "hy-2sigma-20d")
+    assert row["stale"] is True and row["firing_now"] is False

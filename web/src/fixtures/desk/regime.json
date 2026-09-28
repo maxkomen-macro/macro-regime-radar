@@ -10,7 +10,13 @@
   "since": "2026-07",
   "freq": "monthly",
   "source": "regimes table (src/regime.py)",
-  "latest_print": "2026-08"
+  "latest_print": "2026-08",
+  "classifier": {
+   "month": "2026-08",
+   "label": "Overheating",
+   "odds": 0.4246,
+   "agrees": false
+  }
  },
  "history": [
   {
@@ -291,43 +297,220 @@
   "source": "recession model (src/analytics/recession.py)"
  },
  "next_prints": {
+  "basis": {
+   "month": "2026-07",
+   "label": "Goldilocks"
+  },
+  "published": [
+   {
+    "month": "2026-08",
+    "label": "Overheating",
+    "first_effective_month": "2026-10",
+    "cpi": {
+     "reference_month": "2026-08",
+     "series": "CPIAUCSL",
+     "mom": 0.003960181843858157,
+     "direction": "rising",
+     "from_direction": "falling"
+    },
+    "indpro": {
+     "reference_month": "2026-08",
+     "series": "INDPRO",
+     "mom": 0.00022126169630087844,
+     "direction": "rising",
+     "from_direction": "rising"
+    }
+   }
+  ],
+  "upcoming_from": {
+   "month": "2026-08",
+   "label": "Overheating"
+  },
   "cpi": {
    "release_date": "2026-10-14",
+   "released": false,
    "reference_month": "2026-09",
    "series": "CPIAUCSL",
    "threshold_mom": -0.003944560666325425,
    "operator": "<=",
    "flips_to": "Goldilocks",
    "first_effective_month": "2026-11",
+   "from_direction": "rising",
+   "printed_mom": null,
+   "printed_direction": null,
+   "other": {
+    "axis": "growth",
+    "series": "INDPRO",
+    "reference_month": "2026-09",
+    "direction": "rising",
+    "status": "assumed"
+   },
    "freq": "monthly",
    "source": "CPIAUCSL"
   },
   "indpro": {
    "release_date": null,
+   "released": null,
    "reference_month": "2026-09",
    "series": "INDPRO",
    "threshold_mom": -0.00022121275039244104,
    "operator": "<=",
    "flips_to": "Stagflation",
    "first_effective_month": "2026-11",
+   "from_direction": "rising",
+   "printed_mom": null,
+   "printed_direction": null,
+   "other": {
+    "axis": "inflation",
+    "series": "CPIAUCSL",
+    "reference_month": "2026-09",
+    "direction": "rising",
+    "status": "assumed"
+   },
    "freq": "monthly",
    "source": "INDPRO"
   }
  },
  "stats": {
-  "status": "awaiting",
-  "data": null,
-  "unavailable": {
-   "reason": "regime statistics not yet defined in the engine.",
-   "until": null
-  }
+  "rows": [
+   {
+    "regime": "Goldilocks",
+    "months": 27,
+    "spx_n": 26,
+    "spx_pending": 1,
+    "spx_missing": 0,
+    "spx_median_mo": 0.011829111484914723,
+    "spx_mean_mo": 0.006161984823637915,
+    "up_pct": 0.6538461538461539,
+    "vix_avg": 16.853803323239696,
+    "vix_days": 539,
+    "vix_sessions": 539
+   },
+   {
+    "regime": "Overheating",
+    "months": 213,
+    "spx_n": 212,
+    "spx_pending": 1,
+    "spx_missing": 0,
+    "spx_median_mo": 0.012536272878234223,
+    "spx_mean_mo": 0.01016177044806799,
+    "up_pct": 0.6273584905660378,
+    "vix_avg": 19.692722387867285,
+    "vix_days": 4463,
+    "vix_sessions": 4463
+   },
+   {
+    "regime": "Stagflation",
+    "months": 102,
+    "spx_n": 102,
+    "spx_pending": 0,
+    "spx_missing": 0,
+    "spx_median_mo": 0.01143232318659504,
+    "spx_mean_mo": 0.00464086475499713,
+    "up_pct": 0.6274509803921569,
+    "vix_avg": 20.721947318298685,
+    "vix_days": 2126,
+    "vix_sessions": 2126
+   },
+   {
+    "regime": "Recession Risk",
+    "months": 21,
+    "spx_n": 21,
+    "spx_pending": 0,
+    "spx_missing": 0,
+    "spx_median_mo": 0.011322214676852127,
+    "spx_mean_mo": 0.0009059779300041685,
+    "up_pct": 0.6666666666666666,
+    "vix_avg": 26.9695909651843,
+    "vix_days": 440,
+    "vix_sessions": 440
+   }
+  ],
+  "window": {
+   "start": "1996-05",
+   "end": "2026-08",
+   "n": 363
+  },
+  "governed": {
+   "start": "1996-07",
+   "end": "2026-10",
+   "n": 363
+  },
+  "lag_months": 2,
+  "totals": {
+   "months": 363,
+   "spx_n": 361,
+   "spx_pending": 2,
+   "spx_missing": 0,
+   "vix_days": 7568,
+   "vix_sessions": 7568
+  },
+  "vix_coverage": {
+   "stored": true,
+   "first": "1990-01-02",
+   "last": "2026-09-23",
+   "off_session_dropped": 2,
+   "invalid": 0
+  },
+  "freq": "monthly",
+  "source": "regimes table (src/regime.py); asset_prices ^GSPC; ^VIX (asset_prices)"
  },
  "changes": {
-  "status": "awaiting",
-  "data": null,
-  "unavailable": {
-   "reason": "regime statistics not yet defined in the engine.",
-   "until": null
-  }
+  "rows": [
+   {
+    "effective_month": "2026-10",
+    "stamp_month": "2026-08",
+    "from": "Goldilocks",
+    "to": "Overheating",
+    "from_month": "2026-07",
+    "spx_1m": null,
+    "spx_1m_status": "pending"
+   },
+   {
+    "effective_month": "2026-09",
+    "stamp_month": "2026-07",
+    "from": "Overheating",
+    "to": "Goldilocks",
+    "from_month": "2026-06",
+    "spx_1m": null,
+    "spx_1m_status": "pending"
+   },
+   {
+    "effective_month": "2026-03",
+    "stamp_month": "2026-01",
+    "from": "Stagflation",
+    "to": "Overheating",
+    "from_month": "2025-12",
+    "spx_1m": -0.050932690968577,
+    "spx_1m_status": "complete"
+   },
+   {
+    "effective_month": "2025-11",
+    "stamp_month": "2025-09",
+    "from": "Overheating",
+    "to": "Stagflation",
+    "from_month": "2025-08",
+    "spx_1m": 0.0012996181666717899,
+    "spx_1m_status": "complete"
+   },
+   {
+    "effective_month": "2025-08",
+    "stamp_month": "2025-06",
+    "from": "Stagflation",
+    "to": "Overheating",
+    "from_month": "2025-05",
+    "spx_1m": 0.019066444295036122,
+    "spx_1m_status": "complete"
+   }
+  ],
+  "n": 123,
+  "window": {
+   "start": "1996-05",
+   "end": "2026-08",
+   "n": 363
+  },
+  "lag_months": 2,
+  "freq": "monthly",
+  "source": "regimes table (src/regime.py); asset_prices ^GSPC"
  }
 }

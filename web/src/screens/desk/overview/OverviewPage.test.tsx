@@ -43,8 +43,9 @@ afterEach(() => {
 
 describe("Overview words", () => {
   it("spells the since-last-close items in the spec's order", () => {
-    // The audit's snapshot: nothing firing, no VIX for the Sep 23 session yet (FRED posts next day), the July row both days.
-    expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual(["regime unchanged", "data refreshed 05:07 UTC"]);
+    // The audit's snapshot: nothing firing; the VIX (^VIX, desk/fill-compute) closes on both sessions, so its change
+    // is served (15.18 on Sep 23 against 14.21 on Sep 22); the July row both days.
+    expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual(["vol up 1.0 pts", "regime unchanged", "data refreshed 05:07 UTC"]);
     const still = { slug: "2s10s-2sigma-steepening", label: "2s10s +2σ steepening", short: "2s10s steepening", firing_day: 10 };
     expect(sinceItems({ ...fixture.since_last_close!, still_firing: [still], vol_change_pts: 0.8 }).map((i) => i.text)).toEqual(["2s10s steepening still firing, day 10", "vol up 0.8 pts", "regime unchanged", "data refreshed 05:07 UTC"]);
     expect(sinceItems({ ...fixture.since_last_close!, regime_changed: true, regime_from: "Goldilocks", regime_to: "Overheating", vol_change_pts: -1.2 }).map((i) => i.text)).toContain("regime changed → Overheating");
@@ -95,12 +96,13 @@ describe("Overview tab", () => {
     // §2: "since <state_since> · last cross <golden|death>, <date>".
     expect(trend).toHaveTextContent("since Sep 22, 2026 · last cross golden, Jul 1, 2025");
     const vol = screen.getByRole("region", { name: "Vol · VIX" });
-    expect(vol).toHaveTextContent("14.2");
-    // §2: the level and its day; the gap to realized and the band word are unavailable (§1.0).
-    expect(vol).toHaveTextContent("VIX 14.2 · Sep 22");
-    // §1.0.2: no envelope of its own, so the unserved half prints §1.0's reason.
-    expect(vol).toHaveTextContent("The gap to realized and the band word: realized-volatility method not specified.");
-    expect(vol).not.toHaveTextContent(/Calm|protection costs/);
+    expect(vol).toHaveTextContent("15.2");
+    // §2 (desk/fill-compute): the level, its day and its band (^VIX in asset_prices, as the S&P, so dated Sep 23);
+    // the gap to the S&P's 21-day realized volatility, on Sep 21 in the fixture's store (it has no Sep 22 S&P
+    // close, so no window ends on Sep 22 or 23).
+    expect(vol).toHaveTextContent("VIX 15.2 · Sep 23 · subdued");
+    expect(vol).toHaveTextContent("4.4 pts above 21-day realized (10.5) on Sep 21");
+    expect(vol).not.toHaveTextContent(/not specified|protection costs/);
   });
 
   it("a row whose h = 20 study has fewer than ten completed outcomes carries the dashed Too few pill (§1.5)", async () => {
@@ -129,14 +131,15 @@ describe("Overview tab", () => {
     await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(5));
     const rows = within(card).getAllByRole("listitem");
     // §12.1: nothing firing, so the five latest last fires, newest first.
-    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P 5-day move over 2σ", "VIX spike +2σ, 5 days", "S&P 20-day move over 2σ", "S&P golden cross", "2s10s +2σ steepening"]);
+    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P 5-day move over 2σ", "VIX spike +2σ, 5 days", "RSI above 70", "S&P 20-day move over 2σ", "RSI below 30"]);
     expect(rows[0]).toHaveTextContent("last fired Aug 4, 2026");
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Fired 78× since 1996 · S&P up 63% of the time · 20-day median +1.7% (+0.4 pts vs normal)");
     expect(within(rows[0]).getByText("No edge")).toBeInTheDocument();
-    expect(rows[3].textContent?.replace(/\s+/g, " ")).toContain("Fired 14× since 1996 · S&P up 79% of the time · 20-day median +2.7% (+1.4 pts vs normal)");
-    expect(within(rows[3]).getByText("Reliable")).toBeInTheDocument();
+    // desk/fill-compute: the RSI rows are scored, and their last fires are among the five latest.
+    expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("Fired 89× since 1996 · S&P up 63% of the time · 20-day median +1.4% (+0.1 pts vs normal)");
+    expect(within(rows[2]).getByText("No edge")).toBeInTheDocument();
     expect(within(rows[1]).getByText("Suggestive")).toBeInTheDocument();
-    expect(rows[4].textContent?.replace(/\s+/g, " ")).toContain("20-day median +1.6% (+0.3 pts vs normal)");
+    expect(rows[4].textContent?.replace(/\s+/g, " ")).toContain("20-day median +2.8% (+1.5 pts vs normal)");
     expect(within(card).getByRole("link", { name: "Full Signal Ledger →" })).toHaveAttribute("href", "/desk/signal-ledger");
     // The four §1.5 definitions (B-13), word for word.
     const defs = [...card.querySelectorAll(".dk-defs > div")].map((d) => [...d.children].map((c) => c.textContent?.trim()).join(" "));
@@ -206,7 +209,7 @@ describe("blocks served awaiting inside a ready answer (§12.1, §1.0.2)", () =>
     await waitFor(() => expect(screen.getByRole("region", { name: "Vol · VIX" })).toHaveTextContent("realized-volatility method not specified."));
     const vol = screen.getByRole("region", { name: "Vol · VIX" });
     expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Not yet served");
-    expect(vol).not.toHaveTextContent("14.2");
+    expect(vol).not.toHaveTextContent("15.2");
     expect(screen.getByTestId("ov-since")).toHaveTextContent("Since last close");
     expect(screen.getByTestId("ov-since")).toHaveTextContent("no previous generation to compare.");
     expect(screen.getByTestId("ov-since")).not.toHaveTextContent("Awaiting refresh");
@@ -223,5 +226,15 @@ describe("blocks served awaiting inside a ready answer (§12.1, §1.0.2)", () =>
     expect(within(screen.getByRole("region", { name: "Vol · VIX" })).getByTestId("dk-live")).toHaveTextContent(/^Not yet served$/);
     expect(screen.getByTestId("dk-today")).toHaveTextContent("Regime awaiting refresh");
     expect(screen.getByTestId("dk-today")).not.toHaveTextContent("not yet served");
+  });
+});
+
+describe("the VIX's gap to realized (desk/fill-compute)", () => {
+  it("says above or below, the realized figure, and the gap's session only when it is not the level's", async () => {
+    const { gapWords } = await import("./OverviewPage");
+    const vol = { vix: 14.21, date: "2026-09-22", gap: { date: "2026-09-22", vix: 14.21, realized_21d: 16.4, gap_pts: -2.19 } };
+    expect(gapWords(vol)).toBe("2.2 pts below 21-day realized (16.4)");
+    expect(gapWords({ ...vol, gap: { ...vol.gap, date: "2026-09-21", gap_pts: 4.4 } })).toBe("4.4 pts above 21-day realized (16.4) on Sep 21");
+    expect(gapWords({ ...vol, gap: null })).toBe("No session has both the VIX and 21 S&P returns stored.");
   });
 });

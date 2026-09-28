@@ -82,7 +82,13 @@ test.describe("desk v2", () => {
       expect(overflow).toBeLessThanOrEqual(1);
       // §1.5: there is no universal normal month (the tabs that read Ledger rows).
       if (["overview", "technicals", "signal-ledger"].includes(slug)) {
-        const text = (await page.locator("main").textContent()) ?? "";
+        // desk/fill-compute: the seasonality card is left out; its May average prints "+1.3%" as a calendar
+        // month's own average over its own years, not the universal normal month §1.5 forbids.
+        const text = await page.locator("main").evaluate((m) => {
+          const c = m.cloneNode(true) as HTMLElement;
+          c.querySelector('[aria-labelledby="te-season-title"]')?.remove();
+          return c.textContent ?? "";
+        });
         expect(text).not.toMatch(/normal month|\+1\.3%/);
       }
     });
@@ -91,7 +97,7 @@ test.describe("desk v2", () => {
   // Codex R-09: a completed 200 whose body is null is Awaiting refresh on every tab, never a loading state.
   const NULL_ANSWERS: { slug: string; path: string; labels: string[] }[] = [
     { slug: "overview", path: "/api/desk/overview", labels: ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX", "Active signals", "Monitored"] },
-    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now"] },
+    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now", "Last crossover", "Years"] },
     { slug: "event-study", path: "/api/desk/study", labels: ["Events", "Up a month later", "Median at a month", "Worst · best"] },
     { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession score", "Next CPI", "Next INDPRO"] },
     { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
@@ -133,9 +139,9 @@ test.describe("desk v2", () => {
     const macro = payloadOf(deskFixture("GET", "/api/desk/macro")!);
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await open(page, "/desk/regime", { "/api/desk/regime": { status: 200, body: { ...regime, stats: off("regime statistics not yet defined in the engine."), changes: off("regime statistics not yet defined in the engine.") } } });
+      await open(page, "/desk/regime", { "/api/desk/regime": { status: 200, body: { ...regime, stats: off("no stored S&P history in this database."), changes: off("no stored S&P history in this database.") } } });
       const meant = page.getByRole("region", { name: /^What each regime has meant/ });
-      await expect(meant).toContainText("regime statistics not yet defined in the engine.");
+      await expect(meant).toContainText("no stored S&P history in this database.");
       await expect(meant.getByTestId("dk-live")).toHaveText("Not yet served");
       await expect(page.getByRole("region", { name: /^Where we are/ })).toContainText("Overheating");
       expect(await auditPalette(page)).toEqual([]);
@@ -210,11 +216,11 @@ test.describe("desk v2", () => {
     await open(page, "/desk/overview");
     // §2: the K−2 row governing today (a September session reads the July row).
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Jul row");
-    // The audit's values (§2.2, §2.1, Q7): the July row is Goldilocks; the S&P dated Sep 23; the VIX Sep 22.
+    // The audit's values (§2.2, §2.1): the July row is Goldilocks; the S&P dated Sep 23; the VIX (^VIX, desk/fill-compute) Sep 23.
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Goldilocks");
     await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("12%");
     await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Live · Sep 23");
-    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("14.2");
+    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("15.2");
     await expect(page.getByTestId("dk-live")).toHaveCount(4);
     // Nothing is firing in the audit's snapshot, so the line names no signal.
     await expect(page.getByTestId("ov-since")).toContainText("regime unchanged");
@@ -250,8 +256,8 @@ test.describe("desk v2", () => {
     await expect(price.locator(".dk-chart-axis")).toContainText(["6,000", "7,000", "8,000", "Oct 25", "Apr 26", "Sep 26"]);
     await price.getByRole("button", { name: "3Y" }).click();
     await expect(price.getByRole("img", { name: /3Y/ })).toBeVisible();
-    // §3: the S&P rows the Ledger scores; the RSI rows are omitted while unavailable.
-    await expect(page.getByRole("region", { name: /^Signals/ }).getByRole("listitem")).toHaveCount(4);
+    // §3: the S&P rows the Ledger scores, the two RSI rows among them (desk/fill-compute).
+    await expect(page.getByRole("region", { name: /^Signals/ }).getByRole("listitem")).toHaveCount(6);
     // A light action button keeps its dark text on hover (verifier R2-1).
     const act = page.getByTestId("dk-act");
     await act.hover();
@@ -263,7 +269,7 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: the vol block and the RSI card keep their labels, print their reasons and say Not yet served; the sector bars are served (§1.0, §12.7, §12.14)", async ({ page }) => {
+  test("technicals: the vol block keeps its labels, prints its reason and says Not yet served; the sector bars and the RSI, MACD and seasonality cards are served (§1.0, §12.7, §12.14)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/technicals");
@@ -274,7 +280,6 @@ test.describe("desk v2", () => {
       await expect(sect.getByTestId("dk-advanced")).toBeEnabled();
       const cards: [RegExp, string, string][] = [
         [/^What protection costs right now/, "needs stored SPY option snapshots and a versioned skew method.", "PUTS vs CALLS · 1 MONTH OUT"],
-        [/^Momentum · RSI/, "RSI is not computed yet.", "Last below 30"],
       ];
       for (const [name, reason, label] of cards) {
         const card = page.getByRole("region", { name });
@@ -284,6 +289,23 @@ test.describe("desk v2", () => {
         await expect(card.getByTestId("dk-advanced")).toBeDisabled();
         await expect(card.getByRole("img")).toHaveCount(0);
       }
+      // §12.7: RSI(14), its zone and direction, each zone's last session and the gauge, dated by its own session.
+      const rsi = page.getByRole("region", { name: /^Momentum · RSI/ });
+      await expect(rsi.getByTestId("dk-live")).toContainText("Sep 21");
+      await expect(rsi).toContainText("neutral, rising");
+      await expect(rsi).toContainText("Jun 2");
+      await expect(rsi.getByRole("img", { name: "RSI 59.3, neutral" })).toBeVisible();
+      // §12.7 (desk/fill-compute): MACD(12, 26, 9), held on Sep 21 like the RSI, its last crossover, the histogram chart.
+      const macd = page.getByRole("region", { name: /^Momentum · MACD/ });
+      await expect(macd.getByTestId("dk-live")).toContainText("Sep 21");
+      await expect(macd).toContainText("MACD above its signal");
+      await expect(macd).toContainText("MACD crossed above its signal");
+      await expect(macd.getByRole("img", { name: /^MACD, its signal line and the histogram, 6M/ })).toBeVisible();
+      // §12.7 (desk/fill-compute): seasonality by calendar month over every stored close, its window stated.
+      const season = page.getByRole("region", { name: /^Seasonality · S&P 500 by calendar month/ });
+      await expect(season).toContainText("Feb 1990 to Aug 2026");
+      await expect(season.getByRole("row")).toHaveCount(13);
+      await expect(season).toContainText("36–37 years a month");
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }
@@ -432,14 +454,14 @@ test.describe("desk v2", () => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/signal-ledger");
-      await expect(page.locator(".lg-stats")).toContainText("8 scored · 4 not yet served");
+      await expect(page.locator(".lg-stats")).toContainText("10 scored · 2 not yet served");
       // NOW's words are whole, never cut (§8).
       const cutNow = await page.locator(".lg-table td.lg-now").evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
       expect(cutNow, `NOW cells whole at ${width}`).toBe(0);
       const oil = page.locator(".lg-table tr[data-unavailable]", { hasText: "Oil" });
       await expect(oil).toContainText("WTI crude (DCOILWTICO) is not stored in this database");
       await expect(oil.locator(".dk-pill")).toHaveCount(0);
-      await expect(page.locator(".lg-table tr[data-unavailable]")).toHaveCount(4);
+      await expect(page.locator(".lg-table tr[data-unavailable]")).toHaveCount(2);
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }

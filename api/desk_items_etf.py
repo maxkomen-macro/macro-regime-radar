@@ -45,7 +45,8 @@ Rules (the spec names each):
 - What moves with the S&P (§12.8 `correlations`): the same 60-date Pearson
   correlation of SPY's daily log returns with TLT, IEF, HYG, LQD, GLD, UUP,
   IWM and QQQ (adjusted closes, daily log returns) and, when the store holds
-  it, VIX (FRED VIXCLS, daily log changes of the level), each on its own
+  it, VIX (^VIX, the CBOE close in asset_prices since desk/fill-compute, daily
+  log changes of the level), each on its own
   newest session both series hold a value.
 
 Stdlib at import; numpy, pandas and the engine are imported at the point of
@@ -99,11 +100,14 @@ class Store:
         self.first = {k: s.index[0].strftime("%Y-%m-%d") for k, s in raw.items()}
         self.last = {k: s.index[-1].strftime("%Y-%m-%d") for k, s in raw.items()}
         self.providers: list[str] = []
-        syms = [registry.get(k).series_id for k in raw if registry.get(k).table == "asset_prices"]
-        if syms:
-            marks = ",".join("?" * len(syms))
-            self.providers = sorted(r[0] for r in conn.execute(
-                f"SELECT DISTINCT provider FROM asset_prices WHERE interval = '1d' AND symbol IN ({marks})", syms))
+        self.provider_by: dict[str, set[str]] = {}
+        sym_key = {registry.get(k).series_id: k for k in raw if registry.get(k).table == "asset_prices"}
+        if sym_key:
+            marks = ",".join("?" * len(sym_key))
+            for sym, prov in conn.execute(
+                    f"SELECT DISTINCT symbol, provider FROM asset_prices WHERE interval = '1d' AND symbol IN ({marks})", list(sym_key)):
+                self.provider_by.setdefault(sym_key[sym], set()).add(prov)
+            self.providers = sorted(set().union(*self.provider_by.values())) if self.provider_by else []
         if not raw:
             self.sessions = pd.DatetimeIndex([])
             self.iso: list[str] = []
@@ -119,6 +123,12 @@ class Store:
             al, _bad, _why = es.validate_values(al, registry.get(k))
             self.px[k] = al.to_numpy(dtype=float)
         self._np = np
+
+    def providers_of(self, keys) -> list[str]:
+        """The providers of the stored series among `keys`, the ones a block reads
+        (desk/fill-compute: the store also holds the VIX, which only the
+        correlations read, so a block names its own series' providers only)."""
+        return sorted(set().union(*(self.provider_by.get(k, set()) for k in keys)))
 
     def has(self, key: str) -> bool:
         return key in self.px
@@ -209,7 +219,7 @@ def leadership(store: Store) -> dict:
         "date": store.iso[t],
         "freq": "daily",
         "source": SOURCE,
-        "providers": provider_words(store.providers),
+        "providers": provider_words(store.providers_of([BENCHMARK, *SECTOR_KEYS])),
     }
 
 
@@ -316,7 +326,7 @@ def breadth(store: Store) -> dict:
         out[f"{name}_line_window"] = window
     out["relative_window"] = {"start": store.iso[t - WINDOW_SESSIONS], "end": store.iso[t], "n": WINDOW_SESSIONS}
     out.update({"unit": "log_return", "date": store.iso[t], "freq": "daily", "source": SOURCE,
-                "providers": provider_words(store.providers)})
+                "providers": provider_words(store.providers_of([BENCHMARK, *SECTOR_KEYS, "rsp", "iwm"]))})
     return out
 
 
@@ -418,7 +428,7 @@ def stock_bond(store: Store) -> dict:
         "line_window": {"start": series[0]["date"] if series else store.iso[t], "end": store.iso[t], "n": len(series)},
         "stock": {"etf": "SPY", "name": "S&P 500 ETF"}, "bond": {"etf": "TLT", "name": "20+ year Treasury ETF"},
         "transform": "daily log return", "unit": "correlation", "date": store.iso[t], "freq": "daily", "source": SOURCE,
-        "providers": provider_words(store.providers),
+        "providers": provider_words(store.providers_of([BENCHMARK, "tlt"])),
     }
 
 
@@ -461,7 +471,7 @@ def correlations(store: Store) -> list[dict]:
     for key, name in assets:
         spec = registry.get(key)
         row = {"asset": name, "symbol": spec.series_id,
-               "quantity": "index level (FRED VIXCLS)" if key == "vix" else "adjusted close",
+               "quantity": "index level (^VIX)" if key == "vix" else "adjusted close",
                "transform": "daily log change" if key == "vix" else "daily log return",
                "corr": None, "date": None, "window": None, "reason": None}
         if not store.has(key):

@@ -194,8 +194,8 @@
     white-space: normal;
   }
 }
-/* §1.0: the VIX tile's unserved half, on its own line under the level. */
-.ov-vol-off {
+/* §2: the VIX tile's gap to realized, on its own line under the level. */
+.ov-vol-gap {
   display: block;
   margin-top: 2px;
 }

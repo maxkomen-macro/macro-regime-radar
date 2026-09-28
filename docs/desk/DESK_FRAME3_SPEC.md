@@ -37,18 +37,20 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Tab / block | Monday state | Reason |
 |---|---|---|
 | Overview: since-last-close line, regime tile, recession tile, trend tile, VIX level, active signals, data status | LIVE | — |
-| Overview: VIX "gap vs realized" and the vol band word | UNAVAILABLE | realized-volatility method not specified (v2 D-17) |
+| Overview: VIX "gap vs realized" and the vol band word | LIVE (desk/fill-compute) | the S&P's 21-day realized volatility (`src/analytics/technicals.realized_vol`) and the home page's VIX words (§12.1 `tiles.vol`) |
 | Overview: Monitored rows | LIVE from the browser's position store (§9) | no server position store (v2 D-21) |
 | Technicals: price, 50- and 200-day averages, trend, cross, chart, 1-year return, day change, last 20 days in σ, signals (the §3 allowlist) | LIVE | — |
 | Technicals: vol column ("What protection costs right now") | UNAVAILABLE | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
 | Technicals: sector bars | LIVE (desk/fill-etf): the eleven sector ETFs' 60-session log returns less SPY's, `/technicals` `sectors` (§12.14) | — |
-| Technicals: RSI card | UNAVAILABLE | RSI is not computed in `src/desk/` or `api/`; adding it is a new calculation outside Monday's scope (v3 A-16) |
+| Technicals: RSI card | LIVE (desk/fill-compute) | Wilder's RSI(14) on the stored ^GSPC closes, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy) (§12.7) |
+| Technicals: MACD card | LIVE (desk/fill-compute) | MACD(12, 26, 9) on the stored ^GSPC closes, `src/analytics/technicals.macd` (the shared, symbol-agnostic copy) (§12.7 `macd`) |
+| Technicals: seasonality card | LIVE (desk/fill-compute) | each calendar month's average return and share of years up over every stored ^GSPC close, `src/analytics/technicals.monthly_seasonality` (the shared, symbol-agnostic copy) (§12.7 `seasonality`) |
 | Event Study: studies in the catalog (§4, §12.3) | LIVE when every input's coverage is stored in the current generation; otherwise that study is awaiting with the missing series named | v3 §2 |
 | Event Study: any other combination of slots | refused, 422 `unsupported` | v3 §2 |
 | Event Study: confidence 80% / 95% | UNAVAILABLE; intervals are the engine's 90% | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
 | Event Study: the line without the condition (`without_condition`) | UNAVAILABLE | conditional-versus-unconditional comparison is not defined (v4 B-11, C-01) |
 | Regime: current label, history strip, recession score, next prints | LIVE | — |
-| Regime: "What each regime has meant" table, and the S&P a month after each change | UNAVAILABLE | regime statistics not yet defined in the engine (v3 A-16 withdraws v2 §9.4) |
+| Regime: "What each regime has meant" table, and the S&P over the month each change took effect | LIVE (desk/fill-compute) | every stored row measured from when it was known (Codex R-01): each label with the S&P and the VIX of the month it governed, two months after its stamp, the return sample and VIX coverage served apart from the label count (§12.6 `stats`, `changes`) |
 | Macro: yield curve | LIVE with 2y, 10y and 2s10s; 3m, 5y and 30y LIVE once DGS3MO, DGS5 and DGS30 are registered (§12.8) | v2 D-16 |
 | Macro: HY and IG levels, HY 3-year range and percentile, HY last 12 months | LIVE (the 3-year figures null, with the reason, while three-year coverage is incomplete) | v3 §12, v4 B-07 |
 | Macro: stock–bond correlation (SPY against TLT, 60 daily log returns) | LIVE (desk/fill-etf, §12.8) | — |
@@ -57,7 +59,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Sectors: leadership (LEADING, LAGGING, PATTERN, the eleven bars) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: breadth, of the 11 sector ETFs (above the 50- and 200-day, RSP against SPY, IWM against SPY) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: constituent-level breadth (the stocks inside the index) | UNAVAILABLE | constituent data is not ingested |
-| Signal Ledger | LIVE for the rows whose study completes; the two RSI rows, and any row whose inputs are not stored (WTI, DXY), unavailable | v3 §2, v4 B-02 |
+| Signal Ledger | LIVE for the rows whose study completes, the two RSI rows included (desk/fill-compute); any row whose inputs are not stored (WTI, DXY) unavailable | v3 §2, v4 B-02 |
 | Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
 | Basket & Hedge | UNAVAILABLE; local leg editing (legs, weights, save, export) remains | basket pricing and option structures not yet defined in the engine (v2 D-25–D-28) |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
@@ -69,10 +71,10 @@ Neither A nor B changes §12 without writing the change into this file first.
 Build Notes prints these two lists as their own section, word for word.
 
 **Live**
-- Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, active signals, data status.
-- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership.
+- Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.
+- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
-- Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.
+- Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P over the month each took effect.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, and what moves with the S&P.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
@@ -81,13 +83,10 @@ Build Notes prints these two lists as their own section, word for word.
 - Client view: the current study in plain words, a month out.
 
 **Designed, not yet served**
-- The VIX gap to realized volatility and the vol band word.
 - What protection costs: options skew, implied against realized volatility, the term structure.
 - Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
-- RSI, and the two RSI signals.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
-- What each regime has meant, and the S&P after each regime change.
 - The 12-asset correlation matrix.
 - Positions kept on a server, and DV01.
 - Basket pricing, the residual chart and the hedge structures.
@@ -100,8 +99,7 @@ served, "Until: <`unavailable.until`>". No number, no chart, no gauge. Its
 `Advanced ▸` control is disabled and says "not yet served". Its badge reads
 `○ Not yet served` (`○ Awaiting refresh` when the reason begins "Awaiting
 refresh", §1.7). A block that is unavailable by §1.0 but has no served
-envelope prints the reason in §1.0's table (the confidence chips) or, for the
-RSI card, the RSI rows' served reason, "RSI is not computed yet." (§12.3).
+envelope prints the reason in §1.0's table (the confidence chips).
 
 ### 1.1 Navigation
 - The sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
@@ -297,7 +295,7 @@ signal still firing with its `firing_day`; the VIX change in points
 | REGIME | `● Live · <Mon> row` | Overheating (regime color, serif 26px) | Growth rising, inflation rising · rule-based, two-month lag |
 | RECESSION · LOGISTIC MODEL | `● Live` | 12% | <band> · score for <probability_month> · inputs through <inputs_through> |
 | S&P 500 · TREND | `● Live · <date>` | Above 50 & 200 (from `trend.state`) | since <state_since> · last cross <golden\|death>, <date> |
-| VOL · VIX | `● Live · <date>` | 16.2 | VIX <level> · <date> (the gap to realized and the band word are unavailable, §1.0) |
+| VOL · VIX | `● Live · <date>` | 16.2 | VIX <level> · <date> · <band> (calm, subdued, stressed), then "<\|gap_pts\|> pts above\|below 21-day realized (<realized_21d>)", with "on <gap.date>" when that is not `date`; "no session has both the VIX and 21 S&P returns" when `gap` is null |
 
 **Active signals** (left, ~60%). Subtitle `what fired, how it has played out
 before · engine as of <as_of>`. Rows are `/overview` `active_signals` in the
@@ -326,7 +324,9 @@ Action button: **Act on this → Position Monitor**. Badge `● Live · <date>` 
 `/technicals` `date`.
 
 Grid: left column (two rows) = the vol column; top-middle = price; top-right =
-Signals; bottom-middle = Sector leadership; bottom-right = RSI.
+Signals; bottom-middle = Sector leadership; bottom-right = RSI; a third row
+(desk/fill-compute) = MACD across the vol column and the middle, seasonality
+on the right.
 
 **What protection costs right now** (vol column): UNAVAILABLE (§1.0), from
 `/technicals` `vol` (awaiting). Labels kept: PUTS vs CALLS · 1 MONTH OUT ·
@@ -346,7 +346,7 @@ count, up share and h = 20 verdict.
 `ret_1y_dates`) · TREND (`trend.state` in words: above both / below both /
 mixed; since `state_since`) · LAST 20 DAYS (`move_20d_sigma`σ). Rows: the
 Ledger rows in `signals_allowlist` order — golden-cross, death-cross,
-spx-20d-2sigma, spx-5d-2sigma (the RSI rows are omitted while unavailable) —
+rsi-above-70, rsi-below-30, spx-20d-2sigma, spx-5d-2sigma —
 each `label · N× since <sample_start year> · up P% · a month later +M% ·
 pill`. Note box: "vs normal compares each study to its own baseline over its
 own sample."
@@ -363,9 +363,44 @@ sector without `rel_ret` is never hidden (Codex R-01): its row follows the
 seven, the sub-line adds ", among the <ranked_n> sectors with data", and
 the note of §7 names it with its reason.
 
-**Momentum · RSI**: UNAVAILABLE (§1.0; no served envelope, §1.0.2). Labels
-kept: NOW · LAST ABOVE 70 · LAST BELOW 30. PNG 02's two RSI context boxes are
-the layout once RSI is served (§12.13).
+**Momentum · RSI** (desk/fill-compute), from `/technicals` (§12.7). Badge
+`● Live · <rsi_date>` (the RSI's own session, §1.6). Stats: NOW (`rsi`, one
+decimal; sub-line its zone and direction: "overbought" strictly above 70,
+"oversold" strictly below 30, "neutral" otherwise, then "rising", "falling" or
+"flat" from `rsi` against `rsi_prev`, the two served numbers and nothing
+else) · LAST ABOVE 70 and LAST BELOW 30 (each zone's last session,
+`rsi_last_above_70.date` and `rsi_last_below_30.date`; sub-line "S&P
+<after_20d> 20 sessions later"; "20 sessions have not passed yet" while
+`after_20d_status` is `pending`; "the close 20 sessions later (<after_20d_to>)
+is not stored" when it is `missing`, Codex R-08). Gauge 0 · 30 · 70 · 100 with the bands
+Oversold (green) · Neutral · Overbought (amber) and the needle at `rsi`. A null
+`rsi` keeps the labels and says "Awaiting refresh", with no gauge. PNG 02's
+two context boxes are not drawn: no read is served (§12.0).
+
+**Momentum · MACD** (desk/fill-compute), from `/technicals` `macd` (§12.7).
+Title "Momentum · MACD", sub "12, 26, 9 on the S&P's closes". Badge
+`● Live · <macd.date>` (its own session, §1.6). Stats: MACD (`macd.macd`, one
+decimal, index points) · SIGNAL (`macd.signal`) · HISTOGRAM (`macd.hist`,
+signed, green above zero and red below; sub-line "MACD above its signal" or
+"below its signal") · LAST CROSSOVER (`macd.last_cross.date`; sub-line
+"MACD crossed above its signal" or "below" from `last_cross.kind`). Chart,
+`macd.series` (the price chart's 6M sessions): the histogram as bars from zero
+(green above, red below), the MACD line (blue) and the signal line (gray
+dashed), a zero line, month ticks, a marker on the last crossover when it is
+in range. A null `macd` keeps the labels and says "Awaiting refresh", with no
+chart. No read of what the crossover means is served, so none is printed.
+
+**Seasonality · S&P 500 by calendar month** (desk/fill-compute), from
+`/technicals` `seasonality` (§12.7). Sub-line: "Average monthly return and
+share of years up, <window.start> to <window.end>." (months written "Feb 1990").
+A table of the twelve months in calendar order, one row each: MONTH (`label`)
+· AVERAGE (`avg` × 100, signed, one decimal) · a bar from a center zero line,
+green right for a positive average and red left for a negative one, its
+length `|avg|` over the largest `|avg|` of the twelve · UP (`pct_up` × 100,
+whole percent) · YEARS (`n`, with `first_year`–`last_year` in its tooltip).
+Foot: "<fewest n>–<most n> years a month · a month counts once it is
+complete" and the source line. A null `seasonality` keeps the labels and says
+"Awaiting refresh". No read is served, so none is printed.
 
 ---
 
@@ -385,14 +420,15 @@ render as chips under `Yours`.
 
 **Row 2 — THE QUESTION, SPELLED OUT.** Sub-label "change any slot and it
 becomes your own". Six labelled slots: SHOCK (series) · WINDOW (5 / 20 / 60
-sessions; none for a cross) · MOVE ⓘ (up 2σ or more / down 2σ or more /
-50-day crosses above the 200-day / crosses below; tooltip "σ measured over
-the last 252 sessions") · WHILE ⓘ (none / S&P below its 50-day / regime = X;
+sessions; none for a cross or an RSI crossing) · MOVE ⓘ (up 2σ or more /
+down 2σ or more / 50-day crosses above the 200-day / crosses below / RSI
+crosses above 70 / RSI crosses below 30; tooltip "σ measured over the last
+252 sessions") · WHILE ⓘ (none / S&P below its 50-day / regime = X;
 tooltip "Entry at the event close when every input is available by then;
 otherwise the next close.") · WHAT HAPPENS TO (series) · OVER THE NEXT (1 week
 / 2 weeks / 1 month / 3 months). Every option that does not lead to a catalog
-study (§12.3), given the other slots, is disabled; a cross requires shock =
-S&P, target = S&P, while = none and no window. Series labels, roles and ops
+study (§12.3), given the other slots, is disabled; a cross or an RSI
+crossing requires shock = S&P, target = S&P, while = none and no window. Series labels, roles and ops
 come from `/study` `series[]`. Buttons **Run** (primary) and **Save**. A
 request the server refuses (422 `unsupported`) prints the served message.
 
@@ -447,7 +483,10 @@ show the same calculation; the frame-2 engine panel is retired (v2 §8).
   XNYS sessions later. Baseline observations use the identical rule.
 - **Cooldown.** After every retained threshold hit at session t, sessions t+1
   … t+w are excluded, even if the condition later fails. Crosses have no
-  window and no cooldown; `provenance.cooldown` is null for them.
+  window and no cooldown; `provenance.cooldown` is null for them. An RSI
+  crossing (desk/fill-compute) has no window; after each retained crossing
+  the next 14 sessions (the RSI period) are its cooldown, so
+  `provenance.cooldown` is 14.
 - **Baseline.** Each horizon's baseline is the engine's evaluable baseline for
   that exact study and horizon: the condition computable on the baseline dates
   but not required to hold; the same entry and completeness rules; not
@@ -477,7 +516,14 @@ No action button. Badge `● Live · <Mon> row · <date>`. Symmetric 2×2.
 **Where we are** (`rule-based · two-month lag`). Big label (regime color,
 serif 30px): `current.label`, the stored row stamped K−2 for the current
 session month K (`current.print`, v2 §9.1). Sentence "Growth <rising|falling>
-and inflation <rising|falling>. <Nth> month in a row." Stats: GROWTH
+and inflation <rising|falling>. <Nth> month in this regime." (desk/fill-compute;
+it was "in a row"). Under it one line reconciles the home page's classifier
+with this label, from `current.classifier` (desk/fill-compute): "The home
+page's classifier puts <classifier.label> at <odds>% for the <Mon YYYY> row;
+this tab's rule-based label is <label> for the <print> row, the one governing
+today. They <agree|disagree> this month." (the row clause is left out when the
+two rows are one; the odds are left out when served null). The word is
+"classifier", never the other one. Stats: GROWTH
 (industrial production, 3-mo slope) · INFLATION (CPI, 3-mo slope) · IN THIS
 REGIME `months_in` mo (since the <since> row). Beside the label, separately:
 "Latest print: <latest_print>" (never used to classify). LAST FIVE YEARS
@@ -501,20 +547,59 @@ indicators against NBER recession dates, trained <training.start> to
 on the site, and it is labeled as one wherever it appears." Footer
 `Advanced ▸` disabled, "not yet served".
 
-**What each regime has meant**: UNAVAILABLE (§1.0), from `/regime` `stats`
-(awaiting, reason "regime statistics not yet defined in the engine."). Labels
-kept: REGIME / MONTHS / S&P / MO / UP / VIX AVG.
+**What each regime has meant** (desk/fill-compute; Codex R-01, R-04, R-07), from
+`/regime` `stats`. Measured from when each regime was known: a row stamped M
+needs the prints published during M+1, so it governs month M+2 (the engine's
+K−2 rule), and each label is paired with the S&P's return and the VIX of the
+month it governed. Sub-label "since <window.start year> · measured from when
+each regime was known, <window.n> stored labels". Columns REGIME / MONTHS /
+S&P N / S&P MEDIAN / S&P MEAN / UP / VIX AVG / VIX DAYS: `months` (the stored
+labels); `spx_n` (the complete governed months, the returns' own sample);
+`spx_median_mo` and `spx_mean_mo` (simple monthly returns, × 100, signed);
+`up_pct`; `vix_avg` (one decimal); `vix_days` (tooltip "of <vix_sessions>
+sessions due"). The current label's row is marked. PNG 04's STOCK–BOND
+column is not drawn: no bond price series is stored (§6). The note under the
+table, from `totals` and `vix_coverage` only: "Measured from when each regime
+was known: each label is paired with the month it governed, <lag_months>
+months after its stamp, the month a session reads it for." · "S&P: <spx_n>
+complete months of <months> labels; <spx_pending> months not over yet;
+<spx_missing> months missing a month-end close." (each clause only when
+non-zero) · "VIX: <vix_days> of <vix_sessions> sessions stored; <n> stored
+rows set aside as off-session or invalid." ("VIX: not stored yet; the next
+full refresh stores it." while `vix_coverage.stored` is false). No read box.
 
-**What would change it** (`the next two prints`). The card carries the
-sub-label "from the latest print · <latest_print>", and the page prints it:
-the next prints are read from the newest stored row, while WHERE WE ARE shows
-the K−2 row (both stay; ruling of item 14). NEXT CPI · NEXT INDPRO, each
-`release_date` ("release date unavailable" when null) and the sentence "a
-print <operator> <threshold_mom × 100>% m/m flips <inflation|growth> to
-<falling|rising> → <flips_to>, effective from the <first_effective_month>
-label." (`operator` `<=` flips a rising axis to falling, `>` a falling axis
-to rising; v3 §9.3). LAST FIVE REGIME CHANGES · S&P A MONTH LATER:
-UNAVAILABLE (`/regime` `changes`, awaiting).
+**What would change it** (`the next two prints`). Both cards read one label
+(desk/fill-compute, the owner's brief, superseding item 14's ruling that read
+the next prints from the newest row): the next prints are read from the row
+WHERE WE ARE shows, the K−2 row (`next_prints.basis`, always
+`current.print`), and the card carries the sub-label "from the <basis month>
+row · <basis label>". Codex R-05: each stored row after it is already
+published and is said apart from the prints to come: "Already published: the
+<Mon YYYY> row reads <label>, the label from <first_effective_month>: the
+<Mon YYYY> CPI print (<mom>% m/m) flipped|kept inflation …; the <Mon YYYY>
+INDPRO print (…) … ." The upcoming prints are the month after the newest row
+(`upcoming_from`, named "next prints, from the <Mon YYYY> row · <label>" when
+it is not the basis). NEXT CPI · NEXT INDPRO, each its own month's
+`release_date` ("release date unavailable" when null) and "<Mon YYYY> print"
+(", released, not stored yet" while `released` and not printed), then the
+sentence "a print <operator> <threshold_mom × 100>% m/m flips
+<inflation|growth> to <falling|rising> → <flips_to>, effective from the
+<first_effective_month> label." (`operator` `<=` flips a rising axis to
+falling, `>` a falling axis to rising; v3 §9.3) and, Codex R-06, the other
+axis it reads: "The <Mon YYYY> <series> print has <axis> <direction>." when
+published, "Assumes <axis> stays <direction>; the <Mon YYYY> <series> print is
+not out yet." when not; or, for a print this series has already made (the row
+waiting on the other), "the <Mon YYYY> print (<printed_mom>% m/m) flipped
+<axis> to <printed_direction>." Every flip starts from the label it reads
+from: a test holds it for all four regimes. LAST FIVE REGIME CHANGES · S&P OVER THE
+MONTH EACH TOOK EFFECT (desk/fill-compute; Codex R-01, R-08), from `/regime`
+`changes`: each row "<effective_month, Mon YYYY> · <from> → <to> · <stamp
+month> row · <spx_1m>" (the S&P's simple return over the month the change
+took effect, the stamp plus the lag); a null return says its status's own
+words: "month not over" (`pending`, the window not complete yet) or "a
+month-end close is missing" (`missing`, a historical close not stored). The
+list's label reads "Last five of <n> regime changes · S&P over the month each
+took effect".
 
 ---
 
@@ -563,7 +648,7 @@ middle (left and green for a negative correlation, right and amber for a
 positive one), the signed value to two decimals, and its `symbol` (hover:
 `quantity`, `transform`). A row served null prints "not available · <reason>",
 or "Awaiting refresh" when its reason begins so. Stamp: "60 daily returns to
-<the rows' common date>", then each row dated otherwise ("VIXCLS to <date>"),
+<the rows' common date>", then each row dated otherwise ("<symbol> to <date>"),
 then "each against SPY". No meaning word is served. The 12-asset matrix under
 Advanced is `matrix` (awaiting, "the 12-asset matrix's assets and method are
 not specified yet."): `Advanced ▸` disabled.
@@ -640,8 +725,10 @@ this order (v3 §2, v4 B-03): 2s10s-2sigma-steepening, dollar-2sigma-20d,
 golden-cross, rsi-below-30, vix-spike-2sigma-5d, gold-2sigma-spx-weak,
 hy-2sigma-20d, spx-20d-2sigma, death-cross, rsi-above-70, oil-2sigma-20d,
 spx-5d-2sigma. A firing row is green-tinted. NOW: `● Firing · day <n>`
-(green text), `○ Quiet` (gray), or `○ Stale · <evaluated_on>` when the row's
-`evaluated_on` is not the comparison session (v3 §3); the NOW cell's tooltip
+(green text), `○ Quiet` (gray), or `○ Stale · <evaluated_on>` when the row is
+served `stale`: its `evaluated_on` trails the comparison session by more than
+its inputs' publication allowance (§12.5; desk/fill-compute: a FRED daily input
+1–3 sessions behind is current); the NOW cell's tooltip
 reads "evaluated on <evaluated_on>". An unavailable row keeps its label and
 prints its reason across the value columns, with no pill.
 
@@ -918,7 +1005,7 @@ two sessions; v2 §21's `data_status {state, worst_series, date}` is
 | `since_last_close.data.prev_session` | date | required | — | XNYS | N: the XNYS session before `comparison_session` (`api/calendar.previous_trading_day`) |
 | `since_last_close.data.new_fires` | array of `{slug, label, short}` | required (may be empty) | — | the two sessions | N firing state: `firing_now` false → true between `prev_session` and `comparison_session`, both evaluated in this generation; a signal whose `evaluated_on` is not `comparison_session`, or whose state is null, is excluded |
 | `since_last_close.data.still_firing` | array of `{slug, label, short, firing_day}` | required (may be empty) | sessions | the two sessions | N firing state: true → true; `firing_day` as §12.5 |
-| `since_last_close.data.vol_change_pts` | number | required, nullable | VIX points | the two sessions · daily · FRED VIXCLS | N (v4 B-12): VIX on `comparison_session` minus VIX on `prev_session`; null if either observation is missing |
+| `since_last_close.data.vol_change_pts` | number | required, nullable | VIX points | the two sessions · daily · `asset_prices` ^VIX (FRED VIXCLS before desk/fill-compute) | N (v4 B-12): VIX on `comparison_session` minus VIX on `prev_session`; null if either observation is missing |
 | `since_last_close.data.regime_from` | regime label | required, nullable | — | the K−2 row governing `prev_session` | N (B-12): stored `regimes` row |
 | `since_last_close.data.regime_to` | regime label | required, nullable | — | the K−2 row governing `comparison_session` | N (B-12) |
 | `since_last_close.data.regime_changed` | boolean | required, nullable | — | — | N (B-12): `regime_from ≠ regime_to`; null if either is null |
@@ -942,35 +1029,38 @@ two sessions; v2 §21's `data_status {state, worst_series, date}` is
 | `tiles.trend.data.date` | date | required | — | daily · `asset_prices` ^GSPC | S: the session the state is read at |
 | `tiles.trend.data.freq`, `.source` | `"daily"`, string | required | — | — | A: `"daily"`, `"asset_prices ^GSPC"` |
 | `tiles.vol` | block envelope | required | — | — | — |
-| `tiles.vol.data.vix` | number | required | index points | `date` · daily · FRED VIXCLS (`desk_series`) | E: newest stored observation |
+| `tiles.vol.data.vix` | number | required | index points | `date` · daily · `asset_prices` ^VIX (desk/fill-compute, owner's item 7: the CBOE close from ^GSPC's path, EODHD first where a token exists, else Yahoo; FRED's VIXCLS lagged the S&P by up to three sessions) | E: newest stored observation; `source` "asset_prices ^VIX" |
 | `tiles.vol.data.date` | date | required | — | — | E |
 | `tiles.vol.data.freq`, `.source` | `"daily"`, string | required | — | — | A |
+| `tiles.vol.data.band` | `"calm"` \| `"subdued"` \| `"stressed"` | required | — | `date` | A rule (desk/fill-compute): calm < 15 ≤ subdued < 25 ≤ stressed on `vix`, the home page's VIX words and edges (web `DashboardScreen.tsx`; `src/analytics/volatility.py`'s 15 / 25) |
+| `tiles.vol.data.band_edges` | `[15, 25]` | required | VIX points | — | A |
+| `tiles.vol.data.gap` | `{date, vix, realized_21d, gap_pts, window: {start, end, n}}` | required, nullable (null when no session has both) | VIX points | `gap.date` · daily · the VIX's store and `asset_prices` ^GSPC | N realized volatility (desk/fill-compute): on the XNYS calendar, the latest session where the VIX and the S&P's 21-day realized volatility both exist; `realized_21d` = 100 × √252 × the sample standard deviation (ddof 1) of the 21 daily log returns ending that session, each return needing both its closes (`src/analytics/technicals.realized_vol`, symbol-agnostic); `gap_pts` = `vix` − `realized_21d`; `window` names the first close read and the session, `n` 21 returns |
 | `active_signals` | array of Ledger rows (§12.5) | required (may be empty) | — | each row's own | A: the deduplicated union of every row with `firing_now` true and `stale` false and the five rows with the latest non-null `last_fired`, ordered firing first, then `last_fired` descending, then `slug` (v2 §19) |
 | `data_status` | block envelope | required | — | — | — |
 | `data_status.data.state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N data status (v4 B-06): the worst contributor, missing > stale > current |
-| `data_status.data.contributors` | array | required | — | — | N: one per series of the Desk feed set, the tier-1 inputs of the twelve Ledger studies plus DGS2 and DGS10 |
+| `data_status.data.contributors` | array | required | — | — | N: one per series of the Desk feed set, the tier-1 inputs of the twelve Ledger studies plus DGS2 and DGS10: T10Y2Y, BAMLH0A0HYM2, DGS2, DGS10, then the closes ^GSPC, GC=F, ^VIX |
 | `…contributors[].series` | string (series id) | required | — | — | A |
-| `…contributors[].observation_date` | date | required, nullable | — | the series' newest stored observation | S: `desk_series` for the FRED inputs, `asset_prices` for ^GSPC and GC=F (the symbol's own newest row) |
-| `…contributors[].expected_observation_date` | date | required, nullable | — | the observation the series' existing freshness policy expects (C-02); never a publication timestamp | E: for the FRED inputs, `api/freshness._daily_expected_and_lag`'s expected date (bond calendar for rates and spreads, FRED tolerance kept); for ^GSPC and GC=F, the completed session the `asset_prices` rule of `api/freshness.assess` expects, applied to the symbol |
-| `…contributors[].state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N: each series through its existing policy: `desk_series_states` for the FRED inputs, close/current → `current`, stale or delayed past its window → `stale`, absent/unknown → `missing`; the `asset_prices` rule for ^GSPC and GC=F, `current` and `delayed` within the grace → `current`; `stale` → `stale`; absent → `missing`; never a bare comparison with the latest XNYS session outside that policy (B-06) |
+| `…contributors[].observation_date` | date | required, nullable | — | the series' newest stored observation | S: `desk_series` for the FRED inputs, `asset_prices` for ^GSPC, GC=F and ^VIX (the symbol's own newest row) |
+| `…contributors[].expected_observation_date` | date | required, nullable | — | the observation the series' existing freshness policy expects (C-02); never a publication timestamp | E: for the FRED inputs, `api/freshness._daily_expected_and_lag`'s expected date (bond calendar for rates and spreads, FRED tolerance kept: current within 3 business days since desk/fill-compute); for ^GSPC, GC=F and ^VIX, the completed session the `asset_prices` rule of `api/freshness.assess` expects, applied to the symbol |
+| `…contributors[].state` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | N: each series through its existing policy: `desk_series_states` for the FRED inputs, close/current → `current`, stale or delayed past its window → `stale`, absent/unknown → `missing` (a FRED daily series 1–3 business days behind the print due is current, `api/freshness.DAILY_TOLERANCE` = 3, desk/fill-compute); the `asset_prices` rule for ^GSPC, GC=F and ^VIX, `current` and `delayed` within the grace → `current`; `stale` → `stale`; absent → `missing`; never a bare comparison with the latest XNYS session outside that policy (B-06) |
 | `…contributors[].reason` | string | required | — | — | E: the freshness policy's reason sentence |
 
 ### 12.2 `GET /study`
 
 Parameters: `preset=<slug>`, or the six slots `shock`, `window` (5 | 20 |
-60; omitted for a cross), `move` (`up2s` | `down2s` | `cross_above` |
-`cross_below`), `while` (`none` | `spx_below_50` | `regime:<Goldilocks |
+60; omitted for a cross or an RSI crossing), `move` (`up2s` | `down2s` |
+`cross_above` | `cross_below` | `rsi_above_70` | `rsi_below_30`), `while` (`none` | `spx_below_50` | `regime:<Goldilocks |
 Overheating | Stagflation | Recession Risk>`), `target`, `horizon` (5 | 10 |
 20 | 60, default 20). A request must normalize to one catalog study (§12.3);
 `horizon` then selects that study's results. There is no `confidence`
 parameter. `while` defaults to `none`; `window` is required for
-`up2s`/`down2s` and refused for a cross; `preset` also accepts an engine slug
+`up2s`/`down2s` and refused for a cross or an RSI crossing; `preset` also accepts an engine slug
 that parses to a catalog study's query. `horizon` also rides with a preset,
 and a preset link keeps it (Codex round 3, R-23). An unknown parameter, a
 repeated one, a preset asked with slot parameters, or a horizon outside the
 study's `allowed_horizons` is refused 422 `unsupported`, the message naming
-what (R-27). A preset for a row whose `allowed_horizons` is `[]` (the RSI
-rows) is awaiting, with the row's served reason, when the request carries no
+what (R-27). A preset for a row whose `allowed_horizons` is `[]` (none since
+desk/fill-compute gave the RSI rows a question) is awaiting, with the row's served reason, when the request carries no
 `horizon`; with any `horizon` parameter it is refused 422 `unsupported`, the
 message naming `horizon`. The default horizon is never applied to such a row.
 `/study/events` follows the same rule (S-31). Anything else: 422
@@ -981,8 +1071,8 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `slug` | string | required | — | — | A: the catalog slug the request normalizes to (public aliases; the engine's `slug_for` is unchanged, v3 §2) |
 | `label`, `short` | string | required | — | — | A: catalog (§12.3) |
 | `question.shock` | series key | required | — | — | A → E `Query.shock` |
-| `question.window` | 5 \| 20 \| 60 | required, nullable (null for a cross) | sessions | — | E `Query.w` |
-| `question.move` | `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A → E `Query.sign` / `Query.kind`+`cross` |
+| `question.window` | 5 \| 20 \| 60 | required, nullable (null for a cross or an RSI crossing) | sessions | — | E `Query.w` |
+| `question.move` | `up2s` \| `down2s` \| `cross_above` \| `cross_below` \| `rsi_above_70` \| `rsi_below_30` | required | — | — | A → E `Query.sign` / `Query.kind`+`cross` (`kind` `rsi`, `cross` `above` \| `below` for the RSI moves) |
 | `question.while` | `none` \| `spx_below_50` \| `regime:<label>` | required | — | — | A → E `Query.cond` (`spx_below_50dma`, `regime`) |
 | `question.target` | series key | required | — | — | E `Query.target` |
 | `question.horizon` | 5 \| 10 \| 20 \| 60 | required | sessions | — | A: the request's horizon |
@@ -998,7 +1088,8 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `evaluated_on` | date | required, nullable | — | — | N firing state: the study's latest evaluable session |
 | `comparison_session` | date | required | — | XNYS | N firing state: as §12.5 |
 | `prev_session` | date | required | — | XNYS | N firing state: as §12.1 |
-| `stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; a stale study is never called firing today (v3 §3) |
+| `stale` | boolean | required | — | — | N (desk/fill-compute, owner's item 7): `evaluated_on` trails `comparison_session` by more XNYS sessions than the study's publication allowance, the most any of its inputs allows: 0 for a close an exchange prints (^GSPC, GC=F, ^VIX, ^NDX, the dollar index, USD/JPY), 3 for a FRED daily series (`api/freshness.DAILY_TOLERANCE`), 8 for WTI (`DESK_SLOW_PUBLICATION`, published weekly), or is dated after it, or (Codex R-03) any of its inputs' newest validated observation (the engine's trace, `SignalTrace.inputs_last`: after alignment drops off-session rows and validation sets bad values aside, never the newest raw row) trails `comparison_session` by more than that input's own tolerance on its own calendar (`api/desk_v2.inputs_behind`: a close none on XNYS, a FRED rate or spread 3 bond business days, WTI 8), so a FRED grace never covers a stale close; a stale study's `firing_now` is false and `firing_day` null (never reported firing); before, any `evaluated_on` other than `comparison_session` was stale; a stale study is never called firing today (v3 §3) |
+| `stale_inputs` | array of registry keys | required (may be empty) | — | — | N (Codex R-03): the inputs whose newest validated observation trails `comparison_session` by more than their own tolerance on their own calendar |
 | `verdict` | `reliable` \| `suggestive` \| `no_edge` \| `insufficient` | required | — | `selected_horizon` | A: `verdict_rule` v1 (§1.5) at `selected_horizon` |
 | `verdict_rule` | `"v1"` | required | — | — | A |
 | `verdict_confidence` | `0.90` | required | — | — | E `CI_LEVEL` |
@@ -1036,7 +1127,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `last_events[].value_20` | number | required, nullable (incomplete) | `target_unit` | — | P |
 | `without_condition` | block envelope | required | — | — | awaiting, reason "conditional-versus-unconditional comparison is not defined" (v4 B-11, C-01); the shape once defined is §12.13 |
 | `provenance.entry_rule` | string | required | — | — | E `provenance.entry_rule` |
-| `provenance.cooldown` | integer | required, nullable (null for a cross) | sessions | — | E `cooldown_sessions` |
+| `provenance.cooldown` | integer | required, nullable (null for a cross; 14 for an RSI crossing) | sessions | — | E `cooldown_sessions` |
 | `provenance.seed` | integer | required | — | — | E |
 | `provenance.engine_version` | string | required | — | — | A |
 | `provenance.series_start` | object, key → date | required | — | each input's first stored observation | E `provenance.inputs` |
@@ -1087,11 +1178,11 @@ served string as is.
 | `studies` | array of 15 | required | — | — | A: the catalog below |
 | `studies[].slug` | string | required | — | — | A |
 | `studies[].label`, `short` | string | required | — | — | A: one canonical label and short per slug, reused by every tab (v2 §19) |
-| `studies[].client_label` | string | required, nullable (null for the RSI definitions) | — | — | A: the Client view's title in plain words, no σ and no engine terms (§11; ruled in item 14, the 13 titles below approved in item 15) |
+| `studies[].client_label` | string | required, nullable (no catalog row is null since desk/fill-compute) | — | — | A: the Client view's title in plain words, no σ and no engine terms (§11; ruled in item 14, the 13 titles below approved in item 15) |
 | `studies[].available` | boolean | required | — | the current generation | A: true when the engine completes on the pinned generation (v4 B-07): every input's coverage stored |
 | `studies[].unavailable` | `{reason, until\|null}` | required, nullable (null when available) | — | — | E: the engine's `not_stored` reason, or the §1.0 reason |
-| `studies[].question` | `{shock, window, move, while, target}` | required, nullable (null for the RSI definitions) | — | — | A |
-| `studies[].allowed_horizons` | subset of [5, 10, 20, 60] | required | sessions | — | A: [5, 10, 20, 60] for every row with a question, available or not; [] for the RSI rows. |
+| `studies[].question` | `{shock, window, move, while, target}` | required, nullable (no catalog row is null since desk/fill-compute) | — | — | A |
+| `studies[].allowed_horizons` | subset of [5, 10, 20, 60] | required | sessions | — | A: [5, 10, 20, 60] for every row with a question, available or not (every row since desk/fill-compute). |
 
 A study is `ready` when the existing engine completes on the pinned
 generation; missing required inputs, or no evaluable history, is `awaiting`
@@ -1117,11 +1208,20 @@ allows all four horizons):
 | spx-5d-2sigma | S&P 5-day move over 2σ | S&P 5-day move | The S&P rallies sharply within a week | spx | 5 | up2s | none | spx | `spx-w5-z2.0-up-none-spx` |
 | 2s10s-2sigma-steepening | 2s10s +2σ steepening | 2s10s steepening | The yield curve steepens sharply over a month | curve_2s10s | 20 | up2s | none | spx | `curve_2s10s-w20-z2.0-up-none-spx` |
 | oil-2sigma-20d | Oil +2σ, 20 days | oil spike | Oil jumps over a month | wti | 20 | up2s | none | spx | `wti-w20-z2.0-up-none-spx` |
-| rsi-above-70 | RSI above 70 | RSI > 70 | — | — | — | — | — | — | none: `available: false` (RSI not computed) |
-| rsi-below-30 | RSI below 30 | RSI < 30 | — | — | — | — | — | — | none: `available: false` |
+| rsi-above-70 | RSI above 70 | RSI > 70 | The S&P's 14-day momentum gauge (RSI) climbs above 70 | spx | — | rsi_above_70 | none | spx | `spx-rsi-above-70` |
+| rsi-below-30 | RSI below 30 | RSI < 30 | The S&P's 14-day momentum gauge (RSI) drops below 30 | spx | — | rsi_below_30 | none | spx | `spx-rsi-below-30` |
 
-Served reasons: RSI rows: `unavailable.reason` "RSI is not computed yet.";
-`/positions`: "Positions are kept in this browser; there is no server
+The two RSI rows (desk/fill-compute): the engine's `kind` `rsi` on the S&P,
+the RSI of §12.7 crossing strictly above 70 (strictly below 30) on a session
+whose preceding session's RSI was defined and not in that zone, a 14-session
+cooldown after each retained crossing, entry and horizons as every S&P study.
+A session is eligible, as an event or as a baseline candidate, only where its
+RSI and the preceding session's are both defined (Codex R-02): the first
+session after an RSI re-seed can hold no crossing, so it is neither.
+Their client labels are drafted by this branch and await the owner's
+approval (item 15 approved the other 13).
+
+Served reasons: `/positions`: "Positions are kept in this browser; there is no server
 position store."; `/basket/:id`, `/basket/price`, `/hedge`: "basket pricing
 and option structures not yet defined in the engine."
 
@@ -1175,10 +1275,10 @@ cells; booleans `true` / `false`.
 | `signals[].vs_normal` | number | required, nullable | log pp or bp (§1.9) | — | A: v3 §6 formula |
 | `signals[].target_unit`, `display_unit` | as §12.2 | required, nullable (null when unavailable) | — | — | E, A |
 | `signals[].verdict` | verdict enum | required, nullable (null when unavailable) | — | h = 20 | A: v1 |
-| `signals[].firing_now` | boolean | required, nullable | — | `evaluated_on` | N firing state: shocks — the raw trigger and the condition hold on `evaluated_on`, regardless of cooldown; crosses — true only on the strict crossing session |
+| `signals[].firing_now` | boolean | required, nullable | — | `evaluated_on` | N firing state: shocks — the raw trigger and the condition hold on `evaluated_on`, regardless of cooldown; crosses — true only on the strict crossing session; RSI crossings — the RSI is in the zone (strictly above 70, strictly below 30) on `evaluated_on`, regardless of the crossing rule and the cooldown |
 | `signals[].firing_day` | integer | required, nullable (null unless `firing_now` is true) | sessions | — | N: consecutive qualifying XNYS sessions including `evaluated_on`, reset after any false or unevaluable session, never bridging a missing session; 1 for a cross |
 | `signals[].evaluated_on` | date | required, nullable | — | — | N: the row's own latest evaluable session |
-| `signals[].stale` | boolean | required | — | — | N: `evaluated_on` is not `comparison_session`; false for an unavailable row; a stale row is never called firing today |
+| `signals[].stale` | boolean | required | — | — | N (desk/fill-compute, owner's item 7): `evaluated_on` trails `comparison_session` by more XNYS sessions than the study's publication allowance, the most any of its inputs allows: 0 for a close an exchange prints (^GSPC, GC=F, ^VIX, ^NDX, the dollar index, USD/JPY), 3 for a FRED daily series (`api/freshness.DAILY_TOLERANCE`), 8 for WTI (`DESK_SLOW_PUBLICATION`, published weekly), or is dated after it, or (Codex R-03) any of its inputs' newest validated observation (the engine's trace, `SignalTrace.inputs_last`: after alignment drops off-session rows and validation sets bad values aside, never the newest raw row) trails `comparison_session` by more than that input's own tolerance on its own calendar (`api/desk_v2.inputs_behind`: a close none on XNYS, a FRED rate or spread 3 bond business days, WTI 8), so a FRED grace never covers a stale close; a stale study's `firing_now` is false and `firing_day` null (never reported firing); before, any `evaluated_on` other than `comparison_session` was stale; false for an unavailable row; a stale row is never called firing today |
 
 ### 12.6 `GET /regime`
 
@@ -1188,6 +1288,7 @@ cells; booleans `true` / `false`.
 | `current.data.label` | regime label | required | — | row `print` · monthly · `regimes` | E stored row (`classify_regime`) |
 | `current.data.print` | month | required | — | K−2 for the current session month | A (v2 §9.1) |
 | `current.data.latest_print` | month | required | — | the newest stored row | E; shown on Regime only, never used to classify |
+| `current.data.classifier` | `{month, label, odds, agrees}` | required, nullable (null when the newest row stores no finite odds) | —, —, fraction, — | the newest stored row · monthly · `regimes` | S (desk/fill-compute): the home page's classifier reading (`/api/regime/latest`): the newest row's four stored odds (`prob_goldilocks` … `prob_recession`, src/regime.py's softmax), its dominant label (the first of equal odds in that order) and those odds; `odds` is null when the label is Recession Risk (the Desk never shows `regimes.prob_recession`); `agrees` is `label` equal to `current.label` |
 | `current.data.growth`, `inflation` | `"rising"` \| `"falling"` | required | — | as `print` | E signs of the stored trends |
 | `current.data.months_in` | integer | required | months | — | A: the run of equal labels in consecutive stored months ending at `print`; a missing month ends the run |
 | `current.data.since` | month | required | — | — | A |
@@ -1208,17 +1309,40 @@ cells; booleans `true` / `false`.
 | `recession.data.methodology` | string | required | — | — | A: "in-sample fitted scores" |
 | `recession.data.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, `"recession model (src/analytics/recession.py)"` |
 | `next_prints` | block envelope | required | — | — | — |
-| `next_prints.data.cpi`, `.indpro` | object | required, nullable | — | — | N next-print thresholds (§13.2) |
-| `next_prints.data.<k>.release_date` | date | required, nullable (null when the calendar has no record) | — | `event_calendar` | E |
-| `next_prints.data.<k>.reference_month` | month | required | — | — | N |
+| `next_prints.data.basis` | `{month, label}` | required | — | the K−2 row for the session month of the response | N (desk/fill-compute): the row WHERE WE ARE shows, always `current.print` |
+| `next_prints.data.published` | array of ≤ 2 `{month, label, first_effective_month, cpi, indpro}` | required (may be empty) | — | monthly · `regimes`, `raw_series` | N (Codex R-05): the stored rows after `basis`, already published, each with the month it governs from (`month` + 2) and the two prints that made it |
+| `…published[].cpi`, `.indpro` | `{reference_month, series, mom, direction, from_direction}` | required | —, —, m/m change, —, — | — | N: the print of the row's own month, its m/m change against the series' previous month (null when that month is not printed), the axis the stored row carries, and the previous row's |
+| `next_prints.data.upcoming_from` | `{month, label}` | required | — | the newest stored row | N (Codex R-05): the row the upcoming prints are read from; the card names it when it is not `basis` |
+| `next_prints.data.cpi`, `.indpro` | object | required, nullable | — | — | N next-print thresholds (§13.2), for the month after `upcoming_from` |
+| `next_prints.data.<k>.release_date`, `.released` | date, boolean | required, nullable (null when the calendar has no record) | — | `event_calendar` | E (Codex R-05): the release of `reference_month` itself, the first stored release whose New York date falls in the month after it (a monthly print for M is released during M+1), never the next release whatever it covers; N: whether it is out at the response's "now" (true while the store has not stored the print yet) |
+| `next_prints.data.<k>.reference_month` | month | required | — | — | N: `upcoming_from.month` + 1 |
 | `next_prints.data.<k>.series` | `"CPIAUCSL"` \| `"INDPRO"` | required | — | — | A |
-| `next_prints.data.<k>.threshold_mom` | fraction | required, nullable | m/m change | — | N: m is the month of the latest stored regimes row; x_prev is the series' value on the joint INDPRO–CPIAUCSL row before m; `threshold_mom = x_prev / x(m) − 1` (valid for the three-month window only); `threshold_mom` and `flips_to` are null when the series already has a value for m+1; equality is falling |
+| `next_prints.data.<k>.threshold_mom` | fraction | required, nullable | m/m change | — | N: m is `upcoming_from`: `x_prev / x(m) − 1` on the joint frame; null when the series has already printed `reference_month` |
+| `next_prints.data.<k>.from_direction` | `"rising"` \| `"falling"` | required | — | as `upcoming_from` | E: the sign of that row's own stored trend for this axis |
+| `next_prints.data.<k>.printed_mom`, `printed_direction` | fraction, `"rising"` \| `"falling"` | required, nullable (null unless the series already has a print for `reference_month`, the row waiting on the other series) | m/m change, — | — | N: that print's m/m change and the axis it gives the row |
 | `next_prints.data.<k>.operator` | `"<="` \| `">"` | required | — | — | N: `<=` flips a rising axis to falling; `>` a falling axis to rising |
-| `next_prints.data.<k>.flips_to` | regime label | required, nullable (null when not evaluable) | — | — | N: from the latest reference row's other-axis sign |
+| `next_prints.data.<k>.flips_to` | regime label | required, nullable (null when not evaluable) | — | — | N (Codex R-06): the label the flipped axis gives with the other axis at `reference_month` as `other` says |
+| `next_prints.data.<k>.other` | `{axis, series, reference_month, direction, status}` | required | — | — | N (Codex R-06): the other axis at `reference_month`: `published` when its series has printed that month (its direction there on the joint frame's rule), else `assumed`, the `upcoming_from` row's sign kept, and the card says it is an assumption |
 | `next_prints.data.<k>.first_effective_month` | month | required | — | — | N: `reference_month` + 2 months |
 | `next_prints.data.<k>.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, the FRED series id; the release date's source is `event_calendar` |
-| `stats` | block envelope | required | — | — | awaiting: "regime statistics not yet defined in the engine." |
-| `changes` | block envelope | required | — | — | awaiting: same reason |
+| `stats` | block envelope | required | — | — | — |
+| `stats.data.rows` | array of 4, in the order Goldilocks, Overheating, Stagflation, Recession Risk | required | — | monthly · `regimes`, `asset_prices` ^GSPC, the registry's `vix` | N regime statistics (desk/fill-compute; Codex R-01): every stored regimes row counts once, measured over the month it governed, its stamp + `lag_months` (the engine's `REGIME_LAG_MONTHS`, 2: a session in month K reads the row stamped K − 2) |
+| `stats.data.rows[].regime`, `months` | regime label, integer | required | labels | — | S: the stored rows with that label (Q8) |
+| `stats.data.rows[].spx_n`, `spx_pending`, `spx_missing` | integer | required | months | — | N (Codex R-04, R-08): of those labels' governed months, the complete ones (the close on the month's last XNYS session and on the previous month's last XNYS session both stored), those whose window is not complete yet (the month's last session after the newest stored close, or a later month), and those complete by date but missing a close |
+| `stats.data.rows[].spx_median_mo`, `spx_mean_mo` | fraction | required, nullable (null when `spx_n` is 0) | simple return | — | N: median and mean of close(last session of g) / close(last session of g − 1) − 1 over the `spx_n` governed months |
+| `stats.data.rows[].up_pct` | fraction | required, nullable | — | — | N: the share of the `spx_n` months above zero |
+| `stats.data.rows[].vix_avg`, `vix_days`, `vix_sessions` | number, integer, integer | required (`vix_avg` nullable when `vix_days` is 0) | VIX points, sessions | — | N (Codex R-07, R-04): the VIX (`asset_prices` ^VIX) aligned on the XNYS calendar and validated as every engine input is (`event_study.align`, `validate_values`); over the sessions of the governed months that are not pending, the mean of the stored closes and how many there are, and how many sessions were due: every XNYS session of those whole months, whatever the VIX's stored range, so a missing session stays in the denominator (Codex R-09); null and 0 while ^VIX is not stored (a store before its first full refresh after desk/fill-compute), the S&P columns served and `source` saying so |
+| `stats.data.window`, `governed` | `{start, end, n}` | required | months | — | S: the first and last stored rows (stamps) and their count; the first and last governed months |
+| `stats.data.lag_months` | `2` | required | months | — | A: the engine's `REGIME_LAG_MONTHS` |
+| `stats.data.totals` | `{months, spx_n, spx_pending, spx_missing, vix_days, vix_sessions}` | required | — | — | N: the four rows' sums, for the note under the table |
+| `stats.data.vix_coverage` | `{stored, first, last, off_session_dropped, invalid}` | required | —, date, date, rows, rows | — | N (Codex R-07): whether ^VIX is stored, its first and last stored dates, and the stored rows the aligned reader set aside (on a day XNYS did not trade; a non-finite or non-positive value) |
+| `stats.data.freq`, `.source` | `"monthly"`, string | required | — | — | A |
+| `changes` | block envelope | required | — | — | — |
+| `changes.data.rows` | array of ≤ 5, newest first | required | — | monthly · `regimes`, `asset_prices` ^GSPC | N (desk/fill-compute): the stored rows whose label differs from the previous stored row's (Q9; a missing month is not bridged into a change of its own, the change is dated by the row that carries the new label) |
+| `changes.data.rows[].effective_month`, `stamp_month`, `from`, `to`, `from_month` | month, month, regime label, regime label, month | required | — | — | N (Codex R-01): the month the new label took effect (its stamp + `lag_months`); S: the row's stamp, the previous stored row's label, its label, the previous stored row's month |
+| `changes.data.rows[].spx_1m`, `spx_1m_status` | fraction, `"complete"` \| `"pending"` \| `"missing"` | required (`spx_1m` nullable unless complete) | simple return | — | N (Codex R-08): the S&P's simple return over `effective_month`, on the rule of `stats`; `pending` while its window is not complete yet, `missing` when a close it needs is not stored |
+| `changes.data.n` | integer | required | changes | — | N: every change in the stored rows |
+| `changes.data.window`, `.lag_months`, `.freq`, `.source` | `{start, end, n}`, `2`, `"monthly"`, string | required | — | — | A |
 
 ### 12.7 `GET /technicals`
 
@@ -1241,8 +1365,21 @@ Every field describes the registry series `spx` (^GSPC).
 | `cross` | `{kind: "golden"\|"death", date}` | required, nullable | — | — | E `cross_positions` |
 | `move_20d_sigma` | number | required, nullable | σ | `move_20d_date` | N firing state: the spx-20d-2sigma study's z (`zscore(move(level, spx, 20))`) on its `evaluated_on` |
 | `move_20d_date` | date | required, nullable | — | — | N |
+| `rsi` | number | required, nullable (null when no session has a defined RSI) | index points 0–100 | `rsi_date` · daily · `asset_prices` ^GSPC | N RSI (desk/fill-compute): `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), Wilder's RSI(14): seeded from the plain means of 14 close-to-close changes over 15 contiguous valid closes, then avg = (avg × 13 + x) / 14; no losses with gains → 100, no gains with losses → 0, both zero → 50; a missing close breaks the run and the RSI is undefined until 14 new changes re-seed it; the newest defined value |
+| `rsi_date` | date | required, nullable | — | — | N: the session of `rsi` (a gap in the closes holds it on the last session before the gap until the RSI re-seeds) |
+| `rsi_prev`, `rsi_prev_date` | number, date | required, nullable | index points | — | N: the RSI on the XNYS session before `rsi_date` (null when undefined there), and that session |
+| `rsi_last_above_70`, `rsi_last_below_30` | `{date, rsi, after_20d, after_20d_to, after_20d_status}` | required, nullable (null when the RSI has never been in that zone) | —, index points, simple return, —, — | — | N: the last session with the RSI strictly above 70 (strictly below 30), its RSI, and the S&P's simple return from that close to the close 20 XNYS sessions later (`after_20d_to`); `after_20d_status` (Codex R-08) `complete`, `pending` while that session is after the newest stored close (`after_20d` and `after_20d_to` null), or `missing` when it is not but a close the return needs is not stored (`after_20d` null, `after_20d_to` the session) |
+| `macd` | object | required, nullable (null when no session has a defined MACD) | index points | `macd.date` · daily · `asset_prices` ^GSPC | N MACD (desk/fill-compute, owner's item 9): `src/analytics/technicals.macd` (the shared, symbol-agnostic copy, series in, MACD out) on the closes aligned to the XNYS calendar: `macd` = EMA(12) − EMA(26) of the closes, `signal` = EMA(9) of `macd`, `hist` = `macd` − `signal`; each EMA has alpha 2 / (span + 1) and is seeded at its span-th contiguous value with the plain mean of those values; a missing close breaks every average that reads it, and they are undefined until they re-seed (nothing bridges a gap) |
+| `macd.date`, `.macd`, `.signal`, `.hist` | date, numbers | required | index points | — | N: the newest session with a defined histogram (a gap in the closes holds it on the last session before the gap until the averages re-seed), and the three values there |
+| `macd.last_cross` | `{date, kind: "above"\|"below"}` | required, nullable (null when the line has never crossed its signal) | — | — | N: the latest strict crossing, `technicals.macd_crossings`: a session whose histogram is strictly positive (negative) after the side carried was the other one; a zero histogram keeps the carried side; an undefined session resets it, so a crossing never bridges one (the rule of the 50/200-day crosses) |
+| `macd.params` | `{fast: 12, slow: 26, signal: 9}` | required | sessions | — | A |
+| `seasonality` | object | required, nullable (null when no calendar month is complete) | — | `seasonality.window` · monthly · `asset_prices` ^GSPC | N seasonality (desk/fill-compute, owner's item 10): `src/analytics/technicals.monthly_seasonality` (the shared, symbol-agnostic copy, series in) over every stored close aligned on the XNYS calendar from the first stored close through the last day of the newest close's month (`api/desk_items_macro.month_closes`, the regime table's input): a month's simple return is its last session's close over the previous month's last session's close, less one; a month whose last session has no stored close (a month not over yet included), or the month after one, has none |
+| `seasonality.rows` | array of 12 `{month, label, n, avg, pct_up, first_year, last_year}` | required | —, —, years, simple return, fraction, year, year | — | N: calendar order; `n` the years with a return for that month, `avg` their mean, `pct_up` the share strictly above zero, `first_year`/`last_year` the first and last of them; `avg`, `pct_up` and the years null when `n` is 0 |
+| `seasonality.window` | `{start, end, n}` (months) | required | months | — | N: the first and last months with a return, and how many there are |
+| `seasonality.freq`, `.source` | `"monthly"`, `"asset_prices ^GSPC"` | required | — | — | A |
+| `macd.series` | array of `{date, macd, signal, hist}` | required | index points | daily | N chart series: one point per session of `series.6m` (the XNYS sessions after `date` − 6 calendar months, through `date`); each value null where undefined |
 | `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13): the XNYS sessions after `date` − 6, 12 and 36 calendar months, through `date`; a missing close is a point with `close: null`; `ma50`/`ma200` nullable per point |
-| `signals_allowlist` | `["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows are omitted while unavailable). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
+| `signals_allowlist` | `["golden-cross","death-cross","rsi-above-70","rsi-below-30","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows since desk/fill-compute). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
 | `vol` | block envelope | required | — | — | awaiting: "needs stored SPY option snapshots and a versioned skew method." |
 | `sectors` | block envelope | required | — | — | N sector leadership (§12.14, desk/fill-etf): the `/sectors` fields without `breadth`, from the same worker item, so the two agree; awaiting with the route's reason while the store lacks the ETFs |
 
@@ -1282,10 +1419,10 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `stock_bond.data.stock`, `bond` | `{etf, name}` | required | — | — | A: SPY, TLT |
 | `stock_bond.data.transform`, `unit`, `date`, `freq`, `source`, `providers` | `"daily log return"`, `"correlation"`, date, `"daily"`, `"asset_prices"`, string[] | required | — | — | A, S |
 | `correlations` | block envelope, data an array | required | — | — | N what moves with the S&P (desk/fill-etf); awaiting with "Awaiting refresh: …" while SPY, or every listed asset, is not stored |
-| `correlations.data[]` | `{asset, symbol, quantity, transform, corr, date, window, reason}` | required | — | — | in this order: TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ, and VIX (FRED VIXCLS) when the store holds it |
+| `correlations.data[]` | `{asset, symbol, quantity, transform, corr, date, window, reason}` | required | — | — | in this order: TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ, and VIX (`asset_prices` ^VIX since desk/fill-compute) when the store holds it |
 | `correlations.data[].corr` | number | required, nullable | correlation | `date` · daily | N: Pearson's r of SPY's daily log returns and the asset's (VIX: daily log changes of the level) over the 60 XNYS return dates ending at `date`, the newest session both hold a value, every pair complete (no forward fill) |
 | `correlations.data[].date`, `window` | date, `{start, end, n}` | required, nullable (when the asset is not stored) | — | XNYS | N |
-| `correlations.data[].symbol`, `quantity`, `transform` | string | required | — | — | A: the registry's series id; "adjusted close" (VIX "index level (FRED VIXCLS)"); "daily log return" (VIX "daily log change") |
+| `correlations.data[].symbol`, `quantity`, `transform` | string | required | — | — | A: the registry's series id; "adjusted close" (VIX "index level (^VIX)"); "daily log return" (VIX "daily log change") |
 | `correlations.data[].reason` | string | required, nullable | — | — | N: non-null exactly when `corr` is null: "Awaiting refresh: the full refresh stores <symbol>; this database predates it.", or "fewer than 60 complete daily return pairs in the window to <date>" |
 | `matrix` | block envelope | required | — | — | awaiting: "the 12-asset matrix's assets and method are not specified yet." |
 
@@ -1408,7 +1545,7 @@ strikes, expiry, quantity, quote timestamps and signed Greeks are served;
 atm_iv_1m, realized_20d, term: {"1m","3m","6m"}, history_from}` with each
 value's date. Needs stored SPY option snapshots and a versioned skew
 method; `realized_20d` needs its method specified, and the Overview's
-`tiles.vol` `gap_pts` and `band` wait on it (v2 §13).
+`tiles.vol` `gap` and `band` are served since desk/fill-compute (§12.1, realized over 21 daily log returns; the Technicals vol column still waits on the option snapshots).
 
 **Sectors — served since desk/fill-etf (§12.14); this deferred shape is
 kept for the history** (`/technicals` `sectors` block; `GET /sectors`). `{window_months: 3, leadership: [{etf, name, short, rel_ret}]
@@ -1428,12 +1565,9 @@ corr}]`, `matrix: {assets, labels, window, values}`. Each asset declares
 `symbol`, `quantity` and `transform`; Pearson over the same trailing 60 XNYS
 return dates, 60 complete pairs, no forward fill (v2 §12).
 
-**RSI — `status: deferred`** (`/technicals` `rsi`, `rsi_date`, `rsi_prev`;
-the rsi-above-70 and rsi-below-30 studies and Ledger rows). RSI(14) with
-Wilder smoothing, initialized from 14 changes over 15 contiguous valid
-closes; no losses with gains → 100; no gains with losses → 0; both zero →
-50; any gap invalidates it until re-initialized (v3 §13). The card's words
-("rising", "falling") come only from the two served numbers.
+(The RSI shape once deferred here is served since desk/fill-compute: the
+`/technicals` fields in §12.7, the two studies and Ledger rows in §12.3 and
+§12.5.)
 
 **Confidence — `status: deferred`** (`/study?confidence=0.80|0.90|0.95`,
 `confidence_note`). Changes only the interval quantiles, on identical seeded
@@ -1507,10 +1641,32 @@ authorize any conditional-improvement judgment. Added by desk/fill-etf
 its pattern rule, and breadth of the 11 sector ETFs (§12.14); the
 stock–bond correlation and what moves with the S&P (§12.8).
 
-**Not allowed for Monday** (the blocks are unavailable): RSI; confidence
-80% / 95%; the regime statistics table and change outcomes; the
+**Not allowed for Monday** (the blocks are unavailable): RSI (added after
+Monday, below); confidence
+80% / 95%; the regime statistics table and change outcomes (added after
+Monday, below); the
 without-condition comparison; everything §1.0 lists as unavailable. No
 implementation may broaden scope to satisfy an illustrative shape.
+
+**Added after Monday (desk/fill-compute, 2026-09-27, by the owner's brief).**
+Each is a new calculation from stored data, listed in §12 with its rule:
+- the 14-day RSI on ^GSPC, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy), served by `/technicals` (§12.7);
+- MACD (12, 26, 9) on ^GSPC and its last crossover, `src/analytics/technicals.macd` and `macd_crossings` (symbol-agnostic:
+  a close series in, MACD out), served by `/technicals` `macd` (§12.7; the owner's item 9);
+- the S&P's seasonality by calendar month, `src/analytics/technicals.monthly_returns` and `monthly_seasonality`
+  (symbol-agnostic; the regime table's month returns now read the same `monthly_returns`), served by `/technicals`
+  `seasonality` (§12.7; the owner's item 10);
+- what each regime has meant and the last five changes on `/regime` (`stats`, `changes`, §12.6), on the audit's §2.4 method
+  with the K−2 availability lag (Codex R-01: each label over the month it governed, each change by its effective month);
+- the VIX read from `asset_prices` ^VIX (^GSPC's path) instead of FRED VIXCLS, and `stale` judged per study by its inputs'
+  publication cadence (§12.2, §12.5; the owner's item 7). A store its first full refresh after desk/fill-compute has not
+  reached holds no ^VIX rows: the vol tile awaits with the engine's words ("awaiting the next full refresh"), the VIX
+  studies are unavailable with the same reason, `data_status` names ^VIX missing, and the regime table serves its S&P
+  columns with `vix_avg` null. The stored VIXCLS rows are kept (never deleted), no longer refreshed or read by the Desk;
+- the S&P's 21-day realized volatility, `src/analytics/technicals.realized_vol`, and the VIX's band word and gap to it on `/overview` `tiles.vol` (§12.1);
+- the two RSI studies, the engine's `kind` `rsi` (strict crossings of 70 and 30, a 14-session cooldown), scored by the
+  existing engine and the v1 verdict rule like every catalog study (§12.3, §12.5). Existing studies' native results and
+  hashes are unchanged: the RSI's own parameters enter only an RSI study's `inputs_hash`.
 
 ### 13.3 Session A
 Fixtures under `web/src/fixtures/desk/` in the §12 shapes (envelopes

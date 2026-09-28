@@ -20,11 +20,12 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from api import analytics_cache, desk_catalog as catalog, desk_envelope as env, desk_v2
+from api import analytics_cache, desk_catalog as catalog, desk_envelope as env, desk_items, desk_v2
 from api import calendar as nyse
 from api import freshness as fr
 from api.main import app
 from src.analytics import dbpath
+from src.desk import event_study as es
 from tests import desk_contract as dc
 from tests.test_desk_v2_study import _serve
 from tests.test_event_study import _synthetic_db
@@ -33,7 +34,8 @@ client = TestClient(app)
 ITEMS = [(n, f) for n, f in analytics_cache.ITEMS
          if n.startswith(("desk_assets", "desk_study:", "desk_preset:", "desk_technicals", "desk_facts", "desk_regime"))
          or n == "recession"]
-SEVEN = ["T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DGS2", "DGS10", "^GSPC", "GC=F"]
+# desk/fill-compute (item 7): the VIX is a close (^VIX in asset_prices), judged by the closes' rule after ^GSPC and GC=F.
+SEVEN = ["T10Y2Y", "BAMLH0A0HYM2", "DGS2", "DGS10", "^GSPC", "GC=F", "^VIX"]
 WATERMARKS_DDL = """CREATE TABLE IF NOT EXISTS source_watermarks (source TEXT PRIMARY KEY, last_obs TEXT, last_value REAL,
 advanced_at TEXT, checked_at TEXT NOT NULL, status TEXT NOT NULL, detail TEXT)"""
 RAW_DDL = """CREATE TABLE IF NOT EXISTS raw_series (id INTEGER PRIMARY KEY AUTOINCREMENT, series_id TEXT NOT NULL,
@@ -302,16 +304,15 @@ def _status(now: datetime, stored: dict | None, prices: dict) -> dict:
 
 
 def _all_current(d: str, px: str) -> tuple[dict, dict]:
-    return ({sid: d for sid in desk_v2.DATA_STATUS_FRED}, {"^GSPC": px, "GC=F": px})
+    return ({sid: d for sid in desk_v2.DATA_STATUS_FRED}, {"^GSPC": px, "GC=F": px, "^VIX": px})
 
 
 def test_each_fred_contributor_is_desk_series_states_mapped():
     from api import desk as desk_mod
 
     now = datetime(2026, 9, 24, 14, 0, tzinfo=timezone.utc)
-    stored = {"T10Y2Y": "2026-09-23", "VIXCLS": "2026-09-22", "BAMLH0A0HYM2": "2026-09-15", "DGS2": "2026-09-22",
-              "DGS10": "2026-09-22"}
-    got = {c["series"]: c for c in _status(now, stored, {"^GSPC": "2026-09-23", "GC=F": "2026-09-23"})["contributors"]}
+    stored = {"T10Y2Y": "2026-09-23", "BAMLH0A0HYM2": "2026-09-15", "DGS2": "2026-09-22", "DGS10": "2026-09-22"}
+    got = {c["series"]: c for c in _status(now, stored, {"^GSPC": "2026-09-23", "GC=F": "2026-09-23", "^VIX": "2026-09-23"})["contributors"]}
     specs = [s for s in desk_mod.desk_series_specs(stored) if s["id"] in stored]
     for r in fr.desk_series_states(stored=stored, specs=specs, watermarks={}, now=now):
         sid = r["id"][len("desk:"):]
@@ -332,11 +333,19 @@ def test_a_bond_holiday_is_not_a_missed_print():
     assert got["DGS10"]["state"] == "current" and got["DGS10"]["expected_observation_date"] == "2026-10-09"
 
 
-def test_vix_a_day_behind_is_current():
+def test_the_vix_is_a_close_and_takes_the_closes_rule():
+    """desk/fill-compute (item 7): ^VIX is judged like ^GSPC, not by FRED's
+    tolerance: a session behind the close due is stale once the grace has
+    passed, current inside it."""
     stored, prices = _all_current("2026-09-23", "2026-09-23")
-    stored["VIXCLS"] = "2026-09-22"
-    got = {c["series"]: c for c in _status(datetime(2026, 9, 24, 14, 0, tzinfo=timezone.utc), stored, prices)["contributors"]}
-    assert got["VIXCLS"]["state"] == "current" and "1 business day(s) behind" in got["VIXCLS"]["reason"]
+    now = datetime(2026, 9, 24, 14, 0, tzinfo=timezone.utc)
+    got = {c["series"]: c for c in _status(now, stored, prices)["contributors"]}
+    assert got["^VIX"]["state"] == "current" and got["^VIX"]["expected_observation_date"] == "2026-09-23"
+    behind = {c["series"]: c for c in _status(now, stored, dict(prices, **{"^VIX": "2026-09-22"}))["contributors"]}
+    assert behind["^VIX"]["state"] == "stale" and behind["^GSPC"]["state"] == "current"
+    inside = {c["series"]: c for c in _status(datetime(2026, 9, 24, 3, 0, tzinfo=timezone.utc), stored,
+                                               dict(prices, **{"^VIX": "2026-09-22"}))["contributors"]}
+    assert inside["^VIX"]["state"] == "current" and "06:00 UTC" in inside["^VIX"]["reason"]
 
 
 def test_a_price_inside_the_grace_is_current_and_past_it_stale():
@@ -361,7 +370,7 @@ def test_an_unstored_contributor_is_missing_and_the_worst_decides():
     assert by["DGS2"]["state"] == by["GC=F"]["state"] == "missing" and by["GC=F"]["observation_date"] is None
     assert got["state"] == "missing"
     before_refresh = _status(now, None, prices)
-    assert {c["state"] for c in before_refresh["contributors"][:5]} == {"missing"}
+    assert {c["state"] for c in before_refresh["contributors"][:4]} == {"missing"}
 
 
 def test_the_route_judges_at_the_responses_now(served, monkeypatch):
@@ -371,3 +380,86 @@ def test_the_route_judges_at_the_responses_now(served, monkeypatch):
     b = _overview()["data_status"]["data"]
     assert a["state"] == "current" and b["state"] == "stale"
     assert all(c["state"] == "stale" for c in b["contributors"])
+
+
+# ── the VIX's band and its gap to realized volatility (desk/fill-compute) ──
+
+def test_realized_vol_is_21_log_returns_annualized_and_a_gap_voids_its_windows():
+    import math
+    import statistics
+
+    from src.analytics import technicals
+
+    px = pd.Series(100 * np.cumprod(1 + np.random.default_rng(9).normal(0, 0.01, 40)))
+    rv = technicals.realized_vol(px)
+    r = [math.log(b / a) for a, b in zip(px[:-1], px[1:])]
+    assert np.isnan(rv.iloc[:21]).all()
+    assert rv.iloc[21] == pytest.approx(100 * math.sqrt(252) * statistics.stdev(r[:21]), rel=1e-12)
+    assert rv.iloc[39] == pytest.approx(100 * math.sqrt(252) * statistics.stdev(r[-21:]), rel=1e-12)
+    gappy = px.copy()
+    gappy.iloc[30] = np.nan
+    g = technicals.realized_vol(gappy)
+    assert np.isnan(g.iloc[30:40]).all() and g.iloc[29] == pytest.approx(rv.iloc[29])
+
+
+@pytest.mark.parametrize(("vix", "band"), [(14.99, "calm"), (15.0, "subdued"), (24.99, "subdued"), (25.0, "stressed")])
+def test_the_vix_band_is_the_home_pages_words(vix, band):
+    assert desk_v2.vix_band(vix) == band and desk_v2.VIX_BAND_EDGES == (15.0, 25.0)
+
+
+def test_the_gap_is_on_the_latest_session_with_both():
+    dates = es.sessions_between(es.session_calendar("2026-06-01", "2026-09-18"), "2026-06-01", "2026-09-18")
+    spx = pd.Series(100 * np.cumprod(1 + np.random.default_rng(2).normal(0, 0.01, len(dates))), index=dates)
+    vix = pd.Series(15.0 + np.arange(len(dates)) * 0.01, index=dates)
+    g = desk_items.vol_gap(spx, vix)
+    assert g["date"] == "2026-09-18" and g["gap_pts"] == pytest.approx(g["vix"] - g["realized_21d"])
+    assert g["window"] == {"start": dates[-22].strftime("%Y-%m-%d"), "end": "2026-09-18", "n": 21}
+    # a missing S&P close holds the gap on the session before it: no window may read it
+    held = desk_items.vol_gap(spx.drop(dates[-3]), vix)
+    assert held["date"] == dates[-4].strftime("%Y-%m-%d") and held["vix"] == vix.iloc[-4]
+    assert desk_items.vol_gap(spx.iloc[:10], vix) is None
+
+
+def test_the_vol_tile_serves_the_band_and_the_gap(served, monkeypatch, overview_path):
+    _at(monkeypatch, 2026, 9, 18, 21, 0)
+    v = _overview()["tiles"]["vol"]["data"]
+    assert v["band"] == desk_v2.vix_band(v["vix"]) and v["band_edges"] == [15.0, 25.0]
+    g = v["gap"]
+    assert g is not None and g["date"] <= v["date"] and g["gap_pts"] == pytest.approx(g["vix"] - g["realized_21d"])
+    conn = sqlite3.connect(f"file:{overview_path}?mode=ro", uri=True)
+    try:
+        stored = dict(conn.execute("SELECT date, close FROM asset_prices WHERE symbol = '^GSPC' AND interval = '1d' "
+                                   "AND date BETWEEN ? AND ?", (g["window"]["start"], g["date"])).fetchall())
+    finally:
+        conn.close()
+    # the XNYS sessions of the window (the synthetic store holds off-session rows the engine drops)
+    sessions = es.sessions_between(es.session_calendar(g["window"]["start"], g["date"]), g["window"]["start"], g["date"])
+    closes = [stored[d.strftime("%Y-%m-%d")] for d in sessions]
+    import math
+    import statistics
+
+    assert len(closes) == 22
+    rets = [math.log(b / a) for a, b in zip(closes, closes[1:])]
+    assert g["realized_21d"] == pytest.approx(100 * math.sqrt(252) * statistics.stdev(rets), rel=1e-12)
+
+
+def test_before_the_refresh_stores_the_vix_the_vol_tile_says_so(install_worker, monkeypatch, overview_path, tmp_path):
+    """desk/fill-compute (item 7): a store its next full refresh has not reached
+    (no ^VIX rows yet, the deployed store after the merge) awaits with the
+    engine's words, not the generic reason; the data status names ^VIX missing."""
+    path = tmp_path / "macro_radar.db"
+    src = sqlite3.connect(f"file:{overview_path}?mode=ro", uri=True)
+    dst = sqlite3.connect(path)
+    src.backup(dst)
+    src.close()
+    dst.execute("DELETE FROM asset_prices WHERE symbol = '^VIX'")
+    dst.commit()
+    dst.close()
+    _serve(install_worker, monkeypatch, path, items=ITEMS)
+    _at(monkeypatch, 2026, 9, 18, 21, 0)
+    d = _overview()
+    vol = d["tiles"]["vol"]
+    assert vol["status"] == "awaiting" and "next full refresh" in vol["unavailable"]["reason"], vol
+    by = {c["series"]: c for c in d["data_status"]["data"]["contributors"]}
+    assert by["^VIX"]["state"] == "missing" and d["data_status"]["data"]["state"] == "missing"
+    assert d["since_last_close"]["data"]["vol_change_pts"] is None

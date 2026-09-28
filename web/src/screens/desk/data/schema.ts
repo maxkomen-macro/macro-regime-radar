@@ -171,6 +171,8 @@ export function checkAnswer(body: unknown, spec: Obj): Record<string, unknown> |
 // ── The shapes (§12, §12.13) ──────────────────────────────────────────────
 
 const VERDICTS = ["reliable", "suggestive", "no_edge", "insufficient"] as const;
+/** §12.2: the six moves (the two RSI crossings since desk/fill-compute). */
+const MOVES = ["up2s", "down2s", "cross_above", "cross_below", "rsi_above_70", "rsi_below_30"] as const;
 /** §12.2, §12.4 (S-06): a listed event always carries its K−2 label; one whose K−2 month has no stored regimes row is counted, never listed. */
 const REGIME_LABELS = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"] as const;
 // §12.0: a read names the rule that produced it; a read without one is not served.
@@ -206,9 +208,9 @@ const ledgerRow = o({
 const question = o(
   {
     shock: "s!",
-    // §12.2: null for a cross.
+    // §12.2: null for a cross or an RSI crossing.
     window: "n",
-    move: e(["up2s", "down2s", "cross_above", "cross_below"], { req: true }),
+    move: e(MOVES, { req: true }),
     while: "s!",
     target: "s!",
     horizon: "n!",
@@ -226,11 +228,34 @@ const TREND_STATES = ["above_both", "below_both", "mixed", "unavailable"] as con
 const FRESH_STATES = ["current", "stale", "missing"] as const;
 const recessionScore = { score: "n", probability_month: "s", inputs_through: "s", band: e(BANDS), band_edges: t(["n!", "n!"], { nul: true }), freq: "s", source: "s" } as const;
 const nextPrint = o(
-  { release_date: "s?", reference_month: "s!", series: "s", threshold_mom: "n", operator: e(["<=", ">"], { req: true }), flips_to: "s?", first_effective_month: "s!", freq: "s", source: "s" },
+  {
+    release_date: "s?",
+    reference_month: "s!",
+    series: "s",
+    threshold_mom: "n",
+    operator: e(["<=", ">"], { req: true }),
+    flips_to: "s?",
+    first_effective_month: "s!",
+    from_direction: e(["rising", "falling"], { nul: true }),
+    printed_mom: "n",
+    printed_direction: e(["rising", "falling"], { nul: true }),
+    // Codex R-05, R-06: whether the print's own release is out, and the other axis the flip reads.
+    released: "b?",
+    other: o({ axis: "s!", series: "s", reference_month: "s!", direction: e(["rising", "falling"], { req: true }), status: e(["published", "assumed"], { req: true }) }, { nul: true }),
+    freq: "s",
+    source: "s",
+  },
+  { nul: true },
+);
+const publishedPrint = o(
+  { reference_month: "s!", series: "s", mom: "n", direction: e(["rising", "falling"], { nul: true }), from_direction: e(["rising", "falling"], { nul: true }) },
   { nul: true },
 );
 // §12.8 (S-24): `dates` names each tenor's date, null for a tenor not stored.
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s?") });
+const seasonRow = o({ month: "n", label: "s!", n: "n", avg: "n", pct_up: "n", first_year: "n", last_year: "n" });
+const macdPoint = o({ date: "s!", macd: "n", signal: "n", hist: "n" });
+const rsiVisit = o({ date: "s!", rsi: "n", after_20d: "n", after_20d_to: "s?", after_20d_status: e(["complete", "pending", "missing"], { nul: true }) }, { nul: true });
 /** The deferred vol and sectors shapes (§12.13), served as `/technicals` blocks and as their own stubs. */
 const VOL = {
   source: "s",
@@ -299,7 +324,16 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       recession: o({ ...recessionScore }),
       // §12.1: the served state names the trend; without it the tile says nothing (Codex G1-9).
       trend: o({ state: e(TREND_STATES, { req: true }), above_50: "b?", above_200: "b?", state_since: "s?", cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }), date: "s", freq: "s", source: "s" }),
-      vol: o({ vix: "n", date: "s", freq: "s", source: "s" }),
+      vol: o({
+        vix: "n",
+        date: "s",
+        freq: "s",
+        source: "s",
+        // §12.1 (desk/fill-compute): the band on the VIX, and the gap on its own session; a gap without its day claims nothing.
+        band: e(["calm", "subdued", "stressed"], { nul: true }),
+        band_edges: t(["n!", "n!"], { nul: true }),
+        gap: o({ date: "s!", vix: "n", realized_21d: "n", gap_pts: "n", window: o({ start: "s!", end: "s!", n: "n!" }) }, { nul: true }),
+      }),
     }),
     active_signals: l(ledgerRow),
     data_status: o({
@@ -328,6 +362,28 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     trend: o({ state: e(TREND_STATES, { req: true }), state_since: "s?" }),
     move_20d_sigma: "n",
     move_20d_date: "s?",
+    // §12.7: RSI(14) and its two zones' last sessions; a visit without its day claims nothing.
+    rsi: "n",
+    rsi_date: "s?",
+    rsi_prev: "n",
+    rsi_prev_date: "s?",
+    rsi_last_above_70: rsiVisit,
+    rsi_last_below_30: rsiVisit,
+    // §12.7: MACD(12, 26, 9) on its own session; a crossover without its kind and day claims nothing.
+    macd: o(
+      {
+        date: "s!",
+        macd: "n",
+        signal: "n",
+        hist: "n",
+        last_cross: o({ date: "s!", kind: e(["above", "below"], { req: true }) }, { nul: true }),
+        params: o({ fast: "n", slow: "n", signal: "n" }),
+        series: l(macdPoint),
+      },
+      { nul: true },
+    ),
+    // §12.7: the twelve calendar months; a month without its name claims nothing.
+    seasonality: o({ rows: l(seasonRow, { req: true }), window: o({ start: "s!", end: "s!", n: "n!" }), freq: "s", source: "s" }, { nul: true }),
     signals_allowlist: l("s!"),
     // A cross without its kind and day claims nothing (Codex G1-9).
     cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),
@@ -341,7 +397,19 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/regime": o({
     ...envelope,
     // The page words a missing label on its own (Regime R-2); the rest of the block still reads.
-    current: o({ label: "s", print: "s", latest_print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", freq: "s", source: "s" }),
+    current: o({
+      label: "s",
+      print: "s",
+      latest_print: "s",
+      growth: "s",
+      inflation: "s",
+      months_in: "n",
+      since: "s",
+      freq: "s",
+      source: "s",
+      // desk/fill-compute: a classifier reading without its month, label and verdict claims nothing.
+      classifier: o({ month: "s!", label: "s!", odds: "n", agrees: "b!" }, { nul: true }),
+    }),
     history: l(o({ month: "s!", regime: "s!" })),
     history_note: "s",
     history_freq: "s",
@@ -354,9 +422,34 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       training: o({ start: "s!", end: "s!" }, { nul: true }),
       methodology: "s",
     }),
-    stats: l(o({ regime: "s!", months: "n", spx_mo: "n", up_pct: "n", vix_avg: "n", stock_bond_corr: "n" })),
-    next_prints: o({ cpi: nextPrint, indpro: nextPrint }),
-    changes: l(o({ month: "s!", from: "s!", to: "s!", spx_1m: "n" })),
+    stats: o({
+      rows: l(
+        o({ regime: "s!", months: "n", spx_n: "n", spx_pending: "n", spx_missing: "n", spx_median_mo: "n", spx_mean_mo: "n", up_pct: "n", vix_avg: "n", vix_days: "n", vix_sessions: "n" }),
+        { req: true },
+      ),
+      window: o({ start: "s!", end: "s!", n: "n!" }),
+      governed: o({ start: "s!", end: "s!", n: "n!" }),
+      lag_months: "n",
+      totals: o({ months: "n", spx_n: "n", spx_pending: "n", spx_missing: "n", vix_days: "n", vix_sessions: "n" }),
+      vix_coverage: o({ stored: "b!", first: "s?", last: "s?", off_session_dropped: "n", invalid: "n" }),
+      freq: "s",
+      source: "s",
+    }),
+    next_prints: o({
+      basis: o({ month: "s!", label: "s!" }, { nul: true }),
+      published: l(o({ month: "s!", label: "s!", first_effective_month: "s!", cpi: publishedPrint, indpro: publishedPrint })),
+      upcoming_from: o({ month: "s!", label: "s!" }, { nul: true }),
+      cpi: nextPrint,
+      indpro: nextPrint,
+    }),
+    changes: o({
+      rows: l(o({ effective_month: "s!", stamp_month: "s?", from: "s!", to: "s!", from_month: "s?", spx_1m: "n", spx_1m_status: e(["complete", "pending", "missing"], { nul: true }) }), { req: true }),
+      n: "n",
+      window: o({ start: "s!", end: "s!", n: "n!" }),
+      lag_months: "n",
+      freq: "s",
+      source: "s",
+    }),
     reads: reads(["stats", "changes"]),
   }),
   "/macro": o({
@@ -424,6 +517,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     comparison_session: "s?",
     prev_session: "s?",
     stale: "b",
+    // Codex R-03: the inputs behind their own tolerance, by registry key.
+    stale_inputs: l("s!"),
     last_event: "s?",
     // The verdict box says Awaiting refresh on its own; the numbers still stand.
     verdict: e(VERDICTS),
@@ -473,11 +568,11 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         slug: "s!",
         label: "s!",
         short: "s",
-        // §12.3 (item 14): the Client view's title, in plain words; null for the RSI definitions.
+        // §12.3 (item 14): the Client view's title, in plain words.
         client_label: "s?",
         available: "b!",
         unavailable: o({ reason: "s!", until: "s?" }, { nul: true }),
-        question: o({ shock: "s!", window: "n", move: e(["up2s", "down2s", "cross_above", "cross_below"], { req: true }), while: "s!", target: "s!" }, { nul: true }),
+        question: o({ shock: "s!", window: "n", move: e(MOVES, { req: true }), while: "s!", target: "s!" }, { nul: true }),
         allowed_horizons: l("n!"),
       }),
     ),

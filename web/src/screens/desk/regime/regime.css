@@ -174,8 +174,8 @@
   background: var(--dk-red);
 }
 
-/* What each regime has meant: the columns end where the PNG's do (MONTHS at
-   216, S&P 308.5, UP 380.5, VIX 461.5, STOCK–BOND 556 of a 556 px table). */
+/* What each regime has meant: PNG 04's six columns, with S&P MEAN where the
+   PNG draws STOCK–BOND (no bond price series is stored, §6). */
 .rg-table {
   width: 100%;
   table-layout: fixed;
@@ -184,22 +184,47 @@
   font-size: 14px;
 }
 .rg-col-regime {
-  width: 27%;
+  width: 23%;
 }
 .rg-col-months {
-  width: 11.9%;
+  width: 10%;
+}
+.rg-col-n {
+  width: 9%;
 }
 .rg-col-spx {
-  width: 16.6%;
+  width: 13%;
+}
+.rg-col-mean {
+  width: 12%;
 }
 .rg-col-up {
-  width: 12.9%;
+  width: 9%;
 }
 .rg-col-vix {
-  width: 14.6%;
+  width: 11%;
 }
-.rg-col-sb {
-  width: 17%;
+.rg-col-days {
+  width: 13%;
+}
+/* The eight columns scroll in their own region at a phone's width; the page never scrolls sideways. */
+.rg-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.rg-meant-note {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dk-t3);
+}
+.rg-pending {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t3);
 }
 .rg-table th,
 .rg-table td {
@@ -237,9 +262,37 @@
   white-space: nowrap;
 }
 
+/* Where we are: the home page's classifier beside this label (desk/fill-compute). */
+.rg-classifier {
+  margin: 4px 0 2px;
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--dk-t2);
+}
+
 /* What would change it. */
+.rg-next-row {
+  margin: 6px 0 2px;
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--dk-t2);
+}
+.rg-next-row b[data-tone="green"] {
+  color: var(--dk-green);
+}
+.rg-next-row b[data-tone="amber"] {
+  color: var(--dk-amber);
+}
+.rg-next-row b[data-tone="red"] {
+  color: var(--dk-red);
+}
+.rg-next-row b[data-tone="gray"] {
+  color: var(--dk-gray);
+}
 .rg-changes-h {
   margin-top: 8px;
+  /* "Last five of <n> regime changes · S&P a month later" wraps at a phone's width. */
+  white-space: normal;
 }
 .rg-changes {
   list-style: none;
@@ -260,6 +313,10 @@
 .rg-changes li > :last-child {
   font-family: var(--dk-mono);
   font-size: 13px;
+}
+.rg-stamp {
+  font-size: 12px;
+  color: var(--dk-t3);
 }
 .rg-month {
   font-family: var(--dk-mono);

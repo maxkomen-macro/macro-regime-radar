@@ -180,6 +180,15 @@ export interface RecessionScore {
   source?: string;
 }
 
+/** §12.1: VIX against the S&P's 21-day realized volatility, in VIX points, on one session. */
+export interface VolGap {
+  date: string;
+  vix: number | null;
+  realized_21d: number | null;
+  gap_pts: number | null;
+  window?: Window;
+}
+
 export interface OverviewTiles {
   regime?: RegimeRow;
   recession?: RecessionScore;
@@ -195,12 +204,17 @@ export interface OverviewTiles {
     freq?: string;
     source?: string;
   };
-  /** §12.1: the VIX level and its day; the gap to realized and the band word are unavailable (§1.0). */
+  /** §12.1: the VIX level and its day, its band word, and its gap to the S&P's 21-day realized volatility (desk/fill-compute). */
   vol?: {
     vix: number | null;
     date: string;
     freq?: string;
     source?: string;
+    /** calm < 15 ≤ subdued < 25 ≤ stressed, the home page's VIX words (§12.1). */
+    band?: "calm" | "subdued" | "stressed" | null;
+    band_edges?: [number, number] | null;
+    /** On the latest session where both exist; null when none has. */
+    gap?: VolGap | null;
   };
 }
 
@@ -244,6 +258,54 @@ export interface Window {
   n: number;
 }
 
+/** §12.7: one RSI zone's last session. */
+export interface RsiVisit {
+  date: string;
+  rsi: number | null;
+  after_20d: number | null;
+  after_20d_to: string | null;
+  /** Codex R-08: the 20-session window complete, not complete yet, or missing a stored close. */
+  after_20d_status?: ReturnStatus | null;
+}
+
+/** §12.7: one session of the MACD chart; each value null where the MACD is undefined. */
+export interface MacdPoint {
+  date: string;
+  macd: number | null;
+  signal: number | null;
+  hist: number | null;
+}
+
+/** §12.7 (desk/fill-compute): MACD(12, 26, 9) on its own session, its last crossover and the 6M chart. */
+export interface Macd {
+  date: string;
+  macd: number | null;
+  signal: number | null;
+  hist: number | null;
+  last_cross: { date: string; kind: "above" | "below" } | null;
+  params?: { fast: number | null; slow: number | null; signal: number | null };
+  series?: MacdPoint[];
+}
+
+/** §12.7: one calendar month over the stored history; avg and pct_up are fractions, null with no complete year. */
+export interface SeasonRow {
+  month: number | null;
+  label: string;
+  n: number | null;
+  avg: number | null;
+  pct_up: number | null;
+  first_year: number | null;
+  last_year: number | null;
+}
+
+/** §12.7 (desk/fill-compute): the S&P's seasonality by calendar month; `window` is in months ("1990-02"). */
+export interface Seasonality {
+  rows: SeasonRow[];
+  window?: { start: string; end: string; n: number };
+  freq?: string;
+  source?: string;
+}
+
 /** §12.7: every field describes the registry series `spx` (^GSPC). */
 export interface TechnicalsResponse extends Envelope {
   price: number | null;
@@ -266,6 +328,18 @@ export interface TechnicalsResponse extends Envelope {
   /** The spx-20d-2sigma study's z on its `evaluated_on`. */
   move_20d_sigma: number | null;
   move_20d_date?: string | null;
+  /** §12.7: Wilder's RSI(14) on its own session (a gap in the closes leaves the last one before it), and on the session before. */
+  rsi?: number | null;
+  rsi_date?: string | null;
+  rsi_prev?: number | null;
+  rsi_prev_date?: string | null;
+  /** §12.7: the last session strictly above 70 / below 30, its RSI, and the S&P's simple return over the next 20 sessions (null until they have passed). */
+  rsi_last_above_70?: RsiVisit | null;
+  rsi_last_below_30?: RsiVisit | null;
+  /** §12.7: MACD(12, 26, 9); null when no session has one. */
+  macd?: Macd | null;
+  /** §12.7: each calendar month's average return and share of years up; null when no month is complete. */
+  seasonality?: Seasonality | null;
   cross: {
     kind: "golden" | "death";
     date: string;
@@ -280,7 +354,7 @@ export interface TechnicalsResponse extends Envelope {
 
 // ── §12.2 /study ──────────────────────────────────────────────────────────
 
-export type Move = "up2s" | "down2s" | "cross_above" | "cross_below";
+export type Move = "up2s" | "down2s" | "cross_above" | "cross_below" | "rsi_above_70" | "rsi_below_30";
 
 /** The six slots (§4, §12.2): `while` is none | spx_below_50 | regime:<name>; `window` is 5 | 20 | 60, null for a cross. */
 export interface Question {
@@ -371,6 +445,8 @@ export interface StudyResponse extends Envelope {
   /** §12.2 (S-10): the XNYS session before `comparison_session`, as §12.1. */
   prev_session?: string | null;
   stale?: boolean;
+  /** Codex R-03: the inputs (registry keys) whose newest validated observation is behind their own tolerance. */
+  stale_inputs?: string[];
   last_event: string | null;
   /** The selected horizon's verdict (§1.5, B-01). Absent when not served or not known: the verdict box says Awaiting refresh. */
   verdict?: Verdict;
@@ -405,11 +481,11 @@ export interface CatalogStudy {
   slug: string;
   label: string;
   short: string;
-  /** §12.3 (item 14): the Client view's title in plain words, no σ and no engine terms; null for the RSI rows. */
+  /** §12.3 (item 14): the Client view's title in plain words, no σ and no engine terms. */
   client_label?: string | null;
   available: boolean;
   unavailable: Unavailable | null;
-  /** The five non-horizon slots; null for a definition with no question yet (the RSI rows). */
+  /** The five non-horizon slots; null for a definition with no question (none since desk/fill-compute). */
   question: { shock: string; window: number | null; move: Move; while: string; target: string } | null;
   allowed_horizons: number[];
 }
@@ -449,21 +525,83 @@ export interface StudyEventsResponse extends Envelope {
 // ── §12.5 /regime ─────────────────────────────────────────────────────────
 
 /** §12.6: the next print of one series and the move that would flip its axis. */
+/** §12.6: an upcoming print, read from the newest stored row (`upcoming_from`). Codex R-05: `release_date` is the
+ * release of `reference_month` itself, `released` whether it is out; R-06: `other` is the other axis the flip assumes. */
 export interface NextPrint {
   release_date: string | null;
+  released?: boolean | null;
   reference_month: string;
   series: string;
   threshold_mom: number | null;
   operator: "<=" | ">";
   flips_to: string | null;
   first_effective_month: string;
+  /** desk/fill-compute: the axis on the row the card reads from (the K−2 row WHERE WE ARE shows). */
+  from_direction?: "rising" | "falling" | null;
+  /** When the series has already printed `reference_month`: that print's m/m change and the axis it gave the next row. */
+  printed_mom?: number | null;
+  printed_direction?: "rising" | "falling" | null;
+  other?: { axis: string; series: string; reference_month: string; direction: "rising" | "falling"; status: "published" | "assumed" } | null;
   freq?: string;
   source?: string;
 }
 
+/** Codex R-05: one print that made a published row: its own month, its m/m change, the axis it gave and the one before. */
+export interface PublishedPrint {
+  reference_month: string;
+  series?: string;
+  mom: number | null;
+  direction: "rising" | "falling" | null;
+  from_direction: "rising" | "falling" | null;
+}
+
+/** Codex R-05: a stored row after the one the page shows, already published, with the prints that made it. */
+export interface PublishedRow {
+  month: string;
+  label: string;
+  first_effective_month: string;
+  cpi?: PublishedPrint | null;
+  indpro?: PublishedPrint | null;
+}
+
+/** §12.6 (Codex R-01, R-04): one regime's stored labels, and over the months they governed (two after each stamp) the
+ * S&P's complete months (`spx_n`), those not over yet or missing a close, and the VIX's stored sessions of the sessions due. */
+export interface RegimeStat {
+  regime: string;
+  months: number | null;
+  spx_n?: number | null;
+  spx_pending?: number | null;
+  spx_missing?: number | null;
+  spx_median_mo: number | null;
+  spx_mean_mo: number | null;
+  up_pct: number | null;
+  vix_avg: number | null;
+  vix_days?: number | null;
+  vix_sessions?: number | null;
+}
+
+/** §12.6 (Codex R-08): a return with its window complete, not complete yet, or missing a stored close. */
+export type ReturnStatus = "complete" | "pending" | "missing";
+
+/** §12.6 (Codex R-01): a change dated by the month it took effect, the stamp two months before. */
+export interface RegimeChange {
+  effective_month: string;
+  stamp_month?: string | null;
+  from: string;
+  to: string;
+  from_month?: string | null;
+  /** The S&P's simple return over `effective_month`, the first month the new label governed. */
+  spx_1m: number | null;
+  spx_1m_status?: ReturnStatus | null;
+}
+
 export interface RegimeResponse extends Envelope {
   /** The K−2 row governing today, and the newest stored row beside it (`latest_print`, shown, never used to classify). */
-  current?: Partial<RegimeRow> & { latest_print?: string };
+  current?: Partial<RegimeRow> & {
+    latest_print?: string;
+    /** desk/fill-compute: the home page's classifier on the newest row, its dominant label and odds (null for Recession Risk), and whether it is this label. */
+    classifier?: { month: string; label: string; odds: number | null; agrees: boolean } | null;
+  };
   /** The last 60 stored rows, with how they are to be read (§12.6). */
   history?: { month: string; regime: string }[];
   history_note?: string;
@@ -476,9 +614,28 @@ export interface RegimeResponse extends Envelope {
     training?: { start: string; end: string } | null;
     methodology?: string;
   };
-  stats?: { regime: string; months: number | null; spx_mo: number | null; up_pct: number | null; vix_avg: number | null; stock_bond_corr: number | null }[];
-  next_prints?: { cpi?: NextPrint | null; indpro?: NextPrint | null };
-  changes?: { month: string; from: string; to: string; spx_1m: number | null }[];
+  /** §12.6 (desk/fill-compute): every stored row as stamped, with its own month of the S&P (simple returns) and the VIX. */
+  stats?: {
+    rows: RegimeStat[];
+    window?: { start: string; end: string; n: number };
+    governed?: { start: string; end: string; n: number };
+    lag_months?: number | null;
+    totals?: { months: number | null; spx_n: number | null; spx_pending: number | null; spx_missing: number | null; vix_days: number | null; vix_sessions: number | null };
+    vix_coverage?: { stored: boolean; first: string | null; last: string | null; off_session_dropped: number | null; invalid: number | null };
+    freq?: string;
+    source?: string;
+  };
+  /** §12.6 (desk/fill-compute; Codex R-05): `basis` is the K−2 row `current` shows; `published`, the stored rows after it;
+   * the upcoming prints read from `upcoming_from`, the newest row, each against its own month and release. */
+  next_prints?: {
+    basis?: { month: string; label: string } | null;
+    published?: PublishedRow[];
+    upcoming_from?: { month: string; label: string } | null;
+    cpi?: NextPrint | null;
+    indpro?: NextPrint | null;
+  };
+  /** §12.6 (desk/fill-compute): the last five changes, newest first, and how many there are. */
+  changes?: { rows: RegimeChange[]; n?: number | null; window?: { start: string; end: string; n: number }; lag_months?: number | null; freq?: string; source?: string };
   /** PROPOSED (§12.13): the cards' sentences (`stats`, `changes`). */
   reads?: { stats?: Read; changes?: Read };
 }

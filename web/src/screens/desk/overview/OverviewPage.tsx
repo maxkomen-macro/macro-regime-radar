@@ -177,15 +177,24 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
         sub={
           t?.vol ? (
             <>
-              {/* §2: "VIX <level> · <date>"; the gap to realized and the band word print §1.0's reason (§1.0.2). */}
-              {[fin(t.vol.vix) ? `VIX ${num(t.vol.vix)}` : "VIX", dayShort(t.vol.date) || null].filter(Boolean).join(" · ")}
-              <span className="dk-unserved-inline ov-vol-off">The gap to realized and the band word: realized-volatility method not specified.</span>
+              {/* §2: "VIX <level> · <date> · <band>", then the gap to the S&P's 21-day realized volatility (desk/fill-compute). */}
+              {[fin(t.vol.vix) ? `VIX ${num(t.vol.vix)}` : "VIX", dayShort(t.vol.date) || null, t.vol.band ?? null].filter(Boolean).join(" · ")}
+              <span className="ov-vol-gap">{gapWords(t.vol)}</span>
             </>
           ) : null
         }
       />
     </div>
   );
+}
+
+/** §2: the VIX against the S&P's 21-day realized volatility, in VIX points, dated when its session is not the level's. */
+export function gapWords(vol: NonNullable<OverviewTiles["vol"]>): string {
+  const g = vol.gap;
+  if (!g || !fin(g.gap_pts) || !fin(g.realized_21d)) return "No session has both the VIX and 21 S&P returns stored.";
+  const side = g.gap_pts >= 0 ? "above" : "below";
+  const on = g.date !== vol.date && dayShort(g.date) ? ` on ${dayShort(g.date)}` : "";
+  return `${num(Math.abs(g.gap_pts))} pts ${side} 21-day realized (${num(g.realized_21d)})${on}`;
 }
 
 /** One active signal's sentence (§2). */

@@ -12,7 +12,6 @@ import ledger from "./ledger.json";
 import overview from "./overview.json";
 import record from "./regime-record.json";
 import regime from "./regime.json";
-import deferredRegime from "./deferred-regime.json";
 import studyEvents from "./study-events.json";
 import study from "./study.json";
 import macro from "./macro.json";
@@ -55,10 +54,18 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
   const months = record.months;
   const byMonth = new Map(months.map((r) => [r.month, r.regime]));
 
-  it("the record's months by regime are the deferred stats' months (What each regime has meant · since 1996); Monday serves the block awaiting", () => {
+  it("the record's months by regime are the served stats' months (What each regime has meant · since 1996, desk/fill-compute), and its changes are the served changes", () => {
     expect(months[0].month.startsWith("1996")).toBe(true);
-    for (const row of deferredRegime.stats) expect([row.regime, row.months]).toEqual([row.regime, months.filter((m) => m.regime === row.regime).length]);
-    expect(regime.stats).toEqual({ status: "awaiting", data: null, unavailable: { reason: "regime statistics not yet defined in the engine.", until: null } });
+    const stats = regime.stats;
+    for (const row of stats.rows) expect([row.regime, row.months]).toEqual([row.regime, months.filter((m) => m.regime === row.regime).length]);
+    expect(stats.window).toEqual({ start: months[0].month, end: months[months.length - 1].month, n: months.length });
+    // Q9: a change is a row whose label differs from the previous stored row's.
+    const changes = months.slice(1).flatMap((m, i) => (m.regime !== months[i].regime ? [{ month: m.month, from: months[i].regime, to: m.regime }] : []));
+    const served = regime.changes;
+    expect(served.n).toBe(changes.length);
+    // Codex R-01: each change is served by its stamp and dated by the month it took effect, the stamp plus the lag.
+    expect(served.rows.map((c) => ({ month: c.stamp_month, from: c.from, to: c.to }))).toEqual(changes.slice(-5).reverse());
+    for (const c of served.rows) expect(c.effective_month).toBe(monthBefore(c.stamp_month, -record.lag_months));
   });
 
   it("the record is one row a month but the one month the store lacks, and its last 60 rows are /regime's history exactly", () => {
@@ -148,8 +155,11 @@ describe("the audit's real values (FRAME3_DATA_AUDIT.md on desk/frame-3-docs, CO
     // Rule v1 at 20 sessions: only the golden cross is established; HY has two events.
     expect(ledger.signals.filter((r) => r.verdict === "reliable").map((r) => r.slug)).toEqual(["golden-cross"]);
     expect(row("hy-2sigma-20d").verdict).toBe("insufficient");
-    expect([ledger.scored_n, ledger.unavailable_n]).toEqual([8, 4]);
-    expect(catalog.studies.filter((s) => !s.available).map((s) => s.slug)).toEqual(["dollar-2sigma-20d", "oil-2sigma-gold", "oil-2sigma-20d", "rsi-above-70", "rsi-below-30"]);
+    // desk/fill-compute: the two RSI rows are scored by the engine (the API's answer on the audit's store).
+    expect([row("rsi-above-70").n, row("rsi-above-70").last_fired, row("rsi-above-70").verdict]).toEqual([89, "2026-05-26", "no_edge"]);
+    expect([row("rsi-below-30").n, row("rsi-below-30").last_fired, row("rsi-below-30").verdict]).toEqual([45, "2026-03-20", "no_edge"]);
+    expect([ledger.scored_n, ledger.unavailable_n]).toEqual([10, 2]);
+    expect(catalog.studies.filter((s) => !s.available).map((s) => s.slug)).toEqual(["dollar-2sigma-20d", "oil-2sigma-gold", "oil-2sigma-20d"]);
   });
   it("the regime, the recession score, the curve, credit and the cross (§2.1, §2.4, §2.5, §2.2)", () => {
     expect([regime.current.latest_print, overview.tiles.regime.label, overview.tiles.regime.print]).toEqual(["2026-08", "Goldilocks", "2026-07"]);
@@ -215,7 +225,7 @@ describe("the client label (§11, §12.2, §12.3; item 14)", () => {
         expect(r.client_label, r.slug).not.toMatch(/σ|\bz\b|sessions?|window|shock|condition|2s10s|cross/i);
       }
     }
-    expect(rows.filter((r) => r.question != null)).toHaveLength(13);
+    expect(rows.filter((r) => r.question != null)).toHaveLength(15);
     expect(study.client?.headline).toBe(rows.find((r) => r.slug === study.slug)?.client_label);
   });
 });
@@ -249,12 +259,12 @@ describe("the API plan's spec errata (§6, S-02–S-27) as the fixtures carry th
     expect([study.comparison_session, study.prev_session]).toEqual([ledger.comparison_session, ledger.prev_session]);
   });
 
-  it("S-16, S-17: every row with a question allows all four horizons, available or not; the RSI rows none, with the served reason", () => {
+  it("S-16, S-17: every row with a question allows all four horizons, available or not; every row has one since desk/fill-compute", () => {
     for (const r of catalog.studies) {
-      if (r.question) expect(r.allowed_horizons, r.slug).toEqual([5, 10, 20, 60]);
-      else expect([r.allowed_horizons, r.unavailable?.reason]).toEqual([[], "RSI is not computed yet."]);
+      expect(r.question, r.slug).not.toBeNull();
+      expect(r.allowed_horizons, r.slug).toEqual([5, 10, 20, 60]);
     }
-    for (const r of ledger.signals.filter((x) => x.slug.startsWith("rsi-"))) expect(r.unavailable?.reason).toBe("RSI is not computed yet.");
+    for (const r of ledger.signals.filter((x) => x.slug.startsWith("rsi-"))) expect([r.available, r.unavailable]).toEqual([true, null]);
   });
 
   it("S-18, S-19: a firing row counts as firing only when not stale; an unavailable row is not stale", () => {

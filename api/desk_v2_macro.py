@@ -98,10 +98,11 @@ def run_ending_at(rows: list[dict], month: str) -> tuple[int, str]:
         n, first = n + 1, prev
 
 
-def current_block(rows: list[dict], comparison: date) -> dict:
+def current_block(rows: list[dict], comparison: date, classifier: dict | None = None) -> dict:
     """§12.6 `current.data`: the stored K−2 row for the month of the
     comparison session. Awaiting (S-27) when that row is not stored, or does
-    not store both trends."""
+    not store both trends. `classifier` (desk/fill-compute) is the home page's
+    classifier reading on the newest row, and whether its label is this one."""
     from api.desk_items_macro import direction
 
     month = print_for(comparison)
@@ -121,10 +122,17 @@ def current_block(rows: list[dict], comparison: date) -> dict:
         "freq": "monthly",
         "source": REGIMES_SOURCE,
         "latest_print": rows[-1]["month"],
+        "classifier": None if classifier is None else {**classifier, "agrees": classifier["label"] == row["label"]},
     }
 
 
 # ── The next release date (§12.6, per response) ─────────────────────────────
+
+# api/desk_items_macro.NEXT_PRINTS, by key (stdlib here: the module is imported lazily).
+NEXT_PRINT_KEYS: tuple[tuple[str, str, str, str | None], ...] = (
+    ("cpi", "CPIAUCSL", "inflation", "CPI Release"),
+    ("indpro", "INDPRO", "growth", None),
+)
 
 def _utc(stamp: str) -> datetime | None:
     try:
@@ -144,14 +152,40 @@ def release_date(times: list[str], now: datetime) -> str | None:
     return None
 
 
-def next_prints_block(value: dict, times: dict[str, list[str]], now: datetime) -> dict:
-    """§12.6 `next_prints.data`: the item's thresholds, each with the release
-    date of its next print as of `now` (null for INDPRO: no such event is
-    stored)."""
+def release_for(times: list[str], reference_month: str, now: datetime) -> tuple[str | None, bool | None]:
+    """Codex R-05: the release of one reference month, never the next release
+    whatever it covers. A monthly print for month M is released during M+1,
+    so the release is the first stored one whose New York date falls in M+1;
+    with whether it is out at `now`. (None, None) when the calendar has none."""
+    after = months_before(reference_month, -1)
+    for stamp in times:
+        t = _utc(stamp)
+        if t is not None and month_of(t.astimezone(cal.NY).date()) == after:
+            return t.astimezone(cal.NY).date().isoformat(), t <= now
+    return None, None
+
+
+def next_prints_block(value: dict, times: dict[str, list[str]], now: datetime, basis_month: str) -> dict:
+    """§12.6 `next_prints.data` for `basis_month`, the K−2 row `current` shows
+    (desk/fill-compute: both cards read one label). Codex R-05: the rows after
+    it that are already published, with the prints that made them, apart from
+    the upcoming prints, each with the release of its own reference month and
+    whether that release is out at `now`. Awaiting (S-27) when the item holds
+    no reading from that row."""
     if not value.get("ok"):
         raise env.Awaiting(value["reason"])
-    return {k: (None if p is None else {"release_date": release_date(times.get(k, []), now), **p})
-            for k, p in value["data"].items()}
+    read = value["data"]["by_basis"].get(basis_month)
+    if read is None:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    out = {"basis": read["basis"], "published": read["published"], "upcoming_from": read["upcoming_from"]}
+    for k, _sid, _axis, _event in NEXT_PRINT_KEYS:
+        p = read[k]
+        if p is None:
+            out[k] = None
+            continue
+        date_, released = release_for(times.get(k, []), p["reference_month"], now)
+        out[k] = {"release_date": date_, "released": released, **p}
+    return out
 
 
 # ── GET /regime (§12.6) ─────────────────────────────────────────────────────
@@ -161,16 +195,17 @@ def regime_payload(now: datetime) -> dict:
     rows = item["rows"]
     comparison = cal.last_completed_session(now)
     return {
-        "current": env.block_from("/regime", "current", lambda: current_block(rows, comparison)),
+        "current": env.block_from("/regime", "current", lambda: current_block(rows, comparison, item.get("classifier"))),
         "history": [{"month": r["month"], "regime": r["label"]} for r in rows[-HISTORY_ROWS:]],
         "history_note": HISTORY_NOTE,
         "history_freq": "monthly",
         "history_source": REGIMES_SOURCE,
         "recession": stored_block(item["recession"]),
         "next_prints": env.block_from("/regime", "next_prints",
-                                      lambda: next_prints_block(item["next_prints"], item["release_times"], now)),
-        "stats": env.block_deferred("/regime", "stats"),
-        "changes": env.block_deferred("/regime", "changes"),
+                                      lambda: next_prints_block(item["next_prints"], item["release_times"], now,
+                                                                print_for(comparison))),
+        "stats": stored_block(item["stats"]),
+        "changes": stored_block(item["changes"]),
     }
 
 

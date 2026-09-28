@@ -80,9 +80,9 @@ def test_regime_shape(hermetic, monkeypatch):
     body = get_regime()
     assert body["status"] == "ready"
     d = body["data"]
-    for k in ("stats", "changes"):
+    for k in ("stats", "changes"):  # the hermetic store holds no S&P closes: the S-27 sentence (desk/fill-compute)
         assert d[k] == {"status": "awaiting", "data": None,
-                        "unavailable": {"reason": "regime statistics not yet defined in the engine.", "until": None}}
+                        "unavailable": {"reason": "Awaiting refresh: this could not be computed from the current data.", "until": None}}
     months = [h["month"] for h in d["history"]]
     assert len(months) == 60 and months == sorted(months) and months[-1] == store.END_MONTH
     assert d["current"]["status"] == d["recession"]["status"] == d["next_prints"]["status"] == "ready"
@@ -109,7 +109,8 @@ def test_current_is_the_k_minus_2_row_and_moves_at_a_month_boundary_inside_one_g
         assert cur["latest_print"] == store.END_MONTH
 
 
-def test_a_missing_k_minus_2_row_leaves_current_awaiting_and_the_rest_served(tmp_path, install_worker, monkeypatch):
+def test_a_missing_k_minus_2_row_leaves_current_and_the_next_prints_awaiting_and_the_rest_served(tmp_path, install_worker, monkeypatch):
+    """desk/fill-compute: the next prints are read from the K−2 row too, so without it both cards await together."""
     path = store.build(tmp_path / "macro_radar.db")
     conn = sqlite3.connect(path)
     conn.execute("DELETE FROM regimes WHERE date = '2026-07-01'")
@@ -119,7 +120,8 @@ def test_a_missing_k_minus_2_row_leaves_current_awaiting_and_the_rest_served(tmp
     at(monkeypatch, datetime(2026, 9, 25, 21, 0, tzinfo=timezone.utc))
     d = get_regime()["data"]
     assert d["current"] == {"status": "awaiting", "data": None, "unavailable": {"reason": AWAITING_REFRESH, "until": None}}
-    assert d["recession"]["status"] == d["next_prints"]["status"] == "ready"
+    assert d["next_prints"] == d["current"]
+    assert d["recession"]["status"] == "ready"
     assert "2026-07" not in [h["month"] for h in d["history"]]
 
 
@@ -387,11 +389,12 @@ def _oracle_store(tmp_path: Path, regime, growth: list[float], inflation: list[f
     return path
 
 
-def _next(path: Path) -> tuple[dict, list[dict]]:
+def _next(path: Path, basis: str | None = None) -> tuple[dict, list[dict]]:
+    """N6 read from `basis` (default the newest stored row)."""
     conn = sqlite3.connect(path)
     try:
         rows = items.regime_rows(conn)
-        return items.next_prints(conn, rows), rows
+        return items.next_prints(conn, rows)["by_basis"][basis or rows[-1]["month"]], rows
     finally:
         conn.close()
 
@@ -488,6 +491,38 @@ def test_a_series_that_already_printed_the_next_month_is_not_evaluable(tmp_path,
     assert np_["cpi"]["threshold_mom"] is None and np_["cpi"]["flips_to"] is None
     assert np_["cpi"]["operator"] in ("<=", ">") and np_["cpi"]["reference_month"] == v2m.months_before(rows[-1]["month"], -1)
     assert np_["indpro"]["threshold_mom"] is not None and np_["indpro"]["flips_to"] is not None
+    # Codex R-06: CPI's m+1 print is out, so INDPRO's flip reads it, not the basis row's sign
+    assert np_["indpro"]["other"]["status"] == "published" and np_["cpi"]["other"]["status"] == "assumed"
+
+
+def test_codex_r06_a_flip_uses_the_other_axis_already_published_for_that_month(tmp_path, classifier):
+    """Codex R-06: the flip a print would cause was the label with the other axis
+    held at the basis row's sign, even when the other series had already printed
+    that month the other way. Here growth and inflation rise through m; INDPRO's
+    m+1 print is out and turns growth falling; CPI's is not. A CPI print across
+    its threshold gives Recession Risk (growth falling, inflation falling), not
+    Goldilocks, and the real classifier agrees."""
+    growth, infl = _levels(100.0, UP), _levels(250.0, UP)
+    months = pd.date_range("2026-02-01", periods=len(growth), freq="MS")
+    nxt = months[-1] + pd.offsets.MonthBegin(1)
+    g_next = growth[-2] * 0.99  # below the joint row before m: growth falling at m+1
+    path = _oracle_store(tmp_path, classifier, growth, infl, extra={"INDPRO": pd.Series([g_next], index=[nxt])})
+    np_, rows = _next(path)
+    latest, cpi = rows[-1], np_["cpi"]
+    assert latest["label"] == "Overheating" and cpi["operator"] == "<="
+    assert cpi["other"] == {"axis": "growth", "series": "INDPRO", "reference_month": nxt.strftime("%Y-%m"),
+                            "direction": "falling", "status": "published"}
+    assert cpi["flips_to"] == "Recession Risk"
+    joint = pd.DataFrame({"growth": pd.Series(growth + [g_next], index=list(months) + [nxt]),
+                          "inflation": pd.Series(infl + [infl[-2] * (1 - 1e-4)], index=list(months) + [nxt])})
+    got = classifier.classify_regime(classifier.compute_trends(joint["growth"]).iloc[-1],
+                                     classifier.compute_trends(joint["inflation"]).iloc[-1])
+    assert got == cpi["flips_to"]
+    # unpublished, the same flip is qualified as an assumption: growth kept rising, so Goldilocks
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    np0, _ = _next(_oracle_store(plain, classifier, growth, infl))
+    assert np0["cpi"]["other"]["status"] == "assumed" and np0["cpi"]["flips_to"] == "Goldilocks"
 
 
 def test_the_mirrors_are_the_classifiers():
@@ -505,24 +540,41 @@ def test_the_mirrors_are_the_classifiers():
 
 # ── The release date (per response) ─────────────────────────────────────────
 
-def test_the_release_date_is_the_first_stored_release_after_now(hermetic, monkeypatch):
-    """§12.6: `release_date` follows the response's own "now" (plan §0.5),
-    inside one generation; INDPRO has no stored release event."""
-    cases = ((datetime(2026, 9, 26, 15, 0, tzinfo=timezone.utc), "2026-10-14"),
-             (datetime(2026, 10, 14, 12, 29, tzinfo=timezone.utc), "2026-10-14"),
-             (datetime(2026, 10, 14, 12, 30, tzinfo=timezone.utc), "2026-11-10"),
-             (datetime(2027, 2, 1, 15, 0, tzinfo=timezone.utc), None))
-    for now, want in cases:
+def test_codex_r05_each_release_date_is_its_own_reference_months(hermetic, monkeypatch):
+    """Codex R-05: the release date was the first stored release after "now",
+    whatever month it covered, beside a threshold for a different month. The
+    hermetic store's newest row is August; the next CPI print is September's,
+    released in October: on Sep 5 the next stored release is Sep 11 (August's
+    print), and after Oct 14 12:30 it is Nov 10 (October's); neither is
+    September's. Each upcoming print now carries its own month's release, and
+    whether it is out."""
+    cases = ((datetime(2026, 9, 5, 15, 0, tzinfo=timezone.utc), False),
+             (datetime(2026, 10, 14, 12, 29, tzinfo=timezone.utc), False),
+             (datetime(2026, 10, 14, 12, 30, tzinfo=timezone.utc), True))
+    for now, out in cases:
         at(monkeypatch, now)
         d = get_regime()["data"]["next_prints"]["data"]
-        assert d["cpi"]["release_date"] == want, now
-        assert d["indpro"]["release_date"] is None
+        assert d["upcoming_from"]["month"] == "2026-08"
+        assert (d["cpi"]["reference_month"], d["cpi"]["release_date"], d["cpi"]["released"]) == ("2026-09", "2026-10-14", out), now
+        assert (d["indpro"]["release_date"], d["indpro"]["released"]) == (None, None)
+    # on Sep 5 the page shows the July row: the August row is already published, apart from the upcoming prints
+    at(monkeypatch, datetime(2026, 9, 5, 15, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]["next_prints"]["data"]
+    assert d["basis"]["month"] == "2026-07" and [r["month"] for r in d["published"]] == ["2026-08"]
+    assert d["published"][0]["cpi"]["reference_month"] == "2026-08"
+    # past the last stored release: none (and in Feb 2027 the K−2 row is not stored, so the block awaits with `current`)
+    at(monkeypatch, datetime(2027, 2, 1, 15, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]
+    assert d["next_prints"]["status"] == d["current"]["status"] == "awaiting"
 
 
-def test_release_date_reads_new_york_dates():
-    assert v2m.release_date(["2026-10-15T03:30:00Z"], datetime(2026, 10, 1, tzinfo=timezone.utc)) == "2026-10-14"
-    assert v2m.release_date(["not a time", "2026-11-10 13:30:00"], datetime(2026, 10, 1, tzinfo=timezone.utc)) == "2026-11-10"
-    assert v2m.release_date([], datetime(2026, 10, 1, tzinfo=timezone.utc)) is None
+def test_release_for_binds_a_reference_month_to_its_release_in_new_york_dates():
+    times = ["2026-09-11T12:30:00Z", "2026-10-15T03:30:00Z", "2026-11-10 13:30:00", "not a time"]
+    now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    assert v2m.release_for(times, "2026-09", now) == ("2026-10-14", False)  # 03:30 UTC Oct 15 is Oct 14 in New York
+    assert v2m.release_for(times, "2026-08", now) == ("2026-09-11", True)
+    assert v2m.release_for(times, "2026-10", now) == ("2026-11-10", False)
+    assert v2m.release_for(times, "2026-12", now) == (None, None)
 
 
 # ── Real stores ─────────────────────────────────────────────────────────────
@@ -538,7 +590,9 @@ def test_regime_shape_on_a_real_store(path, install_worker, monkeypatch):
     if d["current"]["status"] == "ready":
         assert d["current"]["data"]["print"] == "2026-07"
     if d["next_prints"]["status"] == "ready":
-        for p in d["next_prints"]["data"].values():
+        assert d["next_prints"]["data"]["basis"]["month"] == d["current"]["data"]["print"]
+        for k in ("cpi", "indpro"):
+            p = d["next_prints"]["data"][k]
             if p is not None and p["threshold_mom"] is not None:
                 assert -0.5 < p["threshold_mom"] < 0.5
 
@@ -683,3 +737,289 @@ def test_the_b2a_modules_never_import_src_config():
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env_, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip().splitlines()[-1] == "False"
+
+
+
+# ── What each regime has meant, and the last changes (desk/fill-compute) ────
+
+def _rows(labels: list[tuple[str, str]]) -> list[dict]:
+    return [{"month": m, "label": lab, "growth_trend": 1.0, "inflation_trend": 1.0} for m, lab in labels]
+
+
+def test_month_returns_are_last_session_closes_and_skip_an_unfinished_month():
+    import pandas as pd
+
+    from src.desk import event_study as es
+
+    sessions = es.sessions_between(es.session_calendar("2026-05-01", "2026-09-18"), "2026-05-01", "2026-09-18")
+    spx = pd.Series([100.0 + i for i in range(len(sessions))], index=sessions)
+    rets = items.month_returns(spx)
+    last = lambda m: max(d for d in sessions if d.strftime("%Y-%m") == m)  # noqa: E731
+    assert rets["2026-07"] == pytest.approx(spx[last("2026-07")] / spx[last("2026-06")] - 1, rel=1e-12)
+    assert "2026-05" not in rets and "2026-09" not in rets  # no April close; September is not over
+    held = items.month_returns(spx.drop(last("2026-07")))
+    assert "2026-07" not in held and "2026-08" not in held  # a missing month-end close voids both months it closes
+
+
+FACTORS = {"2025-12": 1.00, "2026-01": 1.01, "2026-02": 1.02, "2026-03": 0.97, "2026-04": 1.04, "2026-05": 0.95,
+           "2026-06": 1.06, "2026-07": 1.07}
+
+
+def _stepped_spx(through: str = "2026-07-31"):
+    """Every session of a month at one price, so each month's return is exactly its factor less one."""
+    import pandas as pd
+
+    from src.desk import event_study as es
+
+    sessions = es.sessions_between(es.session_calendar("2025-12-01", through), "2025-12-01", through)
+    out = []
+    for d in sessions:
+        m = d.strftime("%Y-%m")
+        out.append(100.0 * float(pd.Series([FACTORS[k] for k in FACTORS if k <= m]).prod()))
+    return pd.Series(out, index=sessions), sessions
+
+
+STEP_ROWS = [("2026-01", "Goldilocks"), ("2026-02", "Goldilocks"), ("2026-03", "Stagflation"),
+             ("2026-05", "Stagflation"), ("2026-06", "Overheating")]  # April missing
+
+
+def test_codex_r01_each_label_is_measured_over_the_month_it_governed():
+    """Codex R-01: a label stamped M is known only once M+1's prints are out, and a
+    session in month K reads the row stamped K−2 (the engine's rule). Pairing a label
+    with its own month credited it with a month traded before it existed. Each label
+    is now measured over the month it governed: Goldilocks (stamped Jan, Feb) over
+    March and April, not January and February."""
+    import statistics
+
+    spx, _ = _stepped_spx()
+    st = items.regime_stats(_rows(STEP_ROWS), spx, None)
+    by = {r["regime"]: r for r in st["rows"]}
+    g = by["Goldilocks"]
+    assert (g["months"], g["spx_n"], g["spx_pending"], g["spx_missing"]) == (2, 2, 0, 0)
+    assert g["spx_median_mo"] == pytest.approx(statistics.median([-0.03, 0.04])) and g["up_pct"] == 0.5  # March, April
+    s_ = by["Stagflation"]  # stamped March and May: May and July
+    assert s_["spx_mean_mo"] == pytest.approx((-0.05 + 0.07) / 2) and s_["spx_n"] == 2
+    o = by["Overheating"]  # stamped June: August, not over in the store
+    assert (o["months"], o["spx_n"], o["spx_pending"], o["spx_median_mo"]) == (1, 0, 1, None)
+    assert st["governed"] == {"start": "2026-03", "end": "2026-08", "n": 5} and st["lag_months"] == 2
+    assert st["window"] == {"start": "2026-01", "end": "2026-06", "n": 5}
+
+
+def test_codex_r01_a_change_is_dated_by_the_month_it_took_effect():
+    spx, _ = _stepped_spx()
+    ch = items.regime_changes(_rows(STEP_ROWS), spx)
+    assert ch["n"] == 2 and ch["lag_months"] == 2
+    assert [(c["effective_month"], c["stamp_month"], c["from"], c["to"], c["from_month"]) for c in ch["rows"]] == [
+        ("2026-08", "2026-06", "Stagflation", "Overheating", "2026-05"), ("2026-05", "2026-03", "Goldilocks", "Stagflation", "2026-02")]
+    assert (ch["rows"][1]["spx_1m"], ch["rows"][1]["spx_1m_status"]) == (pytest.approx(-0.05), "complete")  # May
+    assert (ch["rows"][0]["spx_1m"], ch["rows"][0]["spx_1m_status"]) == (None, "pending")  # August is not over
+
+
+def test_codex_r08_a_missing_close_is_not_a_window_still_open():
+    """Codex R-08: a return null because its window is not complete yet and one null
+    because a historical close is not stored were one state ("month not over")."""
+    spx, sessions = _stepped_spx()
+    may_end = max(d for d in sessions if d.strftime("%Y-%m") == "2026-05")
+    ch = items.regime_changes(_rows(STEP_ROWS), spx.drop(may_end))
+    assert [(c["effective_month"], c["spx_1m"], c["spx_1m_status"]) for c in ch["rows"]] == [
+        ("2026-08", None, "pending"), ("2026-05", None, "missing")]
+    st = items.regime_stats(_rows(STEP_ROWS), spx.drop(may_end), None)
+    by = {r["regime"]: r for r in st["rows"]}
+    assert (by["Stagflation"]["spx_n"], by["Stagflation"]["spx_missing"]) == (1, 1)  # May missing, July complete
+    mid = _stepped_spx("2026-07-15")[0]  # July's window not complete yet in the store
+    assert items.MonthReturns(mid).status("2026-07") == ("pending", None)
+    assert items.MonthReturns(mid).status("2026-06") == ("complete", pytest.approx(0.06))
+
+
+def test_codex_r04_r07_the_vix_is_validated_aligned_and_its_coverage_served():
+    """Codex R-07: the VIX is aligned on the XNYS calendar and validated like every
+    engine input before it is averaged; an off-session row and an invalid value are
+    set aside and counted. Codex R-04: its stored sessions are served apart from the
+    label count, against the sessions due in the complete governed months."""
+    import pandas as pd
+
+    spx, sessions = _stepped_spx()
+    vix = pd.Series([10.0 + d.month for d in sessions], index=sessions)
+    march = [d for d in sessions if d.strftime("%Y-%m") == "2026-03"]
+    april = [d for d in sessions if d.strftime("%Y-%m") == "2026-04"]
+    vix[march[3]] = -1.0                                   # invalid for a logged series
+    vix = pd.concat([vix, pd.Series([99.0], index=[pd.Timestamp("2026-03-07")])]).sort_index()  # a Saturday
+    st = items.regime_stats(_rows(STEP_ROWS), spx, vix)
+    g = {r["regime"]: r for r in st["rows"]}["Goldilocks"]
+    assert (g["vix_days"], g["vix_sessions"]) == (len(march) + len(april) - 1, len(march) + len(april))
+    assert g["vix_avg"] == pytest.approx((13.0 * (len(march) - 1) + 14.0 * len(april)) / (len(march) + len(april) - 1))
+    assert st["vix_coverage"] == {"stored": True, "first": "2025-12-01", "last": "2026-07-31", "off_session_dropped": 1, "invalid": 1}
+    o = {r["regime"]: r for r in st["rows"]}["Overheating"]
+    assert (o["vix_days"], o["vix_sessions"], o["vix_avg"]) == (0, 0, None)  # August is not over: no VIX from it either
+    assert st["totals"]["vix_days"] == sum(r["vix_days"] for r in st["rows"]) and st["totals"]["spx_pending"] == 1
+    none = items.regime_stats(_rows(STEP_ROWS), spx, None)
+    assert none["vix_coverage"]["stored"] is False and all(r["vix_avg"] is None for r in none["rows"])
+
+
+def test_codex_r09_the_vix_denominator_is_every_session_of_the_governed_months():
+    """Codex R-09, the repro: a Feb 2026 Goldilocks label governs April 2026; the
+    VIX is stored only on Apr 15 and 16. The sessions due were counted over the
+    VIX's own stored range (2 of 2); they are every XNYS session of April (21:
+    Good Friday, Apr 3, is closed), missing sessions kept in the denominator."""
+    import pandas as pd
+
+    spx, _ = _stepped_spx()  # through July: April complete
+    vix = pd.Series([18.0, 19.0], index=pd.DatetimeIndex(["2026-04-15", "2026-04-16"]))
+    st = items.regime_stats(_rows([("2026-02", "Goldilocks")]), spx, vix)
+    g = {r["regime"]: r for r in st["rows"]}["Goldilocks"]
+    assert (g["vix_days"], g["vix_sessions"], g["vix_avg"]) == (2, 21, pytest.approx(18.5))
+    assert (st["totals"]["vix_days"], st["totals"]["vix_sessions"]) == (2, 21)
+    assert items.month_sessions(["2026-04", "2026-02"]) == {"2026-04": 21, "2026-02": 19}
+
+
+@pytest.mark.parametrize("path", [PUBLISHED], ids=["published"])
+def test_the_stats_and_the_changes_on_the_audits_store(path, install_worker, monkeypatch, tmp_path):
+    """FRAME3_DATA_AUDIT.md §2.4 on the audit's store: Q8's labels and Q9's 123 changes, each measured over the
+    month it governed (Codex R-01). The store predates the ^VIX close (desk/fill-compute, item 7), so its VIX
+    column is null until the next full refresh stores it; with that close added the refresh's way
+    (tests/desk_vix.py, from the store's own VIXCLS rows), the VIX over the governed months."""
+    if not path.exists() or path.stat().st_size == 0:
+        pytest.skip(f"{path.name} is not in this tree")
+    from tests.desk_vix import with_vix_close
+
+    serve(install_worker, monkeypatch, path)
+    at(monkeypatch, datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]
+    if d["history"][-1]["month"] != "2026-08":
+        pytest.skip("not the audit's store")
+    if d["stats"]["data"]["rows"][0]["vix_days"] == 0:
+        before = d["stats"]["data"]
+        assert all(r["vix_avg"] is None and r["vix_days"] == 0 for r in before["rows"]) and "not stored yet" in before["source"]
+        assert before["rows"][0]["spx_n"] == 26 and before["vix_coverage"]["stored"] is False and d["changes"]["status"] == "ready"
+        serve(install_worker, monkeypatch, with_vix_close(path, tmp_path / "with-vix.db"))
+    at(monkeypatch, datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]
+    if d["history"][-1]["month"] != "2026-08":
+        pytest.skip("not the audit's store")
+    st, ch = d["stats"]["data"], d["changes"]["data"]
+    assert [(r["regime"], r["months"], r["spx_n"], r["spx_pending"]) for r in st["rows"]] == [
+        ("Goldilocks", 27, 26, 1), ("Overheating", 213, 212, 1), ("Stagflation", 102, 102, 0), ("Recession Risk", 21, 21, 0)]
+    assert st["window"] == {"start": "1996-05", "end": "2026-08", "n": 363}
+    assert st["governed"] == {"start": "1996-07", "end": "2026-10", "n": 363}
+    # Goldilocks over its governed months, checked against a month-end resample and the stored VIXCLS rows
+    g = st["rows"][0]
+    assert (g["spx_median_mo"], g["spx_mean_mo"], g["up_pct"]) == (
+        pytest.approx(0.0118291114849147, rel=1e-9), pytest.approx(0.0061619848236379, rel=1e-9), pytest.approx(17 / 26))
+    assert g["vix_avg"] == pytest.approx(16.85300556586271, rel=1e-12) and (g["vix_days"], g["vix_sessions"]) == (539, 539)
+    # Codex R-07: FRED's VIX copy carries 34 rows on days XNYS did not trade; the aligned reader sets them aside
+    assert st["vix_coverage"]["off_session_dropped"] == 34 and st["totals"]["vix_days"] == 7566 and st["totals"]["vix_sessions"] == 7568
+    assert ch["n"] == 123 and [(c["effective_month"], c["stamp_month"], c["from"], c["to"], c["spx_1m_status"]) for c in ch["rows"]] == [
+        ("2026-10", "2026-08", "Goldilocks", "Overheating", "pending"), ("2026-09", "2026-07", "Overheating", "Goldilocks", "pending"),
+        ("2026-03", "2026-01", "Stagflation", "Overheating", "complete"), ("2025-11", "2025-09", "Overheating", "Stagflation", "complete"),
+        ("2025-08", "2025-06", "Stagflation", "Overheating", "complete")]
+    assert ch["rows"][2]["spx_1m"] == pytest.approx(-0.050932690968577, rel=1e-12)  # March 2026
+
+
+# ── Both cards read one label (desk/fill-compute) ───────────────────────────
+
+REGIME_AXES = {"Goldilocks": ("rising", "falling"), "Overheating": ("rising", "rising"),
+               "Stagflation": ("falling", "rising"), "Recession Risk": ("falling", "falling")}
+FOUR = [("Goldilocks", UP, DOWN), ("Overheating", UP, UP), ("Stagflation", DOWN, UP), ("Recession Risk", DOWN, DOWN)]
+
+
+def _flip(d: str) -> str:
+    return "falling" if d == "rising" else "rising"
+
+
+def _regime(growth: str, inflation: str) -> str:
+    return next(k for k, v in REGIME_AXES.items() if v == (growth, inflation))
+
+
+@pytest.mark.parametrize("label,gsteps,isteps", FOUR, ids=[f[0] for f in FOUR])
+def test_the_flip_text_matches_the_displayed_label_for_every_regime(tmp_path, install_worker, monkeypatch, classifier,
+                                                                    label, gsteps, isteps):
+    """The next prints are read from the row WHERE WE ARE shows (the K−2 row
+    for the response's session), so their flips start from its label: a CPI
+    print flips inflation away from that row's inflation, an INDPRO print
+    growth away from its growth, and each lands on the regime the table gives."""
+    path = _oracle_store(tmp_path, classifier, _levels(100.0, gsteps), _levels(250.0, isteps))
+    conn = sqlite3.connect(path)
+    last = conn.execute("SELECT date, label FROM regimes ORDER BY date DESC LIMIT 1").fetchone()
+    conn.close()
+    assert last[1] == label, "the oracle store's newest row carries the regime under test"
+    serve(install_worker, monkeypatch, path)
+    y, m = int(last[0][:4]), int(last[0][5:7]) + 2  # the session month K whose K−2 row is the newest
+    y, m = (y + 1, m - 12) if m > 12 else (y, m)
+    at(monkeypatch, datetime(y, m, 15, 21, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]
+    cur, np_ = d["current"]["data"], d["next_prints"]["data"]
+    assert np_["basis"] == {"month": cur["print"], "label": cur["label"]} and cur["label"] == label
+    assert np_["published"] == [] and np_["upcoming_from"] == np_["basis"]
+    growth, inflation = REGIME_AXES[label]
+    assert (cur["growth"], cur["inflation"]) == (growth, inflation)
+    cpi, ind = np_["cpi"], np_["indpro"]
+    assert (cpi["from_direction"], ind["from_direction"]) == (inflation, growth)
+    assert cpi["operator"] == ("<=" if inflation == "rising" else ">") and cpi["flips_to"] == _regime(growth, _flip(inflation))
+    assert ind["operator"] == ("<=" if growth == "rising" else ">") and ind["flips_to"] == _regime(_flip(growth), inflation)
+    assert label not in (cpi["flips_to"], ind["flips_to"])
+
+
+def test_a_print_already_made_is_said_from_the_displayed_row(tmp_path, install_worker, monkeypatch, classifier):
+    """When the displayed K−2 row's next month is stored (mid-month K, before the
+    K−2 row stops governing), the card reads that print from the displayed row:
+    no threshold, the print's m/m change, the axis it gave, and the stored next
+    row's own label."""
+    growth, infl = _levels(100.0, UP), _levels(250.0, DOWN + [0.01])  # the last CPI print jumps: inflation turns rising
+    growth = growth + [growth[-1] * 1.003]
+    path = _oracle_store(tmp_path, classifier, growth, infl)
+    conn = sqlite3.connect(path)
+    rows = items.regime_rows(conn)
+    conn.close()
+    basis, after = rows[-2], rows[-1]
+    np_, _ = _next(path, basis["month"])
+    assert np_["basis"] == {"month": basis["month"], "label": basis["label"]}
+    # Codex R-05: the row after it is published, with the prints that made it, apart from the upcoming prints
+    (pub,) = np_["published"]
+    assert (pub["month"], pub["label"], pub["first_effective_month"]) == (after["month"], after["label"], v2m.months_before(after["month"], -2))
+    cpi = pub["cpi"]
+    assert cpi["reference_month"] == after["month"] and cpi["mom"] == pytest.approx(infl[-1] / infl[-2] - 1, rel=1e-12)
+    assert cpi["direction"] == items.direction(after["inflation_trend"])
+    assert cpi["from_direction"] == items.direction(basis["inflation_trend"])
+    # the upcoming prints read from the newest row, for the month after it
+    assert np_["upcoming_from"] == {"month": after["month"], "label": after["label"]}
+    assert np_["cpi"]["reference_month"] == v2m.months_before(after["month"], -1) and np_["cpi"]["threshold_mom"] is not None
+
+
+def test_the_routes_next_print_keys_mirror_the_items():
+    assert v2m.NEXT_PRINT_KEYS == items.NEXT_PRINTS
+
+
+# ── The home page's classifier beside the rule-based label (desk/fill-compute) ──
+
+def _odds_store(tmp_path: Path, rows: list[tuple]) -> sqlite3.Connection:
+    conn = sqlite3.connect(tmp_path / "odds.db")
+    conn.execute("CREATE TABLE regimes (date TEXT, label TEXT, growth_trend REAL, inflation_trend REAL, prob_goldilocks REAL, "
+                 "prob_overheating REAL, prob_stagflation REAL, prob_recession REAL)")
+    conn.executemany("INSERT INTO regimes VALUES (?,?,?,?,?,?,?,?)", rows)
+    return conn
+
+
+def test_the_classifier_reading_is_the_newest_rows_dominant_odds(tmp_path):
+    conn = _odds_store(tmp_path, [("2026-07-01", "Goldilocks", 1, -1, 0.61, 0.01, 0.01, 0.37),
+                                  ("2026-08-01", "Overheating", 1, 1, 0.11, 0.4246, 0.3698, 0.0957)])
+    try:
+        assert items.classifier_latest(conn) == {"month": "2026-08", "label": "Overheating", "odds": 0.4246}
+        conn.execute("UPDATE regimes SET prob_recession = 0.9 WHERE date = '2026-08-01'")
+        # the Desk never shows regimes.prob_recession: the label is named, its odds are not
+        assert items.classifier_latest(conn) == {"month": "2026-08", "label": "Recession Risk", "odds": None}
+        conn.execute("UPDATE regimes SET prob_goldilocks = NULL WHERE date = '2026-08-01'")
+        assert items.classifier_latest(conn) is None
+    finally:
+        conn.close()
+
+
+def test_the_route_serves_the_classifier_beside_the_k_minus_2_label(install_worker, monkeypatch):
+    if not PUBLISHED.exists() or PUBLISHED.stat().st_size == 0:
+        pytest.skip("no published copy")
+    serve(install_worker, monkeypatch, PUBLISHED)
+    at(monkeypatch, datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc))
+    cur = get_regime()["data"]["current"]["data"]
+    if cur["latest_print"] != "2026-08":
+        pytest.skip("not the audit's store")
+    assert cur["label"] == "Goldilocks" and cur["print"] == "2026-07"
+    assert cur["classifier"] == {"month": "2026-08", "label": "Overheating", "odds": 0.4246, "agrees": False}

@@ -97,9 +97,7 @@ def route_of(path: str) -> str:
 VOL_REASON = "needs stored SPY option snapshots and a versioned skew method."
 POSITIONS_REASON = "Positions are kept in this browser; there is no server position store."
 BASKET_REASON = "basket pricing and option structures not yet defined in the engine."
-RSI_REASON = "RSI is not computed yet."
 WITHOUT_CONDITION_REASON = "conditional-versus-unconditional comparison is not defined"
-REGIME_STATS_REASON = "regime statistics not yet defined in the engine."
 # desk/fill-etf: stock_bond and correlations are served; the matrix's assets and method are open
 MATRIX_REASON = "the 12-asset matrix's assets and method are not specified yet."
 # S-27: a block whose computation failed on this generation.
@@ -118,8 +116,6 @@ DEFERRED_REASONS: dict[str, str] = {
 # The blocks deferred on Monday (§13.2 "not allowed"), by route and path.
 DEFERRED_BLOCKS: dict[tuple[str, str], str] = {
     ("/study", "without_condition"): WITHOUT_CONDITION_REASON,
-    ("/regime", "stats"): REGIME_STATS_REASON,
-    ("/regime", "changes"): REGIME_STATS_REASON,
     ("/technicals", "vol"): VOL_REASON,
     ("/macro", "matrix"): MATRIX_REASON,
 }

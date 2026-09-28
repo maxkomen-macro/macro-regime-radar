@@ -338,3 +338,30 @@ def test_a_desk_macro_build_that_fails_midway_leaves_no_connection_to_the_copy(t
     res = run_failing_build(tmp_path, ("desk_macro",))
     assert res["left_open"] == 0 and res["fresh"] > 0, res
     assert res["errors"].get("desk_macro") == "SchemaCheckFailed", res
+
+
+# ── Item 8 (desk/fill-compute): the published store's month, verified against its raw FRED rows ──
+
+# The stored desk_series rows of the published store (data-latest, synced 2026-09-27 17:55 UTC) around
+# the two curve dates: the last common observation (2026-09-24) and the last on or before it less one
+# calendar month (2026-08-24; 2026-08-22 and 23 are a weekend).
+LIVE_ROWS = {
+    "3m": {"2026-08-21": 3.88, "2026-08-24": 3.87, "2026-09-23": 4.19, "2026-09-24": 4.24},
+    "2y": {"2026-08-21": 4.24, "2026-08-24": 4.24, "2026-09-23": 4.85, "2026-09-24": 4.87},
+    "5y": {"2026-08-21": 4.43, "2026-08-24": 4.41, "2026-09-23": 4.99, "2026-09-24": 5.03},
+    "10y": {"2026-08-21": 4.74, "2026-08-24": 4.70, "2026-09-23": 5.11, "2026-09-24": 5.18},
+    "30y": {"2026-08-21": 5.27, "2026-08-24": 5.23, "2026-09-23": 5.40, "2026-09-24": 5.47},
+}
+
+
+def test_the_published_months_10y_and_2y_moves_are_the_raw_rows():
+    """The Macro tab's +48 bp on the 10-year and the 2-year's ≈ +63 bp implied
+    by 2s10s's −15 bp: (5.18 − 4.70) × 100 and (4.87 − 4.24) × 100 on
+    2026-09-24 against 2026-08-24, the dates the curve picks."""
+    levels = {t: pd.Series(list(v.values()), index=pd.DatetimeIndex(list(v))) for t, v in LIVE_ROWS.items()}
+    c = items.curve(levels)
+    assert (c["today"]["date"], c["month_ago"]["date"]) == ("2026-09-24", "2026-08-24")
+    assert c["10y_chg_bp"] == pytest.approx(48.0, abs=1e-9)
+    assert c["2s10s_bp"] == pytest.approx(31.0, abs=1e-9) and c["2s10s_chg_bp"] == pytest.approx(-15.0, abs=1e-9)
+    two_year = c["10y_chg_bp"] - c["2s10s_chg_bp"]
+    assert two_year == pytest.approx((4.87 - 4.24) * 100, abs=1e-9) == pytest.approx(63.0, abs=1e-9)

@@ -5,7 +5,7 @@
  * sectors block the sector leadership /sectors serves, §12.14) and /ledger
  * (§12.5, the rows in `signals_allowlist` order). Grid:
  * the vol card spans the left column; price and signals on top; sector
- * leadership and RSI below. Every number is a served field, formatted, and
+ * leadership and RSI below; MACD and seasonality in a third row (desk/fill-compute). Every number is a served field, formatted, and
  * dated by its own served dates; the trend's words spell the served
  * `trend.state` (§3).
  * A card stays quiet while its first answer is on its way, and keeps its
@@ -20,10 +20,11 @@ import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, Vo
 import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { capitalize, dayLong, dayShort, grouped, leadershipGaps, num, ordinal, pct, pctPlain, signed, year } from "../kit/format";
+import { capitalize, dayLong, dayShort, grouped, leadershipGaps, monthYear, num, ordinal, pct, pctPlain, signed, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
+import Gauge from "../kit/Gauge";
 import RankBars from "../kit/RankBars";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
 import "./technicals.css";
@@ -253,7 +254,7 @@ export function trendWord(state: string | undefined): string | null {
 const bySlug = (ledger: LedgerResponse | undefined, slug: string) => (Array.isArray(ledger?.signals) ? ledger.signals.find((r) => r.slug === slug && fin(r.n)) : undefined);
 
 function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | undefined; tState: CardState; ledger: LedgerResponse | undefined; lState: CardState }) {
-  // §3: the Ledger rows in `signals_allowlist` order; the RSI rows are omitted while unavailable.
+  // §3: the Ledger rows in `signals_allowlist` order, the two RSI rows among them.
   const rows = allowlistRows(ledger, t?.signals_allowlist);
   const ready = tState === "ready" && !!t;
   const aw = tState === "awaiting";
@@ -401,11 +402,244 @@ export function dayInYear(iso: string | null | undefined, asOf: string): string 
   return iso.slice(0, 4) === asOf.slice(0, 4) ? dayShort(iso) : dayLong(iso);
 }
 
-/** §1.0: RSI is not computed, and the card has no served envelope, so it prints the RSI rows' served reason (§1.0.2, §12.3). */
-export const RSI_UNAVAILABLE = { reason: "RSI is not computed yet.", until: null } as const;
+/** §3: the zone a served RSI sits in, by the two levels the RSI studies cross: strictly above 70
+ * overbought, strictly below 30 oversold, neutral between. */
+export function rsiZone(x: number): "overbought" | "oversold" | "neutral" {
+  return x > 70 ? "overbought" : x < 30 ? "oversold" : "neutral";
+}
 
-function RsiCard() {
-  return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub="is the S&P stretched, either way?" labels={["Now", "Last above 70", "Last below 30"]} block={RSI_UNAVAILABLE} advanced />;
+/** §12.13: "rising" and "falling" come only from the two served numbers, the RSI and the one before it; null without both. */
+export function rsiDirection(now: number | null | undefined, prev: number | null | undefined): "rising" | "falling" | "flat" | null {
+  if (!fin(now) || !fin(prev)) return null;
+  return now > prev ? "rising" : now < prev ? "falling" : "flat";
+}
+
+/** A zone's last session: its day, and the S&P's simple return over the next 20 sessions once they have passed;
+ * Codex R-08: a window not complete yet and a close not stored each say their own reason. */
+export function visitSub(v: TechnicalsResponse["rsi_last_above_70"]) {
+  if (!v) return undefined;
+  if (fin(v.after_20d) && (v.after_20d_status ?? "complete") === "complete")
+    return (
+      <>
+        S&amp;P <Signed value={v.after_20d}>{pct(v.after_20d)}</Signed> 20 sessions later
+      </>
+    );
+  if (v.after_20d_status === "missing") return `the close 20 sessions later${dayShort(v.after_20d_to) ? ` (${dayShort(v.after_20d_to)})` : ""} is not stored`;
+  return "20 sessions have not passed yet";
+}
+
+function RsiCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardState }) {
+  const adv = useAdvanced();
+  const ready = state === "ready" && !!t;
+  const aw = state === "awaiting";
+  const r = ready && fin(t.rsi) ? t.rsi : null;
+  const zone = r != null ? rsiZone(r) : null;
+  const words = r != null ? [zone, rsiDirection(t?.rsi, t?.rsi_prev)].filter(Boolean).join(", ") : "";
+  const day = (v: TechnicalsResponse["rsi_last_above_70"]) => (ready && v?.date ? dayInYear(v.date, t.as_of) : "");
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub="is the S&P stretched, either way?" labels={["Now", "Last above 70", "Last below 30"]} block={unserved} advanced />;
+  return (
+    <section className="dk-card te-rsi" aria-labelledby="te-rsi-title" aria-busy={state === "loading"}>
+      <div className="dk-card-head">
+        <h2 className="dk-card-title" id="te-rsi-title">
+          Momentum · RSI<span className="dk-card-sub"> is the S&amp;P stretched, either way?</span>
+        </h2>
+        {/* §1.6: the RSI is dated by its own session, which a gap in the closes can hold before the price's. */}
+        {r != null && dayShort(t?.rsi_date) ? <LiveBadge parts={[dayShort(t?.rsi_date)]} /> : null}
+      </div>
+      <StatRow cols={3}>
+        <Stat label="Now" awaiting={aw || (ready && r == null)} value={r != null ? num(r) : undefined} sub={words || undefined} />
+        <Stat label="Last above 70" size="date" tone="amber" awaiting={aw || (ready && !day(t.rsi_last_above_70))} value={day(t?.rsi_last_above_70) || undefined} sub={ready ? visitSub(t.rsi_last_above_70) : undefined} />
+        <Stat label="Last below 30" size="date" tone="green" awaiting={aw || (ready && !day(t.rsi_last_below_30))} value={day(t?.rsi_last_below_30) || undefined} sub={ready ? visitSub(t.rsi_last_below_30) : undefined} />
+      </StatRow>
+      <div className="te-rsi-gauge">
+        {r != null ? (
+          <Gauge
+            thick
+            min={0}
+            max={100}
+            value={r}
+            ticks={[0, 30, 70, 100]}
+            bands={[
+              { label: "Oversold", to: 30, tone: "green" },
+              { label: "Neutral", to: 70, tone: "neutral" },
+              { label: "Overbought", to: 100, tone: "amber" },
+            ]}
+            caption={num(r)}
+            label={`RSI ${num(r)}, ${zone}`}
+          />
+        ) : aw || ready ? (
+          <Awaiting />
+        ) : null}
+      </div>
+      <div className="te-foot">
+        <AdvancedPanel adv={adv} items="full RSI line · every crossing · regime split" missing="The full RSI line is not served yet." />
+      </div>
+    </section>
+  );
+}
+
+// ── Momentum · MACD ──────────────────────────────────────────────────────
+
+/** §3: the histogram's side in words, from the served `hist` only. */
+export function macdSide(hist: number | null | undefined): string | null {
+  if (!fin(hist)) return null;
+  return hist > 0 ? "MACD above its signal" : hist < 0 ? "MACD below its signal" : "MACD on its signal";
+}
+
+/** §3: the last crossover in words, from its served kind. */
+export function macdCrossWords(kind: string | undefined): string | null {
+  return kind === "above" ? "MACD crossed above its signal" : kind === "below" ? "MACD crossed below its signal" : null;
+}
+
+/** One decimal, signed ("+8.1", "−10.4"): the MACD's three values are index points either side of zero. */
+const pts1 = (x: number) => signed(x, 1);
+
+function MacdCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardState }) {
+  const ready = state === "ready" && !!t;
+  const aw = state === "awaiting";
+  const m = ready ? (t.macd ?? null) : null;
+  const pts = (m?.series ?? []).filter((p) => typeof p?.date === "string");
+  const all = pts.flatMap((p) => [p.macd, p.signal, p.hist]).filter(fin);
+  const ticks = extentTicks(all.length ? Math.min(0, ...all) : -1, all.length ? Math.max(0, ...all) : 1, 5);
+  const domain: [number, number] = [ticks[0], ticks[ticks.length - 1]];
+  const lc = m?.last_cross ?? null;
+  const crossI = lc ? pts.findIndex((p) => p.date === lc.date) : -1;
+  const day = (iso: string | undefined) => (ready && iso ? dayInYear(iso, t.as_of) : "");
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-macd-title" className="te-macd" title="Momentum · MACD" sub="12, 26, 9 on the S&P's closes" labels={["MACD", "Signal", "Histogram", "Last crossover"]} block={unserved} />;
+  return (
+    <section className="dk-card te-macd" aria-labelledby="te-macd-title" aria-busy={state === "loading"}>
+      <div className="dk-card-head">
+        <h2 className="dk-card-title" id="te-macd-title">
+          Momentum · MACD<span className="dk-card-sub"> 12, 26, 9 on the S&amp;P&apos;s closes</span>
+        </h2>
+        {/* §1.6: the MACD is dated by its own session, which a gap in the closes can hold before the price's. */}
+        {m && dayShort(m.date) ? <LiveBadge parts={[dayShort(m.date)]} /> : null}
+      </div>
+      <StatRow cols={4}>
+        <Stat label="MACD" awaiting={aw || (ready && !fin(m?.macd))} value={m && fin(m.macd) ? pts1(m.macd) : undefined} tone="blue" />
+        <Stat label="Signal" awaiting={aw || (ready && !fin(m?.signal))} value={m && fin(m.signal) ? pts1(m.signal) : undefined} tone="gray" />
+        <Stat
+          label="Histogram"
+          awaiting={aw || (ready && !fin(m?.hist))}
+          value={m && fin(m.hist) ? pts1(m.hist) : undefined}
+          tone={m && fin(m.hist) ? (m.hist > 0 ? "up" : m.hist < 0 ? "down" : undefined) : undefined}
+          sub={m ? (macdSide(m.hist) ?? undefined) : undefined}
+        />
+        <Stat label="Last crossover" size="date" awaiting={aw || (ready && !day(lc?.date))} value={day(lc?.date) || undefined} sub={macdCrossWords(lc?.kind) ?? undefined} />
+      </StatRow>
+      {m && pts.filter((p) => fin(p.macd)).length > 1 ? (
+        <LineChart
+          ariaLabel={`MACD, its signal line and the histogram, 6M${crossI >= 0 && lc ? `; last crossover on ${dayLong(lc.date)}` : ""}`}
+          height={220}
+          n={pts.length}
+          yDomain={domain}
+          yTicks={ticks.map((v) => ({ v, text: num(v, 0) }))}
+          xTicks={monthTicks(pts.map((p) => p.date))}
+          zero
+          bars={{ values: pts.map((p) => (fin(p.hist) ? p.hist : null)), up: DESK_ACCENTS.green, down: DESK_ACCENTS.red }}
+          series={[
+            { key: "signal", values: pts.map((p) => (fin(p.signal) ? p.signal : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 2, label: "Signal" },
+            { key: "macd", values: pts.map((p) => (fin(p.macd) ? p.macd : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "MACD" },
+          ]}
+          endDot="macd"
+          markers={crossI >= 0 && fin(pts[crossI].macd) ? [{ i: crossI, v: pts[crossI].macd as number, color: lc?.kind === "below" ? DESK_ACCENTS.red : DESK_ACCENTS.green, r: 5 }] : []}
+          pad={{ l: 40, r: 64, t: 10, b: 26 }}
+        />
+      ) : state === "loading" ? null : (
+        <Awaiting />
+      )}
+    </section>
+  );
+}
+
+// ── Seasonality ─────────────────────────────────────────────────────────
+
+/** A served month ("1990-02") as "Feb 1990". */
+const monthOf = (ym: string | undefined) => (typeof ym === "string" ? monthYear(`${ym}-01`) : "");
+
+/** §3: the years line under the table, from the served counts ("36–37 years a month"; one number when they agree). */
+export function yearsLine(rows: readonly { n: number | null }[]): string | null {
+  const ns = rows.map((r) => r.n).filter(fin);
+  if (!ns.length) return null;
+  const lo = Math.min(...ns);
+  const hi = Math.max(...ns);
+  return `${lo === hi ? lo : `${lo}–${hi}`} years a month · a month counts once it is complete`;
+}
+
+const SEASON_LABELS = ["Average", "Up", "Years"];
+
+function SeasonalityCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardState }) {
+  const ready = state === "ready" && !!t;
+  const s = ready ? (t.seasonality ?? null) : null;
+  const rows = Array.isArray(s?.rows) ? s.rows : [];
+  // §3: each bar's length is |avg| over the largest |avg| of the twelve.
+  const big = Math.max(0, ...rows.map((r) => (fin(r.avg) ? Math.abs(r.avg) : 0)));
+  const w = s?.window;
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-season-title" className="te-season" title="Seasonality · S&P 500 by calendar month" labels={SEASON_LABELS} cols={3} block={unserved} />;
+  return (
+    <section className="dk-card te-season" aria-labelledby="te-season-title" aria-busy={state === "loading"}>
+      <div className="dk-card-head">
+        <h2 className="dk-card-title" id="te-season-title">
+          Seasonality · S&amp;P 500 by calendar month
+        </h2>
+      </div>
+      {s && rows.length ? (
+        <>
+          {w && monthOf(w.start) && monthOf(w.end) ? (
+            <p className="te-season-sub">
+              Average monthly return and share of years up, {monthOf(w.start)} to {monthOf(w.end)}.
+            </p>
+          ) : null}
+          <div className="te-season-wrap" role="region" aria-label="Seasonality by calendar month" tabIndex={0}>
+            <table className="te-season-table">
+              <colgroup>
+                <col className="te-season-col-month" />
+                <col className="te-season-col-avg" />
+                <col />
+                <col className="te-season-col-up" />
+                <col className="te-season-col-n" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">Month</th>
+                  <th scope="col">Average</th>
+                  <td aria-hidden="true" />
+                  <th scope="col">Up</th>
+                  <th scope="col">Years</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={`${r.label}-${i}`}>
+                    <th scope="row">{r.label}</th>
+                    <td>{fin(r.avg) ? <Signed value={r.avg}>{pct(r.avg)}</Signed> : "—"}</td>
+                    <td className="te-season-barcell" aria-hidden="true">
+                      {fin(r.avg) && big > 0 ? <span className="te-season-bar" data-sign={r.avg >= 0 ? "up" : "down"} style={{ width: `${(Math.abs(r.avg) / big) * 50}%` }} /> : null}
+                    </td>
+                    <td>{fin(r.pct_up) ? pctPlain(r.pct_up) : "—"}</td>
+                    <td title={fin(r.first_year) && fin(r.last_year) ? `${r.first_year}–${r.last_year}` : undefined}>{fin(r.n) ? r.n : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="te-foot">
+            {yearsLine(rows) ? <p className="te-season-note">{yearsLine(rows)}</p> : null}
+            {s.source ? <p className="te-source">Source: {s.source}, monthly</p> : null}
+          </div>
+        </>
+      ) : state === "loading" ? null : (
+        <StatRow cols={3}>
+          {SEASON_LABELS.map((l) => (
+            <Stat key={l} label={l} awaiting />
+          ))}
+        </StatRow>
+      )}
+    </section>
+  );
 }
 
 export default function TechnicalsPage({ page }: { page: DeskPage }) {
@@ -433,7 +667,11 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
         <Unserved block={sectorsOff}>
           <SectorCard s={t?.sectors} state={stateOf(tq, Array.isArray(t?.sectors?.leadership))} />
         </Unserved>
-        <RsiCard />
+        <Unserved block={unavailableOf(tq.error)}>
+          <RsiCard t={t} state={stateOf(tq)} />
+          <MacdCard t={t} state={stateOf(tq)} />
+          <SeasonalityCard t={t} state={stateOf(tq)} />
+        </Unserved>
       </div>
     </div>
   );

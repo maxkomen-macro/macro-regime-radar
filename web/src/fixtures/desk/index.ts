@@ -74,7 +74,7 @@ function catalogAsk(u: URL): { study: CatalogStudy | null; question: Question | 
     return { study: q ? studyFor(CATALOG, q) : null, question: null };
   }
   const move = u.searchParams.get("move");
-  const cross = move === "cross_above" || move === "cross_below";
+  const cross = move === "cross_above" || move === "cross_below" || move === "rsi_above_70" || move === "rsi_below_30";
   const q = {
     shock: u.searchParams.get("shock"),
     window: cross || !u.searchParams.has("window") ? null : Number(u.searchParams.get("window")),
@@ -122,10 +122,11 @@ function paramRefusal(u: URL): string | null {
   const repeated = [...new Set(keys.filter((k, i) => keys.indexOf(k) !== i))];
   if (repeated.length) return `The ${repeated.join(" and ")} parameter is given more than once.`;
   if (u.searchParams.has("preset") && SLOTS.some((k) => u.searchParams.has(k))) return "A preset is asked on its own, with at most a horizon; the six slots are the other way to ask.";
-  // §12.2 (S-20): `window` is required for a shock move and refused for a cross.
+  // §12.2 (S-20): `window` is required for a shock move and refused for a cross or an RSI crossing.
   const move = u.searchParams.get("move");
-  if (!u.searchParams.has("preset") && move && (move === "cross_above" || move === "cross_below") === u.searchParams.has("window"))
-    return u.searchParams.has("window") ? "A cross takes no window." : `The move ${move} needs a window (5, 20 or 60 sessions).`;
+  const rsi = move === "rsi_above_70" || move === "rsi_below_30";
+  if (!u.searchParams.has("preset") && move && (move === "cross_above" || move === "cross_below" || rsi) === u.searchParams.has("window"))
+    return u.searchParams.has("window") ? (rsi ? "An RSI crossing takes no window." : "A cross takes no window.") : `The move ${move} needs a window (5, 20 or 60 sessions).`;
   return null;
 }
 

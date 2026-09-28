@@ -8,7 +8,7 @@
  * the engine, studies.test.ts checks this port against the file.
  *
  * Grammar: a preset keeps its name; a cross is `{target}-{golden|death}-cross`;
- * any other study is `{shock}-w{w}-z{z}-{up|down|abs}-{cond[=value]|none}-{target}`;
+ * an RSI crossing is `{target}-rsi-{above-70|below-30}` (desk/fill-compute); any other study is `{shock}-w{w}-z{z}-{up|down|abs}-{cond[=value]|none}-{target}`;
  * both take `-{regime}` when a regime filter is set. Numbers are written as
  * Python's repr writes the builder's values: the shortest decimal with at
  * least one decimal place (2 → "2.0"). The page keeps a condition with its
@@ -19,8 +19,9 @@
  * with its value as the slug writes it ("vix_above=20.0", "regime=stagflation");
  * `regime` is "all" or a slug word. A cross fixes the shock fields. */
 export interface EventStudyParams {
-  kind: "shock" | "cross";
-  cross: "golden" | "death" | null;
+  kind: "shock" | "cross" | "rsi";
+  /** golden | death for a cross; above | below for an RSI crossing (the engine's `cross` field). */
+  cross: "golden" | "death" | "above" | "below" | null;
   shock: string;
   w: number;
   z: number;
@@ -40,6 +41,11 @@ function cross(which: "golden" | "death"): EventStudyParams {
   return { kind: "cross", cross: which, shock: "spx", w: 20, z: 2, sign: "+", cond: "none", regime: "all", target: "spx" };
 }
 
+function rsi(which: "above" | "below"): EventStudyParams {
+  // The engine fixes an RSI study's shock fields (validate): S&P 500, w = the 14-session cooldown, z 2, sign +.
+  return { kind: "rsi", cross: which, shock: "spx", w: 14, z: 2, sign: "+", cond: "none", regime: "all", target: "spx" };
+}
+
 /** The engine's three presets, in its order (event_study.PRESETS). */
 export const PRESETS: Record<string, EventStudyParams> = { [PRESET_SLUG]: PRESET, "spx-golden-cross": cross("golden"), "spx-death-cross": cross("death") };
 
@@ -54,7 +60,7 @@ export function numSlug(v: number): string {
 
 export function sameParams(a: EventStudyParams, b: EventStudyParams): boolean {
   if (a.kind !== b.kind || a.target !== b.target || a.regime !== b.regime) return false;
-  if (a.kind === "cross") return a.cross === b.cross;
+  if (a.kind === "cross" || a.kind === "rsi") return a.cross === b.cross;
   return a.shock === b.shock && a.w === b.w && a.z === b.z && a.sign === b.sign && a.cond === b.cond;
 }
 
@@ -64,12 +70,14 @@ export function slugFor(p: EventStudyParams): string {
   if (preset) return preset[0];
   const regime = p.regime === "all" ? "" : `-${p.regime}`;
   if (p.kind === "cross") return `${p.target}-${p.cross}-cross${regime}`;
+  if (p.kind === "rsi") return `${p.target}-rsi-${p.cross === "below" ? "below-30" : "above-70"}${regime}`;
   return `${p.shock}-w${p.w}-z${numSlug(p.z)}-${SIGN_WORD[p.sign]}-${p.cond}-${p.target}${regime}`;
 }
 
 const NUM = String.raw`-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?`;
 const SLUG_RE = new RegExp(String.raw`^([a-z0-9_]+)-w(\d+)-z(${NUM})-(up|down|abs)-([a-z0-9_]+)(?:=(${NUM}|[a-z_]+))?-([a-z0-9_]+)(?:-(${REGIMES}))?$`);
 const CROSS_RE = new RegExp(String.raw`^([a-z0-9_]+)-(golden|death)-cross(?:-(${REGIMES}))?$`);
+const RSI_RE = new RegExp(String.raw`^([a-z0-9_]+)-rsi-(above-70|below-30)(?:-(${REGIMES}))?$`);
 
 /** The study a slug names; null for anything the engine would not parse as an address. */
 export function paramsFor(slug: string | null | undefined): EventStudyParams | null {
@@ -77,6 +85,8 @@ export function paramsFor(slug: string | null | undefined): EventStudyParams | n
   if (PRESETS[slug]) return PRESETS[slug];
   const c = CROSS_RE.exec(slug);
   if (c) return { ...cross(c[2] as "golden" | "death"), target: c[1], regime: c[3] ?? "all" };
+  const r = RSI_RE.exec(slug);
+  if (r) return { ...rsi(r[2] === "below-30" ? "below" : "above"), target: r[1], regime: r[3] ?? "all" };
   const m = SLUG_RE.exec(slug);
   if (!m) return null;
   const w = Number(m[2]);
