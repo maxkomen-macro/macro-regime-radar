@@ -207,3 +207,27 @@ the committed ones by zero bytes, and the fixture-store parity test passes.
   for all twelve, 144 cells with 0 mismatches.
 - `pre-refresh`: the six assets not yet stored have null coverage, and the
   other six have 60.
+
+## Full gates (2026-09-28, under `/tmp/mrr-full-gates.lock`)
+
+**First run** at `dbb79f3` (lock held 05:07:53 to 05:20:29 UTC):
+- tsc clean, vitest 1,619 passed in 126 files, build clean.
+- Full pytest: 1,773 passed, 1 skipped, 2 failed. The two failures are
+  `tests/test_asset_history.py::test_without_the_table_the_endpoint_says_the_histories_are_not_stored`
+  and `::test_validate_requires_the_table_in_full_mode_only`. They fail the
+  same way on origin/main `83a9f46`, checked on a clean checkout. They depend
+  on the local snapshot database's tables and dates, not on this branch.
+- Desk e2e (`e2e/desk.spec.ts`, `--workers=1`): 54 of 55. The failure was
+  this branch's. The Macro layout test counted every `section.dk-card.mc-card`
+  and found five cards (`[363, 363, 363, 363, 490]`), because the matrix card
+  carries `mc-card` too.
+
+**Fix** `38333f1`: the test reads the 2×2's own cards
+(`.mc-grid > section.dk-card.mc-card`), four and equal as before. It also
+checks the matrix card: one card, under the grid, the grid's width, keeping
+its height in a taller window.
+
+**Second run** at `38333f1` (lock held 05:22:36 to 05:24:41 UTC): tsc
+clean, vitest 1,619 passed, build clean, and the Desk e2e 55 of 55. The full
+pytest was not rerun: the fix touches only `web/e2e/desk.spec.ts`, which
+pytest doesn't read (nor tsc, whose `include` is `src`, nor vitest).
