@@ -1,8 +1,10 @@
 /**
  * Build Notes (DESK_FRAME3_SPEC §11, screens/11-build-notes.png): the page
  * renders docs/desk/BUILD_NOTES.md, nothing hardcoded but the byline §11
- * names, the line saying where the text comes from and §1.0.1's section
- * "Live / Designed, not yet served" (./scope.ts), word for word. The
+ * names, the line saying where the text comes from, the section "How this
+ * was built" (./built.ts, after the file's "Prototypes, and how I would
+ * build them"; the file's copy of it is not printed twice) and §1.0.1's
+ * section "Live / Designed, not yet served" (./scope.ts), word for word. The
  * contents list is the file's own `##` sections and that section; the
  * article is the file's title, lead and sections through the app's Markdown
  * renderer, with its tables and its figures (an image whose path is a file
@@ -17,6 +19,7 @@ import Markdown from "../../shell/Markdown";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { readNotes } from "./notes";
+import { BUILT_AFTER, BUILT_ID, BUILT_PARAGRAPHS, BUILT_TITLE } from "./built";
 import { SCOPE_LISTS, SCOPE_TITLE } from "./scope";
 import "./notes.css";
 
@@ -140,10 +143,21 @@ function useReading(ids: string[], hash: string) {
   return { active, jump };
 }
 
+/** The article's sections in order: the file's (its own copy of "How this was built" left out), the page's
+ * "How this was built" after "Prototypes, and how I would build them" (else after the file's last), then §1.0.1's. */
+export function sectionOrder(fileSections: readonly { id: string; title: string }[]): { id: string; title: string; built?: true }[] {
+  const file = fileSections.filter((s) => s.title !== BUILT_TITLE);
+  const built = { id: BUILT_ID, title: BUILT_TITLE, built: true as const };
+  const at = file.findIndex((s) => s.title === BUILT_AFTER);
+  return at >= 0 ? [...file.slice(0, at + 1), built, ...file.slice(at + 1)] : [...file, built];
+}
+
 export function BuildNotesView({ page, md }: { page: DeskPage; md: string }) {
   const notes = readNotes(md);
   const { hash } = useLocation();
-  const toc = [...notes.sections.map((s) => ({ id: s.id, title: s.title })), { id: SCOPE_ID, title: SCOPE_TITLE }];
+  const order = sectionOrder(notes.sections);
+  const byId = new Map(notes.sections.map((s) => [s.id, s]));
+  const toc = [...order.map((s) => ({ id: s.id, title: s.title })), { id: SCOPE_ID, title: SCOPE_TITLE }];
   const { active, jump } = useReading(
     toc.map((s) => s.id),
     hash,
@@ -181,12 +195,20 @@ export function BuildNotesView({ page, md }: { page: DeskPage; md: string }) {
           ) : null}
           {/* §11's byline is printed once: a lead paragraph that repeats it is not printed again. */}
           {leadWithoutByline(notes.lead) ? <Markdown text={leadWithoutByline(notes.lead)} headingLevel={3} tables figure={figureUrl} /> : null}
-          {notes.sections.map((s) => (
-            <section key={s.id} id={s.id} className="bn-section" aria-labelledby={`${s.id}--h`}>
-              <h3 id={`${s.id}--h`}>{s.title}</h3>
-              <Markdown text={s.body} headingLevel={3} tables figure={figureUrl} />
-            </section>
-          ))}
+          {order.map((o) =>
+            o.built ? (
+              // The page's own section (./built.ts), rendered as the file's are.
+              <section key={o.id} id={o.id} className="bn-section bn-built" aria-labelledby={`${o.id}--h`}>
+                <h3 id={`${o.id}--h`}>{BUILT_TITLE}</h3>
+                <Markdown text={BUILT_PARAGRAPHS.join("\n\n")} headingLevel={3} />
+              </section>
+            ) : (
+              <section key={o.id} id={o.id} className="bn-section" aria-labelledby={`${o.id}--h`}>
+                <h3 id={`${o.id}--h`}>{o.title}</h3>
+                <Markdown text={byId.get(o.id)?.body ?? ""} headingLevel={3} tables figure={figureUrl} />
+              </section>
+            ),
+          )}
           {/* §1.0.1: the two lists as their own section, word for word (./scope.ts). */}
           <section id={SCOPE_ID} className="bn-section bn-scope" aria-labelledby={`${SCOPE_ID}--h`}>
             <h3 id={`${SCOPE_ID}--h`}>{SCOPE_TITLE}</h3>

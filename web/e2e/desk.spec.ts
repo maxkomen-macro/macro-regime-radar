@@ -636,7 +636,8 @@ test.describe("desk v2", () => {
     const marked = page.locator('.bn-toc a[aria-current="location"]');
     const toc = page.getByRole("navigation", { name: "Contents" });
     // The file's sections, then the page's own §1.0.1 section, last.
-    const titles = ["Long A", "Short", "Tiny", "Long B", "Long C", "Last", "Live / Designed, not yet served"];
+    // The page's own "How this was built" follows the file's sections when the file has no Prototypes section.
+    const titles = ["Long A", "Short", "Tiny", "Long B", "Long C", "Last", "How this was built", "Live / Designed, not yet served"];
     await open(page, "/desk/build-notes");
     await expect(page.getByRole("heading", { level: 2, name: "Synthetic notes" })).toBeVisible();
     await expect(toc.getByRole("link")).toHaveText(titles);
