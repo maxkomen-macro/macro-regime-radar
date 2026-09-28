@@ -247,11 +247,11 @@ describe("Regime tab", () => {
     // The API's answer on the audit's store (Q9): August's month after is September, not over yet.
     // Codex R-01: each change dated by the month it took effect (its stamp two months before), with the S&P over that month.
     expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "Oct 2026Goldilocks → Overheating · Aug rowmonth not over",
-      "Sep 2026Overheating → Goldilocks · Jul rowmonth not over",
-      "Mar 2026Stagflation → Overheating · Jan row−5.1%",
-      "Nov 2025Overheating → Stagflation · Sep row+0.1%",
-      "Aug 2025Stagflation → Overheating · Jun row+1.9%",
+      "Oct 2026Goldilocks → Overheating · from Aug datamonth not over",
+      "Sep 2026Overheating → Goldilocks · from Jul datamonth not over",
+      "Mar 2026Stagflation → Overheating · from Jan data−5.1%",
+      "Nov 2025Overheating → Stagflation · from Sep data+0.1%",
+      "Aug 2025Stagflation → Overheating · from Jun data+1.9%",
     ]);
     expect(card).toHaveTextContent("Last five of 123 regime changes · S&P over the month each took effect");
   });

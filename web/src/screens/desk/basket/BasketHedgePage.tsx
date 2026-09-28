@@ -25,6 +25,7 @@ import type { BasketPriceResponse } from "../data/types";
 import { asOfMismatch, basketLead } from "./trades";
 import { Card, LiveBadge, NotServedBadge } from "../kit/ui";
 import { InstrumentSearch } from "../kit/InstrumentSearch";
+import { defineTerms } from "../kit/Term";
 import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
 import { checkTicker } from "./check";
@@ -526,7 +527,7 @@ function BasketCard({
       {local ? (
         <div className="bh-settings">
           <label className="bh-field">
-            <span className="dk-stat-label">Notional</span>
+            <span className="dk-stat-label">{defineTerms("Notional")}</span>
             <span className="bh-money">
               <span aria-hidden="true">$</span>
               <input className="bh-input bh-notional" inputMode="decimal" aria-label="Notional, dollars" aria-invalid={notional == null || undefined} value={notionalTyped} onChange={(e) => setNotionalWork(e.target.value)} />

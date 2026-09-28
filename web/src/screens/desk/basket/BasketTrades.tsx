@@ -169,10 +169,10 @@ function BetaTable({ b }: { b: { qqq?: BasketBenchmark; spy?: BasketBenchmark } 
       <thead>
         <tr>
           <th scope="col">Against</th>
-          <th scope="col">Beta 1Y</th>
-          <th scope="col">Corr 1Y</th>
-          <th scope="col">Beta 60D</th>
-          <th scope="col">Corr 60D</th>
+          <th scope="col">{defineTerms("Beta 1Y")}</th>
+          <th scope="col">{defineTerms("Corr 1Y")}</th>
+          <th scope="col">{defineTerms("Beta 60D")}</th>
+          <th scope="col">{defineTerms("Corr 60D")}</th>
         </tr>
       </thead>
       <tbody>
@@ -340,9 +340,9 @@ function LiquidityCard({ p, state }: { p: BasketPriceResponse | undefined; state
           <thead>
             <tr>
               <th scope="col">Name</th>
-              <th scope="col">20-day avg $ volume</th>
+              <th scope="col">{defineTerms("20-day avg $ volume")}</th>
               <th scope="col">At target</th>
-              <th scope="col">Days at 20%</th>
+              <th scope="col">{defineTerms("Days at 20%")}</th>
             </tr>
           </thead>
           <tbody>

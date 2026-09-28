@@ -31,7 +31,7 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   cross: { forms: ["golden cross", "Golden cross", "death cross", "Death cross"], text: "A golden cross is the 50-day average rising above the 200-day; a death cross is the 50-day falling below it." },
   rs: { forms: ["Relative strength", "relative strength"], text: "Relative strength is the price divided by a benchmark's, the S&P 500's unless the card names another; a rising line means it is beating the benchmark." },
   logret: { forms: ["log returns", "log return"], text: "A log return is the natural log of the price ratio; for moves this size it is close to the percent change." },
-  corr: { forms: ["60-day correlation", "Correlation", "correlation"], text: "Correlation runs from −1 to +1: how closely two assets' daily returns move together, here over the last 60 sessions." },
+  corr: { forms: ["60-day correlation", "Correlation", "correlation", "Corr"], text: "Correlation runs from −1 to +1: how closely two assets' daily returns move together, here over the last 60 sessions." },
   breadth: { forms: ["Breadth", "breadth"], text: "Breadth is how much of the market joins a move; here, how many sector ETFs sit above their 50-day and 200-day averages, and the average stock against the index." },
   baseline: { forms: ["Vs normal", "vs normal", "a normal stretch"], text: "Normal is the study's baseline: the same horizon's move over every evaluable session of its sample, not only after events." },
   blocks: { forms: ["overlap blocks"], text: "Events whose outcome windows overlap form one block and are resampled together, so one market episode counts once." },
@@ -47,7 +47,9 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   seasonality: { forms: ["Seasonality", "seasonality"], text: "Seasonality is each calendar month's average return over every complete month stored, with how often that month rose." },
   effn: { forms: ["Effective names"], text: "Effective names is 1 divided by the sum of the squared weights: how many equal positions the basket's concentration amounts to." },
   peak: { forms: ["From peak"], text: "From peak is how far the basket index sits below its highest close since the basket's history starts." },
-  adv: { forms: ["days to trade", "Days to trade"], text: "Days to trade is how many sessions buying or selling the position takes at 20% of each name's average daily dollar volume over the last 20 sessions." },
+  adv: { forms: ["days to trade", "Days to trade", "Days at 20%", "Liquidity", "20-day avg $ volume", "ADV"], text: "Liquidity is read as days to trade: how many sessions buying or selling the position takes at 20% of each name's average daily dollar volume (ADV) over the last 20 sessions." },
+  hedgeratio: { forms: ["Hedge ratio", "hedge ratio"], text: "The hedge ratio is the dollars of the ETF to short per dollar of the basket: the basket's beta to that ETF over the fitted window." },
+  conc: { forms: ["Concentration", "concentration"], text: "Concentration is how much of the basket rides on a few names: the top three weights, and the effective number of equal positions it amounts to." },
 };
 
 interface Form {

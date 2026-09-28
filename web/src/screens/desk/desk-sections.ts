@@ -64,7 +64,7 @@ export const DESK_GROUPS: DeskGroup[] = [
     label: "Trade",
     pages: [
       // §10: no Desk / Client toggle.
-      { slug: "basket-hedge", label: "Basket & Hedge", blurb: "Build a basket of US stocks and ETFs, kept in this browser.", action: "send", toggle: false },
+      { slug: "basket-hedge", label: "Basket & Hedge", blurb: "Build a basket, see how it trades against the Nasdaq and S&P, and hedge it.", action: "send", toggle: false },
       { slug: "position-monitor", label: "Position Monitor", title: "Position Monitor", blurb: "Your positions, and how far each is from being wrong.", action: "new", toggle: false },
     ],
   },

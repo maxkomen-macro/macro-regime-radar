@@ -695,8 +695,9 @@ waiting on the other), "the <Mon YYYY> print (<printed_mom>% m/m) flipped
 <axis> to <printed_direction>." Every flip starts from the label it reads
 from: a test holds it for all four regimes. LAST FIVE REGIME CHANGES · S&P OVER THE
 MONTH EACH TOOK EFFECT (desk/fill-compute; Codex R-01, R-08), from `/regime`
-`changes`: each row "<effective_month, Mon YYYY> · <from> → <to> · <stamp
-month> row · <spx_1m>" (the S&P's simple return over the month the change
+`changes`: each row "<effective_month, Mon YYYY> · <from> → <to> · from
+<stamp month, Mon> data · <spx_1m>" (desk/usability §14.13: not "<Mon> row",
+the table's word; the S&P's simple return over the month the change
 took effect, the stamp plus the lag); a null return says its status's own
 words: "month not over" (`pending`, the window not complete yet) or "a
 month-end close is missing" (`missing`, a historical close not stored). The
@@ -2237,7 +2238,7 @@ primary (light) style; every other button on the page is secondary.
 | Regime | Where the economy sits, and which data prints would change it. | **Study the S&P in <regime> →** (header: a 2σ S&P fall over 20 sessions in the current regime, §14.3; drawn once the regime is served) |
 | Event Study | Ask what markets did after a defined shock, and get a scored answer. | **Run** (in the page; the header's Act on this is secondary) |
 | Signal Ledger | Every scored signal on one page; click a row to study it. | **Ask your own question →** (header) |
-| Basket & Hedge | Build a basket of US stocks and ETFs, kept in this browser. | **Send to Position Monitor →** (header; Save basket is secondary) |
+| Basket & Hedge | Build a basket, see how it trades against the Nasdaq and S&P, and hedge it. | **Send to Position Monitor →** (header; Save basket is secondary) |
 | Position Monitor | Your positions, and how far each is from being wrong. | **+ New position** (header), then **Save position** in the form |
 | Data Pipeline | Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. No live number is re-derived in the browser. (desk/prototypes' wording, kept by the owner at the rebase: the one line over fifteen words) | **Export current study → CSV** (in the page) |
 | Build Notes | What this Desk is, how it was checked, and what comes next. | **Take the walkthrough →** (header) |
@@ -2312,7 +2313,9 @@ question pushes one.
   baseline), overlap blocks, the 90% interval, K−2, NAV, DV01, beta, R² and
   notional; since the rebase onto main, MACD (with its signal line and
   histogram), seasonality, and Basket & Hedge's effective names, drawdown
-  from peak and days to trade (20% of 20-session dollar volume). Relative
+  from peak, days to trade and liquidity (20% of 20-session dollar volume,
+  ADV), the hedge ratio, concentration, and its table heads (beta, R²,
+  correlation). Relative
   strength names its benchmark (the S&P 500 unless the card names another).
 - **Where.** Every stat label, card title and card subtitle (`kit/ui.tsx`
   `Stat`, `Card`, `UnservedCard`, and the pages' own card heads, Basket &

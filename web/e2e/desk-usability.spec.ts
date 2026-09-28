@@ -171,7 +171,8 @@ test.describe("desk usability", () => {
       await expect(price).toContainText("225.51");
       await expect(price.getByRole("img")).toBeVisible();
       await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("Last above 70");
-      await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("+23.1%");
+      // The drawdown, the 21-day volatility and the 1-year return sit on the Risk card since the rebase.
+      await expect(main.getByRole("region", { name: /^Risk · drawdown and volatility/ })).toContainText("+23.1%");
       await expect(main.getByRole("region", { name: /^Relative strength vs the S&P 500/ }).getByRole("img")).toBeVisible();
       // The S&P-only cards are the S&P's; one line points there.
       await expect(main.getByRole("region", { name: /^Signals/ })).toHaveCount(0);
@@ -264,7 +265,8 @@ test.describe("desk usability", () => {
       expect(await page.locator("select option[disabled]").count()).toBe(0);
       for (const [label, value] of Object.entries(q.slots)) await page.getByLabel(label, { exact: true }).selectOption(value);
       await page.getByTestId("es-run").click();
-      await expect(page).toHaveURL(new RegExp(`\\?${q.address.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+      // Codex R-07: the builder's mode is in the address too.
+      await expect(page).toHaveURL(new RegExp(`\\?${q.address.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}&mode=build$`));
       const answer = page.getByRole("region", { name: "The answer" });
       await expect(answer).toContainText(q.headline);
       await expect(answer.locator(".dk-stat").first()).toContainText(q.events);
@@ -460,6 +462,8 @@ test.describe("desk usability", () => {
     await hover("/desk/technicals?symbol=NVDA", "Seasonality", "seasonality");
     await hover("/desk/basket-hedge", "Effective names", "effn");
     await hover("/desk/basket-hedge", "days to trade", "adv");
+    await hover("/desk/basket-hedge", "Hedge ratio", "hedgeratio");
+    await hover("/desk/basket-hedge", "Beta 1Y", "beta");
     // The Event Study's Move slot explains σ with the same sentence.
     await open(page, "/desk/event-study");
     await expect(page.locator(".es-tip").first()).toHaveAttribute("data-tip", GLOSSARY.sigma.text);

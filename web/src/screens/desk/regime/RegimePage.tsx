@@ -579,7 +579,7 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
                   <span className="rg-month">{`${monthShort(c.effective_month)} ${year(c.effective_month)}`}</span>
                   <span>
                     {c.from} → {c.to}
-                    {c.stamp_month && monthYear(c.stamp_month) ? <span className="rg-stamp"> · {monthShort(c.stamp_month)} row</span> : null}
+                    {c.stamp_month && monthYear(c.stamp_month) ? <span className="rg-stamp"> · from {monthShort(c.stamp_month)} data</span> : null}
                   </span>
                   <ChangeReturn c={c} />
                 </li>

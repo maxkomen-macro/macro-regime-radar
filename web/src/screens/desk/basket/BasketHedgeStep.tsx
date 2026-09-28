@@ -58,9 +58,9 @@ function EtfTable({ rows, top }: { rows: HedgeEtf[]; top: string | null }) {
         <thead>
           <tr>
             <th scope="col">ETF</th>
-            <th scope="col">R² 1Y</th>
-            <th scope="col">R² 60D</th>
-            <th scope="col">Hedge ratio</th>
+            <th scope="col">{defineTerms("R² 1Y")}</th>
+            <th scope="col">{defineTerms("R² 60D")}</th>
+            <th scope="col">{defineTerms("Hedge ratio")}</th>
             <th scope="col">Short</th>
             <th scope="col">Vol left</th>
             <th scope="col">Vol cut</th>
