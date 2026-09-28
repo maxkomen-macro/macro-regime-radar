@@ -115,7 +115,7 @@ def test_the_memo_serves_the_ledger_and_now_moves_over_it(served, monkeypatch):
         if route == "/study":
             entries = [value[0]]                        # (payload, trace)
         elif route == "/ledger":
-            entries = [row for row, _trace, _cross, _inputs in value]
+            entries = [row for row, _trace, _cross in value]
         else:
             entries = list(value)                       # /study/events rows
         for entry in entries:

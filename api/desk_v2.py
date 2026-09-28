@@ -208,8 +208,7 @@ def study_answer(params: list[tuple[str, str]], t0: float) -> dict:
         raise env.Awaiting(item["reason"])
     hit, (payload, trace) = memo(("/study", study.slug, h), lambda: (study_projection(study, h, item), item["trace"]))
     out = dict(payload)
-    out.update(now_fields(trace, cross=study.question.move.startswith("cross"), allowance=publication_allowance(study),
-                          inputs=item["native"]["provenance"]["inputs"]))
+    out.update(now_fields(trace, cross=study.question.move.startswith("cross"), allowance=publication_allowance(study)))
     out["provenance"] = {**payload["provenance"], "engine_version": env.ENGINE_VERSION}
     out["served_from_cache"] = hit
     out["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 1)
@@ -544,7 +543,7 @@ def _ledger_static() -> list[tuple[dict, Any, bool]]:
         row = {"slug": slug, "label": s.label, "short": s.short, "group": catalog.LEDGER_GROUP[slug],
                "available": available, "unavailable": unavailable, "horizon": 20, **{k: None for k in LEDGER_STATS}}
         if not available:
-            out.append((row, None, False, None))
+            out.append((row, None, False))
             continue
         item = _item(slug)
         native, table = item["native"], item["events"]
@@ -559,7 +558,7 @@ def _ledger_static() -> list[tuple[dict, Any, bool]]:
             up_pct=H["hit_rate"], median=H["median"], baseline_median=H["baseline_median"],
             vs_normal=vs_normal(H["delta"], unit), target_unit=unit, display_unit=display_unit(unit),
             verdict=verdict_v1(by_h, 20))
-        out.append((row, item["trace"], s.question.move.startswith("cross"), native["provenance"]["inputs"]))
+        out.append((row, item["trace"], s.question.move.startswith("cross")))
     return out
 
 
@@ -569,14 +568,13 @@ def ledger_rows(comparison: str, prev: str) -> list[tuple[dict, dict | None]]:
     statistics and firing fields are null and it is not stale (S-19)."""
     _hit, static = memo(("/ledger",), _ledger_static)
     rows = []
-    for base, trace, cross, inputs in static:
+    for base, trace, cross in static:
         row = dict(base)
         if trace is None:
             row.update(firing_now=None, firing_day=None, evaluated_on=None, stale=False)
             rows.append(({k: row[k] for k in LEDGER_KEYS}, None))
             continue
-        f = firing_state(trace, comparison, prev, cross=cross, allowance=publication_allowance(catalog.BY_SLUG[row["slug"]]),
-                         inputs=inputs)
+        f = firing_state(trace, comparison, prev, cross=cross, allowance=publication_allowance(catalog.BY_SLUG[row["slug"]]))
         row.update(firing_now=f["firing_now"], firing_day=f["firing_day"], evaluated_on=f["evaluated_on"], stale=f["stale"])
         rows.append(({k: row[k] for k in LEDGER_KEYS}, f))
     return rows
@@ -659,7 +657,7 @@ def events_csv(rows: list[dict]) -> str:
 STUDY_KEYS = (
     "slug", "label", "short", "question", "selected_horizon", "matched_n", "data_start", "sample_start", "sample_end",
     "first_event", "last_event", "firing_now", "firing_day", "evaluated_on", "comparison_session", "prev_session",
-    "stale", "verdict", "verdict_rule", "verdict_confidence", "headline", "why", "horizons", "by_regime",
+    "stale", "stale_inputs", "verdict", "verdict_rule", "verdict_confidence", "headline", "why", "horizons", "by_regime",
     "unlabeled_n", "last_events", "without_condition", "provenance", "warnings", "series", "client", "empty_state",
     "inputs_hash", "served_from_cache", "elapsed_ms",
 )
@@ -742,22 +740,34 @@ def input_rule(key: str) -> tuple[str, int]:
 
 
 def inputs_behind(inputs: list[dict], comparison: str) -> list[dict]:
-    """Each input (the study's provenance `inputs`: key, last) judged on its own
-    calendar and tolerance against the comparison session: how many of its
-    business days its newest stored value trails the comparison session by,
-    and whether that is more than its tolerance."""
+    """Each input judged on its own calendar and tolerance against the
+    comparison session: how many of its business days its newest VALIDATED
+    observation trails the comparison session by (Codex R-03, round 2: the
+    engine's trace, `SignalTrace.inputs_last`, after alignment and validation,
+    never the newest raw row, so a stored close of −1 is not a fresh close),
+    and whether that is more than its tolerance. An input with no validated
+    observation is stale."""
     from datetime import date as _date
 
     out = []
     cmp_ = _date.fromisoformat(comparison)
     for m in inputs:
         calendar, tolerance = input_rule(m["key"])
+        if m.get("last") is None:
+            out.append({"key": m["key"], "last": None, "calendar": calendar, "lag": None, "tolerance": tolerance, "stale": True})
+            continue
         last = _date.fromisoformat(str(m["last"])[:10])
         between = nyse.bond_business_days_between if calendar == "bond" else nyse.business_days_between
         lag = between(last, cmp_)
         out.append({"key": m["key"], "last": last.isoformat(), "calendar": calendar, "lag": lag, "tolerance": tolerance,
                     "stale": lag > tolerance})
     return out
+
+
+def trace_inputs(trace: Any) -> list[dict]:
+    """The study's inputs with their newest validated observation, from the
+    engine's trace (`SignalTrace.inputs_last`)."""
+    return [{"key": k, "last": d} for k, d in getattr(trace, "inputs_last", ())]
 
 
 def sessions_behind(evaluated_on: str, comparison: str) -> int:
@@ -778,10 +788,12 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
     session is not the run's or is not evaluable. `stale` when `evaluated_on`
     trails the comparison session by more than `allowance` XNYS sessions (its
     inputs' publication cadence, desk/fill-compute: 0 for exchange closes), or
-    is dated after it, or (Codex R-03) when any of `inputs` (the study's
-    provenance inputs) trails the comparison session by more than its own
-    tolerance on its own calendar (`inputs_behind`), so a FRED series' grace
-    never covers a stale exchange close."""
+    is dated after it, or (Codex R-03) when any input's newest validated
+    observation (`inputs`, by default the trace's own, `trace_inputs`) trails
+    the comparison session by more than its own tolerance on its own calendar
+    (`inputs_behind`), so a FRED series' grace never covers a stale exchange
+    close. A stale study is never reported firing: `firing_now` false and
+    `firing_day` null (Codex R-03, round 2)."""
     import numpy as np
 
     ev = trace.evaluable
@@ -809,9 +821,12 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
 
     # Dated after the comparison session (a clock behind the data) is stale as before: never firing today.
     stale = sessions[last] != comparison and (sessions[last] > comparison or sessions_behind(sessions[last], comparison) > allowance)
-    stale_inputs = [m["key"] for m in inputs_behind(inputs or [], comparison) if m["stale"]]
+    stale_inputs = [m["key"] for m in inputs_behind(trace_inputs(trace) if inputs is None else inputs, comparison) if m["stale"]]
+    stale = stale or bool(stale_inputs)
+    if stale:
+        firing_now, firing_day = False, None
     return {"evaluated_on": sessions[last], "firing_now": firing_now, "firing_day": firing_day,
-            "stale": stale or bool(stale_inputs), "stale_inputs": stale_inputs,
+            "stale": stale, "stale_inputs": stale_inputs,
             "state_comparison": state(comparison), "state_prev": state(prev)}
 
 
@@ -820,7 +835,7 @@ def now_fields(trace: Any, *, cross: bool, allowance: int = 0, inputs: list[dict
     comparison, prev = sessions_now()
     f = firing_state(trace, comparison, prev, cross=cross, allowance=allowance, inputs=inputs)
     return {"firing_now": f["firing_now"], "firing_day": f["firing_day"], "evaluated_on": f["evaluated_on"],
-            "comparison_session": comparison, "prev_session": prev, "stale": f["stale"]}
+            "comparison_session": comparison, "prev_session": prev, "stale": f["stale"], "stale_inputs": f["stale_inputs"]}
 
 
 # ── The rules the spec states (plan §1.10) ──────────────────────────────────

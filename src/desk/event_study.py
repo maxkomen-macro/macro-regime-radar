@@ -1175,6 +1175,9 @@ class SignalTrace:
     trigger: np.ndarray                 # bool[n]
     holds: np.ndarray                   # bool[n]
     z: np.ndarray | None                # float[n]
+    # Codex R-03 (desk/fill-compute): each input's newest validated observation on the calendar (after
+    # alignment drops off-session rows and validation sets bad values aside), (key, "YYYY-MM-DD" | None)
+    inputs_last: tuple[tuple[str, str | None], ...] = ()
 
 
 def _frozen(a: np.ndarray, dtype: Any) -> np.ndarray:
@@ -1204,6 +1207,7 @@ def _traced(t: dict) -> tuple[EventTable, SignalTrace]:
         trigger=_frozen(t["trigger"], bool),
         holds=_frozen(t["holds"], bool),
         z=None if t["z"] is None else _frozen(t["z"], float),
+        inputs_last=t.get("inputs_last", ()),
     )
     return table, trace
 
@@ -1394,7 +1398,12 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
             trigger = rsi_zone_mask(r, q.cross or "above")  # the zone, before the crossing rule and the cooldown
         else:
             trigger = trigger_mask(z, q.z, q.sign)
+        last_valid = {}
+        for k, a in al.items():
+            ok = np.flatnonzero(np.isfinite(a.to_numpy(dtype=float)))
+            last_valid[k] = sessions[int(ok[-1])].strftime("%Y-%m-%d") if len(ok) else None
         trace.update(
+            inputs_last=tuple(sorted(last_valid.items())),
             sessions=sessions, ev_pos=ev_pos.copy(), labels=labels.copy(), entry=entry.copy(), same=same.copy(),
             has_entry=has_entry.copy(), ev_delay=ev_delay.copy(), moves_by_h={h: m.copy() for h, m in moves_by_h.items()},
             n_unlabeled=int(len(unl_pos)), z=None if z is None else z.to_numpy(dtype=float).copy(),

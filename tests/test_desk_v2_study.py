@@ -639,3 +639,41 @@ def test_the_catalog_and_items_modules_import_nothing_heavy():
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=base, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip().splitlines()[-1] == "[]"
+
+
+# ── Codex R-03, round 2: freshness from each input's latest VALIDATED observation ──
+
+def _r03_store(tmp_path: Path) -> Path:
+    """Codex's repro: every series through Friday 2026-09-25, then the S&P's
+    closes of Sep 23, 24 and 25 stored as −1 (not a price: the reader sets
+    them aside) and HY OAS on Sep 22 stored as 100 (a spike the HY study fires
+    on). The newest raw S&P row is Sep 25; its newest validated one Sep 22."""
+    path = _synthetic_db(tmp_path / "macro_radar.db", spx_end="2026-09-25")
+    with sqlite3.connect(path) as c:
+        c.execute("UPDATE asset_prices SET close = -1 WHERE symbol = '^GSPC' AND date IN ('2026-09-23', '2026-09-24', '2026-09-25')")
+        c.execute("UPDATE desk_series SET value = 100 WHERE series_id = 'BAMLH0A0HYM2' AND date = '2026-09-22'")
+    return path
+
+
+def test_codex_r03_round2_the_trace_carries_each_inputs_latest_validated_observation(tmp_path):
+    path = _r03_store(tmp_path)
+    _out, _table, trace = es.run_traced(es.parse_slug(catalog.ENGINE_SLUGS["hy-2sigma-20d"]), path)
+    assert dict(trace.inputs_last) == {"hy_oas": "2026-09-25", "spx": "2026-09-22"}
+    f = desk_v2.firing_state(trace, "2026-09-25", "2026-09-24", cross=False, allowance=desk_v2.publication_allowance(catalog.BY_SLUG["hy-2sigma-20d"]))
+    assert f["evaluated_on"] == "2026-09-22" and trace.trigger[trace.sessions.index("2026-09-22")]  # the spike fires there
+    assert f["stale"] is True and f["stale_inputs"] == ["spx"]
+    assert f["firing_now"] is False and f["firing_day"] is None  # a stale study is never reported firing
+
+
+def test_codex_r03_round2_the_route_reports_the_sp_stale_and_no_firing(tmp_path, install_worker, monkeypatch):
+    """The repro on /study, evaluated against Friday Sep 25: the raw rows made the
+    S&P look current and the study, three sessions behind within the HY input's
+    FRED grace, read firing today."""
+    _serve(install_worker, monkeypatch, _r03_store(tmp_path))
+    monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 25, 21, 0, tzinfo=timezone.utc))
+    d = _study("preset=hy-2sigma-20d")["data"]
+    assert (d["comparison_session"], d["evaluated_on"]) == ("2026-09-25", "2026-09-22")
+    assert d["stale"] is True and d["stale_inputs"] == ["spx"]
+    assert d["firing_now"] is not True and d["firing_day"] is None
+    row = next(r for r in dc.check_response("/ledger", client.get("/api/desk/ledger"))["data"]["signals"] if r["slug"] == "hy-2sigma-20d")
+    assert row["stale"] is True and row["firing_now"] is False

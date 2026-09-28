@@ -202,6 +202,7 @@ STUDY = obj(
     first_event=null(DATE), last_event=null(DATE),
     firing_now=null(BOOL), firing_day=null(INT), evaluated_on=null(DATE),
     comparison_session=DATE, prev_session=DATE, stale=BOOL,
+    stale_inputs=Arr(STR),  # Codex R-03: the registry keys of the inputs behind their own tolerance
     verdict=VERDICT, verdict_rule=Const("v1"), verdict_confidence=Const(0.90),
     headline=STR, why=STR,
     horizons=Arr(HORIZON_ROW, min=4, max=4),

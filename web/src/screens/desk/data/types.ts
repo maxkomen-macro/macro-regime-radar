@@ -445,6 +445,8 @@ export interface StudyResponse extends Envelope {
   /** §12.2 (S-10): the XNYS session before `comparison_session`, as §12.1. */
   prev_session?: string | null;
   stale?: boolean;
+  /** Codex R-03: the inputs (registry keys) whose newest validated observation is behind their own tolerance. */
+  stale_inputs?: string[];
   last_event: string | null;
   /** The selected horizon's verdict (§1.5, B-01). Absent when not served or not known: the verdict box says Awaiting refresh. */
   verdict?: Verdict;

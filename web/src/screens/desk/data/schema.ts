@@ -517,6 +517,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     comparison_session: "s?",
     prev_session: "s?",
     stale: "b",
+    // Codex R-03: the inputs behind their own tolerance, by registry key.
+    stale_inputs: l("s!"),
     last_event: "s?",
     // The verdict box says Awaiting refresh on its own; the numbers still stand.
     verdict: e(VERDICTS),
