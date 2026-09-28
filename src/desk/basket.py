@@ -420,13 +420,13 @@ STRESS_MOVE = -0.10
 
 
 def hedge_rows(basket: Mapping[str, float], etfs: Mapping[str, Mapping[str, float]], notional: float,
-               sessions: Sequence[str]) -> list[dict]:
+               sessions: Sequence[str], cutoff: str | None = None) -> list[dict]:
     """One row per ETF, ranked: R² over a year first (60 days when no ETF has
     a year), then the ETF's order. Each row carries both windows' fits and
     `basis`, the window its hedge ratio, dollars and volatilities come from."""
     rows = []
     for order, (sym, levels) in enumerate(etfs.items()):
-        fits = {w: regression(basket, levels, n, sessions) for w, n in WINDOWS.items()}
+        fits = {w: regression(basket, levels, n, sessions, cutoff) for w, n in WINDOWS.items()}
         basis = "1y" if fits["1y"]["beta"] is not None else "60d" if fits["60d"]["beta"] is not None else None
         head = fits[basis] if basis else None
         rows.append({
@@ -451,33 +451,59 @@ def hedge_rows(basket: Mapping[str, float], etfs: Mapping[str, Mapping[str, floa
     return rows
 
 
+def _beta(y: np.ndarray, x: np.ndarray) -> float | None:
+    vx = float(np.var(x, ddof=1))
+    return None if vx == 0.0 else float(np.cov(y, x, ddof=1)[0, 1]) / vx
+
+
 def stress(basket: Mapping[str, float], shocks: Mapping[str, Mapping[str, float]], top: str | None,
-           top_levels: Mapping[str, float] | None, top_ratio: float | None, basis: str | None, notional: float,
-           sessions: Sequence[str], move: float = STRESS_MOVE) -> list[dict]:
-    """The basket's P&L if a benchmark moves `move` (−10%), linear in the
-    fitted betas over `basis`'s window: unhedged, notional × β(basket,
-    benchmark) × move; the hedge, short `top_ratio` × notional of the top
-    ETF, which moves β(ETF, benchmark) × move (exactly the move when it is
-    the benchmark); hedged, the two added."""
+           top_levels: Mapping[str, float] | None, basis: str | None, notional: float, sessions: Sequence[str],
+           cutoff: str, move: float = STRESS_MOVE) -> list[dict]:
+    """The basket's P&L if a benchmark moves `move` (−10%), linear in betas all
+    fitted on one shared window (Codex R-01): the last n sessions (n from
+    `basis`, 252 or 60) up to the basket's `cutoff` on which the basket, the
+    top ETF and the benchmark each have a one-session return. On that window:
+    beta(basket, benchmark), beta(ETF, benchmark) (1 when the ETF is the
+    benchmark) and the hedge ratio beta(basket, ETF). Unhedged, notional ×
+    beta(basket, benchmark) × move; the short, hedge ratio × notional of the
+    ETF, which moves beta(ETF, benchmark) × move; hedged, the two added."""
     n = WINDOWS.get(basis or "", None)
+    cal = list(sessions)
+    within = np.array([d <= cutoff for d in cal])
+    rb = session_returns(on_calendar(basket, cal))
+    re = session_returns(on_calendar(top_levels, cal)) if top_levels is not None else None
     out = []
     for sym, levels in shocks.items():
-        row = {"shock": sym, "move": move, "window": None, "basket_beta": None, "basket_move": None, "unhedged_usd": None,
-               "hedge": top, "hedge_beta": None, "hedge_move": None, "hedge_usd": None, "hedged_usd": None, "hedged_move": None}
-        if n is not None:
-            fb = regression(basket, levels, n, sessions)
-            row["window"] = fb["window"]
-            if fb["beta"] is not None:
-                row["basket_beta"] = fb["beta"]
-                row["basket_move"] = fb["beta"] * move
-                row["unhedged_usd"] = notional * fb["beta"] * move
-                if top is not None and top_levels is not None and top_ratio is not None:
-                    be = 1.0 if top == sym else regression(top_levels, levels, n, sessions)["beta"]
-                    if be is not None:
-                        row["hedge_beta"] = be
-                        row["hedge_move"] = be * move
-                        row["hedge_usd"] = -top_ratio * notional * be * move
-                        row["hedged_usd"] = row["unhedged_usd"] + row["hedge_usd"]
-                        row["hedged_move"] = row["hedged_usd"] / notional
+        row = {"shock": sym, "move": move, "window": None, "reason": None, "basket_beta": None, "basket_move": None,
+               "unhedged_usd": None, "hedge": top, "hedge_ratio": None, "hedge_beta": None, "hedge_move": None,
+               "hedge_usd": None, "hedged_usd": None, "hedged_move": None}
+        if n is None or top is None or re is None:
+            row["reason"] = "no ETF fits the basket over a complete window"
+            out.append(row)
+            continue
+        rs = session_returns(on_calendar(levels, cal))
+        rows = np.flatnonzero(np.isfinite(rb) & np.isfinite(re) & np.isfinite(rs) & within)
+        if len(rows) < n:
+            since = cal[int(rows[0]) - 1] if len(rows) else None
+            row["window"] = {"start": since, "end": cal[int(rows[-1])] if len(rows) else None, "n": int(len(rows))}
+            row["reason"] = f"needs {n} daily returns the basket, {top} and {sym} all have; there are {len(rows)}"
+            out.append(row)
+            continue
+        use = rows[-n:]
+        row["window"] = {"start": cal[int(use[0]) - 1], "end": cal[int(use[-1])], "n": n}
+        bb = _beta(rb[use], rs[use])
+        be = 1.0 if top == sym else _beta(re[use], rs[use])
+        ratio = _beta(rb[use], re[use])
+        if bb is not None:
+            row["basket_beta"] = bb
+            row["basket_move"] = bb * move
+            row["unhedged_usd"] = notional * bb * move
+            if be is not None and ratio is not None:
+                row["hedge_ratio"] = ratio
+                row["hedge_beta"] = be
+                row["hedge_move"] = be * move
+                row["hedge_usd"] = -ratio * notional * be * move
+                row["hedged_usd"] = row["unhedged_usd"] + row["hedge_usd"]
+                row["hedged_move"] = row["hedged_usd"] / notional
         out.append(row)
     return out

@@ -1706,7 +1706,8 @@ The same parameters, refusals, prices and envelope as §12.14. The ETFs are
 fitted to the basket's index by least squares on daily simple returns
 between consecutive sessions both have a close (`src/desk/basket.regression`),
 over the last 252 (1y) and 60 (60d) of them, each window complete or not
-served. The one-year R² ranks them (the 60-day one when no ETF has a year:
+served, every fit reading data only up to the basket's last session (Codex
+R-01). The one-year R² ranks them (the 60-day one when no ETF has a year:
 `ranked_by`); the row's hedge ratio, dollars and volatilities come from its
 `basis` window.
 
@@ -1716,7 +1717,7 @@ served. The one-year R² ranks them (the 60-day one when no ETF has a year:
 | `ranked_by` | `"r2_1y"` \| `"r2_60d"` | required | — | — | N |
 | `etfs[]` | exactly the eight, ranked: `{symbol, label, rank, basis, r2_1y, r2_60d, beta_1y, beta_60d, hedge_ratio, short_usd, basket_vol, residual_vol, vol_reduction, window_1y, window_60d, reason}` | required | R² fraction; beta; USD; annualized vol fractions | own windows | N `hedge_rows`: symbols SMH SOXX QQQ XLK IGV XLU SPY IWM (A: fixed, with their names); `hedge_ratio` = beta = cov / var of the ETF; `short_usd` = beta × notional; `basket_vol` and `residual_vol` = sample sd × √252 of the basket's returns and of basket − beta × ETF; `vol_reduction` = 1 − residual / basket (= 1 − √(1 − R²)); ties keep the list's order; `reason` when no window is complete |
 | `top` | symbol | required, nullable | — | — | N: the first ranked ETF with a hedge ratio |
-| `stress[]` | `{shock: "QQQ"\|"SPY", move: −0.1, window, basket_beta, basket_move, unhedged_usd, hedge, hedge_beta, hedge_move, hedge_usd, hedged_usd, hedged_move}` | required, two rows | fractions; USD | the top pick's `basis` window | N `stress`, linear: basket move = beta(basket, shock) × −10%; unhedged = notional × that; the short `hedge_ratio` × notional of `top` moves beta(top, shock) × −10% (exactly −10% when `top` is the shock); hedged = unhedged + the short's P&L. No convexity, no costs |
+| `stress[]` | `{shock: "QQQ"\|"SPY", move: −0.1, window, reason, basket_beta, basket_move, unhedged_usd, hedge, hedge_ratio, hedge_beta, hedge_move, hedge_usd, hedged_usd, hedged_move}` | required, two rows | fractions; USD | `window`: one window for the row | N `stress`, linear, every beta fitted on one shared window (Codex R-01): the last n sessions (n from the top pick's `basis`) up to the basket's last session on which the basket, `top` and the shock each have a one-session return. basket move = beta(basket, shock) × −10%; unhedged = notional × that; the short, `hedge_ratio` = beta(basket, top) × notional of `top`, moves beta(top, shock) × −10% (1 when `top` is the shock); hedged = unhedged + the short's P&L. Fewer returns than n: null with `reason`. No convexity, no costs |
 
 ---
 

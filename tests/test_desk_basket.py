@@ -256,3 +256,35 @@ def test_codex_r06_the_final_session_rebalances_when_it_is_the_month_end():
     # A month still in progress does not rebalance: with the calendar ending at January 29 nothing shows the month over.
     r3 = bk.price_basket({"A": H(days[:2], [100, 200]), "B": H(days[:2], [100, 100])}, {"A": 0.5, "B": 0.5}, "monthly", 1000.0, sessions=CAL)
     assert r3["rebalances"] == 1 and round(r3["legs"][0]["weight_now"], 6) == round(2 / 3, 6)
+
+
+# ── Codex R-01: the stress reads one shared window ending at the basket's cutoff ──
+
+def test_codex_r01_the_stress_never_reads_etf_closes_after_the_basket():
+    """Codex's repro: the basket has 60 returns identical to QQQ's; SMH has those 60 and then 60 more at three
+    times QQQ's. Fitting SMH on QQQ over SMH's own last 60 returns read the later ones and reported about
+    +$200,000 hedged; on the shared window ending at the basket's cutoff every beta is 1 and the hedge nets $0."""
+    cal = _xnys("2025-01-02", "2025-12-31")[:121]
+    rng = np.random.default_rng(3)
+    q = rng.normal(0, 0.01, 120)
+    qqq = _levels(cal, q)
+    smh = _levels(cal, np.concatenate([q[:60], 3 * q[60:]]))
+    basket = _levels(cal[:61], q[:60])
+    rows = bk.stress(basket, {"QQQ": qqq}, "SMH", smh, "60d", 1_000_000.0, cal, cutoff=cal[60])
+    r = rows[0]
+    assert r["window"] == {"start": cal[0], "end": cal[60], "n": 60}
+    assert r["basket_beta"] == pytest.approx(1.0) and r["hedge_beta"] == pytest.approx(1.0) and r["hedge_ratio"] == pytest.approx(1.0)
+    assert r["unhedged_usd"] == pytest.approx(-100_000.0) and r["hedged_usd"] == pytest.approx(0.0, abs=1e-6)
+    # The ETF ranking reads up to the same cutoff.
+    fit = bk.hedge_rows(basket, {"SMH": smh}, 1_000_000.0, cal, cutoff=cal[60])[0]
+    assert fit["beta_60d"] == pytest.approx(1.0) and fit["window_60d"]["end"] == cal[60]
+
+
+def test_the_stress_says_why_when_the_three_share_too_few_returns():
+    cal = _xnys("2025-01-02", "2025-12-31")[:61]
+    q = np.full(60, 0.001)
+    lv = _levels(cal, q)
+    gapped = {d: v for i, (d, v) in enumerate(lv.items()) if i != 30}
+    r = bk.stress(lv, {"SPY": gapped}, "SMH", lv, "60d", 1e6, cal, cutoff=cal[-1])[0]
+    assert r["unhedged_usd"] is None and r["window"]["n"] == 58
+    assert r["reason"] == "needs 60 daily returns the basket, SMH and SPY all have; there are 58"

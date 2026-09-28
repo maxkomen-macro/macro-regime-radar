@@ -92,7 +92,7 @@ describe("Basket & Hedge tab", () => {
     expect(rows[0]).toHaveAttribute("aria-current", "true");
     expect(rows[0]).toHaveTextContent("top pick");
     const stress = within(hedge).getByRole("region", { name: /^Stress test/ });
-    expect(stress).toHaveTextContent("If QQQ falls 10% the basket loses $170,542 unhedged and makes $5,810 hedged with XLK; if SPY falls 10% the basket loses $238,851 unhedged and makes $1,924 hedged with XLK.");
+    expect(stress).toHaveTextContent("If QQQ falls 10% the basket loses $170,542 unhedged and makes $5,810 hedged with XLK; if SPY falls 10% the basket loses $238,851 unhedged and makes $1,923 hedged with XLK.");
     expect(calls).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
     // The options slot keeps its title, modes and labels, and prints why it is not served (§1.0.2).
     const h = optionsCard();

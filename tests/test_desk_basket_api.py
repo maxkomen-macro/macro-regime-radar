@@ -215,7 +215,8 @@ def test_a_basket_that_is_all_qqq_is_hedged_by_qqq_one_for_one(served):
     assert q["hedged_usd"] == pytest.approx(0.0, abs=1e-6) and q["hedge_beta"] == 1.0
 
 
-def test_the_stress_is_linear_in_the_fitted_betas(served):
+def test_the_stress_is_linear_in_betas_fitted_on_one_shared_window(served):
+    """Codex R-01: the basket, the top ETF and each shock on one window ending at the basket's cutoff."""
     from src.desk import basket as bk
 
     d = hedge(legs="NVDA:50,AVGO:50").json()["data"]
@@ -224,11 +225,13 @@ def test_the_stress_is_linear_in_the_fitted_betas(served):
     ref = bk.price_basket({s: h[s] for s in ("NVDA", "AVGO")}, {"NVDA": 0.5, "AVGO": 0.5}, sessions=cal)
     level = dict(zip(ref["dates"], ref["index"]))
     top_lv = dict(zip(h[d["top"]].dates, h[d["top"]].close))
-    ratio = d["etfs"][0]["hedge_ratio"]
     for s in d["stress"]:
+        assert s["window"]["end"] == ref["end"] and s["window"]["n"] == 252
         bench = dict(zip(h[s["shock"]].dates, h[s["shock"]].close))
-        bb = bk.regression(level, bench, 252, cal)["beta"]
-        be = 1.0 if s["shock"] == d["top"] else bk.regression(top_lv, bench, 252, cal)["beta"]
+        bb = bk.regression(level, bench, 252, cal, ref["end"])["beta"]
+        be = 1.0 if s["shock"] == d["top"] else bk.regression(top_lv, bench, 252, cal, ref["end"])["beta"]
+        ratio = bk.regression(level, top_lv, 252, cal, ref["end"])["beta"]
+        assert s["hedge_ratio"] == pytest.approx(ratio)
         assert s["unhedged_usd"] == pytest.approx(1e6 * bb * -0.1)
         assert s["hedged_usd"] == pytest.approx(1e6 * (bb - ratio * be) * -0.1)
         assert s["hedged_move"] == pytest.approx(s["hedged_usd"] / 1e6)

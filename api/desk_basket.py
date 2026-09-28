@@ -192,7 +192,7 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         h = histories[sym]
         row: dict[str, Any] = {"symbol": sym, "label": label, "price": h.close[-1], "date": h.dates[-1]}
         for w, n in bk.WINDOWS.items():
-            r = bk.regression(level, bench_levels[k], n, sessions)
+            r = bk.regression(level, bench_levels[k], n, sessions, priced["end"])
             row[f"beta_{w}"], row[f"corr_{w}"] = r["beta"], r["corr"]
             row[f"window_{w}"] = r["window"]
             row[f"reason_{w}"] = r["reason"]
@@ -244,7 +244,9 @@ def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         raise env.Unsupported(str(exc)) from exc
     level = dict(zip(priced["dates"], priced["index"]))
     etf_levels = {sym: dict(zip(histories[sym].dates, histories[sym].close)) for sym in HEDGE_ETFS}
-    rows = bk.hedge_rows(level, etf_levels, notional, sessions)
+    # Every fit reads data up to the basket's own last session, never the ETFs' later closes (Codex R-01).
+    cutoff = priced["end"]
+    rows = bk.hedge_rows(level, etf_levels, notional, sessions, cutoff)
     for r in rows:
         r["label"] = HEDGE_ETFS[r["symbol"]]
     top = next((r for r in rows if r["hedge_ratio"] is not None), None)
@@ -261,7 +263,7 @@ def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         "etfs": rows,
         "top": top["symbol"] if top else None,
         "stress": bk.stress(level, shocks, top["symbol"] if top else None, etf_levels[top["symbol"]] if top else None,
-                            top["hedge_ratio"] if top else None, top["basis"] if top else None, notional, sessions),
+                            top["basis"] if top else None, notional, sessions, cutoff),
     }
 
 

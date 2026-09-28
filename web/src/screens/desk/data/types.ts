@@ -971,11 +971,15 @@ export interface HedgeEtf {
 export interface StressRow {
   shock: "QQQ" | "SPY";
   move: number | null;
+  /** The one window every beta of this row is fitted on, ending at the basket's last session (Codex R-01). */
   window: { start: string | null; end: string | null; n: number | null } | null;
+  reason: string | null;
   basket_beta: number | null;
   basket_move: number | null;
   unhedged_usd: number | null;
   hedge: string | null;
+  /** beta(basket, hedge ETF) on this row's window. */
+  hedge_ratio: number | null;
   hedge_beta: number | null;
   hedge_move: number | null;
   hedge_usd: number | null;
