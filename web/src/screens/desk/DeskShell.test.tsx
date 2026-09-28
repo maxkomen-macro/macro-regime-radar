@@ -51,14 +51,16 @@ describe("Desk v2 shell", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
-  it("the sidebar is the only navigation: three groups, eleven tabs, in the spec's order", async () => {
+  it("the sidebar is the only navigation: Market, Research, Trade, then the small About this build line, eleven tabs (§14.5)", async () => {
     renderDesk("/desk/overview");
     const side = await screen.findByRole("complementary", { name: "Sidebar" });
     const groups = within(side).getAllByRole("group");
-    expect(groups.map((g) => within(g).getByText(/^(Survey|Act|Tools)$/).textContent)).toEqual(["Survey", "Act", "Tools"]);
-    expect(within(groups[0]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Overview", "Technicals", "Regime", "Macro & Correlations", "Sectors"]);
-    expect(within(groups[1]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Event Study", "Signal Ledger", "Position Monitor"]);
-    expect(within(groups[2]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Basket & Hedge", "Data Pipeline", "Build Notes"]);
+    expect(groups.map((g) => within(g).getByText(/^(Market|Research|Trade|About this build)$/).textContent)).toEqual(["Market", "Research", "Trade", "About this build"]);
+    expect(within(groups[0]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Overview", "Technicals", "Sectors", "Macro", "Regime"]);
+    expect(within(groups[1]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Event Study", "Signal Ledger"]);
+    expect(within(groups[2]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Basket & Hedge", "Position Monitor"]);
+    expect(within(groups[3]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Data Pipeline", "Build Notes"]);
+    expect(groups[3]).toHaveTextContent("Data Pipeline · Build Notes");
     expect(DESK_GROUPS.flatMap((g) => g.pages)).toHaveLength(11);
     expect(within(side).getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
     expect(within(side).getByRole("link", { name: /Macro Regime Radar/ })).toHaveAttribute("href", "/app/dashboard");

@@ -1,7 +1,8 @@
 /**
  * The Desk v2 sidebar (DESK_FRAME3_SPEC §1.1), the only navigation: the
  * `← MACRO REGIME RADAR` link back to the Radar, `Desk` over `ANALYST
- * WORKSPACE`, the three groups (SURVEY · ACT · TOOLS), and two stacked cards
+ * WORKSPACE`, the groups (desk/usability §14.5: MARKET · RESEARCH · TRADE,
+ * then the small ABOUT THIS BUILD line), the current page marked, and two stacked cards
  * at the foot: TODAY (the regime from /overview, the S&P's day from
  * /technicals, the data word from /overview) and HOUSE DISCIPLINE, whose
  * click opens the gate text the Promote form enforces (§9).
@@ -170,15 +171,33 @@ export default function DeskSidebar({ activeSlug, pathTo, onNavigate }: { active
       </div>
       <nav className="dk-nav" aria-label="Primary">
         {DESK_GROUPS.map((g) => (
-          <div key={g.id} role="group" aria-labelledby={`dk-group-${g.id}`}>
+          <div key={g.id} role="group" aria-labelledby={`dk-group-${g.id}`} className={g.small ? "dk-nav-small" : undefined} data-group={g.id}>
             <p id={`dk-group-${g.id}`} className="dk-nav-group">
               {g.label}
             </p>
-            {g.pages.map((p) => (
-              <Link key={p.slug} to={pathTo(p.slug)} aria-current={p.slug === activeSlug ? "page" : undefined} onClick={onNavigate}>
-                {p.label}
-              </Link>
-            ))}
+            {g.small ? (
+              // §14.5: one small line, "Data Pipeline · Build Notes".
+              <p className="dk-nav-small-links">
+                {g.pages.map((p, i) => (
+                  <span key={p.slug}>
+                    {i ? (
+                      <span className="dk-nav-sep" aria-hidden="true">
+                        {" · "}
+                      </span>
+                    ) : null}
+                    <Link to={pathTo(p.slug)} aria-current={p.slug === activeSlug ? "page" : undefined} onClick={onNavigate}>
+                      {p.label}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            ) : (
+              g.pages.map((p) => (
+                <Link key={p.slug} to={pathTo(p.slug)} aria-current={p.slug === activeSlug ? "page" : undefined} onClick={onNavigate}>
+                  {p.label}
+                </Link>
+              ))
+            )}
           </div>
         ))}
       </nav>

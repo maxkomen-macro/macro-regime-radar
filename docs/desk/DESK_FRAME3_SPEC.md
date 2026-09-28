@@ -167,11 +167,14 @@ is not served; its numbers are illustrative, and it says so in one place.
 - The sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
 - Header of the sidebar: `← MACRO REGIME RADAR` (mono, 10px, links to the Radar root),
   then `Desk` (serif 26px) over `ANALYST WORKSPACE` (mono 9.5px, letter-spaced).
-- Three groups, mono 9.5px uppercase labels:
-  - **SURVEY**: Overview, Technicals, Regime, Macro & Correlations, Sectors
-  - **ACT**: Event Study, Signal Ledger, Position Monitor
-  - **TOOLS**: Basket & Hedge, Data Pipeline, Build Notes
-- Active item: background #1b2027, white text. Others #c9cdd3.
+- Groups, mono 9.5px uppercase labels (desk/usability §14.5 regroups them by
+  what an analyst is doing):
+  - **MARKET**: Overview, Technicals, Sectors, Macro, Regime
+  - **RESEARCH**: Event Study, Signal Ledger
+  - **TRADE**: Basket & Hedge, Position Monitor
+  - then a small **ABOUT THIS BUILD** line: Data Pipeline · Build Notes
+- Active item: background #1b2027, white text, and a 3px green bar at its left
+  (green means "current", §1.3). Others #c9cdd3.
 - Bottom of the sidebar, two stacked cards (border #262b33, radius 10px):
   - **TODAY**: the regime (serif 18px, in its regime color, §1.3) with
     `regime · <Mon> row` beneath (the K−2 row governing today, §5; e.g.
@@ -2191,3 +2194,15 @@ amended in place where it is short, and the report
   form is open the header's action gives way.
 - **The gate is unchanged**: the three answers, the WORDING check, Save off
   until complete, the helper naming what is left, the rule of §9.
+
+### 14.5 Navigation in labelled groups
+
+The tree had no tab strip to replace: the Desk's only navigation was already
+the sidebar, grouped SURVEY · ACT · TOOLS. It is regrouped as the brief asks:
+MARKET (Overview · Technicals · Sectors · Macro · Regime), RESEARCH (Event
+Study · Signal Ledger), TRADE (Basket & Hedge · Position Monitor), then a small
+line "About this build: Data Pipeline · Build Notes" under a rule. Macro's nav
+label and breadcrumb read "Macro"; its page title stays "Macro &
+Correlations". The current page carries the active fill and a green bar; in
+the small line, the active fill. The breadcrumb `Radar › Desk › <Tab>` stays.
+On a phone the Menu button opens the same groups.

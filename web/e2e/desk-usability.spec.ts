@@ -209,4 +209,28 @@ test.describe("desk usability", () => {
     await expect(page).toHaveURL(/\/desk\/position-monitor$/);
     await expect(page.getByText(/Discipline gate/)).toHaveCount(0);
   });
+
+  // ── Item 5: navigation in labelled groups ────────────────────────────────
+
+  test("item 5: Market · Research · Trade, then About this build; the current page is marked; the breadcrumb stays", async ({ page }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/signal-ledger");
+      if (width === 390) await page.getByRole("button", { name: "Menu" }).click();
+      const side = page.getByRole("complementary", { name: "Sidebar" });
+      const groups = side.getByRole("group");
+      await expect(groups.locator(".dk-nav-group")).toHaveText(["Market", "Research", "Trade", "About this build"]);
+      await expect(groups.nth(0).getByRole("link")).toHaveText(["Overview", "Technicals", "Sectors", "Macro", "Regime"]);
+      await expect(groups.nth(1).getByRole("link")).toHaveText(["Event Study", "Signal Ledger"]);
+      await expect(groups.nth(2).getByRole("link")).toHaveText(["Basket & Hedge", "Position Monitor"]);
+      await expect(groups.nth(3)).toContainText("Data Pipeline · Build Notes");
+      const current = side.getByRole("link", { name: "Signal Ledger" });
+      await expect(current).toHaveAttribute("aria-current", "page");
+      // Visibly marked: the active fill, and the green bar that means "current" (§1.3).
+      await expect(current).toHaveCSS("box-shadow", /rgb\(38, 220, 160\)/);
+      await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Radar›Desk›Signal Ledger");
+      expect(await auditPalette(page)).toEqual([]);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
+  });
 });

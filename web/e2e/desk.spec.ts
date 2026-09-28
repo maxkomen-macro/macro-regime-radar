@@ -65,7 +65,7 @@ async function open(page: Page, route: string, over?: Parameters<typeof routeDes
 test.describe("desk v2", () => {
   test.use({ viewport: { width: 1440, height: 960 } });
 
-  test("the sidebar is the only navigation: three groups, eleven tabs, no tab strip", async ({ page }) => {
+  test("the sidebar is the only navigation: labelled groups, eleven tabs, no tab strip (§14.5)", async ({ page }) => {
     await open(page, "/desk/overview");
     const side = page.getByRole("complementary", { name: "Sidebar" });
     await expect(side).toBeVisible();
