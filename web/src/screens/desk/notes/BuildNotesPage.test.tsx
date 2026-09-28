@@ -13,7 +13,8 @@ import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
 import { deskPageBySlug } from "../desk-sections";
-import { BYLINE, BuildNotesView, NOTES_MD, SCOPE_ID, figureUrl, leadWithoutByline } from "./BuildNotesPage";
+import { BYLINE, BuildNotesView, NOTES_MD, SCOPE_ID, figureUrl, leadWithoutByline, sectionOrder } from "./BuildNotesPage";
+import { BUILT_AFTER, BUILT_ID, BUILT_PARAGRAPHS, BUILT_TITLE } from "./built";
 import { HELD_HEADING, HELD_MARK, holdBanned, readNotes, sentences } from "./notes";
 import { SCOPE_LISTS, SCOPE_TITLE } from "./scope";
 
@@ -282,7 +283,8 @@ describe("Build Notes tab", () => {
     const { unmount } = renderWithProviders(<BuildNotesView page={page} md="" />, { route: "/desk/build-notes" });
     expect(screen.getByRole("status")).toHaveTextContent("Awaiting the notes file: docs/desk/BUILD_NOTES.md is not in this build.");
     // §1.0.1's section is the page's own, so it stands without the file.
-    expect(within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link").map((a) => a.textContent)).toEqual([SCOPE_TITLE]);
+    // With no file, the page still prints its own two sections.
+    expect(within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link").map((a) => a.textContent)).toEqual([BUILT_TITLE, SCOPE_TITLE]);
     expect(screen.queryByText(/Rendered from docs\/desk\/BUILD_NOTES\.md/)).toBeNull();
     unmount();
     renderWithProviders(<BuildNotesView page={page} md={"Lead only.\n\n## One\nBody."} />, { route: "/desk/build-notes" });
@@ -294,10 +296,59 @@ describe("Build Notes tab", () => {
     const page = deskPageBySlug("build-notes")!;
     renderWithProviders(<BuildNotesView page={page} md={"# Notes\n\n## Title\nA.\n\n## Title h\nB.\n\n## Title\nC."} />, { route: "/desk/build-notes#%E0%A4%A" });
     expect(screen.getByRole("article")).toHaveAccessibleName("Notes");
-    // Three file sections and §1.0.1's.
-    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label") ?? r.textContent?.slice(0, 7))).toHaveLength(4);
+    // Three file sections, the page's "How this was built" and §1.0.1's.
+    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label") ?? r.textContent?.slice(0, 7))).toHaveLength(5);
     const ids = [...document.querySelectorAll("[id]")].map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link")[0]).toHaveAttribute("aria-current", "location");
+  });
+});
+
+describe("How this was built: the page's own section, mirrored in the notes file", () => {
+  const realFetch = globalThis.fetch;
+  beforeEach(() => {
+    stubDesk();
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it("/desk/build-notes renders the section heading once, right after Prototypes, and lists it in the contents", async () => {
+    renderTab();
+    const h = await screen.findByRole("heading", { level: 3, name: BUILT_TITLE });
+    expect(screen.getAllByRole("heading", { name: BUILT_TITLE })).toHaveLength(1);
+    const section = h.closest("section")!;
+    expect(section.id).toBe(BUILT_ID);
+    for (const p of BUILT_PARAGRAPHS) expect(section).toHaveTextContent(p);
+    const links = within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link").map((a) => a.textContent);
+    expect(links.indexOf(BUILT_TITLE)).toBe(links.indexOf(BUILT_AFTER) + 1);
+    // In the article, too: the section that precedes it is Prototypes.
+    const heads = [...document.querySelectorAll("article h3")].map((e) => e.textContent);
+    expect(heads.indexOf(BUILT_TITLE)).toBe(heads.indexOf(BUILT_AFTER) + 1);
+  });
+
+  it("the notes file carries the same words under the same heading, after the same section", () => {
+    const n = readNotes(NOTES_MD);
+    const titles = n.sections.map((x) => x.title);
+    expect(titles.indexOf(BUILT_TITLE)).toBe(titles.indexOf(BUILT_AFTER) + 1);
+    const body = n.sections.find((x) => x.title === BUILT_TITLE)!.body;
+    const paras = body
+      .split(/\n\s*\n/)
+      .map((p) => p.replace(/\s*\n\s*/g, " ").trim())
+      .filter(Boolean);
+    expect(paras).toEqual([...BUILT_PARAGRAPHS]);
+  });
+
+  it("plain English: under 180 words, no product names", () => {
+    const text = BUILT_PARAGRAPHS.join(" ");
+    expect(text.split(/\s+/).length).toBeLessThan(180);
+    expect(text).not.toMatch(/\b(Claude|Anthropic|Codex|OpenAI|GPT|Gemini|Copilot|Cursor|Playwright|Vitest|Vite|pytest|GitHub|Vercel|Render|Snowflake|EODHD|React|FastAPI|SQLite)\b/);
+  });
+
+  it("orders the sections: the file's own copy left out, the page's after Prototypes, else after the file's last", () => {
+    const s = (title: string) => ({ id: `bn-${title.toLowerCase().replace(/\W+/g, "-")}`, title });
+    expect(sectionOrder([s("A"), s(BUILT_AFTER), s(BUILT_TITLE), s("B")]).map((x) => x.title)).toEqual(["A", BUILT_AFTER, BUILT_TITLE, "B"]);
+    expect(sectionOrder([s("A"), s("B")]).map((x) => x.title)).toEqual(["A", "B", BUILT_TITLE]);
+    expect(sectionOrder([]).map((x) => x.id)).toEqual([BUILT_ID]);
   });
 });

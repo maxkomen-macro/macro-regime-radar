@@ -66,7 +66,8 @@ function drawn(h: StudyHorizon, unit: TargetUnit): Drawn | null {
   return { h, med: h.median * k, base: h.baseline_median * k, lo: w.lo, hi: w.hi };
 }
 
-function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: TargetUnit }) {
+/** Exported for Basket & Hedge's PROTOTYPE event study (§1.0.3), which draws its illustrative horizons the same way. */
+export function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: TargetUnit }) {
   const [ref, width, boxH] = useBox<HTMLDivElement>(640, 360);
   const height = Math.max(260, boxH);
   const pad = { l: 56, r: 12, t: 28, b: 40 };

@@ -3,9 +3,11 @@
  * this browser (the baskets, their typed weights, Save, Export / Import JSON,
  * + New basket), and a saved basket at exactly 100% is priced by
  * /basket/price (§12.15): step 2, how the basket trades, from the fixture's
- * real answer. The hedge's option structures stay unavailable (§1.0.2). The
- * header's Send to Position Monitor carries the basket, which Position
- * Monitor reads as a manual subject (§9).
+ * real answer. Step 3's options slot holds the PROTOTYPE "Hedge with
+ * options" (§1.0.3), its inputs row read from the step's /basket/hedge
+ * answer; with no answer to read, the slot's reason (§1.0.2). The header's
+ * Send to Position Monitor carries the basket, which Position Monitor reads
+ * as a manual subject (§9).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -17,7 +19,7 @@ import { deskError, stubDesk } from "../../../test/desk";
 import { deskFixture } from "../../../fixtures/desk";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
-import { SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
+import { PRESET, SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
 import { OPTIONS_UNAVAILABLE } from "./BasketHedgeStep";
 
 const BASKETS = (sample as { baskets: SavedBasket[] }).baskets;
@@ -61,7 +63,7 @@ const loaded = async () => {
 };
 
 describe("Basket & Hedge tab", () => {
-  it("prices the saved basket: step 2 from /basket/price, step 3 from /basket/hedge, its badge; the options slot unavailable (§10, §12.15, §12.16, §1.0.2)", async () => {
+  it("prices the saved basket: step 2 from /basket/price, step 3 from /basket/hedge, its badge; the options slot holding the PROTOTYPE (§10, §12.15, §12.16, §1.0.3)", async () => {
     seed();
     const { calls } = stubDesk();
     renderTab();
@@ -98,14 +100,16 @@ describe("Basket & Hedge tab", () => {
     // Codex R-15: the card names the short it holds, the table's top row's.
     expect(stress).toHaveTextContent("Hedged holds the short the table above recommends, $1,384,473 of XLK (1.38× the basket), as it is under both shocks.");
     expect(calls).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
-    // The options slot is plain (Codex R-14): its title, badge and why it is not served; no control that cannot act.
+    // §10, §1.0.3: the options slot holds the PROTOTYPE, its inputs row from this answer; its one control, Advanced,
+    // opens something (Codex R-14: no control that cannot act); no badge.
     const h = optionsCard();
-    expect(h).toHaveTextContent("Hedge with options priced off the SPY / QQQ surface");
-    expect(h.querySelector('[data-slot="hedge-options"]')).not.toBeNull();
-    expect(within(h).getAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(1);
-    expect(within(h).queryAllByRole("button")).toHaveLength(0);
-    expect(within(h).queryByTestId("dk-advanced")).toBeNull();
-    expect(within(h).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(h.closest('[data-slot="hedge-options"]')).not.toBeNull();
+    expect(h).toHaveAttribute("data-prototype", "options-hedge");
+    await waitFor(() => expect(h).toHaveTextContent(/Top hedge ETF\s*XLK/));
+    expect(within(h).getAllByRole("button")).toHaveLength(1);
+    expect(within(h).getByTestId("dk-advanced")).toBeEnabled();
+    expect(within(h).queryByTestId("dk-live")).toBeNull();
+    expect(within(hedge).queryAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(0);
     expect(calls.some((c) => c.startsWith("POST"))).toBe(false);
   });
 
@@ -488,4 +492,172 @@ describe("Basket & Hedge tab", () => {
     expect(b).toHaveTextContent("Saved in this browser; priced below.");
     expect(JSON.parse(localStorage.getItem(SAVED_BASKETS_KEY) ?? "[]")).toContainEqual(bad);
   });
+});
+
+describe("Hedge with options (PROTOTYPE, §1.0.3): step 3's options slot for the saved basket", () => {
+  it("reads the basket engine's inputs, live, and prices three routes three ways; no badge, its footnote last", async () => {
+    seed();
+    const { calls } = stubDesk();
+    renderTab();
+    await loaded();
+    const c = await screen.findByRole("region", { name: /^Hedge with options/ });
+    expect(c).toHaveAttribute("data-prototype", "options-hedge");
+    expect(c).toHaveTextContent("from your basket · live");
+    // §12.16's fields, the step's own /basket/hedge answer: notional; top, XLK; its row's hedge ratio and one-year R².
+    expect(c).toHaveTextContent(/Notional\s*\$1\.0M\s*AI infrastructure/);
+    expect(c).toHaveTextContent(/Top hedge ETF\s*XLK\s*first of 8 by R², ahead of SMH at 0\.68/);
+    expect(c).toHaveTextContent(/Hedge ratio\s*1\.38/);
+    expect(c).toHaveTextContent(/R²\s*0\.69\s*252 sessions to Sep 23/);
+    for (const t of ["(a) Puts on XLK, the top-ranked hedge ETF", "(b) Puts on the three largest names", "(c) An OTC basket put from a dealer"]) expect(within(c).getByRole("heading", { name: t })).toBeInTheDocument();
+    expect(within(c).getAllByRole("table")).toHaveLength(3);
+    expect(c).toHaveTextContent("strikes moved by it, so 95/85 is 96.4%/89.2% of XLK");
+    expect(c).toHaveTextContent(/1M 95 put\s*1\.90%\s*\$19,000\s*basket down 6\.9%\s*\$50,000 · 5\.00%/);
+    expect(c).toHaveTextContent("NVDA, AVGO, VRT, each sized to its weight: 52% of the basket");
+    expect(c).toHaveTextContent(/1M 95\/85 put spread\s*1\.83%\s*\$18,300\s*basket down 6\.8%\s*\$50,000 · 5\.00%/);
+    expect(c).toHaveTextContent("an R² of 0.69 leaves 31% of the basket's variance unhedged");
+    expect(within(c).getAllByText("Trade-off:")).toHaveLength(3);
+    expect(within(c).queryByTestId("dk-live")).toBeNull();
+    const foot = c.querySelector("[data-prototype-foot]")!;
+    expect(foot.textContent).toBe("Illustrative values · In production: EODHD option chains for the hedge ETF and the names, and a dealer's quote for the basket put, stored with each basket.");
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    expect(c).toHaveTextContent("vol = XLK's at the strike × 1.38 ÷ √0.69, plus 1.5 points of dealer margin");
+    expect(c).toHaveTextContent("the engine's realized basket vol over the same window: 44.1%");
+    // Priced in the browser: the card asks nothing of its own; the one /basket/hedge request is the step's.
+    expect(calls.filter((x) => x.startsWith("GET /api/desk/basket/hedge"))).toHaveLength(1);
+    expect(calls.some((x) => x.startsWith("POST"))).toBe(false);
+  });
+
+  it("a basket the engine has no answer for: the slot prints its reason, and no prototype is drawn in it", async () => {
+    seed([{ ...BASKETS[0], legs: BASKETS[0].legs.map((l) => (l.symbol === "SMCI" ? { ...l, weight: 8 } : l.symbol === "NVDA" ? { ...l, weight: 26 } : l)) }]);
+    renderTab();
+    await loaded();
+    const step = await screen.findByRole("region", { name: /^Hedge it/ });
+    await waitFor(() => expect(within(step).getAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(1), { timeout: 8000 });
+    expect(step.querySelector('[data-prototype="options-hedge"]')).toBeNull();
+    expect(step.querySelector('[data-slot="hedge-options"]')).not.toBeNull();
+  });
+
+  it("with no basket saved, the slot prints its reason, and no prototype is drawn", async () => {
+    seed([]);
+    renderTab();
+    await waitFor(() => expect(basketCard()).toHaveTextContent("No basket is saved in this browser yet"));
+    const step = screen.getByRole("region", { name: /^Hedge it/ });
+    expect(within(step).getAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(1);
+    expect(document.querySelector("[data-prototype]")).toBeNull();
+  });
+});
+
+describe("Positioning (PROTOTYPE, §1.0.3): drawn for the AI Infrastructure 10 preset", () => {
+  it("a first visit: all ten names with short interest, days to cover, put/call and the crowding flag, the weighted figures; its footnote last", async () => {
+    renderTab();
+    await loaded();
+    const c = await screen.findByRole("region", { name: /^Positioning/ });
+    expect(c).toHaveAttribute("data-prototype", "positioning");
+    expect(c).toHaveTextContent(/Short interest\s*4\.8%\s*of float, weighted over all 10 names/);
+    expect(c).toHaveTextContent(/Days to cover\s*1\.7\s*weighted over all 10 names/);
+    expect(c).toHaveTextContent(/Crowded\s*4 of 10\s*names with data/);
+    const rows = within(within(c).getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows.map((r) => r.querySelector("th")?.firstChild?.textContent)).toEqual(["NVDA", "AVGO", "AMD", "TSM", "MU", "ANET", "VRT", "CEG", "CRWV", "NBIS"]);
+    expect(rows[0]).toHaveTextContent(/NVDA\s*NVIDIA\s*10%\s*1\.1%\s*0\.6\s*0\.78\s*Crowded long/);
+    expect(rows[8]).toHaveTextContent(/CRWV\s*CoreWeave\s*10%\s*18\.3%\s*2\.4\s*1\.36\s*Crowded short/);
+    expect(rows[9]).toHaveTextContent(/NBIS\s*Nebius\s*10%\s*15\.9%\s*2\.8\s*1\.24\s*Crowded short/);
+    expect(c).not.toHaveTextContent("no data");
+    expect(within(c).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Weight", "Short int. (illustrative)", "Days to cover (illustrative)", "Put/call OI (illustrative)", "Crowding"]);
+    expect(within(c).queryByTestId("dk-live")).toBeNull();
+    expect(c.querySelector("[data-prototype-foot]")!.textContent).toBe("Illustrative values · In production: exchange short-interest files, OCC open interest, 13F holdings.");
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    expect(c).toHaveTextContent("short interest at or above 10% of float");
+    expect(c).toHaveTextContent("13F top-ten share: NVDA 38%");
+  });
+
+  it("another basket (the fixture tests' sample): its labels and one line, no table; its footnote last", async () => {
+    seed();
+    renderTab();
+    await loaded();
+    const c = await screen.findByRole("region", { name: /^Positioning/ });
+    expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset.");
+    expect(c).toHaveTextContent(/Short interest\s*—\s*Days to cover\s*—\s*Crowded\s*—/);
+    expect(within(c).queryByRole("table")).toBeNull();
+    expect(within(c).queryByTestId("dk-advanced")).toBeNull();
+    expect(c.querySelector("[data-prototype-foot]")).not.toBeNull();
+  });
+});
+
+describe("Event study on this basket (PROTOTYPE, §1.0.3): as an Event Study answer, drawn for the preset", () => {
+  it("a first visit: the question names the basket; events, up a month later, the median against a normal month, the verdict and the horizon chart; its footnote last", async () => {
+    renderTab();
+    await loaded();
+    const c = await screen.findByRole("region", { name: /^Event study on this basket/ });
+    expect(c).toHaveAttribute("data-prototype", "basket-study");
+    expect(c).toHaveTextContent("After AI Infrastructure 10 falls 2σ over 5 days, it was higher a month later 64% of the time.");
+    expect(c).toHaveTextContent(/Events\s*57\s*56 complete at a month/);
+    expect(c).toHaveTextContent(/Up a month later\s*64%\s*36 of 56 · 61% in a normal month/);
+    expect(c).toHaveTextContent(/Median at a month\s*\+3\.4%\s*vs \+2\.4% in a normal month/);
+    expect(within(c).getByText("Suggestive")).toHaveAttribute("data-verdict", "suggestive");
+    expect(within(c).getByRole("img")).toBeInTheDocument();
+    expect(c).toHaveTextContent("56 completed outcomes in 45 overlap blocks; the 90% interval on the excess median runs −1.1% to +3.8%; 14.0% of resampled medians are adverse against a 3% bar.");
+    expect(c).toHaveTextContent("57 events since 2010 · the basket's index from Aug 2009 · last event Mar 27, 2026");
+    expect(within(c).queryByTestId("dk-live")).toBeNull();
+    expect(c.querySelector("[data-prototype-foot]")!.textContent).toBe("Illustrative values · In production: the existing engine run on the basket index series.");
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    expect(c).toHaveTextContent("the interval spans zero");
+    expect(c).toHaveTextContent("all lean up: Suggestive");
+  });
+
+  it("the preset renamed is the same basket, named as saved", async () => {
+    seed([{ ...PRESET, name: "My AI names" }]);
+    renderTab();
+    const c = await screen.findByRole("region", { name: /^Event study on this basket/ });
+    expect(c).toHaveTextContent("After My AI names falls 2σ over 5 days");
+  });
+
+  it("another basket: the labels and one line, no chart", async () => {
+    seed([{ ...BASKETS[0], legs: BASKETS[0].legs.slice(0, 3).map((l) => ({ ...l, weight: l.symbol === "NVDA" ? 40 : 30 })) }]);
+    renderTab();
+    const c = await screen.findByRole("region", { name: /^Event study on this basket/ });
+    expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset.");
+    expect(within(c).queryByRole("img")).toBeNull();
+    expect(c).not.toHaveTextContent("Suggestive");
+  });
+});
+
+describe("Codex R-04: a basket that repeats a symbol is not the preset", () => {
+  it("ten NVDA legs imported as \"NVDA only\": both prototypes print the one line and no figure", async () => {
+    renderTab();
+    await loaded();
+    const b = basketCard();
+    const nvdaOnly = { id: "local-1", name: "NVDA only", legs: Array.from({ length: 10 }, () => ({ symbol: "NVDA", name: "NVIDIA", weight: "10" })), saved_at: "2026-09-28T00:00:00Z" };
+    const json = JSON.stringify({ kind: "mrr.desk.baskets", version: 1, baskets: [nvdaOnly] });
+    const file = new File([json], "nvda-only.json", { type: "application/json" });
+    // jsdom's File has no text(); a browser's does.
+    Object.defineProperty(file, "text", { value: () => Promise.resolve(json) });
+    fireEvent.change(within(b).getByLabelText("Import saved baskets"), { target: { files: [file] } });
+    await waitFor(() => expect(stored().map((x) => x.name)).toEqual(["AI Infrastructure 10", "NVDA only"]));
+    fireEvent.change(within(b).getByLabelText("Basket"), { target: { value: stored()[1].id } });
+    await waitFor(() => expect(within(basketCard()).getByLabelText("Basket")).toHaveDisplayValue("NVDA only"));
+    for (const name of [/^Positioning/, /^Event study on this basket/]) {
+      const c = await screen.findByRole("region", { name });
+      await waitFor(() => expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset."));
+      expect(within(c).queryByRole("table")).toBeNull();
+      expect(within(c).queryByRole("img")).toBeNull();
+      expect(c.textContent).not.toMatch(/\d%|of float|names with data|Crowded (long|short)|Suggestive|falls 2σ over 5 days, it was/);
+    }
+  });
+});
+
+describe("Codex R-01: Positioning never prints NaN or counts a name without data (the probes are other baskets now)", () => {
+  const basket = (legs: { symbol: string; name: string | null; weight: number }[]) => [{ id: "local-1", name: "Probe", legs, saved_at: "2026-09-22T20:00:00Z" }];
+
+  for (const [label, legs] of [
+    ["CRWV 50% / MSFT 50%", [{ symbol: "CRWV", name: "CoreWeave", weight: 50 }, { symbol: "MSFT", name: "Microsoft", weight: 50 }]],
+    ["MSFT 100%", [{ symbol: "MSFT", name: "Microsoft", weight: 100 }]],
+    ["CRWV 0% / MSFT 100%", [{ symbol: "CRWV", name: "CoreWeave", weight: 0 }, { symbol: "MSFT", name: "Microsoft", weight: 100 }]],
+  ] as const)
+    it(`${label}: the one line, no figure, no NaN (the coverage words are held in positioning.test.ts)`, async () => {
+      seed(basket([...legs]));
+      renderTab();
+      const c = await screen.findByRole("region", { name: /^Positioning/ });
+      expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset.");
+      expect(c.textContent).not.toMatch(/NaN|\d%\s*of float|names with data/);
+    });
 });

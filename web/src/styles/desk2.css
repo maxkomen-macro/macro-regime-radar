@@ -1163,6 +1163,19 @@
 .dk-adv-missing {
   color: var(--dk-t3);
 }
+
+/* ── PROTOTYPE card (§1.0.3, kit/Prototype.tsx): no badge; the footnote is its
+   last line, in the as-of stamp's style (mono, small, the muted text gray). ── */
+.dk-proto-foot {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--dk-t4);
+}
+.dk-adv + .dk-proto-foot,
+.dk-adv-panel + .dk-proto-foot {
+  margin-top: 8px;
+}
 .dk-lc {
   text-transform: none;
 }

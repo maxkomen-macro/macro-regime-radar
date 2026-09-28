@@ -6,8 +6,9 @@
  * grouped and collapsible, each group's table scrolling inside the group, and
  * a search that jumps to a series and opens its group; and the Snowflake
  * bridge: the three-layer schema as the board draws it, the current study's
- * events as CSV (§12.3) and the Snowflake DDL (GET /pipeline/ddl). The last
- * refresh and its validation ride in the top bar (`./badge`).
+ * events as CSV (§12.3) and the Snowflake DDL (GET /pipeline/ddl). Under
+ * them, "Sync to Snowflake", a PROTOTYPE card (§1.0.3, ../prototypes/). The
+ * last refresh and its validation ride in the top bar (`./badge`).
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -21,6 +22,7 @@ import { Awaiting, DroppedNote, droppedWords, Unserved } from "../kit/ui";
 import { dayLong, monthYear } from "../kit/format";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { saveServed } from "../kit/download";
+import { SnowflakeSyncCard } from "../prototypes/SnowflakeSyncCard";
 import { PipelineBadge } from "./badge";
 import "./pipeline.css";
 
@@ -307,6 +309,8 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
           </section>
           <Bridge />
         </div>
+        {/* §11, §1.0.3: the sync the bridge card's schema is for, as a PROTOTYPE; the DDL and the CSV above are real. */}
+        <SnowflakeSyncCard />
       </Unserved>
     </div>
   );

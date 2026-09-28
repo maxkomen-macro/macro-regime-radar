@@ -13,7 +13,9 @@ withdrawn by a later one, it is not repeated here.
 and the counts, dates and units needed to display them honestly. A field the
 engine cannot produce is served as an explicit **unavailable** state, never as
 an illustrative number, and Build Notes lists it under "Designed, not yet
-served". When this file and a PNG disagree, the PNG wins for layout and this
+served". The one exception is a **PROTOTYPE** card (§1.0.3): a block drawn
+finished with illustrative values, footnoted as such, never mixed with a
+served one. When this file and a PNG disagree, the PNG wins for layout and this
 file wins for numbers, labels and API shape (v2 §20, D-35). Every
 illustrative number below is the mockup's; the build renders what the API
 returns.
@@ -32,7 +34,11 @@ Neither A nor B changes §12 without writing the change into this file first.
 
 ## 1. Scope and site-wide rules
 
-### 1.0 Scope for Monday: live and unavailable
+### 1.0 Scope for Monday: live, unavailable and prototype
+
+A block is LIVE (served, badged `● Live`), UNAVAILABLE (§1.0.2) or, for the
+few blocks that would take many hours to build for real, PROTOTYPE (§1.0.3):
+drawn finished with illustrative values and a footnote saying so.
 
 | Tab / block | Monday state | Reason |
 |---|---|---|
@@ -40,7 +46,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Overview: VIX "gap vs realized" and the vol band word | LIVE (desk/fill-compute) | the S&P's 21-day realized volatility (`src/analytics/technicals.realized_vol`) and the home page's VIX words (§12.1 `tiles.vol`) |
 | Overview: Monitored rows | LIVE from the browser's position store (§9) | no server position store (v2 D-21) |
 | Technicals: price, 50- and 200-day averages, trend, cross, chart, 1-year return, day change, last 20 days in σ, signals (the §3 allowlist) | LIVE | — |
-| Technicals: vol column ("What protection costs right now") | UNAVAILABLE | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
+| Technicals: vol column ("What protection costs right now") | PROTOTYPE (§1.0.3) while a ready `/technicals` serves its vol block awaiting as not yet served; otherwise the LIVE card in its own state (UNAVAILABLE, awaiting); UNAVAILABLE for an instrument other than the S&P | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
 | Technicals: sector bars | LIVE (desk/fill-etf): the eleven sector ETFs' 60-session log returns less SPY's, `/technicals` `sectors` (§12.14) | — |
 | Technicals: RSI card | LIVE (desk/fill-compute) | Wilder's RSI(14) on the stored ^GSPC closes, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy) (§12.7) |
 | Technicals: MACD card | LIVE (desk/fill-compute) | MACD(12, 26, 9) on the stored ^GSPC closes, `src/analytics/technicals.macd` (the shared, symbol-agnostic copy) (§12.7 `macd`) |
@@ -63,8 +69,11 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
 | Basket & Hedge: a basket kept in this browser priced as one index (buy-and-hold or monthly), its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), contribution, concentration, liquidity | LIVE, computed on request from EODHD's daily bars (§12.15); the baskets stay in the browser (§1.8) | desk/books |
 | Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.16) | desk/books |
-| Basket & Hedge: hedging with options | UNAVAILABLE; the slot "Hedge with options" is kept for the options card (desk/prototypes) | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
+| Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
+| Basket & Hedge: "Positioning" (step 3, below the options slot, §10) | PROTOTYPE (§1.0.3), drawn for the AI Infrastructure 10 preset; one line for any other basket | short interest, open interest and 13F holdings not ingested |
+| Basket & Hedge: "Event study on this basket" (step 3, beside Positioning, §10) | PROTOTYPE (§1.0.3), drawn for the AI Infrastructure 10 preset; one line for any other basket | no basket index series is stored for the engine to run on |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
+| Data Pipeline: "Sync to Snowflake" (§11) | PROTOTYPE (§1.0.3); the bridge's "Generate Snowflake DDL" and "Export current study → CSV" stay LIVE | no Snowflake account or sync job exists; the schema is proposed |
 | Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
 | Client view | LIVE for Event Study's current study, at h = 20 | — |
 
@@ -102,6 +111,55 @@ served, "Until: <`unavailable.until`>". No number, no chart, no gauge. Its
 `○ Not yet served` (`○ Awaiting refresh` when the reason begins "Awaiting
 refresh", §1.7). A block that is unavailable by §1.0 but has no served
 envelope prints the reason in §1.0's table (the confidence chips).
+
+#### 1.0.3 The prototype state
+
+A PROTOTYPE card shows, finished, a part of the Desk that would take many
+hours to build for real, so the Desk can be walked through end to end. It
+is not served; its numbers are illustrative, and it says so in one place.
+
+1. **Drawn finished.** Title, subtitle, stats, body and `Advanced ▸` as §1.4.
+   No badge (neither `● Live` nor `○ Not yet served`), no banner, no
+   `MOCKUP` label (§1.6).
+2. **One footnote, last.** Its last line is exactly one small, muted
+   footnote, `Illustrative values · In production: <one line on how it would
+   be built>`, in the style of a card's as-of stamp (mono 11px, #6b7280),
+   drawn by the shared `PrototypeFootnote`
+   (`web/src/screens/desk/kit/Prototype.tsx`).
+3. **Illustrative but consistent.** Every figure it prints follows from its
+   fixture's stated inputs by the rule the card states: an option value is
+   Black-Scholes at an assumed volatility, a share is its count over its
+   total, a verdict is §1.5's rule on the card's own numbers. Its
+   `Advanced ▸` is enabled and opens those inputs (the assumed volatilities,
+   rates, day counts, rules and thresholds).
+4. **Kept apart.** Its values come only from the prototype fixtures,
+   `web/src/fixtures/desk/proto-*.json` and `vol.json` (§12.13's vol shape,
+   for the Technicals card), read only by modules under
+   `web/src/screens/desk/prototypes/`. A LIVE card imports none of them, and
+   no prototype value is printed outside a PROTOTYPE card (the page's
+   `[data-prototype]` element).
+5. **A live input says so.** An input the engine serves, drawn inside a
+   PROTOTYPE card, is labelled live (`from your basket · live`) and reads the
+   engine's field; only the outputs are illustrative. (§10: the options
+   card's inputs row reads step 3's own `/basket/hedge` answer, §12.16.)
+6. **In the block's place.** A PROTOTYPE card stands where the block it
+   prototypes stands, and gives way to the LIVE card once that block is
+   served (`ready`, or `awaiting` with a reason beginning "Awaiting
+   refresh"). It asks the API nothing. Where a served block decides it, it
+   stands only in a ready answer that serves that block awaiting as not yet
+   served; a route that is loading, awaiting or failed, or an answer
+   without the block, keeps the LIVE card in that state and never falls
+   back to illustrative figures (Codex R-03).
+7. **Outside the claims.** A page's claims about its served data (Data
+   Pipeline's "Every live number comes from stored data") cover its served panels, not its
+   PROTOTYPE cards; §1.0.1's lists are unchanged: a prototyped block stays
+   "Designed, not yet served" until it is served.
+8. **Same rules otherwise.** §1.3's five colors, the ban list, §1.9's units.
+9. **Tests.** `web/src/screens/desk/prototypes/prototypes.test.tsx` and
+   `e2e/desk.spec.ts`: every PROTOTYPE card ends with the footnote and
+   carries no badge; no module outside `prototypes/` imports a prototype
+   fixture; no prototype value is printed outside a PROTOTYPE card, on the
+   fixture dev server and on a preview of the production build.
 
 ### 1.1 Navigation
 - The sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
@@ -209,7 +267,8 @@ A card that reads live data carries `● Live · <source> · <date>` (green dot,
 mono 10px) top-right, dating only what it covers; a separately dated block
 carries its own date (v2 D-36). An unavailable card carries `○ Not yet
 served`, or `○ Awaiting refresh` when its served reason begins "Awaiting
-refresh" (§1.7). The `MOCKUP · values illustrative` amber badge is NOT built.
+refresh" (§1.7). The `MOCKUP · values illustrative` amber badge is NOT built;
+a PROTOTYPE card (§1.0.3) carries no badge and ends with its footnote.
 
 ### 1.7 Empty, busy and awaiting states
 - `computing` (202): the card stays quiet and busy while the client polls.
@@ -332,10 +391,20 @@ Signals; bottom-middle = Sector leadership; bottom-right = RSI; a third row
 (desk/fill-compute) = MACD across the vol column and the middle, seasonality
 on the right.
 
-**What protection costs right now** (vol column): UNAVAILABLE (§1.0), from
-`/technicals` `vol` (awaiting). Labels kept: PUTS vs CALLS · 1 MONTH OUT ·
+**What protection costs right now** (vol column): PROTOTYPE (§1.0.3), for
+the S&P only, when `/technicals` answers ready and serves its `vol` block
+awaiting as not yet served (Monday). Every other state draws the LIVE card
+below in that state: loading (quiet), the route awaiting (its reason, `○ Not
+yet served`) or failed (Awaiting refresh), an answer without the block
+(Awaiting refresh), the block ready, or awaiting a refresh (Codex R-03). Labels: PUTS vs CALLS · 1 MONTH OUT ·
 WHAT OPTIONS EXPECT vs WHAT HAPPENED · 1 MONTH · 3 MONTHS · 6 MONTHS · SKEW ·
-WHERE IT SITS.
+WHERE IT SITS. The PROTOTYPE reads `vol.json` (§12.13's vol shape) and
+`proto-protection.json`: the 25-delta put and call a month out (vol, strike
+and cost, Black-Scholes at the stated vols), implied against realized at 1, 3
+and 6 months, and the two-year weekly skew line with today's percentile.
+Footnote: "Illustrative values · In production: daily SPY chain snapshots
+from the EODHD options add-on, stored and versioned." The LIVE card, once
+served, prints the §12.13 fields.
 
 **S&P 500 — price and its two trend lines**. Range chips 6M / 1Y / 3Y. Stats:
 PRICE (`price`; sub `chg_1d` × 100 "on <chg_1d_dates.to>") · 50-DAY AVERAGE
@@ -935,12 +1004,88 @@ fields of §12.15:
 Steps 2 and 3 each carry their own answer's `● Live · <provider> · prices
 <prices_as_of>`; when `/basket/hedge` and `/basket/price` answer different
 sessions, step 3 says so in amber (Codex R-08).
-- **Hedge with options**: the slot for the options card (desk/prototypes).
-  UNAVAILABLE here, and plain (Codex R-14): title, subtitle, the `○ Not yet
-  served` badge and the reason, in a `data-slot="hedge-options"` container;
-  no mode button, stat or Advanced control that cannot act. The deferred
-  option shapes, with the corrections that apply when they are built, are in
-  §12.13.
+- **Hedge with options**: the slot for the options card, a
+  `data-slot="hedge-options"` container. While the step's `/basket/hedge`
+  answer is on its way or has answered, it holds the PROTOTYPE card below,
+  across the step's width. With no answer to read (no basket saved at
+  exactly 100%, or the request failed) it is UNAVAILABLE and plain (Codex
+  R-14): title, subtitle, the `○ Not yet served` badge and the reason; no
+  mode button, stat or Advanced control that cannot act. The deferred option
+  shapes, with the corrections that apply when they are built, are in §12.13.
+
+**Hedge with options** (step 3's options slot, across the step under the two
+cards, for a saved basket whose `/basket/hedge` answer is on its way or has
+answered; otherwise the slot's reason, above): PROTOTYPE (§1.0.3). An inputs
+row labelled `from your basket · live` reads the fields of that answer, the
+one the ETF hedge and the stress test print (§12.16,
+`web/src/screens/desk/prototypes/basket-inputs.ts`, `inputsFrom`): NOTIONAL
+(`notional`); TOP HEDGE ETF (`top`, the first of `etfs[]` ranked by R²);
+HEDGE RATIO (that row's `hedge_ratio`); R² (that row's, on its `basis`
+window, with the window). While the answer is on its way the row reads
+"Awaiting refresh" and nothing is priced; an answer with no top pick prices
+nothing and says so. Three
+routes, each as a 1M 95 put, a 3M 95 put and a 1M 95/85 put spread (strikes
+as the basket's level), with the cost in % and $ of notional, the breakeven
+(the basket's fall by expiry that repays the premium) and the payoff at
+expiry if the basket falls 10%, then a one-line trade-off: (a) puts on the
+top-ranked hedge ETF, hedge ratio × notional of it, each strike moved by the
+ratio (the basket's K is 1 − (1 − K) ÷ ratio of the ETF), the ETF assumed to
+move by the basket's move ÷ the ratio, basis risk shown by R²; (b) puts on
+the three largest names, each sized to its weight, each moving with the
+basket; (c) an OTC basket put from a dealer, an exact hedge, dealer-priced at
+the ETF's vol at the strike × hedge ratio ÷ √R² plus a stated margin, with the
+basket swap named as the alternative. Black-Scholes
+at the volatilities of `proto-options.json`, stated in Advanced. Each
+structure is priced only inside its domain (Codex R-02): a hedge ratio from
+0.25 to 4 for the ETF and basket routes, every strike handed to Black-Scholes
+from 50% to 100% of its underlying's spot, a positive assumed vol, an R² in
+(0, 1] for the basket put, and finite results; outside it the row keeps its
+label and prints the reason in plain words ("Not priced: the hedge ratio,
+0.10, is outside the 0.25 to 4 this card prices."), no number. Footnote:
+"Illustrative values · In production: EODHD option chains for the hedge ETF
+and the names, and a dealer's quote for the basket put, stored with each
+basket."
+
+Both cards below are drawn for desk/books' first-visit preset, AI
+Infrastructure 10 (NVDA AVGO AMD TSM MU ANET VRT CEG CRWV NBIS at 10% each;
+`web/src/screens/desk/prototypes/drawn-for.ts`), so a first visit sees every
+name with illustrative values. A basket is the preset only when its legs are
+exactly that symbol–weight mapping: ten unique symbols, each at 10%, in any
+order; a symbol held twice is another basket (Codex R-04). Its name, method
+and notional do not decide it. Any other basket keeps each card's title, stat labels (valued
+"—") and footnote, and prints one line: "Illustrative values are shown for
+the AI Infrastructure 10 preset."
+
+**Positioning** (in step 3, below the options slot, left): PROTOTYPE
+(§1.0.3), from `proto-positioning.json`. Stats: SHORT INTEREST (of float,
+weighted over the names with data) · DAYS TO COVER (the same) · CROWDED
+(<flagged> of <names with data>). Each says what it covers: "weighted over
+all 10 names" for the preset; the pure function behind it
+(`positioning.ts`, `coverageWords`) also words a partial basket, "weighted
+over 50% of the basket (1 of 2 names)"; with no
+name with data, or none carrying weight, the figure is "—" and says why
+("no name with data", "the names with data carry 0% of the basket"), never
+NaN (Codex R-01). One row per name: weight, short interest % of float, days
+to cover, put/call open-interest ratio (those three column headers end
+"(illustrative)"), and a crowding flag by the rule
+Advanced states: Crowded short at a short interest of 10% of float or more,
+else Crowded long when at least 25% of the funds a 13F sample tracks hold the
+name in their top ten, else "none". A name without data reads "no data"
+across the row and is in no count. Footnote: "Illustrative values · In production: exchange
+short-interest files, OCC open interest, 13F holdings."
+
+**Event study on this basket** (in step 3, below the options slot, right): PROTOTYPE
+(§1.0.3), from `proto-basket-study.json`, styled as an Event Study answer
+(§4): the question in serif, naming the basket as saved, "After AI
+Infrastructure 10 falls 2σ over 5 days, it was higher a month later <up>% of
+the time."; EVENTS · UP A MONTH LATER (against
+a normal month) · MEDIAN AT A MONTH (against a normal month, §1.9's log
+display) · VERDICT (§1.5's rule v1 on the card's own numbers at h = 20); the
+Event Study's horizon chart; §12.2's why over the month's row; the
+provenance line (the index from Aug 2009, once half the preset's weight is
+listed). Footnote:
+"Illustrative values · In production: the existing engine run on the basket
+index series."
 
 ---
 
@@ -949,8 +1094,9 @@ sessions, step 3 says so in amber (Codex R-08).
 **Data Pipeline** (`screens/10-data-pipeline.png`). No Desk/Client toggle.
 Header `● Last full refresh <last_refresh_utc> · validation <passed|failed>`,
 or "unknown" for either when not served (v2 D-33). Title "Where every number
-comes from" · "Every panel in Desk resolves to a row here. Nothing is
-synthetic; nothing is re-derived in the browser." Lineage strip: 1 SOURCES
+comes from" · "Every panel in Desk resolves to a row here. Every live
+number comes from stored data; prototype cards are marked. No live number
+is re-derived in the browser." Lineage strip: 1 SOURCES
 (FRED API, Yahoo Finance, EODHD) → 2 FETCH (GitHub Actions) → 3 VALIDATE
 (schema + range checks, as-of ≤ today, gap detection) → 4 TRANSFORM
 (z-scores, MAs, regime labels, forward returns) → 5 STORE (SQLite snapshot,
@@ -967,7 +1113,19 @@ listing dates), Equity ETFs (SPY, RSP, IWM, QQQ, SMH, SOXX, IGV) and Bond,
 gold & dollar ETFs (TLT, IEF, HYG, LQD, GLD, UUP). The bridge
 card is titled "Proposed export schema (not the current SQLite layout)", with
 the DDL block and the buttons **Export current study → CSV** (§12.4) and
-**Generate Snowflake DDL** (`/pipeline/ddl`).
+**Generate Snowflake DDL** (`/pipeline/ddl`). Under the two cards, **Sync to
+Snowflake**: PROTOTYPE (§1.0.3), from `proto-snowflake-sync.json`. The
+target (account, database, warehouse, role); the flow CONNECT → STAGE →
+MERGE → VERIFY, each step with what it does and how long it took; a table of
+the proposed schema's six tables with their key and row counts (STAGED,
+MERGED as inserted · updated or unchanged, a MART table rebuilt; ROWS IN
+SNOWFLAKE, ROWS IN THE SNAPSHOT, CHECK); the status line "Verified: <n> of
+6 tables match the snapshot · <rows> rows staged · <s> s on <warehouse>". It
+opens on the last run; its button **Sync to Snowflake** replays the steps
+(at once under reduced motion). Footnote: "Illustrative values · In
+production: a job after each validated refresh: stage the changed rows,
+MERGE on each key, check counts and hashes." The real DDL and CSV buttons
+are unchanged.
 
 **Build Notes** (`screens/11-build-notes.png`). TOC sidebar from the file's
 sections. Rendered from `docs/desk/BUILD_NOTES.md`, a markdown render,
@@ -1863,6 +2021,6 @@ included), with the real values of `FRAME3_DATA_AUDIT.md` wherever it marks
 a value COMPUTABLE and illustrative values, marked as such, elsewhere. Per
 tab: build from the PNG and this file; screenshot at 1440 wide; compare with
 the PNG; verifier; commit. Acceptance: every tab renders from fixtures;
-every number on screen traces to a §12 field; no color outside §1.3; no
+every number on screen traces to a §12 field (outside a PROTOTYPE card, §1.0.3); no color outside §1.3; no
 "established" or "significant"; typecheck, unit, build and the Desk browser
 tests green.

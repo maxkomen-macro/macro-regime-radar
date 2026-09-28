@@ -3,7 +3,8 @@
  * fixtures: every number is a served field, the signals are the Ledger's S&P
  * group in the Ledger's order, the sector card shows the top three, the
  * middle one and the bottom three, and a card whose endpoint fails keeps its
- * labels and says "Awaiting refresh" (§1.7, §12.9: vol is not wired yet).
+ * labels and says "Awaiting refresh" (§1.7). The vol column is the PROTOTYPE
+ * card (§1.0.3) until /technicals serves its vol block.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -307,17 +308,38 @@ describe("Technicals tab", () => {
     expect(card).toHaveTextContent("20 sessions have not passed yet");
   });
 
-  it("/technicals serves the vol block awaiting (its card keeps its labels and prints its §12.7 reason once) and the sectors block ready", async () => {
+  it("/technicals serves the vol block awaiting and the sectors block ready: the vol column is the PROTOTYPE (§1.0.3), the sector card reads its bars", async () => {
     renderTab();
-    // The card remounts from its loading state to the unavailable one: query it afresh.
-    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveTextContent("needs stored SPY option snapshots and a versioned skew method."));
+    // The cards remount from their loading state to the answered one: query them afresh.
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveAttribute("data-prototype", "protection"));
     const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
     expect(vol).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
-    expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(vol).not.toHaveTextContent("needs stored SPY option snapshots");
+    expect(within(vol).queryByTestId("dk-live")).toBeNull();
+    expect(vol).toHaveTextContent("Illustrative values · In production: daily SPY chain snapshots from the EODHD options add-on, stored and versioned.");
     expect(vol).not.toHaveTextContent("Awaiting refresh");
     const sect = screen.getByRole("region", { name: /^Sector leadership/ });
     await waitFor(() => expect(within(sect).getByRole("list", { name: /top three/ })).toBeInTheDocument());
     expect(within(sect).getByTestId("dk-advanced")).toBeEnabled();
+  });
+
+  it("the PROTOTYPE vol column prints its illustrative numbers, and its Advanced opens the assumed volatilities (§1.0.3)", async () => {
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveAttribute("data-prototype", "protection"));
+    const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
+    expect(vol).toHaveTextContent("+6.8 pts");
+    expect(vol).toHaveTextContent("Puts are 6.8 vol points dearer than calls.");
+    // Black-Scholes at 19.2% and 12.4% vol, 30 days: the 25-delta strikes and what each costs.
+    expect(vol).toHaveTextContent(/25Δ put\s*19\.2%\s*96\.7%\s*0\.84%/);
+    expect(vol).toHaveTextContent(/25Δ call\s*12\.4%\s*102\.7%\s*0\.52%/);
+    expect(vol).toHaveTextContent("15.4 vs 11.9");
+    expect(vol).toHaveTextContent("74th percentile of two years");
+    expect(vol).toHaveTextContent("Rising since June.");
+    const adv = within(vol).getByTestId("dk-advanced");
+    expect(adv).toBeEnabled();
+    fireEvent.click(adv);
+    expect(vol).toHaveTextContent("Black-Scholes on SPY, 30 days to expiry, a 4.10% rate and a 1.20% dividend yield");
+    expect(vol).toHaveTextContent("78 of 105");
   });
 
   it("LAST 20 DAYS is the served σ on its own date, with no word (§3, §12.7 serve none)", async () => {
@@ -328,11 +350,12 @@ describe("Technicals tab", () => {
     expect(signals).not.toHaveTextContent(/extreme move|on Sep 23/);
   });
 
-  it("stays quiet while the first answers are on their way", async () => {
+  it("stays quiet while the first answers are on their way; the vol column waits for /technicals before it is the PROTOTYPE", async () => {
     stubDesk({ "/api/desk/technicals": () => new Promise(() => {}) });
     renderTab();
     const vol = await screen.findByRole("region", { name: "What protection costs right now" });
     expect(vol).toHaveAttribute("aria-busy", "true");
+    expect(vol).not.toHaveAttribute("data-prototype");
     expect(vol).not.toHaveTextContent("Awaiting refresh");
     expect(screen.getByRole("region", { name: /^S&P 500/ })).not.toHaveTextContent("Awaiting refresh");
   });
@@ -350,32 +373,47 @@ describe("Technicals tab", () => {
     expect(screen.getByRole("region", { name: /^S&P 500/ })).toHaveTextContent("7,706");
   });
 
-  it("a failed /technicals keeps the vol and sector cards' labels and says Awaiting refresh", async () => {
+  it("a failed /technicals keeps the vol and sector cards' labels and says Awaiting refresh (Codex R-03: never the PROTOTYPE)", async () => {
     stubDesk({ "/api/desk/technicals": deskError(503, "not wired") });
     renderTab();
-    const vol = await screen.findByRole("region", { name: "What protection costs right now" });
-    await waitFor(() => expect(vol).toHaveTextContent("Awaiting refresh"));
-    expect(vol).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
-    expect(vol).not.toHaveTextContent("6.8");
-    const sect = screen.getByRole("region", { name: /Sector leadership/ });
-    await waitFor(() => expect(sect).toHaveTextContent("Awaiting refresh"));
-    expect(sect).not.toHaveTextContent("XLK");
+    await waitFor(() => expect(screen.getByRole("region", { name: /Sector leadership/ })).toHaveTextContent("Awaiting refresh"));
+    expect(screen.getByRole("region", { name: /Sector leadership/ })).not.toHaveTextContent("XLK");
+    await waitFor(() => expect(screen.getByRole("region", { name: "What protection costs right now" })).toHaveTextContent("Awaiting refresh"));
+    expect(screen.getByRole("region", { name: "What protection costs right now" })).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
+    expect(screen.getByRole("region", { name: "What protection costs right now" })).not.toHaveTextContent("6.8");
+  });
+
+  it("the vol column is the S&P's: /technicals naming another instrument draws no PROTOTYPE (§1.0.3)", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, instrument: "ndx" }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveTextContent("needs stored SPY option snapshots"));
+    expect(screen.getByRole("region", { name: /^What protection costs right now/ })).not.toHaveAttribute("data-prototype");
   });
 });
 
 describe("routes served awaiting (§12.0, §1.0.2)", () => {
-  it("the vol block served awaiting: the card keeps its labels, prints the reason once and says Not yet served", async () => {
+  it("the vol block served awaiting: the PROTOTYPE stands in its place (§1.0.3), without the reason or a badge", async () => {
     renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveTextContent("needs stored SPY option snapshots"));
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveAttribute("data-prototype", "protection"));
     const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
-    expect(within(vol).getAllByText(/needs stored SPY option snapshots/)).toHaveLength(1);
-    expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Not yet served");
-    expect(vol).not.toHaveTextContent("Awaiting refresh");
+    expect(vol).not.toHaveTextContent("needs stored SPY option snapshots");
+    expect(within(vol).queryByTestId("dk-live")).toBeNull();
+  });
+  it("a live vol block awaiting a refresh takes the column back: the LIVE card, its reason and its badge (§1.0.3 rule 6)", async () => {
+    const refresh = { status: "awaiting", data: null, unavailable: { reason: "Awaiting refresh: this could not be computed from the current data.", until: null } };
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, vol: refresh }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveTextContent("Awaiting refresh: this could not be computed from the current data."));
+    const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
+    expect(vol).not.toHaveAttribute("data-prototype");
+    expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
   });
   it("technicals served awaiting: the page badge and its three cards say Not yet served, no Ledger number beside them", async () => {
     stubDesk({ "/api/desk/technicals": deskAwaiting("no generation stored yet.") });
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: /^Signals/ })).toHaveTextContent("no generation stored yet."));
+    // Codex R-03: a route served awaiting keeps the vol card too, with the route's reason; never the PROTOTYPE.
+    expect(screen.getByRole("region", { name: /^What protection costs right now/ })).not.toHaveAttribute("data-prototype");
     for (const name of [/^S&P 500/, /^Signals/, /^What protection costs right now/, /^Sector leadership/]) {
       const card = screen.getByRole("region", { name });
       expect(within(card).getAllByText("no generation stored yet.")).toHaveLength(1);
@@ -393,5 +431,40 @@ describe("routes served awaiting (§12.0, §1.0.2)", () => {
     expect(within(season).getAllByText("no generation stored yet.")).toHaveLength(1);
     expect(season.textContent).not.toMatch(/\d+\.\d|%/);
     expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Not yet served");
+  });
+});
+
+describe("Codex R-03: the protection PROTOTYPE stands only in a ready answer's not-yet-served vol block", () => {
+  const vol = () => screen.getByRole("region", { name: /^What protection costs right now/ });
+  const illustrative = /\+6\.8 pts|0\.84%|96\.7%|74th percentile|Illustrative values/;
+
+  it("/technicals served awaiting: the vol card keeps its labels and the route's reason, Not yet served; no illustrative figure", async () => {
+    stubDesk({ "/api/desk/technicals": deskAwaiting("no generation stored yet.") });
+    renderTab();
+    await waitFor(() => expect(vol()).toHaveTextContent("no generation stored yet."));
+    expect(vol()).not.toHaveAttribute("data-prototype");
+    expect(vol()).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
+    expect(within(vol()).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(vol().textContent).not.toMatch(illustrative);
+  });
+
+  it("/technicals failed: the vol card keeps its labels and says Awaiting refresh; no illustrative figure", async () => {
+    stubDesk({ "/api/desk/technicals": deskError(503, "not wired") });
+    renderTab();
+    await waitFor(() => expect(vol()).toHaveTextContent("Awaiting refresh"));
+    expect(vol()).not.toHaveAttribute("data-prototype");
+    expect(vol()).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
+    expect(vol().textContent).not.toMatch(illustrative);
+  });
+
+  it("a ready answer without the vol block: the vol card awaits a refresh; the PROTOTYPE needs the block served awaiting", async () => {
+    const { vol: _v, ...noVol } = technicals as Record<string, unknown>;
+    void _v;
+    stubDesk({ "/api/desk/technicals": () => noVol });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^S&P 500/ })).toHaveTextContent("7,706"));
+    await waitFor(() => expect(vol()).toHaveTextContent("Awaiting refresh"));
+    expect(vol()).not.toHaveAttribute("data-prototype");
+    expect(vol().textContent).not.toMatch(illustrative);
   });
 });

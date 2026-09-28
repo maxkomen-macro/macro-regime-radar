@@ -88,8 +88,8 @@ and hedged with the ETF that fits it best.
 Designed and drawn, not yet served, each for a stated reason:
 
 - Options and skew: needs a stored history of SPY option snapshots and a
-  written method for picking strikes and expiries. A number without that
-  isn't auditable, so there isn't one.
+  written method for picking strikes and expiries. Where a number isn't
+  computed yet, the card says so or is a marked prototype.
 - Breadth from the stocks themselves: the Sectors card counts the 11
   sector ETFs above their 50- and 200-day averages and says so on every
   count. Counting the index's own stocks needs constituent data, which the
@@ -101,8 +101,93 @@ Designed and drawn, not yet served, each for a stated reason:
   The discipline gate in the browser is a workflow check, not a server
   rule.
 - Hedging a basket with options: the arithmetic for a beta-adjusted put
-  spread on a basket has to be exactly right or absent. It's absent until
-  it's right; the card has its slot on the page.
+  spread on a basket has to be exactly right or absent. Where a number
+  isn't computed yet, the card says so or is a marked prototype.
+
+## Prototypes, and how I would build them
+
+Five cards are drawn as prototypes: finished, with illustrative values, each
+ending in a small footnote that says so and names how it would be built. They
+are there so the Desk can be walked through end to end. They don't change the
+list above: nothing in them is served, and each stays designed, not yet
+served, until it is. A test holds every prototype value inside its own card,
+and no live card reads a prototype's data. Here is how I'd build each one for
+real.
+
+**What protection costs right now (Technicals).** Source: the EODHD options
+add-on, one snapshot of the SPY chain a day after the close, every strike and
+expiry with bid, ask, implied volatility and open interest. Compute: a
+versioned method that interpolates the 25-delta put and call at a constant
+30-day maturity, the at-the-money term structure at 1, 3 and 6 months,
+realized volatility from the stored closes over the same windows, and the
+skew's percentile over the stored history. Storage: one row per date, expiry,
+strike and right in a raw chain table, plus a small derived table keyed by
+date and method version, so a change of method restates the history rather
+than patching it. Effort: about two weeks, most of it the method and its
+tests; the percentile then needs two years of collected snapshots, or a
+purchased backfill.
+
+**Hedge with options (Basket & Hedge).** Source: the same chain snapshots for
+the hedge ETF and the basket's largest names, and, for the OTC route, a
+dealer's indicative quote entered by hand. Compute: each structure priced off
+the stored surface at its own strike and expiry instead of an assumed
+volatility; route (a) sized from the basket engine's hedge ratio, with basis
+risk shown by its R²; breakeven and the payoff under a 10% fall. Storage: the
+quotes with their timestamps, and each priced hedge saved with its basket and
+the surface's as-of date. Effort: two to three weeks once the options store
+exists, mostly the arithmetic's tests: spreads, dividends, and early exercise
+on American single-name options, which Black-Scholes leaves out.
+
+**Positioning (Basket & Hedge).** Source: the exchanges' twice-monthly
+short-interest files, OCC's daily open interest by series, and the SEC's
+quarterly 13F filings. Compute: short interest over float, days to cover
+against 20-day average volume, the put/call open-interest ratio, and a
+crowding flag whose thresholds are written down and tested. Storage: one
+table per source, each row dated by its settlement or filing date, because
+the three arrive on three calendars and the card has to say how old each
+figure is. Effort: about two weeks; the 13F parsing is the long pole, and its
+45-day lag has to be printed beside the number.
+
+**Event study on this basket (Basket & Hedge).** Source: the closes the
+basket's names already have in the store, plus any name not yet ingested.
+Compute: a basket index from the saved weights, a name joining when it lists,
+rebalanced monthly, then the existing event-study engine run on that series
+exactly as it runs on the S&P: same entry rule, baseline, blocks and verdict
+rule. Storage: the index levels in the proposed MART.INDEX_LEVELS table, keyed
+by basket and date, with the inputs hash. Effort: about a week, since the
+engine exists; the work is the index, its rebalancing rule, and a cache keyed
+on the basket's weights.
+
+**Sync to Snowflake (Data Pipeline).** Source: the validated SQLite snapshot
+the refresh already publishes. Compute: a job after each validated refresh
+that stages the changed rows as Parquet, runs MERGE on each RAW and CUR
+table's key, builds the MART tables beside the live ones and swaps them in,
+then compares counts and HASH_AGG per table with the snapshot and fails the
+run on any mismatch. Storage: the three schemas of the proposed DDL, with each
+run logged: rows staged, merged and verified. Effort: about a week, plus a
+Snowflake account and a key-pair role. The DDL and the CSV export on that
+page are already real.
+
+## How this was built
+
+The work was split into parallel branches, each built by an AI coding agent
+in its own git worktree, one commit per item.
+
+Every commit passed type checks, unit tests, a production build and its
+related browser tests; each branch then passed the full test suite and the
+full Desk browser suite once before merge.
+
+An independent AI reviewer checked every branch before it merged, with
+read-only access, and reproduced each finding as a test. Every blocking
+finding was fixed and reviewed again before release. The findings tables are
+in each branch's report in docs/desk/.
+
+I set the scope, the rules and the priorities, adjudicated every finding,
+and made every merge.
+
+The tests enforce three rules: no invented number on a LIVE card;
+illustrative values only inside marked prototype cards; no control that does
+nothing.
 
 ## Review log
 

@@ -1,0 +1,459 @@
+/* PROTOTYPE cards (DESK_FRAME3_SPEC §1.0.3): §1.3's palette only, the kit's type ramp. */
+
+.pr-muted {
+  color: var(--dk-t3);
+}
+.pr-assume {
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.pr-assume > div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 10px;
+}
+.pr-assume dt {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--dk-t4);
+  padding-top: 2px;
+}
+.pr-assume dd {
+  color: var(--dk-t2);
+  min-width: 0;
+}
+.pr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pr-table th,
+.pr-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--dk-row);
+  text-align: right;
+  white-space: nowrap;
+}
+.pr-table thead th {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+}
+.pr-table th:first-child,
+.pr-table td:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+.pr-table tbody th {
+  font-weight: 600;
+  color: var(--dk-t1);
+}
+.pr-table td {
+  font-family: var(--dk-mono);
+  color: var(--dk-t2);
+}
+.pr-table tr:last-child th,
+.pr-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ── Technicals: what protection costs (the vol column's place) ── */
+.pr-protection .pr-sub {
+  margin-top: 3px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--dk-border);
+}
+.pr-protection .te-vol-sec {
+  padding: 14px 0 13px;
+}
+.pr-protection .te-vol-sec:last-child {
+  border-bottom: 0;
+}
+.pr-sides {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pr-sides th,
+.pr-sides td {
+  padding: 3px 0;
+  text-align: right;
+}
+.pr-sides thead th {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  text-transform: uppercase;
+  color: var(--dk-t4);
+}
+.pr-sides tbody th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--dk-t1);
+}
+.pr-sides td {
+  font-family: var(--dk-mono);
+  color: var(--dk-t2);
+}
+.pr-tenors {
+  margin-top: 12px;
+}
+.pr-bars {
+  margin-top: 6px;
+  display: grid;
+  gap: 7px;
+}
+.pr-bar-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto 34px;
+  align-items: center;
+  gap: 8px;
+}
+.pr-bar-tenor {
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t3);
+}
+.pr-bar-pair {
+  display: grid;
+  gap: 3px;
+}
+.pr-bar-pair i,
+.pr-legend i {
+  display: block;
+  height: 6px;
+}
+.pr-bar-iv {
+  background: var(--dk-blue);
+}
+.pr-bar-rv {
+  background: rgba(139, 146, 158, 0.55);
+}
+.pr-bar-nums {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t2);
+  white-space: nowrap;
+}
+.pr-bar-gap {
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  text-align: right;
+}
+.pr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--dk-t3);
+}
+.pr-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pr-legend i {
+  width: 12px;
+}
+.pr-spark {
+  fill: none;
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+}
+.pr-spark-line {
+  fill: none;
+  stroke: var(--dk-blue);
+  stroke-width: 1.6;
+}
+.pr-spark-today {
+  stroke: var(--dk-amber);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.7;
+}
+.pr-spark-dot {
+  fill: var(--dk-t1);
+}
+.pr-range {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t4);
+}
+
+/* ── Basket & Hedge: hedge with options (the hedge's step 3) ── */
+.pr-inputs {
+  margin-top: 10px;
+  padding: 10px 14px 12px;
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  background: var(--dk-card-2);
+}
+.pr-inputs-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t3);
+}
+/* Step 3's options slot, holding the card: the whole width of the step, under the ETF hedge and the stress test. */
+.pr-options-slot {
+  grid-column: 1 / -1;
+}
+.pr-routes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 16px;
+}
+.pr-route-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dk-t1);
+}
+.pr-route-letter {
+  font-family: var(--dk-mono);
+  font-weight: 400;
+  color: var(--dk-t3);
+}
+.pr-route-sub {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--dk-t3);
+}
+.pr-table-wrap {
+  margin-top: 6px;
+  overflow-x: auto;
+}
+.pr-table-wrap:focus-visible {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: 2px;
+}
+.pr-tradeoff {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dk-t2);
+}
+.pr-tradeoff b {
+  font-weight: 600;
+  color: var(--dk-t1);
+}
+.pr-why {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--dk-t3);
+}
+@media (max-width: 760px) {
+  /* The inputs row's four stats in two rows on a phone (StatRow sets its columns inline). */
+  .pr-inputs .dk-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    row-gap: 10px;
+  }
+}
+
+/* ── Basket & Hedge: positioning ── */
+.pr-below {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 13px;
+  align-items: stretch;
+}
+@media (max-width: 1100px) {
+  .pr-below {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.pr-positioning .dk-stats {
+  margin-top: 8px;
+}
+/* "(illustrative)" under a numeric column's name, in lowercase sans, so the headers keep the columns' width. */
+.pr-th-note {
+  display: block;
+  font-family: var(--dk-sans);
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* A long company name (the preset's "Constellation Energy") wraps under its ticker before the table scrolls. */
+.pr-positioning .pr-table tbody th {
+  white-space: normal;
+}
+.pr-positioning .pr-table-wrap {
+  margin-top: 12px;
+}
+.pr-name {
+  font-weight: 400;
+  font-size: 12px;
+}
+.pr-table td.pr-left,
+.pr-table th.pr-left {
+  text-align: left;
+  font-family: var(--dk-sans);
+}
+.pr-flag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--dk-sug-bd);
+  border-radius: 5px;
+  background: var(--dk-sug-bg);
+  color: var(--dk-amber);
+  font-family: var(--dk-mono);
+  font-size: 11px;
+}
+.pr-adv-line {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--dk-t2);
+}
+
+/* ── Basket & Hedge: the event study on the basket (an Event Study answer's type, §4) ── */
+.pr-study .pr-study-q {
+  margin-top: 8px;
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1.3;
+  color: var(--dk-t1);
+}
+.pr-study .dk-stats {
+  margin-top: 12px;
+}
+.pr-study .es-bars {
+  margin-top: 12px;
+  height: 260px;
+}
+.pr-study .es-bars svg {
+  position: absolute;
+  inset: 0;
+}
+.pr-study .es-bar-value {
+  font-family: var(--dk-serif);
+  font-weight: 700;
+  font-size: 12.5px;
+  fill: var(--dk-blue);
+}
+.pr-study .es-bar-label {
+  font-family: var(--dk-serif);
+  font-size: 14px;
+  fill: var(--dk-t1);
+}
+.pr-study .es-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--dk-t2);
+}
+.pr-study .es-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.pr-key-blue {
+  background: var(--dk-blue);
+}
+.pr-key-gray {
+  background: rgba(139, 146, 158, 0.35);
+}
+.pr-key-whisker {
+  color: var(--dk-blue);
+}
+.pr-study-why {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dk-t2);
+}
+.pr-study-prov {
+  margin-top: 6px;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t4);
+}
+
+/* ── Data Pipeline: sync to Snowflake ── */
+.pr-sync .dk-card-head {
+  align-items: center;
+}
+.dk .pr-sync-btn {
+  margin-left: auto;
+}
+.pr-sync-target {
+  margin-top: 4px;
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  color: var(--dk-t3);
+}
+.pr-steps {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.pr-steps li {
+  padding: 10px 12px;
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  background: var(--dk-card-2);
+}
+.pr-steps li[data-state="done"] .pr-step-mark {
+  color: var(--dk-green);
+}
+.pr-steps li[data-state="running"] {
+  border-color: var(--dk-blue);
+}
+.pr-steps li[data-state="running"] .pr-step-mark {
+  color: var(--dk-blue);
+}
+.pr-steps li[data-state="pending"] .pr-step-mark {
+  color: var(--dk-t4);
+}
+.pr-step-detail {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--dk-t2);
+}
+.pr-step-time {
+  margin-top: 4px;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t4);
+}
+.pr-sync .pr-table-wrap {
+  margin-top: 12px;
+}
+.pr-sync-status {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--dk-t2);
+}
+@media (max-width: 900px) {
+  .pr-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

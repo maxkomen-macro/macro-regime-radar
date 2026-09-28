@@ -1,0 +1,71 @@
+{
+ "kind": "mrr.desk.prototype.positioning",
+ "note": "Illustrative: short interest, days to cover, put/call open interest and 13F crowding for the AI Infrastructure 10 preset's ten names (DESK_FRAME3_SPEC §1.0.3). Not a reading of any market.",
+ "basket": "AI Infrastructure 10",
+ "rules": {
+  "crowded_short_si_pct": 10,
+  "crowded_long_13f_pct": 25
+ },
+ "names": {
+  "NVDA": {
+   "si_pct_float": 1.1,
+   "days_to_cover": 0.6,
+   "put_call_oi": 0.78,
+   "top10_13f_pct": 38
+  },
+  "AVGO": {
+   "si_pct_float": 1.4,
+   "days_to_cover": 1.3,
+   "put_call_oi": 0.84,
+   "top10_13f_pct": 29
+  },
+  "AMD": {
+   "si_pct_float": 2.4,
+   "days_to_cover": 0.9,
+   "put_call_oi": 0.88,
+   "top10_13f_pct": 24
+  },
+  "TSM": {
+   "si_pct_float": 0.5,
+   "days_to_cover": 1.1,
+   "put_call_oi": 0.69,
+   "top10_13f_pct": 22
+  },
+  "MU": {
+   "si_pct_float": 1.5,
+   "days_to_cover": 1.2,
+   "put_call_oi": 0.93,
+   "top10_13f_pct": 16
+  },
+  "ANET": {
+   "si_pct_float": 1.7,
+   "days_to_cover": 1.8,
+   "put_call_oi": 0.71,
+   "top10_13f_pct": 14
+  },
+  "VRT": {
+   "si_pct_float": 3.2,
+   "days_to_cover": 1.9,
+   "put_call_oi": 0.92,
+   "top10_13f_pct": 21
+  },
+  "CEG": {
+   "si_pct_float": 2.3,
+   "days_to_cover": 2.6,
+   "put_call_oi": 0.95,
+   "top10_13f_pct": 17
+  },
+  "CRWV": {
+   "si_pct_float": 18.3,
+   "days_to_cover": 2.4,
+   "put_call_oi": 1.36,
+   "top10_13f_pct": 9
+  },
+  "NBIS": {
+   "si_pct_float": 15.9,
+   "days_to_cover": 2.8,
+   "put_call_oi": 1.24,
+   "top10_13f_pct": 5
+  }
+ }
+}

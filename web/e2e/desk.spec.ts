@@ -22,6 +22,9 @@ import positionSample from "../src/fixtures/desk/positions.json" with { type: "j
 import { POSITIONS_KEY } from "../src/screens/desk/positions/store";
 import basketSample from "../src/fixtures/desk/baskets.json" with { type: "json" };
 import { SAVED_BASKETS_KEY } from "../src/screens/desk/basket/weights";
+import { PROTOTYPES } from "../src/screens/desk/prototypes/registry";
+import { PROTOTYPE_MARKERS } from "../src/screens/desk/prototypes/markers";
+import { PROTOTYPE_LEAD } from "../src/screens/desk/kit/Prototype";
 
 /** A fixture answer's payload: the envelope's `data` (§12.0), for an override to change and serve again. */
 function payloadOf(reply: { body: string }): Record<string, unknown> {
@@ -93,6 +96,43 @@ test.describe("desk v2", () => {
       }
     });
   }
+
+  // §1.0.3: a PROTOTYPE card is drawn finished with illustrative values: no badge, its footnote its last line,
+  // and none of its values printed outside it. Run this against a preview of `vite build` too (E2E_BASE_URL):
+  // routeDesk answers in the browser, so the production bundle reads the same fixtures.
+  test("PROTOTYPE cards (§1.0.3): each ends with its footnote and carries no badge; no prototype value is printed outside one", async ({ page }) => {
+    // A first visit: Basket & Hedge seeds the AI Infrastructure 10 preset, the basket the prototypes are drawn for.
+    const all = Object.values(PROTOTYPE_MARKERS).flat();
+    for (const slug of BUILT) {
+      await open(page, `/desk/${slug}`);
+      const here = PROTOTYPES.filter((p) => p.page === slug);
+      await expect(page.locator("[data-prototype]"), slug).toHaveCount(here.length);
+      for (const p of here) {
+        const card = page.locator(`[data-prototype="${p.id}"]`);
+        await expect(card.locator("[data-prototype-foot]")).toHaveCount(1);
+        await expect(card.locator("[data-prototype-foot]")).toHaveText(`${PROTOTYPE_LEAD}${p.production}`);
+        await expect(card.getByTestId("dk-live")).toHaveCount(0);
+        const last = await card.evaluate((el) => {
+          const nodes = el.querySelectorAll("*");
+          return nodes[nodes.length - 1]?.closest("[data-prototype-foot]") !== null;
+        });
+        expect(last, `${p.id}: the footnote is the last line`).toBe(true);
+        for (const m of PROTOTYPE_MARKERS[p.id]) await expect(card, `${p.id} prints ${m}`).toContainText(m);
+        // The footnote reads as the as-of stamp does: mono, small, the muted gray.
+        const foot = await card.locator("[data-prototype-foot]").evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return { mono: /Plex Mono/.test(cs.fontFamily), size: parseFloat(cs.fontSize), color: cs.color };
+        });
+        expect(foot).toEqual({ mono: true, size: 11, color: "rgb(107, 114, 128)" });
+      }
+      const outside = await page.evaluate(() => {
+        const root = document.querySelector(".dk")?.cloneNode(true) as HTMLElement | undefined;
+        root?.querySelectorAll("[data-prototype]").forEach((n) => n.remove());
+        return root?.textContent ?? "";
+      });
+      expect(all.filter((m) => outside.includes(m)), `${slug}: prototype values outside a PROTOTYPE card`).toEqual([]);
+    }
+  });
 
   // Codex R-09: a completed 200 whose body is null is Awaiting refresh on every tab, never a loading state.
   const NULL_ANSWERS: { slug: string; path: string; labels: string[] }[] = [
@@ -269,26 +309,23 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: the vol block keeps its labels, prints its reason and says Not yet served; the sector bars and the RSI, MACD and seasonality cards are served (§1.0, §12.7, §12.14)", async ({ page }) => {
+  test("technicals: the vol column is the PROTOTYPE; the sector bars and the RSI, MACD and seasonality cards are served (§1.0, §1.0.3, §12.7, §12.14)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/technicals");
+      // §1.0.3: the vol block is served awaiting as not yet served, so its PROTOTYPE stands there: finished, no badge, its footnote last.
+      const vol = page.getByRole("region", { name: /^What protection costs right now/ });
+      await expect(vol).toHaveAttribute("data-prototype", "protection");
+      await expect(vol).toContainText("PUTS vs CALLS · 1 MONTH OUT");
+      await expect(vol).not.toContainText("needs stored SPY option snapshots");
+      await expect(vol.getByTestId("dk-live")).toHaveCount(0);
+      await expect(vol.getByTestId("dk-advanced")).toBeEnabled();
+      await expect(vol.getByRole("img")).toHaveCount(2);
       // desk/fill-etf: the sector leadership is served, seven bars from the API's answer on the fixture store.
       const sect = page.getByRole("region", { name: /^Sector leadership/ });
       await expect(sect.getByRole("list", { name: /top three/ }).getByRole("listitem")).toHaveCount(7);
       await expect(sect).toContainText("60 sessions to Sep 23 · log returns ×100 · Yahoo");
       await expect(sect.getByTestId("dk-advanced")).toBeEnabled();
-      const cards: [RegExp, string, string][] = [
-        [/^What protection costs right now/, "needs stored SPY option snapshots and a versioned skew method.", "PUTS vs CALLS · 1 MONTH OUT"],
-      ];
-      for (const [name, reason, label] of cards) {
-        const card = page.getByRole("region", { name });
-        await expect(card).toContainText(reason);
-        await expect(card).toContainText(label);
-        await expect(card.getByTestId("dk-live")).toContainText("Not yet served");
-        await expect(card.getByTestId("dk-advanced")).toBeDisabled();
-        await expect(card.getByRole("img")).toHaveCount(0);
-      }
       // §12.7: RSI(14), its zone and direction, each zone's last session and the gauge, dated by its own session.
       const rsi = page.getByRole("region", { name: /^Momentum · RSI/ });
       await expect(rsi.getByTestId("dk-live")).toContainText("Sep 21");
@@ -599,7 +636,8 @@ test.describe("desk v2", () => {
     const marked = page.locator('.bn-toc a[aria-current="location"]');
     const toc = page.getByRole("navigation", { name: "Contents" });
     // The file's sections, then the page's own §1.0.1 section, last.
-    const titles = ["Long A", "Short", "Tiny", "Long B", "Long C", "Last", "Live / Designed, not yet served"];
+    // The page's own "How this was built" follows the file's sections when the file has no Prototypes section.
+    const titles = ["Long A", "Short", "Tiny", "Long B", "Long C", "Last", "How this was built", "Live / Designed, not yet served"];
     await open(page, "/desk/build-notes");
     await expect(page.getByRole("heading", { level: 2, name: "Synthetic notes" })).toBeVisible();
     await expect(toc.getByRole("link")).toHaveText(titles);
@@ -653,7 +691,7 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("main")).not.toContainText("7,625");
   });
 
-  test("basket & hedge: the saved basket priced (step 2) and hedged (step 3), the options slot unavailable, the weights kept in the browser, the hand-off; every width", async ({ page }) => {
+  test("basket & hedge: the saved basket priced (step 2) and hedged (step 3), the options slot holding the PROTOTYPE, the weights kept in the browser, the hand-off; every width", async ({ page }) => {
     const asked: string[] = [];
     page.on("request", (r) => {
       if (/\/api\/desk\/(basket|hedge)/.test(r.url())) asked.push(`${r.method()} ${new URL(r.url()).pathname}${new URL(r.url()).search}`);
@@ -675,12 +713,26 @@ test.describe("desk v2", () => {
     await expect(step3.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("XLK fits the basket best (R² 0.69 over a year)");
     await expect(step3.locator('tr[aria-current="true"]')).toHaveCount(1);
     await expect(step3.getByRole("region", { name: /^Stress test/ })).toContainText("With the table's hedge, short $1,384,473 of XLK: if QQQ falls 10% the basket loses $170,542 unhedged");
-    // §10 (Codex R-14): the options slot is plain: no control that cannot act, the reason printed.
-    await expect(hedge.getByRole("button")).toHaveCount(0);
-    await expect(hedge.locator('[data-slot="hedge-options"]')).toHaveCount(1);
-    await expect(hedge).toContainText("Option structures for a basket are not yet defined in the engine.");
+    // §10, §1.0.3: step 3's options slot holds the PROTOTYPE for the saved basket: the engine's inputs, live; three
+    // routes; its one control (Advanced) opens something (Codex R-14: no control that cannot act).
+    await expect(page.locator('[data-slot="hedge-options"] [data-prototype="options-hedge"]')).toHaveCount(1);
+    await expect(hedge.getByRole("button")).toHaveCount(1);
+    await expect(hedge).toContainText("from your basket · live");
+    await expect(hedge.getByRole("heading", { level: 3 })).toHaveText(["(a) Puts on XLK, the top-ranked hedge ETF", "(b) Puts on the three largest names", "(c) An OTC basket put from a dealer"]);
+    await expect(hedge.getByRole("table")).toHaveCount(3);
+    await expect(hedge.getByTestId("dk-live")).toHaveCount(0);
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
+    // §1.0.3: Positioning and the event study are drawn for the AI Infrastructure 10 preset; this basket is another,
+    // so each keeps its labels and prints one line (step 3, below the options slot).
+    const positions = step3.getByRole("region", { name: /^Positioning/ });
+    await expect(positions).toHaveAttribute("data-prototype", "positioning");
+    await expect(positions).toContainText("Illustrative values are shown for the AI Infrastructure 10 preset.");
+    await expect(positions.getByRole("table")).toHaveCount(0);
+    const study = step3.getByRole("region", { name: /^Event study on this basket/ });
+    await expect(study).toHaveAttribute("data-prototype", "basket-study");
+    await expect(study).toContainText("Illustrative values are shown for the AI Infrastructure 10 preset.");
+    await expect(study.getByRole("img")).toHaveCount(0);
     // Weights as typed, saved in this browser.
     await basket.getByLabel("Weight of SMCI, percent").fill("8");
     await expect(basket).toContainText("total 96%");
@@ -733,6 +785,12 @@ test.describe("desk v2", () => {
     await expect(basket.getByLabel("Notional, dollars")).toHaveValue("1,000,000");
     await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("since Mar 28, 2025");
     await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best");
+    // §1.0.3: the prototypes are drawn for this basket: Positioning lists all ten names, the event study names it.
+    const positions = page.getByRole("region", { name: /^Positioning/ });
+    await expect(positions.getByRole("table").getByRole("row")).toHaveCount(11);
+    await expect(positions).not.toContainText("no data");
+    await expect(positions.getByRole("columnheader", { name: "Short int. (illustrative)" })).toHaveCount(1);
+    await expect(page.getByRole("region", { name: /^Event study on this basket/ })).toContainText("After AI Infrastructure 10 falls 2σ over 5 days, it was higher a month later 64% of the time.");
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
     // Technicals links here with ?add=: the name is checked against the price endpoint (not served in these tests, so
@@ -743,6 +801,31 @@ test.describe("desk v2", () => {
     await expect(basket.getByLabel("Weight of NVDA, percent")).toHaveValue("9.1");
     await expect(basket).toContainText("ORCL added; the 11 names are at equal weight.");
     await expect(page).toHaveURL(/\/desk\/basket-hedge\?basket=local-1$/);
+  });
+
+  test("data pipeline: Sync to Snowflake, a PROTOTYPE, replays connect → stage → merge → verify beside the real DDL and CSV (§11, §1.0.3)", async ({ page }) => {
+    await open(page, "/desk/data-pipeline");
+    const sync = page.getByRole("region", { name: /^Sync to Snowflake/ });
+    await expect(sync).toHaveAttribute("data-prototype", "snowflake-sync");
+    await expect(sync.getByRole("table").getByRole("row")).toHaveCount(7);
+    await expect(sync).toContainText("Verified: 6 of 6 tables match the snapshot");
+    await sync.getByRole("button", { name: "Sync to Snowflake" }).click();
+    await expect(sync.getByRole("button", { name: "Syncing…" })).toBeDisabled();
+    await expect(sync).toContainText("Verified: 6 of 6 tables match the snapshot", { timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Generate Snowflake DDL" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Export current study → CSV" })).toBeEnabled();
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+    // Under reduced motion the replay completes at once, and nothing animates.
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await open(page, "/desk/data-pipeline");
+    await page.getByRole("region", { name: /^Sync to Snowflake/ }).getByRole("button", { name: "Sync to Snowflake" }).click();
+    await expect(page.getByRole("region", { name: /^Sync to Snowflake/ })).toContainText("Verified: 6 of 6 tables match the snapshot");
+    expect(await page.evaluate(() => [...document.querySelectorAll(".dk *")].filter((el) => getComputedStyle(el).animationName !== "none").length)).toBe(0);
   });
 
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {

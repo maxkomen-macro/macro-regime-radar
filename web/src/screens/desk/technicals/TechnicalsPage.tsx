@@ -5,7 +5,9 @@
  * sectors block the sector leadership /sectors serves, §12.14) and /ledger
  * (§12.5, the rows in `signals_allowlist` order). Grid:
  * the vol card spans the left column; price and signals on top; sector
- * leadership and RSI below; MACD and seasonality in a third row (desk/fill-compute). Every number is a served field, formatted, and
+ * leadership and RSI below; MACD and seasonality in a third row (desk/fill-compute). The vol column is a
+ * PROTOTYPE card (§1.0.3, ../prototypes/ProtectionCard) while a ready /technicals serves its vol
+ * block awaiting as not yet served, and the LIVE card in every other state. Every number is a served field, formatted, and
  * dated by its own served dates; the trend's words spell the served
  * `trend.state` (§3).
  * A card stays quiet while its first answer is on its way, and keeps its
@@ -15,6 +17,7 @@
 
 import { useState } from "react";
 import { unavailableOf, useLedger, useTechnicals } from "../data/api";
+import type { Unavailable } from "../data/envelope";
 import { droppedOf } from "../data/schema";
 import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, VolResponse } from "../data/types";
 import { nyToday } from "../DeskSidebar";
@@ -27,7 +30,8 @@ import { DESK_ACCENTS } from "../kit/palette";
 import Gauge from "../kit/Gauge";
 import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart";
 import RankBars from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, isAwaitingRefresh, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
+import { ProtectionCard } from "../prototypes/ProtectionCard";
 import "./technicals.css";
 
 type CardState = "loading" | "awaiting" | "ready";
@@ -137,6 +141,25 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
       </div>
     </section>
   );
+}
+
+/** §12.7: every field of /technicals describes the S&P (`spx`); an answer naming another instrument is not the S&P's. */
+export function isSpx(t: TechnicalsResponse | undefined): boolean {
+  const inst = (t as { instrument?: unknown } | undefined)?.instrument;
+  return inst == null || inst === "spx" || inst === "^GSPC";
+}
+
+/**
+ * §3, §1.0.3 (Codex R-03): the vol column is the PROTOTYPE card ("What protection costs right now") only when
+ * /technicals answered ready, for the S&P, and served its vol block awaiting as not yet served. Everything else
+ * keeps the LIVE card in its own state: loading (quiet), the route awaiting (its reason) or failed (Awaiting
+ * refresh), an answer without the block (Awaiting refresh), the block ready, or awaiting a refresh of what is
+ * live. An awaiting or failed answer never falls back to the illustrative figures.
+ */
+export function volIsPrototype(t: TechnicalsResponse | undefined, routeOff: Unavailable | null, failed: boolean): boolean {
+  if (!t || routeOff || failed || !isSpx(t)) return false;
+  const block = t._blocks?.vol;
+  return !t.vol && !!block && !isAwaitingRefresh(block);
 }
 
 // ── Price and its two trend lines ─────────────────────────────────────────
@@ -621,10 +644,15 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
       {/* §3: `● Live · <date>` from `/technicals` `date`. */}
       <PageTitle page={page} badge={unavailableOf(tq.error) ? <NotServedBadge boxed block={unavailableOf(tq.error)} /> : t ? <LiveBadge boxed parts={[dayShort(t.date) || null]} /> : null} />
       <div className="te-grid">
-        {/* §12.0: a card whose answer is served awaiting keeps its labels and prints the reason (§1.0.2). */}
-        <Unserved block={volOff}>
-          <VolCard vol={t?.vol} state={stateOf(tq, !!t?.vol)} />
-        </Unserved>
+        {/* §1.0.3: the PROTOTYPE stands in the vol column until the vol block is served; a served block's card keeps
+            its labels and prints its reason when awaiting (§1.0.2). */}
+        {volIsPrototype(t, routeOff, tq.isError) ? (
+          <ProtectionCard />
+        ) : (
+          <Unserved block={volOff}>
+            <VolCard vol={t?.vol} state={stateOf(tq, !!t?.vol)} />
+          </Unserved>
+        )}
         <Unserved block={unavailableOf(tq.error)}>
           <PriceCard t={t} state={stateOf(tq)} cross={cross} />
           <SignalsCard t={t} tState={stateOf(tq)} ledger={lq.data} lState={stateOf(lq, Array.isArray(lq.data?.signals))} />

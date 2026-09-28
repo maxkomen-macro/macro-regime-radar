@@ -37,6 +37,12 @@ export function Unserved({ block, children }: { block: Unavailable | null | unde
   return <UnservedContext.Provider value={block ? { block, once: false } : outer}>{children}</UnservedContext.Provider>;
 }
 
+/** A scope with no unavailable block, whatever encloses it: a PROTOTYPE card (§1.0.3) is drawn finished even on
+ * a page whose served blocks are awaiting. */
+export function Served({ children }: { children: ReactNode }) {
+  return <UnservedContext.Provider value={null}>{children}</UnservedContext.Provider>;
+}
+
 /** The unavailable block around this part, if any. */
 export function useUnserved(): Unavailable | null {
   return useContext(UnservedContext)?.block ?? null;
