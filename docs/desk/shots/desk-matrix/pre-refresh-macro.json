@@ -1,0 +1,260 @@
+{
+ "status": "ready",
+ "data": {
+  "assets": [
+   "SPY",
+   "QQQ",
+   "IWM",
+   "SMH",
+   "XLE",
+   "TLT",
+   "IEF",
+   "HYG",
+   "LQD",
+   "GLD",
+   "UUP",
+   "^VIX"
+  ],
+  "labels": [
+   "S&P 500",
+   "Nasdaq 100",
+   "Small caps",
+   "Semiconductors",
+   "Energy",
+   "20+ year Treasuries",
+   "7–10 year Treasuries",
+   "High-yield bonds",
+   "Investment-grade bonds",
+   "Gold",
+   "Dollar",
+   "VIX"
+  ],
+  "no_data": [
+   {
+    "symbol": "QQQ",
+    "reason": "Awaiting refresh: the full refresh stores QQQ; this database predates it."
+   },
+   {
+    "symbol": "SMH",
+    "reason": "Awaiting refresh: the full refresh stores SMH; this database predates it."
+   },
+   {
+    "symbol": "XLE",
+    "reason": "Awaiting refresh: the full refresh stores XLE; this database predates it."
+   },
+   {
+    "symbol": "TLT",
+    "reason": "Awaiting refresh: the full refresh stores TLT; this database predates it."
+   },
+   {
+    "symbol": "UUP",
+    "reason": "Awaiting refresh: the full refresh stores UUP; this database predates it."
+   },
+   {
+    "symbol": "^VIX",
+    "reason": "Awaiting refresh: the full refresh stores ^VIX; this database predates it."
+   }
+  ],
+  "values": [
+   [
+    1,
+    null,
+    0.7928505237827868,
+    null,
+    null,
+    null,
+    0.538647189353395,
+    0.712779113783768,
+    0.5665516621771507,
+    0.3712227816284577,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    0.7928505237827868,
+    null,
+    1,
+    null,
+    null,
+    null,
+    0.6206856187697255,
+    0.7151265714905104,
+    0.6129795469683414,
+    0.43620699293250637,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    0.538647189353395,
+    null,
+    0.6206856187697255,
+    null,
+    null,
+    null,
+    1,
+    0.8551857591781238,
+    0.956145043539224,
+    0.39165646172769714,
+    null,
+    null
+   ],
+   [
+    0.712779113783768,
+    null,
+    0.7151265714905104,
+    null,
+    null,
+    null,
+    0.8551857591781238,
+    1,
+    0.875945634839623,
+    0.438024317807119,
+    null,
+    null
+   ],
+   [
+    0.5665516621771507,
+    null,
+    0.6129795469683414,
+    null,
+    null,
+    null,
+    0.956145043539224,
+    0.875945634839623,
+    1,
+    0.38147752459792034,
+    null,
+    null
+   ],
+   [
+    0.3712227816284577,
+    null,
+    0.43620699293250637,
+    null,
+    null,
+    null,
+    0.39165646172769714,
+    0.438024317807119,
+    0.38147752459792034,
+    1,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  ],
+  "window": {
+   "start": "2026-07-02",
+   "end": "2026-09-25",
+   "n": 60
+  },
+  "lead": {
+   "text": "The highest pair is IEF and LQD at +0.96 and the lowest SPY and GLD at +0.37.",
+   "rule": "matrix-lead-v1",
+   "hedging": null,
+   "spy_tlt": null,
+   "highest": {
+    "a": "IEF",
+    "b": "LQD",
+    "corr": 0.956145043539224
+   },
+   "lowest": {
+    "a": "SPY",
+    "b": "GLD",
+    "corr": 0.3712227816284577
+   }
+  },
+  "quantity": "adjusted close (^VIX: index level)",
+  "transform": "daily log return (^VIX: daily log change)",
+  "unit": "correlation",
+  "date": "2026-09-25",
+  "freq": "daily",
+  "source": "asset_prices",
+  "providers": [
+   "Yahoo"
+  ]
+ },
+ "unavailable": null
+}
